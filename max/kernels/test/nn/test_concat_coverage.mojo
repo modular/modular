@@ -25,6 +25,7 @@ This file tests various code paths in nn/concat.mojo:
 
 from max.gpu.host import DeviceContext
 from layout import Coord, TensorLayout, TileTensor, row_major
+from layout.coord import DynamicCoord
 from nn.concat import (
     _concat_inner,
     _concat_parallel,
@@ -234,8 +235,8 @@ def test_fused_concat_cpu() raises:
     comptime rank = 3
     comptime axis = 1
 
-    comptime input_shape_0 = IndexList[rank](2, 3, 4)
-    comptime input_shape_1 = IndexList[rank](2, 5, 4)
+    comptime input_shape_0 = Coord(2, 3, 4)
+    comptime input_shape_1 = Coord(2, 5, 4)
     comptime output_shape = IndexList[rank](2, 8, 4)
 
     var out_stack = Array[Scalar[dtype], product(output_shape, rank)](fill=-999)
@@ -263,7 +264,7 @@ def test_fused_concat_cpu() raises:
     var output_dyn = output.make_dynamic[.int64]()
 
     fused_concat[dtype, rank, axis=axis, target="cpu"](
-        StaticTuple[IndexList[rank], 2](input_shape_0, input_shape_1),
+        StaticTuple[DynamicCoord[.int, rank], 2](input_shape_0, input_shape_1),
         output_dyn.layout,
         input_fn,
         output_fn,
@@ -320,9 +321,9 @@ def test_concat_shape() raises:
 
     var output_shape = concat_shape[dtype](input_vec, axis)
 
-    assert_equal(output_shape[0], 2, msg="Wrong dim 0")
-    assert_equal(output_shape[1], 8, msg="Wrong concat dim (3+5=8)")
-    assert_equal(output_shape[2], 4, msg="Wrong dim 2")
+    assert_equal(Int(output_shape[0]), 2, msg="Wrong dim 0")
+    assert_equal(Int(output_shape[1]), 8, msg="Wrong concat dim (3+5=8)")
+    assert_equal(Int(output_shape[2]), 4, msg="Wrong dim 2")
 
     print("✅ Test passed!")
 

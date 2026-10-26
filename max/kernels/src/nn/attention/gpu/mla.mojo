@@ -1182,6 +1182,7 @@ def flare_mla_decoding_dispatch[
             # (1,4) geometry (WM=BM, WN=32 AMD / 16 NVIDIA), so S=1 call sites are
             # byte-identical; warp-local passes `WM=16, WN=128` (num_warps_m=
             # BM//16, num_warps_n=1, one 16-row tile per warp).
+            comptime warp_size = ctx.default_device_info.warp_size
             comptime BN = 64 if ctx.target.is_nvidia_gpu() else 128
             # AMD-structured config picks 16x16x128 for MLA decode when
             # `num_heads <= 16` (Kimi-K2.5 TP=4) or `depth % 128 == 0`;
@@ -1195,7 +1196,7 @@ def flare_mla_decoding_dispatch[
                 64 if (ctx.target.is_nvidia_gpu() or amd_fp8) else 32
             )  # 8 mma_tile per row resolves bank conflict on nvidia
             # num warps in M and N, multiplied by warp size.
-            comptime num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
+            comptime num_threads = (BM // WM) * (BN // WN) * warp_size
 
             comptime accum_type = get_accum_type[q.dtype]()
             comptime num_pipeline_stages = 6
@@ -1204,7 +1205,7 @@ def flare_mla_decoding_dispatch[
 
             shared_mem_bytes += BN * depth * size_of[k_t.dtype]()
 
-            comptime num_warps = ceildiv(num_threads, WARP_SIZE)
+            comptime num_warps = ceildiv(num_threads, warp_size)
 
             # smem for p and warp_scratch
             shared_mem_bytes += (
@@ -1451,7 +1452,7 @@ def flare_mla_decoding_dispatch[
                             Int32(num_partitions_value),
                             valid_length.as_imm(),
                             grid_dim=(D_TILES, _split_k_rows, batch_size),
-                            block_dim=(W_PARTS_64 * WARP_SIZE, 1, 1),
+                            block_dim=(W_PARTS_64 * warp_size, 1, 1),
                         )
                     elif num_partitions_value <= 128:
                         ctx.enqueue_function[kernel_reduce_128](
@@ -1463,7 +1464,7 @@ def flare_mla_decoding_dispatch[
                             Int32(num_partitions_value),
                             valid_length.as_imm(),
                             grid_dim=(D_TILES, _split_k_rows, batch_size),
-                            block_dim=(W_PARTS_128 * WARP_SIZE, 1, 1),
+                            block_dim=(W_PARTS_128 * warp_size, 1, 1),
                         )
                     else:
                         ctx.enqueue_function[kernel_reduce_256](
@@ -1475,7 +1476,7 @@ def flare_mla_decoding_dispatch[
                             Int32(num_partitions_value),
                             valid_length.as_imm(),
                             grid_dim=(D_TILES, _split_k_rows, batch_size),
-                            block_dim=(W_PARTS_256 * WARP_SIZE, 1, 1),
+                            block_dim=(W_PARTS_256 * warp_size, 1, 1),
                         )
                 else:
                     comptime kernel_reduce = mha_splitk_reduce[
@@ -1483,7 +1484,7 @@ def flare_mla_decoding_dispatch[
                         output.dtype,
                         depth=depth_v,
                         num_heads=num_heads,
-                        num_threads=WARP_SIZE,
+                        num_threads=warp_size,
                         use_exp2=reduce_use_exp2,
                     ]
                     ctx.enqueue_function[kernel_reduce](
@@ -1494,7 +1495,7 @@ def flare_mla_decoding_dispatch[
                         Int32(batch_size),
                         Int32(num_partitions_value),
                         grid_dim=(1, num_heads, batch_size),
-                        block_dim=(WARP_SIZE, 1, 1),
+                        block_dim=(warp_size, 1, 1),
                         attributes=pdl_launch_attributes(MHA_PDL_LEVEL),
                     )
                 _ = exp_sum_qk_max_data^
@@ -2547,13 +2548,8 @@ def mla_decoding_single_batch[
 
                         comptime if not not_last_iter:
                             p_reg_vec2[mma_id, i] = _kernel_mask(
-                                IndexList[2, element_type=.uint32](
-                                    score_row, score_col
-                                ),
-                                IndexList[2, element_type=.uint32](
-                                    seq_len,
-                                    num_keys,
-                                ),
+                                (score_row, Int(score_col)),
+                                (seq_len, num_keys),
                                 p_reg_vec2[mma_id, i],
                             )
 
@@ -4280,13 +4276,8 @@ def mla_prefill_single_batch[
 
                         comptime if not not_last_iter:
                             p_reg_vec2[mma_id, i] = _kernel_mask(
-                                IndexList[2, element_type=.uint32](
-                                    Int(score_row), Int(score_col)
-                                ),
-                                IndexList[2, element_type=.uint32](
-                                    seq_len,
-                                    num_keys,
-                                ),
+                                (Int(score_row), Int(score_col)),
+                                (seq_len, num_keys),
                                 p_reg_vec2[mma_id, i],
                             )
 

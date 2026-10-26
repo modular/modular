@@ -58,6 +58,9 @@ public:
   bool getSourceTracebacks() const;
   void setSourceTracebacks(bool v);
 
+  bool getSourceTracebacksHideInternal() const;
+  void setSourceTracebacksHideInternal(bool v);
+
   bool getPreJit() const;
   void setPreJit(bool v);
 

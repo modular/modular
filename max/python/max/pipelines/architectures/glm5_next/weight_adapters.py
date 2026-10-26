@@ -41,11 +41,11 @@ from max.graph.weights import WeightData, Weights
 from max.graph.weights.weights import Shape
 from transformers import AutoConfig
 
-__all__ = ["convert_glm5_next_state_dict"]
+__all__ = ["VISION_WEIGHT_PREFIX", "convert_glm5_next_state_dict"]
 
 # Checkpoint prefix for the vision tower, and the MAX module it loads into.
 _VISION_CHECKPOINT_PREFIX = "model.visual."
-_VISION_MAX_PREFIX = "vision_encoder."
+VISION_WEIGHT_PREFIX = "vision_encoder."
 
 # Language-model prefix map, longest match first: the multimodal prefix has to
 # be tried before the plain one or `model.` would strip only half of it.
@@ -210,12 +210,12 @@ def convert_glm5_next_state_dict(
 
         if checkpoint_name.startswith(_VISION_CHECKPOINT_PREFIX):
             max_name = (
-                _VISION_MAX_PREFIX
+                VISION_WEIGHT_PREFIX
                 + checkpoint_name[len(_VISION_CHECKPOINT_PREFIX) :]
             )
             # The tower's stacked QKV loads into a StackedLinear.
             max_name = max_name.replace("attn.qkv.", "attn.qkv_proj.")
-            if max_name == f"{_VISION_MAX_PREFIX}patch_embed.proj.weight":
+            if max_name == f"{VISION_WEIGHT_PREFIX}patch_embed.proj.weight":
                 weight = _conv3d_to_linear(weight)
             # NOTE: `downsample.weight` is left 4-D, `[out, in, 2, 2]`. The 2x2
             # strided conv is flattened into a matmul in the tower, but whether
@@ -258,17 +258,6 @@ def convert_glm5_next_state_dict(
     # equivalent needs the KDA state rollback from
     # `speculative/gated_delta_rollback.py`, so until that lands these weights
     # have no consumer and a strict load would reject them.
-    # TODO(GLM53-VISION): the graph is text-only -- the architecture is
-    # registered as TEXT_GENERATION with a `TextContext`, and no vision tower
-    # or placeholder substitution is wired. Dropping these keeps a strict load
-    # honest about what the graph actually declares; the alternative is a
-    # non-strict load that would also hide real regressions.
-    vision_keys = [
-        key for key in new_state_dict if key.startswith(_VISION_MAX_PREFIX)
-    ]
-    for key in vision_keys:
-        del new_state_dict[key]
-
     mtp_prefix = f"layers.{text_config.num_hidden_layers}."
     for key in [k for k in new_state_dict if k.startswith(mtp_prefix)]:
         del new_state_dict[key]

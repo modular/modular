@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """APIs to build inference graphs for MAX."""
 
+from max._core.graph import KernelRegistrationError as KernelRegistrationError
+
 from . import dtype_promotion, ops
 from .dim import AlgebraicDim, Dim, DimLike, StaticDim, SymbolicDim
 from .graph import (
@@ -51,3 +53,6 @@ from .value import (
     _OpaqueValue,
 )
 from .weight import ShardingStrategy, Weight
+
+# Tracebacks name it where users import it from.
+KernelRegistrationError.__module__ = __name__

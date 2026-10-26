@@ -95,7 +95,7 @@ def main() raises:
             dev_idx,
             dev_dst,
             grid_dim=1,
-            block_dim=WARP_SIZE,
+            block_dim=ctx.default_device_info.warp_size,
         )
         ctx.enqueue_copy(host_dst, dev_dst)
         ctx.synchronize()

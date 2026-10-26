@@ -61,6 +61,7 @@ from layout.tma_async import (
 from linalg.arch.sm100 import MmaOpSM100_SS
 from linalg.matmul.gpu.sm100.tile_scheduler import TileScheduler
 
+from std.utils.coord import Coord
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -130,8 +131,8 @@ def load_AB[
     num_pipeline_stages: Int,
     /,
     *,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     cta_group: Int = 1,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
@@ -225,10 +226,10 @@ def consumer_main_loop[
     pipeline_stages: Int,
     /,
     *,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     cta_group: Int = 1,
-    cluster_shape: IndexList[3] = Index(1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
 ](
     tmem_addr: UInt32,
     a_smem_iter: SMemTileArray[a_type, _, _, pipeline_stages],
@@ -322,8 +323,8 @@ def multi_stage_store_C[
     /,
     *,
     accum_type: DType,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     stage_stride_cols: Int,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
@@ -451,7 +452,13 @@ def multi_stage_store_C[
             named_barrier[Int32(num_output_warps * WARP_SIZE)]()
 
 
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
@@ -465,9 +472,9 @@ def kernel_8[
     a_desc_shape: Coord,
     b_desc_shape: Coord,
     c_desc_shape: Coord,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
-    cluster_shape: StaticTuple[Int32, 3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
+    cluster_shape: Coord[Int, Int, Int],
     num_pipeline_stages: Int,
     num_clc_pipeline_stages: Int,
     num_accum_pipeline_stages: Int,
@@ -496,8 +503,7 @@ def kernel_8[
     comptime clc_producer_arv_count = 1
     comptime clc_consumer_arv_count = Int32(
         SCHEDULER_THREADS
-    ) + CLUSTER_SIZE * Int32(
-        (TMA_LOAD_THREADS + MMA_THREADS + EPILOGUE_THREADS)
+        + CLUSTER_SIZE * (TMA_LOAD_THREADS + MMA_THREADS + EPILOGUE_THREADS)
     )
 
     # For ld from TMEM, use same per-stage stride in column field.
@@ -657,7 +663,7 @@ def kernel_8[
             tma_mbar[i].init()
             # we need to have 5 arrivals, 2 M, 4 N, top left M/N is shared
             mma_mbar[i].init(
-                cluster_shape[0] // Int32(cta_group) + cluster_shape[1] - 1
+                Int32(cluster_shape[0] // cta_group + cluster_shape[1] - 1)
             )
 
         comptime for i in range(num_accum_pipeline_stages):
@@ -703,8 +709,10 @@ def kernel_8[
         mma_shape,
         accum_type=accum_type,
         cta_group=cta_group,
-        cluster_shape=Index(
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        cluster_shape=(
+            Int(cluster_shape[0]),
+            Int(cluster_shape[1]),
+            Int(cluster_shape[2]),
         ),
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
@@ -713,8 +721,10 @@ def kernel_8[
 
     var scheduler = TileScheduler[
         num_stages=num_clc_pipeline_stages,
-        cluster_shape=Index[dtype=.uint32](
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        cluster_shape=(
+            Int(cluster_shape[0]),
+            Int(cluster_shape[1]),
+            Int(cluster_shape[2]),
         ),
         block_swizzle_size=1,
     ](cluster_dim, clc_response, clc_full_mbar, clc_empty_mbar)
@@ -859,8 +869,10 @@ def kernel_8[
                         block_tile_shape=block_tile_shape,
                         mma_shape=mma_shape,
                         cta_group=cta_group,
-                        cluster_shape=Index(
-                            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+                        cluster_shape=(
+                            Int(cluster_shape[0]),
+                            Int(cluster_shape[1]),
+                            Int(cluster_shape[2]),
                         ),
                     ](
                         tmem_offset,
@@ -935,9 +947,9 @@ def blackwell_kernel_8[
     b_type: DType,
     *,
     transpose_b: Bool,
-    umma_shape: IndexList[3],
-    block_tile_shape: IndexList[3],
-    cluster_shape: StaticTuple[Int32, 3],
+    umma_shape: Coord[Int, Int, Int],
+    block_tile_shape: Coord[Int, Int, Int],
+    cluster_shape: Coord[Int, Int, Int],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
@@ -1076,8 +1088,8 @@ def blackwell_kernel_8[
     )
 
     var cluster_dim = StaticTuple[Int32, 3](
-        Int32(grid_dim[0]) // cluster_shape[0],
-        Int32(grid_dim[1]) // cluster_shape[1],
+        Int32(grid_dim[0] // cluster_shape[0]),
+        Int32(grid_dim[1] // cluster_shape[1]),
         1,
     )
 
@@ -1101,9 +1113,9 @@ def test_blackwell_kernel_8[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
-    cluster_shape: StaticTuple[Int32, 3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
+    cluster_shape: Coord[Int, Int, Int],
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -1260,9 +1272,9 @@ def benchmark_blackwell_matmul(ctx: DeviceContext) raises:
         print("dtype, M, N, K, time(ms), TFLOPS")
 
         comptime BK = 64
-        comptime block_tile_shape = Index(128, 64, BK)
+        comptime block_tile_shape = (128, 64, BK)
         comptime MMA_K = 16
-        comptime umma_shape = Index(
+        comptime umma_shape = (
             block_tile_shape[0] * 2,
             block_tile_shape[1] * 2,
             MMA_K,
@@ -1280,7 +1292,7 @@ def benchmark_blackwell_matmul(ctx: DeviceContext) raises:
                     c_type,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+                    cluster_shape=(2, 1, 1),
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
                     benchmark=True,
@@ -1298,8 +1310,8 @@ def main() raises:
             benchmark_blackwell_matmul(ctx)
             return
 
-        comptime block_tile_shape = Index(128, 64, 64)
-        comptime umma_shape = Index(256, 128, 16)
+        comptime block_tile_shape = (128, 64, 64)
+        comptime umma_shape = (256, 128, 16)
 
         test_blackwell_kernel_8[
             .bfloat16,
@@ -1307,7 +1319,7 @@ def main() raises:
             .bfloat16,
             block_tile_shape,
             umma_shape,
-            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+            cluster_shape=(2, 1, 1),
             a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
             b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
             M=4096,

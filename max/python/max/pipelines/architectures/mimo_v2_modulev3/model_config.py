@@ -56,8 +56,8 @@ from .quant import MiMoV2QuantScheme, moe_layers, parse_quant_scheme
 
 # The config helpers and constants above are the graph-API architecture's;
 # the checkpoint's schema does not differ between the ports. Only the config
-# class below differs: it has no graph-API experimental fields and validates
-# the dense-MLP scale-granule split the ModuleV3 build needs at plan time.
+# class below differs: it has no ``use_subgraphs`` switch and validates the
+# dense-MLP scale-granule split the ModuleV3 build needs at plan time.
 
 
 @dataclass(kw_only=True)
@@ -119,6 +119,15 @@ class MiMoV2Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     """Expert-parallel communication config, set by the pipeline model when
     ``runtime.ep_size > 1``. ``None`` leaves the routed experts channel-
     sharded (tensor parallel)."""
+
+    fused_sliding_qkv: bool = False
+    """Whether sliding-window layers prepare Q, K and V with the fused
+    chunked QKV op instead of separate cache stores and RoPE. Off by
+    default; unsupported with data-parallel attention."""
+    fused_full_qkv: bool = False
+    """Whether full-attention layers use fused chunked QKV preparation.
+    Off by default, independently of sliding fusion; unsupported with
+    data-parallel attention."""
 
     data_parallel_degree: int = 1
     """Attention data-parallel replicas. Reserved for the DP coupling; a
@@ -210,6 +219,7 @@ class MiMoV2Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             devices=devices,
             kv_params=kv_params,
             max_seq_len=max_seq_len,
+            data_parallel_degree=model_config.data_parallel_degree,
         )
         return config
 
@@ -221,6 +231,7 @@ class MiMoV2Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         devices: list[DeviceRef],
         kv_params: KVCacheParamInterface,
         max_seq_len: int,
+        data_parallel_degree: int = 1,
     ) -> Self:
         """Builds the config from the checkpoint's HuggingFace config.
 
@@ -229,6 +240,11 @@ class MiMoV2Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             devices: The devices to build for.
             kv_params: The KV cache tree, from :meth:`construct_kv_params`.
             max_seq_len: The maximum sequence length to build for.
+            data_parallel_degree: Attention replicas over ``devices``. The
+                divisibility checks below are the tensor-parallel sharding
+                constraints, so they hold over one replica's devices --
+                where the weights shard -- not over the whole mesh, where
+                every one-device replica holds them unsharded.
 
         Returns:
             The config.
@@ -239,7 +255,7 @@ class MiMoV2Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         """
         hf = huggingface_config
         _validate(hf)
-        num_devices = len(devices)
+        num_devices = max(len(devices) // max(data_parallel_degree, 1), 1)
         layouts = {
             SLIDING: qkv_chunk_layout(hf, sliding=True),
             FULL: qkv_chunk_layout(hf, sliding=False),

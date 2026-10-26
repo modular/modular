@@ -1889,19 +1889,6 @@ def test_pow() raises:
     assert_equal(Int64(27), Int64.__pow__(Int64(3), Int64(3)))
     assert_equal(Int64(81), Int64.__pow__(Int64(3), Int64(4)))
 
-    # Negative exponents: 1 ** n == 1 for all n.
-    assert_equal(Int64(1), Int64.__pow__(Int64(1), Int64(-1)))
-    assert_equal(Int64(1), Int64.__pow__(Int64(1), Int64(-5)))
-
-    # Negative exponents: (-1) ** n depends on parity.
-    assert_equal(Int64(-1), Int64.__pow__(Int64(-1), Int64(-1)))
-    assert_equal(Int64(1), Int64.__pow__(Int64(-1), Int64(-2)))
-    assert_equal(Int64(-1), Int64.__pow__(Int64(-1), Int64(-3)))
-
-    # Negative exponents: |base| > 1 truncates to 0.
-    assert_equal(Int64(0), Int64.__pow__(Int64(2), Int64(-1)))
-    assert_equal(Int64(0), Int64.__pow__(Int64(3), Int64(-2)))
-
 
 def test_powf() raises:
     assert_almost_equal(Float32(2.0) ** Float32(0.5), 1.4142135)

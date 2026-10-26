@@ -553,7 +553,7 @@ def _latent_sparse_attention_sm100[
         Int32(idx_stride0),
         Int32(idx_stride1),
         grid_dim=num_rows,
-        block_dim=WARP_SIZE,
+        block_dim=ctx.default_device_info.warp_size,
     )
 
     var comp_view = _flat_row_view(
@@ -653,6 +653,7 @@ def latent_sparse_attention_ragged_paged[
     comptime swa_t = type_of(swa_cache)
     comptime comp_t = type_of(comp_cache)
     comptime head_dim = swa_t.kv_params.head_size
+    comptime warp_size = ctx.default_device_info.warp_size
     comptime assert (
         comp_t.kv_params.head_size == head_dim
     ), "window and compressed leaves must share the latent width"
@@ -660,7 +661,7 @@ def latent_sparse_attention_ragged_paged[
         swa_t.kv_params.num_heads == 1 and comp_t.kv_params.num_heads == 1
     ), "the latent leaves hold a single shared head"
     comptime assert (
-        head_dim % WARP_SIZE == 0
+        head_dim % warp_size == 0
     ), "head_dim must be a multiple of the warp size"
     comptime assert output.flat_rank == 3 and q.flat_rank == 3
     comptime assert comp_indices.flat_rank == 2
@@ -804,5 +805,5 @@ def latent_sparse_attention_ragged_paged[
             Int32(idx_stride1),
             scale,
             grid_dim=(num_rows, ceildiv(num_heads, heads_per_block)),
-            block_dim=WARP_SIZE * warps_per_block,
+            block_dim=warp_size * warps_per_block,
         )

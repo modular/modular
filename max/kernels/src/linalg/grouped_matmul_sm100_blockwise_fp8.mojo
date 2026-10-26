@@ -90,7 +90,7 @@ from linalg.matmul.gpu.amd.blockwise_scaled_fp8_grouped_matmul_amd import (
     blockwise_scaled_fp8_grouped_matmul_amd,
 )
 
-from std.utils.index import Index, IndexList
+from std.utils.coord import Coord, DynamicCoord
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
@@ -127,7 +127,9 @@ comptime FRAGMENT_LANES = 16
 
 
 @inline(.always)
-def _accum_row[mma_shape: IndexList[3], cta_group: Int](lane: Int) -> Int:
+def _accum_row[
+    mma_shape: Coord[Int, Int, Int], cta_group: Int
+](lane: Int) -> Int:
     """Returns the accumulator row stored in TMEM lane `lane`.
 
     With `cta_group=1` and M=64 each warp uses only the first 16 lanes of
@@ -140,7 +142,13 @@ def _accum_row[mma_shape: IndexList[3], cta_group: Int](lane: Int) -> Int:
         return lane
 
 
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__name(
@@ -164,10 +172,10 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     a_desc_shape: Coord,
     b_tile_shape: Coord,
     b_desc_shape: Coord,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     transpose_b: Bool = True,
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     num_threads: Int = 128,
@@ -481,8 +489,11 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
                     (4 * m_mma + warp_id, n_mma)
                 )
             )
+            # `Coord` has no element-wise arithmetic, so add the two
+            # coordinate pairs element by element.
             var c_gmem_warp_tile_coords = (
-                ctile_coords + _c_gmem_warp_tile_coords
+                Int(ctile_coords[0]) + Int(_c_gmem_warp_tile_coords[0]),
+                Int(ctile_coords[1]) + Int(_c_gmem_warp_tile_coords[1]),
             )
 
             var c_gmem_frag, _c_gmem_frag_coords, _ = (
@@ -493,7 +504,8 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
             var new_c_gmem_frag_coords = _c_gmem_frag_coords
             new_c_gmem_frag_coords[1] *= 2
             var c_gmem_frag_coords = (
-                c_gmem_warp_tile_coords + new_c_gmem_frag_coords
+                c_gmem_warp_tile_coords[0] + Int(new_c_gmem_frag_coords[0]),
+                c_gmem_warp_tile_coords[1] + Int(new_c_gmem_frag_coords[1]),
             )
 
             comptime assert c_gmem_frag.flat_rank == 2
@@ -821,7 +833,7 @@ def _grouped_matmul_sm100_blockwise_scaled_fp8_impl[
         type_of(b_tma_op).tile_shape,
         type_of(b_tma_op).desc_shape,
         config.block_tile_shape,
-        config.mma_shape,
+        (config.mma_shape[0], config.mma_shape[1], config.mma_shape[2]),
         transpose_b=config.transpose_b,
         a_swizzle=config.a_swizzle,
         b_swizzle=config.b_swizzle,
@@ -857,10 +869,10 @@ def _grouped_matmul_sm100_blockwise_scaled_fp8_impl[
 def _get_accumulator_size[
     *,
     c_smem_layout: TensorLayout,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     cta_group: Int,
-]() -> IndexList[2]:
+]() -> Coord[Int, Int]:
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -885,7 +897,7 @@ def _get_accumulator_size[
     comptime fragment_size = (data_paths * num_elements_per_load) // WARP_SIZE
     comptime num_elements = repeats * fragment_size
 
-    return Index(num_stages, num_elements)
+    return (num_stages, num_elements)
 
 
 @inline(.always)
@@ -926,7 +938,7 @@ def _copy_partial_a_tile_blockwise_from_gmem[
     a_gmem_layout: TensorLayout,
     a_scales_gmem_layout: TensorLayout,
     *,
-    block_tile_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
     a_swizzle: TensorMapSwizzle,
 ](
     a_gmem: TileTensor[a_type, a_gmem_layout, ImmutAnyOrigin],
@@ -1013,8 +1025,8 @@ def load_AB[
     a_smem_layout: Layout,
     b_smem_layout: Layout,
     a_scales_smem_layout: Layout,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     cta_group: Int = 1,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
@@ -1203,7 +1215,7 @@ def load_AB_partial[
     a_smem_layout: Layout,
     b_smem_layout: Layout,
     a_scales_smem_layout: Layout,
-    block_tile_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
     cta_group: Int = 1,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](
@@ -1369,8 +1381,8 @@ def multi_stage_reg_epilogue[
     c_smem_layout: TensorLayout,
     c_type: DType,
     c_static_N: Int,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     is_lower_frag_required: Bool,
     cta_group: Int,
     num_output_warps: Int,
@@ -1642,8 +1654,8 @@ def promote_accumulators[
     /,
     *,
     a_scales_smem_layout: Layout,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     cta_group: Int,
     CLUSTER_SIZE: Int32,
     is_lower_frag_required: Bool,
@@ -1985,7 +1997,13 @@ def promote_accumulators[
                         )
 
 
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
@@ -2015,7 +2033,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     num_pipeline_stages: Int,
-    cluster_shape: StaticTuple[Int32, 3],
+    cluster_shape: Coord[Int, Int, Int],
     expert_n: Int,
     expert_ids_layout: TensorLayout,
     b_scales_n: Int,
@@ -2261,7 +2279,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
         a_type,
         b_type,
         config.block_tile_shape,
-        config.mma_shape,
+        (config.mma_shape[0], config.mma_shape[1], config.mma_shape[2]),
         accum_type=accum_type,
         cta_group=config.cta_group,
         cluster_shape=config.cluster_shape,
@@ -2283,13 +2301,13 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
     var scheduler = TileScheduler[
         static_MN=expert_n,
-        cluster=Index(
+        cluster=(
             config.cluster_shape[0],
             config.cluster_shape[1],
             config.cluster_shape[2],
         ),
         cta_group=config.cta_group,
-        tile_shape=Index(
+        tile_shape=(
             config.block_tile_shape[0],
             config.block_tile_shape[1],
             config.block_tile_shape[2],
@@ -2388,7 +2406,11 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
                     b_smem_layout=b_smem_layout,
                     a_scales_smem_layout=a_scales_smem_layout,
                     block_tile_shape=config.block_tile_shape,
-                    mma_shape=config.mma_shape,
+                    mma_shape=(
+                        config.mma_shape[0],
+                        config.mma_shape[1],
+                        config.mma_shape[2],
+                    ),
                     cta_group=config.cta_group,
                 ](
                     a_tma_op,
@@ -2447,7 +2469,11 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
                     consumer_main_loop[
                         block_tile_shape=config.block_tile_shape,
-                        mma_shape=config.mma_shape,
+                        mma_shape=(
+                            config.mma_shape[0],
+                            config.mma_shape[1],
+                            config.mma_shape[2],
+                        ),
                         cta_group=config.cta_group,
                         cluster_shape=config.cluster_shape,
                     ](
@@ -2507,7 +2533,11 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
             comptime reg_info = _get_accumulator_size[
                 c_smem_layout=c_smem_layout,
                 block_tile_shape=config.block_tile_shape,
-                mma_shape=config.mma_shape,
+                mma_shape=(
+                    config.mma_shape[0],
+                    config.mma_shape[1],
+                    config.mma_shape[2],
+                ),
                 cta_group=config.cta_group,
             ]()
 
@@ -2532,7 +2562,11 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
                 promote_accumulators[
                     a_scales_smem_layout=a_scales_smem_layout,
                     block_tile_shape=config.block_tile_shape,
-                    mma_shape=config.mma_shape,
+                    mma_shape=(
+                        config.mma_shape[0],
+                        config.mma_shape[1],
+                        config.mma_shape[2],
+                    ),
                     cta_group=config.cta_group,
                     CLUSTER_SIZE=Int32(CLUSTER_SIZE),
                     is_lower_frag_required=is_lower_frag_required,
@@ -2566,7 +2600,11 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
                 c_smem_layout=c_smem_layout,
                 c_static_N=expert_n,
                 block_tile_shape=config.block_tile_shape,
-                mma_shape=config.mma_shape,
+                mma_shape=(
+                    config.mma_shape[0],
+                    config.mma_shape[1],
+                    config.mma_shape[2],
+                ),
                 is_lower_frag_required=is_lower_frag_required,
                 cta_group=config.cta_group,
                 num_output_warps=num_output_warps,
@@ -2729,7 +2767,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
             BLOCK_DIM_M=16,
             BLOCK_DIM_N=16,
             transpose_b=transpose_b,
-            scales_granularity_mnk=Index(1, 128, 128),
+            scales_granularity_mnk=Coord[Int, Int, Int](1, 128, 128),
         ](
             c,
             a,
@@ -2875,11 +2913,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         transpose_b=transpose_b,
         config=config,
         num_pipeline_stages=max_pipeline_stages,
-        cluster_shape=StaticTuple[Int32, 3](
-            Int32(config.cluster_shape[0]),
-            Int32(config.cluster_shape[1]),
-            Int32(config.cluster_shape[2]),
-        ),
+        cluster_shape=config.cluster_shape,
         expert_n=expert_n,
         expert_ids_layout=type_of(expert_ids.layout),
         b_scales_n=b_scales_n,
@@ -3052,11 +3086,17 @@ def grouped_matmul_dynamic_scaled_fp8[
 
             # MMA_N=128 halves the number of dispatched (expert, n) tiles vs
             # 64, which dominates runtime for small-M-per-expert decode.
-            comptime umma_shape: IndexList[3] = Index(64, 128, 32)
+            comptime umma_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](
+                64, 128, 32
+            )
 
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                cluster_shape=Index(1, 1, 1),
-                mma_shape=umma_shape,
+                cluster_shape=(1, 1, 1),
+                mma_shape=(
+                    umma_shape[0],
+                    umma_shape[1],
+                    umma_shape[2],
+                ),
                 cta_group=1,
                 AB_swapped=False,
                 k_group_size=1,
@@ -3128,7 +3168,7 @@ def grouped_matmul_dynamic_scaled_fp8[
                     BLOCK_DIM_M=16,
                     BLOCK_DIM_N=16,
                     transpose_b=transpose_b,
-                    scales_granularity_mnk=Index(
+                    scales_granularity_mnk=Coord[Int, Int, Int](
                         m_scale_granularity,
                         n_scale_granularity,
                         k_scale_granularity,

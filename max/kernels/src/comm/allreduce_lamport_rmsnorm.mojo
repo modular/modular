@@ -36,7 +36,7 @@ from std.sys import align_of, size_of
 from std.atomic import Atomic
 from std.collections import Array
 
-from max.gpu import WARP_SIZE, block_idx, grid_dim, thread_idx
+from max.gpu import block_idx, grid_dim, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.primitives import block
@@ -291,7 +291,7 @@ def lamport_allreduce_rmsnorm[
     ), "lamport_allreduce_rmsnorm requires a floating-point dtype"
     comptime atomic_width = Lamport.ATOMIC_BYTES // size_of[dtype]()
     comptime max_tpb = ctx.default_device_info.max_thread_block_size
-    comptime BLOCK_SIZE = align_down(max_tpb, WARP_SIZE)
+    comptime BLOCK_SIZE = align_down(max_tpb, ctx.default_device_info.warp_size)
 
     # A zero grid is rejected by `enqueue_function`. Every rank sees the same
     # `rows`, and the generation flag only advances in-kernel, so skipping

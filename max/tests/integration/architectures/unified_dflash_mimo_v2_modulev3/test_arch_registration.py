@@ -38,6 +38,9 @@ from max.pipelines.architectures.unified_dflash_mimo_v2_modulev3 import (
 from max.pipelines.architectures.unified_dflash_mimo_v2_modulev3.batch_processor import (
     UnifiedDflashMiMoV2ModuleV3BatchProcessor,
 )
+from max.pipelines.architectures.unified_dflash_mimo_v2_modulev3.memory_planner import (
+    UnifiedDflashMiMoV2ModuleV3MemoryPlanner,
+)
 from max.pipelines.architectures.unified_dflash_mimo_v2_modulev3.model_config import (
     UnifiedDflashMiMoV2Config,
     mimo_dflash_draft_width,
@@ -70,15 +73,16 @@ def _v3_speculator(draft_arch: str) -> Speculator:
 @pytest.mark.parametrize("draft_arch", ["DFlashMiMoV2DraftModel"])
 def test_the_flag_selects_the_modulev3_speculator(draft_arch: str) -> None:
     """``prefer_module_v3`` derives the ModuleV3 fused architecture: field
-    for field the ModuleV3 base with this package's model, batching and
-    config, so a selection runs the fused graph with the base's tokenizer,
-    parsers and memory planning."""
+    for field the ModuleV3 base with this package's model, batching,
+    config and memory planner, so a selection runs the fused graph with
+    the base's tokenizer and parsers."""
     arch = _v3_speculator(draft_arch).derive()
     assert arch == replace(
         mimo_v2_modulev3_arch,
         name="UnifiedDflashMiMoV2ForCausalLM_ModuleV3",
         pipeline_model=UnifiedDflashMiMoV2ModuleV3Model,
         config=UnifiedDflashMiMoV2Config,
+        memory_planner=UnifiedDflashMiMoV2ModuleV3MemoryPlanner,
         batching=UnifiedDflashMiMoV2ModuleV3BatchProcessor,
         checkpoint_draft_width=mimo_dflash_draft_width,
         supports_spec_decode_mixed_batches=True,

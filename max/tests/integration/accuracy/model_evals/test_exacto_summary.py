@@ -212,3 +212,30 @@ def test_notes_cannot_judge_a_subset_without_the_split_size() -> None:
     # is no basis to call a run partial.
     out = exacto_summary.notes({"num_tasks": 2}, "taubench_airline")
     assert "partial" not in out
+
+
+def test_render_reports_vgi_bench_and_its_media_manifest() -> None:
+    out = io.StringIO()
+    exacto_summary.render(
+        {
+            "gpqa": None,
+            "taubench": None,
+            "vgi": {
+                "accuracy": 0.39,
+                "stderr": 0.023,
+                "total": 439,
+                "limit": None,
+                "dataset_name": "Seldon-Technologies/VGIBench",
+                "dataset_revision": "e769386ef4d165cad8071f51f1628009d75d9430",
+                "media_manifest_hash": "872691450ddc053ae0b3",
+                "temperature": 0.0,
+                "reasoning_effort": "high",
+                "model_errors_scored_wrong": 3,
+            },
+        },
+        out,
+    )
+    text = out.getvalue()
+    assert "| VGI-Bench | accuracy (MCQ, video) | 0.3900 |" in text
+    assert "3 rejected requests scored 0" in text
+    assert "media manifest `872691450ddc`" in text

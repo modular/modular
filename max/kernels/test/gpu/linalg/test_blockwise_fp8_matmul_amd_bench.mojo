@@ -113,7 +113,9 @@ def bench_shape[
         naive_blockwise_scaled_fp8_matmul[
             BLOCK_DIM=16,
             transpose_b=transpose_b,
-            scales_granularity_mnk=Index(1, BLOCK_SCALE_N, BLOCK_SCALE_K),
+            scales_granularity_mnk=Coord[Int, Int, Int](
+                1, BLOCK_SCALE_N, BLOCK_SCALE_K
+            ),
         ](
             c_ref_dev,
             a_dev,

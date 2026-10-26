@@ -30,8 +30,8 @@ from layout import TensorLayout, TileTensor, row_major
 from std.memory.unsafe_pointer import unsafe_cast
 from std.memory.alloc import Layout as AllocLayout
 from max.gpu.host import DeviceContext, DeviceBuffer, default_accelerator
-from max.gpu.host._legacy._amdgpu_hip import HIP
-from max.gpu.host._legacy._nvidia_cuda import CUDA
+from max.gpu.host import HIP
+from max.gpu.host import CUDA
 from comm import MAX_GPUS, Signal
 from comm.reducescatter import CollectiveEpilogueFn
 from max.gpu.primitives.grid_controls import PDLLevel

@@ -47,6 +47,7 @@ from max.pipelines.architectures.deepseekV3_2.model_config import (
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
+from max.pipelines.lib.interfaces import ArchConfigWithVisionCache
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
@@ -55,6 +56,7 @@ from max.pipelines.weights import resolve_hf_quant_config
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
+from .image_processor import Glm5NextImageProcessor
 from .quantization import Glm5NextQuantScheme, parse_quant_scheme
 from .state_cache import (
     INDEXER_CACHE_KEY,
@@ -263,7 +265,7 @@ def state_bounded_batch_size(
 
 
 @dataclass(kw_only=True)
-class Glm5NextConfig(DeepseekV3_2Config):
+class Glm5NextConfig(DeepseekV3_2Config, ArchConfigWithVisionCache):
     """Configuration for GLM-5.3-Flash."""
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "float8_e4m3fn"
@@ -457,6 +459,33 @@ class Glm5NextConfig(DeepseekV3_2Config):
     def _get_text_config(huggingface_config: AutoConfig) -> AutoConfig:
         """Extracts the text sub-config, tolerating a flat text-only config."""
         return getattr(huggingface_config, "text_config", huggingface_config)
+
+    @classmethod
+    def estimate_vision_cache_entry_bytes(
+        cls, huggingface_config: AutoConfig
+    ) -> int:
+        """Bytes one largest-budget image occupies in the vision cache."""
+        spec = cls.get_vision_cache_row_spec(huggingface_config)
+        if spec is None:
+            return 0
+        hidden_size, dtype = spec
+        max_tokens = Glm5NextImageProcessor().max_image_tokens
+        return max_tokens * hidden_size * dtype.size_in_bytes
+
+    @classmethod
+    def get_vision_cache_row_spec(
+        cls, huggingface_config: AutoConfig
+    ) -> tuple[int, DType] | None:
+        """One decoder-width bfloat16 row per merged vision token.
+
+        ``None`` for a checkpoint without a vision tower. The config shim
+        always sets a ``vision_config``, so its presence alone does not say.
+        """
+        vision_config = getattr(huggingface_config, "vision_config", None)
+        if not hasattr(vision_config, "patch_size"):
+            return None
+        text_config = cls._get_text_config(huggingface_config)
+        return text_config.hidden_size, DType.bfloat16
 
     @staticmethod
     def resolve_layer_types(text_config: AutoConfig) -> list[str]:
@@ -801,6 +830,23 @@ class Glm5NextConfig(DeepseekV3_2Config):
         ):
             vision_config = Glm5NextVisionConfig.initialize_from_config(
                 hf_vision_config, dtype=declared_dtype or DType.bfloat16
+            )
+        # With the cache off, a step's encoder rows cover only the images in
+        # its window while the scatter indices cover every image, so a prompt
+        # that spans steps gets rows on the wrong placeholders.
+        runtime = pipeline_config.runtime
+        if (
+            vision_config is not None
+            and runtime.vision_cache_utilization == 0
+            and (
+                runtime.enable_chunked_prefill
+                or kv_cache_config.enable_prefix_caching
+            )
+        ):
+            raise ValueError(
+                "GLM-5.3-Flash needs the vision encoder cache with chunked "
+                "prefill or prefix caching on: set --vision-cache-utilization "
+                "above 0."
             )
 
         return cls(

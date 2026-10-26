@@ -16,7 +16,7 @@ from std.collections import Array, Optional
 from std.runtime._asyncrt import TaskGroup
 
 from max.gpu.host import DeviceContext, DeviceContextArray
-from max.gpu.host._legacy._kernel_load_gate import (
+from max.gpu.host import (
     CollectiveEnqueueScope,
     CollectiveGate,
 )

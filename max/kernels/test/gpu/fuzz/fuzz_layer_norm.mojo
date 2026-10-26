@@ -90,7 +90,7 @@ def run_one_case[
 ](ctx: DeviceContext, spec: CaseSpec, check: Bool = False) raises:
     var rows = spec.rows
     var cols = spec.cols
-    var shape = Index(rows, cols)
+    var shape = (rows, cols)
 
     var data_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
     var gamma_h = ctx.enqueue_create_host_buffer[dtype](cols)

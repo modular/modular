@@ -207,7 +207,7 @@ def run_mma[
         Int32(N),
         Int32(K),
         grid_dim=(ceildiv(M, mma_m), ceildiv(N, mma_n)),
-        block_dim=WARP_SIZE,
+        block_dim=ctx.default_device_info.warp_size,
     )
 
     ctx.enqueue_copy(c_host, c_device)

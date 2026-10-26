@@ -585,6 +585,20 @@ _TARGETS: dict[str, FuzzTarget] = {
         ),
         default_oracle="ref",
     ),
+    "sparse_indexer_decode_mtp": FuzzTarget(
+        name="sparse_indexer_decode_mtp",
+        bazel_target=(
+            "//Kernels/test/fuzz:fuzz_sparse_indexer_decode_mtp.mojo.test"
+        ),
+        binary=(
+            "bazel-bin/Kernels/test/fuzz/fuzz_sparse_indexer_decode_mtp.mojo.test"
+        ),
+        description=(
+            "MSA per-token decode indexer: ragged m16/m32 scoring, causal"
+            " horizons, init/local forcing and top-k; ref + validity + schedule"
+        ),
+        default_oracle="ref",
+    ),
     "sparse_indexer_prefill": FuzzTarget(
         name="sparse_indexer_prefill",
         bazel_target=(

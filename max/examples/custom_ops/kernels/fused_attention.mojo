@@ -55,7 +55,7 @@ leading to the final output.
 from max.gpu.host import DeviceContext
 from max.gpu import block_idx
 from max.gpu.sync import barrier
-from layout import TensorLayout, TileTensor, row_major, stack_allocation
+from layout import TensorLayout, TileTensor, coord, row_major, stack_allocation
 from layout.math import max, sum
 from layout.tensor_core import TensorCore
 
@@ -273,7 +273,7 @@ def matmul[
 
         comptime assert K % 8 == 0, "K needs to be a multiple of 8"
 
-        var mma_b_t = TensorCore[dtype, dtype, Index(M, N, BK), transpose_b]()
+        var mma_b_t = TensorCore[dtype, dtype, coord[M, N, BK], transpose_b]()
 
         var c_reg = stack_allocation[dtype, address_space=.LOCAL](
             mma_b_t.c_fragment_layout

@@ -15,6 +15,7 @@ from max.pipelines.lib import Speculator
 
 from ..mimo_v2_modulev3.arch import mimo_v2_modulev3_arch
 from .batch_processor import UnifiedDflashMiMoV2ModuleV3BatchProcessor
+from .memory_planner import UnifiedDflashMiMoV2ModuleV3MemoryPlanner
 from .model import UnifiedDflashMiMoV2ModuleV3Model
 from .model_config import (
     UnifiedDflashMiMoV2Config,
@@ -37,6 +38,9 @@ unified_dflash_mimo_v2_modulev3_speculator = Speculator(
     pipeline_model=UnifiedDflashMiMoV2ModuleV3Model,
     batching=UnifiedDflashMiMoV2ModuleV3BatchProcessor,
     config=UnifiedDflashMiMoV2Config,
+    # The base planner's EP reservation undersizes the verify rows the
+    # fused graph merges past the scheduler's active-token budget.
+    memory_planner=UnifiedDflashMiMoV2ModuleV3MemoryPlanner,
     checkpoint_draft_width=mimo_dflash_draft_width,
     # Prefill rows commit their whole chunk and verify nothing, so a batch
     # may mix them with decode rows.

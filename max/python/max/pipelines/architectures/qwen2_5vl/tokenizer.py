@@ -47,7 +47,11 @@ from max.pipelines.lib import (
     resolve_eos_token_ids,
 )
 from max.pipelines.lib.config import PipelineConfig
-from max.pipelines.lib.tokenizer import encode_dkv_cache_hint
+from max.pipelines.lib.tokenizer import (
+    checked_token_ids,
+    encode_dkv_cache_hint,
+    resolve_token_id_bound,
+)
 from max.pipelines.modeling.types import (
     TextGenerationRequest,
     TextGenerationRequestMessage,
@@ -313,6 +317,9 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         self._eos_token_ids = resolve_eos_token_ids(
             self.delegate.eos_token_id, pipeline_config
         )
+        self._token_id_bound = resolve_token_id_bound(
+            self.delegate, pipeline_config
+        )
 
         self.image_token_id = config.image_token_id
         self.video_token_id = config.video_token_id
@@ -547,7 +554,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
                 "images with messages instead."
             )
         else:
-            input_ids = np.asarray(prompt, dtype=np.int64)
+            input_ids = checked_token_ids(prompt, self._token_id_bound)
             if np.any(input_ids == self.image_token_id):
                 raise ValueError(
                     "The prompt has image placeholder tokens, but the request "

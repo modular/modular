@@ -25,8 +25,6 @@ from quantization import (
 from std.testing import assert_almost_equal, assert_true
 from layout import TileTensor, row_major
 
-from std.utils import IndexList
-
 
 def _run_test_quant[group_size: Int, tolerance: Float32]() -> Bool:
     var uniform = SIMD[.float32, group_size]()
@@ -178,13 +176,13 @@ def _read_write_to_tensors[
     Q4sym[group_size, DType.float32].quantize_and_write_to_tensor(
         data_matrix.make_dynamic[.int64](),
         packed_blob.make_dynamic[.int64](),
-        IndexList[data_matrix.rank](num_elements),
+        (num_elements,),
     )
 
     Q4sym[group_size, DType.float32].dequantize_and_write_to_tensor(
         packed_blob.make_dynamic[.int64](),
         out_data_matrix.make_dynamic[.int64](),
-        IndexList[out_data_matrix.rank](num_elements),
+        (num_elements,),
     )
 
     var allClose: Bool = True
@@ -284,7 +282,7 @@ def test_q6_k_dequantize() raises:
     q6_k_dequantize_impl(
         TileTensor(encoded, row_major(len(encoded))).as_imm(),
         TileTensor(out, row_major(len(out))),
-        IndexList[2](num_blocks, 256),
+        (num_blocks, 256),
     )
 
     for b in range(num_blocks):

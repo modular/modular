@@ -398,7 +398,6 @@ def test_unfused_oob_gather() -> None:
     canonicalized = _canonicalize_gpu_error(error_msg)
 
     expected = (
-        'An error occurred in kernel entry point named "<region>":\n'
         'An error occurred in kernel named "<kernel>":\n'
         "<cuda_error>\n"
         "\n"
@@ -421,7 +420,6 @@ def test_fused_oob_gather() -> None:
     canonicalized = _canonicalize_gpu_error(error_msg)
 
     expected = (
-        'An error occurred in kernel entry point named "<region>":\n'
         'An error occurred in kernel named "<kernel>":\n'
         "<cuda_error>\n"
         "\n"
@@ -448,7 +446,6 @@ def test_fused_oob_gather_duplicate_sources() -> None:
     canonicalized = _canonicalize_gpu_error(error_msg)
 
     expected = (
-        'An error occurred in kernel entry point named "<region>":\n'
         'An error occurred in kernel named "<kernel>":\n'
         "<cuda_error>\n"
         "\n"
@@ -475,7 +472,6 @@ def test_fused_oob_gather_unrolled_sources() -> None:
     canonicalized = _canonicalize_gpu_error(error_msg)
 
     expected = (
-        'An error occurred in kernel entry point named "<region>":\n'
         'An error occurred in kernel named "<kernel>":\n'
         "<cuda_error>\n"
         "\n"

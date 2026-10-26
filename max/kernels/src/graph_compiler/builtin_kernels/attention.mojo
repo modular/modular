@@ -27,6 +27,7 @@ import extensibility
 
 from max.gpu.host import DeviceAttribute, DeviceBuffer, DeviceContext
 from layout.tile_tensor import row_major
+from layout import Coord
 from max.gpu.host.info import is_cpu, is_gpu
 from kv_cache.paged_sparse_kv_index_remap import (
     NoRemap,
@@ -1777,8 +1778,10 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
             max_cache_length,
         )
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
-            scales_granularity_mnk=IndexList[3](
-                m_scale_granularity, n_scale_granularity, k_scale_granularity
+            scales_granularity_mnk=(
+                m_scale_granularity,
+                n_scale_granularity,
+                k_scale_granularity,
             ),
             target=target,
         ](
@@ -2490,8 +2493,10 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_bias:
             ).as_unsafe_any_origin()
         )
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
-            scales_granularity_mnk=IndexList[3](
-                m_scale_granularity, n_scale_granularity, k_scale_granularity
+            scales_granularity_mnk=(
+                m_scale_granularity,
+                n_scale_granularity,
+                k_scale_granularity,
             ),
             target=target,
         ](

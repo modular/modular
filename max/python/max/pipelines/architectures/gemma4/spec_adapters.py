@@ -34,7 +34,10 @@ from max.nn.transformer.transformer import (
 )
 from max.pipelines.speculative.block_driver import BlockBatch
 from max.pipelines.speculative.driver import SequentialBatch
-from max.pipelines.speculative.spec_adapters.target_adapter import TargetAdapter
+from max.pipelines.speculative.spec_adapters.target_adapter import (
+    STAGE_BOUNDARY,
+    TargetAdapter,
+)
 from max.pipelines.speculative.spec_target import Verified
 
 if TYPE_CHECKING:
@@ -89,6 +92,8 @@ def _verify(
     # declares.
     if isinstance(batch, SequentialBatch):
         # Images arrive only in prefill, which merges no drafts into a row.
+        # A later pipeline stage starts from the previous stage's hidden
+        # states over the merged window instead of embedding its tokens.
         outputs = target(
             batch.merged_tokens,
             batch.signal_buffers,
@@ -98,6 +103,7 @@ def _verify(
             batch.merged_offsets_per_dev,
             batch.vision_embeddings,
             batch.vision_scatter_indices,
+            boundary_inputs=batch.extra.get(STAGE_BOUNDARY),
         )
         return Verified(
             logits=outputs.logits["logits"],
@@ -131,6 +137,13 @@ def _verify(
 
 
 _BASE = TargetAdapter(primary_kv=PRIMARY_KV, verify=verify)
+# The assistant reads the final hidden states and the last sliding and full
+# layers' caches, all of which the last pipeline stage holds.
 ADAPTER = replace(
-    _BASE, by_method={"mtp": replace(_BASE, primary_kv=_SLIDING_KV)}
+    _BASE,
+    by_method={
+        "mtp": replace(
+            _BASE, primary_kv=_SLIDING_KV, speculates_on_last_stage=True
+        )
+    },
 )

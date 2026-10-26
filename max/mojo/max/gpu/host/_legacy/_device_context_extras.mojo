@@ -23,6 +23,7 @@ from . import (
     FuncAttribute,
 )
 
+from .._launch_args import _IdentityWrapper
 from .device_context import (
     DeviceContext,
     DeviceContextBase,
@@ -42,11 +43,7 @@ __extension DeviceExternalFunction:
 
 
 __extension DeviceContextBase:
-    comptime compile_function_wrapper[
-        declared_arg_types: TypeList[Trait=AnyType, ...],
-        //,
-        func: def(*args: *declared_arg_types) thin -> None,
-    ] = func
+    comptime FunctionWrapper = _IdentityWrapper
 
     @inline(.always)
     def enqueue_function[

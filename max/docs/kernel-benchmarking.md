@@ -23,6 +23,7 @@ performance of Mojo kernels in MAX.
     - [`kbench` YAML format](#kbench-yaml-format)
     - [Expanding specs into instances](#expanding-specs-into-instances)
     - [Enumerating over instances](#enumerating-over-instances)
+    - [Sweep benchmarks](#sweep-benchmarks)
   - [Output files](#output-files)
   - [Compile-time parameters vs. runtime variables](#compile-time-parameters-vs-runtime-variables)
   - [Running Python benchmarks](#running-python-benchmarks)
@@ -368,6 +369,70 @@ for shape in shapes:
 ```
 
 Use the `--shapes` flag to specify a separate YAML file for input shapes.
+
+### Sweep benchmarks
+
+Most of the time in a kernel A/B goes to compiling and initializing, not to
+the benchmark loop. A *sweep* benchmark runs every configuration in one
+process: it pays process start, device initialization, compilation and
+fixture setup once, then reuses them across configurations. The sweep
+library under `max/kernels/benchmarks/sweep/bench_sweep/` provides the
+driver, fixtures and measurement harness for writing one; its benchmarks
+take each runtime axis as a comma list, such as `--cache_len=512,2042`.
+
+Add `sweep: true` to the YAML to drive such a benchmark with `kbench`.
+Instead of expanding the product of the `$` parameters into one process per
+point, each params group collapses to the single process that runs it, with
+every `$` parameter as one comma-joined list:
+
+```yaml
+name: bench_mla_decode_sparse
+file: $KERNEL_BENCHMARKS_ROOT/sweep/bench_mla_decode_sparse.mojo
+sweep: true
+
+params:
+- num_heads: 8
+  page_size: 128
+  $seq_len: [6]
+  $batch_size: [1, 2, 4, 16, 32]
+  $cache_len: [2042]
+```
+
+`kbench` builds one executable per unique set of compile-time pins —
+params groups that share pins share the executable — and runs it as:
+
+```bash
+./bench_mla_decode_sparse_num_heads-8_page_size-128 \
+    --seq_len=6 --batch_size=1,2,4,16,32 --cache_len=2042 -o output.csv
+```
+
+The process writes one CSV row per benchmark, and each row's `name` carries
+its configuration, so `kdiff` and `kplot` join results across runs as
+before.
+
+Rules that differ for sweep specs:
+
+1. A compile-time parameter must pin a single value. A sweep benchmark
+   covers its arm-expanded comptime axes with `comptime for` arms that an
+   unpinned define builds all of, so multiple values here would silently
+   fall to the define's default instead of sweeping. Pin one arm with
+   `--param q_dtype:"[bfloat16]"`, or leave the parameter out to run every
+   arm in one executable. That last part holds only for axes the benchmark
+   arm-expands: a parameter the benchmark reads as a plain `-D` default —
+   a fixed geometry like head count or page size — must be pinned per
+   group, because leaving it out silently uses the default.
+2. `--param` restricts a sweep the usual way:
+   `--param cache_len:"[2042]"` runs that axis as a single value. A flag the
+   YAML does not declare, such as the measurement policy's `--target_time`,
+   rides along when given its `$` prefix: `--param '$target_time:0.2'`.
+3. `--filter` matches whole instances, and a sweep's axis values are the
+   joined lists, so a filter that names one value empties the run. kbench
+   warns when that happens; prefer `--param` to restrict a sweep.
+4. A sweep process runs many benchmarks, so raise the per-instance timeout:
+   `--timeout-secs 600`.
+
+See the sweep benchmarks in `max/kernels/benchmarks/sweep/` and their YAML
+files for examples.
 
 ## Output files
 

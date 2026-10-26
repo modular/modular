@@ -292,7 +292,7 @@ def run_one_case(
     )
     comptime kv_dim2 = 1  # MLA: is_mla=True => dim[1] == 1
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         kv_dim2,
         NUM_LAYERS,
@@ -721,8 +721,13 @@ def run_schedule_case(
     var out_device = ctx.enqueue_create_buffer[q_type](out_size)
     ctx.synchronize()
 
-    var block_shape = IndexList[6](
-        total_pages, 1, NUM_LAYERS, PAGE_SIZE, KV_NUM_HEADS, DEPTH
+    var block_shape = (
+        total_pages,
+        1,
+        NUM_LAYERS,
+        PAGE_SIZE,
+        KV_NUM_HEADS,
+        DEPTH,
     )
     comptime Collection = PagedKVCacheCollection[
         kv_type,

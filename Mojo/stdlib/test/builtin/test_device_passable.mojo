@@ -17,7 +17,7 @@ from std.testing import assert_equal, assert_false, assert_true, TestSuite
 from std.utils import StaticTuple
 from std.utils.coord import ComptimeInt, Coord, Idx
 
-from max.gpu.host._legacy.device_context import DefaultDeviceTypeEncoder
+from max.gpu.host import DefaultDeviceTypeEncoder
 
 
 # A DevicePassable type whose `_to_device_type` scales the encoded value, so a

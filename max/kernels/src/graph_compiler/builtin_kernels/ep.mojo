@@ -23,7 +23,7 @@ from max.gpu.host import DeviceBuffer, DeviceContext, DeviceContextArray
 from max.gpu.host.info import is_gpu
 from std.memory.unsafe_pointer import pointer_to_int
 from layout.tile_tensor import row_major
-from std.utils.index import IndexList
+from layout import Coord
 
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.math import align_up
@@ -64,6 +64,7 @@ from shmem.ep import (
     ep_fused_dispatch_kernel_api,
 )
 from shmem.ep_comm import (
+    EP_WARP_TOKENS_MIN_TOKENS,
     BF16TokenFormat,
     BlockwiseFP8TokenFormat,
     EPLocalSyncCounters,
@@ -1641,6 +1642,12 @@ struct DistributedEPDispatchBlockScaledNV:
                 n_nodes,
                 fused_shared_expert,
                 target,
+                # A prefill chunk's dispatch waited on the monitor's serial
+                # per-expert scan and sent one token per CTA at a time; the
+                # histogram count and the warp-per-token send keep the same
+                # bytes and receive layout (KERN-3829). Only single-node NVFP4
+                # without a fused shared expert takes them.
+                dispatch_warp_min_tokens=EP_WARP_TOKENS_MIN_TOKENS,
             ](
                 format_handler,
                 row_offsets[index].to_tile_tensor[.int64](),
@@ -2365,13 +2372,10 @@ struct DistributedEPCombine:
             @inline(.always)
             def output_fn[
                 dtype: DType,
-                rank: Int,
                 width: SIMDLength,
                 *,
                 alignment: Int = 1,
-            ](coords: IndexList[rank], val: SIMD[dtype, width]) {
-                var out_tensor
-            }:
+            ](coords: Coord, val: SIMD[dtype, width]) {var out_tensor}:
                 out_tensor._fused_store[
                     width=width, element_alignment=alignment
                 ](
@@ -2565,11 +2569,10 @@ struct Struct_ep_combine_wait:
         @inline(.always)
         def output_fn[
             dtype: DType,
-            rank: Int,
             width: SIMDLength,
             *,
             alignment: Int = 1,
-        ](coords: IndexList[rank], val: SIMD[dtype, width]) {var output_tokens}:
+        ](coords: Coord, val: SIMD[dtype, width]) {var output_tokens}:
             output_tokens._fused_store[
                 width=width, element_alignment=alignment
             ](
@@ -2702,11 +2705,10 @@ struct Struct_ep_combine:
         @inline(.always)
         def output_fn[
             dtype: DType,
-            rank: Int,
             width: SIMDLength,
             *,
             alignment: Int = 1,
-        ](coords: IndexList[rank], val: SIMD[dtype, width]) {var output_tokens}:
+        ](coords: Coord, val: SIMD[dtype, width]) {var output_tokens}:
             output_tokens._fused_store[
                 width=width, element_alignment=alignment
             ](
@@ -2850,11 +2852,10 @@ struct Struct_ep_combine_skip_a2a:
         @inline(.always)
         def output_fn[
             dtype: DType,
-            rank: Int,
             width: SIMDLength,
             *,
             alignment: Int = 1,
-        ](coords: IndexList[rank], val: SIMD[dtype, width]) {var output_tokens}:
+        ](coords: Coord, val: SIMD[dtype, width]) {var output_tokens}:
             output_tokens._fused_store[
                 width=width, element_alignment=alignment
             ](

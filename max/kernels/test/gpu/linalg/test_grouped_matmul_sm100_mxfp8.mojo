@@ -25,6 +25,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     BlockScaledMatmulConfig as StructuredBlockScaledMatmulConfig,
 )
 from std.math import ceildiv, align_up
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 from linalg.fp4_utils import (
@@ -53,9 +54,9 @@ def _test_kernel_impl[
     b_type: DType,
     c_type: DType,
     scales_dtype: DType,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
-    cluster_shape: StaticTuple[Int32, 3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: DynamicCoord[.int, 3],
+    cluster_shape: Coord[Int, Int, Int],
     cta_group: Int,
     num_experts: Int,
     expert_shape: IndexList[2],
@@ -88,8 +89,9 @@ def _test_kernel_impl[
     print(
         t"in/out dtypes=({a_type}, {b_type}, {c_type},"
         t" {scales_dtype})  problem shape=({M}, {N}, {K})"
-        t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} cta_group={cta_group} cluster_shape=({cluster_shape[0]},"
-        t" {cluster_shape[1]}, {cluster_shape[2]})"
+        t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} cta_group={cta_group} cluster_shape=(Int({cluster_shape[0]}),"
+        t" Int("
+        t" {cluster_shape[1]}), Int({cluster_shape[2]}))"
         t" swapAB={swapAB} k_group_size={k_group_size} SF_VECTOR_SIZE={SF_VECTOR_SIZE}"
     )
 
@@ -313,8 +315,10 @@ def _test_kernel_impl[
         a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
     ](
         scaling_kind=UMMAKind.KIND_MXF8F6F4,
-        cluster_shape=Index(
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        cluster_shape=(
+            Int(cluster_shape[0]),
+            Int(cluster_shape[1]),
+            Int(cluster_shape[2]),
         ),
         mma_shape=mma_shape,
         block_swizzle_size=block_swizzle_size,
@@ -472,8 +476,8 @@ def main() raises:
         comptime MMA_K = 32
         comptime bm = 128
         comptime bn = 128
-        comptime block_tile_shape = Index(bm, bn, BK)
-        comptime umma_shape = Index(bm, bn, MMA_K)
+        comptime block_tile_shape = (bm, bn, BK)
+        comptime umma_shape = (bm, bn, MMA_K)
 
         print("\n========================================")
         print("Testing NEW kernel (grouped_matmul_block_scaled with MXFP8)")
@@ -487,13 +491,13 @@ def main() raises:
                 scale_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=4,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
                 swapAB=swapAB,
             ](
                 3,
@@ -509,13 +513,13 @@ def main() raises:
                 scale_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=4,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
                 swapAB=swapAB,
             ](
                 3,
@@ -531,13 +535,13 @@ def main() raises:
                 scale_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
                 block_swizzle_size=8,
                 num_experts=6,
-                expert_shape=Index(2048, 1024),
+                expert_shape=(2048, 1024),
                 swapAB=swapAB,
             ](
                 4,
@@ -547,7 +551,7 @@ def main() raises:
             )
 
         # 2SM tests (new structured kernel only, swapAB=True required)
-        comptime umma_shape_2sm = Index(2 * bm, 2 * bn, MMA_K)
+        comptime umma_shape_2sm = (2 * bm, 2 * bn, MMA_K)
 
         # 2SM: Aligned token counts
         _test_kernel_impl[
@@ -557,13 +561,13 @@ def main() raises:
             scale_dtype,
             block_tile_shape,
             umma_shape_2sm,
-            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+            cluster_shape=(2, 1, 1),
             cta_group=2,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=4,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
             swapAB=True,
         ](
             3,
@@ -580,13 +584,13 @@ def main() raises:
             scale_dtype,
             block_tile_shape,
             umma_shape_2sm,
-            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+            cluster_shape=(2, 1, 1),
             cta_group=2,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=4,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
             swapAB=True,
         ](
             3,
@@ -603,13 +607,13 @@ def main() raises:
             scale_dtype,
             block_tile_shape,
             umma_shape_2sm,
-            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+            cluster_shape=(2, 1, 1),
             cta_group=2,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=6,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
             swapAB=True,
         ](
             4,
@@ -623,8 +627,8 @@ def main() raises:
         print("Testing NEW kernel with MMA_N=64 (MXFP8)")
         print("========================================\n")
 
-        comptime umma_shape_n64 = Index(bm, 64, MMA_K)
-        comptime block_tile_shape_n64 = Index(bm, 64, BK)
+        comptime umma_shape_n64 = (bm, 64, MMA_K)
+        comptime block_tile_shape_n64 = (bm, 64, BK)
 
         # MMA_N=64 1SM non-swapped: Aligned token counts
         _test_kernel_impl[
@@ -634,13 +638,13 @@ def main() raises:
             scale_dtype,
             block_tile_shape_n64,
             umma_shape_n64,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=2,
-            expert_shape=Index(128, 1024),
+            expert_shape=(128, 1024),
             swapAB=False,
         ](
             1,
@@ -657,13 +661,13 @@ def main() raises:
             scale_dtype,
             block_tile_shape_n64,
             umma_shape_n64,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=4,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
             swapAB=True,
         ](
             3,
@@ -680,13 +684,13 @@ def main() raises:
             scale_dtype,
             block_tile_shape_n64,
             umma_shape_n64,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=4,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
         ](
             3,
             [64 + 1, 1024 + 3, 128 * 3 + 2],
@@ -702,13 +706,13 @@ def main() raises:
             scale_dtype,
             block_tile_shape_n64,
             umma_shape_n64,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=4,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
         ](
             3,
             [31, 97, 63],
@@ -722,8 +726,8 @@ def main() raises:
         print("========================================\n")
 
         # mma_n=64, cta_group=2: block_tile_shape auto-derived by config
-        comptime umma_shape_2sm_n64 = Index(2 * bm, 64, MMA_K)
-        comptime block_tile_shape_2sm_n64 = Index(bm, 64 // 2, BK)
+        comptime umma_shape_2sm_n64 = (2 * bm, 64, MMA_K)
+        comptime block_tile_shape_2sm_n64 = (bm, 64 // 2, BK)
 
         _test_kernel_impl[
             dtype,
@@ -732,13 +736,13 @@ def main() raises:
             scale_dtype,
             block_tile_shape_2sm_n64,
             umma_shape_2sm_n64,
-            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+            cluster_shape=(2, 1, 1),
             cta_group=2,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=6,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
             swapAB=True,
         ](
             4,
@@ -754,13 +758,13 @@ def main() raises:
             scale_dtype,
             block_tile_shape_2sm_n64,
             umma_shape_2sm_n64,
-            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+            cluster_shape=(2, 1, 1),
             cta_group=2,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=4,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
             swapAB=True,
         ](
             3,
@@ -774,8 +778,8 @@ def main() raises:
         print("Testing NEW kernel with MMA_N=8 (MXFP8)")
         print("========================================\n")
 
-        comptime umma_shape_n8 = Index(bm, 8, MMA_K)
-        comptime block_tile_shape_n8 = Index(bm, 8, BK)
+        comptime umma_shape_n8 = (bm, 8, MMA_K)
+        comptime block_tile_shape_n8 = (bm, 8, BK)
 
         # MMA_N=8: Aligned token counts
         _test_kernel_impl[
@@ -785,13 +789,13 @@ def main() raises:
             scale_dtype,
             block_tile_shape_n8,
             umma_shape_n8,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=4,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
             # MMA_N=8 produces slightly different rounding than cuBLAS
             # due to smaller tile accumulation; allow wider tolerance.
             test_rtol=0.08,
@@ -810,13 +814,13 @@ def main() raises:
             scale_dtype,
             block_tile_shape_n8,
             umma_shape_n8,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=4,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
             test_rtol=0.08,
         ](
             3,
@@ -833,13 +837,13 @@ def main() raises:
             scale_dtype,
             block_tile_shape_n8,
             umma_shape_n8,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=4,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
             test_rtol=0.08,
         ](
             3,
@@ -857,13 +861,13 @@ def main() raises:
             scale_dtype,
             block_tile_shape_n8,
             umma_shape_n8,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=4,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
             test_rtol=0.08,
         ](
             4,
@@ -880,13 +884,13 @@ def main() raises:
             scale_dtype,
             block_tile_shape_n8,
             umma_shape_n8,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=4,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
             test_rtol=0.08,
         ](
             4,
@@ -903,13 +907,13 @@ def main() raises:
             scale_dtype,
             block_tile_shape_n8,
             umma_shape_n8,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=4,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
             test_rtol=0.08,
         ](
             4,
@@ -923,8 +927,8 @@ def main() raises:
         print("Testing NEW kernel with MMA_N=16 (MXFP8)")
         print("========================================\n")
 
-        comptime umma_shape_n16 = Index(bm, 16, MMA_K)
-        comptime block_tile_shape_n16 = Index(bm, 16, BK)
+        comptime umma_shape_n16 = (bm, 16, MMA_K)
+        comptime block_tile_shape_n16 = (bm, 16, BK)
 
         # MMA_N=16: Large token counts
         _test_kernel_impl[
@@ -934,13 +938,13 @@ def main() raises:
             scale_dtype,
             block_tile_shape_n16,
             umma_shape_n16,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=6,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
         ](
             4,
             [512, 1000, 2000, 3000],
@@ -956,13 +960,13 @@ def main() raises:
             scale_dtype,
             block_tile_shape_n16,
             umma_shape_n16,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=4,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
         ](
             3,
             [64 + 1, 1024 + 3, 128 * 3 + 2],
@@ -978,13 +982,13 @@ def main() raises:
             scale_dtype,
             block_tile_shape_n16,
             umma_shape_n16,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=4,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
         ](
             4,
             [1, 64, 4, 256],
@@ -997,8 +1001,8 @@ def main() raises:
         print("Testing NEW kernel with MMA_N=32 (MXFP8)")
         print("========================================\n")
 
-        comptime umma_shape_n32 = Index(bm, 32, MMA_K)
-        comptime block_tile_shape_n32 = Index(bm, 32, BK)
+        comptime umma_shape_n32 = (bm, 32, MMA_K)
+        comptime block_tile_shape_n32 = (bm, 32, BK)
 
         # MMA_N=32: Large token counts
         _test_kernel_impl[
@@ -1008,13 +1012,13 @@ def main() raises:
             scale_dtype,
             block_tile_shape_n32,
             umma_shape_n32,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=6,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
         ](
             4,
             [512, 1000, 2000, 3000],
@@ -1030,13 +1034,13 @@ def main() raises:
             scale_dtype,
             block_tile_shape_n32,
             umma_shape_n32,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=4,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
         ](
             3,
             [64 + 1, 1024 + 3, 128 * 3 + 2],
@@ -1052,13 +1056,13 @@ def main() raises:
             scale_dtype,
             block_tile_shape_n32,
             umma_shape_n32,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=4,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
         ](
             4,
             [1, 64, 32, 256],
@@ -1079,13 +1083,13 @@ def main() raises:
             scale_dtype,
             block_tile_shape_n8,
             umma_shape_n8,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=4,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
             swapAB=True,
             test_rtol=0.08,
         ](
@@ -1103,13 +1107,13 @@ def main() raises:
             scale_dtype,
             block_tile_shape_n8,
             umma_shape_n8,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=4,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
             swapAB=True,
             test_rtol=0.08,
         ](
@@ -1127,13 +1131,13 @@ def main() raises:
             scale_dtype,
             block_tile_shape_n8,
             umma_shape_n8,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=6,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
             swapAB=True,
             test_rtol=0.08,
         ](
@@ -1151,13 +1155,13 @@ def main() raises:
             scale_dtype,
             block_tile_shape_n8,
             umma_shape_n8,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=4,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
             swapAB=True,
             test_rtol=0.08,
         ](
@@ -1175,13 +1179,13 @@ def main() raises:
             scale_dtype,
             block_tile_shape_n16,
             umma_shape_n16,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=6,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
             swapAB=True,
         ](
             4,
@@ -1198,13 +1202,13 @@ def main() raises:
             scale_dtype,
             block_tile_shape_n16,
             umma_shape_n16,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=4,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
             swapAB=True,
         ](
             3,
@@ -1221,13 +1225,13 @@ def main() raises:
             scale_dtype,
             block_tile_shape_n32,
             umma_shape_n32,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=6,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
             swapAB=True,
         ](
             4,
@@ -1244,13 +1248,13 @@ def main() raises:
             scale_dtype,
             block_tile_shape_n32,
             umma_shape_n32,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             block_swizzle_size=8,
             num_experts=4,
-            expert_shape=Index(2048, 1024),
+            expert_shape=(2048, 1024),
             swapAB=True,
         ](
             3,

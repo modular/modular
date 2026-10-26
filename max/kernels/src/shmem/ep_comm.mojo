@@ -114,7 +114,7 @@ from std.memory import unsafe_stack_allocation
 from std.memory.unsafe import bitcast
 from shmem import SHMEM_SIGNAL_SET, SHMEMScope, shmem_put_nbi, shmem_signal_op
 
-from std.utils.index import Index, IndexList, StaticTuple
+from std.utils.index import StaticTuple
 from std.utils.numerics import get_accum_type
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
@@ -126,8 +126,8 @@ from structured_kernels.trace_buf import (
 )
 
 comptime _ep_combine_store_sig = def[
-    dtype: DType, rank: Int, width: SIMDLength, *, alignment: Int = 1
-](IndexList[rank], SIMD[dtype, width]) -> None
+    dtype: DType, width: SIMDLength, *, alignment: Int = 1
+](Coord, SIMD[dtype, width]) -> None
 
 comptime EPCombineStoreFn = (
     ImplicitlyCopyable & RegisterPassable & _ep_combine_store_sig
@@ -865,6 +865,10 @@ trait TokenFormat(Deinitable, DevicePassable):
     # kernel.
     comptime dispatch_smem_size: Int
 
+    # Whether `copy_token_to_send_buf_warp` writes this format's message, so
+    # the warp-per-token dispatch may take it.
+    comptime one_warp_copy: Bool
+
     @inline(.always)
     @staticmethod
     def token_size() -> Int:
@@ -930,6 +934,27 @@ trait TokenFormat(Deinitable, DevicePassable):
         standalone all-threads-in-block striding.
         """
         ...
+
+    @inline(.always)
+    @staticmethod
+    def copy_token_to_send_buf_warp[
+        src_type: DType,
+        buf_addr_space: AddressSpace = .GENERIC,
+    ](
+        buf_p: MutPointer[UInt8, _, address_space=buf_addr_space],
+        src_p: ImmPointer[Scalar[src_type], ...],
+        input_scale: Float32,
+        lane: Int,
+    ) -> None:
+        """Copies the token to the send buffer with the 32 lanes of one warp.
+
+        Writes the same bytes as `copy_token_to_send_buf`, for the
+        warp-per-token dispatch, which calls it only when `one_warp_copy`.
+        """
+        comptime assert src_type != src_type, (
+            "this token format has no one-warp copy, so it cannot take the"
+            " warp-per-token dispatch"
+        )
 
     @always_inline
     @staticmethod
@@ -1062,6 +1087,7 @@ struct BF16TokenFormat[
 
     comptime dispatch_wait_tile_shape = (128, 1)
     comptime dispatch_smem_size = 0
+    comptime one_warp_copy = False
 
     comptime TensorType = TileTensor[
         .bfloat16, Self.output_layout, MutUntrackedOrigin
@@ -1201,6 +1227,7 @@ struct BlockwiseFP8TokenFormat[
 
     comptime dispatch_wait_tile_shape = (128, 1)
     comptime dispatch_smem_size = 0
+    comptime one_warp_copy = False
 
     comptime TensorType = TileTensor[
         Self.fp8_dtype, Self.output_layout, MutUntrackedOrigin
@@ -1571,6 +1598,14 @@ struct NVBlockScaledTokenFormat[
         Self._n_warps * size_of[SharedMemBarrier](), 8
     )
     comptime dispatch_smem_size = Self._mbar_smem_offset + Self._mbar_smem_size
+    # Measured for NVFP4 only; the per-row global scale and the copy-role split
+    # are CTA-wide copies.
+    comptime one_warp_copy = (
+        Self.is_nvfp4
+        and not Self.nvfp4_dyn_global_scales
+        and not Self.ep_copy_role_split
+        and not Self.ep_prequantized
+    )
 
     comptime ScalesTMATensorTileType = TMATensorTile[
         Self.scales_dtype,
@@ -1907,6 +1942,32 @@ struct NVBlockScaledTokenFormat[
                 Self._copy_one_item[src_type, buf_addr_space](
                     buf_p, src_p, global_scale, Int(i)
                 )
+
+    @inline(.always)
+    @staticmethod
+    def copy_token_to_send_buf_warp[
+        src_type: DType,
+        buf_addr_space: AddressSpace = .GENERIC,
+    ](
+        buf_p: MutPointer[UInt8, _, address_space=buf_addr_space],
+        src_p: ImmPointer[Scalar[src_type], ...],
+        input_scale: Float32,
+        lane: Int,
+    ) -> None:
+        comptime n_items = Self.hid_dim // Self.copy_src_width
+        comptime assert (
+            Self.one_warp_copy
+        ), "this block-scaled variant has no one-warp copy"
+        # Lane `l` takes items `l, l + 32, ...`, so the lanes of one scale
+        # group stay adjacent and the group max shuffles see every item.
+        comptime assert n_items % WARP_SIZE == 0, (
+            "every lane must reach each trip, or the scale-group max reads a"
+            " lane that did not load"
+        )
+        for i in range(lane, n_items, WARP_SIZE):
+            Self._copy_one_item[src_type, buf_addr_space](
+                buf_p, src_p, input_scale, i
+            )
 
     @inline(.always)
     @staticmethod
@@ -2407,6 +2468,7 @@ struct MXTokenFormat[
 
     comptime dispatch_wait_tile_shape = (32, 1)
     comptime dispatch_smem_size = 0
+    comptime one_warp_copy = False
 
     comptime TensorType = TileTensor[
         Self.quant_dtype, Self.output_layout, MutUntrackedOrigin
@@ -3017,6 +3079,8 @@ struct EPDispatchKernel[
     ep_prod_reserve: Bool = False,
     ep_copy_role_split: Bool = False,
     ep_send_join_named: Bool = False,
+    ep_monitor_histogram: Bool = False,
+    ep_warp_min_tokens: Int = -1,
 ]:
     """Implements dispatch_async and dispatch_wait kernel logic for Expert Parallelism.
 
@@ -3071,6 +3135,15 @@ struct EPDispatchKernel[
             the dedicated `NB_SEND` hardware barrier id instead of the generic
             id-0 `barrier()`. Off by default. NVIDIA only; AMD keeps
             `barrier()` either way.
+        ep_monitor_histogram: Whether a monitor CTA counts its experts' rows
+            with one pass of the whole CTA over the top-k ids into a
+            shared-memory histogram, instead of one warp per expert scanning
+            every id with one load in flight. Same counts.
+        ep_warp_min_tokens: From this many tokens on, `copy_and_send_tokens`
+            sends one token per warp (`copy_and_send_tokens_warp`) instead of
+            one per CTA. Same bytes, same receive layout; only the slot order
+            inside a (expert, source rank) segment may differ, as it already
+            does between runs. -1 (the default) keeps the per-CTA send.
     """
 
     comptime n_local_experts = Self.n_experts // Self.n_ranks
@@ -3292,6 +3365,48 @@ struct EPDispatchKernel[
 
     @staticmethod
     @inline(.always)
+    def _count_own_experts[
+        TopkIdsEngine: TensorEngine,
+        //,
+    ](
+        topk_ids: TileTensor[mut=False, .int32, Engine=TopkIdsEngine, ...],
+        num_tokens: Int,
+        first_expert: Int32,
+    ) -> Int32:
+        """Counts the rows routed to each of this monitor CTA's experts.
+
+        The whole CTA reads the top-k ids once into a shared-memory histogram
+        of its `n_warps` experts, and each warp takes its own expert's count.
+        A warp scanning every id alone keeps one load in flight, which at
+        prefill row counts outlasts the send. Every thread of the CTA must
+        call this.
+
+        Args:
+            topk_ids: The top-k expert ids of every token.
+            num_tokens: Tokens on this rank.
+            first_expert: The global id of the CTA's first expert.
+
+        Returns:
+            The calling warp's expert's row count.
+        """
+        var hist = unsafe_stack_allocation[
+            Self.n_warps, Int32, address_space=.SHARED
+        ]()
+        if thread_idx.x < Self.n_warps:
+            hist[thread_idx.x] = 0
+        barrier()
+        var topk_ids_flat = topk_ids.reshape(row_major(num_tokens * Self.top_k))
+        for i in range(thread_idx.x, num_tokens * Self.top_k, Self.num_threads):
+            var own = rebind[Int32](topk_ids_flat[i]) - first_expert
+            if own >= 0 and own < Int32(Self.n_warps):
+                _ = Atomic[Int32, scope=BLOCK_SCOPE].fetch_add[
+                    ordering=Ordering.RELAXED
+                ](hist.unsafe_offset(Int(own)), 1)
+        barrier()
+        return hist[warp_id()]
+
+    @staticmethod
+    @inline(.always)
     def monitor_and_signal_completion[
         TopkIdsEngine: TensorEngine,
         //,
@@ -3342,15 +3457,25 @@ struct EPDispatchKernel[
                 expert_idx + Int32(Self.n_local_experts) * my_rank
             )
 
-        if expert_idx < Int32(Self.n_experts):
-            var topk_ids_flat = topk_ids.reshape(
-                row_major(num_tokens * Self.top_k)
+        comptime if Self.ep_monitor_histogram:
+            comptime assert comm_warp_base == 0, (
+                "the histogram synchronizes the whole CTA, so every thread"
+                " must be a monitor thread"
             )
-            for i in range(lane_id(), num_tokens * Self.top_k, WARP_SIZE):
-                if rebind[Int32](topk_ids_flat[i]) == global_expert_idx:
-                    expert_count += 1
+            expert_count = Self._count_own_experts(
+                topk_ids, num_tokens, global_expert_idx - Int32(warp_id())
+            )
 
-            expert_count = warp.sum(expert_count)
+        if expert_idx < Int32(Self.n_experts):
+            comptime if not Self.ep_monitor_histogram:
+                var topk_ids_flat = topk_ids.reshape(
+                    row_major(num_tokens * Self.top_k)
+                )
+                for i in range(lane_id(), num_tokens * Self.top_k, WARP_SIZE):
+                    if rebind[Int32](topk_ids_flat[i]) == global_expert_idx:
+                        expert_count += 1
+
+                expert_count = warp.sum(expert_count)
 
             if lane_id() == 0:
                 var dst_rank, dst_expert_local_idx = udivmod(
@@ -3480,6 +3605,27 @@ struct EPDispatchKernel[
             input_tokens.flat_rank == 2
         ), "input_tokens expects rank == 2"
         comptime assert topk_ids.flat_rank == 2, "topk_ids expects rank == 2"
+        comptime if Self.ep_warp_min_tokens >= 0:
+            comptime assert (
+                comm_thread_base == 0
+                and n_comm_threads == Self.num_threads
+                and comm_barrier_id < 0
+                and not TraceT.enabled
+            ), "the warp-per-token send runs in the standalone dispatch only"
+            if Int(input_tokens.dim(0)) >= Self.ep_warp_min_tokens:
+                Self.copy_and_send_tokens_warp[has_input_scales](
+                    input_tokens,
+                    topk_ids,
+                    send_buf_p,
+                    recv_buf_ptrs,
+                    expert_reserved_counter,
+                    expert_finished_counter,
+                    my_rank,
+                    sm_id,
+                    n_active_send_sms,
+                    input_scales_fn,
+                )
+                return
         comptime comm_warp_base = comm_thread_base // WARP_SIZE
         comptime n_comm_warps = n_comm_threads // WARP_SIZE
         comptime Roles = Self.role_split
@@ -3868,6 +4014,227 @@ struct EPDispatchKernel[
             if lane_id() == 0 and _tr_pub >= 0 and _tr_pairs > 0:
                 trace.stamp[DISPATCH_PAIR_INFO](
                     _tr_pub, _tr_info | (UInt64(_tr_pairs) << 48)
+                )
+
+    @staticmethod
+    @inline(.always)
+    def copy_and_send_tokens_warp[
+        InputTokensEngine: TensorEngine,
+        TopkIdsEngine: TensorEngine,
+        input_type: DType,
+        InputScalesFnType: InputScalesFn,
+        //,
+        has_input_scales: Bool = False,
+    ](
+        input_tokens: TileTensor[
+            mut=False, input_type, Engine=InputTokensEngine, ...
+        ],
+        topk_ids: TileTensor[mut=False, .int32, Engine=TopkIdsEngine, ...],
+        send_buf_p: MutPointer[UInt8, MutUntrackedOrigin],
+        recv_buf_ptrs: Array[
+            MutPointer[UInt8, MutUntrackedOrigin], Self.p2p_world_size
+        ],
+        expert_reserved_counter: MutPointer[Int32, MutUntrackedOrigin],
+        expert_finished_counter: MutPointer[Int32, MutUntrackedOrigin],
+        my_rank: Int32,
+        sm_id: Int,
+        n_active_send_sms: Int,
+        input_scales_fn: InputScalesFnType,
+    ) -> None:
+        """Communication SM logic for dispatch_kernel, one token per warp.
+
+        `copy_and_send_tokens` gives a token to a whole CTA: all its threads
+        quantize it, a CTA barrier, then one warp per top-k slot reserves a
+        slot and copies the message. Its iteration is a chain of latencies
+        with one token in flight. Here a warp owns a token: it reserves the
+        top-k slots (one atomic per lane, issued before the quantize so the
+        round trips overlap it), quantizes the token with its lanes into the
+        token's send-buffer row, then reads the message back a few vectors at
+        a time and stores each part to every destination. A CTA keeps one
+        token in flight per warp, with no CTA barrier.
+
+        The bytes, the segments they land in and the counter protocol are
+        those of `copy_and_send_tokens`; only the order of the slots inside a
+        (destination expert, source rank) segment may differ, as it already
+        does between runs.
+
+        Parameters:
+            InputTokensEngine: Storage engine backing `input_tokens`.
+            TopkIdsEngine: Storage engine backing `topk_ids`.
+            input_type: `DType` of the input token elements (inferred).
+            InputScalesFnType: The type of `input_scales_fn` (inferred).
+            has_input_scales: Whether `input_scales_fn` supplies the input's
+                scale.
+
+        Args:
+            input_tokens: The input tokens to be dispatched.
+            topk_ids: The top-k expert IDs for each token.
+            send_buf_p: Pointer to the send buffer.
+            recv_buf_ptrs: Array of pointers to receive buffers.
+            expert_reserved_counter: Counter for reserved slots per expert.
+            expert_finished_counter: Counter for finished sends per expert.
+            my_rank: The rank of the current device.
+            sm_id: The CTA's index (`block_idx.x`).
+            n_active_send_sms: Count of send CTAs.
+            input_scales_fn: Supplies the input's scale, called only when
+                `has_input_scales`.
+        """
+        comptime assert (
+            input_tokens.flat_rank == 2
+        ), "input_tokens expects rank == 2"
+        comptime assert topk_ids.flat_rank == 2, "topk_ids expects rank == 2"
+        comptime assert is_nvidia_gpu(), (
+            "the warp-per-token send stores plainly, without the system-scope"
+            " stores `block_memcpy[bypass_l2=True]` issues on MI355X"
+        )
+        comptime assert not Self.use_shmem, (
+            "the warp-per-token send reaches peers by direct stores only, not"
+            " SHMEM puts to other nodes"
+        )
+        comptime assert (
+            not Self.skip_a2a
+        ), "the warp-per-token send does not implement skip_a2a"
+        comptime assert (
+            not Self.fused_shared_expert
+        ), "the warp-per-token send does not pack the shared expert's inputs"
+        comptime assert (
+            not Self.ep_final_layout and not Self.ep_prod_reserve
+        ), "the warp-per-token send writes the rank-major staging layout"
+        comptime assert (
+            not Self.role_split.enabled
+        ), "the warp-per-token send has no copy-role split"
+        comptime assert (
+            Self.top_k <= WARP_SIZE
+        ), "one lane reserves each top-k slot"
+        comptime vec_bytes = simd_width_of[DType.uint8]()
+        comptime assert (
+            Self.msg_bytes % vec_bytes == 0
+        ), "the message is moved in whole vectors"
+        comptime n_vec = ceildiv(Self.msg_bytes, WARP_SIZE * vec_bytes)
+        comptime pass_vec = 3
+
+        var lane = Int(lane_id())
+        var num_tokens = Int(input_tokens.dim(0))
+        var input_scale = Float32(1.0)
+        comptime if has_input_scales:
+            input_scale = input_scales_fn[.float32](0)
+
+        # Consecutive tokens go to different CTAs first, so a small batch
+        # still spreads over the SMs.
+        var first_token = (sm_id - Self.n_signal_sms) + Int(
+            warp_id()
+        ) * n_active_send_sms
+        var token_stride = n_active_send_sms * Self.n_warps
+
+        # Only the expert and the slot stay live per lane: the destination
+        # and the counter are recomputed from the expert where they are
+        # used, which keeps the warp send under the 64-register budget of a
+        # 1,024-thread CTA.
+        @inline(.always)
+        def counter_of(expert: Int32) -> Int32:
+            return Self.recv_count_layout(
+                (
+                    expert % Int32(Self.n_local_experts),
+                    expert // Int32(Self.n_local_experts),
+                )
+            )
+
+        for token_idx in range(first_token, num_tokens, token_stride):
+            var target_expert = Int32(0)
+            var slot = Int32(0)
+            if lane < Self.top_k:
+                target_expert = rebind[Int32](topk_ids[token_idx, lane])
+                slot = _counter_atomic.fetch_add[ordering=Ordering.RELAXED](
+                    expert_reserved_counter.unsafe_offset(
+                        counter_of(target_expert)
+                    ),
+                    1,
+                )
+
+            var buf = send_buf_p.unsafe_offset(
+                Self.send_buf_layout((token_idx, Idx[0]))
+            )
+            Self.token_fmt_type.copy_token_to_send_buf_warp[input_type](
+                buf,
+                input_tokens.ptr_at_offset((token_idx, Idx[0])),
+                input_scale,
+                lane,
+            )
+            if lane < Self.top_k:
+                buf.unsafe_store[
+                    width=size_of[UInt16](), alignment=align_of[DType.uint16]()
+                ](
+                    Self.token_fmt_type.topk_info_offset()
+                    + lane * size_of[UInt16](),
+                    bitcast[.uint8, size_of[UInt16]()](UInt16(target_expert)),
+                )
+            if lane == 0:
+                buf.unsafe_store[
+                    width=size_of[Int32](), alignment=align_of[DType.int32]()
+                ](
+                    Self.token_fmt_type.src_info_offset(),
+                    bitcast[.uint8, size_of[Int32]()](Int32(token_idx)),
+                )
+            # Every lane reads back bytes other lanes wrote.
+            syncwarp()
+
+            @inline(.always)
+            def dest_of(k: Int) {imm} -> Tuple[Int32, Int32, Int32]:
+                """The peer, local expert and slot of top-k pick `k`."""
+                var expert = warp.shuffle_idx(target_expert, UInt32(k))
+                return (
+                    expert
+                    // Int32(Self.n_local_experts)
+                    % Int32(Self.p2p_world_size),
+                    expert % Int32(Self.n_local_experts),
+                    warp.shuffle_idx(slot, UInt32(k)),
+                )
+
+            # The message goes out in passes of `pass_vec` vectors a lane,
+            # each loaded once and stored to every destination: holding the
+            # whole message at once spills at the 64-register budget of a
+            # 1,024-thread CTA.
+            comptime for p in range(ceildiv(n_vec, pass_vec)):
+                var msg = Array[SIMD[DType.uint8, vec_bytes], pass_vec](fill=0)
+                comptime for v in range(pass_vec):
+                    var off = (
+                        (p * pass_vec + v) * WARP_SIZE + lane
+                    ) * vec_bytes
+                    if off < Self.msg_bytes:
+                        msg[v] = buf.unsafe_load[
+                            width=vec_bytes, alignment=vec_bytes
+                        ](off)
+                for k in range(Self.top_k):
+                    var peer, local, k_slot = dest_of(k)
+                    var dst = recv_buf_ptrs[peer].unsafe_offset(
+                        Self.recv_buf_layout((local, my_rank, k_slot, Idx[0]))
+                    )
+                    comptime for v in range(pass_vec):
+                        var off = (
+                            (p * pass_vec + v) * WARP_SIZE + lane
+                        ) * vec_bytes
+                        if off < Self.msg_bytes:
+                            dst.unsafe_store[alignment=vec_bytes](off, msg[v])
+
+            # Scales the format keeps outside the message become visible on
+            # the same edge as the bytes, as in the stock send.
+            for k in range(Self.top_k):
+                var peer, local, k_slot = dest_of(k)
+                Self.token_fmt_type.scatter_row_scales(
+                    recv_buf_ptrs[peer], buf, local, k_slot, lane
+                )
+
+            # Publish the warp's copies before they are counted, as the stock
+            # send's flush does; each of lanes 0 to top_k - 1 then counts its
+            # own pair, so no list of pairs is carried in registers.
+            syncwarp()
+            _publish_peer_stores()
+            if lane < Self.top_k:
+                _ = _counter_atomic.fetch_add[ordering=Ordering.RELAXED](
+                    expert_finished_counter.unsafe_offset(
+                        counter_of(target_expert)
+                    ),
+                    1,
                 )
 
     # ===-------------------------------------------------------------------===#
@@ -5753,12 +6120,12 @@ struct EPCombineKernel[
                         + lane_id() * dst_simd_width
                     )
                     store_fn[alignment=store_align](
-                        Index(token_idx, topk_idx, elem_offset), recv_chunk
+                        Coord(token_idx, topk_idx, elem_offset), recv_chunk
                     )
 
             comptime if has_router_weights:
                 store_fn[alignment=store_align](
-                    Index(
+                    Coord(
                         token_idx,
                         chunk_idx_in_token * n_chunk_elems
                         + lane_id() * dst_simd_width,
@@ -5989,12 +6356,64 @@ def combine_wait_kernel[
 # ===-----------------------------------------------------------------------===#
 
 
+# Below this many tokens a rank the warp-per-token dispatch keeps the per-CTA
+# send: with a few tokens per CTA there is little queue to drain, and a
+# 1,024-thread quantize has a shorter latency than one warp's. Set for
+# DeepSeek-V4.1's DP4/EP4 layout from a sweep on four B200s (KERN-3829; hidden
+# 5120, top-k 6, 96 experts a rank, both sends with the histogram monitor,
+# slowest rank): the per-CTA send is faster at 1,024 tokens (72.7 vs 78.8 us)
+# and the warp send from 1,152 (82.9 vs 87.1 us; 1,536: 93.1 vs 101.2; 8,168:
+# 308 vs 394). One and two GPUs cross earlier (580-768 and ~900 tokens), where
+# this threshold leaves up to 6 and 2 us a dispatch.
+comptime EP_WARP_TOKENS_MIN_TOKENS = 1152
+
+
+@always_inline
+def _takes_prefill_send[
+    token_fmt_type: TokenFormat,
+    warp_min_tokens: Int,
+    use_shmem: Bool,
+    skip_a2a: Bool,
+    fused_shared_expert: Bool,
+]() -> Bool:
+    """Returns whether `dispatch_kernel` runs the histogram monitor and the
+    warp-per-token send: only the single-node NVFP4 configuration they were
+    measured on does, and every other one keeps the stock code."""
+    return (
+        warp_min_tokens >= 0
+        and token_fmt_type.one_warp_copy
+        and not use_shmem
+        and not skip_a2a
+        and not fused_shared_expert
+    )
+
+
+def _prefill_send_suffix[
+    token_fmt_type: TokenFormat,
+    warp_min_tokens: Int,
+    use_shmem: Bool,
+    skip_a2a: Bool,
+    fused_shared_expert: Bool,
+]() -> String:
+    """Returns the kernel-name suffix of the warp-per-token send's threshold,
+    empty for the stock code."""
+    comptime if _takes_prefill_send[
+        token_fmt_type,
+        warp_min_tokens,
+        use_shmem,
+        skip_a2a,
+        fused_shared_expert,
+    ]():
+        return String("_warptok", warp_min_tokens)
+    return String()
+
+
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
 @__llvm_arg_metadata(format_handler, `nvvm.grid_constant`)
 @__name(
-    t"ep_fused_dispatch_{input_type}_{num_threads}_{n_sms}_{n_experts}_{n_ranks}_{max_tokens_per_rank}_{p2p_world_size}_{fused_shared_expert}_{use_shmem}",
+    t"ep_fused_dispatch_{input_type}_{num_threads}_{n_sms}_{n_experts}_{n_ranks}_{max_tokens_per_rank}_{p2p_world_size}_{fused_shared_expert}_{use_shmem}{_prefill_send_suffix[token_fmt_type, warp_min_tokens, use_shmem, skip_a2a, fused_shared_expert]()}",
 )
 def dispatch_kernel[
     input_type: DType,
@@ -6016,6 +6435,7 @@ def dispatch_kernel[
     skip_a2a: Bool = False,
     use_shmem: Bool = True,
     allreduce_world_size: Int = 1,
+    warp_min_tokens: Int = -1,
     *,
     # Callers bind this kernel before the call, so there is no tile argument
     # to infer the engines from.
@@ -6087,6 +6507,11 @@ def dispatch_kernel[
         allreduce_world_size: The world size of the allreduce operation. Only
             needed for skip_a2a. Used to calculate the workload distribution for
             the shared expert (if has one).
+        warp_min_tokens: From this many tokens a rank on, send one token
+            per warp, and count experts with the histogram monitor at any
+            count (see `EPDispatchKernel`). -1 (the default) keeps the stock
+            monitor and send, as does every configuration but single-node
+            NVFP4 without a fused shared expert.
         InputTokensEngine: Storage engine backing the `input_tokens` tile.
         TopkIdsEngine: Storage engine backing the `topk_ids` tile.
         RowOffsetsEngine: Storage engine backing the `row_offsets` tile.
@@ -6117,6 +6542,16 @@ def dispatch_kernel[
         input_scales_fn: Input scale supplier, passed by host layout.
     """
 
+    comptime prefill_send = (
+        _takes_prefill_send[
+            token_fmt_type,
+            warp_min_tokens,
+            use_shmem,
+            skip_a2a,
+            fused_shared_expert,
+        ]()
+        and is_nvidia_gpu()
+    )
     comptime dispatch_impl = EPDispatchKernel[
         num_threads,
         n_sms,
@@ -6128,6 +6563,8 @@ def dispatch_kernel[
         use_shmem,
         fused_shared_expert,
         skip_a2a,
+        ep_monitor_histogram=prefill_send,
+        ep_warp_min_tokens=warp_min_tokens if prefill_send else -1,
     ]
 
     comptime _allreduce_world_size = UInt32(allreduce_world_size)
@@ -6423,12 +6860,11 @@ def combine_kernel[
                 @inline(.always)
                 def add_shared_expert_output[
                     dtype: DType,
-                    rank: Int,
                     width: SIMDLength,
                     *,
                     alignment: Int = 1,
-                ](idx: IndexList[rank], combined_val: SIMD[dtype, width]) {var}:
-                    comptime assert rank == 2, "expects a reduced output"
+                ](coords: Coord, combined_val: SIMD[dtype, width]) {var}:
+                    comptime assert coords.rank == 2, "expects a reduced output"
                     var shared_expert_val = SIMD[dtype, width]()
 
                     comptime if combine_impl.skip_a2a:
@@ -6448,19 +6884,22 @@ def combine_kernel[
 
                         if (
                             Int(rank_start)
-                            <= idx[0]
+                            <= Int(coords[0])
                             < Int(rank_start + shared_expert_token_count)
                         ):
                             shared_expert_val = input_tokens.load[width=width](
-                                (idx[0] - Int(rank_start), idx[1])
+                                (
+                                    Int(coords[0]) - Int(rank_start),
+                                    Int(coords[1]),
+                                )
                             ).cast[dtype]()
                     else:
                         shared_expert_val = input_tokens.load[width=width](
-                            (idx[0], idx[1])
+                            (Int(coords[0]), Int(coords[1]))
                         ).cast[dtype]()
 
                     store_fn[alignment=alignment](
-                        idx, combined_val + shared_expert_val
+                        coords, combined_val + shared_expert_val
                     )
 
                 combine_impl.reduce_and_copy_to_output[

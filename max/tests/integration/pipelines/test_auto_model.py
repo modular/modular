@@ -20,13 +20,15 @@ from __future__ import annotations
 
 import asyncio
 import gc
+import inspect
 import weakref
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import get_origin
 from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
+import typing_extensions
 from max.driver import DeviceSpec
 from max.pipelines import (
     PIPELINE_REGISTRY,
@@ -157,6 +159,25 @@ def test_generate_iter_runs_messages_like_generate(model_path: str) -> None:
     assert batch.prompt_lengths == expected.prompt_lengths
 
 
+def test_chat_template_kwargs_reach_the_template(model_path: str) -> None:
+    messages: list[list[Mapping[str, object]]] = [
+        [{"role": "user", "content": "What is 2 + 2?"}]
+    ]
+    with _load_cpu(model_path) as model:
+        default = model.generate(messages=messages, max_new_tokens=1)
+        without_prompt = model.generate(
+            messages=messages,
+            chat_template_kwargs={"add_generation_prompt": False},
+            max_new_tokens=1,
+        )
+    [default_length] = default.prompt_lengths
+    [length] = without_prompt.prompt_lengths
+    # The template's generation prompt opens the assistant turn after the
+    # conversation.
+    assert length < default_length
+    assert without_prompt.sequences[0][:length] == default.sequences[0][:length]
+
+
 def test_greedy_logits_and_log_probs_match_sequences(model_path: str) -> None:
     num_top_log_probs = 3
     with _load_cpu(model_path, max_batch_size=len(PROMPTS)) as model:
@@ -245,6 +266,18 @@ def test_generate_takes_tokenizer_output(model_path: str) -> None:
         outputs.sequences, skip_special_tokens=True
     )
     assert text.startswith(TEXT)
+
+
+def test_batch_errors_name_auto_model(model_path: str) -> None:
+    with _load_cpu(model_path) as model:
+        for start in (model.generate, model.generate_iter):
+            with pytest.raises(ValueError) as error:
+                start(PROMPTS, max_new_tokens=1)
+            assert str(error.value).splitlines()[0] == (
+                "AutoModel does not support scheduling across batches. 2 "
+                "prompts exceed the pipeline's max batch size of 1, and "
+                "AutoModel never splits its prompts."
+            )
 
 
 def test_debug_defaults_and_overrides(model_path: str) -> None:
@@ -545,7 +578,7 @@ def test_rejects_an_embeddings_model(
     with pytest.raises(ValueError) as error:
         AutoModel(_local_or_repo(EMBEDDINGS_REPO_ID), devices="cpu")
     message = str(error.value)
-    assert "AutoModel runs text generation models only" in message
+    assert "AutoModel runs text and image generation models" in message
     assert "MPNetForMaskedLM for embeddings generation" in message
     assert built_configs == []
 
@@ -657,6 +690,7 @@ def test_generate_and_generate_iter_pass_every_argument(
             MASKS,
             messages=messages,
             images=images,
+            chat_template_kwargs={"enable_thinking": False},
             max_new_tokens=3,
             min_new_tokens=2,
             temperature=0.5,
@@ -677,6 +711,7 @@ def test_generate_and_generate_iter_pass_every_argument(
             MASKS,
             messages=messages,
             images=images,
+            chat_template_kwargs={"enable_thinking": False},
             max_new_tokens=3,
             min_new_tokens=2,
             temperature=0.5,
@@ -695,6 +730,7 @@ def test_generate_and_generate_iter_pass_every_argument(
     expected_kwargs: dict[str, object] = {
         "messages": messages,
         "images": images,
+        "chat_template_kwargs": {"enable_thinking": False},
         "max_new_tokens": 3,
         "min_new_tokens": 2,
         "temperature": 0.5,
@@ -709,8 +745,110 @@ def test_generate_and_generate_iter_pass_every_argument(
         "seed": 7,
         "output_logits": True,
         "output_logprobs": 2,
+        "caller": "AutoModel",
     }
     assert calls == [((pipeline, PROMPTS, MASKS), expected_kwargs)] * 2
+
+
+def test_generate_forwards_text_defaults_unchanged(
+    model_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pipeline = MagicMock(spec=TextGenerationPipeline)
+    _stub_retrieve(monkeypatch, pipeline, [])
+    calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def record(*args: object, **kwargs: object) -> None:
+        calls.append((args, kwargs))
+
+    monkeypatch.setattr(auto_model, "generate", record)
+    with _load_cpu(model_path) as model:
+        model.generate(PROMPTS, max_new_tokens=3)
+    assert calls == [
+        (
+            (pipeline, PROMPTS, None),
+            {
+                "messages": None,
+                "images": None,
+                "chat_template_kwargs": None,
+                "max_new_tokens": 3,
+                "min_new_tokens": None,
+                "temperature": None,
+                "top_k": None,
+                "top_p": None,
+                "min_p": None,
+                "frequency_penalty": None,
+                "presence_penalty": None,
+                "repetition_penalty": None,
+                "ignore_eos": False,
+                "stop_token_ids": None,
+                "seed": 0,
+                "output_logits": False,
+                "output_logprobs": 0,
+                "caller": "AutoModel",
+            },
+        )
+    ]
+
+
+def test_image_arguments_are_rejected_on_a_text_model(
+    model_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_retrieve(monkeypatch, MagicMock(spec=TextGenerationPipeline), [])
+    loaded = f"AutoModel loaded {model_path}, a text generation model."
+    with _load_cpu(model_path) as model:
+        # No overload takes the mixed calls, so they go through an untyped
+        # name.
+        untyped: Callable[..., object] = model.generate
+        with pytest.raises(ValueError) as error:
+            model.generate(prompt="a red fox")
+        assert str(error.value) == (
+            f"prompt is for image generation models, and {loaded} Pass "
+            "input_ids or messages instead."
+        )
+        with pytest.raises(ValueError) as error:
+            untyped(PROMPTS, max_new_tokens=3, height=256, width=256)
+        assert str(error.value) == (
+            f"height, width are for image generation models, and {loaded}"
+        )
+        with pytest.raises(TypeError, match="'max_new_tokens'"):
+            untyped(PROMPTS)
+
+
+# A value other than the default for each image-only argument.
+_IMAGE_ONLY_VALUES: dict[str, object] = {
+    "prompt": "a red fox",
+    "negative_prompt": "blurry",
+    "height": 256,
+    "width": 256,
+    "num_inference_steps": 4,
+    "guidance_scale": 2.0,
+    "true_cfg_scale": 2.0,
+    "strength": 0.5,
+    "num_images_per_prompt": 2,
+}
+
+
+def test_every_image_argument_is_rejected_on_a_text_model(
+    model_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    text: set[str] = set()
+    image: set[str] = set()
+    for overload in typing_extensions.get_overloads(AutoModel.generate):
+        names = set(inspect.signature(overload).parameters) - {"self"}
+        (image if "prompt" in names else text).update(names)
+    _stub_retrieve(monkeypatch, MagicMock(spec=TextGenerationPipeline), [])
+    with _load_cpu(model_path) as model:
+        untyped: Callable[..., object] = model.generate
+        for name in sorted(image - text):
+            with pytest.raises(ValueError) as error:
+                untyped(
+                    PROMPTS,
+                    max_new_tokens=1,
+                    **{name: _IMAGE_ONLY_VALUES[name]},
+                )
+            assert str(error.value).startswith(
+                f"{name} is for image generation models"
+            )
 
 
 def test_rejects_a_pipeline_that_does_not_generate_text(
@@ -728,7 +866,7 @@ def test_rejects_a_pipeline_that_does_not_generate_text(
     with pytest.raises(ValueError) as error:
         _load_cpu(model_path)
     assert str(error.value) == (
-        f"AutoModel runs text generation models only, and {model_path} "
+        f"AutoModel runs text and image generation models, and {model_path} "
         "loads as _Cyclic."
     )
     [pipeline_ref] = pipeline_refs

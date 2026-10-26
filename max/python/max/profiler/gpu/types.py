@@ -68,8 +68,9 @@ class GPUStats(msgspec.Struct):
     diagnostic queries.
     """
 
-    memory: MemoryStats
-    """Detailed memory usage statistics for the GPU."""
+    memory: MemoryStats | None
+    """Detailed memory usage statistics for the GPU, or ``None`` if the
+    driver doesn't report them."""
     utilization: UtilizationStats
     """Current GPU compute and memory utilization percentages."""
     clocks: ClockStats | None = None

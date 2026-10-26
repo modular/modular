@@ -15,8 +15,9 @@
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
+from types import MethodType
 from typing import TYPE_CHECKING, Annotated, Any, Generic
 
 from max import tree
@@ -74,6 +75,17 @@ class _TransparentKey:
 
     def __str__(self) -> str:
         return ""
+
+
+@dataclasses.dataclass(frozen=True)
+class _SelfBoundMethod:
+    """The tree child of a method bound to the module that holds it.
+
+    Unflattening binds it to the module being built, so a copy's method acts
+    on the copy rather than on the module it was copied from.
+    """
+
+    func: Callable[..., Any]
 
 
 PinnedDeviceTensor = Annotated[Tensor, _DevicePinned]
@@ -248,12 +260,15 @@ class Module(Generic[_P, _R]):
 
         Children are keyed by attribute name. A child with
         :attr:`name_transparent` set is keyed by a ``_TransparentKey``
-        instead, which omits it from the paths of its descendants.
+        instead, which omits it from the paths of its descendants. A method
+        bound to this module is rebound to the module it is unflattened into.
         """
         return {
             _TransparentKey(name)
             if isinstance(value, Module) and value.name_transparent
-            else name: value
+            else name: _SelfBoundMethod(value.__func__)
+            if isinstance(value, MethodType) and value.__self__ is self
+            else value
             for name, value in vars(self).items()
         }, None
 
@@ -265,6 +280,8 @@ class Module(Generic[_P, _R]):
 
     def __tree_setattr__(self, key: Any, value: Any) -> None:
         """Sets the child ``key`` to ``value``."""
+        if isinstance(value, _SelfBoundMethod):
+            value = MethodType(value.func, self)
         # ``object.__setattr__`` also works for a frozen ``module_dataclass``.
         object.__setattr__(
             self, key.name if isinstance(key, _TransparentKey) else key, value
@@ -645,7 +662,10 @@ class Module(Generic[_P, _R]):
                 def forward(self, x: Tensor) -> Tensor:
                     return x @ self.weight.T + self.bias
 
-            linear = Linear(Tensor.zeros([10, 5]), Tensor.zeros([10]))
+            linear = Linear(
+                Tensor.zeros([10, 5], dtype=DType.float32),
+                Tensor.zeros([10], dtype=DType.float32),
+            )
             _, mesh = defaults()
             run = linear.compile(
                 TensorType(DType.float32, [3, 5], mesh.devices[0])

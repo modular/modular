@@ -34,6 +34,7 @@ example_repo_ids = [
     # "google/gemma-4-26B-A4B-it"
     "nvidia/Gemma-4-31B-IT-NVFP4",
     # "nvidia/Gemma-4-26B-A4B-NVFP4"
+    "nvidia/NVIDIA-Nemotron-3.5-Bolt-E4B-BF16",
 ]
 
 gemma4_arch = SupportedArchitecture(

@@ -44,10 +44,7 @@ _MAX_PACKAGES = {
 # Kernel packages that exist only in the internal build go in the
 # `internal_kernel_packages` attribute instead: a package listed there is
 # simply absent from the open-source build, which keeps that build standalone.
-INTERNAL_PACKAGES = [
-    "//max/driver/src/max_license/_hal",
-    "//max/driver/src/max_license/machine",
-]
+INTERNAL_PACKAGES = []
 
 # Packages that are marked testonly and cannot be used by production targets
 _TESTONLY_MAX_PACKAGES = ["testdata"]

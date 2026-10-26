@@ -13,6 +13,7 @@
 
 from max.gpu.host import DeviceContext
 from layout import (
+    Coord,
     CoordLike,
     Idx,
     TileTensor,
@@ -118,7 +119,7 @@ def test_matmul_dynamic_scaled_fp8[
     naive_blockwise_scaled_fp8_matmul[
         BLOCK_DIM=16,
         transpose_b=transpose_b,
-        scales_granularity_mnk=Index(1, 1, k_dim),
+        scales_granularity_mnk=Coord[Int, Int, Int](1, 1, k_dim),
     ](
         c_ref_tile,
         a_tile,
@@ -277,7 +278,7 @@ def test_matmul_dynamic_scaled_fp8_tensor[
     naive_blockwise_scaled_fp8_matmul[
         BLOCK_DIM=16,
         transpose_b=transpose_b,
-        scales_granularity_mnk=Index(1, 1, k_dim),
+        scales_granularity_mnk=Coord[Int, Int, Int](1, 1, k_dim),
     ](
         c_ref_tile,
         a_tile,

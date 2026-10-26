@@ -465,11 +465,21 @@ def run_nope_native_512_fp8[
         total_pages * kv_dim2 * NUM_LAYERS * PAGE_SIZE * KV_NUM_HEADS
     )
 
-    var block_shape_576 = IndexList[6](
-        total_pages, kv_dim2, NUM_LAYERS, PAGE_SIZE, KV_NUM_HEADS, Q_DEPTH
+    var block_shape_576 = (
+        total_pages,
+        kv_dim2,
+        NUM_LAYERS,
+        PAGE_SIZE,
+        KV_NUM_HEADS,
+        Q_DEPTH,
     )
-    var block_shape_512 = IndexList[6](
-        total_pages, kv_dim2, NUM_LAYERS, PAGE_SIZE, KV_NUM_HEADS, LATENT_DEPTH
+    var block_shape_512 = (
+        total_pages,
+        kv_dim2,
+        NUM_LAYERS,
+        PAGE_SIZE,
+        KV_NUM_HEADS,
+        LATENT_DEPTH,
     )
 
     # One latent cache, quantized once, laid out at both widths so the two runs
@@ -797,7 +807,7 @@ def run_test_sparse_qkv_fp8[
     var total_pages = batch_size * ceildiv(num_keys, PAGE_SIZE)
     var max_pages_per_batch = ceildiv(num_keys, PAGE_SIZE)
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         kv_dim2,
         NUM_LAYERS,
@@ -1348,7 +1358,7 @@ def run_test_sparse_qkv_fp8_variable_topk[
     )
     comptime kv_dim2 = 1
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         kv_dim2,
         NUM_LAYERS,
@@ -1670,7 +1680,7 @@ def run_test_sparse_qkv_fp8_attn_sink[
     var total_pages = batch_size * ceildiv(num_keys, PAGE_SIZE)
     var max_pages_per_batch = ceildiv(num_keys, PAGE_SIZE)
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         kv_dim2,
         NUM_LAYERS,
@@ -2019,7 +2029,7 @@ def run_test_sparse_qkv_fp8_extra_kv[
     var max_num_keys = max_cache_len + q_max_seq_len
     var max_pages_per_batch = ceildiv(max_num_keys, PAGE_SIZE)
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         kv_dim2,
         NUM_LAYERS,
@@ -2097,7 +2107,7 @@ def run_test_sparse_qkv_fp8_extra_kv[
     var max_extra_num_keys = max_extra_cache_len + q_max_seq_len
     var max_extra_pages_per_batch = ceildiv(max_extra_num_keys, PAGE_SIZE)
 
-    var extra_block_shape = IndexList[6](
+    var extra_block_shape = (
         extra_total_pages,
         kv_dim2,
         NUM_LAYERS,
@@ -2556,7 +2566,7 @@ def run_test_sparse_qkv_fp8_topk_clamping[
     )
     comptime kv_dim2 = 1
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         kv_dim2,
         NUM_LAYERS,

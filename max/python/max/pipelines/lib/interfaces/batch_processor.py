@@ -852,12 +852,13 @@ def embedding_ragged_symbolic_inputs(
 ) -> list[TensorType | BufferType]:
     """Symbolic compile inputs for single-replica ragged embedding models."""
     device_ref = device_refs[0]
+    # The dtypes and devices SingleReplicaEmbeddingBatchProcessor builds.
     return [
-        TensorType(DType.int64, shape=["total_seq_len"], device=device_ref),
+        TensorType(DType.uint32, shape=["total_seq_len"], device=device_ref),
         TensorType(
             DType.uint32,
             shape=["input_row_offsets_len"],
-            device=device_ref,
+            device=DeviceRef.CPU(),
         ),
         TensorType(
             DType.uint32,

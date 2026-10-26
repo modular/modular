@@ -5,18 +5,12 @@ description: Localize the first layer where a MAX model diverges from its PyTorc
 ---
 
 When a MAX model runs but fails validation, compare its intermediate tensor
-outputs against a trusted reference implementation (typically the Transformers
-implementation on PyTorch).
+outputs against a trusted reference implementation, typically the Transformers
+implementation on PyTorch.
 
-This guide shows you how to debug validation failures by localizing the first
-point where your MAX model diverges from the reference model. You'll learn how
-to:
-
-1. Run the MAX model and the reference model with the same input.
-2. Capture tensor outputs for intermediate layers.
-3. Compare pairs of tensors in execution order.
-4. Find the first layer whose output differs beyond your expected tolerance.
-5. Narrow down the underlying implementation issue.
+This guide runs both models on the same input, compares their intermediate
+tensors in execution order, and narrows the first difference to the layer that
+causes it.
 
 You can also use the
 [`debug-model`](/develop/model-bringup-skills/#debug-output-divergences)
@@ -27,15 +21,18 @@ inspects the serving loop, which this page doesn't cover.
 
 This page includes generic code snippets you can adapt for your MAX model and
 reference model. For a fully runnable example, see the
-[script][layer-comparison-script] that generates the output on this page.
+[script](https://github.com/modular/modular/tree/main/max/docs/site/code/develop/layer-comparison)
+that generates the output on this page.
 
 :::
 
 :::note
 
-If you plan to [contribute your model to MAX][contributing-models], use the
-in-repo [accuracy debugging][accuracy-debugging] tools to achieve the outcomes
-described on this page.
+If you plan to
+[contribute your model to MAX](https://github.com/modular/modular/blob/main/max/docs/contributing-models.md),
+use the in-repo
+[accuracy debugging](https://github.com/modular/modular/blob/main/max/docs/accuracy-debugging.md)
+tools to achieve the outcomes described on this page.
 
 :::
 
@@ -63,17 +60,34 @@ To compare the intermediate tensors of your MAX model and reference model, you
 need to run both models and save the tensors they produce. Start with the MAX
 model. Run it eagerly, so every layer returns a
 [`Tensor`](/api/python/generated/max.experimental.tensor.Tensor/) whose values
-you can copy to the host with [`to_numpy()`][tensor-to-numpy].
+you can copy to the host with
+[`to_numpy()`](/api/python/generated/max.experimental.tensor.Tensor/#max.experimental.tensor.Tensor.to_numpy).
 
 The following example records each layer's output:
 
 1. Look up each layer by its qualified path, such as `layers.0`, with the
-   [`descendants`][module-descendants] property.
-2. Wrap the layer's [`forward()`][module-forward] method so each call stores
-   its output as a NumPy array. The context manager restores the original
-   methods on exit.
+   [`descendants`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.descendants)
+   property.
+2. Wrap the layer's
+   [`forward()`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.forward)
+   method so each call stores its output as a NumPy array. The context manager
+   restores the original methods on exit.
 
-{/* @sync: ../../code/develop/layer-comparison/layer_comparison.py */}
+<!-- invisible-code-block: python
+import importlib.util
+import sys
+from max.experimental import functional as F
+sample = DOCS_ROOT / "code/develop/layer-comparison/layer_comparison.py"
+spec = importlib.util.spec_from_file_location("lc_sample", sample)
+lc = importlib.util.module_from_spec(spec)
+sys.modules["lc_sample"] = lc
+spec.loader.exec_module(lc)
+reference_model = lc.build_reference_model()
+state_dict = reference_model.model.state_dict()
+token_ids = lc.TOKEN_IDS
+def MyModel(*args):
+    return lc.MyModel([F.silu, F.gelu])
+-->
 
 ```python title="layer-comparison.py"
 from collections.abc import Callable, Iterator
@@ -136,9 +150,10 @@ np.savez("max_tensors.npz", **max_tensors)
 :::note
 
 To capture tensor outputs from *inside* a layer, call
-[`F.print()`][functional-print] with the intermediate tensor and a name, such as
-`F.print(x, "attn_out")`, in the corresponding MAX module's `forward()` method.
-`F.print()` prints the tensor's values in eager code and inside a
+[`F.print()`](/api/python/experimental.functional/#max.experimental.functional.print)
+with the intermediate tensor and a name, such as `F.print(x, "attn_out")`, in
+the corresponding MAX module's `forward()` method. `F.print()` prints the
+tensor's values in eager code and inside a
 [fusion region](/develop/tensor-realization/). Remove those calls when you
 finish debugging.
 
@@ -147,8 +162,9 @@ finish debugging.
 ## Capture PyTorch layer outputs
 
 Next, export the intermediate tensors from a run of your reference model. The
-comparison script in the next section matches tensors by name, so save every
-reference layer's output under its matching MAX layer name. The following
+comparison script in [Find the divergent layer](#find-the-divergent-layer)
+matches tensors by name, so save every reference layer's output under its
+matching MAX layer name. The following
 example does this for a PyTorch model:
 
 1. Defines a map of MAX layer names to PyTorch submodule paths.
@@ -156,8 +172,6 @@ example does this for a PyTorch model:
    its MAX layer name.
 3. Runs the PyTorch model and writes all captured tensors to a single
    `reference_tensors.pt` file.
-
-{/* @sync: ../../code/develop/layer-comparison/layer_comparison.py */}
 
 ```python title="layer-comparison.py"
 import torch
@@ -206,8 +220,6 @@ tensor of the same name, and reports these comparison metrics per layer:
 - **Maximum absolute difference**: the largest element-wise gap in raw units.
 - **Maximum relative difference**: the largest element-wise gap scaled by the
   reference magnitude.
-
-{/* @sync: ../../code/develop/layer-comparison/layer_comparison.py */}
 
 ```python title="layer-comparison.py"
 from dataclasses import dataclass
@@ -279,12 +291,17 @@ results = [
 print_report(results)
 ```
 
-The script prints one row per layer in execution order. On the CPU, where the
-model runs in float32, layers that agree show a cosine similarity of `1.0` and
-near-zero differences. On an accelerator, the model runs in bfloat16, so every
-layer shows small differences from the float32 reference; look for the layer
-where the differences jump. When a layer diverges, that layer and the layers
-after it show the error.
+<!-- invisible-code-block: python
+by_name = {r.name: r for r in results}
+assert list(by_name) == ["embed_tokens", "layers.0", "layers.1", "norm"]
+assert by_name["layers.0"].cosine_similarity > 0.9999
+assert by_name["layers.1"].cosine_similarity < 0.9999
+-->
+
+The script prints one row per layer in execution order. When both
+implementations agree, every row shows a cosine similarity of `1.0` and
+near-zero differences. When a layer diverges, that layer and the layers after it
+show the error.
 
 In the following example report from a CPU run, layer 1 and the final
 normalization diverge. You can see this because the maximum relative difference
@@ -299,10 +316,12 @@ layers.1            0.999432     1.929e-01     9.652e-01
 norm                0.998457     1.465e-01     8.371e-01
 ```
 
-In the [model][layer-comparison-script] used to produce this example output,
-the layers diverge because the model uses a different activation function than
-the reference at that layer. In the next section, learn more about using the
-layer to identify the root cause of the divergence.
+In the
+[model](https://github.com/modular/modular/tree/main/max/docs/site/code/develop/layer-comparison)
+used to produce this example output, the layers diverge because the model uses a
+different activation function than the reference at that layer. Continue with
+[Identify the root cause](#identify-the-root-cause) to trace the divergence to
+an implementation.
 
 ## Identify the root cause
 
@@ -330,16 +349,8 @@ Once you've localized the divergent layer and corrected your model:
 
 - [Repeat logit comparison](/develop/logit-comparison/) to validate that
   your model produces the expected logits.
-- Automate layer comparison with the [`debug-model`][debug-model-skill]
+- Automate layer comparison with the
+  [`debug-model`](https://github.com/modular/skills/blob/main/debug-model/SKILL.md)
   skill.
 - [Run benchmarks](/serve/benchmark/) to measure model performance with
   `max benchmark`.
-
-[accuracy-debugging]: https://github.com/modular/modular/blob/main/max/docs/accuracy-debugging.md
-[contributing-models]: https://github.com/modular/modular/blob/main/max/docs/contributing-models.md
-[debug-model-skill]: https://github.com/modular/skills/blob/main/debug-model/SKILL.md
-[functional-print]: /api/python/experimental.functional/#max.experimental.functional.print
-[layer-comparison-script]: https://github.com/modular/modular/tree/main/max/docs/site/code/develop/layer-comparison
-[module-descendants]: /api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.descendants
-[module-forward]: /api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.forward
-[tensor-to-numpy]: /api/python/generated/max.experimental.tensor.Tensor/#max.experimental.tensor.Tensor.to_numpy

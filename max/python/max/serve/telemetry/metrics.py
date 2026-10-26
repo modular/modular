@@ -64,6 +64,27 @@ ConversationTurn = Literal["first", "later"]
 # The ``phase`` label on ``maxserve.request.client_disconnect_cancellations``:
 # whether the status code was still unsent when the client hung up.
 _DisconnectPhase = Literal["before_response", "during_response"]
+# The ``reason`` label on ``maxserve.cache.connector_lookup_admission_stops``.
+LookupAdmissionStop = Literal["budget", "max_pending", "held"]
+
+# Exclusive upper bounds, in tokens, of the ``prompt_length`` label on
+# ``maxserve.time_to_first_token_by_prompt_length``. Coarse on purpose: the
+# label multiplies the histogram's series.
+_PROMPT_LENGTH_BUCKETS: tuple[tuple[int, str], ...] = (
+    (8 * 1024, "0-8k"),
+    (32 * 1024, "8k-32k"),
+    (64 * 1024, "32k-64k"),
+    (128 * 1024, "64k-128k"),
+    (256 * 1024, "128k-256k"),
+)
+
+
+def _prompt_length_bucket(prompt_tokens: int) -> str:
+    for upper, label in _PROMPT_LENGTH_BUCKETS:
+        if prompt_tokens < upper:
+            return label
+    return "256k-plus"
+
 
 # API_PROXIES the "types" of measurements we make from a meter
 # SDK instruments are the "types" that actually do recording
@@ -150,6 +171,13 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "Time to first token (TTFT). Measured from when the server received the request, so it includes request parsing, validation, media resolution, tokenization, queueing, and prefill."
         ),
     ),  # type: ignore
+    "maxserve.time_to_first_token_by_prompt_length": _meter.create_histogram(
+        "maxserve.time_to_first_token_by_prompt_length",
+        unit="ms",
+        description=(
+            "Time to first token as `maxserve_time_to_first_token_milliseconds` measures it, split by a `prompt_length` label that buckets the request's prompt tokens in units of 1024: `0-8k`, `8k-32k`, `32k-64k`, `64k-128k`, `128k-256k` or `256k-plus`. Compares TTFT across deployments at matched prompt length."
+        ),
+    ),  # type: ignore
     "maxserve.num_input_tokens": _meter.create_counter(
         "maxserve.num_input_tokens",
         description="Cumulative input tokens processed.",
@@ -229,7 +257,15 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "maxserve.batch_execution_time": _meter.create_histogram(
         "maxserve.batch_execution_time",
         unit="ms",
-        description="Distribution of batch execution time.",
+        description="Host executor service time per completed batch.",
+    ),  # type: ignore
+    "maxserve.scheduler.batch_step_time": _meter.create_histogram(
+        "maxserve.scheduler.batch_step_time",
+        unit="ms",
+        description=(
+            "Whole scheduler step including execution, request advancement, "
+            "release and response publication; excludes batch construction."
+        ),
     ),  # type: ignore
     "maxserve.di.decode_admission_queue_wait_time": _meter.create_histogram(
         "maxserve.di.decode_admission_queue_wait_time",
@@ -383,6 +419,24 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         "maxserve.cache.preemption_count",
         description="Total number of preemptions.",
     ),  # type: ignore
+    "maxserve.cache.connector_cordon_wait_time": _meter.create_histogram(
+        "maxserve.cache.connector_cordon_wait_time",
+        unit="ms",
+        description=(
+            "Time a prompt is held out of the batch on its KV connector, from the first time it is cordoned on a deferred connector lookup or an onload to its admission to a batch. Recorded once for each admitted prompt that was cordoned."
+        ),
+    ),  # type: ignore
+    "maxserve.cache.connector_cordon_passes": _meter.create_histogram(
+        "maxserve.cache.connector_cordon_passes",
+        unit="passes",
+        description=(
+            "Scheduler passes from a prompt's first cordon on a deferred connector lookup or an onload to its admission to a batch, recorded with `maxserve_cache_connector_cordon_wait_time_milliseconds`. A prompt admitted in the pass that cordoned it records 0."
+        ),
+    ),  # type: ignore
+    "maxserve.cache.connector_lookup_admission_stops": _create_counter(
+        "maxserve.cache.connector_lookup_admission_stops",
+        description="Prompt admission passes that stopped on a deferred connector lookup, counted per data-parallel replica, split by `reason`: `budget` when the pass had spent its share of lookup tokens, `max_pending` when the replica already had its bound of unanswered lookups out, and `held` when the next prompt arrived behind one still out on its lookup. The prompt waits at the head of its queue for a later pass.",
+    ),
     "maxserve.cache.hits": _meter.create_counter(
         "maxserve.cache.hits",
         unit="tokens",
@@ -1278,6 +1332,18 @@ class _AsyncMetrics:
             ),
         )
 
+    def ttft_by_prompt_length(self, value: float, prompt_tokens: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.time_to_first_token_by_prompt_length",
+                value,
+                {
+                    **self.extra_attributes,
+                    "prompt_length": _prompt_length_bucket(prompt_tokens),
+                },
+            ),
+        )
+
     def input_tokens(self, value: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
@@ -1429,6 +1495,15 @@ class _AsyncMetrics:
             MaxMeasurement(
                 "maxserve.batch_size",
                 size,
+                {**self.extra_attributes, "batch_type": batch_type},
+            ),
+        )
+
+    def scheduler_batch_step_time(self, value: float, batch_type: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.scheduler.batch_step_time",
+                value,
                 {**self.extra_attributes, "batch_type": batch_type},
             ),
         )
@@ -1674,6 +1749,35 @@ class _AsyncMetrics:
         self.client.send_measurement(
             MaxMeasurement(
                 "maxserve.cache.preemption_count", 1, self.extra_attributes
+            ),
+        )
+
+    def connector_cordon_wait_time(self, ms: float) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.cache.connector_cordon_wait_time",
+                ms,
+                self.extra_attributes,
+            ),
+        )
+
+    def connector_cordon_passes(self, passes: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.cache.connector_cordon_passes",
+                passes,
+                self.extra_attributes,
+            ),
+        )
+
+    def connector_lookup_admission_stop(
+        self, reason: LookupAdmissionStop
+    ) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.cache.connector_lookup_admission_stops",
+                1,
+                {**self.extra_attributes, "reason": reason},
             ),
         )
 

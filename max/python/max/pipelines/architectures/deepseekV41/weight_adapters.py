@@ -49,10 +49,12 @@ from transformers.configuration_utils import PretrainedConfig
 from .model_config import (
     NVFP4_SF_ATOM_COLS,
     NVFP4_SF_ATOM_ROWS,
+    compressor_bf16_enabled,
     gate_up_rows_interleaved,
     head_bf16_enabled,
     num_dspark_stages,
     nvfp4_sf_preinterleaved,
+    q_mxfp8_enabled,
     woa_mxfp8_enabled,
 )
 
@@ -106,13 +108,14 @@ def is_host_dequantized(base: str, *, woa_mxfp8: bool | None = None) -> bool:
 
 # bf16 checkpoint weights the model computes with in float32; widened on
 # load.
-FLOAT32_WEIGHT_SUFFIXES = (
-    ".compressor.wkv.weight",
-    ".compressor.wgate.weight",
-    "norm.weight",
-)
+FLOAT32_WEIGHT_SUFFIXES = ("norm.weight",)
 # Widened to float32 too unless ``head_bf16_enabled()``.
 HEAD_WEIGHT = "head.weight"
+# Widened to float32 too unless ``compressor_bf16_enabled()``.
+COMPRESSOR_WEIGHT_SUFFIXES = (
+    ".compressor.wkv.weight",
+    ".compressor.wgate.weight",
+)
 
 # Scales kept as raw e8m0 (widening Engram's would quadruple their size).
 _RAW_SCALE_PREFIXES = (".engram.embed",)
@@ -402,28 +405,21 @@ def bfloat16_to_float32(weight: WeightData, name: str) -> WeightData:
     return with_dtype(bits, DType.float32, name)
 
 
-# Unquantized ``Linear``s whose FP8 weights are host-dequantized. Their
-# scales are already row-expanded by then, which dequantizes identically.
-_TRUNK_HOST_DEQUANT_PROJECTIONS = (
-    ".attn.wq_a",
-    ".attn.wkv",
-    ".attn.wq_b",
-    ".attn.indexer.wq_b",
-)
+def _query_weight(
+    state_dict: Mapping[str, WeightData], base: str, *, mxfp8: bool
+) -> tuple[WeightData, WeightData | None]:
+    """``base``'s weight, and its row-expanded scale if it stays MXFP8.
 
-
-def _trunk_dequantized_weight(
-    state_dict: Mapping[str, WeightData], base: str
-) -> WeightData:
-    """``state_dict[f"{base}.weight"]``, host-dequantized if stored fp8.
-
-    Returns the weight unchanged if the checkpoint stores it unquantized.
+    An fp8 weight is host-dequantized to bf16 unless ``mxfp8``. An
+    unquantized weight is returned unchanged.
     """
     weight = state_dict[f"{base}.weight"]
     scale = state_dict.get(f"{base}{_MAX_SCALE_SUFFIX}")
-    if weight.dtype == DType.float8_e4m3fn and scale is not None:
-        return dequantize_fp8_blocks(weight, scale, f"{base}.weight")
-    return weight
+    if weight.dtype != DType.float8_e4m3fn or scale is None:
+        return weight, None
+    if mxfp8:
+        return weight, scale
+    return dequantize_fp8_blocks(weight, scale, f"{base}.weight"), None
 
 
 def _as_same_width_bits(data: WeightData) -> np.ndarray:
@@ -446,43 +442,53 @@ def _rewire_attention_projections(
     """Fuses and renames one attention's projections onto ``query_proj``.
 
     In place: ``wq_a`` + ``wkv`` -> ``query_proj.fused_wqa_wkv`` and
-    ``wq_b`` -> ``query_proj.wq_b`` (host-dequantized to bf16), ``q_norm``
-    -> ``query_proj.q_norm``, the indexer's ``wq_b`` dequantized, and the
-    consumed scales dropped. Used for trunk layers and DSpark stages.
+    ``wq_b`` -> ``query_proj.wq_b``, ``q_norm`` -> ``query_proj.q_norm``.
+    These and the indexer's ``wq_b`` keep their fp8 weights and scales
+    under :func:`~.model_config.q_mxfp8_enabled`, and are host-dequantized
+    to bf16 otherwise. Used for trunk layers and DSpark stages.
+
+    Raises:
+        ValueError: If only one of ``wq_a`` and ``wkv`` stays MXFP8.
     """
-    fused_name = f"{attn}.query_proj.fused_wqa_wkv.weight"
-    out[fused_name] = with_dtype(
+    mxfp8 = q_mxfp8_enabled()
+    fused = f"{attn}.query_proj.fused_wqa_wkv"
+    parts = [
+        _query_weight(out, f"{attn}.{projection}", mxfp8=mxfp8)
+        for projection in FUSED_QUERY_PROJECTIONS
+    ]
+    scales = [scale for _, scale in parts if scale is not None]
+    if scales and len(scales) != len(parts):
+        raise ValueError(
+            f"{fused}: {FUSED_QUERY_PROJECTIONS} must all be fp8 or none"
+        )
+    out[f"{fused}.weight"] = with_dtype(
         np.concatenate(
-            [
-                _as_same_width_bits(
-                    _trunk_dequantized_weight(out, f"{attn}.{projection}")
-                )
-                for projection in FUSED_QUERY_PROJECTIONS
-            ],
-            axis=0,
+            [_as_same_width_bits(weight) for weight, _ in parts], axis=0
         ),
-        DType.bfloat16,
-        fused_name,
+        DType.float8_e4m3fn if scales else DType.bfloat16,
+        f"{fused}.weight",
     )
-    out[f"{attn}.query_proj.wq_b.weight"] = _trunk_dequantized_weight(
-        out, f"{attn}.wq_b"
-    )
-    out[f"{attn}.query_proj.q_norm.weight"] = out.pop(f"{attn}.q_norm.weight")
+    projections = [(f"{attn}.wq_b", f"{attn}.query_proj.wq_b")]
     # Only index-source layers have an indexer.
     if f"{attn}.indexer.wq_b.weight" in out:
-        out[f"{attn}.indexer.wq_b.weight"] = _trunk_dequantized_weight(
-            out, f"{attn}.indexer.wq_b"
+        projections.append((f"{attn}.indexer.wq_b", f"{attn}.indexer.wq_b"))
+    for projection in FUSED_QUERY_PROJECTIONS:
+        out.pop(f"{attn}.{projection}.weight")
+        out.pop(f"{attn}.{projection}{_MAX_SCALE_SUFFIX}", None)
+    if scales:
+        out[f"{fused}{_MAX_SCALE_SUFFIX}"] = with_dtype(
+            np.concatenate([_as_same_width_bits(s) for s in scales], axis=0),
+            DType.float8_e8m0fnu,
+            f"{fused}{_MAX_SCALE_SUFFIX}",
         )
-    for stale in (
-        f"{attn}.wq_a.weight",
-        f"{attn}.wq_a{_MAX_SCALE_SUFFIX}",
-        f"{attn}.wkv.weight",
-        f"{attn}.wkv{_MAX_SCALE_SUFFIX}",
-        f"{attn}.wq_b.weight",
-        f"{attn}.wq_b{_MAX_SCALE_SUFFIX}",
-        f"{attn}.indexer.wq_b{_MAX_SCALE_SUFFIX}",
-    ):
-        out.pop(stale, None)
+    for source, target in projections:
+        weight, scale = _query_weight(out, source, mxfp8=mxfp8)
+        out.pop(f"{source}.weight")
+        out.pop(f"{source}{_MAX_SCALE_SUFFIX}", None)
+        out[f"{target}.weight"] = weight
+        if scale is not None:
+            out[f"{target}{_MAX_SCALE_SUFFIX}"] = scale
+    out[f"{attn}.query_proj.q_norm.weight"] = out.pop(f"{attn}.q_norm.weight")
 
 
 def _fill_gate_bias_vl(out: dict[str, WeightData], gate: str) -> None:
@@ -992,6 +998,7 @@ def convert_weight_data(
         woa_mxfp8 = woa_mxfp8_enabled()
     if head_bf16 is None:
         head_bf16 = head_bf16_enabled()
+    compressor_bf16 = compressor_bf16_enabled()
     new_state_dict: dict[str, WeightData] = {}
     interleave_trunk = gate_up_rows_interleaved(
         num_routed_experts, data_parallel_degree
@@ -1113,6 +1120,10 @@ def convert_weight_data(
         if (
             name.endswith(FLOAT32_WEIGHT_SUFFIXES)
             or (name == HEAD_WEIGHT and not head_bf16)
+            or (
+                name.endswith(COMPRESSOR_WEIGHT_SUFFIXES)
+                and not compressor_bf16
+            )
         ) and data.dtype == DType.bfloat16:
             new_state_dict[name] = bfloat16_to_float32(data, name)
             continue

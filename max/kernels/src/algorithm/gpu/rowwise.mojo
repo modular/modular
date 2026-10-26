@@ -1560,10 +1560,11 @@ def _launch[
     """
     comptime rank = shape.rank
     comptime sm_count = ctx.default_device_info.sm_count
+    comptime warp_size = ctx.default_device_info.warp_size
     comptime effective_simd = simd_width
 
     # One wave per block: the smallest tiled block that leaves no lane idle.
-    comptime tiled_block_size = ctx.default_device_info.warp_size
+    comptime tiled_block_size = warp_size
 
     comptime is_nvidia_device = ctx.default_device_info.api == "cuda"
     comptime tiled_min_rows_per_sm = (
@@ -1792,10 +1793,10 @@ def _launch[
     # cols=128 divisible neighbor won 2.44x) — see
     # `Kernels/claude_kb/entries/known-limitations/rowwise-gpu-warp-tier-simd-divisibility-cliffs.md`.
     var warp_max = (
-        WARP_SIZE * effective_simd * _WARP_TIER_CHUNK_CAP
-    ) if warp_simd else WARP_SIZE * _WARP_TIER_CHUNK_CAP
+        warp_size * effective_simd * _WARP_TIER_CHUNK_CAP
+    ) if warp_simd else warp_size * _WARP_TIER_CHUNK_CAP
     if row_size <= warp_max:
-        comptime WARP_BLOCK_SIZE = WARP_SIZE * WARP_BLOCK_WARPS
+        comptime WARP_BLOCK_SIZE = warp_size * WARP_BLOCK_WARPS
         var num_blocks = min(
             ceildiv(num_rows, WARP_BLOCK_WARPS),
             sm_count * _SM_OVERPROVISION,
@@ -1832,7 +1833,7 @@ def _launch[
         var warp_sw = 1
         if warp_simd:
             warp_sw = effective_simd
-            while warp_sw > 1 and WARP_SIZE * warp_sw > row_size:
+            while warp_sw > 1 and warp_size * warp_sw > row_size:
                 warp_sw //= 2
 
         comptime for i in range(log2_floor(effective_simd) + 1):

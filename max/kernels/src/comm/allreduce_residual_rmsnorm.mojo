@@ -68,7 +68,6 @@ from std.sys import (
 
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    WARP_SIZE,
     block_idx,
     grid_dim,
     thread_idx,
@@ -86,7 +85,7 @@ from layout import (
     row_major,
 )
 from layout.tile_tensor import _ComptimeConditionalTileTensor
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type
 
 
@@ -990,13 +989,11 @@ def _launch_split_allreduce_rmsnorm_fp8[
     # Define input_fn for RMSNorm (reads from residual_output after allreduce).
     @inline(.always)
     def input_fn[
-        width: Int, _rank: Int
-    ](idx: IndexList[_rank]) {var residual_output_2d} -> SIMD[in_dtype, width]:
-        return residual_output_2d.load[width=width, alignment=width](
-            (idx[0], idx[1])
-        )
+        width: Int
+    ](coords: Coord) {var residual_output_2d} -> SIMD[in_dtype, width]:
+        return residual_output_2d.load[width=width, alignment=width](coords)
 
-    var shape = IndexList[2](rows, cols)
+    var shape = (rows, cols)
     var scale_output_2d = TileTensor(
         scale_output_1d.ptr, row_major(rows, Idx[1])
     )
@@ -1108,8 +1105,11 @@ def _dispatch_fused_kernel[
     if rows == 0:
         return
 
-    comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
-    comptime threads_per_block = max_warps_per_block * WARP_SIZE
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime max_warps_per_block = (
+        ctx.default_device_info.max_thread_block_size // warp_size
+    )
+    comptime threads_per_block = max_warps_per_block * warp_size
     comptime base_simd_width = simd_width_of[in_dtype, target=ctx.target]()
     comptime sw1 = base_simd_width
     comptime sw2 = base_simd_width * 2
@@ -1334,18 +1334,18 @@ def _dispatch_fused_kernel[
 
     # Warp-tiling: each thread handles simd_width elements. Wider simd for
     # larger column counts.
-    if cols <= (WARP_SIZE * sw1 * max_warps_per_block):
+    if cols <= (warp_size * sw1 * max_warps_per_block):
         if use_2stage:
             launch_2stage[sw1]()
         else:
             launch_1stage[sw1]()
-    elif cols <= (WARP_SIZE * sw2 * max_warps_per_block) and cols % sw2 == 0:
+    elif cols <= (warp_size * sw2 * max_warps_per_block) and cols % sw2 == 0:
         if use_2stage:
             launch_2stage[sw2]()
         else:
             launch_1stage[sw2]()
     else:
-        comptime max_cols = WARP_SIZE * sw2 * max_warps_per_block
+        comptime max_cols = warp_size * sw2 * max_warps_per_block
         raise Error(
             "allreduce_rmsnorm: cols ("
             + String(cols)

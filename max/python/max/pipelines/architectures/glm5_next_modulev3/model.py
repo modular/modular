@@ -45,6 +45,11 @@ class Glm5NextModel(DeepseekV3_2Model):
 
     model_config_cls: ClassVar[type[Any]] = Glm5NextConfig
 
+    # The decoder shards the MoE rows across the TP ranks before the expert
+    # dispatch (`Glm5NextDecoderLayer.forward`), so exporters pick the P2P
+    # EP backend.
+    ep_dispatch_token_layout: ClassVar[str] = "tp_sharded"
+
     @classmethod
     def get_kv_params(
         cls,

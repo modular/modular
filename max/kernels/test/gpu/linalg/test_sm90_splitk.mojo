@@ -30,6 +30,7 @@ from linalg.matmul.gpu.sm90.matmul import warp_specialize_gemm_with_multicasting
 from linalg.matmul.gpu.tile_scheduler import RasterOrder
 from linalg.utils_gpu import MatmulConfig
 
+from std.utils.coord import Coord
 from std.utils.index import Index, IndexList
 
 
@@ -38,11 +39,11 @@ def test_warp_specialize_gemm_with_multicasting[
     NType: CoordLike,
     KType: CoordLike,
     //,
-    block_tile_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    cluster_shape: IndexList[3],
+    cluster_shape: Coord[Int, Int, Int],
     num_pipeline_stages: Int = 4,
     transpose_b: Bool = True,
     partitioned_multicast: Bool = False,
@@ -109,9 +110,11 @@ def test_warp_specialize_gemm_with_multicasting[
 
     comptime num_consumer: Int = 1 if BM == 64 else 2
 
-    comptime wgmma_shape = Index(
-        64, BN, 32
-    ) if a_type == .float8_e4m3fn else Index(64, BN, 16)
+    comptime wgmma_shape = (
+        64,
+        BN,
+        32,
+    ) if a_type == .float8_e4m3fn else (64, BN, 16)
 
     print(
         "wgmma_n",
@@ -223,55 +226,55 @@ def main() raises:
 
         print("FLOAT8 GEMM TESTS")
         test_warp_specialize_gemm_with_multicasting[
-            Index(64, 128, 128),
+            (64, 128, 128),
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(2, 1, 1),
+            (2, 1, 1),
             num_pipeline_stages=6,
             partitioned_multicast=False,
             splits=2,
         ](ctx, Int(33), Idx[2304], Idx[2048])
 
         test_warp_specialize_gemm_with_multicasting[
-            Index(64, 128, 128),
+            (64, 128, 128),
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(1, 2, 1),
+            (1, 2, 1),
             num_pipeline_stages=2,
             partitioned_multicast=False,
             splits=2,
         ](ctx, Int(64), Idx[384], Idx[512])
 
         test_warp_specialize_gemm_with_multicasting[
-            Index(64, 128, 128),
+            (64, 128, 128),
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(2, 1, 1),
+            (2, 1, 1),
             num_pipeline_stages=2,
             partitioned_multicast=False,
             splits=2,
         ](ctx, Int(64), Idx[384], Idx[512])
 
         test_warp_specialize_gemm_with_multicasting[
-            Index(64, 80, 128),
+            (64, 80, 128),
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(1, 2, 1),
+            (1, 2, 1),
             num_pipeline_stages=2,
             partitioned_multicast=False,
             splits=4,
         ](ctx, Int(64), Idx[2560], Idx[8192])
 
         test_warp_specialize_gemm_with_multicasting[
-            Index(128, 128, 128),
+            (128, 128, 128),
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(2, 1, 1),
+            (2, 1, 1),
             partitioned_multicast=False,
             num_pipeline_stages=4,
             splits=4,
@@ -283,11 +286,11 @@ def main() raises:
         )
 
         test_warp_specialize_gemm_with_multicasting[
-            Index(128, 128, 128),
+            (128, 128, 128),
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(2, 1, 1),
+            (2, 1, 1),
             partitioned_multicast=False,
             num_pipeline_stages=4,
         ](
@@ -298,11 +301,11 @@ def main() raises:
         )
 
         test_warp_specialize_gemm_with_multicasting[
-            Index(128, 112, 128),
+            (128, 112, 128),
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(2, 1, 1),
+            (2, 1, 1),
             num_pipeline_stages=4,
             partitioned_multicast=False,
         ](
@@ -313,146 +316,146 @@ def main() raises:
         )
 
         test_warp_specialize_gemm_with_multicasting[
-            Index(128, 128, 128),
+            (128, 128, 128),
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(1, 2, 1),
+            (1, 2, 1),
             partitioned_multicast=True,
             num_pipeline_stages=4,
             splits=2,
         ](ctx, Int(199), Idx[512], Idx[1024])
 
         test_warp_specialize_gemm_with_multicasting[
-            Index(128, 128, 128),
+            (128, 128, 128),
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(1, 2, 1),
+            (1, 2, 1),
             partitioned_multicast=False,
             num_pipeline_stages=1,
             splits=2,
         ](ctx, Int(200), Idx[256], Idx[256])
 
         test_warp_specialize_gemm_with_multicasting[
-            Index(128, 128, 128),
+            (128, 128, 128),
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(1, 2, 1),
+            (1, 2, 1),
             partitioned_multicast=True,
             num_pipeline_stages=2,
             splits=2,
         ](ctx, Int(257), Idx[384], Idx[256])
         test_warp_specialize_gemm_with_multicasting[
-            Index(128, 128, 128),
+            (128, 128, 128),
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(2, 2, 1),
+            (2, 2, 1),
             partitioned_multicast=True,
             num_pipeline_stages=2,
             splits=2,
         ](ctx, Int(257), Idx[384], Idx[256])
         test_warp_specialize_gemm_with_multicasting[
-            Index(128, 128, 128),
+            (128, 128, 128),
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(2, 1, 1),
+            (2, 1, 1),
             partitioned_multicast=True,
             num_pipeline_stages=2,
             splits=2,
         ](ctx, Int(257), Idx[384], Idx[256])
 
         test_warp_specialize_gemm_with_multicasting[
-            Index(128, 128, 128),
+            (128, 128, 128),
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(1, 2, 1),
+            (1, 2, 1),
             partitioned_multicast=True,
             num_pipeline_stages=2,
             splits=2,
         ](ctx, Int(255), Idx[384], Idx[256])
         test_warp_specialize_gemm_with_multicasting[
-            Index(128, 128, 128),
+            (128, 128, 128),
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(2, 2, 1),
+            (2, 2, 1),
             partitioned_multicast=True,
             num_pipeline_stages=2,
             splits=2,
         ](ctx, Int(255), Idx[384], Idx[256])
         test_warp_specialize_gemm_with_multicasting[
-            Index(128, 128, 128),
+            (128, 128, 128),
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(2, 1, 1),
+            (2, 1, 1),
             partitioned_multicast=True,
             num_pipeline_stages=2,
             splits=2,
         ](ctx, Int(255), Idx[384], Idx[256])
 
         test_warp_specialize_gemm_with_multicasting[
-            Index(128, 128, 128),
+            (128, 128, 128),
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(1, 2, 1),
+            (1, 2, 1),
             partitioned_multicast=True,
             num_pipeline_stages=2,
             splits=2,
         ](ctx, Int(129), Idx[512], Idx[256])
         test_warp_specialize_gemm_with_multicasting[
-            Index(128, 128, 128),
+            (128, 128, 128),
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(2, 2, 1),
+            (2, 2, 1),
             partitioned_multicast=True,
             num_pipeline_stages=2,
             splits=2,
         ](ctx, Int(129), Idx[512], Idx[256])
         test_warp_specialize_gemm_with_multicasting[
-            Index(128, 128, 128),
+            (128, 128, 128),
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(2, 1, 1),
+            (2, 1, 1),
             partitioned_multicast=True,
             num_pipeline_stages=2,
             splits=2,
         ](ctx, Int(129), Idx[512], Idx[256])
 
         test_warp_specialize_gemm_with_multicasting[
-            Index(128, 128, 128),
+            (128, 128, 128),
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(1, 2, 1),
+            (1, 2, 1),
             partitioned_multicast=True,
             num_pipeline_stages=2,
             splits=2,
         ](ctx, Int(127), Idx[512], Idx[256])
         test_warp_specialize_gemm_with_multicasting[
-            Index(128, 128, 128),
+            (128, 128, 128),
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(2, 2, 1),
+            (2, 2, 1),
             partitioned_multicast=True,
             num_pipeline_stages=2,
             splits=2,
         ](ctx, Int(127), Idx[512], Idx[256])
         test_warp_specialize_gemm_with_multicasting[
-            Index(128, 128, 128),
+            (128, 128, 128),
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            Index(2, 1, 1),
+            (2, 1, 1),
             partitioned_multicast=True,
             num_pipeline_stages=2,
             splits=2,
@@ -460,33 +463,33 @@ def main() raises:
 
         print("BFLOAT16 GEMM TESTS")
         test_warp_specialize_gemm_with_multicasting[
-            Index(64, 128, 64),
+            (64, 128, 64),
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(1, 1, 1),
+            (1, 1, 1),
             num_pipeline_stages=2,
             partitioned_multicast=False,
             splits=2,
         ](ctx, Int(64), Idx[384], Idx[512])
 
         test_warp_specialize_gemm_with_multicasting[
-            Index(64, 80, 64),
+            (64, 80, 64),
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(2, 1, 1),
+            (2, 1, 1),
             num_pipeline_stages=8,
             partitioned_multicast=False,
             splits=4,
         ](ctx, Int(64), Idx[2560], Idx[8192])
 
         test_warp_specialize_gemm_with_multicasting[
-            Index(128, 128, 64),
+            (128, 128, 64),
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(1, 1, 1),
+            (1, 1, 1),
             num_pipeline_stages=4,
             partitioned_multicast=False,
         ](
@@ -497,11 +500,11 @@ def main() raises:
         )
 
         test_warp_specialize_gemm_with_multicasting[
-            Index(128, 80, 64),
+            (128, 80, 64),
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(1, 1, 1),
+            (1, 1, 1),
             num_pipeline_stages=6,
             partitioned_multicast=False,
         ](
@@ -512,11 +515,11 @@ def main() raises:
         )
 
         test_warp_specialize_gemm_with_multicasting[
-            Index(64, 256, 64),
+            (64, 256, 64),
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(1, 1, 1),
+            (1, 1, 1),
             num_pipeline_stages=4,
             partitioned_multicast=False,
             splits=2,
@@ -528,11 +531,11 @@ def main() raises:
         )
 
         test_warp_specialize_gemm_with_multicasting[
-            Index(64, 80, 64),
+            (64, 80, 64),
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(1, 2, 1),
+            (1, 2, 1),
             num_pipeline_stages=6,
             partitioned_multicast=False,
             splits=4,
@@ -544,11 +547,11 @@ def main() raises:
         )
 
         test_warp_specialize_gemm_with_multicasting[
-            Index(64, 128, 64),
+            (64, 128, 64),
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(1, 1, 1),
+            (1, 1, 1),
             num_pipeline_stages=4,
             partitioned_multicast=False,
             splits=2,
@@ -560,86 +563,86 @@ def main() raises:
         )
 
         test_warp_specialize_gemm_with_multicasting[
-            Index(64, 128, 64),
+            (64, 128, 64),
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(1, 2, 1),
+            (1, 2, 1),
             num_pipeline_stages=2,
             partitioned_multicast=False,
             splits=2,
         ](ctx, Int(64), Idx[384], Idx[512])
 
         test_warp_specialize_gemm_with_multicasting[
-            Index(64, 128, 64),
+            (64, 128, 64),
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(2, 1, 1),
+            (2, 1, 1),
             num_pipeline_stages=2,
             partitioned_multicast=True,
             splits=2,
         ](ctx, Int(64), Idx[384], Idx[512])
 
         test_warp_specialize_gemm_with_multicasting[
-            Index(64, 80, 64),
+            (64, 80, 64),
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(1, 2, 1),
+            (1, 2, 1),
             num_pipeline_stages=2,
             partitioned_multicast=True,
             splits=4,
         ](ctx, Int(64), Idx[2560], Idx[8192])
 
         test_warp_specialize_gemm_with_multicasting[
-            Index(64, 80, 64),
+            (64, 80, 64),
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(2, 1, 1),
+            (2, 1, 1),
             num_pipeline_stages=2,
             partitioned_multicast=True,
             splits=4,
         ](ctx, Int(64), Idx[2560], Idx[8192])
 
         test_warp_specialize_gemm_with_multicasting[
-            Index(128, 256, 64),
+            (128, 256, 64),
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(2, 1, 1),
+            (2, 1, 1),
             partitioned_multicast=False,
             splits=4,
         ](ctx, Int(8192), Idx[8192], Idx[2048])
 
         test_warp_specialize_gemm_with_multicasting[
-            Index(128, 256, 64),
+            (128, 256, 64),
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(2, 1, 1),
+            (2, 1, 1),
             partitioned_multicast=False,
             splits=4,
         ](ctx, Int(4096), Idx[8192], Idx[2048])
 
         test_warp_specialize_gemm_with_multicasting[
-            Index(128, 256, 64),
+            (128, 256, 64),
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(2, 1, 1),
+            (2, 1, 1),
             partitioned_multicast=False,
             use_tma_store=True,
             splits=4,
         ](ctx, Int(4096), Idx[8192], Idx[2048])
 
         test_warp_specialize_gemm_with_multicasting[
-            Index(128, 256, 64),
+            (128, 256, 64),
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(2, 1, 1),
+            (2, 1, 1),
             partitioned_multicast=False,
             splits=4,
         ](
@@ -650,11 +653,11 @@ def main() raises:
         )
 
         test_warp_specialize_gemm_with_multicasting[
-            Index(128, 256, 64),
+            (128, 256, 64),
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(2, 1, 1),
+            (2, 1, 1),
             partitioned_multicast=False,
         ](
             ctx,
@@ -664,11 +667,11 @@ def main() raises:
         )
 
         test_warp_specialize_gemm_with_multicasting[
-            Index(128, 256, 64),
+            (128, 256, 64),
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(1, 2, 1),
+            (1, 2, 1),
             partitioned_multicast=False,
             splits=2,
         ](
@@ -679,11 +682,11 @@ def main() raises:
         )
 
         test_warp_specialize_gemm_with_multicasting[
-            Index(128, 256, 64),
+            (128, 256, 64),
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(2, 2, 1),
+            (2, 2, 1),
             partitioned_multicast=False,
             splits=4,
         ](

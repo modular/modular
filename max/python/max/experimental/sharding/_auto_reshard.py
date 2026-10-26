@@ -70,8 +70,10 @@ MeshAxisChoice = tuple[
 In order: each input's placement on the axis before the choice, every
 feasible row with its cost (cheapest first, then fewest inputs moved, then
 the rule's order), the cheapest allowed row (``None`` if no row is
-allowed), and the row committed for the axes after it (the allowed row, or
-the cheapest row within :data:`DEFAULT_TRANSITIONS` when none is allowed).
+allowed), and the row committed for the axes after it: the allowed row, else
+the cheapest row within :data:`DEFAULT_TRANSITIONS`, else the globally
+cheapest row. The committed row decides what the axes after this one rank
+against, so the report can suggest moves the allowed set could reach.
 """
 
 
@@ -87,8 +89,8 @@ def auto_reshard(
     are all in ``allowed_transitions``, and ``mode`` decides what happens
     when that row moves an input. Outside any block the picker allows
     :data:`DEFAULT_TRANSITIONS` and raises when a row would move an input;
-    an argument left out keeps the enclosing block's setting. Use ``"warn"`` to find
-    the moves an op makes, and ``"raise"`` to require each one to be
+    an argument left out keeps the enclosing block's setting. Use ``"warn"``
+    to find the moves an op makes, and ``"raise"`` to require each one to be
     written as an explicit ``transfer_to``. Also works as a decorator. For
     example:
 
@@ -107,7 +109,7 @@ def auto_reshard(
             ...
         with auto_reshard(mode="raise"):   # require explicit transfer_to
             ...
-        with auto_reshard(ALL_TRANSITIONS):      # sequence parallelism too
+        with auto_reshard(ALL_TRANSITIONS):      # reduce-scatter too
             ...
         # Only allreduce partial sums.
         with auto_reshard({(Partial, Replicated)}):

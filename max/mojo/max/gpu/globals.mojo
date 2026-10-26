@@ -48,6 +48,9 @@ instructions synchronously as a unit. The target's MAX plugin sets it:
 - 32 threads per warp on Apple GPUs
 - In host code, the warp size of the build's accelerator, or 0 without one
 
+Host code that sizes a launch should use the warp size of the device it
+launches on, `ctx.default_device_info.warp_size`, rather than this constant.
+
 The warp size is a fundamental parameter that affects:
 - Thread scheduling and execution
 - Memory access coalescing

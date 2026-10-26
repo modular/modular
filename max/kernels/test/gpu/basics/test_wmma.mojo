@@ -15,7 +15,7 @@ from std.math import ceildiv
 from std.memory.alloc import unsafe_alloc
 from std.random import random_si64
 
-from max.gpu import WARP_SIZE, block_idx
+from max.gpu import block_idx
 from max.gpu.host import DeviceContext
 from max.gpu.compute.mma import mma
 from max.gpu.compute.mma_util import (
@@ -289,7 +289,7 @@ def run_mma_fp32_tf32(
             Int32(N),
             Int32(K),
             grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
-            block_dim=WARP_PER_BLOCK * WARP_SIZE,
+            block_dim=WARP_PER_BLOCK * ctx.default_device_info.warp_size,
         )
 
     var nstime = ctx.execution_time(run_func_mma, iterations)
@@ -458,7 +458,7 @@ def run_mma_fp32_bf16(
             Int32(N),
             Int32(K),
             grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
-            block_dim=WARP_PER_BLOCK * WARP_SIZE,
+            block_dim=WARP_PER_BLOCK * ctx.default_device_info.warp_size,
         )
 
     var nstime = ctx.execution_time(run_func_mma, iterations)
@@ -623,7 +623,7 @@ def run_mma_fp32_bf16_2(
             Int32(N),
             Int32(K),
             grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
-            block_dim=WARP_PER_BLOCK * WARP_SIZE,
+            block_dim=WARP_PER_BLOCK * ctx.default_device_info.warp_size,
         )
 
     var nstime = ctx.execution_time(run_func_mma, iterations)
@@ -788,7 +788,7 @@ def run_mma_fp32_fp16(
             Int32(N),
             Int32(K),
             grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
-            block_dim=WARP_PER_BLOCK * WARP_SIZE,
+            block_dim=WARP_PER_BLOCK * ctx.default_device_info.warp_size,
         )
 
     var nstime = ctx.execution_time(run_func_mma, iterations)
@@ -953,7 +953,7 @@ def run_mma_fp16_fp16(
             Int32(N),
             Int32(K),
             grid_dim=(ceildiv(M, MMA_M), ceildiv(N, MMA_N)),
-            block_dim=WARP_PER_BLOCK * WARP_SIZE,
+            block_dim=WARP_PER_BLOCK * ctx.default_device_info.warp_size,
         )
 
     var nstime = ctx.execution_time(run_func_mma, iterations)

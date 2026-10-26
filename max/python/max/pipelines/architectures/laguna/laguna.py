@@ -16,19 +16,24 @@
 Laguna is a Mixture-of-Experts decoder-only transformer with:
 
 - GQA attention with per-head QK norm and rotary embeddings
-- A per-element softplus gate applied to the attention output
+- A softplus gate applied to the attention output, per head or per element
+  depending on the config's ``gating``
 - Sigmoid MoE routing with per-expert score-correction bias
 - Gated MLP (SwiGLU) experts
 
-Attention is uniform GQA (64 query / 8 KV heads, full rotary, single RoPE
-table); only the MLP type (dense prefix vs sparse MoE) varies per layer, read
-from the HF config's ``mlp_layer_types``.
+Attention type varies per layer, from ``layer_types``: ``sliding_attention``
+layers get their own KV cache leaf, sliding-window mask and RoPE table, while
+``full_attention`` layers stay full causal on theirs, and a checkpoint with no
+sliding layer keeps a single flat cache and table. The MLP type (dense prefix
+vs sparse MoE) varies per layer too, from ``mlp_layer_types``, as does its
+precision: a checkpoint can pack some layers' MLPs as NVFP4 and leave the rest
+bfloat16.
 """
 
 from __future__ import annotations
 
 import functools
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +61,8 @@ from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
+    KVCacheParams,
+    MultiKVCacheParams,
     PagedCacheValues,
 )
 from max.nn.layer import LayerList, Module
@@ -63,7 +70,7 @@ from max.nn.linear import MLP as DenseMLP
 from max.nn.linear import ColumnParallelLinear, Linear
 from max.nn.moe import MoE, MoEQuantized, forward_moe_sharded_layers
 from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.rotary_embedding import RotaryEmbedding, YarnScalingParams
 from max.nn.transformer import (
     DecoderOutputs,
     ReturnHiddenStates,
@@ -81,17 +88,27 @@ from max.tree import Tree
 
 from .layers.attention import LagunaAttention
 from .layers.moe_gate import LagunaTopKRouter
-from .layers.rotary_embedding import LagunaRotaryEmbedding
+from .layers.rotary_embedding import (
+    LagunaRotaryEmbedding,
+    LagunaYarnPartialRotaryEmbedding,
+)
 from .model_config import LagunaConfig
+
+
+def _rotary_dim(rope_params: Mapping[str, Any], head_dim: int) -> int:
+    """Returns how many of a head's lanes a RoPE table rotates."""
+    return int(head_dim * float(rope_params.get("partial_rotary_factor", 1.0)))
 
 
 class LagunaTransformerBlock(Module):
     """Laguna decoder block.
 
-    Attention is uniform GQA with per-head QK norm and a single (YaRN) RoPE
-    table. The only per-layer difference is the MLP type: a dense SwiGLU MLP
-    for the dense-prefix layers (``mlp_layer_types[i] == "dense"``) and the
-    EP-sharded sparse MoE block for the rest.
+    Four things vary per layer: the attention type, which picks the mask, the
+    KV cache leaf, and the RoPE table and rotary dim; the query-head count,
+    which sizes ``q_proj``, ``o_proj`` and ``g_proj`` and so the GQA ratio (KV
+    heads stay uniform); the MLP type, dense SwiGLU or EP-sharded sparse MoE;
+    and whether that MLP is packed NVFP4. All four are fixed at construction,
+    so a subgraph group never mixes them.
     """
 
     def __init__(
@@ -102,11 +119,20 @@ class LagunaTransformerBlock(Module):
         create_norm: Callable[..., RMSNorm],
         linear_cls: Callable[..., Linear],
         ep_manager: EPBatchManager | None = None,
+        *,
+        attention_type: str,
+        num_attention_heads: int,
+        kv_params: KVCacheParams,
+        local_window_size: int,
+        gating_mode: str,
+        rotary_dim: int,
     ) -> None:
         super().__init__()
         self.devices = config.devices
         num_devices = len(config.devices)
         self.layer_idx = layer_idx
+        self.attention_type = attention_type
+        is_sliding = attention_type == "sliding_attention"
 
         mlp_type = (
             config.mlp_layer_types[layer_idx]
@@ -115,10 +141,10 @@ class LagunaTransformerBlock(Module):
         )
         self.is_sparse_mlp = mlp_type == "sparse"
 
-        # M.1-NVFP4 keeps attention in bf16 (it's in the quant ignore list);
-        # only MLP/MoE are FP4. Quantize attention only when its weights are
-        # actually a packed/low-precision dtype (auto-detected from q_proj),
-        # NOT merely because attn_dtype matches the bf16 compute dtype.
+        # Laguna NVFP4 checkpoints keep attention in bf16 (it is in the quant
+        # ignore list); only MLP/MoE are FP4. Quantize attention only when its
+        # weights are actually a packed/low-precision dtype (auto-detected from
+        # q_proj), NOT merely because attn_dtype matches the bf16 compute dtype.
         attn_dtype = config.attn_dtype or config.dtype
         attn_is_quantized = (
             config.quant_config is not None
@@ -133,11 +159,15 @@ class LagunaTransformerBlock(Module):
         attn_linear_cls = linear_cls if attn_is_quantized else Linear
 
         self.self_attn = LagunaAttention(
-            num_attention_heads=config.num_attention_heads,
+            num_attention_heads=num_attention_heads,
             num_key_value_heads=config.num_key_value_heads,
             hidden_size=config.hidden_size,
-            kv_params=config.kv_params,
+            kv_params=kv_params,
             layer_idx=layer_idx,
+            is_sliding=is_sliding,
+            local_window_size=local_window_size,
+            gating_mode=gating_mode,
+            rotary_dim=rotary_dim,
             dtype=attn_dtype,
             rope=rope,
             linear_cls=attn_linear_cls,
@@ -155,7 +185,7 @@ class LagunaTransformerBlock(Module):
         if self.is_sparse_mlp:
             # Sparse and dense layers assign different (both Shardable) types
             # to the same attribute, so annotate the union.
-            self.mlp: MoE | DenseMLP = self._get_moe(config, linear_cls)
+            self.mlp: MoE | DenseMLP = self._get_moe(config, layer_idx)
             if ep_manager is not None:
                 # Multi-GPU: expert-parallel sharding via the EP batch
                 # manager. Each device owns a slice of the 256 experts;
@@ -178,7 +208,7 @@ class LagunaTransformerBlock(Module):
                 self.mlp.shard(config.devices)
             )
         else:
-            self.mlp = self._get_dense_mlp(config, linear_cls)
+            self.mlp = self._get_dense_mlp(config, layer_idx)
             self.mlp.sharding_strategy = ShardingStrategy.replicate(num_devices)
             self.mlp_shards = self.mlp.shard(config.devices)
 
@@ -196,18 +226,24 @@ class LagunaTransformerBlock(Module):
             self.post_attention_layernorm.shard(config.devices)
         )
 
-    def _get_moe(
-        self,
-        config: LagunaConfig,
-        linear_cls: Callable[..., Linear],
-    ) -> MoE:
+    def _get_moe(self, config: LagunaConfig, layer_idx: int) -> MoE:
         """Creates the sparse MoE block (sigmoid routing + shared experts + scaling).
 
         ``moe_dim`` here is ``moe_intermediate_size`` (the routed-expert
         intermediate dim from the HF config — NOT the dense-layer
         intermediate, ``intermediate_size_dense``).
+
+        The routed experts may be packed NVFP4 or plain bfloat16;
+        ``quant_config.mlp_quantized_layers``, read off the checkpoint, says
+        which. An unquantized layer must also drop ``config.dtype``, which on a
+        quantized checkpoint is the packed-FP4 storage dtype.
         """
-        moe_cls = MoEQuantized if config.quant_config is not None else MoE
+        quant_config = config.quant_config
+        is_quantized = (
+            quant_config is not None
+            and layer_idx in quant_config.mlp_quantized_layers
+        )
+        moe_cls = MoEQuantized if is_quantized else MoE
         return moe_cls(
             devices=config.devices,
             hidden_dim=config.hidden_size,
@@ -224,8 +260,16 @@ class LagunaTransformerBlock(Module):
                 routed_scaling_factor=config.moe_routed_scaling_factor,
                 router_logit_softcapping=config.moe_router_logit_softcapping,
             ),
-            dtype=config.dtype,
-            quant_config=config.quant_config,
+            dtype=config.dtype if is_quantized else config.unquantized_dtype,
+            quant_config=quant_config if is_quantized else None,
+            # ``max.nn.moe`` keeps the shared experts unquantized only when
+            # their dtype differs from the routed one; equal dtypes pack them
+            # alongside, which is what a uniformly packed checkpoint wants.
+            shared_experts_dtype=(
+                quant_config.shared_experts_weight_dtype or config.dtype
+                if is_quantized and quant_config is not None
+                else None
+            ),
             # Laguna has an always-on shared expert added to the routed
             # output. MAX MoE handles this when ``has_shared_experts=True``
             # — it materialises a ``self.shared_experts`` MLP and adds its
@@ -241,25 +285,22 @@ class LagunaTransformerBlock(Module):
             ),
         )
 
-    def _get_dense_mlp(
-        self,
-        config: LagunaConfig,
-        linear_cls: Callable[..., Linear],
-    ) -> DenseMLP:
-        """Builds the dense SwiGLU MLP used for layer 0 (``mlp_layer_types[0] == "dense"``).
+    def _get_dense_mlp(self, config: LagunaConfig, layer_idx: int) -> DenseMLP:
+        """Builds the dense SwiGLU MLP a ``mlp_layer_types[i] == "dense"`` layer uses.
 
         Distinct from the routed-expert MLPs (which use
         ``moe_intermediate_size``). The dense MLP uses
-        ``intermediate_size_dense`` from the HF config.
+        ``intermediate_size_dense`` from the HF config, and is packed NVFP4 only
+        when the checkpoint shipped scales for it.
         """
+        is_quantized = (
+            config.quant_config is not None
+            and layer_idx in config.quant_config.mlp_quantized_layers
+        )
         return DenseMLP(
-            dtype=config.dtype,
+            dtype=config.dtype if is_quantized else config.unquantized_dtype,
             quantization_encoding=None,
-            # MAX's MLP passes its own ``quant_config`` to the projection
-            # Linears (overriding any partial in ``linear_cls``), so set it here
-            # to make dense layer 0 NVFP4-packed when the model is quantized.
-            # ``None`` for a bf16 config leaves the projections unquantized.
-            quant_config=config.quant_config,
+            quant_config=config.quant_config if is_quantized else None,
             hidden_dim=config.hidden_size,
             feed_forward_length=config.intermediate_size_dense,
             devices=config.devices,
@@ -322,7 +363,12 @@ class LagunaTransformerBlock(Module):
 
 
 class Laguna(DistributedLogitsPostprocessMixin, Module):
-    """Laguna model supporting single-GPU and multi-GPU TP inference."""
+    """Laguna model supporting single-GPU and multi-GPU TP inference.
+
+    Owns the per-layer schedule the blocks are built from: which attention type,
+    cache leaf and RoPE table each layer takes, how many query heads it has, and
+    which layers can share a decoder subgraph.
+    """
 
     def __init__(self, config: LagunaConfig) -> None:
         super().__init__()
@@ -341,20 +387,35 @@ class Laguna(DistributedLogitsPostprocessMixin, Module):
         ):
             raise NotImplementedError("GGUFQ Laguna is not implemented yet")
 
-        # Single (YaRN) RoPE table. ``partial_rotary_factor`` (1.0 for M.1 =
-        # full rotary) and the YaRN scaling come from the HF config.
-        rope = LagunaRotaryEmbedding(
-            dim=config.hidden_size,
-            n_heads=config.num_attention_heads,
-            theta=config.rope_theta,
-            max_seq_len=config.max_seq_len,
-            head_dim=config.kv_params.head_dim,
-            interleaved=False,
-            scaling_params=ProportionalScalingParams(
-                partial_rotary_factor=config.partial_rotary_factor,
-            ),
-        )
-        self.rope = rope
+        # Both cache leaves share head_dim, so either resolves the RoPE table.
+        kv_params_by_type = self._kv_params_by_type(config)
+        head_dim = kv_params_by_type["full_attention"].head_dim
+
+        schedule = config.layer_schedule
+        if schedule is None:
+            raise ValueError(
+                "LagunaConfig.layer_schedule is unset; it is populated by "
+                "LagunaConfig.initialize_from_config."
+            )
+
+        # One RoPE table per attention type: the full-attention table is
+        # YaRN-scaled and rotates only part of each head, the sliding one is
+        # plain and full-rotary.
+        rope_params_by_type: dict[str, Mapping[str, Any]] = {
+            "full_attention": schedule.full_rope
+        }
+        if schedule.sliding_rope is not None:
+            rope_params_by_type["sliding_attention"] = schedule.sliding_rope
+        self._rope_by_type = {
+            layer_type: self._build_rope(config, params, head_dim)
+            for layer_type, params in rope_params_by_type.items()
+        }
+        self._rotary_dim_by_type = {
+            layer_type: _rotary_dim(params, head_dim)
+            for layer_type, params in rope_params_by_type.items()
+        }
+        self.rope_full = self._rope_by_type["full_attention"]
+        self.rope_sliding = self._rope_by_type.get("sliding_attention")
 
         create_norm = functools.partial(
             RMSNorm,
@@ -366,33 +427,62 @@ class Laguna(DistributedLogitsPostprocessMixin, Module):
 
         linear_cls = functools.partial(Linear, quant_config=config.quant_config)
 
+        num_layers = config.num_hidden_layers
+        self._layer_types = list(schedule.layer_types)
+        self._layer_heads = list(schedule.num_heads_per_layer)
+
+        # Each layer addresses its cache leaf by an index counted within its
+        # own attention type, not by its position in the model.
+        type_counts: dict[str, int] = {}
+        self._layer_idx_in_cache: list[int] = []
+        for layer_type in self._layer_types:
+            self._layer_idx_in_cache.append(type_counts.get(layer_type, 0))
+            type_counts[layer_type] = type_counts.get(layer_type, 0) + 1
+
         self.layers = LayerList(
             [
                 LagunaTransformerBlock(
                     config=config,
                     layer_idx=i,
-                    rope=rope,
+                    rope=self._rope_by_type[self._layer_types[i]],
                     create_norm=create_norm,
                     linear_cls=linear_cls,
                     ep_manager=self.ep_manager,
+                    attention_type=self._layer_types[i],
+                    num_attention_heads=self._layer_heads[i],
+                    kv_params=kv_params_by_type[self._layer_types[i]],
+                    local_window_size=schedule.sliding_window or -1,
+                    gating_mode=schedule.gating_mode,
+                    rotary_dim=self._rotary_dim_by_type[self._layer_types[i]],
                 )
-                for i in range(config.num_hidden_layers)
+                for i in range(num_layers)
             ]
         )
 
+        self._subgraph_group_keys: list[tuple[str, int, str, bool]] = []
+        self.subgraph_layer_groups: list[list[int]] = []
         if config.use_subgraphs:
-            # Only the MLP type varies across layers (dense vs sparse), so a
-            # single subgraph can't cover both shapes. Group layers by MLP
-            # type so each subgraph is reused across structurally identical
-            # layers (two groups: the dense prefix and the sparse MoE rest).
-            num_layers = config.num_hidden_layers
+            # A subgraph's signature is fixed by its first layer, so layers may
+            # only share one when they agree on everything that shapes a block.
             mlp_types = config.mlp_layer_types or (["sparse"] * num_layers)
-            groups: dict[str, list[int]] = {}
+            quantized_mlps = (
+                config.quant_config.mlp_quantized_layers
+                if config.quant_config is not None
+                else set()
+            )
+            groups: dict[tuple[str, int, str, bool], list[int]] = {}
             for i in range(num_layers):
-                groups.setdefault(mlp_types[i], []).append(i)
-            self.subgraph_layer_groups: list[list[int]] = list(groups.values())
-        else:
-            self.subgraph_layer_groups = []
+                groups.setdefault(
+                    (
+                        self._layer_types[i],
+                        self._layer_heads[i],
+                        mlp_types[i],
+                        i in quantized_mlps,
+                    ),
+                    [],
+                ).append(i)
+            self._subgraph_group_keys = list(groups)
+            self.subgraph_layer_groups = list(groups.values())
 
         self.norm = create_norm()
         self.norm.sharding_strategy = ShardingStrategy.replicate(
@@ -423,10 +513,85 @@ class Laguna(DistributedLogitsPostprocessMixin, Module):
         self.kv_params = config.kv_params
         self.return_logits = config.return_logits
 
+    @staticmethod
+    def _build_rope(
+        config: LagunaConfig,
+        rope_params: Mapping[str, Any],
+        head_dim: int,
+    ) -> RotaryEmbedding:
+        """Builds one attention type's RoPE table from its HF entry.
+
+        Args:
+            config: The Laguna config.
+            rope_params: One entry of the HF config's ``rope_parameters``.
+            head_dim: Lanes per head, shared by both cache leaves.
+
+        Returns:
+            The rotary embedding for the layers of that attention type.
+
+        Raises:
+            KeyError: If a YaRN table omits ``factor`` or
+                ``original_max_position_embeddings``.
+        """
+        theta = float(rope_params.get("rope_theta", 10000.0))
+        partial_rotary_factor = float(
+            rope_params.get("partial_rotary_factor", 1.0)
+        )
+        if rope_params.get("rope_type", "default") == "yarn":
+            return LagunaYarnPartialRotaryEmbedding(
+                dim=config.hidden_size,
+                n_heads=config.num_attention_heads,
+                theta=theta,
+                max_seq_len=config.max_seq_len,
+                head_dim=head_dim,
+                interleaved=False,
+                scaling_params=YarnScalingParams(
+                    factor=float(rope_params["factor"]),
+                    beta_fast=float(rope_params.get("beta_fast", 32.0)),
+                    beta_slow=float(rope_params.get("beta_slow", 1.0)),
+                    original_max_position_embeddings=int(
+                        rope_params["original_max_position_embeddings"]
+                    ),
+                    truncate=True,
+                ),
+                partial_rotary_factor=partial_rotary_factor,
+            )
+        return LagunaRotaryEmbedding(
+            dim=config.hidden_size,
+            n_heads=config.num_attention_heads,
+            theta=theta,
+            max_seq_len=config.max_seq_len,
+            head_dim=head_dim,
+            interleaved=False,
+            scaling_params=ProportionalScalingParams(
+                partial_rotary_factor=partial_rotary_factor,
+            ),
+        )
+
+    @staticmethod
+    def _kv_params_by_type(config: LagunaConfig) -> dict[str, KVCacheParams]:
+        """Maps each attention type to the cache leaf its layers address.
+
+        Args:
+            config: The Laguna config.
+
+        Returns:
+            A ``KVCacheParams`` per attention type present in the model.
+        """
+        if isinstance(config.kv_params, MultiKVCacheParams):
+            leaves: dict[str, KVCacheParams] = {}
+            for key, leaf in config.kv_params.children.items():
+                assert isinstance(leaf, KVCacheParams)
+                leaves[key] = leaf
+            return leaves
+        assert isinstance(config.kv_params, KVCacheParams)
+        return {"full_attention": config.kv_params}
+
     def __call__(
         self,
         tokens: TensorValueLike,
-        kv_collections: list[PagedCacheValues],
+        sliding_kv_collections: list[PagedCacheValues],
+        full_kv_collections: list[PagedCacheValues],
         return_n_logits: TensorValue,
         input_row_offsets: TensorValue,
         signal_buffers: list[BufferValue],
@@ -438,7 +603,9 @@ class Laguna(DistributedLogitsPostprocessMixin, Module):
 
         Args:
             tokens: Input token IDs.
-            kv_collections: KV cache per device.
+            sliding_kv_collections: Sliding-attention KV cache per device;
+                empty when the model has no sliding layer.
+            full_kv_collections: Full-attention KV cache per device.
             return_n_logits: Number of logits to return.
             input_row_offsets: Row offsets for ragged batching.
             signal_buffers: Signal buffers for allreduce.
@@ -449,8 +616,11 @@ class Laguna(DistributedLogitsPostprocessMixin, Module):
         # Allreduce produces identical embeddings on all GPUs.
         h = self.embed_tokens(tokens, signal_buffers)
 
-        # Single RoPE table, replicated per device.
-        freqs_cis = [self.rope.freqs_cis.to(device) for device in self.devices]
+        # One table per attention type, each replicated per device.
+        freqs_cis_by_type = {
+            layer_type: [rope.freqs_cis.to(device) for device in self.devices]
+            for layer_type, rope in self._rope_by_type.items()
+        }
 
         input_row_offsets_list = ops.distributed_broadcast(
             input_row_offsets.to(self.devices[0]), signal_buffers
@@ -478,23 +648,46 @@ class Laguna(DistributedLogitsPostprocessMixin, Module):
             )
 
         def inputs_for_layer(idx: int, h: list[TensorValue]) -> list[Tree[Any]]:
+            layer_type = self._layer_types[idx]
+            kv_collections = (
+                sliding_kv_collections
+                if layer_type == "sliding_attention"
+                else full_kv_collections
+            )
             values: list[Tree[Any]] = [
-                ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
+                ops.constant(
+                    self._layer_idx_in_cache[idx],
+                    DType.uint32,
+                    device=DeviceRef.CPU(),
+                ),
                 h,
                 signal_buffers,
                 kv_collections,
-                freqs_cis,
+                freqs_cis_by_type[layer_type],
                 input_row_offsets_list,
             ]
             if ep_inputs is not None:
                 values.append(ep_inputs)
             return values
 
+        def name_for_subgraph(group_idx: int) -> str:
+            attention_type, heads, mlp_type, is_quantized = (
+                self._subgraph_group_keys[group_idx]
+            )
+            flavor = (
+                "sliding" if attention_type == "sliding_attention" else "full"
+            )
+            # Every part of the group key has to appear in the name too, or two
+            # groups could collide on one subgraph.
+            precision = "nvfp4_" if is_quantized else ""
+            return f"laguna_{flavor}_{heads}h_{precision}{mlp_type}_block"
+
         h = forward_sequential_layers(
             list(self.layers),
             inputs_for_layer=inputs_for_layer,
             weight_prefix_for_layer=lambda i: f"layers.{i}.",
             subgraph_layer_groups=self.subgraph_layer_groups or None,
+            name_for_subgraph=name_for_subgraph,
             initial_hidden_states=h,
         )
 
@@ -621,10 +814,23 @@ class Laguna(DistributedLogitsPostprocessMixin, Module):
             ]
             num_kv_inputs = len(self.kv_params.flattened_kv_inputs())
             kv_inputs = [next(inputs_iter) for _ in range(num_kv_inputs)]
-            kv_collections = tree.leaves(
-                self.kv_params.unflatten_kv_inputs(iter(kv_inputs)),
-                leaf=KVCacheInputsPerDevice,
-            )
+            if isinstance(self.kv_params, MultiKVCacheParams):
+                # The tree's declaration order is the unflattening order, and
+                # swapping the two leaves would run every layer against the
+                # wrong cache without failing anything.
+                children = list(self.kv_params.children)
+                assert children == ["sliding_attention", "full_attention"], (
+                    f"Unexpected Laguna KV tree order: {children}"
+                )
+                sliding_kv_collections, full_kv_collections = (
+                    self.kv_params.unflatten_basic_kv_tree(iter(kv_inputs))
+                )
+            else:
+                sliding_kv_collections = []
+                full_kv_collections = tree.leaves(
+                    self.kv_params.unflatten_kv_inputs(iter(kv_inputs)),
+                    leaf=KVCacheInputsPerDevice,
+                )
             ep_inputs: list[TensorValue | BufferValue] = []
             for value in inputs_iter:
                 assert isinstance(value, TensorValue | BufferValue)
@@ -632,7 +838,8 @@ class Laguna(DistributedLogitsPostprocessMixin, Module):
 
             return self(
                 tokens.tensor,
-                kv_collections,
+                sliding_kv_collections,
+                full_kv_collections,
                 return_n_logits.tensor,
                 input_row_offsets.tensor,
                 signal_buffers,

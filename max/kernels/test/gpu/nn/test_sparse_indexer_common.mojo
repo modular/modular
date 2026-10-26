@@ -34,7 +34,7 @@ the same way; `_run_block_dim_invariance` turns that argument into evidence.
 """
 
 from std.collections import Set
-from max.gpu import WARP_SIZE, block_idx
+from max.gpu import block_idx
 from max.gpu.host import DeviceBuffer, DeviceContext
 from std.math import min
 from std.random import rand
@@ -341,9 +341,9 @@ def _run_block_dim_invariance(
 ) raises:
     """Every legal CTA width must emit a bit-identical `out_idxs`.
 
-    The ladder is derived from `WARP_SIZE` rather than hard-coded, because the
+    The ladder is derived from `warp_size` rather than hard-coded, because the
     contract is "a positive multiple of the warp size, at most 1024" and a
-    wave-64 arch has no legal 32-wide block. `3 * WARP_SIZE` is deliberate: the
+    wave-64 arch has no legal 32-wide block. `3 * warp_size` is deliberate: the
     contract admits non-power-of-two widths, and the prefill launcher's
     `align_up(..., WARP_SIZE)` sizing rule can land on one.
 
@@ -378,10 +378,11 @@ def _run_block_dim_invariance(
         scores_host.unsafe_ptr()
     )
 
+    comptime warp_size = ctx.default_device_info.warp_size
     var bdims = List[Int]()
     for mult in [1, 2, 3, 4, 8, 16, 32]:
-        if mult * WARP_SIZE <= 1024:
-            bdims.append(mult * WARP_SIZE)
+        if mult * warp_size <= 1024:
+            bdims.append(mult * warp_size)
 
     var reference = _launch_select(
         num_rows, num_blocks, k, host_ptr, bdims[0], ctx

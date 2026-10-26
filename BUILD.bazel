@@ -424,6 +424,16 @@ config_setting(
 )
 
 bool_flag(
+    name = "use_bench",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "use_bench_setting",
+    flag_values = {"//:use_bench": "true"},
+)
+
+bool_flag(
     name = "use_vllm",
     build_setting_default = False,
 )

@@ -61,7 +61,7 @@ from std.collections.string.string import _calc_initial_buffer_size_int32
 from std.os import abort
 
 
-from std.utils import IndexList
+from std.utils.coord import Coord
 
 from .int_tuple import (
     UNKNOWN_VALUE,
@@ -409,19 +409,16 @@ struct Layout(
         return Layout(shape, prefix_product(shape))
 
     @staticmethod
-    def col_major[rank: Int](tuple: IndexList[rank]) -> Layout:
-        """Creates a col-major layout from a IndexList with compile-time rank.
+    def col_major(tuple: Coord) -> Layout:
+        """Creates a col-major layout from a `Coord` of dimensions.
 
         This method creates a col-major layout where the first dimension varies fastest in memory.
         It handles both known and unknown dimensions at compile time, properly calculating
         strides for each dimension. If any dimension is unknown, subsequent strides will
         also be marked as unknown.
 
-        Parameters:
-            rank: The compile-time rank (number of dimensions) of the layout.
-
         Args:
-            tuple: An IndexList containing the dimensions of the layout.
+            tuple: A `Coord` containing the dimensions of the layout.
 
         Returns:
             A col-major Layout with the specified dimensions and computed strides.
@@ -430,11 +427,10 @@ struct Layout(
 
             ```mojo
             from layout import Layout
-            from std.utils import IndexList
+            from std.utils.coord import Coord
 
-            # Create a row-major layout with compile-time rank
-            var idx_list = IndexList[2](3, 4)
-            var layout = Layout.col_major[2](idx_list)
+            # Create a col-major layout
+            var layout = Layout.col_major(coord[3, 4])
             # Result: Layout with shape (3,4) and stride (1,3)
             ```
         """
@@ -442,13 +438,13 @@ struct Layout(
         var shape = IntTuple()
         var stride = IntTuple(c_stride)
 
-        comptime for i in range(rank):
-            shape.append(tuple[i])
+        comptime for i in range(tuple.rank):
+            shape.append(Int(tuple[i]))
 
         var unknown_flag = False
 
-        comptime for i in range(rank - 1):
-            var dim = tuple[i]
+        comptime for i in range(tuple.rank - 1):
+            var dim = Int(tuple[i])
 
             if dim == UNKNOWN_VALUE:
                 unknown_flag = True
@@ -485,19 +481,16 @@ struct Layout(
         return Self.row_major(shape)
 
     @staticmethod
-    def row_major[rank: Int](tuple: IndexList[rank]) -> Layout:
-        """Creates a row-major layout from a IndexList with compile-time rank.
+    def row_major(tuple: Coord) -> Layout:
+        """Creates a row-major layout from a `Coord` of dimensions.
 
         This method creates a row-major layout where the last dimension varies fastest in memory.
         It handles both known and unknown dimensions at compile time, properly calculating
         strides for each dimension. If any dimension is unknown, subsequent strides will
         also be marked as unknown.
 
-        Parameters:
-            rank: The compile-time rank (number of dimensions) of the layout.
-
         Args:
-            tuple: An IndexList containing the dimensions of the layout.
+            tuple: A `Coord` containing the dimensions of the layout.
 
         Returns:
             A row-major Layout with the specified dimensions and computed strides.
@@ -506,11 +499,10 @@ struct Layout(
 
             ```mojo
             from layout import Layout
-            from std.utils import IndexList
+            from std.utils.coord import Coord
 
             # Create a row-major layout with compile-time rank
-            var idx_list = IndexList[2](3, 4)
-            var layout = Layout.row_major[2](idx_list)
+            var layout = Layout.row_major(coord[3, 4])
             # Result: Layout with shape (3,4) and stride (4,1)
             ```
         """
@@ -520,11 +512,11 @@ struct Layout(
 
         var unknown_flag = False
 
-        comptime for i in range(rank):
-            shape.append(tuple[i])
+        comptime for i in range(tuple.rank):
+            shape.append(Int(tuple[i]))
 
-        comptime for i in range(rank - 1):
-            var dim = tuple[rank - 1 - i]
+        comptime for i in range(tuple.rank - 1):
+            var dim = Int(tuple[tuple.rank - 1 - i])
 
             if dim == UNKNOWN_VALUE:
                 unknown_flag = True

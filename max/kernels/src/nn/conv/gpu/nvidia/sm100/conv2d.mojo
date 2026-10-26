@@ -372,11 +372,7 @@ def _conv2d_fprop_impl[
         filter_type,
         out_type,
         config,
-        cluster_shape=StaticTuple[Int32, 3](
-            Int32(config.cluster_shape[0]),
-            Int32(config.cluster_shape[1]),
-            Int32(config.cluster_shape[2]),
-        ),
+        cluster_shape=config.cluster_shape,
         register_based_epilogue=register_based_epilogue,
     ]
     comptime KernelType = type_of(conv_kernel)
@@ -653,11 +649,7 @@ def conv2d_fprop_with_residual[
         filter_type,
         out_type,
         config,
-        cluster_shape=StaticTuple[Int32, 3](
-            Int32(config.cluster_shape[0]),
-            Int32(config.cluster_shape[1]),
-            Int32(config.cluster_shape[2]),
-        ),
+        cluster_shape=config.cluster_shape,
         register_based_epilogue=register_based_epilogue,
     ]
     comptime KernelType = type_of(conv_kernel)

@@ -14,7 +14,6 @@
 from std.sys.arg import argv
 
 import max.gpu.host
-import max.gpu.host._legacy._nvidia_cuda as cuda
 
 
 def compute_capability_to_arch_name(major: Int, minor: Int) -> StaticString:

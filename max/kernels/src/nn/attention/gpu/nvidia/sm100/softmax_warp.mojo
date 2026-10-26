@@ -49,7 +49,6 @@ from nn.attention.gpu.nvidia.sm100.attention import (
     FA4Config,
     EnableForcedOrdering,
     EnableEarlyAdd,
-    ExplicitTMEMCrossP,
 )
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     add_ftz,
@@ -2463,12 +2462,16 @@ def fa4_softmax[
     qkv_dtype: DType,
     rope_dtype_: Optional[DType],
     scale_dtype_: Optional[DType],
+    cross_p: Bool,
     output_type: DType,
     MaskType: MHAMask,
     //,
     KVLUTType: MHAOperand,
     config: FA4Config[
-        qkv_dtype, rope_dtype_=rope_dtype_, scale_dtype_=scale_dtype_
+        qkv_dtype,
+        rope_dtype_=rope_dtype_,
+        scale_dtype_=scale_dtype_,
+        cross_p=cross_p,
     ],
     ValidLengthType: OptionalPointer,
     SinkType: OptionalPointer,
@@ -3194,15 +3197,8 @@ def fa4_softmax[
         # tree/pairings as the aliased path below => bit-exact, no reassociation.
         comptime if CrossP:
             comptime assert not EnableForcedOrdering, (
-                "FA4_TMEM_CROSS_P per-tile store is untested with"
+                "the cross-stage-P per-tile store is untested with"
                 " FA4ForcedSoftmaxOrdering"
-            )
-            comptime assert not (
-                ExplicitTMEMCrossP
-                and not (remainder == 0 and num_batch_iters == 4)
-            ), (
-                "FA4_TMEM_CROSS_P=true was requested but the per-tile store"
-                " assumes 4 full batches (headline shape)"
             )
 
             # single inplace consume (instant at this static position)

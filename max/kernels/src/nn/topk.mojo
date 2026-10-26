@@ -126,14 +126,15 @@ def _topk_stage2_smem_bytes[
     candidates, rounded up to whole warps, plus a value and two indices per
     sample-cache slot, rounded up to `WARP_SIZE` bytes.
     """
-    var num_elem_reduced = align_up(num_blocks_per_input * max_k, WARP_SIZE)
+    comptime warp_size = DeviceContext.default_device_info.warp_size
+    var num_elem_reduced = align_up(num_blocks_per_input * max_k, warp_size)
     var candidate_bytes = num_elem_reduced * (
         size_of[Scalar[dtype]]() + size_of[DType.int]()
     )
     var sample_cache_bytes = max_k * (
         size_of[Scalar[dtype]]() + 2 * size_of[DType.int]()
     )
-    return align_up(candidate_bytes + sample_cache_bytes, WARP_SIZE)
+    return align_up(candidate_bytes + sample_cache_bytes, warp_size)
 
 
 @inline(.always)
@@ -1788,19 +1789,20 @@ def _topk_gpu[
     if batch_size == 0:
         return
 
+    comptime warp_size = ctx.default_device_info.warp_size
     # On Apple GPUs, clamp block_size to a single warp so the shared-memory
     # top-k kernels stay within Apple's static shared-memory budget, then
     # recompute blocks.
     var effective_block_size = block_size
     comptime if ctx.target.is_apple_gpu():
-        effective_block_size = WARP_SIZE
+        effective_block_size = warp_size
 
     # Define the number of blocks per grid
     var num_blocks_per_input_: Int = num_blocks_per_input.or_else(
         ceildiv(N, effective_block_size)
     )
     # Calculate largest num bytes of shmem for each stage
-    if effective_block_size % WARP_SIZE != 0:
+    if effective_block_size % warp_size != 0:
         # TODO: Need to pad in this case
         raise Error("block_size must be a multiple of WARP_SIZE")
 
@@ -2045,10 +2047,11 @@ def topk_gpu[
             block_size_ = 1024
         block_size_ = block_size.or_else(block_size_)
 
+        comptime warp_size = ctx.default_device_info.warp_size
         # On Apple GPUs, clamp block_size to a single warp so the shared-memory
         # top-k kernels stay within Apple's static shared-memory budget.
         comptime if ctx.target.is_apple_gpu():
-            block_size_ = min(block_size_, WARP_SIZE)
+            block_size_ = min(block_size_, warp_size)
 
         # This section handles different input ranks by reshaping to a 2D tensor
         var internal_bs: Int  # Internal batch size
@@ -2162,7 +2165,7 @@ def topk_gpu[
                     internal_out_vals.to_device_buffer(ctx),
                     internal_out_idxs.to_device_buffer(ctx),
                     grid_dim=internal_bs,
-                    block_dim=WARP_SIZE,
+                    block_dim=warp_size,
                     attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
                 return

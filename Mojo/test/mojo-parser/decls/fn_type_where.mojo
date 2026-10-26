@@ -59,7 +59,7 @@ def bind_unconstrained():
 # returns, which stays unconstrained.
 # CHECK-LABEL: lit.fn @"parenthesized[
 # CHECK-SAME: (){(
-# CHECK: kgen.create_closure[!lit.generator<() -> !kgen.none>
+# CHECK: kgen.create_func_ptr[!lit.generator<() -> !kgen.none>
 def parenthesized[n: Int]() -> (def() thin -> None) where n > 0:
     def inner():
         pass

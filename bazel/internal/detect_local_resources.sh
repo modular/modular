@@ -19,8 +19,13 @@ set -euo pipefail
 
 if [[ "$(uname)" == "Linux" ]]; then
     if command -v nvidia-smi > /dev/null; then
-        # One line per GPU, in MiB.
-        output=$(nvidia-smi --query-gpu=memory.total --format=noheader,nounits)
+        # One line per GPU, in MiB. GPU-less images can still ship nvidia-smi,
+        # which then fails to reach the driver.
+        if ! output=$(nvidia-smi --query-gpu=memory.total --format=noheader,nounits); then
+            echo "warning: nvidia-smi failed, assuming no local GPUs: $output" >&2
+            echo "build --local_resources=gpu-memory=0"
+            exit 0
+        fi
         # We assume all GPUs are the same, so just grab the first
         mem_mib="$(echo "$output" | head -n 1)"
         # We specify GiB for local memory
@@ -29,14 +34,14 @@ if [[ "$(uname)" == "Linux" ]]; then
         gpu_count=$(echo "$output" | wc -l)
     elif command -v amd-smi > /dev/null; then
         if ! command -v jq > /dev/null; then
-            echo "error: jq not found, necessary for gpu memory detection with amd-smi. please install jq."
+            echo "error: jq not found, necessary for gpu memory detection with amd-smi. please install jq." >&2
             exit 1
         fi
         output=$(amd-smi static --vram --json)
         # For simplicity, we're assuming that this is output in MB
         unit=$(echo "$output" | jq -r '.gpu_data[0].vram.size.unit')
         if [[ "$unit" != "MB" ]]; then
-            echo "error: assumed ami-smi output outputs MB, got $unit"
+            echo "error: assumed ami-smi output outputs MB, got $unit" >&2
             exit 1
         fi
         # We assume all GPUs are the same, so just grab the first
@@ -47,7 +52,7 @@ if [[ "$(uname)" == "Linux" ]]; then
     elif command -v rocm-smi > /dev/null; then
         # This is the older alternative to amd-smi.
         # The output is more confusing to parse, it doesn't seem worth it to support.
-        echo "error: local resource detection for AMD GPUs only supported with amd-smi, which was not found."
+        echo "error: local resource detection for AMD GPUs only supported with amd-smi, which was not found." >&2
         exit 1
     else
         # No GPUs
@@ -56,7 +61,7 @@ if [[ "$(uname)" == "Linux" ]]; then
     fi
 else # We assume Mac is the only other case
     if ! command -v jq > /dev/null; then
-        echo "error: jq not found, necessary for gpu memory detection on macos. please install jq."
+        echo "error: jq not found, necessary for gpu memory detection on macos. please install jq." >&2
         exit 1
     fi
     mem_gb=$(system_profiler SPHardwareDataType -json | jq --raw-output '.SPHardwareDataType[0].physical_memory' | cut -d ' ' -f 1)

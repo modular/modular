@@ -16,7 +16,6 @@ from std.memory import bitcast
 from std.sys.info import align_of
 from std.testing import assert_equal, assert_true
 from std.utils import StaticTuple
-from std.utils.index import IndexList
 from std.utils.numerics import inf, max_finite, min_or_neg_inf, nan, neg_inf
 
 from layout import TileTensor, row_major
@@ -49,8 +48,8 @@ def mask_kernel[
     var case_idx = global_idx.x
     if case_idx >= NUM_CASES:
         return
-    var coord = IndexList[2](Int(cases[case_idx, 0]), Int(cases[case_idx, 1]))
-    var bound = IndexList[2](Int(cases[case_idx, 2]), Int(cases[case_idx, 3]))
+    var coord = (Int(cases[case_idx, 0]), Int(cases[case_idx, 1]))
+    var bound = (Int(cases[case_idx, 2]), Int(cases[case_idx, 3]))
     var values = input.load[width=width]((case_idx, 0))
     output.store[alignment=align_of[Scalar[dtype]]()](
         (case_idx, 0), _kernel_mask(coord, bound, values)
@@ -117,7 +116,11 @@ def check_mask[dtype: DType, width: Int](ctx: DeviceContext) raises:
         dtype, width, output.origin, input.origin, coordinates.origin
     ]
     ctx.enqueue_function[kernel](
-        output, input, coordinates, grid_dim=1, block_dim=WARP_SIZE
+        output,
+        input,
+        coordinates,
+        grid_dim=1,
+        block_dim=ctx.default_device_info.warp_size,
     )
     ctx.enqueue_copy(output_host, output_dev)
     ctx.synchronize()

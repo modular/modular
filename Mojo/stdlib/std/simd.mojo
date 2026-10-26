@@ -72,6 +72,7 @@ from std.builtin.simd_length import SIMDLength
 from std.builtin.int import _FromInt
 from std.math import DivModable, Powable
 from std.memory import bitcast, unsafe_memcpy, pack_bits
+from std.os import abort
 from std.python import (
     ConvertibleToPython,
     ConvertibleFromPython,
@@ -1248,6 +1249,12 @@ struct SIMD[dtype: DType, length: SIMDLength](
     def __pow__(self, exp: SIMD[_, _]) -> Self:
         """Computes the vector raised to the power of the input integer value.
 
+        For an integral vector, a negative exponent aborts.
+
+        Constraints:
+            The SIMD dtype must be numeric. An integral vector requires an
+            integral exponent.
+
         Args:
             exp: The exponent value.
 
@@ -1296,6 +1303,11 @@ struct SIMD[dtype: DType, length: SIMDLength](
     @inline(.nodebug)
     def __pow__(self, exp: Self) -> Self:
         """Computes the vector raised elementwise to the right hand side power.
+
+        For an integral vector, a negative exponent aborts.
+
+        Constraints:
+            The SIMD dtype must be numeric.
 
         Args:
             exp: The exponent value.
@@ -3758,6 +3770,11 @@ def _pow[
 
         comptime for i in range(width):
             result[i] = _powi(base[i], exp[i].cast[DType.int32]())
+    elif base.dtype.is_integral() and exp.dtype.is_floating_point():
+        comptime assert False, (
+            "an integer cannot be raised to a floating point power; use a"
+            " floating point base, e.g. 'Float64(x) ** n'"
+        )
     else:
         comptime assert False, "unsupported type combination"
 
@@ -3809,16 +3826,14 @@ def _powf[
 
 @inline(.always)
 def _powi(base: Scalar, exp: Int32) -> type_of(base):
-    if base.dtype.is_integral() and exp < 0:
-        if base == 1:
-            return 1
-        if base == -1:
-            # (-1) ** n is 1 for even n, -1 for odd n.
-            return Scalar[base.dtype](1 if (-exp) & 1 == 0 else -1)
-        # For |base| > 1, this is the integer truncation of
-        # 1 / base^|exp|. Note: 0 ** negative is mathematically
-        # undefined, but we return 0 here for now.
-        return 0
+    comptime if base.dtype.is_integral():
+        if exp < 0:
+            # Trap rather than return a truncated result, the way NumPy rejects
+            # integers to negative powers.
+            abort(
+                "an integer cannot be raised to a negative power; use a"
+                " floating point base, e.g. 'Float64(x) ** n'"
+            )
 
     var a = base
     var b = abs(exp) if base.dtype.is_floating_point() else exp

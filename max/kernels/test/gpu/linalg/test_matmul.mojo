@@ -319,6 +319,11 @@ def main() raises:
         test[.float32, N=Int(4096), K=Int(11008)](ctx, 23, 4096, 11008)
         test[.float32, N=Int(4096), K=Int(12288)](ctx, 67, 4096, 12288)
         test[.float32, N=Int(4096), K=Int(4096)](ctx, 555, 4096, 4096)
+        # The split-K outlier rows, one M per row.
+        for m in [1, 37, 67, 131]:
+            test[.float32, transpose_b=True, N=Int(512), K=Int(5120)](
+                ctx, m, 512, 5120
+            )
 
         print("===> bfloat16-float32 mma")
         test[
@@ -331,8 +336,8 @@ def main() raises:
                 .bfloat16,
                 transpose_b=True,
             ](
-                block_tile_shape=Index(64, 128, 64),
-                warp_tile_shape=Index(16, 128, 64),
+                block_tile_shape=(Int(64), Int(128), Int(64)),
+                warp_tile_shape=(Int(16), Int(128), Int(64)),
                 num_pipeline_stages=3,
             ),
             N=Int(128),
@@ -350,6 +355,16 @@ def main() raises:
         ](ctx, 1024, 5120, 3072)
         test[.bfloat16, N=Int(3072), K=Int(32768)](ctx, 1024, 3072, 32768)
         test[.bfloat16, N=Int(3072), K=Int(3072)](ctx, 1024, 3072, 3072)
+        # On SM100 these (N, K) take the SM100 GEMM at M 1 instead of GEMV.
+        test[.bfloat16, transpose_b=True, N=Int(32768), K=Int(1280)](
+            ctx, 1, 32768, 1280
+        )
+        test[.bfloat16, transpose_b=True, N=Int(4096), K=Int(1280)](
+            ctx, 1, 4096, 1280
+        )
+        test[.bfloat16, transpose_b=True, N=Int(4096), K=Int(1280)](
+            ctx, 3, 4096, 1280
+        )
 
         comptime if ctx.target.is_nvidia_gpu():
             test[
@@ -361,8 +376,8 @@ def main() raises:
                     .bfloat16,
                     transpose_b=True,
                 ](
-                    block_tile_shape=Index(16, 64, 64),
-                    warp_tile_shape=Index(16, 64, 32),
+                    block_tile_shape=(Int(16), Int(64), Int(64)),
+                    warp_tile_shape=(Int(16), Int(64), Int(32)),
                     num_pipeline_stages=3,
                     num_k_partitions=1,
                     num_warp_k_partitions=2,
@@ -379,8 +394,8 @@ def main() raises:
                     .bfloat16,
                     transpose_b=True,
                 ](
-                    block_tile_shape=Index(32, 64, 32),
-                    warp_tile_shape=Index(16, 64, 32),
+                    block_tile_shape=(Int(32), Int(64), Int(32)),
+                    warp_tile_shape=(Int(16), Int(64), Int(32)),
                     num_pipeline_stages=3,
                     num_k_partitions=1,
                     num_warp_k_partitions=4,
@@ -418,8 +433,8 @@ def main() raises:
                 .bfloat16,
                 transpose_b=True,
             ](
-                block_tile_shape=Index(64, 128, 64),
-                warp_tile_shape=Index(16, 128, 64),
+                block_tile_shape=(Int(64), Int(128), Int(64)),
+                warp_tile_shape=(Int(16), Int(128), Int(64)),
                 num_pipeline_stages=3,
             ),
             N=Int(128),
@@ -515,4 +530,12 @@ def main() raises:
         )
         test[.bfloat16, transpose_b=True, N=Int(514), K=Int(4096)](
             ctx, 32, 514, 4096
+        )
+
+        print("===> bfloat16 small N")
+        test[.bfloat16, transpose_b=True, N=Int(32), K=Int(5120)](
+            ctx, 3, 32, 5120
+        )
+        test[.bfloat16, transpose_b=True, N=Int(128), K=Int(512)](
+            ctx, 5, 128, 512
         )

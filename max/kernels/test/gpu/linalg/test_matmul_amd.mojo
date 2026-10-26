@@ -348,8 +348,8 @@ def test_block_k(ctx: DeviceContext) raises:
         K: Int,
     ](m: Int, n: Int, k: Int) raises {imm}:
         comptime config = MatmulConfig[in_type, in_type, out_type, True](
-            block_tile_shape=Index(64, 64, block_k),
-            warp_tile_shape=Index(32, 32, block_k),
+            block_tile_shape=(Int(64), Int(64), Int(block_k)),
+            warp_tile_shape=(Int(32), Int(32), Int(block_k)),
         )
         test[config, N=N, K=K](ctx, m, n, k)
 
@@ -374,24 +374,24 @@ def test_warp_k_partitions(ctx: DeviceContext) raises:
         comptime configs: List[config_type] = [
             # TEST: num_warps=(1, 4, 1).
             config_type(
-                block_tile_shape=Index(16, 128, 128),
-                warp_tile_shape=Index(16, 32, 128),
+                block_tile_shape=(Int(16), Int(128), Int(128)),
+                warp_tile_shape=(Int(16), Int(32), Int(128)),
             ),
             # TEST: num_warps=(1, 1, 4).
             config_type(
-                block_tile_shape=Index(16, 16, 64),
-                warp_tile_shape=Index(16, 16, 64),
+                block_tile_shape=(Int(16), Int(16), Int(64)),
+                warp_tile_shape=(Int(16), Int(16), Int(64)),
                 num_warp_k_partitions=4,
             ),
             config_type(
-                block_tile_shape=Index(16, 16, 128),
-                warp_tile_shape=Index(16, 16, 128),
+                block_tile_shape=(Int(16), Int(16), Int(128)),
+                warp_tile_shape=(Int(16), Int(16), Int(128)),
                 num_warp_k_partitions=4,
             ),
             # TEST: num_warps=(1, 2, 2).
             config_type(
-                block_tile_shape=Index(16, 128, 64),
-                warp_tile_shape=Index(16, 64, 64),
+                block_tile_shape=(Int(16), Int(128), Int(64)),
+                warp_tile_shape=(Int(16), Int(64), Int(64)),
                 num_warp_k_partitions=2,
             ),
         ]
@@ -477,8 +477,8 @@ def test_partial_tile[
     """
     comptime WM = 32
     comptime config = MatmulConfig[dtype, dtype, dtype, False](
-        block_tile_shape=Index(64, 64, 32),
-        warp_tile_shape=Index(WM, 32, 32),
+        block_tile_shape=(Int(64), Int(64), Int(32)),
+        warp_tile_shape=(Int(WM), Int(32), Int(32)),
     )
 
     print("=== test_partial_tile", dtype, M, "x", N, "x", K)
@@ -589,8 +589,8 @@ def _run_fp32_split_k[
     # Mirrors the fp32 split-K band's config; only num_k_partitions differs
     # (1 = single-pass, >1 = split-K).
     comptime config = MatmulConfig[.float32, .float32, .float32, True](
-        block_tile_shape=Index(16, 16, 64),
-        warp_tile_shape=Index(16, 16, 64),
+        block_tile_shape=(Int(16), Int(16), Int(64)),
+        warp_tile_shape=(Int(16), Int(16), Int(64)),
         mma_shape=_amdgpu_get_mma_shape[.float32, True](),
         num_pipeline_stages=1,
         num_k_partitions=num_k_partitions,

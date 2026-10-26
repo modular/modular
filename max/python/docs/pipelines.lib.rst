@@ -29,6 +29,7 @@ Submodules
    pipelines.lib.arch_lookup
    pipelines.lib.auto_processor
    pipelines.lib.generate
+   pipelines.lib.generate_images
    pipelines.lib.interfaces
    pipelines.lib.log_probabilities
    pipelines.lib.pipeline_parallel

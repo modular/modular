@@ -36,8 +36,8 @@ from max.gpu.host import (
     LaunchAttribute,
     default_accelerator,
 )
-from max.gpu.host._legacy.device_context import _DumpPath
-from max.gpu.host._legacy.launch_attribute import (
+from max.gpu.host import _DumpPath
+from max.gpu.host import (
     LaunchAttributeID,
     LaunchAttributeValue,
 )

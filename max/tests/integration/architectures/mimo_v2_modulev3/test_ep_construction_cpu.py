@@ -604,3 +604,40 @@ def test_mimo_v2_refuses_dp_and_orphan_ep_managers(
         default_dtype(config.dtype),
     ):
         MiMoV2(config, EPBatchManager(_ep_config(N_DEVICES)))
+
+
+@pytest.mark.parametrize(
+    ("sliding", "full"),
+    [(True, False), (False, True), (True, True)],
+    ids=["sliding", "full", "both"],
+)
+def test_mimo_v2_refuses_fused_qkv_under_dp_attention(
+    checkpoint: Path, sliding: bool, full: bool
+) -> None:
+    """Fused QKV preparation has no parity check for DP replicas, which hold
+    every chunk, so the build refuses it rather than serve it unchecked."""
+    set_virtual_device_api("cuda")
+    set_virtual_device_target_arch("sm_100a")
+    set_virtual_device_count(N_DEVICES)
+
+    config = _ep_config_model(checkpoint, use_allreduce=False)
+    assert config.ep_config is not None
+    config.data_parallel_degree = N_DEVICES
+    config.fused_sliding_qkv = sliding
+    config.fused_full_qkv = full
+    mesh = DeviceMesh(
+        tuple(ref.to_device() for ref in config.devices), (N_DEVICES,), ("dp",)
+    )
+    with (
+        pytest.raises(NotImplementedError, match="data-parallel attention"),
+        F.lazy(),
+        default_device(mesh),
+        default_dtype(config.dtype),
+    ):
+        MiMoV2(config, EPBatchManager(config.ep_config))
+
+    config.data_parallel_degree = 1
+    with F.lazy(), default_device(mesh), default_dtype(config.dtype):
+        assert MiMoV2(config, EPBatchManager(config.ep_config)).mode is (
+            ParallelismMode.TP_EP
+        )

@@ -12,52 +12,50 @@
 # ===----------------------------------------------------------------------=== #
 # DOC: develop/layers.mdx
 
-from max import nn
-from max.driver import accelerator_count
-from max.dtype import DType
-from max.graph import DeviceRef, TensorValue
-
-# Use the GPU when one is available. DeviceRef labels the weights and inputs
-# inside the graph.
-device = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
+from max.driver import CPU
+from max.experimental.nn import Linear, Module, ModuleList, RMSNorm
+from max.experimental.tensor import Tensor, default_device
 
 
-class NormalizedProjection(nn.Module):
+class NormalizedProjection(Module[[Tensor], Tensor]):
     """A linear projection whose output is normalized with RMSNorm."""
 
     def __init__(self, in_dim: int, out_dim: int) -> None:
         super().__init__()
-        self.proj = nn.Linear(in_dim, out_dim, DType.float32, device)
-        self.norm = nn.RMSNorm(out_dim, dtype=DType.float32)
+        self.proj = Linear(in_dim, out_dim, bias=False)
+        self.norm = RMSNorm(out_dim)
 
-    def __call__(self, x: TensorValue) -> TensorValue:
+    def forward(self, x: Tensor) -> Tensor:
         return self.norm(self.proj(x))
 
 
-class DecoderBlock(nn.Module):
+class DecoderBlock(Module[[Tensor], Tensor]):
     def __init__(self, dim: int) -> None:
         super().__init__()
         self.qk_proj = NormalizedProjection(dim, dim)  # your custom layer
-        self.o_proj = nn.Linear(dim, dim, DType.float32, device)
+        self.o_proj = Linear(dim, dim, bias=False)
 
-    def __call__(self, x: TensorValue) -> TensorValue:
+    def forward(self, x: Tensor) -> Tensor:
         return self.o_proj(self.qk_proj(x))
 
 
-class MiniDecoder(nn.Module):
-    """Two decoder blocks and an output projection, all on the same device."""
+class MiniDecoder(Module[[Tensor], Tensor]):
+    """Two decoder blocks and an output projection."""
 
     def __init__(self, dim: int) -> None:
         super().__init__()
-        self.block_0 = DecoderBlock(dim)
-        self.block_1 = DecoderBlock(dim)
-        self.lm_head = nn.Linear(dim, dim, DType.float32, device)
+        self.blocks = ModuleList([DecoderBlock(dim), DecoderBlock(dim)])
+        self.lm_head = Linear(dim, dim, bias=False)
 
-    def __call__(self, x: TensorValue) -> TensorValue:
-        return self.lm_head(self.block_1(self.block_0(x)))
+    def forward(self, x: Tensor) -> Tensor:
+        for block in self.blocks:
+            x = block(x)
+        return self.lm_head(x)
 
 
-model = MiniDecoder(dim=512)
+with default_device(CPU()):
+    model = MiniDecoder(dim=32)
 
-# The composed weight names mirror the attribute hierarchy.
-print(sorted(model.state_dict().keys()))
+    # The composed parameter names mirror the attribute hierarchy.
+    for name in sorted(name for name, _ in model.parameters):
+        print(name)

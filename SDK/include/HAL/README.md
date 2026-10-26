@@ -16,7 +16,7 @@ live in repos outside the mono-repo.
 
 For the NeoDriver design built on this interface, including the Mojo client API,
 plugin hooks, and capability-based extensions, see
-[`max/driver/src/max_license/README.md`](../../../max/driver/src/max_license/README.md).
+[`max/mojo/max/_driver/max_license/README.md`](../../../max/mojo/max/_driver/max_license/README.md).
 
 ## Development Philosophy
 

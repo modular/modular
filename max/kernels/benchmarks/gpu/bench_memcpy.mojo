@@ -29,6 +29,7 @@ from internal_utils import arg_parse, human_readable_size
 from std.testing import assert_almost_equal, assert_true
 
 from std.utils import IndexList
+from std.utils.index import Index
 
 
 @fieldwise_init
@@ -228,9 +229,7 @@ def bench_p2p(
                 abort(String(e))
 
     # Parallelize verification using sync_parallelize
-    var shape = IndexList[1](
-        length_in_elements,
-    )
+    var shape = Index(length_in_elements)
     parallelize_over_rows(verify_chunk, shape, 0, 256)
 
     # Cleanup

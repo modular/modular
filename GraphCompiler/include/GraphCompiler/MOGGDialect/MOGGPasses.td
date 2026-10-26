@@ -512,7 +512,8 @@ def VerifyKernels: Pass<"mogg-verify-kernels", "ModuleOp"> {
   let summary = "Verifies that kernels are well constructed";
   let description = [{
     Emits user-facing diagnostics for malformed `mogg.kernel.decl` signatures
-    (missing `execute`, mismatched shape/execute inputs, ...).
+    (missing `execute`, mismatched shape/execute inputs, ...), located at the
+    offending Mojo argument or entry point when the decl records it.
   }];
 }
 

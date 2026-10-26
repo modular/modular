@@ -22,7 +22,6 @@ from layout import (
     row_major,
 )
 from layout.tile_layout import Layout
-from std.utils.index import IndexList
 
 
 @__name(t"spatial_merge_{dtype}")
@@ -146,23 +145,18 @@ def spatial_merge_kernel[
     # This allows us to index the input as a 5D tiled tensor.
     # Physical memory: [H, W, _hidden_size] row-major.
     # Logical view: [H_out, _merge_size, W_out, _merge_size, _hidden_size].
-    var input_tiled_shape = IndexList[5](
-        Int(H_out), _merge_size, Int(W_out), _merge_size, _hidden_size
-    )
-    var input_tiled_stride = IndexList[5](
-        _merge_size
-        * Int(W)
-        * _hidden_size,  # stride for H_out: skip _merge_size full rows.
-        Int(W) * _hidden_size,  # stride for dh: move one row within block.
-        _merge_size
-        * _hidden_size,  # stride for W_out: skip _merge_size columns.
-        _hidden_size,  # stride for dw: move one column within block.
-        1,  # stride for c: move one channel.
-    )
-
     var input_tiled_layout = Layout(
-        Coord(input_tiled_shape),
-        Coord(input_tiled_stride),
+        (Int(H_out), _merge_size, Int(W_out), _merge_size, _hidden_size),
+        (
+            _merge_size
+            * Int(W)
+            * _hidden_size,  # stride for H_out: skip _merge_size full rows.
+            Int(W) * _hidden_size,  # stride for dh: move one row within block.
+            _merge_size
+            * _hidden_size,  # stride for W_out: skip _merge_size columns.
+            _hidden_size,  # stride for dw: move one column within block.
+            1,  # stride for c: move one channel.
+        ),
     )
 
     var input_tensor = TileTensor(

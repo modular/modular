@@ -47,8 +47,8 @@ from std.sys.intrinsics import likely, unlikely
 
 from std.bit import count_trailing_zeros
 from std.bit.mask import is_negative, splat
-from std.memory import unsafe_memcmp, pack_bits, MaybeUninit
-from std.utils._nicheable import NicheIndex, UnsafeNicheable, _FieldNiche
+from std.memory import unsafe_memcmp, pack_bits
+from std.utils._nicheable import _FieldNicheable
 from std.python import Python, PythonObject
 from std.format._utils import _write_hex
 
@@ -105,8 +105,8 @@ struct StringSpan[origin: ImmOrigin](
     KeyElement,
     PathLike,
     TrivialRegisterPassable,
-    UnsafeNicheable,
     Writable,
+    _FieldNicheable,
 ):
     """An immutable, non-owning view into encoded string data.
 
@@ -516,25 +516,7 @@ struct StringSpan[origin: ImmOrigin](
         except:
             raise cpython.get_error()
 
-    comptime _Niche = _FieldNiche[Self, "_slice"]
-
-    @staticmethod
-    @inline(.always)
-    @doc_hidden
-    def niche_count() -> Int:
-        return Self._Niche.niche_count()
-
-    @staticmethod
-    @inline(.always)
-    @doc_hidden
-    def write_niche[index: Int](memory: MutPointer[MaybeUninit[Self], _]):
-        Self._Niche.write_niche[index](memory)
-
-    @staticmethod
-    @inline(.always)
-    @doc_hidden
-    def classify_niche(memory: ImmPointer[MaybeUninit[Self], _]) -> NicheIndex:
-        return Self._Niche.classify_niche(memory)
+    comptime _KgenNichedFieldName = "_slice".value
 
     # ===------------------------------------------------------------------===#
     # Operator dunders

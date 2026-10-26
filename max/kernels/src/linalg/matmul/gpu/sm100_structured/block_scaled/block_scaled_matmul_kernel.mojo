@@ -62,7 +62,7 @@ from max.gpu.primitives.grid_controls import (
 )
 from max.gpu.sync import syncwarp
 from max.gpu.compute.arch.tcgen05 import *
-from layout import Layout
+from layout import Layout, Coord
 from layout.tensor_core_async import (
     tile_layout_k_major_typed,
     tile_layout_mn_major_typed,
@@ -143,7 +143,7 @@ struct BlackwellBlockScaledMatmulKernel[
         a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
     ],
     # Cluster shape (for LLVM metadata)
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     # Optional features
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: UInt32 = 0,
@@ -420,7 +420,11 @@ struct BlackwellBlockScaledMatmulKernel[
         Self.sfb_dtype,
         Self.config.scaling_kind,
         Self.config.block_tile_shape,
-        Self.config.mma_shape,
+        (
+            Self.config.mma_shape[0],
+            Self.config.mma_shape[1],
+            Self.config.mma_shape[2],
+        ),
         accum_type=Self.accum_type,
         cta_group=Self.cta_group,
         cluster_shape=Self.config.cluster_shape,
@@ -441,11 +445,7 @@ struct BlackwellBlockScaledMatmulKernel[
     # ========== Tile Scheduler Type ==========
     comptime Scheduler = StructuredTileScheduler[
         num_stages=Self.num_clc_pipeline_stages,
-        cluster_shape=Index[dtype=DType.uint32](
-            Self.config.cluster_shape[0],
-            Self.config.cluster_shape[1],
-            Self.config.cluster_shape[2],
-        ),
+        cluster_shape=Self.config.cluster_shape,
         block_swizzle_size=Self.config.block_swizzle_size,
         rasterize_order=Self.config.raster_order,
     ]
@@ -519,7 +519,11 @@ struct BlackwellBlockScaledMatmulKernel[
         a_type=Self.a_type,
         accum_type=Self.accum_type,
         block_tile_shape=Self.config.block_tile_shape,
-        mma_shape=Self.config.mma_shape,
+        mma_shape=(
+            Self.config.mma_shape[0],
+            Self.config.mma_shape[1],
+            Self.config.mma_shape[2],
+        ),
         opc=Self.opc,
         c_swizzle=Self.config.c_swizzle,
         transpose_c=Self.config.AB_swapped,
@@ -905,7 +909,13 @@ struct BlackwellBlockScaledMatmulKernel[
 
     @staticmethod
     @inline(.always)
-    @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
+    @__llvm_metadata(
+        `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+            Int32(Self.cluster_shape[0]),
+            Int32(Self.cluster_shape[1]),
+            Int32(Self.cluster_shape[2]),
+        )
+    )
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)

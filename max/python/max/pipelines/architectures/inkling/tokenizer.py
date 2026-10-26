@@ -21,6 +21,7 @@ from max.pipelines.lib import TextAndVisionTokenizer, resolve_eos_token_ids
 from max.pipelines.lib.tokenizer import (
     ReasoningDelimitersMixin,
     resolve_single_special_token,
+    resolve_token_id_bound,
 )
 from max.pipelines.modeling.types import TokenIds
 from transformers import AutoTokenizer
@@ -76,6 +77,9 @@ class InklingTokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
         huggingface_config = pipeline_config.model.huggingface_config
         self._eos_token_ids = resolve_eos_token_ids(
             self.delegate.eos_token_id, pipeline_config
+        )
+        self._token_id_bound = resolve_token_id_bound(
+            self.delegate, pipeline_config
         )
 
         self.enable_prefix_caching = (

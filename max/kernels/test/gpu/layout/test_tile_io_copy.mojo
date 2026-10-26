@@ -36,7 +36,7 @@ Coverage:
   where each thread owns a single vector.
 """
 
-from max.gpu import WARP_SIZE, thread_idx
+from max.gpu import thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.memory import (
@@ -507,5 +507,5 @@ def main() raises:
         test_swizzled_vectorized_sram_to_dram(ctx)
         test_swizzled_vectorized_local_to_shared(ctx)
         test_async_dram_to_sram_to_dram(ctx)
-        comptime if WARP_SIZE == 32:
+        comptime if ctx.default_device_info.warp_size == 32:
             test_bounded_local_to_dram(ctx)

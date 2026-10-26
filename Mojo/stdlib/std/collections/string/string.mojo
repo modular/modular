@@ -43,6 +43,7 @@ from std.sys.info import is_32bit
 from std.bit import count_leading_zeros
 from std.memory import (
     Layout,
+    MaybeUninit,
     ThinAllocation,
     dealloc,
     unsafe_memcmp,
@@ -50,6 +51,7 @@ from std.memory import (
     unsafe_memset,
 )
 from std.python import ConvertibleFromPython, PythonObject
+from std.utils._nicheable import NicheIndex, UnsafeNicheable
 
 # ===----------------------------------------------------------------------=== #
 # String
@@ -67,6 +69,7 @@ struct String(
     IntableRaising,
     KeyElement,
     PathLike,
+    UnsafeNicheable,
     Writable,
     Writer,
 ):
@@ -661,6 +664,8 @@ struct String(
             UInt64(self._capacity_or_data) & UInt64(Self.FLAG_IS_INLINE)
         )
 
+    # Only out-of-line strings are ref counted: `String`'s niches rely on an
+    # inline string never having this flag.
     @inline(.nodebug)
     def _set_ref_counted(mut self):
         self._capacity_or_data |= Self.FLAG_IS_REF_COUNTED
@@ -670,6 +675,45 @@ struct String(
         return Bool(
             UInt64(self._capacity_or_data) & UInt64(Self.FLAG_IS_REF_COUNTED)
         )
+
+    # No live `String` is both inline and ref counted, so a niche sets both
+    # flags and stores its index in the bits below them. Only the flag bits
+    # are meaningful in every representation; the inline form clobbers the
+    # pointer, the length, and the rest of this field with string data.
+    comptime _NICHE_FLAGS = Self.FLAG_IS_INLINE | Self.FLAG_IS_REF_COUNTED
+
+    @staticmethod
+    @inline(.always)
+    def _capacity_field[
+        origin: Origin, //
+    ](memory: Pointer[MaybeUninit[Self], origin]) -> Pointer[Int, origin]:
+        comptime offset = reflect[Self].field_offset[name="_capacity_or_data"]()
+        return (
+            memory.unsafe_bitcast[Byte]()
+            .unsafe_offset(offset)
+            .unsafe_bitcast[Int]()
+        )
+
+    @staticmethod
+    @inline(.always)
+    @doc_hidden
+    def niche_count() -> Int:
+        return Self.FLAG_IS_REF_COUNTED
+
+    @staticmethod
+    @inline(.always)
+    @doc_hidden
+    def write_niche[index: Int](memory: MutPointer[MaybeUninit[Self], _]):
+        Self._capacity_field(memory).unsafe_write(Self._NICHE_FLAGS | index)
+
+    @staticmethod
+    @inline(.always)
+    @doc_hidden
+    def classify_niche(memory: ImmPointer[MaybeUninit[Self], _]) -> NicheIndex:
+        var capacity = Self._capacity_field(memory)[]
+        if capacity & Self._NICHE_FLAGS != Self._NICHE_FLAGS:
+            return NicheIndex.NotANiche
+        return NicheIndex(capacity & ~Self._NICHE_FLAGS)
 
     # ===------------------------------------------------------------------=== #
     # Pointer Field Helpers

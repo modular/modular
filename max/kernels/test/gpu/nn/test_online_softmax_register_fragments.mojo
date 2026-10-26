@@ -187,7 +187,7 @@ def main() raises:
                                 1,
                                 m,
                                 n,
-                                thread // WARP_SIZE,
+                                thread // ctx.default_device_info.warp_size,
                                 thread % 4,
                                 element,
                             )

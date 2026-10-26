@@ -857,6 +857,17 @@ logit_verification_pipelines:
     kl_div_threshold: 4.6e-01
     timeout: 1800
 
+  # Laguna S-2.1 stays `manual` until a golden exists: `transformers` cannot
+  # load its mixed NVFP4/BF16 experts and the BF16 source model is 236 GB, so
+  # the reference has to come from vLLM. Fill in `pregenerated_torch_goldens`
+  # and the tolerances `--find-tolerances` suggests before dropping the tag.
+  poolside/Laguna-S-2.1-NVFP4:
+    pre_submit_agents: []
+    pipeline: "poolside/Laguna-S-2.1-NVFP4"
+    compatible_with: [gpu]
+    encoding: float4_e2m1fnx2
+    tags: [nvidia-only, no-h100, manual]
+
   # MiniMax-M3 (dense-only layers) on a trimmed checkpoint, compared
   # against goldens pregenerated from the mm-sglang MiniMax-M3 fork.
   minimax/minimax3-dense-only:

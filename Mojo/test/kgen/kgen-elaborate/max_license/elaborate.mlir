@@ -25,20 +25,20 @@ kgen.generator @kernel(%a: i32, %b: i32) {
 
 // COM: A compile_offload op over a function HELLO lowers to a struct of the
 // compiled assembly and the module name.
-kgen.generator @HELLO<x: () capturing -> index>() capturing -> !kgen.none {
+kgen.generator @HELLO<x: () -> index>() -> !kgen.none {
   %none = kgen.param.constant: none = <#kgen.none>
-  %0 = kgen.call_param[() capturing -> index: x]()
+  %0 = kgen.call_param[() -> index: x]()
   hlcf.return %none : !kgen.none
 }
 
-kgen.generator @FOO() capturing -> index {
+kgen.generator @FOO() -> index {
   %0 = index.constant 1
   hlcf.return %0 : index
 }
 
 // CHECK-LABEL: kgen.func export @entry
 kgen.generator export @entry() {
-  kgen.param.declare *"foo()": () capturing -> index = <@FOO>
+  kgen.param.declare *"foo()": () -> index = <@FOO>
   // CHECK: [[STR:%.*]] = kgen.param.constant: string = <"; Mod{{.*}}">
   // CHECK-NEXT: [[STR1:%.*]] = kgen.param.constant: string = <"{{.*}}">
   // CHECK-NEXT: kgen.struct.create([[STR]], [[STR1]]) : !kgen.struct<(string, string)>
@@ -51,7 +51,7 @@ kgen.generator export @entry() {
                                          tune_cpu = "sm_80",
                                          data_layout = "e-i64:64-i128:128-i256:256-v16:16-v32:32-n16:32:64">>
   %1 = kgen.compile_offload<nvptx, 2, "", "",
-                            :() capturing -> !kgen.none @HELLO<:() capturing -> index *"foo()">>
+                            :() -> !kgen.none @HELLO<:() -> index *"foo()">>
                             : !kgen.struct<(string, string)>
   hlcf.return
 }

@@ -1655,11 +1655,8 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
       os << ", /";
   }
   os << ')';
-  for (auto [enabled, effect] :
-       {std::make_pair(fnType.isThrows(), "raises"),
-        std::make_pair(fnType.isCapturing() && !isClosureSignature,
-                       "capturing"),
-        std::make_pair(fnType.isCABI(), "abi(\"C\")")})
+  for (auto [enabled, effect] : {std::make_pair(fnType.isThrows(), "raises"),
+                                 std::make_pair(fnType.isCABI(), "abi(\"C\")")})
 
     if (enabled)
       os << ' ' << effect;

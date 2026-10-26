@@ -26,7 +26,7 @@ from max.pipelines.context import (
     TextContext,
     TextGenerationOutput,
 )
-from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib import PipelineConfig, SpeculativeConfig
 from max.pipelines.modeling.types import (
     Pipeline,
     PipelineTask,
@@ -37,7 +37,7 @@ from max.pipelines.modeling.types import (
 from max.serve import api_server
 from max.serve.config import Settings
 from max.serve.pipelines.echo_gen import EchoTokenGenerator
-from max.serve.pipelines.model_worker import start_model_worker
+from max.serve.pipelines.model_worker import ModelWorker, start_model_worker
 from max.serve.process_control import SubprocessExit
 from max.serve.telemetry.metrics import NoopClient
 from max.serve.worker_interface._zmq_queue import generate_zmq_ipc_path
@@ -55,6 +55,39 @@ class MockContext(Mock):
     def is_done(self) -> bool:
         """Whether the request has completed generation."""
         return self.status.is_done
+
+
+@pytest.mark.asyncio
+async def test_model_worker_rejects_replica_draft_probs_before_loading(
+    mock_pipeline_config: PipelineConfig,
+) -> None:
+    config = mock_pipeline_config.model_copy(
+        update={
+            "speculative": SpeculativeConfig(
+                draft_proposal="sampled",
+                draft_head_parallelism="replica",
+                draft_probs_layout="replica",
+            )
+        }
+    )
+    factory = Mock()
+    with pytest.raises(
+        ValueError,
+        match="MAX Serve does not support draft_probs_layout='replica'",
+    ):
+        await ModelWorker.run(
+            alive=Mock(),
+            model_factory=factory,
+            pipeline_config=config,
+            settings=Settings(),
+            metric_client_factory=Mock(),
+            model_worker_interface=ZmqModelWorkerInterface(
+                PipelineTask.TEXT_GENERATION, context_type=TextContext
+            ),
+            zmq_endpoint_base=generate_zmq_ipc_path(),
+            memory_plan=None,
+        )
+    factory.assert_not_called()
 
 
 @pytest.mark.asyncio

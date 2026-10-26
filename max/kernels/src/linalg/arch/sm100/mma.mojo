@@ -17,12 +17,12 @@ from std.math import align_up
 
 from max.gpu.primitives.cluster import cluster_mask_base
 from max.gpu import block_id_in_cluster
-from max.gpu.host._legacy._tensormap import SwizzleMode
+from max.gpu.host import SwizzleMode
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.compute.arch.tcgen05 import *
 from max.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
-from layout import IntTuple, Layout, TileTensor
+from layout import IntTuple, Layout, TileTensor, coord
 from layout.tile_layout import TensorLayout, _types_to_int_tuple
 from layout.tensor_core_async import (
     _CM_ROW_BYTES,
@@ -31,7 +31,8 @@ from layout.tensor_core_async import (
     tile_layout_mn_major,
 )
 
-from std.utils.index import Index, IndexList, product
+from std.utils.coord import Coord, CoordLike, coord
+from std.utils.index import Index, IndexList
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
     SF_ATOM_M,
@@ -192,17 +193,39 @@ def smem_descriptor[
     ](ptr)
 
 
+def product[*element_types: CoordLike](t: Coord[*element_types]) -> Int:
+    """Calculate the product of all values in a `Coord`.
+
+    Args:
+        t: The `Coord` to multiply.
+
+    Returns:
+        The product of all elements, or `UNKNOWN_VALUE` if any element is
+        `UNKNOWN_VALUE`.
+    """
+    var result = 1
+    comptime for i in range(Coord[*element_types].__len__()):
+        comptime T = element_types[i]
+        comptime if T.is_value:
+            result *= Int(t[i])
+        else:
+            comptime assert (
+                False
+            ), "product() of a `Coord` requires value elements"
+    return result
+
+
 struct MmaOpSM100_SS[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     /,
     *,
     accum_type: DType = .float32,
     cta_group: Int = 1,
-    cluster_shape: IndexList[3] = Index(1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_b: Bool = False,
@@ -253,7 +276,7 @@ struct MmaOpSM100_SS[
             Self.accum_type,
             Self.a_type,
             Self.b_type,
-            Index[dtype=DType.uint32](Self.mma_shape[0], Self.mma_shape[1]),
+            (UInt32(Self.mma_shape[0]), UInt32(Self.mma_shape[1])),
             transpose_b=Self.transpose_b,
         ]()
 
@@ -263,8 +286,13 @@ struct MmaOpSM100_SS[
         # We may get better asm if the mask if computed outside from TMA masks,
         # and passed to `commit`, need to verify.
         comptime if product(Self.cluster_shape) > 1:
-            comptime dim0_mask = cluster_mask_base[Self.cluster_shape, 0]()
-            comptime dim1_mask = cluster_mask_base[Self.cluster_shape, 1]()
+            comptime cluster_shape = coord[
+                Self.cluster_shape[0],
+                Self.cluster_shape[1],
+                Self.cluster_shape[2],
+            ]
+            comptime dim0_mask = cluster_mask_base[cluster_shape, 0]()
+            comptime dim1_mask = cluster_mask_base[cluster_shape, 1]()
 
             # The mask includes ctas on the same row and column in the cluster
             # Example mask for cta (0, 1) is cluster (4,4)
@@ -431,13 +459,13 @@ struct MmaOpSM100_BlockScaled_SS[
     sfa_dtype: DType,
     sfb_dtype: DType,
     scaling_kind: UMMAKind,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     /,
     *,
     accum_type: DType = .float32,
     cta_group: Int = 1,
-    cluster_shape: IndexList[3] = Index(1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_b: Bool = False,
@@ -509,7 +537,7 @@ struct MmaOpSM100_BlockScaled_SS[
             Self.a_type,
             Self.b_type,
             Self.sfa_dtype,
-            Index[dtype=DType.uint32](Self.mma_shape[0], Self.mma_shape[1]),
+            (UInt32(Self.mma_shape[0]), UInt32(Self.mma_shape[1])),
             transpose_b=Self.transpose_b,
         ]()
 
@@ -519,8 +547,13 @@ struct MmaOpSM100_BlockScaled_SS[
         # We may get better asm if the mask if computed outside from TMA masks,
         # and passed to `commit`, need to verify.
         comptime if product(Self.cluster_shape) > 1:
-            comptime dim0_mask = cluster_mask_base[Self.cluster_shape, 0]()
-            comptime dim1_mask = cluster_mask_base[Self.cluster_shape, 1]()
+            comptime cluster_shape = coord[
+                Self.cluster_shape[0],
+                Self.cluster_shape[1],
+                Self.cluster_shape[2],
+            ]
+            comptime dim0_mask = cluster_mask_base[cluster_shape, 0]()
+            comptime dim1_mask = cluster_mask_base[cluster_shape, 1]()
 
             # The mask includes ctas on the same row and column in the cluster
             # Example mask for cta (0, 1) is cluster (4,4)

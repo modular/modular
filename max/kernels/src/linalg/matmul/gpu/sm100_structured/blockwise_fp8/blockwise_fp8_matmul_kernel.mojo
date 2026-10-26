@@ -43,6 +43,7 @@ from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.sync import named_barrier
 from max.gpu.compute.arch.tcgen05 import *
 from layout import (
+    Coord,
     Layout,
     DefaultEngine,
     TensorLayout,
@@ -122,7 +123,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     # Cluster shape (for LLVM metadata)
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     # B-scale N-direction block size (independent of BK_kernel).
     n_scale_granularity: Int = 128,
     b_scales_engine: TensorEngine = DefaultEngine[element_width=1],
@@ -309,7 +310,11 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         Self.a_type,
         Self.b_type,
         Self.config.block_tile_shape,
-        Self.config.mma_shape,
+        (
+            Self.config.mma_shape[0],
+            Self.config.mma_shape[1],
+            Self.config.mma_shape[2],
+        ),
         accum_type=Self.accum_type,
         cta_group=Self.cta_group,
         cluster_shape=Self.config.cluster_shape,
@@ -329,11 +334,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     # ========== Tile Scheduler Type ==========
     comptime Scheduler = StructuredTileScheduler[
         num_stages=Self.num_clc_pipeline_stages,
-        cluster_shape=Index[dtype=DType.uint32](
-            Self.config.cluster_shape[0],
-            Self.config.cluster_shape[1],
-            Self.config.cluster_shape[2],
-        ),
+        cluster_shape=Self.config.cluster_shape,
         block_swizzle_size=Self.config.block_swizzle_size,
         rasterize_order=Self.config.raster_order,
     ]
@@ -413,7 +414,11 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     comptime accum_dims = get_accumulator_dims[
         c_smem_dim1=Self.OutputN,
         block_tile_shape=Self.config.block_tile_shape,
-        mma_shape=Self.config.mma_shape,
+        mma_shape=(
+            Self.config.mma_shape[0],
+            Self.config.mma_shape[1],
+            Self.config.mma_shape[2],
+        ),
         cta_group=Self.cta_group,
     ]()
 
@@ -423,7 +428,11 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         Self.accum_dims[1],
         Self.is_lower_required,
         Self.config.block_tile_shape,
-        Self.config.mma_shape,
+        (
+            Self.config.mma_shape[0],
+            Self.config.mma_shape[1],
+            Self.config.mma_shape[2],
+        ),
         Self.CLUSTER_SIZE,
         Self.n_scale_granularity,
     ]
@@ -437,7 +446,11 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         Self.accum_dims[0],
         Self.accum_dims[1],
         block_tile_shape=Self.config.block_tile_shape,
-        mma_shape=Self.config.mma_shape,
+        mma_shape=(
+            Self.config.mma_shape[0],
+            Self.config.mma_shape[1],
+            Self.config.mma_shape[2],
+        ),
         is_lower_frag_required=Self.is_lower_required,
         cta_group=Self.cta_group,
         num_output_stages=Self.num_output_stages,
@@ -710,7 +723,13 @@ struct BlackwellBlockwiseFP8MatmulKernel[
 
     @staticmethod
     @inline(.always)
-    @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
+    @__llvm_metadata(
+        `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+            Int32(Self.cluster_shape[0]),
+            Int32(Self.cluster_shape[1]),
+            Int32(Self.cluster_shape[2]),
+        )
+    )
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)

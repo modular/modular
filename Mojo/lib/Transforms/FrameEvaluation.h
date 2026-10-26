@@ -25,7 +25,8 @@ namespace M::KGEN {
 /// `lower-async-functions`. Matches the `FrameEvaluator` signature.
 void evaluateFrameByLiveness(FrameData &frameData, FuncOp originalFunction,
                              mlir::DominanceInfo &domInfo, Value errorValue,
-                             Value resultValue, FrameStateTransform transform,
+                             Value resultValue,
+                             FrameStateTransform rematerializeFrameValues,
                              bool isHot);
 
 } // namespace M::KGEN

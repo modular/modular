@@ -32,6 +32,11 @@ from max._core_types.driver import DLPackArray
 
 InputType: TypeAlias = DLPackArray | Buffer | int | float | bool
 
+class ModelExecutionError(RuntimeError, ValueError):
+    """
+    Raised when ``Model.execute`` fails, often in one of the model's kernels. The message names the kernel and, with ``source_tracebacks``, the lines of your model it runs. It is a ``RuntimeError``, and a ``ValueError`` for code written before it.
+    """
+
 class TensorSpec:
     """
     Defines the properties of a tensor, including its name, shape and data type.
@@ -537,6 +542,14 @@ class DebugConfig:
 
     @source_tracebacks.setter
     def source_tracebacks(self, arg: bool, /) -> None: ...
+    @property
+    def source_tracebacks_hide_internal(self) -> bool:
+        """
+        A boolean that, when ``True`` (the default), cuts the tracebacks that :attr:`source_tracebacks` captures at the call into the graph API, leaving out MAX's implementation of each op, so errors show the code that created it. Set it to ``False`` to keep every frame. Takes effect at graph build time.
+        """
+
+    @source_tracebacks_hide_internal.setter
+    def source_tracebacks_hide_internal(self, arg: bool, /) -> None: ...
     @property
     def pre_jit(self) -> bool:
         """

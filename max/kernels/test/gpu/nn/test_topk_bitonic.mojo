@@ -37,6 +37,7 @@ from std.testing import assert_equal, assert_true
 
 from nn.attention.gpu.nvidia.topk_cluster import (
     _choose_topk_cluster_size,
+    _ctopk_max_rows,
     _topk_cluster_kernel,
     topk_cluster_split,
 )
@@ -3558,14 +3559,18 @@ def test_topk_cluster_dispatch(ctx: DeviceContext) raises:
     refuse.
 
     24 rows at `N=107232, bf16` is the GLM decode shape; 8 rows at `f32` the
-    small batch; 64 rows is the gate's edge; 65 must fall through to the
-    histogram selects, which serve the same contract and so validate the same
-    way -- the point of that arm is that the gate moves nothing else. The
-    other shapes reach CS 16, 10, 8, 6, 5 and 3 through the dispatch.
+    small batch; 74 rows is the gate's edge on B200; 75 must fall through to
+    the histogram selects, which serve the same contract and so validate the
+    same way -- the point of that arm is that the gate moves nothing else.
+    The other shapes reach CS 16, 10, 8, 6, 5 and 3 through the dispatch.
 
-    The cluster-size table is pinned first, on B200's 148 SMs and on other
-    SM counts, so a retune shows up here as a deliberate edit.
+    The row cap and the cluster-size table are pinned first, on B200's 148
+    SMs and on other SM counts, so a retune shows up here as a deliberate
+    edit.
     """
+    assert_equal(_ctopk_max_rows[148](), 74, "row cap at sms=148")
+    assert_equal(_ctopk_max_rows[160](), 80, "row cap at sms=160")
+    assert_equal(_ctopk_max_rows[132](), 66, "row cap at sms=132")
     # (rows, N, expected cluster size), per SM count.
     var b200: List[Tuple[Int, Int, Int]] = [
         (1, 107232, 16),
@@ -3591,6 +3596,7 @@ def test_topk_cluster_dispatch(ctx: DeviceContext) raises:
         (45, 107232, 3),
         (46, 107232, 2),
         (64, 107232, 2),
+        (74, 107232, 2),
     ]
     for t in b200:
         assert_equal(
@@ -3634,8 +3640,9 @@ def test_topk_cluster_dispatch(ctx: DeviceContext) raises:
             (16, 107232),
             (40, 65536),
             (8, 32769),
-            (64, 12288),
-            (65, 12288),
+            (74, 12288),
+            (75, 12288),
+            (71, 32771),
         ]:
             var B = shape[0]
             var N = shape[1]
@@ -3766,6 +3773,10 @@ def test_topk_cluster_graph_capture(ctx: DeviceContext) raises:
                     b,
                 )
             _ = idxs_host
+        # The graph captured raw pointers, so keep its inputs alive past the
+        # replays.
+        _ = scores_dev^
+        _ = bounds_dev^
     print("PASS test_topk_cluster_graph_capture")
 
 

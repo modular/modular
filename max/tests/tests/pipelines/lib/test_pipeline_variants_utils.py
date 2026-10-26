@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -42,6 +43,7 @@ from max.pipelines.lib.pipeline_variants.utils import (
     CommittedSpanSnapshot,
     StructuredOutputHelper,
     build_response,
+    get_rope_theta,
     update_spec_decode_context_and_prepare_responses,
 )
 from max.pipelines.lib.tool_parsing import StructuralTagToolParser, register
@@ -1597,3 +1599,17 @@ class TestCommittedSpanSnapshot:
             self._matcher(backend, [_OBJ_OPEN, *committed[:eos_offset]]),
         )
         assert (self._mask(backend, ctx.matcher) == expected).all()
+
+
+def test_get_rope_theta_reads_transformers_4_attribute() -> None:
+    """Transformers 4 configs store ``rope_theta`` as a top-level attribute."""
+    config = SimpleNamespace(rope_theta=1_000_000.0)
+    assert get_rope_theta(config) == 1_000_000.0
+
+
+def test_get_rope_theta_reads_transformers_5_rope_parameters() -> None:
+    """Transformers 5 configs store ``rope_theta`` in ``rope_parameters``."""
+    config = SimpleNamespace(
+        rope_parameters={"rope_type": "default", "rope_theta": 1_000_000.0}
+    )
+    assert get_rope_theta(config) == 1_000_000.0

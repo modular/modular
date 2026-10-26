@@ -31,7 +31,6 @@ from shmem.ep import (
 )
 from shmem.ep_comm import BF16TokenFormat, EPLocalSyncCounters
 from std.testing import assert_almost_equal
-from std.utils.index import IndexList
 
 
 def legalize_topk_ids[
@@ -212,10 +211,10 @@ def test_skip_a2a[
 
     @inline(.always)
     def store_combine_output[
-        dtype: DType, rank: Int, width: SIMDLength, *, alignment: Int = 1
-    ](coords: IndexList[rank], val: SIMD[dtype, width]) {var combine_output_tt}:
+        dtype: DType, width: SIMDLength, *, alignment: Int = 1
+    ](coords: Coord, val: SIMD[dtype, width]) {var combine_output_tt}:
         combine_output_tt.store[alignment=alignment * size_of[dtype]()](
-            Coord(coords), rebind[SIMD[input_type, width]](val)
+            coords, rebind[SIMD[input_type, width]](val)
         )
 
     # --- Run fused dispatch ---

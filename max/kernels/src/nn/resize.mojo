@@ -582,7 +582,7 @@ def resize_linear[
     antialias: Bool,
     dtype: DType,
 ](
-    input: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    input: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
 ):
     """Resizes input to output shape using linear interpolation.

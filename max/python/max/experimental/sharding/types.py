@@ -13,15 +13,14 @@
 
 """Describes how a value is laid out, and whether a callable may write it.
 
-Two layouts describe every tensor argument in :mod:`max.experimental`:
-
 * :class:`TensorLayout`: a dtype, a global shape, and a device mapping. The
   default, and what a value reports about itself.
 * :class:`BufferLayout`: the same, for a buffer a compiled callable may
   also store through.
 
-They differ only in the :mod:`max.graph` type each lowers to per device, so
-which one an argument is given is the one place mutability is spelled.
+A layout carries a dtype, a global shape, and a device mapping. The two types
+differ in the :mod:`max.graph` type each lowers to per device, so the layout an
+argument is given is the one place mutability is spelled.
 """
 
 from __future__ import annotations
@@ -59,12 +58,17 @@ class TensorLayout:
 
     Args:
         dtype: The element data type.
-        shape: The global shape, not one shard's.
-        device: The placement: a single device, a mesh to replicate over,
-            or a :class:`DeviceMapping`.
+        shape: The global shape, not one shard's. A negative
+            :class:`Sharded` axis counts from the end of it.
+        device: The placement: a single device or ``DeviceRef``, a mesh to
+            replicate over, or a :class:`DeviceMapping`. It is stored as
+            :attr:`mapping`; :attr:`device` is the single device a
+            non-distributed value sits on.
 
     Raises:
-        ValueError: If a placement shards an axis this shape does not have.
+        TypeError: If ``device`` is none of the accepted types.
+        ValueError: If the placement count differs from the mesh's axis count,
+            or a :class:`Sharded` axis falls outside the shape's dimensions.
     """
 
     dtype: DType
@@ -168,10 +172,10 @@ class BufferLayout(TensorLayout):
 def as_layout(layout: object) -> TensorLayout:
     """Normalizes a declared layout.
 
-    Takes a declaration, never a value: a live tensor's dims are whatever it
-    currently holds, so reading a layout off one would fix every dimension to
-    that. Anything holding a ``layout`` of its own is refused, and told to
-    pass it.
+    Accepts a declaration, not a live value: a live tensor's dims are whatever
+    it currently holds, so reading its layout would fix every dimension to that
+    size. It rejects any object that carries a ``layout`` and tells the
+    caller to pass that layout instead.
 
     A single-device :mod:`max.graph` type is accepted and coerced, so the
     graph types stay usable without appearing in any signature. A

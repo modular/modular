@@ -12,16 +12,24 @@
 # ===----------------------------------------------------------------------=== #
 # DOC: develop/layers.mdx
 
-from max.dtype import DType
-from max.nn.norm.rms_norm import RMSNorm
+from max.driver import CPU
+from max.experimental.nn.norm import RMSNorm, rms_norm
+from max.experimental.tensor import Tensor, default_device
 
 
-class ScaledRMSNorm(RMSNorm):
-    """RMSNorm that scales by (1 + weight), the Gemma 3 convention."""
+class MultiplyBeforeCastRMSNorm(RMSNorm):
+    """RMSNorm that multiplies by the weight before casting back."""
 
-    def __init__(self, dim: int, dtype: DType, eps: float = 1e-6) -> None:
-        super().__init__(dim=dim, dtype=dtype, eps=eps, weight_offset=1.0)
+    def forward(self, x: Tensor) -> Tensor:
+        return rms_norm(
+            x,
+            self.weight,
+            self.eps,
+            weight_offset=0.0,
+            multiply_before_cast=True,
+        )
 
 
-layer = ScaledRMSNorm(576, DType.float32)
-print(sorted(layer.state_dict().keys()))
+with default_device(CPU()):
+    norm = MultiplyBeforeCastRMSNorm(8, eps=1e-6)
+    print([name for name, _ in norm.parameters])

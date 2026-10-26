@@ -23,7 +23,6 @@ from std.math import ceildiv
 from layout import DefaultEngine, TensorEngine, TensorLayout, TileTensor
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.sys.info import simd_width_of, size_of
-from max.gpu import WARP_SIZE
 from std.ffi import external_call, _get_global_or_null
 
 from shmem import shmem_module_init, shmem_my_pe
@@ -597,6 +596,7 @@ def ep_fused_dispatch_kernel_api[
     skip_a2a: Bool = False,
     use_shmem: Bool = (n_nodes > 1),
     allreduce_world_size: Int = 1,
+    dispatch_warp_min_tokens: Int = -1,
 ](
     token_handler: token_fmt_type,
     row_offsets: TileTensor[.uint32, Engine=RowOffsetsEngine, ...],
@@ -641,6 +641,12 @@ def ep_fused_dispatch_kernel_api[
         allreduce_world_size: The world size of the allreduce operation. Only
             needed for skip_a2a. Used to calculate the workload distribution for
             the shared expert (if has one).
+        dispatch_warp_min_tokens: From this many tokens a rank on, send
+            one token per warp instead of one per CTA, and count each
+            expert's rows with one shared-memory histogram pass at any count.
+            Same bytes and receive layout. -1 (the default) keeps the stock
+            send and count, as does every configuration but single-node NVFP4
+            without a fused shared expert.
 
     Arguments:
         token_handler: Token handler. Wrapper for the output token tensor.
@@ -672,6 +678,7 @@ def ep_fused_dispatch_kernel_api[
         use_shmem,
         allreduce_world_size,
         has_input_scales=False,
+        dispatch_warp_min_tokens=dispatch_warp_min_tokens,
     ](
         token_handler,
         row_offsets,
@@ -713,6 +720,7 @@ def ep_fused_dispatch_kernel_api[
     use_shmem: Bool = (n_nodes > 1),
     allreduce_world_size: Int = 1,
     has_input_scales: Bool = True,
+    dispatch_warp_min_tokens: Int = -1,
 ](
     token_handler: token_fmt_type,
     row_offsets: TileTensor[.uint32, Engine=RowOffsetsEngine, ...],
@@ -765,6 +773,12 @@ def ep_fused_dispatch_kernel_api[
             the shared expert (if has one).
         has_input_scales: Whether `input_scales_fn` supplies the input scale.
             The overload without `input_scales_fn` passes `False`.
+        dispatch_warp_min_tokens: From this many tokens a rank on, send
+            one token per warp instead of one per CTA, and count each
+            expert's rows with one shared-memory histogram pass at any count.
+            Same bytes and receive layout. -1 (the default) keeps the stock
+            send and count, as does every configuration but single-node NVFP4
+            without a fused shared expert.
 
     Arguments:
         token_handler: Token handler. Wrapper for the output token tensor.
@@ -835,6 +849,7 @@ def ep_fused_dispatch_kernel_api[
         skip_a2a=skip_a2a,
         use_shmem=use_shmem,
         allreduce_world_size=allreduce_world_size,
+        warp_min_tokens=dispatch_warp_min_tokens,
         InputTokensEngine=input_tokens.Engine,
         TopkIdsEngine=topk_ids.Engine,
         RowOffsetsEngine=row_offsets.Engine,
@@ -1323,9 +1338,11 @@ def ep_combine_wait_kernel_api[
         )
 
         comptime dst_simd_width = simd_width_of[combine_dtype]()
-        comptime n_chunks_per_tok = hidden_size // (WARP_SIZE * dst_simd_width)
+        comptime n_chunks_per_tok = hidden_size // (
+            hw_info.warp_size * dst_simd_width
+        )
         comptime n_warps_per_block = (
-            hw_info.max_thread_block_size // WARP_SIZE
+            hw_info.max_thread_block_size // hw_info.warp_size
         )
         var grid_dim_x: Int
         comptime if gpu_ctx.target.is_amd_gpu():
@@ -1688,9 +1705,11 @@ def ep_fused_combine_kernel_api[
         #    distributed across n_warps_per_block * (grid_dim - 1) warps.
         # Take the max to be safe; cap at sm_count.
         comptime dst_simd_width = simd_width_of[combine_dtype]()
-        comptime n_chunks_per_tok = hidden_size // (WARP_SIZE * dst_simd_width)
+        comptime n_chunks_per_tok = hidden_size // (
+            hw_info.warp_size * dst_simd_width
+        )
         comptime n_warps_per_block = (
-            hw_info.max_thread_block_size // WARP_SIZE
+            hw_info.max_thread_block_size // hw_info.warp_size
         )
         var num_input_tokens = Int(input_tokens.dim(0))
         var grid_dim_x: Int

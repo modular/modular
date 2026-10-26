@@ -57,33 +57,11 @@ namespace M::MOGG {
 constexpr llvm::StringLiteral kOpaqueTypeMappingAttrName =
     "mogg.opaque_type_mapping";
 
-//===----------------------------------------------------------------------===//
-// MOGG kernel function labels
-//===----------------------------------------------------------------------===//
-
-constexpr llvm::StringLiteral kMoggExecuteFunctionLabel = "mogg.execute";
-constexpr llvm::StringLiteral kMoggShapeFunctionLabel = "mogg.shape";
-constexpr llvm::StringLiteral kMoggElementwiseFunctionLabel =
-    "mogg.elementwise";
-constexpr llvm::StringLiteral kMoggTileElementwiseFunctionLabel =
-    "tile_elementwise";
-constexpr llvm::StringLiteral kMoggBuildGraphFunctionLabel = "mogg.build_graph";
-constexpr llvm::StringLiteral kMoggExecuteDeviceFunctionLabel =
-    "mogg.execute_device";
-constexpr llvm::StringLiteral kMoggExecuteConfigurationFunctionLabel =
-    "mogg.execute_configuration";
-
-/// Method names of `@register`-decorated kernel structs. Some are owned by
-/// KGEN's `LITUtils.h`, which the Mojo parser also uses.
+/// The `@register` decorators, owned by KGEN's `LITUtils.h`, which the Mojo
+/// parser also uses. A kernel struct's method names are
+/// `stringifyKernelFunctionKind`'s.
 using KGEN::kFnRegister;
 using KGEN::kFnRegisterInternal;
-using KGEN::kMoggExecuteFuncName;
-constexpr llvm::StringLiteral kMoggShapeFuncName = "shape";
-constexpr llvm::StringLiteral kMoggElementwiseFuncName = "elementwise";
-constexpr llvm::StringLiteral kMoggBuildGraphFuncName = "build_graph";
-constexpr llvm::StringLiteral kMoggExecuteDeviceFuncName = "execute_device";
-constexpr llvm::StringLiteral kMoggExecuteConfigurationFuncName =
-    "execute_configuration";
 
 /// Indices into `getDecoratorLambdaArgument` for `@extensibility.register`.
 constexpr size_t kRegisterDecoratorArgName = 0;
@@ -96,8 +74,6 @@ constexpr llvm::StringLiteral kMoggTargetParameterName = "target";
 
 /// Lowered specially.
 constexpr llvm::StringLiteral kMoggOutputRankParameterName = "output_rank";
-
-constexpr llvm::StringLiteral kMoggNumDpsOutputs = "mogg.num_dps_outputs";
 
 /// Per-stub-argument metadata: `{dtype}` for a trait tensor, else "". The
 /// layout `L` of `_MoggTensorBufferCapture[dtype, L]` is inferred from the
@@ -246,28 +222,26 @@ constexpr llvm::StringLiteral kStructUntrackedOrigin = "UntrackedOrigin";
 constexpr llvm::StringLiteral kStructOptional = "Optional";
 constexpr llvm::StringLiteral kStructString = "String";
 constexpr llvm::StringLiteral kStructDeviceContext =
-    "max.gpu.host._legacy.device_context.DeviceContext";
+    "max.gpu.host.DeviceContext";
 constexpr llvm::StringLiteral kStructDeviceContextArray =
-    "max.gpu.host._legacy.device_context.DeviceContextArray";
-constexpr llvm::StringLiteral kStructDeviceGraph =
-    "max.gpu.host._legacy.device_graph.DeviceGraph";
+    "max.gpu.host.DeviceContextArray";
+constexpr llvm::StringLiteral kStructDeviceGraph = "max.gpu.host.DeviceGraph";
 constexpr llvm::StringLiteral kStructDeviceGraphBuilder =
-    "max.gpu.host._legacy.device_graph.DeviceGraphBuilder";
+    "max.gpu.host.DeviceGraphBuilder";
 /// `DeviceGraphInputKind`: how an `OwnedTensor` participates as a device graph
 /// input. The `data` member is the Mojo default and is never spelled out.
 constexpr llvm::StringLiteral kStructDeviceGraphInputKind =
-    "max.gpu.host._legacy.device_graph.DeviceGraphInputKind";
+    "max.gpu.host.DeviceGraphInputKind";
 constexpr llvm::StringLiteral kInputKindMutable = "mutable";
 constexpr llvm::StringLiteral kInputKindHost = "host";
 constexpr llvm::StringLiteral kInputKindShapeOnly = "shape_only";
 /// `OwnedTensor.with_kind[kind]()`: the same tensor under another input kind.
 constexpr llvm::StringLiteral kFnWithKind = "with_kind";
 constexpr llvm::StringLiteral kStructDeviceGraphNode =
-    "max.gpu.host._legacy.device_graph.DeviceGraphNode";
+    "max.gpu.host.DeviceGraphNode";
 constexpr llvm::StringLiteral kStructDeviceGraphCache =
-    "max.gpu.host._legacy.device_graph.DeviceGraphCache";
-constexpr llvm::StringLiteral kStructStableAddr =
-    "max.gpu.host._legacy.device_graph.StableAddr";
+    "max.gpu.host.DeviceGraphCache";
+constexpr llvm::StringLiteral kStructStableAddr = "max.gpu.host.StableAddr";
 constexpr llvm::StringLiteral kStructManagedTensorSlice =
     "extensibility.ManagedTensorSlice";
 constexpr llvm::StringLiteral kStructStableTensor =
@@ -544,10 +518,7 @@ constexpr std::pair<llvm::StringLiteral, llvm::StringLiteral>
         {"extensibility", ""},
         {"extensibility.managed_tensor_slice", "managed_tensor_slice"},
         {"extensibility.stable_tensor", "stable_tensor"},
-        // The public max.gpu.host package re-exports names, but these
-        // modules live in the _legacy subpackage.
-        {"max.gpu.host._legacy.device_context", ""},
-        {"max.gpu.host._legacy.device_graph", ""},
+        {"max.gpu.host", ""},
         {"std.utils", ""},
         {"std.utils.coord", ""},
         {"std.utils.numerics", ""},

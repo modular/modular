@@ -338,6 +338,7 @@ def fused_graph(
             huggingface_config=SimpleNamespace(
                 get_text_config=lambda: text_config
             ),
+            pipeline_stage=None,
         ),
     )
     spec = build_spec_graph(

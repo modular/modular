@@ -35,6 +35,7 @@ family.
    pipelines.architectures.dspark_gemma4
    pipelines.architectures.eagle3_deepseekV3
    pipelines.architectures.eagle_llama3
+   pipelines.architectures.flint
    pipelines.architectures.flux2
    pipelines.architectures.gemma3
    pipelines.architectures.gemma3multimodal
@@ -107,6 +108,7 @@ Text generation
    ~max.pipelines.architectures.dspark_gemma4
    ~max.pipelines.architectures.eagle3_deepseekV3
    ~max.pipelines.architectures.eagle_llama3
+   ~max.pipelines.architectures.flint
    ~max.pipelines.architectures.gemma3
    ~max.pipelines.architectures.gemma3multimodal
    ~max.pipelines.architectures.gemma4

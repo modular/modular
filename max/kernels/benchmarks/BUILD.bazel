@@ -142,7 +142,6 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: KERN-2317
-    "gpu/nn/bench_mla_decode_sparse_fp8.mojo": ["//:b200_gpu"],  # SM100-only sparse MLA decode; the kernel asserts on other GPUs
     "gpu/linalg/bench_blockwise_fp8_1d2d.mojo": ["//:b200_gpu"],  # SM100-specific blockwise FP8
     "gpu/linalg/bench_mma_throughput_sm100.mojo": ["//:b200_gpu"],  # SM100 tcgen05 MMA tile-size microbench
     "gpu/linalg/profile_grouped_matmul_swiglu_nvfp4.mojo": ["//:b200_gpu"],  # SM100-specific grouped block-scaled matmul
@@ -343,9 +342,6 @@ mojo_binary(
             # Same reason: timed on remote B200 at the plan's baseline cells;
             # `--bounds=True` selects the bounded (production) kernel arm.
             "gpu/nn/xcheck_topk_bitonic.mojo",
-            # Same reason: timed on remote B200 (`mojo_binary` cannot run
-            # remotely) for the indexer end-to-end baseline.
-            "gpu/nn/bench_mla_index_fp8_paged.mojo",
             # Same reason, timed on remote MI355.
             "gpu/nn/bench_mla_decode_sparse_rows_amd.mojo",
             # Dedicated target below: the Qwen3.8 prod shape is carried in
@@ -385,9 +381,6 @@ mojo_binary(
             # Same reason: timed on remote B200 at the plan's baseline cells;
             # `--bounds=True` selects the bounded (production) kernel arm.
             "gpu/nn/xcheck_topk_bitonic.mojo",
-            # Same reason: timed on remote B200 (`mojo_binary` cannot run
-            # remotely) for the indexer end-to-end baseline.
-            "gpu/nn/bench_mla_index_fp8_paged.mojo",
             # Same reason, timed on remote MI355.
             "gpu/nn/bench_mla_decode_sparse_rows_amd.mojo",
             # Dedicated target below: the Qwen3.8 prod shape is carried in
@@ -677,46 +670,6 @@ build_test(
     name = "gpu/nn/xcheck_topk_bitonic.mojo.test",
     tags = ["gpu"],
     targets = ["gpu/nn/xcheck_topk_bitonic.mojo.run"],
-)
-
-# The paged MLA FP8 indexer end-to-end (scorer + top-k + invalid-fill), timed
-# on remote B200 to measure the top-k's share of the op. Out of the `gpu/**`
-# glob because that glob builds a `mojo_binary`, which cannot run remotely.
-# `manual` keeps it out of `//...`; the `build_test` below restores compile
-# coverage.
-mojo_test(
-    name = "gpu/nn/bench_mla_index_fp8_paged.mojo.run",
-    size = "enormous",
-    srcs = ["gpu/nn/bench_mla_index_fp8_paged.mojo"],
-    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
-    enable_assertions = False,
-    exec_properties = {
-        "test.resources:gpu-memory": "8",
-    },
-    tags = [
-        "gpu",
-        "manual",
-    ],
-    target_compatible_with = [
-        "//:has_gpu",
-        "//:b200_gpu",
-    ],
-    deps = [
-        "//max:comm",
-        "//max:internal_utils",
-        "//max:layout",
-        "//max:max_mojo",
-        "//max:nn",
-        "//max:shmem",
-        "//max:structured_kernels",
-        "@mojo//:std",
-    ],
-)
-
-build_test(
-    name = "gpu/nn/bench_mla_index_fp8_paged.mojo.test",
-    tags = ["gpu"],
-    targets = ["gpu/nn/bench_mla_index_fp8_paged.mojo.run"],
 )
 
 # Out of the `gpu/**` glob so it can be timed on remote MI355; `manual` keeps

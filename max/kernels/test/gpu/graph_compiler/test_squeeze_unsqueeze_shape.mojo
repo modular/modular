@@ -21,8 +21,10 @@ untouched.
 
 from std.testing import TestSuite, assert_equal
 
-from builtin_kernels.gather_scatter import SqueezeShape, UnsqueezeShape
-from extensibility import IOSpec, ManagedTensorSlice, StaticTensorSpec
+from builtin_kernels.gather_scatter import (
+    squeeze_shape_gpu,
+    unsqueeze_shape_gpu,
+)
 from max.gpu.host import DeviceContext
 
 comptime shape_dtype = DType.int64
@@ -111,29 +113,40 @@ def run_case[
     ctx.enqueue_copy(idx_dev, idx_host)
     out_dev.enqueue_fill(CANARY)
 
-    comptime in_spec = StaticTensorSpec[shape_dtype, 1].get_unknown()
-    comptime idx_spec = StaticTensorSpec[indices_type, 1].get_unknown()
-    var input = ManagedTensorSlice[io_spec=IOSpec.Input, static_spec=in_spec](
-        in_dev.unsafe_ptr(), (rank,)
-    )
-    var shape_indices = ManagedTensorSlice[
-        io_spec=IOSpec.Input, static_spec=idx_spec
-    ](idx_dev.unsafe_ptr(), (num_indices,))
-    var output = ManagedTensorSlice[io_spec=IOSpec.Output, static_spec=in_spec](
-        out_dev.unsafe_ptr(), (out_rank,)
-    )
-
+    var out_ptr = out_dev.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
+    var in_ptr = in_dev.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
+    var idx_ptr = idx_dev.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
     comptime if squeeze:
-        SqueezeShape.execute[
-            target="gpu", dtype=shape_dtype, indices_type=indices_type
-        ](output, input, shape_indices, ctx)
+        squeeze_shape_gpu(
+            out_ptr,
+            1,
+            in_ptr,
+            1,
+            idx_ptr,
+            1,
+            rank,
+            num_indices,
+            ctx,
+        )
     else:
-        UnsqueezeShape.execute[
-            target="gpu", dtype=shape_dtype, indices_type=indices_type
-        ](output, input, shape_indices, ctx)
+        unsqueeze_shape_gpu(
+            out_ptr,
+            1,
+            in_ptr,
+            1,
+            idx_ptr,
+            1,
+            rank,
+            num_indices,
+            ctx,
+        )
 
     ctx.enqueue_copy(out_host, out_dev)
     ctx.synchronize()
+    # The helpers take untracked pointers, so keep the device inputs alive
+    # until the kernel has run.
+    _ = in_dev^
+    _ = idx_dev^
     for d in range(out_rank):
         assert_equal(
             Int(out_host[d]),

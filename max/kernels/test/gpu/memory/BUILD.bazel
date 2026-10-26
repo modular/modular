@@ -26,6 +26,7 @@ _OTHER_TESTS = [
 _EXTRA_CONSTRAINTS = {
     "test_apple_edge_masked_load.mojo": ["//:apple_gpu"],
     "test_prefetch_nvidia.mojo": ["//:nvidia_gpu"],
+    "test_tma_cache_hint.mojo": ["//:nvidia_gpu"],
 }
 
 mojo_filecheck_test(

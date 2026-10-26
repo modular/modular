@@ -299,8 +299,13 @@ def run_one_case(
     )
     comptime KV_AXIS = 2  # standard MHA paged cache: dim[1] = {K, V}
 
-    var block_shape = IndexList[6](
-        total_pages, KV_AXIS, NUM_LAYERS, PAGE_SIZE, num_kv_heads, HEAD_DIM
+    var block_shape = (
+        total_pages,
+        KV_AXIS,
+        NUM_LAYERS,
+        PAGE_SIZE,
+        num_kv_heads,
+        HEAD_DIM,
     )
     var block_elems = (
         total_pages * KV_AXIS * NUM_LAYERS * PAGE_SIZE * num_kv_heads * HEAD_DIM
@@ -318,9 +323,7 @@ def run_one_case(
     # --- rank-5 SF-atom scales for input + weight ----------------------------
     comptime k_sf = ceildiv(HIDDEN, SF_VECTOR_SIZE * SF_ATOM_K)
     var m_sf = ceildiv(M, SF_MN_GROUP_SIZE)
-    var input_scale_shape = IndexList[5](
-        m_sf, k_sf, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K
-    )
+    var input_scale_shape = (m_sf, k_sf, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K)
     var input_scale_elems = (
         max(1, m_sf) * k_sf * SF_ATOM_M[0] * SF_ATOM_M[1] * SF_ATOM_K
     )

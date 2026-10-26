@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Token-id prompts on vision tokenizers, as a completion request sends them.
 
-A token-id prompt must build the same row as the text it encodes.
+A token-id prompt must build the same row as the text it encodes, and each
+id must name a row of the model's embedding.
 """
 
 from __future__ import annotations
@@ -22,13 +23,17 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 from max.pipelines.architectures.qwen2_5vl.tokenizer import Qwen2_5VLTokenizer
+from max.pipelines.architectures.qwen3_5.tokenizer import Qwen3_5Tokenizer
 from max.pipelines.context import TextAndVisionContext
+from max.pipelines.context.exceptions import InputError
+from max.pipelines.lib import PipelineRuntimeConfig
 from max.pipelines.lib.tokenizer import TextAndVisionTokenizer
 from max.pipelines.modeling.types import RequestID, TextGenerationRequest
 from transformers import AutoConfig
 
 GEMMA3 = "google/gemma-3-4b-it"
 QWEN2_5VL = "Qwen/Qwen2.5-VL-3B-Instruct"
+QWEN3_5 = "Qwen/Qwen3.5-9B"
 PROMPT = "The capital of France is"
 
 
@@ -121,3 +126,50 @@ async def test_qwen2_5vl_tokenizer_rejects_placeholder_without_image() -> None:
 
     with pytest.raises(ValueError, match="image placeholder tokens"):
         await tokenizer.new_context(_request(token_ids))
+
+
+async def _assert_token_id_range(
+    tokenizer: TextAndVisionTokenizer, model_path: str
+) -> None:
+    """Checks the bound is the embedding size and every tokenizer id fits."""
+    bound = AutoConfig.from_pretrained(model_path).get_text_config().vocab_size
+    assert tokenizer._token_id_bound == bound
+    # Special and added tokens included.
+    assert max(tokenizer.delegate.get_vocab().values()) < bound
+
+    context = await tokenizer.new_context(_request([0, bound - 1]))
+    assert context.tokens.prompt.tolist() == [0, bound - 1]
+
+    for bad_id in (-1, bound):
+        with pytest.raises(InputError, match="out of range"):
+            await tokenizer.new_context(_request([0, bad_id]))
+
+
+@pytest.mark.asyncio
+async def test_text_and_vision_tokenizer_token_id_range() -> None:
+    tokenizer = TextAndVisionTokenizer(
+        GEMMA3, pipeline_config=_pipeline_config(GEMMA3)
+    )
+
+    await _assert_token_id_range(tokenizer, GEMMA3)
+    # DeepSeek-V4.1 builds its rows through encode.
+    with pytest.raises(InputError, match="out of range"):
+        await tokenizer.encode([tokenizer._token_id_bound])
+
+
+@pytest.mark.asyncio
+async def test_qwen2_5vl_tokenizer_token_id_range() -> None:
+    tokenizer = Qwen2_5VLTokenizer(
+        QWEN2_5VL, pipeline_config=_pipeline_config(QWEN2_5VL)
+    )
+
+    await _assert_token_id_range(tokenizer, QWEN2_5VL)
+
+
+@pytest.mark.asyncio
+async def test_qwen3_5_tokenizer_token_id_range() -> None:
+    pipeline_config = _pipeline_config(QWEN3_5)
+    pipeline_config.runtime = PipelineRuntimeConfig()
+    tokenizer = Qwen3_5Tokenizer(QWEN3_5, pipeline_config=pipeline_config)
+
+    await _assert_token_id_range(tokenizer, QWEN3_5)

@@ -82,12 +82,12 @@ from max.gpu.compute.arch.tcgen05 import (
 )
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.host.compile import _compile_code
-from max.gpu.host._legacy.func_attribute import Attribute
+from max.gpu.host import Attribute
 
 comptime NUM_LANES = 128
 comptime NUM_COLS = 32
 comptime WIDE_COLS = 128
-comptime NUM_WARPS = NUM_LANES // WARP_SIZE
+comptime NUM_WARPS = NUM_LANES // DeviceContext.default_device_info.warp_size
 comptime NUM_ELEMENTS = NUM_LANES * NUM_COLS
 comptime WIDE_ELEMENTS = NUM_LANES * WIDE_COLS
 
@@ -508,6 +508,7 @@ def test_budget_round_trip_does_not_spill(ctx: DeviceContext) raises:
 
 def test_m64_round_trip(ctx: DeviceContext) raises:
     print("== test_m64_round_trip")
+    comptime warp_size = ctx.default_device_info.warp_size
     var buf = ctx.enqueue_create_buffer[.float32](NUM_ELEMENTS)
     buf.enqueue_fill(Float32(-1))
     ctx.enqueue_function[tmem_m64_round_trip_kernel](
@@ -518,7 +519,7 @@ def test_m64_round_trip(ctx: DeviceContext) raises:
     ctx.synchronize()
     # Logical row r of the M=64 tile lives in lane 32 * (r // 16) + r % 16.
     for row in range(M64_ROWS):
-        var tmem_lane = (row // M64_LANES_PER_WARP) * WARP_SIZE + (
+        var tmem_lane = (row // M64_LANES_PER_WARP) * warp_size + (
             row % M64_LANES_PER_WARP
         )
         for col in range(NUM_COLS):

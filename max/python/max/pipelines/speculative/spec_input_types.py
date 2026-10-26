@@ -98,6 +98,34 @@ class SpecDecodeInputTypeSpec:
     ``draft_proposal="sampled"``."""
     vocab_size: int | None = None
     """Static vocabulary size, required by ``enable_sampled_draft_proposal``."""
+    draft_probs_replicas: int = 0
+    """Declare ``draft_probs_full`` as one tensor per data-parallel replica,
+    each on the replica's leader device and holding that replica's rows, in
+    place of the single device-0 tensor. Requires
+    ``enable_sampled_draft_proposal`` and a distributed spec."""
+
+
+def draft_probs_rows_name(replica: int) -> str:
+    """The symbolic row count of ``replica``'s proposal distributions."""
+    return f"dspark_probs_rows_replica_{replica}"
+
+
+def replica_leader_devices(spec: SpecDecodeInputTypeSpec) -> list[DeviceRef]:
+    """Each data-parallel replica's first device, in replica order."""
+    degree = spec.data_parallel_degree
+    if not (spec.draft_probs_replicas and spec.distributed and degree > 1):
+        raise ValueError(
+            "per-replica draft distributions need a distributed spec with"
+            " data_parallel_degree > 1"
+        )
+    if spec.draft_probs_replicas != degree or len(spec.devices) % degree:
+        raise ValueError(
+            f"draft_probs_replicas={spec.draft_probs_replicas} must equal"
+            f" data_parallel_degree={degree}, which divides"
+            f" {len(spec.devices)} devices"
+        )
+    per_replica = len(spec.devices) // degree
+    return [spec.devices[r * per_replica] for r in range(degree)]
 
 
 def _declares_signal_buffers(spec: SpecDecodeInputTypeSpec) -> bool:
@@ -118,7 +146,8 @@ def build_spec_decode_input_types(
     Order: [leading], tokens, [vision], device_offsets, [host_offsets],
     return_n_logits,
     [data_parallel_splits], [signals], kv_cache_tree,
-    [batch_context_lengths, ep], draft_tokens, [draft_probs_full], seed,
+    [batch_context_lengths, ep], draft_tokens,
+    [draft_probs_full, or one per replica], seed,
     temperature, top_k,
     max_k, top_p, min_top_p, [in_thinking_phase],
     [draft_slot_ids, draft_block_offsets], [bitmask triple]. Bracketed
@@ -226,13 +255,27 @@ def spec_decode_tail_input_types(
                 "vocab_size is required when enable_sampled_draft_proposal is"
                 " set"
             )
-        all_input_types.append(
-            TensorType(
-                DType.float32,
-                ["batch_size", "num_steps", spec.vocab_size],
-                device=device_ref,
+        if spec.draft_probs_replicas:
+            all_input_types.extend(
+                TensorType(
+                    DType.float32,
+                    [
+                        draft_probs_rows_name(replica),
+                        "num_steps",
+                        spec.vocab_size,
+                    ],
+                    device=leader,
+                )
+                for replica, leader in enumerate(replica_leader_devices(spec))
             )
-        )
+        else:
+            all_input_types.append(
+                TensorType(
+                    DType.float32,
+                    ["batch_size", "num_steps", spec.vocab_size],
+                    device=device_ref,
+                )
+            )
 
     all_input_types.append(
         TensorType(DType.uint64, shape=["batch_size"], device=device_ref)
@@ -338,6 +381,7 @@ class SpecDecodeGraphInputs(Generic[_T, _B, _V]):
     host_input_row_offsets: _T | None = None
     data_parallel_splits: _T | None = None
     draft_probs_full: _T | None = None
+    draft_probs_replicas: list[_T] | None = None
     in_thinking_phase: _T | None = None
     draft_slot_ids: _T | None = None
     """Which drafter rows this step computes, as the tensor's extent:
@@ -428,6 +472,9 @@ class SpecDecodeTailValues:
     top_p: TensorValue
     min_top_p: TensorValue
     draft_probs_full: TensorValue | None = None
+    draft_probs_replicas: list[TensorValue] | None = None
+    """One per replica instead of ``draft_probs_full``, when the spec sets
+    ``draft_probs_replicas``."""
     in_thinking_phase: TensorValue | None = None
     draft_slot_ids: TensorValue | None = None
     """Which drafter rows this step computes, as the tensor's extent:
@@ -478,9 +525,15 @@ def decode_spec_decode_tail(
     take = partial(_next_input, it, decoding="the canonical tail")
 
     draft_tokens = take().tensor
-    draft_probs_full = (
-        take().tensor if spec.enable_sampled_draft_proposal else None
-    )
+    draft_probs_full: TensorValue | None = None
+    draft_probs_replicas: list[TensorValue] | None = None
+    if spec.enable_sampled_draft_proposal:
+        if spec.draft_probs_replicas:
+            draft_probs_replicas = [
+                take().tensor for _ in range(spec.draft_probs_replicas)
+            ]
+        else:
+            draft_probs_full = take().tensor
     seed = take().tensor
     temperature = take().tensor
     top_k = take().tensor
@@ -512,6 +565,7 @@ def decode_spec_decode_tail(
         top_p=top_p,
         min_top_p=min_top_p,
         draft_probs_full=draft_probs_full,
+        draft_probs_replicas=draft_probs_replicas,
         in_thinking_phase=in_thinking_phase,
         draft_slot_ids=draft_slot_ids,
         draft_block_offsets=draft_block_offsets,
@@ -616,6 +670,7 @@ def decode_spec_decode_input_values(
         host_input_row_offsets=host_input_row_offsets,
         data_parallel_splits=data_parallel_splits,
         draft_probs_full=tail.draft_probs_full,
+        draft_probs_replicas=tail.draft_probs_replicas,
         in_thinking_phase=tail.in_thinking_phase,
         draft_slot_ids=tail.draft_slot_ids,
         draft_block_offsets=tail.draft_block_offsets,

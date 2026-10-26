@@ -593,3 +593,46 @@ def test_config_json_is_written_beside_the_score(tmp_path: Path) -> None:
         str(tmp_path), "gpqa_diamond", rows, summary, "EXACTO_GPQA", config
     )
     assert json.loads((tmp_path / "config.json").read_text()) == config
+
+
+def test_a_vgi_log_records_its_media_manifest_and_rejected_requests() -> None:
+    log = json.loads(json.dumps(OPENBENCH_LOG))
+    log["eval"]["task"] = "vgi_bench"
+    log["eval"]["metadata"] = {
+        "harness": "OpenRouterTeam/benchmark-harness",
+        "media_manifest_hash": "8726" + "0" * 60,
+    }
+    log["samples"][2]["scores"]["mcq_scorer"] = {
+        "value": "I",
+        "answer": None,
+        "explanation": "Model error: HTTP 400: video fetch failed",
+    }
+    _, summary = exacto_report.parse_openbench_log(log)
+    assert summary["media_manifest_hash"] == "8726" + "0" * 60
+    assert summary["model_errors_scored_wrong"] == 1
+    # Scored 0 like the harness, so not an error against the budget.
+    assert summary["errors"] == 0
+
+
+def test_rejected_requests_past_the_budget_fail_the_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # They stay in the accuracy as 0, but a server that refuses most videos
+    # must not report that deflated score as a clean run.
+    monkeypatch.delenv("EVAL_MAX_ERROR_RATE", raising=False)
+    summary = {"total": 10, "errors": 0, "model_errors_scored_wrong": 2}
+    with pytest.raises(SystemExit):
+        exacto_report._enforce_error_budget(summary)
+
+
+def test_rejected_requests_within_the_budget_pass(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("EVAL_MAX_ERROR_RATE", raising=False)
+    exacto_report._enforce_error_budget(
+        {"total": 10, "errors": 0, "model_errors_scored_wrong": 1}
+    )
+
+
+def test_vgi_bench_is_a_known_dataset() -> None:
+    assert "vgi_bench" in exacto_report.DATASETS

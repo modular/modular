@@ -33,11 +33,15 @@ def run_split_k[
 ](ctx: DeviceContext, m: Int) raises:
     comptime guard_size = 32
     comptime config = MatmulConfig[dtype, dtype, dtype, transpose_b](
-        block_tile_shape=Index(
-            16, 16, 64
-        ) if ctx.target.is_amd_gpu() else Index(128, 128, 32),
-        warp_tile_shape=Index(16, 16, 64) if ctx.target.is_amd_gpu() else Index(
-            64, 64, 32
+        block_tile_shape=(16, 16, 64) if ctx.target.is_amd_gpu() else (
+            128,
+            128,
+            32,
+        ),
+        warp_tile_shape=(16, 16, 64) if ctx.target.is_amd_gpu() else (
+            64,
+            64,
+            32,
         ),
         mma_shape=_amdgpu_get_mma_shape[
             dtype, True

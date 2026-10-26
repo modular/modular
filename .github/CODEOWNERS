@@ -23,6 +23,7 @@
 /bazel/public-patches/mistral-evals-0001-Check-health-endpoint-with-and-without-v1.patch @modular/sdlc
 /bazel/public-patches/mistral-evals-0002-Increase-request-parallelism.patch @modular/sdlc
 /bazel/public-patches/mistral-evals-0003-Accept-any-200-from-the-health-endpoint.patch @modular/sdlc
+/bazel/public-patches/mistral-evals-0004-Make-request-parallelism-configurable.patch @modular/sdlc
 /bazel/public-patches/tcmalloc-glibc-rseq.patch @modular/sdlc
 /bazel/public-patches/tcmalloc-local-dynamic.patch @modular/sdlc
 /bazel/public-patches/tcmalloc-numa.patch @modular/sdlc
@@ -128,6 +129,7 @@
 /max/mojo/max/gpu/host @modular/stdlib @modular/kernels @modular/driver @copilot-pull-request-reviewer
 /max/mojo/max/runtime @modular/stdlib @modular/mojo-compiler @copilot-pull-request-reviewer
 /max/mojo/max/_plugin/ @modular/stdlib @modular/gpu-abstractions @copilot-pull-request-reviewer
+/max/mojo/max/_driver/ @modular/driver
 /max/mojo/test/atomic/ @modular/stdlib @copilot-pull-request-reviewer
 /max/mojo/test/algorithm/ @modular/stdlib @modular/gpu-abstractions @copilot-pull-request-reviewer
 /max/mojo/test/asyncrt/ @modular/stdlib @modular/kernels @modular/runtime @copilot-pull-request-reviewer

@@ -356,9 +356,9 @@ def test_conv2d_1sm[
     im2col(im2col_host, act_host, problem)
     ctx.enqueue_copy(im2col_device, im2col_host_ptr)
 
-    var _dynamic_a_ref_shape = IndexList[2](M, K)
-    var _dynamic_b_ref_shape = IndexList[2](N, K)
-    var _dynamic_c_ref_shape = IndexList[2](M, N)
+    var _dynamic_a_ref_shape = (M, K)
+    var _dynamic_b_ref_shape = (N, K)
+    var _dynamic_c_ref_shape = (M, N)
     var im2col_device_nd = TileTensor(im2col_device, row_major(M, K))
     var filter_2d_device_nd = TileTensor(filter_device, row_major(N, K))
     var out_2d_ref_nd = TileTensor(out_device_ref, row_major(M, N))

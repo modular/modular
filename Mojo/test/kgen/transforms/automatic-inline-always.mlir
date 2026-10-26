@@ -161,7 +161,10 @@ kgen.func @call_it() {
 
 // -----
 
-kgen.func @callee(%arg0: index, %arg1: index) capturing always_inline {
+// COM: Taking the address of an `always_inline` function is not a call site,
+// COM: so the function is neither inlined there nor erased.
+// CHECK-LABEL: kgen.func @callee
+kgen.func @callee(%arg0: index, %arg1: index) always_inline {
   "use"(%arg0, %arg1) : (index, index) -> ()
   hlcf.return
 }
@@ -169,51 +172,10 @@ kgen.func @callee(%arg0: index, %arg1: index) capturing always_inline {
 // CHECK-LABEL: kgen.func @caller
 kgen.func @caller() {
   %idx0 = index.constant 0
-  // CHECK: %0 = kgen.stage_closure = (%arg0: index) capturing
-  // CHECK-NEXT: "use"(%idx0, %arg0)
-  %0 = kgen.create_closure[(index, index) capturing -> (): @callee](%idx0)
-
-  // CHECK: call_indirect %0(%idx0)
-  kgen.call_indirect %0(%idx0) : (index) capturing -> ()
-  hlcf.return
-}
-
-// -----
-
-kgen.func @has_closure() always_inline {
-  kgen.stage_closure = () {
-    hlcf.return
-  }
-  hlcf.return
-}
-
-// CHECK-LABEL: kgen.func @caller
-kgen.func @caller() {
-  // CHECK: kgen.stage_closure
-  // CHECK-NEXT: hlcf.return
-  kgen.call @has_closure() : () -> ()
-  hlcf.return
-}
-
-// -----
-
-kgen.func @two_callers(%arg0: index, %arg1: index) always_inline {
-  hlcf.return
-}
-
-// CHECK: kgen.func @caller0
-kgen.func @caller0() {
-  %idx0 = index.constant 0
-  // CHECK: stage_closure = (%arg0: index) capturing
-  kgen.create_closure[(index, index) -> (): @two_callers](%idx0)
-  hlcf.return
-}
-
-// CHECK: kgen.func @caller1
-kgen.func @caller1() {
-  %idx0 = index.constant 0
-  // CHECK: stage_closure = (%arg0: index) capturing
-  kgen.create_closure[(index, index) -> (): @two_callers](%idx0)
+  // CHECK: %0 = kgen.create_func_ptr[(index, index) -> (): @callee]()
+  %0 = kgen.create_func_ptr[(index, index) -> (): @callee]()
+  // CHECK-NEXT: call_indirect %0(%idx0, %idx0)
+  kgen.call_indirect %0(%idx0, %idx0) : (index, index) -> ()
   hlcf.return
 }
 

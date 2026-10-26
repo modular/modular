@@ -35,6 +35,7 @@ from layout import (
     Idx,
 )
 
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 
 from linalg.fp4_utils import (
@@ -51,6 +52,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scaled_matmul import (
     grouped_block_scaled_matmul,
 )
+from std.utils.coord import Coord
 
 
 def test_grouped_gemm_epilogue[
@@ -64,8 +66,8 @@ def test_grouped_gemm_epilogue[
     scales_dtype: DType,
     transpose_b: Bool,
     cta_group: Int,
-    mma_shape: IndexList[3],
-    cluster_shape: IndexList[3],
+    mma_shape: DynamicCoord[.int, 3],
+    cluster_shape: Coord[Int, Int, Int],
     register_based_epilogue: Bool = True,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     """Test grouped block-scaled GEMM with epilogue lambda.
@@ -386,8 +388,8 @@ def main() raises:
             scales_dtype,
             transpose_b=transpose_b,
             cta_group=1,
-            mma_shape=Index(128, 128, 32),
-            cluster_shape=Index(1, 1, 1),
+            mma_shape=(Int(128), Int(128), Int(32)),
+            cluster_shape=(Int(1), Int(1), Int(1)),
             register_based_epilogue=True,
         ](ctx, Idx[256], Idx[256], Idx[128])
 
@@ -399,8 +401,8 @@ def main() raises:
             scales_dtype,
             transpose_b=transpose_b,
             cta_group=2,
-            mma_shape=Index(256, 128, 32),
-            cluster_shape=Index(2, 1, 1),
+            mma_shape=(Int(256), Int(128), Int(32)),
+            cluster_shape=(Int(2), Int(1), Int(1)),
             register_based_epilogue=True,
         ](ctx, Idx[256], Idx[256], Idx[128])
 
@@ -412,8 +414,8 @@ def main() raises:
             scales_dtype,
             transpose_b=transpose_b,
             cta_group=1,
-            mma_shape=Index(128, 128, 32),
-            cluster_shape=Index(1, 1, 1),
+            mma_shape=(Int(128), Int(128), Int(32)),
+            cluster_shape=(Int(1), Int(1), Int(1)),
             register_based_epilogue=True,
         ](ctx, Idx[512], Idx[512], Idx[256])
 
@@ -425,8 +427,8 @@ def main() raises:
             scales_dtype,
             transpose_b=transpose_b,
             cta_group=2,
-            mma_shape=Index(256, 128, 32),
-            cluster_shape=Index(2, 1, 1),
+            mma_shape=(Int(256), Int(128), Int(32)),
+            cluster_shape=(Int(2), Int(1), Int(1)),
             register_based_epilogue=True,
         ](ctx, Idx[512], Idx[512], Idx[256])
 

@@ -75,6 +75,7 @@ modular_shared_library(
         "//Init",
         "//Kernels/lib/max_license:WeightsRegistry",
         "//Support:Context",
+        "//Support:Diagnostics",
         "//Support:Globals",
         "//Support:SpanGuard",
         "//max:CAPI.headers",

@@ -27,7 +27,12 @@ from max.pipelines.context import (
 )
 from max.pipelines.context.exceptions import PromptTooLongError
 from max.pipelines.lib import TextAndVisionTokenizer, resolve_eos_token_ids
-from max.pipelines.lib.tokenizer import encode_dkv_cache_hint, open_image
+from max.pipelines.lib.tokenizer import (
+    checked_token_ids,
+    encode_dkv_cache_hint,
+    open_image,
+    resolve_token_id_bound,
+)
 from max.pipelines.modeling.types import (
     ImageContentPart,
     TextContentPart,
@@ -93,6 +98,9 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
 
         self._eos_token_ids = resolve_eos_token_ids(
             self.delegate.eos_token_id, pipeline_config
+        )
+        self._token_id_bound = resolve_token_id_bound(
+            self.delegate, pipeline_config
         )
 
     async def decode(self, encoded: TokenIds, **kwargs) -> str:
@@ -223,7 +231,9 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         else:
             # Hugging Face processors take only text, so token ids skip the
             # processor.
-            processed_inputs = {"input_ids": [list(prompt)]}
+            processed_inputs = {
+                "input_ids": [checked_token_ids(prompt, self._token_id_bound)]
+            }
 
         if "input_ids" not in processed_inputs:
             raise ValueError(

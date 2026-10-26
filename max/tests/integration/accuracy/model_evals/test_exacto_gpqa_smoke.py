@@ -204,6 +204,7 @@ def test_smoke_cli(
     assert set(report["harness_sha256"]) == {
         "exacto_gpqa_task.py",
         "exacto_gpqa_openrouter.py",
+        "exacto_mcq.py",
         "exacto_streaming.py",
         "exacto_gpqa_smoke.py",
     }

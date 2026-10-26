@@ -33,7 +33,6 @@ fails deterministically instead of depending on what the allocator recycled.
 """
 
 from layout import TileTensor, row_major
-from max.gpu import WARP_SIZE
 from max.gpu.host import DeviceContext
 from nn.topk import topk_gpu
 from std.testing import assert_equal
@@ -174,14 +173,15 @@ def check_full_row_keeps_every_slot(ctx: DeviceContext) raises:
 
 
 def check_single_block_fills_past_block_size(ctx: DeviceContext) raises:
-    """One block of `WARP_SIZE` threads against `max_k == 2 * WARP_SIZE`.
+    """One block of `warp_size` threads against `max_k == 2 * warp_size`.
 
     The row is shorter than `max_k`, so the slots past the block hold both real
     picks and padding.
     """
-    comptime block_size = WARP_SIZE
-    comptime n = WARP_SIZE + 5
-    comptime max_k = 2 * WARP_SIZE
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime block_size = warp_size
+    comptime n = warp_size + 5
+    comptime max_k = 2 * warp_size
     var dead = min_or_neg_inf[DTYPE]()
 
     var in_buf = ctx.enqueue_create_buffer[DTYPE](n)

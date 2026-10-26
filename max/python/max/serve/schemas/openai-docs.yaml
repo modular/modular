@@ -1207,6 +1207,143 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /v1/load_lora_adapter:
+    post:
+      operationId: loadLoraAdapter
+      summary: Load a LoRA adapter
+      description: |
+        Loads a LoRA adapter from a local path into a serving instance
+        started with the `--enable-lora` argument. After the adapter loads,
+        its name appears in the [models list](/rest-api/list-models) and
+        you can pass it as the `model` value in inference requests.
+
+        For adapter requirements, such as supported base models, weight
+        format, and layer targets, see the
+        [LoRA adapters guide](/serve/lora-adapters).
+      x-codeSamples:
+        - lang: curl
+          source: |
+            curl -X POST http://0.0.0.0:8000/v1/load_lora_adapter \
+              -H "Content-Type: application/json" \
+              -d '{
+                    "lora_name": "example",
+                    "lora_path": "/path/to/lora-adapter"
+                  }'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoadLoraAdapterRequest'
+      responses:
+        '200':
+          description: |
+            The adapter loaded. Loading a name that is already in use
+            from the same path also returns `200`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoraAdapterResponse'
+              examples:
+                success:
+                  summary: Adapter loaded
+                  value:
+                    status: "success"
+                    message: "LoRA adapter 'example' loaded successfully"
+        '400':
+          description: |
+            The adapter path does not exist locally, the adapter directory
+            is invalid, or the request body is malformed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: |
+            An adapter with the same name is already loaded from a
+            different path.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: An internal error prevented the adapter from loading.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '501':
+          description: |
+            The serving instance was started without LoRA enabled.
+            Restart it with `--enable-lora`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/unload_lora_adapter:
+    post:
+      operationId: unloadLoraAdapter
+      summary: Unload a LoRA adapter
+      description: |
+        Unloads a previously loaded LoRA adapter by name. Unloading removes
+        the adapter from the [models list](/rest-api/list-models), and
+        inference requests that name it fail.
+
+        For the workflow around loading and unloading adapters, see the
+        [LoRA adapters guide](/serve/lora-adapters).
+      x-codeSamples:
+        - lang: curl
+          source: |
+            curl -X POST http://0.0.0.0:8000/v1/unload_lora_adapter \
+              -H "Content-Type: application/json" \
+              -d '{
+                    "lora_name": "example"
+                  }'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnloadLoraAdapterRequest'
+      responses:
+        '200':
+          description: The adapter unloaded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoraAdapterResponse'
+              examples:
+                success:
+                  summary: Adapter unloaded
+                  value:
+                    status: "success"
+                    message: "LoRA adapter 'example' unloaded successfully"
+        '400':
+          description: The request body is malformed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No adapter with that name is loaded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: An internal error prevented the adapter from unloading.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '501':
+          description: |
+            The serving instance was started without LoRA enabled.
+            Restart it with `--enable-lora`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /v1/models:
     get:
       operationId: listModels
@@ -2333,3 +2470,47 @@ components:
           type: string
           enum: [ok, unavailable]
           description: The health status of the service
+    LoadLoraAdapterRequest:
+      type: object
+      description: |
+        Request to load a LoRA adapter into a serving instance started
+        with the `--enable-lora` argument.
+      required:
+        - lora_name
+        - lora_path
+      properties:
+        lora_name:
+          type: string
+          description: |
+            Name that identifies the adapter in inference requests.
+        lora_path:
+          type: string
+          description: |
+            Local path to the adapter directory. Remote repositories
+            are not supported.
+    UnloadLoraAdapterRequest:
+      type: object
+      description: |
+        Request to unload a previously loaded LoRA adapter.
+      required:
+        - lora_name
+      properties:
+        lora_name:
+          type: string
+          description: |
+            Name of the adapter to unload, as given to
+            `POST /v1/load_lora_adapter`.
+    LoraAdapterResponse:
+      type: object
+      description: |
+        Result of a LoRA adapter load or unload request.
+      required:
+        - status
+        - message
+      properties:
+        status:
+          type: string
+          description: The result of the operation.
+        message:
+          type: string
+          description: A human-readable status message.

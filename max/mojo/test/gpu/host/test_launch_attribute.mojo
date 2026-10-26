@@ -15,7 +15,7 @@ from std.sys import size_of
 from std.testing import assert_equal, TestSuite
 
 from max.gpu.host import Dim
-from max.gpu.host._legacy.launch_attribute import (
+from max.gpu.host import (
     LaunchAttribute,
     LaunchAttributeID,
     LaunchAttributeValue,

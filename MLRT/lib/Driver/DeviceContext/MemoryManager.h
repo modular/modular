@@ -583,6 +583,12 @@ public:
   ErrorOr<void *> allocate(size_t size, Device::AllocMode mode);
   ErrorOrSuccess free(void *buf);
 
+  // Return every cached free buffer to the parent, keeping this free list in
+  // service. Unlike a deferred free, nothing gates the move, so the caller
+  // guarantees no device work still references these buffers: it has
+  // synchronized this list's stream, and no one can enqueue more on it.
+  void flushCachedToParent();
+
   bool empty();
 
   // Enable out-of-bounds access checks
@@ -626,6 +632,8 @@ private:
   // so a later `free()` does not dispatch through `desc->allocatedBy_` after
   // this freelist is destroyed. Called only from the destructor.
   void flushToParent();
+  // Shared by `flushToParent` and `flushCachedToParent`. Caller holds `mu_`.
+  void flushCachedToParentLocked();
 
   void selfCheck() const;
   bool contains(MemoryManager::Desc *desc) const;

@@ -297,13 +297,7 @@ POPToLLVMTypeConverter::POPToLLVMTypeConverter(TargetInfoAttr target)
   });
 
   addConversion([this](FuncType signatureType) -> std::optional<Type> {
-    MLIRContext *ctx = signatureType.getContext();
-    if (signatureType.isCapturing()) {
-      auto pointerTy = LLVM::LLVMPointerType::get(ctx);
-      return LLVM::LLVMStructType::getLiteral(ctx, {pointerTy, pointerTy});
-    } else {
-      return convertType(signatureType.getValues());
-    }
+    return convertType(signatureType.getValues());
   });
 
   // TODO(MOCO-1253): GeneratorType should not be allowed during LLVM lowering.
@@ -1234,9 +1228,6 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
   }
 
   if (auto callable = dyn_cast<CallableSymbolAttrInterface>(attr)) {
-    if (cast<FuncTypeGeneratorType>(callable.getType()).getBody().isCapturing())
-      return Error("TODO: capturing closures cannot be materialized as runtime "
-                   "values");
     return LLVM::AddressOfOp::create(
         b, tc.convertType(callable.getType()),
         cast<FlatSymbolRefAttr>(callable.getSymbol()));

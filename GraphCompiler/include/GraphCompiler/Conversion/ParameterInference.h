@@ -61,12 +61,12 @@ void inferOpaqueParameters(
     mlir::Operation *moOp, const KernelDeclFunctionAdaptor &function,
     mlir::ArrayAttr inputParams);
 
-/// Fill and return the list of inferred parameters for a struct kernel
-/// function (execute, shape, elementwise, or build_graph). Uses the stored
-/// struct-level and fn-level ParamDeclAttrs from the KernelDeclAdaptor.
-/// Non-const because `FnTypeGeneratorType`'s pog list metadata accessor is.
+/// Fill and return the list of inferred parameters for the `kind` function of
+/// a struct kernel. Uses the stored struct-level and fn-level ParamDeclAttrs
+/// from the KernelDeclAdaptor. Non-const because `FnTypeGeneratorType`'s pog
+/// list metadata accessor is.
 ErrorOr<InferredParameters> inferKernelParameters(
-    KernelDeclAdaptor &adaptor, llvm::StringRef funcLabel,
+    KernelDeclAdaptor &adaptor, KernelFunctionKind kind,
     std::function<ErrorOr<MojoValue>(StringRef)> &&inferCallback);
 
 /// Fill and return the list of inferred parameters for a standalone

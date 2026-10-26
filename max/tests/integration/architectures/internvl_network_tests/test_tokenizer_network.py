@@ -22,6 +22,7 @@ from max.pipelines.architectures.internvl.tokenizer import (
     InternVLProcessor,
     InternVLTokenizer,
 )
+from max.pipelines.context.exceptions import InputError
 from max.pipelines.modeling.types import (
     ImageContentPart,
     RequestID,
@@ -139,6 +140,34 @@ async def test_internvl_tokenizer_token_id_prompt() -> None:
     assert (
         context.extra_model_args.keys() == text_context.extra_model_args.keys()
     )
+
+
+@pytest.mark.asyncio
+async def test_internvl_tokenizer_token_id_range() -> None:
+    """Token ids are bounded by ``llm_config.vocab_size``."""
+    model_id = "OpenGVLab/InternVL3-1B-Instruct"
+    pipeline_config = _create_mock_pipeline_config(model_id)
+    tokenizer = InternVLTokenizer(
+        model_path=model_id,
+        pipeline_config=pipeline_config,
+        trust_remote_code=True,
+    )
+    bound = pipeline_config.model.huggingface_config.llm_config.vocab_size
+    assert tokenizer._token_id_bound == bound
+    # Special and added tokens included.
+    assert max(tokenizer.delegate.get_vocab().values()) < bound
+
+    def request(prompt: list[int]) -> TextGenerationRequest:
+        return TextGenerationRequest(
+            request_id=RequestID(), model_name=model_id, prompt=prompt
+        )
+
+    context = await tokenizer.new_context(request([0, bound - 1]))
+    assert context.tokens.prompt.tolist() == [0, bound - 1]
+
+    for bad_id in (-1, bound):
+        with pytest.raises(InputError, match="out of range"):
+            await tokenizer.new_context(request([0, bad_id]))
 
 
 @pytest.mark.asyncio

@@ -324,7 +324,7 @@ def ss_qk_partial_kernel[
         ACC_TYPE,
         FP8_TYPE,
         FP8_TYPE,
-        Index[dtype=.uint32](QK_M, QK_N),
+        (UInt32(QK_M), UInt32(QK_N)),
         transpose_b=True,
     ]()
 
@@ -536,7 +536,7 @@ def ss_qk_multistage_kernel[
         ACC_TYPE,
         FP8_TYPE,
         FP8_TYPE,
-        Index[dtype=.uint32](QK_M, QK_N),
+        (UInt32(QK_M), UInt32(QK_N)),
         transpose_b=True,
     ]()
 
@@ -1371,7 +1371,7 @@ def ss_nonws_partial_kernel[
         ACC_TYPE,
         FP8_TYPE,
         FP8_TYPE,
-        Index[dtype=.uint32](NW_M, QK_N),
+        (UInt32(NW_M), UInt32(QK_N)),
         transpose_b=True,
     ]()
 
@@ -1980,7 +1980,7 @@ def ts_partial_kernel[
         TS_ACCUM_TYPE,
         TS_OP_TYPE,
         TS_OP_TYPE,
-        Index[dtype=.uint32](TS_MMA_M, TS_MMA_N),
+        (UInt32(TS_MMA_M), UInt32(TS_MMA_N)),
         transpose_b=True,
     ]()
 

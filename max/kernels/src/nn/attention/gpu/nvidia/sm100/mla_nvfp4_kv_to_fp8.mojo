@@ -66,7 +66,6 @@ comptime _FP8_ROW_BYTES = _LATENT_DIM + NVFP4_MLA_ROPE_DIM
 comptime _PACKED_ROW_BYTES = nvfp4_mla_row_bytes[_FP8_ROW_BYTES]()
 comptime _SF_ROW_BYTES = nvfp4_mla_scale_row_bytes[_FP8_ROW_BYTES]()
 comptime _WARPS_PER_BLOCK = 8
-comptime _BLOCK_THREADS = _WARPS_PER_BLOCK * WARP_SIZE
 comptime _NO_PAGE = UInt32(0xFFFFFFFF)
 # Slots per remap thread; `top_k` and both strides are multiples of it.
 comptime _REMAP_WIDTH = 4
@@ -241,6 +240,9 @@ def mla_prefill_sparse_nvfp4_via_fp8[
     """
     comptime page_size = cache_t.page_size_
     comptime top_k = config.indices_stride // 2
+    comptime block_threads = (
+        _WARPS_PER_BLOCK * ctx.default_device_info.warp_size
+    )
     comptime assert (
         cache_t.dtype == DType.uint8 and cache_t.quantization_enabled
     ), "the convert-once prefill reads a packed NVFP4 cache"
@@ -286,7 +288,7 @@ def mla_prefill_sparse_nvfp4_via_fp8[
         page_slots,
         Int32(pages_per_seq),
         grid_dim=num_pages,
-        block_dim=_BLOCK_THREADS,
+        block_dim=block_threads,
     )
     var remap_threads = num_tokens * dense_stride // _REMAP_WIDTH
     ctx.enqueue_function[_remap_kernel[page_size]](
@@ -298,8 +300,8 @@ def mla_prefill_sparse_nvfp4_via_fp8[
         Int32(dense_stride),
         Int32(num_tokens),
         Int32(num_blocks),
-        grid_dim=ceildiv(remap_threads, _BLOCK_THREADS),
-        block_dim=_BLOCK_THREADS,
+        grid_dim=ceildiv(remap_threads, block_threads),
+        block_dim=block_threads,
     )
 
     # The FP8 kernel addresses rows through the indices alone, so the scratch

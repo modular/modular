@@ -1291,7 +1291,7 @@ void LowerKGENToLLVMPass::runOnOperation() {
       return !typeConverter.isLegal(op);
     }
     return isa_and_present<KGENDialect>(op->getDialect()) &&
-           !isa<KGEN::CallIndirectOp, KGEN::CreateClosureOp,
+           !isa<KGEN::CallIndirectOp, KGEN::CreateFuncPtrOp,
                 KGEN::StructInstanceOp>(op);
   };
   if (failed(M::applyDirectConversion(theModule, &typeConverter,

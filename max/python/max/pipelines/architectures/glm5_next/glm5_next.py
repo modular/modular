@@ -85,6 +85,7 @@ from max.pipelines.architectures.deepseekV3.deepseekV3 import (
 from max.pipelines.architectures.deepseekV3_2.layers import (
     DeepseekV3_2TopKRouter,
 )
+from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 from max.tree import Tree
 
 from .layers.decoder import Glm5NextDecoderLayer
@@ -452,7 +453,8 @@ class Glm5Next(Module):
 
         Five groups, and the order is the contract:
 
-        1. ``tokens``, device row offsets, host row offsets,
+        1. ``tokens``, the per-device vision embeddings, the per-device vision
+           scatter indices, device row offsets, host row offsets,
            ``return_n_logits``, ``data_parallel_splits``
         2. the allreduce signal buffers
         3. both KV cache leaves, flattened -- ``"mla"`` then ``"indexer"``
@@ -462,13 +464,26 @@ class Glm5Next(Module):
         inputs, matching ``deepseekV3_2.py:840`` -- they are fixed by the
         schedule, so nothing has to supply them per step.
 
-        Groups 1-4 are exactly ``DeepseekV3Inputs.buffers``. The recurrent
+        Groups 1-4 are exactly ``Glm5NextInputs.buffers``. The recurrent
         state needs no group of its own: it is a child of the multi-cache, so
         its pools and row ids are already inside group 3.
         """
-        device = self.config.devices[0]
+        devices = self.config.devices
+        device = devices[0]
         types: list[TensorType | BufferType] = [
             TensorType(DType.int64, shape=["total_seq_len"], device=device),
+            *(
+                TensorType(
+                    DType.bfloat16,
+                    shape=["vision_merged_seq_len", self.config.hidden_size],
+                    device=d,
+                )
+                for d in devices
+            ),
+            *(
+                TensorType(DType.int32, shape=["total_image_tokens"], device=d)
+                for d in devices
+            ),
             TensorType(
                 DType.uint32, shape=["input_row_offsets_len"], device=device
             ),
@@ -516,9 +531,9 @@ class Glm5Next(Module):
         cache parameters this module was built with.
 
         Adapts the flat graph inputs to :meth:`__call__`: splits off the
-        signal buffers, unflattens the MLA, indexer and recurrent state
-        caches, and skips ``batch_context_lengths``, which the graph does not
-        read yet.
+        per-device vision rows and scatter indices and the signal buffers,
+        unflattens the MLA, indexer and recurrent state caches, and skips
+        ``batch_context_lengths``, which the graph does not read yet.
 
         Args:
             *input_types: The graph's input types.
@@ -537,14 +552,18 @@ class Glm5Next(Module):
         assert kv_params is not None, "trace needs the KV cache parameters"
         num_devices = len(self.config.devices)
 
-        def forward(
-            tokens: Value[Any],
-            device_input_row_offsets: Value[Any],
-            host_input_row_offsets: Value[Any],
-            return_n_logits: Value[Any],
-            _data_parallel_splits: Value[Any],
-            *variadic: Value[Any],
-        ) -> DecoderOutputs:
+        def forward(tokens: Value[Any], *rest: Value[Any]) -> DecoderOutputs:
+            vision_embeddings = [v.tensor for v in rest[:num_devices]]
+            vision_scatter_indices = [
+                v.tensor for v in rest[num_devices : 2 * num_devices]
+            ]
+            (
+                device_input_row_offsets,
+                host_input_row_offsets,
+                return_n_logits,
+                _data_parallel_splits,
+                *variadic,
+            ) = rest[2 * num_devices :]
             it = iter(variadic)
             signal_buffers = [next(it).buffer for _ in range(num_devices)]
             # The recurrent state is a child of the multi-cache, so one
@@ -570,7 +589,7 @@ class Glm5Next(Module):
                 kv_tree[STATE_CACHE_KEY], leaf=RecurrentStateInputsPerDevice
             )
             # Consumed to keep the input prefix identical to
-            # `DeepseekV3Inputs.buffers`; this graph does not read them yet.
+            # `Glm5NextInputs.buffers`; this graph does not read them yet.
             for _ in range(num_devices):
                 next(it)
             ep_inputs = (
@@ -580,6 +599,8 @@ class Glm5Next(Module):
             )
             return self(
                 tokens.tensor,
+                vision_embeddings,
+                vision_scatter_indices,
                 signal_buffers,
                 mla_kv,
                 indexer_kv,
@@ -602,6 +623,8 @@ class Glm5Next(Module):
     def __call__(
         self,
         tokens: TensorValue,
+        vision_embeddings: list[TensorValue],
+        vision_scatter_indices: list[TensorValue],
         signal_buffers: list[BufferValue],
         mla_kv_collections: list[PagedCacheValues],
         indexer_kv_collections: list[PagedCacheValues],
@@ -617,6 +640,12 @@ class Glm5Next(Module):
         and collapsed once before the final norm; every layer takes and returns
         the widened form. Both attention families receive rank-2 sequences --
         the widening is entirely inside the decoder layer's two mHC sites.
+
+        Vision rows replace the embeddings at their placeholder positions
+        before the widening, which is the whole vision-to-language interface:
+        the decoder is NoPE, so no position ids change. The indices are
+        batch-global, which is right on every device because the embedding is
+        replicated and the token axis is split only inside the MLP.
         """
         config = self.config
         devices = config.devices
@@ -626,7 +655,15 @@ class Glm5Next(Module):
                 "ep_config is set, so the EP communication buffers must be "
                 "passed through from the graph inputs."
             )
-        h = self.embed_tokens(tokens, signal_buffers)
+        h = [
+            merge_multimodal_embeddings(x, embeddings, indices)
+            for x, embeddings, indices in zip(
+                self.embed_tokens(tokens, signal_buffers),
+                vision_embeddings,
+                vision_scatter_indices,
+                strict=True,
+            )
+        ]
         row_offsets = ops.distributed_broadcast(
             input_row_offsets.to(devices[0]), signal_buffers
         )

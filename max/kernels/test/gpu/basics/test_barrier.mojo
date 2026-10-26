@@ -13,7 +13,6 @@
 
 from max.gpu import global_idx
 from max.gpu.sync import barrier
-from max.gpu.globals import WARP_SIZE
 from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 
@@ -40,7 +39,7 @@ def kernel[
 
 
 def test_barrier[dtype: DType](ctx: DeviceContext) raises:
-    comptime block_size = WARP_SIZE
+    comptime block_size = ctx.default_device_info.warp_size
     comptime buffer_size = block_size
     comptime constant_add: Scalar[dtype] = 42
     var input_host = ctx.enqueue_create_host_buffer[dtype](buffer_size)

@@ -29,10 +29,12 @@ import asyncio
 import contextvars
 import dataclasses
 import gc
+import io
 import logging
 import weakref
 from collections.abc import Callable
 from pathlib import Path
+from types import MappingProxyType
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -43,6 +45,7 @@ from max.driver import Buffer, DeviceSpec
 from max.pipelines.context import (
     EOSTracker,
     GenerationStatus,
+    InputError,
     LogProbabilities,
     PixelContext,
     ProcessorInputs,
@@ -69,9 +72,11 @@ from max.pipelines.lib.pipeline_variants.block_diffusion_text_generation import 
     BlockDiffusionTextGenerationPipeline,
 )
 from max.pipelines.lib.registry import PIPELINE_REGISTRY
+from max.pipelines.lib.tokenizer import open_image
 from max.pipelines.lora import LoRAConfig
 from max.pipelines.modeling.types import (
     BatchType,
+    ImageContentPart,
     InputModality,
     PipelineTask,
     RequestID,
@@ -82,6 +87,7 @@ from max.pipelines.modeling.types import (
 )
 from max.pipelines.sampling import SamplingConfig, request_row_seed
 from max.pipelines.speculative import SpeculativeConfig
+from PIL import Image
 
 EOS = 2
 NEVER = 99
@@ -91,6 +97,7 @@ VOCAB = 128
 DECOY = 1
 IMAGE_TOKEN = 50
 IMAGE_TOKENS = 4
+TOKEN_ID_BOUND = 1000
 
 
 @dataclasses.dataclass
@@ -173,6 +180,7 @@ class FakeKVManager:
 class FakeTokenizer:
     eos_token_ids: set[int] = dataclasses.field(default_factory=lambda: {EOS})
     tokenizer_vocab_size: int = 1000
+    token_id_bound: int = TOKEN_ID_BOUND
 
 
 @dataclasses.dataclass
@@ -745,6 +753,27 @@ def test_out_of_vocab_token_raises() -> None:
     _assert_nothing_held(pipeline, 1)
 
 
+@pytest.mark.parametrize("bad_id", [-1, TOKEN_ID_BOUND])
+def test_out_of_range_prompt_token_raises_before_claiming(bad_id: int) -> None:
+    pipeline = FakePipeline()
+    with pytest.raises(
+        InputError,
+        match=f"^Row 1: Prompt token id {bad_id} at position 2 is out of range",
+    ):
+        GenerateIterator(
+            pipeline, [[1, 7, 8], [1, 7, bad_id]], max_new_tokens=3
+        )
+    assert pipeline.kv_manager.claimed == {}
+    assert pipeline.kv_manager.contexts == []
+
+
+def test_highest_prompt_token_id_is_accepted() -> None:
+    pipeline = FakePipeline()
+    result = generate(pipeline, [[1, 7, TOKEN_ID_BOUND - 1]], max_new_tokens=3)
+    assert result.sequences == [[1, 7, TOKEN_ID_BOUND - 1, EOS]]
+    _assert_nothing_held(pipeline, 1)
+
+
 def test_max_new_tokens_below_one_raises() -> None:
     pipeline = FakePipeline()
     with pytest.raises(ValueError, match="at least 1, was 0"):
@@ -809,13 +838,41 @@ def test_prefill_over_a_replica_token_budget_raises() -> None:
     _assert_nothing_held(pipeline, 4)
 
 
-def test_image_generation_models_point_to_serve(
+def test_image_generation_models_point_to_generate_images(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         PIPELINE_REGISTRY,
         "retrieve_context_type",
         lambda pipeline_config: PixelContext,
+    )
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY,
+        "architecture_for_config",
+        lambda pipeline_config: FakeArch(task=PipelineTask.PIXEL_GENERATION),
+    )
+    pipeline = FakePipeline()
+    with pytest.raises(ValueError) as error:
+        GenerateIterator(pipeline, _prompts(1), max_new_tokens=5)
+    assert str(error.value) == (
+        "generate() generates text, and the model uses PixelContext. Use "
+        "generate_images() for image generation models."
+    )
+    assert pipeline.kv_manager.claimed == {}
+
+
+@dataclasses.dataclass(kw_only=True)
+class FakeVideoContext(PixelContext):
+    num_frames: int | None = None
+
+
+def test_video_generation_models_point_to_serve(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        PIPELINE_REGISTRY,
+        "retrieve_context_type",
+        lambda pipeline_config: FakeVideoContext,
     )
     monkeypatch.setattr(
         PIPELINE_REGISTRY,
@@ -830,8 +887,9 @@ def test_image_generation_models_point_to_serve(
     with pytest.raises(ValueError) as error:
         GenerateIterator(pipeline, _prompts(1), max_new_tokens=5)
     _assert_points_to_serve(error, "pixel generation")
-    assert "The model uses PixelContext, and generate() generates text" in (
-        str(error.value)
+    assert (
+        "The model uses FakeVideoContext, and generate() generates text"
+        in str(error.value)
     )
     assert pipeline.kv_manager.claimed == {}
 
@@ -1017,6 +1075,13 @@ def _image_arch(
     )
 
 
+# The image count error with no AutoProcessor hint after it.
+_NO_HINT = (
+    r"^Row {row} has 1 image part but 0 images\. Pass one image per image "
+    r"part, in order\.$"
+)
+
+
 def _chat(text: str, num_images: int = 0) -> list[dict[str, object]]:
     """One user turn holding ``num_images`` image parts, then ``text``."""
     return [
@@ -1055,6 +1120,33 @@ def test_messages_rows_come_from_the_tokenizer() -> None:
     assert [c.sampling_params.seed for c in contexts] == [5, 5 + 2**32]
     assert [c.max_length for c in contexts] == [8, 7]
     _assert_nothing_held(pipeline, 2)
+
+
+def test_chat_template_kwargs_reach_every_messages_row() -> None:
+    pipeline = FakePipeline()
+    tokenizer = FakeVisionTokenizer()
+    pipeline.tokenizer = tokenizer
+    messages = [_chat("1"), _chat("3 7")]
+    options = MappingProxyType({"enable_thinking": False})
+    generate(pipeline, messages=messages, max_new_tokens=5)
+    generate(
+        pipeline,
+        messages=messages,
+        chat_template_kwargs=options,
+        max_new_tokens=5,
+    )
+
+    requests = tokenizer.requests
+    assert [r.chat_template_options for r in requests] == [
+        None,
+        None,
+        {"enable_thinking": False},
+        {"enable_thinking": False},
+    ]
+    # A tokenizer that edits one row's options must not reach the next row.
+    assert requests[2].chat_template_options is not (
+        requests[3].chat_template_options
+    )
 
 
 def test_image_rows_expand_their_placeholders(
@@ -1098,6 +1190,98 @@ def test_image_rows_expand_their_placeholders(
     assert output.log_probs is not None
     assert [lp.sampled_token_ids for lp in output.log_probs] == new_tokens
     _assert_nothing_held(pipeline, 2)
+
+
+def _png_bytes(image: Image.Image) -> bytes:
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def test_pil_images_reach_the_tokenizer_without_a_decode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pipeline = _vision_pipeline(monkeypatch)
+    _image_arch(monkeypatch)
+    tokenizer = pipeline.tokenizer
+    assert isinstance(tokenizer, FakeVisionTokenizer)
+    red = Image.new("RGB", (4, 3), "red")
+    blue = _png_bytes(Image.new("RGB", (4, 3), "blue"))
+    pixels: list[list[object]] = []
+    new_context = tokenizer.new_context
+
+    async def decoding_new_context(
+        request: TextGenerationRequest,
+    ) -> TextAndVisionContext:
+        # As every vision tokenizer reads its images.
+        pixels.extend(
+            list(open_image(image).getdata())
+            for image in request.images_for_processing()
+        )
+        return await new_context(request)
+
+    monkeypatch.setattr(tokenizer, "new_context", decoding_new_context)
+    opened: list[object] = []
+    image_open: Callable[..., Image.Image] = Image.open
+
+    def counting_open(*args: object, **kwargs: object) -> Image.Image:
+        opened.append(args[0])
+        return image_open(*args, **kwargs)
+
+    monkeypatch.setattr(Image, "open", counting_open)
+    generate(
+        pipeline,
+        messages=[_chat("7", num_images=2), _chat("7", num_images=1)],
+        images=[[red, blue], [blue]],
+        max_new_tokens=5,
+    )
+
+    image_row, bytes_row = tokenizer.requests
+    assert image_row.images == [_png_bytes(red), blue]
+    assert image_row.decoded_images == [red, None]
+    assert image_row.images_for_processing()[0] is red
+    assert bytes_row.images == [blue]
+    assert bytes_row.decoded_images == [None]
+    # Only the two blue bytes entries are decoded.
+    assert len(opened) == 2
+    assert pixels == [
+        list(red.getdata()),
+        list(Image.new("RGB", (4, 3), "blue").getdata()),
+        list(Image.new("RGB", (4, 3), "blue").getdata()),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("image", "mode"),
+    [
+        (Image.new("CMYK", (4, 3), (0, 255, 255, 0)), "RGB"),
+        (Image.new("PA", (4, 3)), "RGBA"),
+        (Image.new("LA", (4, 3)), "LA"),
+    ],
+)
+def test_pil_images_encode_as_the_png_they_decode_to(
+    monkeypatch: pytest.MonkeyPatch, image: Image.Image, mode: str
+) -> None:
+    pipeline = _vision_pipeline(monkeypatch)
+    _image_arch(monkeypatch)
+    generate(
+        pipeline,
+        messages=[_chat("7", num_images=1)],
+        images=[[image]],
+        max_new_tokens=5,
+    )
+
+    assert isinstance(pipeline.tokenizer, FakeVisionTokenizer)
+    [request] = pipeline.tokenizer.requests
+    [encoded] = request.images
+    [decoded] = request.decoded_images
+    assert decoded is not None
+    assert decoded.mode == mode
+    with Image.open(io.BytesIO(encoded)) as from_bytes:
+        assert from_bytes.format == "PNG"
+        assert from_bytes.mode == mode
+        assert list(from_bytes.getdata()) == list(decoded.getdata())
+    assert list(decoded.getdata()) == list(image.convert(mode).getdata())
 
 
 def test_token_rows_report_their_prompt_lengths() -> None:
@@ -1150,6 +1334,28 @@ def test_expanded_prompt_over_the_planned_max_length_raises(
         (
             lambda pipeline: GenerateIterator(
                 pipeline,
+                _prompts(1),
+                chat_template_kwargs={"enable_thinking": False},
+                max_new_tokens=5,
+            ),
+            "Pass chat_template_kwargs with messages",
+        ),
+        *(
+            (
+                lambda pipeline, key=key: GenerateIterator(
+                    pipeline,
+                    messages=[_chat("1")],
+                    chat_template_kwargs={key: None},
+                    max_new_tokens=5,
+                ),
+                rf"^chat_template_kwargs cannot set '{key}', since the "
+                "tokenizer",
+            )
+            for key in ("tools", "conversation")
+        ),
+        (
+            lambda pipeline: GenerateIterator(
+                pipeline,
                 attention_mask=[[1]],
                 messages=[_chat("1")],
                 max_new_tokens=5,
@@ -1178,7 +1384,47 @@ def test_expanded_prompt_over_the_planned_max_length_raises(
             lambda pipeline: GenerateIterator(
                 pipeline, messages=[_chat("1", num_images=1)], max_new_tokens=5
             ),
-            "Row 0 has 1 image part but 0 images",
+            _NO_HINT.format(row=0),
+        ),
+        # A part with no image of its own gets the plain count error.
+        *(
+            (
+                lambda pipeline, conversation=conversation: GenerateIterator(
+                    pipeline, messages=[conversation], max_new_tokens=5
+                ),
+                _NO_HINT.format(row=0),
+            )
+            for conversation in (
+                [{"role": "user", "content": [{"type": "image", "url": None}]}],
+                [{"role": "user", "content": [ImageContentPart()]}],
+                [
+                    TextGenerationRequestMessage(
+                        role="user", content=[ImageContentPart()]
+                    )
+                ],
+            )
+        ),
+        (
+            lambda pipeline: GenerateIterator(
+                pipeline,
+                messages=[
+                    _chat("1"),
+                    [
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "image_url",
+                                    "image_url": {"url": "cat.png"},
+                                }
+                            ],
+                        }
+                    ],
+                ],
+                max_new_tokens=5,
+            ),
+            r"^Row 1 has an image_url part, which generate\(\) does not read\. "
+            "Pass the conversations through AutoProcessor",
         ),
     ],
 )
@@ -1194,6 +1440,40 @@ def test_malformed_messages_and_images_raise(
     assert pipeline.kv_manager.claimed == {}
 
 
+@pytest.mark.parametrize("key", ["image", "path", "url", "base64"])
+@pytest.mark.parametrize(
+    "images", [None, [[], [b"dog"]]], ids=["no_images", "matching_count"]
+)
+def test_image_parts_holding_their_image_point_to_auto_processor(
+    monkeypatch: pytest.MonkeyPatch,
+    key: str,
+    images: list[list[bytes]] | None,
+) -> None:
+    pipeline = _vision_pipeline(monkeypatch)
+    _image_arch(monkeypatch)
+    with pytest.raises(ValueError) as error:
+        GenerateIterator(
+            pipeline,
+            messages=[
+                _chat("1"),
+                [
+                    {
+                        "role": "user",
+                        "content": [{"type": "image", key: "cat.png"}],
+                    }
+                ],
+            ],
+            images=images,
+            max_new_tokens=5,
+        )
+    assert str(error.value) == (
+        'Row 1 has an image part with an "image", "path", "url" or "base64" '
+        "entry, which generate() does not read. Pass the conversations "
+        "through AutoProcessor, which moves them into images."
+    )
+    assert pipeline.kv_manager.claimed == {}
+
+
 class _FlatImage:
     """Stands in for a PIL image, which does not iterate."""
 
@@ -1202,26 +1482,30 @@ class _FlatImage:
     ("messages", "images", "message"),
     [
         (_chat("1"), None, r"Wrap one conversation as \[messages\]"),
-        ([_chat("1", num_images=1)], [b"cat"], "list of encoded image lists"),
+        ([_chat("1", num_images=1)], [b"cat"], "list of image lists"),
         (
             [_chat("1", num_images=2)],
             [_FlatImage(), _FlatImage()],
-            "list of encoded image lists",
+            "list of image lists",
+        ),
+        (
+            [_chat("1", num_images=1)],
+            Image.new("RGB", (8, 8)),
+            "list of image lists",
         ),
     ],
 )
 def test_messages_or_images_of_the_wrong_shape_raise_type_error(
     monkeypatch: pytest.MonkeyPatch,
     messages: list[list[dict[str, object]]],
-    images: list[list[bytes]] | None,
+    images: object,
     message: str,
 ) -> None:
     pipeline = _vision_pipeline(monkeypatch)
     _image_arch(monkeypatch)
+    untyped: Callable[..., object] = GenerateIterator
     with pytest.raises(TypeError, match=message):
-        GenerateIterator(
-            pipeline, messages=messages, images=images, max_new_tokens=5
-        )
+        untyped(pipeline, messages=messages, images=images, max_new_tokens=5)
     assert pipeline.kv_manager.claimed == {}
 
 
@@ -2093,14 +2377,29 @@ def test_removed_row_keeps_logits_and_log_probs_aligned() -> None:
     assert [lp.sampled_token_ids for lp in batch.log_probs] == new_tokens
 
 
-def test_logits_need_a_synchronous_pipeline() -> None:
+@pytest.mark.parametrize(
+    ("caller", "advice"),
+    [
+        ("generate()", "Use AutoModel, which turns the overlap scheduler off."),
+        (
+            "AutoModel",
+            "Load the AutoModel without enable_overlap_scheduler=True.",
+        ),
+    ],
+)
+def test_logits_need_a_synchronous_pipeline(caller: str, advice: str) -> None:
     pipeline = FakeOverlapPipeline()
     with pytest.raises(
         ValueError, match="output_logits needs a synchronous pipeline"
-    ):
+    ) as error:
         GenerateIterator(
-            pipeline, _prompts(1), max_new_tokens=5, output_logits=True
+            pipeline,
+            _prompts(1),
+            max_new_tokens=5,
+            output_logits=True,
+            caller=caller,
         )
+    assert str(error.value).endswith(advice)
     assert pipeline.kv_manager.claimed == {}
 
 

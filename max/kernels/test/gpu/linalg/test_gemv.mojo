@@ -15,7 +15,6 @@ from std.math import ceildiv
 from std.memory.alloc import unsafe_alloc
 from std.random import randn, seed, random_float64
 
-from max.gpu import WARP_SIZE
 from max.gpu.host import DeviceContext
 from std.sys import simd_width_of
 from linalg.gemv import (
@@ -78,7 +77,8 @@ def run_matvec[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    comptime WARPS_PER_BLOCK = 1024 // WARP_SIZE
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime WARPS_PER_BLOCK = 1024 // warp_size
 
     @inline(.always)
     def run_func_gemv(ctx: DeviceContext) raises {imm}:
@@ -92,7 +92,7 @@ def run_matvec[
             Int32(N),
             Int32(K),
             grid_dim=ceildiv(M, WARPS_PER_BLOCK),
-            block_dim=WARP_SIZE * WARPS_PER_BLOCK,
+            block_dim=warp_size * WARPS_PER_BLOCK,
         )
 
     @inline(.always)
@@ -101,7 +101,7 @@ def run_matvec[
             c_type,
             a_type,
             b_type,
-            tile_size=WARP_SIZE * WARPS_PER_BLOCK,
+            tile_size=warp_size * WARPS_PER_BLOCK,
         ]
 
         ctx.enqueue_function[kernel](
@@ -111,8 +111,8 @@ def run_matvec[
             Int32(M),
             Int32(N),
             Int32(K),
-            grid_dim=ceildiv(N, WARP_SIZE),
-            block_dim=WARP_SIZE * WARPS_PER_BLOCK,
+            grid_dim=ceildiv(N, warp_size),
+            block_dim=warp_size * WARPS_PER_BLOCK,
         )
 
     var nstime: Float64
@@ -223,7 +223,8 @@ def run_matvec_with_epilogue_fn(
         comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
         return val + SIMD[dtype, width](const_val)
 
-    comptime WARPS_PER_BLOCK = 1024 // WARP_SIZE
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime WARPS_PER_BLOCK = 1024 // warp_size
 
     @inline(.always)
     def run_func_gemv(ctx: DeviceContext) raises {mut c_device, imm}:
@@ -239,7 +240,7 @@ def run_matvec_with_epilogue_fn(
             Int32(K),
             host_args=(compute_fn,),
             grid_dim=ceildiv(M, WARPS_PER_BLOCK),
-            block_dim=WARP_SIZE * WARPS_PER_BLOCK,
+            block_dim=warp_size * WARPS_PER_BLOCK,
         )
 
     @inline(.always)
@@ -249,7 +250,7 @@ def run_matvec_with_epilogue_fn(
             .float32,
             .float32,
             type_of(compute_fn),
-            tile_size=WARP_SIZE * WARPS_PER_BLOCK,
+            tile_size=warp_size * WARPS_PER_BLOCK,
         ]
         ctx.enqueue_function[kernel](
             c_device,
@@ -259,8 +260,8 @@ def run_matvec_with_epilogue_fn(
             Int32(N),
             Int32(K),
             host_args=(compute_fn,),
-            grid_dim=ceildiv(N, WARP_SIZE),
-            block_dim=WARP_SIZE * WARPS_PER_BLOCK,
+            grid_dim=ceildiv(N, warp_size),
+            block_dim=warp_size * WARPS_PER_BLOCK,
         )
 
     ctx.enqueue_copy(c_device, c_host)

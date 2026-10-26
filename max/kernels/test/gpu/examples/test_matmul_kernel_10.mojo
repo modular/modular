@@ -299,9 +299,10 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     comptime K10_TN = 4
     comptime K10_TM = 8
 
-    comptime NUM_WARPS = K10_NUM_THREADS // WARP_SIZE
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime NUM_WARPS = K10_NUM_THREADS // warp_size
     comptime K10_WMITER = (K10_WM * K10_WN) // (
-        WARP_SIZE * K10_TM * K10_TN * K10_WNITER
+        warp_size * K10_TM * K10_TN * K10_WNITER
     )
 
     # Warptile in threadblocktile.
@@ -310,7 +311,7 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
 
     # Threads in the warp sub-tile.
     comptime assert (K10_WM * K10_WN) % (
-        WARP_SIZE * K10_TM * K10_TN * K10_WNITER
+        warp_size * K10_TM * K10_TN * K10_WNITER
     ) == 0
 
     # Warp sub-tile in warp tile.

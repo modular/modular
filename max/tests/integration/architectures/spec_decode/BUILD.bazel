@@ -60,3 +60,27 @@ modular_py_test(
         "//max/python/max/pipelines/lib",
     ],
 )
+
+modular_py_test(
+    name = "test_spec_decode_pipeline_stage",
+    srcs = ["test_spec_decode_pipeline_stage.py"],
+    ignore_extra_deps = [
+        "//max/python/max/pipelines",
+        # Resolve the Gemma 4 and Llama targets and their drafts by name.
+        "//max/python/max/pipelines/architectures/eagle_llama3",
+        "//max/python/max/pipelines/architectures/gemma4",
+        "//max/python/max/pipelines/architectures/gemma4_assistant",
+        "//max/python/max/pipelines/architectures/llama3",
+    ],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/eagle_llama3",
+        "//max/python/max/pipelines/architectures/gemma4",
+        "//max/python/max/pipelines/architectures/gemma4_assistant",
+        "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+    ],
+)

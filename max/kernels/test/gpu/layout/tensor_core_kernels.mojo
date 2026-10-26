@@ -29,7 +29,7 @@ from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout._utils import load_to_simd
 from layout.tensor_core import TensorCore
 
-from std.utils.index import IndexList
+from std.utils.coord import DynamicCoord
 
 
 def mma_load_and_multiply[
@@ -37,7 +37,7 @@ def mma_load_and_multiply[
     dtype: DType,
     lhs_layout: TensorLayout,
     rhs_layout: TensorLayout,
-    inst_shape: IndexList[3],
+    inst_shape: DynamicCoord[.int, 3],
     transpose_b: Bool = False,
 ](
     lhs: TileTensor[dtype, lhs_layout, MutAnyOrigin],
@@ -147,7 +147,7 @@ def mma_write_operand_kernel[
     dst_dtype: DType,
     dtype: DType,
     layout: TensorLayout,
-    inst_shape: IndexList[3],
+    inst_shape: DynamicCoord[.int, 3],
 ](output: TileTensor[dst_dtype, layout, MutAnyOrigin]):
     var mma = TensorCore[dst_dtype, dtype, inst_shape]()
     var thread_reg_tile = stack_allocation[dst_dtype, address_space=.LOCAL](
@@ -166,7 +166,7 @@ def mma_write_operand_kernel[
 def test_load_and_mma_and_multiply_operands[
     dst_dtype: DType,
     dtype: DType,
-    shape: IndexList[3],
+    shape: DynamicCoord[.int, 3],
     transpose_b: Bool = False,
 ](ctx: DeviceContext) raises:
     comptime M = shape[0]
@@ -196,13 +196,13 @@ def test_load_and_mma_and_multiply_operands[
         lhs.device_tensor().as_unsafe_any_origin(),
         rhs.device_tensor().as_unsafe_any_origin(),
         grid_dim=(1, 1),
-        block_dim=(WARP_SIZE),
+        block_dim=(ctx.default_device_info.warp_size),
     )
     ctx.synchronize()
 
 
 def test_write_res_operand[
-    dst_dtype: DType, dtype: DType, shape: IndexList[3]
+    dst_dtype: DType, dtype: DType, shape: DynamicCoord[.int, 3]
 ](ctx: DeviceContext) raises:
     comptime M = shape[0]
     comptime N = shape[1]
@@ -218,7 +218,7 @@ def test_write_res_operand[
     ctx.enqueue_function[mma_load_and_print_kernel_fn](
         dst.device_tensor().as_unsafe_any_origin(),
         grid_dim=(1, 1),
-        block_dim=(WARP_SIZE),
+        block_dim=(ctx.default_device_info.warp_size),
     )
     dst.to_host()
     var result = dst.host_tensor()
@@ -252,7 +252,7 @@ def mma_load_and_print_operands_kernel_ldmatrix[
     dtype: DType,
     lhs_layout: TensorLayout,
     rhs_layout: TensorLayout,
-    inst_shape: IndexList[3],
+    inst_shape: DynamicCoord[.int, 3],
     transpose_b: Bool = False,
 ](
     lhs: TileTensor[dtype, lhs_layout, MutAnyOrigin],
@@ -341,7 +341,7 @@ def mma_load_and_print_operands_kernel_ldmatrix[
 def test_load_operands_ldmatrix[
     dst_dtype: DType,
     dtype: DType,
-    shape: IndexList[3],
+    shape: DynamicCoord[.int, 3],
     transpose_b: Bool = False,
 ](ctx: DeviceContext) raises:
     comptime M = shape[0]
@@ -369,6 +369,6 @@ def test_load_operands_ldmatrix[
         lhs.device_tensor().as_unsafe_any_origin(),
         rhs.device_tensor().as_unsafe_any_origin(),
         grid_dim=(1, 1),
-        block_dim=(WARP_SIZE),
+        block_dim=(ctx.default_device_info.warp_size),
     )
     ctx.synchronize()

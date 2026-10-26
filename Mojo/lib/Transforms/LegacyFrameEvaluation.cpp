@@ -88,6 +88,55 @@ struct PathInfo {
 };
 } // namespace
 
+namespace {
+/// Answers the frame queries from the op states: a use crosses a suspend when
+/// its definition is in another state, and a suspend separates two ops when
+/// they are in different states.
+struct StateFrame final : FrameInterface {
+  explicit StateFrame(bool isHot) : isHot(isHot) {}
+
+  bool isTracked(Operation *op) override { return opToState.contains(op); }
+
+  bool crossesSuspend(OpOperand &use) override {
+    Operation *definingOp = use.get().getDefiningOp();
+    int defState = definingOp ? opToState[definingOp] : (isHot ? 0 : -1);
+    return defState != opToState[use.getOwner()];
+  }
+
+  bool suspendBetween(Operation *from, Operation *to) override {
+    int fromState = opToState[from];
+    return fromState != opToState[to];
+  }
+
+  bool isAfterSuspend(Operation *op) override {
+    assert(opToState.contains(op) &&
+           "The function should not be augmented with control flow ops");
+    return opToState[op] > 0;
+  }
+
+  ArrayRef<VirtualBlock> firstStateVirtualBlocks() override {
+    return virtualBlocksFirstState;
+  }
+
+  const DenseSet<CO::SuspendOp> &firstSuspends() override {
+    return firstSuspendOps;
+  }
+
+  void registerClone(Operation *clone, Operation *original,
+                     Operation *user) override {
+    opToState[clone] = opToState[user];
+  }
+
+  bool isHot;
+  DenseMap<Operation *, int> opToState;
+  SmallVector<Operation *> virtualBlocksFirstState;
+  /// A suspend op 'S' is in this set if it is possible to reach 'S' from the
+  /// entry point without passing through another suspend op. This is used to
+  /// clear the state 0 blocks in hot resumes.
+  DenseSet<CO::SuspendOp> firstSuspendOps;
+};
+} // namespace
+
 int PathInfo::existsAt(VirtualBlock virtualBlock) const {
   for (auto [i, node] : llvm::enumerate(path)) {
     if (node == virtualBlock)
@@ -96,20 +145,16 @@ int PathInfo::existsAt(VirtualBlock virtualBlock) const {
   return -1;
 }
 
-void M::KGEN::evaluateFrameByStateNumbering(FrameData &frameData,
-                                            FuncOp originalFunction,
-                                            mlir::DominanceInfo &domInfo,
-                                            Value errorValue, Value resultValue,
-                                            FrameStateTransform transform,
-                                            bool isHot) {
-  auto &frameTypes = frameData.frameTypes;
-  auto &valueToIndexInFrame = frameData.valueToIndexInFrame;
-  auto &operationToIndexInFrame = frameData.operationToIndexInFrame;
-  auto &opToState = frameData.opToState;
-  auto &virtualBlocksFirstState = frameData.virtualBlocksFirstState;
-  auto &argsInFrame = frameData.argsInFrame;
-  auto &firstSuspends = frameData.firstSuspends;
+/// Maps the first op of each virtual block to the ops that transfer control to
+/// it. Virtual blocks are delimited by control flow nodes, control flow
+/// terminators, and suspends.
+using VirtualBlockPredecessors =
+    DenseMap<VirtualBlock, SmallVector<VirtualBlock>>;
 
+/// Builds the virtual block control flow graph of `originalFunction`.
+static VirtualBlockPredecessors
+computeVirtualBlockPredecessors(FuncOp originalFunction,
+                                mlir::DominanceInfo &domInfo) {
   // Calculate Control Flow Graph.
   // We need to know the predecessors of each region so that
   // we don't process a region until all its predecessors have
@@ -198,6 +243,16 @@ void M::KGEN::evaluateFrameByStateNumbering(FrameData &frameData,
       }
     }
   }
+  return predecessors;
+}
+
+static void computeVirtualBlockStates(StateFrame &frame,
+                                      FuncOp originalFunction,
+                                      mlir::DominanceInfo &domInfo,
+                                      VirtualBlockPredecessors &predecessors) {
+  auto &opToState = frame.opToState;
+  auto &firstSuspends = frame.firstSuspendOps;
+
   // Calculate the state of each op.
   {
     SmallVector<PathInfo> paths;
@@ -359,8 +414,53 @@ void M::KGEN::evaluateFrameByStateNumbering(FrameData &frameData,
   bool stateChanged = true;
   while (stateChanged)
     stateChanged = propagateChildSuspoints();
+}
 
-  transform(originalFunction, opToState);
+/// Records the virtual blocks in state 0, in dominance order, for hot resume
+/// generation. Must run after the frame layout is complete.
+static void
+collectFirstStateVirtualBlocks(StateFrame &frame, const FrameData &frameData,
+                               VirtualBlockPredecessors &predecessors,
+                               mlir::DominanceInfo &domInfo) {
+  auto &valueToIndexInFrame = frameData.valueToIndexInFrame;
+  auto &opToState = frame.opToState;
+  auto &virtualBlocksFirstState = frame.virtualBlocksFirstState;
+
+  // Remember the virtual ops in the first state for hot start resume
+  // generation.
+  for (auto &virtualBlockAndList : predecessors) {
+    VirtualBlock virtualBlock = virtualBlockAndList.first;
+    if (opToState[virtualBlock] == 0) {
+      // Stack allocations used across frames will be deleted.
+      if (isa<StackAllocationOp>(virtualBlock) &&
+          valueToIndexInFrame.contains(virtualBlock->getResults().front()))
+        virtualBlocksFirstState.push_back(virtualBlock->getNextNode());
+      else
+        virtualBlocksFirstState.push_back(virtualBlock);
+    }
+  }
+  // If a dominates b then a should appear first.
+  llvm::sort(
+      virtualBlocksFirstState.begin(), virtualBlocksFirstState.end(),
+      [&](Operation *a, Operation *b) { return domInfo.dominates(a, b); });
+}
+
+void M::KGEN::evaluateFrameByStateNumbering(
+    FrameData &frameData, FuncOp originalFunction, mlir::DominanceInfo &domInfo,
+    Value errorValue, Value resultValue,
+    FrameStateTransform rematerializeFrameValues, bool isHot) {
+  auto &frameTypes = frameData.frameTypes;
+  auto &valueToIndexInFrame = frameData.valueToIndexInFrame;
+  auto &operationToIndexInFrame = frameData.operationToIndexInFrame;
+  auto &argsInFrame = frameData.argsInFrame;
+  auto frame = std::make_unique<StateFrame>(isHot);
+  auto &opToState = frame->opToState;
+
+  VirtualBlockPredecessors predecessors =
+      computeVirtualBlockPredecessors(originalFunction, domInfo);
+  computeVirtualBlockStates(*frame, originalFunction, domInfo, predecessors);
+
+  rematerializeFrameValues(originalFunction, *frame);
 
   // Calculate the frame. Whenever there is a use whose def lives in another
   // state, it must be added to the frame. We need to store the location of the
@@ -454,21 +554,6 @@ void M::KGEN::evaluateFrameByStateNumbering(FrameData &frameData,
     argsInFrame.push_back(FrameData::ArgInFrame(index, frameSlotMaybe->second));
   }
 
-  // Remember the virtual ops in the first state for hot start resume
-  // generation.
-  for (auto &virtualBlockAndList : predecessors) {
-    VirtualBlock virtualBlock = virtualBlockAndList.first;
-    if (opToState[virtualBlock] == 0) {
-      // Stack allocations used across frames will be deleted.
-      if (isa<StackAllocationOp>(virtualBlock) &&
-          valueToIndexInFrame.contains(virtualBlock->getResults().front()))
-        virtualBlocksFirstState.push_back(virtualBlock->getNextNode());
-      else
-        virtualBlocksFirstState.push_back(virtualBlock);
-    }
-  }
-  // If a dominates b then a should appear first.
-  llvm::sort(
-      virtualBlocksFirstState.begin(), virtualBlocksFirstState.end(),
-      [&](Operation *a, Operation *b) { return domInfo.dominates(a, b); });
+  collectFirstStateVirtualBlocks(*frame, frameData, predecessors, domInfo);
+  frameData.frame = std::move(frame);
 }

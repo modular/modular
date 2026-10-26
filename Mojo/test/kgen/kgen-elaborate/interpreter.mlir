@@ -212,12 +212,12 @@ kgen.generator @callee<a: !kgen.struct<(index)>>(
 
 // CHECK-LABEL: kgen.func @unbox_in_result_sig
 kgen.generator @unbox_in_result_sig() {
-  // CHECK-NEXT: kgen.create_closure[(!pop.array<2, index>) -> (): @"callee,a={ 2 }"]()
+  // CHECK-NEXT: kgen.create_func_ptr[(!pop.array<2, index>) -> (): @"callee,a={ 2 }"]()
   kgen.param.declare a = <2>
   kgen.param.declare fn: <!kgen.struct<(index)>>(
     !pop.array<apply(:(!kgen.struct<(index)>) -> index @unbox, *(0,0)), index>
   ) -> () = <@callee>
-  kgen.create_closure[(
+  kgen.create_func_ptr[(
     !pop.array<apply(:(!kgen.struct<(index)>) -> index @unbox,
                      apply(:(index) -> !kgen.struct<(index)> @box, a)),
                index>) -> ():
@@ -270,12 +270,12 @@ kgen.generator @some_function() {
 }
 
 kgen.generator @return_closure_formation() -> !kgen.generator<() -> ()> {
-  %0 = kgen.create_closure[() -> (): @some_function]()
+  %0 = kgen.create_func_ptr[() -> (): @some_function]()
   hlcf.return %0 : !kgen.generator<() -> ()>
 }
 
-// CHECK-LABEL: kgen.func export @interpret_create_closure
-kgen.generator export @interpret_create_closure() {
+// CHECK-LABEL: kgen.func export @interpret_create_func_ptr
+kgen.generator export @interpret_create_func_ptr() {
   // CHECK-NEXT: constant: () -> () = <@some_function>
   kgen.param.constant: () -> () = <apply(:() -> !kgen.generator<() -> ()> @return_closure_formation)>
   hlcf.return

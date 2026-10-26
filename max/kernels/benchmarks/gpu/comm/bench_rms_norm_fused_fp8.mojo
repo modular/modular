@@ -226,15 +226,13 @@ def bench_rms_norm_fused_fp8[
 
             @inline(.always)
             def input_fn_fused[
-                width: Int, _rank: Int
-            ](coords: IndexList[_rank]) {var data_ptr_offset} -> SIMD[
-                in_dtype, width
-            ]:
+                width: Int
+            ](coords: Coord) {var data_ptr_offset} -> SIMD[in_dtype, width]:
                 var data_buf_offset = TileTensor(
                     data_ptr_offset, row_major(Coord(shape))
                 )
                 return data_buf_offset.load[width=width, alignment=width](
-                    Coord(coords)
+                    coords
                 )
 
             var fused_output_tt = TileTensor(
@@ -257,7 +255,7 @@ def bench_rms_norm_fused_fp8[
                 rank,
             ](
                 input_fn_fused,
-                shape,
+                Coord(shape),
                 fused_output_tt,
                 gamma_tensor,
                 epsilon,
@@ -366,13 +364,11 @@ def bench_rms_norm_fused_fp8[
 
     @inline(.always)
     def input_fn_fused_verify[
-        width: Int, _rank: Int
-    ](coords: IndexList[_rank]) {var data_base_ptr_verify} -> SIMD[
-        in_dtype, width
-    ]:
+        width: Int
+    ](coords: Coord) {var data_base_ptr_verify} -> SIMD[in_dtype, width]:
         var data_ptr = data_base_ptr_verify
         var data_buf = TileTensor(data_ptr, row_major(Coord(shape)))
-        return data_buf.load[width=width](Coord(coords))
+        return data_buf.load[width=width](coords)
 
     var fused_output_tt_verify = TileTensor(
         fused_verify_base_ptr,
@@ -393,7 +389,7 @@ def bench_rms_norm_fused_fp8[
         rank,
     ](
         input_fn_fused_verify,
-        shape,
+        Coord(shape),
         fused_output_tt_verify,
         gamma_tensor,
         epsilon,

@@ -34,8 +34,8 @@ from max.gpu.host import (
     DeviceStream,
     default_accelerator,
 )
-from max.gpu.host._legacy._nvidia_cuda import CUDA, CUDA_MODULE
-from max.gpu.host._legacy._amdgpu_hip import HIP, HIP_MODULE
+from max.gpu.host import CUDA, CUDA_MODULE
+from max.gpu.host import HIP, HIP_MODULE
 
 from ._rocshmem import (
     rocshmem_my_pe,

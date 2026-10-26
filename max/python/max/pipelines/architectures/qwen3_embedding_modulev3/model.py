@@ -44,6 +44,7 @@ from max.pipelines.lib.interfaces.batch_processor import (
     embedding_ragged_symbolic_inputs,
 )
 from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 from typing_extensions import override
 
@@ -172,7 +173,7 @@ class Qwen3EmbeddingModel(PipelineModel[TextContext, None]):
         rope = RotaryEmbedding(
             dim=huggingface_config.hidden_size,
             n_heads=huggingface_config.num_attention_heads,
-            theta=huggingface_config.rope_theta,
+            theta=get_rope_theta(huggingface_config),
             max_seq_len=self.max_seq_len,
             device=self.devices[0],
             head_dim=head_dim,

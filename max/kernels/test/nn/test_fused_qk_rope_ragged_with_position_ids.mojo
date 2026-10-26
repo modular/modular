@@ -37,6 +37,7 @@ from testdata.fused_qk_rope_goldens import (
 )
 
 from std.utils import IndexList
+from std.utils.index import Index
 
 
 def test_fused_qk_rope[
@@ -77,8 +78,13 @@ def test_fused_qk_rope[
     comptime kv_params = KVCacheStaticParams(
         num_heads=num_heads, head_size=head_dim
     )
-    comptime block_shape = IndexList[6](
-        num_paged_blocks, 2, num_layers, page_size, num_heads, head_dim
+    comptime block_shape = Index(
+        num_paged_blocks,
+        2,
+        num_layers,
+        page_size,
+        num_heads,
+        head_dim,
     )
 
     var kv_cache_block_buffer = List[Scalar[dtype]](

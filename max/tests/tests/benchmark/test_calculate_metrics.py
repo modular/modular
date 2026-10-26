@@ -58,6 +58,17 @@ def _gpu_stats(*, util: int, used_mib: int, free_mib: int) -> GPUStats:
     )
 
 
+def _gpu_stats_no_memory(*, util: int) -> GPUStats:
+    """A GPUStats with no memory info, as from a driver that lacks it."""
+    return GPUStats(
+        memory=None,
+        utilization=UtilizationStats(
+            gpu_usage_percent=util, memory_activity_percent=None
+        ),
+        clocks=None,
+    )
+
+
 _EMPTY_CPU_METRICS = CPUMetrics(
     user=0.0, user_percent=0.0, system=0.0, system_percent=0.0, elapsed=0.0
 )
@@ -2114,6 +2125,37 @@ def test_aggregate_gpu_stats_tolerates_changing_device_set() -> None:
     assert util == [75.0, 50.0]
     # Reported mean GPU util is the mean across all engine devices seen.
     assert statistics.mean(util) == 62.5
+
+
+def test_aggregate_gpu_stats_without_memory_info() -> None:
+    """No memory info yields empty memory series; utilization is unaffected."""
+    snapshots = [
+        {"n:gpu0": _gpu_stats_no_memory(util=70)},
+        {"n:gpu0": _gpu_stats_no_memory(util=90)},
+    ]
+    peak, avail, util, _ = _aggregate_gpu_stats(
+        collect_gpu_stats=True, gpu_metrics=snapshots
+    )
+    assert peak == []
+    assert avail == []
+    assert util == [80.0]
+
+
+def test_aggregate_gpu_stats_mixed_memory_availability() -> None:
+    """Devices without memory info drop out of the memory series only."""
+    snapshots = [
+        {
+            "n:gpu0": _gpu_stats(util=50, used_mib=100, free_mib=900),
+            "n:gpu1": _gpu_stats_no_memory(util=60),
+        },
+    ]
+    peak, avail, util, _ = _aggregate_gpu_stats(
+        collect_gpu_stats=True, gpu_metrics=snapshots
+    )
+    # Only gpu0 reported memory; gpu1 contributes utilization alone.
+    assert peak == [100.0]
+    assert avail == [900.0]
+    assert util == [50.0, 60.0]
 
 
 def test_aggregate_gpu_stats_splits_utilization_by_group() -> None:

@@ -12,8 +12,9 @@ responsible for tasks such as preparing inputs, executing the model, managing
 inference state such as the KV cache, performing post-processing, and returning
 results.
 
-This page explains how the [`pipelines`](/api/python/pipelines) API works,
-how pipeline components work together, and when to customize pipelines.
+A pipeline is built from components, each behind an interface. Most
+architectures reuse the standard components; this page shows how they work
+together and when to replace one.
 
 :::note
 
@@ -41,45 +42,40 @@ This separates concerns cleanly:
 Pipelines let you focus on model architecture while MAX handles the production
 infrastructure, including batching, caching, compilation, and serving.
 
-## Building blocks
+## The packages pipelines build on
 
-Before digging into pipeline components, it's helpful to understand the
-foundational packages that pipelines build on: [`max.nn`](/api/python/nn),
-[`max.experimental.nn`](/api/python/experimental.nn), and
-[`max.pipelines.kv_cache`](/api/python/pipelines.kv_cache).
+Pipelines build on [`max.nn`](/api/python/nn/),
+[`max.experimental.nn`](/api/python/experimental.nn/), and
+[`max.pipelines.kv_cache`](/api/python/pipelines.kv_cache/).
 
 ### Neural network modules
 
-MAX provides two neural network module packages:
-
-- [`max.nn`](/api/python/nn) provides reusable layers that build MAX graphs.
-  Most existing pipeline architectures use this package.
-- [`max.experimental.nn`](/api/python/experimental.nn) provides the module
-  API used by newer ModuleV3 architectures.
-
-The `max.nn` package includes common components like:
+MAX architectures build their layers with
+[`max.experimental.nn`](/api/python/experimental.nn/), the module API for
+ModuleV3 architectures. It includes common components like:
 
 - **Core modules**:
-  [`Module`](/api/python/generated/max.nn.Module),
-  [`Linear`](/api/python/generated/max.nn.Linear),
-  [`Embedding`](/api/python/generated/max.nn.Embedding),
-  [`Sequential`](/api/python/generated/max.nn.Sequential),
-  [`LayerList`](/api/python/generated/max.nn.LayerList).
+  [`Module`](/api/python/generated/max.experimental.nn.Module/),
+  [`Linear`](/api/python/generated/max.experimental.nn.Linear/),
+  [`Embedding`](/api/python/generated/max.experimental.nn.Embedding/),
+  [`Sequential`](/api/python/generated/max.experimental.nn.Sequential/),
+  [`ModuleList`](/api/python/generated/max.experimental.nn.ModuleList/).
 - **Normalization**:
-  [`RMSNorm`](/api/python/generated/max.nn.RMSNorm) and
-  [`LayerNorm`](/api/python/generated/max.nn.LayerNorm).
+  [`RMSNorm`](/api/python/generated/max.experimental.nn.norm.RMSNorm/),
+  [`GemmaRMSNorm`](/api/python/generated/max.experimental.nn.norm.GemmaRMSNorm/),
+  and [`LayerNorm`](/api/python/generated/max.experimental.nn.norm.LayerNorm/).
 - **Positional encodings**:
-  [`RotaryEmbedding`](/api/python/generated/max.nn.RotaryEmbedding).
+  [`RotaryEmbedding`](/api/python/generated/max.experimental.nn.common_layers.rotary_embedding.RotaryEmbedding/)
+  and
+  [`TransposedRotaryEmbedding`](/api/python/generated/max.experimental.nn.rope.TransposedRotaryEmbedding/).
+- **Attention**:
+  [`AttentionWithRope`](/api/python/generated/max.experimental.nn.common_layers.attention.AttentionWithRope/).
 
-For graph-based components like attention mechanisms and transformers, import
-from `max.nn`:
+The [`max.nn`](/api/python/nn/) package builds MAX graphs directly and backs
+architectures written against it. To port one to ModuleV3, see
+[Migrate an existing architecture to ModuleV3](/develop/model-bringup-skills/#migrate-an-existing-architecture-to-modulev3).
 
-```python
-from max.nn import Module, Linear
-from max.nn.attention import AttentionWithRope
-```
-
-The [`Module`](/api/python/generated/max.experimental.nn.Module) base class in
+The [`Module`](/api/python/generated/max.experimental.nn.Module/) base class in
 `max.experimental.nn` standardizes how modules manage weights and devices.
 Here's an example of building a simple multi-layer perceptron with the
 ModuleV3 API:
@@ -112,30 +108,31 @@ model.to(Accelerator())
 ```
 
 In this example, the `Module` base class automatically tracks all parameters
-through the module hierarchy, letting you iterate over them or inspect them.
-The `to()` method provides a simple way to move the entire model and all its
-parameters to a different device with a single call.
+through the module hierarchy, letting you iterate over them or inspect them. The
+`to()` method moves the model to a different device in one call. Fields
+annotated
+[`PinnedDeviceTensor`](/api/python/generated/max.experimental.nn.PinnedDeviceTensor/),
+such as a quantized layer's scales, stay on the device that created them.
 
-### KV cache module
+### The KV cache manager
 
-The [`max.pipelines.kv_cache`](/api/python/pipelines.kv_cache) package provides
+The [`max.pipelines.kv_cache`](/api/python/pipelines.kv_cache/) package provides
 cache management for transformer inference. The main component is
-[`PagedKVCacheManager`](/api/python/generated/max.pipelines.kv_cache.PagedKVCacheManager),
+[`PagedKVCacheManager`](/api/python/generated/max.pipelines.kv_cache.PagedKVCacheManager/),
 which handles memory allocation for key-value pairs across generation steps.
 
 For most use cases, you don't interact with the cache manager directly. The
-pipeline handles cache management automatically using paged attention based on
-the
-[`supported_encodings`](/api/python/generated/max.pipelines.lib.registry.SupportedArchitecture#max.pipelines.lib.registry.SupportedArchitecture.supported_encodings)
-in your architecture config.
+pipeline builds the cache parameters with your architecture config's
+`get_kv_params()`, and the memory planner your architecture registers in
+`SupportedArchitecture` sizes the cache for the available device memory.
 
 ### How modules and pipelines work together
 
 Understanding the relationship between modules and pipelines is key to working
 with MAX. When you build a model for the pipeline system, define your
 architecture as a module, using either the graph API
-([`max.nn.Module`](/api/python/generated/max.nn.Module)) or the ModuleV3 API
-([`max.experimental.nn.Module`](/api/python/generated/max.experimental.nn.Module)).
+([`max.nn.Module`](/api/python/generated/max.nn.Module/)) or the ModuleV3 API
+([`max.experimental.nn.Module`](/api/python/generated/max.experimental.nn.Module/)).
 MAX then compiles your module into an optimized executable for the target
 device, and the pipeline orchestrates execution.
 
@@ -144,9 +141,9 @@ Here's the workflow:
 1. **Define your model**: Create a module that defines your model
    architecture. The module's computation method defines what happens when
    processing inputs:
-   [`__call__()`](/api/python/generated/max.nn.Module#max.nn.Module.__call__)
+   [`__call__()`](/api/python/generated/max.nn.Module/)
    for the graph API, or
-   [`forward()`](/api/python/generated/max.experimental.nn.Module#max.experimental.nn.Module.forward)
+   [`forward()`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.forward)
    for the ModuleV3 API.
 
 2. **MAX compiles your model**: MAX compiles the module into an optimized
@@ -156,28 +153,21 @@ Here's the workflow:
 3. **Pipelines orchestrate execution**: The pipeline receives pre-tokenized
    context objects (which the tokenizer creates), manages the KV cache, calls
    your model's
-   [`PipelineModel.execute()`](/api/python/generated/max.pipelines.PipelineModel#max.pipelines.PipelineModel.execute)
+   [`PipelineModel.execute()`](/api/python/generated/max.pipelines.PipelineModel/#max.pipelines.PipelineModel.execute)
    method, samples output tokens, and returns results.
 
 This separation lets you work at the right level of abstraction: use
-[`max.nn`](/api/python/nn) or
-[`max.experimental.nn`](/api/python/experimental.nn) to define model
+[`max.nn`](/api/python/nn/) or
+[`max.experimental.nn`](/api/python/experimental.nn/) to define model
 architectures, let MAX handle compilation, and rely on pipelines for
 production serving.
 
 ### Request execution example
 
-To see how these components work together in practice, here's a complete example
-of generating text with a pipeline.
-
-The [`PIPELINE_REGISTRY`](/api/python/pipelines.lib.registry) is the central
-system that maps model architectures to their compiled pipelines and tokenizers.
-When you call
-[`retrieve()`](/api/python/generated/max.pipelines.lib.registry.PipelineRegistry#max.pipelines.lib.registry.PipelineRegistry.retrieve)
-with a [`PipelineConfig`](/api/python/pipelines), the registry looks up the
-model's architecture from its Hugging Face config, validates compatibility,
-downloads weights if needed, compiles the model, and returns both a tokenizer
-and a ready-to-use pipeline instance.
+The script below builds a `PipelineConfig`, retrieves the pipeline with
+[`PIPELINE_REGISTRY.retrieve()`](/api/python/generated/max.pipelines.lib.registry.PipelineRegistry/#max.pipelines.lib.registry.PipelineRegistry.retrieve),
+and runs one request. [Pipeline registry](#pipeline-registry) covers what the
+registry does.
 
 ```python
 import asyncio
@@ -235,7 +225,7 @@ while True:
 print(generated_text)
 ```
 
-In this example, you can see the key phases of pipeline execution:
+The walkthrough below follows the script in execution order:
 
 1. The registry maps the model path to the appropriate tokenizer and compiled
    pipeline.
@@ -246,58 +236,51 @@ In this example, you can see the key phases of pipeline execution:
 4. The pipeline processes tokens, the model executes, and the sampler selects
    new tokens until completion.
 
-Notice how the pipeline itself is stateless, all request-specific state
-lives in the `context` object and the KV cache manager. The pipeline
-orchestrates execution based on the inputs it receives.
+Request state lives in the `context` object and the KV cache manager;
+[Stateless orchestration](#stateless-orchestration) covers that split.
 
-For more information on the stateless nature of the pipeline system, see
-[Stateless orchestration](#stateless-orchestration) below.
+## Pipeline components
 
-## Core components
+### Interfaces every component implements
 
-Now that you understand how modules and pipelines work together, you can explore
-the specific components that make up the pipeline system.
-
-### Top-level interfaces
-
-The [`max.pipelines.modeling.types`](/api/python/pipelines.modeling.types)
-package defines the contracts that all pipeline components must implement. These
+The [`max.pipelines.modeling.types`](/api/python/pipelines.modeling.types/)
+package defines the interfaces every pipeline component implements. These
 abstractions enable MAX to work uniformly across different model architectures
 and tasks.
 
 The key interfaces are:
 
-- [`Pipeline`](/api/python/generated/max.pipelines.modeling.types.Pipeline):
+- [`Pipeline`](/api/python/generated/max.pipelines.modeling.types.Pipeline/):
   Abstract base class for all pipelines. Defines `execute()` and `release()`
   methods that all pipeline implementations must provide.
 
-- [`PipelineInputs`](/api/python/generated/max.pipelines.modeling.types.PipelineInputs):
+- [`PipelineInputs`](/api/python/generated/max.pipelines.modeling.types.PipelineInputs/):
   Base class for inputs to a pipeline, such as text generation requests or
   embeddings requests.
 
-- [`PipelineOutput`](/api/python/generated/max.pipelines.modeling.types.PipelineOutput):
+- [`PipelineOutput`](/api/python/generated/max.pipelines.modeling.types.PipelineOutput/):
   Protocol for pipeline outputs. Must implement `is_done` to signal when
   generation is complete.
 
-- [`PipelineTokenizer`](/api/python/generated/max.pipelines.modeling.types.PipelineTokenizer):
+- [`PipelineTokenizer`](/api/python/generated/max.pipelines.modeling.types.PipelineTokenizer/):
   Interface for tokenizers that convert between text and token IDs, and create
   context objects for requests.
 
-- [`PipelineModel`](/api/python/generated/max.pipelines.PipelineModel):
+- [`PipelineModel`](/api/python/generated/max.pipelines.PipelineModel/):
   Abstract base class for model implementations. Defines methods like
   `execute()` and input preparation methods that all architectures must
   implement.
 
 These interfaces are task-agnostic. Specialized variants like
-[`TextGenerationInputs`](/api/python/generated/max.pipelines.modeling.types.TextGenerationInputs)
+[`TextGenerationInputs`](/api/python/generated/max.pipelines.modeling.types.TextGenerationInputs/)
 and
-[`TextGenerationOutput`](/api/python/generated/max.pipelines.context.TextGenerationOutput)
+[`TextGenerationOutput`](/api/python/generated/max.pipelines.context.TextGenerationOutput/)
 extend them for specific use cases.
 
 ### Pipeline registry
 
 The
-[`PIPELINE_REGISTRY`](/api/python/generated/max.pipelines.lib.registry.PipelineRegistry)
+[`PIPELINE_REGISTRY`](/api/python/generated/max.pipelines.lib.registry.PipelineRegistry/)
 is a singleton that tracks all available model architectures. When you run the
 `max serve` command with a model, the registry:
 
@@ -336,7 +319,7 @@ compiled model.
 ### Supported architecture
 
 A
-[`SupportedArchitecture`](/api/python/generated/max.pipelines.lib.registry.SupportedArchitecture)
+[`SupportedArchitecture`](/api/python/generated/max.pipelines.lib.registry.SupportedArchitecture/)
 configuration defines each model architecture. This bridges the gap between
 Hugging Face model conventions and MAX's execution system.
 
@@ -360,7 +343,7 @@ from max.pipelines.lib import (
 )
 
 llama_arch = SupportedArchitecture(
-    # Must match the HuggingFace model class name
+    # Must match the Hugging Face model class name
     name="LlamaForCausalLM",
 
     # The type of task this architecture supports
@@ -422,7 +405,7 @@ default, and `supported_encodings` to the set of encodings your architecture
 supports. For example, if your model supports `q4_k`
 quantization, set `supported_encodings={"q4_k"}`. For more
 information on quantization, see the
-[quantization guide](/develop/quantize).
+[quantization guide](/develop/quantize/).
 
 The `pipeline_model` field is the class that builds and executes the model.
 The `tokenizer` field is the class that handles text encoding and decoding.
@@ -431,19 +414,18 @@ Finally, the `weight_adapters` field is a dictionary of functions that convert
 weights from different formats. You can use the `weight_adapters` field to
 convert weights from different formats to the default format.
 
-You use these fields to configure the pipeline for your model. In most cases,
-if you implement a new model architecture, you know its architecture and can
-set these fields accordingly.
+Set these fields to match your architecture. Each reference architecture sets a
+working combination for its model family.
 
 ### Pipeline model
 
 The
-[`PipelineModel`](/api/python/generated/max.pipelines.PipelineModel)
+[`PipelineModel`](/api/python/generated/max.pipelines.PipelineModel/)
 abstract class defines the interface for model implementations. Every model
 architecture implements `execute()`, and either implements
 `prepare_initial_token_inputs()` directly or delegates input preparation to a
-batch processor (see [Delegating input preparation to a batch
-processor](#delegating-input-preparation-to-a-batch-processor)):
+batch processor (see
+[input preparation](#delegate-input-preparation-to-a-batch-processor)):
 
 ```python
 from max.pipelines.lib import PipelineModel, ModelInputs, ModelOutputs
@@ -471,32 +453,33 @@ pipeline):
 1. **Prefill**: Process the entire prompt at once, building up the KV cache.
 2. **Decode**: Generate tokens one at a time, reusing the cached keys/values.
 
-#### Delegating input preparation to a batch processor
+#### Delegate input preparation to a batch processor
 
 Every token-generation model needs a batch processor: a
-[`BatchProcessor`](/api/python/generated/max.pipelines.lib.interfaces.BatchProcessor)
+[`BatchProcessor`](/api/python/generated/max.pipelines.lib.interfaces.BatchProcessor/)
 subclass that builds the tensors for each scheduled batch and parses the model's
 outputs. Register it through the `batching` field of
-[`SupportedArchitecture`](/api/python/generated/max.pipelines.lib.registry.SupportedArchitecture):
+[`SupportedArchitecture`](/api/python/generated/max.pipelines.lib.registry.SupportedArchitecture/):
 at registration, MAX sets the processor as the model's `batch_processor_cls`,
 and the base `PipelineModel.prepare_initial_token_inputs()` delegates to it. If
 neither the field nor the model class's own `batch_processor_cls` provides a
 processor, preparing the first batch raises `NotImplementedError`. For ragged
 batches, subclass
-[`RaggedBatchProcessor`](/api/python/generated/max.pipelines.lib.interfaces.RaggedBatchProcessor),
+[`RaggedBatchProcessor`](/api/python/generated/max.pipelines.lib.interfaces.RaggedBatchProcessor/),
 which receives a
-[`BatchProcessorRuntime`](/api/python/generated/max.pipelines.lib.interfaces.BatchProcessorRuntime)
+[`BatchProcessorRuntime`](/api/python/generated/max.pipelines.lib.interfaces.BatchProcessorRuntime/)
 describing the active devices and KV cache.
 
 Reuse an existing processor when your model's batching matches a family that MAX
-already supports. One Llama 3 batch processor backs Llama 3, OLMo, Granite, Qwen
-2, and Phi-3, and Qwen 3.5 subclasses it to adjust specific steps; see the
+already supports. One batch processor, `Llama3BatchProcessor`, backs Llama 3 and
+a set of similar architectures, such as OLMo, Granite, Qwen 2, and Phi-3. Qwen
+3.5 subclasses it to adjust specific steps; see the
 [`llama3` architecture](https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/llama3)
 for a reference implementation. Create a `batch_processor.py` with your own
 `BatchProcessor` subclass only when your model needs batching logic that no
 existing processor covers.
 
-#### Linking to the architecture config
+#### Link to the architecture config
 
 The `model_config_cls` class variable links your pipeline model to the
 architecture configuration class. This connection enables the base
@@ -509,13 +492,14 @@ The base class delegates the following through `model_config_cls`:
   policy (whether the checkpoint bound is a hard cap or a default).
   `PipelineConfig.from_args()` runs it once at construction, so
   `config.model.max_length` carries the resolved value; the pipeline model
-  reads that value, or the memory plan's clamped one when a cap applies.
+  reads that value, or the memory plan's clamped one, as the sequence length
+  it plans against.
 
-- **KV cache parameters**: The `get_kv_params()` method constructs the KV cache
-  configuration. The base class calls `model_config_cls.construct_kv_params()`
-  to build the appropriate `KVCacheParams` for your architecture. Architectures
-  with multiple or hybrid caches (for example, separate sliding-window and
-  full-attention caches) return a
+- **KV cache parameters**: The base class builds the cache parameters with
+  `model_config_cls.construct_kv_params()`, and the pipeline model's
+  `get_kv_params()` delegates to it. Architectures with multiple or hybrid
+  caches (for example, separate sliding-window and full-attention caches) return
+  a
   [`MultiKVCacheParams`](/api/python/generated/max.nn.kv_cache.MultiKVCacheParams/)
   tree instead, which the cache manager consumes through the shared
   [`KVCacheParamInterface`](/api/python/generated/max.nn.kv_cache.KVCacheParamInterface/).
@@ -525,31 +509,21 @@ You can override `calculate_max_seq_len()` (on the architecture config) or
 
 ### When to customize `ModelInputs`
 
-For most text-to-text transformer models, you can use the default `ModelInputs`
-implementation provided by MAX. Start with the default `ModelInputs` and only
-create a custom subclass if your model's forward pass requires additional
-tensors beyond the standard transformer inputs. Custom `ModelInputs` are only
-necessary for:
+The default `ModelInputs` handles token IDs, position IDs, attention masks, and
+KV cache inputs, which covers standard decoder-only models. Subclass it when the
+forward pass needs tensors beyond those:
 
-- Models that process both text and image inputs, require custom input
-  structures to handle image tensors, pixel values, or image embeddings
-  alongside text tokens.
-
-- Models that have unique input patterns, for example: mixture-of-experts
-  with routing tensors or retrieval augmented models with document embeddings.
-
-If you're implementing a standard decoder-only language model (like Llama,
-Mistral, or similar architectures), you likely don't need to subclass
-`ModelInputs`. The default implementation handles token IDs, position IDs,
-attention masks, and KV cache inputs, which covers most use cases.
+- models that process both text and image inputs, needing image tensors, pixel
+  values, or image embeddings alongside text tokens;
+- models that pass extra tensors through the batch, such as
+  mixture-of-experts routing tensors or retrieval-augmented document embeddings.
 
 ## Pipeline execution
 
-Now let's look at how pipelines coordinate execution at runtime. When a pipeline
-runs, it orchestrates three main components: the KV cache manager (which tracks
-key-value pairs across generation steps), the model (which executes the forward
-pass), and the sampler (which selects the next token based on the model's output
-logits). The `execute()` method ties these together in a generation loop.
+A pipeline orchestrates the KV cache manager, which tracks key-value pairs
+across generation steps; the model, which runs the forward pass; and the
+sampler, which selects the next token from the model's output logits.
+`execute()` ties them together in a generation loop.
 
 ### Stateless orchestration
 
@@ -606,16 +580,31 @@ config = PipelineConfig.from_args(
 
 The `PipelineConfig` consolidates all settings and provides defaults based on
 the model and hardware. See the
-[`PipelineConfig` reference](/api/python/generated/max.pipelines.PipelineConfig)
+[`PipelineConfig` reference](/api/python/generated/max.pipelines.PipelineConfig/)
 for all available options.
+
+## Shard the model across devices
+
+A pipeline model runs on one device until its architecture builds a device mesh.
+The reference architectures do that in `_instantiate_module()`: they build a
+[`DeviceMesh`](/api/python/generated/max.experimental.sharding.DeviceMesh/) from
+the devices the pipeline assigned, then enter
+[`default_device(mesh)`](/api/python/generated/max.experimental.tensor.default_device/)
+so every weight is created with a placement.
+
+Set `multi_gpu_supported=True` in `arch.py` so the registry advertises the
+architecture for a multi-device pipeline. The ops inside the model read those
+placements and run the collectives they need. [Tensor
+parallelism](/serve/parallelism/#tensor-parallelism) covers how MAX splits a
+served model across the GPUs you name.
 
 ## Next steps
 
 Now that you understand the pipeline architecture, continue learning:
 
-- [Modules](/develop/modules): Learn how to build model graphs using
+- [Modules](/develop/modules/): Learn how to build model graphs using
   MAX's `Module` class.
-- [Serve custom model architectures](/develop/serve-custom-model-architectures):
+- [Serve custom model architectures](/develop/serve-custom-model-architectures/):
   Implement a complete custom architecture with the pipeline system.
-- [Bring your own fine-tuned model to MAX pipelines](/develop/max-pipeline-bring-your-own-model):
+- [Bring your own fine-tuned model to MAX pipelines](/develop/max-pipeline-bring-your-own-model/):
   Use your own fine-tuned weights with MAX pipelines.

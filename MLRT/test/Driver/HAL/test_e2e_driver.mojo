@@ -11,10 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 from std.os import getenv
-from _hal import Driver, Context, copy
-from _hal.device import Device, DeviceSpec, get_device_spec
-from _hal.status import HALError
-from _hal.plugin import MemoryHandle
+from max._driver import Driver, Context, copy
+from max._driver.max_license.hal.device import (
+    Device,
+    DeviceSpec,
+    get_device_spec,
+)
+from max._driver.max_license.hal.status import HALError
+from max._driver.max_license.hal.plugin import MemoryHandle
 from max.gpu import global_idx
 from std.memory import alloc, ArcPointer, OpaquePointer, Pointer
 from std.sys import size_of
@@ -80,7 +84,7 @@ def do_execute[
     var length_val = Int(length)
 
     # Pack kernel arguments — order must match the kernel signature: a, b, result, n.
-    var args = alloc[OpaquePointer[MutUntrackedOrigin]](
+    var args = alloc[OpaquePointer[ImmUntrackedOrigin]](
         {length = 4}
     ).unsafe_leak()
     var arg_sizes = alloc[UInt64]({length = 4}).unsafe_leak()
@@ -110,9 +114,7 @@ def do_execute[
         func,
         grid=(grid_dim, UInt32(1), UInt32(1)),
         block=(block_dim, UInt32(1), UInt32(1)),
-        args=rebind[Pointer[OpaquePointer[MutUntrackedOrigin], MutAnyOrigin]](
-            args
-        ),
+        args=args,
         arg_sizes=rebind[Pointer[UInt64, MutAnyOrigin]](arg_sizes),
         num_args=UInt32(4),
     )

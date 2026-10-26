@@ -56,7 +56,8 @@ def _value[dtype: DType](index: Int) -> Scalar[dtype]:
 
 
 def _run_case[dtype: DType, width: Int](ctx: DeviceContext) raises:
-    comptime count = WARP_SIZE * width
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime count = warp_size * width
     var host_in = ctx.enqueue_create_host_buffer[dtype](count)
     var host_out = ctx.enqueue_create_host_buffer[dtype](count)
     for i in range(count):
@@ -71,7 +72,7 @@ def _run_case[dtype: DType, width: Int](ctx: DeviceContext) raises:
         dev_out,
         Int32(count),
         grid_dim=1,
-        block_dim=WARP_SIZE,
+        block_dim=warp_size,
     )
     ctx.enqueue_copy(host_out, dev_out)
     ctx.synchronize()
@@ -88,7 +89,7 @@ def _run_case[dtype: DType, width: Int](ctx: DeviceContext) raises:
         dev_out,
         Int32(valid_elements),
         grid_dim=1,
-        block_dim=WARP_SIZE,
+        block_dim=warp_size,
     )
     ctx.enqueue_copy(host_out, dev_out)
     ctx.synchronize()

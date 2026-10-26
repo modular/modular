@@ -83,7 +83,7 @@ struct SM100MHA2Q[
     output_type: DType,
     MaskType: MHAMask,
     SchedulerType: MHATileScheduler,
-    config: FA4Config[KVLUTType.dtype],
+    config: FA4Config,
     ValidLengthType: OptionalPointer,
     SinkType: OptionalPointer,
     KVRowOffsetsType: OptionalPointer,
@@ -103,7 +103,10 @@ struct SM100MHA2Q[
         output_type: Output dtype of the attention result.
         MaskType: Causal or unmasked attention mask type.
         SchedulerType: Tile scheduler controlling iteration over KV tiles.
-        config: Comptime FA4 tile and pipeline configuration.
+        config: Comptime FA4 tile and pipeline configuration. The type is
+            unbound so any `cross_p` value instantiates; the dtype pin the
+            old `FA4Config[KVLUTType.dtype]` spelling enforced lives in
+            `with_fa4_config`'s signature, the only constructor.
         ValidLengthType: Optional pointer type for valid sequence lengths.
         SinkType: Optional pointer type for attention sink weights.
         KVRowOffsetsType: Optional pointer type for KV input row offsets.

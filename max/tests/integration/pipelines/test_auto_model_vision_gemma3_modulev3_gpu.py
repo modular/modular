@@ -20,7 +20,12 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import pytest
-from _auto_model_vision_gpu import check_image_rows, check_text_rows, load
+from _auto_model_vision_gpu import (
+    check_image_rows,
+    check_pil_image_rows,
+    check_text_rows,
+    load,
+)
 from max.pipelines import AutoModel
 
 
@@ -31,6 +36,10 @@ def model() -> Iterator[AutoModel]:
 
 def test_text_prompts_match_the_tokenizer_built_rows(model: AutoModel) -> None:
     check_text_rows(model)
+
+
+def test_pil_image_rows_match_the_bytes_rows(model: AutoModel) -> None:
+    check_pil_image_rows(model)
 
 
 def test_image_rows_match_the_tokenizer_built_rows(model: AutoModel) -> None:

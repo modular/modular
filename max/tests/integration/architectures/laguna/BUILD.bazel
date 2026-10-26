@@ -6,12 +6,21 @@ package(default_visibility = [
     "//oss/modular/max/tests:__subpackages__",
 ])
 
+# The ModuleV3 architecture's tests read the same checkpoint configs. They go
+# through a filegroup so each config belongs to one target.
+filegroup(
+    name = "checkpoint_configs",
+    srcs = glob(["testdata/*.json"]),
+)
+
 modular_py_test(
     name = "laguna",
     size = "medium",
     srcs = glob(["*.py"]),
+    data = [":checkpoint_configs"],
     imports = ["."],
-    # These are trivial pure-Python unit tests, but importing
+    # Mostly pure-Python unit tests, plus the RoPE tests, which compile small
+    # CPU graphs and load the torch reference. Importing
     # max.pipelines.architectures.laguna pulls in the heavy max.pipelines
     # import chain, which times out during pytest collection on contended
     # macOS BuildBuddy workers. macOS adds no coverage here, so skip it.
@@ -24,8 +33,13 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/gemma4",
         "//max/python/max/pipelines/architectures/laguna",
+        "//max/python/max/pipelines/lib",
         requirement("numpy"),
         requirement("torch"),
+        requirement("transformers"),
     ],
 )

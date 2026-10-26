@@ -981,16 +981,17 @@ struct PagedRowIndices[
                         # Issue OOB TMAs for the remaining `[_p,
                         # pages_per_iter)` page slots. The TMA descriptor
                         # is built with `OOBFill.NONE`, which writes 0
-                        # for any OOB coordinate; we use a row coord
-                        # (`Int32.MAX >> 1`) that is unconditionally
-                        # past `globalDim[0]` (block-row count is
-                        # bounded by `total_blocks * stride`, well
-                        # below 2^30 for any realistic workload). Each
-                        # OOB TMA still arrives at `mbar` with its
-                        # byte count, so the caller's `expect_bytes`
-                        # MUST cover the full
+                        # for any OOB coordinate. The row coord is
+                        # negative, so the whole box lies before row 0
+                        # whatever the tensor's extent. A large positive
+                        # coord stops being OOB once the block-row count
+                        # passes it: a 725k-page, 6-layer pool has 1.1e9
+                        # rows, so row 2^30 is a live page whose bytes
+                        # reach P@V. Each OOB TMA still arrives at `mbar`
+                        # with its byte count, so the caller's
+                        # `expect_bytes` MUST cover the full
                         # `pages_per_iter * num_depth_chunks` issues.
-                        comptime _OOB_ROW: Int = 1 << 30
+                        comptime _OOB_ROW: Int = -(1 << 30)
                         comptime for _q in range(_p, pages_per_iter):
                             comptime if fold >= 2 and row_major:
                                 # One rank-5 chunk-inner TMA per OOB page slot.
@@ -998,8 +999,9 @@ struct PagedRowIndices[
                                 # chunk-inner block (num_depth_chunks *
                                 # tma_per_issue_rows * gran). Coord is fast-first
                                 # (gran, in-atom-row, chunk-base, atom_row, head);
-                                # atom_row = _OOB_ROW (>> globalDim atom-row extent)
-                                # so OOBFill.NONE zero-fills this page slot.
+                                # atom_row = _OOB_ROW (< 0, so the whole box is
+                                # before atom-row 0) and OOBFill.NONE zero-fills
+                                # this page slot.
                                 comptime smem_off_oob_rm = (
                                     _q
                                     * num_depth_chunks
@@ -1013,9 +1015,9 @@ struct PagedRowIndices[
                                     stage_base.unsafe_offset(smem_off_oob_rm),
                                     desc_ptr,
                                     mbar.unsafe_ptr(),
-                                    Index(
-                                        0,
-                                        0,
+                                    (
+                                        Idx[0],
+                                        Idx[0],
                                         Int(depth_offset) // swizzle_gran,
                                         _OOB_ROW,
                                         Int(kv_head_idx),
@@ -1040,8 +1042,8 @@ struct PagedRowIndices[
                                     stage_base.unsafe_offset(smem_off_oob_f),
                                     desc_ptr,
                                     mbar.unsafe_ptr(),
-                                    Index(
-                                        0,
+                                    (
+                                        Idx[0],
                                         _OOB_ROW,
                                         Int(depth_offset) // swizzle_gran,
                                         Int(kv_head_idx),
@@ -1061,7 +1063,7 @@ struct PagedRowIndices[
                                         stage_base.unsafe_offset(smem_off_oob),
                                         desc_ptr,
                                         mbar.unsafe_ptr(),
-                                        Index(
+                                        (
                                             Int(depth_offset)
                                             + j * swizzle_gran,
                                             Int(kv_head_idx),
@@ -1096,15 +1098,14 @@ struct PagedRowIndices[
                     ),
                 )
                 cp_async_bulk_tensor_shared_cluster_global_elect[
-                    cta_group=Self.cta_group,
-                    eviction_policy=eviction_policy,
+                    cta_group=Self.cta_group, eviction_policy=eviction_policy
                 ](
                     stage_base.unsafe_offset(smem_off_rm),
                     desc_ptr,
                     mbar.unsafe_ptr(),
-                    Index(
-                        0,
-                        0,
+                    (
+                        Idx[0],
+                        Idx[0],
                         Int(depth_offset) // swizzle_gran,
                         row_rm // _SWIZZLE_ATOM_ROWS,
                         Int(kv_head_idx),
@@ -1122,14 +1123,13 @@ struct PagedRowIndices[
                 # covers `fold` chunks; the gran coord is 0.
                 comptime smem_off_f = (_p * tma_per_issue_rows * swizzle_gran)
                 cp_async_bulk_tensor_shared_cluster_global_elect[
-                    cta_group=Self.cta_group,
-                    eviction_policy=eviction_policy,
+                    cta_group=Self.cta_group, eviction_policy=eviction_policy
                 ](
                     stage_base.unsafe_offset(smem_off_f),
                     desc_ptr,
                     mbar.unsafe_ptr(),
-                    Index(
-                        0,
+                    (
+                        Idx[0],
                         Int(self.rows[src_idx]) + intra_page_row_ct,
                         Int(depth_offset) // swizzle_gran,
                         Int(kv_head_idx),
@@ -1149,7 +1149,7 @@ struct PagedRowIndices[
                         stage_base.unsafe_offset(smem_off),
                         desc_ptr,
                         mbar.unsafe_ptr(),
-                        Index(
+                        (
                             Int(depth_offset) + j * swizzle_gran,
                             Int(kv_head_idx),
                             Int(self.rows[src_idx]) + intra_page_row_ct,

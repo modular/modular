@@ -22,6 +22,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
+from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.comm.ep import EPConfig
@@ -51,8 +52,9 @@ from typing_extensions import Self, override
 
 from . import kv_leaves
 
-# Precision switches. Both default on.
+# Precision switches. All default on.
 WOA_MXFP8_ENV = "MAX_DSV41_WOA_MXFP8"
+Q_MXFP8_ENV = "MAX_DSV41_Q_MXFP8"
 HEAD_BF16_ENV = "MAX_DSV41_HEAD_BF16"
 
 
@@ -76,19 +78,94 @@ def woa_mxfp8_enabled() -> bool:
     return _env_switch(WOA_MXFP8_ENV)
 
 
+def q_mxfp8_enabled() -> bool:
+    """Whether the query-side projections run as MXFP8 matmuls.
+
+    Covers ``attn.wq_a``, ``attn.wkv``, ``attn.wq_b`` and
+    ``attn.indexer.wq_b`` in the trunk and DSpark's ``mtp.*`` stages. On
+    (default): the FP8 weights load as-is with row-expanded E8M0 scales,
+    and the inputs are quantized to MXFP8. Off (``MAX_DSV41_Q_MXFP8=0``):
+    the weights are dequantized to bf16 on the host.
+    """
+    return _env_switch(Q_MXFP8_ENV)
+
+
+# The window KV store inside the fused q/kv norm and quantize (default on).
+FUSED_KV_STORE_ENV = "MAX_DSV41_FUSED_KV_STORE"
+
+
+def fused_kv_store_enabled() -> bool:
+    """Whether the fused q/kv norm and quantize also stores the KV.
+
+    On (default): wherever the fused kernel runs, it writes each token's
+    MXFP8 window record itself, and DSpark's block attention normalizes and
+    quantizes its query with it too. Off (``MAX_DSV41_FUSED_KV_STORE=0``):
+    the trunk writes the normalized KV out for a separate store, and DSpark
+    keeps its unfused query norm and store.
+    """
+    return _env_switch(FUSED_KV_STORE_ENV)
+
+
+# The CSA2 attention writing wo_a's MXFP8 input (default on).
+CSA2_MXFP8_ENV = "MAX_DSV41_CSA2_MXFP8"
+
+
+def csa2_mxfp8_enabled() -> bool:
+    """Whether the CSA2 attention writes ``attn.wo_a``'s MXFP8 input itself.
+
+    Applies with ``wo_a`` in MXFP8 on SM100. Off
+    (``MAX_DSV41_CSA2_MXFP8=0``): the attention writes bf16, and a separate
+    kernel rotates and quantizes it.
+    """
+    return _env_switch(CSA2_MXFP8_ENV)
+
+
 # MXFP8 projections on the cluster split-K matmul (default on).
 MXFP8_SPLITK_ENV = "MAX_DSV41_MXFP8_SPLITK"
 
 
 def mxfp8_splitk_enabled() -> bool:
-    """Whether ``attn.wo_b`` and the shared expert run on the cluster
-    split-K MXFP8 matmul.
+    """Whether ``attn.wo_a``, ``attn.wo_b`` and the shared expert run on
+    the cluster split-K MXFP8 matmul.
 
-    On (default): at decode sizes each 128-row weight tile's K splits over
-    a cluster of CTAs, and other sizes take the production block-scaled
-    matmul. Off (``MAX_DSV41_MXFP8_SPLITK=0``): production at every size.
+    On (default): each weight shape and M takes cluster split-K or a
+    pair-CTA GEMM (decode or prefill) where measured faster, and the
+    production block-scaled matmul otherwise. Off
+    (``MAX_DSV41_MXFP8_SPLITK=0``): production at every size.
     """
     return _env_switch(MXFP8_SPLITK_ENV)
+
+
+# The FFN input in MXFP8 from the hyper-connection step (default on).
+MHC_MXFP8_ENV = "MAX_DSV41_MHC_MXFP8"
+
+
+def mhc_mxfp8_enabled() -> bool:
+    """Whether each hyper-connection step also writes its sublayer's input
+    in MXFP8.
+
+    On (default): on SM100 the shared expert and the attention's fused
+    ``wq_a``/``wkv`` projection read that copy instead of quantizing their
+    input. Off (``MAX_DSV41_MHC_MXFP8=0``): each quantizes its own input.
+    """
+    return _env_switch(MHC_MXFP8_ENV)
+
+
+ENGRAM_HOST_GATHER_ENV = "MAX_ENGRAM_HOST_GATHER"
+
+
+def engram_host_gather_enabled() -> bool:
+    """Whether full-table Engram lookups hash and gather on host threads.
+
+    On (default, NVIDIA GPUs): from 1,024 tokens CPU threads read the pinned
+    tables and the operands reach the GPU in chunks, so no SM reads the
+    tables, and data-parallel forwards run the lookup on a side stream that
+    overlaps the layers before the first Engram layer. Smaller steps and
+    steps a device graph captures run the GPU kernels, on that side stream
+    too. Off (``MAX_ENGRAM_HOST_GATHER=0``, and on other GPUs): the GPU
+    kernels at every size, on the main stream.
+    """
+    return accelerator_api() == "cuda" and _env_switch(ENGRAM_HOST_GATHER_ENV)
 
 
 # Interleave routed-expert NVFP4 block scales on the host (default on). "0"
@@ -272,6 +349,38 @@ def head_bf16_enabled() -> bool:
     is widened to float32 at load.
     """
     return _env_switch(HEAD_BF16_ENV)
+
+
+# The CSA2 compressor's projections on bf16 operands (default on).
+COMPRESSOR_BF16_ENV = "MAX_DSV41_COMPRESSOR_BF16"
+
+
+def compressor_bf16_enabled() -> bool:
+    """Whether the compressor's ``wkv``/``wgate`` keep the checkpoint's bf16.
+
+    On (default): bf16 matmuls with float32 accumulation and output. Off
+    (``MAX_DSV41_COMPRESSOR_BF16=0``): the weights are widened to float32
+    at load and the bf16 input to float32 in the graph. The products of
+    bf16 values are exact in both, so only the accumulation order differs.
+    """
+    return _env_switch(COMPRESSOR_BF16_ENV)
+
+
+# Each CSA2 layer's index list in one kernel launch (default on).
+INDEX_LIST_FUSED_ENV = "MAX_DSV41_INDEX_LIST_FUSED"
+
+
+def index_list_fused_enabled() -> bool:
+    """Whether a GPU layer builds its CSA2 index list in one launch.
+
+    On (default): one ``mo.csa2.index_list`` kernel writes the layer's
+    ``[T, 640]`` window and compressed slots
+    (:func:`~.layers.csa2.index_list`). Off
+    (``MAX_DSV41_INDEX_LIST_FUSED=0``): the graph ops of
+    :func:`~.layers.csa2.index_list_ops`, which build the same list bit for
+    bit.
+    """
+    return _env_switch(INDEX_LIST_FUSED_ENV)
 
 
 @dataclass(kw_only=True)

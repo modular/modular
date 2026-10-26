@@ -25,7 +25,6 @@ from nn._ragged_utils import get_batch_from_row_offsets
 from extensibility import InputTensor, OutputTensor
 from extensibility import Tensor, TileTensorable
 
-from std.utils.coord import coord_to_index_list
 from std.utils.index import IndexList
 
 
@@ -377,7 +376,7 @@ def compute_log_probabilities_ragged_shape[
     comptime assert (
         type_of(lp_output_offsets_host).rank == 1
     ), "lp_output_offsets_host must be rank 1"
-    var num_offsets = coord_to_index_list(lp_output_offsets_host.shape())[0]
+    var num_offsets = Int(lp_output_offsets_host.shape().product())
     return IndexList[2](
         Int(lp_output_offsets_host.to_tile_tensor()[num_offsets - 1]),
         2**levels,

@@ -14,7 +14,6 @@
 from std.math import exp, exp2, isnan, nan
 from std.testing import assert_almost_equal, assert_true
 
-from max.gpu import WARP_SIZE
 from max.gpu.host import DeviceContext
 from layout import TileTensor, row_major
 from nn.attention.gpu.mha import mha_splitk_reduce
@@ -23,6 +22,7 @@ from nn.attention.gpu.mha import mha_splitk_reduce
 def test_reduce[
     depth: Int, use_exp2: Bool, partitions: Int = 3
 ](ctx: DeviceContext) raises:
+    comptime warp_size = ctx.default_device_info.warp_size
     comptime batches = 2
     comptime heads = 3
     comptime output_size = batches * heads * depth
@@ -67,7 +67,7 @@ def test_reduce[
     ctx.enqueue_copy(maxima_dev, maxima_host)
     ctx.enqueue_memset(output_dev, nan[.float32]())
     comptime kernel = mha_splitk_reduce[
-        .float32, .float32, depth, heads, WARP_SIZE, use_exp2
+        .float32, .float32, depth, heads, warp_size, use_exp2
     ]
     ctx.enqueue_function[kernel](
         partials_dev,
@@ -77,7 +77,7 @@ def test_reduce[
         Int32(batches),
         Int32(partitions),
         grid_dim=(1, heads, batches),
-        block_dim=WARP_SIZE,
+        block_dim=warp_size,
     )
     var output_host = ctx.enqueue_create_host_buffer[.float32](len(output_dev))
     ctx.enqueue_copy(output_host, output_dev)

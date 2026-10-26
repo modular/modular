@@ -185,7 +185,7 @@ def check_ldmatrix_transposed_bf16[
         a_device,
         b_device,
         grid_dim=1,
-        block_dim=WARP_SIZE,
+        block_dim=ctx.default_device_info.warp_size,
     )
 
     ctx.enqueue_copy(c_host, c_device)
@@ -297,7 +297,7 @@ def check_ldmatrix(
         Int32(N),
         Int32(K),
         grid_dim=1,
-        block_dim=WARP_SIZE,
+        block_dim=ctx.default_device_info.warp_size,
     )
 
     ctx.synchronize()

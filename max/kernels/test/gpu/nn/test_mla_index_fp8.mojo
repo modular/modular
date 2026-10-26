@@ -54,6 +54,7 @@ from layout.tile_tensor import ImmTileTensor, MutTileTensor
 from std.utils.index import IndexList
 from std.testing import assert_almost_equal, assert_true
 from std.collections import Set
+from std.utils.index import Index
 
 
 def _score_paged_sm100[
@@ -407,7 +408,7 @@ def test_mla_index_fp8_paged_variable_lengths[
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_ptr)
 
     # K blocks: [num_blocks, 1, num_layers, page_size, num_heads, head_size]
-    var k_shape = IndexList[6](
+    var k_shape = Index(
         num_blocks,
         1,  # MLA uses single kv
         num_layers,
@@ -423,7 +424,7 @@ def test_mla_index_fp8_paged_variable_lengths[
 
     # K scale blocks
     comptime head_dim_granularity = 1
-    var ks_shape = IndexList[6](
+    var ks_shape = Index(
         num_blocks,
         1,
         num_layers,
@@ -455,7 +456,7 @@ def test_mla_index_fp8_paged_variable_lengths[
                 ks_tail_host[i] = Float32(-log(1.0 - min(u, 0.999999)))
 
     # Page lookup tables
-    var paged_lut_shape = IndexList[2](batch_size, pages_per_seq)
+    var paged_lut_shape = Index(batch_size, pages_per_seq)
 
     var k_lut_device = ctx.enqueue_create_buffer[.uint32](
         paged_lut_shape.flattened_length()
@@ -1561,7 +1562,7 @@ def test_mla_index_frozen_metadata_equivalence[
         for i in range(batch_size):
             cl_host[i] = UInt32(cache_lens[i])
 
-    var k_shape = IndexList[6](
+    var k_shape = Index(
         num_blocks,
         1,
         num_layers,
@@ -1576,7 +1577,7 @@ def test_mla_index_frozen_metadata_equivalence[
         rand(k_block_host.as_span())
 
     comptime head_dim_granularity = 1
-    var ks_shape = IndexList[6](
+    var ks_shape = Index(
         num_blocks,
         1,
         num_layers,
@@ -1590,7 +1591,7 @@ def test_mla_index_frozen_metadata_equivalence[
     with ks_block_device.map_to_host() as ks_block_host:
         rand(ks_block_host.as_span())
 
-    var paged_lut_shape = IndexList[2](batch_size, lut_pages_per_seq)
+    var paged_lut_shape = Index(batch_size, lut_pages_per_seq)
     var k_lut_device = ctx.enqueue_create_buffer[.uint32](
         paged_lut_shape.flattened_length()
     )
@@ -1862,7 +1863,7 @@ def test_mla_index_chunked_equivalence[
         for i in range(batch_size):
             cl_host[i] = UInt32(cache_lens[i])
 
-    var k_shape = IndexList[6](
+    var k_shape = Index(
         num_blocks,
         1,
         num_layers,
@@ -1877,7 +1878,7 @@ def test_mla_index_chunked_equivalence[
         rand(k_block_host.as_span())
 
     comptime head_dim_granularity = 1
-    var ks_shape = IndexList[6](
+    var ks_shape = Index(
         num_blocks,
         1,
         num_layers,
@@ -1891,7 +1892,7 @@ def test_mla_index_chunked_equivalence[
     with ks_block_device.map_to_host() as ks_block_host:
         rand(ks_block_host.as_span())
 
-    var paged_lut_shape = IndexList[2](batch_size, pages_per_seq)
+    var paged_lut_shape = Index(batch_size, pages_per_seq)
     var k_lut_device = ctx.enqueue_create_buffer[.uint32](
         paged_lut_shape.flattened_length()
     )

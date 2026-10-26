@@ -37,7 +37,6 @@ from std.sys import (
 
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    WARP_SIZE,
     block_idx,
     grid_dim,
     thread_idx,
@@ -530,10 +529,13 @@ def reducescatter_rmsnorm[
     # Each thread owns `simd_width` cols; H=6144 fits the base width
     # (64*8*16=8192) on all targets (no AR two-width dispatch). Assert fit +
     # divisibility below.
-    comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
-    comptime threads_per_block = max_warps_per_block * WARP_SIZE
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime max_warps_per_block = (
+        ctx.default_device_info.max_thread_block_size // warp_size
+    )
+    comptime threads_per_block = max_warps_per_block * warp_size
     comptime simd_width = simd_width_of[in_dtype, target=ctx.target]()
-    comptime max_supported_cols = WARP_SIZE * simd_width * max_warps_per_block
+    comptime max_supported_cols = warp_size * simd_width * max_warps_per_block
     if cols > max_supported_cols:
         raise Error(
             String(

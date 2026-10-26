@@ -717,7 +717,7 @@ def useParamVariadics():
 
   # Use of an unbound thing in a DRValue context binds an empty variadic list.
   # FIXME(#29495): Pack references aren't working right.
-  # HECK-NEXT: [[TMP:%.*]] = kgen.create_closure[!lit.generator<() -> !kgen.none>: @parameters::@"fnWithVariadics{{.*}}"<:param_list<!Int> []>]()
+  # HECK-NEXT: [[TMP:%.*]] = kgen.create_func_ptr[!lit.generator<() -> !kgen.none>: @parameters::@"fnWithVariadics{{.*}}"<:param_list<!Int> []>]()
   # HECK-NEXT: %defLet = lit.var.decl "fnLet" : {{.*}}!lit.generator<() -> !kgen.none>
   # HECK-NEXT: lit.ref.store [[TMP]], %defLet
   # var defLet = fnWithVariadics
@@ -1659,7 +1659,7 @@ def take_variadic_pack[*ArgTypes: AnyType](*args: *ArgTypes):  pass
 
 # CHECK-LABEL: call_variadic_pack_with_function
 def call_variadic_pack_with_function():
-  # CHECK: [[FP:%.*]] = kgen.create_closure[!lit.generator<("x": !Int) -> !kgen.none>: @parameters::@"indirect_function
+  # CHECK: [[FP:%.*]] = kgen.create_func_ptr[!lit.generator<("x": !Int) -> !kgen.none>: @parameters::@"indirect_function
   # CHECK: lit.call {{.*}}take_variadic_pack
   var x = take_variadic_pack(indirect_function)
 

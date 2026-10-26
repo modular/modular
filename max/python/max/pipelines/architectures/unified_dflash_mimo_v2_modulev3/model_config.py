@@ -55,7 +55,43 @@ __all__ = [
     "read_dflash_config",
     "repo_file",
     "sampleable_vocab_size",
+    "verify_widened_row_budget",
 ]
+
+
+def verify_widened_row_budget(pipeline_config: PipelineConfig) -> int:
+    """Returns the EP dispatch row budget for the fused spec graph's DP
+    build.
+
+    The scheduler's token budget charges a decoding request its one active
+    token, but the fused verify step merges ``draft_width`` draft rows
+    beside it through every MoE layer -- rows the budget never counts --
+    so a full decode batch of ``max_batch_size`` requests carries rows
+    past ``max_batch_input_tokens``. The dispatch buffers are fixed at
+    build and the dispatch kernel rejects a wider shard, so the budget
+    counts the drafts, as DeepSeek-V4.1's DSpark EP config does.
+
+    Args:
+        pipeline_config: The pipeline whose scheduler budget and verify
+            width bound the rows.
+
+    Raises:
+        ValueError: Without ``max_batch_size``, which bounds the requests
+            a verify step carries and so the draft rows too.
+    """
+    runtime = pipeline_config.runtime
+    speculative = pipeline_config.speculative
+    assert speculative is not None
+    if runtime.max_batch_size is None:
+        raise ValueError(
+            "the fused MiMo-V2 DFlash spec graph under expert "
+            "parallelism needs max_batch_size, which bounds the draft "
+            "rows a verify step adds to max_batch_input_tokens"
+        )
+    return (
+        runtime.max_batch_input_tokens
+        + runtime.max_batch_size * speculative.draft_width
+    )
 
 
 DRAFT = "draft"
@@ -65,11 +101,15 @@ DRAFT = "draft"
 def with_num_draft_tokens(
     params: MultiKVCacheParams, num_draft_tokens: int
 ) -> MultiKVCacheParams:
-    """``params`` with ``num_draft_tokens`` on every leaf.
+    """Returns ``params`` with ``num_draft_tokens`` on every leaf.
 
     The graph-API unified package owned this; the generic composition on
     main stamps the count itself, and this package builds its own fused
     tree, so it lives here now.
+
+    Args:
+        params: The KV tree to stamp.
+        num_draft_tokens: The draft count every leaf carries.
     """
     children = {}
     for name, leaf in params.children.items():

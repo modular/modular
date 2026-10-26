@@ -56,6 +56,9 @@ def redundant_literal_patterns(value: Int, pair: Tuple[Int, String]):
         # CHECK: case 0:
         case == 0:
             pass
+        # CHECK: case -1:
+        case == -1:
+            pass
         case _:
             pass
 

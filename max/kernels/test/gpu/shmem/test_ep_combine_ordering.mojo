@@ -28,7 +28,7 @@ MI355X (gfx950) only.
 
 from std.atomic import Atomic, Ordering, fence
 from std.memory.alloc import unsafe_alloc
-from max.gpu import WARP_SIZE, block_dim, block_idx, thread_idx
+from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.testing import assert_equal
@@ -109,7 +109,7 @@ def main() raises:
             output,
             scratch,
             grid_dim=N_CONSUMERS + 1,
-            block_dim=WARP_SIZE,
+            block_dim=ctx.default_device_info.warp_size,
         )
 
         ctx.enqueue_copy(host_output, output)

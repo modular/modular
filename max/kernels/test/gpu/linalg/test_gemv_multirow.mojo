@@ -21,7 +21,7 @@ epilogue closure and for an N that does not divide the row tile.
 from std.math import align_up, ceildiv
 from std.sys import simd_width_of
 
-from max.gpu import WARP_SIZE, global_idx
+from max.gpu import global_idx
 from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.gemv import (
@@ -70,12 +70,13 @@ def test_matches_one_row_kernel[
     c_type: DType, dtype: DType, N: Int, K: Int, *, with_epilogue: Bool = False
 ](ctx: DeviceContext, seed: Int) raises:
     """Runs both kernels on the same inputs and requires identical outputs."""
+    comptime warp_size = ctx.default_device_info.warp_size
     comptime simd_width = simd_width_of[dtype, target=ctx.target]()
-    comptime check_bounds_k = K % (WARP_SIZE * simd_width) != 0
+    comptime check_bounds_k = K % (warp_size * simd_width) != 0
     comptime rows_per_warp = _GEMV_MULTIROW_ROWS
     comptime warps_per_block = 8
     # The one-row launch the dispatch performs today.
-    comptime one_row_block_dim = min(align_up(K // simd_width, WARP_SIZE), 1024)
+    comptime one_row_block_dim = min(align_up(K // simd_width, warp_size), 1024)
 
     print(
         "N",
@@ -140,7 +141,7 @@ def test_matches_one_row_kernel[
             Int32(1),
             Int32(K),
             host_args=(bias_epilogue,),
-            grid_dim=ceildiv(N, one_row_block_dim // WARP_SIZE),
+            grid_dim=ceildiv(N, one_row_block_dim // warp_size),
             block_dim=one_row_block_dim,
         )
     else:
@@ -165,7 +166,7 @@ def test_matches_one_row_kernel[
             Int32(N),
             Int32(1),
             Int32(K),
-            grid_dim=ceildiv(N, one_row_block_dim // WARP_SIZE),
+            grid_dim=ceildiv(N, one_row_block_dim // warp_size),
             block_dim=one_row_block_dim,
         )
     ctx.enqueue_copy(ref_host, c_dev)
@@ -197,7 +198,7 @@ def test_matches_one_row_kernel[
             Int32(K),
             host_args=(bias_epilogue,),
             grid_dim=ceildiv(N, rows_per_warp * warps_per_block),
-            block_dim=WARP_SIZE * warps_per_block,
+            block_dim=warp_size * warps_per_block,
         )
     else:
         comptime multirow_kernel = gemv_kernel_vector_multirow[
@@ -223,7 +224,7 @@ def test_matches_one_row_kernel[
             Int32(1),
             Int32(K),
             grid_dim=ceildiv(N, rows_per_warp * warps_per_block),
-            block_dim=WARP_SIZE * warps_per_block,
+            block_dim=warp_size * warps_per_block,
         )
     ctx.enqueue_copy(new_host, c_dev)
     ctx.synchronize()
@@ -245,8 +246,9 @@ def test_matches_host_reference[
     Inputs are small integers, so the f32 accumulation is exact and the host
     result is independent of summation order.
     """
+    comptime warp_size = ctx.default_device_info.warp_size
     comptime simd_width = simd_width_of[dtype, target=ctx.target]()
-    comptime check_bounds_k = K % (WARP_SIZE * simd_width) != 0
+    comptime check_bounds_k = K % (warp_size * simd_width) != 0
     comptime rows_per_warp = _GEMV_MULTIROW_ROWS
     comptime warps_per_block = 8
 
@@ -290,7 +292,7 @@ def test_matches_host_reference[
         Int32(1),
         Int32(K),
         grid_dim=ceildiv(N, rows_per_warp * warps_per_block),
-        block_dim=WARP_SIZE * warps_per_block,
+        block_dim=warp_size * warps_per_block,
     )
 
     ctx.enqueue_copy(w_host, w_dev)

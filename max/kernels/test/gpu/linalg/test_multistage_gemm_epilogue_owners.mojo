@@ -28,8 +28,8 @@ def test_epilogue_owners[
     comptime K = 512
     comptime GUARD = 32
     comptime config = MatmulConfig[dtype, dtype, dtype, True](
-        block_tile_shape=Index(32, 32, 32),
-        warp_tile_shape=Index(16, 16, 32),
+        block_tile_shape=(Int(32), Int(32), Int(32)),
+        warp_tile_shape=(Int(16), Int(16), Int(32)),
         num_pipeline_stages=3,
         num_warp_k_partitions=PARTITIONS,
     )

@@ -45,6 +45,7 @@ from max.pipelines.kv_cache.kv_connector import (
     KVLoadFailed,
     KVLoadRefused,
     KVLookup,
+    KVProbe,
     KVTransfer,
 )
 from max.pipelines.kv_cache.paged_kv_cache import (
@@ -176,6 +177,14 @@ class ScriptedConnector:
         replica_idxs: Sequence[int],
         hint: bytes | None = None,
     ) -> Sequence[Mapping[str, Sequence[bool]]] | None:
+        return None
+
+    def start_probe(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idxs: Sequence[int],
+        hint: bytes | None = None,
+    ) -> KVProbe | None:
         return None
 
     def load(

@@ -92,7 +92,8 @@ async def serve(
     endpoints (``--remote-cpu-workers`` / ``--remote-gpu-workers``). Workers
     run in dedicated child processes; the pipeline's workers are routed by
     their ``deploy_hints`` to the matching device pool and load-balanced
-    round-robin within it.
+    round-robin within it. With no CPU workers, local or remote, every
+    worker runs in the server process.
 
     Args:
         pipeline_args: Flat user-facing pipeline arguments. All fields are
@@ -106,8 +107,10 @@ async def serve(
     raise_nofile_soft_limit()
 
     # Size the GPU worker pool from the model arguments unless the user
-    # set it explicitly.
-    if context_config.local_gpu_workers == 0:
+    # set it explicitly or every worker runs in this process.
+    if context_config.local_gpu_workers is None and (
+        context_config.local_cpu_workers or context_config.remote_cpu_workers
+    ):
         n_gpu_workers = count_unique_device_specs(pipeline_args)
         logger.info("Setting local_gpu_workers to %d", n_gpu_workers)
         context_config = context_config.model_copy(
@@ -120,9 +123,13 @@ async def serve(
 
     logger.info("Building cascade pipeline ...")
     pipeline = await build_pipeline(pipeline_args)
+    rust_pool = any(
+        "rust" in worker.deploy_hints
+        for worker in pipeline._get_workers().values()
+    )
 
     logger.info("Opening %s context ...", context_config.transport)
-    async with context_config.open_context() as runtime:
+    async with context_config.open_context(rust_pool) as runtime:
         logger.info("Deploying cascade pipeline ...")
         await pipeline.deploy(runtime)
 

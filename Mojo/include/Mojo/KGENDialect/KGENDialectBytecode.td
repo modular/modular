@@ -387,7 +387,7 @@ def VariantAttr : DialectAttribute<(attr
 }
 
 def LinkDependencyArrayAttr : DialectAttribute<(attr
-  ConcreteAttrArray<"FlatSymbolRefAttr">:$value
+  ConcreteAttrArray<"SymbolRefAttr">:$value
 )>;
 
 def PreservedAttr : DialectAttribute<(attr

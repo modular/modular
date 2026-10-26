@@ -27,6 +27,11 @@ import max._core.driver
 import max._core.dtype
 import max._mlir.ir
 
+class KernelRegistrationError(ValueError):
+    """
+    Raised when a custom op package fails to load or check, or a custom op's Mojo kernel doesn't match its call. Where the error is in the Mojo code, the message points at it.
+    """
+
 def load_modular_dialects(arg: max._mlir.ir.DialectRegistry, /) -> None:
     """Registers all Modular MLIR dialects into the given registry."""
 

@@ -7,11 +7,10 @@ description: Translate Hugging Face config.json fields into MAX architecture dec
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-When importing a Hugging Face model into MAX as a custom architecture, you're
-responsible for building the graph that the model's `config.json` describes.
-This makes reading and interpreting the config your job. It's the entry point
-of your [model bring-up workflow](/develop/model-bringup-workflow/) and
-the file you consult most frequently.
+A Hugging Face model's `config.json` decides the dimensions, the flags, and
+therefore the modules you write when you bring the architecture into MAX. It is
+the first file in the
+[model bring-up workflow](/develop/model-bringup-workflow/).
 
 ## What is a model config?
 
@@ -32,10 +31,10 @@ to MAX, that instantiation step is yours to write.
 By reviewing the configuration fields, you can identify which values map
 directly to the MAX configuration schema and which flags require custom graph
 layers. You can also spot entries with incorrect defaults that you need to
-verify against the weight dimensions. Use the sections below to interpret each
+verify against the weight dimensions. The notes on this page interpret each
 field and translate it into a concrete architecture plan.
 
-## Read the config
+## Loading the config
 
 Before you write any architecture code, load and inspect the complete
 configuration to trace the model's architectural characteristics. The
@@ -61,7 +60,7 @@ print(config)
 :::note
 
 The `trust_remote_code=True` argument lets Transformers run the custom
-configuration class that some checkpoints ship in their repository. Without it,
+configuration class that some model repositories include. Without it,
 loading a checkpoint whose `model_type` Transformers doesn't recognize raises a
 `ValueError`.
 
@@ -70,7 +69,7 @@ loading a checkpoint whose `model_type` Transformers doesn't recognize raises a
 The `architectures`, `model_type`, and `dtype` fields frame how you read
 the rest of the configuration. The following snippet is from TinyLlama 1.1B,
 with those fields highlighted. The remaining properties are the dimensions and
-flags you'll map in the sections below:
+flags you'll map:
 
 ```output title="Output" {2-4,8,17}
 LlamaConfig {
@@ -209,11 +208,11 @@ architecture package, `deepseekV3_modulev3`.
 </Tabs>
 
 :::note
-The `config.json` snippets above omit some fields for brevity.
+The `config.json` snippets on this page omit some fields for brevity.
 :::
 
 These configuration fields generally fall into categories based on their
-architectural scope, and each category gets its own section below.
+architectural scope.
 
 ## Add dimensions directly to `model_config.py`
 
@@ -279,12 +278,12 @@ methods that fill it in:
   adapter runs. For example, it detects stacked QKV and MLP weights from the
   state dictionary keys.
 
-While most fields map directly, others require preprocessing. For configs
-that use `ArchConfigWithStoredKVParams`, MAX bounds the pipeline's
-`--max-length` setting by `max_position_embeddings` before it calls
-`initialize()`. The `dtype` comes from the
-quantization encoding the pipeline resolves, which defaults to the class's
-`DEFAULT_ENCODING`.
+While most fields map directly, others require preprocessing. For configs that
+use
+[`ArchConfigWithStoredKVParams`](/api/python/generated/max.pipelines.lib.interfaces.ArchConfigWithStoredKVParams/),
+MAX bounds the pipeline's `--max-length` setting by `max_position_embeddings`
+before it calls `initialize()`. The `dtype` comes from the quantization encoding
+the pipeline resolves, which defaults to the class's `DEFAULT_ENCODING`.
 
 Even simple dimensions require validation: `hidden_act` is a single string,
 but `gelu` names the exact GELU and `gelu_pytorch_tanh` names its tanh
@@ -300,11 +299,12 @@ a concise subclass:
   <TabItem value="llama3" label="Llama 3.1">
 
 `Llama3Config` is the baseline configuration class that dense decoders extend.
-Open the configuration schema in
-[`llama3_modulev3/model_config.py`][llama3-config] to inspect how the class
-defines each direct-map field as a typed attribute:
+Open [`Llama3Config`](https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/llama3_modulev3/model_config.py) to inspect how the class defines each
+direct-map field as a typed attribute:
 
-```python title="llama3_modulev3/model_config.py"
+<!-- skip: next "excerpt of an in-tree source file" -->
+
+```python title="model_config.py"
 @dataclass(kw_only=True)
 class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     """Model configuration for Llama3 graph construction/execution."""
@@ -357,11 +357,13 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
   </TabItem>
   <TabItem value="olmo" label="OLMo">
 
-OLMo's direct-map fields match Llama's, so the configuration class in
-[`olmo_modulev3/model_config.py`][olmo-config] subclasses `Llama3Config`. It
-inherits `initialize()` and changes only what OLMo does differently:
+OLMo's direct-map fields match Llama's, so [`OlmoConfig`](https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/olmo_modulev3/model_config.py)
+subclasses `Llama3Config`. It inherits `initialize()` and changes only what
+OLMo does differently:
 
-```python title="olmo_modulev3/model_config.py"
+<!-- skip: next "excerpt of an in-tree source file" -->
+
+```python title="model_config.py"
 @dataclass(kw_only=True)
 class OlmoConfig(Llama3Config):
     """Model configuration for Olmo graph construction/execution."""
@@ -395,11 +397,12 @@ class OlmoConfig(Llama3Config):
 ```
 
 The inherited `initialize()` ends with `return cls(...)`, so it builds an
-`OlmoConfig`. The pipeline model in
-[`olmo_modulev3/model.py`][olmo-model] subclasses the Llama 3 pipeline model
-and points it at the new config class:
+`OlmoConfig`. [`OlmoModel`](https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/olmo_modulev3/model.py) subclasses the Llama 3 pipeline
+model and points it at the new config class:
 
-```python title="olmo_modulev3/model.py"
+<!-- skip: next "excerpt of an in-tree source file" -->
+
+```python title="model.py"
 class OlmoModel(Llama3Model):
     """Olmo pipeline model implementation."""
 
@@ -411,11 +414,12 @@ class OlmoModel(Llama3Model):
   <TabItem value="deepseek" label="DeepSeek-V3">
 
 DeepSeek-V3 has a standalone configuration class that doesn't extend
-`Llama3Config`. Open it in
-[`deepseekV3_modulev3/model_config.py`][deepseekv3-config] to review the
+`Llama3Config`. Open [`DeepseekV3Config`](https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/deepseekV3_modulev3/model_config.py) to review the
 custom schema. It maps general parameters alongside structural fields:
 
-```python title="deepseekV3_modulev3/model_config.py"
+<!-- skip: next "excerpt of an in-tree source file" -->
+
+```python title="model_config.py"
 @dataclass(kw_only=True)
 class DeepseekV3Config(ArchConfigWithKVCache):
     """Configuration for DeepseekV3 models (single-GPU, ModuleV3)."""
@@ -445,7 +449,9 @@ class DeepseekV3Config(ArchConfigWithKVCache):
 The class also rejects config values its layers don't implement. Its
 `__post_init__()` method raises a `ValueError` at construction:
 
-```python title="deepseekV3_modulev3/model_config.py"
+<!-- skip: next "excerpt of an in-tree source file" -->
+
+```python title="model_config.py"
     def __post_init__(self) -> None:
         if self.hidden_act != "silu":
             raise ValueError(
@@ -483,7 +489,7 @@ Structural fields signal that the model departs from a standard transformer
 architecture and requires custom layer logic. When you identify these fields,
 prepare to declare or extend custom layers in the model's implementation file
 (such as `llama3_modulev3/llama3.py` or `deepseekV3_modulev3/deepseekV3.py`)
-using [`max.experimental.nn`](/api/python/experimental.nn) modules:
+using [`max.experimental.nn`](/api/python/experimental.nn/) modules:
 
 - **Grouped-query or multi-query attention** (`num_key_value_heads` below
   `num_attention_heads`, or `multi_query`) shares keys and values across query
@@ -499,8 +505,9 @@ using [`max.experimental.nn`](/api/python/experimental.nn) modules:
 - **QK-norm, post-norm, or MuP scalars** (`use_qk_norm`, `use_post_norm`,
   `embedding_multiplier`, `logits_scaling`) add norms or scale factors inside
   the block.
-- **Quantized weights** (`quantization_config`) need a `QuantConfig` field in
-  your config class (see
+- **Quantized weights** (`quantization_config`) need a
+  [`QuantConfig`](/api/python/generated/max.nn.QuantConfig/) field in your
+  config class (see
   [Map checkpoint weights](/develop/model-bringup-workflow/#map-checkpoint-weights)).
 
 Often, the closest baseline MAX architecture already implements some of these
@@ -511,11 +518,12 @@ layer logic based on these structural fields:
   <TabItem value="llama3" label="Llama 3.1">
 
 Llama 3.1's only structural variation is `rope_scaling`, which requires no
-custom layers. `Llama3Config.initialize()` in
-[`llama3_modulev3/model_config.py`][llama3-config] reads the scaling
-parameters from the configuration into typed params:
+custom layers. `Llama3Config.initialize()` reads the scaling parameters from
+the configuration into typed params:
 
-```python title="llama3_modulev3/model_config.py"
+<!-- skip: next "excerpt of an in-tree source file" -->
+
+```python title="model_config.py"
 if rope_type == "llama3" or rope_type_alt == "llama3":
     rope_scaling_params = Llama3RopeScalingParams(
         factor=rope_scaling["factor"],
@@ -527,11 +535,13 @@ if rope_type == "llama3" or rope_type_alt == "llama3":
     )
 ```
 
-The text model in [`llama3_modulev3/llama3.py`][llama3-module] passes those
-params to the rotary embedding constructor. With `scaling_params=None`, the
-same class computes standard RoPE:
+[`Llama3TextModel`](https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/llama3_modulev3/llama3.py) passes those params to the rotary
+embedding constructor. With `scaling_params=None`, the same class computes
+standard RoPE:
 
-```python title="llama3_modulev3/llama3.py"
+<!-- skip: next "excerpt of an in-tree source file" -->
+
+```python title="llama3.py"
 rope = Llama3RotaryEmbedding(
     dim=config.hidden_size,
     n_heads=config.num_attention_heads,
@@ -548,11 +558,13 @@ rope = Llama3RotaryEmbedding(
   <TabItem value="gemma3" label="Gemma 3">
 
 Gemma 3 applies an RMSNorm to each query and key head before the RoPE
-calculation. To implement this in the compute graph, the attention module in
-[`gemma3_modulev3/layers/attention.py`][gemma3-attention] declares two
-normalization layers sized to one head:
+calculation. To implement this in the compute graph,
+[`Gemma3Attention`](https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/gemma3_modulev3/layers/attention.py) declares two normalization layers sized
+to one head:
 
-```python title="gemma3_modulev3/layers/attention.py"
+<!-- skip: next "excerpt of an in-tree source file" -->
+
+```python title="attention.py"
 self.q_norm = Gemma3RMSNorm(kv_params.head_dim, eps=qk_norm_eps)
 self.k_norm = Gemma3RMSNorm(kv_params.head_dim, eps=qk_norm_eps)
 ```
@@ -560,7 +572,9 @@ self.k_norm = Gemma3RMSNorm(kv_params.head_dim, eps=qk_norm_eps)
 The `forward()` method reshapes the query and key projections into heads,
 normalizes each head, and flattens them again:
 
-```python title="gemma3_modulev3/layers/attention.py"
+<!-- skip: next "excerpt of an in-tree source file" -->
+
+```python title="attention.py"
 x_q, x_k, x_v = qkv.split([q_dim, kv_dim, kv_dim], axis=-1)
 x_q = self.q_norm(x_q.reshape((-1, self.n_heads, head_dim))).reshape(
     (-1, q_dim)
@@ -573,9 +587,9 @@ x_k = self.k_norm(x_k.reshape((-1, num_kv_heads, head_dim))).reshape(
 qkv = F.concat([x_q, x_k, x_v], axis=-1)
 ```
 
-OLMo 3 applies its QK-norm across the full projection width. Its attention
-module in [`olmo3/layers/attention.py`][olmo3-attention] sizes `q_norm` and
-`k_norm` to the whole query and key projections and skips the reshape.
+OLMo 3 applies its QK-norm across the full projection width.
+[`Olmo3Attention`](https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/olmo3/layers/attention.py) sizes `q_norm` and `k_norm` to the whole
+query and key projections and skips the reshape.
 
   </TabItem>
   <TabItem value="deepseek" label="DeepSeek-V3">
@@ -583,9 +597,11 @@ module in [`olmo3/layers/attention.py`][olmo3-attention] sizes `q_norm` and
 DeepSeek-V3 replaces the standard attention mechanism with multi-head latent
 attention (MLA). The decoder layer reads low-rank projection parameters from
 the configuration and instantiates a custom attention module in
-[`deepseekV3_modulev3/layers/transformer_block.py`][deepseekv3-block]:
+[`DeepseekV3TransformerBlock`](https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/deepseekV3_modulev3/layers/transformer_block.py):
 
-```python title="deepseekV3_modulev3/layers/transformer_block.py"
+<!-- skip: next "excerpt of an in-tree source file" -->
+
+```python title="transformer_block.py"
 self.self_attn = QuantizedLatentAttentionWithRope(
     num_attention_heads=config.num_attention_heads,
     num_key_value_heads=config.num_key_value_heads,
@@ -613,18 +629,18 @@ block-scaled FP8 or FP4 settings, and it's `None` for `bfloat16` checkpoints.
   </TabItem>
 </Tabs>
 
-## Recognize macro-architecture changes
+## Fields that change the block sequence
 
 While most parameters dictate sizes or internal layer logic, some fields signal
 that the overall sequence of operations changes, which requires a new graph.
 
-For example, a `vision_config` field implies the model is multimodal and needs
-a separate vision tower (like the one in
-[`pixtral_modulev3/vision_encoder`][pixtral-vision]) to embed images before
-passing them to the transformer. An encoder-decoder structure (like T5) doesn't
-follow the standard decoder-only block sequence. If a parameter alters how
-blocks connect or what inputs they accept, you must write a new
-macro-graph implementation.
+For example, a `vision_config` field implies the model is multimodal and needs a
+separate vision tower (like the one in the
+[Pixtral vision encoder](https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/pixtral_modulev3/vision_encoder))
+to embed images before passing them to the transformer. An encoder-decoder
+structure (like T5) doesn't follow the standard decoder-only block sequence. If
+a parameter alters how blocks connect or what inputs they accept, you must write
+a new macro-graph implementation.
 
 ## Next steps
 
@@ -647,13 +663,3 @@ These pages go deeper on the steps that follow:
 {/* TODO(docs): link these once the pages exist: choose an implementation
 strategy, read the modeling code, configure attention and KV cache, configure
 positional encoding, verify logits and generation, blocked architectures. */}
-
-[llama3-config]: https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/llama3_modulev3/model_config.py
-[llama3-module]: https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/llama3_modulev3/llama3.py
-[olmo-config]: https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/olmo_modulev3/model_config.py
-[olmo-model]: https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/olmo_modulev3/model.py
-[deepseekv3-config]: https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/deepseekV3_modulev3/model_config.py
-[deepseekv3-block]: https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/deepseekV3_modulev3/layers/transformer_block.py
-[gemma3-attention]: https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/gemma3_modulev3/layers/attention.py
-[olmo3-attention]: https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/olmo3/layers/attention.py
-[pixtral-vision]: https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/pixtral_modulev3/vision_encoder

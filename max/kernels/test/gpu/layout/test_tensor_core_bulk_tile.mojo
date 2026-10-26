@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.testing import assert_equal
-from max.gpu import WARP_SIZE
 from max.gpu.host import DeviceContext
 from layout import TileTensor, TensorLayout, coord, row_major, stack_allocation
 from layout.tile_layout import Layout
@@ -122,7 +121,7 @@ def test_bulk_tile[
     ](
         output.device_tensor().as_unsafe_any_origin(),
         grid_dim=1,
-        block_dim=WARP_SIZE,
+        block_dim=ctx.default_device_info.warp_size,
     )
     output.to_host()
     var actual = output.host_tensor()

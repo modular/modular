@@ -17,9 +17,9 @@ Requires MODULAR_DRIVER_PLUGINS env var set to a plugin spec, e.g.:
 """
 
 from std.os import getenv
-from _hal import Driver
-from _hal.extensions.traits import SupportsPeerAccessV1
-from _hal.status import HALError, STATUS_UNKNOWN_ERROR
+from max._driver import Driver
+from max._driver.max_license.hal.extensions.traits import SupportsPeerAccessV1
+from max._driver.max_license.hal.status import HALError, STATUS_UNKNOWN_ERROR
 from std.testing import assert_equal, assert_false
 
 

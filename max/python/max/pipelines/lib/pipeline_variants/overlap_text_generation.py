@@ -2269,6 +2269,7 @@ class OverlapTextGenerationPipeline(
         spec_decode_metrics: _SpeculativeDecodingMetrics | None,
         sync_monotonic: float,
         early_sync_duration_s: float | None = None,
+        num_output_tokens: int | None = None,
     ) -> CompletedBatchStats:
         """Records and returns stats for a batch whose outputs just synced.
 
@@ -2293,9 +2294,11 @@ class OverlapTextGenerationPipeline(
             num_context_tokens=inputs.context_tokens,
             execution_time_s=max(sync_monotonic - start_bound, 0.0),
             early_sync_duration_s=early_sync_duration_s,
+            num_output_tokens=num_output_tokens,
         )
         if spec_decode_metrics is not None:
-            stats.num_output_tokens = spec_decode_metrics.output_tokens
+            if num_output_tokens is None:
+                stats.num_output_tokens = spec_decode_metrics.output_tokens
             stats.draft_tokens_generated = (
                 spec_decode_metrics.draft_tokens_generated
             )
@@ -4272,6 +4275,10 @@ class OverlapTextGenerationPipeline(
                 if _early_sync_monotonic is not None
                 else time.monotonic(),
                 early_sync_duration_s=_early_sync_duration_s,
+                num_output_tokens=sum(
+                    len(output.tokens)
+                    for output in wrapped_outputs.output_dict.values()
+                ),
             )
             if self._spec_decode_state is not None:
                 self._record_spec_decode_metrics(

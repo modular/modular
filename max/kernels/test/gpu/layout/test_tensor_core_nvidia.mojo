@@ -18,7 +18,7 @@ from tensor_core_kernels import (
     test_write_res_operand,
 )
 
-from std.utils.index import Index
+from std.utils.coord import DynamicCoord
 
 
 # CHECK-LABEL: test_load_and_mma_f32_f32_16x8x8
@@ -57,7 +57,7 @@ from std.utils.index import Index
 def test_load_and_mma_f32_f32_16x8x8(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f32_16x8x8")
     test_load_and_mma_and_multiply_operands[
-        DType.float32, DType.float32, Index(16, 8, 8)
+        DType.float32, DType.float32, DynamicCoord[.int, 3](16, 8, 8)
     ](ctx)
 
 
@@ -97,7 +97,10 @@ def test_load_and_mma_f32_f32_16x8x8(ctx: DeviceContext) raises:
 def test_load_and_mma_f32_f32_16x8x8_b_transpose(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f32_16x8x8_b_transpose")
     test_load_and_mma_and_multiply_operands[
-        DType.float32, DType.float32, Index(16, 8, 8), transpose_b=True
+        DType.float32,
+        DType.float32,
+        DynamicCoord[.int, 3](16, 8, 8),
+        transpose_b=True,
     ](ctx)
 
 
@@ -137,7 +140,7 @@ def test_load_and_mma_f32_f32_16x8x8_b_transpose(ctx: DeviceContext) raises:
 def test_load_and_mma_f32_f32_16x8x4(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f32_16x8x4")
     test_load_and_mma_and_multiply_operands[
-        DType.float32, DType.float32, Index(16, 8, 4)
+        DType.float32, DType.float32, DynamicCoord[.int, 3](16, 8, 4)
     ](ctx)
 
 
@@ -179,7 +182,7 @@ def test_load_and_mma_f32_f32_16x8x4(ctx: DeviceContext) raises:
 def test_load_and_mma_f32_bf16_16x8x16(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_bf16_16x8x16")
     test_load_and_mma_and_multiply_operands[
-        DType.float32, DType.bfloat16, Index(16, 8, 16)
+        DType.float32, DType.bfloat16, DynamicCoord[.int, 3](16, 8, 16)
     ](ctx)
 
 
@@ -219,7 +222,10 @@ def test_load_and_mma_f32_bf16_16x8x16(ctx: DeviceContext) raises:
 def test_load_and_mma_f32_bf16_16x8x16_b_transpose(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_bf16_16x8x16_b_transpose")
     test_load_and_mma_and_multiply_operands[
-        DType.float32, DType.bfloat16, Index(16, 8, 16), transpose_b=True
+        DType.float32,
+        DType.bfloat16,
+        DynamicCoord[.int, 3](16, 8, 16),
+        transpose_b=True,
     ](ctx)
 
 
@@ -242,7 +248,9 @@ def test_load_and_mma_f32_bf16_16x8x16_b_transpose(ctx: DeviceContext) raises:
 # CHECK: 28.0 28.0 29.0 29.0 30.0 30.0 31.0 31.0
 def test_write_f32_f32_16x8x8(ctx: DeviceContext) raises:
     print("== test_write_f32_f32_16x8x8")
-    test_write_res_operand[.float32, DType.float32, Index(16, 8, 8)](ctx)
+    test_write_res_operand[
+        .float32, DType.float32, DynamicCoord[.int, 3](16, 8, 8)
+    ](ctx)
 
 
 # CHECK-LABEL: test_write_f32_f32_16x8x4
@@ -264,7 +272,9 @@ def test_write_f32_f32_16x8x8(ctx: DeviceContext) raises:
 # CHECK: 28.0 28.0 29.0 29.0 30.0 30.0 31.0 31.0
 def test_write_f32_f32_16x8x4(ctx: DeviceContext) raises:
     print("== test_write_f32_f32_16x8x4")
-    test_write_res_operand[.float32, DType.float32, Index(16, 8, 4)](ctx)
+    test_write_res_operand[
+        .float32, DType.float32, DynamicCoord[.int, 3](16, 8, 4)
+    ](ctx)
 
 
 # CHECK-LABEL: test_load_f32_bf16_16x8x16_ldmatrix
@@ -305,7 +315,7 @@ def test_write_f32_f32_16x8x4(ctx: DeviceContext) raises:
 def test_load_f32_bf16_16x8x16_ldmatrix(ctx: DeviceContext) raises:
     print("== test_load_f32_bf16_16x8x16_ldmatrix")
     test_load_operands_ldmatrix[
-        DType.float32, DType.bfloat16, Index(16, 8, 16)
+        DType.float32, DType.bfloat16, DynamicCoord[.int, 3](16, 8, 16)
     ](ctx)
 
 
@@ -344,7 +354,9 @@ def test_load_f32_bf16_16x8x16_ldmatrix(ctx: DeviceContext) raises:
 # CHECK-DAG thread 31 a_vals=[63 127 59 123], b_vals=[31 63]
 def test_load_f32_f32_16x8x8_ldmatrix(ctx: DeviceContext) raises:
     print("== test_load_f32_f32_16x8x8_ldmatrix")
-    test_load_operands_ldmatrix[.float32, DType.float32, Index(16, 8, 8)](ctx)
+    test_load_operands_ldmatrix[
+        .float32, DType.float32, DynamicCoord[.int, 3](16, 8, 8)
+    ](ctx)
 
 
 def main() raises:

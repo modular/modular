@@ -126,10 +126,10 @@ public:
   /// the problem hasn't already been diagnosed and it is non-null. This does
   /// not emit an error on failure.
   ///
-  /// The result's `contextualType` is set to `contextualType`.
+  /// The result's `contextualType` is set to `type`.
   static OverloadSet lookup(ASTDecl &declScope, ASTType type,
                             StringRef methodName, const ExprNode *callExpr,
-                            CallSyntax syntax, ASTType contextualType = {},
+                            CallSyntax syntax,
                             function_ref<void()> errorHandler = {});
 
   /// Lookup of a named method on the specified type, filtered to match a
@@ -168,9 +168,15 @@ public:
   const ExprNode *getExpr() const { return explicitParamBindings.getExpr(); }
   SMLoc getExprLoc() const;
 
-  /// Return the bindings derived from `contextualType` followed by
+  /// Returns the type `candidate` is referenced through: `contextualType`, or
+  /// its nonmaterializable target when `candidate` is a member of that target.
+  /// Lookup also collects the target's methods, e.g. `Int` methods for an
+  /// `IntLiteral` receiver.
+  ASTType getContextualType(ASTDecl *candidate) const;
+
+  /// Return the bindings derived from `candidate`'s contextual type followed by
   /// `explicitParamBindings`.
-  ParamBindings getParamBindings() const;
+  ParamBindings getParamBindings(ASTDecl *candidate) const;
 
   /// Perform substitutions of the specified bindings into the symbol, returning
   /// the resultant LITSymbolConstant attr or producing an error message and

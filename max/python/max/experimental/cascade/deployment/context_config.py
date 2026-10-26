@@ -19,17 +19,20 @@ device-routed :class:`~max.experimental.cascade.routing.HybridRuntime`:
 runtimes and ``gpu``-hinted workers into a pool of ``gpu`` worker runtimes. Each
 pool combines locally-launched worker subprocesses (``local_*_workers``) with
 connections to already-running remote workers (``remote_*_workers``), over the
-selected ``transport``.
+selected ``transport``. With no CPU workers, local or remote, every worker
+runs in this process instead.
 """
 
 from __future__ import annotations
 
+import importlib
 import os
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from typing import Literal
 
 from max.experimental.cascade.core import Runtime
+from max.experimental.cascade.core.local_runtime import LocalRuntime
 from max.experimental.cascade.deployment.routing import (
     HybridRuntime,
     RoundRobinPool,
@@ -114,7 +117,15 @@ class ContextConfig(BaseModel):
 
     transport: Transport = "http"
     local_cpu_workers: int = 2
-    local_gpu_workers: int = 0
+    local_gpu_workers: int | None = Field(
+        default=None,
+        description=(
+            "Number of local GPU worker subprocesses. When unset, the server "
+            "starts one per distinct GPU set. Must be unset or 0 when there "
+            "are no CPU workers, since every worker then runs in the server "
+            "process."
+        ),
+    )
     remote_cpu_workers: tuple[str, ...] = Field(default_factory=tuple)
     remote_gpu_workers: tuple[str, ...] = Field(default_factory=tuple)
     otlp_metrics_endpoint: str | None = Field(
@@ -145,22 +156,54 @@ class ContextConfig(BaseModel):
                 self.otlp_metrics_endpoint
             )
 
-    def build_context(self) -> Runtime:
+    def build_context(self, rust_pool: bool = False) -> Runtime:
         """Build the configured device-routed hybrid runtime.
 
+        Args:
+            rust_pool: Add a ``rust`` pool for ``rust``-hinted workers. Needs
+                zero CPU workers, local or remote.
+
         Raises:
-            ValueError: If worker counts are negative or no worker is
-                configured for any device class.
+            ValueError: If worker counts are negative, GPU workers are set
+                while there are no CPU workers, or ``rust_pool`` is set while
+                there are CPU workers.
         """
-        if self.local_cpu_workers < 0 or self.local_gpu_workers < 0:
+        local_gpu_workers = self.local_gpu_workers or 0
+        if self.local_cpu_workers < 0 or local_gpu_workers < 0:
             raise ValueError("Worker counts must be >= 0")
+
+        # With no CPU workers, the tokenizer and parser run in this process,
+        # and a GPU worker in another process can't read their results, so
+        # every worker runs here and the GPU worker count has no say.
+        # TODO(SERVSYS-1335): Remove this in-process mode once workers in
+        # other processes can read results from this process.
+        if not (self.local_cpu_workers or self.remote_cpu_workers):
+            if local_gpu_workers or self.remote_gpu_workers:
+                raise ValueError(
+                    "GPU workers can't run in other processes when CPU "
+                    "workers run in the server process "
+                    "(--cascade-local-cpu-workers 0)."
+                )
+            runtimes: dict[str, Runtime] = {}
+            if rust_pool:
+                runtimes["rust"] = importlib.import_module(
+                    "local_rust_runtime"
+                ).RustRuntime()
+            local = LocalRuntime()
+            runtimes |= {"cpu": local, "gpu": local}
+            return HybridRuntime(runtimes)
+        if rust_pool:
+            raise ValueError(
+                "Rust workers need every worker in the server process: set "
+                "--cascade-local-cpu-workers 0, with no remote CPU workers."
+            )
 
         factory = CONTEXT_FACTORIES[self.transport]
         cpu_runtimes = factory.local_runtimes(
             self.local_cpu_workers
         ) + factory.remote_runtimes(self.remote_cpu_workers)
         gpu_runtimes = factory.local_runtimes(
-            self.local_gpu_workers
+            local_gpu_workers
         ) + factory.remote_runtimes(self.remote_gpu_workers)
 
         pools: dict[str, Runtime] = {}
@@ -168,14 +211,12 @@ class ContextConfig(BaseModel):
             pools["cpu"] = RoundRobinPool(cpu_runtimes)
         if gpu_runtimes:
             pools["gpu"] = RoundRobinPool(gpu_runtimes)
-        if not pools:
-            raise ValueError(
-                "ContextConfig requires at least one local or remote worker"
-            )
         return HybridRuntime(pools)
 
     @asynccontextmanager
-    async def open_context(self) -> AsyncIterator[Runtime]:
+    async def open_context(
+        self, rust_pool: bool = False
+    ) -> AsyncIterator[Runtime]:
         """Open the configured hybrid runtime, owning its lifecycle."""
-        async with self.build_context() as runtime:
+        async with self.build_context(rust_pool) as runtime:
             yield runtime

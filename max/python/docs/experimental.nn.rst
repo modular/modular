@@ -53,6 +53,18 @@ Linear layers
    Embedding
    Linear
 
+Attention and rotary embeddings
+-------------------------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   ~max.experimental.nn.common_layers.attention.AttentionWithRope
+   ~max.experimental.nn.common_layers.rotary_embedding.RotaryEmbedding
+   ~max.experimental.nn.common_layers.rotary_embedding.YarnRotaryEmbedding
+
 LoRA
 ----
 

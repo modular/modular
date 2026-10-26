@@ -84,7 +84,8 @@ from structured_kernels.tile_types import (
 )
 from layout.tile_layout import _IntToComptimeInt
 
-from std.utils.index import Index, IndexList
+from std.utils.coord import Coord, DynamicCoord
+from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_SS
@@ -196,8 +197,8 @@ def load_AB[
     num_pipeline_stages: Int,
     /,
     *,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     cta_group: Int = 1,
     k_group_size: Int = 1,
 ](
@@ -363,10 +364,10 @@ def consumer_main_loop[
     pipeline_stages: Int,
     /,
     *,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     cta_group: Int = 1,
-    cluster_shape: IndexList[3] = (1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     k_group_size: Int = 1,
 ](
     tmem_addr: UInt32,
@@ -1261,7 +1262,7 @@ def _swiglu_epilogue_smem_tma[
                         Pointer(to=c_tma_op.descriptor).unsafe_bitcast[
                             NoneType
                         ](),
-                        Index(Int(out_col), Int(pair0_row)),
+                        (Int(out_col), Int(pair0_row)),
                     )
 
                 var pair1_buf = buf_base.unsafe_offset(c_out_pair_tile_elems)
@@ -1271,7 +1272,7 @@ def _swiglu_epilogue_smem_tma[
                         Pointer(to=c_tma_op.descriptor).unsafe_bitcast[
                             NoneType
                         ](),
-                        Index(Int(out_col), Int(pair1_row)),
+                        (Int(out_col), Int(pair1_row)),
                     )
 
                 cp_async_bulk_commit_group()
@@ -1288,7 +1289,7 @@ def _swiglu_epilogue_smem_tma[
                         Pointer(to=c_tma_op.descriptor).unsafe_bitcast[
                             NoneType
                         ](),
-                        Index(Int(out_col), Int(out_row)),
+                        (Int(out_col), Int(out_row)),
                     )
 
                 cp_async_bulk_commit_group()
@@ -1305,7 +1306,7 @@ def _swiglu_epilogue_smem_tma[
                         Pointer(to=c_tma_op.descriptor).unsafe_bitcast[
                             NoneType
                         ](),
-                        Index(Int(out_col), Int(out_row)),
+                        (Int(out_col), Int(out_row)),
                     )
 
                 cp_async_bulk_commit_group()
@@ -1325,7 +1326,7 @@ def _swiglu_epilogue_smem_tma[
                         Pointer(to=c_tma_op.descriptor).unsafe_bitcast[
                             NoneType
                         ](),
-                        Index(Int(top_out_col), Int(out_row)),
+                        (Int(top_out_col), Int(out_row)),
                     )
 
                 var bot_buf = buf_base.unsafe_offset(BM * HalfN)
@@ -1335,7 +1336,7 @@ def _swiglu_epilogue_smem_tma[
                         Pointer(to=c_tma_op.descriptor).unsafe_bitcast[
                             NoneType
                         ](),
-                        Index(Int(bot_out_col), Int(out_row)),
+                        (Int(bot_out_col), Int(out_row)),
                     )
 
                 cp_async_bulk_commit_group()
@@ -1466,7 +1467,13 @@ struct SwiGLUKernelConstants[
 # ===----------------------------------------------------------------------=== #
 
 
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
@@ -1487,7 +1494,7 @@ def blackwell_swiglu_warp_specialized_kernel[
     transpose_b: Bool,
     config: FusedSwiGLUMatmulConfig[a_type, b_type, c_type, transpose_b],
     BiasEngine: TensorEngine,
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     pdl_level: PDLLevel = PDLLevel(),
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
@@ -1664,7 +1671,7 @@ def blackwell_swiglu_warp_specialized_kernel[
     )
     var scheduler = TileScheduler[
         num_stages=num_clc_pipeline_stages,
-        cluster_shape=Index[dtype=DType.uint32](CLUSTER_M, CLUSTER_N, 1),
+        cluster_shape=(CLUSTER_M, CLUSTER_N, 1),
         block_swizzle_size=config.block_swizzle_size,
         rasterize_order=RasterOrder(config.raster_order._value),
     ](cluster_dim, clc_resp, clc_full, clc_empty, clc_throttle)

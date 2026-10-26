@@ -433,7 +433,9 @@ def blockwise_scaled_fp8_grouped_matmul_amd[
         K_SCALE=K_SCALE,
     ]
 
-    comptime num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
+    comptime num_threads = (
+        (BM // WM) * (BN // WN) * ctx.default_device_info.warp_size
+    )
 
     # grid.y is a packing hint, not a coverage bound (the M-tile stride loop
     # covers every tile for any grid.y); size it from this call's token count.

@@ -19,6 +19,7 @@ import json
 import logging
 import sys
 from collections.abc import Generator
+from pathlib import Path
 from threading import Thread
 from types import SimpleNamespace
 from typing import Any, Literal, TypeVar
@@ -58,7 +59,11 @@ from max.pipelines.lib.log_probabilities import (
     _MAX_TOP_LOGPROBS,
     LogProbabilitiesMixin,
 )
-from max.pipelines.lib.tokenizer import ALLOWED_IMAGE_FORMATS, open_image
+from max.pipelines.lib.tokenizer import (
+    ALLOWED_IMAGE_FORMATS,
+    TextTokenizer,
+    open_image,
+)
 from max.pipelines.modeling.types import (
     ImageContentPart,
     ParsedToolCallDelta,
@@ -133,6 +138,7 @@ from PIL import Image
 from pydantic import AnyUrl, ValidationError
 from sse_starlette.sse import AppStatus
 from starlette.types import Message, Scope
+from transformers import PretrainedConfig
 
 if sys.version_info >= (3, 11):
     from asyncio import TaskGroup
@@ -481,6 +487,100 @@ async def test_completion_out_of_range_logprobs_returns_400(
     body = response.json()
     assert "logprobs" in body["error"]["message"]
     assert body["error"]["type"] == "invalid_request_error"
+
+
+# The row count of the Llama 3 embedding that matches the testdata tokenizer.
+_TESTDATA_VOCAB_SIZE = 128256
+
+
+@pytest.fixture
+def text_tokenizer_app(
+    fixture_testdatadirectory: Path, mock_pipeline_config: PipelineConfig
+) -> FastAPI:
+    """The echo model behind a real ``TextTokenizer``."""
+    tokenizer_config = MagicMock()
+    tokenizer_config.tokenizer_impl = None
+    tokenizer_config.draft_model = None
+    tokenizer_config.model.huggingface_config = PretrainedConfig(
+        vocab_size=_TESTDATA_VOCAB_SIZE
+    )
+    serving_settings = ServingTokenGeneratorSettings(
+        model_factory=EchoTokenGenerator,
+        pipeline_config=mock_pipeline_config,
+        tokenizer=TextTokenizer(
+            str(fixture_testdatadirectory), tokenizer_config
+        ),
+    )
+    settings = Settings(api_types=[APIType.OPENAI], use_heartbeat=False)
+    return fastapi_app(settings, serving_settings)
+
+
+@pytest.mark.asyncio
+async def test_completion_highest_token_ids_are_served(
+    text_tokenizer_app: FastAPI,
+) -> None:
+    """A special token and the last embedding row are served.
+
+    The last row is a reserved special token of the testdata tokenizer.
+    """
+    prompt = [128000, 9906, _TESTDATA_VOCAB_SIZE - 1]
+    async with AsyncTestClient(text_tokenizer_app) as client:
+        response = await client.post(
+            "/v1/completions",
+            json={"model": "echo", "prompt": prompt, "max_tokens": 1},
+        )
+
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize("bad_id", [-1, _TESTDATA_VOCAB_SIZE])
+@pytest.mark.asyncio
+async def test_completion_out_of_range_token_id_returns_400(
+    text_tokenizer_app: FastAPI, bad_id: int
+) -> None:
+    """An id past the embedding is a 400, not a failed batch in the worker."""
+    async with AsyncTestClient(text_tokenizer_app) as client:
+        response = await client.post(
+            "/v1/completions",
+            json={"model": "echo", "prompt": [128000, bad_id]},
+        )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error"]["message"] == (
+        f"Prompt token id {bad_id} at position 1 is out of range. Token ids "
+        f"must be from 0 to {_TESTDATA_VOCAB_SIZE - 1}."
+    )
+    assert body["error"]["type"] == "invalid_request_error"
+
+
+@pytest.mark.asyncio
+async def test_chat_prompt_tokens_out_of_range_returns_400(
+    text_tokenizer_app: FastAPI,
+) -> None:
+    """``prompt_tokens`` replaces the messages, so it is checked the same way."""
+    request = simple_openai_request(model_name="echo", content="hi")
+    request["prompt_tokens"] = [128000, _TESTDATA_VOCAB_SIZE]
+    async with AsyncTestClient(text_tokenizer_app) as client:
+        response = await client.post("/v1/chat/completions", json=request)
+
+    assert response.status_code == 400
+    assert "out of range" in response.json()["error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_embeddings_out_of_range_token_id_returns_400(
+    text_tokenizer_app: FastAPI,
+) -> None:
+    """The tokenizer's rejection is a client fault on embeddings too."""
+    async with AsyncTestClient(text_tokenizer_app) as client:
+        response = await client.post(
+            "/v1/embeddings",
+            json={"model": "echo", "input": [128000, _TESTDATA_VOCAB_SIZE]},
+        )
+
+    assert response.status_code == 400
+    assert "out of range" in response.json()["error"]["message"]
 
 
 @pytest.mark.asyncio

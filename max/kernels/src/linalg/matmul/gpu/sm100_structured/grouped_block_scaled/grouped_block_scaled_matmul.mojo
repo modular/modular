@@ -363,11 +363,7 @@ def _grouped_block_scaled_matmul_impl[
         max_groups=max_groups,
         group_ptr_engine=type_of(a_ptrs).Engine,
         problem_sizes_engine=type_of(problem_sizes).Engine,
-        cluster_shape=StaticTuple[Int32, 3](
-            Int32(config.cluster_shape[0]),
-            Int32(config.cluster_shape[1]),
-            Int32(config.cluster_shape[2]),
-        ),
+        cluster_shape=config.cluster_shape,
         ComputeFnType=ComputeFnType,
         has_compute_fn=has_compute_fn,
     ]

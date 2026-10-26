@@ -153,16 +153,17 @@ def _run_fp6_padding_check[
     matrix_format: CDNA4F8F6F4MatrixFormat,
     accum_width: Int,
 ](ctx: DeviceContext) raises:
-    comptime num_values = WARP_SIZE * accum_width
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime num_values = warp_size * accum_width
 
     var zero_pad_device = ctx.enqueue_create_buffer[.float32](num_values)
     var one_pad_device = ctx.enqueue_create_buffer[.float32](num_values)
 
     var zero_pad_tt = TileTensor(
-        zero_pad_device, row_major[WARP_SIZE, accum_width]()
+        zero_pad_device, row_major[warp_size, accum_width]()
     )
     var one_pad_tt = TileTensor(
-        one_pad_device, row_major[WARP_SIZE, accum_width]()
+        one_pad_device, row_major[warp_size, accum_width]()
     )
 
     comptime kernel = _fp6_padding_kernel[
@@ -176,7 +177,7 @@ def _run_fp6_padding_check[
         zero_pad_tt.as_unsafe_any_origin(),
         one_pad_tt.as_unsafe_any_origin(),
         grid_dim=1,
-        block_dim=WARP_SIZE,
+        block_dim=warp_size,
     )
     ctx.synchronize()
 
@@ -201,16 +202,17 @@ def _run_block_scaled_mma_amd_smoke[
     matrix_format: CDNA4F8F6F4MatrixFormat,
     accum_width: Int,
 ](ctx: DeviceContext) raises:
-    comptime num_values = WARP_SIZE * accum_width
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime num_values = warp_size * accum_width
 
     var baseline_device = ctx.enqueue_create_buffer[.float32](num_values)
     var scaled_device = ctx.enqueue_create_buffer[.float32](num_values)
 
     var baseline_tt = TileTensor(
-        baseline_device, row_major[WARP_SIZE, accum_width]()
+        baseline_device, row_major[warp_size, accum_width]()
     )
     var scaled_tt = TileTensor(
-        scaled_device, row_major[WARP_SIZE, accum_width]()
+        scaled_device, row_major[warp_size, accum_width]()
     )
 
     comptime kernel = _block_scaled_mma_smoke_kernel[
@@ -224,7 +226,7 @@ def _run_block_scaled_mma_amd_smoke[
         baseline_tt.as_unsafe_any_origin(),
         scaled_tt.as_unsafe_any_origin(),
         grid_dim=1,
-        block_dim=WARP_SIZE,
+        block_dim=warp_size,
     )
     ctx.synchronize()
 

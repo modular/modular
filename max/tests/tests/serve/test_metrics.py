@@ -317,7 +317,6 @@ def test_log_spaced_bucket_ranges() -> None:
         (common.HISTOGRAM_LATENCY_BUCKETS_MS, 1.0, 8 * 60 * 60 * 1000.0, 1.5),
         (common.HISTOGRAM_COUNT_BUCKETS, 1.0, 100_000_000.0, 1.5),
         (common.HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS, 10.0, 1_000_000.0, 1.5),
-        (common.HISTOGRAM_BATCH_SIZE_BUCKETS, 1.0, 512.0, 1.5),
         (common.HISTOGRAM_GIB_PER_S_BUCKETS, 0.1, 800.0, 2.0),
     ):
         # The leading 0 keeps exact zeros out of the smallest real bucket.
@@ -328,6 +327,21 @@ def test_log_spaced_bucket_ranges() -> None:
         # significant digits nudges individual steps either side of the ratio.
         ratio = (buckets[-1] / buckets[1]) ** (1 / (len(buckets) - 2))
         assert ratio <= max_ratio
+
+
+def test_batch_size_buckets_are_linear_then_log_spaced() -> None:
+    """Pins one bucket per batch size through 20, then 5% steps out to 512.
+
+    Batch sizes are integers, so the linear run gives each small size its own
+    bucket, and the 5% ladder above it keeps a batch at a max_batch_size cap
+    within a few requests instead of a 50%-wide bucket.
+    """
+    buckets = common.HISTOGRAM_BATCH_SIZE_BUCKETS
+    assert buckets[:21] == (0.0, *(float(size) for size in range(1, 21)))
+    assert buckets[-1] == 512.0
+    tail = buckets[20:]
+    ratio = (tail[-1] / tail[0]) ** (1 / (len(tail) - 1))
+    assert ratio <= 1.05
 
 
 def test_percent_buckets_tighten_near_saturation() -> None:
@@ -760,3 +774,121 @@ def test_create_counter_accepts_a_no_op_meter() -> None:
         counter = metrics._create_counter("test.counter", "A test counter.")
 
     assert isinstance(counter, NoOpCounter)
+
+
+@pytest.mark.parametrize(
+    ("prompt_tokens", "bucket"),
+    [
+        (0, "0-8k"),
+        (8191, "0-8k"),
+        (8192, "8k-32k"),
+        (32767, "8k-32k"),
+        (32768, "32k-64k"),
+        (65536, "64k-128k"),
+        (131072, "128k-256k"),
+        (262143, "128k-256k"),
+        (262144, "256k-plus"),
+        (1_000_000, "256k-plus"),
+    ],
+)
+def test_prompt_length_bucket_edges(prompt_tokens: int, bucket: str) -> None:
+    """Each bucket includes its lower bound, in 1024-token k."""
+    assert metrics._prompt_length_bucket(prompt_tokens) == bucket
+
+
+def test_ttft_by_prompt_length_carries_the_bucket() -> None:
+    client = mock.Mock()
+    recorder = metrics._AsyncMetrics()
+    recorder.configure(client, {"model": "m"})
+
+    recorder.ttft_by_prompt_length(125.0, 20_000)
+
+    measurement = client.send_measurement.call_args.args[0]
+    assert (
+        measurement.instrument_name,
+        measurement.value,
+        measurement.attributes,
+    ) == (
+        "maxserve.time_to_first_token_by_prompt_length",
+        125.0,
+        {"model": "m", "prompt_length": "8k-32k"},
+    )
+    assert recorder.extra_attributes == {"model": "m"}
+    assert isinstance(
+        metrics.SERVE_METRICS["maxserve.time_to_first_token_by_prompt_length"],
+        _ProxyHistogram,
+    )
+
+
+@pytest.mark.parametrize(
+    ("method", "value", "instrument"),
+    [
+        (
+            "connector_cordon_wait_time",
+            42.5,
+            "maxserve.cache.connector_cordon_wait_time",
+        ),
+        (
+            "connector_cordon_passes",
+            3,
+            "maxserve.cache.connector_cordon_passes",
+        ),
+    ],
+)
+def test_connector_cordon_metrics_are_histograms(
+    method: str, value: float, instrument: str
+) -> None:
+    client = mock.Mock()
+    recorder = metrics._AsyncMetrics()
+    recorder.configure(client, {"model": "m"})
+
+    getattr(recorder, method)(value)
+
+    measurement = client.send_measurement.call_args.args[0]
+    assert (
+        measurement.instrument_name,
+        measurement.value,
+        measurement.attributes,
+    ) == (instrument, value, {"model": "m"})
+    assert isinstance(metrics.SERVE_METRICS[instrument], _ProxyHistogram)
+
+
+@pytest.mark.parametrize("reason", ["budget", "max_pending", "held"])
+def test_connector_lookup_admission_stop_carries_the_reason(
+    reason: metrics.LookupAdmissionStop,
+) -> None:
+    client = mock.Mock()
+    recorder = metrics._AsyncMetrics()
+    recorder.configure(client, {"model": "m"})
+
+    recorder.connector_lookup_admission_stop(reason)
+
+    measurement = client.send_measurement.call_args.args[0]
+    assert (
+        measurement.instrument_name,
+        measurement.value,
+        measurement.attributes,
+    ) == (
+        "maxserve.cache.connector_lookup_admission_stops",
+        1,
+        {"model": "m", "reason": reason},
+    )
+    assert isinstance(
+        metrics.SERVE_METRICS[
+            "maxserve.cache.connector_lookup_admission_stops"
+        ],
+        _ProxyCounter,
+    )
+
+
+def test_scheduler_step_time_is_a_separate_histogram() -> None:
+    name = "maxserve.scheduler.batch_step_time"
+    assert _is_histogram(metrics.SERVE_METRICS[name])
+    client = mock.Mock()
+    recorder = metrics._AsyncMetrics()
+    recorder.configure(client, {"model": "m"})
+    recorder.scheduler_batch_step_time(3.0, "CE")
+    measurement = client.send_measurement.call_args.args[0]
+    assert measurement.instrument_name == name
+    assert measurement.value == 3.0
+    assert measurement.attributes == {"model": "m", "batch_type": "CE"}

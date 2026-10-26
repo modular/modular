@@ -20,10 +20,13 @@ on writes their context through the drafter's
 :meth:`~.dflash_mimo_v2.DFlashMiMoV2.write_context`, so the fused spec graph
 fills the drafter cache the same way the graph-API build does.
 
-This module holds the tap projection the drafter's layers share: ``fc`` is row
-parallel (each device multiplies its slice of the tap features and the mesh
-sums the partial products ahead of ``hidden_norm``) and the RoPE table every
-layer's K is rotated through.
+This module holds the tap projection the drafter's layers share: ``fc`` is
+row parallel under tensor parallelism (each device multiplies its slice of
+the tap features and the mesh sums the partial products ahead of
+``hidden_norm``) and a plain ``Linear`` under data parallelism, where each
+one-device replica projects its own rows in full. The RoPE table every
+layer's K is rotated through lives here too, replicated at every device
+count.
 """
 
 from __future__ import annotations
@@ -31,7 +34,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from max.experimental import functional as F
-from max.experimental.nn import Module, RMSNorm
+from max.experimental.nn import Linear, Module, RMSNorm
 from max.experimental.nn.common_layers.linear import RowParallelLinear
 from max.experimental.nn.common_layers.mesh_axis import TP
 from max.experimental.nn.common_layers.rotary_embedding import (
@@ -66,6 +69,11 @@ class DFlashContextWriter(Module[[], None]):
 
     def __init__(self, config: DFlashMiMoV2Config) -> None:
         self.config = config
+        # One replica per device under data parallelism: every weight stays
+        # whole and each replica projects its own rows, as the target's
+        # attention does. Tensor parallelism keeps the row-parallel fc, whose
+        # shards' partial sums the mesh reduces.
+        self.data_parallel = config.data_parallel_degree > 1
         self.rope = RotaryEmbedding(
             dim=config.rotary_dim * config.num_attention_heads,
             n_heads=config.num_attention_heads,
@@ -75,7 +83,8 @@ class DFlashContextWriter(Module[[], None]):
             head_dim=config.rotary_dim,
             interleaved=False,
         )
-        self.fc = RowParallelLinear(
+        fc_cls = Linear if self.data_parallel else RowParallelLinear
+        self.fc = fc_cls(
             len(config.target_layer_ids) * config.hidden_size,
             config.hidden_size,
             bias=False,
@@ -97,11 +106,17 @@ class DFlashContextWriter(Module[[], None]):
 
         Args:
             taps: The target's residual stream after each
-                ``target_layer_ids`` layer, in that order, replicated
-                ``[rows, hidden]``.
+                ``target_layer_ids`` layer, in that order, ``[rows,
+                hidden]`` -- replicated over tensor parallelism, each
+                replica's own rows under data parallelism.
         """
         features = F.concat(list(taps), axis=-1)
         mapping = features.mapping
+        if self.data_parallel:
+            # The replicated fc projects each replica's rows in full, so the
+            # result is complete per shard and no partial sums exist to
+            # reduce.
+            return self.hidden_norm(self.fc(features).to(mapping))
         # Row-parallel fc, done explicitly: each device slices its share of
         # the concatenated taps and multiplies it against its weight shard
         # (a local slice, not a collective); the mesh then sums the partial

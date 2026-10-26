@@ -180,20 +180,21 @@ def _pack_k_kernel[
 
 
 def test_pack_k_byte_index(ctx: DeviceContext) raises:
+    comptime warp_size = ctx.default_device_info.warp_size
     comptime num_acc_per_dispatch = 4
     comptime num_dispatches = 4
-    comptime num_values = WARP_SIZE * num_acc_per_dispatch * num_dispatches
+    comptime num_values = warp_size * num_acc_per_dispatch * num_dispatches
 
     var packed_dev = ctx.enqueue_create_buffer[.float32](num_values)
     var bcast_dev = ctx.enqueue_create_buffer[.float32](num_values)
 
     var packed_tt = TileTensor(
         packed_dev,
-        row_major[WARP_SIZE * num_dispatches, num_acc_per_dispatch](),
+        row_major[warp_size * num_dispatches, num_acc_per_dispatch](),
     )
     var bcast_tt = TileTensor(
         bcast_dev,
-        row_major[WARP_SIZE * num_dispatches, num_acc_per_dispatch](),
+        row_major[warp_size * num_dispatches, num_acc_per_dispatch](),
     )
 
     comptime kernel = _pack_k_kernel[
@@ -204,7 +205,7 @@ def test_pack_k_byte_index(ctx: DeviceContext) raises:
         packed_tt.as_unsafe_any_origin(),
         bcast_tt.as_unsafe_any_origin(),
         grid_dim=1,
-        block_dim=WARP_SIZE,
+        block_dim=warp_size,
     )
     ctx.synchronize()
 

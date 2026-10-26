@@ -70,11 +70,12 @@ def bench_stencil_avg_pool[
     comptime output_width = input_width - pool_window_w + 1
     comptime input_size = 1 * input_height * input_width * num_channels
     comptime output_size = 1 * output_height * output_width * num_channels
-    comptime dynamic_input_shape = IndexList[4](
-        1, input_height, input_width, num_channels
-    )
-    comptime dynamic_output_shape = IndexList[4](
-        1, output_height, output_width, num_channels
+    comptime dynamic_input_shape = (1, input_height, input_width, num_channels)
+    comptime dynamic_output_shape = (
+        1,
+        output_height,
+        output_width,
+        num_channels,
     )
 
     # Create host buffers
@@ -332,11 +333,12 @@ def bench_stencil_max_pool[
     comptime output_width = input_width - pool_window_w + 1
     comptime input_size = 1 * input_height * input_width * num_channels
     comptime output_size = 1 * output_height * output_width * num_channels
-    comptime dynamic_input_shape = IndexList[4](
-        1, input_height, input_width, num_channels
-    )
-    comptime dynamic_output_shape = IndexList[4](
-        1, output_height, output_width, num_channels
+    comptime dynamic_input_shape = (1, input_height, input_width, num_channels)
+    comptime dynamic_output_shape = (
+        1,
+        output_height,
+        output_width,
+        num_channels,
     )
 
     # Create host buffers
@@ -590,10 +592,8 @@ def bench_stencil_avg_pool_padded[
     comptime output_width = input_width - pool_window_w + pad_w * 2 + 1
     comptime input_size = 1 * input_height * input_width * 1
     comptime output_size = 1 * output_height * output_width * 1
-    var dynamic_input_shape = IndexList[4](1, input_height, input_width, 1)
-    comptime dynamic_output_shape = IndexList[4](
-        1, output_height, output_width, 1
-    )
+    var dynamic_input_shape = (1, input_height, input_width, 1)
+    comptime dynamic_output_shape = (1, output_height, output_width, 1)
 
     # Create host buffers
     var h_input_ptr = List(length=input_size, fill=Scalar[dtype](0))

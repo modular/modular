@@ -15,12 +15,15 @@
 
 from __future__ import annotations
 
-import io
+import base64
+import binascii
 import os
+import time
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import TypedDict
 
+import httpx
 from max.pipelines.modeling.types import (
     ImageContentPart,
     TextGenerationRequestMessage,
@@ -33,11 +36,22 @@ __all__ = ["AutoProcessor", "ProcessorOutput"]
 
 _IMAGE_HINTS = ("detail", "max_long_side_pixel")
 
-# The modes Pillow writes as PNG. Other modes, such as CMYK, convert to RGBA
-# when they carry alpha and to RGB otherwise.
-_PNG_MODES = frozenset(
-    {"1", "L", "LA", "I", "I;16", "I;16B", "P", "RGB", "RGBA"}
-)
+# The timeout bounds each image's whole fetch, so a slow host cannot hang a
+# batch, and the cap bounds the memory each image takes.
+_FETCH_CONNECT_TIMEOUT_SECONDS = 10.0
+_FETCH_TIMEOUT_SECONDS = 30.0
+_MAX_FETCH_MIB = 100
+_MAX_FETCH_REDIRECTS = 5
+# Some hosts reject a library's default User-Agent with HTTP 403.
+_FETCH_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "*/*",
+    # A compressed body could expand far past the cap in one decode step.
+    "Accept-Encoding": "identity",
+}
 
 
 class ProcessorOutput(TypedDict):
@@ -50,8 +64,9 @@ class ProcessorOutput(TypedDict):
     messages: list[list[TextGenerationRequestMessage]]
     """One conversation per row, with a placeholder part for each image."""
 
-    images: list[list[bytes]]
-    """Each row's images as encoded bytes, in the order of its image parts."""
+    images: list[list[bytes | Image.Image]]
+    """Each row's images as encoded bytes or PIL images, in the order of its
+    image parts."""
 
 
 class AutoProcessor:
@@ -115,18 +130,25 @@ class AutoProcessor:
         """Returns ``messages`` and ``images`` with one row per conversation.
 
         ``conversations`` is one conversation or a list of them, in Hugging
-        Face message format. An image part holds a PIL image, encoded bytes
-        or a local path (plain or ``file://``) under ``"image"`` or
-        ``"path"``, and keeps its ``detail`` and ``max_long_side_pixel``
-        hints. Each row's images come out as encoded bytes in the order of
-        its image parts.
+        Face message format. An image part holds a PIL image, bytes, a local
+        path, an http(s) URL or a ``data:`` URI under ``"image"``, ``"path"``
+        or ``"url"``, or base64 under ``"base64"``. OpenAI ``image_url``
+        parts work too. An image part keeps its ``detail`` and
+        ``max_long_side_pixel`` hints. Each row's images come out in the
+        order of its image parts, a PIL image as a copy and anything else
+        as encoded bytes.
+
+        URLs are fetched as given, with no host checks, with a 30 second
+        timeout and a 100 MiB cap per image.
 
         Raises:
             TypeError: If a conversation, message, content part or image has
                 the wrong type.
-            ValueError: If a conversation is empty, a message is invalid, or
-                an image part holds no image or names a URL or base64 data.
-            OSError: If an image path cannot be read.
+            ValueError: If a conversation is empty, a message is invalid, an
+                image part holds no image, a fetched image is over the size
+                limit, or base64 data does not decode.
+            OSError: If an image path cannot be read or a URL cannot be
+                fetched.
         """
         return _model_inputs(conversations)
 
@@ -152,9 +174,9 @@ class AutoProcessor:
 
 def _model_inputs(conversations: object) -> ProcessorOutput:
     messages: list[list[TextGenerationRequestMessage]] = []
-    images: list[list[bytes]] = []
+    images: list[list[bytes | Image.Image]] = []
     for row, conversation in enumerate(_conversation_rows(conversations)):
-        row_images: list[bytes] = []
+        row_images: list[bytes | Image.Image] = []
         messages.append(
             [
                 _convert_message(message, row, row_images)
@@ -166,7 +188,7 @@ def _model_inputs(conversations: object) -> ProcessorOutput:
 
 
 def _convert_message(
-    message: object, row: int, images: list[bytes]
+    message: object, row: int, images: list[bytes | Image.Image]
 ) -> TextGenerationRequestMessage:
     if not isinstance(message, Mapping):
         raise TypeError(
@@ -182,7 +204,9 @@ def _convert_message(
     return TextGenerationRequestMessage.model_validate(fields)
 
 
-def _convert_part(part: object, row: int, images: list[bytes]) -> object:
+def _convert_part(
+    part: object, row: int, images: list[bytes | Image.Image]
+) -> object:
     if not isinstance(part, Mapping):
         raise TypeError(
             f"Row {row} has a content part of type {type(part).__name__}. "
@@ -190,12 +214,24 @@ def _convert_part(part: object, row: int, images: list[bytes]) -> object:
         )
     kind = part.get("type")
     if kind == "image":
-        images.append(_image_bytes(part, row))
+        images.append(_image(part, row))
         return ImageContentPart.model_validate(
             {key: part[key] for key in _IMAGE_HINTS if key in part}
         )
     if kind == "image_url":
-        raise _remote_image(row)
+        image_url = part.get("image_url")
+        if isinstance(image_url, Mapping):
+            fields, url = image_url, image_url.get("url")
+        else:
+            fields, url = {}, image_url
+        if not isinstance(url, str):
+            raise ValueError(
+                f'Row {row} has an image_url part with no "url" string.'
+            )
+        images.append(_read_source(url, row))
+        return ImageContentPart.model_validate(
+            {key: fields[key] for key in _IMAGE_HINTS if key in fields}
+        )
     # The message model checks text and video parts and rejects other types.
     return dict(part)
 
@@ -229,42 +265,114 @@ def _conversation_rows(
     return rows
 
 
-def _remote_image(row: int) -> ValueError:
-    return ValueError(
-        f"Row {row} has an image from a URL or base64 data. AutoProcessor "
-        "reads PIL images, encoded bytes and local paths. Download or decode "
-        "the image and pass its bytes."
-    )
-
-
-def _image_bytes(part: Mapping[object, object], row: int) -> bytes:
+def _image(part: Mapping[object, object], row: int) -> bytes | Image.Image:
     image = part.get("image")
+    for key in ("path", "url"):
+        if image is None:
+            image = part.get(key)
     if image is None:
-        image = part.get("path")
+        encoded = part.get("base64")
+        if encoded is None:
+            raise ValueError(
+                f'Row {row} has an image part with no "image", "path", "url" '
+                'or "base64" entry.'
+            )
+        if not isinstance(encoded, str):
+            raise TypeError(
+                f"Row {row} has base64 data of type {type(encoded).__name__}. "
+                "Pass it as a string."
+            )
+        if encoded.lower().startswith("data:"):
+            return _read_source(encoded, row)
+        return _decode_base64(encoded, row)
     if isinstance(image, Image.Image):
-        if image.mode not in _PNG_MODES:
-            has_alpha = {"A", "a"} & set(image.getbands())
-            image = image.convert("RGBA" if has_alpha else "RGB")
-        buffer = io.BytesIO()
-        image.save(buffer, format="PNG")
-        return buffer.getvalue()
+        # The copy holds its own pixels, so a caller may close or edit the
+        # image before generate() encodes it.
+        return image.copy()
     if isinstance(image, bytes):
         return image
-    if isinstance(image, str) and image.lower().startswith("file://"):
-        image = image[len("file://") :]
-    if isinstance(image, str) and image.lower().startswith(
-        ("http://", "https://", "data:")
-    ):
-        raise _remote_image(row)
-    if isinstance(image, (str, os.PathLike)):
+    if isinstance(image, str):
+        return _read_source(image, row)
+    if isinstance(image, os.PathLike):
         return Path(image).read_bytes()
-    if image is None and ("url" in part or "base64" in part):
-        raise _remote_image(row)
-    if image is None:
-        raise ValueError(
-            f'Row {row} has an image part with no "image" or "path" entry.'
-        )
     raise TypeError(
         f"Row {row} has an image of type {type(image).__name__}. Pass a PIL "
-        "image, encoded bytes or a local path."
+        "image, encoded bytes, a local path or a URL."
     )
+
+
+def _read_source(source: str, row: int) -> bytes:
+    lowered = source.lower()
+    if lowered.startswith(("http://", "https://")):
+        return _fetch(source, row)
+    if lowered.startswith("data:"):
+        _, comma, payload = source.partition(",")
+        if not comma:
+            raise ValueError(f"Row {row} has a data URI with no payload.")
+        return _decode_base64(payload, row)
+    if lowered.startswith("file://"):
+        source = source[len("file://") :]
+    return Path(source).read_bytes()
+
+
+def _fetch(url: str, row: int) -> bytes:
+    max_bytes = _MAX_FETCH_MIB * 1024 * 1024
+    deadline = time.monotonic() + _FETCH_TIMEOUT_SECONDS
+    body = bytearray()
+    try:
+        with (
+            httpx.Client(
+                headers=_FETCH_HEADERS,
+                timeout=httpx.Timeout(
+                    _FETCH_TIMEOUT_SECONDS,
+                    connect=_FETCH_CONNECT_TIMEOUT_SECONDS,
+                ),
+                follow_redirects=True,
+                max_redirects=_MAX_FETCH_REDIRECTS,
+            ) as client,
+            client.stream("GET", url) as response,
+        ):
+            response.raise_for_status()
+            encoding = response.headers.get("Content-Encoding", "")
+            if encoding.strip().lower() not in ("", "identity"):
+                raise OSError(
+                    f"Row {row} has an image URL served with Content-Encoding "
+                    f"{encoding!r}, which AutoProcessor does not decode: {url}"
+                )
+            # Without a chunk size, each network read comes back as it
+            # arrives, so the deadline is checked even while bytes trickle in.
+            for chunk in response.iter_raw():
+                body += chunk
+                if len(body) > max_bytes:
+                    raise ValueError(
+                        f"Row {row} has an image URL whose body is over "
+                        f"{_MAX_FETCH_MIB} MiB: {url}"
+                    )
+                if time.monotonic() > deadline:
+                    raise OSError(
+                        f"Row {row} has an image URL that took over "
+                        f"{_FETCH_TIMEOUT_SECONDS:g} seconds to fetch: {url}"
+                    )
+    except (httpx.HTTPError, httpx.InvalidURL) as error:
+        # httpx raises for a body cut short of its Content-Length too, so a
+        # truncated image never comes back as partial bytes.
+        raise OSError(
+            f"Row {row} has an image URL that could not be fetched: {url}"
+        ) from error
+    return bytes(body)
+
+
+def _decode_base64(encoded: str, row: int) -> bytes:
+    # As max serve does, this accepts line breaks, stripped padding and the
+    # URL-safe alphabet.
+    encoded = "".join(encoded.split())
+    encoded += "=" * (-len(encoded) % 4)
+    url_safe = "-" in encoded or "_" in encoded
+    try:
+        return base64.b64decode(
+            encoded, altchars=b"-_" if url_safe else None, validate=True
+        )
+    except binascii.Error as error:
+        raise ValueError(
+            f"Row {row} has base64 image data that does not decode."
+        ) from error

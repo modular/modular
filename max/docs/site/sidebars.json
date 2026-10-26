@@ -117,6 +117,7 @@
         },
         "develop/model-bringup-skills",
         "develop/serve-custom-model-architectures",
+        "develop/max-pipeline-bring-your-own-model",
         {
           "label": "Graphs",
           "type": "category",
@@ -136,6 +137,7 @@
             "develop/read-model-config",
             "develop/weight-adapters",
             "develop/pipelines",
+            "develop/supported-layers",
             "develop/quantize"
           ]
         },
@@ -585,6 +587,7 @@
                 "api/python/pipelines.architectures.dspark_gemma4",
                 "api/python/pipelines.architectures.eagle3_deepseekV3",
                 "api/python/pipelines.architectures.eagle_llama3",
+                "api/python/pipelines.architectures.flint",
                 "api/python/pipelines.architectures.flux2",
                 "api/python/pipelines.architectures.gemma3",
                 "api/python/pipelines.architectures.gemma3multimodal",
@@ -774,6 +777,17 @@
                   },
                   "items": [
                     "__AUTOGEN:max.pipelines.lib.generate__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "generate_images",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.lib.generate_images"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.lib.generate_images__"
                   ]
                 },
                 {

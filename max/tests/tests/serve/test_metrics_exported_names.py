@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Pins the ``/metrics`` line names of the ``maxserve.media.*`` family.
+"""Pins the ``/metrics`` line names of the media and connector wait metrics.
 
 The Prometheus exporter mangles an instrument's name with its ``unit``: it
 appends ``_<unit>`` unless the name already ends in it, and ``_total`` to a
@@ -57,8 +57,25 @@ _MEDIA_MEASUREMENTS: tuple[tuple[str, float, dict[str, str]], ...] = (
     ),
 )
 
+# The admission and TTFT metrics that show where a connector's deferred
+# lookups spend a request's TTFT.
+_ADMISSION_MEASUREMENTS: tuple[tuple[str, float, dict[str, str]], ...] = (
+    ("maxserve.cache.connector_cordon_wait_time", 12.5, {}),
+    ("maxserve.cache.connector_cordon_passes", 2, {}),
+    (
+        "maxserve.cache.connector_lookup_admission_stops",
+        1,
+        {"reason": "budget"},
+    ),
+    (
+        "maxserve.time_to_first_token_by_prompt_length",
+        125.0,
+        {"prompt_length": "8k-32k"},
+    ),
+)
+
 # Exactly what a scrape must show. Every name published in
-# ``docs/max/serve/metrics.mdx`` is copied from this list.
+# ``docs/max/serve/metrics.mdx`` is copied from these lists.
 _EXPECTED_MEDIA_LINES = frozenset(
     {
         "maxserve_media_items_total",
@@ -75,13 +92,25 @@ _EXPECTED_MEDIA_LINES = frozenset(
     }
 )
 
+_EXPECTED_ADMISSION_LINES = frozenset(
+    {
+        "maxserve_cache_connector_cordon_wait_time_milliseconds",
+        "maxserve_cache_connector_cordon_passes",
+        "maxserve_cache_connector_lookup_admission_stops_total",
+        "maxserve_time_to_first_token_by_prompt_length_milliseconds",
+    }
+)
+
 _HISTOGRAM_SUFFIXES = ("_bucket", "_sum", "_count", "_created")
 
 
 @pytest.fixture(scope="module")
 def media_scrape() -> str:
     common.configure_metrics(Settings())
-    for name, value, attributes in _MEDIA_MEASUREMENTS:
+    for name, value, attributes in (
+        *_MEDIA_MEASUREMENTS,
+        *_ADMISSION_MEASUREMENTS,
+    ):
         metrics.MaxMeasurement(name, value, attributes).commit()
     return prometheus_client.generate_latest().decode()
 
@@ -123,3 +152,12 @@ def test_media_metrics_export_under_their_documented_names(
     assert _line_names(media_scrape, "maxserve_media") == (
         _EXPECTED_MEDIA_LINES
     )
+
+
+def test_admission_metrics_export_under_their_documented_names(
+    media_scrape: str,
+) -> None:
+    exported = _line_names(media_scrape, "maxserve_cache_connector_") | (
+        _line_names(media_scrape, "maxserve_time_to_first_token_by_")
+    )
+    assert exported == _EXPECTED_ADMISSION_LINES

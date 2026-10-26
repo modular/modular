@@ -85,7 +85,7 @@ def _run_rms_norm[
     K: Int,
     ctx: DeviceContext,
 ) raises:
-    var shape = Index(M, K)
+    var shape = (M, K)
     var in_view = TileTensor(in_ptr, row_major(Coord(shape)))
     var out_view = TileTensor(out_ptr, row_major(Coord(shape)))
     var gamma_view = TileTensor(gamma_ptr, row_major(Coord(K)))

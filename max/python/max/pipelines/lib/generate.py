@@ -30,6 +30,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import dataclasses
+import io
 import logging
 import operator
 import shlex
@@ -44,7 +45,9 @@ import numpy.typing as npt
 from max.driver import DeviceSpec
 from max.pipelines.context import (
     EOSTracker,
+    InputError,
     LogProbabilities,
+    PixelContext,
     ProcessorInputs,
     SamplingParams,
     SamplingParamsInput,
@@ -62,6 +65,7 @@ from max.pipelines.modeling.types import (
     TextGenerationRequest,
     TextGenerationRequestMessage,
 )
+from PIL import Image
 
 from .config import PipelineConfig
 from .interfaces import PipelineModel
@@ -70,6 +74,7 @@ from .pipeline_variants.block_diffusion_text_generation import (
     BlockDiffusionTextGenerationPipeline,
 )
 from .registry import PIPELINE_REGISTRY
+from .tokenizer import checked_token_ids
 
 __all__ = [
     "BatchPipeline",
@@ -83,11 +88,40 @@ __all__ = [
 _ROW_SEED_STRIDE = 1 << 32
 _U64_MASK = (1 << 64) - 1
 
+# The tokenizers pass these to the chat template call themselves, or name
+# parameters with them along the way, so a caller's copy would collide.
+_TOKENIZER_TEMPLATE_KEYS = frozenset(
+    (
+        "chat_template",
+        "conversation",
+        "delegate",
+        "fn",
+        "messages",
+        "prompt",
+        "self",
+        "tokenize",
+        "tools",
+    )
+)
+
+# The image part entries AutoProcessor reads and the message model drops.
+_INLINE_IMAGE_KEYS = ("image", "path", "url", "base64")
+_AUTO_PROCESSOR_HINT = (
+    "Pass the conversations through AutoProcessor, which moves them into "
+    "images."
+)
+
 _logger = logging.getLogger("max.pipelines")
 
 _T = TypeVar("_T")
 
 _warned_unwarmed_pipelines: weakref.WeakSet[BatchPipeline] = weakref.WeakSet()
+
+# The modes Pillow writes as PNG. Other modes, such as CMYK, convert to RGBA
+# when they carry alpha and to RGB otherwise.
+_PNG_MODES = frozenset(
+    {"1", "L", "LA", "I", "I;16", "I;16B", "P", "RGB", "RGBA"}
+)
 
 
 class _KVCacheParams(Protocol):
@@ -118,6 +152,14 @@ class _EOSTokenSource(Protocol):
 class _VocabSizeSource(Protocol):
     @property
     def tokenizer_vocab_size(self) -> int: ...
+
+
+# Vision tokenizers check ids in new_context, so only text tokenizers expose
+# the bound.
+@runtime_checkable
+class _TokenIdBoundSource(Protocol):
+    @property
+    def token_id_bound(self) -> int: ...
 
 
 @runtime_checkable
@@ -310,6 +352,75 @@ def _materialize_prompts(
 class _Conversation:
     messages: list[TextGenerationRequestMessage]
     images: list[bytes]
+    decoded_images: list[Image.Image | None]
+
+
+def _encode_image(
+    image: bytes | Image.Image,
+) -> tuple[bytes, Image.Image | None]:
+    """Returns an image's encoded bytes and, for a PIL image, the decoded one.
+
+    A PIL image is encoded as PNG, since tokenizers hash the bytes. The
+    decoded image returned is the one encoded, so both decode to the same
+    pixels.
+    """
+    if isinstance(image, bytes):
+        return image, None
+    if image.mode not in _PNG_MODES:
+        has_alpha = {"A", "a"} & set(image.getbands())
+        image = image.convert("RGBA" if has_alpha else "RGB")
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue(), image
+
+
+def _dict_parts(message: object) -> list[Mapping[object, object]]:
+    """Returns a dict message's dict content parts, or none for others."""
+    if not isinstance(message, Mapping):
+        return []
+    content = message.get("content")
+    if isinstance(content, str) or not isinstance(content, Sequence):
+        return []
+    return [part for part in content if isinstance(part, Mapping)]
+
+
+def _has_inline_image(message: object) -> bool:
+    return any(
+        part.get("type") == "image"
+        and any(part.get(key) is not None for key in _INLINE_IMAGE_KEYS)
+        for part in _dict_parts(message)
+    )
+
+
+def _image_rows(images: object, noun: str) -> list[list[bytes | Image.Image]]:
+    """Returns ``images`` as one list of images per ``noun``.
+
+    Raises:
+        TypeError: If ``images`` is not a list of lists of encoded bytes or
+            PIL images.
+    """
+    shape_error = TypeError(
+        f"images must be a list of image lists, one per {noun}, each image "
+        f"encoded bytes or a PIL image. Wrap one {noun}'s images as [images]."
+    )
+    flat_types = (bytes, bytearray, str, Image.Image)
+    # A bare image, or the flat list of PIL images Hugging Face takes, whose
+    # items don't iterate.
+    if isinstance(images, flat_types) or not isinstance(images, Iterable):
+        raise shape_error
+    rows: list[list[object]] = []
+    for row in images:
+        if isinstance(row, flat_types) or not isinstance(row, Iterable):
+            raise shape_error
+        rows.append(list(row))
+    if not all(
+        isinstance(image, (bytes, Image.Image)) for row in rows for image in row
+    ):
+        raise shape_error
+    return [
+        [image for image in row if isinstance(image, (bytes, Image.Image))]
+        for row in rows
+    ]
 
 
 def _plural(count: int, noun: str) -> str:
@@ -321,7 +432,7 @@ def _materialize_conversations(
     messages: Sequence[
         Sequence[TextGenerationRequestMessage | Mapping[str, object]]
     ],
-    images: Sequence[Sequence[bytes]] | None,
+    images: Sequence[Sequence[bytes | Image.Image]] | None,
     caller: str,
     max_images: int | None,
 ) -> list[_Conversation]:
@@ -331,6 +442,17 @@ def _materialize_conversations(
             "messages must be a list of conversations, one per row. Wrap one "
             "conversation as [messages]."
         )
+    messages = [list(row) for row in messages]
+    for row, conversation in enumerate(messages):
+        if any(
+            part.get("type") == "image_url"
+            for message in conversation
+            for part in _dict_parts(message)
+        ):
+            raise ValueError(
+                f"Row {row} has an image_url part, which {caller} does not "
+                f"read. {_AUTO_PROCESSOR_HINT}"
+            )
     rows = [
         [
             message
@@ -341,26 +463,9 @@ def _materialize_conversations(
         for row in messages
     ]
     if images is None:
-        row_images: list[list[bytes]] = [[] for _ in rows]
+        row_images: list[list[bytes | Image.Image]] = [[] for _ in rows]
     else:
-        shape_error = TypeError(
-            "images must be a list of encoded image lists, one per row. Wrap "
-            "one row's images as [images]."
-        )
-        image_rows = list(images)
-        # Hugging Face takes a flat list of PIL images, whose items don't
-        # iterate.
-        if any(
-            isinstance(row, (bytes, bytearray, str))
-            or not isinstance(row, Iterable)
-            for row in image_rows
-        ):
-            raise shape_error
-        row_images = [list(row) for row in image_rows]
-        if not all(
-            isinstance(image, bytes) for row in row_images for image in row
-        ):
-            raise shape_error
+        row_images = _image_rows(images, "row")
         if len(row_images) != len(rows):
             raise ValueError(
                 f"images has {_plural(len(row_images), 'row')}, but messages "
@@ -414,19 +519,34 @@ def _materialize_conversations(
                 f"pipeline takes at most {_plural(max_images, 'image')} per "
                 "row, as max serve does."
             )
-    for row, (num_parts, encoded) in enumerate(
+    for row, (num_parts, row_entries) in enumerate(
         zip(image_parts, row_images, strict=True)
     ):
-        if len(encoded) != num_parts:
+        # Checked whatever the image count, since a matching count would
+        # otherwise run the row on a different image.
+        if any(map(_has_inline_image, messages[row])):
+            raise ValueError(
+                f'Row {row} has an image part with an "image", "path", "url" '
+                f'or "base64" entry, which {caller} does not read. '
+                f"{_AUTO_PROCESSOR_HINT}"
+            )
+        if len(row_entries) != num_parts:
             raise ValueError(
                 f"Row {row} has {_plural(num_parts, 'image part')} but "
-                f"{_plural(len(encoded), 'image')}. Pass one encoded image "
-                "per image part, in order."
+                f"{_plural(len(row_entries), 'image')}. Pass one image per "
+                "image part, in order."
             )
-    return [
-        _Conversation(conversation, encoded)
-        for conversation, encoded in zip(rows, row_images, strict=True)
-    ]
+    conversations = []
+    for conversation, row_entries in zip(rows, row_images, strict=True):
+        encoded = [_encode_image(image) for image in row_entries]
+        conversations.append(
+            _Conversation(
+                conversation,
+                [data for data, _ in encoded],
+                [decoded for _, decoded in encoded],
+            )
+        )
+    return conversations
 
 
 def _resolve_sampling_params(
@@ -465,6 +585,18 @@ def _run_coroutine(coroutine: Coroutine[object, object, _T]) -> _T:
         return executor.submit(context.run, asyncio.run, coroutine).result()
 
 
+def _row_token_ids(
+    row: int, prompt: Sequence[int], token_id_bound: int | None
+) -> npt.NDArray[np.int64]:
+    if token_id_bound is None:
+        return np.asarray(prompt, dtype=np.int64)
+    try:
+        return checked_token_ids(prompt, token_id_bound)
+    except InputError as error:
+        error.args = (f"Row {row}: {error}",)
+        raise
+
+
 async def _new_contexts(
     tokenizer: _ContextSource, requests: Sequence[TextGenerationRequest]
 ) -> list[TextContext]:
@@ -479,7 +611,9 @@ async def _new_contexts(
 
 
 def _row_request(
-    row: Sequence[int] | _Conversation, sampling_params: SamplingParams
+    row: Sequence[int] | _Conversation,
+    sampling_params: SamplingParams,
+    chat_template_kwargs: Mapping[str, object] | None,
 ) -> TextGenerationRequest:
     if isinstance(row, _Conversation):
         return TextGenerationRequest(
@@ -487,7 +621,13 @@ def _row_request(
             model_name="",
             messages=row.messages,
             images=row.images,
+            decoded_images=row.decoded_images,
             sampling_params=sampling_params,
+            chat_template_options=(
+                None
+                if chat_template_kwargs is None
+                else dict(chat_template_kwargs)
+            ),
         )
     return TextGenerationRequest(
         request_id=RequestID(),
@@ -504,6 +644,7 @@ def _build_contexts(
     max_new_tokens: int,
     sampling_params: SamplingParams,
     tokenizer_builds_rows: bool,
+    chat_template_kwargs: Mapping[str, object] | None,
 ) -> list[TextContext]:
     """Builds one context per row.
 
@@ -552,7 +693,7 @@ def _build_contexts(
             _new_contexts(
                 tokenizer,
                 [
-                    _row_request(row, params)
+                    _row_request(row, params, chat_template_kwargs)
                     for row, params in zip(
                         rows, row_sampling_params, strict=True
                     )
@@ -575,6 +716,11 @@ def _build_contexts(
         if isinstance(tokenizer, _VocabSizeSource)
         else None
     )
+    token_id_bound = (
+        tokenizer.token_id_bound
+        if isinstance(tokenizer, _TokenIdBoundSource)
+        else None
+    )
     contexts = []
     for row, prompt in enumerate(rows):
         assert not isinstance(prompt, _Conversation)
@@ -582,7 +728,7 @@ def _build_contexts(
             TextContext(
                 request_id=RequestID(),
                 max_length=row_max_length(row, len(prompt)),
-                tokens=TokenBuffer(np.asarray(prompt, dtype=np.int64)),
+                tokens=TokenBuffer(_row_token_ids(row, prompt, token_id_bound)),
                 eos_tracker=EOSTracker(eos_token_ids=set(eos_token_ids)),
                 sampling_params=row_sampling_params[row],
                 vocab_size=vocab_size,
@@ -665,6 +811,13 @@ def _unsupported(
     return ValueError(message)
 
 
+def _holds_video(context_type: type[PixelContext]) -> bool:
+    # Only a video model's context carries a frame count.
+    return any(
+        field.name == "num_frames" for field in dataclasses.fields(context_type)
+    )
+
+
 def _check_supported(
     pipeline_config: PipelineConfig, caller: str = "generate()"
 ) -> type[TextContext]:
@@ -678,6 +831,14 @@ def _check_supported(
     """
     context_type = PIPELINE_REGISTRY.retrieve_context_type(pipeline_config)
     arch = PIPELINE_REGISTRY.architecture_for_config(pipeline_config)
+    if issubclass(context_type, PixelContext) and not _holds_video(
+        context_type
+    ):
+        raise ValueError(
+            f"{caller} generates text, and the model uses "
+            f"{context_type.__name__}. Use generate_images() for image "
+            "generation models."
+        )
     if not issubclass(context_type, TextContext):
         raise _unsupported(
             pipeline_config,
@@ -855,6 +1016,7 @@ def _check_output_options(
     synchronous: bool,
     output_logits: bool,
     output_logprobs: int,
+    caller: str,
 ) -> None:
     """Raises if the pipeline cannot return the requested outputs."""
     if not 0 <= output_logprobs <= _MAX_TOP_LOGPROBS:
@@ -871,11 +1033,15 @@ def _check_output_options(
             "tokens to a row."
         )
     if output_logits and not synchronous:
+        advice = (
+            "Load the AutoModel without enable_overlap_scheduler=True."
+            if caller == "AutoModel"
+            else "Use AutoModel, which turns the overlap scheduler off."
+        )
         raise ValueError(
             "output_logits needs a synchronous pipeline, but this pipeline "
             "has overlap active, so each step returns the tokens sampled "
-            "from the previous step's logits. Use AutoModel, which turns the "
-            "overlap scheduler off."
+            f"from the previous step's logits. {advice}"
         )
     # The pipeline checks this only after the rows have claimed KV.
     if output_logprobs and isinstance(pipeline, _OverlapSource):
@@ -1062,8 +1228,14 @@ class GenerateIterator:
             :class:`~max.pipelines.modeling.types.TextGenerationRequestMessage`
             or a dict in the same shape, with an image part where each image
             goes.
-        images: One list of encoded images per conversation, matching its
-            image parts in order. Needs an architecture that takes images.
+        images: One list of images per conversation, matching its image
+            parts in order, each as encoded bytes or a PIL image. A PIL
+            image reaches the tokenizer as is, without a second decode.
+            Needs an architecture that takes images.
+        chat_template_kwargs: Keyword arguments passed to every row's chat
+            template as given, such as ``{"enable_thinking": False}``. Unlike
+            serve, ``reasoning_effort`` does not set the thinking switches.
+            Needs ``messages``.
         max_new_tokens: The most tokens to generate for each row.
         min_new_tokens: The fewest tokens a row generates before EOS can end
             it. Defaults to the model's generation config.
@@ -1099,27 +1271,36 @@ class GenerateIterator:
     Raises:
         TypeError: If ``input_ids`` or ``attention_mask`` is not a list of
             integer lists, ``messages`` is not a list of conversations, or
-            ``images`` is not a list of byte-string lists.
+            ``images`` is not a list of lists of encoded bytes or PIL
+            images.
         ValueError: If the request needs a feature GenerateIterator leaves to
-            ``max serve``: LoRA, a model that does not generate text, a block
-            diffusion model, video inputs, device graph capture with
+            ``max serve``: LoRA, a model that generates neither text nor
+            images, a video model, a block diffusion model, video inputs,
+            device graph capture with
             ``data_parallel_degree > 1`` on a warmed-up pipeline, or a batch
             that only fits by scheduling or chunked prefill (more rows than
             the planned max batch size, or a replica's prompts over its
-            per-replica prefill budget or the batch total-token cap). Also
+            per-replica prefill budget or the batch total-token cap). An
+            image generation model raises it pointing to
+            :func:`~max.pipelines.lib.generate_images.generate_images`. Also
             raised for a prompt with no
             room to generate within the planned max length, an invalid
             sampling value, penalties on a pipeline built without
             ``enable_penalties``, ``max_new_tokens`` below 1 or below
-            ``min_new_tokens``, ``attention_mask`` with a different shape
+            ``min_new_tokens``, an ``input_ids`` token id below 0 or past the
+            model's vocabulary, ``attention_mask`` with a different shape
             than ``input_ids``, or ``ignore_eos`` with a row that does not fit
             or with speculative decoding. Also raised for both or neither of
             ``input_ids`` and ``messages``, ``images`` with another row count
             than ``messages``, images or video on an architecture that takes
             text only, a row with more images than the tokenizer's
             ``max_images_per_request``, a row whose image count differs from
-            its image parts, or ``images`` or ``attention_mask`` without the
-            matching prompt argument. Also raised for ``output_logprobs`` outside ``[0, 7]``,
+            its image parts, an ``image_url`` part or an image part with its
+            own image, ``images``,
+            ``chat_template_kwargs`` or ``attention_mask`` without the
+            matching prompt argument, or a ``chat_template_kwargs`` key the
+            tokenizer sets itself. Also raised for ``output_logprobs``
+            outside ``[0, 7]``,
             ``output_logprobs`` on a model that does not compute log
             probabilities, ``output_logits`` on a pipeline that is not
             synchronous, ``output_logits`` or ``output_logprobs`` with
@@ -1142,7 +1323,8 @@ class GenerateIterator:
             Sequence[TextGenerationRequestMessage | Mapping[str, object]]
         ]
         | None = None,
-        images: Sequence[Sequence[bytes]] | None = None,
+        images: Sequence[Sequence[bytes | Image.Image]] | None = None,
+        chat_template_kwargs: Mapping[str, object] | None = None,
         max_new_tokens: int,
         min_new_tokens: int | None = None,
         temperature: float | None = None,
@@ -1170,12 +1352,26 @@ class GenerateIterator:
                     "Pass images with messages, since each image needs an "
                     "image part in a message."
                 )
+            if chat_template_kwargs is not None:
+                raise ValueError(
+                    "Pass chat_template_kwargs with messages, since "
+                    "input_ids get no chat template."
+                )
             rows = _materialize_prompts(input_ids, attention_mask)
         else:
             if input_ids is not None:
                 raise ValueError("Pass input_ids or messages, not both.")
             if attention_mask is not None:
                 raise ValueError("Pass attention_mask only with input_ids.")
+            if chat_template_kwargs is not None:
+                taken = sorted(
+                    _TOKENIZER_TEMPLATE_KEYS & chat_template_kwargs.keys()
+                )
+                if taken:
+                    raise ValueError(
+                        f"chat_template_kwargs cannot set {taken[0]!r}, "
+                        "since the tokenizer sets it itself."
+                    )
             max_images = getattr(
                 pipeline.tokenizer, "max_images_per_request", None
             )
@@ -1233,6 +1429,7 @@ class GenerateIterator:
             sampling_params=sampling_params,
             tokenizer_builds_rows=messages is not None
             or issubclass(context_type, TextAndVisionContext),
+            chat_template_kwargs=chat_template_kwargs,
         )
         # After the max length check: a too-long prompt also trips these
         # limits, and their advice cannot fix it.
@@ -1246,7 +1443,7 @@ class GenerateIterator:
         _check_graph_capture(pipeline, dp_degree, caller)
         self._start(pipeline, contexts, dp_degree)
         _check_output_options(
-            pipeline, self._synchronous, output_logits, output_logprobs
+            pipeline, self._synchronous, output_logits, output_logprobs, caller
         )
         if output_logits:
             self._logits_recorders = [_LogitsRecorder() for _ in contexts]
@@ -1633,7 +1830,8 @@ def generate(
         Sequence[TextGenerationRequestMessage | Mapping[str, object]]
     ]
     | None = None,
-    images: Sequence[Sequence[bytes]] | None = None,
+    images: Sequence[Sequence[bytes | Image.Image]] | None = None,
+    chat_template_kwargs: Mapping[str, object] | None = None,
     max_new_tokens: int,
     min_new_tokens: int | None = None,
     temperature: float | None = None,
@@ -1661,8 +1859,10 @@ def generate(
         input_ids: One token-id prompt per row, as lists or a 2D array.
         attention_mask: Zeros mark padding in ``input_ids`` to drop.
         messages: One conversation per row, instead of ``input_ids``.
-        images: One list of encoded images per conversation, matching its
-            image parts in order.
+        images: One list of images per conversation, matching its image
+            parts in order, each as encoded bytes or a PIL image.
+        chat_template_kwargs: Keyword arguments for every row's chat
+            template. Needs ``messages``.
         max_new_tokens: The most tokens to generate for each row.
         min_new_tokens: The fewest tokens a row generates before EOS can end
             it.
@@ -1709,6 +1909,7 @@ def generate(
         attention_mask,
         messages=messages,
         images=images,
+        chat_template_kwargs=chat_template_kwargs,
         max_new_tokens=max_new_tokens,
         min_new_tokens=min_new_tokens,
         temperature=temperature,

@@ -13,6 +13,51 @@
 
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
+struct SomeLinearType(Movable):
+    def __init__(out self):
+        pass
+
+    def __init__(out self, *, deinit move: Self):
+        pass
+
+    def consume(deinit self):
+        pass
+
+
+def match_guarded_var_binding_requires_copy(
+    var value: SomeLinearType, somecond: Bool
+):
+    match value^:
+    # A guard can fail and advance to the next case, so this binding must copy.
+    # expected-error @+1 {{value of type 'SomeLinearType' cannot be implicitly copied, it does not conform to 'ImplicitlyCopyable'}}
+    case var x if somecond:
+        x^.consume()
+    case _:
+        pass
+
+
+def match_tuple_var_binding_requires_copy(
+    pair: Tuple[SomeLinearType, SomeLinearType]
+):
+    # A borrowed tuple subject cannot transfer either element.
+    match pair:
+    # expected-error @+1 {{value of type 'SomeLinearType' cannot be implicitly copied, it does not conform to 'ImplicitlyCopyable'}}
+    case (var x, _):
+        x^.consume()
+
+
+def match_guarded_tuple_var_binding_requires_copy(
+    var pair: Tuple[SomeLinearType, SomeLinearType], somecond: Bool
+):
+    # A guard can reject the arm after the tuple pattern succeeds.
+    match pair^:
+    # expected-error @+1 {{value of type 'SomeLinearType' cannot be implicitly copied, it does not conform to 'ImplicitlyCopyable'}}
+    case (var x, _) if somecond:
+        x^.consume()
+    case _:
+        pass
+
+
 def match_bad_subject_skips_same_indent_cases():
     # expected-error @+1 {{use of unknown declaration 'no_such_subject'}}
     match no_such_subject:
@@ -50,6 +95,13 @@ match 1:
         pass
 
 def various_match_issues(a: Int, point: Tuple[Int, Int], value: String):
+    match a:
+    # expected-error @+1 {{expression is not a valid match pattern; use '==' to compare against its value}}
+    case -(2):
+        pass
+    case _:
+        pass
+
     match a:
     case 0:
         var x = 42
@@ -99,7 +151,6 @@ def various_match_issues(a: Int, point: Tuple[Int, Int], value: String):
         pass
 
     match Int():
-    # expected-error @+1 {{value of type 'Int' doesn't have a memory origin in 'ref' binding}}
     case ref z:
         pass
 
@@ -503,6 +554,13 @@ def match_exhaustivity_literal_subjects(n: Int, s: String):
     case 1:
         pass
 
+    match n:
+    case -1:
+        pass
+    # expected-warning @+1 {{case is unreachable; '-1' is already covered by a previous case}}
+    case -1:
+        pass
+
     # Or of literals covers each alternative; a later duplicate is unreachable.
     match n:
     case 0 | 1 | 2:
@@ -637,6 +695,13 @@ def match_redundant_explicit_literal_patterns(
     case _:
         pass
 
+    match value:
+    # expected-warning @+1 {{'==' is redundant when matching a literal; remove it}}
+    case == -1:
+        pass
+    case _:
+        pass
+
     match pair:
     # expected-warning @+1 {{'==' is redundant when matching a literal; remove it}}
     case (_, == "expected"):
@@ -651,6 +716,12 @@ def match_expression_patterns_require_explicit_equality(
     match value:
     # expected-error @+1 {{expression is not a valid match pattern; use '==' to compare against its value}}
     case pair[0]:
+        pass
+    # expected-error @+1 {{expression is not a valid match pattern; use '==' to compare against its value}}
+    case -value:
+        pass
+    # expected-error @+1 {{expression is not a valid match pattern; use '==' to compare against its value}}
+    case -(1 + 0):
         pass
     case _:
         pass

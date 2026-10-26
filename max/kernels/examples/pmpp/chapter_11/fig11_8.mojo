@@ -82,7 +82,7 @@ def cpu_scan(
 
 def main() raises:
     """Example usage of warp-level scan."""
-    comptime N = WARP_SIZE
+    comptime N = DeviceContext.default_device_info.warp_size
     comptime dtype = DType.float32
 
     # Allocate host memory
@@ -96,7 +96,7 @@ def main() raises:
 
     print(
         "Launching warp-level scan (Fig 11.8) with 1 block and",
-        WARP_SIZE,
+        N,
         "threads",
     )
 
@@ -114,7 +114,7 @@ def main() raises:
             d_output,
             UInt32(N),
             grid_dim=(1, 1, 1),
-            block_dim=(WARP_SIZE, 1, 1),
+            block_dim=(N, 1, 1),
         )
 
         # Copy result back to host

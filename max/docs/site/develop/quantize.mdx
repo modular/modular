@@ -1,53 +1,52 @@
 ---
 title: Quantization
 sidebar_label: Quantization
-description: An introduction to the MAX Graph quantization API
+description: Serve a quantized checkpoint with MAX or declare quantization for the
+  layers in your own model.
 ---
 
-MAX allows you to load and run pre-quantized models through both its Python API
-and CLI. This guide explains quantization concepts and how to work with
-quantized models in your applications.
+Quantization stores a model's weights at lower precision than the format it was
+trained in, which cuts memory use and speeds up the matrix multiplications that
+dominate inference. MAX runs pre-quantized checkpoints as-is, and your
+architecture can declare how a layer is scaled.
 
-For a complete list of supported quantization encodings, see the
-[quantization](/api/python/generated/max.graph.quantization.QuantizationEncoding)
-documentation.
+## How quantization works
 
-## Understanding quantization
+A quantized layer stores its weights in a narrow type, such as an 8-bit or 4-bit
+format, and keeps a scale factor that maps those values back to a usable range.
+The scale's granularity decides the accuracy and the cost: one scale for a whole
+tensor, one per row or column, or one per block. Finer granularity tracks the
+weight distribution more closely and costs more to apply.
 
-Quantization reduces the numeric precision of model weights to decrease memory
-usage and increase inference speed. For example, models originally trained with
-`float32` weights can be represented using lower precision types like `int8` or
-`int4`, reducing each scalar value from 32 bits to 8 or 4 bits.
+Models often quantize only some of their projections. A layer can keep its
+attention projections at `bfloat16` while its MLP weights run at FP8, which is
+what the per-layer sets in a
+[`QuantConfig`](/api/python/generated/max.nn.QuantConfig/) express.
 
-When used properly, quantization does not significantly affect the model
-accuracy. There are several different quantization encodings that provide
-different levels of precision and encoding formats, each with its own trade-offs
-that may work well for some models or graph operations ("ops") but not others.
-Some models also work great with a mixture of quantization types, so that only
-certain ops perform low-precision calculations while others retain high
-precision.
+## Serve a pre-quantized checkpoint
 
-## How to load pre-quantized models with MAX
-
-You can load pre-quantized models using two primary approaches:
-
-- By specifying a path to a quantized weight file
-- By specifying the quantization encoding format for compatible models
-
-When you have a quantized weight file, you can load it directly using the
-`--weight-path` argument:
+Pass the checkpoint file when the weights are already quantized in a separate
+file format. MAX detects the format from the file:
 
 ```bash
 max serve --model meta-llama/Llama-3.1-8B-Instruct \
     --weight-path=bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf
 ```
 
-MAX automatically detects the quantization format from the weight file. This
-approach works for models with standard quantization formats like GGUF and AWQ.
+Pass the encoding when the checkpoint uses the same file layout as its
+full-precision release. The `--quantization-encoding` flag accepts the following
+values:
 
-For models that have been quantized using specific techniques but don't use a
-separate weight file format, you can specify the quantization encoding directly
-with the `--quantization-encoding` flag:
+- `float32`: full precision.
+- `float16`: 16-bit floating point.
+- `bfloat16`: 16-bit brain floating point.
+- `float8_e4m3fn`: 8-bit floating point with the e4m3fn encoding.
+- `float4_e2m1fnx2`: NVFP4, 4-bit floating point packed two per byte.
+- `float6_e2m3fn`: 6-bit floating point.
+- `q4_0`: 4-bit quantization.
+- `q4_k`: 4-bit quantization with K-means clustering.
+- `q6_k`: 6-bit quantization with K-means clustering.
+- `gptq`: quantization for transformer checkpoints in the GPTQ format.
 
 ```bash
 max generate --model hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4 \
@@ -55,126 +54,87 @@ max generate --model hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4 \
     --prompt "What is the meaning of life?"
 ```
 
-The `--quantization-encoding` flag accepts the following values:
+Architectures register the encodings they support, so an encoding a checkpoint
+declares but the architecture doesn't list fails at load, before the first
+request.
 
-- `float32`: Full precision 32-bit floating point.
-- `bfloat16`: Brain floating point 16-bit format.
-- `q4_0`: 4-bit quantization format.
-- `q4_k`: 4-bit quantization with K-means clustering.
-- `q6_k`: 6-bit quantization with K-means clustering.
-- `float8_e4m3fn`: 8-bit quantization with e4m3fn encoding.
-- `gptq`: Specialized quantization optimized for transformer-based models.
+## Quantize the layers in your model
 
-For more information on the `max` CLI, see the [MAX CLI](/cli)
-documentation or the [MAX API reference](/rest-api/).
-
-## Quantized layer implementation
-
-For developers building custom models with the MAX Graph API you can implement
-custom quantized layers. This is useful when:
-
-- You're building a model from scratch using the MAX Graph API
-- You need precise control over how quantization is implemented
-- You're implementing specialized model architectures that require custom
-quantized operations
-
-To implement a quantized layer in Python, you'll need to make a few key changes
-compared to a standard linear layer. Let's look at the differences.
-
-A standard linear layer in MAX might look like this:
+A [`QuantConfig`](/api/python/generated/max.nn.QuantConfig/)
+describes the scale granularity, the scale dtype, which layers are quantized,
+and the checkpoint format. Pass it to a layer that accepts one, such as
+[`Linear`](/api/python/generated/max.experimental.nn.Linear/), and the layer
+allocates a quantized weight plus the scale tensors it needs. `Linear` accepts
+static per-tensor FP8 only; a block-scaled FP4 or a dynamic input scale raises
+`NotImplementedError` when the layer is constructed, so the failure surfaces at
+model-build time:
 
 ```python
-from max import nn
+from max.driver import CPU
 from max.dtype import DType
-from max.graph import DeviceRef, Weight
+from max.experimental.nn import Linear
+from max.experimental.tensor import default_device
+from max.nn.quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    QuantFormat,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
+)
 
+# Static per-tensor FP8: one weight scale and one input scale cover the whole
+# layer.
+quant_config = QuantConfig(
+    input_scale=InputScaleSpec(
+        granularity=ScaleGranularity.TENSOR,
+        origin=ScaleOrigin.STATIC,
+        dtype=DType.float32,
+    ),
+    weight_scale=WeightScaleSpec(
+        granularity=ScaleGranularity.TENSOR,
+        dtype=DType.float32,
+    ),
+    mlp_quantized_layers={0},
+    attn_quantized_layers=set(),
+    format=QuantFormat.COMPRESSED_TENSORS_FP8,
+)
 
-class Linear(nn.Module):
-    def __init__(self, in_dim, out_dim):
-        super().__init__()
-        self.weight = Weight(
-            name="weight",
-            dtype=DType.float32,
-            shape=[in_dim, out_dim],
-            device=DeviceRef.CPU(),
-        )
-        self.bias = Weight(name="bias", dtype=DType.float32, shape=[out_dim])
-
-    def __call__(self, x):
-        return x @ self.weight.T.to(x.device) + self.bias.to(x.device)
+with default_device(CPU()):
+    linear = Linear(4, 8, bias=False, quant_config=quant_config)
+    for name, tensor in linear.parameters:
+        print(f"{name}: {tensor.dtype}")
 ```
 
-To enable support for GGUF quantization like
-[`Q4_0`](/api/python/generated/max.graph.quantization.QuantizationEncoding#max.graph.quantization.QuantizationEncoding.Q4_0),
-[`Q4_K`](/api/python/generated/max.graph.quantization.QuantizationEncoding#max.graph.quantization.QuantizationEncoding.Q4_K),
-or other encodings, you need to:
+The layer holds an FP8 weight beside its scale tensors:
 
-1. Load weights from the quantized model checkpoint as `uint8` with the
-   appropriate shape.
-2. Replace the standard matrix multiplication `(@)` with the
-   [`qmatmul`](/api/python/graph.ops#max.graph.ops.qmatmul) operation.
-3. Specify the quantization encoding to use.
-
-Here's how you might implement a quantized linear layer:
-
-```python
-from max import nn
-from max.dtype import DType
-from max.graph import DeviceRef, Weight, ops
-from max.graph.quantization import QuantizationEncoding
-
-
-class QuantizedLinear(nn.Module):
-    def __init__(self, in_dim, out_dim, quantization_encoding):
-        super().__init__()
-        self.weight = Weight(
-            name="weight",
-            # The DType must be uint8.
-            dtype=DType.uint8,
-            # qmatmul expects the transposed weight, so the shape is
-            # [out_dim, in_dim] rather than [in_dim, out_dim].
-            shape=[out_dim, in_dim],
-            device=DeviceRef.CPU(),
-            quantization_encoding=quantization_encoding,
-        )
-        self.bias = Weight(
-            name="bias",
-            dtype=DType.float32,
-            shape=[out_dim],
-            device=DeviceRef.CPU(),
-        )
-
-    def __call__(self, x):
-        return ops.qmatmul(
-            self.weight.quantization_encoding, None, x, self.weight.to(x.device)
-        ) + self.bias.to(x.device)
-
-in_dim, out_dim = 64, 32
-quantized_linear = QuantizedLinear(in_dim, out_dim, QuantizationEncoding.Q4_0)
+```output
+weight: DType.float8_e4m3fn
+weight_scale: DType.float32
+input_scale: DType.float32
 ```
 
-The [MAX graph quantization](/api/python/graph.quantization) class defines
-the available quantization formats supported by MAX. These encodings include:
+The scale values come from the checkpoint, so a weight adapter and
+`_prepare_state_dict()` load them the same way they load any other parameter.
 
-- [Q4_0](/api/python/generated/max.graph.quantization.QuantizationEncoding#max.graph.quantization.QuantizationEncoding.Q4_0):
-  4-bit quantization format
-- [Q4_K](/api/python/generated/max.graph.quantization.QuantizationEncoding#max.graph.quantization.QuantizationEncoding.Q4_K):
-  4-bit quantization with K-means clustering
-- [Q5_K](/api/python/generated/max.graph.quantization.QuantizationEncoding#max.graph.quantization.QuantizationEncoding.Q5_K):
-  5-bit quantization with K-means clustering
-- [Q6_K](/api/python/generated/max.graph.quantization.QuantizationEncoding#max.graph.quantization.QuantizationEncoding.Q6_K):
-  6-bit quantization with K-means clustering
-- [GPTQ](/api/python/generated/max.graph.quantization.QuantizationEncoding#max.graph.quantization.QuantizationEncoding.GPTQ):
-  Specialized quantization optimized for transformer-based models
+A compiled module fixes its parameter dtypes in the graph, so one compiled graph
+serves one quantization. Serving both FP8 and `bfloat16` weights means two
+builds.
 
-With this implementation, you can add quantized weights into your MAX models.
-The [`qmatmul`](/api/python/graph.ops#max.graph.ops.qmatmul) operation
-handles the dequantization process during inference, giving you the performance
-benefits of quantization without having to manage the low-level details.
+## Formats the model config expresses
 
-If you're building a custom architecture that loads FP8 or FP4 checkpoints, see
-[Map checkpoint weights](/develop/model-bringup-workflow/#map-checkpoint-weights)
-in the model bring-up workflow guide.
+Formats that need per-block scales, such as NVFP4, are expressed in the model
+config for the architectures that support them. See [Map checkpoint
+weights](/develop/model-bringup-workflow/#map-checkpoint-weights) for how those
+architectures load their quantized checkpoints.
 
-To learn more about quantization, read the LLM Inference Handbook page about
-[LLM quantization](https://handbook.modular.com/model-preparation/llm-quantization/).
+## Next steps
+
+To connect quantized weights to a checkpoint, continue with:
+
+- [Map checkpoint weights](/develop/model-bringup-workflow/#map-checkpoint-weights):
+  how the pipeline maps quantized checkpoint tensors onto your model.
+- [Weight adapters](/develop/weight-adapters/): reconcile names, dtypes, and
+  scale tensors between the checkpoint and your module.
+- [LLM quantization](https://handbook.modular.com/model-preparation/llm-quantization/):
+  background on the formats and their accuracy trade-offs.

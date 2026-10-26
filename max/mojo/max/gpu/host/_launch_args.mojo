@@ -13,8 +13,8 @@
 """Shared helpers for packing GPU kernel launch arguments.
 
 These are implementation details of `DeviceFunction`'s launch paths (see
-`device_context.mojo` and `_device_context_metal.mojo`); they are not part of
-the public API.
+`device_context.mojo` and `_device_context_metal.mojo`) and are shared by the
+legacy and HAL device contexts; they are not part of the public API.
 """
 
 from std.sys import CompilationTarget, align_of, size_of
@@ -22,6 +22,48 @@ from std.sys import CompilationTarget, align_of, size_of
 from std.math import align_up
 
 from std.builtin.device_passable import DevicePassable
+
+
+trait DeviceFunctionWrapper:
+    """Selects the function that `DeviceFunction` compiles for a user kernel.
+
+    Most targets compile the kernel as written. A target that launches through
+    a generated entry point supplies a wrapper that produces it.
+    """
+
+    comptime Entry[
+        ret_type: AnyType,
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        //,
+        f: def(*args: *declared_arg_types) thin -> ret_type,
+    ]: TrivialRegisterPassable
+    """The type of the function compiled for `f`."""
+
+    comptime wrap[
+        ret_type: AnyType,
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        //,
+        f: def(*args: *declared_arg_types) thin -> ret_type,
+    ]: Self.Entry[f]
+    """The function compiled for `f`."""
+
+
+struct _IdentityWrapper(DeviceFunctionWrapper):
+    """Compiles the kernel as written, with no entry point."""
+
+    comptime Entry[
+        ret_type: AnyType,
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        //,
+        f: def(*args: *declared_arg_types) thin -> ret_type,
+    ] = type_of(f)
+
+    comptime wrap[
+        ret_type: AnyType,
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        //,
+        f: def(*args: *declared_arg_types) thin -> ret_type,
+    ]: Self.Entry[f] = f
 
 
 # TODO(MSTDL-3307): Move this back to being a method on DeviceFunction

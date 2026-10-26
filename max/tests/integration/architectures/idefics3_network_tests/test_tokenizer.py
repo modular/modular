@@ -18,6 +18,7 @@ import io
 import numpy as np
 import pytest
 from max.pipelines.architectures.idefics3.tokenizer import Idefics3Tokenizer
+from max.pipelines.context.exceptions import InputError
 from max.pipelines.modeling.types import (
     ImageContentPart,
     RequestID,
@@ -120,3 +121,24 @@ async def test_idefics3_tokenizer_token_id_prompt() -> None:
     assert (
         context.extra_model_args.keys() == text_context.extra_model_args.keys()
     )
+
+
+@pytest.mark.asyncio
+async def test_idefics3_tokenizer_token_id_range() -> None:
+    tokenizer = _make_tokenizer()
+    # The mocked config has no vocab size, so the bound is the tokenizer's
+    # length, which matches the checkpoint's text_config.vocab_size.
+    bound = 128259
+    assert tokenizer._token_id_bound == bound
+
+    def request(prompt: list[int]) -> TextGenerationRequest:
+        return TextGenerationRequest(
+            request_id=RequestID(), model_name=IDEFICS3_REPO_ID, prompt=prompt
+        )
+
+    context = await tokenizer.new_context(request([0, bound - 1]))
+    assert context.tokens.prompt.tolist() == [0, bound - 1]
+
+    for bad_id in (-1, bound):
+        with pytest.raises(InputError, match="out of range"):
+            await tokenizer.new_context(request([0, bad_id]))

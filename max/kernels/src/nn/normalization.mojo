@@ -963,7 +963,10 @@ def rms_norm_gpu[
         return input_fn[simd_width](Coord(indices))
 
     comptime simd_width = simd_width_of[dtype, target=ctx.target]()
-    comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime max_warps_per_block = (
+        ctx.default_device_info.max_thread_block_size // warp_size
+    )
     comptime sm_version = ctx.default_device_info.version
     comptime sm_count = ctx.default_device_info.sm_count
     comptime warp_per_row_rows_per_block = 8
@@ -978,8 +981,8 @@ def rms_norm_gpu[
 
     var grid_dim = rows
     var block_dim = min(
-        align_up(ceildiv(cols, simd_width), WARP_SIZE),
-        WARP_SIZE * max_warps_per_block,
+        align_up(ceildiv(cols, simd_width), warp_size),
+        warp_size * max_warps_per_block,
     )
 
     # Warp-tiling launch geometry for a given per-thread (`eff_simd`, `chunks`):
@@ -991,8 +994,8 @@ def rms_norm_gpu[
     def _wt_threads_per_block[eff_simd: Int, chunks: Int]() {imm} -> Int:
         var threads = ceildiv(ceildiv(cols, eff_simd), chunks)
         return min(
-            align_up(threads, WARP_SIZE),
-            WARP_SIZE * max_warps_per_block,
+            align_up(threads, warp_size),
+            warp_size * max_warps_per_block,
         )
 
     # `exact` means every thread is fully active (the block tiles the row with
@@ -1030,11 +1033,11 @@ def rms_norm_gpu[
     # only above it. 1024 = WARP_SIZE * simd_width * 4 (= one max-width
     # per-thread tile across a single warp) is the measured crossover on B200
     # bf16 -- the largest exact-fit width that still loses to warp-per-row.
-    var warp_tiling_min_cols = WARP_SIZE * simd_width * 4
+    var warp_tiling_min_cols = warp_size * simd_width * 4
     var warp_tiling_exact_fit: Bool
-    if cols <= (WARP_SIZE * simd_width):
+    if cols <= (warp_size * simd_width):
         warp_tiling_exact_fit = _wt_exact[simd_width, 1]()
-    elif cols <= (WARP_SIZE * simd_width * 2):
+    elif cols <= (warp_size * simd_width * 2):
         warp_tiling_exact_fit = _wt_exact[simd_width, 2]()
     else:
         warp_tiling_exact_fit = _wt_exact[simd_width, 4]()
@@ -1094,7 +1097,7 @@ def rms_norm_gpu[
             # Experimentally determined to be the best - tapers off at 2.
             comptime warps_per_block = 2
             # Each warp handles 2 rows, so total rows per block is warps_per_block * 2.
-            block_dim = warps_per_block * WARP_SIZE
+            block_dim = warps_per_block * warp_size
             grid_dim = ceildiv(rows, warps_per_block * 2)
 
             comptime kernel = rms_norm_gpu_warp_tiling_128[
@@ -1122,12 +1125,12 @@ def rms_norm_gpu[
             )
         elif (
             cols >= 128
-            and cols <= (WARP_SIZE * simd_width * max_warps_per_block)
+            and cols <= (warp_size * simd_width * max_warps_per_block)
             and warp_per_row_region
             and not warp_tiling_exact
         ):
             comptime rows_per_block = warp_per_row_rows_per_block
-            block_dim = rows_per_block * WARP_SIZE
+            block_dim = rows_per_block * warp_size
             grid_dim = ceildiv(rows, rows_per_block)
 
             # Single-pass register-cached warp-per-row for narrow, exact-fit
@@ -1135,7 +1138,7 @@ def rms_norm_gpu[
             # two-pass kernel but loads each lane's row chunks ONCE (cached in
             # registers across the `warp.sum`) instead of reloading + resquaring
             # in pass 2.
-            comptime sp_stride = WARP_SIZE * simd_width
+            comptime sp_stride = warp_size * simd_width
             var sp_chunks = cols // sp_stride
             if (
                 dtype in (DType.float32, DType.bfloat16)
@@ -1196,7 +1199,7 @@ def rms_norm_gpu[
                     block_dim=block_dim,
                     attributes=pdl_launch_attributes(pdl_level),
                 )
-        elif cols <= (WARP_SIZE * simd_width * max_warps_per_block):
+        elif cols <= (warp_size * simd_width * max_warps_per_block):
             # CDNA4 (MI355X): when there are enough rows to keep the GPU busy,
             # use a 2x-wider per-thread SIMD so each row's block needs half the
             # warps. This halves the inter-warp block reduction cost and
@@ -1215,21 +1218,21 @@ def rms_norm_gpu[
                 # Narrow rows: a single full-width pass keeps the block small;
                 # split into independent chunks (ILP + smaller block_reduce)
                 # once there are enough columns to fill ~2+ chunks/thread.
-                if cols <= (WARP_SIZE * simd_width):
+                if cols <= (warp_size * simd_width):
                     _launch_warp_tiling[simd_width, 1]()
-                elif cols <= (WARP_SIZE * simd_width * 2):
+                elif cols <= (warp_size * simd_width * 2):
                     _launch_warp_tiling[simd_width, 2]()
                 else:
                     _launch_warp_tiling[simd_width, 4]()
         elif (
-            cols <= (WARP_SIZE * (simd_width * 2) * max_warps_per_block)
+            cols <= (warp_size * (simd_width * 2) * max_warps_per_block)
             and cols % (simd_width * 2) == 0
         ):
             # Wider rows: double the vector width and, for high-row launches,
             # split into chunks.
             if not enough_rows_to_chunk:
                 _launch_warp_tiling[simd_width * 2, 1]()
-            elif cols <= (WARP_SIZE * simd_width * 2 * 2):
+            elif cols <= (warp_size * simd_width * 2 * 2):
                 _launch_warp_tiling[simd_width * 2, 2]()
             else:
                 _launch_warp_tiling[simd_width * 2, 4]()
@@ -1686,7 +1689,10 @@ def apply_qk_rms_norm_gpu[
         return
 
     comptime simd_width = simd_width_of[in_dtype, target=ctx.target]()
-    comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime max_warps_per_block = (
+        ctx.default_device_info.max_thread_block_size // warp_size
+    )
 
     # 2D grid: x = row, y = operand (0 = Q, 1 = K). One block per (row, operand)
     # keeps the grid tiny for small-M decode (e.g. M=16 -> 32 blocks).
@@ -1696,8 +1702,8 @@ def apply_qk_rms_norm_gpu[
     if q_cols % simd_width == 0 and k_cols % simd_width == 0:
         # Vectorized loads/stores; size threads for the wider operand.
         var block_dim = min(
-            align_up(ceildiv(max_cols, simd_width), WARP_SIZE),
-            WARP_SIZE * max_warps_per_block,
+            align_up(ceildiv(max_cols, simd_width), warp_size),
+            warp_size * max_warps_per_block,
         )
         comptime kernel = apply_qk_rms_norm_gpu_block[
             in_dtype=q.dtype,
@@ -1748,8 +1754,8 @@ def apply_qk_rms_norm_gpu[
     else:
         # General N (incl. non-multiple of vector width): scalar loads/stores.
         var block_dim = min(
-            align_up(max_cols, WARP_SIZE),
-            WARP_SIZE * max_warps_per_block,
+            align_up(max_cols, warp_size),
+            warp_size * max_warps_per_block,
         )
         comptime kernel = apply_qk_rms_norm_gpu_block[
             in_dtype=q.dtype,
@@ -2524,16 +2530,19 @@ def group_norm_gpu[
             + String(simd_width)
         )
 
-    comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime max_warps_per_block = (
+        ctx.default_device_info.max_thread_block_size // warp_size
+    )
 
     var grid_dim = num_rows
     var block_dim = min(
         ceildiv(
             ceildiv(num_cols, OutputLinearIdxType(simd_width)),
-            OutputLinearIdxType(WARP_SIZE),
+            OutputLinearIdxType(warp_size),
         )
-        * OutputLinearIdxType(WARP_SIZE),
-        OutputLinearIdxType(WARP_SIZE * max_warps_per_block),
+        * OutputLinearIdxType(warp_size),
+        OutputLinearIdxType(warp_size * max_warps_per_block),
     )
 
     if num_cols % OutputLinearIdxType(simd_width) == 0:
@@ -2541,7 +2550,7 @@ def group_norm_gpu[
         # registers, we do warp tiling, which is a single pass to do mean/var
         # computation and normalization.
         if num_cols <= OutputLinearIdxType(
-            WARP_SIZE * simd_width * max_warps_per_block
+            warp_size * simd_width * max_warps_per_block
         ):
             comptime kernel = group_norm_gpu_warp_tiling[
                 LayoutType=output_rs.LayoutType,
@@ -2577,7 +2586,7 @@ def group_norm_gpu[
                 var max_useful_splits = max(
                     1,
                     group_size
-                    // (Int(simd_width) * WARP_SIZE * max_warps_per_block),
+                    // (Int(simd_width) * warp_size * max_warps_per_block),
                 )
                 num_splits = min(num_splits, max_useful_splits)
 
@@ -2603,12 +2612,12 @@ def group_norm_gpu[
                 # keeps total register usage within GPU limits while
                 # each thread processes more elements per iteration.
                 comptime mb_max_block_dim = min(
-                    256, WARP_SIZE * max_warps_per_block
+                    256, warp_size * max_warps_per_block
                 )
                 var total_simd_elems = group_size // simd_width
                 var chunk_simd_size = ceildiv(total_simd_elems, num_splits)
                 var mb_block_dim = min(
-                    align_up(chunk_simd_size, WARP_SIZE),
+                    align_up(chunk_simd_size, warp_size),
                     mb_max_block_dim,
                 )
                 var mb_grid_dim = Int(num_rows) * num_splits

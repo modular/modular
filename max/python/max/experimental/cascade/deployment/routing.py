@@ -147,11 +147,14 @@ class HybridRuntime(_RoutingRuntime):
         self._runtimes = dict(runtimes)
 
     async def __aenter__(self) -> HybridRuntime:
-        """Open every child runtime; they close when this router closes."""
+        """Open each child runtime once; they close when this router closes."""
         await super().__aenter__()
+        opened = {
+            runtime: await self.enter_async_context(runtime)
+            for runtime in dict.fromkeys(self._runtimes.values())
+        }
         self._runtimes = {
-            name: await self.enter_async_context(runtime)
-            for name, runtime in self._runtimes.items()
+            name: opened[runtime] for name, runtime in self._runtimes.items()
         }
         return self
 

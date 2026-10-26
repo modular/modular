@@ -42,7 +42,7 @@ from max.gpu.host import (
     DeviceGraphInputKind,
     StableAddr,
 )
-from max.gpu.host._legacy.device_context import _DeviceContextPtr
+from max.gpu.host import _DeviceContextPtr
 from max.gpu.host.info import is_accelerator, is_cpu, is_gpu
 from std.memory import OwnedPointer, MaybeUninit, alloc
 from std.os import abort
@@ -1736,6 +1736,10 @@ def mogg_async_check_task_error(mut error: Optional[Error]) raises:
         raise error.take()
 
 
+# Starts every error `mogg_format_kernel_error` formats.
+comptime _KERNEL_ERROR_HEADER = 'An error occurred in kernel named "'
+
+
 @register_internal("mogg.raise")
 @inline(.never)
 def mogg_format_kernel_error(
@@ -1750,10 +1754,7 @@ def mogg_format_kernel_error(
     and eventually caught by the outer MGP region's except handler.
     """
     var msg = (
-        String('An error occurred in kernel named "')
-        + kernel_name
-        + '":\n'
-        + String(error)
+        String(_KERNEL_ERROR_HEADER) + kernel_name + '":\n' + String(error)
     )
     if fusion_info:
         msg += String(t"\n\nFusion info:\n{fusion_info}")
@@ -1771,12 +1772,16 @@ def mogg_format_region_error(
     """Format a region error with the entry point name prefix.
 
     Called from MGP ABI stub except handlers after catching a kernel error.
+    A kernel error already names its kernel, so it passes through as is.
     """
+    var message = String(error)
+    if message.startswith(_KERNEL_ERROR_HEADER):
+        return Error(message^)
     return Error(
         String('An error occurred in kernel entry point named "')
         + region_name
         + '":\n'
-        + String(error)
+        + message
     )
 
 

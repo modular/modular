@@ -2887,6 +2887,13 @@ async def openai_create_embeddings(
         # Admission was rejected (full worker queue); let the central handler
         # map it to HTTP 429 rather than the generic 500 below.
         raise
+    except InputError as e:
+        # The tokenizer rejects a bad input here, such as a prompt that is
+        # too long or holds an out-of-range token id. That is a client fault.
+        logger.warning(
+            "Input validation error in request %s: %s", request_id, str(e)
+        )
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.exception(
             "Exception during response generation in request %s", request_id

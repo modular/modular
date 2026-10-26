@@ -481,7 +481,7 @@ def smallm_streaming_matmul[
                     ceildiv(n, _TILE_N), max_grid_blocks
                 ) if a_in_regs else ceildiv(ceildiv(n, _TILE_N), col_tiles)
             ),
-            block_dim=warps_per_block * WARP_SIZE,
+            block_dim=warps_per_block * ctx.default_device_info.warp_size,
         )
 
     # Register-resident A pays 4 VGPRs per k-chunk, so gate it to shallow

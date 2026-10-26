@@ -23,6 +23,7 @@ from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.pipelines.lib.interfaces.pipeline_model import (
     ModelLoadContext,
 )
+from max.pipelines.lib.pipeline_parallel import stage_layers
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.pipelines.speculative import DraftAliases, validate_draft_state_dict
 
@@ -86,9 +87,13 @@ class Gemma4AssistantDraftArchConfig(Gemma4AssistantConfig):
             backbone_hidden_size=target_text.hidden_size,
             devices=list(sliding.devices),
         )
+        # A pipeline stage's caches hold only its own layers, so the
+        # assistant finds the last sliding and full layers among those.
+        layer_types = list(target_text.layer_types)
+        layers = stage_layers(context.pipeline_config, len(layer_types))
         draft = Gemma4Assistant(
             config,
-            target_layer_types=list(target_text.layer_types),
+            target_layer_types=layer_types[layers.start : layers.stop],
             target_sliding_kv_params=sliding,
             target_global_kv_params=full,
         )

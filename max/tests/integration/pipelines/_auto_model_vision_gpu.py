@@ -138,6 +138,34 @@ def check_text_rows(model: AutoModel) -> None:
     assert "Paris" in new_text
 
 
+def check_pil_image_rows(model: AutoModel) -> None:
+    """Checks that a PIL image row matches the row from its PNG bytes."""
+    messages = [
+        [
+            TextGenerationRequestMessage(
+                role="user",
+                content=[
+                    ImageContentPart(),
+                    TextContentPart(text="Describe this image."),
+                ],
+            )
+        ]
+    ]
+    png = _red_png()
+    outputs = [
+        model.generate(
+            messages=messages,
+            images=[[row_image]],
+            max_new_tokens=MAX_NEW_TOKENS,
+            top_k=1,
+        )
+        for row_image in (Image.open(io.BytesIO(png)), png)
+    ]
+    from_pil, from_bytes = outputs
+    assert from_pil.prompt_lengths == from_bytes.prompt_lengths
+    assert from_pil.sequences == from_bytes.sequences
+
+
 def check_image_rows(model: AutoModel) -> None:
     """Checks a red image row and a text row against the oracle.
 

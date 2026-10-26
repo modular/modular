@@ -45,6 +45,10 @@ _FILECHECK_TESTS = [
 _CONSTRAINTS = {
     "test_activations.mojo": ["@platforms//os:linux"],
     "test_top_k.mojo": ["@platforms//os:linux"],  # TODO: Fix on macOS
+    # TODO: This test predates the `Coord` migration of the layout package and
+    # does not build against it (nor against `Layout.row_major` on main). It is
+    # excluded until it is ported.
+    "test_flash_attention.mojo": ["@platforms//:incompatible"],
 }
 
 _FILECHECK_EXTRA_DEPS = {

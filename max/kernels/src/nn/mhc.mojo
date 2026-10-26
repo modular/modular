@@ -462,6 +462,24 @@ def mhc_post_kernel[
 
 
 @inline(.always)
+def mhc_post_block_size[dtype: DType, hidden_size: Int]() -> Int:
+    """Returns the threads per block `mhc_post` takes for `hidden_size`.
+
+    256 where their 16-byte vectors split the hidden axis into whole blocks,
+    else 128.
+
+    Parameters:
+        dtype: Element type of the streams.
+        hidden_size: Width of one stream.
+
+    Returns:
+        The threads per block.
+    """
+    comptime width = 16 // size_of[dtype]()
+    return 256 if hidden_size % (256 * width) == 0 else 128
+
+
+@inline(.always)
 def mhc_post_non_temporal(num_rows: Int, num_cus: Int) -> Bool:
     """Returns whether `mhc_post` marks its accesses non-temporal.
 
@@ -583,6 +601,9 @@ def mhc_post[
             "] with T = ",
             num_rows,
         )
+    # An empty tensor's pointer need not be aligned.
+    if num_rows == 0:
+        return
     # The kernel moves 16-byte vectors along the hidden dimension and reads
     # each token's coefficients as one contiguous vector.
     if not (
@@ -597,8 +618,6 @@ def mhc_post[
             "mhc_post needs unit inner strides, 16-byte aligned rows of"
             " streams/y/output and contiguous rows of post and comb"
         )
-    if num_rows == 0:
-        return
 
     var gpu_ctx = context
     var num_cus = gpu_ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)

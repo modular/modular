@@ -419,13 +419,13 @@ computeDefaultParamsDict(KernelDeclFunctionAdaptor *fnAdaptor) {
 }
 
 ErrorOr<InferredParameters> inferKernelParameters(
-    KernelDeclAdaptor &adaptor, llvm::StringRef funcLabel,
+    KernelDeclAdaptor &adaptor, KernelFunctionKind kind,
     std::function<ErrorOr<MojoValue>(StringRef)> &&inferCallback) {
   KernelDeclFunctionAdaptor *fnAdaptor =
-      const_cast<KernelDeclFunctionAdaptor *>(
-          adaptor.getFunctionByLabel(funcLabel));
-  ASSERT_STREAM(fnAdaptor,
-                "Function label '" << funcLabel << "' not found in adaptor");
+      const_cast<KernelDeclFunctionAdaptor *>(adaptor.getFunction(kind));
+  ASSERT_STREAM(fnAdaptor, "Kernel has no '"
+                               << stringifyKernelFunctionKind(kind)
+                               << "' function");
 
   // Each variant (execute / elementwise / shape / build_graph) has its own
   // param list, since signatures differ (e.g. elementwise omits
@@ -441,7 +441,7 @@ ErrorOr<InferredParameters> inferKernelParameters(
   // Defaults are declared on the execute signature (`execute_device`'s, for a
   // declarative kernel), except that `execute_configuration` declares its own.
   KernelDeclFunctionAdaptor *defaultsFn =
-      funcLabel == kMoggExecuteConfigurationFunctionLabel
+      kind == KernelFunctionKind::ExecuteConfiguration
           ? fnAdaptor
           : (adaptor.executeFunction ? &*adaptor.executeFunction : nullptr);
   mlir::DictionaryAttr defaultParams = computeDefaultParamsDict(defaultsFn);

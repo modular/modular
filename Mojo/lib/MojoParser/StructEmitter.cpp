@@ -1565,9 +1565,9 @@ static CValue emitEnumInitCall(IREmitter &emitter, ASTDecl &enumDecl,
   TypedAttr caseType = getEnumCaseTypeValue(enumDecl, caseIndex);
   if (!indexValue || !caseType)
     return fail();
-  OverloadSet overloads = OverloadSet::lookup(
-      enumDecl, selfType, kEnumInitName, node, CallSyntax::kMethodCallSynthetic,
-      /*contextualType=*/selfType);
+  OverloadSet overloads =
+      OverloadSet::lookup(enumDecl, selfType, kEnumInitName, node,
+                          CallSyntax::kMethodCallSynthetic);
   if (!overloads) {
     emitter.shared.emitError(node->getLoc())
         << "internal error: enum has no '" << kEnumInitName

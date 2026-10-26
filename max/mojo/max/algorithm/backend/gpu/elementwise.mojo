@@ -14,7 +14,6 @@
 
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    WARP_SIZE,
     block_idx,
     grid_dim,
     thread_idx,
@@ -867,7 +866,7 @@ def _elementwise_impl_gpu[
 
     # Round down to the warp/wavefront size for correct hardware alignment
     # on both NVIDIA (warp=32) and AMD (wavefront=64).
-    comptime warp_size = WARP_SIZE
+    comptime warp_size = hw_info.warp_size
     comptime default_block_size = (
         128 if ctx.default_device_info
         == B200 else block_size_unrounded - (block_size_unrounded % warp_size)
@@ -1023,7 +1022,7 @@ def _dual_elementwise_impl_gpu[
     ), "the sm_count and thread_count must be known"
 
     comptime block_size_unrounded = registers_per_block // registers_per_thread
-    comptime warp_size = WARP_SIZE
+    comptime warp_size = hw_info.warp_size
     comptime default_block_size = (
         128 if ctx.default_device_info
         == B200 else block_size_unrounded - (block_size_unrounded % warp_size)

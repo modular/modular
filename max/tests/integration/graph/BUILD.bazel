@@ -32,11 +32,13 @@ _CPU_ONLY_TESTS = [
 
 # Tests with their own targets due to special configurations
 _SEPARATE_TARGET_TESTS = [
+    "test_mega_ffn_amd_gpu.py",
     "test_advanced_indexing.py",
     "test_buffer_create_init.py",
     "test_buffer_create_init_gpu.py",
     "test_debug_config.py",
     "test_debug_config_integration.py",
+    "test_device_graph_side_stream_reclaim.py",
     "test_device_graph_synthesis.py",
     "test_engine_device_graph.py",
     "test_execution_spans.py",
@@ -62,12 +64,15 @@ _GRAPH_COMMON_DATA = [
     "//max/tests/integration/Inputs/kernel_override_ops",
     "//max/tests/integration/Inputs/kernel_verification_ops",
     "//max/tests/integration/Inputs/test_user_op",
+    "//max/tests/integration/graph/testdata/bad_kernel_ops",
+    "//max/tests/integration/graph/testdata/bad_kernel_ops:__init__.mojo",
     "//max/tests/integration/graph/testdata/compile_config_ops",
     "//max/tests/integration/graph/testdata/counter_ops",
     "//max/tests/tests/graph/testdata",
 ]
 
 _GRAPH_COMMON_ENV = {
+    "MODULAR_BAD_KERNEL_OPS_PATH": "$(rootpath //max/tests/integration/graph/testdata/bad_kernel_ops)",
     "MODULAR_COUNTER_OPS_PATH": "$(rootpath //max/tests/integration/graph/testdata/counter_ops)",
     "MODULAR_KERNEL_OVERRIDE_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_override_ops)",
     "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
@@ -156,6 +161,7 @@ modular_py_test(
     precompile_mefs = True,
     precompile_shards = {
         "test_mamba2_fused_inputs.py": 4,
+        "test_resize_linear.py": 4,
         "test_resize_nearest.py": 8,
     },
     tags = [
@@ -355,6 +361,38 @@ modular_py_test(
         "gpu",
     ],
     target_compatible_with = ["//:amd_gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("hypothesis"),
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "mega_ffn_amd_tests",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_mega_ffn_amd_gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    gpu_constraints = ["//:mi355_gpu"],
+    # MI355-only: the op's MegaFFN is the gfx950 decode kernel.
+    precompile_mefs = True,
+    tags = [
+        # Persistent MegaFFN grids that share a GPU can block each other's dispatch.
+        "exclusive-if-local",
+        "gpu",
+    ],
+    # Needs mo.grouped.ffn.block.scaled.amd, registered only by the
+    # closed-source kernels.
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
@@ -578,6 +616,35 @@ modular_py_test(
         "//conditions:default": [],
     }),
     precompile_mefs = True,
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("hypothesis"),
+        requirement("numpy"),
+    ],
+)
+
+# A small VMM budget with fine granules, so filling the free budget after a
+# capture is cheap and the allocator's reuse of released memory is visible.
+modular_py_test(
+    name = "test_device_graph_side_stream_reclaim",
+    srcs = [
+        "conftest.py",
+        "test_device_graph_side_stream_reclaim.py",
+    ],
+    env = {
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE": "2147483648",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM": "1",
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB": "2",
+    },
+    # TODO(CENG-1259): Run on AMD too once HIP keeps side-stream views alive
+    # after capture; the fix this test covers is CUDA only.
+    gpu_constraints = ["//:nvidia_gpu"],
     tags = [
         "gpu",
     ],

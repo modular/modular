@@ -39,7 +39,7 @@ import statistics
 from typing import Any
 
 #: Datasets this module can normalize.
-DATASETS = ("gpqa_diamond", "taubench_airline")
+DATASETS = ("gpqa_diamond", "taubench_airline", "vgi_bench")
 
 #: Share of questions that may share one correct-answer letter before the score
 #: stops measuring knowledge. Four options, so chance is 0.25; anything past
@@ -259,6 +259,16 @@ def parse_openbench_log(
         "harness": task_metadata.get("harness", "openbench"),
         "harness_commit": task_metadata.get("harness_commit"),
         "dataset_revision": task_metadata.get("dataset_revision"),
+        # Set by tasks that, like the harness, send media from a manifest: two
+        # runs saw the same videos only if they record the same hash.
+        "media_manifest_hash": task_metadata.get("media_manifest_hash"),
+        # The harness scores a request the server rejected (a 400 for an
+        # unfetchable video, say) as a wrong answer rather than an error, so
+        # these are in the accuracy but not in `errors`.
+        "model_errors_scored_wrong": sum(
+            str(row.get("explanation") or "").startswith("Model error:")
+            for row in rows
+        ),
         "harness_status": log.get("status"),
         "task": eval_meta.get("task"),
         "dataset_name": dataset.get("name"),
@@ -582,25 +592,39 @@ def _enforce_error_budget(summary: dict[str, Any]) -> None:
     Mirrors :func:`eval_common.enforce_error_budget`, including the
     ``EVAL_MAX_ERROR_RATE`` override, so an endpoint that rejects most requests
     cannot report a passing-looking 0.0.
+
+    Requests the server rejected are held to the same budget. They score 0 in
+    the accuracy, as the harness scores them, so they never reach ``errors``;
+    without this check a server that refuses most videos reports a deflated
+    score and exits 0.
     """
     total = summary.get("total")
-    errors = summary.get("errors")
-    if not isinstance(total, int) or not isinstance(errors, int) or total <= 0:
+    if not isinstance(total, int) or total <= 0:
         return
     budget = float(
         os.environ.get("EVAL_MAX_ERROR_RATE") or DEFAULT_MAX_ERROR_RATE
     )
     if budget <= 0:
         return
-    rate = errors / total
-    if rate <= budget:
-        return
-    print(
-        f"::error::{errors}/{total} samples errored ({rate:.1%}), above the "
-        f"{budget:.0%} budget. Errors score as incorrect, so this run's score "
-        f"reflects infrastructure, not model quality."
-    )
-    raise SystemExit(1)
+    errors = summary.get("errors")
+    if isinstance(errors, int) and errors / total > budget:
+        print(
+            f"::error::{errors}/{total} samples errored "
+            f"({errors / total:.1%}), above the {budget:.0%} budget. Errors "
+            "score as incorrect, so this run's score reflects infrastructure, "
+            "not model quality."
+        )
+        raise SystemExit(1)
+    rejected = summary.get("model_errors_scored_wrong")
+    if isinstance(rejected, int) and rejected / total > budget:
+        print(
+            f"::error::the server rejected {rejected}/{total} requests "
+            f"({rejected / total:.1%}), above the {budget:.0%} budget. They "
+            "score 0 as the harness scores them, so this run's score reflects "
+            "the endpoint, not model quality. Check the explanations in "
+            "results.jsonl."
+        )
+        raise SystemExit(1)
 
 
 def parse_reference(

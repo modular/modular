@@ -1,0 +1,100 @@
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "laguna_modulev3",
+    size = "medium",
+    # The RoPE test builds both architectures' tables for every attention type
+    # and lands just over medium's 300s.
+    timeout = "long",
+    srcs = glob(
+        ["test_*.py"],
+        exclude = ["test_logits_parity*.py"],
+    ),
+    data = ["//max/tests/integration/architectures/laguna:checkpoint_configs"],
+    # Imported dynamically by max._interpreter, never statically; without it
+    # every eager op in the RoPE test falls back to a full graph compile.
+    ignore_extra_deps = ["//max/python/max/_interpreter_ops"],
+    imports = ["."],
+    # Importing max.pipelines.architectures.laguna pulls in the heavy
+    # max.pipelines import chain, which times out during pytest collection on
+    # contended macOS BuildBuddy workers; see the graph architecture's tests.
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/laguna",
+        "//max/python/max/pipelines/architectures/laguna_modulev3",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_library(
+    name = "laguna_parity",
+    testonly = True,
+    srcs = ["laguna_parity.py"],
+    data = ["//max/tests/integration/architectures/laguna:checkpoint_configs"],
+    imports = ["."],
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/laguna",
+        "//max/python/max/pipelines/architectures/laguna_modulev3",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/test_common:mocks",
+        "//max/tests/integration/test_common:simple_kv_cache",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "laguna_modulev3_gpu",
+    size = "large",
+    srcs = ["test_logits_parity.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    imports = ["."],
+    tags = ["gpu"],
+    deps = [":laguna_parity"],
+)
+
+modular_py_test(
+    name = "laguna_modulev3_nvfp4_gpu",
+    size = "large",
+    srcs = ["test_logits_parity_nvfp4.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    # The NVFP4 grouped MoE matmul is SM100-only.
+    gpu_constraints = ["//:b200_gpu"],
+    imports = ["."],
+    tags = ["gpu"],
+    deps = [":laguna_parity"],
+)

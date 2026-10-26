@@ -116,6 +116,7 @@ def test_recorder_reports_window_aggregates_per_device() -> None:
     a = snapshot["GPU-a"]
     assert a.utilization.gpu_usage_percent == 85
     assert a.utilization.memory_activity_percent == 20
+    assert a.memory is not None
     assert a.memory.used_bytes == 1000 * _MIB
     assert a.memory.free_bytes == 3000 * _MIB
     assert a.memory.total_bytes == 4000 * _MIB

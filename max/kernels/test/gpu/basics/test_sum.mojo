@@ -16,7 +16,6 @@ from std.math import ceildiv, iota
 from max.gpu import global_idx
 from max.gpu.primitives import warp
 from max.gpu.primitives import block
-from max.gpu.globals import WARP_SIZE
 from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 
@@ -38,8 +37,8 @@ def warp_sum_kernel[
 
 
 def test_warp_sum(ctx: DeviceContext) raises:
-    comptime size = WARP_SIZE
-    comptime BLOCK_SIZE = WARP_SIZE
+    comptime size = ctx.default_device_info.warp_size
+    comptime BLOCK_SIZE = size
 
     # Allocate and initialize host memory
     var in_host = ctx.enqueue_create_host_buffer[dtype](size)
@@ -95,7 +94,7 @@ def block_sum_kernel[
 def test_block_sum(ctx: DeviceContext) raises:
     # Initialize a block with several warps. The sum for each warp is tested
     # above.
-    comptime BLOCK_SIZE = WARP_SIZE * 2
+    comptime BLOCK_SIZE = ctx.default_device_info.warp_size * 2
     comptime size = BLOCK_SIZE
 
     # Allocate and initialize host memory

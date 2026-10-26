@@ -262,6 +262,21 @@ ParamInf::inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx,
   return failure(); // TODO: Improve this.
 }
 
+/// Returns true if argument `argIdx` of a call to `declIfKnown` is the
+/// receiver of a struct method, typed as the method's own struct.
+static bool isSelfArg(ASTDecl *declIfKnown, size_t argIdx, CallSyntax syntax,
+                      ASTType expectedType, SharedState &shared) {
+  if (syntax == CallSyntax::kParamBindings || argIdx != 0)
+    return false;
+  auto *fnDecl = dyn_cast_if_present<DefASTDecl>(declIfKnown);
+  if (!fnDecl)
+    return false;
+  FnOp fnOp = fnDecl->getOp();
+  if (fnOp.getIsStatic() || !isa<StructDeclOp>(fnOp->getParentOp()))
+    return false;
+  return expectedType.getDecl(shared) == fnDecl->getParentDecl();
+}
+
 /// Core type matching logic for parameter inference, handling the expected
 /// type without convention-specific processing. This function is called after
 /// the expected type has been adjusted for calling conventions.
@@ -340,7 +355,19 @@ ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand, size_t argIdx,
       // as much of a mismatch as a normal implicit conversion.  This enables
       // exact matches to be more specific, and literals to be more compatible
       // than an actual conversion.
-      ++numImplicitConversions;
+      //
+      // FIXME: We +2 on the counter when the current arg is self purely for
+      // backward compatibility reason: To support custom self type, we used to
+      // enter the function twice for self argument, so the extra count is to
+      // compensate for the old behavior.
+      // We should really instead have two separate overload sets for
+      // non-materializable and always evaluate the overloads collected from the
+      // type itself before evaluating the set collected from the nmtarget type.
+      // See `OverloadSet::lookup`.
+      if (isSelfArg(declIfKnown, argIdx, syntax, expectedType, getShared()))
+        numImplicitConversions += 2;
+      else
+        numImplicitConversions += 1;
       return success();
     }
 
@@ -1680,63 +1707,6 @@ LogicalResult CallParamInf::inferResultSlot(RefType expectedRef, size_t argIdx,
   return success();
 }
 
-/// Given an incomplete parameter binding set, try to infer parameters on Self
-/// of a method from the first argument.
-LogicalResult CallParamInf::inferCTADParams() {
-  // Consider "conditional conformance" cases like:
-  //     struct X[A: AnyType]:
-  //       def foo[B: Movable](self: X[B]): ...
-  //
-  // When resolving a function call like `someX.foo()`, we install the
-  // bindings for 'A' from the typeof(someX) when resolving the
-  // AttributeRefExpr and then infer 'B' from someX again.
-  //
-  // However, when we have something like `X.foo(someX)` we cannot install the
-  // bindings for 'A' at AttributeRef resolution time, and 'someX' is only
-  // bound by parameter inference to 'B'.  Notice this and infer the parameter
-  // directly from A.  This is also important for operator resolution, which
-  // works effectively the same way.
-  //
-  // TODO: Provide a first class representation for conditional conformance
-  // that doesn't have us shadowing parameters like this!
-
-  // We can only do this if we have an argument.
-  assert(!callOperands.empty() && !callOperands[0].keyword &&
-         "init should have positional self argument");
-
-  auto selfConvention = calleeSignature.getArgConventions()[0];
-  ASTType declaredSelfType = RefType::stripRefConvention(
-      calleeSignature.getArgument(0), selfConvention);
-
-  // Get the ASTDecl for the declared self type.  This will give us the struct
-  // that we are referring to without bound parameters.
-  auto *decl =
-      cast_or_null<StructASTDecl>(declaredSelfType.getDecl(getShared()));
-  if (!decl)
-    return success();
-
-  // Get the Self type, with parameters bound to the structs CTAD parameters.
-  ASTType selfType = decl->getSelfType();
-  if (!selfType)
-    return success();
-
-  // We need to convert named parameters like "T", which are ParamDeclRefAttr
-  // into ParamIndexRefAttr(0) style of representation.
-  IndexRefRemapper remapper(decl->getOp().getParams(), /*resultParams*/ {});
-  selfType = remapper.replace(selfType.mlirType);
-
-  // If passing self by reference, wrap the Self type with the RefType
-  // paraphernalia like origins.
-  if (hasAddress(selfConvention))
-    selfType = sugarCast<RefType>(calleeSignature.getArgument(0))
-                   .getWithElement(selfType);
-
-  // Infer the first operand against this type - it was presumably already
-  // inferred against the methods declared type of 'self' as well.
-  return inferOneOperand(callOperands[0], /*operandIdx*/ 0, /*argIdx*/ 0,
-                         selfType, selfConvention);
-}
-
 LogicalResult CallParamInf::inferOptionalLiteralSize() {
   if (callOperands.values.empty())
     return success();
@@ -2285,32 +2255,6 @@ VerifiedParamBindings CallParamInf::inferForCall() {
     diag << "assigning " << numOperands << " operand" << plural(numOperands)
          << " to an unresolvable variadic pack argument";
     return {};
-  }
-
-  // Check to see if this is a CTAD parameter - a parameter on the struct
-  // that encloses the method.  Consider "conditional conformance" cases like:
-  //     struct X[A: AnyType]:
-  //       def foo[B: Movable](self: X[B]): ...
-  // When resolving a function call like `someX.foo()`, we install the
-  // bindings for 'A' from the typeof(someX) when resolving the
-  // AttributeRefExpr and then infer 'B' from someX again.
-  //
-  // However, when we have something like `X.foo(someX)` we cannot install the
-  // bindings for 'A' at AttributeRef resolution time, and 'someX' is only
-  // bound by parameter inference to 'B'.  Notice this and infer the parameter
-  // directly from A.  This is also important for operator resolution, which
-  // works effectively the same way.
-  //
-  // TODO: Provide a first class representation for conditional conformance
-  // that doesn't have us shadowing parameters like this!
-  // A trait member's enclosing declaration is a trait rather than a struct, so
-  // the struct-shaped CTAD inference never applies to one.
-  if (auto *fnDecl = dyn_cast_if_present<DefASTDecl>(declIfKnown)) {
-    auto fnOp = fnDecl->getOp();
-    if (!fnOp.getIsStatic() && isa<StructDeclOp>(fnOp->getParentOp())) {
-      if (failed(inferCTADParams()))
-        return {};
-    }
   }
 
   // Fills in any inferrable origin parameters.

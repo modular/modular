@@ -949,7 +949,7 @@ struct SM100TensorAccumulator[
         Self.accum_t,
         Self.operand_t,
         Self.operand_t,
-        Index[dtype=DType.uint32](Self.MMA_M, Self.MMA_N),
+        (UInt32(Self.MMA_M), UInt32(Self.MMA_N)),
         transpose_b=Self.transpose_b,
     ]()
 
@@ -4033,10 +4033,10 @@ struct FA4MiscMBars[
             When False (default), the non-WS full-depth-tile count applies and
             the layout is byte-identical.
         crossp: Whether cross-stage P applies to the config this type was
-            built from, i.e. `FA4Config.crossp_on()`. Threaded in rather than
-            read from the `FA4_TMEM_CROSS_P` define, because that define
-            defaults ON and this type cannot see the config fields that scope
-            it to the MHA 2Q shape. False (default) keeps the mbar layout
+            built from, i.e. `FA4Config.crossp_on()`. Threaded in rather
+            than read off the config's `cross_p` parameter, because this
+            type cannot see the config fields that scope it to the MHA 2Q
+            shape. False (default) keeps the mbar layout
             byte-identical to cross-P-off.
 
     Memory layout (count=128 first, then count=1):
@@ -4099,9 +4099,9 @@ struct FA4MiscMBars[
     # 2Q + non-WS only -- mutually exclusive with Publish (num_q==1 only), so
     # appending after it never collides.
     # `crossp` is `FA4Config.crossp_on()`, threaded in by whoever built this
-    # type, so this count and `FA4Config.smem_used` always agree. Do NOT read
-    # the `FA4_TMEM_CROSS_P` define here: it defaults ON, and this struct
-    # cannot see the config fields that scope it to the MHA 2Q shape.
+    # type, so this count and `FA4Config.smem_used` always agree. Do NOT
+    # read the config's `cross_p` parameter here: it defaults ON, and this
+    # struct cannot see the config fields that scope it to the MHA 2Q shape.
     comptime CrossP_enabled: Bool = (
         Self.crossp and Self.num_q == 2 and not Self.use_ws
     )

@@ -188,7 +188,8 @@ ArrayRef<ParamDeclAttr> FileModuleOp::getInputParams() { return {}; }
 void PackageOp::build(OpBuilder &builder, OperationState &state,
                       StringAttr name) {
   build(builder, state, name, /*sym_visibility=*/nullptr, /*docString=*/{},
-        /*dependencies=*/{}, /*externLLVMBitcodeModules=*/{});
+        /*dependencies=*/{}, /*externLLVMBitcodeModules=*/{},
+        /*isNamespace=*/nullptr);
   assert(state.regions.size() == 1);
   state.regions.back()->push_back(new Block());
 }
@@ -1976,12 +1977,12 @@ LogicalResult RefUpcastOp::verify() {
 //===----------------------------------------------------------------------===//
 
 void RefFromPointerOp::build(OpBuilder &builder, OperationState &result,
-                             Value pointer, TypedAttr origin, bool startsUninit,
-                             bool endsUninit) {
+                             Value pointer, TypedAttr origin, StringAttr name,
+                             bool startsUninit, bool endsUninit) {
   auto ptr = cast<PointerType>(pointer.getType());
   auto refType =
       RefType::get(ptr.getElementType(), origin, ptr.getAddressSpace());
-  build(builder, result, refType, pointer, startsUninit, endsUninit);
+  build(builder, result, refType, pointer, name, startsUninit, endsUninit);
 }
 
 //===----------------------------------------------------------------------===//

@@ -47,6 +47,7 @@ from nn.topk import (
 from std.testing import assert_almost_equal, assert_equal, assert_true
 
 from std.utils import IndexList
+from std.utils.index import Index
 
 comptime DEBUG_BENCH = False
 comptime PRINT_OUTPUT = False
@@ -104,9 +105,9 @@ def test_case_batched[
     var out_idx_len = 1 if sampling else K
 
     # Allocate host memory
-    var in_shape = IndexList[2](batch_size, N)
-    var out_vals_shape = IndexList[2](batch_size, K)
-    var out_idxs_shape = IndexList[2](batch_size, out_idx_len)
+    var in_shape = Index(batch_size, N)
+    var out_vals_shape = Index(batch_size, K)
+    var out_idxs_shape = Index(batch_size, out_idx_len)
 
     var in_host_ptr = ctx.enqueue_create_host_buffer[dtype](
         in_shape.flattened_length()
@@ -138,7 +139,7 @@ def test_case_batched[
     var num_blocks_per_input_: Int = num_blocks_per_input.or_else(
         ceildiv(N, block_size)
     )
-    var local_topk_shape = IndexList[2](batch_size, num_blocks_per_input_ * K)
+    var local_topk_shape = Index(batch_size, num_blocks_per_input_ * K)
     var device_local_topk_vals = ctx.enqueue_create_buffer[dtype](
         local_topk_shape.flattened_length()
     )

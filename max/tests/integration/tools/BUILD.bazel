@@ -174,6 +174,7 @@ modular_py_binary(
         ":run_models",
         "//max/python/max/_entrypoints",
         "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/laguna",
         "//max/python/max/pipelines/architectures/llama4",
         "//max/python/max/pipelines/architectures/nemotron_h",
         "//max/python/max/pipelines/architectures/nemotron_h_modulev3",

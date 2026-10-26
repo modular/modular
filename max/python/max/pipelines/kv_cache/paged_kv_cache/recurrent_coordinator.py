@@ -66,6 +66,9 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
     Hashless until its copy lands, so without this it reads as the live block.
     """
 
+    unfilled: set[RequestID] = field(default_factory=set, kw_only=True)
+    """Requests whose live block still needs filling before its first forward."""
+
     def _loading(self, req_id: RequestID) -> LittleKVCacheBlock | None:
         """Returns the loading checkpoint, forgetting it once published."""
         block = self.loading.get(req_id)
@@ -206,6 +209,8 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
                 f"No blocks left for the recurrent state of {req_id}"
             )
         live = pool.alloc_block(leaf_id) if draws_live else row.pop()
+        if draws_live:
+            self.unfilled.add(req_id)
         if draws_successor:
             self.successors[req_id] = pool.alloc_block(leaf_id)
 
@@ -217,6 +222,7 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
     def release(self, req_id: RequestID, replica_idx: int) -> None:
         """Frees every block the request holds, its successor too."""
         self.loading.pop(req_id, None)
+        self.unfilled.discard(req_id)
         successor = self.successors.pop(req_id, None)
         if successor is not None:
             self.pools[replica_idx].free_block(successor)
@@ -240,6 +246,8 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
         self.loading.pop(req_id, None)
         # Nothing live means nothing to refit around, so the row stays empty.
         if live is not None:
+            # A kept live block is rewound with the row, so it is filled again.
+            self.unfilled.add(req_id)
             null_block = pool.null_little_blocks[leaf_id]
             while len(row) < max(num_committed_blocks - 1, 0):
                 row.append(null_block)
@@ -286,14 +294,17 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
     ) -> Mapping[str, tuple[int | None, int]]:
         """Returns the block this forward resumes from and the one it fills.
 
-        Filled from a checkpoint when the row holds one: what a prefix hit
-        claimed or loaded, or the predecessor a checkpoint published. Filled
-        with zeros when the request has processed nothing and matched no hit,
-        since a drawn block holds whatever its last request wrote.
+        Only a newly drawn live block needs filling: from the checkpoint a
+        prefix hit claimed or loaded, or with zeros when the request has
+        processed nothing and matched no hit. Once the fill is returned the
+        block counts as filled, since the caller copies it in before anything
+        reads the block.
 
         Empty once the request runs in a block it has written itself.
         """
         del replica_idx  # the blocks name themselves; the caller holds the pool
+        if ctx.request_id not in self.unfilled:
+            return {}
         row = self.rows.get(ctx.request_id)
         runs_in = self.live_blocks(ctx.request_id)
         if row is None or runs_in is None:
@@ -306,6 +317,7 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
         if published is not None or ctx.tokens.processed_length == 0:
             src = None if published is None else published.bid
             fills[leaf_id] = (src, runs_in[leaf_id])
+        self.unfilled.discard(ctx.request_id)
         return fills
 
     @traced

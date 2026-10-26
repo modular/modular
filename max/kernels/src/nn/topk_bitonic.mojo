@@ -1149,7 +1149,9 @@ comptime _HSEL_SCAN_ITEMS: Int = 8
 # back to refining from the row, which is exact and only slower.
 comptime _HSEL_WARPS: Int = _PTOPK_BLOCK // WARP_SIZE
 comptime _HSEL_WARP_CAP: Int = 1024
-comptime _HSEL_CAND_CAP: Int = _HSEL_WARP_CAP * _HSEL_WARPS
+comptime _HSEL_CAND_CAP: Int = _HSEL_WARP_CAP * (
+    _PTOPK_BLOCK // DeviceContext.default_device_info.warp_size
+)
 comptime _HSEL_SMEM_BYTES: Int = _HSEL_CAND_CAP * size_of[Int32]()
 
 # Every row past the single-block tier goes to the select, including the rows
@@ -1872,15 +1874,12 @@ def _histsel_topk_impl[
                                                 wcur_p, UInt32(1)
                                             )
                                         )
-                                        # Wrap instead of testing the cap: a warp
-                                        # that overruns its region turns `parked`
-                                        # off for the whole block below, so nothing
-                                        # reads `cand` afterwards and what the
-                                        # wrapped slots hold cannot matter.
-                                        cand[
-                                            wbase
-                                            + (slot & (_HSEL_WARP_CAP - 1))
-                                        ] = Int32(base + j)
+                                        # A warp that overruns its region turns
+                                        # `parked` off for the whole block below,
+                                        # so nothing reads `cand` afterwards and
+                                        # the overflow can be dropped.
+                                        if slot < _HSEL_WARP_CAP:
+                                            cand[wbase + slot] = Int32(base + j)
                                         if ph[j] <= shi:
                                             _ = Atomic[
                                                 UInt32, scope=BLOCK_SCOPE
@@ -4015,8 +4014,9 @@ def persistent_topk_block_split[
     each producing a sorted top-`_TILE` partial, then merged per row (phase 2).
     All other shapes fall back to `persistent_topk_block` unchanged.
 
-    On SM90+ targets (SM12x excluded), at most `_CTOPK_MAX_ROWS` rows that do
-    not fill the GPU instead take the cluster-cooperative kernel
+    On SM90+ targets (SM12x excluded), up to as many rows as clusters of two
+    keep resident in one wave (`_ctopk_max_rows`) instead take the
+    cluster-cooperative kernel
     (`nn/attention/gpu/nvidia/topk_cluster.mojo`), which spreads each row over
     a thread-block cluster — and only under the
     `ordered=False, deterministic=False` contract, which is all that kernel
@@ -4106,8 +4106,8 @@ def persistent_topk_block_split[
     ):
         comptime if (not ordered) and (not deterministic):
             from nn.attention.gpu.nvidia.topk_cluster import (
-                _CTOPK_MAX_ROWS,
                 _choose_topk_cluster_size,
+                _ctopk_max_rows,
                 topk_cluster_split,
             )
 
@@ -4116,7 +4116,8 @@ def persistent_topk_block_split[
             )
             if (
                 total_seq_len > 0
-                and total_seq_len <= _CTOPK_MAX_ROWS
+                and total_seq_len
+                <= _ctopk_max_rows[ctx.default_device_info.sm_count]()
                 and total_seq_len < sm_count
                 and K <= PERSISTENT_TOPK_MAX_N
             ):

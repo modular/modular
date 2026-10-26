@@ -256,7 +256,9 @@ def _select_pooled_graph(
         layer_idx,
         p.pools_selected,
         p.quant_config.scales_granularity_mnk[2],
-        MHAMaskVariant.NULL_MASK,
+        # Without a causal mask a prefill query spends its pool budget on
+        # pools after it, which the sparse attention's causal mask discards.
+        MHAMaskVariant.CAUSAL_MASK,
         kpool=kpool,
     )
     return mla_kpool_expand_topk(

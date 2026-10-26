@@ -3,26 +3,26 @@ title: Model development overview
 description: Learn the process to bring a trained model from Hugging Face to MAX.
 ---
 
-The **Model development** section explains how to write model architectures that
-MAX doesn't support out of the box. You'll learn how to use the MAX Python API
-to convert trained models from Hugging Face or PyTorch into models that MAX can
-serve.
+MAX includes architecture implementations for a set of models. For a model
+outside that set, you write the architecture yourself with the MAX Python API
+and then serve it like any supported model. The guides here convert trained
+models from Hugging Face or PyTorch into architectures that MAX can load.
 
-While MAX supports multiple modalities (including image and video generation),
-the guides in this section currently focus on transformer-based text generation
-models, as they follow the most stable and established implementation paradigms.
+MAX also supports image and video generation models. The guides here cover
+transformer-based text generation models, which follow the most stable
+implementation pattern.
 
 :::note ModuleV3 API
 
 Use ModuleV3 when porting a new model architecture to MAX. To migrate an
-existing architecture from the Graph API ([`max.graph`](/api/python/graph) and
-[`max.nn`](/api/python/nn)) to ModuleV3, use our
+existing architecture from the Graph API ([`max.graph`](/api/python/graph/) and
+[`max.nn`](/api/python/nn/)) to ModuleV3, use our
 [`/migrate-max-v2-to-v3`](https://github.com/modular/skills/blob/main/migrate-max-v2-to-v3/SKILL.md)
 skill.
 
 :::
 
-## What you implement
+## What a custom architecture contains
 
 MAX provides the serving infrastructure, runtime, and model execution features
 required to run a model in production. When you add support for a new
@@ -48,8 +48,9 @@ MAX provides the following functionality for you:
   endpoint API.
 - **KV cache management**: Paged allocation, cache eviction, prefix caching,
   and chunked prefill.
-- **Parallelism**: Data parallelism, tensor parallelism, weight sharding,
-  collective communication, and device management.
+- **[Parallelism](/serve/parallelism/)**: Data parallelism, tensor
+  parallelism, weight sharding, collective communication, and device
+  management.
 - **Tokenization**: Wrapping Hugging Face tokenizers for the serving loop.
 - **Weight loading**: Reading safetensors and GGUF files from disk or Hugging
   Face Hub.
@@ -58,7 +59,7 @@ MAX provides the following functionality for you:
 
 ## Architecture components
 
-Each model architecture in MAX requires the following five components, each
+Each model architecture in MAX requires these components, each
 supported by a corresponding part of the MAX Python API.
 
 :::note
@@ -72,8 +73,8 @@ that differ.
 
 ### Model graph
 
-You'll use `Module` subclasses to define the graph computation layers, and
-assemble them into a `Graph` object that MAX uses to compile the model.
+You write `Module` subclasses for the layers, and the pipeline model compiles
+the graph those modules describe.
 
 Standard architectures like Llama 3 compose mostly from built-in modules.
 `Linear`, `Embedding`, and `RMSNorm` come from `max.experimental.nn`; `MLP` and
@@ -88,10 +89,10 @@ custom layer](/develop/layers/) for components like these.
 
 ### Weight adapter
 
-You need a simple function that renames Hugging Face checkpoint keys to match
-your `Module` hierarchy. Usually this is simple string replacement: the Llama 3
-adapter strips a `"model."` prefix. The adapter is registered in
-`SupportedArchitecture` and runs once when MAX loads the model.
+You need a function that renames Hugging Face checkpoint keys to match
+your `Module` hierarchy. Usually this is string replacement: the Llama 3
+adapter rewrites a `"model."` prefix to `"language_model."`. The adapter is
+registered in `SupportedArchitecture` and runs once when MAX loads the model.
 
 Learn more in [Weight adapters](/develop/weight-adapters/).
 
@@ -99,20 +100,19 @@ Learn more in [Weight adapters](/develop/weight-adapters/).
 
 This is the central class that builds, compiles, and executes the model graph.
 For models with a KV cache (most LLMs), you'll create it as a subclass of
-`PipelineModelWithKVCache`.
+`ModuleV3PipelineModelWithKVCache`.
 
 When instantiated, the pipeline model receives the `InferenceSession` used at
 runtime and is responsible for:
 
-- **Graph construction**: Assemble `Module` layers, call
-  `load_state_dict(state_dict)` to bind the adapted checkpoint weights, and
-  build the `Graph` object.
-- **Compilation**: Call `session.compile(graph)` to compile the graph into a
-  `CompiledModel`, then `session.init(compiled, weights_registry=state_dict)`
-  to bind weights and produce an executable `Model`.
+- **Graph construction**: `_instantiate_module()` builds the root `Module`, and
+  `graph_specs()` builds it under `F.lazy()` and registers it as the decoder
+  with the adapted checkpoint weights.
+- **Compilation**: The constructor compiles the decoder through `load_graphs()`
+  on the session and stores the result in `model`.
 - **Input preparation**: Convert tokenized requests into graph inputs.
-- **Execution**: Its `execute()` function is called by the serving loop to run
-  the compiled model and return the logits.
+- **Execution**: `execute()` passes `model_inputs.buffers` to the compiled model
+  and returns the logits.
 
 Learn more in [Model pipelines](/develop/pipelines/).
 
@@ -125,18 +125,16 @@ object. The model hyperparameters pass through unchanged: your config class is
 necessary because Hugging Face configs aren't standardized across model families
 (different field names, nesting conventions, derived vs. explicit values).
 
-Learn more in
-[Serve custom model architectures](/develop/serve-custom-model-architectures/).
+Learn more in [Read a model config](/develop/read-model-config/).
 
 ### Architecture registry
 
 Every model architecture needs an `arch.py` file that connects all the pieces.
-
-It's a `SupportedArchitecture` object that registers your model to the
-pipeline system. It wires together your pipeline model class, config class,
-tokenizer, weight adapter, and supported quantization formats. When a user
-serves a model based on a Hugging Face repo ID, MAX looks up this registration
-to find your code.
+It builds one or more `SupportedArchitecture` objects that register your model
+with the pipeline system. A package that `max serve` loads through
+`--custom-architectures` also exposes them as an `ARCHITECTURES` list from its
+`__init__.py`, which [Serve your custom
+model](/develop/serve-custom-model-architectures/) covers.
 
 Learn more in
 [Serve custom model architectures](/develop/serve-custom-model-architectures/).
@@ -172,3 +170,14 @@ their Hugging Face repository ID with `max serve`.
 
 For details, see
 [Contributing new model architectures](https://github.com/modular/modular/blob/main/max/docs/contributing-models.md).
+
+## Next steps
+
+With every component in place, work through the process in order:
+
+- [Model bring-up workflow](/develop/model-bringup-workflow/): the end-to-end
+  port, from package layout to serving.
+- [Bring up a model with AI agent skills](/develop/model-bringup-skills/):
+  automate the port with the MAX skills for coding agents.
+- [Serve a fine-tuned model](/develop/max-pipeline-bring-your-own-model/):
+  serve custom weights when the base architecture is already supported.

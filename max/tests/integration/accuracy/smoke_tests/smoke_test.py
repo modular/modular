@@ -115,6 +115,8 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "nvidia/DeepSeek-V3.1-NVFP4": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_8x_b200.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4__fp8kv": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_fp8kv_8x_b200.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4__mtp": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_mtp_8x_b200.yaml",
+    "poolside/Laguna-S-2.1-NVFP4": "max/pipelines/architectures/laguna/recipes/laguna_s_2_1_nvfp4_1x_b200.yaml",
+    "poolside/Laguna-S-2.1-NVFP4__modulev3": "max/pipelines/architectures/laguna_modulev3/recipes/laguna_s_2_1_nvfp4_1x_b200.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_mtp_tpep_8x_b200.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4__tpep": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tpep_8x_b200.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4__tpep_ar": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tpep_ar_8x_b200.yaml",
@@ -132,6 +134,7 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3": "max/pipelines/architectures/nemotron_h_modulev3/recipes/lightning_nvfp4.yaml",
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3_dspark": "max/pipelines/architectures/nemotron_h_modulev3/recipes/lightning_nvfp4_dspark.yaml",
     "tencent/Hy4-preview-FP8__mtp": "max/pipelines/architectures/hy_v4/recipes/hy4_preview_fp8_tp_ep_8x_b200.yaml",
+    "thinkingmachines/Inkling-Small-NVFP4__modulev3": "max/pipelines/architectures/inkling_modulev3/recipes/inkling_small_nvfp4.yaml",
     "thinkingmachines/Inkling-Small-NVFP4__mtp": "max/pipelines/architectures/inkling/recipes/inkling_small_nvfp4_mtp.yaml",
     "RadixArk/Qwen3.8-27B-NVFP4__mtp": "max/pipelines/architectures/qwen3_5/recipes/qwen38_27b_nvfp4_mtp.yaml",
     "RadixArk/Qwen3.8-27B-NVFP4__dflash2": "max/pipelines/architectures/qwen3_5/recipes/qwen38_27b_nvfp4_dflash2.yaml",
@@ -552,6 +555,10 @@ def get_server_cmd(
         # VMM on 8 GPUs at the default memory budget.
         if gpu_name.startswith("AMD") and gpu_count <= 4:
             env["MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM"] = "1"
+        # Without this, the registry falls back to an unquantized matmul
+        # that rejects the packed checkpoint's weight shapes.
+        if "kimi-k3" in model.casefold() and gpu_name.startswith("AMD"):
+            env["MAX_KIMI_K3_AMD_W4A8"] = "1"
 
     if _inside_bazel():
         assert framework == "max-ci", "bazel invocation only supports max-ci"
@@ -814,6 +821,8 @@ def smoke_test(
                 num_questions=num_questions,
                 disable_timeouts=disable_timeouts,
                 metrics_url=metrics_url,
+                # Mach refreshes /metrics every 2s; wait so reads aren't stale.
+                metrics_delay_s=2 if framework == "mach-ci" else 0,
                 lm_eval_metadata=lm_eval_metadata,
             )
 

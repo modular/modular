@@ -31,6 +31,7 @@ from typing import Any, TextIO
 DATASETS = [
     ("gpqa_diamond", "GPQA-Diamond", "accuracy (MCQ)", "gpqa"),
     ("taubench_airline", "tau2-bench airline", "mean reward", "taubench"),
+    ("vgi_bench", "VGI-Bench", "accuracy (MCQ, video)", "vgi"),
 ]
 
 
@@ -61,6 +62,10 @@ def notes(score: dict[str, Any], dataset: str) -> str:
     flags = []
     if score.get("limit"):
         flags.append("partial (question subset)")
+    if dataset == "vgi_bench" and score.get("model_errors_scored_wrong"):
+        flags.append(
+            f"{score['model_errors_scored_wrong']} rejected requests scored 0"
+        )
     if dataset == "taubench_airline":
         # The runner counts the split, so this needs no knowledge of the
         # dataset size and stays right if upstream changes it.
@@ -158,7 +163,8 @@ def _render_provenance(
     """Writes the knobs that decide whether a score is comparable at all."""
     gpqa = scores.get("gpqa")
     tau = scores.get("taubench")
-    if not gpqa and not tau:
+    vgi = scores.get("vgi")
+    if not gpqa and not tau and not vgi:
         return
     out.write("### Comparability\n\n")
     if gpqa:
@@ -177,6 +183,15 @@ def _render_provenance(
             f"{tau.get('hit_step_cap')} hit the step cap, "
             f"harness `{str(tau.get('harness_commit'))[:12]}`\n"
         )
+    if vgi:
+        out.write(
+            f"- VGI-Bench: dataset `{vgi.get('dataset_name')}` "
+            f"@ `{str(vgi.get('dataset_revision'))[:12]}`, "
+            f"media manifest `{str(vgi.get('media_manifest_hash'))[:12]}`, "
+            f"temperature {vgi.get('temperature')}, "
+            f"reasoning effort {vgi.get('reasoning_effort')}, "
+            f"stop_ratio {vgi.get('stop_ratio')}\n"
+        )
     out.write("\n")
 
 
@@ -185,9 +200,14 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gpqa", help="Path to the GPQA score.json.")
     parser.add_argument("--taubench", help="Path to the tau2 score.json.")
+    parser.add_argument("--vgi", help="Path to the VGI-Bench score.json.")
     args = parser.parse_args(argv)
 
-    scores = {"gpqa": load(args.gpqa), "taubench": load(args.taubench)}
+    scores = {
+        "gpqa": load(args.gpqa),
+        "taubench": load(args.taubench),
+        "vgi": load(args.vgi),
+    }
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary_path:
         with open(summary_path, "a") as f:

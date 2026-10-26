@@ -837,6 +837,7 @@ def _softmax_gpu[
     comptime if not sink and not logsoftmax:
         comptime BLOCK_SIZE = 256
         comptime WARP_ROWS = 4
+        comptime warp_size = ctx.default_device_info.warp_size
 
         # Short inner axes (<32) use a warp-local kernel with one
         # element per lane for coalesced loads. Longer rows stay on the
@@ -845,7 +846,7 @@ def _softmax_gpu[
             use_warp: Bool
         ]() raises {var num_rows, var shape_il, var output, var sm_count, imm}:
             comptime if use_warp:
-                comptime WARP_BLOCK_SIZE = WARP_SIZE * WARP_ROWS
+                comptime WARP_BLOCK_SIZE = warp_size * WARP_ROWS
                 var warp_num_blocks = min(
                     ceildiv(num_rows, WARP_ROWS),
                     sm_overprovision_factor * sm_count,
@@ -1003,7 +1004,7 @@ def _softmax_gpu[
                     dispatch,
                 )
 
-        unswitch(shape_il[axis] <= WARP_SIZE, dispatch_warp_or_block)
+        unswitch(shape_il[axis] <= warp_size, dispatch_warp_or_block)
     else:
         # Fallback: sink-attention or logsoftmax variants stay on the legacy
         # 3-pass kernel until those variants are added to the online path.
@@ -1595,8 +1596,8 @@ def _online_softmax_iter_for_mma_output[
             ](score_frag_rowmax[col_tile, row])
 
     var coords = idx2crd[warp_layout](lane_id)
-    var lane_contains_first_column = coords[1] == 0
-    var lane_row = coords[0]
+    var lane_contains_first_column = Int(coords[1]) == 0
+    var lane_row = Int(coords[0])
 
     # If a row is split across multiple warps, communicate via shared memory
     # to achieve the rowwise max.

@@ -20,7 +20,6 @@ introducing a comm → nn → comm circular dependency.
 
 from std.math import rsqrt
 from std.sys import align_of, simd_width_of
-from max.algorithm.functional import _get_start_indices_of_nth_subvolume
 from max.gpu import WARP_SIZE, block_idx, thread_idx
 import max.gpu.primitives.warp as warp
 from max.gpu.host import DeviceContext
@@ -33,7 +32,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type
 
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
@@ -81,13 +80,13 @@ def rms_norm_fused_fp8[
     rank: Int,
     InputFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int, rank: Int](IndexList[rank]) -> SIMD[in_dtype, width],
+    & def[width: Int](Coord) -> SIMD[in_dtype, width],
     /,
     target: StaticString = "gpu",
     compile_only: Bool = False,
 ](
     input_fn: InputFnType,
-    shape: IndexList[rank],
+    shape: Coord,
     output: TileTensor[mut=True, out_dtype, ...],
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
@@ -127,6 +126,7 @@ def rms_norm_fused_fp8[
             value.
         scale_output: TileTensor to write per-row dynamic scales.
     """
+    comptime assert shape.rank == rank, "shape.rank must be the same as rank"
     comptime assert output.rank == rank, "output.rank must be the same as rank"
     comptime assert (
         scale_output.rank == rank
@@ -186,11 +186,11 @@ def _rms_norm_fused_fp8_gpu[
     rank: Int,
     InputFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int, rank: Int](IndexList[rank]) -> SIMD[in_dtype, width],
+    & def[width: Int](Coord) -> SIMD[in_dtype, width],
     compile_only: Bool = False,
 ](
     input_fn: InputFnType,
-    shape: IndexList[rank],
+    shape: Coord,
     output: TileTensor[mut=True, out_dtype, ...],
     gamma: TileTensor[in_dtype, ...],
     epsilon: Float32,
@@ -201,26 +201,37 @@ def _rms_norm_fused_fp8_gpu[
 ) raises:
     """GPU dispatcher for fused RMSNorm + FP8 quantization."""
 
+    comptime assert shape.rank == rank, "shape.rank must be the same as rank"
+
     if rank == 0:
         return
 
-    var last_dim = shape[rank - 1]
+    var last_dim = Int(shape[rank - 1])
     if last_dim == 0:
         return
 
-    var rows = shape.flattened_length() // last_dim
+    var rows = Int(shape.product()) // last_dim
     var cols = last_dim
 
-    # Create 2D input function (following rms_norm_fused_residual_add pattern)
+    # The closure reaches the GPU by value through `host_args`, so a captured
+    # `Coord` would lower to one scalar device `.param` per dynamic leaf while
+    # the host packs it as a single capture slot; that arity mismatch corrupts
+    # the launch (MOCO-4307). A `row_major` `Layout` keeps the capture a single
+    # aggregate `.param`, with the shape's static dims and all.
+    var shape_layout = row_major(shape)
+
+    # 2D input function (following the rms_norm_fused_residual_add pattern):
+    # `Layout.idx2crd` translates each flattened `(row, col)` back to the
+    # original n-D coordinate, the same decomposition the shared
+    # `_get_start_indices_of_nth_subvolume_static` helper performs for the `nn`
+    # kernels (which a `comm → nn` import cannot reach).
     @inline(.always)
     def input_fn_2d[
         simd_width: Int
-    ](row: Int, col: Int) {var shape, var input_fn} -> SIMD[
+    ](row: Int, col: Int) {var cols, var shape_layout, var input_fn} -> SIMD[
         in_dtype, simd_width
     ]:
-        var indices = _get_start_indices_of_nth_subvolume(row, shape)
-        indices[rank - 1] = col
-        return input_fn[simd_width, rank](indices.canonicalize())
+        return input_fn[simd_width](shape_layout.idx2crd(row * cols + col))
 
     # Create 2D output TileTensor view
     var output_2d = TileTensor(output._storage, row_major(rows, cols))
@@ -229,7 +240,10 @@ def _rms_norm_fused_fp8_gpu[
     var scale_output_1d = TileTensor(scale_output._storage, row_major(rows))
 
     # Dispatch based on column count (following rms_norm_gpu pattern)
-    comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime max_warps_per_block = (
+        ctx.default_device_info.max_thread_block_size // warp_size
+    )
     comptime base_simd_width = simd_width_of[in_dtype, target=ctx.target]()
 
     # Dispatch: select SIMD width and kernel strategy based on column count
@@ -256,10 +270,10 @@ def _rms_norm_fused_fp8_gpu[
         )
 
     if cols % base_simd_width == 0:
-        if cols <= (WARP_SIZE * base_simd_width * max_warps_per_block):
+        if cols <= (warp_size * base_simd_width * max_warps_per_block):
             launch[base_simd_width, True]()
         elif (
-            cols <= (WARP_SIZE * (base_simd_width * 2) * max_warps_per_block)
+            cols <= (warp_size * (base_simd_width * 2) * max_warps_per_block)
             and cols % (base_simd_width * 2) == 0
         ):
             launch[base_simd_width * 2, True]()
@@ -543,8 +557,11 @@ def _rms_norm_fused_fp8_gpu_launch[
     Selects between warp-tiling and block-tiling kernels at compile time.
     """
 
-    comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
-    comptime threads_per_block = max_warps_per_block * WARP_SIZE
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime max_warps_per_block = (
+        ctx.default_device_info.max_thread_block_size // warp_size
+    )
+    comptime threads_per_block = max_warps_per_block * warp_size
 
     var grid_dim = rows
     var block_dim = threads_per_block

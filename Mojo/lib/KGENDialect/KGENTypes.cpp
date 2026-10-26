@@ -697,9 +697,7 @@ std::optional<size_t> FuncType::findPackVarArgIndex() {
 bool FuncType::hasKwVarArgs() { return getArgListAttrs().hasKwVarArg(); }
 
 std::optional<int64_t> FuncType::getTypeSize(TargetInfoAttr target) const {
-  // Non-capturing closures are function pointers. Capturing closures contain
-  // a function pointer and a capture state pointer.
-  return (isCapturing() ? 2 : 1) * target.getDataLayout().getPointerSize();
+  return target.getDataLayout().getPointerSize();
 }
 
 std::optional<int64_t> FuncType::getTypeAlign(TargetInfoAttr target) const {

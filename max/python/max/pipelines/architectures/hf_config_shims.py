@@ -333,7 +333,17 @@ class LagunaHFConfig(PretrainedConfig):
     model_type = "laguna"
 
     def __init__(self, **kwargs: object) -> None:
+        # Laguna nests its rope config per attention type, which transformers'
+        # flat rope validation rejects, so withhold the rope keys from the base
+        # initializer and restore them afterwards.
+        deferred_rope = {
+            key: kwargs.pop(key)
+            for key in ("rope_parameters", "rope_scaling", "rope_theta")
+            if key in kwargs
+        }
         super().__init__(**kwargs)
+        for key, value in deferred_rope.items():
+            setattr(self, key, value)
         for k, v in kwargs.items():
             if not hasattr(self, k):
                 setattr(self, k, v)
@@ -874,3 +884,22 @@ class HYV4HFConfig(PretrainedConfig):
 
 
 AutoConfig.register("hy_v4", HYV4HFConfig, exist_ok=True)
+
+# Use the native FlintConfig if a transformers release ships one;
+# otherwise this passthrough shim covers the "flint" model_type.
+try:
+    from transformers import FlintConfig as FlintHFConfig
+except ImportError:
+
+    class FlintHFConfig(PretrainedConfig):  # type: ignore[no-redef]
+        """Configuration shim for the ``flint`` model type.
+
+        Every field comes from the repo's config.json, and unknown
+        keyword arguments become attributes on ``PretrainedConfig``, so
+        no field mapping is needed.
+        """
+
+        model_type = "flint"
+
+
+AutoConfig.register("flint", FlintHFConfig, exist_ok=True)

@@ -667,6 +667,9 @@ class TokenGeneratorPipeline(
                         if is_first_chunk:
                             server_ttft_ms = ttft_sw.elapsed_ms
                             METRICS.ttft(server_ttft_ms)
+                            METRICS.ttft_by_prompt_length(
+                                server_ttft_ms, context.tokens.prompt_length
+                            )
                             hops = (
                                 dict(ttft_join_hops) if ttft_join_hops else {}
                             )

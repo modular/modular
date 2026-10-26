@@ -30,7 +30,6 @@ from numpy.typing import NDArray
 
 # bfloat16 has no numpy dtype, so 16-bit graph inputs go through torch.
 _DTYPE_TO_TORCH = {
-    DType.float32: torch.float32,
     DType.float16: torch.float16,
     DType.bfloat16: torch.bfloat16,
 }
@@ -321,18 +320,18 @@ def test_resize_linear_gpu_dynamic_sizes(session: InferenceSession) -> None:
 
 
 @pytest.mark.skipif(accelerator_count() == 0, reason="No GPU available")
-@pytest.mark.parametrize(
-    "dtype", [DType.float32, DType.float16, DType.bfloat16]
-)
-@pytest.mark.parametrize("coord_mode", list(CoordinateTransformMode))
+@pytest.mark.parametrize("dtype", [DType.float16, DType.bfloat16])
 @pytest.mark.parametrize("antialias", [False, True])
 def test_resize_linear_gpu_dtypes(
     session: InferenceSession,
     dtype: DType,
-    coord_mode: CoordinateTransformMode,
     antialias: bool,
 ) -> None:
-    """GPU float dtypes match the float64 reference.
+    """16-bit GPU inputs match the float64 reference.
+
+    `test_resize_linear_gpu_matches_cpu` covers every coordinate mode.
+    The mode does not depend on the dtype, so this test does not repeat
+    them: each mode would only add a graph compile.
 
     float64 is excluded: it is not a GPU float dtype (MSTDL-2711). The
     kernel accumulates in float32 for every 16-bit input, so the
@@ -347,7 +346,6 @@ def test_resize_linear_gpu_dtypes(
             ops.resize_linear(
                 graph.inputs[0].tensor,
                 OUTPUT_SHAPE,
-                coordinate_transform_mode=coord_mode,
                 antialias=antialias,
             )
         )
@@ -359,19 +357,13 @@ def test_resize_linear_gpu_dtypes(
     ]
     assert isinstance(result, Buffer)
 
-    expected = _reference(data, OUTPUT_SHAPE, coord_mode, antialias)
-    if dtype == DType.float32:
-        np.testing.assert_allclose(
-            result.to_numpy(), expected, rtol=1e-5, atol=1e-5
-        )
-    else:
-        # The kernel accumulates in float32 and rounds once on store.
-        np.testing.assert_allclose(
-            torch.from_dlpack(result).float().cpu().numpy(),
-            expected,
-            rtol=2e-2,
-            atol=2e-2,
-        )
+    # The kernel accumulates in float32 and rounds once on store.
+    np.testing.assert_allclose(
+        torch.from_dlpack(result).float().cpu().numpy(),
+        _reference(data, OUTPUT_SHAPE, antialias=antialias),
+        rtol=2e-2,
+        atol=2e-2,
+    )
 
 
 @pytest.mark.skipif(accelerator_count() == 0, reason="No GPU available")

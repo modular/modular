@@ -7603,7 +7603,13 @@ def _router_gate_mixed_gemv(
     hidden_states: TensorValue,
     gate_weight: TensorValue,
 ) -> TensorValue:
-    """Computes mixed-input MiniMax router logits."""
+    """Computes mixed-input MiniMax router logits from fixed gate weights.
+
+    On SM100, ``gate_weight`` must be initialized before graph execution and
+    remain unchanged during execution. The kernel prefetches weights before
+    waiting for dependent grids, so weights produced by preceding graph ops
+    are unsupported. An already initialized graph input is allowed.
+    """
     _check_rank(2, hidden_states=hidden_states, gate_weight=gate_weight)
     _check_dtype(DType.bfloat16, hidden_states=hidden_states)
     _check_dtype(DType.float32, gate_weight=gate_weight)
@@ -8255,6 +8261,177 @@ def grouped_dynamic_block_scaled_matmul_amd_swiglu_quant(
         parameters=parameters,
     )
     return outputs[0].tensor, outputs[1].tensor
+
+
+def amd_mega_ffn_workspace_words(
+    num_experts: int, max_rows: int, dispatch_rows: int
+) -> int:
+    """Returns the u32 words of an AMD MegaFFN persistent workspace.
+
+    One padded counter slot per possible 16-row block (each expert adds at
+    most one partial block) and per workgroup of the launch (one per CU, at
+    most 1024), plus the two parity ticket words; then the prefill
+    MegaFFN's region, laid out the same way with a slot per 128-row block
+    of the dispatch buffer (``mega_prefill_region_words`` in
+    ``mega_ffn_amd_prefill.mojo``).
+
+    Args:
+        num_experts: Expert slots of the FFN.
+        max_rows: The most rows the GPU can receive inside the MegaFFN's
+            band.
+        dispatch_rows: Rows of the dispatch buffer the FFN reads, its
+            capacity at prefill.
+
+    Returns:
+        The workspace length in ``uint32`` words.
+    """
+    pad = 32  # u32 words of a counter slot: mega_ffn_amd_decode.PAD
+    blocks = num_experts + -(-max_rows // 16)
+    prefill_blocks = num_experts + -(-dispatch_rows // 128)
+    return max(blocks, 1024) * pad + max(prefill_blocks, 1024) * pad + 4
+
+
+def grouped_ffn_block_scaled_amd(
+    hidden_states: TensorValue,
+    gate_up_weight: TensorValue,
+    a_scales: TensorValue,
+    gate_up_scales: TensorValue,
+    down_weight: TensorValue,
+    down_scales: TensorValue,
+    expert_start_indices: TensorValue,
+    expert_ids: TensorValue,
+    expert_usage_stats_host: TensorValue,
+    workspace: BufferValue,
+    estimated_total_m: TensorValue,
+    scales_max_padded_m: int,
+    decode_grid_m_cap: int,
+    decode_grid_m_rows: int,
+    mega_band_m: int,
+    mega_max_rows: int,
+    prefill_band_m: int = 0,
+    prefill_mega: bool = True,
+    activation: GatedActivation | None = None,
+) -> TensorValue:
+    """Runs an MXFP8 MoE FFN on AMD gfx950: gate/up, activation, down.
+
+    In its band it is the one-launch MegaFFN; otherwise it runs the
+    same two kernels as
+    :func:`grouped_dynamic_block_scaled_matmul_amd_swiglu_quant` followed by
+    :func:`grouped_dynamic_block_scaled_matmul_amd`, bit for bit either way.
+
+    Args:
+        hidden_states: MXFP8 rows grouped by expert, ``[total_tokens, H]``.
+        gate_up_weight: Preshuffled, sigma-permuted gate/up weight,
+            ``[num_experts, 2 * I, H]``.
+        a_scales: The rows' E8M0 scales in the per-expert slot layout.
+        gate_up_scales: Preshuffled gate/up weight scales.
+        down_weight: Preshuffled down weight, ``[num_experts, H, I]``.
+        down_scales: Preshuffled down weight scales.
+        expert_start_indices: Where each expert's rows start.
+        expert_ids: The expert ID for each slot.
+        expert_usage_stats_host: ``[max_tokens_per_expert,
+            num_active_experts]``.
+        workspace: The persistent MegaFFN counter buffer: minted once per
+            call site with ``ops.buffer_create(..., init_value=0)``, sized by
+            :func:`amd_mega_ffn_workspace_words`, never zeroed again.
+        estimated_total_m: Row-count estimate that picks the regime.
+        scales_max_padded_m: Per-expert slot stride of the scales.
+        decode_grid_m_cap: Decode-band gate; 0 disables the MegaFFN.
+        decode_grid_m_rows: Rows the chain's decode grid covers per expert.
+        mega_band_m: The MegaFFN runs when ``estimated_total_m`` is at most
+            this (0: never).
+        mega_max_rows: The most rows this GPU can receive inside that band.
+        prefill_band_m: Above this ``estimated_total_m`` the op runs the
+            prefill GEMMs (0: never), bit for bit the chain's output.
+        prefill_mega: Runs that band as one prefill MegaFFN launch rather
+            than two GEMM launches.
+        activation: The gated activation, as for
+            :func:`grouped_dynamic_block_scaled_matmul_amd_swiglu_quant`.
+
+    Returns:
+        The bf16 FFN output, ``[total_tokens, H]``.
+    """
+    if scales_max_padded_m <= 0:
+        raise ValueError(
+            "the AMD MoE FFN reads slot-layout scales; scales_max_padded_m"
+            f" must be positive but got {scales_max_padded_m}"
+        )
+    for name, t in (
+        ("hidden_states", hidden_states),
+        ("gate_up_weight", gate_up_weight),
+        ("down_weight", down_weight),
+    ):
+        if t.dtype != DType.float8_e4m3fn:
+            raise TypeError(f"{name} must be float8_e4m3fn but got {t.dtype}")
+    max_num_tokens_arg = ops.constant(
+        scales_max_padded_m,
+        dtype=expert_usage_stats_host.dtype,
+        device=expert_usage_stats_host.device,
+    )
+    results = ops.inplace_custom(
+        "mo.grouped.ffn.block.scaled.amd",
+        device=hidden_states.device,
+        values=[
+            hidden_states,
+            gate_up_weight,
+            a_scales,
+            gate_up_scales,
+            down_weight,
+            down_scales,
+            expert_start_indices,
+            expert_ids,
+            workspace,
+            max_num_tokens_arg,
+            expert_usage_stats_host[1],
+            estimated_total_m.cast(DType.uint32),
+            ops.constant(
+                decode_grid_m_cap, dtype=DType.uint32, device=DeviceRef.CPU()
+            ),
+            ops.constant(
+                decode_grid_m_rows, dtype=DType.uint32, device=DeviceRef.CPU()
+            ),
+            ops.constant(
+                mega_band_m, dtype=DType.uint32, device=DeviceRef.CPU()
+            ),
+            ops.constant(
+                mega_max_rows, dtype=DType.uint32, device=DeviceRef.CPU()
+            ),
+            ops.constant(
+                prefill_band_m, dtype=DType.uint32, device=DeviceRef.CPU()
+            ),
+            ops.constant(
+                int(prefill_mega), dtype=DType.uint32, device=DeviceRef.CPU()
+            ),
+        ],
+        out_types=[
+            TensorType(
+                dtype=DType.bfloat16,
+                shape=[hidden_states.shape[0], down_weight.shape[1]],
+                device=hidden_states.device,
+            ),
+            # The intermediate activation and its slot-layout scales: op
+            # outputs so the memory planner owns them, as for the two-op
+            # chain. Unused by callers.
+            TensorType(
+                dtype=DType.float8_e4m3fn,
+                shape=[hidden_states.shape[0], down_weight.shape[2]],
+                device=hidden_states.device,
+            ),
+            TensorType(
+                dtype=DType.float8_e8m0fnu,
+                shape=[
+                    Dim(int(gate_up_weight.shape[0])) * scales_max_padded_m,
+                    ceildiv(down_weight.shape[2], Dim(32)),
+                ],
+                device=hidden_states.device,
+            ),
+        ],
+        parameters={
+            "scales_max_padded_m": scales_max_padded_m,
+            **(activation or GatedActivation()).kernel_parameters(),
+        },
+    )
+    return results[0].tensor
 
 
 # MFMA geometry of the AMD preb B layouts, mirroring the constants of the
@@ -11393,6 +11570,90 @@ def rope_quantize_dynamic_block_scaled(
     )
 
     return result[0].tensor, result[1].tensor
+
+
+def rms_norm_quantize_mxfp8_q_kv(
+    x: TensorValue,
+    q_weight: TensorValue,
+    kv_weight: TensorValue,
+    epsilon: float,
+    q_cols: int,
+) -> tuple[TensorValue, TensorValue, TensorValue]:
+    """RMS-normalizes the q and kv parts of each row and quantizes q to MXFP8.
+
+    Each row of ``x`` is ``q_cols`` columns of q then the rest as kv. One
+    kernel computes what :func:`~max.graph.ops.rms_norm` on each part,
+    then :func:`quantize_dynamic_block_scaled` on the normalized q, would,
+    without writing the normalized q out. The normalized rows are rounded
+    to bfloat16 where ``rms_norm`` rounds them. The two paths differ only in
+    the order of each row's sum of squares. Runs on NVIDIA SM100 and SM120.
+
+    Args:
+        x: The bfloat16 input. Shape: ``[M, q_cols + kv_cols]``.
+        q_weight: The bfloat16 q weight. Shape: ``[q_cols]``.
+        kv_weight: The bfloat16 kv weight. Shape: ``[kv_cols]``.
+        epsilon: Added to each row's mean square.
+        q_cols: The width of the q part. ``q_cols`` and ``kv_cols`` must each
+            be a multiple of 256.
+
+    Returns:
+        The float8_e4m3fn q ``[M, q_cols]``, its float8_e8m0fnu scales in
+        the rank-5 interleaved layout, and the bfloat16 normalized kv
+        ``[M, kv_cols]``.
+
+    Raises:
+        ValueError: If the GPU is not SM100 or SM120, or the shapes and
+            dtypes are not as above.
+    """
+    if not (_is_sm10x_gpu() or _is_sm12x_gpu()):
+        raise ValueError(
+            "rms_norm_quantize_mxfp8_q_kv requires an NVIDIA SM100 or SM120 GPU"
+        )
+    if x.rank != 2 or x.dtype != DType.bfloat16:
+        raise ValueError("x must be a rank 2 bfloat16 tensor")
+    width = x.shape[1]
+    if not isinstance(width, StaticDim):
+        raise ValueError(f"x.shape[1] must be static, got {width}")
+    kv_cols = int(width) - q_cols
+    if q_cols <= 0 or kv_cols <= 0 or q_cols % 256 or kv_cols % 256:
+        raise ValueError(
+            "q_cols and the kv width must each be a positive multiple of 256,"
+            f" got {q_cols} and {kv_cols}"
+        )
+    for name, weight, cols in (
+        ("q_weight", q_weight, q_cols),
+        ("kv_weight", kv_weight, kv_cols),
+    ):
+        if weight.dtype != DType.bfloat16 or list(weight.shape) != [cols]:
+            raise ValueError(
+                f"{name} must be a bfloat16 tensor of shape [{cols}]"
+            )
+
+    q_type, scales_type = _block_scaled_quantize_out_types(
+        x.shape[0],
+        Dim(q_cols),
+        "q_cols",
+        32,
+        DType.float8_e8m0fnu,
+        DType.float8_e4m3fn,
+        x.device,
+    )
+    result = ops.custom(
+        "mo.rms_norm.quantize.mxfp8.q_kv",
+        device=x.device,
+        values=[
+            x,
+            q_weight,
+            kv_weight,
+            ops.constant(epsilon, DType.float32, device=DeviceRef.CPU()),
+        ],
+        out_types=[
+            q_type,
+            scales_type,
+            TensorType(DType.bfloat16, [x.shape[0], kv_cols], x.device),
+        ],
+    )
+    return result[0].tensor, result[1].tensor, result[2].tensor
 
 
 def grouped_quantize_dynamic_block_scaled(
@@ -14751,8 +15012,9 @@ def hyper_connection_gates(
 
 
 def _mhc_post_block_width(dtype: DType) -> int:
-    # A block of 256 threads covers 256 16-byte vectors of the hidden axis.
-    threads_per_block = 256
+    # The narrowest block, 128 threads, covers 128 16-byte vectors of the
+    # hidden axis; the kernel takes 256 where those divide it.
+    threads_per_block = 128
     vector_bytes = 16
     return threads_per_block * vector_bytes // dtype.size_in_bytes
 

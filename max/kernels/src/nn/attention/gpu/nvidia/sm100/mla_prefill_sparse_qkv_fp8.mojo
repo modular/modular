@@ -50,7 +50,6 @@ and head=128 (cta_group=2, 2-CTA f8f6f4) are follow-ups.
 """
 
 from std.sys import size_of
-from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -1103,7 +1102,7 @@ struct MLAPrefillSparseQKVFP8[
                             NoneType
                         ](),
                         prologue_q[].unsafe_ptr(),
-                        Index(
+                        (
                             j * Self.Q_SWIZZLE_COLS,
                             Int(head_coord),
                             Int(seq_idx),
@@ -2012,9 +2011,18 @@ struct MLAPrefillSparseQKVFP8[
                     var pad_row = Int(
                         head_local >= UInt32(Self.NUM_Q_HEADS_PER_CTA)
                     )
+                    # Each pad thread gets its own dump slot: the two depth-column
+                    # warps of a head row share head_local.
+                    var dump_slot = Int(
+                        depth_col_block
+                    ) * Self.PADDED_HEADS_PER_CTA + Int(head_local)
                     var store_off = (
                         smem_offset * (1 - pad_row)
-                        + (Self.SMemType.O_SIZE - 2) * pad_row
+                        + (
+                            Self.SMemType.O_SIZE
+                            - 2 * (2 * Self.PADDED_HEADS_PER_CTA - dump_slot)
+                        )
+                        * pad_row
                     )
                     (o_ptr.unsafe_offset(store_off)).unsafe_store[width=2](v)
 

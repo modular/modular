@@ -888,7 +888,7 @@ def fp8_index_score_amd[
             kv_splits,
             1,
         ),
-        block_dim=(2 * WARP_SIZE, 1, 1),
+        block_dim=(2 * ctx.default_device_info.warp_size, 1, 1),
     )
 
 

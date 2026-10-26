@@ -93,8 +93,6 @@ from quantization.qmatmul_k import matmul_Q4_K, matmul_Q6_K
 
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from std.utils.index import IndexList
-
 # ===-----------------------------------------------------------------------===#
 # Fused QKV matmul (ragged)
 # ===-----------------------------------------------------------------------===#
@@ -298,7 +296,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
     weight_dtype: DType,
     output_dtype: DType,
     scale_dtype: DType,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
     target: StaticString = "cpu",
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
@@ -701,7 +699,7 @@ def _fused_qkv_matmul_kv_cache_ragged_scale[
     collection_t: KVCollectionT,
     //,
     cache_t: KVCacheT,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
     *,
     target: StaticString,
 ](
@@ -1168,7 +1166,7 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale[
     scale_dtype: DType,
     cache_t: KVCacheT,
     //,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
     *,
     target: StaticString,
 ](
@@ -2515,7 +2513,7 @@ def _matmul_blockwise_scaled_fp8_common[
     //,
     *,
     target: StaticString,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
 ](
     hidden_state: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
     weight: TileTensor[mut=False, b_type, address_space=.GENERIC, ...],
@@ -3122,7 +3120,7 @@ def k_matmul_ragged_paged_scale[
     weight_dtype: DType,
     scale_dtype: DType,
     target: StaticString,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
@@ -3233,7 +3231,7 @@ def _matmul_k_cache_ragged_scale_impl[
     cache_t: KVCacheT,
     *,
     target: StaticString,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
 ](
     hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
@@ -5517,7 +5515,7 @@ def kv_cache_store_padded[
     & def[width: Int, alignment: Int](Coord) -> SIMD[cache_t.dtype, width],
 ](
     cache: cache_t,
-    input_shape: IndexList[4],
+    input_shape: Coord,
     valid_lengths: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
     input_fn: InputFnType,
     context: DeviceContext,
@@ -5537,7 +5535,7 @@ def kv_cache_store_padded[
 
     Args:
         cache: The KVCache object to write key or value entries into.
-        input_shape: Shape of the input as a 4D index list (batch, tokens,
+        input_shape: Shape of the input as a 4D `Coord` (batch, tokens,
             heads, head_size).
         valid_lengths: Tensor with shape (batch_size,) giving the number of
             valid tokens per batch; rows beyond this are skipped.
@@ -5579,7 +5577,7 @@ def kv_cache_store_padded[
 
     elementwise[
         simd_width, target=target, _trace_description="kv_cache_store_padded"
-    ](write_to_cache, Coord(input_shape), context)
+    ](write_to_cache, input_shape, context)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -5658,7 +5656,7 @@ def kv_cache_2m_iadd_dispatch[
     var m = Int(lora_end_idx[0])
 
     # [2m, N]
-    var elementwise_shape = IndexList[2](2 * m, Int(kv.dim[1]()))
+    var elementwise_shape = (2 * m, Int(kv.dim[1]()))
 
     def iadd[
         width: Int, alignment: Int = 1
@@ -5708,13 +5706,9 @@ def kv_cache_2m_iadd_dispatch[
             comptime compile_target = ctx.target
             comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
-            elementwise[simd_width, target=target](
-                iadd, Coord(elementwise_shape), ctx
-            )
+            elementwise[simd_width, target=target](iadd, elementwise_shape, ctx)
     else:
         comptime compile_target = CompilationTarget.current()
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
-        elementwise[simd_width, target=target](
-            iadd, Coord(elementwise_shape), ctx
-        )
+        elementwise[simd_width, target=target](iadd, elementwise_shape, ctx)

@@ -63,6 +63,7 @@ from std.memory import dealloc, unsafe_memcpy, ThinAllocation
 from std.memory.alloc import Layout as AllocLayout
 from std.collections import check_bounds
 from std.utils import IndexList
+from std.utils.coord import Coord, DynamicCoord
 from layout.coord import ComptimeInt, Coord, CoordLike
 from . import math as layout_math
 

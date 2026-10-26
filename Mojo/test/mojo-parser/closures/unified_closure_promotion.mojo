@@ -58,7 +58,7 @@ def trigger_dtype():
 
 # COM: Verify async closures instantiate the closure trait with async
 # COM: metadata and use an async call op.
-# S2-DAG: lit.struct.decl @"closure$async_unified_closure()::inc::__storage"{{.*}}#kgen.fn_metadata<{{.*}}"async|capturing"
+# S2-DAG: lit.struct.decl @"closure$async_unified_closure()::inc::__storage"{{.*}}#kgen.fn_metadata<{{.*}}"async"
 # S2-LABEL: lit.fn @"async_unified_closure()"
 # S2-DAG: lit.async.call[!lit.generator<
 

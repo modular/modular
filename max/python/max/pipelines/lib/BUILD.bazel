@@ -43,6 +43,7 @@ modular_py_library(
         "//max/python/max/profiler",
         "//max/python/max/support",
         requirement("hf-transfer"),
+        requirement("httpx"),
         requirement("huggingface-hub"),
         requirement("msgspec"),
         requirement("numpy"),

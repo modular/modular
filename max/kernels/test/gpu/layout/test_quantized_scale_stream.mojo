@@ -109,10 +109,11 @@ def scale_stream_kernel[
 
 
 def test_scale_stream[CADENCE: Int, STAGES: Int](ctx: DeviceContext) raises:
+    comptime warp_size = ctx.default_device_info.warp_size
     comptime N = 384
     comptime GROUPS = 16
     comptime input_layout = row_major[1, 8 + 2 * GROUPS * N]()
-    comptime output_layout = row_major[2, GROUPS * CADENCE, WARP_SIZE, 24]()
+    comptime output_layout = row_major[2, GROUPS * CADENCE, warp_size, 24]()
     var source = HostDeviceTileTensor[.bfloat16](input_layout, ctx)
     var output = HostDeviceTileTensor[.bfloat16](output_layout, ctx)
     var host = source.host_tensor()
@@ -129,13 +130,13 @@ def test_scale_stream[CADENCE: Int, STAGES: Int](ctx: DeviceContext) raises:
         source.device_tensor().as_unsafe_any_origin(),
         output.device_tensor().as_unsafe_any_origin(),
         grid_dim=1,
-        block_dim=2 * WARP_SIZE,
+        block_dim=2 * warp_size,
     )
     output.to_host()
     var actual = output.host_tensor()
     for partition in range(2):
         for k in range(GROUPS * CADENCE):
-            for lane in range(WARP_SIZE):
+            for lane in range(warp_size):
                 for i in range(8):
                     var expected = scale_value(
                         partition * GROUPS + k // CADENCE,

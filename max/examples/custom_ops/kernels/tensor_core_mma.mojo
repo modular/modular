@@ -40,7 +40,7 @@ from max.gpu.sync import schedule_barrier as amd_schedule_barrier
 # Import AMD helper functions and structs from the kernels subdirectory
 
 from .amd_helpers import amd_scheduling_hints, compare_equal
-from layout import TensorLayout, TileTensor, row_major, stack_allocation
+from layout import TensorLayout, TileTensor, coord, row_major, stack_allocation
 from layout.layout import blocked_product
 from linalg.matmul.gpu.amd.matmul_mma import MmaOp
 from structured_kernels.amd_tile_io import (
@@ -90,6 +90,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
             var b_tt = b.to_tile_tensor().as_unsafe_any_origin()
 
             var gpu_ctx = ctx
+            comptime warp_size = gpu_ctx.default_device_info.warp_size
             comptime if gpu_ctx.target.is_nvidia_gpu() and Self.algorithm == "mma_tile_buffers":
                 raise Error("mma_tile_buffers is AMD-only")
 
@@ -164,7 +165,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                     comptime MMA_N = 8 if gpu_ctx.target.is_nvidia_gpu() else 32
                     comptime MMA_K = 16 if gpu_ctx.target.is_nvidia_gpu() else 8
                     comptime NUM_WARPS = (BM // MMA_M) * (BN // MMA_N)
-                    comptime NUM_THREADS = NUM_WARPS * WARP_SIZE
+                    comptime NUM_THREADS = NUM_WARPS * warp_size
                     comptime if gpu_ctx.target.is_nvidia_gpu():
                         comptime assert M > 0 and N > 0 and K > 0
                         comptime assert (
@@ -203,7 +204,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                     comptime MMA_N = 8 if gpu_ctx.target.is_nvidia_gpu() else 32
                     comptime MMA_K = 16 if gpu_ctx.target.is_nvidia_gpu() else 8
                     comptime NUM_WARPS = (BM // MMA_M) * (BN // MMA_N)
-                    comptime NUM_THREADS = NUM_WARPS * WARP_SIZE
+                    comptime NUM_THREADS = NUM_WARPS * warp_size
                     comptime if gpu_ctx.target.is_nvidia_gpu():
                         comptime assert M > 0 and N > 0 and K > 0
                         comptime assert (
@@ -244,7 +245,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                     comptime MMA_N = 8 if gpu_ctx.target.is_nvidia_gpu() else 32
                     comptime MMA_K = 16 if gpu_ctx.target.is_nvidia_gpu() else 8
                     comptime NUM_WARPS = (BM // WM) * (BN // WN)
-                    comptime NUM_THREADS = NUM_WARPS * WARP_SIZE
+                    comptime NUM_THREADS = NUM_WARPS * warp_size
                     comptime if gpu_ctx.target.is_nvidia_gpu():
                         comptime assert M > 0 and N > 0 and K > 0
                         comptime assert (
@@ -287,7 +288,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                     comptime MMA_N = 8 if gpu_ctx.target.is_nvidia_gpu() else 32
                     comptime MMA_K = 16 if gpu_ctx.target.is_nvidia_gpu() else 8
                     comptime NUM_WARPS = (BM // WM) * (BN // WN)
-                    comptime NUM_THREADS = NUM_WARPS * WARP_SIZE
+                    comptime NUM_THREADS = NUM_WARPS * warp_size
                     comptime if gpu_ctx.target.is_nvidia_gpu():
                         comptime assert M > 0 and N > 0 and K > 0
                         comptime assert (
@@ -330,7 +331,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                     comptime MMA_N = 8 if gpu_ctx.target.is_nvidia_gpu() else 32
                     comptime MMA_K = 16 if gpu_ctx.target.is_nvidia_gpu() else 8
                     comptime NUM_WARPS = (BM // WM) * (BN // WN)
-                    comptime NUM_THREADS = NUM_WARPS * WARP_SIZE
+                    comptime NUM_THREADS = NUM_WARPS * warp_size
                     comptime if gpu_ctx.target.is_nvidia_gpu():
                         comptime assert M > 0 and N > 0 and K > 0
                         comptime assert (
@@ -376,7 +377,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                     comptime MMA_K = 8
 
                     comptime NUM_WARPS = (BM // WM) * (BN // WN)
-                    comptime NUM_THREADS = NUM_WARPS * WARP_SIZE
+                    comptime NUM_THREADS = NUM_WARPS * warp_size
 
                     # `mma_tile_buffers` takes `TileTensor` A/B/C. B is the
                     # (transposed) `row_major[N, K]` `TileTensor` built above.
@@ -426,7 +427,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                 comptime MMA_N = 8 if gpu_ctx.target.is_nvidia_gpu() else 16
                 comptime MMA_K = 16
                 comptime NUM_WARPS = (BM // MMA_M) * (BN // MMA_N)
-                comptime NUM_THREADS = NUM_WARPS * WARP_SIZE
+                comptime NUM_THREADS = NUM_WARPS * warp_size
                 comptime naive_tensor_kernel = naive_tensor[
                     a.dtype,
                     output.dtype,
@@ -580,7 +581,7 @@ def naive_tensor[
 
     # Create tensor core operation object with mixed precision: f16 input, f32 accumulator
     var mma_op = TensorCore[
-        output_type, input_type, Index(MMA_M, MMA_N, MMA_K)
+        output_type, input_type, coord[MMA_M, MMA_N, MMA_K]
     ]()
 
     # Calculate correct accumulator fragment size based on MMA configuration
@@ -696,7 +697,7 @@ def basic_shared_mem[
 
     # Create tensor core operation object with mixed precision: f16 input, f32 accumulator
     var mma_op = TensorCore[
-        output_type, input_type, Index(MMA_M, MMA_N, MMA_K)
+        output_type, input_type, coord[MMA_M, MMA_N, MMA_K]
     ]()
 
     # Allocate shared memory for tiles of A and B
@@ -844,7 +845,7 @@ def multi_block_tiled[
 
     # Create tensor core operation object with mixed precision: f16 input, f32 accumulator
     var mma_op = TensorCore[
-        output_type, input_type, Index(MMA_M, MMA_N, MMA_K)
+        output_type, input_type, coord[MMA_M, MMA_N, MMA_K]
     ]()
 
     # Allocate shared memory for tiles of A and B
@@ -1012,7 +1013,7 @@ def scheduler_hints[
 
     # Create tensor core operation object with mixed precision: f16 input, f32 accumulator
     var mma_op = TensorCore[
-        output_type, input_type, Index(MMA_M, MMA_N, MMA_K)
+        output_type, input_type, coord[MMA_M, MMA_N, MMA_K]
     ]()
 
     # Allocate single set of shared memory buffers (single buffering to fit memory limit)
@@ -1204,7 +1205,7 @@ def double_buffer[
 
     # Create tensor core operation object with mixed precision: f16 input, f32 accumulator
     var mma_op = TensorCore[
-        output_type, input_type, Index(MMA_M, MMA_N, MMA_K)
+        output_type, input_type, coord[MMA_M, MMA_N, MMA_K]
     ]()
 
     # Allocate two sets of shared memory buffers for double buffering
@@ -1477,7 +1478,7 @@ def mma_tile_buffers[
     var mma_op = MmaOp[
         out_type=accum_type,
         in_type=input_type,
-        shape=IndexList[3](MMA_M, MMA_N, MMA_K),
+        shape=(MMA_M, MMA_N, MMA_K),
         k_group_size=k_group_size,
         num_k_tiles=num_k_tiles,
         num_m_mmas=num_m_mmas,

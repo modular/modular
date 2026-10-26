@@ -1840,6 +1840,8 @@ ErrorOr<DeviceContextRef> DeviceContext::selectStream(unsigned streamId) {
   return DeviceContextRef::copy(this);
 }
 
+bool DeviceContext::flushIdleStreamViews() { return false; }
+
 MemoryManagerFreeList &DeviceContext::freeList() const { return *freeList_; }
 MemoryManagerFreeList &DeviceContext::hostFreeList() const {
   return *hostFreeList_;

@@ -36,6 +36,7 @@ from max.pipelines.lib.tokenizer import (
     max_tokens_to_generate,
     open_image,
     resolve_eos_token_ids,
+    resolve_token_id_bound,
     run_with_default_executor,
 )
 from max.pipelines.modeling.types import (
@@ -186,6 +187,12 @@ class DeepseekV41Tokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
         self.max_length = max_length or self.delegate.model_max_length
         self._eos_token_ids = resolve_eos_token_ids(
             self.delegate.eos_token_id, pipeline_config
+        )
+        # The Engram token map has one entry per tokenizer id, so an id past
+        # the tokenizer has no entry even where the embedding has a row.
+        self._token_id_bound = min(
+            len(self.delegate),
+            resolve_token_id_bound(self.delegate, pipeline_config),
         )
         self._chat_template = chat_template
         self._resolve_reasoning_delimiters(self.delegate)

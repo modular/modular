@@ -18,6 +18,7 @@
 #include "mlir/IR/Location.h"
 #include "mlir/IR/MLIRContext.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
 #include <cstddef>
 #include <string>
@@ -47,6 +48,47 @@ static std::string locationToString(Location location) {
   return Twine(Twine(fileLoc.getFilename()) + ":" + Twine(fileLoc.getLine()) +
                ":" + Twine(fileLoc.getColumn()))
       .str();
+}
+
+namespace {
+/// Prints one diagnostic directly, without going through the context's engine.
+struct SourcePrinter : mlir::SourceMgrDiagnosticHandler {
+  using SourceMgrDiagnosticHandler::emitDiagnostic;
+  using SourceMgrDiagnosticHandler::SourceMgrDiagnosticHandler;
+};
+} // namespace
+
+std::string
+FormatScopedDiagnosticHandler::formatWithSource(const mlir::Diagnostic &diag) {
+  // Drop the "see current operation" note: it dumps the op's IR, which says
+  // nothing to someone reading their Mojo source.
+  mlir::Diagnostic shown(diag.getLocation(), diag.getSeverity());
+  shown << diag.str();
+  for (const mlir::Diagnostic &note : diag.getNotes())
+    if (!llvm::StringRef(note.str()).starts_with("see current operation"))
+      shown.attachNote(note.getLocation()) << note.str();
+
+  std::string out;
+  llvm::raw_string_ostream os(out);
+  // Without a file location there is no source line to show, and
+  // `<unknown>:0:` says nothing.
+  if (!diag.getLocation()->findInstanceOf<mlir::FileLineColLoc>()) {
+    emitDiagnosticSeverityToStream(os, shown);
+    for (const mlir::Diagnostic &note : shown.getNotes()) {
+      os << '\n';
+      emitDiagnosticSeverityToStream(os, note);
+    }
+    return out;
+  }
+  // The printer registers itself as a handler on its context while it lives;
+  // a private context keeps that off the caller's, which may be emitting from
+  // other threads or from inside a handler.
+  mlir::MLIRContext printerContext(mlir::MLIRContext::Threading::DISABLED);
+  // Loads each file the locations name on demand, as `mojo build` does.
+  llvm::SourceMgr sourceMgr;
+  SourcePrinter printer(sourceMgr, &printerContext, os);
+  printer.emitDiagnostic(shown);
+  return llvm::StringRef(out).rtrim().str();
 }
 
 void FormatScopedDiagnosticHandler::emitDiagnosticSeverityToStream(

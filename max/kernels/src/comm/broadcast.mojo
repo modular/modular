@@ -260,11 +260,14 @@ def broadcast_pull_2stage_kernel[
     OutputLayout: TensorLayout,
     ngpus: Int,
     result_engine: TensorEngine,
+    in_engine: TensorEngine,
     *,
     BLOCK_SIZE: Int,
 ](
     result: TileTensor[dtype, OutputLayout, MutAnyOrigin, Engine=result_engine],
-    root_input_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
+    root_input: TileTensor[
+        dtype, OutputLayout, ImmutAnyOrigin, Engine=in_engine
+    ],
     rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     num_elements: Int32,
     my_rank: Int32,
@@ -286,11 +289,12 @@ def broadcast_pull_2stage_kernel[
         OutputLayout: Layout of the output TileTensor.
         ngpus: Number of GPUs participating.
         result_engine: Engine of the output tensor.
+        in_engine: Engine of the root's input tensor.
         BLOCK_SIZE: Number of threads per block.
 
     Args:
         result: Output TileTensor for broadcast result.
-        root_input_ptr: Pointer to root's input data (all GPUs read from this).
+        root_input: Root's input TileTensor (all GPUs read from this via P2P).
         rank_sigs: Signal pointers for synchronization.
             IMPORTANT: Signal pointers have trailing buffers for communication.
         num_elements: Number of elements to broadcast.
@@ -329,6 +333,7 @@ def broadcast_pull_2stage_kernel[
         _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, _my_rank)
 
         var is_root = _my_rank == _root
+        var in_tile = root_input.address_space_cast[_target_address_space]()
         var result_tt = result.address_space_cast[
             _target_address_space
         ]().reshape(row_major(_num_elements))
@@ -351,11 +356,7 @@ def broadcast_pull_2stage_kernel[
         for idx in range(
             my_chunk_start + thr_local_start, aligned_chunk_end, elem_stride
         ):
-            var data = root_input_ptr.unsafe_address_space_cast[
-                _target_address_space
-            ]().unsafe_load[
-                width=simd_width, alignment=alignment, invariant=True
-            ](
+            var data = in_tile.raw_load[width=simd_width, alignment=alignment](
                 idx
             )
             my_payload.unsafe_address_space_cast[
@@ -366,9 +367,7 @@ def broadcast_pull_2stage_kernel[
         # Handle tail elements (spread across threads)
         var tail_idx = aligned_chunk_end + global_tid
         if tail_idx < my_chunk_end:
-            var data = root_input_ptr.unsafe_address_space_cast[
-                _target_address_space
-            ]().unsafe_load[width=1, invariant=True](tail_idx)
+            var data = in_tile.raw_load[width=1](tail_idx)
             my_payload.unsafe_address_space_cast[
                 _target_address_space
             ]().unsafe_store(tail_idx - my_chunk_start, data)
@@ -436,29 +435,20 @@ def broadcast_pull_2stage_kernel[
 
         # Root: copy all elements from input to result (after Stage 2)
         # Skip if in-place (input and result point to same memory)
-        var is_inplace = (
-            root_input_ptr.unsafe_address_space_cast[_target_address_space]()
-            == result_tt.ptr
-        )
+        var is_inplace = in_tile.ptr == result_tt.ptr
         if is_root and not is_inplace:
             var num_simd_vectors = _num_elements // simd_width
             for idx in range(global_tid, num_simd_vectors, stride):
                 var elem_idx = idx * simd_width
-                var data = root_input_ptr.unsafe_address_space_cast[
-                    _target_address_space
-                ]().unsafe_load[
-                    width=simd_width, alignment=alignment, invariant=True
-                ](
-                    elem_idx
-                )
+                var data = in_tile.raw_load[
+                    width=simd_width, alignment=alignment
+                ](elem_idx)
                 result_tt.store[alignment=alignment]((elem_idx,), data)
 
             # Handle tail elements (spread across threads)
             var root_tail_idx = tail_start + global_tid
             if root_tail_idx < _num_elements:
-                var data = root_input_ptr.unsafe_address_space_cast[
-                    _target_address_space
-                ]().unsafe_load[width=1, invariant=True](root_tail_idx)
+                var data = in_tile.raw_load[width=1](root_tail_idx)
                 result_tt.store((root_tail_idx,), data)
 
         # Final barrier to ensure all GPUs complete before returning
@@ -694,19 +684,19 @@ def broadcast_2stage[
     )
 
     # `OutputLayout` and `in_layout` are the same here: broadcast writes the
-    # shape it reads. The root's input is passed as a host-resolved bare
-    # pointer (all GPUs read it via P2P), so the kernel takes no input tile.
+    # shape it reads.
     comptime kernel = broadcast_pull_2stage_kernel[
         dtype,
         in_layout,
         ngpus,
         out_engine,
+        in_engine,
         BLOCK_SIZE=BLOCK_SIZE,
     ]
 
     ctx.enqueue_function[kernel](
         output_tensor,
-        rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](input_tensor.ptr),
+        input_tensor.as_imm(),
         rank_sigs,
         Int32(num_elements),
         Int32(my_rank),

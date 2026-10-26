@@ -65,6 +65,7 @@ _COMPLETION_TOKEN_METRICS = (
     "maxserve_num_output_tokens_total",  # max / max-ci
     "vllm:generation_tokens_total",  # vllm
     "sglang:generation_tokens_total",  # sglang
+    "mach_request_output_tokens_total",  # mach-ci
 )
 
 _SPEC_DECODE_ACCEPTANCE_LENGTH_METRIC = (
@@ -172,6 +173,7 @@ def call_eval(
     num_questions: int,
     disable_timeouts: bool,
     metrics_url: str | None = None,
+    metrics_delay_s: float = 0,
     lm_eval_metadata: str | None = None,
 ) -> tuple[EvalResults, EvalSamples]:
     extra_gen_kwargs = ",max_gen_toks=4096"
@@ -224,6 +226,7 @@ def call_eval(
         args = [interpreter, "-m", *eval_cmd]
         logger.info(f"Running eval with:\n {' '.join(args)}")
         eval_timeout = None if disable_timeouts else 600
+        time.sleep(metrics_delay_s)
         tokens_before = (
             get_num_tokens_generated(metrics_url) if metrics_url else None
         )
@@ -239,6 +242,7 @@ def call_eval(
                 f"Evals did not finish within the expected timeout={eval_timeout}s. "
                 "You can pass --disable-timeouts to opt-out of this."
             ) from None
+        time.sleep(metrics_delay_s)
         tokens_after = (
             get_num_tokens_generated(metrics_url) if metrics_url else None
         )

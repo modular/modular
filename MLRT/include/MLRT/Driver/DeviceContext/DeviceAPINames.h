@@ -50,6 +50,11 @@ inline StringRef apiToVendorPrefix(StringRef api) {
   return api;
 }
 
+/// Whether `apiToVendorPrefix(api)` names a Mojo `--target-accelerator` vendor.
+inline bool hasMojoVendor(StringRef api) {
+  return api == "cuda" || api == "hip" || api == "metal";
+}
+
 /// The device API name for `api`, which may already be one or may be the Mojo
 /// `--target-accelerator` vendor name for the same device. Lets a caller
 /// holding a target-accelerator value pass it through unchanged. "metal" needs

@@ -300,6 +300,7 @@ def gated_group_rmsnorm_gpu[
     """
 
     var total_warps = n_rows * num_groups
+    comptime warp_size = ctx.default_device_info.warp_size
 
     comptime vec_width = 16 // max(size_of[dtype](), size_of[gate_dtype]())
     comptime if (
@@ -329,13 +330,13 @@ def gated_group_rmsnorm_gpu[
                 Int32(num_groups),
                 eps,
                 host_args=(gate_fn,),
-                grid_dim=ceildiv(total_warps * WARP_SIZE, VEC_BLK),
+                grid_dim=ceildiv(total_warps * warp_size, VEC_BLK),
                 block_dim=VEC_BLK,
             )
             return
 
     comptime BLK = 256  # 8 warps / threadgroup
-    var grid = ceildiv(total_warps * WARP_SIZE, BLK)
+    var grid = ceildiv(total_warps * warp_size, BLK)
 
     comptime kernel = gated_group_rmsnorm_kernel[
         dtype,

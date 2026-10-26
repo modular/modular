@@ -44,7 +44,9 @@ from max.nn.kv_cache import PagedCacheValues
 from max.nn.layer import Module
 from max.nn.linear import Linear
 from max.nn.norm.rms_norm import RMSNorm
+from max.nn.quant_config import QuantConfig
 
+from .mxfp8_matmul import mxfp8_linear
 from .ragged import V41RaggedRows as RaggedRows
 
 
@@ -78,12 +80,16 @@ class DeepseekV41Indexer(Module):
         device: DeviceRef,
         *,
         owns_k: bool,
+        wq_b_quant_config: QuantConfig | None = None,
     ) -> None:
         """Initializes the indexer.
 
         Args:
             owns_k: Whether this layer produces its own index keys (creates
                 ``wk``/``k_norm``).
+            wq_b_quant_config: An MXFP8 config makes ``wq_b``
+                ``float8_e4m3fn`` with block scales; ``None`` keeps it in
+                ``dtype``.
 
         Raises:
             ValueError: If ``index_head_dim`` is not 128 or ``rope_head_dim``
@@ -104,7 +110,11 @@ class DeepseekV41Indexer(Module):
         self.owns_k = owns_k
 
         self.wq_b = Linear(
-            q_lora_rank, self.n_heads * self.head_dim, dtype, device
+            q_lora_rank,
+            self.n_heads * self.head_dim,
+            dtype if wq_b_quant_config is None else DType.float8_e4m3fn,
+            device,
+            quant_config=wq_b_quant_config,
         )
         # Uses the model `dtype` rather than a fixed bf16.
         self.weights_proj = Linear(hidden_size, self.n_heads, dtype, device)
@@ -114,20 +124,28 @@ class DeepseekV41Indexer(Module):
             self.k_norm = RMSNorm(self.head_dim, DType.float32, rms_norm_eps)
 
     def __call__(
-        self, qr: TensorValue, x: TensorValue
+        self,
+        qr: TensorValue,
+        x: TensorValue,
+        qr_scales: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue]:
         """Projects the index queries and per-head weights.
 
         Args:
-            qr: ``[..., T, q_lora_rank]`` normalized low-rank query.
+            qr: ``[..., T, q_lora_rank]`` normalized low-rank query, or its
+                ``float8_e4m3fn`` quantization when ``qr_scales`` is given.
             x: ``[..., T, hidden_size]`` raw hidden state.
+            qr_scales: The E8M0 block scales of a quantized ``qr``.
 
         Returns:
             ``([T, n_heads * head_dim] queries, [T, n_heads] weights)``,
             before RoPE, quantization and weight scaling.
         """
         return (
-            ops.reshape(self.wq_b(qr), [-1, self.n_heads * self.head_dim]),
+            ops.reshape(
+                mxfp8_linear(self.wq_b, qr, qr_scales),
+                [-1, self.n_heads * self.head_dim],
+            ),
             ops.reshape(self.weights_proj(x), [-1, self.n_heads]),
         )
 

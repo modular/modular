@@ -356,26 +356,36 @@ def multistage_mma[
             return rows if rows_are_per_tile else max(0, rows - k_tile * BK)
         return iter_valid_rows
 
-    # Prefetch (num_pipeline_stages - 1) stages.
+    # Prefetch (num_pipeline_stages - 1) stages. A stage past the last k tile
+    # stays empty: its copy would read past the operands and write past a
+    # non-circular shared-memory iterator.
     comptime if prefetch_init:
+        var prefetch_iters = (
+            static_num_iters if static_num_iters >= 0 else num_iters
+        )
         comptime for stage in range(num_pipeline_stages - 1):
-            comptime if a_iter.address_space == .GENERIC:
-                var a_smem_tile = a_smem_iter.next_unsafe(stage)[]
-                _copy_tile_to_sram[async_copy_a_layout, swizzle_a, a_masked](
-                    a_smem_tile, a_iter[], a_iter.num_valid_rows
-                )
+            if stage < prefetch_iters:
+                comptime if a_iter.address_space == .GENERIC:
+                    var a_smem_tile = a_smem_iter.next_unsafe(stage)[]
+                    _copy_tile_to_sram[
+                        async_copy_a_layout, swizzle_a, a_masked
+                    ](a_smem_tile, a_iter[], a_iter.num_valid_rows)
 
-                a_iter._incr()
+                    a_iter._incr()
 
-            comptime if b_iter.address_space == .GENERIC:
-                var b_smem_tile = b_smem_iter.next_unsafe(stage)[]
-                _copy_tile_to_sram[async_copy_b_layout, swizzle_b, b_masked](
-                    b_smem_tile,
-                    b_iter[],
-                    _b_valid_rows(b_iter.num_valid_rows, transpose_b, stage),
-                )
+                comptime if b_iter.address_space == .GENERIC:
+                    var b_smem_tile = b_smem_iter.next_unsafe(stage)[]
+                    _copy_tile_to_sram[
+                        async_copy_b_layout, swizzle_b, b_masked
+                    ](
+                        b_smem_tile,
+                        b_iter[],
+                        _b_valid_rows(
+                            b_iter.num_valid_rows, transpose_b, stage
+                        ),
+                    )
 
-                b_iter._incr()
+                    b_iter._incr()
 
             async_copy_commit_group()
 

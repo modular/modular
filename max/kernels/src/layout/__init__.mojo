@@ -51,6 +51,7 @@ from .tile_tensor import (
     ImmTileTensor,
     LTToTTLayout,
     MutTileTensor,
+    MutabilityKnown,
     TileTensor,
     flatten_leading,
     stack_allocation,

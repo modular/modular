@@ -16,8 +16,10 @@
 Describes, for every op, what redistribution to perform before the op runs.
 The pipeline is deliberately local: per-op rules over a placement vocabulary
 (:class:`Replicated`, :class:`Sharded`, :class:`Partial`,
-:class:`Unknown`), scored by a single cost model, with the cheapest plan
-picked at each dispatch. There is no whole-graph trace.
+:class:`Unknown`), scored by a single cost model, with the cheapest allowed
+row picked on each mesh axis. A dispatch whose every row needs a transition
+the current policy disallows raises rather than picking one. There is no
+whole-graph trace.
 
 An op redistributes its inputs whenever the plan it picks needs it, so a
 model can contain collectives it never wrote. Inside an
@@ -46,8 +48,10 @@ that would replace it:
     a = full([4, 8], 1.0, device=DeviceMapping(mesh, (Sharded(1),)))
     b = full([8, 2], 1.0, device=DeviceMapping(mesh, (Sharded(0),)))
 
-    # ``relu`` needs the full sum, so its input is allreduced first. This
-    # block reports that, instead of letting it pass unremarked.
+    # ``relu`` has no row for a partial sum, so its input moves to Replicated.
+    # The default transition set makes that an allreduce: the cheaper
+    # reduce-scatter into Sharded is not allowed outside an
+    # ``auto_reshard(ALL_TRANSITIONS)`` block. This block reports the move.
     with auto_reshard(mode="warn"):
         y = relu(matmul(a, b))
 
@@ -58,10 +62,11 @@ that would replace it:
     # full(4, 8) @ full(8, 2) = 8 * ones(4, 2), then relu is a no-op (positive).
     assert np.allclose(y.to_numpy(), np.full((4, 2), 8.0))
 
-This module avoids the overloaded word "rank". A *device* is one accelerator;
-a *mesh axis* is one named dimension of the :class:`DeviceMesh` grid; a
-*shard* is one device's piece of a tensor; a *tensor axis* is a dimension of
-the tensor itself.
+This module avoids the overloaded word "rank" in prose. A *device* is one
+accelerator; a *mesh axis* is one named dimension of the :class:`DeviceMesh`
+grid; a *shard* is one device's piece of a tensor; a *tensor axis* is a
+dimension of the tensor itself. :attr:`TensorLayout.rank` is the number of
+tensor axes.
 """
 
 from ._auto_reshard import auto_reshard

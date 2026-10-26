@@ -284,6 +284,38 @@ struct Metrics {
     disk_write_bytes: AtomicU64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LeafRecency {
+    /// The whole sequence, last block first, so the shared prefix at its
+    /// start is evicted last.
+    FullSequence,
+    /// The last `blocks` of the sequence, in order, so blocks the window
+    /// slid past age toward eviction.
+    SlidingWindow { blocks: usize },
+    /// The whole sequence, in order, so the latest state is evicted last.
+    Recurrent,
+}
+
+/// Returns `hashes` in the order a leaf with `recency` touches them.
+fn touch_order(recency: LeafRecency, hashes: &[BlockHash]) -> Vec<BlockHash> {
+    match recency {
+        LeafRecency::FullSequence => hashes.iter().rev().copied().collect(),
+        LeafRecency::SlidingWindow { blocks } => {
+            hashes[hashes.len().saturating_sub(blocks)..].to_vec()
+        }
+        LeafRecency::Recurrent => hashes.to_vec(),
+    }
+}
+
+/// Moves the host block holding `block_hash` to the most-recently-used end of
+/// `leaf_idx`'s free queue, if the host tier holds one.
+fn touch_host(pool: &mut JengaBlockPool<BlockHash>, leaf_idx: usize, block_hash: BlockHash) {
+    if let Some(host_bid) = pool.lookup_hash(leaf_idx, block_hash) {
+        pool.touch(leaf_idx, host_bid);
+        pool.free_block(leaf_idx, host_bid);
+    }
+}
+
 /// The tiered KV connector: host tier plus an optional disk last level.
 pub struct TieredConnector {
     num_leaves: usize,
@@ -291,6 +323,7 @@ pub struct TieredConnector {
     pub disk: Arc<DiskTier>,
     engine: Arc<CopyEngine>,
     bytes_per_leaf: Vec<usize>,
+    recency: Vec<LeafRecency>,
 
     onload_lanes: Vec<Arc<TransferLane>>,
     onload_rr: AtomicUsize,
@@ -313,6 +346,10 @@ fn next_onload_lane(rr: &AtomicUsize, n: usize) -> usize {
 
 impl TieredConnector {
     /// Builds a connector.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "connector construction threads through all tier and leaf config"
+    )]
     pub fn new(
         total_num_host_blocks: usize,
         cache_ratios: Vec<usize>,
@@ -321,11 +358,19 @@ impl TieredConnector {
         bytes_per_leaf: Vec<usize>,
         only_last_level: bool,
         num_h2d_onload_lanes: usize,
+        recency: Vec<LeafRecency>,
     ) -> crate::error::Result<Self> {
         if num_h2d_onload_lanes == 0 {
             return Err(crate::error::ConnectorError::Config(
                 "num_h2d_onload_lanes must be at least 1".to_owned(),
             ));
+        }
+        if recency.len() != cache_ratios.len() {
+            return Err(crate::error::ConnectorError::Config(format!(
+                "got a recency for {} leaves, expected {}",
+                recency.len(),
+                cache_ratios.len()
+            )));
         }
         let skip_host_cache_tier = only_last_level && disk.enabled;
         Ok(TieredConnector {
@@ -342,6 +387,7 @@ impl TieredConnector {
             disk,
             engine,
             bytes_per_leaf,
+            recency,
             // Each onload lane does a blocking `memcpy; sync` per copy on its
             // own H2D stream. N>1 lets host-hit admits overlap. N=1 is the
             // historical FIFO that yields the copy engine after every block.
@@ -398,6 +444,27 @@ impl TieredConnector {
             .lookup_hash(leaf_hash.leaf_idx, leaf_hash.block_hash)
             .is_some()
             || self.disk.contains(leaf_hash)
+    }
+
+    /// Refreshes each leaf's recency for the blocks of `hashes` it reads,
+    /// ordered by the leaf's [`LeafRecency`], so a later-touched block is
+    /// evicted after an earlier one.
+    ///
+    /// `hashes` is the whole sequence, in order. A host block goes to the
+    /// most-recently-used end of its free queue; one a transfer still pins goes
+    /// there when the pin drops. Hashes neither tier holds are skipped.
+    pub fn touch(&mut self, hashes: &[BlockHash]) {
+        for leaf_idx in 0..self.recency.len() {
+            let ordered = touch_order(self.recency[leaf_idx], hashes);
+            for &block_hash in &ordered {
+                touch_host(&mut self.pool, leaf_idx, block_hash);
+            }
+            self.disk
+                .touch(ordered.into_iter().map(|block_hash| LeafHash {
+                    leaf_idx,
+                    block_hash,
+                }));
+        }
     }
 
     /// Applies the host block events the lanes handed back: publishes filled
@@ -830,8 +897,9 @@ mod tests {
     };
 
     use super::{
-        BlockHash, DiskTier, Hit, JengaBlockPool, LeafHash, PoolOptions, next_onload_lane,
-        plan_load, plan_offload, reserve_disk_promotions,
+        BlockHash, DiskTier, Hit, JengaBlockPool, LeafHash, LeafRecency, PoolOptions,
+        next_onload_lane, plan_load, plan_offload, reserve_disk_promotions, touch_host,
+        touch_order,
     };
 
     fn hashes(count: u128) -> Vec<BlockHash> {
@@ -845,6 +913,47 @@ mod tests {
         assert_eq!(next_onload_lane(&rr, 2), 1);
         assert_eq!(next_onload_lane(&rr, 2), 0);
         assert_eq!(rr.load(Ordering::Relaxed), 3);
+    }
+
+    #[test]
+    fn a_full_sequence_is_touched_last_block_first() {
+        assert_eq!(
+            touch_order(LeafRecency::FullSequence, &hashes(3)),
+            [BlockHash(2, 2), BlockHash(1, 1), BlockHash(0, 0)]
+        );
+    }
+
+    #[test]
+    fn a_sliding_window_touches_only_its_window_in_order() {
+        let window = LeafRecency::SlidingWindow { blocks: 2 };
+        assert_eq!(
+            touch_order(window, &hashes(4)),
+            [BlockHash(2, 2), BlockHash(3, 3)]
+        );
+        // A window wider than the sequence is the whole sequence.
+        assert_eq!(touch_order(window, &hashes(1)), [BlockHash(0, 0)]);
+    }
+
+    #[test]
+    fn a_recurrent_leaf_is_touched_in_order() {
+        assert_eq!(touch_order(LeafRecency::Recurrent, &hashes(2)), hashes(2));
+    }
+
+    #[test]
+    fn a_touched_host_block_is_evicted_after_an_untouched_one() {
+        let mut pool = JengaBlockPool::new(2, vec![1], PoolOptions::default()).expect("a pool");
+        let [first, second] = [BlockHash(1, 1), BlockHash(2, 2)];
+        for hash in [first, second] {
+            let bid = pool.alloc_block(0).expect("a block");
+            pool.commit_into_prefix_cache(0, hash, bid);
+            pool.free_block(0, bid);
+        }
+
+        touch_host(&mut pool, 0, first);
+        pool.alloc_block(0).expect("a block");
+
+        assert!(pool.lookup_hash(0, first).is_some());
+        assert!(pool.lookup_hash(0, second).is_none());
     }
 
     /// A disk promotion awaiting its host block.

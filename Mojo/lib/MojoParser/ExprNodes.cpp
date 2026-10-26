@@ -69,8 +69,7 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 static bool usesClosurePipeline(FnOp fn) {
-  return fn->getParentOfType<FnOp>() && !fn.isOptionalSymbol() &&
-         !fn.getFuncTypeGenerator().isCapturing();
+  return fn->getParentOfType<FnOp>() && !fn.isOptionalSymbol();
 }
 
 LogicalResult ExprNode::emitDestructuringPValue(PValue value,
@@ -3406,8 +3405,7 @@ auto SubscriptNode::emitLCVIR(ExprDest &dest, IREmitter &emitter,
 
         auto callOv =
             OverloadSet::lookup(emitter.getDeclScope(), ty, "__call__", base,
-                                CallSyntax::kMethodCallSynthetic,
-                                /*contextualType=*/ty);
+                                CallSyntax::kMethodCallSynthetic);
 
         if (!callOv.isNull()) {
           assert(callOv.explicitParamBindings.empty() &&
@@ -3773,8 +3771,10 @@ static AnyValue emitBinOpCall(ASTExprAnd<AnyValue> lhs,
                         {lhs, rhs});
 
   // `a in b` => `b.__contains__(a)` and there is no reversed form.
-  if (kind == ExprNode::Kind::kCmpIn)
+  if (kind == ExprNode::Kind::kCmpIn) {
     std::swap(operands[0], operands[1]);
+    std::swap(lhs, rhs);
+  }
 
   // Check to see if we have a forward version of this function on the primary
   // receiver.
@@ -4837,7 +4837,7 @@ AnyValue FunctionTypeNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   argList.resultArg = resultArg;
   argList.effects = effects;
   argList.isThin = isThin;
-  argList.isParsingClosure = !isThin && !effects.isCapturing();
+  argList.isParsingClosure = !isThin;
   argList.thrownTypeExpr = const_cast<ExprNode *>(thrownTypeExpr);
 
   TypeCheckedFnSignature tcSignature(paramList, argList, originExpr,
@@ -5040,9 +5040,10 @@ AnyValue MagicFunctionNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   auto immortal = emitter.builder->getAttr<AnyOriginAttr>(/*isMut=*/true);
   bool startsUninit = kind == ExprNode::kGetAddressAsUninitLValue;
   bool endsUninit = kind == ExprNode::kGetAddressAsOwned;
+  StringAttr desc = StringAttr::get(emitter.getContext(), "(reference value)");
   exprVal =
       RefFromPointerOp::create(*emitter.builder, getLocation(emitter), exprVal,
-                               immortal, startsUninit, endsUninit);
+                               immortal, desc, startsUninit, endsUninit);
 
   /// __get_address_as_owned_value(ptr) # returns RValue
   if (kind == ExprNode::kGetAddressAsOwned)

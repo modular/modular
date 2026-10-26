@@ -28,18 +28,6 @@ comptime EnableForcedOrdering = get_defined_bool[
 ]()
 comptime EnableEarlyAdd = get_defined_bool["FA4AddEarly", False]()
 
-# Cross-stage P TMEM placement (2Q, non-WS only): each softmax stage's P is
-# written into the OTHER stage's free S columns instead of self-aliasing its
-# own S, enabling early S-release. Default OFF => byte-identical.
-comptime EnableTMEMCrossP = get_defined_bool["FA4_TMEM_CROSS_P", True]()
-
-# Reading the same define with the opposite default recovers whether the user
-# passed it at all: only an explicit `=true` makes a False-defaulted read come
-# back True. The cross-stage-P guards key off this, so the ON-by-default path
-# can never trip a guard -- they fire only when someone explicitly asks for
-# cross-stage P on a config that does not support it.
-comptime ExplicitTMEMCrossP = get_defined_bool["FA4_TMEM_CROSS_P", False]()
-
 # Programmatic Dependent Launch level for the SM100 MHA prefill kernel.  On by
 # default so back-to-back attention grids in a stream overlap launch/prologue
 # latency; disable with `-D MHA_PDL=false`.  When > OFF the kernel emits
@@ -60,6 +48,15 @@ struct FA4Config[
     *,
     rope_dtype_: Optional[DType] = None,
     scale_dtype_: Optional[DType] = None,
+    # Cross-stage P TMEM placement (2Q, non-WS only): each softmax stage's P
+    # is written into the OTHER stage's free S columns instead of
+    # self-aliasing its own S, enabling early S-release. A comptime
+    # parameter, threaded from the dispatch entries, so an A/B can
+    # elaborate both arms of one executable -- one compile, one fixture
+    # fill, paired timing. Defaults ON (the measured choice); where the
+    # support matrix rejects the config, `crossp_on()` folds it to False
+    # and every consumer stays byte-identical to cross-P-off.
+    cross_p: Bool = True,
 ](TrivialRegisterPassable):
     var MMA_M: Int
     var BM: Int
@@ -136,6 +133,13 @@ struct FA4Config[
     # False -- the default and every config today -- means `o_phys_cols()` is
     # literally `padded_ov_depth`, i.e. every existing config is byte-identical.
     var ws_shared_key: Bool
+    # Fuses a GQA group that does not divide MMA_M (9 or 6) into one CTA on the
+    # warp-specialized BM=32 depth-128 route. Fusing shrinks `BM_eff()` from 32
+    # to `32 // group`, so this is an explicit knob rather than derived: the
+    # dispatch instantiates both the fused and the unfused config and picks per
+    # launch by `max_prompt_len`. Reconstructors (`with_splitk`) must forward it,
+    # or the rebuilt config is unfused under a grid sized for the fused one.
+    var fuse_nondividing: Bool
 
     # Concrete scale/rope dtypes for `Scalar[...]`/pointer reads. When the
     # optional param is unset, fall back to `qkv_dtype` so the type is always
@@ -1091,12 +1095,14 @@ struct FA4Config[
     ) -> Bool:
         """The cross-stage-P support matrix, in one place.
 
-        Every `comptime assert` that guards a cross-stage-P code path derives
-        its condition from here, so turning the feature on BY DEFAULT can never
-        trip one of those guards. They stay hard errors, but only an explicit
-        `-D FA4_TMEM_CROSS_P=true` on an unsupported config can reach them.
+        `crossp_on()` folds the knob to False wherever this is False, which
+        is what keeps every consumer outside the supported matrix
+        byte-identical to cross-P-off -- a caller may thread `cross_p=True`
+        through a dispatch that also builds 1Q / WS / MLA vehicles, and
+        those fold it silently rather than failing the build.
 
-        Deriving the default from the guards is the point. An earlier version
+        Deriving the matrix from the consumers' requirements is the point.
+        An earlier version
         of this predicate listed the consumers it knew about instead, and CI
         found a consumer it did not know about within the hour.
 
@@ -1134,10 +1140,10 @@ struct FA4Config[
         as an `smem_used != smem_size` constraint failure, or worse, an
         ILLEGAL_ADDRESS at runtime.
 
-        `FA4_TMEM_CROSS_P` now defaults ON, so `crossp_supported` is what keeps
+        `cross_p` defaults ON, so `crossp_supported` is what keeps
         every other consumer byte-identical to cross-P-off.
         """
-        return EnableTMEMCrossP and Self.crossp_supported(
+        return Self.cross_p and Self.crossp_supported(
             self.num_q,
             self.use_ws,
             self.pair_cta,
@@ -1194,6 +1200,7 @@ struct FA4Config[
         single_o: Bool = False,
         bn_cap: Int = 0,
         ws_shared_key: Bool = False,
+        fuse_nondividing: Bool = False,
     ):
         # num_qk_stages == 0 (default) derives the optimal Q@K' staging.
         # A nonzero value pins it (used by the in-kernel 1Q/2Q switch, which
@@ -1234,9 +1241,21 @@ struct FA4Config[
             self.MMA_M = 32
         else:
             self.MMA_M = 128
-        # A group that does not divide MMA_M is packed only by the d256
-        # shared-key decode vehicle: its tile holds `MMA_M // group` seq
-        # positions x `group` heads and leaves `MMA_M % group` pad rows.
+        # A group that does not divide MMA_M is packed by the d256 shared-key
+        # decode vehicle, and, when requested via `fuse_nondividing`, by the
+        # BM=32 depth-128 route. Such a tile holds `MMA_M // group` seq
+        # positions x `group` heads and leaves `MMA_M % group` pad rows, which
+        # `load_warp.mojo` zero-fills and excludes from the Q barrier's bytes.
+        # The request is honored only for the validated (group, depth) set, so
+        # callers can pass it unconditionally and read the result back.
+        self.fuse_nondividing = (
+            fuse_nondividing
+            and BM == 32
+            and not pair_cta
+            and qk_depth == 128
+            and not is_mla
+            and (group == 9 or group == 6)
+        )
         self.fuse_gqa = (
             group > 1
             and not is_mla
@@ -1248,6 +1267,7 @@ struct FA4Config[
                     and qk_depth == 256
                     and group < self.MMA_M
                 )
+                or self.fuse_nondividing
             )
         )
         comptime if Self.qkv_dtype.is_float8():
@@ -1364,7 +1384,7 @@ struct FA4Config[
         # +32 only to clear row stats it keeps inplaced in TMEM — MAX keeps
         # stats in SMEM, so the base is free). 2Q + non-WS only: the 1Q
         # odd-T tail aliases s1->s0, which would collide the two P windows.
-        comptime if EnableTMEMCrossP:
+        comptime if Self.cross_p:
             if self.num_q == 2 and not self.use_ws:
                 self.TMEM_P0 = self.TMEM_S1
                 self.TMEM_P1 = Self.TMEM_S0
@@ -1657,7 +1677,7 @@ struct FA4Config[
         # needs `use_shared_kv`, which is only decided above. Same predicate
         # FA4MiscMBars.CrossP_count is threaded from, so the accounting and the
         # layout cannot drift.
-        if EnableTMEMCrossP and Self.crossp_supported(
+        if Self.cross_p and Self.crossp_supported(
             self.num_q,
             self.use_ws,
             self.pair_cta,
@@ -1966,6 +1986,10 @@ struct FA4Config[
         mode) are re-passed so a GLM-style config (`v_head_dim != qk_nope`) or a
         single-O config survives the reconstruction; both are byte-identical for
         the DeepSeek/MHA shapes (nope == ov, single_o == False).
+
+        `fuse_nondividing` is re-passed too: dropping it changes `BM_eff()`, so
+        the rebuilt config would run unfused under a grid sized for the fused
+        one.
         """
         return Self(
             num_q_heads=self.num_q_heads,
@@ -1985,10 +2009,17 @@ struct FA4Config[
             nope_depth=self.nope_depth,
             single_o=self.single_o,
             ws_shared_key=self.ws_shared_key,
+            fuse_nondividing=self.fuse_nondividing,
         )
 
     @inline(.always)
-    def with_bm(self, bm: Int, *, ws_shared_key: Bool = False) -> Self:
+    def with_bm(
+        self,
+        bm: Int,
+        *,
+        ws_shared_key: Bool = False,
+        fuse_nondividing: Bool = False,
+    ) -> Self:
         """Reconstruct this config with an explicit `BM` (single-CTA).
 
         Used by dispatch to force a warp-specialized packed-TMEM datapath
@@ -2007,6 +2038,10 @@ struct FA4Config[
         *selected* here (a `BM=32`/`BM=64` reconstruction is exactly where it
         becomes legal). It defaults to False, so every existing call is
         unchanged.
+
+        `fuse_nondividing` follows the same rule: it is selected here, defaults
+        to False, and is honored only for BM=32 depth-128 groups 9 and 6 (read
+        the result back from the returned config's `fuse_nondividing`).
         """
         return Self(
             num_q_heads=self.num_q_heads,
@@ -2020,6 +2055,7 @@ struct FA4Config[
             BM=bm,
             nope_depth=self.nope_depth,
             ws_shared_key=ws_shared_key,
+            fuse_nondividing=fuse_nondividing,
         )
 
     @inline(.always)
@@ -2112,6 +2148,8 @@ struct FA4Config[
             Self.scale_dtype_size,
             "\nuse_shared_kv = ",
             self.use_shared_kv,
+            "\ncross_p = ",
+            Self.cross_p,
         )
 
     def correction_smem_elements(self) -> Int:

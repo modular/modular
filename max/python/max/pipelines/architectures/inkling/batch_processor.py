@@ -258,12 +258,17 @@ class InklingBatchProcessor(
             if getattr(context, "needs_vision_encoding", False)
             for image in context.images
         ]
-        assert self._vision_model is not None
         device0 = self.runtime.devices[0]
         pixels = _pinned_copy(blocks, device0)
-        embeddings = self._vision_model.execute(pixels)[0]
-        assert isinstance(embeddings, Buffer)
+        embeddings = self._encode_images(pixels)
         return embeddings, _pinned_copy([indices], device0)
+
+    def _encode_images(self, patches: Buffer) -> Buffer:
+        """Runs the vision tower over one block of patches."""
+        assert self._vision_model is not None
+        embeddings = self._vision_model.execute(patches)[0]
+        assert isinstance(embeddings, Buffer)
+        return embeddings
 
 
 def _pinned_copy(

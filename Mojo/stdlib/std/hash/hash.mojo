@@ -25,8 +25,10 @@ There are a few main tools in this module:
 """
 
 from std.builtin.constrained import _field_conforms_to_error
-from std.builtin._enum import __Enum
+from std.builtin.enum_like import EnumLike
+from std.builtin.variadics import ParameterList, TypeList
 from std.collections import Span
+from std.os import abort
 from std.reflection import reflect
 
 from .hasher import Hasher, default_hasher
@@ -84,17 +86,15 @@ trait Hashable:
         Args:
             hasher: The hasher instance to contribute to.
         """
+        # An `EnumLike` type hashes its active case and that case's payload,
+        # not its fields.
+        comptime if conforms_to(Self, EnumLike):
+            _enum_reflection_hash(self, hasher)
+            return
+
         comptime r = reflect[Self]
         comptime names = r.field_names()
         comptime types = r.field_types()
-
-        # Just so we have a better error message: the assert on `Hashable`
-        # below also rejects an enum's hidden storage field, but reports that
-        # field instead of the enum itself.
-        comptime assert not conforms_to(Self, __Enum), (
-            "deriving `__hash__` is not yet supported for enums; write"
-            " `__hash__`"
-        )
 
         comptime for i in range(names.length):
             comptime T = types[i]
@@ -104,6 +104,29 @@ trait Hashable:
                 ParentConformsTo="Hashable",
             ]()
             r.field_ref[i](self).__hash__(hasher)
+
+
+@inline(.always)
+def _enum_reflection_hash[
+    T: EnumLike & Hashable
+](this: T, mut hasher: Some[Hasher]):
+    """Hashes the index of the active case, then the payload of that case."""
+    var discriminant = this._get_enum_discriminant()
+    discriminant.__hash__(hasher)
+    comptime names = ParameterList[T._enum_case_names]()
+    comptime types = TypeList[Trait=AnyType, T._enum_case_types]()
+    comptime for i in range(names.length):
+        if discriminant == i:
+            comptime PayloadType = types[i]
+            comptime if PayloadType != NoneType:
+                comptime assert conforms_to(PayloadType, Hashable), (
+                    "the payload of every case must conform to `Hashable` to"
+                    " use the default `Hashable` implementation for an"
+                    " `EnumLike` type"
+                )
+                this._unsafe_get_enum_payload[i]().__hash__(hasher)
+            return
+    abort("`_get_enum_discriminant` returned an index that names no case")
 
 
 def hash[

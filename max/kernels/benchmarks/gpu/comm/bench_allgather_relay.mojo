@@ -261,32 +261,32 @@ def main() raises:
         else:
             peer_base = pair_base
 
-        comptime SrcPtrType = ImmPointer[Scalar[dtype], ImmutAnyOrigin]
         comptime OutPtrType = MutPointer[Scalar[dtype], MutAnyOrigin]
-        var my_in_ptrs = StaticTuple[SrcPtrType, GROUP]()
-        var my_out_ptrs = StaticTuple[OutPtrType, GROUP]()
-        var my_lengths = StaticTuple[Int32, GROUP](Int32(length))
-        for i in range(GROUP):
-            my_in_ptrs[i] = rebind[SrcPtrType](
-                in_tile(group_base + i, length).ptr
+        var my_in = Array[_, GROUP](
+            fill_with=lambda (i: Int) -> InTileType: in_tile(
+                group_base + i, length
             )
-            my_out_ptrs[i] = out_tile(rank, i, length).ptr
+        )
+        var my_out_ptrs = Array[_, GROUP](
+            fill_with=lambda (i: Int) -> OutPtrType: rebind[OutPtrType](
+                out_tile(rank, i, length).ptr
+            )
+        )
+        var my_lengths = Array[_, GROUP](fill=Int32(length))
 
-        var peer_in_ptrs = StaticTuple[
-            ImmPointer[Scalar[dtype], ImmutAnyOrigin], GROUP
-        ]()
-        var peer_lengths = StaticTuple[Int32, GROUP](Int32(length))
-        var peer_out_ptrs = StaticTuple[
-            MutPointer[Scalar[dtype], MutAnyOrigin], GROUP * GROUP
-        ]()
-        for dst_idx in range(GROUP):
-            peer_in_ptrs[dst_idx] = rebind[
-                ImmPointer[Scalar[dtype], ImmutAnyOrigin]
-            ](in_tile(peer_base + dst_idx, length).ptr)
-            for src_idx in range(GROUP):
-                peer_out_ptrs[dst_idx * GROUP + src_idx] = rebind[
-                    MutPointer[Scalar[dtype], MutAnyOrigin]
-                ](out_tile(peer_base + dst_idx, src_idx, length).ptr)
+        var peer_in = Array[_, GROUP](
+            fill_with=lambda (i: Int) -> InTileType: in_tile(
+                peer_base + i, length
+            )
+        )
+        var peer_lengths = Array[_, GROUP](fill=Int32(length))
+        # Flattened as [dst * GROUP + src], matching `allgather`'s output
+        # layout.
+        var peer_out_ptrs = Array[_, GROUP * GROUP](
+            fill_with=lambda (i: Int) -> OutPtrType: rebind[OutPtrType](
+                out_tile(peer_base + i // GROUP, i % GROUP, length).ptr
+            )
+        )
 
         var pair_sigs = Array[_, PAIR](
             fill_with=lambda (i: Int) -> MutPointer[
@@ -298,9 +298,9 @@ def main() raises:
 
         _allgather_p2p_relay(
             my_out_ptrs,
-            my_in_ptrs,
+            my_in,
             my_lengths,
-            peer_in_ptrs,
+            peer_in,
             peer_lengths,
             peer_out_ptrs,
             pair_sigs,

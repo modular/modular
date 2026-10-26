@@ -510,8 +510,6 @@ kgen.generator @datalayout_operators() {
   kgen.param.constant: index = <get_sizeof(index, #target)>
   // CHECK-NEXT: <8>
   kgen.param.constant: index = <get_sizeof(!kgen.generator<() -> ()>, #target)>
-  // CHECK-NEXT: <16>
-  kgen.param.constant: index = <get_sizeof(!kgen.generator<() capturing -> ()>, #target)>
 
   // CHECK-NEXT: <4>
   kgen.param.constant: index = <get_alignof(si32, #target)>

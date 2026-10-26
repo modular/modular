@@ -31,8 +31,6 @@ from nn.topk import (
     _topk_dead_val,
 )
 
-from std.utils import IndexList
-
 comptime DEBUG_FILE = False
 comptime SEED = 42
 
@@ -415,14 +413,9 @@ def radix_sort_pairs_kernel[
             # Double the offset for the next iteration to fetch values from farther threads.
             offset <<= 1
 
-        # After the loop, set the first thread's offset to 0.
-        if tid == 0:
-            s_thread_offsets[tid * NUM_BUCKETS + radix] = 0
-        else:
-            # For all other threads, set the offset to the value of the previous thread.
-            s_thread_offsets[tid * NUM_BUCKETS + radix] = s_thread_offsets[
-                (tid - 1) * NUM_BUCKETS + radix
-            ]
+        # Make the scan exclusive with the thread's own count. Reading slot
+        # `tid - 1` instead races with thread `tid - 1` writing it.
+        s_thread_offsets[tid * NUM_BUCKETS + radix] -= counts_buf[radix]
         # Synchronize all threads to ensure that the final offset values are set.
         barrier()
 
@@ -554,7 +547,7 @@ def run_radix_sort_pairs_gpu[
     mut keys: DoubleBuffer[dtype, ...],
     mut key_ids: DoubleBuffer[out_idx_type, ...],
     skip_sort: MutPointer[Scalar[.bool], _],
-    in_shape: IndexList,
+    in_shape: Coord[Int, Int],
 ) raises:
     """
     Runs a multi-pass radix sort on key/index pairs across batches on the GPU
@@ -572,7 +565,7 @@ def run_radix_sort_pairs_gpu[
         keys: DoubleBuffer[dtype] - Double buffer holding the keys to sort, swapped each pass.
         key_ids: DoubleBuffer[out_idx_type] - Double buffer holding the key indices, swapped each pass.
         skip_sort: Pointer[Scalar[.bool]] - Per-batch flag indicating whether sorting is skipped.
-        in_shape: IndexList - Shape of the input tensor as [batch_size, vocab_size].
+        in_shape: Coord - Shape of the input tensor as [batch_size, vocab_size].
     """
     var batch_size = in_shape[0]
     var vocab_size = in_shape[1]
@@ -780,9 +773,7 @@ def _topp_minp_sampling_gpu[
 
     # Step 1; Apply temperature scaling to the logits and apply
     # softmax to get probabilities
-    var input_shape = IndexList[input_logits.rank](
-        Int(input_logits.dim[0]()), Int(input_logits.dim[1]())
-    )
+    var input_shape = (Int(input_logits.dim[0]()), Int(input_logits.dim[1]()))
     var batch_size = input_shape[0]
     var vocab_size = input_shape[1]
 
@@ -804,7 +795,7 @@ def _topp_minp_sampling_gpu[
 
     _softmax_gpu[dtype, 1, input_logits.rank](
         apply_temperature,
-        Coord(input_shape),
+        input_shape,
         input_probs,
         input_logits.rank - 1,
         ctx,

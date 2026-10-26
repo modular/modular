@@ -340,24 +340,9 @@ void ModuleLoader::traverseImportDirectories(
   for (auto &rawPath : autoImportDirs) {
     if (callback(rawPath).wasInterrupted())
       return;
-
-    // Cannot find the file, then check child directories of the auto import
-    // directory.
-    std::error_code ec;
-    for (llvm::sys::fs::recursive_directory_iterator f(rawPath, ec), e; f != e;
-         f.increment(ec)) {
-      if (ec)
-        continue;
-      const std::string &path = f->path();
-      // Skip non-directories and source packages, internal packages should be
-      // imported using a relative import.
-      if (!llvm::sys::fs::is_directory(path) ||
-          Filesystem::isMojoSourcePackagePath(path))
-        continue;
-      if (callback(path).wasInterrupted())
-        return;
-    }
   }
+
+  llvm::SourceMgr &sourceMgr = shared.getSourceMgr();
 
   // Check the working directory: the entry point's directory, derived once
   // from the main buffer and visible to every import site alike. No import site
@@ -365,7 +350,6 @@ void ModuleLoader::traverseImportDirectories(
   // depend on which file triggered it. A null buffer id requests no working
   // directory at all.
   if (importBufferFileId) {
-    llvm::SourceMgr &sourceMgr = shared.getSourceMgr();
     std::filesystem::path cwd =
         deriveWorkingDirectory(sourceMgr, sourceMgr.getMainFileID());
     if (!cwd.empty() && callback(cwd.string()).wasInterrupted())
@@ -373,9 +357,10 @@ void ModuleLoader::traverseImportDirectories(
   }
 
   // Check the include directories.
-  for (StringRef includeDir : shared.getSourceMgr().getIncludeDirs())
+  for (StringRef includeDir : sourceMgr.getIncludeDirs()) {
     if (callback(includeDir).wasInterrupted())
       return;
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -1127,6 +1112,7 @@ ModuleState &ModuleLoader::createPackageState(ModuleSpec moduleSpec,
                                    /*line=*/1, /*column=*/1);
   auto moduleBuilder = parentState.decl->getDeclEndBuilder();
   auto packageOp = PackageOp::create(moduleBuilder, loc, declName);
+  packageOp.setIsNamespace(moduleSpec.isNamespace());
   // Note we intentionally don't set a valid 'loc' here. The real loc is set
   // if/when the module is actually opened on demand.
   auto &decl = cast<PackageASTDecl>(shared.declResolver->addDecl(

@@ -55,6 +55,7 @@ def main() -> None:
         for name in (
             "exacto_gpqa_task.py",
             "exacto_gpqa_openrouter.py",
+            "exacto_mcq.py",
             "exacto_streaming.py",
             Path(__file__).name,
         )

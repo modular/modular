@@ -787,16 +787,25 @@ KernelDeclAdaptor::KernelDeclAdaptor(KernelDeclOp decl) {
     return f;
   };
 
-  executeFunction = buildFn(decl.getExecute(), kMoggExecuteFuncName);
-  buildGraphFunction = buildFn(decl.getBuildGraph(), kMoggBuildGraphFuncName);
+  executeFunction =
+      buildFn(decl.getExecute(),
+              stringifyKernelFunctionKind(KernelFunctionKind::Execute));
+  buildGraphFunction =
+      buildFn(decl.getBuildGraph(),
+              stringifyKernelFunctionKind(KernelFunctionKind::BuildGraph));
   elementwiseFunction =
-      buildFn(decl.getElementwise(), kMoggElementwiseFuncName);
+      buildFn(decl.getElementwise(),
+              stringifyKernelFunctionKind(KernelFunctionKind::Elementwise));
+  // The TileTensor overload is a Mojo method named `elementwise` too.
   tileElementwiseFunction =
-      buildFn(decl.getTileElementwise(), kMoggElementwiseFuncName);
+      buildFn(decl.getTileElementwise(),
+              stringifyKernelFunctionKind(KernelFunctionKind::Elementwise));
   executeDeviceFunction =
-      buildFn(decl.getExecuteDevice(), kMoggExecuteDeviceFuncName);
-  executeConfigurationFunction = buildFn(decl.getExecuteConfiguration(),
-                                         kMoggExecuteConfigurationFuncName);
+      buildFn(decl.getExecuteDevice(),
+              stringifyKernelFunctionKind(KernelFunctionKind::ExecuteDevice));
+  executeConfigurationFunction = buildFn(
+      decl.getExecuteConfiguration(),
+      stringifyKernelFunctionKind(KernelFunctionKind::ExecuteConfiguration));
 
   if (executeDeviceFunction)
     executeFunction = executeDeviceFunction;
@@ -816,21 +825,27 @@ KernelDeclAdaptor::KernelDeclAdaptor(KernelDeclOp decl) {
 }
 
 const KernelDeclFunctionAdaptor *
-KernelDeclAdaptor::getFunctionByLabel(llvm::StringRef label) const {
-  if (label == kMoggExecuteFunctionLabel)
-    return executeFunction ? &*executeFunction : nullptr;
-  if (label == kMoggElementwiseFunctionLabel)
-    return elementwiseFunction ? &*elementwiseFunction : nullptr;
-  if (label == "tile_elementwise")
-    return tileElementwiseFunction ? &*tileElementwiseFunction : nullptr;
-  if (label == kMoggBuildGraphFunctionLabel)
-    return buildGraphFunction ? &*buildGraphFunction : nullptr;
-  if (label == kMoggExecuteDeviceFunctionLabel)
-    return executeDeviceFunction ? &*executeDeviceFunction : nullptr;
-  if (label == kMoggExecuteConfigurationFunctionLabel)
-    return executeConfigurationFunction ? &*executeConfigurationFunction
-                                        : nullptr;
-  return nullptr;
+KernelDeclAdaptor::getFunction(KernelFunctionKind kind) const {
+  auto get = [](const std::optional<KernelDeclFunctionAdaptor> &function) {
+    return function ? &*function : nullptr;
+  };
+  switch (kind) {
+  case KernelFunctionKind::Execute:
+    return get(executeFunction);
+  case KernelFunctionKind::Elementwise:
+    return get(elementwiseFunction);
+  case KernelFunctionKind::TileElementwise:
+    return get(tileElementwiseFunction);
+  case KernelFunctionKind::BuildGraph:
+    return get(buildGraphFunction);
+  case KernelFunctionKind::ExecuteDevice:
+    return get(executeDeviceFunction);
+  case KernelFunctionKind::ExecuteConfiguration:
+    return get(executeConfigurationFunction);
+  case KernelFunctionKind::Shape:
+    return nullptr;
+  }
+  llvm_unreachable("unknown kernel function kind");
 }
 
 KernelFunctionDeclAdaptor::KernelFunctionDeclAdaptor(PrimitiveDeclOp decl)

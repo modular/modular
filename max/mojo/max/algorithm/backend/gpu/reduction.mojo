@@ -1035,7 +1035,7 @@ def reduce_launch[
         comptime BLOCK_SIZE = get_defined_int[
             "MOJO_REDUCTION_BLOCK_SIZE", 128
         ]()
-        if shape[reduce_dim] < WARP_SIZE:
+        if shape[reduce_dim] < ctx.default_device_info.warp_size:
             comptime kernel = small_reduce_kernel[
                 rank,
                 reduce_dim,

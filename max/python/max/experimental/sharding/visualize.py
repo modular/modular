@@ -416,12 +416,15 @@ def visualize(
     blocks: bool = True,
     tree: bool = True,
 ) -> None:
-    """Draws a mesh, or a tensor's slices, as blocks beside their tree.
+    """Draws a mesh or a tensor's slices as blocks beside the tree they share.
 
-    The blocks on the left give one cell per device (for a mesh) or one cell
-    per slice, sized in proportion to the local shape; the tree on the right
-    gives one level per mesh axis and the slice held at every node. Both
-    describe the same value, so they share one header.
+    The blocks on the left give one cell per device for a mesh, and one cell
+    per slice for a tensor, with the devices that share a slice listed
+    together. Cells are sized in proportion to the local shape when every
+    dimension is static, and equally otherwise. A ``Partial`` or ``Unknown``
+    cell is faded and labelled: what each device holds is not a piece of the
+    drawn tensor. The tree gives one level per mesh axis and the value held
+    at every node. Both describe the same value, so they share one header.
 
     A dict draws its values side by side, smaller, each under its key, so
     that related values such as an op's inputs and output read in one row:
@@ -452,8 +455,11 @@ def visualize(
         visualize({"lhs": lhs, "rhs": rhs, "out": out}, tree=False)
 
     Args:
-        value: A :class:`DeviceMesh`, a :class:`TensorLayout` or a tensor
-            (anything with a ``layout``), or a dict of them keyed by title.
+        value: A :class:`DeviceMesh`, a :class:`TensorLayout`, or anything
+            with a ``layout`` property that is a ``TensorLayout`` (such as a
+            :class:`~max.experimental.tensor.Tensor`), or a dict of them keyed
+            by title. A bare :class:`DeviceMapping` is not accepted; wrap it
+            in a :class:`TensorLayout` to give it a dtype and a shape.
         title: Text prepended to the header, such as the variable name. For
             a dict, a line above the whole row.
         blocks: Whether to draw the blocks.

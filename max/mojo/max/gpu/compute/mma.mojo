@@ -28,7 +28,7 @@ from std.sys.info import (
 from std.memory import bitcast
 
 from std.utils import StaticTuple
-from std.utils.index import Index
+from std.utils.coord import coord
 
 from max.gpu._utils import (
     _get_llvm_struct_fields,
@@ -690,7 +690,7 @@ def wgmma_async[
         "Number of output registers ",
         String(width),
         " don't match the instruction shape ",
-        String(Index(m, n, k)),
+        String(coord[m, n, k]),
     )
 
     comptime assert scale_d == 1 or scale_d == 0, (
@@ -812,7 +812,7 @@ def wgmma_async[
         "Number of output registers ",
         String(Int(width)),
         " don't match the instruction shape ",
-        String(Index(m, n, k)),
+        String(coord[m, n, k]),
     )
 
     comptime assert scale_d == 1 or scale_d == 0, (
@@ -935,7 +935,7 @@ def wgmma_async[
         "Number of output registers ",
         String(Int(frag_c_width)),
         " don't match the instruction shape ",
-        String(Index(m, n, k)),
+        String(coord[m, n, k]),
     )
 
     comptime assert (m * k // 128) * size_of[
@@ -944,7 +944,7 @@ def wgmma_async[
         "Number of input a registers ",
         String(Int(frag_a_width)),
         " don't match the instruction shape ",
-        String(Index(m, n, k)),
+        String(coord[m, n, k]),
     )
     # for now, limited support
     comptime assert m == 64

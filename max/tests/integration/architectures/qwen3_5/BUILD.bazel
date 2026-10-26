@@ -277,6 +277,16 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_chat_template_options",
+    srcs = ["test_chat_template_options.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/modeling",
+    ],
+)
+
+modular_py_test(
     name = "test_reasoning",
     srcs = ["test_reasoning.py"],
     deps = [

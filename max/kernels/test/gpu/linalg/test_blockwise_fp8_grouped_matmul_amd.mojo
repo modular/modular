@@ -234,7 +234,7 @@ def test_grouped_blockwise_fp8_matmul_amd[
         BLOCK_DIM_M=16,
         BLOCK_DIM_N=16,
         transpose_b=transpose_b,
-        scales_granularity_mnk=Index(
+        scales_granularity_mnk=Coord[Int, Int, Int](
             BLOCK_SCALE_M, BLOCK_SCALE_N, BLOCK_SCALE_K
         ),
     ](
@@ -677,7 +677,9 @@ def test_grouped_decode_grid_m_cap_capture_safety[
         BLOCK_DIM_M=16,
         BLOCK_DIM_N=16,
         transpose_b=transpose_b,
-        scales_granularity_mnk=Index(1, BLOCK_SCALE_N, BLOCK_SCALE_K),
+        scales_granularity_mnk=Coord[Int, Int, Int](
+            1, BLOCK_SCALE_N, BLOCK_SCALE_K
+        ),
     ](
         c_ref_dev,
         a_dev,

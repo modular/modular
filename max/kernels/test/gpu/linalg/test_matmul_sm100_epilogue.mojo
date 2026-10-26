@@ -31,8 +31,10 @@ from linalg.matmul.gpu.sm100_structured.default.matmul import (
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
+from std.utils.coord import Coord
 
 
 def test_matmul_sm100_epilogue[
@@ -43,9 +45,9 @@ def test_matmul_sm100_epilogue[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
-    cluster_shape: StaticTuple[Int32, 3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: DynamicCoord[.int, 3],
+    cluster_shape: Coord[Int, Int, Int],
     cta_group: Int,
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -143,8 +145,10 @@ def test_matmul_sm100_epilogue[
     ctx.enqueue_copy(c_device, c_host_ptr)
 
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        cluster_shape=Index(
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        cluster_shape=(
+            Int(cluster_shape[0]),
+            Int(cluster_shape[1]),
+            Int(cluster_shape[2]),
         ),
         mma_shape=mma_shape,
         cta_group=cta_group,
@@ -254,12 +258,16 @@ def main() raises:
                 ) and mma_n_scale % 2 != 0:
                     continue
 
-                comptime block_tile_shape = Index(
-                    64 * mma_m_scale, 8 * mma_n_scale, BK
+                comptime block_tile_shape = (
+                    64 * mma_m_scale,
+                    8 * mma_n_scale,
+                    BK,
                 )
 
-                comptime umma_shape = Index(
-                    128 * mma_m_scale, 16 * mma_n_scale, MMA_K
+                comptime umma_shape = (
+                    128 * mma_m_scale,
+                    16 * mma_n_scale,
+                    MMA_K,
                 )
 
                 comptime for register_based_epilogue in [True, False]:
@@ -279,9 +287,7 @@ def main() raises:
                             .bfloat16,
                             block_tile_shape,
                             umma_shape,
-                            cluster_shape=StaticTuple[Int32, 3](
-                                Int32(cluster_m), Int32(cluster_n), 1
-                            ),
+                            cluster_shape=(cluster_m, cluster_n, 1),
                             cta_group=2,
                             test_lambda_fn=True,
                             register_based_epilogue=register_based_epilogue,

@@ -1160,6 +1160,13 @@ public:
   // stream.
   virtual ErrorOr<DeviceContextRef> selectStream(unsigned streamId);
 
+  // Moves the cached free memory of every `selectStream` view that no caller
+  // holds back to the device memory pool, so an allocation miss can retry.
+  // Memory those views allocated during a graph capture stays with them.
+  // Blocks until each such view's stream is idle. Returns whether any view was
+  // flushed. The caller must not hold the memory manager lock.
+  virtual bool flushIdleStreamViews();
+
   /// \param pool optional externally owned memory pool the builder allocates
   /// from instead of creating a private one, letting multiple graphs share
   /// activation memory. The pool must belong to this context's device. Graphs

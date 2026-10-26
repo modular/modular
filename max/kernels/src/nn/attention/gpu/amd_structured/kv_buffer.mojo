@@ -1578,8 +1578,8 @@ struct DecodeKVBuffer[
 
     comptime _dtype = Self.dtype
     comptime _num_stages = Self.num_stages
-    comptime MMA_N = Self.tensor_core_mma.shape[1]
-    comptime MMA_K = Self.tensor_core_mma.shape[2]
+    comptime MMA_N = Int(Self.tensor_core_mma.shape[1])
+    comptime MMA_K = Int(Self.tensor_core_mma.shape[2])
     comptime num_warps_n = Self.BN // Self.WN
     comptime num_mmas = ceildiv(Self.config.wsize, Self.MMA_N)
 
@@ -1636,7 +1636,11 @@ struct DecodeKVBuffer[
     comptime _TiledMma = TiledMmaOp[
         out_type=Self.tensor_core_mma.out_type,
         in_type=Self.dtype,
-        shape=Self.tensor_core_mma.shape,
+        shape=(
+            Int(Self.tensor_core_mma.shape[0]),
+            Int(Self.tensor_core_mma.shape[1]),
+            Int(Self.tensor_core_mma.shape[2]),
+        ),
         transpose_b=Self.tensor_core_mma.transpose_b,
     ]
 

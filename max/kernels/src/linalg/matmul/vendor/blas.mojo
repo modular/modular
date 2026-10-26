@@ -95,9 +95,9 @@ from _rocblas.rocblas import (
     rocblas_destroy_handle,
 )
 from max.gpu.host import DeviceBuffer, DeviceContext, default_accelerator
-from max.gpu.host._legacy._kernel_load_gate import KernelLoadScope
-from max.gpu.host._legacy._amdgpu_hip import HIP
-from max.gpu.host._legacy._nvidia_cuda import CUDA
+from max.gpu.host import KernelLoadScope
+from max.gpu.host import HIP
+from max.gpu.host import CUDA
 from layout import Idx, TileTensor, row_major
 from layout.tile_tensor import (
     NullableTileTensor,

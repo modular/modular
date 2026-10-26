@@ -46,6 +46,8 @@ constexpr llvm::StringLiteral kStackTraceOnError =
 constexpr llvm::StringLiteral kStackTraceOnCrash =
     "max-debug.stack-trace-on-crash";
 constexpr llvm::StringLiteral kSourceTracebacks = "max-debug.source-tracebacks";
+constexpr llvm::StringLiteral kSourceTracebacksHideInternal =
+    "max-debug.source-tracebacks-hide-internal";
 constexpr llvm::StringLiteral kPreJit = "max-debug.pre-jit";
 constexpr llvm::StringLiteral kUninitializedReadMode =
     "max-debug.uninitialized-read-mode";
@@ -173,6 +175,13 @@ bool DebugConfig::getSourceTracebacks() const {
 }
 void DebugConfig::setSourceTracebacks(bool v) {
   M::Config::setGlobalValue(kSourceTracebacks, boolStr(v));
+}
+
+bool DebugConfig::getSourceTracebacksHideInternal() const {
+  return readBool(kSourceTracebacksHideInternal, /*defaultValue=*/true);
+}
+void DebugConfig::setSourceTracebacksHideInternal(bool v) {
+  M::Config::setGlobalValue(kSourceTracebacksHideInternal, boolStr(v));
 }
 
 bool DebugConfig::getPreJit() const { return readBool(kPreJit); }
@@ -322,6 +331,7 @@ void DebugConfig::reset() {
   M::Config::unsetGlobalValue(kStackTraceOnError);
   M::Config::unsetGlobalValue(kStackTraceOnCrash);
   M::Config::unsetGlobalValue(kSourceTracebacks);
+  M::Config::unsetGlobalValue(kSourceTracebacksHideInternal);
   M::Config::unsetGlobalValue(kPreJit);
   M::Config::unsetGlobalValue(kUninitializedReadMode);
   M::Config::unsetGlobalValue(kOpLogLevel);

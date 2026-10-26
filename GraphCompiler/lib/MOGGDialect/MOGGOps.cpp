@@ -1144,7 +1144,7 @@ LogicalResult CallBuildGraphOp::emitMojo(EmitMojoState &state) {
     return state.inferDefaultKernelParamValue(*this, paramName);
   };
   auto maybeParams = inferKernelParameters(
-      buildGraphAdaptor, MOGG::kMoggBuildGraphFunctionLabel, inferParam);
+      buildGraphAdaptor, KernelFunctionKind::BuildGraph, inferParam);
   if (maybeParams.isError())
     return emitError() << "Failed to infer all the kernel parameters: "
                        << maybeParams.takeError();
@@ -1160,6 +1160,47 @@ LogicalResult CallBuildGraphOp::emitMojo(EmitMojoState &state) {
                      kernelOperands);
   state.genAllKeepAliveStatements();
   return success();
+}
+
+//===----------------------------------------------------------------------===//
+// KernelDeclOp
+//===----------------------------------------------------------------------===//
+
+/// Returns the location named `name` among `declLoc`'s fused locations.
+static std::optional<Location> findNamedLoc(Location declLoc, StringRef name) {
+  auto fused = dyn_cast<mlir::FusedLoc>(declLoc);
+  if (!fused)
+    return std::nullopt;
+  for (Location loc : fused.getLocations())
+    if (auto named = dyn_cast<mlir::NameLoc>(loc);
+        named && named.getName() == name)
+      return named.getChildLoc();
+  return std::nullopt;
+}
+
+Location KernelDeclOp::getMojoStructLocation() {
+  return findNamedLoc(getLoc(), kStructLocationName).value_or(getLoc());
+}
+
+Location KernelDeclOp::getMojoFunctionLocation(KernelFunctionKind kind) {
+  if (std::optional<Location> loc =
+          findNamedLoc(getLoc(), stringifyKernelFunctionKind(kind)))
+    return *loc;
+  return getMojoStructLocation();
+}
+
+std::string KernelDeclOp::getMojoArgLocationName(KernelFunctionKind kind,
+                                                 uint64_t position) {
+  return llvm::formatv("{0}.arg{1}", stringifyKernelFunctionKind(kind),
+                       position);
+}
+
+Location KernelDeclOp::getMojoArgLocation(KernelFunctionKind kind,
+                                          uint64_t position) {
+  std::string name = getMojoArgLocationName(kind, position);
+  if (std::optional<Location> loc = findNamedLoc(getLoc(), name))
+    return *loc;
+  return getMojoFunctionLocation(kind);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1285,8 +1326,9 @@ static std::string collectCompactSourceNotes(Location rootLoc) {
       os << '\n';
   }
 
+  // Ops with the same traceback share a note: this counts tracebacks, not ops.
   if (notes.size() > 1)
-    os << "[fused from " << notes.size() << " ops]";
+    os << "[fused from " << notes.size() << " source locations]";
 
   return result;
 }
@@ -1820,9 +1862,9 @@ static LogicalResult emitDeclarativeLaunch(
   // Calls `Kernel[...].method[...]` with the given operands.
   using Callee = std::function<MojoValue(ArrayRef<MojoValue>)>;
   auto calleeFor = [&](const KernelDeclFunctionAdaptor &fn,
-                       StringRef label) -> FailureOr<Callee> {
+                       KernelFunctionKind kind) -> FailureOr<Callee> {
     auto params = inferKernelParameters(
-        adaptor, label,
+        adaptor, kind,
         std::function<ErrorOr<MojoValue>(StringRef)>(inferParam));
     if (params.isError()) {
       op.emitError() << "Failed to infer all the parameters of '"
@@ -1840,9 +1882,9 @@ static LogicalResult emitDeclarativeLaunch(
   };
   FailureOr<Callee> executeConfiguration =
       calleeFor(*adaptor.executeConfigurationFunction,
-                MOGG::kMoggExecuteConfigurationFunctionLabel);
+                KernelFunctionKind::ExecuteConfiguration);
   FailureOr<Callee> executeDevice = calleeFor(
-      *adaptor.executeDeviceFunction, MOGG::kMoggExecuteDeviceFunctionLabel);
+      *adaptor.executeDeviceFunction, KernelFunctionKind::ExecuteDevice);
   if (failed(executeConfiguration) || failed(executeDevice))
     return failure();
 
@@ -1916,7 +1958,7 @@ LogicalResult CallOpaqueOp::emitMojo(EmitMojoState &state) {
     kernelOperands.push_back(state.getMojoValueFor(ctx));
 
   auto maybeParams = inferKernelParameters(
-      execAdaptor, MOGG::kMoggExecuteFunctionLabel, inferParam);
+      execAdaptor, KernelFunctionKind::Execute, inferParam);
   if (maybeParams.isError())
     return emitError() << "Failed to infer all the kernel parameters: "
                        << maybeParams.takeError();
@@ -5434,10 +5476,10 @@ LogicalResult CallElementwiseOp::emitMojo(EmitMojoState &state) {
     }
     return state.inferDefaultKernelParamValue(*this, paramName);
   };
-  llvm::StringRef ewFuncLabel = ewAdaptor.isElementwise()
-                                    ? MOGG::kMoggElementwiseFunctionLabel
-                                    : MOGG::kMoggExecuteFunctionLabel;
-  auto maybeParams = inferKernelParameters(ewAdaptor, ewFuncLabel, inferParam);
+  KernelFunctionKind ewKind = ewAdaptor.isElementwise()
+                                  ? KernelFunctionKind::Elementwise
+                                  : KernelFunctionKind::Execute;
+  auto maybeParams = inferKernelParameters(ewAdaptor, ewKind, inferParam);
   if (maybeParams.isError())
     return emitError() << "Failed to infer all the kernel parameters: "
                        << maybeParams.takeError();

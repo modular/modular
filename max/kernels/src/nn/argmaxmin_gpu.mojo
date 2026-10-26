@@ -14,7 +14,7 @@
 
 
 from std.bit import next_power_of_two
-from max.gpu import WARP_SIZE, block_dim, block_idx, thread_idx
+from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
@@ -558,10 +558,11 @@ def argmax_with_bias_gpu[
             and Int(bias.ptr) % align_of[SIMD[bias_dtype, simd_width]]() == 0
         )
 
+        comptime warp_size = ctx.default_device_info.warp_size
         var block_size = min(
             next_power_of_two(ceildiv(split_len, simd_width)), 1024
         )
-        block_size = max(block_size, WARP_SIZE)
+        block_size = max(block_size, warp_size)
         # Same-type scans with both vocabularies static use 70--77 registers per
         # thread on B200, exceeding the 64-register budget at 1024 threads.
         # Use 512 threads for these specializations; keep other specializations
@@ -575,10 +576,10 @@ def argmax_with_bias_gpu[
             )
         ):
             block_size = min(block_size, 512)
-        var combine_block_size = max(next_power_of_two(num_splits), WARP_SIZE)
+        var combine_block_size = max(next_power_of_two(num_splits), warp_size)
         comptime if ctx.target.is_apple_gpu():
-            block_size = WARP_SIZE
-            combine_block_size = WARP_SIZE
+            block_size = warp_size
+            combine_block_size = warp_size
 
         var part_vals = ctx.enqueue_create_buffer[.float32](
             num_rows * num_splits

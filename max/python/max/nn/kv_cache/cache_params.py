@@ -1011,7 +1011,8 @@ class KVLeafRegion:
 
         Fewer than ``num_blocks`` when some slots hold the null block: a
         sliding window keeps only its span, and a state keeps only its live
-        block and one checkpoint.
+        block and one checkpoint. With prefix caching on, this includes what
+        the leaf keeps so a request can resume where it may be checkpointed.
         """
         raise NotImplementedError("Subclasses must implement this method.")
 
@@ -1080,13 +1081,14 @@ class PagedKVLeafRegion(KVLeafRegion):
         """Returns ``num_blocks``, capped by the window when the leaf has one.
 
         A sliding-window leaf only needs the pages holding the tokens its
-        window looks back at, plus the page it is writing now.
+        window looks back at, plus the page it is writing now. With prefix
+        caching on, it keeps one extra page, so a replay of a prompt that ends
+        exactly on a page boundary can resume one page earlier.
         """
         if self.group_id.is_full():
             return num_blocks
-        return min(
-            num_blocks, self.group_id.blocks_in_window(self.page_size) + 1
-        )
+        window = self.group_id.blocks_in_window(self.page_size) + 1
+        return min(num_blocks, window + int(enable_prefix_caching))
 
     def staged_input_shapes(
         self, batch_size: int, num_blocks: int

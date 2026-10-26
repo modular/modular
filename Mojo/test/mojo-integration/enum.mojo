@@ -261,6 +261,37 @@ __enum Key(Equatable, Hashable, ImplicitlyCopyable, Writable):
         String(self).__hash__(hasher)
 
 
+__enum Derived(Equatable, Hashable):
+    case none
+    case one(Int)
+    case many(List[Int])
+
+
+# CHECK-LABEL: == derived equality and hashing
+def test_derived_equality_and_hashing() raises:
+    print("== derived equality and hashing")
+    # The defaults compare and hash the active case and its payload.
+    # TODO(MOCO-5104): plain `Derived.none` once a payload-less case value
+    # materializes in an enum that is not `ImplicitlyCopyable`.
+    # CHECK-NEXT: True True True
+    print(
+        materialize[Derived.none]() == materialize[Derived.none](),
+        Derived.one(1) == Derived.one(1),
+        Derived.many([1, 2]) == Derived.many([1, 2]),
+    )
+    # CHECK-NEXT: False False False
+    print(
+        materialize[Derived.none]() == Derived.one(1),
+        Derived.one(1) == Derived.one(2),
+        Derived.many([1]) == Derived.many([1, 2]),
+    )
+    # CHECK-NEXT: True True
+    print(
+        hash(Derived.one(1)) == hash(Derived.one(1)),
+        hash(Derived.many([1, 2])) == hash(Derived.many([1, 2])),
+    )
+
+
 # CHECK-LABEL: == user-written equality and hashing
 def test_user_equality_and_hashing() raises:
     print("== user-written equality and hashing")
@@ -341,6 +372,7 @@ def main() raises:
     test_generic()
     test_register_passable()
     test_comptime_match()
+    test_derived_equality_and_hashing()
     test_user_equality_and_hashing()
     test_open_enum()
     test_caseless_enum()

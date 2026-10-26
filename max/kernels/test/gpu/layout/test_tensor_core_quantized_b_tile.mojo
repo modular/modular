@@ -13,7 +13,7 @@
 
 from std.testing import assert_equal
 from std.memory.unsafe import bitcast
-from max.gpu import WARP_SIZE, thread_idx
+from max.gpu import thread_idx
 from max.gpu.host import DeviceContext
 from max.gpu.sync import barrier
 from layout import TileTensor, TensorLayout, row_major, stack_allocation
@@ -88,20 +88,21 @@ def quantized_b_kernel[
 
 
 def test_quantized_b[packed_dtype: DType, NF: Int](ctx: DeviceContext) raises:
-    comptime layout = row_major[3, NF, WARP_SIZE, 8]()
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime layout = row_major[3, NF, warp_size, 8]()
     var output = HostDeviceTileTensor[.bfloat16](layout, ctx)
     _ = output.host_tensor().fill(-32)
     output.to_device()
     ctx.enqueue_function[quantized_b_kernel[packed_dtype, NF, type_of(layout)]](
         output.device_tensor().as_unsafe_any_origin(),
         grid_dim=1,
-        block_dim=WARP_SIZE,
+        block_dim=warp_size,
     )
     output.to_host()
     var actual = output.host_tensor()
     for kg in range(3):
         for row in range(NF):
-            for lane in range(WARP_SIZE):
+            for lane in range(warp_size):
                 var scale = scale_value(row, lane)
                 for reg in range(4):
                     # Each packed word supplies adjacent B fragments. Within

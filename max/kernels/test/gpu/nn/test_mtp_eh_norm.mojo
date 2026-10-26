@@ -17,7 +17,6 @@ from std.random import rand, seed
 from std.testing import assert_equal, assert_true
 
 from layout import TileTensor, row_major
-from max.gpu import WARP_SIZE
 from max.gpu.host import DeviceContext, HostBuffer
 
 from nn.mtp_eh_norm import mtp_eh_norm_kernel
@@ -75,7 +74,8 @@ def test_mtp_eh_norm[
     comptime eps32 = Float32(1e-5)
     # A power-of-two ceiling, the same value the graph op passes.
     comptime max_warps = (
-        ctx.default_device_info.max_thread_block_size // WARP_SIZE
+        ctx.default_device_info.max_thread_block_size
+        // ctx.default_device_info.warp_size
     )
     var eps = Float64(1e-5)
 
@@ -228,6 +228,7 @@ def test_mtp_eh_norm[
 
 def main() raises:
     with DeviceContext() as ctx:
+        comptime warp_size = ctx.default_device_info.warp_size
         # GLM-5.3-Flash / DeepSeek-V3.2 draft width.
         test_mtp_eh_norm[hidden_size=4096, block_threads=256](
             num_tokens=3, ctx=ctx
@@ -236,22 +237,22 @@ def main() raises:
         test_mtp_eh_norm[hidden_size=384, block_threads=256](
             num_tokens=2, ctx=ctx
         )
-        # Three warps, stated in `WARP_SIZE` so it stays three on every
+        # Three warps, stated in `warp_size` so it stays three on every
         # target. `block_reduce_dual_sum` reduces over a power-of-two lane
         # group, so a non-power-of-two warp count can drop a warp's sum. The
         # other shapes here all have power-of-two warp counts.
-        test_mtp_eh_norm[hidden_size=384, block_threads=3 * WARP_SIZE](
+        test_mtp_eh_norm[hidden_size=384, block_threads=3 * warp_size](
             num_tokens=2, ctx=ctx
         )
         # Five and seven warps, for the same reason.
-        test_mtp_eh_norm[hidden_size=1024, block_threads=5 * WARP_SIZE](
+        test_mtp_eh_norm[hidden_size=1024, block_threads=5 * warp_size](
             num_tokens=2, ctx=ctx
         )
-        test_mtp_eh_norm[hidden_size=2048, block_threads=7 * WARP_SIZE](
+        test_mtp_eh_norm[hidden_size=2048, block_threads=7 * warp_size](
             num_tokens=2, ctx=ctx
         )
         # One warp per block: the cross-warp path is skipped.
-        test_mtp_eh_norm[hidden_size=512, block_threads=WARP_SIZE](
+        test_mtp_eh_norm[hidden_size=512, block_threads=warp_size](
             num_tokens=2, ctx=ctx
         )
 

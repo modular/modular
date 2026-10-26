@@ -17,7 +17,7 @@ from std.math.uutils import udivmod
 from std.memory import bitcast, dealloc
 from std.memory.alloc import Layout as AllocLayout
 from std.sys.info import align_of, simd_width_of
-from max.gpu import WARP_SIZE, block_dim, block_idx, thread_idx
+from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.primitives.warp import shuffle_xor
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceBuffer, DeviceContext
@@ -39,6 +39,7 @@ from layout import (
     row_major,
     stack_allocation,
 )
+from layout.coord import DynamicCoord
 from internal_utils.fp8_utils import cast_saturating
 from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
@@ -63,7 +64,6 @@ from nn.normalization import _rms_norm_impl, _rms_norm_warp_tiling_subkernel
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from std.utils.numerics import get_accum_type
 
-from std.utils import IndexList
 from extensibility import InputTensor
 from extensibility import (
     _MutableInputTensor as MutableInputTensor,
@@ -706,17 +706,18 @@ def fused_qk_rms_norm_ragged_paged[
         comptime assert (
             rms_norm_cols % simd_width == 0
         ), "rms_norm_cols must be divisible by simd_width"
+        comptime warp_size = context.default_device_info.warp_size
         comptime max_warps_per_block = (
-            context.default_device_info.max_thread_block_size // WARP_SIZE
+            context.default_device_info.max_thread_block_size // warp_size
         )
         comptime warps_per_block = ceildiv(
-            rms_norm_cols // simd_width, WARP_SIZE
+            rms_norm_cols // simd_width, warp_size
         )
         comptime assert (
             warps_per_block <= max_warps_per_block
         ), "fused QK RMSNorm block size exceeds device max warps per block"
         var cols = Int(rms_norm_cols)
-        comptime block_dim_value = WARP_SIZE * warps_per_block
+        comptime block_dim_value = warp_size * warps_per_block
         comptime kernel = _fused_qk_rms_norm_ragged_paged_gpu[
             cache_t=type_of(k_cache),
             q_out_layout=q_output.LayoutType,
@@ -1237,17 +1238,18 @@ def fused_qk_rms_norm_rope_ragged_paged[
         comptime assert (
             simd_width % 2 == 0
         ), "simd_width must be even for the split RoPE layout"
+        comptime warp_size = context.default_device_info.warp_size
         comptime max_warps_per_block = (
-            context.default_device_info.max_thread_block_size // WARP_SIZE
+            context.default_device_info.max_thread_block_size // warp_size
         )
         comptime warps_per_block = ceildiv(
-            rms_norm_cols // simd_width, WARP_SIZE
+            rms_norm_cols // simd_width, warp_size
         )
         comptime assert (
             warps_per_block <= max_warps_per_block
         ), "fused QK RMSNorm+RoPE block size exceeds device max warps per block"
         var cols = Int(rms_norm_cols)
-        comptime block_dim_value = WARP_SIZE * warps_per_block
+        comptime block_dim_value = warp_size * warps_per_block
         comptime kernel = _fused_qk_rms_norm_rope_ragged_paged_gpu[
             cache_t=type_of(k_cache),
             q_out_layout=q_output.LayoutType,
@@ -1685,17 +1687,18 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
         comptime assert (
             simd_width % 2 == 0
         ), "simd_width must be even for the split RoPE layout"
+        comptime warp_size = context.default_device_info.warp_size
         comptime max_warps_per_block = (
-            context.default_device_info.max_thread_block_size // WARP_SIZE
+            context.default_device_info.max_thread_block_size // warp_size
         )
         comptime warps_per_block = ceildiv(
-            main_rms_cols // simd_width, WARP_SIZE
+            main_rms_cols // simd_width, warp_size
         )
         comptime assert (
             warps_per_block <= max_warps_per_block
         ), "fused QK RMSNorm+RoPE block size exceeds device max warps per block"
         var cols = Int(main_rms_cols)
-        comptime block_dim_value = WARP_SIZE * warps_per_block
+        comptime block_dim_value = warp_size * warps_per_block
         comptime kernel = _fused_dual_qk_rms_norm_rope_ragged_paged_gpu[
             main_cache_t=type_of(main_k_cache),
             index_cache_t=type_of(index_k_cache),
@@ -2451,10 +2454,11 @@ def fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged[
         comptime assert (
             simd_width % 2 == 0
         ), "simd_width must be even for the split RoPE layout"
-        comptime warps_per_block = ceildiv(head_dim // simd_width, WARP_SIZE)
+        comptime warp_size = context.default_device_info.warp_size
+        comptime warps_per_block = ceildiv(head_dim // simd_width, warp_size)
         comptime assert (
             warps_per_block
-            <= context.default_device_info.max_thread_block_size // WARP_SIZE
+            <= context.default_device_info.max_thread_block_size // warp_size
         ), "row exceeds device max warps per block"
         comptime kernel = fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged_gpu[
             main_cache_t=type_of(main_k_cache),
@@ -2527,7 +2531,7 @@ def fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged[
                 k_index_input_fn,
             ),
             grid_dim=rows,
-            block_dim=WARP_SIZE * warps_per_block,
+            block_dim=warp_size * warps_per_block,
         )
 
 
@@ -2594,14 +2598,14 @@ def rms_norm_kv_cache_ragged_paged[
         rms_norm_cols <= kv_collection.kv_params.head_size or not per_head_norm
     ), "Length of gamma must be smaller or equal to head size"
 
-    var shape = IndexList[rank]()
-    shape[0] = Int(total_seq_len)
+    var shape = DynamicCoord[.int, rank]()
+    shape.replace_dynamic[0](Int(total_seq_len))
 
     comptime if per_head_norm:
-        shape[1] = kv_params.num_heads
-        shape[2] = rms_norm_cols
+        shape.replace_dynamic[1](kv_params.num_heads)
+        shape.replace_dynamic[2](rms_norm_cols)
     else:
-        shape[1] = rms_norm_cols
+        shape.replace_dynamic[1](rms_norm_cols)
 
     @inline(.always)
     def key_cache_input_fn[
@@ -2690,7 +2694,7 @@ def rms_norm_kv_cache_ragged_paged[
         ](
             key_cache_input_fn,
             key_cache_output_fn,
-            Coord(shape),
+            shape,
             gamma,
             context,
         )
@@ -2740,14 +2744,14 @@ def rms_norm_value_cache_ragged_paged[
         rms_norm_cols <= kv_collection.kv_params.head_size or not per_head_norm
     ), "Length of gamma must be smaller or equal to head size"
 
-    var shape = IndexList[rank]()
-    shape[0] = Int(total_seq_len)
+    var shape = DynamicCoord[.int, rank]()
+    shape.replace_dynamic[0](Int(total_seq_len))
 
     comptime if per_head_norm:
-        shape[1] = kv_params.num_heads
-        shape[2] = rms_norm_cols
+        shape.replace_dynamic[1](kv_params.num_heads)
+        shape.replace_dynamic[2](rms_norm_cols)
     else:
-        shape[1] = rms_norm_cols
+        shape.replace_dynamic[1](rms_norm_cols)
 
     @inline(.always)
     def value_cache_input_fn[
@@ -2834,7 +2838,7 @@ def rms_norm_value_cache_ragged_paged[
         ](
             value_cache_input_fn,
             value_cache_output_fn,
-            Coord(shape),
+            shape,
             gamma,
             context,
         )

@@ -89,10 +89,12 @@ def matmul[
     epilogue_fn: EpilogueFnType,
     ctx: DeviceContext,
 ) raises:
-    """Vendor matmul into `c`, followed by a pass that hands each output
-    chunk to an epilogue closure value.
+    """Vendor matmul into a scratch buffer, followed by a pass that hands
+    each output chunk to an epilogue closure value.
 
-    `c` holds the raw matmul result; `epilogue_fn` stores the final output.
+    `epilogue_fn` stores the final output, so `c` supplies only the output
+    shape and is neither read nor written. Callers may pass a `c` over a
+    null pointer.
 
     Parameters:
         EpilogueFnType: Type of `epilogue_fn` (inferred).
@@ -100,8 +102,8 @@ def matmul[
             `a @ b.T` instead of `a @ b` (defaults to `False`).
 
     Args:
-        c: Output matrix of shape `(m, n)` and rank 2 that receives the
-            raw matmul result. Caller-allocated and mutable.
+        c: Rank-2 matrix giving the output shape `(m, n)`. Its storage is
+            not accessed.
         a: Left-hand input matrix of rank 2.
         b: Right-hand input matrix of rank 2, transposed when
             `transpose_b` is `True`.
@@ -116,7 +118,8 @@ def matmul[
     comptime c_type = c.dtype
     comptime simd_size = _epilogue_simd_size[c_type]()
 
-    var c_tt = c
+    var scratch = ctx.enqueue_create_buffer[c_type](c.num_elements())
+    var c_tt = TileTensor(scratch, row_major(c.layout.shape_coord()))
 
     def epilogue_wrapper[
         simd_width: Int, alignment: Int = 1
@@ -133,7 +136,7 @@ def matmul[
 
     vendor_matmul[use_tf32=True](
         ctx,
-        c,
+        c_tt,
         a,
         b,
         c_row_major=True,
@@ -144,6 +147,8 @@ def matmul[
         target="gpu",
         _trace_description="elementwise_vendor_matmul_epilogue",
     ](epilogue_wrapper, (m, n), ctx)
+
+    _ = scratch^
 
 
 def matmul[

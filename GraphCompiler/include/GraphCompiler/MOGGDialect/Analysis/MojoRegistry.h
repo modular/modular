@@ -37,6 +37,10 @@ public:
 
   bool containsKernel(llvm::StringRef name) const;
 
+  /// Returns the registered kernel name closest to `name` by edit distance,
+  /// if one is close enough to be a likely typo.
+  std::optional<llvm::StringRef> suggestKernelName(llvm::StringRef name) const;
+
   /// Asserts that the op exists.
   KernelDeclOp lookupKernelBySymName(llvm::StringRef symName) const;
 

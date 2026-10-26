@@ -90,25 +90,15 @@ void stageDeviceGraphOps(MLIRContext *ctx, ModelOp model) {
 
   Block *executeBlock = model.getExecuteBlock();
 
-  /// Staged: every `mogg.routine.async`, plus each
-  /// `mgp.device_graph.stable.create` of a staged producer's result (left
-  /// outside, it would form a cycle with the staging op). Block order
+  /// Staged: every `mogg.routine.async` and every
+  /// `mgp.device_graph.stable.create`. A stable create only has meaning inside
+  /// device-graph execution, where the partitioner assigns it a slot, so none
+  /// stays outside regardless of what produces or reads it. Block order
   /// preserves scheduling.
-  llvm::DenseSet<Operation *> stagedOpSet;
-  for (AsyncRoutineOp region : executeBlock->getOps<AsyncRoutineOp>())
-    stagedOpSet.insert(region);
-
-  for (DeviceGraphStableCreateOp stableCreate :
-       executeBlock->getOps<DeviceGraphStableCreateOp>()) {
-    Operation *producer = stableCreate.getTensor().getDefiningOp();
-    if (producer && stagedOpSet.contains(producer))
-      stagedOpSet.insert(stableCreate);
-  }
-
-  SmallVector<Operation *> stagedOps;
+  llvm::SetVector<Operation *> stagedOps;
   for (Operation &op : *executeBlock)
-    if (stagedOpSet.contains(&op))
-      stagedOps.push_back(&op);
+    if (isa<AsyncRoutineOp, DeviceGraphStableCreateOp>(op))
+      stagedOps.insert(&op);
 
   if (stagedOps.empty())
     return;
@@ -119,7 +109,7 @@ void stageDeviceGraphOps(MLIRContext *ctx, ModelOp model) {
   for (Operation *op : stagedOps) {
     for (Value operand : op->getOperands()) {
       Operation *def = operand.getDefiningOp();
-      if (!def || !stagedOpSet.contains(def))
+      if (!def || !stagedOps.contains(def))
         freeValues.insert(operand);
     }
   }
@@ -131,7 +121,7 @@ void stageDeviceGraphOps(MLIRContext *ctx, ModelOp model) {
   for (Operation *op : stagedOps) {
     for (OpResult result : op->getResults()) {
       for (OpOperand &use : result.getUses()) {
-        if (!stagedOpSet.contains(use.getOwner()))
+        if (!stagedOps.contains(use.getOwner()))
           escapingUses.insert(&use);
       }
     }

@@ -52,6 +52,7 @@ from max.serve.scheduler_result import SchedulerResult
 from max.serve.telemetry import _log_context
 from max.serve.telemetry._log_context import batch_id_ctx
 from max.serve.telemetry._tracing import batch_spans_enabled
+from max.serve.telemetry.metrics import METRICS
 from opentelemetry import propagate as otel_propagate
 from opentelemetry.context import Context as OtelContext
 
@@ -60,7 +61,7 @@ from .batch_constructor import TextBatchConstructor
 from .batch_constructor.text_batch_constructor import BatchSchedulingStrategy
 from .config import TokenGenerationSchedulerConfig
 from .dp_padding import DPBatchPadder
-from .utils import SchedulerLogger, get_cancelled_reqs
+from .utils import SchedulerLogger, _ScheduledBatch, get_cancelled_reqs
 
 if TYPE_CHECKING:
     from max.serve.telemetry._kernel_capture import KernelCapture
@@ -338,10 +339,8 @@ class TokenGenerationScheduler(Scheduler):
             )
             return SchedulerProgress.NO_PROGRESS
 
-        # When the overlap pipeline is actually overlapping, the wall-clock
-        # time measured below reflects the previous batch's sync, not the
-        # current batch. Flag it so the logger attributes execution time and
-        # throughput to the completed-batch stats collected below.
+        # Overlap execution metrics belong to the completed batch rather than
+        # the batch being enqueued. The pipeline supplies that batch's stats.
         is_overlap_active = bool(
             getattr(self.pipeline, "overlap_active", False)
         )
@@ -350,16 +349,16 @@ class TokenGenerationScheduler(Scheduler):
         t0 = time.monotonic()
         if len(inputs.flat_batch) > 0:
             with Tracer(f"_schedule({inputs})"):
-                num_terminated_reqs = self._schedule(inputs, is_overlap_active)
+                scheduled = self._schedule(inputs, is_overlap_active)
         else:
-            num_terminated_reqs = self._schedule(inputs, is_overlap_active)
+            scheduled = self._schedule(inputs, is_overlap_active)
         t1 = time.monotonic()
-        batch_execution_time_s = t1 - t0
+        METRICS.scheduler_batch_step_time(
+            (t1 - t0) * 1000, batch_type=inputs.batch_type.value
+        )
 
-        # Log batch metrics. Under overlap scheduling the wall-clock time
-        # measured above describes the previously enqueued batch; the
-        # pipeline reports that batch's composition and timing so telemetry
-        # is attributed to the correct batch type.
+        # Overlap reports the completed batch's composition and service time;
+        # synchronous batches use the interval measured around execute().
         completed_batch_stats = (
             self.pipeline.take_completed_batch_stats()
             if hasattr(self.pipeline, "take_completed_batch_stats")
@@ -370,9 +369,14 @@ class TokenGenerationScheduler(Scheduler):
             inputs=inputs,
             kv_cache=self.batch_constructor.kv_cache,
             batch_creation_time_s=batch_creation_time_s,
-            batch_execution_time_s=batch_execution_time_s,
+            batch_execution_time_s=0.0
+            if is_overlap_active
+            else scheduled.execution_time_s,
+            num_output_tokens=None
+            if is_overlap_active
+            else scheduled.output_tokens,
             num_pending_reqs=len(self.batch_constructor.all_ce_reqs),
-            num_terminated_reqs=num_terminated_reqs,
+            num_terminated_reqs=scheduled.terminated_reqs,
             total_preemption_count=self.batch_constructor.total_preemption_count,
             batch_spec_decode_metrics=self.pipeline.batch_spec_decode_metrics()
             if hasattr(self.pipeline, "batch_spec_decode_metrics")
@@ -406,8 +410,8 @@ class TokenGenerationScheduler(Scheduler):
 
     def _schedule(
         self, inputs: TextGenerationInputs[TextContext], lagged: bool = False
-    ) -> int:
-        """Returns the number of terminated requests."""
+    ) -> _ScheduledBatch:
+        """Executes a batch and returns its service time and completed counts."""
         batch_id = self._batch_counter
         self._batch_counter += 1
 
@@ -484,7 +488,12 @@ class TokenGenerationScheduler(Scheduler):
                 else 0
             )
             try:
+                execution_start = time.monotonic()
                 responses = self.pipeline.execute(inputs)
+                execution_time_s = time.monotonic() - execution_start
+                output_tokens = sum(
+                    len(output.tokens) for output in responses.values()
+                )
             finally:
                 if range_id:
                     range_end(range_id)
@@ -559,7 +568,11 @@ class TokenGenerationScheduler(Scheduler):
             batch_span.set_attribute(
                 "max.batch.terminated_count", num_terminated_requests
             )
-            return num_terminated_requests
+            return _ScheduledBatch(
+                terminated_reqs=num_terminated_requests,
+                execution_time_s=execution_time_s,
+                output_tokens=output_tokens,
+            )
         finally:
             batch_span.end()
 

@@ -315,11 +315,7 @@ def grouped_matmul_block_scaled[
         transpose_b,
         config=config,
         static_N=expert_n,
-        cluster_shape=StaticTuple[Int32, 3](
-            Int32(config.cluster_shape[0]),
-            Int32(config.cluster_shape[1]),
-            Int32(config.cluster_shape[2]),
-        ),
+        cluster_shape=config.cluster_shape,
         pdl_level=pdl_level,
         fuse_swiglu=fuse_swiglu,
         SwiGLUOutputT=SwiGLUOutputT,

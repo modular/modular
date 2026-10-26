@@ -43,7 +43,7 @@ data-before-signal ordering that `AmdCounterBackend` delegates to the caller;
 """
 
 from std.atomic import Ordering, fence
-from max.gpu import barrier, lane_id, thread_idx, warp_id, WARP_SIZE
+from max.gpu import barrier, lane_id, thread_idx, warp_id
 from max.gpu.host import DeviceContext
 from max.gpu.memory import AddressSpace
 from std.memory import stack_allocation
@@ -127,7 +127,7 @@ def _run_config[num_stages: Int](ctx: DeviceContext, n_items: Int) raises:
     ctx.enqueue_memset[.int32](result, 0)
 
     # Exactly two warps: producer (warp 0) + consumer (warp 1).
-    comptime block_dim = 2 * WARP_SIZE
+    comptime block_dim = 2 * ctx.default_device_info.warp_size
 
     comptime if ctx.target.is_amd_gpu():
         ctx.enqueue_function[

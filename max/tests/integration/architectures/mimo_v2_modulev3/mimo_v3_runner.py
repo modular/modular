@@ -39,6 +39,7 @@ from max import tree
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.experimental import compilation
 from max.experimental import functional as F
 from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import default_device, default_dtype
@@ -121,6 +122,8 @@ class Runner:
         num_devices: int,
         max_seq_len: int,
         kv_cache_bytes: int = 16 * 1024**3,
+        fused_sliding_qkv: bool = False,
+        fused_full_qkv: bool = False,
     ) -> None:
         """Adapts the checkpoint, then compiles and loads the model.
 
@@ -130,6 +133,9 @@ class Runner:
             num_devices: The GPUs to shard over.
             max_seq_len: The longest sequence to run.
             kv_cache_bytes: The paged KV cache's size per device.
+            fused_sliding_qkv: Whether sliding layers use fused QKV
+                preparation.
+            fused_full_qkv: Whether full layers use fused QKV preparation.
         """
         self.hf = PretrainedConfig(
             **json.loads((checkpoint / "config.json").read_text())
@@ -144,6 +150,8 @@ class Runner:
             max_seq_len=max_seq_len,
         )
         config.return_logits = ReturnLogits.ALL
+        config.fused_sliding_qkv = fused_sliding_qkv
+        config.fused_full_qkv = fused_full_qkv
 
         t0 = time.time()
         weights = SafetensorWeights(sorted(checkpoint.glob("*.safetensors")))
@@ -170,11 +178,18 @@ class Runner:
         )
         t0 = time.time()
         session = InferenceSession(devices=self.devices)
-        self.model = model.compile(
+        # ``Module.compile`` split in two, to count the fused QKV op sites in
+        # the staged graph before it compiles.
+        staged, registry = model.stage(
             *input_types,
             weights=state,
-            session=session,
             name="mimo_v2_modulev3_fixture_check",
+        )
+        self.fused_qkv_count = str(staged).count(
+            "mo.chunked_qkv_rope_store.ragged.paged"
+        )
+        self.model = compilation.CompiledCallable(
+            staged, registry, session=session
         )
         print(f"compiled and loaded in {time.time() - t0:.0f} s")
         self.kv = JengaKVCacheManager.create(
