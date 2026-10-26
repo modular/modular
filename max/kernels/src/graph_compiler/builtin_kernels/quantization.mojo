@@ -144,8 +144,8 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
 
         # The scale output holds one value per input row, laid out
         # [1, rows]. View it as rank-1 and index it by row number.
-        var in_shape = input.shape()
-        var rows = in_shape.flattened_length() // in_shape[rank - 1]
+        var in_shape = input.shape_coord()
+        var rows = Int(in_shape.product()) // Int(in_shape[rank - 1])
         var scale_t = TileTensor(
             scales.to_tile_tensor[.int64]()._storage,
             row_major(rows),
@@ -171,7 +171,7 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
         ) {var scale_t, var in_shape}:
             var row = 0
             comptime for i in range(rank - 1):
-                row = row * in_shape[i] + Int(coords[i])
+                row = row * Int(in_shape[i]) + Int(coords[i])
             scale_t.store[width=1, alignment=1](Coord(row), val)
 
         # Static row width (when known) enables the register-cached row path.
@@ -200,7 +200,7 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
                 output_fn,
                 scale_fn,
                 input.shape_coord(),
-                Int(input.shape()[rank - 1]),
+                Int(input.shape_coord()[rank - 1]),
                 gamma.to_tile_tensor[.int64](),
                 epsilon.cast[input_dtype](),
                 weight_offset.cast[input_dtype](),

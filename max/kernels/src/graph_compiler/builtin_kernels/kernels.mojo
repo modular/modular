@@ -311,7 +311,7 @@ struct Range:
             get_kernel_simd_width[dtype, target](),
             target=target,
             _trace_description=_trace_name,
-        ](body, Coord(output.shape()).flatten(), ctx)
+        ](body, output.shape().flatten(), ctx)
 
 
 @extensibility.register_shape_function("mo.range")
@@ -379,7 +379,7 @@ struct Copy:
         elementwise[
             get_kernel_simd_width[dtype, "cpu"](),
             _trace_description="mogg.for_each",
-        ](body, Coord(output.shape()).flatten(), ctx)
+        ](body, output.shape().flatten(), ctx)
 
 
 @extensibility.register("nan_check_count")
@@ -3476,7 +3476,7 @@ struct BundledAllReduceSum:
             alignment: Int,
         ](coords: Coord, val: SIMD[_dtype, _width]) {var output} -> None:
             output._lambda_store[width=_width, element_alignment=alignment](
-                rebind[IndexList[rank]](coord_to_index_list(coords)),
+                coords,
                 rebind[SIMD[dtype, _width]](val),
             )
 

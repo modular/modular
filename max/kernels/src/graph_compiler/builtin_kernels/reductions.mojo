@@ -616,7 +616,7 @@ struct ReduceMul:
             target=target,
             reduce_dim=axis,
             name=_trace_name,
-        ](input_fn, output_fn, Coord(input.shape()).flatten(), ctx)
+        ](input_fn, output_fn, input.shape().flatten(), ctx)
 
 
 @extensibility.register_shape_function("mo.reduce.mul")
@@ -1355,7 +1355,7 @@ struct ReduceMinAndMax:
             input_fn,
             output_min_fn,
             output_max_fn,
-            Coord(input.shape()).flatten(),
+            input.shape().flatten(),
             ctx,
         )
 
@@ -2026,7 +2026,7 @@ struct Softmax:
         comptime if sm_cols != UNKNOWN_VALUE:
             softmax[output.dtype, output.rank, target=target, reduce_dim=axis](
                 input_fn,
-                Coord(output.shape()),
+                output.shape_coord(),
                 ComptimeInt[sm_cols](),
                 output.to_tile_tensor[.int64](),
                 axis,
@@ -2035,7 +2035,7 @@ struct Softmax:
         else:
             softmax[output.dtype, output.rank, target=target, reduce_dim=axis](
                 input_fn,
-                Coord(output.shape()),
+                output.shape_coord(),
                 Int(input.shape()[axis]),
                 output.to_tile_tensor[.int64](),
                 axis,
@@ -2094,7 +2094,7 @@ struct LogSoftmax:
                 reduce_dim=axis,
             ](
                 input_fn,
-                Coord(output.shape()),
+                output.shape_coord(),
                 ComptimeInt[lsm_cols](),
                 output.to_tile_tensor[.int64](),
                 axis,
@@ -2109,7 +2109,7 @@ struct LogSoftmax:
                 reduce_dim=axis,
             ](
                 input_fn,
-                Coord(output.shape()),
+                output.shape_coord(),
                 Int(input.shape()[axis]),
                 output.to_tile_tensor[.int64](),
                 axis,

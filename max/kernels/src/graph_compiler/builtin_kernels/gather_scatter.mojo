@@ -2757,7 +2757,7 @@ struct AdvancedIndexingSetItem:
             get_kernel_simd_width[dtype, target](),
             target=target,
             _trace_description=_trace_name + "_p1/2_copy",
-        ](copy_input, Coord(output_tensor.shape()).flatten(), ctx)
+        ](copy_input, output_tensor.shape().flatten(), ctx)
 
         # Then run the updates in-place.
         _advanced_indexing_setitem_inplace[
