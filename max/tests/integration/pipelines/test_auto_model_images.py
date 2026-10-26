@@ -150,6 +150,23 @@ def test_generate_passes_every_image_argument(
     ]
 
 
+def test_generate_rejects_too_many_images_before_running(
+    image_model_path: str, builds: list[PipelineTask]
+) -> None:
+    with _load(image_model_path) as model:
+        pipeline = model._image_pipeline
+        tokenizer = model._image_tokenizer
+        assert isinstance(pipeline, MagicMock)
+        assert isinstance(tokenizer, MagicMock)
+        with pytest.raises(ValueError) as error:
+            model.generate(prompt="a", num_images_per_prompt=5)
+        assert str(error.value) == (
+            "num_images_per_prompt must be at most 4, got 5."
+        )
+        pipeline.execute.assert_not_called()
+        tokenizer.new_context.assert_not_called()
+
+
 def test_text_arguments_are_rejected_on_an_image_model(
     image_model_path: str, builds: list[PipelineTask]
 ) -> None:

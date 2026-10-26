@@ -41,6 +41,12 @@ This version is still a work in progress.
 
 ## Inference server
 
+- `max serve` now rejects an image generation request that asks for more
+  than 4 images with a 422 error naming `num_images`, the same response as
+  other out-of-range image options. `generate_images()` and
+  `AutoModel.generate()` raise a `ValueError` for `num_images_per_prompt`
+  above 4 before any prompt runs. A request had no upper limit before.
+
 - `/v1/completions` now returns a 400 error for `echo` with `logprobs` on a
   server started without `--enable-echo`, when the model computes log
   probabilities. The request used to crash the model worker. Other models

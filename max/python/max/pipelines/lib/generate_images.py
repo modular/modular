@@ -44,6 +44,7 @@ from max.pipelines.request import (
     OutputImageContent,
 )
 from max.pipelines.request.provider_options import (
+    MAX_NUM_IMAGES,
     ImageProviderOptions,
     ProviderOptions,
 )
@@ -309,7 +310,8 @@ def generate_images(
             that use it need it above 1 and a ``negative_prompt``.
         strength: How far an input image is noised, in ``(0, 1]``. Z-Image
             reads it, and FLUX.2 ignores it.
-        num_images_per_prompt: The number of images for each prompt.
+        num_images_per_prompt: The number of images for each prompt, at
+            most 4.
         seed: The seed for prompt 0. Prompt ``i`` uses
             ``(seed + i) % 2**32``, since numpy takes 32-bit seeds.
         caller: What the user called, which errors name.
@@ -323,12 +325,12 @@ def generate_images(
         ValueError: If there are no prompts, a prompt is empty or too long
             for the model, ``negative_prompt`` or ``images`` has the wrong
             length, a prompt has more than one input image,
-            ``num_inference_steps`` or ``num_images_per_prompt`` is below 1,
-            ``seed`` is outside ``[0, 2**32)``, a value is outside the range
-            ``max serve`` accepts, the model generates video, or an input
-            image goes to a model that takes text only. A tokenizer's error
-            names its prompt. Every prompt is checked before the first one
-            runs.
+            ``num_inference_steps`` is below 1, ``num_images_per_prompt`` is
+            outside ``[1, 4]``, ``seed`` is outside ``[0, 2**32)``, a value
+            is outside the range ``max serve`` accepts, the model generates
+            video, or an input image goes to a model that takes text only.
+            A tokenizer's error names its prompt. Every prompt is checked
+            before the first one runs.
         RuntimeError: If the pipeline returns output that is not an image.
         OSError: If an input image's bytes do not decode, before any prompt
             runs.
@@ -395,6 +397,11 @@ def _prepare_requests(
     if num_images_per_prompt < 1:
         raise ValueError(
             "num_images_per_prompt must be at least 1, got "
+            f"{num_images_per_prompt}."
+        )
+    if num_images_per_prompt > MAX_NUM_IMAGES:
+        raise ValueError(
+            f"num_images_per_prompt must be at most {MAX_NUM_IMAGES}, got "
             f"{num_images_per_prompt}."
         )
     if not 0 <= seed < _SEED_LIMIT:
