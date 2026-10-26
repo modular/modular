@@ -13,11 +13,16 @@ package(default_visibility = [
 modular_py_test(
     name = "test_arch_registration",
     srcs = ["test_arch_registration.py"],
+    # The draft architecture the pairing resolves to is imported by the
+    # registry, not the test.
+    ignore_extra_deps = [
+        "//max/python/max/pipelines/architectures/dspark_deepseekV41",
+    ],
     deps = [
         "//max/python/max/graph",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures/deepseekV41",
-        "//max/python/max/pipelines/architectures/unified_dspark_deepseekV41",
+        "//max/python/max/pipelines/architectures/dspark_deepseekV41",
         "//max/python/max/pipelines/lib",
     ],
 )
@@ -176,20 +181,19 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/deepseekV41",
-        "//max/python/max/pipelines/architectures/unified_dspark_deepseekV41",
         "//max/python/max/pipelines/lib",
         requirement("numpy"),
     ],
 )
 
 # Guards the graph-spec load (pipelines/lib graph_specs and PipelineModel
-# load_graphs) around the deferred weight loads.
+# load_graphs) and the speculative pairing's compile (SpecDecodePipelineModel)
+# around the deferred weight loads.
 modular_py_test(
     name = "test_load_graphs",
     srcs = ["test_load_graphs.py"],
     deps = [
         "//max/python/max/pipelines/architectures/deepseekV41",
-        "//max/python/max/pipelines/architectures/unified_dspark_deepseekV41",
         "//max/python/max/pipelines/lib",
     ],
 )
@@ -213,7 +217,6 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/deepseekV41",
-        "//max/python/max/pipelines/architectures/unified_dspark_deepseekV41",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
@@ -243,7 +246,6 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/deepseekV41",
-        "//max/python/max/pipelines/architectures/unified_dspark_deepseekV41",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
@@ -266,7 +268,7 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/deepseekV41",
-        "//max/python/max/pipelines/architectures/unified_dspark_deepseekV41",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         requirement("numpy"),
     ],
@@ -346,17 +348,20 @@ modular_py_test(
     ],
 )
 
-# Guards the shared spec-decode graph (pipelines/speculative block_driver.py
-# and spec_input_types.py), SpeculativeConfig, the KV cache input types from
+# Guards the shared spec-decode graph (pipelines/lib build_spec_graph,
+# pipelines/speculative block_driver.py and spec_input_types.py),
+# SpeculativeConfig, the KV cache input types from
 # nn/kv_cache MultiKVCacheParams, and the expert-parallel graph inputs from
 # nn/comm/ep EPBatchManager. Traces only, but needs a GPU because
 # the MXFP8 scale layout follows the host's accelerator.
 modular_py_test(
-    name = "test_unified_dspark_construction",
+    name = "test_dspark_graph_construction",
     size = "large",
-    srcs = ["test_unified_dspark_construction.py"],
+    srcs = ["test_dspark_graph_construction.py"],
     data = ["//max/tests/integration/architectures/deepseekV41/testdata"],
     gpu_constraints = ["//:b200_gpu"],
+    # Importing it registers the architectures the pairing resolves.
+    ignore_extra_deps = ["//max/python/max/pipelines"],
     tags = ["gpu"],
     # Needs mo.engram.hash_gather and mo.engram.hash_gather_shard, registered
     # only by the closed-source kernels.
@@ -365,9 +370,10 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/architectures/deepseekV41",
-        "//max/python/max/pipelines/architectures/unified_dspark_deepseekV41",
+        "//max/python/max/pipelines/architectures/dspark_deepseekV41",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/speculative",
         requirement("numpy"),

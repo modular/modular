@@ -73,7 +73,6 @@ UNLISTED_MODULES: frozenset[str] = frozenset({"hy_v4", "mtp_hy_v4"})
 # architecture's row. merge_architectures() raises on an unmapped
 # ``Unified*`` name, so new variants must be added here.
 SPEC_DECODE_VARIANT_BASE_ARCH: dict[str, str] = {
-    "UnifiedDSparkDeepseekV41ForCausalLM": "DeepseekV41ForCausalLM",
     "UnifiedMTPGlmMoeDsaForCausalLM": "GlmMoeDsaForCausalLM",
 }
 

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 from max.dtype import DType
@@ -1307,6 +1308,10 @@ class DeepseekV41(Module):
         """Shared by the data-parallel replicas' routed experts; its graph
         inputs must be fetched before the forward
         (:meth:`data_parallel_replicas`)."""
+        self.expert_streaming: Any = None
+        """The routed experts a speculative pairing streams straight to
+        their devices, a :class:`~.model.ExpertStreaming`; ``None`` for a
+        model that doesn't."""
 
         attn_factory, _ = make_csa2_attn_factory(
             num_heads=config.num_attention_heads,
@@ -1341,6 +1346,15 @@ class DeepseekV41(Module):
         )
         self._engram_host_tables = engram_host_tables
         self._engram_lookup_cache: EngramLookup | None = None
+
+    def bind_engram_tables(
+        self, tables: Mapping[int, tuple[TensorValue, TensorValue]]
+    ) -> None:
+        """Binds this device's Engram tables, as in the constructor.
+
+        For a model built before the graph whose inputs they are.
+        """
+        self._engram_host_tables = tables
 
     def _lm_head(self, x: TensorValue) -> TensorValue:
         """Returns the head's float32 ``[t, vocab]`` logits.

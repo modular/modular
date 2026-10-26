@@ -10,20 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""DeepSeek-V4.1-Flash speculative decoding with its built-in DSpark drafter."""
+"""The DSpark stages DeepSeek-V4.1's checkpoint ships beside its trunk."""
 
-from .arch import unified_dspark_deepseekV41_speculator
-from .batch_processor import (
-    UnifiedDSparkDeepseekV41BatchProcessor,
-    UnifiedDSparkDeepseekV41Inputs,
+from .arch import dspark_deepseekV41_draft_arch
+from .model import (
+    DSparkDeepseekV41DraftArchConfig,
+    DSparkDeepseekV41DraftConfig,
 )
-from .model import UnifiedDSparkDeepseekV41Model
-from .unified_dspark_deepseekV41 import UnifiedDSparkDeepseekV41
 
 __all__ = [
-    "UnifiedDSparkDeepseekV41",
-    "UnifiedDSparkDeepseekV41BatchProcessor",
-    "UnifiedDSparkDeepseekV41Inputs",
-    "UnifiedDSparkDeepseekV41Model",
-    "unified_dspark_deepseekV41_speculator",
+    "DSparkDeepseekV41DraftArchConfig",
+    "DSparkDeepseekV41DraftConfig",
+    "dspark_deepseekV41_draft_arch",
 ]

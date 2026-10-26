@@ -583,6 +583,7 @@
                 "api/python/pipelines.architectures.dflash_mimo_v2",
                 "api/python/pipelines.architectures.diffusion_gemma",
                 "api/python/pipelines.architectures.dspark_deepseekV4",
+                "api/python/pipelines.architectures.dspark_deepseekV41",
                 "api/python/pipelines.architectures.dspark_draft",
                 "api/python/pipelines.architectures.dspark_gemma4",
                 "api/python/pipelines.architectures.dspark_qwen3",
@@ -634,7 +635,6 @@
                 "api/python/pipelines.architectures.qwen_image",
                 "api/python/pipelines.architectures.qwen_image_edit",
                 "api/python/pipelines.architectures.step3p5",
-                "api/python/pipelines.architectures.unified_dspark_deepseekV41",
                 "api/python/pipelines.architectures.unified_mtp_glm5_2",
                 "api/python/pipelines.architectures.wan"
               ]

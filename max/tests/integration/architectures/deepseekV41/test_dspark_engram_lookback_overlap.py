@@ -45,14 +45,15 @@ from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType
 from max.nn.kv_cache import BatchCharacteristics, MHAAttnKey
 from max.nn.transformer import ReturnLogits
+from max.pipelines.architectures.deepseekV41.model import (
+    DeepseekV41BatchProcessor,
+    DeepseekV41Inputs,
+)
 from max.pipelines.architectures.deepseekV41.model_config import (
     DeepseekV41Config,
 )
-from max.pipelines.architectures.unified_dspark_deepseekV41.batch_processor import (
-    UnifiedDSparkDeepseekV41BatchProcessor,
-    UnifiedDSparkDeepseekV41Inputs,
-)
-from max.pipelines.architectures.unified_dspark_deepseekV41.model import (
+from max.pipelines.architectures.deepseekV41.spec_adapters import (
+    batch_trailing_buffers,
     read_engram_lookback,
     record_engram_lookback,
 )
@@ -62,11 +63,15 @@ from max.pipelines.lib.interfaces.batch_processor import BatchProcessorRuntime
 from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
     in_flight_draft_placeholders,
 )
+from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
+    _Inputs,
+)
 from max.pipelines.lib.pipeline_variants.utils import (
     update_spec_decode_context_and_prepare_responses,
 )
 from max.pipelines.modeling.types import RequestID
 from max.pipelines.speculative.config import MAGIC_DRAFT_TOKEN_ID
+from max.pipelines.speculative.spec_input_types import SpecDecodeInputTypeSpec
 
 DEPTH = 3
 """The checkpoint's ``engram_max_ngram_size - 1``."""
@@ -129,16 +134,22 @@ def lookback_device(request: pytest.FixtureRequest) -> _Device:
     return _Device(device, session.load(_lookback_graph(device_ref)))
 
 
-def _processor(
-    device: Device, dp: int
-) -> UnifiedDSparkDeepseekV41BatchProcessor:
+def _processor(device: Device, dp: int) -> DeepseekV41BatchProcessor:
     config = cast(
         DeepseekV41Config,
-        SimpleNamespace(engram_layer_ids=(1, 14), engram_max_ngram_size=4),
+        SimpleNamespace(
+            engram_layer_ids=(1, 14),
+            engram_max_ngram_size=4,
+            data_parallel_degree=dp,
+            engram_host_buffers=[],
+        ),
     )
     runtime = BatchProcessorRuntime(
         pipeline_config=cast(
-            Any, SimpleNamespace(needs_bitmask_constraints=False)
+            Any,
+            SimpleNamespace(
+                needs_bitmask_constraints=False, speculative=SimpleNamespace()
+            ),
         ),
         devices=[device],
         return_logits=ReturnLogits.VARIABLE,
@@ -147,7 +158,7 @@ def _processor(
         max_batch_input_tokens=MAX_LENGTH,
         data_parallel_degree=dp,
     )
-    return UnifiedDSparkDeepseekV41BatchProcessor(config, runtime)
+    return DeepseekV41BatchProcessor(config, runtime)
 
 
 @dataclass
@@ -278,7 +289,7 @@ class _Pipeline:
         inputs = self._processor.prepare_initial_token_inputs(
             [[r.ctx for r in replica] for replica in replicas]
         )
-        assert isinstance(inputs, UnifiedDSparkDeepseekV41Inputs)
+        assert isinstance(inputs, DeepseekV41Inputs)
         assert inputs.engram_lookback_ids is not None
         assert inputs.engram_lookback_source is not None
         assert inputs.engram_lookback_history is not None
@@ -522,11 +533,21 @@ def test_replay_records_into_the_history_the_next_step_reads() -> None:
     processor = _processor(device, dp=1)
     kv_cache_inputs = cast(Any, [Buffer.zeros((2,), DType.int64, device)])
 
-    def spec_inputs(
-        contexts: list[TextContext],
-    ) -> UnifiedDSparkDeepseekV41Inputs:
-        inputs = processor.prepare_initial_token_inputs(
+    def spec_inputs(contexts: list[TextContext]) -> _Inputs:
+        # As the pairing's batch processor wraps its target's inputs.
+        target = processor.prepare_initial_token_inputs(
             [contexts], kv_cache_inputs, NUM_DRAFTS + 1
+        )
+        inputs = _Inputs(
+            tokens=target.tokens,
+            input_row_offsets=target.input_row_offsets,
+            return_n_logits=target.return_n_logits,
+            kv_cache_inputs=target.kv_cache_inputs,
+            seed=Buffer.zeros((1,), DType.uint64, device),
+            spec=SpecDecodeInputTypeSpec(
+                devices=[DeviceRef.GPU()], distributed=False
+            ),
+            trailing=batch_trailing_buffers(target),
         )
         batch = len(contexts)
         inputs.draft_tokens = Buffer.zeros(
@@ -541,7 +562,7 @@ def test_replay_records_into_the_history_the_next_step_reads() -> None:
     @contextmanager
     def warmup_inputs(
         batch_size: int, batch_characteristics: BatchCharacteristics
-    ) -> Iterator[UnifiedDSparkDeepseekV41Inputs]:
+    ) -> Iterator[_Inputs]:
         # As `OverlapTextGenerationPipeline._warmup_model_inputs` builds them.
         yield spec_inputs(
             [
@@ -588,7 +609,7 @@ def test_replay_records_into_the_history_the_next_step_reads() -> None:
     for r in requests:
         r.ctx.update(int(rng.integers(LOW_TOKEN, HIGH_TOKEN)))
     inputs = spec_inputs([r.ctx for r in requests])
-    assert inputs.engram_lookback_history is history
+    assert history in inputs.trailing
     runner.replay(
         model_inputs=inputs,
         batch_characteristics=runner.align(

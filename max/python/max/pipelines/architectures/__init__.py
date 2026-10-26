@@ -139,6 +139,11 @@ def register_all_models() -> None:
             "dspark_deepseekV4_draft_arch",
         ),
         _LazyArch(
+            "DSparkDeepseekV41DraftModel",
+            ".dspark_deepseekV41",
+            "dspark_deepseekV41_draft_arch",
+        ),
+        _LazyArch(
             "DSparkDraftModel", ".dspark_draft", "dspark_speculators_draft_arch"
         ),
         _LazyArch(
@@ -404,12 +409,6 @@ def register_all_models() -> None:
             "qwen_image_edit_plus_arch",
         ),
         _LazyArch("Step3p5ForCausalLM", ".step3p5", "step3p5_arch"),
-        _LazyArch(
-            "UnifiedDSparkDeepseekV41ForCausalLM",
-            ".unified_dspark_deepseekV41",
-            "unified_dspark_deepseekV41_speculator",
-            speculates_on="DeepseekV41ForCausalLM",
-        ),
         _LazyArch(
             "UnifiedMTPGlmMoeDsaForCausalLM",
             ".unified_mtp_glm5_2",

@@ -24,29 +24,23 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from types import SimpleNamespace
 from typing import Any, cast
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import numpy as np
-from max.driver import Buffer
+from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import Model
 from max.graph import DeviceRef
 from max.nn.kv_cache import BatchCharacteristics, MHAAttnKey
+from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.deepseekV41.model import (
+    DeepseekV41BatchProcessor,
     DeepseekV41Inputs,
     DeepseekV41Model,
 )
-from max.pipelines.architectures.unified_dspark_deepseekV41 import (
-    UnifiedDSparkDeepseekV41Model,
-)
-from max.pipelines.architectures.unified_dspark_deepseekV41.batch_processor import (
-    UnifiedDSparkDeepseekV41BatchProcessor,
-    UnifiedDSparkDeepseekV41Inputs,
-)
+from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.lib.graph_capture import ServeGraphCaptureRunner
-from max.pipelines.lib.interfaces.batch_processor import (
-    UnifiedSpecDecodeBatchProcessor,
-)
+from max.pipelines.lib.interfaces.batch_processor import BatchProcessorRuntime
 
 NUM_DEVICES = 4
 ENGRAM_LAYERS = (1, 14)
@@ -203,166 +197,60 @@ def test_execute_rebinds_tables_on_processor_built_inputs() -> None:
     assert executed[-len(engram) :] == engram
 
 
-# --- DSpark (unified spec-decode graph) -------------------------------------
+# --- DSpark (the speculative pairing's batches) ------------------------------
 
 DRAFT_WIDTH = 5
 
 
-class _SpecRecordingModel(_RecordingModel):
-    """The spec-decode graph returns (accepted, next tokens, next drafts)."""
-
-    def capture(self, graph_key: int, *buffers: Buffer) -> list[Buffer]:
-        self.calls["capture"].append(list(buffers))
-        return [self.output, self.output, self.output]
-
-    def execute(self, *buffers: Buffer) -> list[Buffer]:
-        self.calls["execute"].append(list(buffers))
-        return [self.output, self.output, self.output]
-
-
-class _StubSpecProcessor(_StubProcessor):
-    """Builds DSpark inputs without draft tokens or sampling parameters."""
-
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[Any]],
-        kv_cache_inputs: Any = None,
-        return_n_logits: int = 1,
-    ) -> Any:
-        batch = sum(len(b) for b in replica_batches)
-        return UnifiedDSparkDeepseekV41Inputs(
-            tokens=_buf(batch),
-            input_row_offsets=_buf(batch + 1),
-            return_n_logits=_buf(1),
-            signal_buffers=list(self.signal_buffers),
-            kv_cache_inputs=cast(Any, list(self.kv_leaves)),
-            seed=_buf(1),
-            engram_lookback_ids=_buf(batch, 2),
-        )
-
-
-def _bind_spec_tail(inputs: Any, batch: int) -> Any:
-    """Sets the draft tokens and sampling parameters of a spec-decode step."""
-    inputs.draft_tokens = _buf(batch, DRAFT_WIDTH)
-    inputs.temperature = _buf(batch)
-    inputs.top_k = _buf(batch)
-    inputs.max_k = _buf(1)
-    inputs.top_p = _buf(batch)
-    inputs.min_top_p = _buf(1)
-    return inputs
-
-
-def test_dspark_capture_replay_and_execute_bind_the_same_inputs() -> None:
-    """DSpark capture, replay and execute bind one input list.
-
-    The list is the batch's inputs, draft tokens and sampling parameters,
-    the Engram lookback, the pinned Engram tables, and last a host buffer
-    whose length ``S + B * K`` (prompt tokens plus every draft) sets the
-    graph's combined row count.
-    """
-    pipeline_model = object.__new__(UnifiedDSparkDeepseekV41Model)
-    engram = [
-        _buf(3, 2)
-        for _ in range(NUM_DEVICES)
-        for _ in ENGRAM_LAYERS
-        for _ in ("weight", "scale")
-    ]
-    pipeline_model._engram_host_buffers = engram
-    pipeline_model._batch_processor = cast(Any, _StubSpecProcessor())
-    pipeline_model.model = cast(Model, _SpecRecordingModel())
-    engine = cast(_SpecRecordingModel, pipeline_model.model)
-
-    @contextmanager
-    def warmup_inputs(
-        batch_size: int, batch_characteristics: BatchCharacteristics
-    ) -> Iterator[Any]:
-        assert batch_characteristics.max_prompt_length == DRAFT_WIDTH + 1
-        inputs = pipeline_model.prepare_initial_token_inputs(
-            replica_batches=cast(Any, [[object()] * batch_size]),
-            kv_cache_inputs=None,
-            return_n_logits=DRAFT_WIDTH + 1,
-        )
-        yield _bind_spec_tail(inputs, batch_size)
-
-    kv_params = _kv_params()
-    kv_params.num_draft_tokens_per_step = DRAFT_WIDTH
-    runner = ServeGraphCaptureRunner(
-        model=cast(Model, engine),
-        kv_params=kv_params,
-        warmup_model_inputs=warmup_inputs,
-        max_cache_length_upper_bound=10,
-        max_batch_size=2,
-        num_speculative_tokens=DRAFT_WIDTH,
+def _context(active: int, position: int) -> TextContext:
+    """A request with ``position`` tokens, the last ``active`` of them new."""
+    ctx = TextContext(
+        max_length=64, tokens=TokenBuffer(np.ones(position, dtype=np.int64))
     )
-    runner.warmup_pre_ready()
-    assert engine.calls["capture"]
-    assert runner.captures_verify_width(DRAFT_WIDTH)
-
-    batch = 2
-    inputs = _bind_spec_tail(
-        pipeline_model.prepare_initial_token_inputs(
-            cast(Any, [[object()] * batch]), return_n_logits=DRAFT_WIDTH + 1
-        ),
-        batch,
-    )
-    outputs = pipeline_model.execute(inputs)
-    assert outputs.next_draft_tokens is engine.output
-    (executed,) = engine.calls["execute"]
-
-    def check(bound: list[Buffer], rows: int) -> None:
-        assert len(bound) == len(executed)
-        # The pinned tables sit just before the row-count buffer.
-        assert bound[-1 - len(engram) : -1] == engram
-        marker = bound[-1]
-        assert marker.device.is_host
-        assert marker.shape == (rows + rows * DRAFT_WIDTH,)
-
-    check(executed, batch)
-    for captured in engine.calls["capture"]:
-        check(captured, captured[0].shape[0])
-
-    characteristics = runner.align(
-        BatchCharacteristics(
-            batch_size=batch,
-            max_prompt_length=DRAFT_WIDTH + 1,
-            max_cache_valid_length=7,
-        )
-    )
-    runner.replay(model_inputs=inputs, batch_characteristics=characteristics)
-    (replayed,) = engine.calls["replay"]
-    check(replayed, batch)
+    ctx.tokens.skip_processing(position - active)
+    return ctx
 
 
-def _context(active: int, position: int) -> Any:
-    return SimpleNamespace(
-        tokens=SimpleNamespace(active_length=active, current_position=position)
-    )
-
-
-def test_dspark_dp4_inputs_follow_the_distributed_input_order() -> None:
+def test_dspark_dp4_batches_stage_each_replicas_bounds() -> None:
     """At DP4 the processor stages each replica's bounds and context length.
 
-    The host row offsets follow the row offsets, the replica splits follow
-    the logit count, and one context length per replica follows the KV
-    cache, including for an idle replica.
+    The pairing's graph reads them beside the KV cache, including for an
+    idle replica, and a marker as long as the prompt tokens plus every draft.
     """
-    processor = object.__new__(UnifiedDSparkDeepseekV41BatchProcessor)
-    processor.config = MagicMock(engram_layer_ids=())
+    runtime = BatchProcessorRuntime(
+        pipeline_config=cast(
+            Any,
+            SimpleNamespace(
+                needs_bitmask_constraints=False, speculative=SimpleNamespace()
+            ),
+        ),
+        devices=[CPU()],
+        return_logits=ReturnLogits.VARIABLE,
+        max_batch_size=8,
+        max_seq_len=64,
+        max_batch_input_tokens=64,
+        data_parallel_degree=NUM_DEVICES,
+    )
+    processor = DeepseekV41BatchProcessor(
+        cast(
+            Any,
+            SimpleNamespace(
+                engram_layer_ids=(),
+                data_parallel_degree=NUM_DEVICES,
+                engram_host_buffers=[],
+            ),
+        ),
+        runtime,
+    )
     replicas = [
         [_context(3, 10), _context(1, 4)],
         [],
         [_context(2, 7)],
         [_context(5, 5)],
     ]
-    base = _bind_spec_tail(
-        _StubSpecProcessor().prepare_initial_token_inputs(replicas), 4
+    inputs = processor.prepare_initial_token_inputs(
+        cast(Any, replicas), return_n_logits=DRAFT_WIDTH + 1
     )
-    with patch.object(
-        UnifiedSpecDecodeBatchProcessor,
-        "prepare_initial_token_inputs",
-        return_value=base,
-    ):
-        inputs = processor.prepare_initial_token_inputs(cast(Any, replicas))
 
     offsets = inputs.host_input_row_offsets
     splits = inputs.data_parallel_splits
@@ -374,11 +262,5 @@ def test_dspark_dp4_inputs_follow_the_distributed_input_order() -> None:
     lengths = inputs.batch_context_lengths
     assert [b.dtype for b in lengths] == [DType.int32] * NUM_DEVICES
     assert [b.to_numpy().tolist() for b in lengths] == [[14], [0], [7], [5]]
-
-    buffers = list(inputs.buffers)
-    assert buffers[2] is offsets
-    assert buffers[4] is splits
-    kv = 5 + NUM_DEVICES
-    after_kv = kv + len(base.kv_cache_inputs)
-    assert buffers[kv:after_kv] == base.kv_cache_inputs
-    assert buffers[after_kv : after_kv + NUM_DEVICES] == lengths
+    assert inputs.merged_rows is not None
+    assert inputs.merged_rows.shape == (11 + 4 * DRAFT_WIDTH,)

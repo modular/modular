@@ -31,6 +31,7 @@ from __future__ import annotations
 import logging
 from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from functools import cached_property, partial
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -109,6 +110,7 @@ from ..interfaces.pipeline_model import (
     PipelineModelWithKVCache,
     UnifiedEagleOutputs,
     UnifiedSpecDecodeInputs,
+    WeightLoad,
 )
 from ..memory_estimation import MemoryPlan
 from ..pipeline_parallel import PipelinedModel
@@ -926,9 +928,9 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
     Under a distributed signature the target batches the inputs ahead of the
     spec-decode tail itself, since its row offsets on the host,
     data-parallel splits, context lengths and expert-parallel buffers are
-    its own to compute. A target that encodes its images in its own batching
-    prepares the whole batch, the inputs its call takes past the tail
-    included.
+    its own to compute. A target that encodes its images in its own batching,
+    or whose adapter asks for it, prepares the whole batch, the inputs its
+    call takes past the tail included.
     """
 
     def __init__(
@@ -943,14 +945,16 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
         self._pairing = _Pairing.from_pipeline_config(runtime.pipeline_config)
         target, draft = self._pairing.target, self._pairing.draft
         self._takes_images = _takes_images(target, draft)
-        self._encodes_in_batching = _encodes_in_batching(target, draft)
+        self._prepares_batches = _encodes_in_batching(
+            target, draft
+        ) or spec_adapters.prepares_every_batch(self._pairing.adapter_arch)
 
     @cached_property
     def _target_batching(self) -> Any:
-        """The target's batching for distributed or image-encoding targets."""
+        """The target's batching, where it prepares any of the batches."""
         config = self.spec_config
         assert config.input_spec is not None, "the graph has not been built"
-        if not (config.input_spec.distributed or self._encodes_in_batching):
+        if not (config.input_spec.distributed or self._prepares_batches):
             return None
         return _batching(self._pairing.target)(config.target, self.runtime)
 
@@ -1026,7 +1030,7 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
             inputs = super().prepare_initial_token_inputs(
                 replica_batches, kv_cache_inputs, return_n_logits
             )
-        elif self._encodes_in_batching:
+        elif self._prepares_batches and not config.input_spec.distributed:
             inputs = self._target_inputs(
                 replica_batches, kv_cache_inputs, return_n_logits
             )
@@ -1216,6 +1220,8 @@ class SpecDecodePipelineModel(
     export_contract: Mapping[str, object] | None = None
     """What the target's engine checks the export's inputs against, if it
     keeps a record of its own."""
+    _weight_loads: list[WeightLoad]
+    """The weight loads the modules deferred to the compile."""
 
     def __init__(
         self,
@@ -1377,8 +1383,8 @@ class SpecDecodePipelineModel(
                 draft_weights=draft_weights,
             )
             timer.mark_build_complete()
-            model = session.load(
-                spec.graph, weights_registry=spec.weights_registry
+            model = self._compile_and_init(
+                session, spec.graph, spec.weights_registry
             )
         config.input_spec = spec.input_spec
         self.export_input_types = spec.input_types
@@ -1388,6 +1394,33 @@ class SpecDecodePipelineModel(
         self._wire_batch_processor(model, config)
         return model
 
+    def _compile_and_init(
+        self,
+        session: InferenceSession,
+        graph: Graph,
+        weights_registry: dict[str, Any],
+    ) -> Model:
+        """Compiles the graph while the modules' deferred weight loads run.
+
+        The compile waits for the loads that can't overlap it, and the graph
+        initializes once every load has filled the registry.
+        """
+        loads, self._weight_loads = self._weight_loads, []
+        if not loads:
+            return session.load(graph, weights_registry=weights_registry)
+        with ThreadPoolExecutor(len(loads)) as pool:
+            running = [
+                (pool.submit(load.load, weights_registry), load)
+                for load in loads
+            ]
+            for future, load in running:
+                if not load.overlaps_compile:
+                    future.result()
+            compiled = session.compile(graph)
+            for future, _ in running:
+                future.result()
+        return session.init(compiled, weights_registry=weights_registry)
+
     def _build_modules(self, session: InferenceSession) -> _Modules:
         """Builds the draft, then the target, each as its own architecture."""
         config = self.arch_config_as(SpecDecodeArchConfig)
@@ -1396,8 +1429,14 @@ class SpecDecodePipelineModel(
         pairing = self.pairing
 
         ep = _EPRuntime(session)
+        self._weight_loads = []
         context = replace(
-            ModelLoadContext.from_pipeline_model(self), ep_runtime=ep.start
+            ModelLoadContext.from_pipeline_model(self),
+            ep_runtime=ep.start,
+            # A ModuleV3 pairing compiles with its weights, so it defers none.
+            weight_loads=(
+                None if _builds_modulev3(pairing.target) else self._weight_loads
+            ),
         )
         draft_paths = _draft_checkpoint(
             self.pipeline_config

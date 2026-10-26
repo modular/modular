@@ -31,6 +31,7 @@ family.
    pipelines.architectures.dflash_mimo_v2
    pipelines.architectures.diffusion_gemma
    pipelines.architectures.dspark_deepseekV4
+   pipelines.architectures.dspark_deepseekV41
    pipelines.architectures.dspark_draft
    pipelines.architectures.dspark_gemma4
    pipelines.architectures.dspark_qwen3
@@ -82,7 +83,6 @@ family.
    pipelines.architectures.qwen_image
    pipelines.architectures.qwen_image_edit
    pipelines.architectures.step3p5
-   pipelines.architectures.unified_dspark_deepseekV41
    pipelines.architectures.unified_mtp_glm5_2
    pipelines.architectures.wan
 
@@ -104,6 +104,7 @@ Text generation
    ~max.pipelines.architectures.dflash_mimo_v2
    ~max.pipelines.architectures.diffusion_gemma
    ~max.pipelines.architectures.dspark_deepseekV4
+   ~max.pipelines.architectures.dspark_deepseekV41
    ~max.pipelines.architectures.dspark_draft
    ~max.pipelines.architectures.dspark_gemma4
    ~max.pipelines.architectures.dspark_qwen3
@@ -148,7 +149,6 @@ Text generation
    ~max.pipelines.architectures.qwen3_5
    ~max.pipelines.architectures.qwen3vl_moe
    ~max.pipelines.architectures.step3p5
-   ~max.pipelines.architectures.unified_dspark_deepseekV41
    ~max.pipelines.architectures.unified_mtp_glm5_2
 
 Embeddings

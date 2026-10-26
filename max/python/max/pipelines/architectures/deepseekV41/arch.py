@@ -50,4 +50,9 @@ deepseekV41_arch = SupportedArchitecture(
     checkpoint_draft_width=dspark_draft_width,
     reasoning_parser="deepseekv4",
     tool_parser="deepseekv41",
+    checkpoint_drafts={"dspark": "DSparkDeepseekV41DraftModel"},
+    spec_decode_graph_names={"dspark": "unified_dspark_deepseekV41"},
+    # The block driver commits per row, so a prefill row riding a decode
+    # batch commits its whole chunk.
+    supports_spec_decode_mixed_batches=True,
 )

@@ -56,6 +56,7 @@ __all__ = [
     "ep_input_types",
     "export_contract",
     "extra",
+    "prepares_every_batch",
     "primary_kv",
     "relaxed_thinking_acceptance",
     "sequential_proposer",
@@ -75,6 +76,7 @@ VerifyFn = Callable[[SequentialBatch | BlockBatch], Verified[Any]]
 _TARGET_ADAPTERS: Mapping[str, str] = {
     "DeepseekV3ForCausalLM": ".deepseekV3.spec_adapters",
     "DeepseekV4ForCausalLM": ".deepseekV4.spec_adapters",
+    "DeepseekV41ForCausalLM": ".deepseekV41.spec_adapters",
     "Gemma4ForConditionalGeneration": ".gemma4.spec_adapters",
     "Gemma4ForConditionalGeneration_ModuleV3": ".gemma4_modulev3.spec_adapters",
     "Gemma4UnifiedForConditionalGeneration": ".gemma4.spec_adapters",
@@ -223,6 +225,12 @@ def relaxed_thinking_acceptance(target_arch: str) -> bool:
     """Returns whether a reasoning model's drafts may be accepted under the
     relaxed in-thinking rule."""
     return _adapter(target_arch).relaxed_thinking_acceptance
+
+
+def prepares_every_batch(target_arch: str) -> bool:
+    """Returns whether the target's own batch processor prepares every batch
+    of a pairing, the inputs past the canonical tail included."""
+    return _adapter(target_arch).prepares_every_batch
 
 
 def signal_buffer_index(target_arch: str) -> int | None:

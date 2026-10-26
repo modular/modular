@@ -25,10 +25,11 @@ from max.pipelines.architectures.deepseekV41.model import (
     DROP_PAGE_CACHE_ENV,
     DeepseekV41Model,
 )
-from max.pipelines.architectures.unified_dspark_deepseekV41.model import (
-    UnifiedDSparkDeepseekV41Model,
-)
 from max.pipelines.lib import GraphRole
+from max.pipelines.lib.interfaces.pipeline_model import WeightLoad
+from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
+    SpecDecodePipelineModel,
+)
 
 
 class _WeightLoads:
@@ -114,40 +115,29 @@ def test_load_graphs_overlaps_the_compile_with_the_engram_pinning(
     assert events == ["upload", "compiled", "pin", "released"]
 
 
-def test_dspark_still_loads_through_build_graph_for_compile(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The DSpark subclass keeps its own graph build, and its compile still
-    overlaps the Engram pinning, which finishes before the weights init.
+def test_a_speculative_pairing_overlaps_its_compile_with_the_pinning() -> None:
+    """The DSpark pairing defers the same loads to its fused graph's compile,
+    and the Engram pinning finishes before the weights initialize.
     """
-    pipeline_model = object.__new__(UnifiedDSparkDeepseekV41Model)
+    pipeline_model = object.__new__(SpecDecodePipelineModel)
     events: list[str] = []
     loads = _WeightLoads(events)
-    _stub_load(monkeypatch, pipeline_model, events)
-    graph = Mock()
+    pipeline_model._weight_loads = [
+        WeightLoad(lambda registry: loads.pin(), overlaps_compile=True),
+        WeightLoad(lambda registry: loads.upload(), overlaps_compile=False),
+    ]
+    graph, compiled, decoder = Mock(), Mock(), Mock()
 
-    def build_graph_for_compile(
-        session: object, state_dict: object, model_config: object
-    ) -> tuple[Mock, dict[str, Any]]:
-        pipeline_model._defer_weight_load(loads.pin, overlaps_compile=True)
-        pipeline_model._defer_weight_load(loads.upload, overlaps_compile=False)
-        return graph, {}
-
-    def compile_reusing_mefs(compiled_graph: object) -> Mock:
+    def compile(compiled_graph: object) -> Mock:
         assert compiled_graph is graph
         loads.compile()
-        return Mock()
+        return compiled
 
-    decoder = Mock()
-
-    def init(compiled: object, weights_registry: object) -> Mock:
+    def init(compiled_graph: object, weights_registry: object) -> Mock:
+        assert compiled_graph is compiled
         events.append("init")
         return decoder
 
-    session = Mock(compile_reusing_mefs=compile_reusing_mefs, init=init)
-    monkeypatch.setattr(
-        pipeline_model, "_build_graph_for_compile", build_graph_for_compile
-    )
-
-    assert pipeline_model.load_model(session) is decoder
-    assert events == ["upload", "compiled", "pin", "init", "released"]
+    session = Mock(compile=compile, init=init)
+    assert pipeline_model._compile_and_init(session, graph, {}) is decoder
+    assert events == ["upload", "compiled", "pin", "init"]

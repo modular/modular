@@ -37,10 +37,11 @@ from max.nn.kv_cache import spec_decode_cache_slack
 from max.pipelines.architectures import hf_config_shims  # noqa: F401
 from max.pipelines.architectures.deepseekV41 import memory_planner
 from max.pipelines.architectures.deepseekV41.deepseekV41 import (
+    DeepseekV41,
     DeepseekV41Block,
 )
 from max.pipelines.architectures.deepseekV41.dspark_drafter import (
-    DeepseekV41WithDSpark,
+    DeepseekV41DSparkDrafter,
 )
 from max.pipelines.architectures.deepseekV41.layers.attention import (
     CSA2Attention,
@@ -104,13 +105,18 @@ def _config(num_draft_tokens: int) -> DeepseekV41Config:
     )
 
 
-def _model(num_draft_tokens: int) -> DeepseekV41WithDSpark:
-    return DeepseekV41WithDSpark(
+def _model(num_draft_tokens: int) -> DeepseekV41:
+    return DeepseekV41(
         _config(num_draft_tokens), DeviceRef.CPU(), engram_host_tables={}
     )
 
 
-def _trunk_attentions(model: DeepseekV41WithDSpark) -> list[CSA2Attention]:
+def _drafter(model: DeepseekV41) -> DeepseekV41DSparkDrafter:
+    """The DSpark stages, built beside ``model`` from its config."""
+    return DeepseekV41DSparkDrafter(model.config, DeviceRef.CPU())
+
+
+def _trunk_attentions(model: DeepseekV41) -> list[CSA2Attention]:
     attentions = []
     for layer in model.trunk.layers:
         assert isinstance(layer, DeepseekV41Block)
@@ -131,7 +137,7 @@ def test_rotary_tables_cover_speculative_slack(
     model = _model(num_draft_tokens)
     want = MAX_SEQ_LEN + spec_decode_cache_slack(model.config.kv_params)
     trunk = _trunk_attentions(model)
-    drafter = list(model.dspark._attentions())
+    drafter = list(_drafter(model)._attentions())
     assert len(trunk) == TRUNK_LAYERS and len(drafter) == STAGES
     tables = [(f"trunk layer {i}", a.rope) for i, a in enumerate(trunk)]
     tables += [(f"drafter stage {i}", a.rope) for i, a in enumerate(drafter)]
@@ -154,7 +160,7 @@ def test_drafter_gathers_last_speculative_position_on_cpu() -> None:
     model = _model(num_draft_tokens=5)
     last = MAX_SEQ_LEN + spec_decode_cache_slack(model.config.kv_params) - 1
     positions = np.array([MAX_SEQ_LEN - 1, MAX_SEQ_LEN, last], dtype=np.int32)
-    drafter = model.dspark._attentions()[0]
+    drafter = _drafter(model)._attentions()[0]
     trunk = _trunk_attentions(model)[0]
     with Graph("dsv41_rope_gather_at_capacity", input_types=[]) as graph:
         pos = ops.constant(positions, DType.int32, DeviceRef.CPU())
@@ -196,7 +202,7 @@ def test_planner_reserves_the_graphs_candidate_blocks(
         candidate_block_size=text_config.candidate_block_size,
         candidate_topk_blocks=text_config.candidate_topk_blocks,
     )
-    source = DeepseekV41WithDSpark(
+    source = DeepseekV41(
         config, DeviceRef.CPU(), engram_host_tables={}
     ).trunk.layers[0]
     assert isinstance(source, DeepseekV41Block)

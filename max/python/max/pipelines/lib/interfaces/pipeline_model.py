@@ -451,6 +451,15 @@ class UnifiedSpecDecodeInputs(ModelInputs):
 
 
 @dataclass(frozen=True)
+class WeightLoad:
+    """A host-side weight load that runs once a module's graph is built."""
+
+    load: Callable[[dict[str, Any]], None]
+    """Fills the weights registry the graph initializes with."""
+    overlaps_compile: bool
+
+
+@dataclass(frozen=True)
 class ModelLoadContext:
     """What a pipeline model reads to build its module from a checkpoint."""
 
@@ -473,6 +482,9 @@ class ModelLoadContext:
     encodes_images: bool = True
     """Whether the module encodes images. ``False`` builds a multimodal
     checkpoint's language model alone."""
+    weight_loads: list[WeightLoad] | None = None
+    """The queue :meth:`defer_weight_load` adds to, for a caller that runs
+    host-side weight loads once the module's graph is built."""
 
     @classmethod
     def from_pipeline_model(cls, model: PipelineModel[Any]) -> ModelLoadContext:
@@ -496,6 +508,27 @@ class ModelLoadContext:
         """
         if ep_config is not None and self.ep_runtime is not None:
             self.ep_runtime(ep_config)
+
+    def defer_weight_load(
+        self,
+        load: Callable[[dict[str, Any]], None],
+        *,
+        overlaps_compile: bool,
+    ) -> None:
+        """Queues ``load`` to run once the module's graph is built.
+
+        ``load`` fills the weights registry the graph initializes with. One
+        that ``overlaps_compile`` runs during the compile, so it must not
+        hold the GIL; the compile waits for the others.
+
+        Raises:
+            ValueError: If the caller runs no deferred weight loads.
+        """
+        if self.weight_loads is None:
+            raise ValueError(
+                "This module defers weight loads, which its caller doesn't run."
+            )
+        self.weight_loads.append(WeightLoad(load, overlaps_compile))
 
     @property
     def max_seq_len(self) -> int:

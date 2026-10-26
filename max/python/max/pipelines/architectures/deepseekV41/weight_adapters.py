@@ -572,19 +572,17 @@ _DSPARK_STAGE_TENSOR = re.compile(r"^mtp\.(?P<stage>\d+)\.(?P<rest>.+)$")
 # these prefixes under stage 0, and under the last stage.
 _DSPARK_FIRST_STAGE_OWNED = ("main_proj.", "main_norm.")
 _DSPARK_LAST_STAGE_OWNED = ("norm.", "markov_head.")
-DSPARK_MODULE_PREFIX = "dspark"
-"""Attribute that holds the drafter, and so the prefix of its weight names."""
 
 
 def rewire_dspark_state_dict(
     state_dict: dict[str, WeightData], last_stage: int
 ) -> dict[str, WeightData]:
-    """Maps ``mtp.{i}.*`` tensors onto the ``dspark`` drafter tree.
+    """Maps ``mtp.{i}.*`` tensors onto the drafter's tree.
 
     Stages get the trunk's attention, gate and shared-expert rewiring; then
     ``mtp.0.main_{proj,norm}`` and ``mtp.{last_stage}.{norm,markov_head}``
-    move to ``dspark.*``, and every other ``mtp.{i}.X`` to
-    ``dspark.stages.{i}.X``.
+    become the drafter's own, and every other ``mtp.{i}.X`` becomes
+    ``stages.{i}.X``.
 
     Args:
         state_dict: Only ``mtp.*`` tensors (already through
@@ -615,9 +613,9 @@ def rewire_dspark_state_dict(
         if (stage == 0 and rest.startswith(_DSPARK_FIRST_STAGE_OWNED)) or (
             stage == last_stage and rest.startswith(_DSPARK_LAST_STAGE_OWNED)
         ):
-            final[f"{DSPARK_MODULE_PREFIX}.{rest}"] = data
+            final[rest] = data
         else:
-            final[f"{DSPARK_MODULE_PREFIX}.stages.{stage}.{rest}"] = data
+            final[f"stages.{stage}.{rest}"] = data
     return final
 
 
@@ -1424,49 +1422,31 @@ def convert_safetensor_state_dict(
 def convert_dspark_safetensor_state_dict(
     state_dict: dict[str, Weights],
     huggingface_config: PretrainedConfig,
-    *,
-    defer_routed_experts: bool = False,
     **unused_kwargs: object,
 ) -> dict[str, WeightData]:
-    """Returns the trunk's weights together with the DSpark stages' weights.
+    """The DSpark stages' weights (``mtp.*``), under the drafter's names.
 
-    Applies :func:`convert_weight_data` to both, then
-    :func:`rewire_trunk_state_dict` to the trunk and
-    :func:`rewire_dspark_state_dict` to the ``mtp.*`` stages. Unused DSpark
-    tensors are dropped. ``defer_routed_experts`` defers only the trunk's
-    NVFP4 experts.
+    For the draft beside the trunk, which loads the same checkpoint through
+    :func:`convert_safetensor_state_dict`. Applies :func:`convert_weight_data`
+    and :func:`rewire_dspark_state_dict`; unused DSpark tensors are dropped.
     """
     text_config = getattr(huggingface_config, "text_config", huggingface_config)
     resolve_quantization_info(
         huggingface_config, state_dict, text_config.num_hidden_layers
     )
-    converted = convert_weight_data(
+    stages = convert_weight_data(
         {
             name: value.data()
             for name, value in state_dict.items()
-            if not is_unused_dspark_tensor(name)
-            and not is_skipped_checkpoint_tensor(name)
+            if name.startswith(DSPARK_CHECKPOINT_PREFIX)
+            and not is_unused_dspark_tensor(name)
         },
         num_routed_experts=text_config.n_routed_experts,
         num_dspark_experts=text_config.dspark_n_routed_experts,
-        defer_routed_experts=defer_routed_experts,
-        data_parallel_degree=_data_parallel_degree(unused_kwargs),
     )
-    num_stages = num_dspark_stages(text_config)
-    trunk = {
-        name: data
-        for name, data in converted.items()
-        if not name.startswith(DSPARK_CHECKPOINT_PREFIX)
-    }
-    stages = {
-        name: data
-        for name, data in converted.items()
-        if name.startswith(DSPARK_CHECKPOINT_PREFIX)
-    }
-    return {
-        **rewire_trunk_state_dict(trunk),
-        **rewire_dspark_state_dict(stages, last_stage=num_stages - 1),
-    }
+    return rewire_dspark_state_dict(
+        stages, last_stage=num_dspark_stages(text_config) - 1
+    )
 
 
 # The checkpoint stores the vision RMSNorm weights in bfloat16; the reference

@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Traces the unified DSpark spec-decode graph at the real V4.1 config.
+"""Traces the DSpark pairing's speculative graph at the real V4.1 config.
 
 Tracing only, but the test needs a GPU because the MXFP8 scale layout is
 chosen from the host's accelerator rather than graph metadata.
@@ -19,19 +19,22 @@ chosen from the host's accelerator rather than graph metadata.
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 from unittest.mock import Mock
 
 import numpy as np
 import pytest
 from max.dtype import DType
-from max.graph import DeviceRef, Graph, TensorType, TensorValue
+from max.graph import DeviceRef, TensorType
 from max.nn.comm.ep import EPConfig
 from max.nn.kv_cache import MultiKVCacheParams
-from max.nn.layer import Module
+from max.nn.transformer import ReturnHiddenStates
 from max.pipelines.architectures import hf_config_shims  # noqa: F401
 from max.pipelines.architectures.deepseekV41 import kv_leaves
+from max.pipelines.architectures.deepseekV41.deepseekV41 import DeepseekV41
 from max.pipelines.architectures.deepseekV41.dspark_drafter import (
-    DeepseekV41WithDSpark,
+    DeepseekV41DSparkDrafter,
 )
 from max.pipelines.architectures.deepseekV41.layers.engram_hash import (
     EngramLayout,
@@ -43,13 +46,13 @@ from max.pipelines.architectures.deepseekV41.model_config import (
     NVFP4_ACTIVATION_QUANT_CONFIG,
     DeepseekV41Config,
 )
-from max.pipelines.architectures.unified_dspark_deepseekV41.model import (
-    driver_outputs,
+from max.pipelines.architectures.dspark_deepseekV41 import (
+    DSparkDeepseekV41DraftConfig,
 )
-from max.pipelines.architectures.unified_dspark_deepseekV41.unified_dspark_deepseekV41 import (
-    UnifiedDSparkDeepseekV41,
+from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
+    build_spec_graph,
 )
-from max.pipelines.lib import KVCacheConfig
 from max.pipelines.speculative.config import SpeculativeConfig
 from transformers import AutoConfig
 
@@ -105,15 +108,35 @@ def _model_config(
         devices=devices,
         max_seq_len=4096,
         data_parallel_degree=data_parallel_degree,
+        kv_leaf_specs=kv_leaves.kv_leaf_specs(text_config),
         **text_fields,
         **DeepseekV41Config.resolve_quantization_fields(config),
     )
 
 
-def _fix_up_weight_names(module: Module) -> None:
-    """Sets each ``Weight.name`` to its dotted state-dict key."""
-    for name, weight in module.raw_state_dict().items():
-        weight.name = name
+def _pipeline_config(
+    config: AutoConfig, data_parallel_degree: int, mixed_width: int | None
+) -> PipelineConfig:
+    """What the pairing reads of a served config."""
+    return cast(
+        PipelineConfig,
+        SimpleNamespace(
+            models=SimpleNamespace(
+                main_architecture_name="DeepseekV41ForCausalLM"
+            ),
+            draft_model=None,
+            speculative=_speculative(mixed_width),
+            needs_bitmask_constraints=False,
+            runtime=SimpleNamespace(
+                reasoning_parser=None, prefer_module_v3=False
+            ),
+            model=SimpleNamespace(
+                data_parallel_degree=data_parallel_degree,
+                pipeline_stage=None,
+                huggingface_config=config,
+            ),
+        ),
+    )
 
 
 @pytest.mark.parametrize(
@@ -133,7 +156,7 @@ def test_unified_dspark_graph_traces(
     expert_parallel: bool,
     mixed_width: int | None,
 ) -> None:
-    """One spec-decode step traces; a weightless driver declares its inputs.
+    """One spec-decode step traces, its weights named but not loaded.
 
     With a data-parallel degree of 4 each device verifies and drafts its own
     replica's requests; with ``expert_parallel`` the verification's routed
@@ -150,74 +173,40 @@ def test_unified_dspark_graph_traces(
     )
     kv_params = model_config.kv_params
     assert isinstance(kv_params, MultiKVCacheParams)
-    specs = kv_leaves.kv_leaf_specs(DeepseekV41Config.get_text_config(config))
-    layer_ids = model_config.engram_layer_ids
-    assert layer_ids, "the real config has Engram layers"
-
-    lookback = TensorType(
-        DType.int64,
-        ["engram_lookback_batch", model_config.engram_max_ngram_size - 1],
-        device=devices[0],
-    )
+    assert model_config.engram_layer_ids, "the real config has Engram layers"
     n = max(model_config.vocab_size, model_config.engram_vocab_size)
     token_map = (
         np.arange(n, dtype=np.int32) % model_config.engram_compressed_vocab_size
     )
-    tables = _engram_table_types(
+    model_config.engram_input_types = _engram_table_types(
         model_config, devices, token_map, sharded=data_parallel_degree == 1
     )
-    trailing_types = [lookback, *tables]
-    signature = UnifiedDSparkDeepseekV41(
-        model_config,
-        _speculative(mixed_width),
-        specs,
-        model=None,
-        trailing_input_types=trailing_types,
+    target = DeepseekV41(
+        model_config, engram_host_tables={}, engram_token_map=token_map
     )
-    input_types = signature.input_types(kv_params)
+    draft = DeepseekV41DSparkDrafter(model_config, devices[0])
+    spec = build_spec_graph(
+        _pipeline_config(config, data_parallel_degree, mixed_width),
+        MultiKVCacheParams.from_params({"target": kv_params}),
+        devices,
+        include_signal_buffers=num_devices > 1,
+        target=target,
+        target_config=model_config,
+        draft=draft,
+        draft_config=DSparkDeepseekV41DraftConfig(model_config),
+        hidden_states=ReturnHiddenStates.SELECTED_LAYERS,
+        draft_weights=None,
+    )
 
-    with Graph(
-        "unified_dspark_deepseekV41_trace", input_types=input_types
-    ) as graph:
-        trailing = signature.decode_inputs(graph.inputs, kv_params).trailing
-        # The model's own inputs follow the standard ones exactly once.
-        assert len(trailing) == len(trailing_types)
-        values = trailing[1:]
-        per_device: list[dict[int, tuple[TensorValue, TensorValue]]] = []
-        idx = 0
-        for _ in devices:
-            per_dev: dict[int, tuple[TensorValue, TensorValue]] = {}
-            for layer_id in layer_ids:
-                per_dev[layer_id] = (values[idx].tensor, values[idx + 1].tensor)
-                idx += 2
-            per_device.append(per_dev)
-        nn_model = DeepseekV41WithDSpark(
-            model_config,
-            engram_host_tables=per_device[0],
-            engram_token_map=token_map,
-        )
-        _fix_up_weight_names(nn_model)
-        driver = UnifiedDSparkDeepseekV41(
-            model_config,
-            _speculative(mixed_width),
-            specs,
-            model=nn_model,
-            trailing_input_types=trailing_types,
-        )
-        assert tuple(driver.input_types(kv_params)) == tuple(input_types)
-        if num_devices > 1:
-            driver.shard(devices, per_device)
-        outputs = driver_outputs(
-            driver,
-            driver.decode_inputs(graph.inputs, kv_params),
-            specs,
-            has_engram=True,
-        )
-        graph.output(*outputs)
-
+    assert spec.graph.name == "unified_dspark_deepseekV41"
+    # The Engram lookback, the tables, then the merged-rows marker end it.
+    assert str(spec.input_types[-1].shape[0]) == "merged_seq_len"
     # (num_accepted, next_tokens, next_draft_tokens), argmax drafts.
+    outputs = spec.graph.output_types
     assert len(outputs) == 3
-    assert outputs[2].shape[1] == NUM_SPECULATIVE_TOKENS
+    drafts = outputs[2]
+    assert isinstance(drafts, TensorType)
+    assert drafts.shape[1] == NUM_SPECULATIVE_TOKENS
 
 
 def _engram_table_types(

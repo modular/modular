@@ -22,9 +22,9 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
-from max.driver import accelerator_api
+from max.driver import Buffer, accelerator_api
 from max.dtype import DType
-from max.graph import DeviceRef
+from max.graph import DeviceRef, TensorType
 from max.nn.comm.ep import EPConfig
 from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
 from max.nn.kv_cache import KVCacheParamInterface, spec_decode_cache_slack
@@ -518,6 +518,16 @@ class DeepseekV41Config(ArchConfigWithKVCache):
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
 
+    kv_leaf_specs: list[kv_leaves.V41KVLeafSpec] = field(default_factory=list)
+    """The KV cache leaves, in params-tree order."""
+
+    # Set by ``DeepseekV41Model.build_module``, for the speculative graph,
+    # which takes the pinned Engram tables as inputs.
+    engram_input_types: list[TensorType] = field(default_factory=list)
+    """One CPU input pair per (device, Engram layer), device-major."""
+    engram_host_buffers: list[Buffer] = field(default_factory=list)
+    """The pinned tables of :attr:`engram_input_types`, once pinned."""
+
     def validate_num_speculative_tokens(
         self, num_speculative_tokens: int
     ) -> None:
@@ -750,6 +760,7 @@ class DeepseekV41Config(ArchConfigWithKVCache):
                 runtime.max_batch_input_tokens,
                 max_seq_len,
             ),
+            kv_leaf_specs=kv_leaves.kv_leaf_specs(text_config),
             **cls.resolve_text_fields(text_config),
             **cls.resolve_quantization_fields(config),
         )
