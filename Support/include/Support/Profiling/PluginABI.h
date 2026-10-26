@@ -45,7 +45,7 @@
 // M_PROFILER_API_HAS), which is what lets newer shims degrade gracefully
 // against older plugins and vice versa.
 #define M_PROFILER_ABI_MAJOR 1
-#define M_PROFILER_ABI_MINOR 1
+#define M_PROFILER_ABI_MINOR 2
 
 // Filename the shim probes when MODULAR_PROFILER_PLUGIN does not name an
 // explicit path: next to the host DSO first, then the default dlopen search.
@@ -115,6 +115,14 @@ typedef struct M_ProfilerPluginAPI {
   // ABI 1.1. Asks for an event-triggered step-window burst; `reason` need
   // not be NUL-terminated. Returns whether a burst opened.
   bool (*requestBurst)(const char *reason, size_t reasonLen);
+
+  // ABI 1.2.
+  // Attaches a top-level metadata field to the live trace. The first value
+  // set for a key in a trace wins; later calls for it are cheap no-ops. The
+  // value is inserted into the trace JSON verbatim, so it must be valid JSON
+  // needing no escapes. Dropped when no trace is live.
+  void (*setTraceMetadata)(const char *key, size_t keyLen, const char *value,
+                           size_t valueLen);
 } M_ProfilerPluginAPI;
 
 // True iff `api` (a plugin's table) is long enough to carry `field` and sets

@@ -581,6 +581,14 @@ public:
   /// The HAL backend never creates instances, so this is unreachable.
   DeviceContext &context() const;
 
+  /// Profiler identity and manifest, as on the legacy DeviceGraph. Unreachable
+  /// at runtime, since no instance exists; empty so replay tracing is a no-op.
+  uint64_t profilerId() const { return 0; }
+  const std::string &profilerManifest() const {
+    static const std::string empty;
+    return empty;
+  }
+
 private:
   llvm::SmallVector<DeviceBufferRef> inputs_;
   llvm::SmallVector<AsyncRT::AnyAsyncValueRef> outputs_;

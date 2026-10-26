@@ -114,6 +114,8 @@ struct RangeSink {
   void (*rangeEnd)();
   void (*registerCurrentThread)();
   bool (*requestBurst)(StringRef reason);
+  // Null when the attached profiler predates it.
+  void (*setTraceMetadata)(StringRef key, StringRef value);
 };
 
 // Why a sink is being requested; the integration decides per request kind
@@ -182,6 +184,13 @@ void rangeEnd();
 // trace format, so keep it under 2^31 to avoid aliasing. The matching
 // rangeEnd() is shared with rangeBegin (per-thread LIFO).
 void rangeBeginWithId(uint64_t correlationId, StringRef name, uint32_t color);
+
+// Attach a top-level metadata field to the live trace, if any. The first value
+// set for a key in a trace wins and later calls for it are cheap, so callers
+// may set it on every occurrence of the event it describes. `value` is
+// inserted into the trace JSON verbatim: it must be valid JSON containing no
+// backslashes or newlines. Outside a live trace this is one predicted branch.
+void setTraceMetadata(StringRef key, StringRef value);
 
 // Advance the step counter. Drives the warmup/active state machine for
 // fixed-window profiling. MAX calls this internally at the end of
