@@ -17,12 +17,11 @@
 using namespace M;
 using namespace KGEN;
 
-void M::KGEN::evaluateFrameByLiveness(FrameData &frameData,
-                                      FuncOp originalFunction,
-                                      mlir::DominanceInfo &domInfo,
-                                      Value errorValue, Value resultValue,
-                                      FrameStateTransform transform,
-                                      bool isHot) {
+void M::KGEN::evaluateFrameByLiveness(
+    FrameData &frameData, FuncOp originalFunction, mlir::DominanceInfo &domInfo,
+    Value errorValue, Value resultValue,
+    FrameStateTransform rematerializeFrameValues, bool isHot) {
   evaluateFrameByStateNumbering(frameData, originalFunction, domInfo,
-                                errorValue, resultValue, transform, isHot);
+                                errorValue, resultValue,
+                                rematerializeFrameValues, isHot);
 }

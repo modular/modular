@@ -2612,7 +2612,7 @@ struct _DeviceGraphBuilderEnqueuer[
 
     @inline(.always)
     def enqueue[
-        args_origin: MutOrigin, //
+        args_origin: ImmOrigin, //
     ](
         self,
         func_handle: _DeviceFunctionPtr[mut=True],
@@ -2662,7 +2662,12 @@ struct _DeviceGraphBuilderEnqueuer[
             shared_mem_bytes,
             attributes,
             num_attributes,
-            args,
+            # TODO(MSTDL-1904): Do backends really need these to be mutable? I
+            #   hope none are mutating kernel arguments. For each backend, none
+            #   specifically say they mutate these, and the API docs frequently
+            #   imply they simply copy these values, but the C function
+            #   signatures also don't specifically *promise* they're `const`.
+            args.unsafe_mut_cast[True](),
             arg_count,
             arg_sizes,
             dep_args.ids,

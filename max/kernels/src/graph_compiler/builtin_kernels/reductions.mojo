@@ -253,7 +253,9 @@ def arg_nonzero_shape(input_buffer: Some[TileTensorable]) -> IndexList[2]:
     Returns:
         The output shape as a rank-2 `IndexList` of nonzero element indices.
     """
-    return arg_nonzero.arg_nonzero_shape(input_buffer.to_tile_tensor())
+    return coord_to_index_list(
+        arg_nonzero.arg_nonzero_shape(input_buffer.to_tile_tensor())
+    )
 
 
 @extensibility.register("mo.reduce.row_mean_of_squares")
@@ -614,7 +616,7 @@ struct ReduceMul:
             target=target,
             reduce_dim=axis,
             name=_trace_name,
-        ](input_fn, output_fn, Coord(input.shape()).flatten(), ctx)
+        ](input_fn, output_fn, input.shape().flatten(), ctx)
 
 
 @extensibility.register_shape_function("mo.reduce.mul")
@@ -1353,7 +1355,7 @@ struct ReduceMinAndMax:
             input_fn,
             output_min_fn,
             output_max_fn,
-            Coord(input.shape()).flatten(),
+            input.shape().flatten(),
             ctx,
         )
 
@@ -2024,7 +2026,7 @@ struct Softmax:
         comptime if sm_cols != UNKNOWN_VALUE:
             softmax[output.dtype, output.rank, target=target, reduce_dim=axis](
                 input_fn,
-                Coord(output.shape()),
+                output.shape_coord(),
                 ComptimeInt[sm_cols](),
                 output.to_tile_tensor[.int64](),
                 axis,
@@ -2033,7 +2035,7 @@ struct Softmax:
         else:
             softmax[output.dtype, output.rank, target=target, reduce_dim=axis](
                 input_fn,
-                Coord(output.shape()),
+                output.shape_coord(),
                 Int(input.shape()[axis]),
                 output.to_tile_tensor[.int64](),
                 axis,
@@ -2092,7 +2094,7 @@ struct LogSoftmax:
                 reduce_dim=axis,
             ](
                 input_fn,
-                Coord(output.shape()),
+                output.shape_coord(),
                 ComptimeInt[lsm_cols](),
                 output.to_tile_tensor[.int64](),
                 axis,
@@ -2107,7 +2109,7 @@ struct LogSoftmax:
                 reduce_dim=axis,
             ](
                 input_fn,
-                Coord(output.shape()),
+                output.shape_coord(),
                 Int(input.shape()[axis]),
                 output.to_tile_tensor[.int64](),
                 axis,

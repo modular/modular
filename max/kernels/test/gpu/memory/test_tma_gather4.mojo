@@ -429,8 +429,13 @@ def _run_paged_gather4_test[
 
     # Build the 6D blocks tensor.
     # Shape: [num_blocks, kv_dim, num_layers, page_size, num_heads, head_size]
-    comptime shape_6d = IndexList[6](
-        num_blocks, kv_dim, num_layers, page_size, num_heads, head_size
+    comptime shape_6d = (
+        num_blocks,
+        kv_dim,
+        num_layers,
+        page_size,
+        num_heads,
+        head_size,
     )
     var blocks = HostDeviceTileTensor[dtype](row_major(Coord(shape_6d)), ctx)
     var blocks_host = blocks.host_tensor()
@@ -615,8 +620,13 @@ def test_continuous_kv_cache[
 
     # Build the 6D blocks tensor.
     # Shape: [num_blocks, 2, num_layers, max_seq_len, num_heads, head_size]
-    comptime shape_6d = IndexList[6](
-        num_blocks, 2, num_layers, max_seq_len, num_heads, head_size
+    comptime shape_6d = (
+        num_blocks,
+        2,
+        num_layers,
+        max_seq_len,
+        num_heads,
+        head_size,
     )
     var blocks = HostDeviceTileTensor[dtype](row_major(Coord(shape_6d)), ctx)
     var blocks_host = blocks.host_tensor()
@@ -1028,8 +1038,13 @@ def test_wide_gather4_paged_kv[
     )
 
     # Build the 6D blocks tensor.
-    comptime shape_6d = IndexList[6](
-        num_blocks, kv_dim, num_layers, page_size, num_heads, head_size
+    comptime shape_6d = (
+        num_blocks,
+        kv_dim,
+        num_layers,
+        page_size,
+        num_heads,
+        head_size,
     )
     var blocks = HostDeviceTileTensor[dtype](row_major(Coord(shape_6d)), ctx)
     var blocks_host = blocks.host_tensor()
@@ -1164,8 +1179,13 @@ def test_wide_gather4_continuous_kv[
 
     # Build the 6D blocks tensor.
     # Shape: [num_blocks, 2, num_layers, max_seq_len, num_heads, head_size]
-    comptime shape_6d = IndexList[6](
-        num_blocks, 2, num_layers, max_seq_len, num_heads, head_size
+    comptime shape_6d = (
+        num_blocks,
+        2,
+        num_layers,
+        max_seq_len,
+        num_heads,
+        head_size,
     )
     var blocks = HostDeviceTileTensor[dtype](row_major(Coord(shape_6d)), ctx)
     var blocks_host = blocks.host_tensor()
@@ -1296,8 +1316,13 @@ def test_wide_gather4_mha_operand[
     )
 
     # Build the 6D blocks tensor.
-    comptime shape_6d = IndexList[6](
-        num_blocks, kv_dim, num_layers, page_size, num_heads, head_size
+    comptime shape_6d = (
+        num_blocks,
+        kv_dim,
+        num_layers,
+        page_size,
+        num_heads,
+        head_size,
     )
     var blocks = HostDeviceTileTensor[dtype](row_major(Coord(shape_6d)), ctx)
     var blocks_host = blocks.host_tensor()
@@ -1762,8 +1787,13 @@ def test_gather4_tile_api_paged[
     )
 
     # ---- Build the 6D blocks tensor ----
-    comptime pg_shape_6d = IndexList[6](
-        num_blocks, kv_dim, num_layers, page_size, num_heads, head_size
+    comptime pg_shape_6d = (
+        num_blocks,
+        kv_dim,
+        num_layers,
+        page_size,
+        num_heads,
+        head_size,
     )
     var blocks = HostDeviceTileTensor[dtype](row_major(Coord(pg_shape_6d)), ctx)
     var blocks_host = blocks.host_tensor()

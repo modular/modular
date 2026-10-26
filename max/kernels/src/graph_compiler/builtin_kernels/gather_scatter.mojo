@@ -2276,12 +2276,19 @@ struct Concat:
         inputs: FusedInputVariadicTensors[dtype=dtype, rank=rank, ...],
         ctx: DeviceContext,
     ) raises:
-        var input_shapes = StaticTuple[IndexList[rank], inputs.size]()
+        var input_shapes = StaticTuple[DynamicCoord[.int, rank], inputs.size]()
 
         check_axis_in_range[axis, output.rank]()
 
         comptime for i in range(inputs.size):
-            input_shapes[i] = inputs[i].shape()
+            # `fused_concat` threads the input shapes as dynamic `Coord`s. One
+            # is built explicitly per input because the tensors' `shape_coord`
+            # types can differ in their static-vs-dynamic split, while the
+            # tuple's element type must be uniform.
+            var input_shape = DynamicCoord[.int, rank]()
+            comptime for d in range(rank):
+                input_shape.replace_dynamic[d](inputs[i].dim_size[d]())
+            input_shapes[i] = input_shape
 
         # Copy-capture `inputs` into the device-kernel closure. A by-reference
         # capture leaves the GPU kernel holding a host-side pointer to the
@@ -2750,7 +2757,7 @@ struct AdvancedIndexingSetItem:
             get_kernel_simd_width[dtype, target](),
             target=target,
             _trace_description=_trace_name + "_p1/2_copy",
-        ](copy_input, Coord(output_tensor.shape()).flatten(), ctx)
+        ](copy_input, output_tensor.shape().flatten(), ctx)
 
         # Then run the updates in-place.
         _advanced_indexing_setitem_inplace[

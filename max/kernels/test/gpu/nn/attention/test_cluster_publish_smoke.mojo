@@ -58,6 +58,7 @@ from std.testing import assert_equal
 from std.utils.static_tuple import StaticTuple
 
 from layout.tma_async import SharedMemBarrier
+from layout import Coord
 from max.gpu.primitives.cluster import load_cluster_smem
 
 
@@ -70,9 +71,15 @@ comptime SOFTMAX_THREADS = 256  # warps 0-7
 comptime BM = 128  # WG0 rows that each arrive (the production combine warpgroup)
 
 
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 def publish_smoke_kernel[
-    P: Int, cluster_shape: StaticTuple[Int32, 3]
+    P: Int, cluster_shape: Coord[Int, Int, Int]
 ](output: MutPointer[UInt32, MutAnyOrigin]):
     # Static shared scratch, identically offset in every CTA — `mapa` rebases it
     # onto a peer's window.
@@ -141,7 +148,7 @@ def run_publish_test[P: Int](ctx: DeviceContext) raises:
         for i in range(n):
             h[i] = SENTINEL
 
-    comptime cluster_shape = StaticTuple[Int32, 3](Int32(P), Int32(1), Int32(1))
+    comptime cluster_shape = (P, 1, 1)
     comptime kernel = publish_smoke_kernel[P, cluster_shape]
     ctx.enqueue_function[kernel](
         out_dev,

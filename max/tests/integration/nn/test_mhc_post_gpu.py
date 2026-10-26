@@ -142,6 +142,12 @@ def test_post_128_thread_blocks(compile_post_128: Model, tokens: int) -> None:
     _assert_rounded_once(actual, streams, y, post, comb)
 
 
+def test_post_accepts_no_tokens(compile_post: Model) -> None:
+    """A data-parallel replica with no rows in the batch runs the op."""
+    (out,) = compile_post.execute(*_inputs(0))
+    assert from_dlpack(out).shape == (0, _HC_MULT, _HIDDEN)
+
+
 def test_post_contracts_over_the_first_stream_axis(
     compile_post: Model,
 ) -> None:

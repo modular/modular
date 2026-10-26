@@ -347,29 +347,25 @@ def _apply_mask[
                         comptime if mask_t.apply_log2e_after_mask:
                             p *= log2e
 
-                        var bound: IndexList[2, element_type=.uint32]
+                        var bound: Coord[Int, Int]
 
                         comptime if decoding:
-                            bound = IndexList[2, element_type=.uint32](
+                            bound = (
                                 Int(position.num_keys),
                                 Int(position.num_keys),
                             )
                             p = _kernel_mask(
-                                IndexList[2, element_type=.uint32](
-                                    Int(score_row), Int(score_col)
-                                ),
+                                (Int(score_row), Int(score_col)),
                                 bound,
                                 p,
                             )
                         elif masked:
-                            bound = IndexList[2, element_type=.uint32](
+                            bound = (
                                 Int(position.seq_len),
                                 Int(position.num_keys),
                             )
                             p = _kernel_mask(
-                                IndexList[2, element_type=.uint32](
-                                    Int(score_row), Int(score_col)
-                                ),
+                                (Int(score_row), Int(score_col)),
                                 bound,
                                 p,
                             )

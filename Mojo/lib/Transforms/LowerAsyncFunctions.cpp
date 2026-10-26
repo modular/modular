@@ -365,12 +365,64 @@ struct CopyContext {
   Block *target;
 };
 
+namespace {
+/// Answers the frame queries for clones of the original function's ops by
+/// asking the original frame about the ops they were cloned from. A clone has
+/// the operands of its original, so a use maps to the same operand number.
+class ClonedFrame final : public FrameInterface {
+public:
+  explicit ClonedFrame(FrameInterface &originalFrame)
+      : originalFrame(originalFrame) {}
+
+  void mapClone(Operation *clone, Operation *original) {
+    cloneToOriginal[clone] = original;
+  }
+
+  bool isTracked(Operation *op) override {
+    return cloneToOriginal.contains(op);
+  }
+
+  bool crossesSuspend(OpOperand &use) override {
+    Operation *original = cloneToOriginal.at(use.getOwner());
+    return originalFrame.crossesSuspend(
+        original->getOpOperand(use.getOperandNumber()));
+  }
+
+  bool suspendBetween(Operation *from, Operation *to) override {
+    return originalFrame.suspendBetween(cloneToOriginal.at(from),
+                                        cloneToOriginal.at(to));
+  }
+
+  bool isAfterSuspend(Operation *op) override {
+    return originalFrame.isAfterSuspend(cloneToOriginal.at(op));
+  }
+
+  ArrayRef<VirtualBlock> firstStateVirtualBlocks() override {
+    llvm_unreachable("a hot ramp has no first state to remove");
+  }
+
+  const DenseSet<CO::SuspendOp> &firstSuspends() override {
+    llvm_unreachable("a hot ramp has no first state to remove");
+  }
+
+  void registerClone(Operation *clone, Operation *original,
+                     Operation *user) override {
+    llvm_unreachable("frame arguments are cloned before the hot ramp");
+  }
+
+private:
+  FrameInterface &originalFrame;
+  DenseMap<Operation *, Operation *> cloneToOriginal;
+};
+} // namespace
+
 FrameData LowerAsyncBuildContext::cloneFrameAndFirstStateTo(
     FuncOp hotRamp, FuncOp fromFuncOp, FrameData *originalFrameData) {
   FrameData emptyFrame;
   COTypes opaqueCoTypes(builder.getContext(), std::move(emptyFrame),
                         /*promiseType=*/{});
   FrameData frameData;
+  auto clonedFrame = std::make_unique<ClonedFrame>(*originalFrameData->frame);
   /// Augment the hot ramp function signature. We will clone ops from the funcOp
   /// into the hot ramp function.
   SmallVector<Type> inputs;
@@ -447,7 +499,7 @@ FrameData LowerAsyncBuildContext::cloneFrameAndFirstStateTo(
       /// Clone.
       Operation *clone = builder.cloneWithoutRegions(*operation, mapping);
       mapping.map(operation, clone);
-      frameData.opToState[clone] = originalFrameData->opToState[operation];
+      clonedFrame->mapClone(clone, operation);
       for (auto [result, image] :
            llvm::zip(operation->getResults(), clone->getResults())) {
         auto indexMaybe = originalFrameData->valueToIndexInFrame.find(result);
@@ -498,6 +550,7 @@ FrameData LowerAsyncBuildContext::cloneFrameAndFirstStateTo(
   }
   for (Type frameType : originalFrameData->frameTypes)
     frameData.frameTypes.push_back(frameType);
+  frameData.frame = std::move(clonedFrame);
   return frameData;
 }
 
@@ -567,22 +620,22 @@ void LowerAsyncBuildContext::populateHotResumeFrom(FuncOp original,
   insertFrameLoadsStores(resumeFunction, coTypes, errorValue, memoryResultValue,
                          Temp::Hot, /*loadFromFrame=*/true);
   // (1) Collect ops to remove.
+  FrameInterface &frame = *coTypes.getFrameData()->frame;
   SmallVector<Operation *> opsToRemove;
-  walkVirtualBlocks(
-      coTypes.getFrameData()->virtualBlocksFirstState, [&](Operation *op) {
-        if (isa<HLCF::ControlFlowTerminator>(op)) {
-          builder.setInsertionPoint(op);
-          for (auto [index, type] : llvm::enumerate(op->getOperandTypes()))
-            op->setOperand(index, ParamConstantOp::create(
-                                      builder, UninitMemAttr::get(type)));
-        } else if (!isa<SuspendOp, SuspendEndOp>(op)) {
-          opsToRemove.push_back(op);
-        }
-      });
+  walkVirtualBlocks(frame.firstStateVirtualBlocks(), [&](Operation *op) {
+    if (isa<HLCF::ControlFlowTerminator>(op)) {
+      builder.setInsertionPoint(op);
+      for (auto [index, type] : llvm::enumerate(op->getOperandTypes()))
+        op->setOperand(
+            index, ParamConstantOp::create(builder, UninitMemAttr::get(type)));
+    } else if (!isa<SuspendOp, SuspendEndOp>(op)) {
+      opsToRemove.push_back(op);
+    }
+  });
 
   // (2) Replace arguments in parent control flow with constants.
   DenseSet<Operation *> parents;
-  for (SuspendOp suspendOp : coTypes.getFrameData()->firstSuspends) {
+  for (SuspendOp suspendOp : frame.firstSuspends()) {
     Operation *current = suspendOp->getParentOp();
     while (current) {
       Operation *parent = current;
@@ -592,9 +645,7 @@ void LowerAsyncBuildContext::populateHotResumeFrom(FuncOp original,
       if (parents.contains(parent))
         break;
       parents.insert(parent);
-      assert(coTypes.getFrameData()->opToState.contains(parent) &&
-             "The function should not be augmented with control flow ops");
-      if (coTypes.getFrameData()->opToState[parent] > 0)
+      if (frame.isAfterSuspend(parent))
         continue;
 
       builder.setInsertionPoint(parent);
@@ -653,7 +704,7 @@ FuncOp LowerAsyncBuildContext::createSharedResume(StringRef prefix,
       builder, PointerType::get(coldContType), hotStartContinuation);
   Value coldStartContinuation = pointerBitcast.getResult();
   for (VirtualBlock virtualBlock :
-       coldcoTypes.getFrameData()->virtualBlocksFirstState) {
+       coldcoTypes.getFrameData()->frame->firstStateVirtualBlocks()) {
     Operation *current = virtualBlock;
     while (current->getPrevNode()) {
       Operation *prev = current->getPrevNode();
@@ -837,13 +888,14 @@ FuncOp LowerAsyncBuildContext::createColdRamp(StringRef prefix,
 COTypes LowerAsyncBuildContext::calculateFrame(FuncOp original,
                                                bool includeArgs) {
   auto [errorValue, memoryResultValue] = getErrorAndMemoryValues(original);
-  // The transform function clones ops whose values should not be stored in
-  // the frame. This includes constants and pointer offsets.
-  auto transform = [&](FuncOp, DenseMap<Operation *, int> &opToState) {
-    cloneFrameArgs(original, builder, dominanceInfo, opToState);
+  // Clones ops whose values should not be stored in the frame before each use
+  // that crosses a suspend. This includes constants and pointer offsets.
+  auto rematerializeFrameValues = [&](FuncOp, FrameInterface &frame) {
+    cloneFrameArgs(original, builder, dominanceInfo, frame);
   };
   FrameData frameData(original, dominanceInfo, errorValue, memoryResultValue,
-                      transform, /*isHot=*/!includeArgs, evaluateFrame);
+                      rematerializeFrameValues, /*isHot=*/!includeArgs,
+                      evaluateFrame);
   COTypes coTypes(
       builder.getContext(), std::move(frameData),
       StructType::get(original.getContext(), original.getResultTypes()));
@@ -913,6 +965,7 @@ void LowerAsyncBuildContext::insertFrameLoadsStores(
     FuncOp resumeFunction, COTypes &coTypes, Value errorValue,
     Value memoryResultValue, Temp temp, bool loadFromFrame) {
   const FrameData *frameData = coTypes.getFrameData();
+  FrameInterface &frame = *frameData->frame;
   builder.setInsertionPointToStart(&resumeFunction.getBodyRegion().front());
   resumeFunction.getBodyRegion().insertArgument(
       (unsigned)0, PointerType::get(coTypes.getContinuationType()),
@@ -940,37 +993,31 @@ void LowerAsyncBuildContext::insertFrameLoadsStores(
       storeOpInFrameIfNeeded(frameData, op, continuation, opsToDelete);
 
       // Extract arguments from operands if needed.
-      auto useStateMaybe = frameData->opToState.find(op);
-      if (useStateMaybe == frameData->opToState.end())
+      if (!frame.isTracked(op))
         continue;
-      int useState = useStateMaybe->second;
-      for (auto [index, operand] : llvm::enumerate(op->getOperands())) {
+      for (OpOperand &use : op->getOpOperands()) {
+        Value operand = use.get();
         auto entry = frameData->valueToIndexInFrame.find(operand);
         if (entry != frameData->valueToIndexInFrame.end() ||
             operand == errorValue || operand == memoryResultValue) {
-          // Only extract the value out of the frame if the def was in another
-          // state. Block arguments have been cached in frameVariables because
+          // Only extract the value out of the frame if the use crosses a
+          // suspend. Block arguments have been cached in frameVariables because
           // region block arguments are processed before body ops.
-          int defState = temp == Temp::Hot ? 0 : -1;
-          bool isStackAlloc = false;
           Operation *definingOp = operand.getDefiningOp();
-          if (definingOp) {
-            defState = frameData->opToState.at(definingOp);
-            isStackAlloc = isa<StackAllocationOp>(definingOp);
-          }
+          bool isStackAlloc = isa_and_nonnull<StackAllocationOp>(definingOp);
 
           // Stack allocated variables are an exception. They are pulled from
           // the frame regardless of state status because the stack allocation
           // is replaced with a frame allocation.
           if (!isStackAlloc) {
-            if (defState == useState)
+            if (!frame.crossesSuspend(use))
               continue;
             if (!loadFromFrame)
               continue;
           }
-          Value image = frameVariables.getFrameValueForOperand(
-              continuation, operand, op, useState);
-          op->setOperand(index, image);
+          Value image =
+              frameVariables.getFrameValueForOperand(continuation, operand, op);
+          use.set(image);
         }
       }
 
@@ -1094,7 +1141,6 @@ void LowerAsyncBuildContext::storeBlockArgumentsInFrame(
   if (block.getNumArguments() == 0)
     return;
   builder.setInsertionPointToStart(&block);
-  int frameValueState = frameData->opToState.at(key);
   for (BlockArgument argument : block.getArguments()) {
     auto entry = frameData->valueToIndexInFrame.find(
         key->getParentRegion()->getArgument(argument.getArgNumber()));
@@ -1103,7 +1149,7 @@ void LowerAsyncBuildContext::storeBlockArgumentsInFrame(
     Value dataSlot =
         StructGEPOp::create(builder, continuation, Frame + entry->getSecond());
     StoreOp::create(builder, argument, dataSlot);
-    frameVariables.overwriteValue(frameValueState, argument);
+    frameVariables.overwriteValue(key, argument);
   }
 }
 

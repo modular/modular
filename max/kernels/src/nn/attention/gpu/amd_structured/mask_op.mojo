@@ -366,13 +366,11 @@ struct MaskTileOp[
                         var bound_x = num_keys if Self.token_gen else seq_len
 
                         frag[j] = _kernel_mask(
-                            IndexList[2, element_type=.uint32](
+                            (
                                 Int(score_row),
                                 Int(score_col + UInt32(fragment_col)),
                             ),
-                            IndexList[2, element_type=.uint32](
-                                Int(bound_x), Int(bound_y)
-                            ),
+                            (Int(bound_x), Int(bound_y)),
                             frag[j],
                         )
 

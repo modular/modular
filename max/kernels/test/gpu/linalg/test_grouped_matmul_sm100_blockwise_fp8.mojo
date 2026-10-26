@@ -222,7 +222,9 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
         BLOCK_DIM_M=16,
         BLOCK_DIM_N=16,
         transpose_b=transpose_b,
-        scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
+        scales_granularity_mnk=Coord[Int, Int, Int](
+            1, BLOCK_SCALE_K, BLOCK_SCALE_K
+        ),
     ](
         c_device_ref_tt,
         a_device_tt,
@@ -239,7 +241,7 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     ctx.synchronize()
 
     comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        cluster_shape=Index(1, 1, 1),
+        cluster_shape=(Int(1), Int(1), Int(1)),
         mma_shape=umma_shape,
         cta_group=1,
         AB_swapped=False,
@@ -373,7 +375,7 @@ def main() raises:
             .bfloat16,
             num_experts=2,
             expert_shape=(256, 256),
-            umma_shape=(64, 128, 32),
+            umma_shape=(Int(64), Int(128), Int(32)),
         ](2, [5, 11], [0, 1], ctx)
 
         # total_m stride misalignment: total_num_tokens=7 with fp32 scales

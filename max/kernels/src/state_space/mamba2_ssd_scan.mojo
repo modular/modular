@@ -63,22 +63,12 @@ from max.algorithm import sync_parallelize
 from std.math import ceildiv, exp2, fma
 from std.memory import unsafe_stack_allocation
 from std.sys.info import align_of
-from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 from layout import TensorLayout, TensorEngine, TileTensor
 from state_space.selective_scan import softplus
 
 # exp(x) == exp2(x * LOG2E), and exp2 is the faster GPU instruction.
 comptime LOG2E = 1.4426950408889634
-
-
-@inline(.always)
-def _strides[rank: Int](t: TileTensor[...]) -> IndexList[rank]:
-    """Returns the strides of `t`, read from its layout."""
-    var result = IndexList[rank]()
-    comptime for i in range(rank):
-        result[i] = Int(t.dynamic_stride(i))
-    return result
 
 
 @fieldwise_init

@@ -1175,8 +1175,8 @@ def _batched_matmul_gpu_impl[
         def kernel_helper[block_m: Int, block_n: Int]() raises {imm}:
             comptime block_k = 64
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                block_tile_shape=Index(block_m, block_n, block_k),
-                warp_tile_shape=Index(block_m // 2, block_n // 2, block_k),
+                block_tile_shape=(block_m, block_n, block_k),
+                warp_tile_shape=(block_m // 2, block_n // 2, block_k),
                 mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
                 num_pipeline_stages=1,
                 num_k_partitions=1,
@@ -1537,7 +1537,13 @@ def batched_matmul_shape[
     return output_shape
 
 
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
@@ -1560,10 +1566,10 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
     b_desc_shape: Coord,
     a_scales_tile_shape: Coord,
     a_scales_desc_shape: Coord,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     transpose_b: Bool = True,
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     num_threads: Int = 128,
@@ -1666,8 +1672,8 @@ def bmm_sm100_blockwise_scaled_fp8[
     b_scales_type: DType,
     *,
     transpose_b: Bool,
-    umma_shape: Coord,
-    block_tile_shape: IndexList[3],
+    umma_shape: Coord[Int, Int, Int],
+    block_tile_shape: Coord[Int, Int, Int],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_scaling_block_n: Int = 128,
@@ -1708,7 +1714,11 @@ def bmm_sm100_blockwise_scaled_fp8[
     _bmm_sm100_blockwise_scaled_fp8_impl[
         transpose_b=transpose_b,
         umma_shape=umma_shape,
-        block_tile_shape=block_tile_shape,
+        block_tile_shape=(
+            Int(block_tile_shape[0]),
+            Int(block_tile_shape[1]),
+            Int(block_tile_shape[2]),
+        ),
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         b_scaling_block_n=b_scaling_block_n,
@@ -1726,8 +1736,8 @@ def bmm_sm100_blockwise_scaled_fp8[
     //,
     *,
     transpose_b: Bool,
-    umma_shape: Coord,
-    block_tile_shape: IndexList[3],
+    umma_shape: Coord[Int, Int, Int],
+    block_tile_shape: Coord[Int, Int, Int],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_scaling_block_n: Int = 128,
@@ -1771,7 +1781,11 @@ def bmm_sm100_blockwise_scaled_fp8[
     _bmm_sm100_blockwise_scaled_fp8_impl[
         transpose_b=transpose_b,
         umma_shape=umma_shape,
-        block_tile_shape=block_tile_shape,
+        block_tile_shape=(
+            Int(block_tile_shape[0]),
+            Int(block_tile_shape[1]),
+            Int(block_tile_shape[2]),
+        ),
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         b_scaling_block_n=b_scaling_block_n,
@@ -1789,8 +1803,8 @@ def _bmm_sm100_blockwise_scaled_fp8_impl[
     //,
     *,
     transpose_b: Bool,
-    umma_shape: Coord,
-    block_tile_shape: IndexList[3],
+    umma_shape: Coord[Int, Int, Int],
+    block_tile_shape: Coord[Int, Int, Int],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_scaling_block_n: Int = 128,
@@ -2131,7 +2145,7 @@ def blockwise_scaled_fp8_matmul_amd_batched[
     b_scales_type: DType,
     //,
     *,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
     transpose_b: Bool = False,
 ](
     c_: TileTensor[mut=True, c_type, ...],
@@ -2287,7 +2301,7 @@ def _batched_matmul_dynamic_scaled_fp8_amd_tiled[
     b_scales_type: DType,
     //,
     *,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
     transpose_b: Bool = False,
 ](
     c_: TileTensor[mut=True, c_type, ...],
@@ -2457,7 +2471,7 @@ def batched_matmul_dynamic_scaled_fp8_naive[
     b_scales_type: DType,
     //,
     *,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
     transpose_b: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, ...],
@@ -2513,7 +2527,9 @@ def batched_matmul_dynamic_scaled_fp8_naive[
         naive_blockwise_scaled_fp8_matmul[
             BLOCK_DIM=16,
             transpose_b=transpose_b,
-            scales_granularity_mnk=Index(1, BLOCK_SCALE_N, BLOCK_SCALE_K),
+            scales_granularity_mnk=Coord[Int, Int, Int](
+                1, BLOCK_SCALE_N, BLOCK_SCALE_K
+            ),
         ](
             c[batch, :, :].address_space_cast[.GENERIC](),
             a[batch, :, :].address_space_cast[.GENERIC](),
@@ -2663,8 +2679,16 @@ def _batched_matmul_dynamic_scaled_fp8_impl[
 
         bmm_sm100_blockwise_scaled_fp8[
             transpose_b=transpose_b,
-            umma_shape=(umma_shape[0], umma_shape[1], umma_shape[2]),
-            block_tile_shape=block_tile_shape,
+            umma_shape=(
+                Int(umma_shape[0]),
+                Int(umma_shape[1]),
+                Int(umma_shape[2]),
+            ),
+            block_tile_shape=(
+                Int(block_tile_shape[0]),
+                Int(block_tile_shape[1]),
+                Int(block_tile_shape[2]),
+            ),
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             b_scaling_block_n=n_scale_granularity,
@@ -2677,8 +2701,10 @@ def _batched_matmul_dynamic_scaled_fp8_impl[
         and type_of(a).static_shape[2] > 0
     ):
         return _batched_matmul_dynamic_scaled_fp8_amd_tiled[
-            scales_granularity_mnk=Index(
-                m_scale_granularity, n_scale_granularity, k_scale_granularity
+            scales_granularity_mnk=(
+                m_scale_granularity,
+                n_scale_granularity,
+                k_scale_granularity,
             ),
             transpose_b=transpose_b,
         ](
@@ -2691,8 +2717,10 @@ def _batched_matmul_dynamic_scaled_fp8_impl[
         )
     else:
         return batched_matmul_dynamic_scaled_fp8_naive[
-            scales_granularity_mnk=Index(
-                m_scale_granularity, n_scale_granularity, k_scale_granularity
+            scales_granularity_mnk=(
+                m_scale_granularity,
+                n_scale_granularity,
+                k_scale_granularity,
             ),
             transpose_b=transpose_b,
         ](

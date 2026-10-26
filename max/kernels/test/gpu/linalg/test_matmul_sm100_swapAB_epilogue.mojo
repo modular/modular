@@ -45,9 +45,9 @@ def test_matmul_sm100_epilogue[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    block_tile_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
     mma_shape: DynamicCoord[.int, 3],
-    cluster_shape: StaticTuple[Int32, 3],
+    cluster_shape: Coord[Int, Int, Int],
     cta_group: Int,
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -138,8 +138,10 @@ def test_matmul_sm100_epilogue[
     ctx.enqueue_copy(c_device, c_host_ptr)
 
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        cluster_shape=Index(
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        cluster_shape=(
+            Int(cluster_shape[0]),
+            Int(cluster_shape[1]),
+            Int(cluster_shape[2]),
         ),
         mma_shape=mma_shape,
         cta_group=cta_group,
@@ -258,7 +260,7 @@ def main() raises:
                         .bfloat16,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                        cluster_shape=(4, 4, 1),
                         cta_group=2,
                         test_lambda_fn=True,
                         register_based_epilogue=register_based_epilogue,
@@ -278,7 +280,7 @@ def main() raises:
                         .bfloat16,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                        cluster_shape=(4, 4, 1),
                         cta_group=2,
                         test_lambda_fn=True,
                         register_based_epilogue=register_based_epilogue,
@@ -304,7 +306,7 @@ def main() raises:
                         .bfloat16,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                        cluster_shape=(4, 4, 1),
                         cta_group=1,
                         test_lambda_fn=True,
                         register_based_epilogue=register_based_epilogue,
@@ -324,7 +326,7 @@ def main() raises:
                         .bfloat16,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](4, 2, 1),
+                        cluster_shape=(4, 2, 1),
                         cta_group=1,
                         test_lambda_fn=True,
                         register_based_epilogue=register_based_epilogue,

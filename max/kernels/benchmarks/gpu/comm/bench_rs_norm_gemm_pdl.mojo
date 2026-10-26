@@ -122,18 +122,18 @@ def bench_rs_norm_gemm_pdl[
     comptime swizzle = TensorMapSwizzle.SWIZZLE_128B
     comptime BK = swizzle.bytes() // size_of[in_dtype]()
     comptime MMA_K = 16
-    comptime block_tile_shape = Index(bm, bn, BK)
+    comptime block_tile_shape = (bm, bn, BK)
     comptime mma_shape = (2 * bm, 2 * bn, MMA_K)
 
     comptime gemm_config_off = MatmulConfig[in_dtype, in_dtype, in_dtype, True](
-        cluster_shape=Index(2, 1, 1),
+        cluster_shape=(Int(2), Int(1), Int(1)),
         mma_shape=mma_shape,
         cta_group=2,
     )
     comptime gemm_config_prefetch = MatmulConfig[
         in_dtype, in_dtype, in_dtype, True
     ](
-        cluster_shape=Index(2, 1, 1),
+        cluster_shape=(Int(2), Int(1), Int(1)),
         mma_shape=mma_shape,
         cta_group=2,
         prefetch_tiles_n=prefetch_tiles_n,

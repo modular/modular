@@ -23,7 +23,7 @@ from max.gpu.host import DeviceBuffer, DeviceContext, DeviceContextArray
 from max.gpu.host.info import is_gpu
 from std.memory.unsafe_pointer import pointer_to_int
 from layout.tile_tensor import row_major
-from std.utils.index import IndexList
+from layout import Coord
 
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.math import align_up
@@ -2372,13 +2372,10 @@ struct DistributedEPCombine:
             @inline(.always)
             def output_fn[
                 dtype: DType,
-                rank: Int,
                 width: SIMDLength,
                 *,
                 alignment: Int = 1,
-            ](coords: IndexList[rank], val: SIMD[dtype, width]) {
-                var out_tensor
-            }:
+            ](coords: Coord, val: SIMD[dtype, width]) {var out_tensor}:
                 out_tensor._fused_store[
                     width=width, element_alignment=alignment
                 ](
@@ -2572,11 +2569,10 @@ struct Struct_ep_combine_wait:
         @inline(.always)
         def output_fn[
             dtype: DType,
-            rank: Int,
             width: SIMDLength,
             *,
             alignment: Int = 1,
-        ](coords: IndexList[rank], val: SIMD[dtype, width]) {var output_tokens}:
+        ](coords: Coord, val: SIMD[dtype, width]) {var output_tokens}:
             output_tokens._fused_store[
                 width=width, element_alignment=alignment
             ](
@@ -2709,11 +2705,10 @@ struct Struct_ep_combine:
         @inline(.always)
         def output_fn[
             dtype: DType,
-            rank: Int,
             width: SIMDLength,
             *,
             alignment: Int = 1,
-        ](coords: IndexList[rank], val: SIMD[dtype, width]) {var output_tokens}:
+        ](coords: Coord, val: SIMD[dtype, width]) {var output_tokens}:
             output_tokens._fused_store[
                 width=width, element_alignment=alignment
             ](
@@ -2857,11 +2852,10 @@ struct Struct_ep_combine_skip_a2a:
         @inline(.always)
         def output_fn[
             dtype: DType,
-            rank: Int,
             width: SIMDLength,
             *,
             alignment: Int = 1,
-        ](coords: IndexList[rank], val: SIMD[dtype, width]) {var output_tokens}:
+        ](coords: Coord, val: SIMD[dtype, width]) {var output_tokens}:
             output_tokens._fused_store[
                 width=width, element_alignment=alignment
             ](

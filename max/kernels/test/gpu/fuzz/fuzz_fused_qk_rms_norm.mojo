@@ -314,7 +314,7 @@ def run_one_case(
     )
     comptime KV_DIM = 2  # standard MHA paged cache: dim[1] = {K, V}
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         KV_DIM,
         NUM_LAYERS,

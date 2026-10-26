@@ -2267,16 +2267,16 @@ trait _FunctionEnqueuer:
     """
 
     def enqueue[
-        args_origin: MutOrigin, //
+        args_origin: ImmOrigin, //
     ](
         self,
         func_handle: _DeviceFunctionPtr[mut=True],
         grid_dim: Dim,
         block_dim: Dim,
         shared_mem_bytes: Int,
-        attributes: Pointer[mut=True, LaunchAttribute, _],
+        attributes: MutPointer[LaunchAttribute, _],
         num_attributes: Int,
-        args: Pointer[mut=True, OpaquePointer[args_origin], _],
+        args: MutPointer[ImmOpaquePointer[args_origin], _],
         arg_count: UInt32,
         arg_sizes: OptionalPointer[mut=True, UInt64, _],
     ) -> _CString[]:
@@ -2414,16 +2414,16 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
 
     @inline(.always)
     def enqueue[
-        args_origin: MutOrigin, //
+        args_origin: ImmOrigin, //
     ](
         self,
         func_handle: _DeviceFunctionPtr[mut=True],
         grid_dim: Dim,
         block_dim: Dim,
         shared_mem_bytes: Int,
-        attributes: Pointer[mut=True, LaunchAttribute, _],
+        attributes: MutPointer[LaunchAttribute, _],
         num_attributes: Int,
-        args: Pointer[mut=True, OpaquePointer[args_origin], _],
+        args: MutPointer[ImmOpaquePointer[args_origin], _],
         arg_count: UInt32,
         arg_sizes: OptionalPointer[mut=True, UInt64, _],
     ) -> _CString[]:
@@ -2466,7 +2466,12 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
             c_uint(shared_mem_bytes),
             attributes,
             c_uint(num_attributes),
-            args,
+            # TODO(MSTDL-1904): Do backends really need these to be mutable? I
+            #   hope none are mutating kernel arguments. For each backend, none
+            #   specifically say they mutate these, and the API docs frequently
+            #   imply they simply copy these values, but the C function
+            #   signatures also don't specifically *promise* they're `const`.
+            args.unsafe_mut_cast[True](),
             arg_count,
             arg_sizes,
         )
@@ -2922,13 +2927,17 @@ def _max_dynamic_shared_bytes_for_load[
 
 
 @inline(.never)
-def _enqueue_packed_checked(
+def _enqueue_packed_checked[
+    # TODO(MOCO-5073): Remove once nested autoparameterization is supported
+    dense_args_origin: ImmOrigin,
+    //,
+](
     ctx: Some[_FunctionEnqueuer],
     *,
     func_handle: _DeviceFunctionPtr[mut=True],
     device_context: DeviceContext,
     func_name: StaticString,
-    dense_args_addrs: Pointer[OpaquePointer[MutAnyOrigin], MutUntrackedOrigin],
+    dense_args_addrs: MutPointer[ImmOpaquePointer[dense_args_origin], _],
     dense_args_sizes: Optional[Pointer[UInt64, MutUntrackedOrigin]],
     num_args: Int,
     grid_dim: Dim,
@@ -3420,18 +3429,17 @@ struct DeviceFunction[
         comptime num_slots = max(num_args, 1)
 
         var dense_args_addrs = unsafe_stack_allocation[
-            num_slots, OpaquePointer[MutAnyOrigin]
+            # TODO(MSTDL-1904): Remove mut cast; verify treated as immutable.
+            num_slots,
+            OpaquePointer[args.origin],
         ]()
         var dense_args_sizes = unsafe_stack_allocation[num_slots, UInt64]()
 
         comptime for i in range(num_args):
             # TODO(MSTDL-1904): Validate the safety of this.
-            dense_args_addrs[unsafe_offset=i] = (
-                Pointer(to=args[i])
-                .unsafe_bitcast[NoneType]()
-                .unsafe_mut_cast[True]()
-                .as_unsafe_any_origin()
-            )
+            dense_args_addrs[unsafe_offset=i] = Pointer(
+                to=args[i]
+            ).unsafe_bitcast[NoneType]()
 
         comptime for i in range(num_args):
             dense_args_sizes[unsafe_offset=i] = UInt64(size_of[Ts[i]]())
@@ -3573,11 +3581,6 @@ struct DeviceFunction[
             for i in range(len(constant_memory)):
                 self._copy_to_constant_memory(constant_memory[i])
 
-        # A kernel may take no arguments; keep the buffer non-empty.
-        var dense_args_addrs = unsafe_stack_allocation[
-            max(num_passed_args, 1), OpaquePointer[MutAnyOrigin]
-        ]()
-
         comptime if Self.target.is_apple_gpu():
             # `num_passed_args` sizes the offsets array, which covers encoded
             # args only, so it stays `num_encoded`; `HostArgs.length` sizes
@@ -3593,10 +3596,7 @@ struct DeviceFunction[
                 device_context=self._context.assert_default_target(),
                 translated_arg_offsets=translated_arg_offsets,
                 extra_align=extra_align,
-                translated_args_ptr=translated_args.unsafe_ptr().unsafe_origin_cast[
-                    MutAnyOrigin
-                ](),
-                dense_args_addrs=dense_args_addrs,
+                translated_args_ptr=translated_args.unsafe_ptr(),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
                 shared_mem_bytes=shared_mem_bytes.or_else(0),
@@ -3608,6 +3608,15 @@ struct DeviceFunction[
             )
 
         else:
+            comptime dense_args_origin = origin_of(
+                host_args, ImmOrigin(origin_of(translated_args))
+            )
+
+            # A kernel may take no arguments; keep the buffer non-empty.
+            var dense_args_addrs = Array[
+                OpaquePointer[dense_args_origin], max(num_passed_args, 1)
+            ](uninitialized=True)
+
             # Since we skip over zero sized declared dtypes when passing
             # arguments we need to know the current count of arguments pushed.
             var translated_arg_idx = 0
@@ -3632,9 +3641,11 @@ struct DeviceFunction[
                         device_type_encoder, first_word_addr
                     )
 
-                    dense_args_addrs[
-                        unsafe_offset=translated_arg_idx
-                    ] = first_word_addr.as_unsafe_any_origin()
+                    dense_args_addrs.unsafe_get(
+                        translated_arg_idx
+                    ) = first_word_addr.as_imm()._as_origin_superset[
+                        dense_args_origin
+                    ]()
                     translated_arg_idx += 1
 
             comptime for i in range(HostArgs.length):
@@ -3643,13 +3654,12 @@ struct DeviceFunction[
                 if arg_size == 0:
                     continue
 
-                var arg_addr = (
-                    Pointer(to=host_args[i])
-                    .unsafe_bitcast[NoneType]()
-                    .unsafe_mut_cast[True]()
-                    .as_unsafe_any_origin()
-                )
-                dense_args_addrs[unsafe_offset=translated_arg_idx] = arg_addr
+                var arg_addr = Pointer(to=host_args[i]).unsafe_bitcast[
+                    NoneType
+                ]()
+                dense_args_addrs.unsafe_get(
+                    translated_arg_idx
+                ) = arg_addr._as_origin_superset[dense_args_origin]()
                 translated_arg_idx += 1
 
             comptime func_name = reflect_fn[Self.func].display_name()
@@ -3658,7 +3668,7 @@ struct DeviceFunction[
                 func_handle=self._handle,
                 device_context=self._context.assert_default_target(),
                 func_name=func_name,
-                dense_args_addrs=dense_args_addrs,
+                dense_args_addrs=dense_args_addrs.unsafe_ptr(),
                 dense_args_sizes=None,
                 num_args=num_translated_args,
                 grid_dim=grid_dim,
@@ -3952,16 +3962,14 @@ struct DeviceExternalFunction[
 
         comptime num_args = Ts.length
 
-        var dense_args_addrs = Array[OpaquePointer[MutAnyOrigin], num_args](
+        var dense_args_addrs = Array[OpaquePointer[ImmutAnyOrigin], num_args](
             uninitialized=True
         )
 
         comptime for i in range(num_args):
-            # TODO(MSTDL-1904): Validate the safety of this.
             dense_args_addrs[i] = (
                 Pointer(to=args[i])
                 .unsafe_bitcast[NoneType]()
-                .unsafe_mut_cast[True]()
                 .as_unsafe_any_origin()
             )
 
@@ -3989,21 +3997,15 @@ struct DeviceExternalFunction[
             var dense_args_is_device_ptr = Array[Bool, num_args](fill=False)
 
             var metal_args = MetalEnqueueFunctionArgs(
-                dense_args_addrs.unsafe_ptr()
-                .unsafe_origin_cast[MutUntrackedOrigin]()
-                .unsafe_bitcast[OpaquePointer[MutUntrackedOrigin]](),
-                dense_args_sizes.unsafe_ptr().unsafe_origin_cast[
-                    MutUntrackedOrigin
-                ](),
-                dense_args_is_device_ptr.unsafe_ptr().unsafe_origin_cast[
-                    MutUntrackedOrigin
-                ](),
+                dense_args_addrs.unsafe_ptr(),
+                dense_args_sizes.unsafe_ptr(),
+                dense_args_is_device_ptr.unsafe_ptr(),
                 None,
                 Int32(0),
             )
 
             var ptr = (
-                Pointer(to=metal_args)
+                ImmPointer(to=metal_args)
                 .unsafe_bitcast[NoneType]()
                 .as_unsafe_any_origin()
             )
@@ -4017,7 +4019,7 @@ struct DeviceExternalFunction[
                     shared_mem_bytes.or_else(0),
                     attributes.unsafe_ptr(),
                     len(attributes),
-                    metal_args_addrs.unsafe_ptr().as_unsafe_any_origin(),
+                    metal_args_addrs.unsafe_ptr(),
                     UInt32(num_args),
                     no_arg_sizes,
                 ),
@@ -4033,7 +4035,7 @@ struct DeviceExternalFunction[
                 shared_mem_bytes.or_else(0),
                 attributes.unsafe_ptr(),
                 len(attributes),
-                dense_args_addrs.unsafe_ptr().as_unsafe_any_origin(),
+                dense_args_addrs.unsafe_ptr(),
                 UInt32(num_args),
                 no_arg_sizes,
             ),
@@ -4591,16 +4593,16 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
 
     @inline(.always)
     def enqueue[
-        args_origin: MutOrigin, //
+        args_origin: ImmOrigin, //
     ](
         self,
         func_handle: _DeviceFunctionPtr[mut=True],
         grid_dim: Dim,
         block_dim: Dim,
         shared_mem_bytes: Int,
-        attributes: Pointer[mut=True, LaunchAttribute, _],
+        attributes: MutPointer[LaunchAttribute, _],
         num_attributes: Int,
-        args: Pointer[mut=True, OpaquePointer[args_origin], _],
+        args: MutPointer[ImmOpaquePointer[args_origin], _],
         arg_count: UInt32,
         arg_sizes: OptionalPointer[mut=True, UInt64, _],
     ) -> _CString[]:
@@ -4646,7 +4648,12 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
             c_uint(shared_mem_bytes),
             attributes,
             c_uint(num_attributes),
-            args,
+            # TODO(MSTDL-1904): Do backends really need these to be mutable? I
+            #   hope none are mutating kernel arguments. For each backend, none
+            #   specifically say they mutate these, and the API docs frequently
+            #   imply they simply copy these values, but the C function
+            #   signatures also don't specifically *promise* they're `const`.
+            args.unsafe_mut_cast[True](),
             arg_count,
             arg_sizes,
         )

@@ -41,7 +41,7 @@ def run_row_mean_of_squares_gpu[
     var data_d = ctx.enqueue_create_buffer[in_dtype](rows * cols)
     var out_d = ctx.enqueue_create_buffer[out_dtype](rows)
 
-    var shape = Index(rows, cols)
+    var shape = (rows, cols)
     var data_buf = TileTensor(data_d, row_major(Coord(shape)))
     var out_buf = TileTensor(out_d, row_major(Coord(Index(rows, 1))))
 

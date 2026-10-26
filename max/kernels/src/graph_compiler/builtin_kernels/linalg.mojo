@@ -705,11 +705,12 @@ struct LinalgBandPart:
             return input._lambda_load[width=width](coords)
 
         matrix_band_part[
+            rank=rank,
             simd_width=simd_width_of[dtype](),
             target=target,
         ](
             input_fn,
-            input.shape(),
+            input.shape_coord(),
             num_lower.to_tile_tensor[int_type](),
             num_upper.to_tile_tensor[int_type](),
             exclude.to_tile_tensor[.int64](),
@@ -2624,20 +2625,23 @@ struct Struct_router_gate_mixed_gemv:
     decode and prefill), so the op branches on runtime `M`:
 
     - `M == 0` (graph-capture warmup): no launch.
-    - tiny `M` (`M <= 64`, decode): the fused mixed GEMV — `a` is loaded as bf16
-      and widened to fp32 in registers, then dotted against the unchanged fp32
-      `b` in a SINGLE launch, fusing away the standalone bf16->fp32 activation
-      cast that otherwise precedes the fp32 router GEMV.
+    - tiny `M` (`M <= 64` on MI355X, `M <= 128` on SM100; decode): the fused
+      mixed GEMV — `a` is loaded as bf16 and widened to fp32 in registers, then
+      dotted against the unchanged fp32 `b` in a SINGLE launch, fusing away the
+      standalone bf16->fp32 activation cast that otherwise precedes the fp32
+      router GEMV.
     - large `M` (prefill): the fused GEMV is catastrophically slow, so the op
       falls back to the baseline chain — cast `a` to fp32, then an ordinary
       fp32 matmul against the fp32 `b` (two launches, matching baseline).
 
     Because bf16->fp32 widening is lossless, every route is numerically
-    equivalent to casting `a` to fp32 first and running the fp32 GEMM.
+    equivalent to casting `a` to fp32 first and running the fp32 GEMM. On SM100
+    the baseline's fp32 matmul switches to TF32 tensor cores above `M = 64`, so
+    the fused GEMV's IEEE-fp32 result there is the more precise of the two.
 
     This is not part of generic matmul/GEMV dispatch. The MiniMax-M3 router emits
-    this explicit graph op on MI355X; other architectures retain the standard
-    router path.
+    this explicit graph op on MI355X and SM100; other architectures retain the
+    standard router path.
 
     `N` (expert count) and `K` (hidden size) are read from the weight `b`'s
     static `[N, K]` layout at compile time — the op carries no redundant `N`/`K`
@@ -2687,7 +2691,10 @@ struct Struct_router_gate_mixed_gemv:
 
         var c_tt = TileTensor(c.unsafe_ptr(), row_major(M, Idx[N]))
 
-        if router_gate_use_mixed_gemv(M):
+        # SM100's fused window reaches M = 128 (c128 decode); above it the
+        # TF32 tile GEMM below wins on weight reuse.
+        comptime max_m = 64 if context.target.is_amd_gpu() else 128
+        if router_gate_use_mixed_gemv(M, max_m):
             # Tiny-M decode: fused mixed bf16-A × fp32-B GEMV, one launch.
             var a_tt = TileTensor(a.unsafe_ptr(), row_major(M, Idx[K]))
             router_gate_mixed_gemv[N](

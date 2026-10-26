@@ -150,8 +150,8 @@ def _bmm0_bs[
         accum * scale.cast[p_type](),
     )
     p[y * padded_num_keys + x] = _kernel_mask(
-        Index(score_row, score_col),
-        Index(cur_query_len, num_keys),
+        (Int(score_row), Int(score_col)),
+        (Int(cur_query_len), Int(num_keys)),
         p[y * padded_num_keys + x],
     )
 

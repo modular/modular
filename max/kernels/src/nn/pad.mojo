@@ -24,6 +24,7 @@ from layout import (
     TileTensor,
     row_major,
 )
+from layout.coord import DynamicCoord
 
 # TODO Refactor -- we should decide on and put them into a more common file
 from linalg.transpose import _fill_strides
@@ -31,7 +32,7 @@ from std.math import clamp
 from std.memory import unsafe_memcpy
 
 
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
 
 
 @inline(.always)
@@ -53,48 +54,44 @@ struct _NestedLoopIter[n_loops: Int](ImplicitlyCopyable, Iterable, Iterator):
              .....
     """
 
-    comptime Element = IndexList[Self.n_loops]
+    comptime Element = DynamicCoord[.int, Self.n_loops]
     comptime IteratorType[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
     var cur: Self.Element
 
-    comptime LoopBoundSpec = Array[IndexList[2], Self.n_loops]
-    var loop_bounds: Self.LoopBoundSpec
+    var lower_bounds: StaticTuple[Int, Self.n_loops]
+    var upper_bounds: StaticTuple[Int, Self.n_loops]
     var early_stop: Bool
 
-    def __init__(out self, loop_bounds: Self.LoopBoundSpec):
-        assert len(loop_bounds) == Self.n_loops, (
-            "Number of entries in loop_bounds doesn't match the number of"
-            " loops specified"
-        )
+    def __init__(
+        out self,
+        lower_bounds: StaticTuple[Int, Self.n_loops],
+        upper_bounds: StaticTuple[Int, Self.n_loops],
+    ):
+        self.lower_bounds = lower_bounds
+        self.upper_bounds = upper_bounds
 
-        # TODO: Should this function take an `owned loop_bounds` to avoid
-        #   a copy in places where the caller already has an owned value?
-        self.loop_bounds = loop_bounds.copy()
-
-        self.cur = IndexList[Self.n_loops]()
+        self.cur = DynamicCoord[.int, Self.n_loops]()
         self.early_stop = False
 
-        for i in range(Self.n_loops):
-            var lb = self._lb_loop(i)
-            var ub = self._ub_loop(i)
+        comptime for i in range(Self.n_loops):
+            self.cur.replace_dynamic[i](lower_bounds[i])
 
-            self.cur[i] = lb
-
-            var invalid_bound = lb >= ub
+            var invalid_bound = lower_bounds[i] >= upper_bounds[i]
             self.early_stop = self.early_stop or invalid_bound
 
-    def _lb_loop(self, axis: Int) -> Int:
-        return self.loop_bounds[axis][0]
+    def _lb_loop[axis: Int](self) -> Int:
+        return self.lower_bounds[axis]
 
-    def _ub_loop(self, axis: Int) -> Int:
-        return self.loop_bounds[axis][1]
+    def _ub_loop[axis: Int](self) -> Int:
+        return self.upper_bounds[axis]
 
     def __init__(out self, *, copy: Self):
         self.cur = copy.cur
-        self.loop_bounds = copy.loop_bounds.copy()
+        self.lower_bounds = copy.lower_bounds
+        self.upper_bounds = copy.upper_bounds
         self.early_stop = copy.early_stop
 
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
@@ -105,18 +102,21 @@ struct _NestedLoopIter[n_loops: Int](ImplicitlyCopyable, Iterable, Iterator):
             raise StopIteration()
 
         var cur = self.cur
-        self.cur[len(self.cur) - 1] += 1
+        self.cur.replace_dynamic[Self.n_loops - 1](
+            Int(self.cur[Self.n_loops - 1]) + 1
+        )
 
-        for i in range(Self.n_loops - 1, 0, -1):
-            if self.cur[i] == self._ub_loop(i):
-                self.cur[i] = self._lb_loop(i)
-                self.cur[i - 1] += 1
+        comptime for i in range(1, Self.n_loops):
+            comptime axis = Self.n_loops - i
+            if Int(self.cur[axis]) == self._ub_loop[axis]():
+                self.cur.replace_dynamic[axis](self._lb_loop[axis]())
+                self.cur.replace_dynamic[axis - 1](Int(self.cur[axis - 1]) + 1)
 
         return cur
 
     @inline(.always)
     def __len__(self) -> Int:
-        if self.cur[0] >= self._ub_loop(0) or self.early_stop:
+        if Int(self.cur[0]) >= self._ub_loop[0]() or self.early_stop:
             return 0
         else:
             return 1
@@ -165,7 +165,7 @@ def pad_constant[
         output: MutPointer[Scalar[dtype], address_space=.GENERIC, ...],
         input: Pointer[Scalar[dtype], address_space=.GENERIC, ...],
         paddings: Pointer[Scalar[paddings_type], _],
-        output_shape: IndexList[output_rank],
+        output_shape: DynamicCoord[.int, output_rank],
         output_strides: MutPointer[Int, _],
         input_strides: Pointer[Int, _],
     ) {var constant_cast}:
@@ -226,7 +226,7 @@ def pad_reflect[
         output: MutPointer[Scalar[dtype], address_space=.GENERIC, ...],
         input: Pointer[Scalar[dtype], address_space=.GENERIC, ...],
         paddings: Pointer[Scalar[paddings_type], _],
-        output_shape: IndexList[output_rank],
+        output_shape: DynamicCoord[.int, output_rank],
         output_strides: MutPointer[Int, _],
         input_strides: Pointer[Int, _],
     ) {}:
@@ -247,7 +247,7 @@ def pad_shape[
 ](
     input_buf: TileTensor[mut=False, input_type, ...],
     paddings_buf: TileTensor[mut=False, paddings_type, ...],
-) raises -> IndexList[input_buf.rank]:
+) raises -> DynamicCoord[.int, input_buf.rank]:
     """
     Compute the output shape of a `pad` operation, and assert the inputs are
     compatible.
@@ -275,12 +275,14 @@ def pad_shape[
         raise Error("[pad] paddings shape must be (2 * input_rank)")
 
     # compute and return the output shape
-    var output_shape = IndexList[input_buf.rank]()
+    var output_shape = DynamicCoord[.int, input_buf.rank]()
 
     comptime for axis in range(input_buf.rank):
         var pre_pad = Int(paddings_buf[2 * axis])
         var post_pad = Int(paddings_buf[2 * axis + 1])
-        output_shape[axis] = pre_pad + Int(input_buf.dim[axis]()) + post_pad
+        output_shape.replace_dynamic[axis](
+            pre_pad + Int(input_buf.dim[axis]()) + post_pad
+        )
 
     return output_shape
 
@@ -295,7 +297,7 @@ def _do_pad[
         MutPointer[Scalar[dtype], address_space=.GENERIC, ...],
         Pointer[Scalar[dtype], address_space=.GENERIC, ...],
         Pointer[Scalar[paddings_type], _],
-        IndexList[OutputLayoutType.rank],
+        DynamicCoord[.int, OutputLayoutType.rank],
         MutPointer[Int, _],
         Pointer[Int, _],
     ) -> None,
@@ -318,10 +320,10 @@ def _do_pad[
     _fill_strides(input, input_strides_buf)
     _fill_strides(output, output_strides_buf)
 
-    var output_shape = IndexList[output.rank]()
+    var output_shape = DynamicCoord[.int, output.rank]()
 
     comptime for axis in range(output.rank):
-        output_shape[axis] = Int(output.dim[axis]())
+        output_shape.replace_dynamic[axis](Int(output.dim[axis]()))
 
     return pad_impl_fn(
         output.ptr,
@@ -402,9 +404,8 @@ struct _PadAxis[rank: Int, paddings_type: DType](TrivialRegisterPassable):
         out self,
         axis: Int,
         paddings: Pointer[Scalar[Self.paddings_type], _],
-        output_shape: IndexList[Self.rank],
+        axis_dim: Int,
     ):
-        var axis_dim = output_shape[axis]
         var pre_pad = Int(paddings[2 * axis])
         var post_pad = Int(paddings[2 * axis + 1])
         var non_pad = axis_dim - pre_pad - post_pad
@@ -478,10 +479,10 @@ struct _AxisParams[rank: Int, dtype: DType, paddings_type: DType](
         out self,
         axis: Int,
         paddings: Pointer[Scalar[Self.paddings_type], _],
-        output_shape: IndexList[Self.rank],
+        axis_dim: Int,
     ):
         self.pad_axis = _PadAxis[Self.rank, Self.paddings_type](
-            axis, paddings, output_shape
+            axis, paddings, axis_dim
         )
         self.output_offset = 0
         self.input_offset = 0
@@ -550,17 +551,17 @@ def _pad_constant_axis[
     output: MutPointer[Scalar[dtype], _],
     input: Pointer[Scalar[dtype], _],
     constant: Scalar[dtype],
-    output_shape: IndexList[rank],
+    output_shape: DynamicCoord[.int, rank],
     output_strides: Pointer[Int, _],
     input_strides: Pointer[Int, _],
     var axis_params: StaticTuple[_AxisParams[rank, dtype, paddings_type], rank],
 ):
     comptime if axis == (rank - 1):
-        axis_params[axis].base(output, input, constant, output_shape[axis])
+        axis_params[axis].base(output, input, constant, Int(output_shape[axis]))
     else:
         var output_axis_stride = Int(output_strides[axis])
         var input_axis_stride = Int(input_strides[axis])
-        for i in range(output_shape[axis]):
+        for i in range(Int(output_shape[axis])):
             axis_params[axis].pre_check(i)
 
             axis_params[axis + 1].init_offsets(
@@ -588,7 +589,7 @@ def _pad_constant_impl[
     input: Pointer[Scalar[dtype], _],
     paddings: Pointer[Scalar[paddings_type], _],
     constant: Scalar[dtype],
-    output_shape: IndexList[rank],
+    output_shape: DynamicCoord[.int, rank],
     output_strides: Pointer[Int, _],
     input_strides: Pointer[Int, _],
 ):
@@ -613,7 +614,7 @@ def _pad_constant_impl[
 
     comptime for r in range(rank):
         axis_params[r] = _AxisParams[rank, dtype, paddings_type](
-            r, paddings, output_shape
+            r, paddings, Int(output_shape[r])
         )
 
     # CRITICAL: should be setting output_offset=0, input_offset=0, and
@@ -705,10 +706,10 @@ struct _AxisParamsReflect[rank: Int, dtype: DType, paddings_type: DType](
         out self,
         axis: Int,
         paddings: Pointer[Scalar[Self.paddings_type], _],
-        output_shape: IndexList[Self.rank],
+        axis_dim: Int,
     ):
         self.pad_axis = _PadAxis[Self.rank, Self.paddings_type](
-            axis, paddings, output_shape
+            axis, paddings, axis_dim
         )
         self.next_input_offset = 0
         self.next_output_offset = 0
@@ -832,7 +833,7 @@ def _pad_reflect_impl[
     output: MutPointer[Scalar[dtype], address_space=.GENERIC, ...],
     input: Pointer[Scalar[dtype], address_space=.GENERIC, ...],
     paddings: Pointer[Scalar[paddings_type], _],
-    output_shape: IndexList[rank],
+    output_shape: DynamicCoord[.int, rank],
     output_strides: MutPointer[Int, _],
     input_strides: Pointer[Int, _],
 ):
@@ -853,9 +854,9 @@ def _pad_reflect_impl[
         _AxisParamsReflect[rank, dtype, paddings_type], rank
     ]()
 
-    for r in range(rank):
+    comptime for r in range(rank):
         axis_params[r] = _AxisParamsReflect[rank, dtype, paddings_type](
-            r, paddings, output_shape
+            r, paddings, Int(output_shape[r])
         )
 
     _pad_reflect_axis[rank, dtype, paddings_type, 0](
@@ -905,80 +906,91 @@ def pad_repeat[
     # value. `pre_pads`/`post_pads` below are just unpacked views for the
     # loop bounds.
     comptime rank = output.rank
-    var output_shape = IndexList[rank]()
+    var output_shape = DynamicCoord[.int, rank]()
     comptime for axis in range(rank):
-        output_shape[axis] = Int(output.dim[axis]())
+        output_shape.replace_dynamic[axis](Int(output.dim[axis]()))
 
     var pad_axes = StaticTuple[_PadAxis[rank, paddings_type], rank]()
-    var pre_pads = IndexList[rank]()
-    var post_pads = IndexList[rank]()
+    var pre_pads = DynamicCoord[.int, rank]()
+    var post_pads = DynamicCoord[.int, rank]()
 
-    for axis in range(comptime (rank)):
+    comptime for axis in range(rank):
         var pad_axis = _PadAxis[rank, paddings_type](
-            axis, paddings, output_shape
+            axis, paddings, Int(output_shape[axis])
         )
         pad_axes[axis] = pad_axis
-        pre_pads[axis] = pad_axis.pre_pad
-        post_pads[axis] = pad_axis.post_pad
+        pre_pads.replace_dynamic[axis](pad_axis.pre_pad)
+        post_pads.replace_dynamic[axis](pad_axis.post_pad)
 
-    var loop_bounds = _NestedLoopIter[output.rank].LoopBoundSpec(
-        fill=IndexList[2](0)
-    )
+    var lower_bounds = StaticTuple[Int, rank]()
+    var upper_bounds = StaticTuple[Int, rank]()
 
-    comptime for i in range(output.rank):
-        loop_bounds[i] = IndexList[2](0, Int(input.dim[i]()))
+    comptime for i in range(rank):
+        lower_bounds[i] = 0
+        upper_bounds[i] = Int(input.dim[i]())
 
-    var non_pad_iter = _NestedLoopIter[output.rank](loop_bounds)
+    var non_pad_iter = _NestedLoopIter[rank](lower_bounds, upper_bounds)
 
     for input_idx in non_pad_iter:
-        var output_idx = input_idx + pre_pads
-        output.store(
-            Coord(output_idx),
-            input.load[width=1](Coord(input_idx)),
-        )
+        var output_idx = DynamicCoord[.int, rank]()
+        comptime for i in range(rank):
+            output_idx.replace_dynamic[i](Int(input_idx[i]) + Int(pre_pads[i]))
+        output.store(output_idx, input.load[width=1](input_idx))
 
-    for axis in reversed(range(comptime (output.rank))):
-        for i in range(axis):
-            loop_bounds[i] = IndexList[2](
-                pre_pads[i], pre_pads[i] + Int(input.dim(i))
-            )
+    comptime for axis_count in range(rank):
+        comptime axis = rank - 1 - axis_count
 
-        for i in range(axis + 1, comptime (output.rank)):
-            loop_bounds[i] = IndexList[2](0, Int(output.dim(i)))
+        comptime for i in range(axis):
+            lower_bounds[i] = Int(pre_pads[i])
+            upper_bounds[i] = Int(pre_pads[i]) + Int(input.dim[i]())
+
+        comptime for i in range(axis + 1, rank):
+            lower_bounds[i] = 0
+            upper_bounds[i] = Int(output.dim[i]())
 
         # handle pre-padding of the axis
-        var pre_lower = 0
-        var pre_upper = pre_pads[axis]
+        lower_bounds[axis] = 0
+        upper_bounds[axis] = Int(pre_pads[axis])
 
-        loop_bounds[axis] = IndexList[2](pre_lower, pre_upper)
-
-        var pre_pad_iter = _NestedLoopIter[output.rank](loop_bounds)
+        var pre_pad_iter = _NestedLoopIter[rank](lower_bounds, upper_bounds)
 
         for write_idx in pre_pad_iter:
             # Shared repeat-mode coordinate map (see `_PadAxis.map_index`):
             # clamps to the first input position; the border row is read in
             # output space, i.e. at `pre_pad + mapped input index`.
-            var read_idx = write_idx
-            read_idx[axis] = pre_pads[axis] + pad_axes[axis].map_index[
-                mode="repeat"
-            ](write_idx[axis])
+            var read_idx = DynamicCoord[.int, rank]()
+            comptime for i in range(rank):
+                comptime if i == axis:
+                    read_idx.replace_dynamic[i](
+                        Int(pre_pads[i])
+                        + pad_axes[axis].map_index[mode="repeat"](
+                            Int(write_idx[i])
+                        )
+                    )
+                else:
+                    read_idx.replace_dynamic[i](Int(write_idx[i]))
 
-            output[Coord(write_idx)] = output[Coord(read_idx)]
+            output[write_idx] = output[read_idx]
 
         # and now post-padding
-        var post_lower = pre_pads[axis] + Int(input.dim(axis))
-        var post_upper = Int(output.dim(axis))
+        lower_bounds[axis] = Int(pre_pads[axis]) + Int(input.dim[axis]())
+        upper_bounds[axis] = Int(output.dim[axis]())
 
-        loop_bounds[axis] = IndexList[2](post_lower, post_upper)
-
-        var post_pad_iter = _NestedLoopIter[output.rank](loop_bounds)
+        var post_pad_iter = _NestedLoopIter[rank](lower_bounds, upper_bounds)
 
         for write_idx in post_pad_iter:
             # Shared repeat-mode coordinate map (see `_PadAxis.map_index`):
             # clamps to the last input position, read in output space.
-            var read_idx = write_idx
-            read_idx[axis] = pre_pads[axis] + pad_axes[axis].map_index[
-                mode="repeat"
-            ](write_idx[axis])
+            var read_idx = DynamicCoord[.int, rank]()
+            comptime for i in range(rank):
+                comptime if i == axis:
+                    read_idx.replace_dynamic[i](
+                        Int(pre_pads[i])
+                        + pad_axes[axis].map_index[mode="repeat"](
+                            Int(write_idx[i])
+                        )
+                    )
+                else:
+                    read_idx.replace_dynamic[i](Int(write_idx[i]))
 
-            output[Coord(write_idx)] = output[Coord(read_idx)]
+            output[write_idx] = output[read_idx]

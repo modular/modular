@@ -84,7 +84,7 @@ def do_execute[
     var length_val = Int(length)
 
     # Pack kernel arguments — order must match the kernel signature: a, b, result, n.
-    var args = alloc[OpaquePointer[MutUntrackedOrigin]](
+    var args = alloc[OpaquePointer[ImmUntrackedOrigin]](
         {length = 4}
     ).unsafe_leak()
     var arg_sizes = alloc[UInt64]({length = 4}).unsafe_leak()
@@ -114,9 +114,7 @@ def do_execute[
         func,
         grid=(grid_dim, UInt32(1), UInt32(1)),
         block=(block_dim, UInt32(1), UInt32(1)),
-        args=rebind[Pointer[OpaquePointer[MutUntrackedOrigin], MutAnyOrigin]](
-            args
-        ),
+        args=args,
         arg_sizes=rebind[Pointer[UInt64, MutAnyOrigin]](arg_sizes),
         num_args=UInt32(4),
     )

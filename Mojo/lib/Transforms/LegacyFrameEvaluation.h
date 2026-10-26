@@ -25,7 +25,8 @@ void evaluateFrameByStateNumbering(FrameData &frameData,
                                    FuncOp originalFunction,
                                    mlir::DominanceInfo &domInfo,
                                    Value errorValue, Value resultValue,
-                                   FrameStateTransform transform, bool isHot);
+                                   FrameStateTransform rematerializeFrameValues,
+                                   bool isHot);
 
 } // namespace M::KGEN
 

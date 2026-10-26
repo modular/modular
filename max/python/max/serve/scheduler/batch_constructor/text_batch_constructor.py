@@ -89,12 +89,16 @@ class _PendingCERequest:
     tokens, per replica, from a read-only probe of the device and shared
     (host/disk) cache tiers at enqueue time. The shared tiers give the same
     answer on every replica; per-replica differences come from device-cache
-    residency only. ``entered_at`` is when this stay in the pool began, which
-    differs from the deferral deadline once a preempted request re-enters.
+    residency only. ``awaits_presence`` says the shared tiers' answer was
+    still out when ``weights`` was taken, so it counts the device tier
+    alone and the planner prices the request again until the answer lands.
+    ``entered_at`` is when this stay in the pool began, which differs from
+    the deferral deadline once a preempted request re-enters.
     """
 
     ctx: TextContext
     weights: list[int]
+    awaits_presence: bool = False
     entered_at: float = field(default_factory=time.monotonic)
 
 
@@ -110,12 +114,15 @@ class _BoundRequest:
     ``ce_weight`` is the request's estimated post-prefix-cache CE length on
     ``replica_idx``, carried so the planner prices bound work the way it
     prices the pool (see :meth:`TextBatchConstructor._ce_weight`). ``None``
-    for a request bound straight into the TG queue.
+    for a request bound straight into the TG queue. ``awaits_presence`` is
+    as on :class:`_PendingCERequest`: the planner prices the request again
+    until the shared tiers answer or the request is claimed.
     """
 
     ctx: TextContext
     replica_idx: int
     ce_weight: int | None = None
+    awaits_presence: bool = False
 
 
 @dataclass
@@ -810,7 +817,9 @@ class TextBatchConstructor:
             and ctx.tokens.generated_length == 0
         ):
             self._ce_pending[ctx.request_id] = _PendingCERequest(
-                ctx=ctx, weights=self._post_cache_weights(ctx)
+                ctx=ctx,
+                weights=self._post_cache_weights(ctx),
+                awaits_presence=self.kv_cache.awaits_presence(ctx),
             )
             self._ce_arrival[ctx.request_id] = time.monotonic()
             return
@@ -826,6 +835,7 @@ class TextBatchConstructor:
         replica_idx: int,
         *,
         ce_weight: int | None = None,
+        awaits_presence: bool = False,
     ) -> None:
         """Binds a request to a replica and enqueues it in the right queue.
 
@@ -836,6 +846,9 @@ class TextBatchConstructor:
                 ``replica_idx``, when the caller already has it. Probed here
                 otherwise -- the probe hashes the whole prompt, so a caller
                 holding the answer should pass it.
+            awaits_presence: Whether ``ce_weight`` was taken while the
+                shared tiers' answer was still out, so the planner prices
+                the request again until it lands.
         """
         replica = self.replicas[replica_idx]
 
@@ -843,13 +856,15 @@ class TextBatchConstructor:
         if ctx.tokens.generated_length == 0:
             if self._dp_ce_balance_enabled and ce_weight is None:
                 ce_weight = self._post_cache_weights(ctx)[replica_idx]
+                awaits_presence = self.kv_cache.awaits_presence(ctx)
             replica.ce_reqs[ctx.request_id] = ctx
         else:
             ce_weight = None
+            awaits_presence = False
             replica.tg_reqs[ctx.request_id] = ctx
 
         self._bound_requests[ctx.request_id] = _BoundRequest(
-            ctx, replica_idx, ce_weight
+            ctx, replica_idx, ce_weight, awaits_presence
         )
         if ctx.request_id not in self._bind_seq:
             self._bind_seq[ctx.request_id] = next(self._next_bind_seq)
@@ -924,7 +939,10 @@ class TextBatchConstructor:
         # Only a preempted request returns to the pool with its bind seq.
         rebind = request_id in self._bind_seq
         self._bind_request(
-            pending.ctx, replica_idx, ce_weight=pending.weights[replica_idx]
+            pending.ctx,
+            replica_idx,
+            ce_weight=pending.weights[replica_idx],
+            awaits_presence=pending.awaits_presence,
         )
         if rebind:
             self._restore_bind_order(request_id, replica_idx)
@@ -945,12 +963,42 @@ class TextBatchConstructor:
             return ctx.tokens.active_length
         return bound.ce_weight
 
+    def _price_again_once_presence_answers(self) -> None:
+        """Prices again the requests whose shared-tier answer was out.
+
+        A request priced while the cache's connector probe was still out
+        was weighted by its device tier alone, so each pass asks the cache
+        once whether the answer has landed, which takes nothing, and prices
+        the request once more when it has. A bound request stops being
+        priced once it is claimed, since its probe is then the allocation's
+        to read and a request that ran is priced by its live window.
+        """
+        for pending in self._ce_pending.values():
+            if pending.awaits_presence and not self.kv_cache.awaits_presence(
+                pending.ctx
+            ):
+                pending.weights = self._post_cache_weights(pending.ctx)
+                pending.awaits_presence = False
+        for bound in self._bound_requests.values():
+            if not bound.awaits_presence:
+                continue
+            if self.kv_cache.contains(bound.ctx):
+                bound.awaits_presence = False
+            elif not self.kv_cache.awaits_presence(bound.ctx):
+                bound.ce_weight = self._post_cache_weights(bound.ctx)[
+                    bound.replica_idx
+                ]
+                bound.awaits_presence = False
+
     def _post_cache_weights(self, ctx: TextContext) -> list[int]:
         """Estimates per-replica post-prefix-cache CE length for a new request.
 
         Probes the prefix caches read-only (device tier per replica, shared
         host/disk tiers once) and subtracts the contiguous cached prefix from
-        the request's unprocessed length. Fails open: on any probe error the
+        the request's unprocessed length. A cache whose connector probe is a
+        round trip starts it on the first call and counts the device tier
+        alone until it answers, which ``kv_cache.awaits_presence`` reports.
+        Never waits on the connector. Fails open: on any probe error the
         request is weighted at its full unprocessed length everywhere
         (pre-cache behavior), and the first failure is logged.
         """
@@ -1106,10 +1154,11 @@ class TextBatchConstructor:
         # Pooled CE requests are not bound to a replica yet: nothing was
         # claimed in the KV cache and no replica queue holds them.
         if request_id in self._ce_pending:
-            del self._ce_pending[request_id]
+            pending = self._ce_pending.pop(request_id)
             self._ce_arrival.pop(request_id, None)
             self._bind_seq.pop(request_id, None)
             self._cordon_waits.pop(request_id, None)
+            self.kv_cache.abandon_presence(pending.ctx)
             self.pipeline.release(request_id)
             return
 
@@ -1161,6 +1210,9 @@ class TextBatchConstructor:
         # not claimed".
         if self.kv_cache is not None and self.kv_cache.contains(bound.ctx):
             self.kv_cache.release(bound.ctx)
+        elif self.kv_cache is not None:
+            # Never claimed, so only the probe its pricing started is held.
+            self.kv_cache.abandon_presence(bound.ctx)
 
         # Pipeline release handles model-specific cleanup (e.g. vision encoder cache)
         self.pipeline.release(request_id)
@@ -1272,7 +1324,9 @@ class TextBatchConstructor:
             self._lookup_holds.pop(context.request_id, None)
             self._request_id_to_lora_name.pop(context.request_id, None)
             self._ce_pending[context.request_id] = _PendingCERequest(
-                ctx=context, weights=self._post_cache_weights(context)
+                ctx=context,
+                weights=self._post_cache_weights(context),
+                awaits_presence=self.kv_cache.awaits_presence(context),
             )
             self._ce_pending.move_to_end(context.request_id, last=False)
             return
@@ -2052,6 +2106,7 @@ class TextBatchConstructor:
         self._ce_step_quota = None
         if not self._dp_ce_balance_enabled:
             return
+        self._price_again_once_presence_answers()
         if not self._ce_pending and not any(
             replica.ce_reqs for replica in self.replicas
         ):

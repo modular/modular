@@ -48,11 +48,13 @@ from max.pipelines.kv_cache._nixl_backend import (
 from max.pipelines.kv_cache._nixl_plugin_deps import preload_nixl_plugin_deps
 from max.pipelines.kv_cache.kv_connector import (
     CompletedLookup,
+    CompletedProbe,
     KVConnector,
     KVConnectorTransfer,
     KVLoadFailed,
     KVLoadRefused,
     KVLookup,
+    KVProbe,
     KVTransfer,
 )
 from max.profiler import traced
@@ -63,7 +65,7 @@ _logger = logging.getLogger("max.pipelines")
 # lacks them, so each client is checked once and driven through the blocking
 # calls it has rather than failing on the first request.
 _ASYNC_LOOKUP_ENTRIES = ("start_prepare_load", "load_lookup", "abandon_lookup")
-_PRESENCE_ENTRIES = ("presence", "presence_supported")
+_PRESENCE_ENTRIES = ("presence", "presence_supported", "start_presence")
 
 
 class _DkvLookup(Protocol):
@@ -77,6 +79,20 @@ class _DkvLookup(Protocol):
     def is_complete(self) -> bool: ...
 
     def resident_mask(self) -> Sequence[bool]: ...
+
+
+class _DkvPresence(Protocol):
+    """One presence call in flight, as ``start_presence`` returns it.
+
+    It pins nothing and stages nothing, so there is nothing to hand back.
+    ``masks`` is ``None`` when the server or a hinted peer predates presence,
+    or when the query went unanswered because the server shed it or the
+    co-located dKV timed out, answered not ready, or never received it.
+    """
+
+    def is_complete(self) -> bool: ...
+
+    def masks(self) -> Sequence[Sequence[bool]] | None: ...
 
 
 class _DkvClient(Protocol):
@@ -136,6 +152,14 @@ class _DkvClient(Protocol):
     ) -> Sequence[Sequence[bool]] | None: ...
 
     def presence_supported(self) -> bool: ...
+
+    def start_presence(
+        self,
+        *,
+        group_ids: Sequence[int],
+        block_hashes: Sequence[int],
+        hint: bytes | None = ...,
+    ) -> _DkvPresence: ...
 
     def is_healthy(self) -> bool: ...
 
@@ -1034,6 +1058,67 @@ class _DkvPendingLookup:
         return resident
 
 
+class _DkvPendingProbe:
+    """One pricing's presence calls, one per shard layout, polled as one.
+
+    Answers per replica asked, as :meth:`DKVConnector.probe` does. A
+    replica that could not load when the calls started answers an empty
+    mapping, so it still leases if it reconnects. Reads ``None`` when any
+    call was shed, timed out, or reached a server without presence.
+    """
+
+    def __init__(
+        self,
+        leaf_ids: Sequence[str],
+        handles: Sequence[tuple[Sequence[str], _DkvPresence]],
+        width: int,
+        replica_idxs: Sequence[int],
+        able: Sequence[int],
+    ) -> None:
+        self._leaf_ids = list(leaf_ids)
+        self._handles = list(handles)
+        self._width = width
+        self._replica_idxs = list(replica_idxs)
+        self._able = set(able)
+        self._complete = False
+
+    def is_complete(self) -> bool:
+        """Returns whether every layout's call has answered. Never blocks."""
+        if not self._complete:
+            self._complete = all(
+                handle.is_complete() for _, handle in self._handles
+            )
+        return self._complete
+
+    def masks(self) -> list[Mapping[str, Sequence[bool]]] | None:
+        """Returns each replica's residency, once every layout has answered."""
+        if not self.is_complete():
+            raise RuntimeError("dkv presence has not answered on every layout")
+        answered: dict[str, Sequence[bool]] = {}
+        for leaf_ids, handle in self._handles:
+            answer = handle.masks()
+            if answer is None:
+                return None
+            if len(answer) != len(leaf_ids) or any(
+                len(mask) != self._width for mask in answer
+            ):
+                raise ValueError(
+                    f"dkv start_presence answered {len(answer)} leaves "
+                    f"{[len(mask) for mask in answer]} blocks wide for "
+                    f"leaves {leaf_ids} over {self._width} blocks"
+                )
+            answered.update(
+                zip(leaf_ids, [list(mask) for mask in answer], strict=True)
+            )
+        resident: Mapping[str, Sequence[bool]] = {
+            leaf_id: answered[leaf_id] for leaf_id in self._leaf_ids
+        }
+        unknown: Mapping[str, Sequence[bool]] = {}
+        return [
+            resident if r in self._able else unknown for r in self._replica_idxs
+        ]
+
+
 class _DkvSyncLookup(CompletedLookup):
     """A lookup answered in place by an extension without the async entries.
 
@@ -1692,6 +1777,56 @@ class DKVConnector(KVConnector):
             leaf_id: answered[leaf_id] for leaf_id in self._leaves
         }
         return [resident if r in able else misses for r in replica_idxs]
+
+    def start_probe(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idxs: Sequence[int],
+        hint: bytes | None = None,
+    ) -> KVProbe | None:
+        """Starts :meth:`probe`'s presence calls and returns at once.
+
+        Returns a handle that answers as :meth:`probe` does for the replicas
+        that could load when it started, and ``None`` when some layout's
+        client or server lacks presence, which leaves the manager on
+        :meth:`probe`.
+        """
+        if not block_hashes:
+            return CompletedProbe(
+                [
+                    {leaf_id: [] for leaf_id in self._leaves}
+                    for _ in replica_idxs
+                ]
+            )
+        able = [r for r in replica_idxs if self._can_load(r)]
+        if not able:
+            return CompletedProbe(None)
+
+        clients = self._clients[able[0]]
+        has_presence = self._presence_clients[able[0]]
+        if not all(
+            has_presence[leaf_ids[0]]
+            and clients[leaf_ids[0]].presence_supported()
+            for leaf_ids in self._presence_layouts
+        ):
+            return None
+
+        dkv_hashes = [_to_dkv_u64(h) for h in block_hashes]
+        usable_hint = self._usable_hint(hint)
+        handles = [
+            (
+                leaf_ids,
+                clients[leaf_ids[0]].start_presence(
+                    group_ids=[self._wire_ids[leaf_id] for leaf_id in leaf_ids],
+                    block_hashes=dkv_hashes,
+                    hint=usable_hint,
+                ),
+            )
+            for leaf_ids in self._presence_layouts
+        ]
+        return _DkvPendingProbe(
+            list(self._leaves), handles, len(dkv_hashes), replica_idxs, able
+        )
 
     def _probe_one_leaf(
         self,

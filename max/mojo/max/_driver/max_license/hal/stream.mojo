@@ -119,13 +119,15 @@ struct Stream[device_spec: DeviceSpec](Deinitable, Movable):
     # Stream operations
     # ===-------------------------------------------------------------------===#
 
-    def execute(
+    def execute[
+        args_origin: ImmOrigin, //
+    ](
         mut self,
         func: FunctionHandle,
         grid: Tuple[UInt32, UInt32, UInt32],
         block: Tuple[UInt32, UInt32, UInt32],
-        args: Pointer[mut=True, OpaquePointer[MutUntrackedOrigin], _],
-        arg_sizes: Pointer[mut=True, UInt64, _],
+        args: Pointer[mut=True, ImmOpaquePointer[args_origin], _],
+        arg_sizes: ImmPointer[UInt64, _],
         num_args: UInt32,
         shared_mem_bytes: UInt32 = 0,
         attributes: OptionalReg[OpaquePointer[MutUntrackedOrigin]] = None,
@@ -147,13 +149,14 @@ struct Stream[device_spec: DeviceSpec](Deinitable, Movable):
         self._chain_signal()
 
     def execute[
+        args_origin: ImmOrigin,
         ExecutionConfigType: GridBlockExecutionConfig,
         //,
     ](
         mut self,
         func: FunctionHandle,
         execution_config: ExecutionConfigType,
-        args: Pointer[mut=True, OpaquePointer[MutUntrackedOrigin], _],
+        args: Pointer[mut=True, ImmOpaquePointer[args_origin], _],
         arg_sizes: Pointer[mut=True, UInt64, _],
         num_args: UInt32,
         attributes: OptionalReg[OpaquePointer[MutUntrackedOrigin]] = None,

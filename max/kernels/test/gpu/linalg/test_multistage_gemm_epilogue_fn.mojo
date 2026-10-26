@@ -176,8 +176,8 @@ def main() raises:
         comptime split_k_config = MatmulConfig[
             .float32, .float32, .float32, True
         ](
-            block_tile_shape=Index(16, 16, 64),
-            warp_tile_shape=Index(16, 16, 64),
+            block_tile_shape=(Int(16), Int(16), Int(64)),
+            warp_tile_shape=(Int(16), Int(16), Int(64)),
             mma_shape=_amdgpu_get_mma_shape[.float32, True](),
             num_pipeline_stages=1,
             num_k_partitions=4,

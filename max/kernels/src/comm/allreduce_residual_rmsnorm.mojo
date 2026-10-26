@@ -85,7 +85,7 @@ from layout import (
     row_major,
 )
 from layout.tile_tensor import _ComptimeConditionalTileTensor
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type
 
 
@@ -989,13 +989,11 @@ def _launch_split_allreduce_rmsnorm_fp8[
     # Define input_fn for RMSNorm (reads from residual_output after allreduce).
     @inline(.always)
     def input_fn[
-        width: Int, _rank: Int
-    ](idx: IndexList[_rank]) {var residual_output_2d} -> SIMD[in_dtype, width]:
-        return residual_output_2d.load[width=width, alignment=width](
-            (idx[0], idx[1])
-        )
+        width: Int
+    ](coords: Coord) {var residual_output_2d} -> SIMD[in_dtype, width]:
+        return residual_output_2d.load[width=width, alignment=width](coords)
 
-    var shape = IndexList[2](rows, cols)
+    var shape = (rows, cols)
     var scale_output_2d = TileTensor(
         scale_output_1d.ptr, row_major(rows, Idx[1])
     )

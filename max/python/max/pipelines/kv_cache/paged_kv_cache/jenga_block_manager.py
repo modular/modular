@@ -23,6 +23,7 @@ different caches. This allows the memory to be fungible between the caches.
 from __future__ import annotations
 
 import logging
+import os
 import time
 from bisect import bisect_left
 from collections.abc import Iterator, Mapping, Sequence
@@ -42,6 +43,7 @@ from max.pipelines.kv_cache.kv_connector import (
     KVLoadFailed,
     KVLoadRefused,
     KVLookup,
+    KVProbe,
     KVTransfer,
 )
 from max.pipelines.modeling.types import RequestID
@@ -99,6 +101,42 @@ _MAX_CONNECTOR_LOOKUP_HAND_BACKS = 2
 # DEFAULT_PLAN_TTL and the server's DKV_READER_LEASE_DEADLINE, and neither
 # reaches Python, so this has to follow them by hand.
 _LOOKUP_HAND_BACK_AGE_S = 7.0
+
+# A pricing probe still unanswered this long after its start is read as
+# unanswered for good, so a connector that never answers holds no pricing up.
+# Set to the lookup hold, which bounds how long the request's turn in its
+# queue keeps the prompts behind it waiting.
+_PRESENCE_PROBE_AGE_S = 5.0
+
+# A probed miss older than this no longer skips a lease. Two requests
+# sharing a prefix that both probe a miss at once are the DP balancer's
+# common case, and the first to run offloads that prefix while the second
+# waits its turn, so a miss is trusted only for about as long as a prefill
+# chunk and its offload take to land in the store. Past that the lease
+# decides, as it did without the probe.
+_PROBED_MISS_AGE_S = 1.0
+
+ASYNC_PRESENCE_ENV_VAR = "MAX_SERVE_CONNECTOR_ASYNC_PRESENCE"
+"""Whether DP balance pricing starts the connector's presence probe.
+
+1 by default. 0 asks the blocking probe on the scheduler thread, as before
+the started form existed, and with no started probe no miss spares a lease.
+"""
+
+PROBED_MISS_SKIP_ENV_VAR = "MAX_SERVE_CONNECTOR_PROBED_MISS_SKIP"
+"""Whether a fresh miss from the started probe spares the first lease.
+
+1 by default. 0 keeps pricing on the started probe but leaves every lease to
+run, so a request whose prefix a sibling is still offloading loads it rather
+than computing it again.
+"""
+
+
+def _env_flag(name: str) -> bool:
+    value = os.getenv(name, "1")
+    if value not in ("0", "1"):
+        raise ValueError(f"{name} must be 0 or 1, got {value!r}")
+    return value == "1"
 
 
 @dataclass
@@ -208,6 +246,77 @@ class _PendingLookup:
         self.missed = True
         self._answered = True
         self.abandon()
+
+
+class _PendingProbe:
+    """A connector probe started when a request was priced, read later.
+
+    Asked over ``hashes``, the request's whole chain, so the answer covers
+    wherever the request's device hit ends when it is read. Pricing reads
+    it again while the request waits in its pool, and the request's first
+    allocation reads it to skip the lease a miss would have found nothing
+    with. It is never waited on: a handle that has not answered, that
+    raised when polled, or that answered nothing reads as no answer, and
+    the lease decides what the connector holds as it did without a probe.
+    """
+
+    _logged_failure = False
+
+    def __init__(
+        self,
+        connector: KVConnector,
+        handle: KVProbe,
+        hashes: list[bytes],
+        started_at: float,
+    ) -> None:
+        self.hashes = hashes
+        self._connector = connector
+        self._handle = handle
+        self._started_at = started_at
+        self._answers: Sequence[Mapping[str, Sequence[bool]]] | None = None
+        self._answered = False
+
+    def age_s(self) -> float:
+        """Returns how long ago the probe started, in seconds."""
+        return time.monotonic() - self._started_at
+
+    def is_answered(self) -> bool:
+        """Returns whether the probe is done answering. Never blocks or raises.
+
+        Sticky: a probe read as done is never polled again, so one that
+        answers after its age ran out stays unanswered.
+        """
+        if self._answered:
+            return True
+        try:
+            if self._handle.is_complete():
+                self._answers = self._handle.masks()
+                self._answered = True
+        except Exception:
+            # Once per process, since a connector that fails one read fails
+            # every request's, and the scheduler thread logs each.
+            log = (
+                logger.debug
+                if _PendingProbe._logged_failure
+                else logger.exception
+            )
+            _PendingProbe._logged_failure = True
+            log(
+                "reading a %s presence answer failed, so its request is "
+                "priced from the device tier alone",
+                self._connector.name,
+                exc_info=True,
+            )
+            self._answered = True
+        if not self._answered and self.age_s() >= _PRESENCE_PROBE_AGE_S:
+            self._answered = True
+        return self._answered
+
+    def answers(self) -> Sequence[Mapping[str, Sequence[bool]]] | None:
+        """Returns the probe's answer per replica, or ``None`` without one."""
+        if not self.is_answered():
+            return None
+        return self._answers
 
 
 class _PendingLookupTransfer:
@@ -558,6 +667,11 @@ class JengaBlockManager:
         }
         self._cacheable_leaf_ids = list(self._cacheable_groups)
         self._requests: dict[RequestID, RequestCacheState] = {}
+        # Pricing probes by request, claimed or not: a request is priced
+        # before it is claimed, and its probe is read at its first alloc.
+        self._pending_probes: dict[RequestID, _PendingProbe] = {}
+        self._async_presence = _env_flag(ASYNC_PRESENCE_ENV_VAR)
+        self._probed_miss_skip = _env_flag(PROBED_MISS_SKIP_ENV_VAR)
 
         # State for the KVConnector.
         self._connector = connector
@@ -612,7 +726,17 @@ class JengaBlockManager:
         # The pages are already free, so the request goes before the hand
         # back and one that raises cannot leave it claimed over them.
         state = self._requests.pop(req_id)
+        self._pending_probes.pop(req_id, None)
         self._abandon_pending_lookup(state)
+
+    def abandon_presence(self, ctx: TextContext) -> None:
+        """Drops the request's pricing probe, for one released unclaimed."""
+        self._pending_probes.pop(ctx.request_id, None)
+
+    def awaits_presence(self, ctx: TextContext) -> bool:
+        """Returns whether the request's pricing probe is still out."""
+        probe = self._pending_probes.get(ctx.request_id)
+        return probe is not None and not probe.is_answered()
 
     def _abandon_pending_lookup(self, state: RequestCacheState) -> None:
         """Hands back a lookup the request started and will never load from."""
@@ -723,6 +847,8 @@ class JengaBlockManager:
         to load, or one the device hit it was asked past shrank under, is
         asked again rather than consumed, so it reads ``True``, until the
         request's re-asks after a shrink run out and the rest is computed.
+        A first chunk whose pricing probe answered a miss past its device
+        hit reads ``False``, since that alloc leases nothing.
         """
         state = self._state_of(ctx)
         if (
@@ -741,7 +867,16 @@ class JengaBlockManager:
         )
         pending = state.pending_lookup
         if pending is None or state.lookup_is_stale():
-            return num_device_blocks < len(desired_hashes)
+            remaining = desired_hashes[num_device_blocks:]
+            if not remaining or pending is not None:
+                return bool(remaining)
+            # A pricing probe that answered this chunk a miss leaves nothing
+            # to lease, so the deferred alloc starts no lookup.
+            first = state.committed_idx // self._block_size + num_device_blocks
+            return (
+                self._probed_run(ctx, self._replica_of(ctx), first, remaining)
+                != 0
+            )
         return (
             pending.is_answered()
             and not pending.missed
@@ -864,28 +999,27 @@ class JengaBlockManager:
     ) -> list[PrefixCacheHits]:
         """Counts the number of prefix cache hits for a request per replica.
 
-        Read-only. With cross-replica copies on, a block held by any replica
-        counts as a hit, without checking there is room to copy it in.
-
-        Both halves run the same reconcile the reuse path runs, the device
-        one over the block pools and the external one over the connector's
-        masks, so this cannot disagree with what a real admit would serve
-        on the leaves the masks cover. The external half is one ``probe``
-        over the whole chain, answered for every replica at once since the
-        connector's tiers are shared, and read from wherever each replica's
-        device hit ends. A probe may answer for one representative leaf, as
-        the dKV connector does against a server without presence, so only
-        the leaves it covers are reconciled, and the count can then exceed
-        what an admit serves when another leaf holds less. A connector with
-        no probe is asked with a ``lookup`` per replica instead, which is
-        advisory, and this never goes on to load. The dKV connector declines
-        the probe only for a tree without a full-attention leaf. Its one
-        caller, the prefix-aware DP prefill balancer, fails open.
+        With cross-replica copies on, a block held by any replica counts as
+        a hit, without checking there is room to copy it in. The external
+        count comes from one connector probe over the whole chain. A
+        connector that can start its probe has it started on the first call,
+        and the request counts its device tier alone until the probe
+        answers (see :meth:`awaits_presence`). The probe is kept for the
+        request's first deferred allocation. A probe that covers only one
+        representative leaf can count more than an admit serves when
+        another leaf holds less. A connector with no probe is asked with an
+        advisory ``lookup`` per replica instead.
 
         Returns:
             A list of PrefixCacheHits for each replica.
         """
-        desired_hashes = self._compute_block_hashes(ctx, [])
+        connector = self._connector
+        probe = self._pending_probes.get(ctx.request_id)
+        desired_hashes = (
+            probe.hashes
+            if probe is not None
+            else self._compute_block_hashes(ctx, [])
+        )
         device_hits = [
             self._find_longest_device_prefix_cache_hit(
                 desired_hashes, replica_idx, self._cross_replica_copy_enabled
@@ -893,25 +1027,25 @@ class JengaBlockManager:
             for replica_idx in range(self._num_replicas)
         ]
         probed = None
-        if self._connector is not None and any(
+        if connector is not None and any(
             num_hit_blocks < len(desired_hashes)
             for num_hit_blocks in device_hits
         ):
-            # TODO(CLIN-2105): The probe still runs on the scheduler thread,
-            # a few ms per presence call against a healthy dKV but up to its
-            # RPC timeout against a slow one, and a request requeued under KV
-            # pressure is priced again on every pass. Move it behind
-            # start_presence once presence time shows up in batch creation.
-            probed = self._connector.probe(
-                desired_hashes,
-                range(self._num_replicas),
-                hint=ctx.dkv_cache_hint,
-            )
+            if probe is None:
+                probe = self._start_presence_probe(ctx, desired_hashes)
+            if probe is not None:
+                probed = probe.answers()
+            else:
+                probed = connector.probe(
+                    desired_hashes,
+                    range(self._num_replicas),
+                    hint=ctx.dkv_cache_hint,
+                )
 
         hit_counts: list[PrefixCacheHits] = []
         for replica_idx, num_hit_blocks in enumerate(device_hits):
             remaining = desired_hashes[num_hit_blocks:]
-            if self._connector is None or not remaining:
+            if connector is None or not remaining:
                 num_external_blocks = 0
             elif probed is not None:
                 num_external_blocks = self._longest_connector_hit(
@@ -921,6 +1055,10 @@ class JengaBlockManager:
                     },
                     covered_only=True,
                 )
+            elif probe is not None:
+                # Out, or answered nothing: the external run is unknown and
+                # priced as none rather than asked for on this thread.
+                num_external_blocks = 0
             else:
                 num_external_blocks = (
                     self._find_longest_connector_prefix_cache_hit(
@@ -1074,6 +1212,76 @@ class JengaBlockManager:
             desired, replica_idx=replica_idx, hint=hint
         )
         return self._longest_connector_hit(resident)
+
+    def _start_presence_probe(
+        self, ctx: TextContext, hashes: list[bytes]
+    ) -> _PendingProbe | None:
+        """Starts the request's pricing probe over its whole chain.
+
+        ``None`` when the connector has no started probe, which leaves the
+        request to the blocking one.
+        """
+        assert self._connector is not None
+        if not self._async_presence:
+            return None
+        # Taken before the connector is asked, since the start waits for the
+        # connector lock and a miss must not be trusted for that wait too.
+        started_at = time.monotonic()
+        # TODO(CLIN-2105): A request requeued under KV pressure is released,
+        # which drops its probe, and priced again on the next pass, so it
+        # starts one presence call per pass for as long as it stays requeued.
+        # Keep the probe across the requeue if that rate shows up in dKV's
+        # presence RPCs.
+        handle = self._connector.start_probe(
+            hashes, range(self._num_replicas), hint=ctx.dkv_cache_hint
+        )
+        if handle is None:
+            return None
+        probe = _PendingProbe(self._connector, handle, hashes, started_at)
+        self._pending_probes[ctx.request_id] = probe
+        return probe
+
+    def _probed_run(
+        self,
+        ctx: TextContext,
+        replica_idx: int,
+        first: int,
+        remaining: Sequence[bytes],
+    ) -> int | None:
+        """Returns how deep a run the request's pricing probe reports.
+
+        Read from block ``first`` of the request's chain over ``remaining``,
+        the blocks its device hit leaves. ``None`` when there is no probe,
+        it has not answered, answered nothing, is too old to trust a miss
+        from, or was asked over another chain, in which case a lease
+        decides what the connector holds as it would have without a probe.
+        """
+        probe = self._pending_probes.get(ctx.request_id)
+        if (
+            not self._probed_miss_skip
+            or probe is None
+            or probe.age_s() >= _PROBED_MISS_AGE_S
+        ):
+            return None
+        answers = probe.answers()
+        if answers is None or replica_idx >= len(answers):
+            return None
+        last = first + len(remaining)
+        if probe.hashes[first:last] != list(remaining):
+            return None
+        covered = {
+            leaf_id: mask[first:last]
+            for leaf_id, mask in answers[replica_idx].items()
+            if leaf_id in self._cacheable_groups
+        }
+        # An answer covering no leaf says nothing, where reconciling it
+        # would read as a miss and spare a lease that may have found a run.
+        if not covered:
+            return None
+        return min(
+            self._longest_connector_hit(covered, covered_only=True),
+            len(remaining),
+        )
 
     def _longest_connector_hit(
         self,
@@ -1872,6 +2080,14 @@ class JengaBlockManager:
             )
             remaining = desired_hashes[num_device_blocks:]
             if not remaining:
+                return True
+            # The pricing probe is read once, here, and the lookup it does
+            # not spare supersedes it. A miss leaves nothing to lease, and
+            # the reuse serves the chunk from the device hit alone.
+            first = state.committed_idx // self._block_size + num_device_blocks
+            probed = self._probed_run(ctx, replica_idx, first, remaining)
+            self._pending_probes.pop(ctx.request_id, None)
+            if probed == 0:
                 return True
             pending = self._start_connector_lookup(
                 ctx, remaining, replica_idx, first_block=num_device_blocks

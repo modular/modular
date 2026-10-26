@@ -18,9 +18,8 @@ from max.algorithm.functional import elementwise
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
 from layout import TileTensor
-from layout import Coord, coord_to_index_list
-
-from std.utils import IndexList
+from layout import Coord
+from layout.coord import DynamicCoord
 
 
 @inline(.always)
@@ -100,41 +99,44 @@ def merge_ragged_tensors[
         var a_tensor_size = Int(a.dim[0]())
         var is_tensor_a = Int(idx[0]) < a_tensor_size
 
+        var src_row_idx = Int(idx[0])
         var batch_id: Int
-        var src_idx: IndexList[rank] = rebind[IndexList[rank]](
-            coord_to_index_list(idx)
-        )
         if is_tensor_a:
-            batch_id = get_batch_from_row_offsets(a_row_offsets, src_idx[0])
+            batch_id = get_batch_from_row_offsets(a_row_offsets, src_row_idx)
         else:
-            src_idx[0] = Int(idx[0]) - a_tensor_size
-            batch_id = get_batch_from_row_offsets(b_row_offsets, src_idx[0])
+            src_row_idx -= a_tensor_size
+            batch_id = get_batch_from_row_offsets(b_row_offsets, src_row_idx)
 
-        var dst_idx: IndexList[rank] = rebind[IndexList[rank]](
-            coord_to_index_list(idx)
-        )
-        var dst_row_idx: Int = src_idx[0]
+        var dst_row_idx: Int = src_row_idx
 
         if is_tensor_a:
             dst_row_idx += Int(b_row_offsets[batch_id])
         else:
             dst_row_idx += Int(a_row_offsets[batch_id + 1])
 
-        dst_idx[0] = dst_row_idx
+        # Both coordinates keep `idx`'s trailing elements and carry their own
+        # row: the source row to load from, and the row to store to.
+        var src_idx = DynamicCoord[.int, rank]()
+        var dst_idx = DynamicCoord[.int, rank]()
+        comptime for i in range(1, rank):
+            src_idx.replace_dynamic[i](Int(idx[i]))
+            dst_idx.replace_dynamic[i](Int(idx[i]))
+        src_idx.replace_dynamic[0](src_row_idx)
+        dst_idx.replace_dynamic[0](dst_row_idx)
 
         # The elementwise function takes care of handling the scenario where
         # tensors' last dimension is not multiple of simdwidth. It will call
         # this `merge_fn`function with width = 1 for the last few elements.
         var val: SIMD[dtype, width]
         if is_tensor_a:
-            val = a.load[width=width](Coord(src_idx))
+            val = a.load[width=width](src_idx)
         else:
-            val = b.load[width=width](Coord(src_idx))
+            val = b.load[width=width](src_idx)
 
-        c.store(Coord(dst_idx), val)
+        c.store(dst_idx, val)
 
         # Update the row offsets if this is the first element of the batch
-        var is_first_element = is_tensor_a and src_idx[0] == Int(
+        var is_first_element = is_tensor_a and src_row_idx == Int(
             a_row_offsets[batch_id]
         )
 

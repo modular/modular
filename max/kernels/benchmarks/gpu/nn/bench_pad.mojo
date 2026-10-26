@@ -24,15 +24,14 @@ from std.benchmark import (
 )
 from max.gpu.host import DeviceContext
 from internal_utils import get_defined_shape, int_list_to_tuple
-from layout import TileTensor, row_major
+from layout import Coord, TileTensor, row_major
 from nn.pad_gpu import pad_constant, get_padding_output_shape
-
-from std.utils.index import IndexList
 
 
 def bench_pad_gpu[
-    rank: Int, //, dtype: DType, shape: IndexList[rank], pad_size: Int
+    dtype: DType, shape: Coord, pad_size: Int
 ](ctx: DeviceContext, mut b: Bench) raises:
+    comptime rank = shape.rank
     # Create paddings with uniform pre/post padding on all dimensions.
     var paddings_stack = Array[Int, 2 * rank](uninitialized=True)
     var paddings = TileTensor(paddings_stack, row_major[2 * rank]())
@@ -41,8 +40,8 @@ def bench_pad_gpu[
         paddings[2 * i + 1] = Int(pad_size)
 
     var output_shape = get_padding_output_shape(shape, paddings)
-    var input_size = shape.flattened_length()
-    var output_size = output_shape.flattened_length()
+    var input_size = shape.product()
+    var output_size = output_shape.product()
 
     var in_device = ctx.enqueue_create_buffer[dtype](input_size)
     var out_device = ctx.enqueue_create_buffer[dtype](output_size)
@@ -84,9 +83,11 @@ def bench_pad_gpu[
 
 def main() raises:
     comptime dtype = get_defined_dtype["dtype", .float32]()
-    comptime shape = int_list_to_tuple[
-        get_defined_shape["shape", "256x256"]()
-    ]()
+    # `int_list_to_tuple` still hands back an `IndexList`; the pad entry
+    # points take the shape as a `Coord`.
+    comptime shape = Coord(
+        int_list_to_tuple[get_defined_shape["shape", "256x256"]()]()
+    )
     comptime pad_size = get_defined_int["pad_size", 3]()
 
     var m = Bench(BenchConfig(num_repetitions=1))

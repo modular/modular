@@ -121,7 +121,7 @@ def _probe_layer_norm[
     ctx.enqueue_copy(gamma_d, gamma_h)
     ctx.enqueue_copy(beta_d, beta_h)
 
-    var shape = Index(rows, cols)
+    var shape = (rows, cols)
     var in_buf = TileTensor(in_d, row_major(Coord(shape)))
     var out_buf = TileTensor(out_d, row_major(Coord(shape)))
     var gamma = TileTensor(gamma_d, row_major(cols))
@@ -195,7 +195,7 @@ def _probe_rms_norm[
     ctx.enqueue_copy(in_d, in_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
 
-    var shape = Index(rows, cols)
+    var shape = (rows, cols)
     var in_buf = TileTensor(in_d, row_major(Coord(shape)))
     var out_buf = TileTensor(out_d, row_major(Coord(shape)))
     var gamma = TileTensor(gamma_d, row_major(cols))
@@ -258,7 +258,7 @@ def _probe_softmax[
     var out_d = ctx.enqueue_create_buffer[dtype](rows * cols)
     ctx.enqueue_copy(in_d, in_h)
 
-    var shape = Index(rows, cols)
+    var shape = (rows, cols)
     var in_buf = TileTensor(in_d, row_major(Coord(shape)))
     var out_buf = TileTensor(out_d, row_major(Coord(shape)))
 

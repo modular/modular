@@ -42,6 +42,7 @@ from layout import (
     row_major,
 )
 
+from std.utils.coord import Coord, DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 
@@ -457,7 +458,7 @@ def dispatch_amd_matmul_by_block_shape[
     transpose_b: Bool,
     N: Int,
     K: Int,
-    default_block_tile_shape: IndexList[3],
+    default_block_tile_shape: Coord[Int, Int, Int],
     use_heuristic: Bool = False,
     *,
     LauncherFnType: ImplicitlyCopyable
@@ -517,8 +518,8 @@ def dispatch_amd_matmul_by_block_shape[
         comptime default_config = MatmulConfig[
             a_type, b_type, c_type, transpose_b
         ](
-            block_tile_shape=Index(block_m, block_n, block_k),
-            warp_tile_shape=Index(
+            block_tile_shape=(block_m, block_n, block_k),
+            warp_tile_shape=(
                 block_m // 2,
                 block_n // 2,
                 block_k,
@@ -553,7 +554,7 @@ def grouped_matmul_amd[
     //,
     *,
     transpose_b: Bool = True,
-    block_tile_shape: IndexList[3] = Index(128, 128, 64),
+    block_tile_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](128, 128, 64),
     has_epilogue_fn: Bool = False,
     has_compute_fn: Bool = False,
 ](
@@ -859,7 +860,11 @@ def grouped_matmul[
             var num_active_experts = stats[1]
 
             grouped_matmul_sm90[
-                wgmma_shape=wgmma_shape,
+                wgmma_shape=(
+                    Int(wgmma_shape[0]),
+                    Int(wgmma_shape[1]),
+                    Int(wgmma_shape[2]),
+                ),
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
             ](
@@ -903,11 +908,19 @@ def grouped_matmul[
                 block_tile_shape[1] * cta_group,
                 MMA_K,
             )
-            comptime cluster_shape = Index(cta_group, 1, 1)
+            comptime cluster_shape = (cta_group, 1, 1)
             comptime transpose_b = True
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                block_tile_shape=block_tile_shape,
-                mma_shape=(umma_shape[0], umma_shape[1], umma_shape[2]),
+                block_tile_shape=(
+                    Int(block_tile_shape[0]),
+                    Int(block_tile_shape[1]),
+                    Int(block_tile_shape[2]),
+                ),
+                mma_shape=(
+                    Int(umma_shape[0]),
+                    Int(umma_shape[1]),
+                    Int(umma_shape[2]),
+                ),
                 cluster_shape=cluster_shape,
             )
 

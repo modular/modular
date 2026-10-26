@@ -569,6 +569,7 @@ modular_cc_library(
     }),
     visibility = [
         "//Kernels/tools/max_license/gpu-query:__pkg__",
+        "//MLRT/unittests/Driver:__pkg__",
         "//Mojo:__subpackages__",
     ],
     deps = [

@@ -141,7 +141,7 @@ def run_test_blockwise_fp8[
     )
     comptime kv_dim2 = 1  # MLA: is_mla=True => dim[1]=1
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         kv_dim2,
         NUM_LAYERS,
@@ -176,7 +176,7 @@ def run_test_blockwise_fp8[
     #          per-token scales
     # -----------------------------------------------------------------------
     # Scales 6D shape: [total_pages, kv_dim2, NUM_LAYERS, PAGE_SIZE, num_heads, head_dim_gran]
-    var scales_shape = IndexList[6](
+    var scales_shape = (
         total_pages,
         kv_dim2,
         NUM_LAYERS,
@@ -652,7 +652,7 @@ def run_bench_blockwise_fp8[
     )
     comptime kv_dim2 = 1
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         kv_dim2,
         NUM_LAYERS,
@@ -680,7 +680,7 @@ def run_bench_blockwise_fp8[
         blocks_host[i] = blocks_bf16[i].cast[kv_type]()
 
     # Scales tensor
-    var scales_shape = IndexList[6](
+    var scales_shape = (
         total_pages,
         kv_dim2,
         NUM_LAYERS,

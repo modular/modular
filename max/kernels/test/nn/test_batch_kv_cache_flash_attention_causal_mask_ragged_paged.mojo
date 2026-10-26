@@ -29,6 +29,7 @@ from std.testing import assert_almost_equal, assert_equal, assert_true
 from std.sys import size_of
 
 from std.utils import IndexList
+from std.utils.index import Index
 
 comptime kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
 comptime replit_num_q_heads = 24
@@ -113,7 +114,7 @@ def execute_ragged_flash_attention[
     )
 
     # initialize our KVCache
-    var block_shape = IndexList[6](
+    var block_shape = Index(
         num_continuous_blocks,
         2,
         num_layers,

@@ -55,7 +55,6 @@ from layout.tile_layout import (
 )
 from layout.swizzle import Swizzle, make_swizzle as _make_swizzle
 from layout.tma_async import TMATensorTile
-from std.utils.index import IndexList
 from linalg.utils import (
     ElementwiseComputeFn,
     ElementwiseEpilogueFn,
@@ -1606,12 +1605,6 @@ struct TMEMToSMemWriter[
                 transpose_c=Self.transpose_c,
                 c_swizzle=Self.c_swizzle,
             ](lower_casted, c_smem_warp_tile_lower)
-
-
-# =============================================================================
-# Imports for IndexList
-# =============================================================================
-from std.utils.index import IndexList
 
 
 # =============================================================================

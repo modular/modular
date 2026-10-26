@@ -15,9 +15,9 @@
 from std.math import ceil, ceildiv
 from std.sys.info import align_of, size_of
 
-from layout import Coord, TileTensor, row_major
+from layout import Coord, CoordLike, TileTensor, row_major
 from std.memory import bitcast, unsafe_memcpy
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
 
 
 @inline(.always)
@@ -273,20 +273,20 @@ struct Q4sym[
     # TODO: support axis which not divisible by group_size
     @staticmethod
     def quantize_and_write_to_tensor[
-        input_rank: Int
+        *input_shape_types: CoordLike
     ](
         input_tt: TileTensor[
             mut=False, Self.float_dtype, address_space=.GENERIC, ...
         ],
         output_tt: TileTensor[mut=True, .uint8, address_space=.GENERIC, ...],
-        input_shape: IndexList[input_rank],
+        input_shape: Coord[*input_shape_types],
     ):
         """
         Encodes the floating point numbers in `input_tt` along the
         inner-most dimension and writes the result to output_tt.
 
         Parameters:
-            input_rank: The rank of the input tensor.
+            input_shape_types: The element types of the `input_shape` Coord.
 
         Args:
             input_tt: The input tensor we are encoding.
@@ -297,9 +297,10 @@ struct Q4sym[
                     ceil(`d` / group_size) * size_of(self).
             input_shape: The shape of the input tensor.
         """
+        comptime input_rank = input_shape.rank
         comptime assert (
             input_rank == input_tt.rank
-        ), "input_rank must match tensor rank"
+        ), "input_shape must match tensor rank"
         comptime assert (
             input_tt.rank == output_tt.rank
         ), "input tensor and output tensor must have the same rank"
@@ -308,7 +309,7 @@ struct Q4sym[
         # Read and quantize `input_tt` to blocked format, dump the raw
         # struct/block into `output_tt`
         assert (
-            input_shape[input_tt.rank - 1] % Self.group_size == 0
+            Int(input_shape[input_tt.rank - 1]) % Self.group_size == 0
         ), "Only support fully divisible dimensions right now."
 
         var blob_output_ptr = output_tt.ptr
@@ -352,29 +353,30 @@ struct Q4sym[
 
     @staticmethod
     def dequantize_and_write_to_tensor[
-        output_rank: Int
+        *output_shape_types: CoordLike
     ](
         input_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
         output_tt: TileTensor[
             mut=True, Self.float_dtype, address_space=.GENERIC, ...
         ],
-        output_shape: IndexList[output_rank],
+        output_shape: Coord[*output_shape_types],
     ):
         """
         Dequantizes the block-quantized values in `input_tt` along the
         inner-most dimension and writes the decoded result to `output_tt`.
 
         Parameters:
-            output_rank: The rank of the output tensor.
+            output_shape_types: The element types of the `output_shape` Coord.
 
         Args:
             input_tt: The input tensor we are decoding.
             output_tt: The output tensor containing the decoded input.
             output_shape: The shape of the output tensor.
         """
+        comptime output_rank = output_shape.rank
         comptime assert (
             output_rank == output_tt.rank
-        ), "output_rank must match tensor rank"
+        ), "output_shape must match tensor rank"
         comptime assert (
             input_tt.rank == output_tt.rank
         ), "input tensor and output tensor must have the same rank"
@@ -570,16 +572,16 @@ struct block_Q6_K:
 
 
 def q6_k_dequantize_impl[
-    output_rank: Int
+    *output_shape_types: CoordLike
 ](
     input_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
     output_tt: TileTensor[mut=True, .float32, address_space=.GENERIC, ...],
-    output_shape: IndexList[output_rank],
+    output_shape: Coord[*output_shape_types],
 ):
     """Dequantizes a Q6_K encoded tensor into a float32 output tensor.
 
     Parameters:
-        output_rank: The rank of the output tensor.
+        output_shape_types: The element types of the `output_shape` Coord.
 
     Args:
         input_tt: The input tensor containing Q6_K encoded data.
@@ -590,7 +592,10 @@ def q6_k_dequantize_impl[
     comptime block_nelems = block_QK_K.quantized_k
     comptime block_nbytes = size_of[block_Q6_K]()
 
-    var num_blocks = (output_shape[0] * output_shape[1]) // block_nelems
+    comptime assert output_shape.rank == 2, "output_shape must be rank 2"
+    var num_blocks = (
+        Int(output_shape[0]) * Int(output_shape[1])
+    ) // block_nelems
     # Block layout: low 4 bits, then high 2 bits, then scales and the base.
     comptime qh_offset = block_QK_K.quantized_k // 2
     var input_q6_k_ptr = input_tt.ptr.unsafe_bitcast[block_Q6_K]()

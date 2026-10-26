@@ -471,3 +471,53 @@ def test_save_result_json_writes_labels_in_base_layout(
     assert data["client_args"]["model"] == "myorg/model"
     assert data["client_args"]["request_rate"] == "2.5"
     assert data["client_args"]["max_concurrency"] == 4
+
+
+def test_save_result_json_writes_non_finite_values_as_null(
+    tmp_path: Path,
+) -> None:
+    """A zero-duration run's NaN metrics serialize as null, not bare NaN."""
+    config = ServingBenchmarkConfig(model="myorg/model")
+    result = BenchmarkResult(
+        task_type="text",
+        max_concurrency=1,
+        text_data=TextGenAggregates(
+            duration=0.0,
+            completed=0,
+            failures=1,
+            request_throughput=0.0,
+            total_input=0,
+            total_output=0,
+            nonempty_response_chunks=0,
+            max_input=0,
+            max_output=0,
+            max_total=0,
+            global_cached_token_rate=float("nan"),
+            ttfts=[float("nan"), 12.5],
+        ),
+    )
+    path = tmp_path / "result.json"
+
+    save_result_json(
+        str(path),
+        BenchmarkRunResultLabels.from_config(
+            config,
+            benchmark_task="text-generation",
+            model_id="myorg/model",
+            tokenizer_id="myorg/model",
+        ),
+        result,
+        request_rate=float("inf"),
+        record_max_concurrency=None,
+    )
+
+    text = path.read_text()
+    assert "NaN" not in text
+
+    def reject(token: str) -> None:
+        raise ValueError(f"non-standard JSON constant {token}")
+
+    data = json.loads(text, parse_constant=reject)
+    assert data["aggregate_tokens_per_minute"] is None
+    assert data["global_cached_token_rate"] is None
+    assert data["ttfts"] == [None, 12.5]

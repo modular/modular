@@ -20,6 +20,7 @@ from max.gpu.host import DeviceContext
 from std.memory import dealloc
 from std.memory.alloc import Layout as AllocLayout
 from layout import Coord, CoordLike, Idx, TileTensor, row_major
+from std.utils.coord import Coord, DynamicCoord
 from std.utils.index import IndexList
 from internal_utils import assert_almost_equal, assert_with_measure
 from std.random import rand
@@ -44,9 +45,9 @@ def test_matmul_sm90[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    cluster_shape: IndexList[3],
-    block_tile_shape: IndexList[3],
-    wgmma_shape: IndexList[3],
+    cluster_shape: Coord[Int, Int, Int],
+    block_tile_shape: Coord[Int, Int, Int],
+    wgmma_shape: Coord[Int, Int, Int],
     num_consumer: Int = 1,
     num_pipeline_stages: Int = 4,
     transpose_b: Bool = True,

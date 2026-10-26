@@ -50,9 +50,9 @@ def test_partial_n_tile_compute_epilogue[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    block_tile_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
     mma_shape: DynamicCoord[.int, 3],
-    cluster_shape: StaticTuple[Int32, 3],
+    cluster_shape: Coord[Int, Int, Int],
     cta_group: Int,
     transpose_b: Bool = True,
     swapAB: Bool = False,
@@ -128,8 +128,10 @@ def test_partial_n_tile_compute_epilogue[
     ctx.enqueue_copy(c_device, c_host_ptr)
 
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        cluster_shape=Index(
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        cluster_shape=(
+            Int(cluster_shape[0]),
+            Int(cluster_shape[1]),
+            Int(cluster_shape[2]),
         ),
         mma_shape=mma_shape,
         cta_group=cta_group,
@@ -205,7 +207,7 @@ def main() raises:
             dtype,
             block_tile_shape_1sm,
             mma_shape_1sm,
-            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+            cluster_shape=(2, 1, 1),
             cta_group=1,
             swapAB=False,
         ](ctx, Int(64), Idx[128], Idx[128])
@@ -217,7 +219,7 @@ def main() raises:
             dtype,
             block_tile_shape_1sm,
             mma_shape_1sm,
-            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+            cluster_shape=(2, 1, 1),
             cta_group=1,
             swapAB=True,
         ](ctx, Int(64), Idx[128], Idx[128])

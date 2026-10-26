@@ -243,8 +243,8 @@ def main() raises:
             Layout.row_major(1, 128, 128, 128),
             Layout.row_major(3, 3, 128, 256),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
         ](ctx, "[1,128,128,128] 3x3 s1 C128->256 (compute-bound)")
 
         # C128->128 @64^2.
@@ -252,8 +252,8 @@ def main() raises:
             Layout.row_major(1, 64, 64, 128),
             Layout.row_major(3, 3, 128, 128),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
         ](ctx, "[1,64,64,128] 3x3 s1 C128->128 (compute-bound)")
 
         # C64->64 @256^2: mid-K, high spatial. Crossover region.
@@ -261,8 +261,8 @@ def main() raises:
             Layout.row_major(1, 256, 256, 64),
             Layout.row_major(3, 3, 64, 64),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
         ](ctx, "[1,256,256,64] 3x3 s1 C64->64 (crossover)")
 
         # ---- Memory-bound regime (the verdict-bar shape) ----
@@ -273,8 +273,8 @@ def main() raises:
             Layout.row_major(1, 512, 512, 32),
             Layout.row_major(3, 3, 32, 32),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
         ](ctx, "[1,512,512,32] 3x3 s1 C32->32 @512^2 (MEM-BOUND verdict bar)")
 
         # ---- FLUX.2-VAE decoder shapes (production) ----
@@ -284,8 +284,8 @@ def main() raises:
             Layout.row_major(1, 256, 256, 128),
             Layout.row_major(3, 3, 128, 128),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
         ](ctx, "[1,256,256,128] 3x3 s1 C128->128 (FLUX-VAE)")
 
         # 256->128 at 256^2 (channel reduction stage).
@@ -293,8 +293,8 @@ def main() raises:
             Layout.row_major(1, 256, 256, 256),
             Layout.row_major(3, 3, 256, 128),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
         ](ctx, "[1,256,256,256] 3x3 s1 C256->128 (FLUX-VAE)")
 
         # 128->64 at 512^2 (late decoder, low-C high-res).
@@ -302,8 +302,8 @@ def main() raises:
             Layout.row_major(1, 512, 512, 128),
             Layout.row_major(3, 3, 128, 64),
             DType.bfloat16,
-            IndexList[2](1, 1),
-            IndexList[2](1, 1),
+            (1, 1),
+            (1, 1),
         ](ctx, "[1,512,512,128] 3x3 s1 C128->64 (FLUX-VAE late)")
 
         print("DONE")

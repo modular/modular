@@ -1007,14 +1007,16 @@ struct RawDriver(Movable):
                 message=String(t"failed to unload function: {err.message}"),
             )
 
-    def execute_function(
+    def execute_function[
+        args_origin: ImmOrigin, //
+    ](
         self,
         queue: QueueHandle,
         func: FunctionHandle,
         grid: Tuple[UInt32, UInt32, UInt32],
         block: Tuple[UInt32, UInt32, UInt32],
-        args: Pointer[mut=True, OpaquePointer[MutUntrackedOrigin], _],
-        arg_sizes: Pointer[mut=True, UInt64, _],
+        args: Pointer[mut=True, OpaquePointer[args_origin], _],
+        arg_sizes: ImmPointer[UInt64, _],
         num_args: UInt32,
         shared_mem_bytes: UInt32 = 0,
         attributes: OptionalReg[OpaquePointer[MutUntrackedOrigin]] = None,
@@ -1038,8 +1040,15 @@ struct RawDriver(Movable):
             queue,
             func,
             Pointer(to=config),
-            args,
-            arg_sizes,
+            # TODO(MSTDL-1904): Do backends really need these to be mutable? I
+            #   hope none are mutating kernel arguments. For each backend, none
+            #   specifically say they mutate these, and the API docs frequently
+            #   imply they simply copy these values, but the C function
+            #   signatures also don't specifically *promise* they're `const`.
+            args.unsafe_mut_cast[True]().unsafe_bitcast[
+                OpaquePointer[MutUntrackedOrigin]
+            ](),
+            arg_sizes.unsafe_mut_cast[True](),
             num_args,
         )
         if status != STATUS_SUCCESS:

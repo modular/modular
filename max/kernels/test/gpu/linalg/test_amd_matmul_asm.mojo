@@ -191,9 +191,9 @@ def compile_pingpong_kernel_to_asm[
     comptime c_tt_layout = RowMajorLayout[ComptimeInt[M], ComptimeInt[N]]
 
     comptime pingpong_config = KernelConfig(
-        block_shape=Index(256, 256, block_k),
-        warp_shape=Index(128, 64, block_k),
-        mma_shape=Index(16, 16, mma_k),
+        block_shape=(256, 256, block_k),
+        warp_shape=(128, 64, block_k),
+        mma_shape=(Int(16), Int(16), Int(mma_k)),
     )
 
     comptime kernel = AMDPingPongMatmul[

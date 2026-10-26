@@ -85,6 +85,7 @@ from layout.tma_async import (
     create_tensor_tile,
 )
 
+from std.utils.coord import Coord, DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -188,8 +189,8 @@ def load_AB[
     num_pipeline_stages: Int,
     //,
     *,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     cta_group: Int = 1,
     a_plane_splits: IndexList[2] = Index(0, 0),
 ](
@@ -600,10 +601,10 @@ def consumer_main_loop[
     pipeline_stages: Int,
     //,
     *,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     cta_group: Int = 1,
-    cluster_shape: IndexList[3] = Index(1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
 ](
     tmem_addr: UInt32,
     a_smem_tiles: SMemTileArray2D[
@@ -825,8 +826,8 @@ def multi_stage_store_C[
     *,
     c_smem_layout: Layout,
     accum_type: DType,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     stage_stride_cols: Int,
     c_static_N: Int,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -1331,8 +1332,8 @@ def zero_output_epilogue[
     /,
     *,
     c_smem_layout: Layout,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     c_static_N: Int,
     c_swizzle: TensorMapSwizzle,
     cta_group: Int,
@@ -1420,7 +1421,13 @@ def zero_output_epilogue[
 # splitting. Thus, we simply take the `work_tile_coord` without scaling it
 # in the callee; the scheduler returns element coordinates instead of tile
 # coordinates.
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
@@ -1436,9 +1443,9 @@ def blackwell_tma_umma_warp_specialized_kernel[
     b_desc_shape: Coord,
     c_tile_shape: Coord,
     c_desc_shape: Coord,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
-    cluster_shape: StaticTuple[Int32, 3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
+    cluster_shape: Coord[Int, Int, Int],
     num_pipeline_stages: Int,
     num_accum_pipeline_stages: Int,
     num_output_stages: Int = 2,
@@ -1700,7 +1707,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
             tma_mbar[i].init()
             # we need to have 5 arrivals, 2 M, 4 N, top left M/N is shared
             mma_mbar[i].init(
-                cluster_shape[0] // Int32(cta_group) + cluster_shape[1] - 1
+                Int32(cluster_shape[0] // cta_group + cluster_shape[1] - 1)
             )
 
         comptime for i in range(num_accum_pipeline_stages):
@@ -1730,8 +1737,10 @@ def blackwell_tma_umma_warp_specialized_kernel[
         mma_shape,
         accum_type=accum_type,
         cta_group=cta_group,
-        cluster_shape=Index(
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        cluster_shape=(
+            Int(cluster_shape[0]),
+            Int(cluster_shape[1]),
+            Int(cluster_shape[2]),
         ),
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
@@ -1748,10 +1757,12 @@ def blackwell_tma_umma_warp_specialized_kernel[
     )
     var scheduler = TileScheduler[
         static_MN=expert_m,
-        cluster=Index(cluster_shape[0], cluster_shape[1], cluster_shape[2]),
+        cluster=(cluster_shape[0], cluster_shape[1], cluster_shape[2]),
         cta_group=cta_group,
-        tile_shape=Index(
-            block_tile_shape[0], block_tile_shape[1], block_tile_shape[2]
+        tile_shape=(
+            block_tile_shape[0],
+            block_tile_shape[1],
+            block_tile_shape[2],
         ),
         swapAB=transpose_c,
     ](num_active_experts, b_offsets_tensor)
@@ -1889,8 +1900,10 @@ def blackwell_tma_umma_warp_specialized_kernel[
                         block_tile_shape=block_tile_shape,
                         mma_shape=mma_shape,
                         cta_group=cta_group,
-                        cluster_shape=Index(
-                            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+                        cluster_shape=(
+                            Int(cluster_shape[0]),
+                            Int(cluster_shape[1]),
+                            Int(cluster_shape[2]),
                         ),
                     ](
                         tmem_offset,
@@ -2385,11 +2398,7 @@ def _grouped_matmul_sm100_persistent[
         config.block_tile_shape,
         (config.mma_shape[0], config.mma_shape[1], config.mma_shape[2]),
         transpose_b=transpose_b,
-        cluster_shape=StaticTuple[Int32, 3](
-            Int32(cluster_shape[0]),
-            Int32(cluster_shape[1]),
-            Int32(cluster_shape[2]),
-        ),
+        cluster_shape=cluster_shape,
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,
         c_swizzle=c_swizzle,

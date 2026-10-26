@@ -57,7 +57,6 @@ from ....utils import (
     no_compute_fn,
     no_epilogue_fn,
 )
-from std.utils.index import IndexList
 from std.utils.coord import Coord, DynamicCoord
 from std.sys import align_of, size_of
 from layout.tile_io import copy_local_to_dram

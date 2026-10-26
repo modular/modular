@@ -110,7 +110,7 @@ def execute_ragged_flash_attention[
     )
 
     # KV block shapes
-    var kv_block_continuous_shape = IndexList[6](
+    var kv_block_continuous_shape = (
         num_continuous_blocks,
         2,
         num_layers,
@@ -118,7 +118,7 @@ def execute_ragged_flash_attention[
         kv_params.num_heads,
         kv_params.head_size,
     )
-    var kv_block_paged_shape = IndexList[6](
+    var kv_block_paged_shape = (
         num_paged_blocks,
         2,
         num_layers,

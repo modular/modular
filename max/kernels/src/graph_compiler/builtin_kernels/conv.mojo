@@ -304,13 +304,9 @@ struct PadConstant:
         elif is_gpu[target]():
             pad_constant_gpu(
                 output_tile.ptr,
-                rebind[IndexList[rank]](
-                    coord_to_index_list(output_tile.layout.shape_coord())
-                ),
+                output_tile.layout.shape_coord(),
                 input_tile.ptr,
-                rebind[IndexList[rank]](
-                    coord_to_index_list(input_tile.layout.shape_coord())
-                ),
+                input_tile.layout.shape_coord(),
                 paddings_ptr,
                 rebind[Scalar[out_dtype]](constant),
                 ctx,
@@ -336,9 +332,11 @@ def pad_constant_shape[
         constant_dtype == type_of(input).dtype
     ), "constant dtype must match input dtype"
     return rebind[IndexList[type_of(input).rank]](
-        pad_shape(
-            input.to_tile_tensor(),
-            padding.to_tile_tensor(),
+        coord_to_index_list(
+            pad_shape(
+                input.to_tile_tensor(),
+                padding.to_tile_tensor(),
+            )
         )
     )
 
@@ -374,13 +372,9 @@ struct PadRepeat:
         elif is_gpu[target]():
             pad_repeat_gpu(
                 output_tile.ptr,
-                rebind[IndexList[rank]](
-                    coord_to_index_list(output_tile.layout.shape_coord())
-                ),
+                output_tile.layout.shape_coord(),
                 input_tile.ptr,
-                rebind[IndexList[rank]](
-                    coord_to_index_list(input_tile.layout.shape_coord())
-                ),
+                input_tile.layout.shape_coord(),
                 paddings_ptr,
                 ctx,
             )
@@ -395,9 +389,11 @@ def pad_repeat_shape(
     """Computes the output shape for the `mo.pad.repeat` graph op."""
     comptime assert type_of(padding).rank == 1, "padding must be rank 1"
     return rebind[IndexList[type_of(input).rank]](
-        pad_shape(
-            input.to_tile_tensor(),
-            padding.to_tile_tensor(),
+        coord_to_index_list(
+            pad_shape(
+                input.to_tile_tensor(),
+                padding.to_tile_tensor(),
+            )
         )
     )
 
@@ -433,13 +429,9 @@ struct PadReflect:
         elif is_gpu[target]():
             pad_reflect_gpu(
                 output_tile.ptr,
-                rebind[IndexList[rank]](
-                    coord_to_index_list(output_tile.layout.shape_coord())
-                ),
+                output_tile.layout.shape_coord(),
                 input_tile.ptr,
-                rebind[IndexList[rank]](
-                    coord_to_index_list(input_tile.layout.shape_coord())
-                ),
+                input_tile.layout.shape_coord(),
                 paddings_ptr,
                 ctx,
             )
@@ -454,9 +446,11 @@ def pad_reflect_shape(
     """Computes the output shape for the `mo.pad.reflect` graph op."""
     comptime assert type_of(padding).rank == 1, "padding must be rank 1"
     return rebind[IndexList[type_of(input).rank]](
-        pad_shape(
-            input.to_tile_tensor(),
-            padding.to_tile_tensor(),
+        coord_to_index_list(
+            pad_shape(
+                input.to_tile_tensor(),
+                padding.to_tile_tensor(),
+            )
         )
     )
 

@@ -311,7 +311,7 @@ struct Range:
             get_kernel_simd_width[dtype, target](),
             target=target,
             _trace_description=_trace_name,
-        ](body, Coord(output.shape()).flatten(), ctx)
+        ](body, output.shape().flatten(), ctx)
 
 
 @extensibility.register_shape_function("mo.range")
@@ -335,7 +335,7 @@ def range_shape[
     Returns:
         The output shape `[num_elements]` for the range tensor.
     """
-    return arange_shape(start, stop, step)
+    return IndexList[1](arange_shape(start, stop, step))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -379,7 +379,7 @@ struct Copy:
         elementwise[
             get_kernel_simd_width[dtype, "cpu"](),
             _trace_description="mogg.for_each",
-        ](body, Coord(output.shape()).flatten(), ctx)
+        ](body, output.shape().flatten(), ctx)
 
 
 @extensibility.register("nan_check_count")
@@ -740,12 +740,14 @@ def non_maximum_suppression_shape(
     var iou_threshold_float = iou_threshold
     var score_threshold_float = score_threshold
 
-    return non_max_suppression_shape_func(
-        boxes.to_tile_tensor(),
-        scores.to_tile_tensor().bitcast[type_of(boxes).dtype](),
-        max_output_boxes_int,
-        iou_threshold_float,
-        score_threshold_float,
+    return coord_to_index_list(
+        non_max_suppression_shape_func(
+            boxes.to_tile_tensor(),
+            scores.to_tile_tensor().bitcast[type_of(boxes).dtype](),
+            max_output_boxes_int,
+            iou_threshold_float,
+            score_threshold_float,
+        )
     )
 
 
@@ -949,7 +951,7 @@ struct RandomNormal:
             )
 
         random_normal[target=target](
-            output.shape(),
+            output.shape_coord(),
             mean,
             variance,
             seed_value.unsafe_ptr[.uint64](),
@@ -1024,7 +1026,7 @@ struct RandomUniform:
             )
 
         random_uniform[target=target](
-            output.shape(),
+            output.shape_coord(),
             lower_bound,
             upper_bound,
             seed_value.unsafe_ptr[.uint64](),
@@ -1242,8 +1244,14 @@ struct Fold:
         # run time.
         var output_size_ptr = output_size.to_tile_tensor().ptr
         var kernel_size_ptr = kernel_size.to_tile_tensor().ptr
-        var output_size_tuple = Index(output_size_ptr[0], output_size_ptr[1])
-        var kernel_size_tuple = Index(kernel_size_ptr[0], kernel_size_ptr[1])
+        var output_size_tuple = (
+            Int(output_size_ptr[0]),
+            Int(output_size_ptr[1]),
+        )
+        var kernel_size_tuple = (
+            Int(kernel_size_ptr[0]),
+            Int(kernel_size_ptr[1]),
+        )
         var input_tensor = input.to_tile_tensor[dtype]()
         var output_tensor = output.to_tile_tensor()
 
@@ -1304,18 +1312,16 @@ def fold_kernel_shape[
     ), "kernel_size and output_size must have integral type"
     var output_size_tt = output_size.to_tile_tensor()
     var kernel_size_tt = kernel_size.to_tile_tensor()
-    var output_size_tuple = Index(
-        Int(output_size_tt[0]),
-        Int(output_size_tt[1]),
-    )
-    var kernel_size_tuple = Index(
-        Int(kernel_size_tt[0]),
-        Int(kernel_size_tt[1]),
-    )
-    return fold_shape(
-        rebind[IndexList[3]](coord_to_index_list(input.shape())),
-        output_size_tuple,
-        kernel_size_tuple,
+    var output_size_tuple = (Int(output_size_tt[0]), Int(output_size_tt[1]))
+    var kernel_size_tuple = (Int(kernel_size_tt[0]), Int(kernel_size_tt[1]))
+    return coord_to_index_list(
+        fold_shape(
+            rebind[DynamicCoord[.int64, 3]](
+                input.shape().make_dynamic[.int64]()
+            ),
+            output_size_tuple,
+            kernel_size_tuple,
+        )
     )
 
 
@@ -3470,7 +3476,7 @@ struct BundledAllReduceSum:
             alignment: Int,
         ](coords: Coord, val: SIMD[_dtype, _width]) {var output} -> None:
             output._lambda_store[width=_width, element_alignment=alignment](
-                rebind[IndexList[rank]](coord_to_index_list(coords)),
+                coords,
                 rebind[SIMD[dtype, _width]](val),
             )
 

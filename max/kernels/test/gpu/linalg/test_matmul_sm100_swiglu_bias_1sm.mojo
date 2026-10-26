@@ -225,12 +225,12 @@ def main() raises:
         # ============================================================
         comptime for bm in [64, 128]:
             comptime for bn in [16, 32, 64, 128]:
-                comptime mma_shape = Index(bm, bn, MMA_K)
+                comptime mma_shape = (bm, bn, MMA_K)
 
                 comptime config_1 = swiglu_matmul_config[
                     dtype, dtype, dtype, True
                 ](
-                    cluster_shape=Index(4, 4, 1),
+                    cluster_shape=(Int(4), Int(4), Int(1)),
                     mma_shape=mma_shape,
                     block_swizzle_size=8,
                     cta_group=1,
@@ -244,7 +244,7 @@ def main() raises:
                 comptime config_2 = swiglu_matmul_config[
                     dtype, dtype, dtype, True
                 ](
-                    cluster_shape=Index(4, 4, 1),
+                    cluster_shape=(Int(4), Int(4), Int(1)),
                     mma_shape=mma_shape,
                     block_swizzle_size=4,
                     cta_group=1,
@@ -258,7 +258,7 @@ def main() raises:
                 comptime config_3 = swiglu_matmul_config[
                     dtype, dtype, dtype, True
                 ](
-                    cluster_shape=Index(4, 4, 1),
+                    cluster_shape=(Int(4), Int(4), Int(1)),
                     mma_shape=mma_shape,
                     block_swizzle_size=0,
                     cta_group=1,
@@ -273,7 +273,7 @@ def main() raises:
                 comptime config_4 = swiglu_matmul_config[
                     dtype, dtype, dtype, True
                 ](
-                    cluster_shape=Index(8, 2, 1),
+                    cluster_shape=(Int(8), Int(2), Int(1)),
                     mma_shape=mma_shape,
                     block_swizzle_size=2,
                     cta_group=1,
@@ -287,7 +287,7 @@ def main() raises:
                 comptime config_5 = swiglu_matmul_config[
                     dtype, dtype, dtype, True
                 ](
-                    cluster_shape=Index(4, 4, 1),
+                    cluster_shape=(Int(4), Int(4), Int(1)),
                     mma_shape=mma_shape,
                     block_swizzle_size=1,
                     cta_group=1,
@@ -303,14 +303,14 @@ def main() raises:
         # ============================================================
         comptime for bm in [64, 128]:
             comptime for bn in range(8, 256, 8):
-                comptime mma_shape_1sm = Index(bm, bn, MMA_K)
+                comptime mma_shape_1sm = (bm, bn, MMA_K)
 
                 # SMEM-TMA, non-swap: needs bn % 16 == 0.
                 comptime if bn % 16 == 0:
                     comptime config_smem_ns = swiglu_matmul_config[
                         dtype, dtype, dtype, True
                     ](
-                        cluster_shape=Index(1, 1, 1),
+                        cluster_shape=(Int(1), Int(1), Int(1)),
                         mma_shape=mma_shape_1sm,
                         block_swizzle_size=0,
                         cta_group=1,
@@ -325,7 +325,7 @@ def main() raises:
                 comptime config_smem_sw = swiglu_matmul_config[
                     dtype, dtype, dtype, True
                 ](
-                    cluster_shape=Index(1, 1, 1),
+                    cluster_shape=(Int(1), Int(1), Int(1)),
                     mma_shape=mma_shape_1sm,
                     block_swizzle_size=0,
                     cta_group=1,
@@ -340,7 +340,7 @@ def main() raises:
                 comptime config_gmem_ns = FusedSwiGLUMatmulConfig[
                     dtype, dtype, dtype, True
                 ](
-                    cluster_shape=Index(1, 1, 1),
+                    cluster_shape=(Int(1), Int(1), Int(1)),
                     mma_shape=mma_shape_1sm,
                     block_swizzle_size=0,
                     cta_group=1,
@@ -356,7 +356,7 @@ def main() raises:
                 comptime config_gmem_sw = FusedSwiGLUMatmulConfig[
                     dtype, dtype, dtype, True
                 ](
-                    cluster_shape=Index(1, 1, 1),
+                    cluster_shape=(Int(1), Int(1), Int(1)),
                     mma_shape=mma_shape_1sm,
                     block_swizzle_size=0,
                     cta_group=1,

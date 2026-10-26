@@ -223,7 +223,9 @@ def test_matmul_sm100_blockwise_scaled_fp8[
     naive_blockwise_scaled_fp8_matmul[
         BLOCK_DIM=16,
         transpose_b=transpose_b,
-        scales_granularity_mnk=(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
+        scales_granularity_mnk=Coord[Int, Int, Int](
+            1, BLOCK_SCALE_K, BLOCK_SCALE_K
+        ),
     ](
         c_device_ref_nd,
         a_device_nd,
@@ -270,7 +272,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=(64, 64, 32),
+            umma_shape=(Int(64), Int(64), Int(32)),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
@@ -283,7 +285,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=(64, 64, 32),
+            umma_shape=(Int(64), Int(64), Int(32)),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
@@ -296,7 +298,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=(64, 64, 32),
+            umma_shape=(Int(64), Int(64), Int(32)),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
             value_epilogue=True,
@@ -311,7 +313,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=(64, 64, 32),
+            umma_shape=(Int(64), Int(64), Int(32)),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
             value_compute=True,
@@ -326,7 +328,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=(64, 64, 32),
+            umma_shape=(Int(64), Int(64), Int(32)),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
@@ -340,7 +342,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=(64, 128, 32),
+            umma_shape=(Int(64), Int(128), Int(32)),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
@@ -354,7 +356,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=(64, 64, 32),
+            umma_shape=(Int(64), Int(64), Int(32)),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
@@ -368,7 +370,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=(64, 16, 32),
+            umma_shape=(Int(64), Int(16), Int(32)),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
@@ -382,7 +384,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=(64, 8, 32),
+            umma_shape=(Int(64), Int(8), Int(32)),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
@@ -396,7 +398,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=(64, 256, 32),
+            umma_shape=(Int(64), Int(256), Int(32)),
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](

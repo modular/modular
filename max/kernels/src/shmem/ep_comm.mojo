@@ -114,7 +114,7 @@ from std.memory import unsafe_stack_allocation
 from std.memory.unsafe import bitcast
 from shmem import SHMEM_SIGNAL_SET, SHMEMScope, shmem_put_nbi, shmem_signal_op
 
-from std.utils.index import Index, IndexList, StaticTuple
+from std.utils.index import StaticTuple
 from std.utils.numerics import get_accum_type
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
@@ -126,8 +126,8 @@ from structured_kernels.trace_buf import (
 )
 
 comptime _ep_combine_store_sig = def[
-    dtype: DType, rank: Int, width: SIMDLength, *, alignment: Int = 1
-](IndexList[rank], SIMD[dtype, width]) -> None
+    dtype: DType, width: SIMDLength, *, alignment: Int = 1
+](Coord, SIMD[dtype, width]) -> None
 
 comptime EPCombineStoreFn = (
     ImplicitlyCopyable & RegisterPassable & _ep_combine_store_sig
@@ -6120,12 +6120,12 @@ struct EPCombineKernel[
                         + lane_id() * dst_simd_width
                     )
                     store_fn[alignment=store_align](
-                        Index(token_idx, topk_idx, elem_offset), recv_chunk
+                        Coord(token_idx, topk_idx, elem_offset), recv_chunk
                     )
 
             comptime if has_router_weights:
                 store_fn[alignment=store_align](
-                    Index(
+                    Coord(
                         token_idx,
                         chunk_idx_in_token * n_chunk_elems
                         + lane_id() * dst_simd_width,
@@ -6860,12 +6860,11 @@ def combine_kernel[
                 @inline(.always)
                 def add_shared_expert_output[
                     dtype: DType,
-                    rank: Int,
                     width: SIMDLength,
                     *,
                     alignment: Int = 1,
-                ](idx: IndexList[rank], combined_val: SIMD[dtype, width]) {var}:
-                    comptime assert rank == 2, "expects a reduced output"
+                ](coords: Coord, combined_val: SIMD[dtype, width]) {var}:
+                    comptime assert coords.rank == 2, "expects a reduced output"
                     var shared_expert_val = SIMD[dtype, width]()
 
                     comptime if combine_impl.skip_a2a:
@@ -6885,19 +6884,22 @@ def combine_kernel[
 
                         if (
                             Int(rank_start)
-                            <= idx[0]
+                            <= Int(coords[0])
                             < Int(rank_start + shared_expert_token_count)
                         ):
                             shared_expert_val = input_tokens.load[width=width](
-                                (idx[0] - Int(rank_start), idx[1])
+                                (
+                                    Int(coords[0]) - Int(rank_start),
+                                    Int(coords[1]),
+                                )
                             ).cast[dtype]()
                     else:
                         shared_expert_val = input_tokens.load[width=width](
-                            (idx[0], idx[1])
+                            (Int(coords[0]), Int(coords[1]))
                         ).cast[dtype]()
 
                     store_fn[alignment=alignment](
-                        idx, combined_val + shared_expert_val
+                        coords, combined_val + shared_expert_val
                     )
 
                 combine_impl.reduce_and_copy_to_output[

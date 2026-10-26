@@ -24,6 +24,7 @@ This file tests various code paths in nn/concat.mojo:
 
 from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
+from layout.coord import DynamicCoord
 from nn.concat import (
     _concat_gpu,
     _no_epilogue,
@@ -494,8 +495,8 @@ def test_fused_concat_gpu(ctx: DeviceContext) raises:
     comptime rank = 3
     comptime axis = 1
 
-    comptime input_shape_0 = IndexList[rank](2, 3, 4)
-    comptime input_shape_1 = IndexList[rank](2, 5, 4)
+    comptime input_shape_0 = Coord(2, 3, 4)
+    comptime input_shape_1 = Coord(2, 5, 4)
     comptime output_shape = IndexList[rank](2, 8, 4)
 
     var output_device_buffer = ctx.enqueue_create_buffer[dtype](
@@ -530,7 +531,7 @@ def test_fused_concat_gpu(ctx: DeviceContext) raises:
         output_dyn.store(coords, rebind[SIMD[dtype, width]](val + 10))
 
     fused_concat[dtype, rank, axis=axis, target="gpu"](
-        StaticTuple[IndexList[rank], 2](input_shape_0, input_shape_1),
+        StaticTuple[DynamicCoord[.int, rank], 2](input_shape_0, input_shape_1),
         output_dyn.layout,
         input_fn,
         output_fn,

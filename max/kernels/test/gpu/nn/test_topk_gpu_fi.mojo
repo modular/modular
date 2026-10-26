@@ -35,6 +35,7 @@ from std.random import random_float64, seed
 from std.testing import assert_almost_equal
 from std.utils import IndexList
 from std.utils.numerics import min_or_neg_inf
+from std.utils.index import Index
 
 comptime DEBUG_BENCH = False
 comptime PRINT_OUTPUT = False
@@ -311,7 +312,7 @@ def test_topk_topp_sampling[
         batch_size,
     )
 
-    var input_shape = IndexList[2](batch_size, N)
+    var input_shape = Index(batch_size, N)
     var input_runtime_layout = row_major(Coord(input_shape))
     var output_shape = IndexList[1](batch_size)
     var output_runtime_layout = row_major(batch_size)
@@ -436,7 +437,7 @@ def test_topk_topp_rng_offset_batch_invariant[
         batch_size,
     )
 
-    var input_shape = IndexList[2](batch_size, N)
+    var input_shape = Index(batch_size, N)
     var input_runtime_layout = row_major(Coord(input_shape))
     var output_runtime_layout = row_major(batch_size)
 
@@ -529,7 +530,7 @@ def test_topk_sampling[
     comptime assert sampling, "This test requires sampling=True"
 
     # Create layouts for input tensor [batch_size, N].
-    var input_shape = IndexList[2](batch_size, N)
+    var input_shape = Index(batch_size, N)
     var input_runtime_layout = row_major(Coord(input_shape))
 
     # Create layouts for output tensor [batch_size].
@@ -777,11 +778,11 @@ def test_case_batched[
     ), "topk_mask_logits only supports sampling=False"
 
     # Create layouts for input/masked_logits tensors [batch_size, N].
-    var input_shape = IndexList[2](batch_size, N)
+    var input_shape = Index(batch_size, N)
     var input_runtime_layout = row_major(Coord(input_shape))
 
     # Create layouts for topk output tensors [batch_size, K].
-    var topk_shape = IndexList[2](batch_size, K)
+    var topk_shape = Index(batch_size, K)
     var topk_runtime_layout = row_major(Coord(topk_shape))
 
     # Create device buffers.
@@ -1111,7 +1112,7 @@ def test_topk_topp_sampling_fi[
         T,
     )
 
-    var input_shape = IndexList[2](batch_size, N)
+    var input_shape = Index(batch_size, N)
     var input_layout = row_major(Coord(input_shape))
     var output_layout = row_major(batch_size)
     var mask_layout = row_major(Coord(input_shape))

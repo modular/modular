@@ -48,6 +48,7 @@ from std.testing import assert_equal
 
 from std.utils import IndexList
 from std.math import ceildiv
+from std.utils.index import Index
 
 
 @__llvm_arg_metadata(src_tma_tile, `nvvm.grid_constant`)
@@ -244,7 +245,7 @@ def test_continuous_kv_cache[
 
     # Initialize cache blocks
     var num_blocks = batch_size + 2
-    var dyn_shape = IndexList[6](
+    var dyn_shape = Index(
         num_blocks,
         2,  # key and value
         num_layers,
@@ -453,7 +454,7 @@ def test_paged_kv_cache[
     var num_blocks = batch_size * pages_per_seq + 10  # Extra blocks
 
     # Initialize paged cache blocks
-    var dyn_shape = IndexList[6](
+    var dyn_shape = Index(
         num_blocks,
         2,  # key and value
         num_layers,
@@ -483,7 +484,7 @@ def test_paged_kv_cache[
         random(kv_block_host_tensor)
 
     # Set up page lookup table
-    var paged_lut_shape = IndexList[2](batch_size, pages_per_seq)
+    var paged_lut_shape = Index(batch_size, pages_per_seq)
 
     var paged_lut_device = ctx.enqueue_create_buffer[.uint32](
         paged_lut_shape.flattened_length()

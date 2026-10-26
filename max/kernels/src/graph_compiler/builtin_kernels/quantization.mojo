@@ -144,8 +144,8 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
 
         # The scale output holds one value per input row, laid out
         # [1, rows]. View it as rank-1 and index it by row number.
-        var in_shape = input.shape()
-        var rows = in_shape.flattened_length() // in_shape[rank - 1]
+        var in_shape = input.shape_coord()
+        var rows = Int(in_shape.product()) // Int(in_shape[rank - 1])
         var scale_t = TileTensor(
             scales.to_tile_tensor[.int64]()._storage,
             row_major(rows),
@@ -171,7 +171,7 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
         ) {var scale_t, var in_shape}:
             var row = 0
             comptime for i in range(rank - 1):
-                row = row * in_shape[i] + Int(coords[i])
+                row = row * Int(in_shape[i]) + Int(coords[i])
             scale_t.store[width=1, alignment=1](Coord(row), val)
 
         # Static row width (when known) enables the register-cached row path.
@@ -200,7 +200,7 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
                 output_fn,
                 scale_fn,
                 input.shape_coord(),
-                Int(input.shape()[rank - 1]),
+                Int(input.shape_coord()[rank - 1]),
                 gamma.to_tile_tensor[.int64](),
                 epsilon.cast[input_dtype](),
                 weight_offset.cast[input_dtype](),
@@ -440,14 +440,11 @@ struct GGMLQ40Dequantize:
         comptime assert type_of(input).rank == 2
         var input_tt = input.to_tile_tensor[.uint8]()
         var output_tt = output.to_tile_tensor[.float32]()
-        # A trait argument's shape() is a Coord, so convert to the IndexList
-        # the dequantize helper takes.
+        # A trait argument's shape() is already a Coord.
         Q4sym[group_size=32].dequantize_and_write_to_tensor(
             input_tt,
             output_tt,
-            rebind[IndexList[2]](
-                coord_to_index_list(output_tt.layout.shape_coord())
-            ),
+            output_tt.layout.shape_coord(),
         )
 
 
@@ -649,14 +646,11 @@ struct GGMLQ6KDequantize:
         comptime assert type_of(input).rank == 2
         var input_tt = input.to_tile_tensor[.uint8]()
         var output_tt = output.to_tile_tensor[.float32]()
-        # A trait argument's shape() is a Coord, so convert to the IndexList
-        # the dequantize helper takes.
+        # A trait argument's shape() is already a Coord.
         q6_k_dequantize_impl(
             input_tt,
             output_tt,
-            rebind[IndexList[2]](
-                coord_to_index_list(output_tt.layout.shape_coord())
-            ),
+            output_tt.layout.shape_coord(),
         )
 
 

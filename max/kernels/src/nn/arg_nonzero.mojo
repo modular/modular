@@ -33,7 +33,6 @@ from max.gpu.primitives import block
 from max.runtime.tracing import Trace, TraceLevel
 from std.math import ceildiv
 from std.utils import StaticTuple
-from std.utils.index import IndexList
 
 # Default GPU block size; override per launch via `_arg_nonzero_gpu[BLOCK_SIZE=...]`.
 comptime _ARG_NONZERO_BLOCK_SIZE = 256
@@ -80,8 +79,7 @@ def arg_nonzero[
             )
             var offset = input_buffer.layout(Coord(indices))
             if input_buffer[Coord(indices)] != 0:
-                var out_indices = IndexList[2]()
-                out_indices[0] = j
+                var out_row = j
                 j += 1
 
                 # Get the coordinates for the current index
@@ -89,9 +87,8 @@ def arg_nonzero[
 
                 # Write each coordinate to the output buffer
                 comptime for k in range(input_buffer.rank):
-                    out_indices[1] = k
                     output_buffer.store(
-                        (out_indices[0], out_indices[1]),
+                        (out_row, k),
                         output_buffer.ElementType(coords[k].value()),
                     )
 
@@ -411,7 +408,7 @@ def arg_nonzero[
 @inline(.always)
 def arg_nonzero_shape[
     dtype: DType
-](input_buffer: TileTensor[dtype, ...]) -> IndexList[2]:
+](input_buffer: TileTensor[dtype, ...]) -> Coord[Int, Int]:
     """Return [NumNonZeros, InputRank] where NumNonZeros are the number of
     non-zero elements in the input.
 
@@ -425,15 +422,11 @@ def arg_nonzero_shape[
         Shape of the arg_nonzero kernel for this input [NumNonZeros, InputRank].
     """
 
-    var shape = IndexList[2]()
-    shape[1] = input_buffer.rank
-
     var numel = input_buffer.num_elements()
 
-    var j: Int = 0
+    var num_nonzero: Int = 0
     for i in range(numel):
         if input_buffer[i] != 0:
-            j += 1
+            num_nonzero += 1
 
-    shape[0] = j
-    return shape
+    return (num_nonzero, input_buffer.rank)

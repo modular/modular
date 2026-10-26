@@ -68,7 +68,7 @@ comptime K = get_defined_int["K", 1024 + 16]()  # K-tail (not a 32 multiple)
 comptime mma_n = get_defined_int["mma_n", 128]()
 comptime cta_group = get_defined_int["cta_group", 1]()
 
-comptime block_tile_shape = Index(bm, mma_n // cta_group, BK)
+comptime block_tile_shape = (bm, mma_n // cta_group, BK)
 comptime umma_shape = (cta_group * bm, mma_n, MMA_K)
 
 comptime fuzz_seed = get_defined_int["fuzz_seed", 12345]()
@@ -220,7 +220,7 @@ def run_one_case(
         a_type, a_type, out_dtype, scales_dtype, scales_dtype, transpose_b
     ](
         scaling_kind=UMMAKind.KIND_MXF8F6F4,
-        cluster_shape=Index(cta_group, 1, 1),
+        cluster_shape=(Int(cta_group), Int(1), Int(1)),
         mma_shape=umma_shape,
         block_swizzle_size=8,
         cta_group=cta_group,

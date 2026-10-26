@@ -95,6 +95,7 @@ from std.utils.coord import DynamicCoord
 from std.testing import assert_almost_equal
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
+from std.utils.coord import Coord
 
 
 # Core-matrix row count for the WGMMA/UMMA descriptor canonical layout. Matches
@@ -203,7 +204,7 @@ def pv_mma_kernel[
     v_tile_shape: Coord,
     v_desc_shape: Coord,
     c_layout: TensorLayout,
-    block_tile_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
     mma_shape: DynamicCoord[.int, 3],
     swizzle_mode: TensorMapSwizzle,
     use_native_mn: Bool,

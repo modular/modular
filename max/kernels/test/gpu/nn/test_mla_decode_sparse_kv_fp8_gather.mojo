@@ -176,7 +176,7 @@ def _run_case[
     var max_pages_per_batch = ceildiv(num_keys, PAGE_SIZE)
     var total_pages = batch_size * max_pages_per_batch
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         1,
         NUM_LAYERS,
@@ -681,7 +681,7 @@ def _check_s_gt_1_guard(ctx: DeviceContext) raises:
         num_heads=KV_NUM_HEADS, head_size=K_CACHE_DIM, is_mla=True
     )
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         1,
         NUM_LAYERS,
@@ -1344,7 +1344,7 @@ def _run_sentinel_case[
     var max_pages_per_batch = ceildiv(num_keys, PAGE_SIZE)
     var total_pages = batch_size * max_pages_per_batch
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         1,
         NUM_LAYERS,

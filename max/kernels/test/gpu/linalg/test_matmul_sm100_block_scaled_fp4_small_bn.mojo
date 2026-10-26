@@ -36,8 +36,8 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
         comptime MMA_K = 32
 
         comptime for mma_n in [8, 16, 24, 32, 48, 64, 96]:
-            comptime block_tile_shape = Index(128, mma_n, BK)
-            comptime umma_shape = Index(128, mma_n, MMA_K)
+            comptime block_tile_shape = (128, mma_n, BK)
+            comptime umma_shape = (128, mma_n, MMA_K)
 
             test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 dtype,
@@ -46,7 +46,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 scales_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](Int32(1), 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
@@ -67,7 +67,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 scales_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
@@ -88,7 +88,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 scales_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                cluster_shape=(4, 4, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
@@ -109,7 +109,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 scales_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](4, 2, 1),
+                cluster_shape=(4, 2, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
@@ -131,7 +131,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 scales_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](8, 2, 1),
+                cluster_shape=(8, 2, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
@@ -152,7 +152,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 scales_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                cluster_shape=(4, 4, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
@@ -174,7 +174,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 scales_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                cluster_shape=(4, 4, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
@@ -197,7 +197,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 scales_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
@@ -218,7 +218,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 scales_dtype,
                 block_tile_shape,
                 umma_shape,
-                cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                cluster_shape=(4, 4, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
@@ -233,8 +233,8 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
             )
 
         # Llama-3.1-405B TP8 FP4 shapes (small_bn kernel, M=1)
-        comptime small_bn_block_tile = Index(128, 8, BK)
-        comptime small_bn_umma = Index(128, 8, MMA_K)
+        comptime small_bn_block_tile = (128, 8, BK)
+        comptime small_bn_umma = (128, 8, MMA_K)
 
         def test_small_bn[N: Int, K: Int]() raises {imm}:
             test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -244,7 +244,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 scales_dtype,
                 small_bn_block_tile,
                 small_bn_umma,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
@@ -271,8 +271,8 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
         # Epilogue fusion tests: verify TileWriter's epilogue path.
         print("\n--- Epilogue fusion tests ---")
         comptime for mma_n in [8, 16, 24, 32, 48, 64, 96]:
-            comptime epi_block_tile = Index(128, mma_n, BK)
-            comptime epi_umma = Index(128, mma_n, MMA_K)
+            comptime epi_block_tile = (128, mma_n, BK)
+            comptime epi_umma = (128, mma_n, MMA_K)
             test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
                 dtype,
                 dtype,
@@ -280,7 +280,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 scales_dtype,
                 epi_block_tile,
                 epi_umma,
-                cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 cta_group=1,
                 a_swizzle=swizzle,
                 b_swizzle=swizzle,
@@ -303,9 +303,9 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                     dtype,
                     out_dtype,
                     scales_dtype,
-                    Index(128, 32, BK),
-                    Index(128, 32, MMA_K),
-                    cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                    (128, 32, BK),
+                    (128, 32, MMA_K),
+                    cluster_shape=(1, 1, 1),
                     cta_group=1,
                     a_swizzle=swizzle,
                     b_swizzle=swizzle,
@@ -322,8 +322,8 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
                 )
 
         # swapAB + epilogue fusion
-        comptime epi_block_tile_swap = Index(128, 8, BK)
-        comptime epi_umma_swap = Index(128, 8, MMA_K)
+        comptime epi_block_tile_swap = (128, 8, BK)
+        comptime epi_umma_swap = (128, 8, MMA_K)
         test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             dtype,
             dtype,
@@ -331,7 +331,7 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_suite[
             scales_dtype,
             epi_block_tile_swap,
             epi_umma_swap,
-            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cluster_shape=(1, 1, 1),
             cta_group=1,
             a_swizzle=swizzle,
             b_swizzle=swizzle,

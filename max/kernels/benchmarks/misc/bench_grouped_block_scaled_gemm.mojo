@@ -141,9 +141,7 @@ def bench_grouped_block_scaled_gemm[
 
     # MMA shape and cluster shape
     comptime mma_shape = ((256, 256, 32) if cta_group == 2 else (128, 128, 32))
-    comptime cluster_shape = Index(2, 1, 1) if cta_group == 2 else Index(
-        1, 1, 1
-    )
+    comptime cluster_shape = ((2, 1, 1) if cta_group == 2 else (1, 1, 1))
 
     # Use m_override if provided, otherwise Int(m) (compile-time)
     var M = m_override if m_override > 0 else Int(m)

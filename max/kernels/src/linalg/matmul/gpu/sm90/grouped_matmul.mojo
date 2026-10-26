@@ -26,7 +26,8 @@ from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import TileTensor, coord, flatten_leading
 from layout.tma_async import create_tensor_tile
 
-from std.utils.index import Index, IndexList
+from std.utils.coord import Coord, DynamicCoord
+from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 from .matmul_kernels import HopperMatmulSM90Kernel
@@ -47,7 +48,7 @@ def default_config_sm90[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool,
-    wgmma_shape: IndexList[3],
+    wgmma_shape: Coord[Int, Int, Int],
 ]() -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
     """Returns the default SM90 matmul config for the given WGMMA shape.
 
@@ -69,9 +70,9 @@ def default_config_sm90[
     comptime BN = wgmma_shape[1]
     comptime BK = 128 // size_of[a_type]()
     return MatmulConfig[a_type, b_type, c_type, transpose_b](
-        block_tile_shape=Index(128, BN, BK),
+        block_tile_shape=(128, BN, BK),
         mma_shape=(wgmma_shape[0], wgmma_shape[1], wgmma_shape[2]),
-        cluster_shape=Index(1, 1, 1),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=False,
@@ -87,7 +88,7 @@ def grouped_matmul_sm90[
     //,
     *,
     transpose_b: Bool = True,
-    wgmma_shape: IndexList[3] = Index(64, 256, 16),
+    wgmma_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](64, 256, 16),
     config: MatmulConfig[
         a_type, b_type, c_type, transpose_b
     ] = default_config_sm90[a_type, b_type, c_type, transpose_b, wgmma_shape](),
@@ -144,11 +145,7 @@ def grouped_matmul_sm90[
     comptime N = b.static_shape[1]
     comptime K = b.static_shape[2]
 
-    comptime cluster_shape = StaticTuple[Int32, 3](
-        Int32(config.cluster_shape[0]),
-        Int32(config.cluster_shape[1]),
-        Int32(config.cluster_shape[2]),
-    )
+    comptime cluster_shape = config.cluster_shape
 
     comptime c_smem_layout = _get_c_smem_layout[
         config.block_tile_shape,

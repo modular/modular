@@ -13,6 +13,7 @@
 """Tests for dual-concat kernels (two independent concats in one launch)."""
 
 from layout import Coord, TileTensor, row_major
+from layout.coord import DynamicCoord
 from nn.concat import _fused_dual_concat_gpu
 
 from max.gpu.host import DeviceContext
@@ -85,10 +86,12 @@ def test_dual_concat_inner_most_single_dim(ctx: DeviceContext) raises:
     var b1 = TileTensor(b1_buf, row_major(Coord(in_shape_0)))
     var out1 = TileTensor(out1_buf, row_major(Coord(IndexList[rank](2, 4, 2))))
 
-    var input_shapes_0 = StaticTuple[IndexList[rank], 3](
-        in_shape_0, in_shape_0, in_shape_0
+    var input_shapes_0 = StaticTuple[DynamicCoord[.int, rank], 3](
+        Coord(2, 4, 1), Coord(2, 4, 1), Coord(2, 4, 1)
     )
-    var input_shapes_1 = StaticTuple[IndexList[rank], 2](in_shape_0, in_shape_0)
+    var input_shapes_1 = StaticTuple[DynamicCoord[.int, rank], 2](
+        Coord(2, 4, 1), Coord(2, 4, 1)
+    )
 
     @inline(.always)
     def input_fn_0[
@@ -237,13 +240,13 @@ def test_dual_concat_general_axis(ctx: DeviceContext) raises:
     var d1 = TileTensor(d1_buf, row_major(Coord(IndexList[rank](2, 6, 4))))
     var out1 = TileTensor(out1_buf, row_major(Coord(IndexList[rank](2, 8, 4))))
 
-    var input_shapes_0 = StaticTuple[IndexList[rank], 2](
-        IndexList[rank](2, 3, 4),
-        IndexList[rank](2, 5, 4),
+    var input_shapes_0 = StaticTuple[DynamicCoord[.int, rank], 2](
+        Coord(2, 3, 4),
+        Coord(2, 5, 4),
     )
-    var input_shapes_1 = StaticTuple[IndexList[rank], 2](
-        IndexList[rank](2, 2, 4),
-        IndexList[rank](2, 6, 4),
+    var input_shapes_1 = StaticTuple[DynamicCoord[.int, rank], 2](
+        Coord(2, 2, 4),
+        Coord(2, 6, 4),
     )
 
     @inline(.always)
@@ -369,11 +372,11 @@ def test_dual_concat_inner_most_static_vs_dynamic(ctx: DeviceContext) raises:
     comptime static_out_layout_1 = row_major[d0, d1, d2, size_1]()
     comptime n_rows = d0 * d1 * d2
 
-    var in_shape = IndexList[rank](d0, d1, d2, 1)
-    var input_shapes_0 = StaticTuple[IndexList[rank], size_0](
+    var in_shape = Coord(d0, d1, d2, 1)
+    var input_shapes_0 = StaticTuple[DynamicCoord[.int, rank], size_0](
         in_shape, in_shape, in_shape
     )
-    var input_shapes_1 = StaticTuple[IndexList[rank], size_1](
+    var input_shapes_1 = StaticTuple[DynamicCoord[.int, rank], size_1](
         in_shape, in_shape
     )
 

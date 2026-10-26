@@ -28,7 +28,7 @@ from max.gpu.host.info import H100
 from internal_utils import Table
 from std.logger import Logger
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 from ....utils import (
     ElementwiseComputeFn,
@@ -208,9 +208,9 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=64,
         N=16384,
         K=2048,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(64, 128, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(64, 128, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=8,
         num_consumer=1,
         partitioned_multicast=False,
@@ -221,9 +221,9 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=128,
         N=16384,
         K=2048,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(128, 128, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(128, 128, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
@@ -234,9 +234,9 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=256,
         N=16384,
         K=2048,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(128, 128, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(128, 128, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
@@ -247,9 +247,9 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=512,
         N=16384,
         K=2048,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(128, 128, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(128, 128, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
@@ -260,9 +260,9 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=1024,
         N=16384,
         K=2048,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(128, 128, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(128, 128, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
@@ -273,9 +273,9 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=MAX_M,
         N=16384,
         K=2048,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(128, 128, 128),
-        cluster_shape=Index(2, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(128, 128, 128),
+        cluster_shape=(2, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
@@ -288,9 +288,9 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=64,
         N=2304,
         K=16384,
-        mma_shape=IndexList[3](64, 48, 32),
-        block_tile_shape=Index(64, 48, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 48, 32),
+        block_tile_shape=(64, 48, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=8,
         num_consumer=1,
         partitioned_multicast=False,
@@ -301,9 +301,9 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=128,
         N=2304,
         K=16384,
-        mma_shape=IndexList[3](64, 48, 32),
-        block_tile_shape=Index(64, 48, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 48, 32),
+        block_tile_shape=(64, 48, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=8,
         num_consumer=1,
         partitioned_multicast=False,
@@ -314,9 +314,9 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=256,
         N=2304,
         K=16384,
-        mma_shape=IndexList[3](64, 96, 32),
-        block_tile_shape=Index(64, 96, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 96, 32),
+        block_tile_shape=(64, 96, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=4,
         num_consumer=1,
         partitioned_multicast=False,
@@ -327,9 +327,9 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=512,
         N=2304,
         K=16384,
-        mma_shape=IndexList[3](64, 144, 32),
-        block_tile_shape=Index(128, 144, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 144, 32),
+        block_tile_shape=(128, 144, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=False,
@@ -340,9 +340,9 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=1024,
         N=2304,
         K=16384,
-        mma_shape=IndexList[3](64, 144, 32),
-        block_tile_shape=Index(128, 144, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 144, 32),
+        block_tile_shape=(128, 144, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=False,
@@ -353,9 +353,9 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=2048,
         N=2304,
         K=16384,
-        mma_shape=IndexList[3](64, 144, 32),
-        block_tile_shape=Index(128, 144, 128),
-        cluster_shape=Index(2, 1, 1),
+        mma_shape=(64, 144, 32),
+        block_tile_shape=(128, 144, 128),
+        cluster_shape=(2, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
@@ -366,9 +366,9 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=MAX_M,
         N=2304,
         K=16384,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(128, 128, 128),
-        cluster_shape=Index(2, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(128, 128, 128),
+        cluster_shape=(2, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
@@ -381,9 +381,9 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=64,
         N=13312,
         K=16384,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(64, 128, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(64, 128, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=8,
         num_consumer=1,
         partitioned_multicast=False,
@@ -394,9 +394,9 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=128,
         N=13312,
         K=16384,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(128, 128, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(128, 128, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
@@ -407,9 +407,9 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=256,
         N=13312,
         K=16384,
-        mma_shape=IndexList[3](64, 208, 32),
-        block_tile_shape=Index(128, 208, 128),
-        cluster_shape=Index(1, 2, 1),
+        mma_shape=(64, 208, 32),
+        block_tile_shape=(128, 208, 128),
+        cluster_shape=(1, 2, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
@@ -420,9 +420,9 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=512,
         N=13312,
         K=16384,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(128, 128, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(128, 128, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
@@ -433,9 +433,9 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=1024,
         N=13312,
         K=16384,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(128, 128, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(128, 128, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
@@ -446,9 +446,9 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=MAX_M,
         N=13312,
         K=16384,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(128, 128, 128),
-        cluster_shape=Index(2, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(128, 128, 128),
+        cluster_shape=(2, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
@@ -461,9 +461,9 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=64,
         N=16384,
         K=6656,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(64, 128, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(64, 128, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=8,
         num_consumer=1,
         partitioned_multicast=False,
@@ -474,9 +474,9 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=1024,
         N=16384,
         K=6656,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(128, 128, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(128, 128, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
@@ -487,9 +487,9 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         M=MAX_M,
         N=16384,
         K=6656,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(128, 128, 128),
-        cluster_shape=Index(2, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(128, 128, 128),
+        cluster_shape=(2, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
@@ -509,9 +509,9 @@ comptime llama_8b_fp8_list: List[TuningConfigSM90] = [
         M=128,
         N=-1,
         K=-1,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(64, 128, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(64, 128, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=8,
         num_consumer=1,
         partitioned_multicast=True,
@@ -522,9 +522,9 @@ comptime llama_8b_fp8_list: List[TuningConfigSM90] = [
         M=1024,
         N=-1,
         K=-1,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(128, 128, 128),
-        cluster_shape=Index(1, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(128, 128, 128),
+        cluster_shape=(1, 1, 1),
         num_pipeline_stages=6,
         num_consumer=2,
         partitioned_multicast=True,
@@ -535,9 +535,9 @@ comptime llama_8b_fp8_list: List[TuningConfigSM90] = [
         M=MAX_M,
         N=-1,
         K=-1,
-        mma_shape=IndexList[3](64, 128, 32),
-        block_tile_shape=Index(128, 128, 128),
-        cluster_shape=Index(2, 1, 1),
+        mma_shape=(64, 128, 32),
+        block_tile_shape=(128, 128, 128),
+        cluster_shape=(2, 1, 1),
         num_pipeline_stages=6,
         num_consumer=2,
         partitioned_multicast=True,
@@ -635,9 +635,9 @@ def matmul_dispatch_sm90_fp8[
             c_type,
             transpose_b,
         ](
-            block_tile_shape=Index(BLOCK_TILE_DIM_M, WGMMA_N, 128),
+            block_tile_shape=(BLOCK_TILE_DIM_M, WGMMA_N, 128),
             mma_shape=(64, WGMMA_N, 32),
-            cluster_shape=Index(CLUSTER_DIM_X, 1, 1),
+            cluster_shape=(CLUSTER_DIM_X, 1, 1),
             num_pipeline_stages=NUM_PIPELINE_STAGES,
             num_consumer=NUM_CONSUMER,
             partitioned_multicast=False,
@@ -739,9 +739,9 @@ def matmul_dispatch_sm90_fp8[
                 comptime config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
-                    block_tile_shape=Index(64, BN, BK),
+                    block_tile_shape=(64, BN, BK),
                     mma_shape=(64, BN, 32),
-                    cluster_shape=Index(1, 1, 1),
+                    cluster_shape=(1, 1, 1),
                     num_pipeline_stages=6,
                     num_consumer=1,
                     partitioned_multicast=False,
@@ -758,9 +758,9 @@ def matmul_dispatch_sm90_fp8[
                 comptime config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
-                    block_tile_shape=Index(64, BN, BK),
+                    block_tile_shape=(64, BN, BK),
                     mma_shape=(64, BN, 32),
-                    cluster_shape=Index(1, 1, 1),
+                    cluster_shape=(1, 1, 1),
                     num_pipeline_stages=6,
                     num_consumer=1,
                     partitioned_multicast=False,
@@ -782,9 +782,9 @@ def matmul_dispatch_sm90_fp8[
                     c_type,
                     transpose_b,
                 ](
-                    block_tile_shape=Index(128, BN, BK),
+                    block_tile_shape=(128, BN, BK),
                     mma_shape=(64, BN, 32),
-                    cluster_shape=Index(1, 1, 1),
+                    cluster_shape=(1, 1, 1),
                     num_pipeline_stages=4,
                     num_consumer=2,
                     partitioned_multicast=False,
@@ -904,11 +904,9 @@ def matmul_dispatch_sm90_bf16_fp32[
                 c_type,
                 transpose_b,
             ](
-                block_tile_shape=Index(
-                    BLOCK_TILE_DIM_M, WGMMA_N // size_factor, BK
-                ),
+                block_tile_shape=(BLOCK_TILE_DIM_M, WGMMA_N // size_factor, BK),
                 mma_shape=(64, WGMMA_N // size_factor, mma_k),
-                cluster_shape=Index(CLUSTER_DIM_X, CLUSTER_DIM_Y, 1),
+                cluster_shape=(CLUSTER_DIM_X, CLUSTER_DIM_Y, 1),
                 num_pipeline_stages=NUM_PIPELINE_STAGES,
                 num_consumer=NUM_CONSUMER,
                 partitioned_multicast=PARTITIONED_MULTICAST,
@@ -949,8 +947,8 @@ def matmul_dispatch_sm90_bf16_fp32[
                     c_type,
                     transpose_b,
                 ](
-                    block_tile_shape=Index(BLOCK_TILE_DIM_M, WGMMA_N, BK),
-                    cluster_shape=Index(CLUSTER_DIM_X, CLUSTER_DIM_Y, 1),
+                    block_tile_shape=(BLOCK_TILE_DIM_M, WGMMA_N, BK),
+                    cluster_shape=(CLUSTER_DIM_X, CLUSTER_DIM_Y, 1),
                     num_pipeline_stages=NUM_PIPELINE_STAGES,
                     num_consumer=NUM_CONSUMER,
                     partitioned_multicast=PARTITIONED_MULTICAST,
@@ -976,8 +974,8 @@ def matmul_dispatch_sm90_bf16_fp32[
                     c_type,
                     transpose_b,
                 ](
-                    block_tile_shape=Index(BLOCK_TILE_DIM_M, WGMMA_N, BK),
-                    cluster_shape=Index(CLUSTER_DIM_X, CLUSTER_DIM_Y, 1),
+                    block_tile_shape=(BLOCK_TILE_DIM_M, WGMMA_N, BK),
+                    cluster_shape=(CLUSTER_DIM_X, CLUSTER_DIM_Y, 1),
                     num_pipeline_stages=NUM_PIPELINE_STAGES,
                     num_consumer=NUM_CONSUMER,
                     partitioned_multicast=PARTITIONED_MULTICAST,
@@ -1132,7 +1130,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                     m,
                     static_N,
                     static_K,
-                    Index(1, 1, 1),
+                    (1, 1, 1),
                     1,
                     1,
                     False,
@@ -1154,7 +1152,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                         m,
                         static_N,
                         static_K,
-                        Index(1, 1, 1),
+                        (1, 1, 1),
                         1,
                         1,
                         False,
@@ -1199,9 +1197,9 @@ def matmul_dispatch_sm90_bf16_fp32[
                 comptime config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
-                    block_tile_shape=Index(64, 16, 64),
+                    block_tile_shape=(64, 16, 64),
                     mma_shape=(64, 16, 16),
-                    cluster_shape=Index(1, 1, 1),
+                    cluster_shape=(1, 1, 1),
                     num_pipeline_stages=12,
                     num_consumer=1,
                     partitioned_multicast=False,
@@ -1224,9 +1222,9 @@ def matmul_dispatch_sm90_bf16_fp32[
                 comptime config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
-                    block_tile_shape=Index(64, 24, 64),
+                    block_tile_shape=(64, 24, 64),
                     mma_shape=(64, 24, 16),
-                    cluster_shape=Index(1, 1, 1),
+                    cluster_shape=(1, 1, 1),
                     num_pipeline_stages=14,
                     num_consumer=1,
                     partitioned_multicast=False,
@@ -1252,9 +1250,9 @@ def matmul_dispatch_sm90_bf16_fp32[
                 comptime config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
-                    block_tile_shape=Index(64, 24, 64),
+                    block_tile_shape=(64, 24, 64),
                     mma_shape=(64, 24, 16),
-                    cluster_shape=Index(1, 1, 1),
+                    cluster_shape=(1, 1, 1),
                     num_pipeline_stages=12,
                     num_consumer=1,
                     partitioned_multicast=False,
@@ -1277,9 +1275,9 @@ def matmul_dispatch_sm90_bf16_fp32[
                 comptime config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
-                    block_tile_shape=Index(64, 32, 64),
+                    block_tile_shape=(64, 32, 64),
                     mma_shape=(64, 32, 16),
-                    cluster_shape=Index(1, 1, 1),
+                    cluster_shape=(1, 1, 1),
                     num_pipeline_stages=12,
                     num_consumer=1,
                     partitioned_multicast=False,
@@ -1302,9 +1300,9 @@ def matmul_dispatch_sm90_bf16_fp32[
                 comptime config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
-                    block_tile_shape=Index(64, 32, 64),
+                    block_tile_shape=(64, 32, 64),
                     mma_shape=(64, 32, 16),
-                    cluster_shape=Index(1, 1, 1),
+                    cluster_shape=(1, 1, 1),
                     num_pipeline_stages=16,
                     num_consumer=1,
                     partitioned_multicast=False,
@@ -1327,9 +1325,9 @@ def matmul_dispatch_sm90_bf16_fp32[
                 comptime config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
-                    block_tile_shape=Index(64, 40, 64),
+                    block_tile_shape=(64, 40, 64),
                     mma_shape=(64, 40, 16),
-                    cluster_shape=Index(1, 1, 1),
+                    cluster_shape=(1, 1, 1),
                     num_pipeline_stages=12,
                     num_consumer=1,
                     partitioned_multicast=False,
@@ -1352,9 +1350,9 @@ def matmul_dispatch_sm90_bf16_fp32[
                 comptime config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
-                    block_tile_shape=Index(64, 56, 64),
+                    block_tile_shape=(64, 56, 64),
                     mma_shape=(64, 56, 16),
-                    cluster_shape=Index(1, 1, 1),
+                    cluster_shape=(1, 1, 1),
                     num_pipeline_stages=12,
                     num_consumer=1,
                     partitioned_multicast=False,
@@ -1377,9 +1375,9 @@ def matmul_dispatch_sm90_bf16_fp32[
                 comptime config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
-                    block_tile_shape=Index(64, 48, 64),
+                    block_tile_shape=(64, 48, 64),
                     mma_shape=(64, 48, 16),
-                    cluster_shape=Index(1, 1, 1),
+                    cluster_shape=(1, 1, 1),
                     num_pipeline_stages=12,
                     num_consumer=1,
                     partitioned_multicast=False,
@@ -1400,9 +1398,9 @@ def matmul_dispatch_sm90_bf16_fp32[
                 comptime config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
-                    block_tile_shape=Index(64, 56, 64),
+                    block_tile_shape=(64, 56, 64),
                     mma_shape=(64, 56, 16),
-                    cluster_shape=Index(1, 1, 1),
+                    cluster_shape=(1, 1, 1),
                     num_pipeline_stages=12,
                     num_consumer=1,
                     partitioned_multicast=False,
@@ -1423,9 +1421,9 @@ def matmul_dispatch_sm90_bf16_fp32[
                 comptime config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
-                    block_tile_shape=Index(64, 64, 64),
+                    block_tile_shape=(64, 64, 64),
                     mma_shape=(64, 64, 16),
-                    cluster_shape=Index(1, 1, 1),
+                    cluster_shape=(1, 1, 1),
                     num_pipeline_stages=10,
                     num_consumer=1,
                     partitioned_multicast=False,
@@ -1445,9 +1443,9 @@ def matmul_dispatch_sm90_bf16_fp32[
                 comptime config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
-                    block_tile_shape=Index(64, 48, 64),
+                    block_tile_shape=(64, 48, 64),
                     mma_shape=(64, 48, 16),
-                    cluster_shape=Index(1, 2, 1),
+                    cluster_shape=(1, 2, 1),
                     num_pipeline_stages=14,
                     partitioned_multicast=False,
                     pdl_level=pdl_level,
@@ -1526,9 +1524,9 @@ def matmul_dispatch_sm90_bf16_fp32[
     comptime if a_is_bfloat16_or_float32 and static_N == 8192 and static_K == 2048:
         if m <= 16:
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                block_tile_shape=Index(64, 64 // size_factor, BK),
+                block_tile_shape=(64, 64 // size_factor, BK),
                 mma_shape=(64, 64 // size_factor, mma_k),
-                cluster_shape=Index(1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 num_pipeline_stages=12,
                 num_consumer=1,
                 partitioned_multicast=False,
@@ -1545,9 +1543,9 @@ def matmul_dispatch_sm90_bf16_fp32[
             return DISPATCH_HIT
         elif m <= 64:
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                block_tile_shape=Index(64, 64 // size_factor, BK),
+                block_tile_shape=(64, 64 // size_factor, BK),
                 mma_shape=(64, 64 // size_factor, mma_k),
-                cluster_shape=Index(1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 num_pipeline_stages=8,
                 num_consumer=1,
                 partitioned_multicast=False,
@@ -1566,9 +1564,9 @@ def matmul_dispatch_sm90_bf16_fp32[
             comptime M8192_N8192_K2048_config = MatmulConfig[
                 a_type, b_type, c_type, transpose_b
             ](
-                block_tile_shape=Index(128, 256 // size_factor, BK),
+                block_tile_shape=(128, 256 // size_factor, BK),
                 mma_shape=(64, 256 // size_factor, mma_k),
-                cluster_shape=Index(2, 1, 1),
+                cluster_shape=(2, 1, 1),
                 num_pipeline_stages=4,
                 num_consumer=2,
                 partitioned_multicast=False,
@@ -1588,9 +1586,9 @@ def matmul_dispatch_sm90_bf16_fp32[
             comptime M4096_N8192_K2048_config = MatmulConfig[
                 a_type, b_type, c_type, transpose_b
             ](
-                block_tile_shape=Index(128, 256 // size_factor, BK),
+                block_tile_shape=(128, 256 // size_factor, BK),
                 mma_shape=(64, 256 // size_factor, mma_k),
-                cluster_shape=Index(2, 1, 1),
+                cluster_shape=(2, 1, 1),
                 num_pipeline_stages=4,
                 num_consumer=2,
                 partitioned_multicast=False,
@@ -1608,9 +1606,9 @@ def matmul_dispatch_sm90_bf16_fp32[
     comptime if a_is_bfloat16_or_float32 and static_N == 14336 and static_K == 8192:
         if m <= 64:
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                block_tile_shape=Index(64, 112 // size_factor, BK),
+                block_tile_shape=(64, 112 // size_factor, BK),
                 mma_shape=(64, 112 // size_factor, mma_k),
-                cluster_shape=Index(1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 num_pipeline_stages=8,
                 num_consumer=1,
                 partitioned_multicast=False,
@@ -1629,9 +1627,9 @@ def matmul_dispatch_sm90_bf16_fp32[
             comptime M8192_N14336_K8192_config = MatmulConfig[
                 a_type, b_type, c_type, transpose_b
             ](
-                block_tile_shape=Index(128, 256 // size_factor, BK),
+                block_tile_shape=(128, 256 // size_factor, BK),
                 mma_shape=(64, 256 // size_factor, mma_k),
-                cluster_shape=Index(2, 1, 1),
+                cluster_shape=(2, 1, 1),
                 num_pipeline_stages=4,
                 num_consumer=2,
                 partitioned_multicast=False,
@@ -1651,9 +1649,9 @@ def matmul_dispatch_sm90_bf16_fp32[
             comptime M4096_N14336_K8192_config = MatmulConfig[
                 a_type, b_type, c_type, transpose_b
             ](
-                block_tile_shape=Index(128, 256 // size_factor, BK),
+                block_tile_shape=(128, 256 // size_factor, BK),
                 mma_shape=(64, 256 // size_factor, mma_k),
-                cluster_shape=Index(2, 1, 1),
+                cluster_shape=(2, 1, 1),
                 num_pipeline_stages=4,
                 num_consumer=2,
                 partitioned_multicast=False,
@@ -1671,9 +1669,9 @@ def matmul_dispatch_sm90_bf16_fp32[
     comptime if a_is_bfloat16_or_float32 and static_N == 8192 and static_K == 7168:
         if m <= 16:
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                block_tile_shape=Index(64, 64 // size_factor, BK),
+                block_tile_shape=(64, 64 // size_factor, BK),
                 mma_shape=(64, 64 // size_factor, mma_k),
-                cluster_shape=Index(1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 num_pipeline_stages=12,
                 num_consumer=1,
                 partitioned_multicast=False,
@@ -1690,9 +1688,9 @@ def matmul_dispatch_sm90_bf16_fp32[
             return DISPATCH_HIT
         elif m <= 64:
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                block_tile_shape=Index(64, 64 // size_factor, BK),
+                block_tile_shape=(64, 64 // size_factor, BK),
                 mma_shape=(64, 64 // size_factor, mma_k),
-                cluster_shape=Index(1, 1, 1),
+                cluster_shape=(1, 1, 1),
                 num_pipeline_stages=8,
                 num_consumer=1,
                 partitioned_multicast=False,
@@ -1711,9 +1709,9 @@ def matmul_dispatch_sm90_bf16_fp32[
             comptime M8192_N8192_K7168_config = MatmulConfig[
                 a_type, b_type, c_type, transpose_b
             ](
-                block_tile_shape=Index(128, 256 // size_factor, BK),
+                block_tile_shape=(128, 256 // size_factor, BK),
                 mma_shape=(64, 256 // size_factor, mma_k),
-                cluster_shape=Index(2, 1, 1),
+                cluster_shape=(2, 1, 1),
                 num_pipeline_stages=4,
                 num_consumer=2,
                 partitioned_multicast=False,
@@ -1736,9 +1734,9 @@ def matmul_dispatch_sm90_bf16_fp32[
                 c_type,
                 transpose_b,
             ](
-                block_tile_shape=Index(128, 256 // size_factor, BK),
+                block_tile_shape=(128, 256 // size_factor, BK),
                 mma_shape=(64, 256 // size_factor, mma_k),
-                cluster_shape=Index(2, 1, 1),
+                cluster_shape=(2, 1, 1),
                 num_pipeline_stages=4,
                 num_consumer=2,
                 partitioned_multicast=False,
@@ -1762,9 +1760,9 @@ def matmul_dispatch_sm90_bf16_fp32[
             comptime M512_N3840_K15360_config = MatmulConfig[
                 a_type, b_type, c_type, transpose_b
             ](
-                block_tile_shape=Index(128, 128 // size_factor, BK),
+                block_tile_shape=(128, 128 // size_factor, BK),
                 mma_shape=(64, 128 // size_factor, mma_k),
-                cluster_shape=Index(2, 1, 1),
+                cluster_shape=(2, 1, 1),
                 num_pipeline_stages=4,
                 num_consumer=2,
                 partitioned_multicast=False,
@@ -1796,9 +1794,9 @@ def matmul_dispatch_sm90_bf16_fp32[
                 comptime default_bf16_config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
-                    block_tile_shape=Index(64, BN, BK),
+                    block_tile_shape=(64, BN, BK),
                     mma_shape=(64, BN, mma_k),
-                    cluster_shape=Index(1, 1, 1),
+                    cluster_shape=(1, 1, 1),
                     num_pipeline_stages=4,
                     num_consumer=1,
                     partitioned_multicast=False,
@@ -2010,7 +2008,7 @@ def matmul_dispatch_sm90_bf16_fp32[
         comptime default_bf16_config = MatmulConfig[
             a_type, b_type, c_type, transpose_b
         ](
-            block_tile_shape=Index(128, BN, 64),
+            block_tile_shape=(128, BN, 64),
             mma_shape=(64, BN, mma_k),
             num_pipeline_stages=4,
             num_consumer=2,

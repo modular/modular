@@ -39,7 +39,7 @@ from max.gpu.primitives.cluster import (
     elect_one_sync_with_mask,
 )
 from max.gpu.sync import named_barrier, syncwarp
-from layout import DefaultEngine, TensorLayout, TensorEngine, TileTensor
+from layout import DefaultEngine, TensorLayout, TensorEngine, TileTensor, Coord
 from structured_kernels.tile_types import (
     TmaOpType,
     static_row_major,
@@ -108,7 +108,7 @@ struct BlockwiseFP8_1D2DMatmulKernel[
     static_N: Int,
     static_K: Int,
     # Cluster shape
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     b_scales_engine: TensorEngine = DefaultEngine[element_width=1],
     c_device_engine: TensorEngine = DefaultEngine[element_width=1],
     offsets_engine: TensorEngine = DefaultEngine[element_width=1],
@@ -502,7 +502,13 @@ struct BlockwiseFP8_1D2DMatmulKernel[
 
     @staticmethod
     @inline(.always)
-    @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
+    @__llvm_metadata(
+        `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+            Int32(Self.cluster_shape[0]),
+            Int32(Self.cluster_shape[1]),
+            Int32(Self.cluster_shape[2]),
+        )
+    )
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)

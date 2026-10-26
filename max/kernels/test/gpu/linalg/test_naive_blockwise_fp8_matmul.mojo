@@ -161,8 +161,10 @@ def test_naive_blockwise_fp8_matmul[
         naive_blockwise_scaled_fp8_matmul[
             BLOCK_DIM=16,
             transpose_b=transpose_b,
-            scales_granularity_mnk=Index(
-                BLOCK_SCALE_M, BLOCK_SCALE_N, BLOCK_SCALE_K
+            scales_granularity_mnk=Coord[Int, Int, Int](
+                BLOCK_SCALE_M,
+                BLOCK_SCALE_N,
+                BLOCK_SCALE_K,
             ),
         ](
             c_dev,
@@ -203,36 +205,36 @@ def main() raises:
         comptime for transpose_b in range(0, 2):
             test_naive_blockwise_fp8_matmul[
                 .float8_e4m3fn,
-                Index(1, 128, 128),
+                (1, 128, 128),
                 transpose_b=Bool(transpose_b),
             ](ctx, Idx[128], Idx[128], Idx[128])
 
             test_naive_blockwise_fp8_matmul[
                 .float8_e4m3fn,
-                Index(1, 64, 128),
+                (1, 64, 128),
                 transpose_b=Bool(transpose_b),
             ](ctx, Idx[128], Idx[256], Idx[128])
 
             test_naive_blockwise_fp8_matmul[
                 .float8_e4m3fn,
-                Index(1, 64, 16),
+                (1, 64, 16),
                 transpose_b=Bool(transpose_b),
             ](ctx, Idx[128], Idx[128], Idx[128])
 
             test_naive_blockwise_fp8_matmul[
                 .float8_e4m3fn,
-                Index(1, 128, 128),
+                (1, 128, 128),
                 transpose_b=Bool(transpose_b),
             ](ctx, Idx[120], Idx[128], Idx[128])
 
             test_naive_blockwise_fp8_matmul[
                 .float8_e4m3fn,
-                Index(1, 128, 128),
+                (1, 128, 128),
                 transpose_b=Bool(transpose_b),
             ](ctx, Idx[120], Idx[129], Idx[128])
 
             test_naive_blockwise_fp8_matmul[
                 .float8_e4m3fn,
-                Index(32, 128, 64),
+                (32, 128, 64),
                 transpose_b=Bool(transpose_b),
             ](ctx, Idx[120], Idx[129], Idx[129])

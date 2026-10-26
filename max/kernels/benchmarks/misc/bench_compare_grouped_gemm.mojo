@@ -231,7 +231,7 @@ def bench_structured_kernel[
     comptime max_groups = num_groups
     comptime transpose_b = True
     comptime mma_shape = (mma_m, mma_n, 32)
-    comptime cluster_shape = Index(1, 1, 1)
+    comptime cluster_shape = (1, 1, 1)
     comptime is_fp4 = (a_type == DType.uint8)
     comptime k_pack = 2 if is_fp4 else 1
     comptime K_ARRAY = KType.static_value // k_pack

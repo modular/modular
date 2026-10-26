@@ -358,7 +358,7 @@ struct Struct_kv_cache_store_padded:
 
         kv_cache_store_padded[target=target](
             cache,
-            inputs.shape(),
+            inputs.shape_coord(),
             valid_lengths.to_tile_tensor(),
             input_fn,
             context,

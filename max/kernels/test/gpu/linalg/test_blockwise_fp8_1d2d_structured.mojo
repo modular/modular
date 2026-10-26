@@ -250,7 +250,9 @@ def test_blockwise_fp8_1d2d_structured[
         BLOCK_DIM_M=16,
         BLOCK_DIM_N=16,
         transpose_b=transpose_b,
-        scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
+        scales_granularity_mnk=Coord[Int, Int, Int](
+            1, BLOCK_SCALE_K, BLOCK_SCALE_K
+        ),
     ](
         c_ref_tt,
         a_tt,
@@ -327,7 +329,7 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=8,
-            expert_shape=Index(7168, 2048),
+            expert_shape=(7168, 2048),
         ](1, [128], [0], ctx)
 
         # 4 active experts, uniform decode-like distribution
@@ -335,7 +337,7 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=8,
-            expert_shape=Index(7168, 2048),
+            expert_shape=(7168, 2048),
         ](4, [64, 64, 64, 64], [0, 2, 5, 7], ctx)
 
         # Unaligned token counts (realistic MoE routing)
@@ -343,7 +345,7 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=8,
-            expert_shape=Index(7168, 2048),
+            expert_shape=(7168, 2048),
         ](4, [20, 100, 4, 48], [0, 3, 5, 7], ctx)
 
         # ============================================================
@@ -355,7 +357,7 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=8,
-            expert_shape=Index(2048, 7168),
+            expert_shape=(2048, 7168),
         ](1, [128], [0], ctx)
 
         # Multi-expert, unaligned
@@ -363,7 +365,7 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=8,
-            expert_shape=Index(2048, 7168),
+            expert_shape=(2048, 7168),
         ](4, [20, 256, 4, 32], [0, 2, 5, 7], ctx)
 
         # ============================================================
@@ -375,7 +377,7 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=4,
-            expert_shape=Index(256, 256),
+            expert_shape=(256, 256),
         ](1, [128], [0], ctx)
 
         # Multi-expert unaligned
@@ -383,7 +385,7 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=4,
-            expert_shape=Index(512, 1024),
+            expert_shape=(512, 1024),
         ](2, [20, 40], [0, 2], ctx)
 
         # float32 output
@@ -391,7 +393,7 @@ def main() raises:
             .float8_e4m3fn,
             .float32,
             num_experts=4,
-            expert_shape=Index(512, 1024),
+            expert_shape=(512, 1024),
         ](2, [20, 40], [0, 2], ctx)
 
         # ============================================================
@@ -402,7 +404,7 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=8,
-            expert_shape=Index(2048, 7168),
+            expert_shape=(2048, 7168),
         ](4, [20, 1500, 300, 28], [0, 3, 5, 7], ctx)
 
     print("\nAll blockwise FP8 1D2D structured kernel tests passed!")

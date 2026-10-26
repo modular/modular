@@ -27,6 +27,7 @@ from matmul_kernels import (
 )
 from std.testing import assert_almost_equal
 from std.utils import IndexList
+from std.utils.index import Index
 
 comptime run_gemm_kernel_type = def(
     mut m: Bench,
@@ -59,9 +60,9 @@ struct test_matmul[
         self.M = Self.a_layout.shape[0].value()
         self.N = Self.b_layout.shape[1].value()
         self.K = Self.b_layout.shape[0].value()
-        var a_shape = IndexList[2](self.M, self.K)
-        var b_shape = IndexList[2](self.K, self.N)
-        var c_shape = IndexList[2](self.M, self.N)
+        var a_shape = Index(self.M, self.K)
+        var b_shape = Index(self.K, self.N)
+        var c_shape = Index(self.M, self.N)
 
         self.a_device_buffer = ctx.enqueue_create_buffer[Self.dtype](
             a_shape.flattened_length()

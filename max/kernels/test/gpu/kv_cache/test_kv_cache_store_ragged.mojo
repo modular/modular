@@ -271,7 +271,7 @@ def test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
         UInt32(max_full_context_length),
     )
 
-    var q_shape = IndexList[4](
+    var q_shape = (
         batch_size,
         max_seq_length_batch,
         num_kv_heads,

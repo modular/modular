@@ -96,7 +96,7 @@ def test_chunk_overflow(ctx: DeviceContext) raises:
     comptime kv_params = KVCacheStaticParams(
         num_heads=KV_NUM_HEADS, head_size=CACHE_DEPTH, is_mla=True
     )
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         1,
         NUM_LAYERS,

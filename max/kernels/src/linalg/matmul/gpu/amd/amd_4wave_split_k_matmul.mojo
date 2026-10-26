@@ -512,14 +512,14 @@ def _amd_4wave_split_k_matmul_impl[
     var elems_per_split = M * N
 
     comptime config_64 = KernelConfig(
-        block_shape=Index(64, 64, _bk),
-        warp_shape=Index(32, 32, _bk),
-        mma_shape=Index(16, 16, _mma_k),
+        block_shape=(64, 64, _bk),
+        warp_shape=(32, 32, _bk),
+        mma_shape=(16, 16, _mma_k),
     )
     comptime config_128 = KernelConfig(
-        block_shape=Index(128, 128, _bk),
-        warp_shape=Index(64, 64, _bk),
-        mma_shape=Index(16, 16, _mma_k),
+        block_shape=(128, 128, _bk),
+        warp_shape=(64, 64, _bk),
+        mma_shape=(16, 16, _mma_k),
     )
 
     @inline(.always)
