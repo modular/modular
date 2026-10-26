@@ -44,22 +44,23 @@ DISABLE: set[str] = set()
 NIGHTLY = {"NIGHTLY"}
 VARIANT = {"VARIANT"}
 PRIVATE = {"PRIVATE"}
-_MACH_2xB200 = {"mach:2xB200"}
 
 # Model → HW it runs on. DISABLE runs nowhere. NIGHTLY adds the model to the
 # scheduled nightly run (`--tier nightly`) on the HW it lists; without it the
 # model runs only on manual dispatch. VARIANT marks a `<hf-repo>__<variant>` key
 # that runs a recipe from MODEL_RECIPES in smoke_test.py; PRIVATE marks one
 # whose recipe ships with a private arch and resolves from private hw_recipes.
-# Mach runs a variant only on the HW its `_MACH_*` tags list.
+# Mach runs every entry on the same HW as MAX. Do not add Mach-only HW tags to
+# hide a model Mach cannot serve on some HW yet: let that job fail. A red smoke
+# test is the forcing function to implement it or to drop the model.
 #
 # To add a model, trigger the smoke test with it first:
 # https://github.com/modularml/modular/actions/workflows/serveSmokeTest.yaml
 # then list it below with the HW it passed on. VLMs also go in is_vision_model
 # in smoke_test.py.
 # Every entry is exactly one line, sorted by key, with tags in the order
-# NIGHTLY, VARIANT, PRIVATE, HW, Mach HW. The only comment allowed is an
-# existing Linear ticket at the end of the line, as `# TODO(PROJ-1234)`.
+# NIGHTLY, VARIANT, PRIVATE, HW. The only comment allowed is an existing
+# Linear ticket at the end of the line, as `# TODO(PROJ-1234)`.
 # fmt: off
 MODELS: Mapping[str, set[str]] = {
     "allenai/Olmo-3-7B-Instruct": _1xB200 | _1xMI355,
@@ -116,7 +117,7 @@ MODELS: Mapping[str, set[str]] = {
     "nvidia/Kimi-K2.7-Code-NVFP4__modulev3": VARIANT | _8xB200,
     "nvidia/Llama-3.1-405B-Instruct-NVFP4": _8xB200,
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16__modulev3": NIGHTLY | VARIANT | _1xMI355 | _2xMI355,
-    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3": NIGHTLY | VARIANT | _1xB200 | _2xB200 | _MACH_2xB200,
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3": NIGHTLY | VARIANT | _1xB200 | _2xB200,
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3_dspark": NIGHTLY | VARIANT | _1xB200 | _2xB200,
     "openai/gpt-oss-20b": _1xB200 | _1xMI355 | _2xB200,
     "OpenGVLab/InternVL3_5-8B-Instruct": _1xB200 | _1xMI355,
@@ -179,8 +180,6 @@ def excluded(framework: str, gpu: str, model: str) -> bool:
     # Variants run MAX recipes; vLLM and SGLang have no equivalent.
     if "VARIANT" in tags and framework in {"vllm", "sglang"}:
         return True
-    if "VARIANT" in tags and framework == "mach-ci":
-        return f"mach:{gpu}" not in tags
     return gpu not in tags
 
 

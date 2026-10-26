@@ -159,27 +159,3 @@ def test_8xmi355_stays_opt_in() -> None:
             job["model"] for job in json.loads(result.output)["include"]
         }
         assert scheduled == models, f"{framework} on 8xMI355"
-
-
-def test_mach_skips_variants() -> None:
-    """Mach runs a variant only on the HW its Mach tags list."""
-    result = CliRunner().invoke(
-        smoke_test_github_matrix.main,
-        ["--framework", "mach-ci", "--run-on-b200"],
-    )
-    assert result.exit_code == 0
-    scheduled = {job["model"] for job in json.loads(result.output)["include"]}
-    assert scheduled
-    assert not {m for m in scheduled if "__" in m}
-
-
-def test_mach_runs_nemotron_on_2xb200() -> None:
-    result = CliRunner().invoke(
-        smoke_test_github_matrix.main,
-        ["--framework", "mach-ci", "--run-on-2xb200"],
-    )
-    assert result.exit_code == 0
-    scheduled = {job["model"] for job in json.loads(result.output)["include"]}
-    assert {m for m in scheduled if "__" in m} == {
-        "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3"
-    }
