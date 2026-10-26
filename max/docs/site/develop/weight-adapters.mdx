@@ -136,9 +136,10 @@ During serving, MAX finds and merges shards for you.
 
 ### Inspect the module parameters
 
-Each parameter name is the attribute path from the root `Module` to the
-parameter tensor, joined with dots. To list them, construct your `Module` inside
-an `F.lazy()` block and iterate over its
+Each parameter name is the
+[attribute path](/develop/modules/#walk-a-modules-parameters) from the root
+`Module` to the parameter tensor, joined with dots. To list them, construct your
+`Module` inside an `F.lazy()` block and iterate over its
 [`parameters`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.parameters)
 property:
 

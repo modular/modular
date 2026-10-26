@@ -316,5 +316,7 @@ From here, go deeper on the pieces a module touches:
   one from scratch, or wrap a custom op.
 - [Eager execution](/develop/eager-execution/): run `Tensor` and `F`
   operations directly to check a forward pass.
+- [Weight adapters](/develop/weight-adapters/): rename checkpoint keys to the
+  module's parameter names before `load_state_dict()`.
 - [Model bring-up workflow](/develop/model-bringup-workflow/): see how modules
   become a served architecture, from config mapping to the KV cache.

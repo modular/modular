@@ -70,9 +70,10 @@ that carries it:
 - **Wrap a kernel** when the computation exists as Mojo and you need it inside
   the module. See [Wrap a custom op](/develop/layers/#wrap-a-custom-op).
 
-Each of those keeps the module contract: named parameters, a `forward()` that
-runs eagerly, a `load_state_dict()` that reports missing and unexpected keys,
-and a `compile()` that captures the whole module as one graph.
+Each of those keeps the module contract:
+[named parameters](/develop/modules/#walk-a-modules-parameters), a `forward()`
+that runs eagerly, a `load_state_dict()` that reports missing and unexpected
+keys, and a `compile()` that captures the whole module as one graph.
 
 ## Next steps
 

@@ -260,8 +260,9 @@ Assign the layer to an attribute on the parent module, then call it in the
 forward pass. These details determine whether the layer loads and runs
 correctly:
 
-- **Parameter names**: a layer registers its parameters under its attribute
-  path. Match these to the checkpoint so the weights load, or write a [weight
+- **Parameter names**: a layer registers its parameters under its
+  [attribute path](/develop/modules/#walk-a-modules-parameters). Match these to
+  the checkpoint so the weights load, or write a [weight
   adapter](/develop/weight-adapters/) when the checkpoint names differ.
 - **Stacks**: hold a repeated layer, such as a stack of transformer blocks, in a
   [`ModuleList`](/api/python/generated/max.experimental.nn.ModuleList/), never

@@ -214,8 +214,10 @@ before it reports the implementation as complete.
 
 Before serving, the agent runs preflight gates and local checks. These
 include an import smoke test, a lazy build of the module, and a diff between
-the adapter's keys and the module's parameter names. It then serves the model
-locally to confirm that it compiles and loads weights without orphan keys.
+the adapter's keys and the module's
+[parameter names](/develop/modules/#walk-a-modules-parameters). It then serves
+the model locally to confirm that it compiles and loads weights without orphan
+keys.
 Finally, it compares greedy token generation against the reference Hugging
 Face model.
 
