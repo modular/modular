@@ -349,6 +349,11 @@ def register_all_models() -> None:
             ".muse_glimmer",
             "muse_glimmer_arch",
         ),
+        _LazyArch(
+            "MuseSparkForConditionalGeneration_ModuleV3",
+            ".muse_spark",
+            "muse_spark_arch",
+        ),
         _LazyArch("OlmoForCausalLM", ".olmo", "olmo_arch"),
         _LazyArch("Olmo2ForCausalLM", ".olmo2", "olmo2_arch"),
         _LazyArch(

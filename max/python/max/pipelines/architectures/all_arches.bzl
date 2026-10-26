@@ -81,6 +81,7 @@ ALL_ARCHITECTURES = [
     "//max/python/max/pipelines/architectures/mtp_inkling",
     "//max/python/max/pipelines/architectures/mtp_qwen3_5",
     "//max/python/max/pipelines/architectures/muse_glimmer",
+    "//max/python/max/pipelines/architectures/muse_spark",
     "//max/python/max/pipelines/architectures/olmo",
     "//max/python/max/pipelines/architectures/olmo2",
     "//max/python/max/pipelines/architectures/olmo2_modulev3",
