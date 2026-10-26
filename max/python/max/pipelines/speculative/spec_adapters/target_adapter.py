@@ -202,6 +202,11 @@ class TargetAdapter:
     """Whether a reasoning model's drafts may be accepted under the relaxed
     in-thinking rule, which adds the ``in_thinking_phase`` input."""
 
+    signal_buffer_index: int | None = None
+    """Where a ModuleV3 target's fused graph takes its signal buffers, on
+    every device count, for an engine that binds them there. ``None``
+    takes them after every other input, and none on one device."""
+
     trailing_input_types: Callable[[Any], Sequence[TensorType | BufferType]] = (
         _default_trailing_input_types
     )

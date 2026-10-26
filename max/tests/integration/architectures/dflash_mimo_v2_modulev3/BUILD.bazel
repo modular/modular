@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -6,10 +6,9 @@ package(default_visibility = [
     "//oss/modular/max/tests:__subpackages__",
 ])
 
-# The fixture builders shared by the ModuleV3 fused MiMo-V2 DFlash tests:
-# the synthetic target/drafter checkpoints, their KV trees and the fused
-# module build on a CPU mesh. Ported from the no-GPU check script the
-# migration lane ran by hand, so the tests are hermetic through bazel.
+# The fixture builders shared by the ModuleV3 MiMo-V2 DFlash tests: the
+# synthetic target/drafter checkpoints, their KV trees and the fused module
+# the pairing compiles, built on a CPU mesh.
 modular_py_library(
     name = "mimo_dflash_v3_fixtures",
     testonly = True,
@@ -30,25 +29,6 @@ modular_py_library(
         "//max/python/max/pipelines/architectures/dflash_mimo_v2",
         "//max/python/max/pipelines/architectures/dflash_mimo_v2_modulev3",
         "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
-        "//max/python/max/pipelines/architectures/unified_dflash_mimo_v2_modulev3",
-        "//max/python/max/pipelines/speculative",
-    ],
-)
-
-modular_py_test(
-    name = "test_arch_registration",
-    size = "small",
-    srcs = ["test_arch_registration.py"],
-    # Importing max.pipelines times out pytest collection on contended macOS
-    # workers, and macOS adds no coverage to these CPU-only tests.
-    target_compatible_with = select({
-        "@platforms//os:macos": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
-    deps = [
-        "//max/python/max/pipelines",
-        "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
-        "//max/python/max/pipelines/architectures/unified_dflash_mimo_v2_modulev3",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/speculative",
     ],
@@ -75,7 +55,7 @@ modular_py_test(
 # The data-parallel half of the no-GPU gates: the DP signature's batch-split
 # pair, context lengths and EP tail; the DP2xEP2 graph staged on virtual
 # B200s (the batch split, the dispatch/combine, the drafter's full heads per
-# replica); and the batch processor's runtime DP packing, beside the
+# replica); the packed inputs' DP slots and the EP row budget, beside the
 # refusals. Same host constraints as the TP staging gate below.
 modular_py_test(
     name = "test_dp_construction_cpu",
@@ -85,6 +65,9 @@ modular_py_test(
         # The staged trace realizes eager tensors, which import the MO
         # interpreter; without its compiled ops the trace crawls.
         "//max/python/max/_interpreter_ops",
+        # The pairing resolves its target and drafter by name.
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/mimo_v2",
     ],
     imports = ["."],
     target_compatible_with = select({
@@ -98,13 +81,12 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        # The pairing resolves its target and drafter by name.
+        "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures/dflash_mimo_v2_modulev3",
+        "//max/python/max/pipelines/architectures/mimo_v2",
         "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
-        "//max/python/max/pipelines/architectures/unified_dflash_mimo_v2_modulev3",
-        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
-        "//max/python/max/pipelines/request",
-        requirement("numpy"),
     ],
 )
 
@@ -120,6 +102,9 @@ modular_py_test(
         # The staged trace realizes eager tensors, which import the MO
         # interpreter; without its compiled ops the trace crawls.
         "//max/python/max/_interpreter_ops",
+        # The pairing resolves its target and drafter by name.
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/mimo_v2",
     ],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -133,7 +118,11 @@ modular_py_test(
         "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/pipelines/architectures/unified_dflash_mimo_v2_modulev3",
+        # The pairing resolves its target and drafter by name.
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/dflash_mimo_v2_modulev3",
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
         "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/kv_cache/connectors/dkv",
         "//max/python/max/pipelines/speculative",
@@ -149,6 +138,9 @@ modular_py_test(
     srcs = ["test_qkv_fusion.py"],
     ignore_extra_deps = [
         "//max/python/max/_interpreter_ops",
+        # The pairing resolves its target and drafter by name.
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/mimo_v2",
     ],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -161,6 +153,8 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/experimental",
         "//max/python/max/graph",
-        "//max/python/max/pipelines/architectures/unified_dflash_mimo_v2_modulev3",
+        # The pairing resolves its target and drafter by name.
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/mimo_v2",
     ],
 )

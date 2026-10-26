@@ -10,11 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Fixtures for the ModuleV3 fused MiMo-V2 DFlash tests, without a GPU.
+"""Fixtures for the ModuleV3 MiMo-V2 DFlash tests, without a GPU.
 
-Builds the real fused module (:class:`UnifiedDflashMiMoV2ModuleV3`) on a CPU
-mesh from synthetic checkpoints: a tiny MiMo-V2.6-Flash target config at the
-real checkpoint's shapes, a tiny DFlash drafter config, and their KV trees.
+Builds the fused module the ModuleV3 pairing compiles, through the same
+driver call, on a CPU mesh from synthetic checkpoints: a tiny MiMo-V2.6-Flash
+target config at the real checkpoint's shapes, a tiny DFlash drafter config,
+and their KV trees.
 The stage never executes -- the W4A8 expert kernels have no CPU dispatch --
 so a build needs no accelerator and runs anywhere bazel does.
 """
@@ -23,9 +24,12 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from dataclasses import replace
+from functools import partial
+from pathlib import Path
+from types import SimpleNamespace
 from typing import cast
 
-from max.driver import CPU, Buffer
+from max.driver import Buffer
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.sharding import DeviceMesh
@@ -36,13 +40,21 @@ from max.graph.weights import WeightData, Weights
 from max.nn.comm.ep import EPBatchManager, EPConfig
 from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.architectures.dflash_mimo_v2 import DFlashMiMoV2Config
+from max.pipelines.architectures.dflash_mimo_v2 import (
+    DFlashMiMoV2Config,
+    DFlashMiMoV2DraftConfig,
+    DrafterExport,
+)
+from max.pipelines.architectures.dflash_mimo_v2_modulev3 import DFlashMiMoV2
 from max.pipelines.architectures.dflash_mimo_v2_modulev3.weight_adapters import (
     MASK_EMBEDDING,
     drafter_tensor_shapes,
 )
 from max.pipelines.architectures.dflash_mimo_v2_modulev3.weight_adapters import (
     convert_safetensor_state_dict as draft_convert,
+)
+from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import (
+    MiMoV2SpecTarget,
 )
 from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
     FULL,
@@ -52,14 +64,14 @@ from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
 from max.pipelines.architectures.mimo_v2_modulev3.weight_adapters import (
     convert_safetensor_state_dict as target_convert,
 )
-from max.pipelines.architectures.unified_dflash_mimo_v2_modulev3.model_config import (
-    DRAFT,
+from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
+    _driver_call,
+    _graph_name,
+    _Pairing,
+    _SpecDecodeModule,
 )
-from max.pipelines.architectures.unified_dflash_mimo_v2_modulev3.unified_dflash_mimo_v2 import (
-    UnifiedDflashMiMoV2ModuleV3,
-    UnifiedDflashMiMoV2Spec,
-)
-from max.pipelines.speculative import SpeculativeConfig
+from max.pipelines.speculative import SpeculativeConfig, spec_adapters
 
 BLOCK = 8
 DRAFTS = 7
@@ -383,40 +395,17 @@ def tiny_draft_config(
     )
 
 
-class _IdCPU(CPU):
-    """A CPU device carrying an arbitrary id, to stand in for a GPU.
-
-    The traced graph inserts its signal buffers only when the module's
-    devices carry at least two distinct accelerator ids, and every CPU is id
-    0; a mesh of these carries the mesh's signal buffers at the engine's
-    slot, as the GPU build does.
-    """
-
-    def __init__(self, device_id: int) -> None:
-        super().__init__()
-        self._device_id = device_id
-
-    @property
-    def id(self) -> int:
-        return self._device_id
-
-
-def build_spec(
+def build_parts(
     devices: list[DeviceRef],
     *,
     data_parallel_degree: int = 1,
     ep_config: EPConfig | None = None,
-) -> tuple[
-    UnifiedDflashMiMoV2Spec,
-    MiMoV2Config,
-    DFlashMiMoV2Config,
-    MultiKVCacheParams,
-]:
-    """The fused graph's spec and its target/drafter configs, on ``devices``.
+) -> tuple[MiMoV2Config, DFlashMiMoV2Config, MultiKVCacheParams]:
+    """The target's and drafter's configs and their KV tree, on ``devices``.
 
     ``data_parallel_degree`` above 1 builds the DP form: one-device
-    replicas, the batch axis named ``dp``, dp-aware KV trees, and -- with
-    ``ep_config`` -- the P2P expert backend the replicas dispatch through.
+    replicas, dp-aware KV trees, and -- with ``ep_config`` -- the P2P
+    expert backend the replicas dispatch through.
     """
     target_kv = target_kv_params(
         devices,
@@ -438,61 +427,121 @@ def build_spec(
         max_seq_len=512,
         data_parallel_degree=data_parallel_degree,
     )
+    config.kv_params = target_kv
     config.data_parallel_degree = data_parallel_degree
     config.ep_config = ep_config
     draft = tiny_draft_config(
         devices, draft_kv, data_parallel_degree=data_parallel_degree
     )
-    # Widen as the pipeline model does: the spec target builds wide.
+    # As the pairing builds the target: wide, at the drafter's taps.
     config.target_layer_ids = list(draft.target_layer_ids)
     config.return_logits = ReturnLogits.VARIABLE
     config.return_hidden_states = ReturnHiddenStates.SELECTED_LAYERS
-    spec = UnifiedDflashMiMoV2Spec(
-        target=config,
-        draft=draft,
-        speculative_config=SpeculativeConfig(
-            speculative_method="dflash",
-            num_speculative_tokens=DRAFTS,
-        ),
-        num_speculative_tokens=DRAFTS,
-        sampleable_vocab_size=SAMPLEABLE,
-    )
     kv_tree = MultiKVCacheParams.from_params(
-        {"target": target_kv, DRAFT: draft_kv}
+        {"target": target_kv, "draft": draft_kv}
     )
-    return spec, config, draft, kv_tree
+    return config, draft, kv_tree
+
+
+def pipeline_config(
+    *, structured_output: bool, data_parallel_degree: int = 1
+) -> PipelineConfig:
+    """What the pairing reads of a served config that prefers ModuleV3."""
+    return cast(
+        PipelineConfig,
+        SimpleNamespace(
+            models=SimpleNamespace(main_architecture_name="MiMoV2ForCausalLM"),
+            # The checkpoint's own name, which the target renames.
+            draft_model=SimpleNamespace(
+                huggingface_config=SimpleNamespace(
+                    architectures=["DFlashDraftModel"]
+                )
+            ),
+            speculative=SpeculativeConfig(
+                speculative_method="dflash", num_speculative_tokens=DRAFTS
+            ),
+            needs_bitmask_constraints=structured_output,
+            runtime=SimpleNamespace(
+                reasoning_parser=None, prefer_module_v3=True
+            ),
+            model=SimpleNamespace(
+                data_parallel_degree=data_parallel_degree,
+                pipeline_stage=None,
+                huggingface_config=SimpleNamespace(
+                    get_text_config=_FakeAttrConfig
+                ),
+            ),
+        ),
+    )
+
+
+def graph_name() -> str:
+    """The name the pairing compiles its fused graph under."""
+    return _graph_name(
+        _Pairing.from_pipeline_config(pipeline_config(structured_output=False)),
+        "dflash",
+    )
 
 
 def build_module(
-    spec: UnifiedDflashMiMoV2Spec,
+    config: MiMoV2Config,
+    draft: DFlashMiMoV2Config,
     kv_tree: MultiKVCacheParams,
     *,
     structured_output: bool,
     ep_batch_manager: EPBatchManager | None = None,
-) -> UnifiedDflashMiMoV2ModuleV3:
-    """The fused module traced on the spec's mesh.
+) -> _SpecDecodeModule:
+    """The fused module the pairing compiles, traced on ``config``'s devices.
 
-    The mesh follows the pipeline model's: one axis over the devices, named
+    Its signal buffers sit where the pipeline model places them: declared on
+    one device, inserted by the trace at the adapter's slot on more. The
+    mesh follows the pipeline model's: one axis over the devices, named
     ``dp`` under data parallelism (the split placement keys on it) and
-    ``tp`` otherwise. CPU refs build a CPU mesh, as the no-GPU staging does;
-    GPU refs build over the (possibly virtual) accelerators.
+    ``tp`` otherwise.
     """
-    n_devices = len(spec.target.devices)
-    axis_name = "dp" if spec.target.data_parallel_degree > 1 else "tp"
-    mesh = DeviceMesh(
-        tuple(ref.to_device() for ref in spec.target.devices),
-        (n_devices,),
-        (axis_name,),
+    devices = [ref.to_device() for ref in config.devices]
+    dp_degree = config.data_parallel_degree
+    axis_name = "dp" if dp_degree > 1 else "tp"
+    mesh = DeviceMesh(tuple(devices), (len(devices),), (axis_name,))
+    with default_device(mesh), default_dtype(DType.bfloat16), F.lazy():
+        target = MiMoV2SpecTarget(config, ep_batch_manager)
+        drafter = DFlashMiMoV2(draft, mask_embedding())
+    draft_config = DFlashMiMoV2DraftConfig(
+        module=draft,
+        sampleable_vocab_size=SAMPLEABLE,
+        drafter_export=DrafterExport(
+            directory=Path(),
+            target_layer_ids=list(draft.target_layer_ids),
+            num_speculative_tokens=DRAFTS,
+            spec_block_size=BLOCK,
+        ),
     )
-    with default_device(mesh), default_dtype(DType.bfloat16):
-        with F.lazy():
-            return UnifiedDflashMiMoV2ModuleV3(
-                spec,
-                mask_embedding(),
-                kv_params=kv_tree,
-                enable_structured_output=structured_output,
-                ep_batch_manager=ep_batch_manager,
-            )
+    declared = len(devices) == 1
+    return _SpecDecodeModule(
+        target,
+        drafter,
+        partial(
+            _driver_call,
+            pipeline_config(
+                structured_output=structured_output,
+                data_parallel_degree=dp_degree,
+            ),
+            kv_tree,
+            list(config.devices),
+            include_signal_buffers=True,
+            target_config=config,
+            draft_config=draft_config,
+            hidden_states=ReturnHiddenStates.SELECTED_LAYERS,
+            trace_owns_signal_buffers=not declared,
+            signal_buffer_index=(
+                None
+                if declared
+                else spec_adapters.signal_buffer_index(
+                    "MiMoV2ForCausalLM_ModuleV3"
+                )
+            ),
+        ),
+    )
 
 
 def fused_weights(
@@ -503,5 +552,5 @@ def fused_weights(
     draft_state = adapted_draft(draft, mask_embedding())
     return {
         **{f"target.{k}": v for k, v in target_state.items()},
-        **{f"{DRAFT}.{k}": v for k, v in draft_state.items()},
+        **{f"draft.{k}": v for k, v in draft_state.items()},
     }

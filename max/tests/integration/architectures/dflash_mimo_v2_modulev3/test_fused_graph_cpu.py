@@ -36,6 +36,7 @@ suite's GPU lane, not here.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -47,12 +48,17 @@ from max.experimental.compilation import StagedGraph
 from max.experimental.tensor import default_device, default_dtype
 from max.graph import DeviceRef
 from max.nn import kernels
-from max.nn.kv_cache import KVConnectorType
-from max.pipelines.architectures.unified_dflash_mimo_v2_modulev3.model_config import (
-    UnifiedDflashMiMoV2Config,
+from max.nn.comm import Signals
+from max.nn.kv_cache import (
+    KVCacheParams,
+    KVConnectorType,
+    MultiKVCacheParams,
 )
-from max.pipelines.architectures.unified_dflash_mimo_v2_modulev3.unified_dflash_mimo_v2 import (
-    GRAPH_NAME,
+from max.pipelines.architectures.dflash_mimo_v2_modulev3.model import (
+    DFlashMiMoV2ModuleV3DraftArchConfig,
+)
+from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
+    MiMoV2Config,
 )
 from max.pipelines.kv_cache.config import KVCacheConfig, KVConnectorConfig
 from max.pipelines.kv_cache.connectors.dkv.connector import (
@@ -64,9 +70,14 @@ from mimo_dflash_v3_fixtures import (
     DFLASH_CONFIG,
     _FakeAttrConfig,
     build_module,
-    build_spec,
+    build_parts,
     fused_weights,
+    graph_name,
 )
+
+GRAPH_NAME = "unified_dflash_mimo_v2"
+"""The graph-API pairing's graph name, which Mach's block-spec executor binds
+by constant."""
 
 N_INPUTS_1DEV = 35
 """Inputs at 1 device without the bitmask triple (38 with it): the fused
@@ -78,11 +89,12 @@ buffer, the 24 KV leaves (8 per group over 3 groups), the draft tokens, the
 def test_construct_kv_params_builds_a_tree_the_dkv_connector_serves(
     tmp_path: Any,
 ) -> None:
-    """The dKV-configured KV tree the real export path builds is servable.
+    """The dKV-configured KV tree the pairing builds is servable.
 
-    Calls ``construct_kv_params`` with a dKV-typed connector config (the
-    refusal this module used to raise is gone) and hands the built tree to
-    the connector's own validation: the target's sliding window (128) beside
+    Builds the target's and the ModuleV3 drafter's params with a dKV-typed
+    connector config (the drafter refuses it only on the graph API), joins
+    them as the pairing does, and hands the tree to the connector's own
+    validation: the target's sliding window (128) beside
     the drafter's context window (1024) is the mixed-width tree, and a leaf
     kind the connector cannot serve (a scratch or recurrent leaf joining
     the tree) fails here rather than at a served boot.
@@ -109,12 +121,26 @@ def test_construct_kv_params_builds_a_tree_the_dkv_connector_serves(
         kv_connector_config=KVConnectorConfig(type=KVConnectorType.dkv),
     )
 
-    params = UnifiedDflashMiMoV2Config.construct_kv_params(
-        _FakeAttrConfig(),
-        pipeline_config,
-        devices,
-        kv_cache_config,
-        DType.bfloat16,
+    def kv_params(config_cls: Any) -> Any:
+        return config_cls.construct_kv_params(
+            _FakeAttrConfig(),
+            pipeline_config,
+            devices,
+            kv_cache_config,
+            DType.bfloat16,
+        )
+
+    target = kv_params(MiMoV2Config)
+    draft = kv_params(DFlashMiMoV2ModuleV3DraftArchConfig)
+    assert isinstance(target, MultiKVCacheParams)
+    assert isinstance(draft, KVCacheParams)
+    # The pairing stamps every leaf with the draft's width.
+    stamped = {}
+    for name, leaf in target.children.items():
+        assert isinstance(leaf, KVCacheParams)
+        stamped[name] = replace(leaf, num_draft_tokens=draft.num_draft_tokens)
+    params = MultiKVCacheParams.from_params(
+        {"target": MultiKVCacheParams.from_params(stamped), "draft": draft}
     )
     leaves = {
         region.leaf_id: region.group_id for region in params.leaves().values()
@@ -142,9 +168,9 @@ def staged() -> tuple[StagedGraph[Any, Any], str]:
     realizes every adapter output), and every check below only reads it.
     """
     one = [DeviceRef.CPU()]
-    spec, config, draft, kv_tree = build_spec(one)
+    config, draft, kv_tree = build_parts(one)
     weights = fused_weights(config, draft)
-    module = build_module(spec, kv_tree, structured_output=False)
+    module = build_module(config, draft, kv_tree, structured_output=False)
     # The W4A8 kernels have no CPU dispatch; the stage only emits the ops,
     # so pin the SM100 shape paths the GPU build will compile, exactly as
     # the ModuleV3 MiMo CPU harness does.
@@ -152,9 +178,9 @@ def staged() -> tuple[StagedGraph[Any, Any], str]:
     with default_dtype(DType.bfloat16), default_device(CPU()):
         with F.lazy():
             graph, _registry = module.stage(
-                *module.input_types(),
+                *module.driver_call().input_types,
                 weights=weights,
-                name=GRAPH_NAME,
+                name=graph_name(),
                 allow_subgraphs=True,
             )
             text = str(graph)
@@ -181,6 +207,16 @@ def test_the_input_count_matches_the_v2_signature(
     assert len(graph.graph.inputs) == N_INPUTS_1DEV
 
 
+def test_the_signal_buffer_takes_the_engines_slot(
+    staged: tuple[StagedGraph[Any, Any], str],
+) -> None:
+    """Mach binds the signal buffers after the tokens, row offsets and logit
+    count, where the graph-API pairing declares them."""
+    graph, _ = staged
+    (signal,) = Signals(devices=[DeviceRef.CPU()]).input_types()
+    assert graph.graph.inputs[3].type == signal
+
+
 def test_the_weight_name_contract_holds_both_directions() -> None:
     """``Module.compile`` silently drops a weights entry no parameter
     matches and initializes that parameter to its default, so the fused
@@ -188,8 +224,8 @@ def test_the_weight_name_contract_holds_both_directions() -> None:
     checkpoint must be asserted equal as sets, and the strict load pins
     shape and backing dtype."""
     one = [DeviceRef.CPU()]
-    spec, config, draft, kv_tree = build_spec(one)
-    module = build_module(spec, kv_tree, structured_output=False)
+    config, draft, kv_tree = build_parts(one)
+    module = build_module(config, draft, kv_tree, structured_output=False)
     weights = fused_weights(config, draft)
     names = {name for name, _ in module.parameters}
     assert names == set(weights), (

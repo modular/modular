@@ -31,15 +31,12 @@ from max.experimental import functional as F
 from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import default_device, default_dtype
 from max.graph import DeviceRef
-from max.pipelines.architectures.unified_dflash_mimo_v2_modulev3.unified_dflash_mimo_v2 import (
-    GRAPH_NAME,
-    UnifiedDflashMiMoV2ModuleV3,
-)
 from mimo_dflash_v3_fixtures import (
     _FakeAttrConfig,
-    build_spec,
+    build_module,
+    build_parts,
     fused_weights,
-    mask_embedding,
+    graph_name,
 )
 
 FUSED_QKV = "mo.chunked_qkv_rope_store.ragged.paged"
@@ -59,24 +56,23 @@ def test_qkv_fusion_reaches_the_spec_graph(
     set_virtual_device_api("cuda")
     set_virtual_device_target_arch("sm_100a")
     set_virtual_device_count(n_devices)
-    spec, config, draft, kv_tree = build_spec(
+    config, draft, kv_tree = build_parts(
         [DeviceRef.GPU(i) for i in range(n_devices)]
     )
     config.fused_sliding_qkv = sliding
     config.fused_full_qkv = full
+    module = build_module(config, draft, kv_tree, structured_output=False)
+    call = module.driver_call()
     mesh = DeviceMesh(
         tuple(Accelerator(i) for i in range(n_devices)), (n_devices,), ("tp",)
     )
     with default_device(mesh), default_dtype(DType.bfloat16):
         with F.lazy():
-            module = UnifiedDflashMiMoV2ModuleV3(
-                spec, mask_embedding(), kv_params=kv_tree
-            )
-        with F.lazy():
             staged, _registry = module.stage(
-                *module.input_types(),
+                *call.input_types,
                 weights=fused_weights(config, draft),
-                name=GRAPH_NAME,
+                name=graph_name(),
+                signal_buffer_index=call.driver.input_spec.signal_buffer_index,
             )
             text = str(staged)
     assert text.count(FUSED_QKV) == n_devices * (

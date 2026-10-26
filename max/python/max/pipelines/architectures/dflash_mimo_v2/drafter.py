@@ -44,6 +44,7 @@ from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.registry import PIPELINE_REGISTRY
 from max.pipelines.speculative._dflash import parse_dflash_draft_hf_config
 from transformers import AutoConfig
+from typing_extensions import Self
 
 from .dflash_mimo_v2 import DFlashMiMoV2
 from .model_config import DFlashMiMoV2Config
@@ -247,11 +248,11 @@ class DFlashMiMoV2DraftConfig:
 
 
 @dataclass
-class DFlashMiMoV2DraftArchConfig(ArchConfigWithBoundedMaxSeqLen):
+class DFlashMiMoV2DraftArchConfigBase(ArchConfigWithBoundedMaxSeqLen):
     """The draft architecture's config: its sequence bound and KV leaf.
 
     The drafter is served only beside a MiMo-V2 target, so nothing else of
-    it is read from here.
+    it is read from here. Each API's subclass builds its module.
     """
 
     max_seq_len: int
@@ -263,7 +264,7 @@ class DFlashMiMoV2DraftArchConfig(ArchConfigWithBoundedMaxSeqLen):
         model_config: MAXModelConfig | None = None,
         *,
         max_seq_len: int,
-    ) -> DFlashMiMoV2DraftArchConfig:
+    ) -> Self:
         """Records the sequence length the pipeline resolved."""
         del pipeline_config, model_config
         return cls(max_seq_len=max_seq_len)
@@ -277,20 +278,8 @@ class DFlashMiMoV2DraftArchConfig(ArchConfigWithBoundedMaxSeqLen):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        """Returns the drafter's context cache, from its raw config.
-
-        Raises:
-            ValueError: If the cache is configured for dKV.
-        """
+        """Returns the drafter's context cache, from its raw config."""
         del huggingface_config, cache_dtype
-        # The connector itself serves this tree per leaf; the graph-API
-        # build keeps the refusal by policy (all model work is
-        # ModuleV3-only).
-        if kv_cache_config.kv_connector_config.type == KVConnectorType.dkv:
-            raise ValueError(
-                "MiMo-V2 DFlash supports the dKV connector only on its "
-                "ModuleV3 build. Pass --prefer-module-v3 to use it."
-            )
         draft_model = pipeline_config.draft_model
         assert draft_model is not None
         return drafter_kv_params(
@@ -302,16 +291,24 @@ class DFlashMiMoV2DraftArchConfig(ArchConfigWithBoundedMaxSeqLen):
             kv_cache_config,
         )
 
-    @classmethod
-    def build_module(
-        cls, context: ModelLoadContext
-    ) -> tuple[DFlashMiMoV2, DFlashMiMoV2DraftConfig]:
-        """Builds the drafter from the draft checkpoint ``context`` names.
+    @staticmethod
+    def read_drafter(
+        context: ModelLoadContext,
+    ) -> tuple[
+        DFlashMiMoV2Config,
+        dict[str, WeightData],
+        WeightData,
+        DFlashMiMoV2DraftConfig,
+    ]:
+        """Reads the drafter the draft checkpoint ``context`` names.
 
         It reads the folder's ``config.json`` raw, as the drafter module
         parses it, and loads its weights and trained mask embedding from the
-        same folder. It embeds and projects through its target's embedding
-        and head, so spec decoding shares those onto it.
+        same folder.
+
+        Returns:
+            The drafter module's config, its tensors without the mask
+            embedding, the mask embedding, and the config the pairing reads.
 
         Raises:
             ValueError: If the method isn't ``dflash``.
@@ -335,14 +332,68 @@ class DFlashMiMoV2DraftArchConfig(ArchConfigWithBoundedMaxSeqLen):
             context.max_seq_len,
         )
         state, mask_embedding, directory = load_drafter(repo, config)
-        draft = DFlashMiMoV2(config, mask_embedding=mask_embedding)
-        draft.load_state_dict(state, weight_alignment=1, strict=True)
-        return draft, DFlashMiMoV2DraftConfig(
-            module=config,
-            sampleable_vocab_size=sampleable_vocab_size(pipeline_config),
-            drafter_export=drafter_export(
-                config,
-                directory,
-                num_speculative_tokens=speculative.draft_width,
+        return (
+            config,
+            state,
+            mask_embedding,
+            DFlashMiMoV2DraftConfig(
+                module=config,
+                sampleable_vocab_size=sampleable_vocab_size(pipeline_config),
+                drafter_export=drafter_export(
+                    config,
+                    directory,
+                    num_speculative_tokens=speculative.draft_width,
+                ),
             ),
         )
+
+
+class DFlashMiMoV2DraftArchConfig(DFlashMiMoV2DraftArchConfigBase):
+    """The graph API drafter's config, which builds its module."""
+
+    @classmethod
+    def construct_kv_params(
+        cls,
+        huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+    ) -> KVCacheParams:
+        """Returns the drafter's context cache, from its raw config.
+
+        Raises:
+            ValueError: If the cache is configured for dKV.
+        """
+        # The connector itself serves this tree per leaf; the graph-API
+        # build keeps the refusal by policy (all model work is
+        # ModuleV3-only).
+        if kv_cache_config.kv_connector_config.type == KVConnectorType.dkv:
+            raise ValueError(
+                "MiMo-V2 DFlash supports the dKV connector only on its "
+                "ModuleV3 build. Pass --prefer-module-v3 to use it."
+            )
+        return super().construct_kv_params(
+            huggingface_config,
+            pipeline_config,
+            devices,
+            kv_cache_config,
+            cache_dtype,
+        )
+
+    @classmethod
+    def build_module(
+        cls, context: ModelLoadContext
+    ) -> tuple[DFlashMiMoV2, DFlashMiMoV2DraftConfig]:
+        """Builds the drafter from the draft checkpoint ``context`` names.
+
+        It embeds and projects through its target's embedding and head, so
+        spec decoding shares those onto it.
+
+        Raises:
+            ValueError: If the method isn't ``dflash``.
+        """
+        config, state, mask_embedding, draft_config = cls.read_drafter(context)
+        draft = DFlashMiMoV2(config, mask_embedding=mask_embedding)
+        draft.load_state_dict(state, weight_alignment=1, strict=True)
+        return draft, draft_config

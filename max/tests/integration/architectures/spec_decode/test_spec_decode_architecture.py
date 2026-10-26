@@ -24,6 +24,7 @@ import pytest
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     SpecDecodeArchConfig,
     SpecDecodePipelineModel,
+    _SpecDecodeModuleV3PipelineModel,
     _SpecDecodeModuleV3VisionCachePipelineModel,
     spec_decode_architecture,
 )
@@ -128,6 +129,18 @@ def test_a_modulev3_target_pairs_with_its_modulev3_draft() -> None:
     assert arch.pipeline_model is _SpecDecodeModuleV3VisionCachePipelineModel
     assert InputModality.IMAGE in arch.input_modalities
     assert arch.requires_max_batch_context_length
+
+
+def test_a_modulev3_block_target_pairs_with_its_modulev3_drafter() -> None:
+    # The checkpoint names its drafter as Llama 3's, which the target renames.
+    arch = spec_decode_architecture(
+        "MiMoV2ForCausalLM", "dflash", "DFlashDraftModel", prefer_module_v3=True
+    )
+    assert arch is not None
+    assert arch.name == "MiMoV2ForCausalLM_ModuleV3+dflash"
+    assert arch.pipeline_model is _SpecDecodeModuleV3PipelineModel
+    assert arch.multi_gpu_supported
+    assert arch.supports_spec_decode_mixed_batches
 
 
 def test_a_target_that_builds_both_pairs_on_the_graph_api_by_default() -> None:

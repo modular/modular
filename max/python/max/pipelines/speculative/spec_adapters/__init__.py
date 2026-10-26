@@ -59,6 +59,7 @@ __all__ = [
     "primary_kv",
     "relaxed_thinking_acceptance",
     "sequential_proposer",
+    "signal_buffer_index",
     "speculates_on_last_stage",
     "tail_buffers",
     "tail_kv",
@@ -87,6 +88,7 @@ _TARGET_ADAPTERS: Mapping[str, str] = {
     "KimiK3ForConditionalGeneration": "kimi_k3_spec",
     "LlamaForCausalLM": ".llama3.spec_adapters",
     "MiMoV2ForCausalLM": ".mimo_v2.spec_adapters",
+    "MiMoV2ForCausalLM_ModuleV3": ".mimo_v2_modulev3.spec_adapters",
     "NemotronHForCausalLM": ".nemotron_h_modulev3.spec_adapters",
     "Qwen3_5ForCausalLM": ".qwen3_5.spec_adapters",
     "Qwen3_5ForConditionalGeneration": ".qwen3_5.spec_adapters",
@@ -221,6 +223,12 @@ def relaxed_thinking_acceptance(target_arch: str) -> bool:
     """Returns whether a reasoning model's drafts may be accepted under the
     relaxed in-thinking rule."""
     return _adapter(target_arch).relaxed_thinking_acceptance
+
+
+def signal_buffer_index(target_arch: str) -> int | None:
+    """Returns where a ModuleV3 target's fused graph takes its signal
+    buffers on every device count, if it fixes that."""
+    return _adapter(target_arch).signal_buffer_index
 
 
 def trailing_input_types(

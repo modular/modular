@@ -10,22 +10,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Block spec-decode adapters for a ModuleV3 MiMo-V2 target and DFlash drafter.
+"""Block spec-decode adapters for a ModuleV3 MiMo-V2 target and its DFlash
+drafter.
 
-Both are :class:`~max.pipelines.speculative.driver.TensorAdapter` values, so
-the block driver hands them ``Tensor`` values, one per device where it holds
-a list. The target also grows the verify pass the base module refuses to
-build: a variable-logits window scored from a host count, and the
-``SELECTED_LAYERS`` taps the drafter's ``fc`` reads.
+The target verifies through :class:`~.mimo_v2.MiMoV2SpecTarget`'s own pass.
+The drafter embeds and projects through the target's embedding and head, so
+its proposer lives here, beside the target it reads. Both run on ``Tensor``
+values.
+
+Mach's block-spec executor binds this pairing's export and the graph-API
+pairing's through one slot map, so the graph takes its signal buffers where
+the graph-API signature declares them, on every device count. Under
+data-parallel attention the target splits the merged batch over its
+one-device replicas, and each replica's full drafter drafts its own rows.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import replace
-from typing import Any
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any
 
-from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn.common_layers.mesh_axis import DP
 from max.experimental.realization_context import ensure_context
@@ -37,10 +41,13 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor
 from max.graph import BufferType, TensorType, TensorValue, ops
-from max.nn.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.kv_cache import KVCacheInputsPerDevice, PagedCacheValues
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.speculative._tensor_compat import as_graph_values
+from max.nn.comm.ep import EPCommBuffers
+from max.nn.kv_cache import KVCacheInputsPerDevice
+from max.nn.transformer import ReturnHiddenStates
+from max.pipelines.speculative._tensor_compat import (
+    as_graph_values,
+    as_tensors,
+)
 from max.pipelines.speculative.block_driver import (
     Accepted,
     BlockBatch,
@@ -48,194 +55,33 @@ from max.pipelines.speculative.block_driver import (
     block_kv_with_dispatch,
     local_row_offsets,
 )
-from max.pipelines.speculative.driver import (
-    TensorAdapter,
-    _for_adapter,
-    _from_adapter,
+from max.pipelines.speculative.driver import SequentialBatch, TensorAdapter
+from max.pipelines.speculative.spec_adapters.target_adapter import (
+    TargetAdapter,
 )
 from max.pipelines.speculative.spec_target import Verified
+from max.pipelines.speculative.unified_graph_ops import mask_padded_tail
 
-from ..deepseekV3.deepseekV3 import mask_padded_tail
 from ..dflash_mimo_v2_modulev3 import DFlashMiMoV2
-from ..mimo_v2_modulev3.mimo_v2 import MiMoV2
-from ..mimo_v2_modulev3.model_config import FULL, SLIDING, MiMoV2Config
+from .mimo_v2 import MiMoV2SpecTarget
+from .model_config import FULL, SLIDING
 
-__all__ = [
-    "DFlashMiMoV2Proposer",
-    "MiMoV2BlockTarget",
-    "MiMoV2SpecTarget",
-    "verify_fn",
-]
+if TYPE_CHECKING:
+    from max.pipelines.speculative.block_driver import BlockProposer
+    from max.pipelines.speculative.config import SpeculativeConfig
+    from max.pipelines.speculative.spec_adapters import VerifyFn
+
+__all__ = ["ADAPTER", "DFlashMiMoV2Proposer", "MiMoV2BlockTarget"]
 
 _Batch = BlockBatch[Tensor, Tensor, Tensor]
 _Caches = list[KVCacheInputsPerDevice[Tensor, Tensor]]
 
-
-def verify_fn(
-    target: MiMoV2BlockTarget,
-) -> Callable[[BlockBatch], Verified[Any, TensorValue]]:
-    """The block target's verify behind the driver's callable argument.
-
-    The driver hands the traced graph's values to ``verify``; the target's
-    layers are ModuleV3 ``Tensor`` values. The conversion pair is the one
-    the driver's per-adapter sites apply to the proposer, kept at the
-    boundary here since the verify callable is this package's own.
-    """
-
-    def _verify(
-        batch: BlockBatch,
-    ) -> Verified[Any, TensorValue]:
-        # The conversion pairs the driver applies to the proposer's calls:
-        # graph values in, the adapter's Tensor results back out. The
-        # driver's captured-hidden payload stays opaque to it.
-        return _from_adapter(target, target.verify(_for_adapter(target, batch)))
-
-    return _verify
+_SIGNAL_BUFFER_INDEX = 3
+"""After ``tokens``, ``input_row_offsets`` and ``return_n_logits``, before
+the KV tree."""
 
 
-class MiMoV2SpecTarget(MiMoV2):
-    """The fused graph's MiMo-V2 target: a verify pass, not a forward.
-
-    The base module returns neither variable logits nor hidden states: its
-    ``F.range`` count would land on the device, and its per-device taps are a
-    speculative-decode concern. Both are built here instead, where the verify
-    hands the count in from the host and the taps reach the drafter's ``fc``
-    without leaving the graph.
-
-    Under data-parallel attention the verify splits the merged batch over
-    the one-device replicas with the base forward's split helper, and the
-    EP batch manager threads the routed experts' dispatch buffers through
-    every MoE layer, as the base forward does.
-    """
-
-    def __init__(
-        self,
-        config: MiMoV2Config,
-        ep_batch_manager: EPBatchManager | None = None,
-    ) -> None:
-        if not config.target_layer_ids:
-            raise ValueError(
-                "MiMo-V2 DFlash: the spec target captures its taps at the"
-                " drafter's target_layer_ids, which are unset."
-            )
-        if config.target_layer_ids != sorted(config.target_layer_ids):
-            raise ValueError(
-                "MiMo-V2 DFlash: the target captures its taps in layer order;"
-                f" got target_layer_ids {config.target_layer_ids}."
-            )
-        # Build with the base's narrow ABI and widen after: the base module
-        # refuses hidden states at build, and the verify pass is the only
-        # consumer of the wide ones. The base's NONE guard narrows the
-        # attributes to the literal, so the widening needs the cast comments.
-        super().__init__(
-            replace(
-                config,
-                return_logits=ReturnLogits.LAST_TOKEN,
-                return_hidden_states=ReturnHiddenStates.NONE,
-            ),
-            ep_batch_manager,
-        )
-        self.return_logits = ReturnLogits.VARIABLE
-        self.return_hidden_states = ReturnHiddenStates.SELECTED_LAYERS
-        self.target_layer_ids = list(config.target_layer_ids)
-        self._target_layers = set(self.target_layer_ids)
-
-    def verify(
-        self,
-        tokens: Tensor,
-        return_n_logits: Tensor,
-        input_row_offsets: Tensor,
-        kv_by_group: Mapping[str, Sequence[PagedCacheValues]],
-        comm: EPCommBuffers | None = None,
-        host_merged_offsets: Tensor | None = None,
-        data_parallel_splits: Tensor | None = None,
-    ) -> tuple[Tensor, list[Tensor]]:
-        """Runs the target over the merged rows, at verify width.
-
-        Args:
-            tokens: The single-device merged tokens, ``[merged_seq_len]``.
-            return_n_logits: How many trailing rows of each request score
-                logits; a host tensor, as the logit range needs.
-            input_row_offsets: The single-device ragged offsets.
-            kv_by_group: The target's caches, one per device per KV group,
-                keyed ``sliding_attention`` and ``full_attention``.
-            comm: The EP communication buffers, when the routed experts
-                serve expert parallelism.
-            host_merged_offsets: The merged offsets on the host, under data
-                parallelism; the split helper slices its bounds in int64.
-            data_parallel_splits: Per-replica batch boundaries, under data
-                parallelism.
-
-        Returns:
-            The ``[batch * count, vocab]`` float32 logits and the residual
-            stream after each tapped layer, in layer order. The logits are
-            replicated over the whole batch; the taps are replicated over
-            tensor parallelism and sharded per replica under data
-            parallelism.
-        """
-        tokens, input_row_offsets = self._place(tokens, input_row_offsets)
-        h = self.embed_tokens(tokens)
-        if self.dp_attention:
-            assert host_merged_offsets is not None
-            assert data_parallel_splits is not None
-            # The base forward's own split, so the two cannot drift: each
-            # replica verifies its own rows against its own cache.
-            h, input_row_offsets = self._split_replica_batch(
-                h, input_row_offsets, host_merged_offsets, data_parallel_splits
-            )
-        freqs_cis = {
-            group: rope.freqs_cis.cast(h.dtype).to(h.mesh)
-            for group, rope in self.ropes.items()
-        }
-        taps: list[Tensor] = []
-        for i, layer in enumerate(self.layers):
-            group = self._layer_groups[i]
-            h = layer(
-                h,
-                kv_by_group[group],
-                freqs_cis[group],
-                input_row_offsets,
-                comm,
-            )
-            if i in self._target_layers:
-                taps.append(h)
-        # The count is a host tensor, so `F.range` takes it; a device count
-        # it would reject. Each request scores its trailing `count` rows.
-        count = return_n_logits[0]
-        distance = F.range(
-            count,
-            0,
-            -1,
-            out_dim="return_n_logits_range",
-            dtype=DType.int64,
-            device=h.mesh,
-        )
-        # The base forward's own trailing-rows gather, at the verify's
-        # distance: rebased per replica under data parallelism, where the
-        # replicas' rows then gather onto the whole batch as the base's
-        # last rows do.
-        rows = self._gather_trailing_rows(
-            h,
-            input_row_offsets,
-            per_replica=self.dp_attention,
-            distance=distance,
-        )
-        if self.dp_attention:
-            rows = F.allgather(rows)
-        logits = self._logits(rows)
-        return logits, taps
-
-    def draft_logits(self, h: Tensor) -> Tensor:
-        """The target's head over the drafter's own final-norm output.
-
-        The drafter normalizes its block before this head reads it, so the
-        target's final norm must not run again.
-        """
-        logits = self.lm_head(h)
-        return F.allgather(logits, tensor_axis=-1).cast(DType.float32)
-
-
-class MiMoV2BlockTarget(TensorAdapter):
+class MiMoV2BlockTarget:
     """The ModuleV3 MiMo-V2 target over the merged rows, returning its taps.
 
     Acceptance samples its recovered and bonus tokens from these logits, so
@@ -252,8 +98,21 @@ class MiMoV2BlockTarget(TensorAdapter):
         self.target = target
         self.vocab_size = vocab_size
         self.sampleable_vocab_size = sampleable_vocab_size
+        # Only data-parallel attention declares the distributed inputs; the
+        # tensor-parallel export's slots stay those Mach already binds.
+        self.takes_distributed_inputs = target.dp_attention
 
-    def verify(self, batch: _Batch) -> Verified[list[Tensor], Tensor]:
+    def __call__(
+        self, batch: SequentialBatch | BlockBatch
+    ) -> Verified[list[TensorValue]]:
+        assert isinstance(batch, BlockBatch)
+        # The driver runs on graph values, the target on Tensors.
+        verified: Verified[list[TensorValue]] = as_graph_values(
+            self._verify(as_tensors(batch))
+        )
+        return verified
+
+    def _verify(self, batch: _Batch) -> Verified[list[Tensor], Tensor]:
         # The paged-cache kernels take the same cache leaves as graph values,
         # so the buffers the kernels write in place stay buffers through the
         # round trip.
@@ -298,12 +157,6 @@ class MiMoV2BlockTarget(TensorAdapter):
             hidden=list(hidden),
         )
 
-    def ep_input_types(self) -> Sequence[TensorType | BufferType]:
-        ep_batch_manager = self.target.ep_batch_manager
-        if ep_batch_manager is None:
-            return ()
-        return tuple(ep_batch_manager.input_types())
-
 
 class DFlashMiMoV2Proposer(TensorAdapter):
     """The DFlash block drafter, reusing the target's embedding and head.
@@ -320,6 +173,9 @@ class DFlashMiMoV2Proposer(TensorAdapter):
 
     samples_from_anchor = False
     supports_zero_draft_rows = False
+    # The drafter's own lengths place its context, as they do in an engine
+    # that sizes each group's claim separately.
+    ctx_at_draft_cache_length = True
 
     def __init__(
         self,
@@ -530,3 +386,64 @@ class DFlashMiMoV2Proposer(TensorAdapter):
         if self.mesh.num_devices > 1:
             return F.distributed_broadcast(value, self.mesh)
         return value.to(self.mesh)
+
+
+def verify(
+    target: Any,
+    target_config: Any,
+    hidden_states: ReturnHiddenStates,
+    draft_config: Any,
+) -> VerifyFn:
+    """Returns the verify of a ModuleV3 MiMo-V2 target, returning its taps.
+
+    Raises:
+        ValueError: If the target wasn't built to return selected layers,
+            which only block drafts read.
+    """
+    if hidden_states != ReturnHiddenStates.SELECTED_LAYERS:
+        raise ValueError(
+            "A ModuleV3 MiMo-V2 target verifies only for block drafts, which"
+            f" read selected layers. Got {hidden_states.value}."
+        )
+    assert isinstance(target, MiMoV2SpecTarget)
+    return MiMoV2BlockTarget(
+        target,
+        vocab_size=target_config.vocab_size,
+        sampleable_vocab_size=draft_config.sampleable_vocab_size,
+    )
+
+
+def ep_input_types(target: Any) -> Sequence[TensorType | BufferType]:
+    """Returns the EP buffers a target built with expert parallelism takes."""
+    assert isinstance(target, MiMoV2SpecTarget)
+    if target.ep_batch_manager is None:
+        return ()
+    return tuple(target.ep_batch_manager.input_types())
+
+
+def block_proposer(
+    verify: VerifyFn,
+    draft: Any,
+    draft_config: Any,
+    speculative: SpeculativeConfig,
+) -> BlockProposer[Any, Any, Any, Any, Any]:
+    """Returns the DFlash proposer, which reads the verified target's
+    embedding and head."""
+    assert isinstance(verify, MiMoV2BlockTarget)
+    assert isinstance(draft, DFlashMiMoV2)
+    return DFlashMiMoV2Proposer(
+        draft,
+        verify.target,
+        num_speculative_tokens=speculative.draft_width,
+        sampleable_vocab_size=draft_config.sampleable_vocab_size,
+    )
+
+
+ADAPTER = TargetAdapter(
+    primary_kv=FULL,
+    verify=verify,
+    block_proposer=block_proposer,
+    ep_input_types=ep_input_types,
+    # Where Mach binds them for the graph-API pairing's export too.
+    signal_buffer_index=_SIGNAL_BUFFER_INDEX,
+)

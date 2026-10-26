@@ -862,7 +862,7 @@ class _Inputs(UnifiedSpecDecodeInputs):
         """Returns the buffers in the order the graph's signature declares.
 
         A graph traced by ``Module.compile`` declares no signal buffers and
-        takes them after every declared input.
+        takes them after every declared input, or where its spec places them.
         """
         spec = self.spec
         assert spec is not None
@@ -903,14 +903,21 @@ class _Inputs(UnifiedSpecDecodeInputs):
                 *signals,
                 *kv,
             )
-        return (
+        buffers = (
             *prefix,
             *self._spec_decode_tail_buffers(
                 include_in_thinking_phase=spec.include_in_thinking_phase,
             ),
             *self.trailing,
-            *(self.signal_buffers if traced else ()),
         )
+        if not traced:
+            return buffers
+        at = (
+            len(buffers)
+            if spec.signal_buffer_index is None
+            else spec.signal_buffer_index
+        )
+        return (*buffers[:at], *self.signal_buffers, *buffers[at:])
 
 
 class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
@@ -1321,9 +1328,11 @@ class SpecDecodePipelineModel(
     def signal_buffers(self) -> list[Buffer]:
         """Returns the signal buffers the target's collectives need."""
         model = self.pairing.target.pipeline_model
-        always = model is not None and issubclass(
-            model, AlwaysSignalBuffersMixin
-        )
+        always = (
+            model is not None and issubclass(model, AlwaysSignalBuffersMixin)
+        ) or spec_adapters.signal_buffer_index(
+            self.pairing.adapter_arch
+        ) is not None
         if len(self.devices) <= 1 and not always:
             return []
         return Signals.allocate(self.devices)
@@ -1675,12 +1684,14 @@ def _driver_call(
     draft_config: Any,
     hidden_states: ReturnHiddenStates,
     trace_owns_signal_buffers: bool = False,
+    signal_buffer_index: int | None = None,
 ) -> _DriverCall:
     """Builds the driver over the target and the draft, and its call.
 
     The arguments are :func:`build_spec_graph`'s. With
     ``trace_owns_signal_buffers`` the graph declares no signal buffers, for
-    a module whose trace appends its own.
+    a module whose trace inserts its own, at ``signal_buffer_index`` or
+    after every input.
     """
     pairing = _Pairing.from_pipeline_config(pipeline_config)
     target_arch = pairing.adapter_arch
@@ -1742,6 +1753,11 @@ def _driver_call(
             distributed=_takes_distributed_inputs(verify),
         )
     distributed = _takes_distributed_inputs(verify, proposer)
+    if distributed and signal_buffer_index is not None:
+        # An adapter names the slot in the undistributed signature; the
+        # distributed one declares the host offsets and the batch splits
+        # ahead of it.
+        signal_buffer_index += 2
     input_spec = SpecDecodeInputTypeSpec(
         devices=list(devices),
         distributed=distributed,
@@ -1750,6 +1766,7 @@ def _driver_call(
         ),
         include_signal_buffers=include_signal_buffers,
         trace_owns_signal_buffers=trace_owns_signal_buffers,
+        signal_buffer_index=signal_buffer_index,
         include_in_thinking_phase=thinking,
         enable_vision=vision,
         vision_hidden_size=(
@@ -1904,6 +1921,10 @@ class _SpecDecodeModuleV3PipelineModel(SpecDecodePipelineModel):
         config = self.arch_config_as(SpecDecodeArchConfig)
         modules = self._build_modules(session)
         _share_target_slots(modules)
+        index = spec_adapters.signal_buffer_index(self.pairing.adapter_arch)
+        # A one-device trace takes no signal buffers, so a graph that takes
+        # them on every device count declares its own.
+        declared = index is not None and len(self.devices) == 1
         module = _SpecDecodeModule(
             modules.target,
             modules.draft,
@@ -1916,7 +1937,8 @@ class _SpecDecodeModuleV3PipelineModel(SpecDecodePipelineModel):
                 target_config=modules.target_config,
                 draft_config=modules.draft_config,
                 hidden_states=modules.hidden_states,
-                trace_owns_signal_buffers=True,
+                trace_owns_signal_buffers=not declared,
+                signal_buffer_index=None if declared else index,
             ),
         )
         call = module.driver_call()
@@ -1924,6 +1946,7 @@ class _SpecDecodeModuleV3PipelineModel(SpecDecodePipelineModel):
             *call.input_types,
             weights=modules.weights,
             name=_graph_name(self.pairing, call.method),
+            signal_buffer_index=call.driver.input_spec.signal_buffer_index,
         )
         config.input_spec = call.driver.input_spec
         self.export_input_types = call.input_types

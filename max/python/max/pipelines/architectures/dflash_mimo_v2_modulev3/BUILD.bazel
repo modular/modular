@@ -16,5 +16,6 @@ modular_py_library(
         # graph-API drafter.
         "//max/python/max/pipelines/architectures/dflash_mimo_v2",
         "//max/python/max/nn",
+        "//max/python/max/pipelines/lib",
     ],
 )

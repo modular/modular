@@ -100,7 +100,6 @@ ALL_ARCHITECTURES = [
     "//max/python/max/pipelines/architectures/qwen_image_edit",
     "//max/python/max/pipelines/architectures/step3p5",
     "//max/python/max/pipelines/architectures/umt5",
-    "//max/python/max/pipelines/architectures/unified_dflash_mimo_v2_modulev3",
     "//max/python/max/pipelines/architectures/unified_dspark_deepseekV41",
     "//max/python/max/pipelines/architectures/unified_mtp_glm5_2",
     "//max/python/max/pipelines/architectures/unified_mtp_glm5_2_modulev3",

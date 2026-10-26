@@ -15,7 +15,8 @@
 from __future__ import annotations
 
 import enum
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import replace
 
 from max.dtype import DType
 from max.experimental import functional as F
@@ -588,3 +589,145 @@ class MiMoV2(Module[..., ModuleV3Outputs]):
         return ModuleV3Outputs(
             next_token_logits=last, logits=logits, logit_offsets=offsets
         )
+
+
+class MiMoV2SpecTarget(MiMoV2):
+    """MiMo-V2 as a speculative target: a verify pass, not a forward.
+
+    The base module returns neither variable logits nor hidden states: its
+    ``F.range`` count would land on the device, and its per-device taps are a
+    speculative-decode concern. Both are built here instead, where the verify
+    hands the count in from the host and the taps reach the drafter's ``fc``
+    without leaving the graph.
+
+    Under data-parallel attention the verify splits the merged batch over
+    the one-device replicas with the base forward's split helper, and the
+    EP batch manager threads the routed experts' dispatch buffers through
+    every MoE layer, as the base forward does.
+    """
+
+    def __init__(
+        self,
+        config: MiMoV2Config,
+        ep_batch_manager: EPBatchManager | None = None,
+    ) -> None:
+        if not config.target_layer_ids:
+            raise ValueError(
+                "MiMo-V2 DFlash: the spec target captures its taps at the"
+                " drafter's target_layer_ids, which are unset."
+            )
+        if config.target_layer_ids != sorted(config.target_layer_ids):
+            raise ValueError(
+                "MiMo-V2 DFlash: the target captures its taps in layer order;"
+                f" got target_layer_ids {config.target_layer_ids}."
+            )
+        # Build with the base's narrow ABI and widen after: the base module
+        # refuses hidden states at build, and the verify pass is the only
+        # consumer of the wide ones. The base's NONE guard narrows the
+        # attributes to the literal, so the widening needs the cast comments.
+        super().__init__(
+            replace(
+                config,
+                return_logits=ReturnLogits.LAST_TOKEN,
+                return_hidden_states=ReturnHiddenStates.NONE,
+            ),
+            ep_batch_manager,
+        )
+        self.return_logits = ReturnLogits.VARIABLE
+        self.return_hidden_states = ReturnHiddenStates.SELECTED_LAYERS
+        self.target_layer_ids = list(config.target_layer_ids)
+        self._target_layers = set(self.target_layer_ids)
+
+    def verify(
+        self,
+        tokens: Tensor,
+        return_n_logits: Tensor,
+        input_row_offsets: Tensor,
+        kv_by_group: Mapping[str, Sequence[PagedCacheValues]],
+        comm: EPCommBuffers | None = None,
+        host_merged_offsets: Tensor | None = None,
+        data_parallel_splits: Tensor | None = None,
+    ) -> tuple[Tensor, list[Tensor]]:
+        """Runs the target over the merged rows, at verify width.
+
+        Args:
+            tokens: The single-device merged tokens, ``[merged_seq_len]``.
+            return_n_logits: How many trailing rows of each request score
+                logits; a host tensor, as the logit range needs.
+            input_row_offsets: The single-device ragged offsets.
+            kv_by_group: The target's caches, one per device per KV group,
+                keyed ``sliding_attention`` and ``full_attention``.
+            comm: The EP communication buffers, when the routed experts
+                serve expert parallelism.
+            host_merged_offsets: The merged offsets on the host, under data
+                parallelism; the split helper slices its bounds in int64.
+            data_parallel_splits: Per-replica batch boundaries, under data
+                parallelism.
+
+        Returns:
+            The ``[batch * count, vocab]`` float32 logits and the residual
+            stream after each tapped layer, in layer order. The logits are
+            replicated over the whole batch; the taps are replicated over
+            tensor parallelism and sharded per replica under data
+            parallelism.
+        """
+        tokens, input_row_offsets = self._place(tokens, input_row_offsets)
+        h = self.embed_tokens(tokens)
+        if self.dp_attention:
+            assert host_merged_offsets is not None
+            assert data_parallel_splits is not None
+            # The base forward's own split, so the two cannot drift: each
+            # replica verifies its own rows against its own cache.
+            h, input_row_offsets = self._split_replica_batch(
+                h, input_row_offsets, host_merged_offsets, data_parallel_splits
+            )
+        freqs_cis = {
+            group: rope.freqs_cis.cast(h.dtype).to(h.mesh)
+            for group, rope in self.ropes.items()
+        }
+        taps: list[Tensor] = []
+        for i, layer in enumerate(self.layers):
+            group = self._layer_groups[i]
+            h = layer(
+                h,
+                kv_by_group[group],
+                freqs_cis[group],
+                input_row_offsets,
+                comm,
+            )
+            if i in self._target_layers:
+                taps.append(h)
+        # The count is a host tensor, so `F.range` takes it; a device count
+        # it would reject. Each request scores its trailing `count` rows.
+        count = return_n_logits[0]
+        distance = F.range(
+            count,
+            0,
+            -1,
+            out_dim="return_n_logits_range",
+            dtype=DType.int64,
+            device=h.mesh,
+        )
+        # The base forward's own trailing-rows gather, at the verify's
+        # distance: rebased per replica under data parallelism, where the
+        # replicas' rows then gather onto the whole batch as the base's
+        # last rows do.
+        rows = self._gather_trailing_rows(
+            h,
+            input_row_offsets,
+            per_replica=self.dp_attention,
+            distance=distance,
+        )
+        if self.dp_attention:
+            rows = F.allgather(rows)
+        logits = self._logits(rows)
+        return logits, taps
+
+    def draft_logits(self, h: Tensor) -> Tensor:
+        """The target's head over the drafter's own final-norm output.
+
+        The drafter normalizes its block before this head reads it, so the
+        target's final norm must not run again.
+        """
+        logits = self.lm_head(h)
+        return F.allgather(logits, tensor_axis=-1).cast(DType.float32)

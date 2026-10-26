@@ -129,6 +129,11 @@ def register_all_models() -> None:
             "dflash_mimo_v2_draft_arch",
         ),
         _LazyArch(
+            "DFlashMiMoV2DraftModel_ModuleV3",
+            ".dflash_mimo_v2_modulev3",
+            "dflash_mimo_v2_modulev3_draft_arch",
+        ),
+        _LazyArch(
             "DSparkDeepseekV4DraftModel",
             ".dspark_deepseekV4",
             "dspark_deepseekV4_draft_arch",
@@ -399,17 +404,6 @@ def register_all_models() -> None:
             "qwen_image_edit_plus_arch",
         ),
         _LazyArch("Step3p5ForCausalLM", ".step3p5", "step3p5_arch"),
-        _LazyArch(
-            "UnifiedDflashMiMoV2ForCausalLM_ModuleV3",
-            ".unified_dflash_mimo_v2_modulev3",
-            "unified_dflash_mimo_v2_modulev3_arch",
-        ),
-        _LazyArch(
-            "UnifiedDflashMiMoV2ForCausalLM_ModuleV3",
-            ".unified_dflash_mimo_v2_modulev3",
-            "unified_dflash_mimo_v2_modulev3_speculator",
-            speculates_on="MiMoV2ForCausalLM_ModuleV3",
-        ),
         _LazyArch(
             "UnifiedDSparkDeepseekV41ForCausalLM",
             ".unified_dspark_deepseekV41",

@@ -90,6 +90,10 @@ class SpecDecodeInputTypeSpec:
     A graph traced by :meth:`~max.experimental.nn.Module.compile` appends its
     own after every declared input, so declaring them here too would leave
     two sets."""
+    signal_buffer_index: int | None = None
+    """Where the trace inserts its signal buffers, under
+    ``trace_owns_signal_buffers``, for an engine that binds them there.
+    ``None`` appends them."""
     enable_sampled_draft_proposal: bool = False
     """Declare the ``draft_probs_full`` input: the distribution the draft
     sampled its token from, which the acceptance test's residual subtracts and
