@@ -33,60 +33,65 @@ static bool needsStateClone(Operation *operation) {
 
 namespace {
 struct CloneFrameArgs {
-  CloneFrameArgs(ImplicitLocOpBuilder &b, DenseMap<Operation *, int> &opToState,
+  CloneFrameArgs(ImplicitLocOpBuilder &b, FrameInterface &frame,
                  mlir::DominanceInfo &dominanceInfo)
-      : builder(b), opToState(opToState), dominanceInfo(dominanceInfo) {}
+      : builder(b), frame(frame), dominanceInfo(dominanceInfo) {}
   void cloneFrameArgsOf(Operation *user) {
-    int useState = opToState[user];
-    for (auto [index, operand] : llvm::enumerate(user->getOperands())) {
-      Operation *definingOp = operand.getDefiningOp();
+    for (OpOperand &use : user->getOpOperands()) {
+      Operation *definingOp = use.get().getDefiningOp();
       if (!definingOp)
         continue;
       if (!needsStateClone(definingOp))
         continue;
-      int defState = opToState[definingOp];
-      if (defState == useState)
+      if (!frame.crossesSuspend(use))
         continue;
 
-      auto existing = constantToStateSpecific.find(definingOp);
-      if (existing == constantToStateSpecific.end())
-        existing = constantToStateSpecific.try_emplace(definingOp).first;
-      auto existingClone = existing->second.find(useState);
+      SmallVector<ClonedFor> &clones = clonesOf[definingOp];
+      auto existingClone =
+          llvm::find_if(llvm::reverse(clones), [&](const ClonedFor &existing) {
+            return !frame.suspendBetween(existing.user, user);
+          });
       Operation *clonedDefOp;
-      if (existingClone == existing->second.end()) {
+      if (existingClone == llvm::reverse(clones).end()) {
         builder.setInsertionPoint(user);
         clonedDefOp = builder.clone(*definingOp);
-        opToState[clonedDefOp] = useState;
-        existing->second.insert({useState, clonedDefOp});
+        frame.registerClone(clonedDefOp, definingOp, user);
+        clones.push_back({user, clonedDefOp});
         if (clonedDefOp->getNumOperands() > 0)
           cloneFrameArgsOf(clonedDefOp);
       } else {
-        clonedDefOp = existingClone->second;
+        clonedDefOp = existingClone->clone;
         if (!dominanceInfo.dominates(clonedDefOp, user)) {
-          // We have two uses in the same state where one does not dominate the
-          // other. This implies that the first instance of the usage is in a
-          // nested region.
+          // We have two uses with no suspend between them where one does not
+          // dominate the other. This implies that the first instance of the
+          // usage is in a nested region.
           Operation *parent = clonedDefOp->getParentOp();
           while (!dominanceInfo.dominates(parent, user))
             parent = parent->getParentOp();
           clonedDefOp->moveBefore(parent);
         }
       }
-      user->setOperand(index, clonedDefOp->getResult(0));
+      use.set(clonedDefOp->getResult(0));
     }
   }
+  /// A clone of a constant, and the op it was first cloned for.
+  struct ClonedFor {
+    Operation *user;
+    Operation *clone;
+  };
+
   ImplicitLocOpBuilder &builder;
-  DenseMap<Operation *, int> &opToState;
-  DenseMap<Operation *, DenseMap<int, Operation *>> constantToStateSpecific;
+  FrameInterface &frame;
+  DenseMap<Operation *, SmallVector<ClonedFor>> clonesOf;
   mlir::DominanceInfo &dominanceInfo;
 };
 } // namespace
 
 void M::KGEN::cloneFrameArgs(FuncOp funcOp, ImplicitLocOpBuilder &b,
                              mlir::DominanceInfo &domInfo,
-                             DenseMap<Operation *, int> &opToState) {
+                             FrameInterface &frame) {
   auto insertPoint = b.saveInsertionPoint();
-  CloneFrameArgs cloner(b, opToState, domInfo);
+  CloneFrameArgs cloner(b, frame, domInfo);
   funcOp.walk([&](Operation *user) {
     if (user->getNumOperands() > 0)
       cloner.cloneFrameArgsOf(user);
@@ -141,26 +146,35 @@ COTypes::COTypes(MLIRContext *cxt, FrameData &&frameData,
 // FrameVariables
 //===----------------------------------------------------------------------===//
 
+void FrameVariables::eraseReusable(SmallVector<ExtractedValue> &extracted,
+                                   Operation *op) {
+  FrameInterface &frame = *frameData->frame;
+  llvm::erase_if(extracted, [&](const ExtractedValue &existing) {
+    return !frame.suspendBetween(existing.extractedFor, op);
+  });
+}
+
 Value FrameVariables::getFrameValueForOperand(Value continuation, Value operand,
-                                              Operation *opWithUse,
-                                              int useState) {
+                                              Operation *opWithUse) {
   auto entry = frameData->valueToIndexInFrame.find(operand);
   if (entry == frameData->valueToIndexInFrame.end() && operand != errorValue &&
       operand != resultValue)
     return {};
-  DenseMap<int, Value> &frameVariablesForValue =
-      frameVariables.try_emplace(operand).first->getSecond();
+  SmallVector<ExtractedValue> &extracted = frameVariables[operand];
 
   // Reuse existing extracted value if possible.
-  Value image;
-  auto existingImage = frameVariablesForValue.find(useState);
-  bool wasExtractedInThisState = existingImage != frameVariablesForValue.end();
+  FrameInterface &frame = *frameData->frame;
+  auto existingImage = llvm::find_if(
+      llvm::reverse(extracted), [&](const ExtractedValue &existing) {
+        return !frame.suspendBetween(existing.extractedFor, opWithUse);
+      });
   // TODO: can this be parent region also?
   bool wasExtractedInThisRegion =
-      wasExtractedInThisState && existingImage->getSecond().getParentRegion() ==
-                                     opWithUse->getParentRegion();
+      existingImage != llvm::reverse(extracted).end() &&
+      existingImage->image.getParentRegion() == opWithUse->getParentRegion();
+  Value image;
   if (wasExtractedInThisRegion) {
-    image = existingImage->getSecond();
+    image = existingImage->image;
   } else {
     builder.setInsertionPoint(opWithUse);
     if (operand == errorValue) {
@@ -188,18 +202,14 @@ Value FrameVariables::getFrameValueForOperand(Value continuation, Value operand,
         image = LoadOp::create(builder, dataSlot);
       }
     }
-    if (wasExtractedInThisState)
-      frameVariablesForValue.erase(existingImage);
-    frameVariablesForValue.insert({useState, image});
+    eraseReusable(extracted, opWithUse);
+    extracted.push_back({opWithUse, image});
   }
   return image;
 }
 
-void FrameVariables::overwriteValue(int state, Value value) {
-  DenseMap<int, Value> &frameVariablesForValue =
-      frameVariables.try_emplace(value).first->getSecond();
-  auto existing = frameVariablesForValue.find(state);
-  if (existing != frameVariablesForValue.end())
-    frameVariablesForValue.erase(existing);
-  frameVariablesForValue.insert({state, value});
+void FrameVariables::overwriteValue(Operation *op, Value value) {
+  SmallVector<ExtractedValue> &extracted = frameVariables[value];
+  eraseReusable(extracted, op);
+  extracted.push_back({op, value});
 }
