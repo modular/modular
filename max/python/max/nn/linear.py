@@ -731,7 +731,11 @@ class ColumnParallelLinear(Linear):
         self.distributed_linear_layers = super().shard(self.devices)
 
     def __call__(  # type: ignore[override]
-        self, x: Sequence[TensorValue], signal_buffers: Iterable[BufferValue]
+        self,
+        x: Sequence[TensorValue],
+        signal_buffers: Iterable[BufferValue],
+        *,
+        rows_slice: bool = False,
     ) -> list[TensorValue]:
         """Applies a linear transformation to the input data.
 
@@ -740,6 +744,11 @@ class ColumnParallelLinear(Linear):
                 The last dimension must match the layer's ``in_dim``.
                 The input tensors must reside on their respective devices.
             signal_buffers: :class:`~max.graph.BufferValue` buffers for peer-to-peer communication in allgather.
+            rows_slice: When True, device ``d`` of ``N`` gets only its own
+                ``1/N`` block of rows of the gathered output
+                (:func:`~max.graph.ops.allgather_rows_slice`), moving ``N``
+                times fewer bytes. The rows must divide evenly over the
+                devices.
 
         Returns:
             List of output :class:`~max.graph.TensorValue` tensors of shape ``(..., out_dim)``.
@@ -752,6 +761,10 @@ class ColumnParallelLinear(Linear):
             self.distributed_linear_layers[i](x[i])
             for i in range(self.num_devices)
         ]
+        if rows_slice:
+            return ops.allgather_rows_slice(
+                linear_outs, signal_buffers, axis=-1
+            )
         return ops.allgather(linear_outs, signal_buffers, axis=-1)
 
 

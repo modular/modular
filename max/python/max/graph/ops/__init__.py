@@ -62,7 +62,7 @@ from . import (
     random,
     reducescatter,
 )
-from .allgather import allgather
+from .allgather import allgather, allgather_rows_slice
 from .allgather_rms_norm import (
     allgather_rms_norm,
     allgather_rms_norm_quant_mxfp6,

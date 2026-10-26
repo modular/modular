@@ -417,6 +417,20 @@ class SpeculativeConfig(ConfigFileModel):
         ),
     )
 
+    logits_delivery: Literal["allgather", "replica"] = Field(
+        default="allgather",
+        description=(
+            "How the lm_head's logits reach the devices that read them. "
+            "'allgather' (default) gathers the whole batch's logits onto "
+            "every device. 'replica' delivers each data-parallel replica "
+            "only its own rows, moving one eighth of the bytes at DP8, for "
+            "the verify and the draft head both. Each replica's rows are "
+            "padded to the widest replica's first, so any split of the batch "
+            "works. Requires ``draft_probs_layout='replica'`` and "
+            "``draft_head_parallelism='replica'``."
+        ),
+    )
+
     logit_penalties: bool = Field(
         default=False,
         description=(
@@ -448,6 +462,16 @@ class SpeculativeConfig(ConfigFileModel):
                 "draft_probs_layout='replica' needs draft_proposal='sampled'"
                 " and draft_head_parallelism='replica': the distributions"
                 " are drawn on each replica's device and stay there"
+            )
+        if self.logits_delivery == "replica" and (
+            self.draft_probs_layout != "replica"
+            or self.draft_head_parallelism != "replica"
+        ):
+            raise ValueError(
+                "logits_delivery='replica' needs draft_probs_layout='replica'"
+                " and draft_head_parallelism='replica': it hands each device"
+                " only its own replica's logits, which only those layouts"
+                " read"
             )
         return self
 
