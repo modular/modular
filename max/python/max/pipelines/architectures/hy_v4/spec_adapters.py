@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Speculative-decoding adapters between the shared driver and Hy4.
+"""How spec decoding calls Hy4, and how its MTP layer proposes.
 
 The driver speaks graph values and graph-API caches; the Hy4 target and draft
 are ModuleV3. Each adapter wraps its inputs as ``Tensor``s, runs the module,
@@ -22,15 +22,19 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+import numpy as np
+from max.driver import Buffer, Device
+from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module as ModuleV3
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.sharding import DeviceMapping, DeviceMesh, Replicated
 from max.experimental.tensor import Tensor
-from max.graph import BufferType, DimLike, TensorType, TensorValue
+from max.graph import DeviceRef, DimLike, TensorType, TensorValue, Value
 from max.nn.kv_cache import PagedCacheValues as GraphPagedCacheValues
-from max.nn.layer import Module
 from max.nn.transformer import ReturnHiddenStates
+from max.pipelines.context import TextContext
+from max.pipelines.speculative.block_driver import BlockBatch
+from max.pipelines.speculative.config import SpeculativeConfig
 from max.pipelines.speculative.driver import (
     CarryDimNames,
     DecodeKVSwap,
@@ -41,39 +45,35 @@ from max.pipelines.speculative.driver import (
     SequentialBatch,
     gather_variable_rows,
 )
+from max.pipelines.speculative.spec_adapters.target_adapter import (
+    TargetAdapter,
+)
 from max.pipelines.speculative.spec_target import Verified
 
-from ..hy_v4.hy_v4 import HYV4TextModel
-from .hy_v4_mtp import HYV4MultiTokenPredictor
+from .batch_processor import prefill_buffer_length
+from .hy_v4 import HYV4, HYV4TextModel
+from .mtp import HYV4MultiTokenPredictor
 
 __all__ = [
+    "ADAPTER",
+    "BATCH_CONTEXT_LENGTH",
     "INDEXER_DRAFT_KV",
     "INDEXER_TARGET_KV",
     "HYV4MTPProposer",
     "HYV4Target",
-    "ModuleV3Handle",
 ]
 
-INDEXER_TARGET_KV = "target_indexer"
+PRIMARY_KV = "mla"
+"""The target's KV leaf the driver dispatches over."""
+
+INDEXER_TARGET_KV = "indexer"
 """Names the target's indexer K cache leaf in ``passthrough_kv``."""
 
 INDEXER_DRAFT_KV = "draft_indexer"
 """Names the draft's indexer K cache leaf in ``passthrough_kv``."""
 
-
-class ModuleV3Handle(Module):
-    """Lets the driver register a ModuleV3 module it never calls.
-
-    The driver keeps its target and draft as graph-API sublayers for their
-    state dicts; ModuleV3 names and loads these weights itself.
-    """
-
-    def __init__(self, module: ModuleV3[..., Any]) -> None:
-        super().__init__()
-        self.module = module
-
-    def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        return self.module(*args, **kwargs)
+BATCH_CONTEXT_LENGTH = "batch_context_length"
+"""Names the host prefill buffer length in a driver batch's ``extra``."""
 
 
 def _caches(
@@ -113,8 +113,7 @@ def _batch_context_length(batch: SequentialBatch) -> Tensor:
     """The host prefill buffer length the attention blocks take instead of
     reading the plan's back. It counts no draft rows; the sparse MLA kernels,
     the only ones Hy4 builds, never read it."""
-    (length,) = batch.batch_context_lengths
-    return Tensor.from_graph_value(length)
+    return Tensor.from_graph_value(batch.extra[BATCH_CONTEXT_LENGTH])
 
 
 class HYV4Target:
@@ -149,8 +148,11 @@ class HYV4Target:
             logits=_first_device(logits), hidden=_per_device(hidden)
         )
 
-    def ep_input_types(self) -> Sequence[TensorType | BufferType]:
-        return ()
+    def __call__(
+        self, batch: SequentialBatch | BlockBatch
+    ) -> Verified[list[TensorValue]]:
+        assert isinstance(batch, SequentialBatch)
+        return self.verify(batch)
 
 
 class HYV4MTPProposer:
@@ -244,3 +246,67 @@ class HYV4MTPProposer:
             logits=_first_device(self.target.logits(out)),
             hidden=_per_device(out),
         )
+
+
+def verify(
+    target: Any,
+    target_config: Any,
+    hidden_states: ReturnHiddenStates,
+    draft_config: Any,
+) -> HYV4Target:
+    """Returns the verify of a Hy4 module, on every device it spans."""
+    del target_config, hidden_states, draft_config
+    assert isinstance(target, HYV4)
+    return HYV4Target(target.language_model)
+
+
+def sequential_proposer(
+    verify: Any,
+    draft: Any,
+    draft_config: Any,
+    speculative: SpeculativeConfig,
+) -> HYV4MTPProposer:
+    """Returns the proposer of the MTP layer, on the verify's target."""
+    del draft_config, speculative
+    assert isinstance(verify, HYV4Target)
+    assert isinstance(draft, HYV4MultiTokenPredictor)
+    return HYV4MTPProposer(draft, verify.target)
+
+
+def trailing_input_types(target_config: Any) -> list[TensorType]:
+    """Returns the host prefill buffer length."""
+    del target_config
+    return [TensorType(DType.int32, [1], device=DeviceRef.CPU())]
+
+
+def trailing_buffers(
+    target_config: Any,
+    contexts: Sequence[TextContext],
+    devices: Sequence[Device],
+) -> list[Buffer]:
+    """Returns the batch's prefill buffer length, as ``HYV4BatchProcessor``
+    writes it."""
+    del devices
+    length = prefill_buffer_length(
+        list(contexts), target_config.kv_params.page_size
+    )
+    return [Buffer.from_numpy(np.array([length], dtype=np.int32))]
+
+
+def extra(target_config: Any, trailing: Sequence[Value[Any]]) -> dict[str, Any]:
+    """Names the prefill buffer length."""
+    del target_config
+    (length,) = trailing
+    return {BATCH_CONTEXT_LENGTH: length.tensor}
+
+
+ADAPTER = TargetAdapter(
+    primary_kv=PRIMARY_KV,
+    verify=verify,
+    # Accepts strictly in thinking too, as its fused MTP graph did.
+    relaxed_thinking_acceptance=False,
+    sequential_proposer=sequential_proposer,
+    trailing_input_types=trailing_input_types,
+    trailing_buffers=trailing_buffers,
+    extra=extra,
+)

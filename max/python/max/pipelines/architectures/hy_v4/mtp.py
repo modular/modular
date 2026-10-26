@@ -25,8 +25,8 @@ from max.experimental.nn.norm import RMSNorm
 from max.experimental.tensor import Tensor
 from max.nn.kv_cache import MultiKVCacheParams
 
-from ..hy_v4.layers.decoder import HYV4DecoderLayer
-from ..hy_v4.model_config import HYV4Config
+from .layers.decoder import HYV4DecoderLayer
+from .model_config import HYV4Config
 
 __all__ = ["HYV4MultiTokenPredictor", "draft_config"]
 

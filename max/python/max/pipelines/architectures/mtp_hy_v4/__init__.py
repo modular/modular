@@ -10,9 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Hy4 with its MTP layer as the speculative draft."""
+"""The MTP layer a Hy4 checkpoint ships beside its trunk."""
 
-from .arch import unified_mtp_hy_v4_speculator
-from .model import UnifiedMTPHYV4Model
+from .arch import mtp_hy_v4_draft_arch
+from .model import MTPHYV4DraftArchConfig
+from .weight_adapters import convert_hy_v4_mtp_state_dict
 
-__all__ = ["UnifiedMTPHYV4Model", "unified_mtp_hy_v4_speculator"]
+__all__ = [
+    "MTPHYV4DraftArchConfig",
+    "convert_hy_v4_mtp_state_dict",
+    "mtp_hy_v4_draft_arch",
+]

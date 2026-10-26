@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Maps the Hy4 checkpoint onto the unified MTP module's names."""
+"""Maps a Hy4 checkpoint's MTP layer onto the draft module's names."""
 
 from __future__ import annotations
 
@@ -23,15 +23,16 @@ from max.graph.type import Shape
 from max.graph.weights import WeightData, Weights
 from transformers.configuration_utils import PretrainedConfig
 
-from ..hy_v4.weight_adapters import (
-    convert_mtp_state_dict,
-    convert_safetensor_state_dict,
-)
+from ..hy_v4.weight_adapters import convert_mtp_state_dict
+
+__all__ = ["convert_hy_v4_mtp_state_dict"]
+
+_DRAFT_PREFIX = "draft."
 
 # BF16 in the MTP layer, float32 in every target layer and in the modules.
-DRAFT_FLOAT32 = (
-    "draft.self_attn.learnable_sink_param",
-    "draft.mlp.gate.e_score_correction_bias",
+_DRAFT_FLOAT32 = (
+    "self_attn.learnable_sink_param",
+    "mlp.gate.e_score_correction_bias",
 )
 
 
@@ -46,18 +47,22 @@ def _bf16_to_float32(weight: WeightData) -> WeightData:
     return WeightData(buffer, weight.name, DType.float32, Shape(buffer.shape))
 
 
-def convert_with_mtp_state_dict(
+def convert_hy_v4_mtp_state_dict(
     state_dict: Mapping[str, Weights],
     huggingface_config: PretrainedConfig,
     **unused_kwargs: object,
 ) -> dict[str, WeightData]:
-    """Returns the target's ``language_model.*`` and the draft's ``draft.*``.
+    """Returns the MTP layer's own tensors, named as the draft module's.
 
-    The draft's BF16 sink and router bias are widened to the float32 the
-    target layers store, which is exact.
+    Its BF16 sink and router bias are widened to the float32 the target
+    layers store, which is exact.
     """
-    out = convert_safetensor_state_dict(state_dict, huggingface_config)
-    draft = convert_mtp_state_dict(state_dict, huggingface_config)
-    for name in DRAFT_FLOAT32:
+    draft = {
+        name.removeprefix(_DRAFT_PREFIX): weight
+        for name, weight in convert_mtp_state_dict(
+            state_dict, huggingface_config
+        ).items()
+    }
+    for name in _DRAFT_FLOAT32:
         draft[name] = _bf16_to_float32(draft[name])
-    return out | draft
+    return draft

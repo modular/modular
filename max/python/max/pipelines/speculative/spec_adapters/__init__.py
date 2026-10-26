@@ -76,6 +76,7 @@ _TARGET_ADAPTERS: Mapping[str, str] = {
     "Gemma4ForConditionalGeneration": ".gemma4.spec_adapters",
     "Gemma4UnifiedForConditionalGeneration": ".gemma4.spec_adapters",
     "GraniteForCausalLM": ".llama3.spec_adapters",
+    "HYV4ForCausalLM": ".hy_v4.spec_adapters",
     "InklingForConditionalGeneration": ".inkling.spec_adapters",
     "KimiK25ForConditionalGeneration": ".kimik2_5.spec_adapters",
     "KimiK3ForConditionalGeneration": "kimi_k3_spec",

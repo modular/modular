@@ -3,13 +3,11 @@ load("//bazel:api.bzl", "modular_py_library", "requirement")
 package(default_visibility = ["//max:consumers"])
 
 modular_py_library(
-    name = "unified_mtp_hy_v4",
+    name = "mtp_hy_v4",
     srcs = glob(["**/*.py"]),
     deps = [
         requirement("numpy"),
         requirement("transformers"),
-        requirement("typing-extensions"),
-        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/experimental",
@@ -19,7 +17,7 @@ modular_py_library(
         "//max/python/max/pipelines/architectures/hy_v4",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
-        "//max/python/max/pipelines/speculative",
+        "//max/python/max/pipelines/modeling",
         "//max/python/max/pipelines/weights",
     ],
 )

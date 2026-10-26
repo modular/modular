@@ -295,6 +295,7 @@ def register_all_models() -> None:
             ".mtp_deepseekV3",
             "mtp_deepseekV3_draft_arch",
         ),
+        _LazyArch("MTPHYV4DraftModel", ".mtp_hy_v4", "mtp_hy_v4_draft_arch"),
         _LazyArch(
             "MTPInklingDraftModel", ".mtp_inkling", "mtp_inkling_draft_arch"
         ),
@@ -424,12 +425,6 @@ def register_all_models() -> None:
             "UnifiedMTPGlmMoeDsaForCausalLM_ModuleV3",
             ".unified_mtp_glm5_2_modulev3",
             "unified_mtp_glm5_2_modulev3_arch",
-        ),
-        _LazyArch(
-            "UnifiedMTPHYV4ForCausalLM",
-            ".unified_mtp_hy_v4",
-            "unified_mtp_hy_v4_speculator",
-            speculates_on="HYV4ForCausalLM",
         ),
         _LazyArch("WanPipeline", ".wan", "wan_arch"),
         _LazyArch("WanImageToVideoPipeline", ".wan", "wan_i2v_arch"),

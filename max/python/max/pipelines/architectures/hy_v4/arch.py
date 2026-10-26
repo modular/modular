@@ -36,6 +36,7 @@ hy_v4_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
     requires_max_batch_context_length=True,
+    checkpoint_drafts={"mtp": "MTPHYV4DraftModel"},
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
