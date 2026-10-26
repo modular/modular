@@ -22,10 +22,12 @@ from __future__ import annotations
 
 from max.experimental import functional as F
 from max.experimental.nn import HyperConnection, Module, RMSNorm
+from max.experimental.nn.common_layers.functional_kernels import mhc_post
 from max.experimental.nn.common_layers.quant_moe import ExpertParallelMoE
 from max.experimental.sharding import DeviceMapping, Sharded, auto_reshard
 from max.experimental.tensor import Tensor
 from max.nn.comm.ep import EPCommBuffers
+from max.nn.kernels import mhc_post_preferred
 
 from ...deepseekV3_2_modulev3.layers.moe import DeepseekV3_2TensorParallelMoE
 from ..model_config import Glm5NextConfig
@@ -40,8 +42,14 @@ def write_back(
 
     ``streams' = post * y + comb^T @ streams``. ``comb``'s columns sum to one,
     so contracting over its first stream axis makes the mix a convex
-    combination of the incoming streams.
+    combination of the incoming streams. On AMD GPUs, for shapes it supports,
+    the ``mhc_post`` kernel evaluates it in float32 and rounds once to the
+    streams' dtype; elsewhere it is an outer product plus a small batched
+    matmul in the streams' dtype.
     """
+    hc_mult, hidden_size = streams.shape[1], streams.shape[2]
+    if mhc_post_preferred(int(hc_mult), int(hidden_size), streams.dtype):
+        return mhc_post(streams, y, post, comb)
     dtype = streams.dtype
     placed = post.cast(dtype).unsqueeze(-1) * y.unsqueeze(1)
     mixed = comb.cast(dtype).transpose(-1, -2) @ streams

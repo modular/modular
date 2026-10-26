@@ -63,6 +63,9 @@ from max.nn.kernels import (
     hyper_connection_gates as _hyper_connection_gates,
 )
 from max.nn.kernels import (
+    mhc_post as _mhc_post,
+)
+from max.nn.kernels import (
     mla_decode_graph as _mla_decode_graph,
 )
 from max.nn.kernels import (
@@ -262,6 +265,20 @@ moe_router_group_limited = F.functional(_moe_router_group_limited)
 mtp_eh_norm = F.functional(_mtp_eh_norm)
 
 
+def _mhc_post_rule(
+    streams: TensorLayout,
+    y: TensorLayout,
+    post: TensorLayout,
+    comb: TensorLayout,
+) -> list[AxisAssignment]:
+    # The mHC streams are replicated on every device, as a single residual is,
+    # so the write-back only runs on replicated inputs.
+    return [AxisAssignment((R, R, R, R), (R,))]
+
+
+mhc_post = F.functional(_mhc_post, rule=_mhc_post_rule)
+
+
 def _moe_sigmoid_gemv_router_rule(
     hidden_states: TensorLayout,
     gate_weight: TensorLayout,
@@ -299,6 +316,7 @@ __all__ = [
     "fused_silu",
     "grouped_matmul_ragged",
     "hyper_connection_gates",
+    "mhc_post",
     "mla_fp8_index_top_k",
     "mla_fp8_index_top_k_physical",
     "moe_create_indices",

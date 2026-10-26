@@ -15041,6 +15041,25 @@ def mhc_post_supports(hc_mult: int, hidden_size: int, dtype: DType) -> bool:
     )
 
 
+def mhc_post_preferred(hc_mult: int, hidden_size: int, dtype: DType) -> bool:
+    """Returns whether a mHC write-back should run on :func:`mhc_post`.
+
+    Every mHC write-back routes through this one predicate, so the graph-API
+    and ModuleV3 layers switch together.
+
+    Args:
+        hc_mult: The number of residual streams.
+        hidden_size: The width of one stream.
+        dtype: The streams' dtype.
+
+    Returns:
+        True on AMD GPUs for shapes :func:`mhc_post_supports` accepts.
+    """
+    # TODO(KERN-3765): prefer mhc_post on every GPU once it is timed on
+    # NVIDIA, where the batched-matmul fallback also lands on the naive kernel.
+    return _is_amd_gpu() and mhc_post_supports(hc_mult, hidden_size, dtype)
+
+
 def mhc_post(
     streams: TensorValue,
     y: TensorValue,

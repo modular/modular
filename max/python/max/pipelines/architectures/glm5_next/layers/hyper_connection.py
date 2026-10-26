@@ -26,13 +26,12 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
-from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
 from max.nn.kernels import (
     hyper_connection_gates,
     mhc_post,
-    mhc_post_supports,
+    mhc_post_preferred,
 )
 from max.nn.layer import Module, Shardable
 
@@ -301,9 +300,7 @@ class HyperConnection(Module, Shardable):
                 f"{self.hc_mult}, {self.hidden_size}] and y [total_tokens, "
                 f"{self.hidden_size}], got {streams.shape} and {y.shape}."
             )
-        if accelerator_api() == "hip" and mhc_post_supports(
-            self.hc_mult, self.hidden_size, streams.dtype
-        ):
+        if mhc_post_preferred(self.hc_mult, self.hidden_size, streams.dtype):
             return mhc_post(streams, y, mixing.post, mixing.comb)
         dtype = streams.dtype
         placed = ops.unsqueeze(
