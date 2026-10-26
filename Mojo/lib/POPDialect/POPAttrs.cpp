@@ -81,13 +81,15 @@ OptionalParseResult POP::ArrayType::parseValue(AsmParser &p,
   return p.parseRSquare();
 }
 
-LogicalResult POP::ArrayType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult POP::ArrayType::printValue(AsmPrinter &p, TypedAttr value,
+                                         KGENParamPrinter &printer) const {
   auto array = ::dyn_cast<POP::ArrayAttr>(value);
   if (!array)
     return failure();
   p << '[';
-  llvm::interleaveComma(array.getValues(), p,
-                        [&](TypedAttr value) { printParamValue(p, value); });
+  llvm::interleaveComma(array.getValues(), p, [&](TypedAttr value) {
+    printer.printParamValue(p, value);
+  });
   p << ']';
   return mlir::success();
 }

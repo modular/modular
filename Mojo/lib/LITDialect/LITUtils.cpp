@@ -100,6 +100,12 @@ bool LIT::isVariadicOfTypeExpr(TypedAttr attr) {
 /// forms are: "imm expr", "mut expr", "mut=<expr>, expr" and "muttoimm expr"
 /// without quotes.
 void LIT::printOriginParamValue(AsmPrinter &p, TypedAttr value) {
+  KGENParamPrinter printer = KGENParamPrinter::createDiagnosticPrinter();
+  printOriginParamValue(p, value, printer);
+}
+
+void LIT::printOriginParamValue(AsmPrinter &p, TypedAttr value,
+                                KGENParamPrinter &printer) {
   // If the type is sugared, then we don't want to sugar this operation because
   // round tripping would lose the sugar.
   if (auto castVal = dyn_cast<OriginMutCastAttr>(value)) {
@@ -111,7 +117,7 @@ void LIT::printOriginParamValue(AsmPrinter &p, TypedAttr value) {
         if (type.isMutableKnown(false) && srcType.isMutableKnown(true)) {
           p << "muttoimm ";
           // Now that the type is specified, print the origin value itself.
-          printParamValue(p, castVal.getOperand());
+          printer.printParamValue(p, castVal.getOperand());
           return;
         }
       }
@@ -123,12 +129,12 @@ void LIT::printOriginParamValue(AsmPrinter &p, TypedAttr value) {
     p << (boolAttr.getAsBool() ? "mut " : "imm ");
   } else {
     p << "mut=";
-    printParamValue(p, mutability);
+    printer.printParamValue(p, mutability);
     p << ", ";
   }
 
   // Now that the type is specified, print the origin value itself.
-  printParamValue(p, value);
+  printer.printParamValue(p, value);
 }
 
 void OriginPrinter::printParam(raw_ostream &os, TypedAttr param) const {

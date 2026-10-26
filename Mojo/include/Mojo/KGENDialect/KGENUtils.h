@@ -27,6 +27,7 @@
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
 #include "mlir/IR/OpImplementation.h"
 #include "llvm/ADT/BitVector.h"
+#include "llvm/ADT/DenseMap.h"
 
 #include <optional>
 #include <utility>
@@ -38,6 +39,101 @@ class SIMDType;
 
 /// This type is a bit of a mouthful, add a useful alias for it.
 using ExportMap = llvm::MapVector<StringAttr, ExportKind>;
+
+/// Dedup state for printing parameter expressions so that a repeated
+/// subexpression is printed in full once and referred to by a label afterwards.
+class DedupContext {
+public:
+  DedupContext() = default;
+  DedupContext(const DedupContext &) = delete;
+  DedupContext &operator=(const DedupContext &) = delete;
+  DedupContext(DedupContext &&) = default;
+  DedupContext &operator=(DedupContext &&) = default;
+  ~DedupContext() {
+    assert((ids.empty() || finalized) &&
+           "printed with a DedupContext but never called finalize()");
+  }
+
+  /// Returns the placeholder to print at this position for `key`. Sets
+  /// `isRepeat` if `key` was printed before.
+  std::string mark(const void *key, bool &isRepeat);
+
+  /// Rewrites the placeholders in `raw`, which must contain everything printed
+  /// with this context, in print order. `labelPrefix` is prepended to each
+  /// label; it must not appear in the printed text.
+  std::string finalize(StringRef raw, char labelPrefix = '`');
+
+private:
+  DenseMap<const void *, unsigned> ids;
+  SmallVector<bool> referenced;
+  bool finalized = false;
+};
+
+/// Printer for KGEN parameter expressions and types. The recursive printing
+/// routines are methods so the dedup state is carried implicitly and cannot be
+/// dropped or injected partway through a print. The printer owns its dedup
+/// context (if any) and is non-copyable: copying would silently create a
+/// second, empty context and break label sharing across a print.
+class KGENParamPrinter {
+public:
+  KGENParamPrinter(const KGENParamPrinter &) = delete;
+  KGENParamPrinter &operator=(const KGENParamPrinter &) = delete;
+  KGENParamPrinter(KGENParamPrinter &&) = default;
+  KGENParamPrinter &operator=(KGENParamPrinter &&) = default;
+
+  /// Prints every subexpression in full. Use it for diagnostics and IR that
+  /// must round-trip through the parser.
+  static KGENParamPrinter createDiagnosticPrinter() {
+    return KGENParamPrinter();
+  }
+
+  /// Prints a repeated non-trivial subexpression (see
+  /// `KGENDialect::registerNonTrivialParamAttrs`) once, then refers to it by a
+  /// label. Use it for mangled names and display strings, which are never
+  /// parsed back.
+  static KGENParamPrinter createManglePrinter() {
+    KGENParamPrinter printer;
+    printer.dedup.emplace();
+    return printer;
+  }
+
+  /// Rewrites the dedup placeholders in `raw`, which must contain everything
+  /// printed with this printer, in print order. `labelPrefix` is prepended to
+  /// each label; it must not appear in the printed text. Returns `raw`
+  /// unchanged when this printer does not dedup.
+  std::string finalize(StringRef raw, char labelPrefix = '`') {
+    return dedup ? dedup->finalize(raw, labelPrefix) : std::string(raw);
+  }
+
+  void printKGENType(AsmPrinter &p, Type type);
+  void printParamType(AsmPrinter &p, Type type);
+  void printParamTypes(AsmPrinter &p, ArrayRef<Type> types);
+  void printTypeParamValue(AsmPrinter &p, TypedAttr value);
+  void printTypeParamValues(AsmPrinter &p, ArrayRef<TypedAttr> values);
+  void printParamValue(AsmPrinter &p, TypedAttr value, Type type = {});
+  void printColonTypeParamValue(AsmPrinter &p, TypedAttr value);
+  void printColonTypeOrDefault(AsmPrinter &p, Type type, Type defaultType);
+  void printColonTypeOrIndex(AsmPrinter &p, Type type);
+  void printGenerator(AsmPrinter &p, GeneratorType generator);
+  void printParameterValues(AsmPrinter &p, ArrayRef<TypedAttr> values);
+  void printBindParams(AsmPrinter &p, TypedAttr generator,
+                       ArrayRef<TypedAttr> paramValues,
+                       DenseBoolArrayAttr discharged = {});
+
+private:
+  KGENParamPrinter() = default;
+
+  void printColonTypeOrIndexPrefix(AsmPrinter &p, Type type);
+  void printOperatorOperands(AsmPrinter &p, POC opcode,
+                             ArrayRef<TypedAttr> operands);
+  void printParamValueImpl(AsmPrinter &p, TypedAttr value, Type type);
+
+  std::optional<DedupContext> dedup;
+};
+
+/// Returns true if `value` is a compound parameter expression eligible for a
+/// dedup label; see `KGENDialect::registerNonTrivialParamAttrs`.
+bool isNonTrivialParamAttr(Attribute value);
 
 /// Given a module operation, return its exported symbols and aliases.
 ExportMap getExportedSymbols(ModuleOp module);
@@ -194,7 +290,8 @@ ParseResult parseParamNames(AsmParser &p, SmallVector<StringAttr> &names);
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the printed syntax easier to grok. In a
 /// context where printing for diagnostics, we do not use the double quoted
-/// syntax to escape MLIR and KGEN keywords.
+/// syntax to escape MLIR and KGEN keywords. Prints every subexpression in
+/// full; use `KGENParamPrinter` with a `DedupContext` to label repeats.
 void printParamValue(AsmPrinter &p, TypedAttr value, Type type = {});
 void printParamValue(AsmPrinter &p, Operation *op, TypedAttr value,
                      Type type = {});

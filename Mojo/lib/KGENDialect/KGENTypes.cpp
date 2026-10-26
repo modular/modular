@@ -191,7 +191,8 @@ OptionalParseResult ParamType::parseValue(AsmParser &p,
   return {}; // No custom parsing.
 }
 
-LogicalResult ParamType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult ParamType::printValue(AsmPrinter &p, TypedAttr value,
+                                    KGENParamPrinter &printer) const {
   return failure(); // No custom printing.
 }
 
@@ -229,19 +230,22 @@ OptionalParseResult NonStructTypeType::parseValue(AsmParser &p,
   return parseSugaredTypeValue(p, value, *this, parseOptionalKGENType);
 }
 
-LogicalResult NonStructTypeType::printValue(AsmPrinter &p,
-                                            TypedAttr value) const {
-  void (*typePrinter)(AsmPrinter &, Type) = &printKGENType; // Select overload.
-  return printSugaredTypeValue(p, value, typePrinter);
+LogicalResult NonStructTypeType::printValue(AsmPrinter &p, TypedAttr value,
+                                            KGENParamPrinter &printer) const {
+  return printSugaredTypeValue(p, value, [&printer](AsmPrinter &p, Type type) {
+    printer.printKGENType(p, type);
+  });
 }
 
 OptionalParseResult TypeType::parseValue(AsmParser &p, TypedAttr &value) const {
   return parseSugaredTypeValue(p, value, *this, parseOptionalKGENType);
 }
 
-LogicalResult TypeType::printValue(AsmPrinter &p, TypedAttr value) const {
-  void (*typePrinter)(AsmPrinter &, Type) = &printKGENType; // Select overload.
-  return printSugaredTypeValue(p, value, typePrinter);
+LogicalResult TypeType::printValue(AsmPrinter &p, TypedAttr value,
+                                   KGENParamPrinter &printer) const {
+  return printSugaredTypeValue(p, value, [&printer](AsmPrinter &p, Type type) {
+    printer.printKGENType(p, type);
+  });
 }
 
 std::optional<int64_t> TypeType::getTypeSize(TargetInfoAttr target) const {
@@ -403,7 +407,8 @@ OptionalParseResult GeneratorType::parseValue(AsmParser &p,
   return {};
 }
 
-LogicalResult GeneratorType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult GeneratorType::printValue(AsmPrinter &p, TypedAttr value,
+                                        KGENParamPrinter &printer) const {
   if (::isa<FuncTypeGeneratorType>(*this)) {
     if (auto mlirOp = dyn_cast<MLIROpAttr>(value)) {
       p << mlirOp.getName();
@@ -416,7 +421,7 @@ LogicalResult GeneratorType::printValue(AsmPrinter &p, TypedAttr value) const {
     if (!symbolCst)
       return failure();
     p << symbolCst.getSymbol();
-    printParameterValues(p, symbolCst.getParamValues());
+    printer.printParameterValues(p, symbolCst.getParamValues());
     return success();
   }
 
@@ -874,8 +879,8 @@ OptionalParseResult FuncLiteralType::parseValue(AsmParser &p,
   return {};
 }
 
-LogicalResult FuncLiteralType::printValue(AsmPrinter &p,
-                                          TypedAttr value) const {
+LogicalResult FuncLiteralType::printValue(AsmPrinter &p, TypedAttr value,
+                                          KGENParamPrinter &printer) const {
   return failure();
 }
 
@@ -1235,7 +1240,8 @@ OptionalParseResult PointerType::parseValue(AsmParser &p,
   return {};
 }
 
-LogicalResult PointerType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult PointerType::printValue(AsmPrinter &p, TypedAttr value,
+                                      KGENParamPrinter &printer) const {
   // Print a raw pointer attribute as an integer.
   if (auto ptrAttr = dyn_cast<PointerAttr>(value)) {
     p << ptrAttr.getAddr();
@@ -1245,7 +1251,7 @@ LogicalResult PointerType::printValue(AsmPrinter &p, TypedAttr value) const {
   // Print a `store_to_mem` directive.
   if (auto memAttr = dyn_cast<StoreToMemAttr>(value)) {
     p << "store_to_mem(";
-    printParamValue(p, memAttr.getValue());
+    printer.printParamValue(p, memAttr.getValue());
     p << ')';
     return success();
   }
@@ -2138,12 +2144,13 @@ OptionalParseResult VariantType::parseValue(AsmParser &p,
   return mlir::success();
 }
 
-LogicalResult VariantType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult VariantType::printValue(AsmPrinter &p, TypedAttr value,
+                                      KGENParamPrinter &printer) const {
   auto variant = dyn_cast<VariantAttr>(value);
   if (!variant)
     return failure();
   p << '{';
-  printColonTypeParamValue(p, variant.getValue());
+  printer.printColonTypeParamValue(p, variant.getValue());
   p << ", " << variant.getIndex() << '}';
   return success();
 }

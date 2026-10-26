@@ -25,6 +25,10 @@
 
 #include <filesystem>
 
+namespace M::KGEN {
+class DedupContext;
+} // namespace M::KGEN
+
 // Pull in the dialect definition.
 #include "Mojo/KGENDialect/KGENDialect.h.inc"
 

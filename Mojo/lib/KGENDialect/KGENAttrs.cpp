@@ -78,6 +78,24 @@ void KGENDialect::registerAttributes() {
 #define GET_ATTRDEF_LIST
 #include "Mojo/KGENDialect/KGENAttrs.cpp.inc"
       >();
+
+  // Deduplicated compound expressions. A compound attribute is omitted when a
+  // label on it would be noise or mark nothing visible: references and
+  // constants are cheap to reprint; SugarAttr and type references print the
+  // same as the form they wrap; ParamListAttr splats its elements into the
+  // parent without delimiters, so a label would appear to mark only the first
+  // element.
+  registerNonTrivialParamAttrs<
+      ParamOperatorAttr, ParamIdenticalAttr, BindParamsAttr,
+      CastFromBuiltinAttr, CastToBuiltinAttr, TypeConformsToTraitAttr,
+      UpcastAttr, DowncastAttr, ExtensionAttr, QuoteAttr, GeneratorAttr,
+      FuncPtrBitcastAttr, GetWitnessAttr, ParamListReduceAttr,
+      ParamListTabulateAttr, ParamListSizeAttr, ParamListGetAttr,
+      ParamListConcatAttr, GetTypeNameAttr, GetBaseTypeNameAttr,
+      StructFieldTypesAttr, StructFieldNamesAttr, StructFieldIndexByNameAttr,
+      StructFieldTypeByNameAttr, StructFieldOffsetByIndexAttr,
+      StructFieldOffsetByNameAttr, GetNumAnnotationsAttr,
+      GetAnnotationValueAttr, GetAnnotationTypeAttr>();
 }
 
 //===----------------------------------------------------------------------===//
@@ -203,13 +221,15 @@ OptionalParseResult ParamListType::parseValue(AsmParser &p,
   return p.parseRSquare();
 }
 
-LogicalResult ParamListType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult ParamListType::printValue(AsmPrinter &p, TypedAttr value,
+                                        KGENParamPrinter &printer) const {
   auto variadic = ::dyn_cast<ParamListAttr>(value);
   if (!variadic)
     return failure();
   p << '[';
-  llvm::interleaveComma(variadic.getValues(), p,
-                        [&](TypedAttr value) { printParamValue(p, value); });
+  llvm::interleaveComma(variadic.getValues(), p, [&](TypedAttr value) {
+    printer.printParamValue(p, value);
+  });
   p << ']';
   return success();
 }
@@ -2189,13 +2209,15 @@ OptionalParseResult StructType::parseValue(AsmParser &p,
   return p.parseRBrace();
 }
 
-LogicalResult StructType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult StructType::printValue(AsmPrinter &p, TypedAttr value,
+                                     KGENParamPrinter &printer) const {
   auto structAttr = ::dyn_cast<StructAttr>(value);
   if (!structAttr)
     return failure();
   p << "{ ";
-  llvm::interleaveComma(structAttr.getValues(), p,
-                        [&](TypedAttr value) { printParamValue(p, value); });
+  llvm::interleaveComma(structAttr.getValues(), p, [&](TypedAttr value) {
+    printer.printParamValue(p, value);
+  });
   p << " }";
   return mlir::success();
 }
@@ -6146,7 +6168,8 @@ OptionalParseResult SIMDType::parseValue(AsmParser &p, TypedAttr &value) const {
   return result;
 }
 
-LogicalResult SIMDType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult SIMDType::printValue(AsmPrinter &p, TypedAttr value,
+                                   KGENParamPrinter &printer) const {
   auto simd = ::dyn_cast<SIMDAttr>(value);
   if (!simd)
     return failure();
