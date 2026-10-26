@@ -45,7 +45,6 @@ from max.nn.kv_cache import (
     KVCacheParamInterface,
     PagedCacheValues,
     RecurrentStateInputsPerDevice,
-    packed_page_stride,
 )
 from max.nn.layer import LayerList, Module
 from max.nn.linear import MLP, ColumnParallelLinear, Linear
@@ -185,6 +184,7 @@ class Qwen3_5FullAttentionBlock(Module):
         layer_idx: TensorValue,
         signal_buffers: list[BufferValue],
         kv_blocks: list[BufferValue],
+        page_stride: list[TensorValue],
         cache_lengths: list[TensorValue],
         lookup_table: list[TensorValue],
         max_prompt_length: list[TensorValue],
@@ -203,7 +203,7 @@ class Qwen3_5FullAttentionBlock(Module):
                     norm_xs[i],
                     PagedCacheValues(
                         kv_blocks=kv_blocks[i],
-                        page_stride=packed_page_stride(kv_blocks[i]),
+                        page_stride=page_stride[i],
                         cache_lengths=cache_lengths[i],
                         lookup_table=lookup_table[i],
                         max_prompt_length=max_prompt_length[i],
@@ -637,6 +637,7 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
                     layer_idx_tensor,
                     signal_buffers,
                     [kv.kv_blocks for kv in kv_collections],
+                    [kv.page_stride for kv in kv_collections],
                     [kv.cache_lengths for kv in kv_collections],
                     [kv.lookup_table for kv in kv_collections],
                     [kv.max_prompt_length for kv in kv_collections],

@@ -190,6 +190,7 @@ class Qwen3_5MTP(Module):
             layer_idx,
             signal_buffers,
             [kv.kv_blocks for kv in kv_collections],
+            [kv.page_stride for kv in kv_collections],
             [kv.cache_lengths for kv in kv_collections],
             [kv.lookup_table for kv in kv_collections],
             [kv.max_prompt_length for kv in kv_collections],
