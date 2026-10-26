@@ -760,6 +760,7 @@ modular_cc_library(
         ":Driver/DeviceContextAPI",
         "//Support:Base",
         "//Support:HashUtils",
+        "//Support:ProfilingRanges",
         "//Support:SymbolExport",
         "@llvm-project//llvm:Support",
     ],

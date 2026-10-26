@@ -22,6 +22,7 @@
 #include "MLRT/Driver/DeviceContext/LaunchTraceEntry.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/StringRef.h"
 
 #include <cstddef>
@@ -44,7 +45,13 @@ enum class LaunchTraceKind : uint64_t {
 // Per-stream launch trace collection state.
 struct LaunchTraceState {
   bool enabled = false;
+  // Nonzero when the stream is being captured into a device graph: other
+  // streams capturing into the same graph (forked via events) record here.
+  uint64_t captureId = 0;
   std::vector<KernelLaunchMetadata> entries;
+  // Stream index of each joined stream, in first-seen order; the owning
+  // stream is 0.
+  llvm::DenseMap<void *, uint32_t> streamIndices;
 };
 
 // Global registry for launch-trace capture across device backends.
@@ -63,7 +70,9 @@ public:
   void appendLaunchTraceEntry(void *stream,
                               const KernelLaunchMetadata &metadata);
 
-  // Record a kernel launch trace with full parameter hashing
+  // Record a kernel launch trace with full parameter hashing. `owner`, when
+  // set, is the stream whose trace receives the entry (see
+  // resolveTraceStream); it defaults to `stream`.
   //
   // This hashes:
   // - Kernel function pointer (for identity)
@@ -81,10 +90,23 @@ public:
                          uint32_t blockY, uint32_t blockZ,
                          uint32_t sharedMemBytes, llvm::ArrayRef<uint8_t> attrs,
                          uint32_t numAttrs, llvm::ArrayRef<void *> args,
-                         void *stream);
+                         void *stream, void *owner = nullptr);
 
-  // Begin tracing for a stream (clears previous entries)
-  void beginTraceForStream(void *stream);
+  // Begin tracing for a stream (clears previous entries). A nonzero
+  // `captureId` identifies the device-graph capture the stream is recording.
+  void beginTraceForStream(void *stream, uint64_t captureId = 0);
+
+  // Returns the stream whose trace an operation enqueued on `stream` belongs
+  // to, or nullptr when it is not traced. A stream without its own trace that
+  // is capturing into a traced capture (`captureIdOf` returns its capture id,
+  // or 0 when not capturing) resolves to that capture's owning stream.
+  void *resolveTraceStream(void *stream,
+                           llvm::function_ref<uint64_t(void *)> captureIdOf);
+
+  // Append an entry enqueued on `stream` to the trace owned by `owner`, as
+  // returned by resolveTraceStream.
+  void appendLaunchTraceEntry(void *owner, void *stream,
+                              const KernelLaunchMetadata &metadata);
 
   // Take (retrieve and clear) trace entries for a stream
   std::vector<KernelLaunchMetadata> takeTraceForStream(void *stream);

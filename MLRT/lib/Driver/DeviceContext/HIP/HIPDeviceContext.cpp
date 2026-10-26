@@ -193,6 +193,32 @@ static Error formatHipError(const char *file, int line, const char *func,
   }
 }
 
+// The id of the capture `stream` is recording into, or 0 when it is not
+// capturing (or the runtime lacks capture introspection).
+static uint64_t captureIdOf(const HIPDriver &driver, hipStream_t stream) {
+  if (!driver.hasStreamCaptureInfo())
+    return 0;
+  hipStreamCaptureStatus status =
+      hipStreamCaptureStatus::hipStreamCaptureStatusNone;
+  unsigned long long captureId = 0;
+  if (driver.hipStreamGetCaptureInfo_v2(stream, &status, &captureId, nullptr,
+                                        nullptr, nullptr) != HIPDriver::SUCCESS)
+    return 0;
+  return status == hipStreamCaptureStatus::hipStreamCaptureStatusActive
+             ? captureId
+             : 0;
+}
+
+// The stream whose launch trace an operation enqueued on `stream` belongs to,
+// or nullptr when it is not traced: `stream` itself, or the capturing stream
+// of the capture `stream` was forked into.
+static void *traceOwner(const HIPDriver &driver, hipStream_t stream) {
+  return launchTraceRegistry().resolveTraceStream(
+      static_cast<void *>(stream), [&](void *s) {
+        return captureIdOf(driver, static_cast<hipStream_t>(s));
+      });
+}
+
 static bool isStreamCapturing(const HIPDriver &driver, hipStream_t stream) {
   hipStreamCaptureStatus status =
       hipStreamCaptureStatus::hipStreamCaptureStatusNone;
@@ -1327,7 +1353,9 @@ ErrorOr<DeviceGraphRef> HIPDeviceStream::endCapture() {
 
 void HIPDeviceStream::beginLaunchTrace() const {
   auto &registry = launchTraceRegistry();
-  registry.beginTraceForStream(static_cast<void *>(stream_));
+  const auto &hipDevice = HIPDevice::cast(this->device());
+  registry.beginTraceForStream(static_cast<void *>(stream_),
+                               captureIdOf(hipDevice.hipDriver(), stream_));
 }
 
 std::vector<KernelLaunchMetadata> HIPDeviceStream::takeLaunchTrace() const {
@@ -1368,7 +1396,7 @@ ErrorOrSuccess HIPDeviceFunction::hipCallKernelDirect(
     hipStream_t stream) const {
   // Record launch trace if enabled
   auto &registry = launchTraceRegistry();
-  if (registry.isLaunchTraceEnabled(static_cast<void *>(stream))) {
+  if (void *owner = traceOwner(moduleFunction_->hipDriver(), stream)) {
     // HIP doesn't support parameter introspection like CUDA's
     // cuFuncGetParamInfo, so we pass empty arrays for paramSizes and args
     registry.recordLaunchTrace(
@@ -1376,7 +1404,7 @@ ErrorOrSuccess HIPDeviceFunction::hipCallKernelDirect(
         /*paramSizes=*/llvm::ArrayRef<size_t>(), gridX, gridY, gridZ, blockX,
         blockY, blockZ, sharedMemBytes,
         /*attrs=*/llvm::ArrayRef<uint8_t>(), /*numAttrs=*/0,
-        /*args=*/llvm::ArrayRef<void *>(), static_cast<void *>(stream));
+        /*args=*/llvm::ArrayRef<void *>(), static_cast<void *>(stream), owner);
   }
 
   HIP_CHECK_ERR(moduleFunction_->hipDriver().hipModuleLaunchKernel(
@@ -1662,12 +1690,13 @@ ErrorOrSuccess HIPDeviceContext::enqueueCopyToDevice(void *dst, const void *src,
 
   HIP_CHECK_ERR(driver_.hipMemcpyHtoDAsync(dst, src, byteSize, stream_));
   auto &registry = launchTraceRegistry();
-  if (registry.isLaunchTraceEnabled(static_cast<void *>(stream_))) {
+  if (void *owner = traceOwner(driver_, stream_)) {
     KernelLaunchMetadata metadata(
         "hipMemcpyHtoD",
         hashMemcpyTrace(LaunchTraceKind::kMemcpyHtoD, byteSize),
         KernelLaunchMetadata::MemcpyKind::HtoD, byteSize);
-    registry.appendLaunchTraceEntry(static_cast<void *>(stream_), metadata);
+    registry.appendLaunchTraceEntry(owner, static_cast<void *>(stream_),
+                                    metadata);
   }
   MAYBE_SYNC(*this);
   return success();
@@ -1683,12 +1712,13 @@ ErrorOrSuccess HIPDeviceContext::enqueueCopyFromDevice(void *dst,
   HIP_CHECK_ERR(driver_.hipMemcpyDtoHAsync(dst, const_cast<void *>(src),
                                            byteSize, stream_));
   auto &registry = launchTraceRegistry();
-  if (registry.isLaunchTraceEnabled(static_cast<void *>(stream_))) {
+  if (void *owner = traceOwner(driver_, stream_)) {
     KernelLaunchMetadata metadata(
         "hipMemcpyDtoH",
         hashMemcpyTrace(LaunchTraceKind::kMemcpyDtoH, byteSize),
         KernelLaunchMetadata::MemcpyKind::DtoH, byteSize);
-    registry.appendLaunchTraceEntry(static_cast<void *>(stream_), metadata);
+    registry.appendLaunchTraceEntry(owner, static_cast<void *>(stream_),
+                                    metadata);
   }
   MAYBE_SYNC(*this);
   return success();
@@ -1751,12 +1781,13 @@ ErrorOrSuccess HIPDeviceContext::memCopyDtoD(DeviceBuffer &dst,
     RETURN_IF_ERROR(srcCtx.enqueueWaitForEvent(*dstEvent));
   }
   auto &registry = launchTraceRegistry();
-  if (registry.isLaunchTraceEnabled(static_cast<void *>(stream_))) {
+  if (void *owner = traceOwner(driver_, stream_)) {
     KernelLaunchMetadata metadata(
         "hipMemcpyDtoD",
         hashMemcpyTrace(LaunchTraceKind::kMemcpyDtoD, dstByteSize),
         KernelLaunchMetadata::MemcpyKind::DtoD, dstByteSize);
-    registry.appendLaunchTraceEntry(static_cast<void *>(stream_), metadata);
+    registry.appendLaunchTraceEntry(owner, static_cast<void *>(stream_),
+                                    metadata);
   }
 
   MAYBE_SYNC(*this);
@@ -1840,12 +1871,13 @@ HIPDeviceContext::memBatchCopy(llvm::ArrayRef<DeviceBuffer *> dsts,
   }
 
   auto &registry = launchTraceRegistry();
-  if (registry.isLaunchTraceEnabled(static_cast<void *>(stream_))) {
+  if (void *owner = traceOwner(driver_, stream_)) {
     KernelLaunchMetadata metadata(
         "hipMemcpyBatch",
         hashMemcpyTrace(LaunchTraceKind::kMemcpyDtoD, totalBytes),
         KernelLaunchMetadata::MemcpyKind::DtoD, totalBytes);
-    registry.appendLaunchTraceEntry(static_cast<void *>(stream_), metadata);
+    registry.appendLaunchTraceEntry(owner, static_cast<void *>(stream_),
+                                    metadata);
   }
 
   MAYBE_SYNC(*this);
@@ -1920,11 +1952,12 @@ ErrorOrSuccess HIPDeviceContext::enqueueSetMemory(void *dst, size_t byteSize,
     }
   }
   auto &registry = launchTraceRegistry();
-  if (registry.isLaunchTraceEnabled(static_cast<void *>(stream_))) {
+  if (void *owner = traceOwner(driver_, stream_)) {
     KernelLaunchMetadata metadata("hipMemset",
                                   hashMemsetTrace(byteSize, val, valSize),
                                   byteSize, val, valSize);
-    registry.appendLaunchTraceEntry(static_cast<void *>(stream_), metadata);
+    registry.appendLaunchTraceEntry(owner, static_cast<void *>(stream_),
+                                    metadata);
   }
 
   MAYBE_SYNC(*this);

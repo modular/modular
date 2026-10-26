@@ -18,11 +18,14 @@
 
 #include "MLRT/Driver/DeviceContext/LaunchTraceRegistry.h"
 #include "Support/HashUtils.h"
+#include "Support/Profiling/CaptureLabels.h"
 #include "Support/SymbolExport.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Sequence.h"
 
 #include <cassert>
 #include <memory>
+#include <utility>
 
 using namespace M;
 using namespace M::Driver;
@@ -42,18 +45,68 @@ bool M::Driver::LaunchTraceRegistry::isLaunchTraceEnabled(void *stream) {
   return it != states.end() && it->second.enabled;
 }
 
+// Stamps the enqueuing thread's innermost capture label onto `entry`.
+static void stampCaptureLabel(KernelLaunchMetadata &entry) {
+  if (!M::Profiling::isCaptureLabelingActive())
+    return;
+  M::Profiling::CaptureLabel label = M::Profiling::currentCaptureLabel();
+  entry.opSeq = label.opSeq;
+  entry.opThread = label.thread;
+}
+
 void M::Driver::LaunchTraceRegistry::appendLaunchTraceEntry(
     void *stream, const KernelLaunchMetadata &metadata) {
+  appendLaunchTraceEntry(stream, stream, metadata);
+}
+
+void M::Driver::LaunchTraceRegistry::appendLaunchTraceEntry(
+    void *owner, void *stream, const KernelLaunchMetadata &metadata) {
+  KernelLaunchMetadata entry = metadata;
+  stampCaptureLabel(entry);
   std::lock_guard<std::mutex> lock(mu);
   if (globalEnabled) {
-    KernelLaunchMetadata entry = metadata;
-    entry.streamIndex = streamIndexForLocked(stream);
-    globalEntries.push_back(std::move(entry));
+    KernelLaunchMetadata globalEntry = entry;
+    globalEntry.streamIndex = streamIndexForLocked(stream);
+    globalEntries.push_back(std::move(globalEntry));
   }
-  auto it = states.find(stream);
+  auto it = states.find(owner);
   if (it == states.end() || !it->second.enabled)
     return;
-  it->second.entries.push_back(metadata);
+  LaunchTraceState &state = it->second;
+  if (stream != owner) {
+    auto [indexIt, inserted] = state.streamIndices.try_emplace(
+        stream, static_cast<uint32_t>(state.streamIndices.size() + 1));
+    entry.streamIndex = indexIt->second;
+  }
+  state.entries.push_back(std::move(entry));
+}
+
+void *M::Driver::LaunchTraceRegistry::resolveTraceStream(
+    void *stream, llvm::function_ref<uint64_t(void *)> captureIdOf) {
+  // The global trace records every stream, but a stream forked into a traced
+  // capture still resolves to its owner first, so the capture's trace keeps
+  // its operations.
+  bool global = false;
+  {
+    std::lock_guard<std::mutex> lock(mu);
+    auto it = states.find(stream);
+    if (it != states.end() && it->second.enabled)
+      return stream;
+    global = globalEnabled;
+    bool anyCapture = llvm::any_of(states, [](const auto &kv) {
+      return kv.second.enabled && kv.second.captureId != 0;
+    });
+    if (!anyCapture)
+      return global ? stream : nullptr;
+  }
+  if (uint64_t captureId = captureIdOf(stream)) {
+    std::lock_guard<std::mutex> lock(mu);
+    for (auto &[owner, state] : states) {
+      if (state.enabled && state.captureId == captureId)
+        return owner;
+    }
+  }
+  return global ? stream : nullptr;
 }
 
 void M::Driver::LaunchTraceRegistry::recordLaunchTrace(
@@ -61,7 +114,7 @@ void M::Driver::LaunchTraceRegistry::recordLaunchTrace(
     llvm::ArrayRef<size_t> paramSizes, uint32_t gridX, uint32_t gridY,
     uint32_t gridZ, uint32_t blockX, uint32_t blockY, uint32_t blockZ,
     uint32_t sharedMemBytes, llvm::ArrayRef<uint8_t> attrs, uint32_t numAttrs,
-    llvm::ArrayRef<void *> args, void *stream) {
+    llvm::ArrayRef<void *> args, void *stream, void *owner) {
   raw_xxhash64_stream hasher;
 
   // Hash deterministic launch parameters
@@ -108,14 +161,17 @@ void M::Driver::LaunchTraceRegistry::recordLaunchTrace(
   KernelLaunchMetadata metadata(kernelName, hasher.hash(), gridX, gridY, gridZ,
                                 blockX, blockY, blockZ, sharedMemBytes,
                                 numAttrs, /*streamIndex=*/0);
-  appendLaunchTraceEntry(stream, metadata);
+  appendLaunchTraceEntry(owner ? owner : stream, stream, metadata);
 }
 
-void M::Driver::LaunchTraceRegistry::beginTraceForStream(void *stream) {
+void M::Driver::LaunchTraceRegistry::beginTraceForStream(void *stream,
+                                                         uint64_t captureId) {
   std::lock_guard<std::mutex> lock(mu);
   auto &state = states[stream];
   state.enabled = true;
+  state.captureId = captureId;
   state.entries.clear();
+  state.streamIndices.clear();
 }
 
 std::vector<KernelLaunchMetadata>

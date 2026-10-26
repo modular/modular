@@ -730,6 +730,17 @@ modular_cc_test(
 )
 
 modular_cc_test(
+    name = "LaunchTraceLabelsTest",
+    size = "small",
+    srcs = ["LaunchTraceLabelsTest.cpp"],
+    deps = [
+        "//MLRT:Driver/DeviceContextAPI",
+        "//MLRT:Driver/LaunchTraceRegistry",
+        "//Support:ProfilingRanges",
+    ],
+)
+
+modular_cc_test(
     name = "TraceMetadataTest",
     size = "small",
     srcs = ["TraceMetadataTest.cpp"],
