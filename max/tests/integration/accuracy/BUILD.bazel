@@ -150,6 +150,9 @@ modular_py_binary(
     ] + ALL_ARCHITECTURES,
 )
 
+# FLUX.2-dev does not fit this target's budget. Run its image entries through
+# the black-forest-labs/FLUX.2-dev-t2i-bfloat16-v2 and
+# black-forest-labs/FLUX.2-dev-i2i-bfloat16-v2 targets below.
 modular_py_test(
     #a generic test that can be used with parameters
     name = "test_verify_pipelines",
@@ -183,6 +186,51 @@ modular_py_test(
         requirement("click"),
     ],
 )
+
+# FLUX.2-dev's weights take about 110 GB of device memory, more than
+# test_verify_pipelines requests, so its image entries get their own targets.
+# Every other model keeps the smaller budget and shares a GPU.
+#
+# The repo caps an enormous test at 2700s (.bazelrc), but text to image takes
+# about 2700s on B200, and verify_pipelines allows each attempt the entry's
+# 3600s plus one retry after a flake. Run these targets with
+# --test_timeout=-1,-1,-1,7500 so they end in a verdict, not a TIMEOUT.
+[
+    modular_py_test(
+        name = pipeline,
+        size = "enormous",
+        srcs = ["test_verify_pipelines.py"],
+        args = [
+            "--pipeline",
+            pipeline,
+            "--devices",
+            "gpu",
+        ],
+        env = {
+            # FLUX.2-dev is gated, so it loads from the runner's cache.
+            "HF_HUB_OFFLINE": "1",
+        },
+        exec_properties = {
+            "test.resources:gpu-memory": "160",
+        },
+        gpu_constraints = ["//:has_gpu"],
+        main = "test_verify_pipelines.py",
+        tags = [
+            "gpu",
+            "manual",
+            "no-sandbox",
+            "requires-network",
+        ],
+        deps = [
+            ":verify_pipelines",
+            requirement("click"),
+        ],
+    )
+    for pipeline in [
+        "black-forest-labs/FLUX.2-dev-t2i-bfloat16-v2",
+        "black-forest-labs/FLUX.2-dev-i2i-bfloat16-v2",
+    ]
+]
 
 modular_py_test(
     name = "allenai/OLMo-1B-hf-float32",
