@@ -279,6 +279,11 @@ def register_all_models() -> None:
             ".kimik2_5_modulev3",
             "kimivl_modulev3_arch",
         ),
+        _LazyArch(
+            "KimiK3ForConditionalGeneration_ModuleV3",
+            ".kimi_k3_modulev3",
+            "kimi_k3_modulev3_arch",
+        ),
         _LazyArch("LagunaForCausalLM", ".laguna", "laguna_arch"),
         _LazyArch(
             "LagunaForCausalLM_ModuleV3",
@@ -437,16 +442,6 @@ def register_all_models() -> None:
         from kimi_k3 import kimi_k3_arch  # type: ignore[import-not-found]
 
         PIPELINE_REGISTRY.register(kimi_k3_arch)
-    except ModuleNotFoundError:
-        pass
-
-    # Optional: import the Kimi K3 ModuleV3 model if available.
-    try:
-        from kimi_k3_modulev3 import (  # type: ignore[import-not-found]
-            kimi_k3_modulev3_arch,
-        )
-
-        PIPELINE_REGISTRY.register(kimi_k3_modulev3_arch)
     except ModuleNotFoundError:
         pass
 

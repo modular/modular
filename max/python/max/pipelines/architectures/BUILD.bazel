@@ -14,8 +14,6 @@ modular_py_library(
         "tool_parsers",
         # Private Kimi K3 arch is imported at runtime, not directly
         "kimi_k3",
-        # Private Kimi K3 ModuleV3 arch is imported at runtime, not directly
-        "kimi_k3_modulev3",
         # Private Kimi K3 spec-decode family and draft, imported at runtime
         "kimi_k3_spec",
         # Private MiniMax-M3 arch is imported at runtime, not directly
