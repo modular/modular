@@ -64,9 +64,18 @@ class FuzzTarget:
     binary: str  # path under the repo root, relative to bazel-bin via symlink
     description: str
     default_oracle: str
+    min_gpus: int = 1
 
 
 _TARGETS: dict[str, FuzzTarget] = {
+    "allgather_rows_slice": FuzzTarget(
+        name="allgather_rows_slice",
+        bazel_target="//max/kernels/test/gpu/fuzz:fuzz_allgather_rows_slice.mojo.test",
+        binary="bazel-bin/max/kernels/test/gpu/fuzz/fuzz_allgather_rows_slice.mojo.test",
+        description="multi-GPU row windows, exact host-slice oracle and barrier reuse",
+        default_oracle="ref",
+        min_gpus=2,
+    ),
     "argsort": FuzzTarget(
         name="argsort",
         bazel_target="//max/kernels/test/gpu/fuzz:fuzz_argsort.mojo.test",
@@ -694,7 +703,7 @@ def _compute_sanitizer_path() -> str:
 
 
 def _oracle_command_and_env(
-    oracle: str, base_cmd: list[str], gpu: int
+    oracle: str, base_cmd: list[str], gpu: str
 ) -> tuple[list[str], dict[str, str]]:
     """Return the (command, extra-env) for running one case under `oracle`.
 
@@ -927,7 +936,7 @@ def run_case(
     target: FuzzTarget,
     spec: dict[str, int],
     oracle: str,
-    gpu: int,
+    gpu: str,
     timeout_s: float,
 ) -> CaseResult:
     # Generic: pass each spec field as `--<key> <value>`; the Mojo target reads
@@ -1060,7 +1069,7 @@ def shrink(
     target: FuzzTarget,
     spec: dict[str, int],
     oracle: str,
-    gpu: int,
+    gpu: str,
     timeout_s: float,
     target_verdict: Verdict,
     target_kind: str,
@@ -1135,7 +1144,7 @@ def replay_corpus(
     root: Path,
     corpus_root: Path,
     only_target: str | None,
-    gpu: int,
+    gpu: str,
     timeout_s: float,
     do_build: bool,
 ) -> int:
@@ -1159,7 +1168,17 @@ def replay_corpus(
             continue
         # Targets for closed-source kernels are registered here too, but the
         # open-source repo omits their package, so their entries cannot run.
-        if not _package_present(root, _TARGETS[tname]):
+        target = _TARGETS[tname]
+        if len(gpu.split(",")) < target.min_gpus:
+            print(
+                f"[replay] SKIP     {tname}: requires at least"
+                f" {target.min_gpus} devices in --gpu"
+            )
+            skipped += 1
+            if only_target:
+                return 1
+            continue
+        if not _package_present(root, target):
             absent.add(tname)
             skipped += 1
             continue
@@ -1218,6 +1237,20 @@ def replay_corpus(
 # ===----------------------------------------------------------------------=== #
 
 
+def _gpu_devices(value: str) -> str:
+    devices = [device.strip() for device in value.split(",")]
+    if not all(device.isascii() and device.isdecimal() for device in devices):
+        raise argparse.ArgumentTypeError(
+            "--gpu requires comma-separated nonnegative device indices"
+        )
+    indices = [str(int(device)) for device in devices]
+    if len(indices) != len(set(indices)):
+        raise argparse.ArgumentTypeError(
+            "--gpu device indices must be distinct"
+        )
+    return ",".join(indices)
+
+
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
@@ -1268,9 +1301,9 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     )
     p.add_argument(
         "--gpu",
-        type=int,
-        default=0,
-        help="GPU device index (NVIDIA or AMD).",
+        type=_gpu_devices,
+        default="0",
+        help="GPU device index or comma-separated indices for a collective (NVIDIA or AMD).",
     )
     p.add_argument(
         "--timeout",
@@ -1299,9 +1332,9 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
 def main(argv: list[str]) -> int:
     args = _parse_args(argv)
-    root = _repo_root()
 
     if args.replay_corpus:
+        root = _repo_root()
         return replay_corpus(
             root,
             root / args.corpus_dir,
@@ -1313,7 +1346,14 @@ def main(argv: list[str]) -> int:
 
     target = _TARGETS[args.target or "mha_causal"]
     oracle = args.oracle or target.default_oracle
+    if len(args.gpu.split(",")) < target.min_gpus:
+        print(
+            f"{target.name} requires at least {target.min_gpus} devices in --gpu",
+            file=sys.stderr,
+        )
+        return 1
 
+    root = _repo_root()
     if not args.no_build:
         build_target(
             root, target, line_info=(oracle in ("memcheck", "initcheck"))
