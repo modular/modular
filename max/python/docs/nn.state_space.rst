@@ -25,6 +25,16 @@ Submodules
 
    nn.state_space.kimi_delta
 
+Classes
+-------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   GatedDeltaReplayInputs
+
 Functions
 ---------
 
@@ -41,8 +51,10 @@ Functions
    gated_delta_state_fold
    gated_group_rmsnorm
    kda_chunk
+   kda_chunk_is_registered
    kda_chunk_supports_head_dims
    kda_decode
+   mamba2_replay_fold
    mamba2_ssd_chunk_scan_varlen_fwd_inplace
    short_conv_ring
    verify_width_operand
