@@ -95,8 +95,6 @@ def apply_penalties_to_logits[
         var batch_id = get_batch_from_row_offsets(
             frequency_offsets, Int(idx[0])
         )
-        var token = Int(compressed_frequency_data[idx[0], 0])
-
         var repetition_penalty_val = repetition_penalty[batch_id][0]
         var presence_penalty_val = presence_penalty[batch_id][0]
         var frequency_penalty_val = frequency_penalty[batch_id][0]
@@ -104,6 +102,18 @@ def apply_penalties_to_logits[
             isfinite(presence_penalty_val) and isfinite(frequency_penalty_val),
             "frequency/presence penalty must be finite",
         )
+        # A row with the API's defaults leaves every logit unchanged, and
+        # this kernel is a random gather and scatter over the vocabulary:
+        # skip the row before it pays for them.
+        if (
+            repetition_penalty_val == 1.0
+            and presence_penalty_val == 0.0
+            and frequency_penalty_val == 0.0
+        ):
+            return
+        # The entry's token is only needed past the skip: a row with the
+        # API's defaults never reads it.
+        var token = Int(compressed_frequency_data[idx[0], 0])
         # skip padding tokens
         if token >= 0:
             var count = compressed_frequency_data[idx[0], 1][0].cast[
