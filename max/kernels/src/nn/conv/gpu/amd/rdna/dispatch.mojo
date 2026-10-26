@@ -28,7 +28,6 @@ from max.gpu import global_idx, WARP_SIZE
 from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
-from std.utils.index import IndexList
 from linalg.utils import (
     ElementwiseComputeFn,
     ElementwiseEpilogueFn,
@@ -180,9 +179,9 @@ def dispatch_rdna_conv2d[
     input: TileTensor[input_type, ...],
     filter: TileTensor[filter_type, ...],
     output: TileTensor[mut=True, output_type, ...],
-    stride: IndexList[2],
-    dilation: IndexList[2],
-    symmetric_padding: IndexList[2],
+    stride: Coord[Int, Int],
+    dilation: Coord[Int, Int],
+    symmetric_padding: Coord[Int, Int],
     num_groups: Int,
     ctx: DeviceContext,
     source_ptr: MutPointer[Scalar[output_type], MutAnyOrigin] = MutPointer[

@@ -3280,13 +3280,8 @@ def mha_single_batch[
 
                         comptime if not not_last_iter:
                             p_reg_vec2[mma_id, i] = _kernel_mask(
-                                IndexList[2, element_type=.uint32](
-                                    Int(score_row), Int(score_col)
-                                ),
-                                IndexList[2, element_type=.uint32](
-                                    seq_len,
-                                    num_keys,
-                                ),
+                                (Int(score_row), Int(score_col)),
+                                (Int(seq_len), Int(num_keys)),
                                 p_reg_vec2[mma_id, i],
                             )
 
@@ -3961,14 +3956,8 @@ def mha_single_batch_pipelined[
 
                         comptime if not not_last_iter:
                             p_reg_vec2[mma_id, i] = _kernel_mask(
-                                IndexList[
-                                    2,
-                                    element_type=.uint32,
-                                ](Int(score_row), Int(score_col)),
-                                IndexList[
-                                    2,
-                                    element_type=.uint32,
-                                ](seq_len, num_keys),
+                                (Int(score_row), Int(score_col)),
+                                (Int(seq_len), Int(num_keys)),
                                 p_reg_vec2[mma_id, i],
                             )
 
@@ -4608,16 +4597,16 @@ def scale_and_mask_helper[
                     )
 
                 p_reg_tile[n_mma, i + i_group * simd_width] = _kernel_mask(
-                    Index(score_row, score_col),
-                    Index(
-                        batch_cache_valid_length + 1,
+                    (Int(score_row), Int(score_col)),
+                    (
+                        Int(batch_cache_valid_length + 1),
                         # The following setting ensures that out of bound check happens at
                         # every function call, also it corrects the bounds to be exact.
                         # Previous version was using batch_cache_valid_length + 1 which was fine
                         # with the non-split-k based mha as the ooo would have been triggered only
                         # for the last iteration of the outer loop. So while the bound was not exact, it
                         # led to correct output.
-                        kv_tile_start_row + bound,
+                        Int(kv_tile_start_row + bound),
                     ),
                     p_reg_tile[n_mma, i + i_group * simd_width],
                 )

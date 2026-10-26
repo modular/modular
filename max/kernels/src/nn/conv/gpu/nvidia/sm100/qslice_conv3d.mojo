@@ -373,7 +373,7 @@ def dispatch_qslice_conv3d_sm100[
 
     var pad_h = symmetric_padding[1]
     var pad_w = symmetric_padding[2]
-    var symmetric_padding_2d = IndexList[2](pad_h, pad_w)
+    var symmetric_padding_2d = (pad_h, pad_w)
 
     comptime output_simd_width = gcd(
         simd_width_of[output_type, target=ctx.target](), C_out

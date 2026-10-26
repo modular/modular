@@ -24,10 +24,10 @@ from layout import (
     TensorEngine,
     TensorLayout,
     TileTensor,
-    coord_to_index_list,
 )
+from layout.coord import DynamicCoord
 
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # split
@@ -92,38 +92,35 @@ def split[
                     " non-split axes"
                 )
 
-    var output_sizes = IndexList[num_outputs]()
-
-    comptime for i in range(num_outputs):
-        output_sizes[i] = Int(outputs[i].dim(axis))
-
     @inline(.always)
     def elementwise_fn_wrapper[
         width: Int, alignment: Int = 1
-    ](input_coords: Coord) {var output_sizes, var input, var outputs,}:
-        # The associated index in the output tensor
-        var output_coords = IndexList[input_coords.rank]()
-        var input_idx = coord_to_index_list(input_coords)
-
+    ](input_coords: Coord) {var input, var outputs,}:
         # Which output index to write to
         var output_idx = 0
 
-        # The current shape
-        var axis_output_dim = input_idx[axis]
+        # The current position along the split axis. Read through an unrolled
+        # loop variable: a literal read on a symbolically-ranked `Coord` does
+        # not compile.
+        var axis_output_dim = 0
+        comptime for i in range(input_coords.rank):
+            if i == axis:
+                axis_output_dim = Int(input_coords[i])
 
         # First determine which output we should write to
         comptime for i in range(num_outputs):
-            if axis_output_dim < output_sizes[i]:
+            if axis_output_dim < Int(outputs[i].dim(axis)):
                 break
-            axis_output_dim -= output_sizes[i]
+            axis_output_dim -= Int(outputs[i].dim(axis))
             output_idx += 1
 
         # Then derive the output coordinate
+        var output_coords = DynamicCoord[.int, input_coords.rank]()
         comptime for i in range(input_coords.rank):
             if i == axis:
-                output_coords[i] = axis_output_dim
+                output_coords.replace_dynamic[i](axis_output_dim)
             else:
-                output_coords[i] = input_idx[i]
+                output_coords.replace_dynamic[i](Int(input_coords[i]))
 
         var value = input.load[width=width, alignment=align_of[dtype]()](
             input_coords
@@ -142,7 +139,7 @@ def split[
         comptime for i in range(num_outputs):
             if output_idx == i:
                 outputs[i].store[alignment=align_of[dtype]()](
-                    Coord(output_coords), value
+                    output_coords, value
                 )
 
     # Can vectorize only if not splitting over last dim.

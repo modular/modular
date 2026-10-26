@@ -2548,13 +2548,8 @@ def mla_decoding_single_batch[
 
                         comptime if not not_last_iter:
                             p_reg_vec2[mma_id, i] = _kernel_mask(
-                                IndexList[2, element_type=.uint32](
-                                    score_row, score_col
-                                ),
-                                IndexList[2, element_type=.uint32](
-                                    seq_len,
-                                    num_keys,
-                                ),
+                                (score_row, Int(score_col)),
+                                (seq_len, num_keys),
                                 p_reg_vec2[mma_id, i],
                             )
 
@@ -4281,13 +4276,8 @@ def mla_prefill_single_batch[
 
                         comptime if not not_last_iter:
                             p_reg_vec2[mma_id, i] = _kernel_mask(
-                                IndexList[2, element_type=.uint32](
-                                    Int(score_row), Int(score_col)
-                                ),
-                                IndexList[2, element_type=.uint32](
-                                    seq_len,
-                                    num_keys,
-                                ),
+                                (Int(score_row), Int(score_col)),
+                                (seq_len, num_keys),
                                 p_reg_vec2[mma_id, i],
                             )
 

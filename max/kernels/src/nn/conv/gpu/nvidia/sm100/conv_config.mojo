@@ -29,7 +29,6 @@ from max.gpu.host.info import B200
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.sys import size_of
 from std.utils.coord import Coord
-from std.utils.index import IndexList
 from std.utils.numerics import get_accum_type
 
 
@@ -211,7 +210,7 @@ struct Conv2dConfig[
     var mma_shape: Coord[Int, Int, Int]
 
     # Output tile shape for epilogue
-    var output_tile_shape: IndexList[2]
+    var output_tile_shape: Coord[Int, Int]
 
     # ========== Pipeline Configuration ==========
     var num_pipeline_stages: Int
