@@ -292,15 +292,8 @@ const std::string &Device::getAcceleratorArchOrEmpty() {
       return std::string();
     llvm::StringRef name(nameOr.takeValue());
 
-    // The apis this backend names a vendor for. A plugin api has none, and
-    // the caller reads "" as "no accelerator" -- `apiToVendorPrefix` would
-    // otherwise hand back the plugin's own name as though it were a vendor.
     llvm::StringRef api = dev->api();
-    bool named = api == cudaAPI || api == hipAPI;
-#if MODULAR_MACOS
-    named = named || api == metalAPI;
-#endif
-    if (!named)
+    if (!hasMojoVendor(api))
       return std::string();
 
     return (llvm::Twine(apiToVendorPrefix(api)) + ":" + name).str();
