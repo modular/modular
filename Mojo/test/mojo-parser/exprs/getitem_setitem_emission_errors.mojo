@@ -61,3 +61,23 @@ def testVariadicIndexList(mut foo: VariadicIndexList, i: Int, the_value: Int):
 
     # Setter needs to pass the new value as 'val', not in the variadics.
     foo[i, i, i, i] = the_value
+
+
+struct ParamIndexedSetterOnly(Movable where False):
+    def __getitem_param__[idx: Int, /](self) -> Int:
+        return idx
+
+    def __setitem__(mut self, idx: Int, val: Int):
+        pass
+
+
+# A dynamic index vetoes the compile-time index path whenever a dynamic
+# counterpart exists, including when that counterpart is only a setter.
+def test_setter_only_reports_asymmetry(mut a: ParamIndexedSetterOnly, i: Int):
+    # expected-error @+2 {{'ParamIndexedSetterOnly' has '__setitem__' but no '__getitem__' method}}
+    # expected-note @+1 {{used in an expression here}}
+    a[i] = 42
+
+    # expected-error @+2 {{'ParamIndexedSetterOnly' has '__setitem__' but no '__getitem__' method}}
+    # expected-note @+1 {{used in an expression here}}
+    _ = a[i]
