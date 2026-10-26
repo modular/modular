@@ -32,7 +32,7 @@ from std.math.constants import log2e
 
 import max.gpu.primitives.warp as warp
 from max.gpu import WARP_SIZE, block_idx, lane_id, warp_id
-from max.gpu.sync import barrier
+from max.gpu.sync import barrier, syncwarp
 from max.gpu.host import DeviceContext
 from max.gpu.primitives.grid_controls import (
     PDLLevel,
@@ -862,6 +862,15 @@ def mla_combine_kernel_split_parallel[
                     my_rescale * my_data + partner_rescale * partner_data
                 )
                 smem_result.unsafe_store(smem_my_base + elem_offset, merged)
+
+            # The lanes above read this warp's own `smem_m`/`smem_l` slot, and
+            # the lane-0 store below overwrites that same slot with the merged
+            # value for the partner warp's next step. Both sides are this warp,
+            # so the ordering has to be a warp sync: `barrier()` cannot go here
+            # (only the `warp_idx < stride` warps reach it) and post-Volta lanes
+            # do not run in lockstep, so the read is not ordered before the
+            # store by construction.
+            syncwarp()
 
             # Update merged (m, l).
             if lane_idx == 0:
