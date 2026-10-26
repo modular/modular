@@ -106,8 +106,8 @@ def test[
     fold[stride=stride, dilation=dilation, padding=padding, target="cpu"](
         input=input,
         output=output,
-        output_size=output_size,
-        kernel_size=kernel_size,
+        output_size=(Int(output_size[0]), Int(output_size[1])),
+        kernel_size=(Int(kernel_size[0]), Int(kernel_size[1])),
         ctx=DeviceContext(api="cpu"),
     )
 

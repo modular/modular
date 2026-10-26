@@ -253,7 +253,9 @@ def arg_nonzero_shape(input_buffer: Some[TileTensorable]) -> IndexList[2]:
     Returns:
         The output shape as a rank-2 `IndexList` of nonzero element indices.
     """
-    return arg_nonzero.arg_nonzero_shape(input_buffer.to_tile_tensor())
+    return coord_to_index_list(
+        arg_nonzero.arg_nonzero_shape(input_buffer.to_tile_tensor())
+    )
 
 
 @extensibility.register("mo.reduce.row_mean_of_squares")

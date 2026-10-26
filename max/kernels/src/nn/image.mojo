@@ -14,8 +14,7 @@
 
 from layout import TensorEngine, TensorLayout, TileTensor
 
-from std.utils.coord import DynamicCoord, dyn_coord
-from std.utils.index import IndexList
+from std.utils.coord import Coord, DynamicCoord, dyn_coord
 
 
 # Padding handling method.
@@ -220,7 +219,7 @@ struct ImageData[
         assert False, "Invalid layout"
         return 0
 
-    def get_tuple_index(self, idx: Int) -> IndexList[4]:
+    def get_tuple_index(self, idx: Int) -> Coord[Int, Int, Int, Int]:
         """Converts the flat index to the dimension index of the underlying
         data based on the tensor layout.
 
@@ -228,26 +227,30 @@ struct ImageData[
             idx: Flat index.
 
         Returns:
-            A IndexList containing the index in NCHW order.
+            A `Coord` containing the index in NCHW order.
         """
 
         var image_shape = ImageShape(self)
 
         @inline(.always)
-        def _compute_index_nchw() {var image_shape, imm} -> IndexList[4]:
+        def _compute_index_nchw() {
+            var image_shape, imm
+        } -> Coord[Int, Int, Int, Int]:
             # Index [N,C,H,W]
             var lidx, w_idx = divmod(idx, image_shape.W)
             var lidx2, h_idx = divmod(lidx, image_shape.H)
             var n_idx, c_idx = divmod(lidx2, image_shape.C)
-            return IndexList[4](n_idx, c_idx, h_idx, w_idx)
+            return (n_idx, c_idx, h_idx, w_idx)
 
         @inline(.always)
-        def _compute_index_nhwc() {var image_shape, imm} -> IndexList[4]:
+        def _compute_index_nhwc() {
+            var image_shape, imm
+        } -> Coord[Int, Int, Int, Int]:
             # Index [N,H,W,C]
             var lidx, c_idx = divmod(idx, image_shape.C)
             var lidx2, w_idx = divmod(lidx, image_shape.W)
             var n_idx, h_idx = divmod(lidx2, image_shape.H)
-            return IndexList[4](n_idx, c_idx, h_idx, w_idx)
+            return (n_idx, c_idx, h_idx, w_idx)
 
         comptime if Self.static_image_layout == Image2DLayout.NCHW:
             return _compute_index_nchw()
@@ -255,7 +258,7 @@ struct ImageData[
             return _compute_index_nhwc()
 
         assert False, "Invalid layout"
-        return IndexList[4](0)
+        return (0, 0, 0, 0)
 
     def __getitem__(self, n: Int, c: Int, h: Int, w: Int) -> Scalar[Self.dtype]:
         """Reads the underlying data buffer based on the tensor index and under-
