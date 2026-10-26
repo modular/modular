@@ -21,6 +21,7 @@ import extensibility
 from extensibility import InputTensor, OutputTensor
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_gpu
+from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from max.gpu import WARP_SIZE
 
 from nn.mtp_eh_norm import mtp_eh_norm_kernel
@@ -103,12 +104,14 @@ struct MTPEhNorm:
             type_of(hw_tt.as_imm()).LayoutType,
             ImmOrigin(hw_tt.origin),
             hidden_size,
+            block_threads,
             max_warps,
             out_tt.Engine,
             type_of(embed_tt.as_imm()).Engine,
             type_of(prev_tt.as_imm()).Engine,
             type_of(ew_tt.as_imm()).Engine,
             type_of(hw_tt.as_imm()).Engine,
+            pdl_level=PDLLevel.ON,
         ]
         ctx.enqueue_function[kernel](
             out_tt,
@@ -120,4 +123,7 @@ struct MTPEhNorm:
             Int32(num_tokens),
             grid_dim=num_tokens,
             block_dim=block_threads,
+            # The launch may start while the grid before it in the stream
+            # drains; the kernel waits for that grid before its first read.
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
