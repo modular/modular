@@ -31,11 +31,9 @@ from max.pipelines.lib._model_components import (
     updated_component,
 )
 from max.pipelines.lib.arch_lookup import (
-    ARCH_LOOKUP,
     SupportedArchitecture,
     find_architecture,
     import_custom_architectures,
-    select_speculator,
 )
 from max.pipelines.lib.interfaces import (
     ArchConfig,
@@ -646,73 +644,25 @@ def _select_spec_decode_architecture(
     models: Mapping[str, MAXModelConfig],
     prefer_module_v3: bool = False,
 ) -> SupportedArchitecture | None:
-    """Selects the architecture of the target's declared speculator.
-
-    A target's speculators keep the method and draft pairs they declare.
-    Any other pair gets the unified architecture for the target and its
-    draft, if the two pair.
-
-    ``prefer_module_v3`` keeps the speculator in lockstep with the
-    architecture variant the same flag selects.
-
-    Raises:
-        ValueError: If the target offers speculators but none accepts the
-            configured method and draft, and the unified model can't pair
-            them either.
-    """
+    """Returns the unified architecture for the target and its draft, if any."""
     if not speculative:
         return None
 
     target_archs = models["main"].huggingface_config.architectures
     if not target_archs:
         return None
-    target = target_archs[0]
-
     draft_model = models.get("draft")
     draft_archs = (
         draft_model.huggingface_config.architectures
         if draft_model is not None
         else None
     )
-    # Keyed by target name, so a target that declares no speculators never
-    # imports a spec-decode package. The prefer flag keeps the lookup in
-    # lockstep with the architecture variant the same flag selects.
-    declared = ARCH_LOOKUP.speculators_for(
-        target, prefer_module_v3=prefer_module_v3
-    )
-    draft_name = draft_archs[0] if draft_archs else None
-    if not any(
-        speculator.method == speculative.speculative_method
-        and speculator.draft_arch == draft_name
-        for speculator in declared
-    ):
-        unified = spec_decode_architecture(
-            target,
-            speculative.speculative_method,
-            draft_name,
-            prefer_module_v3=prefer_module_v3,
-        )
-        # A target with speculators for other pairs only still refuses a
-        # pair nothing runs, below.
-        if unified is not None or not declared:
-            return unified
-
-    draft_arch: str | None = None
-    if draft_model is not None:
-        if not draft_archs:
-            raise ValueError(
-                "Draft model HF config has empty ``architectures=[]``,"
-                f" so no speculator for {target} can be selected."
-            )
-        draft_arch = draft_archs[0]
-
-    speculator = select_speculator(
-        target,
+    return spec_decode_architecture(
+        target_archs[0],
         speculative.speculative_method,
-        draft_arch,
+        draft_archs[0] if draft_archs else None,
         prefer_module_v3=prefer_module_v3,
     )
-    return None if speculator is None else speculator.derive()
 
 
 def _is_nemotron_h_dspark_pair(models: Mapping[str, MAXModelConfig]) -> bool:
@@ -756,9 +706,8 @@ def _apply_speculative_target_architecture(
 ) -> SupportedArchitecture | None:
     """Selects the unified spec-decode architecture for the target.
 
-    A target that declares a :class:`Speculator`, or that pairs with its
-    draft in a unified graph, returns the unified architecture, leaving its
-    ``architectures`` untouched.
+    A target that pairs with its draft in a unified graph returns the unified
+    architecture, leaving its ``architectures`` untouched.
 
     ``prefer_module_v3`` selects the speculator in lockstep with the
     architecture variant the same flag selects.

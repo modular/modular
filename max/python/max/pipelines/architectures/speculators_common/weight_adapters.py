@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Weight handling shared by unified speculators-DSpark pipelines."""
+"""Weight handling shared by speculators-format DSpark drafts."""
 
 from __future__ import annotations
 
@@ -25,30 +25,6 @@ from .draft_config import DSparkSpeculatorsDraftConfig
 # confidence head gates dynamic proposal lengths, which MAX does not use.
 SKIPPED_DRAFT_KEYS = ("t2d",)
 SKIPPED_DRAFT_PREFIXES = ("confidence_head.",)
-
-
-def merge_unified_state_dict(
-    target_state_dict: dict[str, Any],
-    draft_state_dict: dict[str, Any],
-) -> dict[str, Any]:
-    """Merges target + draft weights for a unified model.
-
-    Prefixes target weights with ``target.*`` and draft weights with
-    ``draft.*`` verbatim (the speculators checkpoint carries no ``model.``
-    prefix and its keys match the draft module 1:1, including the frozen
-    ``embed_tokens`` / pruned-vocab ``lm_head`` copies and the ``d2t`` offset
-    table). Training-only tensors are skipped.
-    """
-    unified: dict[str, Any] = {}
-    for name, value in target_state_dict.items():
-        unified[f"target.{name}"] = value
-    for name, value in draft_state_dict.items():
-        if name in SKIPPED_DRAFT_KEYS or name.startswith(
-            SKIPPED_DRAFT_PREFIXES
-        ):
-            continue
-        unified[f"draft.{name}"] = value
-    return unified
 
 
 def validate_draft_checkpoint_weights(

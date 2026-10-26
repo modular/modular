@@ -18,8 +18,7 @@ tiny int64 ``d2t`` table is materialized). The gates:
 
 1. The checkpoint's names minus the explicit skip list exactly cover the
    draft module's expected weights — no unconsumed keys, no phantom skips.
-2. ``merge_unified_state_dict`` applies exactly that skip list.
-3. The weight-time guards (lm_head / markov_w2 rows, d2t length + image,
+2. The weight-time guards (lm_head / markov_w2 rows, d2t length + image,
    fc in-features) pass on the real tensors and fail loudly on tampered
    ones — including the 12B-style full-vocab lm_head alias shape this
    checkpoint must NOT be treated as having.
@@ -47,7 +46,6 @@ from max.pipelines.architectures.speculators_common import (
     SKIPPED_DRAFT_KEYS,
     SKIPPED_DRAFT_PREFIXES,
     DSparkSpeculatorsDraftConfig,
-    merge_unified_state_dict,
     validate_draft_checkpoint_weights,
 )
 from safetensors import safe_open
@@ -162,18 +160,6 @@ def test_checkpoint_names_cover_draft_module(
     assert not missing, (
         f"draft-module weights absent from the checkpoint: {sorted(missing)}"
     )
-
-
-def test_merge_applies_exactly_the_skip_list(
-    header: tuple[dict[str, tuple[int, ...]], np.ndarray],
-) -> None:
-    shapes, _ = header
-    names = set(shapes)
-    placeholder = object()
-    unified = merge_unified_state_dict(
-        {}, {name: placeholder for name in names}
-    )
-    assert set(unified) == {f"draft.{n}" for n in names - _skipped(names)}
 
 
 def _guard_inputs(

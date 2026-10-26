@@ -40,19 +40,13 @@ class _LazyArch:
     name: str
     """The architecture name, which must match the ``name`` of the
     :class:`SupportedArchitecture` that ``module``.``symbol`` resolves to
-    (including any ``_ModuleV3`` suffix).
-
-    With ``speculates_on`` set this is not a lookup key."""
+    (including any ``_ModuleV3`` suffix)."""
 
     module: str
     """``.``-relative module path the architecture is defined in."""
 
     symbol: str
-    """The attribute on ``module`` holding the :class:`SupportedArchitecture`,
-    or the :class:`~max.pipelines.lib.Speculator` that derives it."""
-
-    speculates_on: str | None = None
-    """For a Speculator, the name of the target it speculates on. """
+    """The attribute on ``module`` holding the :class:`SupportedArchitecture`."""
 
 
 def register_all_models() -> None:
@@ -430,7 +424,6 @@ def register_all_models() -> None:
             entry.module,
             entry.symbol,
             package=__name__,
-            speculates_on=entry.speculates_on,
         )
 
     # Optional: pull in private tool parsers.

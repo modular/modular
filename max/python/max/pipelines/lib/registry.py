@@ -59,13 +59,11 @@ from .arch_lookup import (
     ARCH_LOOKUP,
     ArchLookup,
     SupportedArchitecture,
-    select_speculator,
 )
 
 # The public arch_lookup names reach `max.pipelines.lib` through here rather
 # than directly
 from .arch_lookup import PipelineModelType as PipelineModelType
-from .arch_lookup import Speculator as Speculator
 from .embeddings_pipeline import EmbeddingsPipeline
 from .interfaces import PipelineModel
 from .pipeline_variants.overlap_text_generation import (
@@ -400,7 +398,7 @@ class PipelineRegistry:
 
     def register(
         self,
-        architecture: SupportedArchitecture | Speculator,
+        architecture: SupportedArchitecture,
         *,
         allow_override: bool = False,
     ) -> None:
@@ -408,7 +406,6 @@ class PipelineRegistry:
 
         If multiple architectures share the same name but have different tasks,
         they are registered in a secondary lookup table keyed by (name, task).
-        A :class:`Speculator` registers the architecture it derives.
         """
         self._arch_lookup.register(architecture, allow_override=allow_override)
 
@@ -419,7 +416,6 @@ class PipelineRegistry:
         symbol: str,
         *,
         package: str | None = None,
-        speculates_on: str | None = None,
     ) -> None:
         """Records *how* to import an architecture without importing it yet.
 
@@ -435,19 +431,10 @@ class PipelineRegistry:
             module: Dotted module path to import the architecture from. May be
                 ``.``-relative, resolved against ``package``.
             symbol: The attribute on ``module`` holding the
-                :class:`SupportedArchitecture`, or the :class:`Speculator`
-                that derives it.
+                :class:`SupportedArchitecture`.
             package: Anchor package used to resolve a relative ``module`` path.
-            speculates_on: For a :class:`Speculator`, the name of the target
-                architecture it speculates on.
         """
-        self._arch_lookup.register_lazy(
-            name,
-            module,
-            symbol,
-            package=package,
-            speculates_on=speculates_on,
-        )
+        self._arch_lookup.register_lazy(name, module, symbol, package=package)
 
     def _materialize_lazy(self, name: str) -> None:
         """Imports and registers any architectures deferred under ``name``.
@@ -513,26 +500,12 @@ class PipelineRegistry:
             if draft is not None
             else None
         )
-        method = pipeline_config.speculative.speculative_method
-        draft_arch = draft_archs[0] if draft_archs else None
-        prefer_v3 = pipeline_config.runtime.prefer_module_v3
-        # A target's speculators keep only the methods they declare; the
-        # prefer flag keeps the speculator in lockstep with the
-        # architecture variant the same flag selects.
-        if any(
-            speculator.method == method
-            for speculator in ARCH_LOOKUP.speculators_for(
-                name, prefer_module_v3=prefer_v3
-            )
-        ):
-            speculator = select_speculator(
-                name, method, draft_arch, prefer_module_v3=prefer_v3
-            )
-            assert speculator is not None
-            return speculator.derive()
         return (
             spec_decode_architecture(
-                name, method, draft_arch, prefer_module_v3=prefer_v3
+                name,
+                pipeline_config.speculative.speculative_method,
+                draft_archs[0] if draft_archs else None,
+                prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
             )
             or arch
         )
