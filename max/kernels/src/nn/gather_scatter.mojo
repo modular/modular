@@ -18,7 +18,6 @@ from layout import (
     TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
-    coord_to_index_list,
     row_major,
 )
 from std.collections.string.string_span import get_static_string
@@ -39,14 +38,41 @@ from std.atomic import Atomic
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from max.gpu.host.info import is_cpu, is_gpu
 
-from layout.coord import DynamicCoord
+from layout.coord import CoordLike, DynamicCoord
 from std.memory import unsafe_memcpy
 from max.runtime.asyncrt import parallelism_level
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from extensibility import ManagedTensorSlice
 
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
 from std.collections import OptionalReg
+
+
+@inline(.always)
+def _coord_get[
+    element_types: TypeList[Trait=CoordLike, ...]
+](coord: Coord[*element_types], idx: Int) -> Int:
+    """Reads element `idx` of a flat `Coord` at runtime.
+
+    A `Coord` subscript needs the index to be known at compile time, because
+    only then is the element's type known. So unroll over the comptime
+    positions and select with a runtime predicate.
+
+    Parameters:
+        element_types: Element types of the `Coord`.
+
+    Args:
+        coord: The `Coord` to read from.
+        idx: Runtime element index to read.
+
+    Returns:
+        The element at `idx`.
+    """
+    var result = 0
+    comptime for i in range(coord.rank):
+        if i == idx:
+            result = Int(coord[i])
+    return result
 
 
 @inline(.always)
@@ -194,14 +220,12 @@ def gather_reduce[
 
     var out_vecs_per_thread = ceildiv(Int(indices.dim[0]()), num_tasks)
 
-    var output_2d_dims = IndexList[2](
-        Int(output.dim[0]()), Int(output.dim[1]())
-    )
+    var output_2d_dims = Coord(Int(output.dim[0]()), Int(output.dim[1]()))
 
     comptime if output.flat_rank == 3:
-        output_2d_dims[1] = Int(output.dim[2]())
+        output_2d_dims.replace_dynamic[1](Int(output.dim[2]()))
 
-    var output_bind = output.reshape(row_major(Coord(output_2d_dims)))
+    var output_bind = output.reshape(row_major(output_2d_dims))
     var input_bind = input.reshape(input.layout.make_dynamic[.int64]())
 
     var gather_axis_size = Int(input.dim(gather_axis))
@@ -534,16 +558,29 @@ def gather[
             coords, rebind[SIMD[dtype, width]](val)
         )
 
+    var input_shape = DynamicCoord[.int64, input.rank]()
+    comptime for i in range(input.rank):
+        input_shape.replace_dynamic[i](Int64(input.dim(i)))
+    var indices_shape = DynamicCoord[.int64, indices.rank]()
+    comptime for i in range(indices.rank):
+        indices_shape.replace_dynamic[i](Int64(indices.dim(i)))
+    var output_shape = DynamicCoord[.int64, output.rank]()
+    comptime for i in range(output.rank):
+        output_shape.replace_dynamic[i](Int64(output.dim(i)))
+
     _gather_impl[
+        input.rank,
+        indices.rank,
+        output.rank,
         dtype,
         indices_type,
         has_prefetch=True,
         target=target,
     ](
         Axis(axis),
-        coord_to_index_list(input.layout.shape_coord()),
-        coord_to_index_list(indices.layout.shape_coord()),
-        coord_to_index_list(output.layout.shape_coord()),
+        input_shape,
+        indices_shape,
+        output_shape,
         input_fn=input_fn,
         indices_fn=indices_fn,
         output_fn=output_fn,
@@ -552,13 +589,20 @@ def gather[
     )
 
 
-def gather_guards(
+def gather_guards[
+    input_rank: Int, indices_rank: Int, output_rank: Int
+](
     axis: Axis,
-    input_shape: IndexList,
-    indices_shape: IndexList,
-    output_shape: IndexList,
+    input_shape: DynamicCoord[.int64, input_rank],
+    indices_shape: DynamicCoord[.int64, indices_rank],
+    output_shape: DynamicCoord[.int64, output_rank],
 ) raises -> None:
     """Validates that the input, indices, and output shapes are compatible for a gather operation.
+
+    Parameters:
+        input_rank: Rank of the input tensor.
+        indices_rank: Rank of the indices tensor.
+        output_rank: Rank of the output tensor.
 
     Args:
         axis: Axis along which the gather is performed; must be non-negative
@@ -574,30 +618,37 @@ def gather_guards(
     """
     if Int(axis) < 0:
         raise Error("gather kernel does not support negative axis")
-    for i in range(axis):
-        if output_shape[i] != input_shape[i]:
+    for i in range(Int(axis)):
+        if _coord_get(output_shape, i) != _coord_get(input_shape, i):
             raise Error(
                 "gather: output_shape[0:axis] does not match"
                 " input_shape[0:axis]"
             )
-    for i in range(Int(axis), Int(axis) + indices_shape.size):
-        if output_shape[i] != indices_shape[i - Int(axis)]:
+    for i in range(Int(axis), Int(axis) + indices_shape.rank):
+        if _coord_get(output_shape, i) != _coord_get(
+            indices_shape, i - Int(axis)
+        ):
             raise Error(
                 "gather: output_shape[axis:axis+indices_rank] does not"
                 " match indices_shape"
             )
-    for i in range(Int(axis) + indices_shape.size, output_shape.size):
-        if output_shape[i] != input_shape[i - indices_shape.size + 1]:
+    for i in range(Int(axis) + indices_shape.rank, output_shape.rank):
+        if _coord_get(output_shape, i) != _coord_get(
+            input_shape, i - indices_shape.rank + 1
+        ):
             raise Error(
                 "gather: output_shape[axis + indices_rank:] does not match"
                 " input_shape[axis:]"
             )
-    if Int(axis) >= input_shape.size:
+    if Int(axis) >= input_shape.rank:
         raise Error("gather: axis must be less than input rank")
 
 
 @inline(.always)
 def gather_elementwise_fn_wrapper[
+    input_rank: Int,
+    indices_rank: Int,
+    output_rank: Int,
     dtype: DType,
     indices_type: DType,
     InputFnType: ImplicitlyCopyable
@@ -625,9 +676,9 @@ def gather_elementwise_fn_wrapper[
     output_fn: OutputFnType,
     prefetch_fn: PrefetchFnType,
     axis: Axis,
-    input_shape: IndexList,
-    indices_shape: IndexList,
-    output_shape: IndexList,
+    input_shape: DynamicCoord[.int64, input_rank],
+    indices_shape: DynamicCoord[.int64, indices_rank],
+    output_shape: DynamicCoord[.int64, output_rank],
     coords: Coord,
     error_index_ptr: OptionalReg[MutPointer[Int, MutAnyOrigin]] = None,
 ):
@@ -641,6 +692,9 @@ def gather_elementwise_fn_wrapper[
     instead.
 
     Parameters:
+        input_rank: Rank of the input tensor.
+        indices_rank: Rank of the indices tensor.
+        output_rank: Rank of the output tensor.
         dtype: Element type of the input and output values.
         indices_type: Element type of the indices buffer.
         InputFnType: Function type that loads a SIMD vector from the input
@@ -672,9 +726,9 @@ def gather_elementwise_fn_wrapper[
         error_index_ptr: Optional pointer to record an out-of-bounds index
             for CPU error reporting (defaults to None).
     """
-    comptime assert coords.rank == output_shape.size
+    comptime assert coords.rank == output_shape.rank
     comptime assert (
-        output_shape.size == input_shape.size + indices_shape.size - 1
+        output_shape.rank == input_shape.rank + indices_shape.rank - 1
     )
 
     # out_coords consists of 3 chunks:
@@ -682,13 +736,13 @@ def gather_elementwise_fn_wrapper[
     #   out_coords[axis:axis+indices_rank] = indices_coords
     #   out_coords[axis + indices_rank:] = input_coords[axis + 1:]
     # and input_coords[axis] = indices[indices_coords]
-    var indices_index = DynamicCoord[.int64, indices_shape.size]()
+    var indices_index = DynamicCoord[.int64, indices_shape.rank]()
 
     # Get the indices of the index. `axis` is a runtime value, so the source
     # position is picked by a runtime predicate over comptime positions; a
     # dynamic subscript would force `coords` out of registers and through
     # memory.
-    comptime for i in range(indices_shape.size):
+    comptime for i in range(indices_shape.rank):
         comptime for j in range(coords.rank):
             if j == i + Int(axis):
                 indices_index.replace_dynamic[i](Int64(coords[j].value()))
@@ -697,18 +751,22 @@ def gather_elementwise_fn_wrapper[
     var data_index = indices_fn[1](indices_index)
 
     # Update the indices with the new data index.
-    var data_indices = DynamicCoord[.int64, input_shape.size]()
+    var data_indices = DynamicCoord[.int64, input_shape.rank]()
 
-    comptime skip_factor = indices_shape.size - 1
+    comptime skip_factor = indices_shape.rank - 1
+
+    # Extent of the gathered axis; a runtime subscript on a `Coord` does not
+    # compile, so this unrolls over the comptime positions.
+    var axis_dim = _coord_get(input_shape, Int(axis))
 
     # Build the indices for the input. We have replaced in index in 'axis'
     # with an index from the indices tensor. `Coord` subscripts are checked
     # at compile time, so the `comptime if`s skip positions that rank-0
     # indices make out of range; the runtime `axis` test never reaches them.
-    comptime for i in range(input_shape.size):
+    comptime for i in range(input_shape.rank):
         if i == Int(axis):
             var normalized_coords = _unsafe_normalize_neg_index(
-                data_index, input_shape[axis]
+                data_index, axis_dim
             )
             data_indices.replace_dynamic[i](Int64(normalized_coords))
 
@@ -716,12 +774,12 @@ def gather_elementwise_fn_wrapper[
             # Use debug_assert to validate normalized index is within bounds
             # on GPU and trap, as more detailed checking is costly on GPU.
             comptime if is_cpu[target]():
-                if not (0 <= Int(normalized_coords) < input_shape[axis]):
+                if not (0 <= Int(normalized_coords) < axis_dim):
                     error_index_ptr.value()[] = Int(data_index)
                     return  # Early return on bounds error
 
             debug_assert[assert_mode="safe"](
-                0 <= Int(normalized_coords) < input_shape[axis],
+                0 <= Int(normalized_coords) < axis_dim,
                 (
                     "Gather index out of bounds. Run on CPU for more"
                     " detailed error checking."
@@ -754,6 +812,9 @@ def _no_prefetch(input_coords: Coord, indices_coords: Coord):
 # TODO: Delete / for testing purposes (test_gather.mojo)
 @inline(.always)
 def gather[
+    input_rank: Int,
+    indices_rank: Int,
+    output_rank: Int,
     dtype: DType,
     indices_type: DType,
     InputFnType: ImplicitlyCopyable
@@ -771,9 +832,9 @@ def gather[
     target: StaticString = "cpu",
 ](
     axis: Axis,
-    input_shape: IndexList,
-    indices_shape: IndexList,
-    output_shape: IndexList,
+    input_shape: DynamicCoord[.int64, input_rank],
+    indices_shape: DynamicCoord[.int64, indices_rank],
+    output_shape: DynamicCoord[.int64, output_rank],
     *,
     input_fn: InputFnType,
     indices_fn: IndicesFnType,
@@ -786,6 +847,9 @@ def gather[
     https://github.com/onnx/onnx/blob/main/docs/Operators.md#gatherelements).
 
     Parameters:
+        input_rank: Rank of the input tensor.
+        indices_rank: Rank of the indices tensor.
+        output_rank: Rank of the output tensor.
         dtype: Element type of the input and output tensors.
         indices_type: Element type of the `indices` tensor.
         InputFnType: Function type that loads a SIMD vector from the input
@@ -808,6 +872,9 @@ def gather[
         context: Device context for execution.
     """
     _gather_impl[
+        input_rank,
+        indices_rank,
+        output_rank,
         dtype,
         indices_type,
         has_prefetch=False,
@@ -827,6 +894,9 @@ def gather[
 
 @inline(.always)
 def _gather_impl[
+    input_rank: Int,
+    indices_rank: Int,
+    output_rank: Int,
     dtype: DType,
     indices_type: DType,
     InputFnType: ImplicitlyCopyable
@@ -848,9 +918,9 @@ def _gather_impl[
     target: StaticString = "cpu",
 ](
     axis: Axis,
-    input_shape: IndexList,
-    indices_shape: IndexList,
-    output_shape: IndexList,
+    input_shape: DynamicCoord[.int64, input_rank],
+    indices_shape: DynamicCoord[.int64, indices_rank],
+    output_shape: DynamicCoord[.int64, output_rank],
     *,
     input_fn: InputFnType,
     indices_fn: IndicesFnType,
@@ -864,14 +934,13 @@ def _gather_impl[
         ]() else simd_width_of[dtype, target=context.target]()
     )
 
-    gather_guards(axis, input_shape, indices_shape, output_shape)
+    gather_guards[input_rank, indices_rank, output_rank](
+        axis, input_shape, indices_shape, output_shape
+    )
     with Trace[TraceLevel.OP, target=target](
         "gather", task_id=get_safe_task_id(context)
     ):
-        if (
-            input_shape.flattened_length() == 0
-            or indices_shape.flattened_length() == 0
-        ):
+        if Int(input_shape.product()) == 0 or Int(indices_shape.product()) == 0:
             return
 
         # Create an error reporting location since we cannot raise from an elementwise lambda.
@@ -897,6 +966,9 @@ def _gather_impl[
             var error_index_ptr,
         }:
             gather_elementwise_fn_wrapper[
+                input_rank,
+                indices_rank,
+                output_rank,
                 dtype,
                 indices_type,
                 simd_width=simd_width,
@@ -909,22 +981,22 @@ def _gather_impl[
                 output_fn,
                 prefetch_fn,
                 axis,
-                input_shape.canonicalize(),
-                indices_shape.canonicalize(),
-                output_shape.canonicalize(),
+                input_shape,
+                indices_shape,
+                output_shape,
                 idx,
                 error_index_ptr,
             )
 
         # If we are gathering on the last dimension then we have to be scalar.
-        if Int(axis) == input_shape.size - 1:
+        if Int(axis) == input_shape.rank - 1:
             elementwise[
                 simd_width=1,
                 target=target,
                 _trace_description="gather",
             ](
                 gather_elementwise_fn,
-                Coord(output_shape),
+                output_shape,
                 context,
             )
         else:
@@ -934,7 +1006,7 @@ def _gather_impl[
                 _trace_description="gather",
             ](
                 gather_elementwise_fn,
-                Coord(output_shape),
+                output_shape,
                 context,
             )
 
@@ -946,7 +1018,11 @@ def _gather_impl[
                     String(
                         "gather index {} is out of bounds for axis {} with"
                         " size {}"
-                    ).format(invalid_index, Int(axis), input_shape[axis])
+                    ).format(
+                        invalid_index,
+                        Int(axis),
+                        _coord_get(input_shape, Int(axis)),
+                    )
                 )
 
 
@@ -1120,11 +1196,7 @@ def scatter_nd_generator[
     with Trace[TraceLevel.OP, target=target](
         _trace_description, task_id=get_safe_task_id(context)
     ):
-        if rebind[IndexList[data.rank]](
-            coord_to_index_list(data.layout.shape_coord())
-        ) != rebind[IndexList[data.rank]](
-            coord_to_index_list(output.layout.shape_coord())
-        ):
+        if data.layout.shape_coord() != output.layout.shape_coord():
             raise Error(
                 "Input and output shapes in scatter_nd must be the same."
             )
@@ -1144,13 +1216,13 @@ def scatter_nd_generator[
         var output_flat = output.reshape(row_major(output.num_elements()))
         var data_flat = data.reshape(row_major(data.num_elements()))
 
-        var output_strides = IndexList[data.rank]()
-        for i in range(data.rank):
-            output_strides[i] = Int(output.dynamic_stride(i))
+        var output_strides = DynamicCoord[.int64, data.rank]()
+        comptime for i in range(data.rank):
+            output_strides.replace_dynamic[i](Int64(output.dynamic_stride(i)))
 
-        var updates_strides = IndexList[updates.rank]()
-        for i in range(updates.rank):
-            updates_strides[i] = Int(updates.dynamic_stride(i))
+        var updates_strides = DynamicCoord[.int64, updates.rank]()
+        comptime for i in range(updates.rank):
+            updates_strides.replace_dynamic[i](Int64(updates.dynamic_stride(i)))
 
         # Always copy input to output first.
         comptime if is_gpu[target]():
@@ -1175,9 +1247,10 @@ def scatter_nd_generator[
             updates.ptr, row_major(updates.num_elements())
         )
 
-        var data_shape = coord_to_index_list(data.layout.shape_coord())
-        var indices_shape = coord_to_index_list(indices.layout.shape_coord())
-        var last_shape_of_indices = indices_shape[indices.rank - 1]
+        var data_shape = DynamicCoord[.int64, data.rank]()
+        comptime for i in range(data.rank):
+            data_shape.replace_dynamic[i](Int64(data.dim(i)))
+        var last_shape_of_indices = Int(indices.dim(indices.rank - 1))
 
         # Depending on r_minus_m = data_rank - last_shape_of_indices,
         # we will be copying (gather):
@@ -1207,38 +1280,42 @@ def scatter_nd_generator[
             # dimensions, and is continuous memory locations).
             var count_copy = 1
             for i in range(r_minus_m):
-                count_copy = count_copy * data_shape[data.rank - 1 - i]
-            var indices_coords = coord_to_index_list(_indices_coords)
+                count_copy = count_copy * _coord_get(
+                    data_shape, data.rank - 1 - i
+                )
 
             # Stores the full index on output, where to copy updates to.
             # Zeroing here to avoid doing it selectively within the nested loop below.
-            var output_index_tensor = IndexList[data.rank](0)
+            var output_index_tensor = DynamicCoord[.int64, data.rank]()
 
             # Stores the full index on updates, where to copy from.
             # Zeroing here to avoid doing it selectively within the nested loop below.
-            var updates_index_tensor = IndexList[updates_rank](0)
+            var updates_index_tensor = DynamicCoord[.int64, updates_rank]()
 
             # Construct the full index on updates tensor, i.e., where to copy from.
-            for dim in range(_indices_coords.rank):
-                updates_index_tensor[dim] = indices_coords[dim]
+            comptime for dim in range(_indices_coords.rank):
+                updates_index_tensor.replace_dynamic[dim](
+                    Int64(_coord_get(_indices_coords, dim))
+                )
 
             # Construct the output_index_tensor whose elements contain the indices
             # for each dimension of the output, i.e., where to copy updates to.
             # As part of that we need to construct the indices_index, which is the
             # index to the indices tensor, where we get the elements for the
             # output_index_tensor from.
-            var indices_index = IndexList[indices.rank]()
+            var indices_index = DynamicCoord[.int64, indices.rank]()
+            comptime for i in range(indices.rank - 1):
+                indices_index.replace_dynamic[i](
+                    Int64(_coord_get(_indices_coords, i))
+                )
             for dim in range(last_shape_of_indices):
                 # Size of current dimension on data.
                 # Used to compare to index on this dimension (idx_on_axis).
-                var input_ax_dim = data_shape[dim]
+                var input_ax_dim = _coord_get(data_shape, dim)
 
-                for i in range(_indices_coords.rank):
-                    indices_index[i] = indices_coords[i]
-                indices_index[indices.rank - 1] = dim
+                indices_index.replace_dynamic[indices.rank - 1](Int64(dim))
 
-                var indices_coord = Coord(indices_index)
-                var idx_on_axis = indices.load(indices_coord)
+                var idx_on_axis = indices.load(indices_index)
 
                 comptime if oob_index_strategy == ScatterOobIndexStrategy.SKIP:
                     # Quit if the index falls outside of [-input_ax_dim, input_ax_dim)
@@ -1247,26 +1324,30 @@ def scatter_nd_generator[
                     ) or idx_on_axis >= Scalar[indices_type](input_ax_dim):
                         return
 
-                output_index_tensor[dim] = Int(
+                var normalized = Int(
                     _unsafe_normalize_neg_index(idx_on_axis, input_ax_dim)
                 )
+                comptime for i in range(data.rank):
+                    if i == dim:
+                        output_index_tensor.replace_dynamic[i](
+                            Int64(normalized)
+                        )
 
             # Calculate the updates_offset from where to copy the updates.
             var updates_offset = 0
 
             for i in range(updates_rank):
-                updates_offset = (
-                    updates_offset
-                    + updates_strides[i] * updates_index_tensor[i]
-                )
+                updates_offset = updates_offset + _coord_get(
+                    updates_strides, i
+                ) * _coord_get(updates_index_tensor, i)
 
             # Calculate the output_offset to where to copy the updates.
             var output_offset = 0
 
             for i in range(data.rank):
-                output_offset = (
-                    output_offset + output_strides[i] * output_index_tensor[i]
-                )
+                output_offset = output_offset + _coord_get(
+                    output_strides, i
+                ) * _coord_get(output_index_tensor, i)
 
             comptime if case .Some(atomic_update) = atomic_update_fn:
                 for i in range(count_copy):
@@ -1311,22 +1392,21 @@ def scatter_nd_generator[
             # parallelism, where iterating over index rows alone caps
             # parallelism at the row count and leaves each thread serially
             # copying an entire slice.
-            var coords = coord_to_index_list(_coords)
-            var elem = coords[indices.rank - 1]
+            var elem = _coord_get(_coords, indices.rank - 1)
 
             # Index into the indices tensor naming this update row.
-            var indices_index = IndexList[indices.rank]()
-            for i in range(indices.rank - 1):
-                indices_index[i] = coords[i]
+            var indices_index = DynamicCoord[.int64, indices.rank]()
+            comptime for i in range(indices.rank - 1):
+                indices_index.replace_dynamic[i](Int64(_coord_get(_coords, i)))
 
             # Base offset on output addressed by this index row.
             var output_base = 0
             for dim in range(last_shape_of_indices):
                 # Size of current dimension on data.
                 # Used to compare to index on this dimension (idx_on_axis).
-                var input_ax_dim = data_shape[dim]
-                indices_index[indices.rank - 1] = dim
-                var idx_on_axis = indices.load(Coord(indices_index))
+                var input_ax_dim = _coord_get(data_shape, dim)
+                indices_index.replace_dynamic[indices.rank - 1](Int64(dim))
+                var idx_on_axis = indices.load(indices_index)
 
                 comptime if oob_index_strategy == ScatterOobIndexStrategy.SKIP:
                     # Quit if the index falls outside of [-input_ax_dim, input_ax_dim)
@@ -1335,8 +1415,11 @@ def scatter_nd_generator[
                     ) or idx_on_axis >= Scalar[indices_type](input_ax_dim):
                         return
 
-                output_base = output_base + output_strides[dim] * Int(
+                var normalized = Int(
                     _unsafe_normalize_neg_index(idx_on_axis, input_ax_dim)
+                )
+                output_base = (
+                    output_base + _coord_get(output_strides, dim) * normalized
                 )
 
             # Base offset on updates for this row; the copied slice occupies
@@ -1348,7 +1431,9 @@ def scatter_nd_generator[
             # produce wrong results.
             var updates_base = 0
             for i in range(indices.rank - 1):
-                updates_base = updates_base + updates_strides[i] * coords[i]
+                updates_base = updates_base + _coord_get(
+                    updates_strides, i
+                ) * _coord_get(_coords, i)
 
             # The launch below only selects simd_width > 1 when slice_elems,
             # the row strides, and the base pointers are all multiples of the
@@ -1384,12 +1469,14 @@ def scatter_nd_generator[
             # for CPU but caps GPU parallelism at the row count.
             var slice_elems = 1
             for i in range(r_minus_m):
-                slice_elems = slice_elems * data_shape[data.rank - 1 - i]
+                slice_elems = slice_elems * _coord_get(
+                    data_shape, data.rank - 1 - i
+                )
 
-            var iter_shape = IndexList[indices.rank]()
+            var iter_shape = DynamicCoord[.int64, indices.rank]()
             comptime for i in range(indices.rank - 1):
-                iter_shape[i] = Int(indices.dim[i]())
-            iter_shape[indices.rank - 1] = slice_elems
+                iter_shape.replace_dynamic[i](Int64(Int(indices.dim[i]())))
+            iter_shape.replace_dynamic[indices.rank - 1](Int64(slice_elems))
 
             # Vectorize across the slice when every access is provably
             # aligned: each thread touches `base + elem` where elem is a
@@ -1421,25 +1508,25 @@ def scatter_nd_generator[
                     simd_width=pack,
                     target=target,
                     _trace_description=trace_description_str,
-                ](update_element_func, Coord(iter_shape), context)
+                ](update_element_func, iter_shape, context)
             else:
                 elementwise[
                     simd_width=1,
                     target=target,
                     _trace_description=trace_description_str,
-                ](update_element_func, Coord(iter_shape), context)
+                ](update_element_func, iter_shape, context)
         else:
             # Iterate over indices.shape[:-1], i.e. one update vector per
             # index row.
-            var iter_shape = IndexList[indices.rank - 1]()
+            var iter_shape = DynamicCoord[.int64, indices.rank - 1]()
             comptime for i in range(indices.rank - 1):
-                iter_shape[i] = Int(indices.dim[i]())
+                iter_shape.replace_dynamic[i](Int64(Int(indices.dim[i]())))
 
             elementwise[
                 simd_width=1,
                 target=target,
                 _trace_description=trace_description_str,
-            ](update_func, Coord(iter_shape), context)
+            ](update_func, iter_shape, context)
 
 
 @inline(.always)
@@ -1484,7 +1571,7 @@ def scatter_nd_shape[
     input: TileTensor[mut=False, input_type, ...],
     updates: TileTensor[mut=False, input_type, ...],
     indices: TileTensor[mut=False, indices_type, ...],
-) raises -> IndexList[input.rank]:
+) raises -> DynamicCoord[.int64, input.rank]:
     """
     Compute the output shape of a `scatter_nd` operation, and assert the
     inputs are compatible.
@@ -1533,9 +1620,10 @@ def scatter_nd_shape[
                 " match"
             )
 
-    return rebind[IndexList[input.rank]](
-        coord_to_index_list(input.layout.shape_coord())
-    )
+    var output_shape = DynamicCoord[.int64, input.rank]()
+    comptime for i in range(input.rank):
+        output_shape.replace_dynamic[i](Int64(input.dim(i)))
+    return output_shape
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1552,7 +1640,7 @@ def gather_shape[
     input_buf: TileTensor[mut=False, input_type, ...],
     indices_buf: TileTensor[mut=False, indices_type, ...],
     axis: Int,
-) raises -> IndexList[output_rank]:
+) raises -> DynamicCoord[.int64, output_rank]:
     """
     Compute the output shape of a `gather` operation, and assert the inputs are
     compatible.
@@ -1579,20 +1667,35 @@ def gather_shape[
     var normalized_axis = normalize_neg_index(axis, input_buf.rank)
 
     # compute and return the output shape
-    var output_shape = IndexList[output_rank]()
+    var output_shape = DynamicCoord[.int64, output_rank]()
 
-    var input_shape = coord_to_index_list(input_buf.layout.shape_coord())
-    var indices_shape = coord_to_index_list(indices_buf.layout.shape_coord())
+    var input_shape = DynamicCoord[.int64, input_buf.rank]()
+    comptime for i in range(input_buf.rank):
+        input_shape.replace_dynamic[i](Int64(input_buf.dim(i)))
+    var indices_shape = DynamicCoord[.int64, indices_buf.rank]()
+    comptime for i in range(indices_buf.rank):
+        indices_shape.replace_dynamic[i](Int64(indices_buf.dim(i)))
 
     # NOTE it's written this way instead of 3 separate for-loops because
-    # currently KGEN unrolling only works for strictly static bounds.
+    # currently KGEN unrolling only works for strictly static bounds. Every
+    # read goes through `_coord_get` even where the position is a comptime
+    # expression: a runtime `axis` prunes the branches only at runtime, so a
+    # literal subscript here would materialize as a constant GEP for a
+    # position outside the shape (e.g. `input_shape[out_dim]` with
+    # `output_rank > input_rank`).
     comptime for out_dim in range(output_rank):
         if out_dim < normalized_axis:
-            output_shape[out_dim] = input_shape[out_dim]
+            output_shape.replace_dynamic[out_dim](
+                Int64(_coord_get(input_shape, out_dim))
+            )
         elif out_dim < normalized_axis + indices_buf.rank:
-            output_shape[out_dim] = indices_shape[out_dim - normalized_axis]
+            output_shape.replace_dynamic[out_dim](
+                Int64(_coord_get(indices_shape, out_dim - normalized_axis))
+            )
         else:
-            output_shape[out_dim] = input_shape[out_dim - indices_buf.rank + 1]
+            output_shape.replace_dynamic[out_dim](
+                Int64(_coord_get(input_shape, out_dim - indices_buf.rank + 1))
+            )
 
     return output_shape
 
@@ -1682,24 +1785,31 @@ def scatter_elements[
         simd_width: Int, alignment: Int = 1
     ](indices_coords: Coord) {var}:
         var idx_on_axis = indices.to_tile_tensor()[indices_coords]
-        var output_coords = coord_to_index_list(indices_coords)
-        output_coords[axis] = Int(
+        var output_coords = DynamicCoord[.int64, rank]()
+        comptime for i in range(rank):
+            output_coords.replace_dynamic[i](
+                Int64(_coord_get(indices_coords, i))
+            )
+        var normalized = Int(
             _unsafe_normalize_neg_index(idx_on_axis, input_ax_dim)
         )
+        comptime for i in range(rank):
+            if i == axis:
+                output_coords.replace_dynamic[i](Int64(normalized))
         var update_val = updates.to_tile_tensor()[indices_coords]
 
         comptime if case .Some(atomic_update) = atomic_update_fn:
             var output_tt = output.to_tile_tensor()
             var output_offset = 0
             for i in range(rank):
-                output_offset += (
-                    Int(output_tt.dynamic_stride(i)) * output_coords[i]
+                output_offset += Int(output_tt.dynamic_stride(i)) * _coord_get(
+                    output_coords, i
                 )
             atomic_update(
                 output.unsafe_ptr().unsafe_offset(output_offset), update_val
             )
         else:
-            output.to_tile_tensor()[Coord(output_coords)] = update_val
+            output.to_tile_tensor()[output_coords] = update_val
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
     elementwise[
@@ -1718,7 +1828,7 @@ def scatter_elements_shape[
     updates: TileTensor[mut=False, input_type, ...],
     indices: TileTensor[mut=False, indices_type, ...],
     axis: Int,
-) raises -> IndexList[input.rank]:
+) raises -> DynamicCoord[.int64, input.rank]:
     """
     Compute the output shape of a `scatter_elements` operation, and assert the
     inputs are compatible.
@@ -1755,9 +1865,10 @@ def scatter_elements_shape[
             )
 
     # Return output shape
-    return rebind[IndexList[input.rank]](
-        coord_to_index_list(input.layout.shape_coord())
-    )
+    var output_shape = DynamicCoord[.int64, input.rank]()
+    comptime for i in range(input.rank):
+        output_shape.replace_dynamic[i](Int64(input.dim(i)))
+    return output_shape
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1798,11 +1909,7 @@ def gather_elements[
         indices_type == .int32 or indices_type == .int64
     ), "indices in gather_elements must be int32 or int64"
 
-    if rebind[IndexList[input.rank]](
-        coord_to_index_list(indices.layout.shape_coord())
-    ) != rebind[IndexList[input.rank]](
-        coord_to_index_list(output.layout.shape_coord())
-    ):
+    if indices.layout.shape_coord() != output.layout.shape_coord():
         raise Error(
             "indices and output shape in gather_elements must be the same"
         )
@@ -1822,11 +1929,15 @@ def gather_elements[
         comptime assert indices.flat_rank >= output_coords.flat_rank
         comptime assert output.flat_rank >= output_coords.flat_rank
         var idx_on_axis = indices.load(output_coords)
-        var input_idx = coord_to_index_list(output_coords)
-        input_idx[axis] = Int(
+        var input_coords = DynamicCoord[.int64, input.rank]()
+        comptime for i in range(input.rank):
+            input_coords.replace_dynamic[i](Int64(_coord_get(output_coords, i)))
+        var normalized = Int(
             _unsafe_normalize_neg_index(idx_on_axis, input_ax_dim)
         )
-        var input_coords = Coord(input_idx)
+        comptime for i in range(input.rank):
+            if i == axis:
+                input_coords.replace_dynamic[i](Int64(normalized))
         comptime assert input.flat_rank >= input_coords.flat_rank
         output.store(output_coords, input.load(input_coords))
 
@@ -1848,7 +1959,7 @@ def gather_nd_shape[
 ](
     input_buf: TileTensor[mut=False, input_type, ...],
     indices_buf: TileTensor[mut=False, indices_type, ...],
-) raises -> IndexList[output_rank]:
+) raises -> DynamicCoord[.int64, output_rank]:
     """
     Compute the output shape of a `gather` operation, and assert the inputs are
     compatible.
@@ -1869,8 +1980,10 @@ def gather_nd_shape[
     if input_buf.rank < 1 or indices_buf.rank < 1:
         raise Error("[gather_nd] input_rank and indices_rank must be >= 1")
 
-    var indices_shape = coord_to_index_list(indices_buf.layout.shape_coord())
-    var index_size = indices_shape[indices_buf.rank - 1]
+    var indices_shape = DynamicCoord[.int64, indices_buf.rank]()
+    comptime for i in range(indices_buf.rank):
+        indices_shape.replace_dynamic[i](Int64(indices_buf.dim(i)))
+    var index_size = Int(indices_shape[indices_buf.rank - 1])
     if index_size < 1 or input_buf.rank - batch_dims < index_size:
         raise Error(
             "[gather_nd] index size must be within range [1, input_rank -"
@@ -1880,22 +1993,24 @@ def gather_nd_shape[
         raise Error("[gather_nd] requires (batch_dims < indices_rank)")
 
     # compute and return the output shape
-    var output_shape = IndexList[output_rank]()
-    var next_out_dim = 0
+    var output_shape = DynamicCoord[.int64, output_rank]()
 
-    var input_shape = coord_to_index_list(input_buf.layout.shape_coord())
+    var input_shape = DynamicCoord[.int64, input_buf.rank]()
+    comptime for i in range(input_buf.rank):
+        input_shape.replace_dynamic[i](Int64(input_buf.dim(i)))
 
-    comptime for i in range(batch_dims):
-        output_shape[next_out_dim] = indices_shape[i]
-        next_out_dim += 1
-
-    comptime for i in range(batch_dims, indices_buf.rank - 1):
-        output_shape[next_out_dim] = indices_shape[i]
-        next_out_dim += 1
+    # The output is the batch dims followed by the index's remaining dims,
+    # then the input dims past the gathered ones.
+    comptime for i in range(indices_buf.rank - 1):
+        output_shape.replace_dynamic[i](Int64(indices_shape[i]))
 
     for i in range(batch_dims + index_size, input_buf.rank):
-        output_shape[next_out_dim] = input_shape[i]
-        next_out_dim += 1
+        var out_pos = i - index_size - batch_dims + indices_buf.rank - 1
+        comptime for d in range(output_rank):
+            if d == out_pos:
+                output_shape.replace_dynamic[d](
+                    Int64(_coord_get(input_shape, i))
+                )
 
     return output_shape
 
@@ -1941,9 +2056,9 @@ def gather_nd[
         data.rank >= 1 and indices.rank >= 1
     ), "Constraint: data_rank >= 1 and indices_rank >= 1"
 
-    var indices_shape = coord_to_index_list(indices.layout.shape_coord())
+    var last_indices_dim = Int(indices.dim(indices.rank - 1))
     assert (
-        1 <= indices_shape[indices.rank - 1] <= data.rank - batch_dims
+        1 <= last_indices_dim <= data.rank - batch_dims
     ), "Constraint: 1 <= indices_shape[-1] <= data_rank - batch_dims"
 
     # This is modeled as an elementwise function mapping an index in the
@@ -1951,46 +2066,53 @@ def gather_nd[
     def gather_nd_elementwise_fn[
         simd_width: Int, alignment: Int = 1
     ](output_idx_arg: Coord) {var}:
-        var output_idx = coord_to_index_list(output_idx_arg)
-        var data_idx = IndexList[data.rank]()
-        var indices_idx = IndexList[indices.rank]()
-        var indices_last_dim = Int(indices.dim[indices.rank - 1]())
+        var data_idx = DynamicCoord[.int64, data.rank]()
+        var indices_idx = DynamicCoord[.int64, indices.rank]()
+        var indices_last_dim = Int(indices.dim(indices.rank - 1))
 
         # Fill in the known dimensions in our batch_dim
         comptime for i in range(batch_dims):
-            data_idx[i] = output_idx[i]
+            data_idx.replace_dynamic[i](Int64(_coord_get(output_idx_arg, i)))
 
         # Start filling in the index into the indices buffer
         comptime for i in range(0, indices.rank - 1):
-            indices_idx[i] = output_idx[i]
+            indices_idx.replace_dynamic[i](Int64(_coord_get(output_idx_arg, i)))
 
         # walk the last dimensions, which are the slices we're gathering
         for i in range(indices_last_dim):
-            indices_idx[indices.rank - 1] = i
-            var indices_coord = Coord(indices_idx)
-            data_idx[batch_dims + i] = Int(indices.load(indices_coord))
+            indices_idx.replace_dynamic[indices.rank - 1](Int64(i))
+            var load_pos = batch_dims + i
+            comptime for d in range(data.rank):
+                if d == load_pos:
+                    data_idx.replace_dynamic[d](
+                        Int64(Int(indices.load(indices_idx)))
+                    )
 
         # fill in the last slices in the input
         var num_tail_elems = data.rank - batch_dims - indices_last_dim
         var output_start = output.rank - num_tail_elems
         var src_start = indices_last_dim + batch_dims
         for i in range(0, num_tail_elems):
-            data_idx[src_start + i] = output_idx[output_start + i]
+            var tail_pos = src_start + i
+            comptime for d in range(data.rank):
+                if d == tail_pos:
+                    data_idx.replace_dynamic[d](
+                        Int64(_coord_get(output_idx_arg, output_start + i))
+                    )
 
         comptime for i in range(data.rank):
-            assert data_idx[i] >= 0 and data_idx[i] < Int(
+            assert Int(data_idx[i]) >= 0 and Int(data_idx[i]) < Int(
                 data.dim[i]()
             ), "data index out of bounds"
 
         comptime for i in range(output.rank):
-            assert Int(output_idx[i]) >= 0 and Int(output_idx[i]) < Int(
+            assert Int(output_idx_arg[i]) >= 0 and Int(output_idx_arg[i]) < Int(
                 output.dim[i]()
             ), "output index out of bounds"
 
-        var data_coord = Coord(data_idx)
-        var output_coord = Coord(output_idx)
         output.store[alignment=1](
-            output_coord, data.load[width=simd_width, alignment=1](data_coord)
+            output_idx_arg,
+            data.load[width=simd_width, alignment=1](data_idx),
         )
 
     comptime target_simd_width = (

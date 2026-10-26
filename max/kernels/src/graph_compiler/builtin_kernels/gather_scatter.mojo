@@ -721,13 +721,12 @@ def scatter_nd_shape_fn(
     comptime assert (
         type_of(updates).dtype == type_of(input).dtype
     ), "updates dtype must match input dtype"
-    return rebind[IndexList[type_of(input).rank]](
-        scatter_nd_shape(
-            input.to_tile_tensor(),
-            updates.to_tile_tensor().bitcast[type_of(input).dtype]().as_imm(),
-            indices.to_tile_tensor(),
-        )
+    var shape = scatter_nd_shape(
+        input.to_tile_tensor(),
+        updates.to_tile_tensor().bitcast[type_of(input).dtype]().as_imm(),
+        indices.to_tile_tensor(),
     )
+    return rebind[IndexList[type_of(input).rank]](coord_to_index_list(shape))
 
 
 @extensibility.register("mo.scatter_nd.skip_oob_indices")
@@ -814,13 +813,12 @@ def scatter_nd_add_shape(
     comptime assert (
         type_of(updates).dtype == type_of(input).dtype
     ), "updates dtype must match input dtype"
-    return rebind[IndexList[type_of(input).rank]](
-        scatter_nd_shape(
-            input.to_tile_tensor(),
-            updates.to_tile_tensor().bitcast[type_of(input).dtype]().as_imm(),
-            indices.to_tile_tensor(),
-        )
+    var shape = scatter_nd_shape(
+        input.to_tile_tensor(),
+        updates.to_tile_tensor().bitcast[type_of(input).dtype]().as_imm(),
+        indices.to_tile_tensor(),
     )
+    return rebind[IndexList[type_of(input).rank]](coord_to_index_list(shape))
 
 
 @extensibility.register("mo.scatter_nd.mul")
@@ -876,13 +874,12 @@ def scatter_nd_mul_shape(
     comptime assert (
         type_of(updates).dtype == type_of(input).dtype
     ), "updates dtype must match input dtype"
-    return rebind[IndexList[type_of(input).rank]](
-        scatter_nd_shape(
-            input.to_tile_tensor(),
-            updates.to_tile_tensor().bitcast[type_of(input).dtype]().as_imm(),
-            indices.to_tile_tensor(),
-        )
+    var shape = scatter_nd_shape(
+        input.to_tile_tensor(),
+        updates.to_tile_tensor().bitcast[type_of(input).dtype]().as_imm(),
+        indices.to_tile_tensor(),
     )
+    return rebind[IndexList[type_of(input).rank]](coord_to_index_list(shape))
 
 
 @extensibility.register("mo.scatter_nd.min")
@@ -938,13 +935,12 @@ def scatter_nd_min_shape(
     comptime assert (
         type_of(updates).dtype == type_of(input).dtype
     ), "updates dtype must match input dtype"
-    return rebind[IndexList[type_of(input).rank]](
-        scatter_nd_shape(
-            input.to_tile_tensor(),
-            updates.to_tile_tensor().bitcast[type_of(input).dtype]().as_imm(),
-            indices.to_tile_tensor(),
-        )
+    var shape = scatter_nd_shape(
+        input.to_tile_tensor(),
+        updates.to_tile_tensor().bitcast[type_of(input).dtype]().as_imm(),
+        indices.to_tile_tensor(),
     )
+    return rebind[IndexList[type_of(input).rank]](coord_to_index_list(shape))
 
 
 @extensibility.register("mo.scatter_nd.max")
@@ -1000,13 +996,12 @@ def scatter_nd_max_shape(
     comptime assert (
         type_of(updates).dtype == type_of(input).dtype
     ), "updates dtype must match input dtype"
-    return rebind[IndexList[type_of(input).rank]](
-        scatter_nd_shape(
-            input.to_tile_tensor(),
-            updates.to_tile_tensor().bitcast[type_of(input).dtype]().as_imm(),
-            indices.to_tile_tensor(),
-        )
+    var shape = scatter_nd_shape(
+        input.to_tile_tensor(),
+        updates.to_tile_tensor().bitcast[type_of(input).dtype]().as_imm(),
+        indices.to_tile_tensor(),
     )
+    return rebind[IndexList[type_of(input).rank]](coord_to_index_list(shape))
 
 
 @extensibility.register("mo.apply_packed_bitmask")
@@ -1116,14 +1111,13 @@ def scatter_shape_fn[
     comptime assert (
         type_of(indices).rank == type_of(input).rank
     ), "indices rank must match input rank"
-    return rebind[IndexList[type_of(input).rank]](
-        scatter_elements_shape(
-            input.to_tile_tensor(),
-            updates.to_tile_tensor().bitcast[type_of(input).dtype]().as_imm(),
-            indices.to_tile_tensor(),
-            axis,
-        )
+    var shape = scatter_elements_shape(
+        input.to_tile_tensor(),
+        updates.to_tile_tensor().bitcast[type_of(input).dtype]().as_imm(),
+        indices.to_tile_tensor(),
+        axis,
     )
+    return rebind[IndexList[type_of(input).rank]](coord_to_index_list(shape))
 
 
 @extensibility.register("mo.scatter.add")
@@ -1172,14 +1166,13 @@ def scatter_add_shape_fn(
     comptime assert (
         type_of(indices).rank == type_of(input).rank
     ), "indices rank must match input rank"
-    return rebind[IndexList[type_of(input).rank]](
-        scatter_elements_shape(
-            input.to_tile_tensor(),
-            updates.to_tile_tensor().bitcast[type_of(input).dtype]().as_imm(),
-            indices.to_tile_tensor(),
-            Int(axis),
-        )
+    var shape = scatter_elements_shape(
+        input.to_tile_tensor(),
+        updates.to_tile_tensor().bitcast[type_of(input).dtype]().as_imm(),
+        indices.to_tile_tensor(),
+        Int(axis),
     )
+    return rebind[IndexList[type_of(input).rank]](coord_to_index_list(shape))
 
 
 @extensibility.register("mo.scatter.max")
@@ -1238,14 +1231,13 @@ def scatter_max_shape_fn(
     comptime assert (
         type_of(indices).rank == type_of(input).rank
     ), "indices rank must match input rank"
-    return rebind[IndexList[type_of(input).rank]](
-        scatter_elements_shape(
-            input.to_tile_tensor(),
-            updates.to_tile_tensor().bitcast[type_of(input).dtype]().as_imm(),
-            indices.to_tile_tensor(),
-            Int(axis),
-        )
+    var shape = scatter_elements_shape(
+        input.to_tile_tensor(),
+        updates.to_tile_tensor().bitcast[type_of(input).dtype]().as_imm(),
+        indices.to_tile_tensor(),
+        Int(axis),
     )
+    return rebind[IndexList[type_of(input).rank]](coord_to_index_list(shape))
 
 
 @extensibility.register("mo.scatter.min")
@@ -1304,14 +1296,13 @@ def scatter_min_shape_fn(
     comptime assert (
         type_of(indices).rank == type_of(input).rank
     ), "indices rank must match input rank"
-    return rebind[IndexList[type_of(input).rank]](
-        scatter_elements_shape(
-            input.to_tile_tensor(),
-            updates.to_tile_tensor().bitcast[type_of(input).dtype]().as_imm(),
-            indices.to_tile_tensor(),
-            Int(axis),
-        )
+    var shape = scatter_elements_shape(
+        input.to_tile_tensor(),
+        updates.to_tile_tensor().bitcast[type_of(input).dtype]().as_imm(),
+        indices.to_tile_tensor(),
+        Int(axis),
     )
+    return rebind[IndexList[type_of(input).rank]](coord_to_index_list(shape))
 
 
 @extensibility.register("mo.scatter.mul")
@@ -1370,14 +1361,13 @@ def scatter_mul_shape_fn(
     comptime assert (
         type_of(indices).rank == type_of(input).rank
     ), "indices rank must match input rank"
-    return rebind[IndexList[type_of(input).rank]](
-        scatter_elements_shape(
-            input.to_tile_tensor(),
-            updates.to_tile_tensor().bitcast[type_of(input).dtype]().as_imm(),
-            indices.to_tile_tensor(),
-            Int(axis),
-        )
+    var shape = scatter_elements_shape(
+        input.to_tile_tensor(),
+        updates.to_tile_tensor().bitcast[type_of(input).dtype]().as_imm(),
+        indices.to_tile_tensor(),
+        Int(axis),
     )
+    return rebind[IndexList[type_of(input).rank]](coord_to_index_list(shape))
 
 
 @extensibility.register("mo.broadcast_to")
@@ -2088,13 +2078,14 @@ def gather_nd_shape_fn[
     data: Some[TileTensorable], indices: Some[TileTensorable]
 ) raises -> IndexList[output_rank]:
     """Computes the output shape for the `mo.gather_nd` graph op."""
-    return gather_nd_shape[
+    var shape = gather_nd_shape[
         batch_dims=batch_dims,
         output_rank=output_rank,
     ](
         data.to_tile_tensor(),
         indices.to_tile_tensor(),
     )
+    return rebind[IndexList[output_rank]](coord_to_index_list(shape))
 
 
 @extensibility.register("mo.gather")
@@ -2138,14 +2129,17 @@ struct Gather:
             )
 
         gather[
-            output.dtype,
-            indices.dtype,
+            input_rank=input.rank,
+            indices_rank=indices.rank,
+            output_rank=output.rank,
+            dtype=output.dtype,
+            indices_type=indices.dtype,
             target=target,
         ](
             Axis(axis, input.rank),
-            input.shape(),
-            indices.shape(),
-            output.shape(),
+            Coord(input.shape()),
+            Coord(indices.shape()),
+            Coord(output.shape()),
             input_fn=input_fn,
             indices_fn=indices_fn,
             output_fn=output_fn,
@@ -2162,11 +2156,12 @@ def gather_shape_fn[
     input: Some[TileTensorable], indices: Some[TileTensorable]
 ) raises -> IndexList[output_rank]:
     """Computes the output shape for the `mo.gather` graph op."""
-    return gather_shape[output_rank=output_rank](
+    var shape = gather_shape[output_rank=output_rank](
         input.to_tile_tensor(),
         indices.to_tile_tensor(),
         axis,
     )
+    return rebind[IndexList[output_rank]](coord_to_index_list(shape))
 
 
 @extensibility.register("mo.gather_sum")
