@@ -576,6 +576,15 @@ def MojoHAL_DeviceContext_reassignWait(
         return _err_cstr(String(e))
 
 
+@export
+def MojoHAL_DeviceContext_sameStream(
+    a: _DeviceContextBoxPtr,
+    b: _DeviceContextBoxPtr,
+) abi("C") -> Bool:
+    # A `selectStream` view shares its context's stream: compare streams.
+    return a[]._stream is b[]._stream
+
+
 # A memmapped file wrapped as a host-visible buffer view; munmaps on release.
 @fieldwise_init
 struct _MmapBox(Movable):
