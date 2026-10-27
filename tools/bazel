@@ -47,6 +47,20 @@ if [[ -z "${GITHUB_REPOSITORY:-}" && $OSTYPE != darwin* && -d /dev/shm && ! -e /
   bazelrc_lines+=("common --sandbox_base=/dev/shm")
 fi
 
+# Read from the public cache by default. Health-checked first so a build
+# offline or behind a firewall warns instead of stalling on every action.
+if [[ -n "${BAZEL_DISABLE_REMOTE_CACHE:-}" ]]; then
+  echo "warning: remote cache disabled with \$BAZEL_DISABLE_REMOTE_CACHE" >&2
+elif [[ -n "${BUILDBUDDY_TOKEN:-}" ]]; then
+  : # Trusted CI passes its own read-write key; --remote_header accumulates.
+elif curl \
+  --connect-timeout 3 --retry 3 --head --output /dev/null --fail --silent \
+  'https://modular-public.buildbuddy.io/healthz?server-type=prod-buildbuddy-server'; then
+  bazelrc_lines+=("build --config=public-cache-readonly")
+else
+  echo "warning: cannot connect to the public remote cache" >&2
+fi
+
 readonly bazelrc_root="$script_root/../build"
 readonly logs_dir="$bazelrc_root/logs"
 mkdir -p "$logs_dir"
