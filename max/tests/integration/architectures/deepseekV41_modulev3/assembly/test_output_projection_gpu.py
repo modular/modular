@@ -24,7 +24,7 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Module
 from max.experimental.sharding import DeviceMapping, DeviceMesh, Sharded
-from max.experimental.tensor import Tensor
+from max.experimental.tensor import Tensor, default_device
 from max.graph import DeviceRef, TensorType
 from max.pipelines.architectures.deepseekV41_modulev3.interface import (
     V41Config,
@@ -35,7 +35,16 @@ from max.pipelines.architectures.deepseekV41_modulev3.layer_resolver import (
 )
 from max.pipelines.architectures.deepseekV41_modulev3.layers.attention import (
     Attention,
+    RaggedRows,
 )
+from max.pipelines.architectures.deepseekV41_modulev3.layers.block import (
+    DecoderLayer,
+    LayerPlan,
+)
+from max.pipelines.architectures.deepseekV41_modulev3.layers.mhc import (
+    mhc_identity_writeback,
+)
+from max.pipelines.architectures.deepseekV41_modulev3.layers.norm import RMSNorm
 from max.pipelines.architectures.deepseekV41_modulev3.layers.rope import (
     RopeParams,
 )
@@ -156,3 +165,107 @@ def test_output_projection_tp(
     )
     actual = run(Tensor.from_dlpack(values_bf16).to(Accelerator(0)))
     np.testing.assert_array_equal(actual.to_numpy(), expected)
+
+
+class _PassFFN(Module[..., Tensor]):
+    def forward(self, x: Tensor, mask: Tensor) -> Tensor:
+        del mask
+        return x
+
+
+class _Boundary(Module[[Tensor], tuple[Tensor, Tensor, Tensor]]):
+    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        super().__init__()
+        layer = object.__new__(DecoderLayer)
+        Module.__init__(layer)
+        layer.hc_mult = 4
+        layer.norm_eps = 1e-20
+        layer.plan = LayerPlan((), {}, "")
+        layer.attn_norm = RMSNorm(64)
+        layer.ffn_norm = RMSNorm(64)
+        layer.ffn_norm.weight = F.full(
+            [64], 2.0, dtype=DType.bfloat16, device=Accelerator(0)
+        )
+        monkeypatch.setattr(layer, "ffn", _PassFFN(), raising=False)
+        monkeypatch.setattr(layer, "_attention", lambda x, site: (x, []))
+        for role in ("attn", "ffn"):
+            setattr(
+                layer,
+                f"hc_{role}_fn",
+                Tensor.zeros([24, 256], dtype=DType.float32),
+            )
+            setattr(
+                layer,
+                f"hc_{role}_base",
+                Tensor.zeros([24], dtype=DType.float32),
+            )
+            setattr(
+                layer,
+                f"hc_{role}_scale",
+                Tensor.zeros([3], dtype=DType.float32),
+            )
+        self.layer = layer
+
+    def forward(self, stream: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+        total = stream.shape[0]
+        pre = F.broadcast_to(
+            F.constant(
+                np.array([[1.0, 0.0, 0.0, 0.0]], np.float32),
+                DType.float32,
+                device=stream.mapping,
+            ),
+            [total, 4],
+        )
+        y, post, comb = mhc_identity_writeback(stream)
+        zero = F.full([total], 0, dtype=DType.int32, device=stream.mapping)
+        offsets = F.shape_to_tensor([0, total]).cast(DType.uint32)
+        rows = RaggedRows(
+            offsets,
+            zero,
+            zero,
+            zero,
+            F.shape_to_tensor([total]).cast(DType.int32),
+        )
+        mixed, pre, result, _, _, _ = self.layer(
+            stream, pre, y, post, comb, rows, zero, zero, zero, [], [], []
+        )
+        return mixed, pre, result
+
+
+def test_compiled_decoder_boundary_normalizes_ffn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with default_device(Accelerator(0)):
+        module = _Boundary(monkeypatch)
+    run = module.compile(
+        TensorType(DType.bfloat16, ["rows", 4, 64], DeviceRef.GPU(0))
+    )
+    values = (
+        np.random.default_rng(73).normal(size=(3, 4, 64)).astype(np.float32)
+    )
+    bits = values.view(np.uint32)
+    bits = ((bits + 0x7FFF + ((bits >> 16) & 1)) >> 16).astype(np.uint16)
+    inputs = Tensor.from_dlpack(Buffer.from_numpy(bits).view(DType.bfloat16))
+    mixed, pre, result = run(inputs.to(Accelerator(0)))
+    stream = mixed.cast(DType.float32).to_numpy()
+    collapse = np.sum(stream * pre.to_numpy()[:, :, None], axis=1)
+    bits = collapse.astype(np.float32).view(np.uint32)
+    collapse = (((bits + 0x7FFF + ((bits >> 16) & 1)) >> 16) << 16).view(
+        np.float32
+    )
+    expected = (
+        2.0
+        * collapse
+        / np.sqrt(np.mean(collapse * collapse, axis=-1, keepdims=True) + 1e-20)
+    )
+    # One BF16 rounding at the normalization output.
+    bits = expected.astype(np.float32).view(np.uint32)
+    expected = (((bits + 0x7FFF + ((bits >> 16) & 1)) >> 16) << 16).view(
+        np.float32
+    )
+    np.testing.assert_allclose(
+        result.cast(DType.float32).to_numpy(),
+        expected,
+        rtol=1.0 / 128,
+        atol=1e-5,
+    )

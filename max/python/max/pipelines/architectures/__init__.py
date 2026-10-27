@@ -94,6 +94,11 @@ def register_all_models() -> None:
         _LazyArch("DeepseekV4ForCausalLM", ".deepseekV4", "deepseekV4_arch"),
         _LazyArch("DeepseekV41ForCausalLM", ".deepseekV41", "deepseekV41_arch"),
         _LazyArch(
+            "DeepseekV41ForCausalLM_ModuleV3",
+            ".deepseekV41_modulev3",
+            "deepseekV41_modulev3_arch",
+        ),
+        _LazyArch(
             "DeepseekV32ForCausalLM_ModuleV3",
             ".deepseekV3_2_modulev3",
             "deepseekV3_2_modulev3_arch",

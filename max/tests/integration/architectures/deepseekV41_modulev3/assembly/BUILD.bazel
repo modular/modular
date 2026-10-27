@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_library", "requirement")
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 load("//max/tests/integration/xarch_warm:eager_py_test.bzl", "modular_eager_py_test")
 
 package(default_visibility = [
@@ -20,6 +20,49 @@ modular_eager_py_test(
         "//max/python/max/experimental",
         "//max/python/max/experimental/nn",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        requirement("numpy"),
+    ],
+)
+
+# The weight adapter's wo_a bf16 expansion (the official baseline), the
+# stacked-projection fold and the no-vision gate drop, on real
+# E4M3/E8M0 pair arithmetic.
+modular_py_test(
+    name = "test_weight_adapters",
+    srcs = ["test_weight_adapters.py"],
+    deps = [
+        requirement("transformers"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        requirement("numpy"),
+    ],
+)
+
+modular_eager_py_test(
+    name = "test_runtime",
+    srcs = ["test_runtime.py"],
+    cpu_only = True,
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
+    # tokenizers is a transitive dependency of transformers but doesn't have
+    # an unversioned bazel alias, so we need to ignore its unresolved imports
+    ignore_unresolved_imports = [
+        "tokenizers.Tokenizer",
+        "tokenizers.models.WordLevel",
+    ],
+    deps = [
+        ":runtime_config",
+        requirement("transformers"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/experimental",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
         requirement("numpy"),
     ],
 )
@@ -59,6 +102,27 @@ modular_eager_py_test(
         "//max/python/max/graph",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
         "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+# The loader's pinned Engram host tables: page-locked against the
+# accelerator (a ``CPU()`` staging buffer is pageable, which the UVA
+# gather must not read), byte-exact against the checkpoint view, and
+# deduplicated lazily across reloads of the same bytes.
+modular_py_test(
+    name = "test_pinned_tables_gpu",
+    size = "large",
+    srcs = ["test_pinned_tables_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
         requirement("numpy"),
     ],
 )

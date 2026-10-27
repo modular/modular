@@ -34,8 +34,8 @@ from typing import Any, ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.comm.ep import EPConfig
 from max.nn.kv_cache import KVCacheParamInterface
+from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import (
@@ -67,7 +67,6 @@ class DeepseekV41Config(ArchConfigWithKVCache):
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "float4_e2m1fnx2"
     SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
         "float4_e2m1fnx2",
-        "float32",
     }
 
     # MAX-specific fields.
@@ -77,11 +76,8 @@ class DeepseekV41Config(ArchConfigWithKVCache):
     max_seq_len: int
     quantization_encoding: SupportedEncoding | None = None
     data_parallel_degree: int = 1
-    # Expert-parallel config, set by the pipeline model when runtime
-    # ``ep_size`` > 1 (the DeepseekV3 ModuleV3 pattern). ``None`` keeps the
-    # tensor-parallel MoE.
-    ep_config: EPConfig | None = None
-
+    return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
+    return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
     # Core dimensions (``text_config``).
     vocab_size: int = 129280
     hidden_size: int = 5120

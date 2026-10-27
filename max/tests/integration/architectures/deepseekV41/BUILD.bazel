@@ -170,6 +170,19 @@ modular_py_test(
     ],
 )
 
+# Guards the Engram lookup adapter's workspace sizing and capacity bound
+# for reduced and over-capacity table layouts (engram_lookup.py). CPU only.
+modular_py_test(
+    name = "test_engram_reduced_layout",
+    srcs = ["test_engram_reduced_layout.py"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        requirement("numpy"),
+    ],
+)
+
 # Guards pipelines/lib/log_probabilities.py (LogProbabilitiesMixin and its
 # graph).
 modular_py_test(
