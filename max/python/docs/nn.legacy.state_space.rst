@@ -3,8 +3,8 @@
 :lang: python
 :wrapper_class: rst-module-autosummary
 
-max.nn.state\_space
-===================
+max.nn.legacy.state\_space
+==========================
 
 .. automodule:: max.nn.legacy.state_space
    :no-members:

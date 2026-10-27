@@ -33,8 +33,9 @@ The layout is flat. There should be one `.rst` per documented module, named
 after the dotted Python path:
 
 - [`engine.rst`](engine.rst) documents `max.engine`.
-- [`nn.rst`](nn.rst) documents `max.nn.legacy`.
-- [`nn.attention.rst`](nn.attention.rst) documents `max.nn.legacy.attention`.
+- [`nn.rst`](nn.rst) documents `max.nn`.
+- [`nn.legacy.attention.rst`](nn.legacy.attention.rst) documents
+  `max.nn.legacy.attention`.
 
 ## CI coverage check
 

@@ -31,14 +31,15 @@ adjusts them (heading demotion, empty-section removal, sidebar stub population).
 ## RST file organization
 
 Each Python module has one flat RST file (for example, `nn.rst`,
-`nn.attention.rst`, `pipelines.rst`). There are two documentation patterns:
+`nn.legacy.attention.rst`, `pipelines.rst`). There are two documentation
+patterns:
 
 - **Explicit autosummary** (most files): uses `.. automodule::` with
   `:no-members:`, then groups members into semantic sections with
   `.. autosummary::` directives referencing templates in
   `_templates/autosummary/` (`class.rst`, `function.rst`).
 - **Automodule with :members:** (for example, `graph.ops.rst`,
-  `nn.kernels.rst`, `experimental.functional.rst`): documents all public
+  `nn.legacy.kernels.rst`, `functional.rst`): documents all public
   members automatically without explicit listing.
 
 `index.rst` lists all module pages in its toctree. Module pages that have

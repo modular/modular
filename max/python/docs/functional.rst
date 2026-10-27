@@ -3,9 +3,8 @@
 :type: module
 :lang: python
 
-.. This page uses automodule instead of autosummary primarily because
-   this API is still experimental. We should consider switching to
-   autosummary when it's moved to max.functional.
+.. This page uses automodule with :imported-members:, so it lists every
+   public op without curated sections. A curated autosummary would group them.
 
 max.functional
 ============================

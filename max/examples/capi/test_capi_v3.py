@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Capture a MEF from a graph built with the new ``max.experimental`` API.
+"""Capture a MEF from a graph built with the ``max.nn`` and ``max.tensor`` API.
 
 This is the new-API counterpart to ``test_capi.py``. It builds the same
 vector-add graph as a :class:`~max.nn.Module`, compiles it, and

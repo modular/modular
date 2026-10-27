@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Testing utilities for the experimental :class:`~max.tensor.Tensor` API."""
+"""Testing utilities for the :class:`~max.tensor.Tensor` API."""
 
 from __future__ import annotations
 

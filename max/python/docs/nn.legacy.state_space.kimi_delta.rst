@@ -3,8 +3,8 @@
 :lang: python
 :wrapper_class: rst-module-autosummary
 
-max.nn.state\_space.kimi\_delta
-===============================
+max.nn.legacy.state\_space.kimi\_delta
+======================================
 
 .. automodule:: max.nn.legacy.state_space.kimi_delta
    :no-members:

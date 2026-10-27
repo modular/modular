@@ -149,7 +149,7 @@ def _parse_reexports(source: str, package: str) -> dict[str, _ReExport]:
     """For an ``__init__.py``, return ``{local_name: _ReExport}``.
 
     ``from .foo import Bar`` in package ``max.nn.legacy`` records
-    ``Bar -> max.nn.foo`` (implicit). ``from .foo import Bar as Bar``
+    ``Bar -> max.nn.legacy.foo`` (implicit). ``from .foo import Bar as Bar``
     is flagged ``explicit=True`` (PEP 484 re-export). Star imports are
     skipped.
     """

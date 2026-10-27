@@ -270,8 +270,7 @@ def populate_sidebar_items(docs_path: str, sidebar_file: str) -> None:
         content = f.read()
 
     # Collect all generated .md files from any "generated/" subdirectory
-    # under api/python (covers generated/, experimental/generated/,
-    # experimental/nn/generated/, etc.)
+    # under api/python.
     generated_entries = []  # list of (filename, docusaurus_id) tuples
     for root, _, files in os.walk(python_api_path):
         if os.path.basename(root) != "generated":

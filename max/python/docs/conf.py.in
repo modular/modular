@@ -334,8 +334,8 @@ def setup(app):
         if what == "class" and name == "finfo" and inspect.isclass(obj):
             return True
 
-        # ``:imported-members:`` module pages (``nn.kernels.rst``) pick up
-        # stdlib annotation names (``Any`` from ``typing``,
+        # ``:imported-members:`` module pages (``nn.legacy.kernels.rst``) pick
+        # up stdlib annotation names (``Any`` from ``typing``,
         # ``MutableSequence`` from ``collections.abc``). Documenting them
         # registers a py-domain object literally named ``typing.Any``,
         # which then resolves every ``typing.Any`` cross-reference in

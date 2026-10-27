@@ -22,7 +22,7 @@ from max.tensor.sharding.rules import rms_norm_rule
 
 from ..module import Module
 
-#: Functional form of RMS normalization for experimental tensors.
+#: Functional form of RMS normalization for :class:`~max.tensor.Tensor` values.
 #:
 #: See :func:`max.graph.ops.rms_norm` for the underlying op, including the
 #: ``weight_offset`` and ``multiply_before_cast`` knobs used to switch

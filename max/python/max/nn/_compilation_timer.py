@@ -24,7 +24,7 @@ from types import TracebackType
 # Re-exported for backward compatibility — historical callers import these
 # from this module. The data, contextvar stack, and engine-side recording
 # helper now live in max.engine._compilation_stats so engine.api can record
-# compile/init durations without a circular dependency on experimental.nn.
+# compile/init durations without a circular dependency on max.nn.
 from max.engine._compilation_stats import (
     CompilationStats,
     _active_stats,

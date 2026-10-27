@@ -3,8 +3,8 @@
 :lang: python
 :wrapper_class: rst-module-autosummary
 
-max.nn.kv\_cache
-================
+max.nn.legacy.kv\_cache
+=======================
 
 .. automodule:: max.nn.legacy.kv_cache
    :no-members:

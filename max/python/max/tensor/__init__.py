@@ -32,9 +32,8 @@ passes it to ``F.matmul`` along with its transpose:
 
 # TODO(MXF-897): Remove once device discovery stops depending on import
 # order. A plugin-backed accelerator only registers if max.engine loaded
-# before this package first touched the runtime, and this package used to
-# load after it via max.experimental. Until the driver loads what it needs
-# itself, import max.engine first to keep that order.
+# before this package first touched the runtime. Until the driver loads what
+# it needs itself, import max.engine first to keep that order.
 from max import engine as _engine
 
 from .tensor import (
