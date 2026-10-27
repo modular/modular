@@ -14,7 +14,8 @@
 
 Runs the head on random norm, Markov and LM head weights both ways at DP2
 and requires identical draft tokens and distributions, argmax and sampled,
-including with an empty replica.
+including with an empty replica. The distributions kept on each replica's
+device, and each replica's verify logits, match the device-0 ones' rows.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Type, ops
 from max.nn.legacy import Signals
+from max.nn.legacy.transformer import ReturnLogits, logits_postprocess
 from max.pipelines.architectures.deepseekV41.dspark_drafter import (
     DeepseekV41DSparkDrafter,
 )
@@ -39,6 +41,7 @@ from max.pipelines.architectures.deepseekV41.model_config import (
 )
 from max.pipelines.architectures.deepseekV41.spec_adapters import (
     _DSparkProposer,
+    replica_verify_logits,
 )
 from max.pipelines.speculative.block_driver import (
     Accepted,
@@ -48,6 +51,8 @@ from max.pipelines.speculative.block_driver import (
 )
 
 K = 5
+# Verify logits kept per request, fewer than the K merged rows each has.
+N_LOGITS = 3
 HIDDEN = 128
 VOCAB = 256
 DP = 2
@@ -127,6 +132,8 @@ def test_replica_head_matches_device0_head() -> None:
             TensorType(DType.int64, ["batch_size"], dev0),
             TensorType(DType.float32, ["batch_size"], dev0),
             TensorType(DType.int64, [DP + 1], DeviceRef.CPU()),
+            *(TensorType(DType.uint32, ["offsets_len"], d) for d in devices),
+            TensorType(DType.int64, [1], DeviceRef.CPU()),
             *signals.input_types(),
         ],
     )
@@ -136,7 +143,9 @@ def test_replica_head_matches_device0_head() -> None:
         prev, seed, temperature, top_k, top_p, splits = (
             v.tensor for v in g.inputs[2 * DP : 2 * DP + 6]
         )
-        signal_buffers = [v.buffer for v in g.inputs[2 * DP + 6 :]]
+        offsets = [v.tensor for v in g.inputs[2 * DP + 6 : 3 * DP + 6]]
+        n_logits = g.inputs[3 * DP + 6].tensor
+        signal_buffers = [v.buffer for v in g.inputs[3 * DP + 7 :]]
         trunks = [
             SimpleNamespace(head=SimpleNamespace(weight=w)) for w in heads
         ]
@@ -184,15 +193,48 @@ def test_replica_head_matches_device0_head() -> None:
                 vocab_size=VOCAB,
             )
 
-        def drafts(block_hs: TensorValue | list[TensorValue]) -> list[Any]:
+        def drafts(
+            block_hs: TensorValue | list[TensorValue], replica_probs: bool
+        ) -> list[Any]:
+            proposer._per_replica_probs = replica_probs
             sampled = sampler()
             return [
                 proposer.head(batch, block_hs, accepted, ArgmaxDraftSampler()),
                 proposer.head(batch, block_hs, accepted, sampled),
-                sampled.distributions(),
+                *(sampled.replica_distributions or [sampled.distributions()]),
             ]
 
-        g.output(*drafts(all_hs), *drafts(hs))
+        def lm_head(weight: TensorValue) -> Any:
+            return lambda x: ops.cast(
+                ops.matmul(
+                    ops.cast(x, DType.bfloat16), ops.transpose(weight, 0, 1)
+                ),
+                DType.float32,
+            )
+
+        def identity(x: TensorValue) -> TensorValue:
+            return x
+
+        trunks_with_heads = [
+            SimpleNamespace(norm=identity, _lm_head=lm_head(w)) for w in heads
+        ]
+        verify_logits = logits_postprocess(
+            all_hs.reshape([-1, HIDDEN]),
+            offsets[0],
+            n_logits,
+            norm=identity,
+            lm_head=lm_head(heads[0]),
+            return_logits=ReturnLogits.VARIABLE,
+        ).logits["logits"]
+        g.output(
+            *drafts(all_hs, False),
+            *drafts(hs, False),
+            *drafts(hs, True),
+            verify_logits,
+            *replica_verify_logits(
+                cast(Any, trunks_with_heads), hs, offsets, splits, n_logits
+            ),
+        )
 
     accelerators = [Accelerator(i) for i in range(DP)]
     session = InferenceSession(devices=[CPU(), *accelerators])
@@ -213,16 +255,20 @@ def test_replica_head_matches_device0_head() -> None:
             np.full(batch_size, -1, np.int64),
             np.full(batch_size, 0.95, np.float32),
         ]
+        merged_offsets = Buffer.from_numpy(
+            np.arange(batch_size + 1, dtype=np.uint32) * K
+        )
         outputs = model.execute(
             *block_hs,
             *(head.to(acc) for acc in accelerators),
             *(Buffer.from_numpy(p).to(accelerators[0]) for p in params),
             Buffer.from_numpy(np.array(split, np.int64)),
+            *(merged_offsets.to(acc) for acc in accelerators),
+            Buffer.from_numpy(np.array([N_LOGITS], np.int64)),
             *signals.buffers(),
         )
-        ref_argmax, ref_tokens, ref_dists, argmax, tokens, dists = (
-            cast(Buffer, o).to(CPU()).to_numpy() for o in outputs
-        )
+        values = [cast(Buffer, o).to(CPU()).to_numpy() for o in outputs]
+        ref_argmax, ref_tokens, ref_dists, argmax, tokens, dists = values[:6]
         assert ref_argmax.shape == (batch_size, K)
         np.testing.assert_array_equal(argmax, ref_argmax)
         np.testing.assert_array_equal(tokens, ref_tokens)
@@ -230,3 +276,16 @@ def test_replica_head_matches_device0_head() -> None:
         np.testing.assert_array_equal(dists, ref_dists)
         # Not vacuous: the sampled chain left the argmax one somewhere.
         assert not np.array_equal(ref_tokens, ref_argmax)
+
+        argmax, tokens, *replica_dists = values[6 : 8 + DP]
+        np.testing.assert_array_equal(argmax, ref_argmax)
+        np.testing.assert_array_equal(tokens, ref_tokens)
+        ref_logits, *logits = values[8 + DP :]
+        assert ref_logits.shape == (batch_size * N_LOGITS, VOCAB)
+        for lo, hi, dist, rows in zip(
+            split[:-1], split[1:], replica_dists, logits, strict=True
+        ):
+            np.testing.assert_array_equal(dist, ref_dists[lo:hi])
+            np.testing.assert_array_equal(
+                rows, ref_logits[lo * N_LOGITS : hi * N_LOGITS]
+            )

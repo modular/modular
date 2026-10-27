@@ -178,14 +178,31 @@ def _release_graph_capture_outputs_to_borrowed(
             buffer_field_names.append(field_name)
             buffers.append(value)
 
-    if not buffers:
+    replicas = (
+        outputs.next_draft_probs_replicas or []
+        if isinstance(outputs, UnifiedEagleOutputs)
+        else []
+    )
+    if not buffers and not replicas:
         return outputs
 
-    released_buffers = _release_buffers_to_borrowed(buffers)
-    return replace(
+    released_buffers = _release_buffers_to_borrowed([*buffers, *replicas])
+    outputs = replace(
         outputs,
-        **dict(zip(buffer_field_names, released_buffers, strict=True)),
+        **dict(
+            zip(
+                buffer_field_names,
+                released_buffers[: len(buffers)],
+                strict=True,
+            )
+        ),
     )
+    if replicas:
+        assert isinstance(outputs, UnifiedEagleOutputs)
+        outputs = replace(
+            outputs, next_draft_probs_replicas=released_buffers[len(buffers) :]
+        )
+    return outputs
 
 
 def _engine_model_and_signal_buffers(
@@ -393,22 +410,8 @@ class ServeGraphCaptureRunner:
                     if not self._is_spec_decode:
                         outputs = ModelOutputs(*output_buffers)
                     else:
-                        if len(output_buffers) not in (3, 4):
-                            raise RuntimeError(
-                                "spec-decode graph capture returned "
-                                f"{len(output_buffers)} outputs; expected 3 "
-                                "(num_accepted_draft_tokens, next_tokens, "
-                                "next_draft_tokens) or 4 (+ "
-                                "next_draft_probs_full, under "
-                                "draft_proposal='sampled')."
-                            )
-                        outputs = UnifiedEagleOutputs(
-                            num_accepted_draft_tokens=output_buffers[0],
-                            next_tokens=output_buffers[1],
-                            next_draft_tokens=output_buffers[2],
-                            next_draft_probs_full=output_buffers[3]
-                            if len(output_buffers) == 4
-                            else None,
+                        outputs = UnifiedEagleOutputs.from_buffers(
+                            output_buffers
                         )
                     # Graph-capture warmup keeps many output handles alive. Drop
                     # Python-side ownership so later captures can reuse the same

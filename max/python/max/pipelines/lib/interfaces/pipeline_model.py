@@ -354,6 +354,9 @@ class UnifiedEagleOutputs(ModelOutputs):
     """The distribution each next-step draft token was sampled from,
     ``[batch_size, num_speculative_tokens, vocab_size]``. Only populated when
     the graph was built with ``draft_proposal="sampled"``."""
+    next_draft_probs_replicas: list[Buffer] | None = None
+    """The same distributions under ``draft_probs_layout="replica"``: one
+    tensor per data-parallel replica, holding its rows on its own device."""
 
     # HACK: These are required to inherit from ModelOutputs but are unused
     # for UnifiedEagleOutputs!
@@ -361,6 +364,33 @@ class UnifiedEagleOutputs(ModelOutputs):
     next_token_logits: None = None
     logit_offsets: None = None
     hidden_states: None = None
+
+    @classmethod
+    def from_buffers(cls, buffers: Sequence[Buffer]) -> UnifiedEagleOutputs:
+        """Reads a unified graph's outputs.
+
+        ``(num_accepted_draft_tokens, next_tokens, next_draft_tokens)``, then
+        under ``draft_proposal="sampled"`` the distributions: one tensor, or
+        one per replica (always more than one) under
+        ``draft_probs_layout="replica"``.
+
+        Raises:
+            RuntimeError: If there are fewer than three buffers.
+        """
+        if len(buffers) < 3:
+            raise RuntimeError(
+                f"unified spec-decode graph returned {len(buffers)} outputs;"
+                " expected num_accepted_draft_tokens, next_tokens,"
+                " next_draft_tokens and any draft distributions"
+            )
+        dists = list(buffers[3:])
+        return cls(
+            num_accepted_draft_tokens=buffers[0],
+            next_tokens=buffers[1],
+            next_draft_tokens=buffers[2],
+            next_draft_probs_full=dists[0] if len(dists) == 1 else None,
+            next_draft_probs_replicas=dists if len(dists) > 1 else None,
+        )
 
 
 @dataclass(kw_only=True)
@@ -377,6 +407,9 @@ class UnifiedSpecDecodeInputs(ModelInputs):
     ``[batch_size, num_speculative_tokens, vocab_size]``. The pipeline sets it
     exactly when the compiled graph declares it (``draft_proposal="sampled"``),
     so the tail packs it whenever it is present."""
+    draft_probs_replicas: list[Buffer] | None = None
+    """``draft_probs_full`` under ``draft_probs_layout="replica"``: each
+    replica's rows on its own device, packed in its place."""
     seed: Buffer | None = None
     temperature: Buffer | None = None
     top_k: Buffer | None = None
@@ -418,6 +451,8 @@ class UnifiedSpecDecodeInputs(ModelInputs):
         # allocates it only after checking the compiled graph declares it.
         if self.draft_probs_full is not None:
             tail += (self.draft_probs_full,)
+        if self.draft_probs_replicas is not None:
+            tail += tuple(self.draft_probs_replicas)
         assert self.seed is not None
         tail += (self.seed,)
         assert self.temperature is not None

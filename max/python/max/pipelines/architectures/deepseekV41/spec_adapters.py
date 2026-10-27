@@ -51,9 +51,11 @@ from max.pipelines.speculative.block_driver import (
     BlockBatch,
     DraftSampler,
     SampledDraftSampler,
+    local_row_offsets,
 )
 from max.pipelines.speculative.driver import SequentialBatch
 from max.pipelines.speculative.spec_adapters.target_adapter import TargetAdapter
+from max.pipelines.speculative.spec_input_types import draft_probs_rows_name
 from max.pipelines.speculative.spec_target import Verified
 from max.pipelines.speculative.unified_graph_ops import broadcast_per_device
 
@@ -194,6 +196,40 @@ def record_engram_lookback(
     ops.buffer_store_slice(
         history, window, [(slice(first, rows), batch), slice(None)]
     )
+
+
+def replica_verify_logits(
+    replicas: Sequence[DeepseekV41],
+    xs: Sequence[TensorValue],
+    merged_offsets: Sequence[TensorValue],
+    splits: TensorValue,
+    return_n_logits: TensorValue,
+) -> list[TensorValue]:
+    """Each replica's verify logits, computed on its own device.
+
+    Args:
+        replicas: One trunk copy per device, each with the whole LM head.
+        xs: Per device, its replica's ``[1, t_i, hidden]`` merged rows.
+        merged_offsets: Per device, the whole batch's merged row offsets.
+        splits: ``[n + 1]`` replica request boundaries, on the host.
+        return_n_logits: Logits kept per request.
+
+    Returns:
+        Per device, ``[rows_i * return_n_logits, vocab]`` float32.
+    """
+    return [
+        logits_postprocess(
+            ops.reshape(x, [-1, x.shape[-1]]),
+            local_row_offsets(offsets, splits, i, f"verify_logit_offsets_{i}"),
+            return_n_logits,
+            norm=replica.norm,
+            lm_head=replica._lm_head,
+            return_logits=ReturnLogits.VARIABLE,
+        ).logits["logits"]
+        for i, (replica, x, offsets) in enumerate(
+            zip(replicas, xs, merged_offsets, strict=True)
+        )
+    ]
 
 
 def _lookback_types(config: DeepseekV41Config) -> list[TensorType | BufferType]:
@@ -345,21 +381,21 @@ def block_proposer(
 ) -> BlockProposer[TrunkTaps, TensorValue | list[TensorValue]]:
     """Returns the proposer of the DSpark stages, on the verify's trunk.
 
-    Raises:
-        ValueError: If ``speculative`` keeps the proposal distributions per
-            replica, which this proposer does not.
+    With ``draft_probs_layout="replica"`` the verify also keeps each
+    replica's logits on its own device, for a verdict where the rows live.
+    The trunk's LM head is replicated, so ``logits_delivery`` needs nothing
+    more: no device ever receives another replica's logits.
     """
-    if speculative.draft_probs_layout != "device0":
-        raise ValueError(
-            "DeepSeek-V4.1 DSpark supports only draft_probs_layout='device0'"
-        )
     assert isinstance(verify, _Verify)
     assert isinstance(draft, DeepseekV41DSparkDrafter)
+    per_replica_probs = speculative.draft_probs_layout == "replica"
+    verify.replica_logits = per_replica_probs
     return _DSparkProposer(
         verify,
         draft,
         draft_config,
         per_replica_head=speculative.draft_head_parallelism == "replica",
+        per_replica_probs=per_replica_probs,
     )
 
 
@@ -375,6 +411,7 @@ class _Verify:
         self.target = target
         self.config = config
         self.takes_distributed_inputs = config.data_parallel_degree > 1
+        self.replica_logits = False
         self._replicas: list[DeepseekV41] | None = None
 
     def replicas(self, batch: BlockBatch) -> list[DeepseekV41]:
@@ -450,9 +487,13 @@ class _Verify:
             logits, hidden = self._tensor_parallel(
                 batch, replicas, caches, visions
             )
+        # No whole-batch logits exist when each replica keeps its own; the
+        # verdict then reads only ``replica_logits``.
+        replica_logits = logits if isinstance(logits, list) else None
         return Verified(
-            logits=logits,
+            logits=logits[0] if isinstance(logits, list) else logits,
             hidden=hidden,
+            replica_logits=replica_logits,
             roll_forward=(
                 self._record_lookback
                 if _ENGRAM_HISTORY in batch.extra
@@ -543,11 +584,12 @@ class _Verify:
         replicas: Sequence[DeepseekV41],
         caches: Sequence[CSA2Cache],
         visions: Sequence[VisionMerge],
-    ) -> tuple[TensorValue, TrunkTaps]:
+    ) -> tuple[TensorValue | list[TensorValue], TrunkTaps]:
         """Runs the verify with each device on its own replica's requests.
 
         The merged batch is replica-major; each device's taps and rows cover
-        its own requests, and the logits cover the whole batch on device 0.
+        its own requests, and the logits cover the whole batch on device 0,
+        or with :attr:`replica_logits` each replica's own rows on its device.
         ``visions`` hold the whole batch's image rows on every device, and
         each device merges its own.
         """
@@ -597,6 +639,14 @@ class _Verify:
             ],
         )
         assert taps is not None
+        if self.replica_logits:
+            return replica_verify_logits(
+                replicas,
+                xs,
+                batch.merged_offsets_per_dev,
+                splits,
+                batch.return_n_logits,
+            ), (taps, split.rows)
         lead = replicas[0]
         outputs = logits_postprocess(
             gather_rows(xs, batch.merged_tokens.shape[0], batch.signal_buffers),
@@ -643,10 +693,12 @@ class _DSparkProposer:
         draft: DeepseekV41DSparkDrafter,
         draft_config: Any,
         per_replica_head: bool = False,
+        per_replica_probs: bool = False,
     ) -> None:
         self._verify = verify
         self.draft = draft
         self._per_replica_head = per_replica_head
+        self._per_replica_probs = per_replica_probs
         self.config = verify.config
         self.block_size = draft_config.block_size
         self.mask_token_id = draft_config.mask_token_id
@@ -799,8 +851,9 @@ class _DSparkProposer:
 
         The sequential head then runs over a replica's few rows on every
         device at once, rather than over the whole batch on device 0 while
-        the others wait. Only the draft tokens and a sampled draft's
-        distributions are gathered back onto device 0.
+        the others wait. Only the draft tokens are gathered back onto device
+        0, with a sampled draft's distributions, unless they stay on each
+        replica's device.
         """
         splits = batch.data_parallel_splits
         assert splits is not None
@@ -851,16 +904,20 @@ class _DSparkProposer:
             )
         ]
         if isinstance(sampler, SampledDraftSampler):
-            sampler.adopt_distributions(
-                ops.allgather(
+            dists = [
+                local.distributions()
+                for local in samplers
+                if isinstance(local, SampledDraftSampler)
+            ]
+            if self._per_replica_probs:
+                sampler.adopt_replica_distributions(
                     [
-                        local.distributions()
-                        for local in samplers
-                        if isinstance(local, SampledDraftSampler)
-                    ],
-                    signals,
-                )[0]
-            )
+                        dist.rebind([draft_probs_rows_name(r), *dist.shape[1:]])
+                        for dist, r in zip(dists, batch.replica_of, strict=True)
+                    ]
+                )
+            else:
+                sampler.adopt_distributions(ops.allgather(dists, signals)[0])
         return ops.cast(
             ops.allgather(drafts, signals)[0], accepted.next_tokens.dtype
         ).rebind([accepted.next_tokens.shape[0], self.block_size])

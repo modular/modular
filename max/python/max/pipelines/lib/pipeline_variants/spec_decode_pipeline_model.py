@@ -161,8 +161,8 @@ class _UnifiedSpecDecodeModelMixin:
         graph declares it.
         """
         outputs = self._spec_decode_model.output_metadata
-        # Exports may have one distribution per replica; MAX Serve rejects
-        # that layout before constructing its pipeline.
+        # One distribution, or one per replica under
+        # draft_probs_layout="replica".
         if len(outputs) < 4:
             return None
         shape = outputs[3].shape
@@ -171,23 +171,14 @@ class _UnifiedSpecDecodeModelMixin:
         )
         return shape[-1]
 
+    @property
+    def num_draft_distributions(self) -> int:
+        """Distribution outputs: 0 (argmax), 1, or one per replica."""
+        return max(0, len(self._spec_decode_model.output_metadata) - 3)
+
     def execute(self, model_inputs: ModelInputs) -> UnifiedEagleOutputs:
         model_outputs = self._spec_decode_model.execute(*model_inputs.buffers)
-        if len(model_outputs) not in (3, 4):
-            raise RuntimeError(
-                f"{type(self).__name__} graph returned {len(model_outputs)} "
-                "outputs; expected 3 (num_accepted_draft_tokens, next_tokens, "
-                "next_draft_tokens) or 4 (+ next_draft_probs_full, under "
-                "draft_proposal='sampled')."
-            )
-        return UnifiedEagleOutputs(
-            num_accepted_draft_tokens=model_outputs[0],
-            next_tokens=model_outputs[1],
-            next_draft_tokens=model_outputs[2],
-            next_draft_probs_full=model_outputs[3]
-            if len(model_outputs) == 4
-            else None,
-        )
+        return UnifiedEagleOutputs.from_buffers(model_outputs)
 
     def _next_seed(self) -> Buffer:
         self._seed_counter = getattr(self, "_seed_counter", 0) + 1
@@ -1274,8 +1265,8 @@ class SpecDecodePipelineModel(
         graph declares it.
         """
         outputs = self.model.output_metadata
-        # Exports may have one distribution per replica; MAX Serve rejects
-        # that layout before constructing its pipeline.
+        # One distribution, or one per replica under
+        # draft_probs_layout="replica".
         if len(outputs) < 4:
             return None
         shape = outputs[3].shape
@@ -1284,24 +1275,15 @@ class SpecDecodePipelineModel(
         )
         return shape[-1]
 
+    @property
+    def num_draft_distributions(self) -> int:
+        """Distribution outputs: 0 (argmax), 1, or one per replica."""
+        return max(0, len(self.model.output_metadata) - 3)
+
     def execute(self, model_inputs: ModelInputs) -> UnifiedEagleOutputs:
         """Runs the fused graph and names its outputs."""
         model_outputs = self.model.execute(*model_inputs.buffers)
-        if len(model_outputs) not in (3, 4):
-            raise RuntimeError(
-                f"{type(self).__name__} graph returned {len(model_outputs)} "
-                "outputs; expected 3 (num_accepted_draft_tokens, next_tokens, "
-                "next_draft_tokens) or 4 (+ next_draft_probs_full, under "
-                "draft_proposal='sampled')."
-            )
-        return UnifiedEagleOutputs(
-            num_accepted_draft_tokens=model_outputs[0],
-            next_tokens=model_outputs[1],
-            next_draft_tokens=model_outputs[2],
-            next_draft_probs_full=model_outputs[3]
-            if len(model_outputs) == 4
-            else None,
-        )
+        return UnifiedEagleOutputs.from_buffers(model_outputs)
 
     @property
     def routed_expert_row_bound(self) -> int | None:
@@ -1704,6 +1686,10 @@ class _DriverCall:
         )
         if graph_inputs.draft_probs_full is not None:
             call_kwargs["draft_probs_full"] = graph_inputs.draft_probs_full
+        if graph_inputs.draft_probs_replicas is not None:
+            call_kwargs["draft_probs_replicas"] = (
+                graph_inputs.draft_probs_replicas
+            )
         if self.penalties:
             call_kwargs["penalties"] = LogitPenalties.from_inputs(
                 [v.tensor for v in trailing[-len(self.penalties) :]]

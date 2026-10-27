@@ -46,9 +46,6 @@ from max.pipelines.architectures.deepseekV41.model_config import (
     DeepseekV41Config,
     RoutedExpertFormat,
 )
-from max.pipelines.architectures.deepseekV41.spec_adapters import (
-    block_proposer,
-)
 from max.pipelines.architectures.dspark_deepseekV41 import (
     DSparkDeepseekV41DraftConfig,
 )
@@ -66,14 +63,18 @@ NUM_SPECULATIVE_TOKENS = 5
 def _speculative(
     mixed_width: int | None = None,
     draft_proposal: Literal["argmax", "sampled"] = "argmax",
-    draft_head_parallelism: Literal["device0", "replica"] = "device0",
+    replica: Literal["", "head", "all"] = "",
 ) -> SpeculativeConfig:
+    """``replica`` turns on the draft head per replica, or every per-replica
+    option: the head, the proposal distributions and the logits."""
     return SpeculativeConfig(
         speculative_method="dspark",
         num_speculative_tokens=NUM_SPECULATIVE_TOKENS,
         num_speculative_tokens_mixed_batch=mixed_width,
         draft_proposal=draft_proposal,
-        draft_head_parallelism=draft_head_parallelism,
+        draft_head_parallelism="replica" if replica else "device0",
+        draft_probs_layout="replica" if replica == "all" else "device0",
+        logits_delivery="replica" if replica == "all" else "allgather",
     )
 
 
@@ -163,21 +164,23 @@ _MXFP4 = RoutedExpertFormat.MXFP4
         "mixed_width",
         "expert_format",
         "draft_proposal",
-        "draft_head_parallelism",
+        "replica",
     ),
     [
-        (1, 1, False, None, _NVFP4, "argmax", "device0"),
-        (4, 1, False, None, _NVFP4, "argmax", "device0"),
-        (4, 4, False, None, _NVFP4, "argmax", "device0"),
-        (4, 4, True, None, _NVFP4, "argmax", "device0"),
-        (4, 4, True, None, _NVFP4, "sampled", "device0"),
-        (4, 4, True, None, _NVFP4, "argmax", "replica"),
-        (4, 4, True, None, _NVFP4, "sampled", "replica"),
-        (1, 1, False, 2, _NVFP4, "argmax", "device0"),
-        (4, 4, False, 2, _NVFP4, "argmax", "device0"),
-        (1, 1, False, None, _MXFP4, "argmax", "device0"),
-        (4, 1, False, None, _MXFP4, "argmax", "device0"),
-        (4, 4, True, None, _MXFP4, "argmax", "device0"),
+        (1, 1, False, None, _NVFP4, "argmax", ""),
+        (4, 1, False, None, _NVFP4, "argmax", ""),
+        (4, 4, False, None, _NVFP4, "argmax", ""),
+        (4, 4, True, None, _NVFP4, "argmax", ""),
+        (4, 4, True, None, _NVFP4, "sampled", ""),
+        (4, 4, True, None, _NVFP4, "argmax", "head"),
+        (4, 4, True, None, _NVFP4, "sampled", "head"),
+        (4, 4, True, None, _NVFP4, "sampled", "all"),
+        (4, 4, True, 2, _NVFP4, "sampled", "all"),
+        (1, 1, False, 2, _NVFP4, "argmax", ""),
+        (4, 4, False, 2, _NVFP4, "argmax", ""),
+        (1, 1, False, None, _MXFP4, "argmax", ""),
+        (4, 1, False, None, _MXFP4, "argmax", ""),
+        (4, 4, True, None, _MXFP4, "argmax", ""),
     ],
 )
 def test_unified_dspark_graph_traces(
@@ -187,7 +190,7 @@ def test_unified_dspark_graph_traces(
     mixed_width: int | None,
     expert_format: RoutedExpertFormat,
     draft_proposal: Literal["argmax", "sampled"],
-    draft_head_parallelism: Literal["device0", "replica"],
+    replica: Literal["", "head", "all"],
 ) -> None:
     """One spec-decode step traces, its weights named but not loaded.
 
@@ -200,7 +203,8 @@ def test_unified_dspark_graph_traces(
     kinds of step and still drafts the full block. ``expert_format`` picks
     the trunk's routed experts: NVFP4 rows dispatch to the fused expert
     kernel, MXFP4 rows dispatch as MXFP8 to the W4A8 GEMMs. With
-    ``draft_head_parallelism="replica"`` each device drafts its own rows.
+    ``replica`` each device drafts its own rows, and with ``"all"`` also
+    verifies them and keeps their proposal distributions.
     """
     config = AutoConfig.from_pretrained(str(TESTDATA / "config.json"))
     devices = [DeviceRef.GPU(i) for i in range(num_devices)]
@@ -225,7 +229,7 @@ def test_unified_dspark_graph_traces(
         _pipeline_config(
             config,
             data_parallel_degree,
-            _speculative(mixed_width, draft_proposal, draft_head_parallelism),
+            _speculative(mixed_width, draft_proposal, replica),
         ),
         MultiKVCacheParams.from_params({"target": kv_params}),
         devices,
@@ -242,13 +246,18 @@ def test_unified_dspark_graph_traces(
     # The Engram lookback, the tables, then the merged-rows marker end it.
     assert str(spec.input_types[-1].shape[0]) == "merged_seq_len"
     # (num_accepted, next_tokens, next_draft_tokens), then a sampled draft's
-    # distributions.
+    # distributions: one per replica, on its device, with ``"all"``.
     outputs = spec.graph.output_types
-    assert len(outputs) == 3 + (draft_proposal == "sampled")
-    drafts = outputs[2]
+    drafts, *dists = outputs[2:]
     assert isinstance(drafts, TensorType)
     assert str(drafts.shape[0]) == "batch_size"
     assert drafts.shape[1] == NUM_SPECULATIVE_TOKENS
+    if draft_proposal == "argmax":
+        assert dists == []
+    elif replica == "all":
+        assert [d.device for d in dists if isinstance(d, TensorType)] == devices
+    else:
+        assert len(dists) == 1
 
 
 def _engram_table_types(
@@ -286,15 +295,3 @@ def _engram_table_types(
                 )
             )
     return tables
-
-
-def test_per_replica_distributions_are_refused() -> None:
-    speculative = SpeculativeConfig(
-        speculative_method="dspark",
-        num_speculative_tokens=NUM_SPECULATIVE_TOKENS,
-        draft_proposal="sampled",
-        draft_head_parallelism="replica",
-        draft_probs_layout="replica",
-    )
-    with pytest.raises(ValueError, match="supports only"):
-        block_proposer(Mock(), Mock(), Mock(), speculative)
