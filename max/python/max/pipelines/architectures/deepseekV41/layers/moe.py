@@ -38,7 +38,7 @@ from max.graph import (
 )
 from max.nn.activation import GatedActivation
 from max.nn.comm.ep import EPBatchManager
-from max.nn.comm.ep.ep_kernels import fused_silu_quantized
+from max.nn.comm.ep.ep_kernels import fused_silu, fused_silu_quantized
 from max.nn.kernels import (
     _is_apple_gpu,
     _is_sm10x_gpu,
@@ -65,7 +65,6 @@ from ...deepseekV4.layers.moe import (
     DeepseekV4Gate,
     DeepseekV4RoutedExperts,
     _PackedExpertWeight,
-    _swiglu,
     sqrt_softplus,
 )
 from ..layer_resolver import LayerInfo
@@ -710,8 +709,8 @@ class DeepseekV41Mxfp4RoutedExperts(DeepseekV4RoutedExperts):
         The rows arrive MXFP8-quantized with E8M0 block scales per 32. The
         gate/up GEMM, the clamped SwiGLU, the activation's MXFP8 quantize
         and the down GEMM run as separate ops, which share the dispatch's
-        routing tensors. The SwiGLU covers every row of the receive buffer;
-        the quantize and the GEMMs only the rows received.
+        routing tensors and touch only the rows received, not the whole
+        receive buffer.
 
         Args:
             received: The dispatch's ``(rows, block scales, expert_start,
@@ -738,9 +737,10 @@ class DeepseekV41Mxfp4RoutedExperts(DeepseekV4RoutedExperts):
             usage,
             estimated_total_m,
         )
-        gate, up = ops.split(gate_up, [self.inter, self.inter], axis=1)
         # The combine applies the routing weights, after the down projection.
-        activated = _swiglu(gate, up, None, self.swiglu_limit, DType.bfloat16)
+        activated = fused_silu(
+            gate_up, expert_start, activation=_clamped_swiglu(self.swiglu_limit)
+        )
         quantized, activated_scales = mxfp8_grouped_quantize(
             activated, expert_start, scale_offsets, expert_ids
         )
