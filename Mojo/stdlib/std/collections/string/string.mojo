@@ -2393,12 +2393,41 @@ def ord(s: StringSlice) -> Int:
     This function is in the prelude, so you don't need to import it.
 
     Args:
-        s: The input string, which must contain only a single- character.
+        s: The input string, which must contain only a single character.
 
     Returns:
         An integer representing the code point of the given character.
     """
     return Int(Codepoint.ord(s))
+
+
+def ord(s: StringLiteral[_]) -> Int:
+    """Returns an integer that represents the codepoint of a single-character
+    string.
+
+    Given a string containing a single character `Codepoint`, return an integer
+    representing the codepoint of that character. For example, `ord("a")`
+    returns the integer `97`. This is the inverse of the `chr()` function.
+
+    Constraints:
+        The literal must contain exactly one codepoint.
+
+    Args:
+        s: The input string, which must contain only a single character.
+
+    Returns:
+        An integer representing the code point of the given character.
+    """
+    comptime literal = type_of(s)()
+    # TODO(MOCO-5221): Use a plain `comptime assert` once it is checked before
+    # the fold below. Until then the fold sits in a branch so bad input never
+    # reaches it.
+    comptime if literal.count_codepoints() == 1:
+        return comptime (ord(StringSlice(literal)))
+    else:
+        comptime assert (
+            False
+        ), "ord() expects a string literal containing exactly one character"
 
 
 # ===----------------------------------------------------------------------=== #
