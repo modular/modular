@@ -37,6 +37,7 @@ from std.sys import (
 from nn.attention.gpu.nvidia.common import ImmutTileTensor1D
 from nn.attention.gpu.mha import mha_splitk_reduce
 from nn.attention.gpu.mha_decode_partition_heuristic import (
+    AMD_MLA_BF16_DECODE_BLOCK_M,
     mha_decoding_num_partitions,
 )
 import max.gpu.primitives.warp as warp
@@ -1263,7 +1264,8 @@ def flare_mla_decoding_dispatch[
 
             # Pick num_partitions for split-K. Only AMD has a tuned heuristic
             # today; non-SM10x NVIDIA stays at 1 to preserve existing behavior.
-            # Partition count is independent of BM; both BM variants share it.
+            # The AMD default assumes block-M 32 whichever BM launches; see
+            # `AMD_MLA_BF16_DECODE_BLOCK_M`.
             var num_partitions_value: Int
             if case .Some(num_partitions) = num_partitions:
                 num_partitions_value = num_partitions
@@ -1590,7 +1592,9 @@ def flare_mla_decoding_dispatch[
             # AMD decode MMA is 16x16x32, so BM is a multiple of 16: one 16-row
             # tile, masking padding at num_heads<16; NVIDIA clamps instead.
             comptime preferred_BM_default = (
-                16 if (not has_enough_smem or ctx.target.is_amd_gpu()) else 32
+                AMD_MLA_BF16_DECODE_BLOCK_M if ctx.target.is_amd_gpu() else (
+                    16 if not has_enough_smem else 32
+                )
             )
             # Round up, not clamp: the kernel asserts `BM % 16 == 0`, so e.g.
             # 12 heads per device must use BM=16.

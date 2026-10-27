@@ -87,10 +87,9 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
     comptime rows_predicated: Bool = False
     """Whether an invalid indexed key is skipped rather than read.
 
-    Only meaningful with `rows_indexed`. When set, the consumer bounds its
-    keys by `indexed_valid_length`, `indexed_row` says whether a slot names
-    a row at all, and the loader zeroes the LDS of every key it skips
-    instead of reading a substitute row.
+    Only meaningful with `rows_indexed`. When set, `indexed_row` says
+    whether a slot names a row at all, and the loader zeroes the LDS of
+    every key it skips instead of reading a substitute row.
     """
 
     @inline(.always)
@@ -134,7 +133,8 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
     def indexed_valid_length(self, batch_idx: UInt32) -> Int:
         """Returns the number of leading keys of `batch_idx` that are valid.
 
-        Only read when `rows_predicated` is set. The default bounds nothing.
+        Read when `rows_indexed` is set: the decode caps each entry's keys
+        at it. The default bounds nothing.
 
         Args:
             batch_idx: Batch entry.
@@ -607,9 +607,11 @@ struct SparseRowsMHAOperand[
     """Base of the cache storage that `base.get_tma_row` rows index."""
     var zero_row: ImmPointer[Scalar[Self.dtype], ImmUntrackedOrigin]
     """A `row_width`-element row of zeros; unused when `predicated`."""
-    var indices: ImmPointer[Int32, ImmUntrackedOrigin]
+    var indices: ImmPointer[Int32, ImmUntrackedOrigin, address_space=.GLOBAL]
     """Encoded physical indices, `[batch, indices_stride]`, `-1` unused."""
-    var valid_lengths: ImmPointer[UInt32, ImmUntrackedOrigin]
+    var valid_lengths: ImmPointer[
+        UInt32, ImmUntrackedOrigin, address_space=.GLOBAL
+    ]
     """Per-entry count of leading valid slots; unused when `predicated`."""
     var topk_lengths: ImmPointer[Int32, ImmUntrackedOrigin]
     """Per-entry top-k slot counts, read only when `has_topk_lengths`."""
@@ -664,13 +666,20 @@ struct SparseRowsMHAOperand[
         self.zero_row = zero_row.as_imm().unsafe_origin_cast[
             ImmUntrackedOrigin
         ]()
-        self.indices = indices.as_imm().unsafe_origin_cast[ImmUntrackedOrigin]()
-        self.valid_lengths = valid_lengths.as_imm().unsafe_origin_cast[
-            ImmUntrackedOrigin
-        ]()
+        self.indices = (
+            indices.as_imm()
+            .unsafe_origin_cast[ImmUntrackedOrigin]()
+            .unsafe_address_space_cast[.GLOBAL]()
+        )
+        self.valid_lengths = (
+            valid_lengths.as_imm()
+            .unsafe_origin_cast[ImmUntrackedOrigin]()
+            .unsafe_address_space_cast[.GLOBAL]()
+        )
         self.topk_lengths = ImmPointer[
             Int32, ImmUntrackedOrigin
         ].unsafe_dangling()
+        debug_assert(indices_stride > 0, "a top-k selection needs a slot")
         self.indices_stride = Int32(indices_stride)
         self.selection_lag = 0
         self.has_topk_lengths = False
@@ -712,13 +721,18 @@ struct SparseRowsMHAOperand[
         self.zero_row = ImmPointer[
             Scalar[Self.dtype], ImmUntrackedOrigin
         ].unsafe_dangling()
-        self.indices = indices.as_imm().unsafe_origin_cast[ImmUntrackedOrigin]()
+        self.indices = (
+            indices.as_imm()
+            .unsafe_origin_cast[ImmUntrackedOrigin]()
+            .unsafe_address_space_cast[.GLOBAL]()
+        )
         self.valid_lengths = ImmPointer[
-            UInt32, ImmUntrackedOrigin
+            UInt32, ImmUntrackedOrigin, address_space=.GLOBAL
         ].unsafe_dangling()
         self.topk_lengths = topk_lengths.as_imm().unsafe_origin_cast[
             ImmUntrackedOrigin
         ]()
+        debug_assert(indices_stride > 0, "a top-k selection needs a slot")
         self.indices_stride = Int32(indices_stride)
         self.selection_lag = Int32(selection_lag)
         self.has_topk_lengths = has_topk_lengths
@@ -763,7 +777,7 @@ struct SparseRowsMHAOperand[
                 )
             )
         else:
-            return self.valid_lengths[Int(batch_idx)]
+            return self.valid_lengths.unsafe_load(Int(batch_idx))
 
     @inline(.always)
     def indexed_row_ptr(
@@ -772,10 +786,10 @@ struct SparseRowsMHAOperand[
         # Branch-free so a caller resolving many keys can issue all the index
         # loads before using any: the slot is clamped in range, both addresses
         # are formed, and the result is a select.
-        var slot = min(Int(key_idx), Int(self.indices_stride) - 1)
-        var encoded = self.indices[
-            Int(batch_idx) * Int(self.indices_stride) + slot
-        ]
+        var slot = min(key_idx, UInt32(self.indices_stride - 1))
+        var encoded = self.indices.unsafe_load(
+            Int(batch_idx) * Int(self.indices_stride) + Int(slot)
+        )
         var valid = (key_idx < self.valid_length(batch_idx)) & (encoded >= 0)
         var row_ptr = self.blocks_base.unsafe_offset(
             Int(self.base.get_tma_row(max(encoded, 0))) * Self.row_width
@@ -791,10 +805,8 @@ struct SparseRowsMHAOperand[
         # on its critical path, and flat loads plus 64-bit clamps cost more
         # issue cycles than the copies they address.
         var slot = min(UInt32(key_idx), UInt32(self.indices_stride - 1))
-        var encoded = (
-            self.indices.unsafe_address_space_cast[.GLOBAL]()
-            .unsafe_offset(Int(batch_idx * UInt32(self.indices_stride) + slot))
-            .unsafe_load()
+        var encoded = self.indices.unsafe_load(
+            Int(batch_idx * UInt32(self.indices_stride) + slot)
         )
         var row_ptr = self.blocks_base.unsafe_offset(
             Int(self.base.get_tma_row(max(encoded, 0))) * Self.row_width

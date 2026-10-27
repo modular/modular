@@ -193,6 +193,14 @@ _EXTRA_CONSTRAINTS = {
         "//:mi355_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    "test_mla_decode_sparse_rows_bf16_amd.mojo": select({
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mla_decode_sparse_bf16_key_amd.mojo": select({
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_mla_prefill_sparse_kv_fp8_gather.mojo": select({
         "//:b200_gpu": [],
         "//:mi355_gpu": [],
@@ -628,6 +636,7 @@ _GPU_MEMORY = {
     "test_mla_decode_qkv_fp8_tail_stress.mojo": "3",
     "test_mla_decode_sparse_kv_bf16.mojo": "3",
     "test_mla_decode_sparse_kv_fp8_gather.mojo": "4",
+    "test_mla_decode_sparse_rows_bf16_amd.mojo": "8",
     "test_mla_decode_split_policy.mojo": "4",
     "test_mla_index_fp8.mojo": "3",
     "test_mla_prefill_blockwise_fp8.mojo": "4",
@@ -1919,3 +1928,32 @@ mojo_test(
         ),
     ]
 ]
+
+# The BF16 sparse MLA rows test at 16 heads per device, where the split
+# heuristic takes its other branch. The catch-all target runs 32 heads.
+mojo_test(
+    name = "test_mla_decode_sparse_rows_bf16_amd_h16.mojo.test",
+    size = "large",
+    srcs = ["test_mla_decode_sparse_rows_bf16_amd.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
+        "-D",
+        "NUM_HEADS=16",
+    ],
+    enable_assertions = True,
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    main = "test_mla_decode_sparse_rows_bf16_amd.mojo",
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:internal_utils",
+        "//max:linalg",
+        "//max:nn",
+        "//max:testdata",
+        "@mojo//:std",
+    ],
+)
