@@ -101,14 +101,11 @@ def _expected() -> np.ndarray:
 
     Entry ``e`` of request ``r`` sits at slot
     ``(table[r, e // slots] * layers + layer) * slots + e % slots``, and a
-    negative entry stays ``-1``.
+    negative entry stays ``-1``. The window leaf's layer count is the
+    trunk layers plus the DSpark draft stages that share it, so it reads
+    off the built params.
     """
-    interface = V41Config.from_hf(_hf_config())
-    # The DSpark draft stages share the window leaf (``kv_leaf_specs``
-    # sizes its num_layers with them), so the op strides a block's layers
-    # across the draft rows too.
-    w_layers = interface.num_hidden_layers + interface.num_dspark_stages
-    w_slots = PAGE_SIZE
+    w_layers, w_slots = _shape("swa")[1], PAGE_SIZE
     c_slots = PAGE_SIZE // 2
     out = np.full((2, 128 + MAX_COMPRESSED), -1, np.int64)
     for r, pos in enumerate(POSITIONS):

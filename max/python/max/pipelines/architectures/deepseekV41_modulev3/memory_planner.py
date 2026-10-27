@@ -20,12 +20,21 @@ from collections.abc import Sequence
 from typing import Any
 
 from max.graph import DeviceRef
+from max.nn.legacy.comm.ep import EPConfig
+from max.nn.legacy.quant_config import fp4_packed_k
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.support.human_readable_formatter import to_human_readable_bytes
 
+from ..deepseekV41.memory_planner import (
+    _SCALE_TILE_BYTES,
+    _SCALE_TILE_ROWS,
+    _SCALE_TILE_SCALES,
+    _mm_pages,
+)
 from .inputs import v41_config
 from .interface import V41Config, extra_inputs
 from .layers.index_ops import INDEXER_SCORES_BUDGET_BYTES
+from .model import build_ep_config
 from .model_config import DeepseekV41Config
 
 logger = logging.getLogger("max.pipelines")
@@ -130,8 +139,94 @@ def forward_rows(runtime: Any, max_length: int) -> int:
     )
 
 
+def _dp_ep_config(pipeline_config: Any, text: Any) -> EPConfig | None:
+    """The EP config whose buffers a DP run allocates, or ``None``.
+
+    Only the multi-GPU shape the trunk wires (``dp == ep_size == the
+    device count``) carries EP buffers; every other shape the model
+    refuses before load, so the planner leaves them alone rather than
+    fronting its own error.
+    """
+    ep_size = pipeline_config.runtime.ep_size
+    n_devices = len(pipeline_config.model.device_specs)
+    if (
+        ep_size <= 1
+        or ep_size != n_devices
+        or pipeline_config.model.data_parallel_degree != n_devices
+    ):
+        return None
+    return build_ep_config(pipeline_config, text, n_devices)
+
+
+def _ep_reserve_bytes(pipeline_config: Any, text: Any) -> tuple[int, int]:
+    """(comm buffers, receive pool) per device under expert parallelism.
+
+    The comm buffers are what EP init allocates beside the KV pool. The
+    receive pool is the receive-side rows the grouped EP chain holds
+    live: the dispatched tokens with their per-block scales and source
+    map, the packed down input the fused gate/up+SwiGLU kernel writes
+    (its epilogue runs the activation and the NVFP4 re-quant, so no bf16
+    intermediate exists), and the down projection's bf16 output -- all
+    sized for the most rows a device can receive.
+
+    Returns:
+        ``(0, 0)`` when the run carries no EP buffers.
+    """
+    config = _dp_ep_config(pipeline_config, text)
+    if config is None:
+        return 0, 0
+    rows = int(config.get_max_recv_tokens())
+    hidden = int(config.hidden_size)
+    n_ranks = int(config.n_gpus_per_node) * int(config.n_nodes)
+    n_local_experts = int(config.n_experts) // n_ranks
+    inter = int(text.moe_intermediate_size)
+    quant_config = config.dispatch_quant_config
+    assert quant_config is not None, "the trunk's dispatch is NVFP4-quantized"
+    assert quant_config.input_scale.block_size is not None
+    block = quant_config.input_scale.block_size[1]
+    tile_rows = -(
+        -(rows + n_local_experts * _SCALE_TILE_ROWS) // _SCALE_TILE_ROWS
+    )
+
+    def scale_bytes(width: int) -> int:
+        tile_cols = -(-width // (block * _SCALE_TILE_SCALES))
+        return tile_rows * tile_cols * _SCALE_TILE_BYTES
+
+    pool = (
+        # The dispatched rows, NVFP4-packed with their block scales.
+        rows * fp4_packed_k(hidden, quant_config)
+        + scale_bytes(hidden)
+        # The source map, one [rows, 2] int32 entry per row.
+        + rows * 2 * 4
+        # The fused gate/up+SwiGLU kernel's output: the down projection's
+        # NVFP4-packed input rows with their block scales.
+        + rows * fp4_packed_k(inter, quant_config)
+        + scale_bytes(inter)
+        # The down projection's bf16 output.
+        + rows * hidden * 2
+    )
+    return config.estimate_memory_usage(), _mm_pages(pool)
+
+
 class DeepseekV41MemoryPlanner(PagedMemoryPlanner):
-    """Reserves the forward's transient scratch, and counts only HBM weights."""
+    """Reserves the forward's transient scratch, and counts only HBM weights.
+
+    The DP and EP corrections split by consumer. The export-time plan
+    (``memory_estimation.plan_from_sizes``) charges these estimates
+    against ``device_memory_utilization`` of free memory read before
+    anything loads, and the runtime owns the replication and the EP
+    dispatch's allocations: the weights count once (the EP shards and
+    the vocab-parallel embedding and head spread the rest over the
+    ranks -- the engine's own KV sizing reads device free with the
+    weights already resident, so the plan never holds the replicas
+    back), and the EP comm buffers and receive pool stay out of that
+    plan because the engine books them itself, through the sidecar
+    figure below. The sidecar is the exception: the engine sizes and
+    allocates the unified KV arena before EP init allocates the
+    dispatch heaps, so the EP reserve travels there (see
+    :meth:`forward_scratch_bytes_per_device`). The frozen DP4/EP4
+    export plan is pinned in test_memory_planner.py.
+    """
 
     def estimate_weights_size(self, pipeline_config: Any) -> int:
         """Weights on device: the checkpoint minus the host-resident Engram tables."""
@@ -158,7 +253,10 @@ class DeepseekV41MemoryPlanner(PagedMemoryPlanner):
 
         Only transient scratch. The KV leaves are sized afterwards out of what
         this leaves free (``memory_estimation.plan_from_sizes``), so counting
-        them here would subtract them twice.
+        them here would subtract them twice. The EP dispatch's comm buffers
+        and receive pool are not forward scratch either: they allocate after
+        the plan has priced the KV budget, and the engine books them through
+        :meth:`forward_scratch_bytes_per_device` instead.
 
         Returns:
             Bytes summed over the devices, which each run their own forward.
@@ -198,31 +296,40 @@ class DeepseekV41MemoryPlanner(PagedMemoryPlanner):
         return (arena + scores) * n_devices
 
     def forward_scratch_bytes_per_device(self, pipeline_config: Any) -> int:
-        """Per-device transient scratch of the widest forward this config runs.
+        """Per-device bytes the engine's KV sizing must hold back.
 
-        The same arena and indexer-score estimate
+        The forward's arena and indexer-score estimate
         :meth:`estimate_activation_memory` sums over every device, for one
-        device: the exporter records this figure in the input-spec sidecar
-        (``forward_scratch_bytes_per_device``) and the engine's KV sizing
-        holds it back per device, so the first forward still finds its own
-        room. Mach sizes the KV pool before any forward runs, so without it
-        the pool spends the scratch's room and the forward OOMs.
+        device -- plus the EP dispatch's comm buffers and receive pool. The
+        exporter records this figure in the input-spec sidecar and the
+        engine's KV sizing holds it back per device, and the boot order is
+        why the EP terms ride here and nowhere else: the engine sizes and
+        allocates the unified KV arena before EP init runs its handshake
+        and allocates the dispatch heaps (the C4b boot's serve log shows
+        ``unified KV arena allocated`` at 10:21:57.545Z preceding ``running
+        EP init handshake`` at 10:21:57.699Z), so at KV-sizing time those
+        buffers are not yet resident -- without this reserve an unpinned
+        boot sizes the pool into their room, exactly as it would into the
+        forward scratch's, which travels here for the same reason.
         """
         runtime = pipeline_config.runtime
         max_length = pipeline_config.model.max_length
         config = v41_config(pipeline_config.model.huggingface_config)
+        text = DeepseekV41Config.get_text_config(
+            pipeline_config.model.huggingface_config
+        )
         rows = forward_rows(runtime, max_length)
-        return prefill_arena_bytes(config, rows) + indexer_score_bytes(
-            config,
-            rows,
-            max_length,
-            index_source_layer_ids=DeepseekV41Config.get_text_config(
-                pipeline_config.model.huggingface_config
-            ).index_source_layer_ids,
-            candidate_topk_blocks=DeepseekV41Config.get_text_config(
-                pipeline_config.model.huggingface_config
-            ).candidate_topk_blocks,
-            candidate_block_size=DeepseekV41Config.get_text_config(
-                pipeline_config.model.huggingface_config
-            ).candidate_block_size,
+        ep_buffers, ep_pool = _ep_reserve_bytes(pipeline_config, text)
+        return (
+            prefill_arena_bytes(config, rows)
+            + indexer_score_bytes(
+                config,
+                rows,
+                max_length,
+                index_source_layer_ids=text.index_source_layer_ids,
+                candidate_topk_blocks=text.candidate_topk_blocks,
+                candidate_block_size=text.candidate_block_size,
+            )
+            + ep_buffers
+            + ep_pool
         )

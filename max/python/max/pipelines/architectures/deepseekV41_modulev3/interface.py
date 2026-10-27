@@ -352,18 +352,25 @@ def build_kv_params(
 def extra_inputs(
     config: V41Config,
     device_refs: Sequence[DeviceRef],
+    data_parallel_degree: int = 1,
 ) -> list[tuple[str, TensorType]]:
     """Returns the forward inputs after the KV leaves, in graph order.
 
-    The four per-row fields name their rows _BATCH_SYMBOL: every device
-    holds the same rows, so the name unifies them with each replica's KV
-    metadata. Data parallelism is refused by the batch processor and the
-    model, so there is no global-row dim to name.
+    The four per-request fields name their rows _BATCH_SYMBOL under
+    tensor parallelism -- every device holds the same rows, so the name
+    unifies them with each replica's KV metadata. Under data parallelism
+    the engine feeds them the GLOBAL row count (the graph broadcasts and
+    slices them per rank from ``data_parallel_splits``), so they need a
+    dim of their own: ``replica_0_batch_size`` here is the per-replica
+    request count, and sharing it would force the global rows onto
+    replica 0.
 
     Args:
         config: The interface config the input extents derive from.
         device_refs: The devices the graph runs on; the per-row fields
             name their rows after the first.
+        data_parallel_degree: The number of data-parallel replicas; above
+            1 the per-request fields take a global-row dim of their own.
 
     Returns:
         The ``(name, tensor type)`` pairs, in the order the forward reads
@@ -372,17 +379,20 @@ def extra_inputs(
     gpu0 = device_refs[0]
     cpu = DeviceRef.CPU()
     i32, u8 = DType.int32, DType.uint8
+    batch_rows = (
+        _BATCH_SYMBOL if data_parallel_degree == 1 else "global_batch_rows"
+    )
     extras = [
-        ("swa_begin", TensorType(i32, [_BATCH_SYMBOL], gpu0)),
-        ("global_write_floor", TensorType(i32, [_BATCH_SYMBOL], gpu0)),
+        ("swa_begin", TensorType(i32, [batch_rows], gpu0)),
+        ("global_write_floor", TensorType(i32, [batch_rows], gpu0)),
         ("image_token_mask", TensorType(u8, ["total_seq_len"], gpu0)),
         (
             "engram_lookback",
-            TensorType(i32, [_BATCH_SYMBOL, _NUM_LAST_TOKEN_LOOKBACK], gpu0),
+            TensorType(i32, [batch_rows, _NUM_LAST_TOKEN_LOOKBACK], gpu0),
         ),
         (
             "engram_lookback_dead",
-            TensorType(u8, [_BATCH_SYMBOL, _NUM_LAST_TOKEN_LOOKBACK], gpu0),
+            TensorType(u8, [batch_rows, _NUM_LAST_TOKEN_LOOKBACK], gpu0),
         ),
     ]
     for ordinal, rows in enumerate(config.engram_num_embeddings):

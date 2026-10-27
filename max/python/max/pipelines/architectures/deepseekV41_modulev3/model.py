@@ -18,20 +18,53 @@ import hashlib
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
-from max.driver import Buffer, Device, Usage
+from max.driver import Buffer, Device, Usage, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.graph.weights import Weights, WeightsAdapter
+from max.nn.legacy.comm.ep import (
+    EPBatchManager,
+    EPCommInitializer,
+    EPConfig,
+    EPInit,
+    calculate_ep_max_tokens_per_rank,
+)
+
+# The export's ep_init graph declares its counter buffers by the same word
+# count EPCommInitializer allocates at runtime, so the engine introspects
+# from the MEF the size it must zero-fill at boot.
+from max.nn.legacy.comm.ep.ep_manager import _ep_counter_words
 from max.nn.legacy.kv_cache import MultiKVCacheParams
+from max.nn.legacy.quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    QuantFormat,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
+)
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
-from max.pipelines.lib import ModuleV3Outputs, ModuleV3PipelineModelWithKVCache
+from max.pipelines.lib import (
+    GraphRole,
+    GraphSpec,
+    KVCacheConfig,
+    ModuleV3Outputs,
+    ModuleV3PipelineModelWithKVCache,
+    PipelineConfig,
+)
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from max.support.host_memory import available_host_memory, host_memory_limit
 from max.support.human_readable_formatter import to_human_readable_bytes
 from max.tensor.sharding import DeviceMesh
 from transformers import AutoTokenizer
+from typing_extensions import override
+
+if TYPE_CHECKING:
+    from max.pipelines.lib.memory_estimation import MemoryPlan
 
 from .batch_processor import DeepseekV41BatchProcessor
 from .deepseekV41 import DeepseekV41
@@ -193,18 +226,233 @@ def _pinned_table(
     return buffer.view(dtype)
 
 
+def build_ep_config(
+    pipeline_config: PipelineConfig, text: Any, n_devices: int
+) -> EPConfig:
+    """Builds the ModuleV3 EP config from the pipeline ``ep_size``.
+
+    A module-level function so the memory planner sizes the same buffers
+    the model allocates: ``text`` is any config view carrying
+    ``hidden_size``, ``num_hidden_layers``, ``num_experts_per_tok``,
+    ``n_routed_experts`` and ``moe_intermediate_size`` (the frozen
+    ``DeepseekV41Config`` or the HF ``text_config``).
+
+    NVFP4 dispatch matches both the experts' W4A4 grouped chain (the
+    dispatch quantizes with the checkpoint's static per-expert
+    ``input_scale``, the same scale the tensor-parallel path quantizes
+    with) and vLLM's dispatch cost (about 2.9 KB per routed row). The
+    combine returns bf16, as vLLM's does.
+    """
+    runtime = pipeline_config.runtime
+    ep_size = runtime.ep_size
+    dp = pipeline_config.model.data_parallel_degree
+    n_layers = int(text.num_hidden_layers)
+    # The routed experts' storage quantization, which the dispatch
+    # token format and the fused SwiGLU kernel read: modelopt NVFP4
+    # (16-value E2M1 blocks, E4M3 per-block scales, static fp32
+    # input scales).
+    dispatch_quant_config = QuantConfig(
+        format=QuantFormat.NVFP4,
+        input_scale=InputScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            origin=ScaleOrigin.STATIC,
+            dtype=DType.float32,
+            block_size=(1, 16),
+        ),
+        weight_scale=WeightScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            dtype=DType.float8_e4m3fn,
+            block_size=(1, 16),
+        ),
+        mlp_quantized_layers=set(range(n_layers)),
+        attn_quantized_layers=set(),
+        can_use_fused_swiglu=True,
+    )
+    return EPConfig(
+        dispatch_dtype=DType.uint8,
+        dispatch_quant_config=dispatch_quant_config,
+        combine_dtype=DType.bfloat16,
+        hidden_size=text.hidden_size,
+        top_k=int(text.num_experts_per_tok),
+        n_experts=text.n_routed_experts,
+        max_tokens_per_rank=calculate_ep_max_tokens_per_rank(
+            max_batch_input_tokens=runtime.max_batch_input_tokens,
+            ep_size=ep_size,
+            data_parallel_degree=dp,
+            use_allreduce=False,
+        ),
+        n_gpus_per_node=n_devices,
+        n_nodes=max(1, ep_size // n_devices),
+        moe_dim=int(text.moe_intermediate_size),
+        fused_shared_expert=False,
+        use_allreduce=False,
+    )
+
+
 class DeepseekV41Model(
     LogProbabilitiesMixin,
     ModuleV3PipelineModelWithKVCache[TextContext, DeepseekV41Config],
 ):
-    """Loads the text trunk and binds its shared pinned Engram tables."""
+    """Loads the text trunk and binds its shared pinned Engram tables.
+
+    With ``data_parallel_degree > 1`` (and ``ep_size == n_devices``) the
+    graph is DP-attention + EP-MoE: every rank runs the full attention
+    heads on its own request shard and the routed experts stay
+    expert-sharded with a P2P dispatch/combine (the DeepseekV3 ModuleV3
+    ``DP_EP`` pattern). The tokens stay one global batch on device 0; the
+    graph splits them per rank from ``data_parallel_splits``.
+    """
+
+    _engram_tables: list[EngramTable]
+    _token_map: np.ndarray
+
+    # gen_mef's EP backend check: with DP attention each rank's dispatch
+    # tokens are its own rows, which only the P2P backend serves. Irrelevant
+    # at ep_size == 1 (the check returns before reading it).
+    ep_dispatch_token_layout: ClassVar[str] = "tp_sharded"
 
     model_config_cls: ClassVar[type[Any]] = DeepseekV41Config
     batch_processor_cls: ClassVar[type[DeepseekV41BatchProcessor]] = (
         DeepseekV41BatchProcessor
     )
-    _engram_tables: list[EngramTable]
-    _token_map: np.ndarray
+
+    def __init__(
+        self,
+        pipeline_config: PipelineConfig,
+        session: InferenceSession,
+        devices: list[Device],
+        kv_cache_config: KVCacheConfig,
+        weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
+        adapter: WeightsAdapter | None = None,
+        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        max_batch_size: int = 1,
+    ) -> None:
+        # Capture the session so _init_distributed_runtime can run the EP
+        # handshake outside virtual-device mode.
+        self.session = session
+        super().__init__(
+            pipeline_config,
+            session,
+            devices,
+            kv_cache_config,
+            weights,
+            adapter=adapter,
+            return_logits=return_logits,
+            return_hidden_states=return_hidden_states,
+            max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
+        )
+
+    def _build_ep_config(
+        self, model_config: DeepseekV41Config, n_devices: int
+    ) -> EPConfig:
+        """Builds the ModuleV3 EP config from the pipeline ``ep_size``."""
+        return build_ep_config(self.pipeline_config, model_config, n_devices)
+
+    @override
+    def _init_distributed_runtime(
+        self, model_config: DeepseekV41Config
+    ) -> None:
+        super()._init_distributed_runtime(model_config)
+        self._ep_batch_manager: EPBatchManager | None = None
+        self.ep_comm_initializer: EPCommInitializer | None = None
+
+        ep_size = self.pipeline_config.runtime.ep_size
+        dp = self.pipeline_config.model.data_parallel_degree
+        # The arch registration lets every multi-GPU layout through, but
+        # this trunk wires exactly one: DP attention with EP over all the
+        # devices. Everything else -- plain tensor parallelism included --
+        # dies deep in graph staging, so refuse it here, before the graphs
+        # compile (the checkpoint has already loaded at this point),
+        # naming the layout that works. The config's ``device_specs`` is
+        # read rather than ``self.devices``: an EP1 build (a
+        # graph-contract recorder can stage the model without
+        # ``__init__``) never touches the device list.
+        n_devices = len(self.pipeline_config.model.device_specs)
+        if n_devices > 1 and (dp != n_devices or ep_size != n_devices):
+            raise ValueError(
+                f"DeepSeek-V4.1 serves {n_devices} devices only as "
+                "data-parallel attention with expert-parallel MoE: pass "
+                f"--data-parallel-degree {n_devices} --ep-size "
+                f"{n_devices} (got data_parallel_degree={dp}, "
+                f"ep_size={ep_size}). Plain tensor parallelism is not "
+                "wired for this trunk."
+            )
+        if ep_size <= 1:
+            return
+        n_devices = len(self.devices)
+        if ep_size != n_devices:
+            # Reachable on a single device with ep_size > 1: the pre-check
+            # above already refused every multi-device mismatch.
+            raise ValueError(
+                f"ep_size={ep_size} must equal the device count "
+                f"({n_devices}) on the single-node DP-attention shape."
+            )
+        if not self.pipeline_config.runtime.enable_chunked_prefill:
+            # The dispatch/combine buffers are sized to
+            # max_tokens_per_rank (max_batch_input_tokens on this P2P
+            # single-node shape), which the batch constructor treats as a
+            # soft limit: with chunking off it admits an oversized prompt
+            # whole, and the dispatch overflows the fixed buffers.
+            raise ValueError(
+                "DeepSeek-V4.1 expert parallelism requires chunked prefill: "
+                "the EP dispatch buffers are sized to "
+                "max_batch_input_tokens, which without chunking is a soft "
+                "limit a longer prompt exceeds."
+            )
+        # DeepseekV41Config is mutable; the EP config lives on the batch
+        # manager the rest of the runtime already reads (graph_specs
+        # included).
+        ep_config = self._build_ep_config(model_config, n_devices)
+        self._ep_batch_manager = EPBatchManager(ep_config)
+        self._modulev3_extra_input_types = self._ep_batch_manager.input_types()
+        if not is_virtual_device_mode():
+            # In-process serving allocates the symmetric heap and the
+            # counters now, and the base load_graphs hands the buffers to
+            # the batch processor, so every forward's input tail carries
+            # them. The export leaves them to the engine's handshake,
+            # which owns the counters the compiled forward shares.
+            self.ep_comm_initializer = EPCommInitializer(ep_config)
+            self.ep_comm_initializer.ep_init(self.session)
+            # run_init already wrote node_id through the shared config;
+            # restate it like the deepseekV3 pattern does.
+            ep_config.node_id = self.ep_comm_initializer.config.node_id
+
+    @override
+    def graph_specs(
+        self, model_config: DeepseekV41Config
+    ) -> dict[str, GraphSpec]:
+        """The decoder, plus the EP handshake graph when EP is on.
+
+        The ``ep_init`` graph allocates the engine-side symmetric heap and
+        returns its buffer addresses, so the engine runs it once at startup
+        with its own atomic counters (``mach/docs/expert-parallelism.md``,
+        contract 1). The export never runs it in-process: the engine's
+        handshake owns the counters the forward shares.
+        """
+        specs = super().graph_specs(model_config)
+        ep_batch_manager = getattr(self, "_ep_batch_manager", None)
+        ep_config = ep_batch_manager.config if ep_batch_manager else None
+        if ep_config is not None:
+            counter_shape = [
+                _ep_counter_words(
+                    ep_config.n_experts,
+                    ep_config.n_gpus_per_node,
+                    ep_config.use_allreduce,
+                    ep_config.moe_dim,
+                )
+            ]
+            init = EPInit(ep_config, counter_shape)
+            specs[GraphRole.EP_INIT] = GraphSpec(
+                init,
+                "ep_init",
+                init.input_types(),
+                weights={},
+            )
+        return specs
 
     def _load_state_dict(self) -> dict[str, Any]:
         result = super()._load_state_dict()
@@ -216,14 +464,11 @@ class DeepseekV41Model(
         self._checkpoint = result.state_dict
         return result.state_dict
 
+    @override
     def _create_model_config(
         self, state_dict: dict[str, Any]
     ) -> DeepseekV41Config:
         del state_dict
-        if self.pipeline_config.runtime.ep_size > 1:
-            raise ValueError(
-                "DeepSeek-V4.1 ModuleV3 currently supports tensor parallelism"
-            )
         config = DeepseekV41Config.initialize(
             self.pipeline_config, max_seq_len=self.max_seq_len
         )
@@ -239,11 +484,17 @@ class DeepseekV41Model(
         del state_dict, model_config
         return DType.bfloat16
 
+    @override
     def _instantiate_module(
         self, model_config: DeepseekV41Config
     ) -> DeepseekV41:
         assert isinstance(self.kv_params, MultiKVCacheParams)
-        mesh = DeviceMesh(tuple(self.devices), (len(self.devices),), ("tp",))
+        # The single mesh axis is the DP axis under data parallelism: the
+        # vocab-parallel embedding and head shard their weight over it by
+        # name, and every other weight replicates.
+        dp = self.pipeline_config.model.data_parallel_degree
+        axis = "dp" if dp > 1 else "tp"
+        mesh = DeviceMesh(tuple(self.devices), (len(self.devices),), (axis,))
         return DeepseekV41(
             model_config,
             self.kv_params,
@@ -252,6 +503,8 @@ class DeepseekV41Model(
                 self.huggingface_config
             ),
             token_map=self._token_map,
+            data_parallel_degree=dp,
+            ep_batch_manager=getattr(self, "_ep_batch_manager", None),
         )
 
     def _load_decoder(

@@ -37,10 +37,11 @@ deepseekV41_modulev3_arch = SupportedArchitecture(
     ],
     default_encoding=DeepseekV41Config.DEFAULT_ENCODING,
     supported_encodings=DeepseekV41Config.SUPPORTED_ENCODINGS,
-    # The assembled trunk serves one device: full-model tensor parallelism
-    # hits a sharding placement conflict in the window-list masking path,
-    # and the data/expert-parallel shapes are not wired yet.
-    multi_gpu_supported=False,
+    # Multi-GPU serves the data-parallel attention + expert-parallel MoE
+    # shapes this trunk wires (dp == ep_size == the device count, the
+    # full attention heads once per rank); plain tensor parallelism
+    # still hits the window-list masking placement conflict.
+    multi_gpu_supported=True,
     supports_device_graph_capture=False,
     supports_empty_batches=False,
     requires_max_batch_context_length=True,

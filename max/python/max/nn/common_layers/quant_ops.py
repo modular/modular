@@ -988,6 +988,7 @@ def grouped_matmul_swiglu_nvfp4_ep(
     down_input_scale: Tensor,
     *,
     estimated_total_m: Tensor | None = None,
+    activation: GatedActivation | None = None,
 ) -> tuple[Tensor, Tensor]:
     """Fused NVFP4 gate/up grouped matmul + SwiGLU + re-quantize (EP path)."""
     b_scales = interleave_grouped_scales(weight.weight_scale)
@@ -1013,6 +1014,7 @@ def grouped_matmul_swiglu_nvfp4_ep(
         estimated_total_m=TensorValue(estimated_total_m)
         if estimated_total_m is not None
         else None,
+        activation=activation,
     )
     return Tensor.from_graph_value(c_packed), Tensor.from_graph_value(c_scales)
 
@@ -1029,14 +1031,16 @@ def grouped_matmul_silu(
     estimated_total_m: Tensor | None = None,
     accum_dtype: DType | None = None,
     decode_grid_m_cap: int = 0,
+    activation: GatedActivation | None = None,
     swiglu_limit: float = 0.0,
 ) -> QuantAwareTensor:
     """Gate/up grouped matmul + SwiGLU, returning the down-projection input.
 
     ``accum_dtype`` upcasts the gate/up output before the SwiGLU, which
-    DeepSeek-V3.2 does in float32. A non-zero ``swiglu_limit`` clamps the
-    activation's inputs, ``silu(min(gate, limit)) * clamp(up, -limit,
-    limit)``, which GLM-5.3-Flash needs.
+    DeepSeek-V3.2 does in float32. ``activation`` overrides the gated
+    activation (the asymmetric training clamp, on V4.1). A non-zero
+    ``swiglu_limit`` clamps the activation's inputs, ``silu(min(gate, limit))
+    * clamp(up, -limit, limit)``, which GLM-5.3-Flash needs.
     """
     # Pre-quantized EP activations carry their own per-expert scale offset;
     # single-device tokens rely on the caller-supplied one.
@@ -1072,6 +1076,7 @@ def grouped_matmul_silu(
             gate_up_scale,
             down.input_scale,
             estimated_total_m=estimated_total_m,
+            activation=activation,
         )
         return NVFP4Activation(
             data=c_packed,
@@ -1113,6 +1118,7 @@ def grouped_matmul_silu(
         requant_weight,
         quant_config,
         scales_offset=offset,
+        activation=activation,
         swiglu_limit=swiglu_limit,
     )
 
@@ -1221,6 +1227,7 @@ def grouped_silu(
     quant_config: QuantConfig | None = None,
     *,
     scales_offset: Tensor | None = None,
+    activation: GatedActivation | None = None,
     swiglu_limit: float = 0.0,
 ) -> QuantAwareTensor:
     """SiLU-gate a grouped gate/up output.
@@ -1228,9 +1235,8 @@ def grouped_silu(
     A non-zero ``swiglu_limit`` clamps the gate from above and the up
     projection on both sides before the activation.
     """
-    activation = (
-        GatedActivation("silu", limit=swiglu_limit) if swiglu_limit else None
-    )
+    if activation is None and swiglu_limit:
+        activation = GatedActivation("silu", limit=swiglu_limit)
     if isinstance(out_weight, NVFP4Tensor):
         assert quant_config is not None and scales_offset is not None
         data, scales = fused_silu_quantized(
@@ -1268,7 +1274,7 @@ def grouped_silu(
     # Exhaustive: a new quantized down-weight must not silently skip its
     # re-quant by taking the plain bf16 SiLU.
     assert out_weight is None or isinstance(out_weight, Tensor)
-    return fused_silu(x, expert_start_indices, activation)
+    return fused_silu(x, expert_start_indices, activation=activation)
 
 
 def concat_fp8_block(*tensors: FP8BlockTensor, axis: int = 0) -> FP8BlockTensor:

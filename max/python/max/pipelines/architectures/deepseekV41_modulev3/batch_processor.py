@@ -19,7 +19,9 @@ from typing import cast
 
 import numpy as np
 from max.driver import Buffer
+from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
+from max.nn.legacy.comm.ep import EPCommInitializer
 from max.nn.legacy.kv_cache import KVCacheInputs
 from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.architectures.deepseekV41.layers.engram_hash import (
@@ -33,8 +35,8 @@ from max.pipelines.lib.interfaces.batch_processor import (
     RaggableContext,
     build_single_replica_ragged_token_arrays,
     modulev3_ragged_kv_symbolic_inputs,
-    single_replica_context_batch,
 )
+from max.pipelines.lib.utils import compute_data_parallel_splits
 
 from .inputs import DeepseekV41Inputs, v41_config
 from .interface import extra_input_names, extra_inputs
@@ -61,14 +63,24 @@ class DeepseekV41BatchProcessor(
         super().__init__(config, runtime)
         self._v41 = v41_config(runtime.pipeline_config.model.huggingface_config)
         self._engram_static: dict[str, Buffer] = {}
-        if runtime.pipeline_config.model.data_parallel_degree != 1:
-            raise ValueError(
-                "DeepSeek-V4.1 ModuleV3 currently requires data_parallel_degree=1"
-            )
+        self._dp_degree = runtime.pipeline_config.model.data_parallel_degree
+        self._ep_comm_initializer: EPCommInitializer | None = None
 
     def bind_engram(self, static_inputs: Mapping[str, Buffer]) -> None:
         """Hands over the ``engram_table_*`` buffers the model pinned."""
         self._engram_static = dict(static_inputs)
+
+    def bind_ep_comm_initializer(
+        self, initializer: EPCommInitializer | None
+    ) -> None:
+        """Wires the EP buffers the model's load created, if it did."""
+        self._ep_comm_initializer = initializer
+
+    def _ep_inputs(self) -> tuple[Buffer, ...]:
+        """The EP comm buffers, in ``EPBatchManager.input_types`` order."""
+        if self._ep_comm_initializer is None:
+            return ()
+        return tuple(self._ep_comm_initializer.model_inputs())
 
     def get_symbolic_inputs(
         self,
@@ -76,13 +88,38 @@ class DeepseekV41BatchProcessor(
         kv_params: KVCacheParamInterface,
         device_refs: list[DeviceRef],
     ) -> list[TensorType | BufferType]:
-        """Returns the compile inputs up to the signal buffers, in ABI order."""
+        """Returns the compile inputs up to the signal buffers, in ABI order.
+
+        Under data parallelism the CPU split boundaries and int64 row
+        offsets follow ``input_row_offsets`` and precede the KV leaves,
+        matching ``DeepseekV41.forward``'s variadic order (the DeepseekV3
+        ModuleV3 pattern).
+        """
         inputs: list[TensorType | BufferType] = list(
             modulev3_ragged_kv_symbolic_inputs(
                 kv_params=kv_params, device_refs=device_refs
             )
         )
-        inputs.extend(t for _, t in extra_inputs(self._v41, device_refs))
+        if self._dp_degree > 1:
+            inputs.insert(
+                3,
+                TensorType(
+                    DType.int64,
+                    shape=[self._dp_degree + 1],
+                    device=DeviceRef.CPU(),
+                ),
+            )
+            inputs.insert(
+                4,
+                TensorType(
+                    DType.int64,
+                    shape=["input_row_offsets_len"],
+                    device=DeviceRef.CPU(),
+                ),
+            )
+        inputs.extend(
+            t for _, t in extra_inputs(self._v41, device_refs, self._dp_degree)
+        )
         return inputs
 
     def _extras(
@@ -136,15 +173,38 @@ class DeepseekV41BatchProcessor(
         kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> DeepseekV41Inputs:
-        """Packs one ragged batch with its KV, Engram and replay inputs."""
-        context_batch = single_replica_context_batch(
-            replica_batches, processor_name=type(self).__qualname__
-        )
+        """Packs one ragged batch with its KV and Engram inputs.
+
+        Under data parallelism all replicas' requests form one device-0
+        batch plus the CPU ``data_parallel_splits`` boundaries the forward
+        splits it by.
+        """
+        if self._dp_degree > 1 and len(replica_batches) != self._dp_degree:
+            raise ValueError(
+                f"data parallelism expects {self._dp_degree} replica "
+                f"batches, got {len(replica_batches)}."
+            )
         assert kv_cache_inputs is not None
-        tokens_np, offsets_np = build_single_replica_ragged_token_arrays(
-            cast(Sequence[RaggableContext], context_batch)
-        )
+        # An empty replica contributes a zero-width boundary; the in-graph
+        # split still hands it a 0-token shard.
+        context_batch = [ctx for batch in replica_batches for ctx in batch]
+        if context_batch:
+            tokens_np, offsets_np = build_single_replica_ragged_token_arrays(
+                cast(Sequence[RaggableContext], context_batch)
+            )
+        else:
+            tokens_np = np.empty(0, dtype=np.int64)
+            offsets_np = np.zeros(1, dtype=np.uint32)
         device0 = self.runtime.devices[0]
+        data_parallel_splits = None
+        input_row_offsets_i64 = None
+        if self._dp_degree > 1:
+            data_parallel_splits = Buffer.from_numpy(
+                compute_data_parallel_splits(replica_batches)
+            )
+            input_row_offsets_i64 = Buffer.from_numpy(
+                offsets_np.astype(np.int64)
+            )
         return DeepseekV41Inputs(
             tokens=Buffer.from_numpy(tokens_np.astype(np.int64)).to(device0),
             input_row_offsets=Buffer.from_numpy(offsets_np).to(device0),
@@ -153,4 +213,7 @@ class DeepseekV41BatchProcessor(
             ),
             kv_cache_inputs=kv_cache_inputs,
             extras=self._extras(context_batch, offsets_np),
+            ep_inputs=self._ep_inputs(),
+            data_parallel_splits=data_parallel_splits,
+            input_row_offsets_i64=input_row_offsets_i64,
         )

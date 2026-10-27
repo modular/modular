@@ -168,8 +168,21 @@ def test_output_projection_tp(
 
 
 class _PassFFN(Module[..., Tensor]):
-    def forward(self, x: Tensor, mask: Tensor) -> Tensor:
-        del mask
+    """The boundary's feed-forward stand-in: passes its rows through.
+
+    Takes the same arguments the real feed-forward's forward does, the EP
+    communication buffers and the host row count among them, and ignores
+    every one but the rows.
+    """
+
+    def forward(
+        self,
+        x: Tensor,
+        mask: Tensor,
+        comm_buffers: object = None,
+        total_rows: Tensor | None = None,
+    ) -> Tensor:
+        del mask, comm_buffers, total_rows
         return x
 
 

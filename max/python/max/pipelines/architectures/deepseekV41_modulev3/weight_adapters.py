@@ -61,6 +61,18 @@ _EXPERT_TENSOR = re.compile(
     r"\.(?P<kind>weight_scale_2|weight_scale|input_scale|weight)$"
 )
 
+# The routed experts' static gate/up scalars a derived leaf reduces: the
+# EP dispatch quantizes with one uniform scale per layer, the max of the
+# layer's experts' ``w1`` and ``w3`` ``input_scale`` values (tree names,
+# post-rename) -- both projections read the same dispatched activation,
+# so either one's calibrated range can bind.
+_EXPERT_GATE_INPUT_SCALE = re.compile(
+    r"^(?P<layer>layers\.\d+)\.ffn\.experts\.\d+\.w[13]\.weight\.input_scale$"
+)
+
+_GLOBAL_INPUT_SCALE = "ffn.global_input_scale"
+"""The derived leaf's suffix under the layer: ``layers.{L}.ffn.<this>``."""
+
 # The Engram embed tables: graph inputs, never module parameters.
 _ENGRAM_EMBED = re.compile(r"^layers\.\d+\.engram\.embed\.(weight|scale)$")
 
@@ -378,6 +390,156 @@ def stack_projections(
                 )
 
 
+def _max_input_scale(parts: list[WeightData], name: str) -> WeightData:
+    """The uniform dispatch scale of one MoE layer, as a ``[1]`` f32 leaf.
+
+    The value is the max of ``parts`` (the layer's experts' static
+    ``w1``/``w3`` ``input_scale`` scalars), reusing the winning scalar's
+    own bytes so the derived leaf is bit-identical to the in-graph max
+    the EP forward used to compute. A zero-byte part marks a shape-only
+    stand-in, which carries no values to reduce; the leaf then stands in
+    the same way (``concat_rows``'s rule).
+
+    Raises:
+        ValueError: If a part is not a one-value float32 scalar (real
+            parts) or the stand-ins disagree with real ones.
+    """
+    values: list[WeightData] = []
+    stand_ins = sum(
+        1 for part in parts if _as_buffer(part.data).num_elements == 0
+    )
+    if stand_ins:
+        if stand_ins != len(parts):
+            raise ValueError(
+                f"{name}: zero-byte scale stand-ins beside real ones"
+            )
+        # A shapes-only dict carries no data; the leaf stands in the
+        # same way (``concat_rows``'s rule for zero-byte parts).
+        return WeightData(
+            Buffer.from_dlpack(np.zeros((0,), np.uint8)),
+            name,
+            DType.float32,
+            Shape([1]),
+        )
+    for part in parts:
+        buffer = _as_buffer(part.data)
+        if part.dtype != DType.float32 or buffer.num_elements != 1:
+            raise ValueError(
+                f"{part.name}: the NVFP4 global scale reduces one-value "
+                f"float32 scalars, got {part.dtype} "
+                f"{[int(d) for d in part.shape]}"
+            )
+        values.append(part)
+    if not values:
+        raise ValueError(f"{name}: no expert scales to reduce")
+    best = max(
+        values,
+        key=lambda part: float(
+            np.from_dlpack(_as_buffer(part.data).view(DType.float32, [1]))[0]
+        ),
+    )
+    # Own bytes: the part's buffer is a view into the checkpoint mapping.
+    array = np.array(
+        np.from_dlpack(_as_buffer(best.data).view(DType.float32, [1]))
+    )
+    return WeightData(Buffer.from_numpy(array), name, DType.float32, Shape([1]))
+
+
+def derive_global_input_scales(
+    state_dict: dict[str, WeightData],
+) -> None:
+    """Materializes each MoE layer's uniform NVFP4 dispatch scale, in place.
+
+    The EP dispatch quantizes every rank's activations with one global
+    scale per layer -- the max of the layer's experts' static ``w1`` and
+    ``w3`` ``input_scale`` values (both projections read the same
+    dispatched activation, so either's calibrated range can bind; the
+    legacy V4.1 adapter reduces the same pair), the exact reduction the
+    EP forward ran in-graph as a cross-device scalar hub (whose
+    per-step gather/scatter lowered to ``mgp.device_wait`` pairs). The
+    graph now reads the derived leaf, replicated at load; the per-expert
+    scales it reduces stay in the dict untouched, so every consumer of
+    the originals is unchanged.
+
+    A layer is derived only when the checkpoint supplies at least one of
+    its expert gate scales (a full checkpoint supplies all of them); the
+    reduction over what is present is exact for the full checkpoint and
+    deterministic for partial fixtures.
+    """
+    per_layer: dict[str, list[WeightData]] = {}
+    for name, data in sorted(state_dict.items()):
+        match = _EXPERT_GATE_INPUT_SCALE.match(name)
+        if match is not None:
+            per_layer.setdefault(match["layer"], []).append(data)
+    for layer, parts in per_layer.items():
+        state_dict[f"{layer}.{_GLOBAL_INPUT_SCALE}"] = _max_input_scale(
+            parts, f"{layer}.{_GLOBAL_INPUT_SCALE}"
+        )
+
+
+# The expert gate/up scalar whose value the fused kernel shares: an EP
+# checkpoint must calibrate ``w1`` and ``w3`` alike, because the fused
+# gate/up weight keeps one ``weight_scale_2`` for both halves.
+_EXPERT_GATE_UP_SCALE_2 = re.compile(
+    r"^(?P<path>.*\.ffn\.experts\.(?P<expert>\d+))\.w(?P<proj>[13])"
+    r"\.weight_scale_2$"
+)
+
+
+def _f32_scalar(data: WeightData) -> float:
+    """The value of a one-element float32 scalar leaf."""
+    buffer = _as_buffer(data.data)
+    if data.dtype != DType.float32 or buffer.num_elements != 1:
+        raise ValueError(
+            f"{data.name}: expected a one-value float32 scalar, got "
+            f"{data.dtype} {[int(d) for d in data.shape]}"
+        )
+    return float(np.from_dlpack(buffer.view(DType.float32, [1]))[0])
+
+
+def check_expert_gate_up_scale_pairs(
+    state_dict: Mapping[str, WeightData],
+) -> None:
+    """Refuses a checkpoint whose expert gate/up scalar scales disagree.
+
+    The EP forward fuses each expert's ``w1``/``w3`` into one grouped
+    kernel, and the NVFP4 concat keeps the first tensor's
+    ``weight_scale_2`` for both halves; a checkpoint calibrating the two
+    projections apart would silently mis-scale the up half (the trunk's
+    tensor-parallel path keeps them separate and stays exact, which is
+    why the tensor-parallel legacy adapter only warns). The check runs
+    only under expert parallelism, where the fusion's assumption is
+    load-bearing; it reads checkpoint names, before rename table A.
+
+    Raises:
+        ValueError: If any expert's ``w1`` and ``w3`` carry a different
+            ``weight_scale_2``, or one arrives without the other.
+    """
+    per_expert: dict[str, dict[str, WeightData]] = {}
+    for name, data in sorted(state_dict.items()):
+        match = _EXPERT_GATE_UP_SCALE_2.match(name)
+        if match is not None:
+            per_expert.setdefault(match["path"], {})[match["proj"]] = data
+    for path, projections in sorted(per_expert.items()):
+        missing = {"1", "3"} - projections.keys()
+        if missing:
+            raise ValueError(
+                f"{path}: the expert's w1 and w3 must both carry "
+                f"weight_scale_2 (missing w{min(missing)})"
+            )
+        w1, w3 = projections["1"], projections["3"]
+        if _f32_scalar(w1) != _f32_scalar(w3):
+            raise ValueError(
+                f"{path}: w1 and w3 weight_scale_2 disagree "
+                f"({_f32_scalar(w1)} vs {_f32_scalar(w3)}); the "
+                "expert-parallel forward fuses the two projections with "
+                "one shared scalar scale, so a checkpoint that calibrates "
+                "them apart cannot serve under --ep-size. Serve with "
+                "--ep-size 1 instead: the tensor-parallel path runs the "
+                "projections separately and stays exact."
+            )
+
+
 class AdapterResult(dict[str, WeightData]):
     """Module weights with the host Engram tables kept alongside them."""
 
@@ -479,12 +641,16 @@ def convert_weight_data(
     3. Drop ``gate.bias_vl`` when the config has no ``vision_config``;
        every other gate tensor stays required.
     4. Extract the Engram embed tables into :class:`EngramTable` views.
-    5. Expand each ``attn.wo_a`` FP8 pair (E4M3 codes plus its compact
+    5. Derive each MoE layer's uniform NVFP4 dispatch scale
+       (:func:`derive_global_input_scales`) -- the max of the layer's
+       experts' static ``w1``/``w3`` ``input_scale`` values, a new tree
+       leaf the EP dispatch reads instead of reducing it in-graph.
+    6. Expand each ``attn.wo_a`` FP8 pair (E4M3 codes plus its compact
        E8M0 block scales) into one bf16 leaf -- the official BF16
        baseline, exact: an E4M3 value times a power of two fits bf16
        (:func:`dequantize_fp8_blocks`); the graph runs the plain
        grouped bf16 matmul and never activation-quantizes it.
-    6. Stack the :data:`STACKED_PROJECTIONS` pairs into their one-GEMM
+    7. Stack the :data:`STACKED_PROJECTIONS` pairs into their one-GEMM
        leaves, trunk tensors only.
 
     Nothing else changes a byte: no dense scale expansion, no norm
@@ -518,6 +684,7 @@ def convert_weight_data(
     else:
         tables = []
     out = _rename_checkpoint(state_dict, has_vision=has_vision)
+    derive_global_input_scales(out)
     expand_wo_a_blocks(out)
     stack_projections(out, n_devices)
     return AdapterResult(out, tables)
@@ -612,10 +779,17 @@ def convert_safetensor_state_dict(
     model binds them as pinned static inputs
     (``_bind_engram_static_inputs``), named by
     :func:`.interface.extra_input_names`; the tables never enter the
-    module weight dict. The TP degree for the sharded stacked
+    module weight dict. The interleave degree for the sharded stacked
     pairs reads off ``pipeline_config`` (the pipeline model builds one
-    TP mesh over all its devices), so the interleave matches the mesh
-    the module shards over.
+    mesh over all its devices), so the interleave matches the mesh the
+    module shards over -- except under data parallelism, where the
+    stacked pairs stay whole per rank and the parts concat plainly.
+
+    Raises:
+        ValueError: Under expert parallelism (``ep_size > 1``), if any
+            expert's ``w1`` and ``w3`` ``weight_scale_2`` disagree
+            (:func:`check_expert_gate_up_scale_pairs`); and everything
+            :func:`convert_weight_data` raises.
     """
     text = DeepseekV41Config.get_text_config(huggingface_config)
     resolve_quantization_info(
@@ -627,11 +801,18 @@ def convert_safetensor_state_dict(
     engram_layer_ids = tuple(
         int(layer) for layer in getattr(text, "engram_layer_ids", ())
     )
-    n_devices = (
-        1
-        if pipeline_config is None
-        else len(pipeline_config.model.device_specs)
-    )
+    if pipeline_config is None:
+        n_devices = 1
+        ep_size = 1
+    else:
+        n_devices = len(pipeline_config.model.device_specs)
+        if pipeline_config.model.data_parallel_degree > 1:
+            # Under data parallelism the stacked pairs stay whole on
+            # every rank (``StackedSharedExpert`` skips the shard), so
+            # the parts concat plainly: the per-rank interleave is the
+            # TP layout the module's half-split pairs with.
+            n_devices = 1
+        ep_size = pipeline_config.runtime.ep_size
     loaded = {
         name: value.data()
         for name, value in sorted(state_dict.items())
@@ -644,6 +825,8 @@ def convert_safetensor_state_dict(
         )
         and (has_vision or not name.endswith(".ffn.gate.bias_vl"))
     }
+    if ep_size > 1:
+        check_expert_gate_up_scale_pairs(loaded)
     return convert_weight_data(
         loaded,
         has_vision=has_vision,

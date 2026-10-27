@@ -23,20 +23,27 @@ values against the reference E4M3 x E8M0 arithmetic, plus the no-vision
 gate drop on the same pass. The stacked-projection tests cover the
 ``w13`` fold directly: the TP1 concatenation and its scale-block
 placement, the per-rank TP2 interleave each rank's slice loads, the
-never-interleaved dense pair, zero-byte stand-ins, and the scale-block
-rank-split rejection.
+never-interleaved dense pair, zero-byte stand-ins, the scale-block
+rank-split rejection, and the plain concat data parallelism stacks
+(the stacked pair stays whole per rank). The derived-dispatch-scale
+tests pin the uniform NVFP4 dispatch scale the EP MoE path quantizes
+with: the bit-exact global max over the experts' ``w1`` and ``w3``
+scales, order-free, with the per-expert leaves it reduces left in the
+tree. The pipeline-entry tests pin what only the entry point knows:
+the DP-aware stacking degree and the EP gate/up scale-pair refusal.
 """
 
 from __future__ import annotations
 
+from typing import cast
 from unittest.mock import Mock
 
 import numpy as np
 import pytest
-from max.driver import Buffer
+from max.driver import Buffer, DLPackArray
 from max.dtype import DType
 from max.graph.type import Shape
-from max.graph.weights import WeightData
+from max.graph.weights import WeightData, Weights
 from max.pipelines.architectures.deepseekV41_modulev3.weight_adapters import (
     _engram_tables,
     convert_safetensor_state_dict,
@@ -371,3 +378,309 @@ def test_stack_projections_refuses_rank_splitting_a_scale_block() -> None:
     pair, _ = _shared_pair(prefix, seed=13)
     with pytest.raises(ValueError, match="whole"):
         stack_projections(pair, n_devices=4)
+
+
+def _weights(state: dict[str, WeightData]) -> dict[str, Weights]:
+    """The state as a ``Weights`` mapping the pipeline adapter reads.
+
+    The mocks stand in for safetensors handles; the cast keeps the
+    entry point's signature honest where the values cannot isinstance.
+    """
+    return {
+        name: cast(Weights, Mock(**{"data.return_value": wd}))
+        for name, wd in state.items()
+    }
+
+
+def _pipeline_config(dp: int, ep_size: int, n_devices: int) -> Mock:
+    config = Mock()
+    config.model.data_parallel_degree = dp
+    config.model.device_specs = [Mock() for _ in range(n_devices)]
+    config.runtime.ep_size = ep_size
+    return config
+
+
+_HF = PretrainedConfig(
+    text_config=PretrainedConfig(num_hidden_layers=1, engram_layer_ids=[]),
+)
+
+# The minimal ModelOpt config an NVFP4 expert fragment resolves against:
+# one trunk layer whose routed experts the map declares.
+_NVFP4_HF = PretrainedConfig(
+    text_config=PretrainedConfig(num_hidden_layers=1, engram_layer_ids=[]),
+    quantization_config={
+        "quant_method": "modelopt",
+        "quant_algo": "MIXED_PRECISION",
+        "moe_quant_algo": "NVFP4",
+        "group_size": 16,
+        "weight_block_size": [32, 32],
+        "kv_cache_quant_algo": None,
+        "quantized_layers": {
+            "layers.0.ffn.experts": {"quant_algo": "NVFP4", "group_size": 16}
+        },
+    },
+)
+
+
+def test_pipeline_adapter_stacks_shared_pair_plainly_under_dp() -> None:
+    """Under data parallelism the stacked pair stays whole per rank.
+
+    ``StackedSharedExpert`` skips the shard under DP and the module
+    half-splits the whole leaf, so the entry point must stack the pair
+    plainly -- an interleaved whole leaf would scramble gate and up
+    rows on every rank. The TP branch of the same entry point keeps the
+    per-rank interleave.
+    """
+    prefix = "layers.2.ffn.shared_experts"
+    pair, arrays = _shared_pair(prefix, seed=17)
+    adapted = convert_safetensor_state_dict(
+        _weights(pair), _HF, _pipeline_config(dp=4, ep_size=4, n_devices=4)
+    )
+    weight = adapted[f"{prefix}.w13.weight"]
+    np.testing.assert_array_equal(
+        _leaf_u8(weight),
+        np.concatenate([arrays["w1.weight"], arrays["w3.weight"]]),
+    )
+
+
+def test_pipeline_adapter_interleaves_shared_pair_under_tp() -> None:
+    """Without data parallelism the interleave follows the device count."""
+    prefix = "layers.2.ffn.shared_experts"
+    pair, arrays = _shared_pair(prefix, seed=19)
+    adapted = convert_safetensor_state_dict(
+        _weights(pair), _HF, _pipeline_config(dp=1, ep_size=1, n_devices=2)
+    )
+    weight = adapted[f"{prefix}.w13.weight"]
+    np.testing.assert_array_equal(
+        _leaf_u8(weight),
+        np.concatenate(
+            [
+                arrays["w1.weight"][:32],
+                arrays["w3.weight"][:32],
+                arrays["w1.weight"][32:],
+                arrays["w3.weight"][32:],
+            ]
+        ),
+    )
+
+
+def _expert_scale_pair_state(
+    w1_scale: float, w3_scale: float
+) -> dict[str, WeightData]:
+    """One expert's gate/up ``weight_scale_2`` checkpoint scalars."""
+    state: dict[str, WeightData] = {}
+    for projection, scale in (("w1", w1_scale), ("w3", w3_scale)):
+        name = f"layers.0.ffn.experts.0.{projection}.weight_scale_2"
+        state[name] = _wd(
+            np.asarray(scale, dtype=np.float32), name, DType.float32
+        )
+    return state
+
+
+def test_pipeline_adapter_refuses_disagreeing_gate_up_scales_under_ep() -> None:
+    """A checkpoint calibrating ``w1``/``w3`` apart cannot serve under EP.
+
+    The EP forward fuses the two projections with one shared
+    ``weight_scale_2`` (the NVFP4 concat keeps the first tensor's
+    scalar), so a disagreement would silently mis-scale the up half;
+    the entry point refuses it before any tensor converts.
+    """
+    state = _expert_scale_pair_state(1.0, 2.0)
+    with pytest.raises(ValueError, match="weight_scale_2 disagree"):
+        convert_safetensor_state_dict(
+            _weights(state),
+            _NVFP4_HF,
+            _pipeline_config(dp=4, ep_size=4, n_devices=4),
+        )
+
+
+def test_pipeline_adapter_accepts_paired_gate_up_scales_under_ep() -> None:
+    state = _expert_scale_pair_state(1.5, 1.5)
+    adapted = convert_safetensor_state_dict(
+        _weights(state),
+        _NVFP4_HF,
+        _pipeline_config(dp=4, ep_size=4, n_devices=4),
+    )
+    assert _f32_bits(
+        adapted["layers.0.ffn.experts.0.w1.weight.weight_scale_2"].data
+    ) == _bits(1.5)
+
+
+def test_pipeline_adapter_skips_the_gate_up_scale_check_without_ep() -> None:
+    """The tensor-parallel path runs the projections separately, so a
+    disagreeing checkpoint stays servable at ep_size 1 (and with no
+    pipeline config at all)."""
+    state = _expert_scale_pair_state(1.0, 2.0)
+    adapted = convert_safetensor_state_dict(
+        _weights(state),
+        _NVFP4_HF,
+        _pipeline_config(dp=1, ep_size=1, n_devices=1),
+    )
+    assert len(adapted) == 2
+    adapted = convert_safetensor_state_dict(_weights(state), _NVFP4_HF)
+    assert len(adapted) == 2
+
+
+# Deliberately unequal expert gate scales: several magnitudes, a duplicated
+# value (0.5 twice) and the maximum on a plain mantissa.
+_UNEQUAL_W1_SCALES = (3.0, 0.03125, 0.5, 1.0, 0.25, 0.5, 6.25, 0.75)
+
+# The maximum sits one ulp above 0.5: bf16 rounds it back to 0.5, and
+# float64 arithmetic and a cast back keep it, so this fixture separates an
+# exact fp32 materialization from every lossy spelling of it.
+_LOWBIT_MAX_W1_SCALES = (0.125, 0.03125, 0.5, 0.25, 0.5, 0.0625, 0.375, 0.0)
+
+_SCALE_FIXTURES = {
+    "unequal": _UNEQUAL_W1_SCALES,
+    "lowbit_max": _LOWBIT_MAX_W1_SCALES,
+}
+
+
+def _gate_scales_state_dict(
+    scales: tuple[float, ...],
+    layer: int = 0,
+    *,
+    w3: tuple[float, ...] | None = None,
+) -> dict[str, WeightData]:
+    """A checkpoint fragment carrying the fixture's expert gate/up scales.
+
+    ``w3`` defaults to ``scales`` (a checkpoint whose two projections
+    calibrate alike), and every ``w2`` input scale is poisoned one ulp
+    above the gate/up maximum, so a scalar that wrongly reduces over it
+    fails instead of passing vacuously. The names are the checkpoint's
+    own spellings (the adapter renames them per table A).
+    """
+    up = scales if w3 is None else w3
+    poison = float(
+        np.nextafter(np.float32(max(max(scales), max(up))), np.float32(np.inf))
+    )
+    state: dict[str, WeightData] = {}
+    for expert, value in enumerate(scales):
+        for projection, scale in (
+            ("w1", value),
+            ("w2", poison),
+            ("w3", up[expert]),
+        ):
+            name = (
+                f"layers.{layer}.ffn.experts.{expert}.{projection}.input_scale"
+            )
+            state[name] = _wd(
+                np.asarray(scale, dtype=np.float32), name, DType.float32
+            )
+    return state
+
+
+def _f32_bits(data: DLPackArray) -> bytes:
+    """One fp32 leaf's first value, read without widening its bytes."""
+    buffer = data if isinstance(data, Buffer) else Buffer.from_dlpack(data)
+    return np.asarray(
+        np.from_dlpack(buffer.view(DType.float32, [1]))[0], dtype=np.float32
+    ).tobytes()
+
+
+def _derived_scale_bits(
+    scales: tuple[float, ...], *, w3: tuple[float, ...] | None = None
+) -> bytes:
+    """The adapter's derived dispatch-scale leaf value, as fp32 bits."""
+    out = convert_weight_data(
+        _gate_scales_state_dict(scales, w3=w3), has_vision=False
+    ).state_dict
+    derived = out["layers.0.ffn.global_input_scale"]
+    assert derived.dtype == DType.float32
+    assert [int(d) for d in derived.shape] == [1]
+    return _f32_bits(derived.data)
+
+
+def _bits(value: np.floating | float) -> bytes:
+    return np.asarray(value, dtype=np.float32).tobytes()
+
+
+@pytest.mark.parametrize("fixture", _SCALE_FIXTURES)
+def test_derived_dispatch_scale_is_the_global_gate_up_maximum(
+    fixture: str,
+) -> None:
+    """The derived leaf equals the flat fp32 max over ``w1`` and ``w3``.
+
+    The EP dispatch quantizes every rank's activations with this one
+    uniform scale per layer, and both projections read the same
+    dispatched activation, so the leaf must be exactly the maximum over
+    all experts' ``w1`` and ``w3`` ``input_scale`` scalars.
+    """
+    scales = _SCALE_FIXTURES[fixture]
+    assert _derived_scale_bits(scales) == _bits(max(scales))
+
+
+def test_derived_dispatch_scale_reads_the_up_projection() -> None:
+    """An up scale above every gate scale wins the derived leaf.
+
+    A checkpoint may calibrate ``w3``'s input range above every ``w1``'s;
+    quantizing the dispatch with only the gate maximum would clip the
+    up projection's inputs. The legacy V4.1 adapter reduces the same
+    pair, and the fixture's up maximum must move the derived scalar.
+    """
+    w3 = (0.5, 1.0, 0.25, 0.03125, 8.0, 0.75, 2.0, 0.5)
+    scales = _UNEQUAL_W1_SCALES
+    assert max(w3) > max(scales)
+    assert _derived_scale_bits(scales, w3=w3) == _bits(max(w3)), (
+        "the derived scale must cover the up projection's calibrated range"
+    )
+
+
+@pytest.mark.parametrize("fixture", _SCALE_FIXTURES)
+@pytest.mark.parametrize("seed", [0, 1, 2])
+def test_derived_dispatch_scale_is_reduction_order_free(
+    fixture: str, seed: int
+) -> None:
+    """Per-rank maxima then a global max equal the flat max, bit for bit.
+
+    A cross-device reduction would take per-rank maxima, then a global
+    max; the adapter reduces once over the checkpoint leaves. fp32 max is
+    exact, so a shuffle of the fixture must not move the scalar's bits.
+    """
+    scales = _SCALE_FIXTURES[fixture]
+    rng = np.random.default_rng(seed)
+    shuffled = tuple(float(v) for v in rng.permutation(scales))
+    flat = np.float32(max(shuffled))
+    per_rank = [
+        np.float32(max(shuffled[r * 2 : (r + 1) * 2])) for r in range(4)
+    ]
+    gathered = np.float32(max(per_rank))
+    assert _derived_scale_bits(shuffled) == _bits(flat), (shuffled, flat)
+    assert _bits(gathered) == _bits(flat), (gathered, flat)
+
+
+def test_derived_dispatch_scale_rejects_per_rank_scales() -> None:
+    """The fixture makes a per-rank scalar visibly wrong.
+
+    The dispatch wraps received activations with the receiving rank's
+    uniform scale, so any rank whose local maximum is not the global
+    maximum would reinterpret every peer row it quantizes. The fixture
+    records that the local maxima are not the global value, and the
+    derived leaf is.
+    """
+    scales = _UNEQUAL_W1_SCALES
+    per_rank = [np.float32(max(scales[r * 2 : (r + 1) * 2])) for r in range(4)]
+    global_max = np.float32(max(scales))
+    assert any(_bits(local) != _bits(global_max) for local in per_rank)
+    assert _derived_scale_bits(scales) == _bits(global_max)
+
+
+def test_the_expert_scales_the_derivation_reduces_stay_in_the_tree() -> None:
+    """The per-expert leaves survive the derivation untouched."""
+    scales = _UNEQUAL_W1_SCALES
+    poison = float(np.nextafter(np.float32(max(scales)), np.float32(np.inf)))
+    out = convert_weight_data(
+        _gate_scales_state_dict(scales), has_vision=False
+    ).state_dict
+    for expert, value in enumerate(scales):
+        for projection, expected in (
+            ("w1", value),
+            ("w2", poison),
+            # ``w3`` defaults to the gate fixture: the up scales are real
+            # values the reduction reads, not poison.
+            ("w3", value),
+        ):
+            name = (
+                f"layers.0.ffn.experts.{expert}.{projection}.weight.input_scale"
+            )
+            assert _f32_bits(out[name].data) == _bits(expected), name

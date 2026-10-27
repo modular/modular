@@ -85,10 +85,9 @@ def test_registered_runtime_is_text_only() -> None:
     assert issubclass(DeepseekV41Tokenizer, TextTokenizer)
     assert not deepseekV41_modulev3_arch.supports_device_graph_capture
     assert not deepseekV41_modulev3_arch.supports_empty_batches
-    # The assembled trunk serves one device; the parallel shapes are not
-    # wired yet, so registration rejects a multi-GPU launch up front rather
-    # than letting it die in graph construction.
-    assert not deepseekV41_modulev3_arch.multi_gpu_supported
+    # The data/expert-parallel shapes are wired, so a multi-GPU launch
+    # passes config validation and serves DP attention + EP MoE.
+    assert deepseekV41_modulev3_arch.multi_gpu_supported
 
 
 def test_real_module_parameter_tree() -> None:
@@ -322,6 +321,7 @@ def test_output_modes_use_ragged_offsets(
     config.return_logits = mode
     config.return_hidden_states = ReturnHiddenStates.NONE
     model.config = config
+    model.dp = 1
     monkeypatch.setattr(model, "head", lambda x: x, raising=False)
     monkeypatch.setattr(model, "norm", lambda x: x, raising=False)
     hidden = Tensor.from_dlpack(np.arange(20, dtype=np.float32).reshape(5, 4))
@@ -359,6 +359,7 @@ def test_last_hidden_states_are_pre_final_norm(
     config.return_logits = ReturnLogits.LAST_TOKEN
     config.return_hidden_states = ReturnHiddenStates.LAST
     model.config = config
+    model.dp = 1
     monkeypatch.setattr(model, "head", lambda x: x, raising=False)
     monkeypatch.setattr(model, "norm", lambda x: 2 * x, raising=False)
     hidden = Tensor.from_dlpack(np.arange(20, dtype=np.float32).reshape(5, 4))

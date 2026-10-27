@@ -42,6 +42,26 @@ modular_py_test(
     ],
 )
 
+# The memory plan's DP accounting: the export-time plan counts the
+# checkpoint once and leaves the EP dispatch's reserve to the engine's
+# sidecar, which keeps holding the comm buffers and receive pool back
+# (the KV pool is sized before the dispatch heaps allocate).
+modular_py_test(
+    name = "test_memory_planner",
+    srcs = ["test_memory_planner.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/architectures/deepseekV41_modulev3/assembly:runtime_config",
+        requirement("numpy"),
+    ],
+)
+
 # Resolver regressions against the published checkpoint's layer mapping,
 # including its three trailing DSpark draft ratio rows.
 modular_py_test(

@@ -28,6 +28,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, DeviceMesh
 
@@ -171,6 +172,12 @@ class FeedForward(Module[..., Tensor]):
     ``y += shared_experts(x)``, as in the HF reference's MoE block), so a
     layer pays one cross-GPU barrier instead of two, and the result is
     rounded to bf16 once.
+
+    With an ``ep_batch_manager`` (expert parallelism, which always comes
+    with data-parallel attention) there is no barrier at all: the routed
+    experts dispatch/combine through the P2P EP buffers, the shared
+    expert runs whole on each rank's own rows, and the output is complete
+    per rank.
     """
 
     def __init__(
@@ -179,10 +186,12 @@ class FeedForward(Module[..., Tensor]):
         mesh: DeviceMesh,
         *,
         data_parallel: bool = False,
+        ep_batch_manager: EPBatchManager | None = None,
     ) -> None:
         super().__init__()
         self.mesh = mesh
         self.data_parallel = data_parallel
+        self.ep_batch_manager = ep_batch_manager
         h, ffn = config.hidden_size, config.moe_intermediate_size
         self.gate = Router(
             h,
@@ -212,10 +221,24 @@ class FeedForward(Module[..., Tensor]):
             config.n_routed_experts,
             mesh=mesh,
             swiglu_limit=_SWIGLU_LIMIT,
+            ep_batch_manager=ep_batch_manager,
         )
 
-    def forward(self, x: Tensor, image_token_mask: Tensor) -> Tensor:
-        """The mixture of experts, reduced per the parallelism layout."""
+    def forward(
+        self,
+        x: Tensor,
+        image_token_mask: Tensor,
+        comm_buffers: EPCommBuffers | None = None,
+        total_rows: Tensor | None = None,
+    ) -> Tensor:
+        """The mixture of experts, reduced per the parallelism layout.
+
+        Under expert parallelism the routed experts dispatch/combine
+        through ``comm_buffers`` and the output is complete per rank
+        (bf16), with ``total_rows`` the host-resident batch row count the
+        grouped kernels' tile-regime estimate reads (``None`` on the
+        tensor-parallel path, which never runs it).
+        """
         ids, weights = _on_each_device(
             self.mesh,
             lambda gate, x, mask: gate(x, mask),
@@ -224,6 +247,36 @@ class FeedForward(Module[..., Tensor]):
             image_token_mask,
             mapping=x.mapping,
         )
+        if self.ep_batch_manager is not None:
+            if not self.data_parallel:
+                raise ValueError(
+                    "expert parallelism without data-parallel attention is "
+                    "not wired in this model (tokens would need the "
+                    "TP-sharded P2P dispatch layout)"
+                )
+            if comm_buffers is None:
+                raise ValueError(
+                    "the EP feed-forward requires the EP comm buffers"
+                )
+            if total_rows is None:
+                raise ValueError(
+                    "the EP feed-forward requires the host-resident total "
+                    "row count (the grouped kernels' tile-regime estimate)"
+                )
+            routed = self.routed.ep_forward(
+                x, ids, weights, comm_buffers, total_rows
+            )
+            shared = self.shared_experts.partial(x)
+            # The combine rounds the routed sum to bf16 (combine_dtype);
+            # add the shared expert in float32 and round once, as the TP
+            # path does after its all-reduce.
+            total = F.cast(
+                F.call_on_mesh(F.add, self.mesh, out_specs=x.mapping)(
+                    routed.cast(DType.float32), shared
+                ),
+                DType.bfloat16,
+            )
+            return total
         routed = self.routed.partial(x, ids, weights)
         shared = self.shared_experts.partial(x)
         # Both are Partial; adding them locally keeps the generic add from
@@ -234,19 +287,50 @@ class FeedForward(Module[..., Tensor]):
         return F.allreduce_sum(total).cast(DType.bfloat16)
 
 
+def _attend(
+    attn: Attention,
+    x: Tensor,
+    kv: tuple[PagedCacheValues, PagedCacheValues | None],
+    rows: tuple[Tensor, Tensor, Tensor, Tensor, Tensor],
+    layer_idx: tuple[Tensor, Tensor],
+    swa_begin: Tensor,
+    comp_indices: Tensor | None,
+    projected: tuple[Tensor, Tensor] | None,
+) -> Tensor:
+    """One attention body on one rank's own rows (see ``_attention``).
+
+    ``rows`` crosses the mesh boundary as its five tensors -- a plain
+    dataclass is a tree leaf, so it would pass through unsharded.
+    """
+    return attn(
+        x,
+        kv,
+        RaggedRows(*rows),
+        layer_idx,
+        swa_begin,
+        comp_indices,
+        projected=projected,
+    )
+
+
 def _select(
     group: str,
     compressor: Compressor | None,
     indexer: Indexer,
     x: Tensor,
     qr: Tensor,
-    rows: RaggedRows,
+    rows: tuple[Tensor, Tensor, Tensor, Tensor, Tensor],
     kv: dict[str, PagedCacheValues],
     slots: dict[str, Tensor],
     pool: Tensor | None,
     global_write_floor: Tensor,
 ) -> tuple[Tensor, Tensor | None]:
-    """One layer's compressor and indexer on one device (see ``_index``)."""
+    """One layer's compressor and indexer on one device (see ``_index``).
+
+    ``rows`` crosses the mesh boundary as its five tensors -- a plain
+    dataclass is a tree leaf, so it would pass through unsharded.
+    """
+    row_data = RaggedRows(*rows)
     if group == "reindex_r1":
         # No compressor here: the layer rescoring the candidate source's
         # blocks reads its index leaf and its compressed leaf.
@@ -256,7 +340,7 @@ def _select(
             qr,
             None,
             None,
-            rows,
+            row_data,
             {"idx_source": kv["idx_c1a"], "comp": kv["c1a"]},
             {"idx_source": slots["idx_c1a"], "comp": slots["c1a"]},
             pool=pool,
@@ -267,26 +351,26 @@ def _select(
         # The ratio-2 ring save runs inside the pooling op, against this
         # layer's own ``c2a_state`` scratch leaf.
         latent, valid = compressor(
-            raw, rows, kv["c2a_state"], slots["c2a_state"]
+            raw, row_data, kv["c2a_state"], slots["c2a_state"]
         )
         return indexer(
             x,
             qr,
             latent,
             valid,
-            rows,
+            row_data,
             {"idx": kv["idx_c2a"], "comp": kv["c2a"]},
             {"idx": slots["idx_c2a"], "comp": slots["c2a"]},
             global_write_floor=global_write_floor,
         )
     assert group == "full_r1_cand", group
-    latent, valid = compressor(raw, rows)
+    latent, valid = compressor(raw, row_data)
     return indexer(
         x,
         qr,
         latent,
         valid,
-        rows,
+        row_data,
         {"idx": kv["idx_c1a"], "comp": kv["c1a"]},
         {"idx": slots["idx_c1a"], "comp": slots["c1a"]},
         global_write_floor=global_write_floor,
@@ -305,6 +389,10 @@ class DecoderLayer(Module[..., Any]):
             and entry cap.
         candidate_block_size: The candidate pool's block size in entries.
         engram: The layer's Engram module on ``engram_layer_ids``.
+        data_parallel: Whether the mesh axis is a data-parallel axis (the
+            attention and the shared expert run whole per rank, TP=1).
+        ep_batch_manager: The EP batch manager when the routed experts run
+            expert-parallel; ``None`` keeps the tensor-parallel MoE.
     """
 
     def __init__(
@@ -318,6 +406,7 @@ class DecoderLayer(Module[..., Any]):
         candidate_block_size: int,
         engram: Module[..., Any] | None = None,
         data_parallel: bool = False,
+        ep_batch_manager: EPBatchManager | None = None,
     ) -> None:
         super().__init__()
         layer = info.layer_id
@@ -390,6 +479,7 @@ class DecoderLayer(Module[..., Any]):
             config,
             mesh,
             data_parallel=data_parallel,
+            ep_batch_manager=ep_batch_manager,
         )
         if engram is not None:
             self.engram = engram
@@ -417,15 +507,41 @@ class DecoderLayer(Module[..., Any]):
                 produced.append(pool)
         elif group in ("reuse_r2", "reuse_r1"):
             comp_indices = s.routed
-        y = attn(
-            x,
-            (s.kv["swa"], s.kv[plan.comp]),
-            s.rows,
-            (s.slots["swa"], s.slots[plan.comp]),
-            s.swa_begin,
-            comp_indices,
-            projected=projected,
-        )
+        if self.data_parallel:
+            # Each rank's rows are its own, so the attention body -- the
+            # single-device csa2 ops, the per-step rope table, the padded
+            # row masks -- runs once per rank over its shard, like the
+            # compressor and indexer below, and the result is claimed on
+            # the rows' placement.
+            y = _on_each_device(
+                self.mesh,
+                _attend,
+                attn,
+                x,
+                (s.kv["swa"], s.kv[plan.comp]),
+                (
+                    s.rows.offsets,
+                    s.rows.bid,
+                    s.rows.local,
+                    s.rows.positions,
+                    s.rows.lengths,
+                ),
+                (s.slots["swa"], s.slots[plan.comp]),
+                s.swa_begin,
+                comp_indices,
+                projected,
+                mapping=x.mapping,
+            )
+        else:
+            y = attn(
+                x,
+                (s.kv["swa"], s.kv[plan.comp]),
+                s.rows,
+                (s.slots["swa"], s.slots[plan.comp]),
+                s.swa_begin,
+                comp_indices,
+                projected=projected,
+            )
         return y, produced
 
     def _index(
@@ -445,7 +561,13 @@ class DecoderLayer(Module[..., Any]):
             attn.indexer,
             x,
             qr,
-            s.rows,
+            (
+                s.rows.offsets,
+                s.rows.bid,
+                s.rows.local,
+                s.rows.positions,
+                s.rows.lengths,
+            ),
             kv,
             slots,
             s.routed,
@@ -467,6 +589,8 @@ class DecoderLayer(Module[..., Any]):
         kv: list[PagedCacheValues],
         slots: list[Tensor],
         routed: list[Tensor],
+        comm_buffers: EPCommBuffers | None = None,
+        total_rows: Tensor | None = None,
     ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, list[Tensor]]:
         """One layer: the subgraph body its block group shares.
 
@@ -478,6 +602,9 @@ class DecoderLayer(Module[..., Any]):
         ``layer_plan(...).leaves``; every index is a graph operand, never a
         constant baked into the shared body. ``routed`` holds the selection
         a reuse or reindex layer reads and is empty elsewhere.
+        ``comm_buffers`` and ``total_rows`` reach the EP feed-forward (the
+        P2P dispatch/combine buffers and the host-resident batch row count)
+        and are ``None`` on the tensor-parallel path.
 
         Returns:
             ``(stream, pre, y, post, comb, produced)``: the stream before
@@ -533,7 +660,9 @@ class DecoderLayer(Module[..., Any]):
         post = claim_replicated(post, stream)
         comb = claim_replicated(comb, stream)
         pre = claim_replicated(pre, stream)
-        y = self.ffn(self.ffn_norm(x), s.image_token_mask)
+        y = self.ffn(
+            self.ffn_norm(x), s.image_token_mask, comm_buffers, total_rows
+        )
         return stream, pre, y, post, comb, produced
 
 
