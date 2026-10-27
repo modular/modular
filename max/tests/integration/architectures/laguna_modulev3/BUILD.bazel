@@ -81,6 +81,7 @@ modular_py_test(
         "//conditions:default": [],
     }),
     imports = ["."],
+    precompile_mefs = True,
     tags = ["gpu"],
     deps = [":laguna_parity"],
 )
@@ -95,6 +96,7 @@ modular_py_test(
     # The NVFP4 grouped MoE matmul is SM100-only.
     gpu_constraints = ["//:b200_gpu"],
     imports = ["."],
+    precompile_mefs = True,
     tags = ["gpu"],
     deps = [":laguna_parity"],
 )
