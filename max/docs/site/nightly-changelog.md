@@ -101,6 +101,13 @@ This version is still a work in progress.
 
 ## Python API
 
+- The eager `Module` framework moved from `max.experimental.nn` to `max.nn`,
+  and the graph-based layers that `max.nn` held moved to `max.nn.legacy`.
+  `max.nn.legacy` is deprecated and will be removed in MAX 27.1. Code that
+  uses it gets a `DeprecationWarning` naming the line that used it. To keep
+  using the graph-based layers until then, change `from max.nn import ...` to
+  `from max.nn.legacy import ...`.
+
 - A custom op whose Mojo kernel is registered wrong, or doesn't match its
   call, now raises `max.graph.KernelRegistrationError`, a `ValueError`
   subclass. The message points at the Mojo code the way the Mojo compiler

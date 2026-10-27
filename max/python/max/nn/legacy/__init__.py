@@ -12,6 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """Neural network modules for MAX.
 
+.. deprecated::
+    ``max.nn.legacy`` will be removed in MAX 27.1. Use :mod:`max.nn` instead.
+    Code outside MAX that uses it gets a ``DeprecationWarning``.
+
 ``max.nn.legacy`` layers come in two modes. In graph-based execution, a layer's
 ``__call__`` stages its operations into a :class:`~max.graph.Graph`, and MAX
 compiles the finished graph into an optimized executable that runs on
@@ -41,6 +45,7 @@ abstractions directly on :class:`~max.tensor.Tensor` values,
 executing each operation immediately, PyTorch-style.
 """
 
+from . import _deprecation
 from .attention import (
     AttentionWithRope,
     DistributedAttentionImpl,
@@ -179,3 +184,5 @@ __all__ = [
     "split_batch",
     "split_batch_replicated",
 ]
+
+_deprecation.install()
