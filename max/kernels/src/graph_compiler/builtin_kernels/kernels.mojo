@@ -1633,45 +1633,61 @@ struct Struct_rope_split_store_ragged_paged[interleaved: Bool]:
     @inline(.always)
     @staticmethod
     def execute[
-        out_dtype: DType,
-        qkv_dtype: DType,
-        freq_dtype: DType,
-        cache_dtype: DType,
-        //,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=out_dtype, rank=2, ...],
-        qkv: InputTensor[dtype=qkv_dtype, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
-        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        output: Some[Output & Tensor],
+        qkv: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        freqs_cis: Some[Input & Tensor],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(qkv), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(freqs_cis), TileTensorable)
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime out_dtype = type_of(output).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(qkv).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(freqs_cis).rank == 2
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
         var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            page_stride,
-            cache_lengths,
-            kv_lookup_table,
-            max_prompt_length,
-            max_cache_length,
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
         )
         return rope_split_store_paged_ragged[
             q_out_dtype=out_dtype,
             target=target,
             interleaved=Self.interleaved,
         ](
-            qkv.to_tile_tensor[.int64](),
-            input_row_offsets.to_tile_tensor[.int64](),
-            freqs_cis.to_tile_tensor[.int64](),
+            qkv.to_tile_tensor(),
+            input_row_offsets.to_tile_tensor[.uint32](),
+            freqs_cis.to_tile_tensor(),
             kv_collection,
             layer_idx,
-            output.to_tile_tensor[.int64](),
+            output.to_tile_tensor(),
             ctx,
         )
 
@@ -1690,35 +1706,52 @@ struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
     @inline(.always)
     @staticmethod
     def execute[
-        out_dtype: DType,
-        qkv_dtype: DType,
-        freq_dtype: DType,
-        cache_dtype: DType,
-        //,
         mrope_section: StaticString,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=out_dtype, rank=2, ...],
-        qkv: InputTensor[dtype=qkv_dtype, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
-        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
-        position_ids: InputTensor[dtype=.uint32, rank=2, ...],
+        output: Some[Output & Tensor],
+        qkv: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        freqs_cis: Some[Input & Tensor],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
+        position_ids: Some[Input & Tensor],
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(qkv), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(freqs_cis), TileTensorable)
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime assert conforms_to(type_of(position_ids), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(qkv).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(freqs_cis).rank == 2
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
+        comptime assert type_of(position_ids).rank == 2
         var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            page_stride,
-            cache_lengths,
-            kv_lookup_table,
-            max_prompt_length,
-            max_cache_length,
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
         )
 
         comptime if mrope_section == "":
@@ -1726,13 +1759,13 @@ struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
                 target=target,
                 interleaved=Self.interleaved,
             ](
-                qkv.to_tile_tensor[.int64](),
-                input_row_offsets.to_tile_tensor[.int64](),
-                freqs_cis.to_tile_tensor[.int64](),
+                qkv.to_tile_tensor(),
+                input_row_offsets.to_tile_tensor[.uint32](),
+                freqs_cis.to_tile_tensor(),
                 kv_collection,
-                position_ids.to_tile_tensor[.int64](),
+                position_ids.to_tile_tensor[.uint32](),
                 layer_idx,
-                output.to_tile_tensor[.int64](),
+                output.to_tile_tensor(),
                 ctx,
             )
         else:
@@ -1743,13 +1776,13 @@ struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
                 mrope_types=mrope.element_types,
                 mrope_section=mrope,
             ](
-                qkv.to_tile_tensor[.int64](),
-                input_row_offsets.to_tile_tensor[.int64](),
-                freqs_cis.to_tile_tensor[.int64](),
+                qkv.to_tile_tensor(),
+                input_row_offsets.to_tile_tensor[.uint32](),
+                freqs_cis.to_tile_tensor(),
                 kv_collection,
-                position_ids.to_tile_tensor[.int64](),
+                position_ids.to_tile_tensor[.uint32](),
                 layer_idx,
-                output.to_tile_tensor[.int64](),
+                output.to_tile_tensor(),
                 ctx,
             )
 
@@ -2921,10 +2954,10 @@ struct PackConvTransposeFilterShape:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        rank: Int,
-        filter_type: DType,
-    ](filter_buf: InputTensor[dtype=filter_type, rank=rank, ...]) raises:
+    def execute(
+        filter_buf: Some[Input & Tensor],
+    ) raises:
+        comptime assert conforms_to(type_of(filter_buf), TileTensorable)
         raise Error("Only meant to be used for shape function!")
 
 

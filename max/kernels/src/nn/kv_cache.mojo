@@ -64,7 +64,13 @@ from nn.normalization import _rms_norm_impl, _rms_norm_warp_tiling_subkernel
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from std.utils.numerics import get_accum_type
 
-from extensibility import InputTensor
+from extensibility import (
+    Input,
+    InputTensor,
+    MutableInput,
+    Tensor,
+    TileTensorable,
+)
 from extensibility import (
     _MutableInputTensor as MutableInputTensor,
 )
@@ -2921,6 +2927,112 @@ def generic_get_paged_cache[
     )
 
 
+def generic_get_paged_cache[
+    v_head_size: Int = -1,
+](
+    blocks: TileTensor[mut=True, address_space=.GENERIC, ...],
+    page_stride: TileTensor[
+        mut=False, DType.int64, address_space=.GENERIC, ...
+    ],
+    cache_lengths: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    lookup_table: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    max_prompt_length: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    max_cache_length: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    out result: PagedKVCacheCollection[
+        blocks.dtype,
+        _paged_cache_static_params(
+            blocks.static_shape[4],
+            blocks.static_shape[5],
+            blocks.static_shape[1],
+            v_head_size,
+        ),
+        blocks.static_shape[3],
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutUntrackedOrigin,
+    ],
+):
+    """Builds a paged KV cache collection from projected tiles of any
+    storage.
+
+    The blocks' static shape supplies the cache's head count, head size, page
+    size and MLA layout.
+
+    Parameters:
+        v_head_size: The value head size of a split cache, whose single plane
+            packs each key and value row; -1 otherwise.
+
+    Args:
+        blocks: KV values `[num_blocks, kv_dim, num_layers, page_size,
+            num_heads, head_size]`.
+        page_stride: Page-to-page distance for `blocks`, in elements.
+        cache_lengths: Cache lengths per request.
+        lookup_table: Page lookup table `[batch_size, max_pages]`.
+        max_prompt_length: Max prompt length, `[1]`.
+        max_cache_length: Max cache length, `[1]`.
+
+    Returns:
+        The collection over `blocks`.
+    """
+    comptime assert blocks.rank == 6
+    comptime dtype = blocks.dtype
+    comptime assert dtype != DType.uint8, (
+        "a uint8 KV cache is packed NVFP4 and needs its scales: build it with"
+        " generic_get_paged_cache_with_scales, from an op that reads NVFP4"
+    )
+    comptime assert (
+        v_head_size <= 0 or blocks.static_shape[1] == 1
+    ), "a split KV cache packs its key and value into one plane"
+    # The collection holds pointer-backed tiles, so rebuild each one over its
+    # tile's data; a non-pointer storage policy aborts here at run time.
+    # The device buffers are owned by the graph runtime and kept alive
+    # externally, so the views carry the untracked any-origins.
+    return generic_get_paged_cache[
+        dtype,
+        _paged_cache_static_params(
+            blocks.static_shape[4],
+            blocks.static_shape[5],
+            blocks.static_shape[1],
+            v_head_size,
+        ),
+        blocks.static_shape[3],
+    ](
+        TileTensor(
+            ptr=blocks.ptr.unsafe_origin_cast[MutAnyOrigin](),
+            layout=blocks.layout,
+        ),
+        TileTensor(
+            ptr=page_stride.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+            layout=page_stride.layout,
+        ),
+        TileTensor(
+            ptr=cache_lengths.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+            layout=cache_lengths.layout,
+        ),
+        TileTensor(
+            ptr=lookup_table.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+            layout=lookup_table.layout,
+        ),
+        TileTensor(
+            ptr=max_prompt_length.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+            layout=max_prompt_length.layout,
+        ),
+        TileTensor(
+            ptr=max_cache_length.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+            layout=max_cache_length.layout,
+        ),
+    )
+
+
 # Bytes of a packed NVFP4 row that one E4M3 scale covers: 16 e2m1 elements.
 comptime _NVFP4_SCALE_GROUP_BYTES = 8
 
@@ -3038,6 +3150,150 @@ def generic_get_paged_cache_with_scales[
         scales.to_tile_tensor().as_unsafe_any_origin(),
         scales_page_stride.to_tile_tensor().as_imm().as_unsafe_any_origin(),
         scales_lookup_table.to_tile_tensor().as_imm().as_unsafe_any_origin(),
+    )
+
+
+def generic_get_paged_cache_with_scales(
+    blocks: TileTensor[mut=True, address_space=.GENERIC, ...],
+    page_stride: TileTensor[
+        mut=False, DType.int64, address_space=.GENERIC, ...
+    ],
+    cache_lengths: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    lookup_table: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    max_prompt_length: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    max_cache_length: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    scales: TileTensor[mut=True, address_space=.GENERIC, ...],
+    scales_page_stride: TileTensor[
+        mut=False, DType.int64, address_space=.GENERIC, ...
+    ],
+    scales_lookup_table: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    out result: PagedKVCacheCollection[
+        blocks.dtype,
+        KVCacheStaticParams(
+            blocks.static_shape[4],
+            blocks.static_shape[5],
+            blocks.static_shape[1] == 1,
+            _scaled_cache_fp8_tail_size[blocks.dtype, scales.dtype](
+                blocks.static_shape[5],
+                scales.static_shape[5],
+            ),
+        ),
+        blocks.static_shape[3],
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+        scale_dtype_=scales.dtype,
+        quantization_granularity_=_scaled_cache_granularity[
+            blocks.dtype, scales.dtype
+        ](
+            blocks.static_shape[5],
+            scales.static_shape[5],
+        ),
+    ],
+):
+    """Builds a scaled paged KV cache collection from projected tiles of any
+    storage.
+
+    The operands come in the order `flatten_without_attention_dispatch_metadata`
+    emits for quantized cache params. The blocks' static shape supplies the
+    cache's head count, head size, page size and MLA layout. The quantization
+    granularity is the values' row width over the scales' row width, in value
+    elements. A packed NVFP4 row may end in FP8 bytes that carry no scales.
+
+    Args:
+        blocks: KV values `[num_blocks, kv_dim, num_layers, page_size,
+            num_heads, head_size]`.
+        page_stride: Page-to-page distance for `blocks`, in elements.
+        cache_lengths: Cache lengths per request.
+        lookup_table: Page lookup table `[batch_size, max_pages]`.
+        max_prompt_length: Max prompt length, `[1]`.
+        max_cache_length: Max cache length, `[1]`.
+        scales: Scales, the shape of `blocks` with the last dimension
+            `head_size / granularity`.
+        scales_page_stride: Page-to-page distance for `scales`.
+        scales_lookup_table: Page lookup table of the scales.
+
+    Returns:
+        The collection over the values and their scales.
+    """
+    comptime assert blocks.rank == 6
+    comptime assert scales.rank == 6
+    comptime dtype = blocks.dtype
+    comptime scale_dtype = scales.dtype
+    comptime head_size = blocks.static_shape[5]
+    comptime scales_per_row = scales.static_shape[5]
+    comptime kv_params = KVCacheStaticParams(
+        blocks.static_shape[4],
+        head_size,
+        blocks.static_shape[1] == 1,
+        _scaled_cache_fp8_tail_size[dtype, scale_dtype](
+            head_size, scales_per_row
+        ),
+    )
+    comptime granularity = _scaled_cache_granularity[dtype, scale_dtype](
+        head_size, scales_per_row
+    )
+    comptime assert (
+        granularity * scales_per_row + kv_params.fp8_tail_size == head_size
+    ), "the scales row must evenly divide the values row"
+    # The collection holds pointer-backed tiles, so rebuild each one over its
+    # tile's data; a non-pointer storage policy aborts here at run time.
+    # The device buffers are owned by the graph runtime and kept alive
+    # externally, so the views carry the untracked any-origins.
+    return generic_get_paged_cache_with_scales[
+        dtype,
+        scale_dtype,
+        kv_params,
+        blocks.static_shape[3],
+        granularity,
+    ](
+        TileTensor(
+            ptr=blocks.ptr.unsafe_origin_cast[MutAnyOrigin](),
+            layout=blocks.layout,
+        ),
+        TileTensor(
+            ptr=page_stride.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+            layout=page_stride.layout,
+        ),
+        TileTensor(
+            ptr=cache_lengths.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+            layout=cache_lengths.layout,
+        ),
+        TileTensor(
+            ptr=lookup_table.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+            layout=lookup_table.layout,
+        ),
+        TileTensor(
+            ptr=max_prompt_length.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+            layout=max_prompt_length.layout,
+        ),
+        TileTensor(
+            ptr=max_cache_length.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+            layout=max_cache_length.layout,
+        ),
+        TileTensor(
+            ptr=scales.ptr.unsafe_origin_cast[MutAnyOrigin](),
+            layout=scales.layout,
+        ),
+        TileTensor(
+            ptr=scales_page_stride.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+            layout=scales_page_stride.layout,
+        ),
+        TileTensor(
+            ptr=scales_lookup_table.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+            layout=scales_lookup_table.layout,
+        ),
     )
 
 

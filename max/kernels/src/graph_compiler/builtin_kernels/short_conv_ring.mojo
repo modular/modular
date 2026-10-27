@@ -14,10 +14,7 @@
 `nn.short_conv_ring`."""
 
 import extensibility
-from extensibility import InputTensor, OutputTensor
-from extensibility import (
-    _MutableInputTensor as MutableInputTensor,
-)
+from extensibility import Input, MutableInput, Output, Tensor, TileTensorable
 from max.gpu.host import DeviceContext
 
 from nn.kv_cache import generic_get_paged_cache
@@ -35,31 +32,44 @@ struct Struct_short_conv_ring:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType,
-        ring_dtype: DType,
         commit: Bool,
         //,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=2, ...],
-        x: InputTensor[dtype=dtype, rank=2, ...],
-        weight: InputTensor[dtype=dtype, rank=2, ...],
-        ring: MutableInputTensor[dtype=ring_dtype, rank=3, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        positions: InputTensor[dtype=.uint32, rank=1, ...],
-        conv_rows: InputTensor[dtype=.uint32, rank=2, ...],
+        output: Some[Output & Tensor],
+        x: Some[Input & Tensor],
+        weight: Some[Input & Tensor],
+        ring: Some[MutableInput & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        positions: Some[Input & Tensor],
+        conv_rows: Some[Input & Tensor],
         layer_row: UInt32,
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(x), TileTensorable)
+        comptime assert conforms_to(type_of(weight), TileTensorable)
+        comptime assert conforms_to(type_of(ring), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(positions), TileTensorable)
+        comptime assert conforms_to(type_of(conv_rows), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(x).rank == 2
+        comptime assert type_of(weight).rank == 2
+        comptime assert type_of(ring).rank == 3
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(positions).rank == 1
+        comptime assert type_of(conv_rows).rank == 2
         short_conv_ring[target=target, commit=commit](
-            x.to_tile_tensor[.int64](),
-            weight.to_tile_tensor[.int64](),
-            ring.to_tile_tensor[.int64](),
-            input_row_offsets.to_tile_tensor[.int64](),
-            positions.to_tile_tensor[.int64](),
-            conv_rows.to_tile_tensor[.int64](),
+            x.to_tile_tensor[dtype](),
+            weight.to_tile_tensor[dtype](),
+            ring.to_tile_tensor(),
+            input_row_offsets.to_tile_tensor[.uint32](),
+            positions.to_tile_tensor[.uint32](),
+            conv_rows.to_tile_tensor[.uint32](),
             layer_row,
-            output.to_tile_tensor[.int64](),
+            output.to_tile_tensor(),
             context,
         )
 
@@ -72,47 +82,84 @@ struct Struct_fused_qk_rms_norm_short_conv_ragged_paged:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType,
-        cache_dtype: DType,
-        ring_dtype: DType,
         multiply_before_cast: Bool,
         apply_log_scaling: Bool,
         commit: Bool,
         //,
         target: StaticString,
     ](
-        q_output: OutputTensor[dtype=dtype, rank=3, ...],
-        qkvr: InputTensor[dtype=dtype, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        positions: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
-        q_gamma: InputTensor[dtype=dtype, rank=1, ...],
-        k_gamma: InputTensor[dtype=dtype, rank=1, ...],
-        k_weight: InputTensor[dtype=dtype, rank=2, ...],
-        v_weight: InputTensor[dtype=dtype, rank=2, ...],
-        k_conv_ring: MutableInputTensor[dtype=ring_dtype, rank=3, ...],
-        v_conv_ring: MutableInputTensor[dtype=ring_dtype, rank=3, ...],
-        k_conv_rows: InputTensor[dtype=.uint32, rank=2, ...],
-        v_conv_rows: InputTensor[dtype=.uint32, rank=2, ...],
+        q_output: Some[Output & Tensor],
+        qkvr: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        positions: Some[Input & Tensor],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
+        q_gamma: Some[Input & Tensor],
+        k_gamma: Some[Input & Tensor],
+        k_weight: Some[Input & Tensor],
+        v_weight: Some[Input & Tensor],
+        k_conv_ring: Some[MutableInput & Tensor],
+        v_conv_ring: Some[MutableInput & Tensor],
+        k_conv_rows: Some[Input & Tensor],
+        v_conv_rows: Some[Input & Tensor],
         k_layer_row: UInt32,
         v_layer_row: UInt32,
-        log_scaling: InputTensor[dtype=.float32, rank=1, ...],
+        log_scaling: Some[Input & Tensor],
         epsilon: Float32,
         layer_idx: UInt32,
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(q_output), TileTensorable)
+        comptime assert conforms_to(type_of(qkvr), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(positions), TileTensorable)
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime assert conforms_to(type_of(q_gamma), TileTensorable)
+        comptime assert conforms_to(type_of(k_gamma), TileTensorable)
+        comptime assert conforms_to(type_of(k_weight), TileTensorable)
+        comptime assert conforms_to(type_of(v_weight), TileTensorable)
+        comptime assert conforms_to(type_of(k_conv_ring), TileTensorable)
+        comptime assert conforms_to(type_of(v_conv_ring), TileTensorable)
+        comptime assert conforms_to(type_of(k_conv_rows), TileTensorable)
+        comptime assert conforms_to(type_of(v_conv_rows), TileTensorable)
+        comptime assert conforms_to(type_of(log_scaling), TileTensorable)
+        comptime dtype = type_of(q_output).dtype
+        comptime ring_dtype = type_of(k_conv_ring).dtype
+        comptime assert type_of(q_output).rank == 3
+        comptime assert type_of(qkvr).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(positions).rank == 1
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
+        comptime assert type_of(q_gamma).rank == 1
+        comptime assert type_of(k_gamma).rank == 1
+        comptime assert type_of(k_weight).rank == 2
+        comptime assert type_of(v_weight).rank == 2
+        comptime assert type_of(k_conv_ring).rank == 3
+        comptime assert type_of(v_conv_ring).rank == 3
+        comptime assert type_of(k_conv_rows).rank == 2
+        comptime assert type_of(v_conv_rows).rank == 2
+        comptime assert type_of(log_scaling).rank == 1
         var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            page_stride,
-            cache_lengths,
-            kv_lookup_table,
-            max_prompt_length,
-            max_cache_length,
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
         )
         fused_qk_rms_norm_short_conv_ragged_paged[
             target=target,
@@ -120,23 +167,23 @@ struct Struct_fused_qk_rms_norm_short_conv_ragged_paged:
             apply_log_scaling=apply_log_scaling,
             commit=commit,
         ](
-            qkvr.to_tile_tensor[.int64](),
+            qkvr.to_tile_tensor[dtype](),
             kv_collection,
-            q_gamma.to_tile_tensor[.int64](),
-            k_gamma.to_tile_tensor[.int64](),
-            k_weight.to_tile_tensor[.int64](),
-            v_weight.to_tile_tensor[.int64](),
-            k_conv_ring.to_tile_tensor[.int64](),
-            v_conv_ring.to_tile_tensor[.int64](),
+            q_gamma.to_tile_tensor[dtype](),
+            k_gamma.to_tile_tensor[dtype](),
+            k_weight.to_tile_tensor[dtype](),
+            v_weight.to_tile_tensor[dtype](),
+            k_conv_ring.to_tile_tensor(),
+            v_conv_ring.to_tile_tensor[ring_dtype](),
             epsilon,
             layer_idx,
-            input_row_offsets.to_tile_tensor[.int64](),
-            positions.to_tile_tensor[.int64](),
-            k_conv_rows.to_tile_tensor[.int64](),
-            v_conv_rows.to_tile_tensor[.int64](),
+            input_row_offsets.to_tile_tensor[.uint32](),
+            positions.to_tile_tensor[.uint32](),
+            k_conv_rows.to_tile_tensor[.uint32](),
+            v_conv_rows.to_tile_tensor[.uint32](),
             k_layer_row,
             v_layer_row,
-            log_scaling.to_tile_tensor[.int64](),
-            q_output.to_tile_tensor[.int64](),
+            log_scaling.to_tile_tensor[.float32](),
+            q_output.to_tile_tensor(),
             context,
         )
