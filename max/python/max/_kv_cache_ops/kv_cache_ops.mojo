@@ -159,7 +159,7 @@ def multiprocessor_count(
     if not ctx:
         raise Error("Expected a non-null device context pointer.")
     var device_ctx = DeviceContext(ctx.unsafe_value())
-    var sm_count = device_ctx.get_attribute(
+    var sm_count = device_ctx.device().get_attribute(
         DeviceAttribute.MULTIPROCESSOR_COUNT
     )
     ref cpython = Python().cpython()

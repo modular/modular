@@ -20,7 +20,7 @@ def _ownership_helper(
     var ctx: DeviceContext,
 ) raises -> DeviceContext:
     var ctx_copy = ctx
-    print("local ctx_copy: " + ctx_copy.name())
+    print("local ctx_copy: " + ctx_copy.device().get_name())
     return ctx_copy
 
 
@@ -36,7 +36,7 @@ def _run_name(ctx: DeviceContext) raises:
     print("-")
     print("_run_name()")
 
-    var ctx_name = ctx.name()
+    var ctx_name = ctx.device().get_name()
     print("ctx_name = ", ctx_name)
 
     var api = ctx.api()
@@ -58,7 +58,7 @@ def _run_ownership_transfer(ctx: DeviceContext) raises:
     print("_run_ownership_transfer()")
 
     var ctx_copy = _ownership_helper(ctx)
-    print("ctx_copy: ", ctx_copy.name())
+    print("ctx_copy: ", ctx_copy.device().get_name())
 
     var buf = ctx.create_buffer_sync[.float32](32)
     print("buf: ", len(buf))
@@ -103,8 +103,10 @@ def _run_compute_capability(ctx: DeviceContext) raises:
 def _run_get_attribute(ctx: DeviceContext) raises:
     print("-")
     print("_run_get_attribute()")
-    print("clock_rate: ", ctx.get_attribute(DeviceAttribute.CLOCK_RATE))
-    print("warp_size: ", ctx.get_attribute(DeviceAttribute.WARP_SIZE))
+    print(
+        "clock_rate: ", ctx.device().get_attribute(DeviceAttribute.CLOCK_RATE)
+    )
+    print("warp_size: ", ctx.device().get_attribute(DeviceAttribute.WARP_SIZE))
 
 
 def _run_device_view(ctx: DeviceContext) raises:
@@ -112,12 +114,8 @@ def _run_device_view(ctx: DeviceContext) raises:
     print("_run_device_view()")
 
     var device = ctx.device()
-    assert_equal(device.get_name(), ctx.name())
-    assert_equal(
-        device.get_attribute(DeviceAttribute.WARP_SIZE),
-        ctx.get_attribute(DeviceAttribute.WARP_SIZE),
-    )
-    assert_equal(device.is_host_unified(), ctx.is_host_unified())
+    assert_equal(device.id, 0)
+    _ = device.is_host_unified()
 
 
 def _run_get_stream(ctx: DeviceContext) raises:
@@ -151,7 +149,7 @@ def _run_peer_access(ctx: DeviceContext) raises:
 def test_smoke() raises:
     var ctx = create_test_device_context()
     print("-------")
-    print("Running test_smoke(" + ctx.name() + "):")
+    print("Running test_smoke(" + ctx.device().get_name() + "):")
 
     _run_name(ctx)
     _run_ownership_transfer(ctx)

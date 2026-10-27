@@ -61,7 +61,7 @@ def _launch_device_collective[
     # Resolved here because the deferred dispatch below cannot raise.
     var worker_ids = Array[Int, num_devices](fill=-1)
     comptime for i in range(num_devices):
-        worker_ids[i] = task_id_for_device(Int(dev_ctxs[i].id()))
+        worker_ids[i] = task_id_for_device(Int(dev_ctxs[i].device().id))
 
     var gate = CollectiveGate(dev_ctxs[0], num_devices)
     var tg = TaskGroup()

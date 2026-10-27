@@ -23,8 +23,8 @@ from std.testing import assert_equal, assert_false, assert_raises, assert_true
 def test_device_ids_are_distinct() raises:
     var ctx0 = DeviceContext(device_id=0)
     var ctx1 = DeviceContext(device_id=1)
-    assert_equal(ctx0.id(), 0)
-    assert_equal(ctx1.id(), 1)
+    assert_equal(ctx0.device().id, 0)
+    assert_equal(ctx1.device().id, 1)
 
 
 def test_device_id_out_of_range() raises:

@@ -84,7 +84,7 @@ device ID) that gets included in the log output:
 
 ```mojo
 # Trace with target information
-with Trace[TraceLevel.OP, target=StaticString("gpu")](op_name, task_id:Int(ctx.id())):
+with Trace[TraceLevel.OP, target=StaticString("gpu")](op_name, task_id:Int(ctx.device().id)):
     # Operation implementation to log
 ```
 

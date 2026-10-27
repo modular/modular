@@ -1778,7 +1778,7 @@ def allreduce_rmsnorm[
         scale_ub,
         scale_output_1d,
         rank_sigs,
-        Int(ctx.id()),
+        Int(ctx.device().id),
         Int.MAX,
         ctx,
     )
@@ -1850,8 +1850,8 @@ def allreduce_residual_rmsnorm[
         rank_sigs: Per-GPU signal pointers for synchronization.
         ctx: Device context for this GPU.
         my_rank: This GPU's index in `input_buffers` and `rank_sigs`.
-            Defaults to `ctx.id()`, which is right only when device ordinals
-            match list positions.
+            Defaults to `ctx.device().id`, which is right only when device
+            ordinals match list positions.
         scratch_bytes: Bytes after each `Signal` header that kernels may
             stage through. Paths that need more take the 1-stage kernel.
             None means the caller sized it for every path.
@@ -1864,7 +1864,7 @@ def allreduce_residual_rmsnorm[
         " in_dtype (skip quantization)"
     )
 
-    var rank = my_rank.or_else(Int(ctx.id()))
+    var rank = my_rank.or_else(Int(ctx.device().id))
     if not 0 <= rank < ngpus:
         raise Error(
             t"allreduce_residual_rmsnorm: my_rank ({rank}) must be in [0,"

@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests that `DeviceContext.device()` answers the same as the context."""
+"""Tests the `Device` view returned by `DeviceContext.device()`."""
 
 from max.gpu.host import DeviceAttribute, DeviceContext
 from std.testing import assert_equal, assert_true, TestSuite
@@ -20,15 +20,15 @@ def _multiprocessor_count(ctx: DeviceContext) raises -> Int:
     return ctx.device().get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
 
 
-def test_device_matches_context() raises:
+def test_device_queries() raises:
     with DeviceContext() as ctx:
         var device = ctx.device()
-        assert_equal(device.get_name(), ctx.name())
-        assert_equal(
-            device.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
-            ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
+        assert_equal(device.id, 0)
+        assert_true(device.get_name().byte_length() > 0)
+        assert_true(
+            device.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT) > 0
         )
-        assert_equal(device.is_host_unified(), ctx.is_host_unified())
+        _ = device.is_host_unified()
 
 
 def test_device_through_borrowed_context() raises:
@@ -44,6 +44,13 @@ def test_device_from_temporary_context() raises:
         .get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
         > 0
     )
+
+
+def test_device_id_follows_context() raises:
+    if DeviceContext.number_of_devices() < 2:
+        return
+    with DeviceContext(1) as ctx:
+        assert_equal(ctx.device().id, 1)
 
 
 def main() raises:

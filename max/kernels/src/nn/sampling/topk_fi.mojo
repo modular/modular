@@ -462,7 +462,7 @@ def topk_mask_logits[
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "topk_mask_logits",
         Trace[TraceLevel.OP]._get_detail_str(trace_information),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         var out_shape = coord_to_index_list(masked_logits.layout.shape_coord())
         if shape[0] != out_shape[0] or shape[1] != out_shape[1]:
@@ -1219,7 +1219,7 @@ def topk_sampling_from_prob[
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "topk_sampling_from_prob",
         Trace[TraceLevel.OP]._get_detail_str(trace_information),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         var out_shape = coord_to_index_list(output.layout.shape_coord())
         if out_shape[0] != batch_size:
@@ -2783,7 +2783,7 @@ def topk_topp_sampling_from_prob[
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "topk_topp_sampling_from_prob",
         Trace[TraceLevel.OP]._get_detail_str(trace_information),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         var out_shape = coord_to_index_list(output.layout.shape_coord())
         if out_shape[0] != batch_size:
@@ -3262,7 +3262,7 @@ def topk_softmax_sample[
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "topk_softmax_sample",
         Trace[TraceLevel.OP]._get_detail_str(trace_information),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         var out_shape = coord_to_index_list(
             sampled_indices.layout.shape_coord()
@@ -3663,7 +3663,7 @@ def topk_topp_masked_probs[
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "topk_topp_masked_probs",
         Trace[TraceLevel.OP]._get_detail_str(trace_information),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         var probs_shape = coord_to_index_list(probs.layout.shape_coord())
         if probs_shape[0] != batch_size or probs_shape[1] != d:

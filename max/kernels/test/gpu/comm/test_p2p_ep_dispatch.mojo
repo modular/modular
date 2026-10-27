@@ -1360,7 +1360,7 @@ def test_dispatch_common[
 
         @inline(.always)
         def call_fn_dispatch(ctx: DeviceContext, cache_iter: Int) raises {imm}:
-            var dev_id = Int(ctx.id())
+            var dev_id = Int(ctx.device().id)
             run_dispatch_async(dev_id, cache_iter)
 
         def per_gpu_dispatch(i: Int) raises {mut results_b, imm}:
@@ -1402,7 +1402,7 @@ def test_dispatch_common[
         def call_fn_dispatch_wait(
             ctx: DeviceContext, cache_iter: Int
         ) raises {imm}:
-            var dev_id = Int(ctx.id())
+            var dev_id = Int(ctx.device().id)
             run_dispatch_async_wait(dev_id, cache_iter)
 
         def per_gpu_dispatch_wait(i: Int) raises {mut results_b, imm}:
@@ -1448,7 +1448,7 @@ def test_dispatch_common[
 
         @inline(.always)
         def call_fn_e2e(ctx: DeviceContext, cache_iter: Int) raises {imm}:
-            var dev_id = Int(ctx.id())
+            var dev_id = Int(ctx.device().id)
             run_dispatch_async(dev_id, cache_iter + 1)
             run_dispatch_async_wait(dev_id, cache_iter + 1)
 

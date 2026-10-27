@@ -308,7 +308,7 @@ def top_k[
     with Trace[TraceLevel.OP, target=target](
         "top_k",
         Trace[TraceLevel.OP]._get_detail_str(trace_information),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         var normalized_axis = normalize_neg_index(Int64(axis), input.rank)
 
@@ -2089,7 +2089,7 @@ def topk_gpu[
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "topk_gpu",
         Trace[TraceLevel.OP]._get_detail_str(trace_information),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         var N = Int(orig_in_shape[input.rank - 1])
         var last_idx_dim = 1 if sampling else max_k
@@ -2445,7 +2445,7 @@ def fused_token_sampling_gpu[
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "fused_token_sampling_gpu",
         Trace[TraceLevel.OP]._get_detail_str(trace_information),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         comptime assert (
             input.rank == out_idxs.rank
@@ -2941,7 +2941,7 @@ def gumbel_sampling_fused_gpu[
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "gumbel_sampling_fused_gpu",
         Trace[TraceLevel.OP]._get_detail_str(trace_information),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         var batch_size = Int(input.dim(0))
         # Speculative decoding can ask for zero rows, and a grid of 0 is not
@@ -3077,7 +3077,7 @@ def gumbel_sampling_gpu[
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "gumbel_sampling_gpu",
         Trace[TraceLevel.OP]._get_detail_str(trace_information),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         # create a buffer to hold the Gumbel noise applied input
         var noised_input_buf = ctx.enqueue_create_buffer[dtype](

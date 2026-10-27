@@ -280,7 +280,7 @@ def _matmul_impl[
                 _trace_description if _trace_description else "",
             ](),
             Trace[TraceLevel.OP]._get_detail_str(description_fn),
-            task_id=OptionalReg(Int(ctx.value().id())),
+            task_id=OptionalReg(Int(ctx.value().device().id)),
         ):
             comptime if has_epilogue_fn:
                 _matmul_gpu[
@@ -332,7 +332,7 @@ def _matmul_impl[
                 _trace_description if _trace_description else "",
             ](),
             Trace[TraceLevel.OP]._get_detail_str(cpu_description_fn),
-            task_id=OptionalReg(Int(ctx.value().id())) if ctx else None,
+            task_id=OptionalReg(Int(ctx.value().device().id)) if ctx else None,
         ):
             var kernel_type_m = (
                 a.static_shape[0] if a.static_shape[0] > -1 else 0

@@ -248,7 +248,7 @@ def flash_attention[
         Trace[
             TraceLevel.OP, target=context.default_device_info.api
         ]._get_detail_str(description_fn),
-        task_id=Int(context.id()),
+        task_id=Int(context.device().id),
     ):
         return _flash_attention_dense[
             config=config,
@@ -652,7 +652,7 @@ def _flash_attention_kv_cache[
         Trace[
             TraceLevel.OP, target=ctx.default_device_info.api
         ]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         var max_prompt_len: Int
         var num_keys = Int(k.max_context_length())

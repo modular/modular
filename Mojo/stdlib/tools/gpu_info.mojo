@@ -64,7 +64,7 @@ def main() raises:
 
     if ctx.api() == "cuda":
         print("GPUInfo(")
-        print('name="' + ctx.name() + '", ')
+        print('name="' + ctx.device().get_name() + '", ')
         print('api="' + String(ctx.api()) + '", ')
         print(
             'arch_name="'
@@ -78,20 +78,22 @@ def main() raises:
         print(
             "sm_count="
             + String(
-                ctx.get_attribute(host.DeviceAttribute.MULTIPROCESSOR_COUNT)
+                ctx.device().get_attribute(
+                    host.DeviceAttribute.MULTIPROCESSOR_COUNT
+                )
             )
             + ", "
         )
         print(
             "warp_size="
-            + String(ctx.get_attribute(host.DeviceAttribute.WARP_SIZE))
+            + String(ctx.device().get_attribute(host.DeviceAttribute.WARP_SIZE))
             + ", "
         )
         print("threads_per_sm=-1, ")
         print(
             "shared_memory_per_multiprocessor="
             + String(
-                ctx.get_attribute(
+                ctx.device().get_attribute(
                     host.DeviceAttribute.MAX_SHARED_MEMORY_PER_MULTIPROCESSOR
                 )
             )
@@ -100,7 +102,9 @@ def main() raises:
         print(
             "max_registers_per_block="
             + String(
-                ctx.get_attribute(host.DeviceAttribute.MAX_REGISTERS_PER_BLOCK)
+                ctx.device().get_attribute(
+                    host.DeviceAttribute.MAX_REGISTERS_PER_BLOCK
+                )
             )
             + ", "
         )
@@ -108,7 +112,7 @@ def main() raises:
         print(")")
     elif ctx.api() == "hip":
         print("GPUInfo(")
-        print('name="' + ctx.name() + '", ')
+        print('name="' + ctx.device().get_name() + '", ')
         print('api="' + String(ctx.api()) + '", ')
         print('arch_name="' + arch_name + '", ')
         print(
@@ -117,20 +121,24 @@ def main() raises:
         print(
             "sm_count="
             + String(
-                ctx.get_attribute(host.DeviceAttribute.MULTIPROCESSOR_COUNT)
+                ctx.device().get_attribute(
+                    host.DeviceAttribute.MULTIPROCESSOR_COUNT
+                )
             )
             + ", "
         )
         print(
             "warp_size="
-            + String(ctx.get_attribute(host.DeviceAttribute.WARP_SIZE))
+            + String(ctx.device().get_attribute(host.DeviceAttribute.WARP_SIZE))
             + ", "
         )
         print("threads_per_sm=-1, ")
         print(
             "max_registers_per_block="
             + String(
-                ctx.get_attribute(host.DeviceAttribute.MAX_REGISTERS_PER_BLOCK)
+                ctx.device().get_attribute(
+                    host.DeviceAttribute.MAX_REGISTERS_PER_BLOCK
+                )
             )
             + ", "
         )

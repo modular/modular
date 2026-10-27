@@ -868,7 +868,7 @@ def bench_combine[
 
     @inline(.always)
     def call_fn_combine(ctx: DeviceContext, cache_iter: Int) raises {imm}:
-        var dev_id = Int(ctx.id())
+        var dev_id = Int(ctx.device().id)
         run_combine_async(dev_id, cache_iter)
 
     def per_gpu_combine(i: Int) raises {mut results_b, imm}:
@@ -908,7 +908,7 @@ def bench_combine[
 
     @inline(.always)
     def call_fn_combine_wait(ctx: DeviceContext, cache_iter: Int) raises {imm}:
-        var dev_id = Int(ctx.id())
+        var dev_id = Int(ctx.device().id)
         run_combine_async_wait(dev_id, cache_iter)
 
     def per_gpu_combine_wait(i: Int) raises {mut results_b, imm}:
@@ -965,7 +965,7 @@ def bench_combine[
 
     @inline(.always)
     def call_fn_e2e_split(ctx: DeviceContext, cache_iter: Int) raises {imm}:
-        var dev_id = Int(ctx.id())
+        var dev_id = Int(ctx.device().id)
         run_e2e(dev_id, cache_iter + 1)
 
     def per_gpu_e2e_split(i: Int) raises {mut results_b, imm}:
@@ -1016,7 +1016,7 @@ def bench_combine[
 
     @inline(.always)
     def call_fn_e2e_fused(ctx: DeviceContext, cache_iter: Int) raises {imm}:
-        var dev_id = Int(ctx.id())
+        var dev_id = Int(ctx.device().id)
         run_fused_combine(dev_id, cache_iter + 1)
 
     def per_gpu_e2e_fused(i: Int) raises {mut results_b, imm}:

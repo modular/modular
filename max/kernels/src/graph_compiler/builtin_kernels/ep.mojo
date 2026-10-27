@@ -320,7 +320,7 @@ struct Struct_ep_init:
         comptime if n_nodes > 1:
             my_rank = Int32(shmem_my_pe())
         else:
-            my_rank = Int32(gpu_ctx.id())
+            my_rank = Int32(gpu_ctx.device().id)
         my_rank_tensor[0] = my_rank
 
 

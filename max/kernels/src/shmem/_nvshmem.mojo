@@ -340,7 +340,7 @@ def nvshmemx_init_thread(ctx: DeviceContext, gpus_per_node: Int = -1) raises:
     # Initialize NVSHMEM with MPI
     var mpi_comm = get_mpi_comm_world()
     var attr = NVSHMEMXInitAttr(Pointer(to=mpi_comm))
-    attr.args.uid_args.myrank = Int32(ctx.id())
+    attr.args.uid_args.myrank = Int32(ctx.device().id)
     attr.args.uid_args.nranks = c_int(nranks)
 
     var status = nvshmemx_hostlib_init_attr(

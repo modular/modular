@@ -376,8 +376,10 @@ def run_config[
         shape.frozen_cache_len + shape.seq_len, scores_align
     )
     var row_bytes = max_num_keys * size_of[scores_dtype]()
-    var l2_bytes = ctx.get_attribute(DeviceAttribute.L2_CACHE_SIZE)
-    var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+    var l2_bytes = ctx.device().get_attribute(DeviceAttribute.L2_CACHE_SIZE)
+    var sm_count = ctx.device().get_attribute(
+        DeviceAttribute.MULTIPROCESSOR_COUNT
+    )
     ctx.synchronize()
     h.timer.lap("config_setup")
 
@@ -550,9 +552,9 @@ def main() raises:
         # of these two, and both differ across Blackwell parts.
         print(
             "MLAIDXDEV l2_bytes=",
-            ctx.get_attribute(DeviceAttribute.L2_CACHE_SIZE),
+            ctx.device().get_attribute(DeviceAttribute.L2_CACHE_SIZE),
             " sm_count=",
-            ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
+            ctx.device().get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
         )
         var rot = h.rotation()
 

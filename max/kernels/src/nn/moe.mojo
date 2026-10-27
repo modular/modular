@@ -425,7 +425,7 @@ def moe_create_indices[
     )
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.moe.create_indices", task_id=Int(context.id())
+        "mo.moe.create_indices", task_id=Int(context.device().id)
     ):
         comptime kernel = moe_create_indices_kernel[
             input_type,
@@ -547,7 +547,7 @@ def moe_create_indices_with_slots[
     )
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.moe.create_indices.with_slots", task_id=Int(context.id())
+        "mo.moe.create_indices.with_slots", task_id=Int(context.device().id)
     ):
         comptime kernel = moe_create_indices_kernel[
             input_type,
@@ -1096,7 +1096,7 @@ def router_group_limited[
     var gpu_ctx = context
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.moe.router_group_limited", task_id=Int(gpu_ctx.id())
+        "mo.moe.router_group_limited", task_id=Int(gpu_ctx.device().id)
     ):
         comptime num_threads = n_routed_experts
         comptime hw_info = gpu_ctx.default_device_info
@@ -1976,7 +1976,7 @@ def single_group_router[
     var gpu_ctx = context
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.moe.router_single_group", task_id=Int(gpu_ctx.id())
+        "mo.moe.router_single_group", task_id=Int(gpu_ctx.device().id)
     ):
         # Several tokens a block keep large batches in one wave.
         comptime tokens_per_block = 4
@@ -2250,7 +2250,8 @@ def sigmoid_gemv_single_group_router[
     )
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.moe.sigmoid_gemv_router_single_group", task_id=Int(context.id())
+        "mo.moe.sigmoid_gemv_router_single_group",
+        task_id=Int(context.device().id),
     ):
         comptime gemv = router_gemv_partials_kernel[
             hidden_type,
@@ -2540,7 +2541,7 @@ def sink_gate_router[
     var gpu_ctx = context
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.moe.router_sink_gate", task_id=Int(gpu_ctx.id())
+        "mo.moe.router_sink_gate", task_id=Int(gpu_ctx.device().id)
     ):
         comptime num_threads = n_routed_experts
 
@@ -2751,7 +2752,7 @@ def single_group_router_eplb[
     var gpu_ctx = context
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.moe.single.group.router.eplb", task_id=Int(gpu_ctx.id())
+        "mo.moe.single.group.router.eplb", task_id=Int(gpu_ctx.device().id)
     ):
         comptime num_threads = n_routed_experts
 
@@ -3014,7 +3015,7 @@ def eplb_remap[
     var gpu_ctx = context
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.moe.eplb.remap", task_id=Int(gpu_ctx.id())
+        "mo.moe.eplb.remap", task_id=Int(gpu_ctx.device().id)
     ):
         # Target ~128 threads/block. Divides cleanly into NVIDIA warp=32,
         # AMD wave=64, and Apple SIMD=32 so no lanes idle from divisibility.

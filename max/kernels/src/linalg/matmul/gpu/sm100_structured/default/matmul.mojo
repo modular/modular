@@ -1103,13 +1103,13 @@ def _splitk_context(ctx: DeviceContext) raises -> _SplitKContext:
         The state; it lives as long as the process.
     """
     var key = String(
-        "LINALG_SM100_SPLITK_", ctx.id(), "_", Int(ctx._handle.value())
+        "LINALG_SM100_SPLITK_", ctx.device().id, "_", Int(ctx._handle.value())
     )
     var cached = _get_global_or_null(key)
     if cached:
         return cached.unsafe_value().unsafe_bitcast[_SplitKContext]()[]
     var slot = -1
-    var device = ctx.id()
+    var device = ctx.device().id
     if device < _SPLITK_MAX_DEVICES:
         var counts = _SPLITK_SLOT_COUNTS.get_or_create_ptr()
         var taken = Int(

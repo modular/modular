@@ -398,7 +398,7 @@ def MojoHAL_DeviceContext_isHostUnified(
     ctx: _DeviceContextBoxPtr,
 ) abi("C") -> _CString[]:
     try:
-        out_unified[] = ctx[].is_host_unified()
+        out_unified[] = ctx[].device().is_host_unified()
         return None
     except e:
         return _err_cstr(String(e))
@@ -435,7 +435,7 @@ def MojoHAL_DeviceContext_getName(
     ctx: _DeviceContextBoxPtr,
 ) abi("C") -> _CString[]:
     try:
-        out_name[] = _alloc_cstr(ctx[].name())
+        out_name[] = _alloc_cstr(ctx[].device().get_name())
         return None
     except e:
         return _err_cstr(String(e))
@@ -495,7 +495,7 @@ def MojoHAL_DeviceContext_getAttribute(
     # `attr` is a CUDA-style `CUdevice_attribute` code (the values of
     # `DeviceAttribute`); the plugin translates it to its native equivalent.
     try:
-        out_value[] = Int32(ctx[].get_attribute(DeviceAttribute(attr)))
+        out_value[] = Int32(ctx[].device().get_attribute(DeviceAttribute(attr)))
         return None
     except e:
         return _err_cstr(String(e))

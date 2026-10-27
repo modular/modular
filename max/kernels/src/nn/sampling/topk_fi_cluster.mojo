@@ -660,7 +660,7 @@ def topk_topp_masked_probs_cluster[
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "topk_topp_masked_probs",
         Trace[TraceLevel.OP]._get_detail_str(trace_information),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         var probs_shape = coord_to_index_list(probs.layout.shape_coord())
         if probs_shape[0] != batch_size or probs_shape[1] != d:
@@ -1524,7 +1524,7 @@ def topk_topp_sampling_from_prob_cluster[
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "topk_topp_sampling_from_prob",
         Trace[TraceLevel.OP]._get_detail_str(trace_information),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         var out_shape = coord_to_index_list(output.layout.shape_coord())
         if out_shape[0] != batch_size:

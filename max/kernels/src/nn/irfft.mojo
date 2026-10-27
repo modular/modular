@@ -53,7 +53,7 @@ def _get_fft_workarea(
 ) raises -> OpaquePointer[MutUntrackedOrigin]:
     # Include device ID in cache key to ensure per-device workspace buffers.
     var fft_buffer_key = String(
-        "CUFFT_BUFFER_PTR_", buffer_size, "_DEV_", ctx.id()
+        "CUFFT_BUFFER_PTR_", buffer_size, "_DEV_", ctx.device().id
     )
 
     var lookup = _get_global_or_null(fft_buffer_key)
@@ -84,7 +84,7 @@ def _get_fft_plan[
 ) raises -> cufftHandle:
     # Include device ID in cache key to ensure per-device cuFFT plans.
     var cached_plan_key = String(
-        "CUFFT_PLAN_", output_size, ",", batch_size, "_DEV_", ctx.id()
+        "CUFFT_PLAN_", output_size, ",", batch_size, "_DEV_", ctx.device().id
     )
 
     var lookup = _get_global_or_null(cached_plan_key)

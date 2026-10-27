@@ -154,7 +154,7 @@ def rms_norm_fused_fp8[
     with Trace[TraceLevel.OP, target=target](
         "rms_norm_fused_fp8",
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         if target == "gpu":
             _rms_norm_fused_fp8_gpu[

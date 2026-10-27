@@ -335,7 +335,7 @@ struct SweepHarness(Movable):
             )
         var fields = Fields()
         fields.add("tag", self.tag)
-        fields.add("device", ctx.name())
+        fields.add("device", ctx.device().get_name())
         fields.add("api", ctx.api())
         self.policy.write_fields(fields)
         fields.add("evict_bytes", self.evict_bytes)

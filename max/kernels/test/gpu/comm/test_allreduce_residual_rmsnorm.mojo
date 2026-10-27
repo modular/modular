@@ -1365,14 +1365,14 @@ def test_residual_rmsnorm_rank_not_ordinal[
     ngpus: Int
 ](list_of_ctx: List[DeviceContext]) raises:
     """Runs on GPUs whose ordinals differ from their positions in the group,
-    as with `--devices gpu:4,5,6,7`. A rank taken from `ctx.id()` would index
-    past the group's buffers. The row counts cover the Lamport kernel and the
-    barrier kernels."""
+    as with `--devices gpu:4,5,6,7`. A rank taken from `ctx.device().id` would
+    index past the group's buffers. The row counts cover the Lamport kernel
+    and the barrier kernels."""
     print(
         "  test_residual_rmsnorm_rank_not_ordinal[",
         ngpus,
         ", first ordinal=",
-        list_of_ctx[0].id(),
+        list_of_ctx[0].device().id,
         "]",
     )
     comptime cols = 4096

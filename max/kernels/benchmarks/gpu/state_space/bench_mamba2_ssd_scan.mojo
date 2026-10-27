@@ -457,7 +457,7 @@ def _benchmark_ssd_shape(
                 raise Error("AUTO SSD requires NVIDIA SM80 or newer")
             if head_dim % 64 != 0:
                 raise Error("AUTO SSD requires head_dim divisible by 64")
-            print("SSD_AUTO_DEVICE_NAME,", ctx.name(), sep="")
+            print("SSD_AUTO_DEVICE_NAME,", ctx.device().get_name(), sep="")
             print(
                 "SSD_AUTO_SHAPE_ELIGIBLE,",
                 use_grouped_cb_ssd(total_len, batch, nheads, head_dim, ngroups),
@@ -469,7 +469,7 @@ def _benchmark_ssd_shape(
                     ctx.target.is_nvidia_gpu["sm_100"]()
                     or ctx.target.is_nvidia_gpu["sm_100a"]()
                 )
-                and ctx.name() == "NVIDIA B200",
+                and ctx.device().get_name() == "NVIDIA B200",
                 sep="",
             )
             _bench_ssd[

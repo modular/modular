@@ -1480,7 +1480,7 @@ def reducescatter[
             a grouped reduce-scatter has no non-P2P fallback).
         Error: If input buffer size is not a multiple of SIMD width.
     """
-    var global_rank = my_rank.or_else(Int(ctx.id()))
+    var global_rank = my_rank.or_else(Int(ctx.device().id))
     var plan = _reducescatter_plan[
         dtype,
         ngpus,
@@ -1586,7 +1586,7 @@ def reducescatter[
         Error: If P2P access is not available between GPUs.
         Error: If the input or output shapes do not partition evenly.
     """
-    var global_rank = my_rank.or_else(Int(ctx.id()))
+    var global_rank = my_rank.or_else(Int(ctx.device().id))
     var plan = _reducescatter_plan[
         dtype,
         ngpus,

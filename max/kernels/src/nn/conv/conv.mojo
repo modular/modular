@@ -3969,7 +3969,7 @@ def _get_cudnn_meta(
         The cuDNN metadata.
     """
     # Key the cuDNN metadata cache on the device ID.
-    var cache_key = "CUDA_CUDNN_META_CACHE" + String(ctx.id())
+    var cache_key = "CUDA_CUDNN_META_CACHE" + String(ctx.device().id)
 
     # Get or create the per-device cache dictionary.
     var ptr_meta = _get_global_or_null(cache_key)
@@ -4098,7 +4098,9 @@ struct CachedCuDNNMetaNHWCFull(ImplicitlyCopyable):
 def _get_cached_cudnn_meta_nhwc_full(
     ctx: DeviceContext,
 ) raises -> MutPointer[CachedCuDNNMetaNHWCFull, AnyOrigin[mut=True]]:
-    var cache_key = "CUDA_CUDNN_CACHED_META_NHWC_FULL_" + String(ctx.id())
+    var cache_key = "CUDA_CUDNN_CACHED_META_NHWC_FULL_" + String(
+        ctx.device().id
+    )
 
     var ptr_meta = _get_global_or_null(cache_key)
     if case .Some(ptr_meta) = ptr_meta:
@@ -4471,7 +4473,7 @@ def _get_cached_miopen_meta[
     CachedMIOpenMeta[conv_rank], MutAnyOrigin
 ]:
     var cache_key = String(
-        "MIOPEN_CACHED_META_", String(conv_rank), "D_", String(ctx.id())
+        "MIOPEN_CACHED_META_", String(conv_rank), "D_", String(ctx.device().id)
     )
 
     var ptr_meta = _get_global_or_null(cache_key)
@@ -6908,7 +6910,7 @@ def _conv3d_cudnn[
     # --- Algorithm selection (cached per shape) ---
     var cache_key = String(
         "CONV3D_ALGO_",
-        ctx.id(),
+        ctx.device().id,
         "_",
         input.dim[0](),
         "_",

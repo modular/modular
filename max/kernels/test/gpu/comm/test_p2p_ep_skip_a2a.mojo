@@ -80,7 +80,7 @@ def test_skip_a2a[
     ]
     comptime msg_bytes = token_fmt_type.msg_size()
 
-    var my_rank = Int(ctx.id())
+    var my_rank = Int(ctx.device().id)
 
     print(
         "Running skip_a2a test: hidden_size:",

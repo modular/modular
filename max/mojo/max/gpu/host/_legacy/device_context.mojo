@@ -268,7 +268,7 @@ def _raise_call_error(
         "' on device ",
         device_context.api(),
         ":",
-        device_context.id(),
+        device_context.device().id,
         " with error '",
         err_msg,
         "'",
@@ -4511,35 +4511,17 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         """
         return {Pointer(to=self).as_imm()}
 
+    @deprecated("Use `DeviceContext.device().get_name()` instead.")
     def name(self) -> String:
-        """Returns the device name, an ASCII string identifying this device,
-        defined by the native device API.
-
-        This method queries the underlying GPU device for its name, which typically
-        includes the model and other identifying information. This can be useful for
-        logging, debugging, or making runtime decisions based on the specific GPU hardware.
+        """Returns the device name, defined by the native device API.
 
         Returns:
             A string containing the device name.
-
-        Example:
-
-        ```mojo
-        from max.gpu.host import DeviceContext
-
-        var ctx = DeviceContext()
-        print("Running on device:", ctx.name())
-        ```
         """
-        # const char *AsyncRT_DeviceContext_deviceName(const DeviceContext *ctx)
-        var name_ptr = external_call[
-            "AsyncRT_DeviceContext_deviceName",
-            _CString[],
-            _DeviceContextPtr[mut=True],
-        ](
-            self._handle,
-        )
-        return _string_from_owned_charptr(name_ptr)
+        try:
+            return self.device().get_name()
+        except e:
+            abort(String(e))
 
     def api(self) -> String:
         """Returns the name of the API used to program the device.
@@ -6510,23 +6492,10 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         )
         return Int(value)
 
+    @deprecated("Use `DeviceContext.device().get_attribute()` instead.")
     @inline(.always)
     def get_attribute(self, attr: DeviceAttribute) raises -> Int:
         """Returns the specified attribute for this device.
-
-        Use the aliases defined by
-        [DeviceAttribute](/api/mojo/max/gpu/host/device_attribute/DeviceAttribute/)
-        to specify attributes. For example:
-
-        ```mojo
-        from max.gpu.host import DeviceAttribute, DeviceContext
-
-        def main() raises:
-            var ctx = DeviceContext()
-            var attr = DeviceAttribute.MAX_BLOCKS_PER_MULTIPROCESSOR
-            var max_blocks = ctx.get_attribute(attr)
-            print(max_blocks)
-        ```
 
         Args:
             attr: The device attribute to query.
@@ -6537,20 +6506,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        var value: c_int = 0
-        # const char * AsyncRT_DeviceContext_getAttribute(int *result, const DeviceContext *ctx, int attr)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceContext_getAttribute",
-                _CString[],
-            ](
-                Pointer(to=value),
-                self._handle,
-                c_int(attr._value),
-            ),
-            location=call_location(),
-        )
-        return Int(value)
+        return self.device().get_attribute(attr)
 
     @inline(.always)
     def is_compatible(self) -> Bool:
@@ -6588,37 +6544,18 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         except:
             return False
 
+    @deprecated("Use `DeviceContext.device().id` instead.")
     @inline(.always)
     def id(self) raises -> Int64:
         """Returns the ID associated with this device.
-
-        This method retrieves the unique identifier for the current device.
-        Device IDs are used to distinguish between multiple devices in a system
-        and are often needed for multi-GPU programming.
 
         Returns:
             The unique device ID as an Int64.
 
         Raises:
             If there's an error retrieving the device ID.
-
-        Example:
-
-        ```mojo
-        from max.gpu.host import DeviceContext
-
-        var ctx = DeviceContext()
-        try:
-            var device_id = ctx.id()
-            print("Using device with ID:", device_id)
-        except:
-            print("Failed to get device ID")
-        ```
         """
-        # int64_t AsyncRT_DeviceContext_id(const DeviceContext *ctx)
-        return external_call[
-            "AsyncRT_DeviceContext_id", Int64, _DeviceContextPtr[mut=True]
-        ](self._handle)
+        return self.device().id
 
     @doc_hidden
     @inline(.always)
@@ -6860,13 +6797,11 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         )
         return result
 
+    @deprecated("Use `DeviceContext.device().is_host_unified()` instead.")
     @inline(.always)
     def is_host_unified(self) raises -> Bool:
         """Returns True if this device and the host share one physical memory
         pool.
-
-        Reports hardware topology, so it does not predict whether
-        `DeviceBuffer.unsafe_host_ptr()` succeeds for any particular buffer.
 
         Returns:
             True if device and host memory are one physical pool.
@@ -6874,21 +6809,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         Raises:
             If there's an error querying the device.
         """
-        var result: Bool = False
-        # const char *AsyncRT_DeviceContext_isHostUnified(bool *result, const DeviceContext *ctx)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceContext_isHostUnified",
-                _CString[],
-                Pointer[Bool, origin_of(result)],
-                _DeviceContextPtr[mut=True],
-            ](
-                Pointer(to=result),
-                self._handle,
-            ),
-            location=call_location(),
-        )
-        return result
+        return self.device().is_host_unified()
 
     @staticmethod
     @inline(.always)
@@ -7033,18 +6954,26 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
     def main() raises:
         var ctx = DeviceContext()
         var device = ctx.device()
-        print(device.get_name())
+        print("Device", device.id, "is", device.get_name())
         print(device.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT))
     ```
     """
 
     var _ctx: Pointer[DeviceContextBase[Self.target], Self.origin]
 
+    var id: Int64
+    """The ID of this device among the devices of its API, as passed to the
+    `DeviceContext` constructor."""
+
     @doc_hidden
     def __init__(
         out self, ctx: Pointer[DeviceContextBase[Self.target], Self.origin]
     ):
         self._ctx = ctx
+        # int64_t AsyncRT_DeviceContext_id(const DeviceContext *ctx)
+        self.id = external_call[
+            "AsyncRT_DeviceContext_id", Int64, _DeviceContextPtr[mut=True]
+        ](ctx[]._handle)
 
     def get_name(self) raises -> String:
         """Returns the device name, as reported by the native device API.
@@ -7055,10 +6984,29 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
         Raises:
             If the device name cannot be queried.
         """
-        return self._ctx[].name()
+        # const char *AsyncRT_DeviceContext_deviceName(const DeviceContext *ctx)
+        var name_ptr = external_call[
+            "AsyncRT_DeviceContext_deviceName",
+            _CString[],
+            _DeviceContextPtr[mut=True],
+        ](self._ctx[]._handle)
+        return _string_from_owned_charptr(name_ptr)
 
     def get_attribute(self, attr: DeviceAttribute) raises -> Int:
         """Returns the specified attribute for this device.
+
+        Use the aliases defined by
+        [DeviceAttribute](/api/mojo/max/gpu/host/device_attribute/DeviceAttribute/)
+        to specify attributes. For example:
+
+        ```mojo
+        from max.gpu.host import DeviceAttribute, DeviceContext
+
+        def main() raises:
+            var ctx = DeviceContext()
+            var attr = DeviceAttribute.MAX_BLOCKS_PER_MULTIPROCESSOR
+            print(ctx.device().get_attribute(attr))
+        ```
 
         Args:
             attr: The device attribute to query.
@@ -7069,11 +7017,27 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
         Raises:
             If the attribute cannot be queried.
         """
-        return self._ctx[].get_attribute(attr)
+        var value: c_int = 0
+        # const char * AsyncRT_DeviceContext_getAttribute(int *result, const DeviceContext *ctx, int attr)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_getAttribute",
+                _CString[],
+            ](
+                Pointer(to=value),
+                self._ctx[]._handle,
+                c_int(attr._value),
+            ),
+            location=call_location(),
+        )
+        return Int(value)
 
     def is_host_unified(self) raises -> Bool:
         """Returns True if this device and the host share one physical memory
         pool.
+
+        Reports hardware topology, so it does not predict whether
+        `DeviceBuffer.unsafe_host_ptr()` succeeds for any particular buffer.
 
         Returns:
             True if device and host memory are one physical pool.
@@ -7081,7 +7045,21 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
         Raises:
             If the device cannot be queried.
         """
-        return self._ctx[].is_host_unified()
+        var result: Bool = False
+        # const char *AsyncRT_DeviceContext_isHostUnified(bool *result, const DeviceContext *ctx)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_isHostUnified",
+                _CString[],
+                Pointer[Bool, origin_of(result)],
+                _DeviceContextPtr[mut=True],
+            ](
+                Pointer(to=result),
+                self._ctx[]._handle,
+            ),
+            location=call_location(),
+        )
+        return result
 
 
 struct DeviceContextArray[length: Int](Copyable, Sized):

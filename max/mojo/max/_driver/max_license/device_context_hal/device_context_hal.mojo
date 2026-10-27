@@ -715,6 +715,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         """
         self._stream[].synchronize()
 
+    @deprecated("Use `DeviceContext.device().id` instead.")
     def id(self) raises -> Int64:
         """Returns the ID associated with this device.
 
@@ -724,7 +725,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         Raises:
             If there's an error retrieving the device ID.
         """
-        return self._device[].id
+        return self.device().id
 
     @inline(.always)
     def get_memory_info(self) raises -> Tuple[c_size_t, c_size_t]:
@@ -758,23 +759,10 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         var info = self._context[].get_memory_info()
         return (c_size_t(info[0]), c_size_t(info[1]))
 
+    @deprecated("Use `DeviceContext.device().get_attribute()` instead.")
     @inline(.always)
     def get_attribute(self, attr: DeviceAttribute) raises -> Int:
         """Returns the specified attribute for this device.
-
-        Use the aliases defined by
-        [DeviceAttribute](/docs/max/gpu/host/device_attribute/DeviceAttribute/)
-        to specify attributes. For example:
-
-        ```mojo
-        from max.gpu.host import DeviceAttribute, DeviceContext
-
-        def main() raises:
-            var ctx = DeviceContext()
-            var attr = DeviceAttribute.MAX_BLOCKS_PER_MULTIPROCESSOR
-            var max_blocks = ctx.get_attribute(attr)
-            print(max_blocks)
-        ```
 
         Args:
             attr: The device attribute to query.
@@ -785,7 +773,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        return Int(self._device[].get_attribute(attr._value))
+        return self.device().get_attribute(attr)
 
     @doc_hidden
     @inline(.always)
@@ -806,7 +794,9 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
 
         This is a private method intended for internal use only.
         """
-        var major = self.get_attribute(DeviceAttribute.COMPUTE_CAPABILITY_MAJOR)
+        var major = self.device().get_attribute(
+            DeviceAttribute.COMPUTE_CAPABILITY_MAJOR
+        )
         # TODO: Apple GPUs report the chip generation (M1-M5) directly as the
         # compute capability, matching the native MetalDeviceContext
         # (`MetalDevice::computeCapability` returns the MAJOR only). The
@@ -814,7 +804,9 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         # changed.
         if self.api() == "metal":
             return major
-        var minor = self.get_attribute(DeviceAttribute.COMPUTE_CAPABILITY_MINOR)
+        var minor = self.device().get_attribute(
+            DeviceAttribute.COMPUTE_CAPABILITY_MINOR
+        )
         return major * 10 + minor
 
     def set_as_current(self) raises:
@@ -2349,6 +2341,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         except:
             return 0
 
+    @deprecated("Use `DeviceContext.device().get_name()` instead.")
     def name(self) raises -> String:
         """Returns the device name as reported by the native driver.
 
@@ -2358,7 +2351,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         Raises:
             If querying the device name from the driver fails.
         """
-        return self._device[].get_name()
+        return self.device().get_name()
 
     def is_compatible(self) -> Bool:
         """Returns True if this device is compatible with MAX.
@@ -2443,12 +2436,10 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         """
         return self._device[].get_arch()
 
+    @deprecated("Use `DeviceContext.device().is_host_unified()` instead.")
     def is_host_unified(self) raises -> Bool:
         """Returns True if this device and the host share one physical memory
         pool.
-
-        Reports hardware topology, so it does not predict whether
-        `DeviceBuffer.unsafe_host_ptr()` succeeds for any particular buffer.
 
         Returns:
             True if device and host memory are one physical pool.
@@ -2456,7 +2447,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         Raises:
             If there's an error querying the device.
         """
-        return self._device[].is_host_unified()
+        return self.device().is_host_unified()
 
 
 struct Device[target: CompilationTarget, origin: ImmOrigin](
@@ -2474,11 +2465,15 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
 
     var _ctx: Pointer[DeviceContextBase[Self.target], Self.origin]
 
+    var id: Int64
+    """The ID of this device among the devices of its driver."""
+
     @doc_hidden
     def __init__(
         out self, ctx: Pointer[DeviceContextBase[Self.target], Self.origin]
     ):
         self._ctx = ctx
+        self.id = ctx[]._device[].id
 
     def get_name(self) raises -> String:
         """Returns the device name, as reported by the native device API.
@@ -2489,7 +2484,7 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
         Raises:
             If the device name cannot be queried.
         """
-        return self._ctx[].name()
+        return self._ctx[]._device[].get_name()
 
     def get_attribute(self, attr: DeviceAttribute) raises -> Int:
         """Returns the specified attribute for this device.
@@ -2503,7 +2498,7 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
         Raises:
             If the attribute cannot be queried.
         """
-        return self._ctx[].get_attribute(attr)
+        return Int(self._ctx[]._device[].get_attribute(attr._value))
 
     def is_host_unified(self) raises -> Bool:
         """Returns True if this device and the host share one physical memory
@@ -2515,7 +2510,7 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
         Raises:
             If the device cannot be queried.
         """
-        return self._ctx[].is_host_unified()
+        return self._ctx[]._device[].is_host_unified()
 
 
 struct _DeviceContextScopeHAL(Movable):

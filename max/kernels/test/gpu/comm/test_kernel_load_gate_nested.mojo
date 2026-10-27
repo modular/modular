@@ -180,8 +180,8 @@ def main() raises:
 
     # The opener and the control's loader must avoid the device workers, which
     # run the per-device launch bodies, and each other.
-    var dev0_worker = task_id_for_device(Int(ctx0.id()))
-    var dev1_worker = task_id_for_device(Int(ctx1.id()))
+    var dev0_worker = task_id_for_device(Int(ctx0.device().id))
+    var dev1_worker = task_id_for_device(Int(ctx1.device().id))
     var spare = List[Int]()
     for worker in range(1, parallelism_level()):
         if worker != dev0_worker and worker != dev1_worker:

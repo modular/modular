@@ -330,7 +330,7 @@ def _run_round[call: Int](ctx0: DeviceContext, ctx1: DeviceContext) raises:
     var tg = TaskGroup()
     # Resolved before the coroutine exists: a raise between the two would
     # abandon it, and Coroutine is not implicitly destroyable.
-    var loader_worker = task_id_for_device(Int(ctx1.id()))
+    var loader_worker = task_id_for_device(Int(ctx1.device().id))
 
     @inline(.always)
     __async def loader() {var} -> None:

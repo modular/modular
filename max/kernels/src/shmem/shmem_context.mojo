@@ -207,10 +207,10 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
 
         # nvshmem and rocshmem behave differently here, nvshmem requires that
         # you set the current context to a device ID corresponding with the
-        # GPU id on the node i.e. if team_my_pe is 3 then DeviceContext.id()
+        # GPU id on the node i.e. if team_my_pe is 3 then `Device.id`
         # should also be 3. rocshmem does this inside the rocshmem_init()
         # call, and each process will launch kernels on the associated pe
-        # from MPI, the DeviceContext.id() will always be 0, but it's
+        # from MPI, the `Device.id` will always be 0, but it's
         # associated with a different GPU in each process.
         var mype = shmem_team_my_pe(team)
         self._ctx = DeviceContext(device_id=Int(mype))

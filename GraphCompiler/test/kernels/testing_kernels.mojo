@@ -2678,8 +2678,8 @@ struct MultiDeviceContext:
         x: InputTensor[dtype=dtype, ...],
         dev_ctxs: DeviceContextArray[2],
     ) raises:
-        print("dev_ctx0.id() =", dev_ctxs[0].id())
-        print("dev_ctx1.id() =", dev_ctxs[1].id())
+        print("dev_ctx0.device().id =", dev_ctxs[0].device().id)
+        print("dev_ctx1.device().id =", dev_ctxs[1].device().id)
         dev_ctxs[0].synchronize()
         dev_ctxs[1].synchronize()
 
@@ -2712,7 +2712,7 @@ struct VariadicDeviceContext:
         dev_ctxs: DeviceContextArray,
     ) raises:
         for i in range(len(dev_ctxs)):
-            print("dev_ctxs[", i, "].id() =", dev_ctxs[i].id())
+            print("dev_ctxs[", i, "].id() =", dev_ctxs[i].device().id)
             dev_ctxs[i].synchronize()
 
 

@@ -855,7 +855,7 @@ def bench_dispatch_common[
 
     @inline(.always)
     def call_fn_dispatch(ctx: DeviceContext, cache_iter: Int) raises {imm}:
-        var dev_id = Int(ctx.id())
+        var dev_id = Int(ctx.device().id)
         run_dispatch_async(dev_id, cache_iter)
 
     def per_gpu_dispatch(i: Int) raises {mut results_b, imm}:
@@ -895,7 +895,7 @@ def bench_dispatch_common[
 
     @inline(.always)
     def call_fn_dispatch_wait(ctx: DeviceContext, cache_iter: Int) raises {imm}:
-        var dev_id = Int(ctx.id())
+        var dev_id = Int(ctx.device().id)
         run_dispatch_async_wait(dev_id, cache_iter)
 
     def per_gpu_dispatch_wait(i: Int) raises {mut results_b, imm}:
@@ -944,7 +944,7 @@ def bench_dispatch_common[
 
     @inline(.always)
     def call_fn_e2e_split(ctx: DeviceContext, cache_iter: Int) raises {imm}:
-        var dev_id = Int(ctx.id())
+        var dev_id = Int(ctx.device().id)
         run_e2e(dev_id, cache_iter + 1)
 
     def per_gpu_e2e_split(i: Int) raises {mut results_b, imm}:
@@ -989,7 +989,7 @@ def bench_dispatch_common[
 
     @inline(.always)
     def call_fn_e2e_fused(ctx: DeviceContext, cache_iter: Int) raises {imm}:
-        var dev_id = Int(ctx.id())
+        var dev_id = Int(ctx.device().id)
         run_fused_dispatch(dev_id, cache_iter + 1)
 
     def per_gpu_e2e_fused(i: Int) raises {mut results_b, imm}:

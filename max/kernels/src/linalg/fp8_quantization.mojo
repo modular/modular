@@ -297,7 +297,7 @@ def quantize_tensor_dynamic_scaled_fp8[
 
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "quantize_tensor_dynamic_scaled_fp8",
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         if num_rows == 0:
             return
@@ -465,7 +465,7 @@ def quantize_dynamic_scaled_fp8[
 
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "quantize_dynamic_scaled_fp8",
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         if num_rows == 0:
             return

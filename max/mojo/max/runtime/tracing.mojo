@@ -41,18 +41,15 @@ comptime log = logger.Logger[logger.Level.INFO](fd=stderr, prefix="[OP] ")
 
 
 def get_safe_task_id(ctx: DeviceContext.Generic) -> OptionalReg[Int]:
-    """Safely extract task_id from DeviceContext, returning None if null/invalid.
+    """Returns the task ID for the device behind a `DeviceContext`.
 
     Args:
         ctx: The device context to extract the task ID from.
 
     Returns:
-        An OptionalReg containing the task ID if valid, None otherwise.
+        An OptionalReg containing the device's ID.
     """
-    try:
-        return OptionalReg(Int(ctx.id()))
-    except:
-        return None
+    return OptionalReg(Int(ctx.device().id))
 
 
 def get_safe_task_id(ctx: Optional[DeviceContext]) -> OptionalReg[Int]:

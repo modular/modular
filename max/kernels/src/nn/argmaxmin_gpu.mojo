@@ -513,7 +513,7 @@ def argmax_with_bias_gpu[
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "argmax_with_bias_gpu",
         Trace[TraceLevel.OP]._get_detail_str(trace_information),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         if position < 0 or position >= positions:
             raise Error(
