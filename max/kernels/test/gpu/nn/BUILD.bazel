@@ -111,6 +111,8 @@ _EXTRA_CONSTRAINTS = {
     "test_attention_fp8_tail_stress_amd.mojo": ["//:mi355_gpu"],
     "test_amd_4wave_conv_rt_hw.mojo": ["//:mi355_gpu"],
     "test_amd_4wave_conv3d.mojo": ["//:mi355_gpu"],
+    # `mhc_pre` projects on the gfx950-only bf16 16x16x32 MFMA.
+    "test_mhc_pre.mojo": ["//:mi355_gpu"],
     "test_conv2d_sm100.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],

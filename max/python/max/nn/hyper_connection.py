@@ -16,15 +16,20 @@
 from __future__ import annotations
 
 from max import functional as F
+from max.driver import accelerator_api
 from max.dtype import DType
 from max.functional import random
+from max.nn.legacy.kernels import mhc_pre_supports
 from max.tensor import Tensor
 
-from .common_layers.functional_kernels import hyper_connection_gates
+from .common_layers.functional_kernels import hyper_connection_gates, mhc_pre
 from .module import Module
+from .norm import RMSNorm
 
 
-class HyperConnection(Module[[Tensor], tuple[Tensor, Tensor, Tensor]]):
+# `...` because a parameter list cannot mark `forward`'s `norm` optional:
+# `[Tensor, RMSNorm | None]` would make every caller pass it.
+class HyperConnection(Module[..., tuple[Tensor, Tensor, Tensor]]):
     r"""Mixes ``hc_mult`` parallel residual streams around a transformer sublayer.
 
     Manifold-Constrained Hyper-Connections (mHC) generalize the residual
@@ -51,7 +56,8 @@ class HyperConnection(Module[[Tensor], tuple[Tensor, Tensor, Tensor]]):
         hidden_streams = comb @ hidden_streams + post.unsqueeze(-1) * sublayer_out
 
     The gate math always runs in float32. ``collapsed`` is cast back to the
-    input's dtype.
+    input's dtype. Where :func:`~max.nn.legacy.kernels.mhc_pre_supports` accepts the
+    shape and device, one fused op computes the whole site.
 
     Args:
         hidden_size: Width of a single residual stream.
@@ -61,6 +67,9 @@ class HyperConnection(Module[[Tensor], tuple[Tensor, Tensor, Tensor]]):
         hc_eps: Epsilon guarding the Sinkhorn divisions.
         rms_norm_eps: Epsilon of the unweighted RMSNorm applied to the streams
             before the projection.
+        hc_fn_dtype: Storage dtype of ``hc_fn``, float32 or bfloat16. The
+            fused op reads a bfloat16 projection in one pass instead of
+            three; elsewhere it is widened to float32 in the graph.
     """
 
     hc_fn: Tensor
@@ -80,6 +89,7 @@ class HyperConnection(Module[[Tensor], tuple[Tensor, Tensor, Tensor]]):
         hc_sinkhorn_iters: int = 20,
         hc_eps: float = 1e-6,
         rms_norm_eps: float = 1e-6,
+        hc_fn_dtype: DType = DType.float32,
     ) -> None:
         super().__init__()
 
@@ -91,7 +101,7 @@ class HyperConnection(Module[[Tensor], tuple[Tensor, Tensor, Tensor]]):
 
         mix_width = 2 * hc_mult + hc_mult**2
         self.hc_fn = random.normal(
-            [mix_width, hc_mult * hidden_size], dtype=DType.float32
+            [mix_width, hc_mult * hidden_size], dtype=hc_fn_dtype
         )
         self.hc_base = Tensor.zeros([mix_width], dtype=DType.float32)
         self.hc_scale = Tensor.ones([3], dtype=DType.float32)
@@ -102,19 +112,24 @@ class HyperConnection(Module[[Tensor], tuple[Tensor, Tensor, Tensor]]):
         yield "hc_mult", self.hc_mult
         yield "hc_sinkhorn_iters", self.hc_sinkhorn_iters, 20
 
-    def forward(self, hidden_streams: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+    def forward(
+        self, hidden_streams: Tensor, norm: RMSNorm | None = None
+    ) -> tuple[Tensor, Tensor, Tensor]:
         """Computes the mHC gates and collapses the streams for the sublayer.
 
         Args:
             hidden_streams: The parallel residual streams, shaped
                 ``[total_seq_len, hc_mult, hidden_size]``. The batch and
                 sequence axes are folded into the leading axis.
+            norm: The sublayer's input norm, applied to ``collapsed``. The
+                fused op applies a plain :class:`RMSNorm` itself.
 
         Returns:
             A tuple ``(post, comb, collapsed)``. ``post`` is float32
             ``[total_seq_len, hc_mult]``, ``comb`` is float32
             ``[total_seq_len, hc_mult, hc_mult]``, and ``collapsed`` is
-            ``[total_seq_len, hidden_size]`` in ``hidden_streams``' dtype.
+            ``[total_seq_len, hidden_size]`` in ``hidden_streams``' dtype,
+            normalized by ``norm`` if given.
 
         Raises:
             ValueError: If ``hidden_streams`` is not rank 3 or its trailing two
@@ -137,8 +152,49 @@ class HyperConnection(Module[[Tensor], tuple[Tensor, Tensor, Tensor]]):
                 f" {hidden_streams.shape[2]}"
             )
 
+        if accelerator_api() == "hip" and mhc_pre_supports(
+            self.hc_mult,
+            self.hidden_size,
+            hidden_streams.dtype,
+            self.hc_fn.dtype,
+            hidden_streams.mesh.devices[0],
+        ):
+            gamma: Tensor | None = None
+            norm_eps: float | None = None
+            # The op normalizes as RMSNorm does: it rounds the normalized row
+            # to the streams' dtype, then scales it by the weight.
+            if (
+                type(norm) is RMSNorm
+                and norm.weight.dtype == hidden_streams.dtype
+            ):
+                gamma, norm_eps, norm = norm.weight, norm.eps, None
+            # The op runs once per device; its rows keep the streams'
+            # placement.
+            post, comb, collapsed, _ = (
+                out.rebind_mapping(hidden_streams.mapping)
+                if hidden_streams.is_distributed
+                else out
+                for out in mhc_pre(
+                    hidden_streams,
+                    self.hc_fn,
+                    self.hc_base,
+                    self.hc_scale,
+                    hc_sinkhorn_iters=self.hc_sinkhorn_iters,
+                    rms_eps=self.rms_norm_eps,
+                    hc_eps=self.hc_eps,
+                    gamma=gamma,
+                    norm_eps=norm_eps,
+                )
+            )
+            if norm is not None:
+                collapsed = norm(collapsed)
+            return post, comb, collapsed
+
         rows = hidden_streams.shape[0]
         streams = hidden_streams.cast(DType.float32)
+        hc_fn = self.hc_fn
+        if hc_fn.dtype != DType.float32:
+            hc_fn = hc_fn.cast(DType.float32)
 
         flat = streams.reshape([rows, self.hc_mult * self.hidden_size])
         # Unweighted RMSNorm, applied to the projection rather than its input:
@@ -147,7 +203,7 @@ class HyperConnection(Module[[Tensor], tuple[Tensor, Tensor, Tensor]]):
         # into the fp32 matmul, which may run in TF32.
         rms = F.rsqrt((flat * flat).mean(axis=-1) + self.rms_norm_eps)
 
-        mix = (flat @ self.hc_fn.T) * rms
+        mix = (flat @ hc_fn.T) * rms
         # The gates are computed row by row, so on a mesh each device's rows
         # keep the projection's placement.
         pre, post, comb = (
@@ -163,8 +219,8 @@ class HyperConnection(Module[[Tensor], tuple[Tensor, Tensor, Tensor]]):
         )
 
         collapsed = (pre.unsqueeze(-1) * streams).sum(axis=1).squeeze(1)
-        return (
-            post,
-            comb.reshape([rows, self.hc_mult, self.hc_mult]),
-            collapsed.cast(hidden_streams.dtype),
-        )
+        comb = comb.reshape([rows, self.hc_mult, self.hc_mult])
+        collapsed = collapsed.cast(hidden_streams.dtype)
+        if norm is not None:
+            collapsed = norm(collapsed)
+        return post, comb, collapsed

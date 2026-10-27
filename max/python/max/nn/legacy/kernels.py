@@ -22,7 +22,12 @@ from typing import Any, ParamSpec, TypeVar, cast
 
 import numpy as np
 from max._core.dialects import builtin, kgen, mo
-from max.driver import accelerator_api, accelerator_architecture_name
+from max.driver import (
+    Device,
+    accelerator_api,
+    accelerator_architecture_name,
+    accelerator_count,
+)
 from max.dtype import DType
 from max.graph import (
     AlgebraicDim,
@@ -15200,6 +15205,220 @@ def hyper_connection_gates(
         },
     )
     return (results[0].tensor, results[1].tensor, results[2].tensor)
+
+
+# NOTE: keep these in sync with the comptime asserts of `mhc_pre` in
+# max/kernels/src/nn/mhc.mojo: a shape admitted here but not there fails at
+# graph compile.
+_MHC_PRE_HC_MULT = 4
+_MHC_PRE_HIDDEN_STEP = 1024
+_MHC_PRE_MAX_HIDDEN = 8192
+
+
+def _mhc_pre_supports_hidden_size(hidden_size: int) -> bool:
+    return (
+        hidden_size % _MHC_PRE_HIDDEN_STEP == 0
+        and _MHC_PRE_HIDDEN_STEP <= hidden_size <= _MHC_PRE_MAX_HIDDEN
+    )
+
+
+def mhc_pre_supports(
+    hc_mult: int,
+    hidden_size: int,
+    dtype: DType,
+    fn_dtype: DType,
+    device: Device | DeviceRef,
+) -> bool:
+    """Returns whether :func:`mhc_pre` runs on this device and shape.
+
+    The kernel projects on CDNA4 bf16 MFMA, so it runs on gfx950 only, and
+    is specialized to four bf16 streams whose width is one to eight
+    1024-wide blocks.
+
+    Args:
+        hc_mult: The number of residual streams.
+        hidden_size: The width of one stream.
+        dtype: The streams' dtype.
+        fn_dtype: The dtype of the stream projection ``hc_fn``.
+        device: The device the op would run on.
+
+    Returns:
+        True if :func:`mhc_pre` accepts the shape on ``device``.
+    """
+    if not (
+        hc_mult == _MHC_PRE_HC_MULT
+        and dtype == DType.bfloat16
+        and fn_dtype in (DType.float32, DType.bfloat16)
+        and _mhc_pre_supports_hidden_size(hidden_size)
+    ):
+        return False
+    if isinstance(device, DeviceRef):
+        # A graph can be built on a host without the GPU it targets.
+        if not device.is_gpu() or device.id >= accelerator_count():
+            return False
+        device = device.to_device()
+    return device.api == "hip" and device.architecture_name.startswith("gfx950")
+
+
+def mhc_pre(
+    streams: TensorValue,
+    hc_fn: TensorValue,
+    base: TensorValue,
+    scale: TensorValue,
+    *,
+    hc_sinkhorn_iters: int,
+    rms_eps: float,
+    hc_eps: float,
+    gamma: TensorValue | None = None,
+    norm_eps: float | None = None,
+) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue]:
+    r"""Runs a whole mHC pre site in one op: gates plus stream collapse.
+
+    Fuses what an mHC site does before its sublayer. Per token, with ``x`` the
+    streams flattened to ``hc_mult * hidden_size`` values, it computes ``mix =
+    (x @ hc_fn.T) * rsqrt(mean(x * x) + rms_eps)``, the ``pre``, ``post`` and
+    ``comb`` gates of :func:`hyper_connection_gates` from ``mix``, and
+    ``collapsed = sum_j pre[j] * streams[j]`` rounded to the streams' dtype.
+    With ``gamma`` the collapsed row is then RMS-normalized and scaled by
+    ``gamma``, as the sublayer's input norm would.
+
+    The projection runs on bf16 MFMA with float32 accumulation; a float32
+    ``hc_fn`` is split into three bf16 terms whose products are exact. Check
+    :func:`mhc_pre_supports` first: the op runs on gfx950 only.
+
+    Args:
+        streams: The residual streams, bfloat16. Shape: ``[total_seq_len,
+            hc_mult, hidden_size]``.
+        hc_fn: The stream projection, float32 or bfloat16. Shape: ``[2 *
+            hc_mult + hc_mult ** 2, hc_mult * hidden_size]``.
+        base: Per-output bias in ``pre``, ``post``, ``comb`` order, float32.
+            Shape: ``[2 * hc_mult + hc_mult ** 2]``.
+        scale: Per-output scale in ``pre``, ``post``, ``comb`` order,
+            float32. Shape: ``[3]``.
+        hc_sinkhorn_iters: Number of Sinkhorn-Knopp iterations.
+        rms_eps: Epsilon of the unweighted RMS scale on the projection.
+        hc_eps: Epsilon guarding the gates and the Sinkhorn divisions.
+        gamma: The weight of an RMSNorm on the collapsed row, in the streams'
+            dtype, or ``None`` to skip the norm. Shape: ``[hidden_size]``.
+        norm_eps: Epsilon of that RMSNorm; required with ``gamma``.
+
+    Returns:
+        A tuple of four tensors:
+
+        - ``post``: sublayer-output placement weights, float32. Shape:
+          ``[total_seq_len, hc_mult]``.
+        - ``comb``: the stream mixer, float32. Shape: ``[total_seq_len,
+          hc_mult, hc_mult]``.
+        - ``collapsed``: the sublayer input, normalized with ``gamma`` if
+          given, in the streams' dtype. Shape: ``[total_seq_len, hidden_size]``.
+        - ``pre``: stream-collapse weights, float32. Shape:
+          ``[total_seq_len, hc_mult]``.
+
+    Raises:
+        ValueError: If a dtype, rank, shape or device does not match,
+            ``hc_mult`` or ``hidden_size`` is not static or outside what the
+            kernel supports, or ``gamma`` and ``norm_eps`` are not given
+            together.
+    """
+    _check_rank(3, streams=streams)
+    _check_rank(2, hc_fn=hc_fn)
+    _check_rank(1, base=base, scale=scale)
+    _check_dtype(DType.bfloat16, streams=streams)
+    _check_dtype(DType.float32, base=base, scale=scale)
+    if hc_fn.dtype not in (DType.float32, DType.bfloat16):
+        raise ValueError(
+            f"expected hc_fn of float32 or bfloat16, got {hc_fn.dtype}"
+        )
+    _check_same_device(streams=streams, hc_fn=hc_fn, base=base, scale=scale)
+    if not streams.device.is_gpu():
+        raise ValueError(f"mhc_pre runs on GPU only, got {streams.device}")
+    if (gamma is None) != (norm_eps is None):
+        raise ValueError("expected gamma and norm_eps together")
+    if hc_sinkhorn_iters < 1:
+        raise ValueError(
+            f"expected hc_sinkhorn_iters >= 1, got {hc_sinkhorn_iters}"
+        )
+
+    hc_dim, hidden_dim = streams.shape[1], streams.shape[2]
+    if not isinstance(hc_dim, StaticDim) or not isinstance(
+        hidden_dim, StaticDim
+    ):
+        raise ValueError(
+            "expected static hc_mult and hidden_size in streams, got"
+            f" {streams.shape}"
+        )
+    hc_mult, hidden_size = int(hc_dim), int(hidden_dim)
+    if hc_mult != _MHC_PRE_HC_MULT:
+        raise ValueError(f"expected hc_mult {_MHC_PRE_HC_MULT}, got {hc_mult}")
+    if not _mhc_pre_supports_hidden_size(hidden_size):
+        raise ValueError(
+            f"expected hidden_size a multiple of {_MHC_PRE_HIDDEN_STEP} in"
+            f" [{_MHC_PRE_HIDDEN_STEP}, {_MHC_PRE_MAX_HIDDEN}], got"
+            f" {hidden_size}"
+        )
+    mix_width = 2 * hc_mult + hc_mult**2
+    if (
+        hc_fn.shape[0] != mix_width
+        or hc_fn.shape[1] != hc_mult * hidden_size
+        or base.shape[0] != mix_width
+        or scale.shape[0] != 3
+    ):
+        raise ValueError(
+            f"expected hc_fn [{mix_width}, {hc_mult * hidden_size}], base"
+            f" [{mix_width}] and scale [3] for streams {streams.shape}, got"
+            f" {hc_fn.shape}, {base.shape} and {scale.shape}"
+        )
+
+    device = streams.device
+    if gamma is None:
+        # The kernel reads no gamma without the norm; this fills the slot.
+        gamma = ops.constant([0.0], streams.dtype, device=device)
+    else:
+        _check_rank(1, gamma=gamma)
+        _check_same_dtype(streams=streams, gamma=gamma)
+        _check_same_device(streams=streams, gamma=gamma)
+        if gamma.shape[0] != hidden_size:
+            raise ValueError(
+                f"expected gamma [{hidden_size}], got {gamma.shape}"
+            )
+
+    rows = streams.shape[0]
+    results = ops.custom(
+        "mo.mhc.pre",
+        device=device,
+        values=[
+            streams,
+            hc_fn,
+            base,
+            scale,
+            gamma,
+            ops.constant(rms_eps, DType.float32, device=DeviceRef.CPU()),
+            ops.constant(hc_eps, DType.float32, device=DeviceRef.CPU()),
+            ops.constant(
+                0.0 if norm_eps is None else norm_eps,
+                DType.float32,
+                device=DeviceRef.CPU(),
+            ),
+        ],
+        out_types=[
+            TensorType(DType.float32, [rows, hc_mult], device=device),
+            TensorType(DType.float32, [rows, hc_mult, hc_mult], device=device),
+            TensorType(streams.dtype, [rows, hidden_size], device=device),
+            TensorType(DType.float32, [rows, hc_mult], device=device),
+        ],
+        parameters={
+            "hc_mult": hc_mult,
+            "hidden_size": hidden_size,
+            "hc_sinkhorn_iters": hc_sinkhorn_iters,
+            "has_norm": norm_eps is not None,
+        },
+    )
+    return (
+        results[0].tensor,
+        results[1].tensor,
+        results[2].tensor,
+        results[3].tensor,
+    )
 
 
 def _mhc_post_block_width(dtype: DType) -> int:

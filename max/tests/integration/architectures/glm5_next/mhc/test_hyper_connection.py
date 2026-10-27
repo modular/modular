@@ -23,6 +23,8 @@ the model never runs.
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 import torch
 from max.driver import Accelerator, accelerator_api
@@ -31,6 +33,9 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.nn.legacy.layer import Module
 from max.nn.legacy.norm import RMSNorm
+from max.pipelines.architectures.glm5_next.layers import (
+    hyper_connection as hyper_connection_module,
+)
 from max.pipelines.architectures.glm5_next.layers.hyper_connection import (
     HyperConnection,
     StreamMixing,
@@ -316,6 +321,196 @@ def test_write_back_falls_back_outside_the_kernel_limits(
         graph.output(hc.write_back(streams, y, mixing))
     uses_kernel = supported and accelerator_api() == "hip"
     assert ("mo.mhc.post" in str(graph)) == uses_kernel
+
+
+def _on_gfx950() -> bool:
+    if accelerator_api() != "hip":
+        return False
+    return Accelerator(0).architecture_name.startswith("gfx950")
+
+
+@pytest.mark.parametrize("with_norm", [False, True])
+@pytest.mark.parametrize(
+    ("hc_mult", "hidden_size", "supported"),
+    [
+        (HC_MULT, HIDDEN_SIZE, True),
+        (HC_MULT, 1024, True),
+        (HC_MULT, 1536, False),
+        (8, 1024, False),
+    ],
+)
+def test_mapping_uses_the_fused_kernel_on_gfx950(
+    hc_mult: int, hidden_size: int, supported: bool, with_norm: bool
+) -> None:
+    """``mo.mhc.pre`` replaces the mapping chain where the kernel runs."""
+    hc = HyperConnection(
+        hidden_size=hidden_size,
+        hc_mult=hc_mult,
+        dtype=DType.bfloat16,
+        sinkhorn_iters=SINKHORN_ITERS,
+        eps=HC_EPS,
+        rms_norm_eps=RMS_NORM_EPS,
+        name="hc_attn",
+    )
+    device = DeviceRef.GPU()
+    with Graph(
+        "Glm5NextMappingRouting",
+        input_types=(
+            TensorType(
+                DType.bfloat16, ("t", hc_mult, hidden_size), device=device
+            ),
+            TensorType(DType.bfloat16, (hidden_size,), device=device),
+        ),
+    ) as graph:
+        streams, gamma = (v.tensor for v in graph.inputs)
+        mixing = hc(streams, gamma if with_norm else None)
+        graph.output(mixing.post, mixing.comb, mixing.xs)
+    uses_kernel = supported and _on_gfx950()
+    text = str(graph)
+    assert ("mo.mhc.pre" in text) == uses_kernel
+    assert ("mo.hyper_connection.gates" in text) != uses_kernel
+
+
+class _FusedAndChainSites(Module):
+    """The site twice on shared weights: as routed, and forced onto the chain.
+
+    Off gfx950 both halves are the chain, so they must agree bitwise there.
+    """
+
+    def __init__(self, with_norm: bool) -> None:
+        super().__init__()
+        self.with_norm = with_norm
+        self.hc = HyperConnection(
+            hidden_size=HIDDEN_SIZE,
+            hc_mult=HC_MULT,
+            dtype=DType.bfloat16,
+            sinkhorn_iters=SINKHORN_ITERS,
+            eps=HC_EPS,
+            rms_norm_eps=RMS_NORM_EPS,
+            name="hc_attn",
+        )
+        self.norm = RMSNorm(
+            HIDDEN_SIZE,
+            DType.bfloat16,
+            RMS_NORM_EPS,
+            multiply_before_cast=False,
+        )
+
+    def __call__(self, streams: TensorValue) -> tuple[TensorValue, ...]:
+        gamma = self.norm.weight if self.with_norm else None
+        routed = self.hc(streams, gamma)
+        with patch.object(
+            hyper_connection_module, "accelerator_api", return_value="cuda"
+        ):
+            chain = self.hc(streams, gamma)
+        return (
+            routed.post,
+            routed.comb,
+            routed.xs,
+            chain.post,
+            chain.comb,
+            chain.xs,
+        )
+
+
+# The fused kernel applies the stream RMS after the projection rather than
+# before it, so it rounds differently from the chain: the gates are held to the
+# fused op's own gate and the bf16 sequence to its value tolerance, both
+# against float64 (`max/tests/integration/nn/test_mhc_pre_gpu.py`).
+FUSED_GATE_ATOL = 1e-4
+COLLAPSED_RTOL = 2.0**-7
+NORMED_RTOL = 2.0**-6
+VALUE_ATOL_FRAC = 1e-2
+
+
+def _value_error(
+    actual: torch.Tensor, expected: torch.Tensor, rtol: float
+) -> float:
+    """Returns the worst error over ``rtol * |ref|``, in units of the atol."""
+    assert torch.isfinite(actual).all()
+    ref = expected.double()
+    atol = VALUE_ATOL_FRAC * ref.square().mean().sqrt().item()
+    excess = (actual.double() - ref).abs() - rtol * ref.abs()
+    return excess.max().item() / atol
+
+
+def _gate_error(actual: torch.Tensor, expected: torch.Tensor) -> float:
+    return (actual.double() - expected.double()).abs().max().item()
+
+
+@pytest.mark.parametrize("with_norm", [False, True])
+def test_fused_mapping_matches_chain_and_float64(
+    weights: dict[str, torch.Tensor], with_norm: bool
+) -> None:
+    """The routed site agrees with the chain and with float64 at every T.
+
+    The float64 gate is the fused op's. Off gfx950 the routed site is the chain
+    itself, whose float32 matmul is not held to that gate on every GPU, so the
+    test only requires the two halves to be identical there.
+    """
+    site = _FusedAndChainSites(with_norm)
+    site.load_state_dict(weights)
+    session = InferenceSession(devices=[Accelerator(0)])
+    graph = Graph(
+        "Glm5NextFusedMapping",
+        site,
+        input_types=(
+            TensorType(
+                DType.bfloat16,
+                ("tokens", HC_MULT, HIDDEN_SIZE),
+                device=DeviceRef.GPU(),
+            ),
+        ),
+    )
+    fused = _on_gfx950()
+    assert ("mo.mhc.pre" in str(graph)) == fused
+    compiled = session.load(graph, weights_registry=site.state_dict())
+    rtol = NORMED_RTOL if with_norm else COLLAPSED_RTOL
+
+    for tokens in (1, 8, 128, 1024):
+        generator = torch.Generator().manual_seed(tokens)
+        streams = torch.randn(
+            tokens, HC_MULT, HIDDEN_SIZE, generator=generator
+        ).bfloat16()
+        outputs = compiled.execute(streams.cuda().contiguous())
+        post, comb, xs, chain_post, chain_comb, chain_xs = (
+            torch.from_dlpack(out).cpu() for out in outputs
+        )
+
+        ref_post, ref_comb, ref_xs = mhc_mapping(
+            streams,
+            weights["hc_attn_fn"],
+            weights["hc_attn_base"],
+            weights["hc_attn_scale"],
+            hc_mult=HC_MULT,
+            sinkhorn_iters=SINKHORN_ITERS,
+            hc_eps=HC_EPS,
+            rms_norm_eps=RMS_NORM_EPS,
+            mapping_dtype=torch.float64,
+        )
+        if with_norm:
+            ref_xs = rms_norm(ref_xs, weights["norm.weight"], RMS_NORM_EPS)
+
+        errors = {
+            "post vs fp64": _gate_error(post, ref_post),
+            "comb vs fp64": _gate_error(comb, ref_comb),
+            "post vs chain": _gate_error(post, chain_post),
+            "comb vs chain": _gate_error(comb, chain_comb),
+            "xs vs fp64": _value_error(xs, ref_xs, rtol),
+            "xs vs chain": _value_error(xs, chain_xs, rtol),
+        }
+        print(
+            f"T={tokens} norm={with_norm}: "
+            + ", ".join(f"{k} {v:.3e}" for k, v in errors.items())
+        )
+        if not fused:
+            assert torch.equal(post, chain_post)
+            assert torch.equal(comb, chain_comb)
+            assert torch.equal(xs, chain_xs)
+            continue
+        for name, error in errors.items():
+            limit = 1.0 if name.startswith("xs") else FUSED_GATE_ATOL
+            assert error <= limit, f"T={tokens} {name}: {error:.3e}"
 
 
 # `comb / (comb.sum + hc_eps)` has its fixed point at `1 / (1 + hc_eps)`, so a

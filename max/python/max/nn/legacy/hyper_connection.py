@@ -15,10 +15,11 @@
 
 from __future__ import annotations
 
+from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
 
-from .kernels import hyper_connection_gates
+from .kernels import hyper_connection_gates, mhc_pre, mhc_pre_supports
 from .layer import Module
 
 
@@ -53,6 +54,8 @@ class HyperConnection(Module):
 
     The gate math always runs in float32, regardless of ``dtype``, matching the
     reference implementation. ``collapsed`` is cast back to the input's dtype.
+    On gfx950, a call without ``pre_mix`` on bfloat16 streams runs as one
+    fused op (:func:`~max.nn.legacy.kernels.mhc_pre`) where the shape allows it.
 
     .. code-block:: python
 
@@ -182,6 +185,19 @@ class HyperConnection(Module):
             )
 
         device = hidden_streams.device
+        if (
+            pre_mix is None
+            and accelerator_api() == "hip"
+            and mhc_pre_supports(
+                self.hc_mult,
+                self.hidden_size,
+                hidden_streams.dtype,
+                self.hc_fn.dtype,
+                device,
+            )
+        ):
+            return self._fused_pre(hidden_streams)
+
         rows = hidden_streams.shape[0]
         streams = ops.cast(hidden_streams, DType.float32)
 
@@ -212,4 +228,27 @@ class HyperConnection(Module):
             comb,
             ops.cast(collapsed, hidden_streams.dtype),
             pre,
+        )
+
+    def _fused_pre(
+        self, hidden_streams: TensorValue
+    ) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue]:
+        """Runs the whole site as one ``mo.mhc.pre`` op on gfx950."""
+        device = hidden_streams.device
+        base: TensorValue = self.hc_base
+        scale: TensorValue = self.hc_scale
+        if base.dtype != DType.float32:
+            base = base.cast(DType.float32)
+        if scale.dtype != DType.float32:
+            scale = scale.cast(DType.float32)
+        # The kernel takes ``hc_fn`` as stored: a float32 projection keeps
+        # its low bits through three exact bf16 terms.
+        return mhc_pre(
+            hidden_streams,
+            self.hc_fn.to(device),
+            base.to(device),
+            scale.to(device),
+            hc_sinkhorn_iters=self.hc_sinkhorn_iters,
+            rms_eps=self.rms_norm_eps,
+            hc_eps=self.hc_eps,
         )

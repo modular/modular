@@ -26,12 +26,15 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
+from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
 from max.nn.legacy.kernels import (
     hyper_connection_gates,
     mhc_post,
     mhc_post_preferred,
+    mhc_pre,
+    mhc_pre_supports,
 )
 from max.nn.legacy.layer import Module, Shardable
 
@@ -204,8 +207,7 @@ class HyperConnection(Module, Shardable):
             streams: ``[total_tokens, hc_mult, hidden_size]``.
             norm_weight: Gamma of the block's input layernorm, applied to the
                 collapsed sequence. Passed in rather than applied by the caller
-                so that a fused kernel can fold it, which is where vLLM's
-                ``mhc_pre`` puts it too.
+                so that a fused kernel can fold the norm into the collapse.
 
         Returns:
             The mapping outputs and the sequence the sublayer consumes.
@@ -222,6 +224,26 @@ class HyperConnection(Module, Shardable):
                 f"{streams.shape}."
             )
         device = streams.device
+        if accelerator_api() == "hip" and mhc_pre_supports(
+            self.hc_mult, self.hidden_size, streams.dtype, self.fn.dtype, device
+        ):
+            # The kernel applies the stream RMS to the projection outputs
+            # rather than to its inputs: equal algebraically, rounded
+            # differently.
+            post, comb, collapsed, _ = mhc_pre(
+                streams,
+                self.fn.to(device),
+                self.base.to(device),
+                self.scale.to(device),
+                hc_sinkhorn_iters=self.sinkhorn_iters,
+                rms_eps=self.rms_norm_eps,
+                hc_eps=self.eps,
+                gamma=None
+                if norm_weight is None
+                else norm_weight.cast(streams.dtype).to(device),
+                norm_eps=None if norm_weight is None else self.rms_norm_eps,
+            )
+            return StreamMixing(post=post, comb=comb, xs=collapsed)
         tokens = streams.shape[0]
         hc = self.hc_mult
 

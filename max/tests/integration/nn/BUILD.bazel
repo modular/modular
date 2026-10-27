@@ -115,6 +115,7 @@ modular_py_test(
             "test_int8_w8a8_apple_gpu.py",
             "test_linear_nvfp4_apple_gpu.py",
             "test_lora_kernels_gpu.py",
+            "test_mhc_pre_gpu.py",
             "test_mlp_fp4_gpu.py",
             "test_moe_nvfp4_gpu.py",
             "test_mxfp4_fused_silu_scale_fusion_gpu.py",
@@ -377,6 +378,37 @@ modular_py_test(
         "//max/python/max/nn/legacy",
         requirement("hypothesis"),
         requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_mhc_pre_gpu",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_mhc_pre_gpu.py",
+    ],
+    # T = 8192 holds the op chain's fp32 copies of the streams beside the
+    # torch fp64 reference.
+    env = {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    tags = [
+        "gpu",
+    ],
+    # The op issues CDNA4-only MFMA. Its two-device case skips on one GPU.
+    target_compatible_with = ["//:mi355_gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        requirement("hypothesis"),
+        requirement("torch"),
     ],
 )
 

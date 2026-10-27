@@ -21,7 +21,7 @@ from std.collections import OptionalReg
 from std.math import align_up, ceildiv, iota
 from std.os import getenv
 from std.random import seed
-from std.sys.info import size_of
+from std.sys.info import _accelerator_arch, size_of
 import extensibility
 
 # ===-----------------------------------------------------------------------===#
@@ -86,7 +86,12 @@ from nn.kv_cache_ragged import (
     generic_fused_qkv_matmul_kv_cache_paged_ragged_bias,
 )
 from nn.attention.gpu.mha import MHADecodeDispatchMetadata
-from nn.mhc import hyper_connection_gates, mhc_post, mhc_post_block_size
+from nn.mhc import (
+    hyper_connection_gates,
+    mhc_post,
+    mhc_post_block_size,
+    mhc_pre,
+)
 from nn.moe import (
     eplb_remap,
     moe_create_indices,
@@ -2852,6 +2857,64 @@ struct Struct_hyper_connection_gates:
             pre_post_comb_b.to_tile_tensor[.float32, mut=False](),
             pre_post_comb_scale.to_tile_tensor[.float32, mut=False](),
             hc_eps,
+            context,
+        )
+
+
+@extensibility.register("mo.mhc.pre")
+struct Struct_mhc_pre:
+    """Registers the `mo.mhc.pre` graph op with the graph compiler."""
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        dtype: DType,
+        fn_dtype: DType,
+        //,
+        hc_mult: Int,
+        hidden_size: Int,
+        hc_sinkhorn_iters: Int,
+        has_norm: Bool,
+        target: StaticString,
+    ](
+        post: OutputTensor[dtype=.float32, rank=2, ...],
+        comb: OutputTensor[dtype=.float32, rank=3, ...],
+        collapsed: OutputTensor[dtype=dtype, rank=2, ...],
+        pre: OutputTensor[dtype=.float32, rank=2, ...],
+        streams: InputTensor[dtype=dtype, rank=3, ...],
+        hc_fn: InputTensor[dtype=fn_dtype, rank=2, ...],
+        base: InputTensor[dtype=.float32, rank=1, ...],
+        scale: InputTensor[dtype=.float32, rank=1, ...],
+        gamma: InputTensor[dtype=dtype, rank=1, ...],
+        rms_eps: Float32,
+        hc_eps: Float32,
+        norm_eps: Float32,
+        context: DeviceContext,
+    ) raises:
+        # The projection issues CDNA4-only MFMA; callers gate on
+        # `mhc_pre_supports`.
+        comptime assert (
+            _accelerator_arch() == "amdgpu:gfx950"
+        ), "mo.mhc.pre requires gfx950"
+        mhc_pre[
+            hc_mult=hc_mult,
+            hidden_size=hidden_size,
+            hc_sinkhorn_iters=hc_sinkhorn_iters,
+            has_norm=has_norm,
+            target=target,
+        ](
+            post.to_tile_tensor[.int64](),
+            comb.to_tile_tensor[.int64](),
+            collapsed.to_tile_tensor[.int64](),
+            pre.to_tile_tensor[.int64](),
+            streams.to_tile_tensor[.int64]().as_imm(),
+            hc_fn.to_tile_tensor[.int64]().as_imm(),
+            base.to_tile_tensor[.int64]().as_imm(),
+            scale.to_tile_tensor[.int64]().as_imm(),
+            gamma.to_tile_tensor[.int64]().as_imm(),
+            rms_eps,
+            hc_eps,
+            norm_eps,
             context,
         )
 

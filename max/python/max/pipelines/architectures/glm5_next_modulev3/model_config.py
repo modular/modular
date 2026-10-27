@@ -110,6 +110,8 @@ class Glm5NextConfig(DeepseekV3_2Config):
     hc_mult: int = 4
     hc_sinkhorn_iters: int = 20
     hc_eps: float = 1e-6
+    hc_fn_dtype: DType = DType.float32
+    """Storage dtype of the mHC stream projections."""
 
     index_kpool: int = 4
     index_kpool_compress: bool = True

@@ -56,6 +56,9 @@ from max.nn.legacy.kernels import (
     mhc_post as _mhc_post,
 )
 from max.nn.legacy.kernels import (
+    mhc_pre as _mhc_pre,
+)
+from max.nn.legacy.kernels import (
     mla_decode_graph as _mla_decode_graph,
 )
 from max.nn.legacy.kernels import (
@@ -232,6 +235,7 @@ fused_qk_ragged_rope = F.functional(_fused_qk_ragged_rope)
 fused_chunked_qkv_rope_store_ragged = F.functional(
     _fused_chunked_qkv_rope_store_ragged
 )
+mhc_pre = F.functional(_mhc_pre)
 
 
 def fused_silu_rule(
@@ -317,6 +321,7 @@ __all__ = [
     "grouped_matmul_ragged",
     "hyper_connection_gates",
     "mhc_post",
+    "mhc_pre",
     "mla_fp8_index_top_k",
     "mla_fp8_index_top_k_physical",
     "moe_create_indices",

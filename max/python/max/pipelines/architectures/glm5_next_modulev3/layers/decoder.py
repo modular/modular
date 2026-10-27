@@ -63,6 +63,7 @@ def _site(config: Glm5NextConfig) -> HyperConnection:
         hc_sinkhorn_iters=config.hc_sinkhorn_iters,
         hc_eps=config.hc_eps,
         rms_norm_eps=config.rms_norm_eps,
+        hc_fn_dtype=config.hc_fn_dtype,
     )
 
 
@@ -100,13 +101,12 @@ class Glm5NextDecoderLayer(Module[..., Tensor]):
         comm_buffers: EPCommBuffers | None,
     ) -> Tensor:
         replicated = DeviceMapping.replicated(streams.mesh)
-        post, comb, collapsed = self.hc_attn(streams)
+        post, comb, h = self.hc_attn(streams, self.input_layernorm)
         # The attention output is a sum of per-device partials.
-        y = self.self_attn(self.input_layernorm(collapsed), *attn_args)
+        y = self.self_attn(h, *attn_args)
         streams = write_back(streams, y.to(replicated), post, comb)
 
-        post, comb, collapsed = self.hc_ffn(streams)
-        h = self.post_attention_layernorm(collapsed)
+        post, comb, h = self.hc_ffn(streams, self.post_attention_layernorm)
         if isinstance(self.mlp, DeepseekV3_2TensorParallelMoE):
             # Its experts are split by columns, so every device needs every
             # row. Its float32 combine is a sum of per-device partials, and
