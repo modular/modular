@@ -4115,26 +4115,37 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
 
     @staticmethod
     def execute[
-        work_dtype: DType,
-        state_dtype: DType,
         target: StaticString,
     ](
-        conv_output_ragged: OutputTensor[dtype=work_dtype, rank=2, ...],
-        qkv_input_ragged: InputTensor[dtype=work_dtype, rank=2, ...],
-        conv_weight: InputTensor[dtype=work_dtype, rank=2, ...],
-        conv_state: MutableInputTensor[dtype=state_dtype, rank=3, ...],
-        slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        conv_output_ragged: Some[Output & Tensor],
+        qkv_input_ragged: Some[Input & Tensor],
+        conv_weight: Some[Input & Tensor],
+        conv_state: Some[MutableInput & Tensor],
+        slot_idx: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        Self.launch[work_dtype, state_dtype, target, capture_input=False](
-            conv_output_ragged,
-            qkv_input_ragged,
-            conv_weight,
-            conv_state,
-            slot_idx,
-            input_row_offsets,
-            conv_output_ragged,
+        comptime assert conforms_to(type_of(conv_output_ragged), TileTensorable)
+        comptime assert conforms_to(type_of(qkv_input_ragged), TileTensorable)
+        comptime assert conforms_to(type_of(conv_weight), TileTensorable)
+        comptime assert conforms_to(type_of(conv_state), TileTensorable)
+        comptime assert conforms_to(type_of(slot_idx), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime work_dtype = type_of(conv_output_ragged).dtype
+        comptime assert type_of(conv_output_ragged).rank == 2
+        comptime assert type_of(qkv_input_ragged).rank == 2
+        comptime assert type_of(conv_weight).rank == 2
+        comptime assert type_of(conv_state).rank == 3
+        comptime assert type_of(slot_idx).rank == 1
+        comptime assert type_of(input_row_offsets).rank == 1
+        Self.launch[target, capture_input=False](
+            conv_output_ragged.to_tile_tensor(),
+            qkv_input_ragged.to_tile_tensor[work_dtype](),
+            conv_weight.to_tile_tensor[work_dtype](),
+            conv_state.to_tile_tensor(),
+            slot_idx.to_tile_tensor[.uint32](),
+            input_row_offsets.to_tile_tensor[.uint32](),
+            conv_output_ragged.to_tile_tensor(),
             ctx,
         )
 
@@ -4142,74 +4153,70 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
     def launch[
         work_dtype: DType,
         state_dtype: DType,
+        //,
         target: StaticString,
         capture_input: Bool,
     ](
-        conv_output_ragged: OutputTensor[dtype=work_dtype, rank=2, ...],
-        qkv_input_ragged: InputTensor[dtype=work_dtype, rank=2, ...],
-        conv_weight: InputTensor[dtype=work_dtype, rank=2, ...],
-        conv_state: MutableInputTensor[dtype=state_dtype, rank=3, ...],
-        slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        qkv_window: OutputTensor[dtype=work_dtype, rank=2, ...],
+        conv_output_ragged: TileTensor[mut=True, work_dtype, ...],
+        qkv_input_ragged: TileTensor[work_dtype, ...],
+        conv_weight: TileTensor[work_dtype, ...],
+        conv_state: TileTensor[mut=True, state_dtype, ...],
+        slot_idx: TileTensor[DType.uint32, ...],
+        input_row_offsets: TileTensor[DType.uint32, ...],
+        qkv_window: TileTensor[mut=True, work_dtype, ...],
         ctx: DeviceContext,
     ) raises:
         """Launches the conv, also copying its input to `qkv_window` when
         `capture_input`. `qkv_window` then has the output's shape and is
         otherwise never touched.
         """
+        comptime assert conv_output_ragged.rank == 2
+        comptime assert qkv_input_ragged.rank == 2
+        comptime assert conv_weight.rank == 2
+        comptime assert conv_state.rank == 3
+        comptime assert slot_idx.rank == 1
+        comptime assert input_row_offsets.rank == 1
+        comptime assert qkv_window.rank == 2
         # Number of threads per block along the conv_dim axis.
         comptime CONV1D_BLOCK_DIM: Int = 128
 
-        var total_seq_len = qkv_input_ragged.dim_size(0)
-        var conv_dim = qkv_input_ragged.dim_size(1)
-        var kernel_size = conv_weight.dim_size(1)
-        var batch_size = slot_idx.dim_size(0)
+        var total_seq_len = Int(qkv_input_ragged.dim[0]())
+        var conv_dim = Int(qkv_input_ragged.dim[1]())
+        var kernel_size = Int(conv_weight.dim[1]())
+        var batch_size = Int(slot_idx.dim[0]())
 
         # Host-side shape sanity checks. The kernel indexes the conv_state pool
         # via `slot = slot_idx[batch_item]`; slot bounds are guaranteed by the
         # Python-side `GatedDeltaNetStateCache.claim`, so we only validate that
         # tensor shapes are mutually consistent here.
         debug_assert(
-            input_row_offsets.dim_size(0) == batch_size + 1,
+            Int(input_row_offsets.dim[0]()) == batch_size + 1,
             (
                 "gated_delta_conv1d_fwd: input_row_offsets must"
                 " have batch_size + 1 entries"
             ),
         )
         debug_assert(
-            conv_state.dim_size(0) > 0,
+            Int(conv_state.dim[0]()) > 0,
             (
                 "gated_delta_conv1d_fwd: conv_state pool must"
                 " have at least one slot"
             ),
         )
         debug_assert(
-            conv_state.dim_size(1) == conv_dim,
+            Int(conv_state.dim[1]()) == conv_dim,
             (
                 "gated_delta_conv1d_fwd: conv_state pool channel"
                 " dim must equal conv_dim"
             ),
         )
         debug_assert(
-            conv_state.dim_size(2) == kernel_size - 1,
+            Int(conv_state.dim[2]()) == kernel_size - 1,
             (
                 "gated_delta_conv1d_fwd: conv_state pool window"
                 " dim must equal kernel_size - 1"
             ),
         )
-
-        var conv_output_ragged_tt = conv_output_ragged.to_tile_tensor[
-            DType.int64
-        ]()
-        var qkv_input_ragged_tt = qkv_input_ragged.to_tile_tensor[.int64]()
-        var conv_weight_tt = conv_weight.to_tile_tensor[.int64]()
-        var conv_state_tt = conv_state.to_tile_tensor[.int64]()
-        var slot_idx_tt = slot_idx.to_tile_tensor[.int64]()
-        var input_row_offsets_tt = input_row_offsets.to_tile_tensor[
-            DType.int64
-        ]()
-        var qkv_window_tt = qkv_window.to_tile_tensor[.int64]()
 
         comptime assert is_gpu[
             target
@@ -4220,14 +4227,12 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
 
         # The kernel addresses the ragged input and output with 32-bit linear
         # offsets (the conv_state pool keeps 64-bit offsets).
-        var qkv_input_strides = qkv_input_ragged.strides()
-        var conv_output_strides = conv_output_ragged.strides()
-        var max_input_offset = (total_seq_len - 1) * qkv_input_strides[0] + (
-            conv_dim - 1
-        ) * qkv_input_strides[1]
-        var max_output_offset = (total_seq_len - 1) * conv_output_strides[0] + (
-            conv_dim - 1
-        ) * conv_output_strides[1]
+        var max_input_offset = (total_seq_len - 1) * Int(
+            qkv_input_ragged.dynamic_stride(0)
+        ) + (conv_dim - 1) * Int(qkv_input_ragged.dynamic_stride(1))
+        var max_output_offset = (total_seq_len - 1) * Int(
+            conv_output_ragged.dynamic_stride(0)
+        ) + (conv_dim - 1) * Int(conv_output_ragged.dynamic_stride(1))
         if max(max_input_offset, max_output_offset) > Int(UInt32.MAX):
             raise Error(
                 t"gated_delta_conv1d_fwd: ragged input/output linear offsets"
@@ -4256,28 +4261,28 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
                     kKernelSize,
                     CONV1D_BLOCK_DIM,
                     Self.write_state,
-                    qkv_input_ragged_tt.LayoutType,
-                    conv_weight_tt.LayoutType,
-                    conv_state_tt.LayoutType,
-                    slot_idx_tt.LayoutType,
-                    input_row_offsets_tt.LayoutType,
-                    conv_output_ragged_tt.LayoutType,
-                    qkv_input_ragged_tt.Engine,
+                    qkv_input_ragged.LayoutType,
+                    conv_weight.LayoutType,
+                    conv_state.LayoutType,
+                    slot_idx.LayoutType,
+                    input_row_offsets.LayoutType,
+                    conv_output_ragged.LayoutType,
+                    qkv_input_ragged.Engine,
                     capture_input,
-                    qkv_window_tt.LayoutType,
+                    qkv_window.LayoutType,
                 ]
             ](
                 Int32(batch_size),
                 Int32(total_seq_len),
                 Int32(conv_dim),
                 Int32(tokens_per_block),
-                qkv_input_ragged_tt,
-                conv_weight_tt,
-                conv_state_tt,
-                slot_idx_tt,
-                input_row_offsets_tt,
-                conv_output_ragged_tt,
-                qkv_window_tt,
+                qkv_input_ragged,
+                conv_weight,
+                conv_state,
+                slot_idx,
+                input_row_offsets,
+                conv_output_ragged,
+                qkv_window,
                 grid_dim=(grid_dim_tokens, grid_dim_channels),
                 block_dim=(CONV1D_BLOCK_DIM,),
             )
@@ -4364,31 +4369,47 @@ struct GatedDeltaConv1dVerifyFwd[rollback: Bool]:
 
     @staticmethod
     def execute[
-        work_dtype: DType,
-        state_dtype: DType,
         target: StaticString,
     ](
-        conv_output_ragged: OutputTensor[dtype=work_dtype, rank=2, ...],
-        qkv_window: OutputTensor[dtype=work_dtype, rank=2, ...],
-        qkv_input_ragged: InputTensor[dtype=work_dtype, rank=2, ...],
-        conv_weight: InputTensor[dtype=work_dtype, rank=2, ...],
-        conv_state: MutableInputTensor[dtype=state_dtype, rank=3, ...],
-        slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        verify_width: InputTensor[dtype=.int64, rank=1, ...],
+        conv_output_ragged: Some[Output & Tensor],
+        qkv_window: Some[Output & Tensor],
+        qkv_input_ragged: Some[Input & Tensor],
+        conv_weight: Some[Input & Tensor],
+        conv_state: Some[MutableInput & Tensor],
+        slot_idx: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        verify_width: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        var num_draft_tokens = verify_width.dim_size(0)
+        comptime assert conforms_to(type_of(conv_output_ragged), TileTensorable)
+        comptime assert conforms_to(type_of(qkv_window), TileTensorable)
+        comptime assert conforms_to(type_of(qkv_input_ragged), TileTensorable)
+        comptime assert conforms_to(type_of(conv_weight), TileTensorable)
+        comptime assert conforms_to(type_of(conv_state), TileTensorable)
+        comptime assert conforms_to(type_of(slot_idx), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(verify_width), TileTensorable)
+        comptime work_dtype = type_of(conv_output_ragged).dtype
+        comptime assert type_of(conv_output_ragged).rank == 2
+        comptime assert type_of(qkv_window).rank == 2
+        comptime assert type_of(qkv_input_ragged).rank == 2
+        comptime assert type_of(conv_weight).rank == 2
+        comptime assert type_of(conv_state).rank == 3
+        comptime assert type_of(slot_idx).rank == 1
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(verify_width).rank == 1
+        comptime assert type_of(verify_width).dtype == DType.int64
+        var num_draft_tokens = Int(verify_width.shape()[0].value())
         var committed = num_draft_tokens == 0
         if Self.rollback and committed:
             return
         # The rollback's replay plan is sized to one token plus its drafts
         # per row, so a wider row would take it out of bounds.
-        var batch_size = slot_idx.dim_size(0)
+        var batch_size = Int(slot_idx.shape()[0].value())
         if (
             not Self.rollback
             and not committed
-            and qkv_input_ragged.dim_size(0)
+            and Int(qkv_input_ragged.shape()[0].value())
             != batch_size * (num_draft_tokens + 1)
         ):
             raise Error(
@@ -4399,12 +4420,10 @@ struct GatedDeltaConv1dVerifyFwd[rollback: Bool]:
                 " rows for ",
                 batch_size,
                 " requests, got ",
-                qkv_input_ragged.dim_size(0),
+                Int(qkv_input_ragged.shape()[0].value()),
             )
         if committed or Self.rollback:
-            GatedDeltaConv1dFwd[write_state=True].execute[
-                work_dtype, state_dtype, target
-            ](
+            GatedDeltaConv1dFwd[write_state=True].execute[target](
                 conv_output_ragged,
                 qkv_input_ragged,
                 conv_weight,
@@ -4415,15 +4434,15 @@ struct GatedDeltaConv1dVerifyFwd[rollback: Bool]:
             )
         else:
             GatedDeltaConv1dFwd[write_state=False].launch[
-                work_dtype, state_dtype, target, capture_input=True
+                target, capture_input=True
             ](
-                conv_output_ragged,
-                qkv_input_ragged,
-                conv_weight,
-                conv_state,
-                slot_idx,
-                input_row_offsets,
-                qkv_window,
+                conv_output_ragged.to_tile_tensor(),
+                qkv_input_ragged.to_tile_tensor[work_dtype](),
+                conv_weight.to_tile_tensor[work_dtype](),
+                conv_state.to_tile_tensor(),
+                slot_idx.to_tile_tensor[.uint32](),
+                input_row_offsets.to_tile_tensor[.uint32](),
+                qkv_window.to_tile_tensor[work_dtype](),
                 ctx,
             )
 
@@ -4446,13 +4465,13 @@ struct _GatedDeltaRecurrenceShape(TrivialRegisterPassable):
         //,
         op_name: StaticString,
     ](
-        recurrence_output: OutputTensor[dtype=work_dtype, rank=2, ...],
-        qkv_conv_output: InputTensor[dtype=work_dtype, rank=2, ...],
-        decay_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
-        beta_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
-        recurrent_state: MutableInputTensor[dtype=state_dtype, rank=4, ...],
-        slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        recurrence_output: TileTensor[work_dtype, ...],
+        qkv_conv_output: TileTensor[work_dtype, ...],
+        decay_per_token: TileTensor[work_dtype, ...],
+        beta_per_token: TileTensor[work_dtype, ...],
+        recurrent_state: TileTensor[state_dtype, ...],
+        slot_idx: TileTensor[DType.uint32, ...],
+        input_row_offsets: TileTensor[DType.uint32, ...],
     ) raises -> Self:
         """Validates the operands of a recurrence launch and returns their
         dims.
@@ -4477,12 +4496,19 @@ struct _GatedDeltaRecurrenceShape(TrivialRegisterPassable):
         Raises:
             If the operands' shapes disagree.
         """
-        var total_seq_len = qkv_conv_output.dim_size(0)
-        var conv_dim = qkv_conv_output.dim_size(1)
-        var num_value_heads = decay_per_token.dim_size(1)
-        var batch_size = slot_idx.dim_size(0)
-        var key_head_dim = recurrent_state.dim_size(2)
-        var value_head_dim = recurrent_state.dim_size(3)
+        comptime assert recurrence_output.rank == 2
+        comptime assert qkv_conv_output.rank == 2
+        comptime assert decay_per_token.rank == 2
+        comptime assert beta_per_token.rank == 2
+        comptime assert recurrent_state.rank == 4
+        comptime assert slot_idx.rank == 1
+        comptime assert input_row_offsets.rank == 1
+        var total_seq_len = Int(qkv_conv_output.dim[0]())
+        var conv_dim = Int(qkv_conv_output.dim[1]())
+        var num_value_heads = Int(decay_per_token.dim[1]())
+        var batch_size = Int(slot_idx.dim[0]())
+        var key_head_dim = Int(recurrent_state.dim[2]())
+        var value_head_dim = Int(recurrent_state.dim[3]())
         var value_dim = num_value_heads * value_head_dim
         # conv_dim = 2 * key_dim + value_dim.
         var key_dim = (conv_dim - value_dim) // 2
@@ -4504,14 +4530,14 @@ struct _GatedDeltaRecurrenceShape(TrivialRegisterPassable):
         # The kernel indexes the pool by `slot_idx`, whose bounds the cache
         # guarantees, so only the shapes are checked here.
         if (
-            input_row_offsets.dim_size(0) != batch_size + 1
-            or recurrent_state.dim_size(0) == 0
-            or recurrent_state.dim_size(1) != num_value_heads
-            or decay_per_token.dim_size(0) != total_seq_len
-            or beta_per_token.dim_size(0) != total_seq_len
-            or beta_per_token.dim_size(1) != num_value_heads
-            or recurrence_output.dim_size(0) != total_seq_len
-            or recurrence_output.dim_size(1) != value_dim
+            Int(input_row_offsets.dim[0]()) != batch_size + 1
+            or Int(recurrent_state.dim[0]()) == 0
+            or Int(recurrent_state.dim[1]()) != num_value_heads
+            or Int(decay_per_token.dim[0]()) != total_seq_len
+            or Int(beta_per_token.dim[0]()) != total_seq_len
+            or Int(beta_per_token.dim[1]()) != num_value_heads
+            or Int(recurrence_output.dim[0]()) != total_seq_len
+            or Int(recurrence_output.dim[1]()) != value_dim
         ):
             raise Error(
                 op_name,
@@ -4572,40 +4598,49 @@ struct GatedDeltaRecurrenceFwd:
 
     @staticmethod
     def execute[
-        work_dtype: DType,
-        state_dtype: DType,
         target: StaticString,
     ](
-        recurrence_output: OutputTensor[dtype=work_dtype, rank=2, ...],
-        qkv_conv_output: InputTensor[dtype=work_dtype, rank=2, ...],
-        decay_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
-        beta_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
-        recurrent_state: MutableInputTensor[dtype=state_dtype, rank=4, ...],
-        slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        recurrence_output: Some[Output & Tensor],
+        qkv_conv_output: Some[Input & Tensor],
+        decay_per_token: Some[Input & Tensor],
+        beta_per_token: Some[Input & Tensor],
+        recurrent_state: Some[MutableInput & Tensor],
+        slot_idx: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(recurrence_output), TileTensorable)
+        comptime assert conforms_to(type_of(qkv_conv_output), TileTensorable)
+        comptime assert conforms_to(type_of(decay_per_token), TileTensorable)
+        comptime assert conforms_to(type_of(beta_per_token), TileTensorable)
+        comptime assert conforms_to(type_of(recurrent_state), TileTensorable)
+        comptime assert conforms_to(type_of(slot_idx), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime work_dtype = type_of(recurrence_output).dtype
+        comptime state_dtype = type_of(recurrent_state).dtype
+        comptime assert type_of(recurrence_output).rank == 2
+        comptime assert type_of(qkv_conv_output).rank == 2
+        comptime assert type_of(decay_per_token).rank == 2
+        comptime assert type_of(beta_per_token).rank == 2
+        comptime assert type_of(recurrent_state).rank == 4
+        comptime assert type_of(slot_idx).rank == 1
+        comptime assert type_of(input_row_offsets).rank == 1
+        var recurrence_output_tt = recurrence_output.to_tile_tensor()
+        var qkv_conv_output_tt = qkv_conv_output.to_tile_tensor[work_dtype]()
+        var decay_per_token_tt = decay_per_token.to_tile_tensor[work_dtype]()
+        var beta_per_token_tt = beta_per_token.to_tile_tensor[work_dtype]()
+        var recurrent_state_tt = recurrent_state.to_tile_tensor()
+        var slot_idx_tt = slot_idx.to_tile_tensor[.uint32]()
+        var input_row_offsets_tt = input_row_offsets.to_tile_tensor[.uint32]()
         var shape = _GatedDeltaRecurrenceShape.of["gated_delta_recurrence_fwd"](
-            recurrence_output,
-            qkv_conv_output,
-            decay_per_token,
-            beta_per_token,
-            recurrent_state,
-            slot_idx,
-            input_row_offsets,
+            recurrence_output_tt,
+            qkv_conv_output_tt,
+            decay_per_token_tt,
+            beta_per_token_tt,
+            recurrent_state_tt,
+            slot_idx_tt,
+            input_row_offsets_tt,
         )
-
-        var recurrence_output_tt = recurrence_output.to_tile_tensor[
-            DType.int64
-        ]()
-        var qkv_conv_output_tt = qkv_conv_output.to_tile_tensor[.int64]()
-        var decay_per_token_tt = decay_per_token.to_tile_tensor[.int64]()
-        var beta_per_token_tt = beta_per_token.to_tile_tensor[.int64]()
-        var recurrent_state_tt = recurrent_state.to_tile_tensor[.int64]()
-        var slot_idx_tt = slot_idx.to_tile_tensor[.int64]()
-        var input_row_offsets_tt = input_row_offsets.to_tile_tensor[
-            DType.int64
-        ]()
 
         comptime assert is_gpu[
             target
@@ -4753,26 +4788,47 @@ struct GatedDeltaRecurrenceVerifyRingFwd:
 
     @staticmethod
     def execute[
-        work_dtype: DType,
-        state_dtype: DType,
-        ring_dtype: DType,
         target: StaticString,
     ](
-        recurrence_output: OutputTensor[dtype=work_dtype, rank=2, ...],
-        qkv_conv_output: InputTensor[dtype=work_dtype, rank=2, ...],
-        decay_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
-        beta_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
-        recurrent_state: MutableInputTensor[dtype=state_dtype, rank=4, ...],
-        ring: MutableInputTensor[dtype=ring_dtype, rank=4, ...],
-        slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
-        ring_slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        verify_width: InputTensor[dtype=.int64, rank=1, ...],
+        recurrence_output: Some[Output & Tensor],
+        qkv_conv_output: Some[Input & Tensor],
+        decay_per_token: Some[Input & Tensor],
+        beta_per_token: Some[Input & Tensor],
+        recurrent_state: Some[MutableInput & Tensor],
+        ring: Some[MutableInput & Tensor],
+        slot_idx: Some[Input & Tensor],
+        ring_slot_idx: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        verify_width: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        var num_draft_tokens = verify_width.dim_size(0)
+        comptime assert conforms_to(type_of(recurrence_output), TileTensorable)
+        comptime assert conforms_to(type_of(qkv_conv_output), TileTensorable)
+        comptime assert conforms_to(type_of(decay_per_token), TileTensorable)
+        comptime assert conforms_to(type_of(beta_per_token), TileTensorable)
+        comptime assert conforms_to(type_of(recurrent_state), TileTensorable)
+        comptime assert conforms_to(type_of(ring), TileTensorable)
+        comptime assert conforms_to(type_of(slot_idx), TileTensorable)
+        comptime assert conforms_to(type_of(ring_slot_idx), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(verify_width), TileTensorable)
+        comptime work_dtype = type_of(recurrence_output).dtype
+        comptime state_dtype = type_of(recurrent_state).dtype
+        comptime ring_dtype = type_of(ring).dtype
+        comptime assert type_of(recurrence_output).rank == 2
+        comptime assert type_of(qkv_conv_output).rank == 2
+        comptime assert type_of(decay_per_token).rank == 2
+        comptime assert type_of(beta_per_token).rank == 2
+        comptime assert type_of(recurrent_state).rank == 4
+        comptime assert type_of(ring).rank == 4
+        comptime assert type_of(slot_idx).rank == 1
+        comptime assert type_of(ring_slot_idx).rank == 1
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(verify_width).rank == 1
+        comptime assert type_of(verify_width).dtype == DType.int64
+        var num_draft_tokens = Int(verify_width.shape()[0].value())
         if num_draft_tokens == 0:
-            GatedDeltaRecurrenceFwd.execute[work_dtype, state_dtype, target](
+            GatedDeltaRecurrenceFwd.execute[target](
                 recurrence_output,
                 qkv_conv_output,
                 decay_per_token,
@@ -4784,18 +4840,25 @@ struct GatedDeltaRecurrenceVerifyRingFwd:
             )
             return
 
+        var recurrence_output_tt = recurrence_output.to_tile_tensor()
+        var qkv_conv_output_tt = qkv_conv_output.to_tile_tensor[work_dtype]()
+        var decay_per_token_tt = decay_per_token.to_tile_tensor[work_dtype]()
+        var beta_per_token_tt = beta_per_token.to_tile_tensor[work_dtype]()
+        var recurrent_state_tt = recurrent_state.to_tile_tensor()
+        var slot_idx_tt = slot_idx.to_tile_tensor[.uint32]()
+        var input_row_offsets_tt = input_row_offsets.to_tile_tensor[.uint32]()
         var shape = _GatedDeltaRecurrenceShape.of[
             "gated_delta_recurrence_verify_ring_fwd"
         ](
-            recurrence_output,
-            qkv_conv_output,
-            decay_per_token,
-            beta_per_token,
-            recurrent_state,
-            slot_idx,
-            input_row_offsets,
+            recurrence_output_tt,
+            qkv_conv_output_tt,
+            decay_per_token_tt,
+            beta_per_token_tt,
+            recurrent_state_tt,
+            slot_idx_tt,
+            input_row_offsets_tt,
         )
-        var ring_len = ring.dim_size(2)
+        var ring_len = Int(ring.shape()[2].value())
         if num_draft_tokens + 1 > ring_len:
             raise Error(
                 "gated_delta_recurrence_verify_ring_fwd: a verify of ",
@@ -4806,8 +4869,8 @@ struct GatedDeltaRecurrenceVerifyRingFwd:
                 ring_len,
             )
         if (
-            ring.dim_size(1) != shape.num_key_heads
-            or ring_slot_idx.dim_size(0) != shape.batch_size
+            Int(ring.shape()[1].value()) != shape.num_key_heads
+            or Int(ring_slot_idx.shape()[0].value()) != shape.batch_size
         ):
             raise Error(
                 "gated_delta_recurrence_verify_ring_fwd: the ring must hold ",
@@ -4815,20 +4878,13 @@ struct GatedDeltaRecurrenceVerifyRingFwd:
                 " key heads and its row table ",
                 shape.batch_size,
                 " rows, got ",
-                ring.dim_size(1),
+                Int(ring.shape()[1].value()),
                 " and ",
-                ring_slot_idx.dim_size(0),
+                Int(ring_slot_idx.shape()[0].value()),
             )
 
-        var recurrence_output_tt = recurrence_output.to_tile_tensor[.int64]()
-        var qkv_conv_output_tt = qkv_conv_output.to_tile_tensor[.int64]()
-        var decay_per_token_tt = decay_per_token.to_tile_tensor[.int64]()
-        var beta_per_token_tt = beta_per_token.to_tile_tensor[.int64]()
-        var recurrent_state_tt = recurrent_state.to_tile_tensor[.int64]()
-        var ring_tt = ring.to_tile_tensor[.int64]()
-        var slot_idx_tt = slot_idx.to_tile_tensor[.int64]()
-        var ring_slot_idx_tt = ring_slot_idx.to_tile_tensor[.int64]()
-        var input_row_offsets_tt = input_row_offsets.to_tile_tensor[.int64]()
+        var ring_tt = ring.to_tile_tensor()
+        var ring_slot_idx_tt = ring_slot_idx.to_tile_tensor[.uint32]()
 
         comptime assert is_gpu[
             target
@@ -4838,7 +4894,7 @@ struct GatedDeltaRecurrenceVerifyRingFwd:
         if shape.key_head_dim == 128 and shape.value_head_dim == 128:
             _check_ring_record_stride[128, 128](
                 "gated_delta_recurrence_verify_ring_fwd",
-                ring.dim_size(3),
+                Int(ring.shape()[3].value()),
                 shape.num_value_heads // shape.num_key_heads,
             )
             comptime for shift in range(1, 4):
@@ -4967,33 +5023,46 @@ struct GatedDeltaStateFold:
 
     @staticmethod
     def execute[
-        state_dtype: DType,
-        ring_dtype: DType,
         target: StaticString,
     ](
-        recurrent_state: MutableInputTensor[dtype=state_dtype, rank=4, ...],
+        recurrent_state: Some[MutableInput & Tensor],
         # Mutable, though only read, to order the fold after the verify.
-        ring: MutableInputTensor[dtype=ring_dtype, rank=4, ...],
-        row_ids: InputTensor[dtype=.uint32, rank=2, ...],
-        ring_row_ids: InputTensor[dtype=.uint32, rank=2, ...],
-        num_accepted: InputTensor[dtype=.uint32, rank=1, ...],
-        verify_width: InputTensor[dtype=.int64, rank=1, ...],
+        ring: Some[MutableInput & Tensor],
+        row_ids: Some[Input & Tensor],
+        ring_row_ids: Some[Input & Tensor],
+        num_accepted: Some[Input & Tensor],
+        verify_width: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        if verify_width.dim_size(0) == 0:
+        comptime assert conforms_to(type_of(recurrent_state), TileTensorable)
+        comptime assert conforms_to(type_of(ring), TileTensorable)
+        comptime assert conforms_to(type_of(row_ids), TileTensorable)
+        comptime assert conforms_to(type_of(ring_row_ids), TileTensorable)
+        comptime assert conforms_to(type_of(num_accepted), TileTensorable)
+        comptime assert conforms_to(type_of(verify_width), TileTensorable)
+        comptime state_dtype = type_of(recurrent_state).dtype
+        comptime ring_dtype = type_of(ring).dtype
+        comptime assert type_of(recurrent_state).rank == 4
+        comptime assert type_of(ring).rank == 4
+        comptime assert type_of(row_ids).rank == 2
+        comptime assert type_of(ring_row_ids).rank == 2
+        comptime assert type_of(num_accepted).rank == 1
+        comptime assert type_of(verify_width).rank == 1
+        comptime assert type_of(verify_width).dtype == DType.int64
+        if Int(verify_width.shape()[0].value()) == 0:
             return
-        var num_layers = row_ids.dim_size(0)
-        var batch_size = row_ids.dim_size(1)
-        var num_value_heads = recurrent_state.dim_size(1)
-        var num_key_heads = ring.dim_size(1)
-        var key_head_dim = recurrent_state.dim_size(2)
-        var value_head_dim = recurrent_state.dim_size(3)
-        var ring_len = ring.dim_size(2)
+        var num_layers = Int(row_ids.shape()[0].value())
+        var batch_size = Int(row_ids.shape()[1].value())
+        var num_value_heads = Int(recurrent_state.shape()[1].value())
+        var num_key_heads = Int(ring.shape()[1].value())
+        var key_head_dim = Int(recurrent_state.shape()[2].value())
+        var value_head_dim = Int(recurrent_state.shape()[3].value())
+        var ring_len = Int(ring.shape()[2].value())
 
         if (
-            ring_row_ids.dim_size(0) != num_layers
-            or ring_row_ids.dim_size(1) != batch_size
-            or num_accepted.dim_size(0) != batch_size
+            Int(ring_row_ids.shape()[0].value()) != num_layers
+            or Int(ring_row_ids.shape()[1].value()) != batch_size
+            or Int(num_accepted.shape()[0].value()) != batch_size
         ):
             raise Error(
                 "gated_delta_state_fold: the ring row table must match the",
@@ -5014,11 +5083,11 @@ struct GatedDeltaStateFold:
                 " key heads",
             )
 
-        var recurrent_state_tt = recurrent_state.to_tile_tensor[.int64]()
-        var ring_tt = ring.to_tile_tensor[.int64]()
-        var row_ids_tt = row_ids.to_tile_tensor[.int64]()
-        var ring_row_ids_tt = ring_row_ids.to_tile_tensor[.int64]()
-        var num_accepted_tt = num_accepted.to_tile_tensor[.int64]()
+        var recurrent_state_tt = recurrent_state.to_tile_tensor()
+        var ring_tt = ring.to_tile_tensor()
+        var row_ids_tt = row_ids.to_tile_tensor[.uint32]()
+        var ring_row_ids_tt = ring_row_ids.to_tile_tensor[.uint32]()
+        var num_accepted_tt = num_accepted.to_tile_tensor[.uint32]()
 
         comptime assert is_gpu[
             target
@@ -5028,7 +5097,7 @@ struct GatedDeltaStateFold:
         if key_head_dim == 128 and value_head_dim == 128:
             _check_ring_record_stride[128, 128](
                 "gated_delta_state_fold",
-                ring.dim_size(3),
+                Int(ring.shape()[3].value()),
                 num_value_heads // num_key_heads,
             )
             comptime for shift in range(1, 4):
