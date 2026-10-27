@@ -2364,7 +2364,7 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
     @inline(.always)
     def __init__(
         out self,
-        # FIXME(MSTDL-3258): DeviceContext target type erasure.
+        # FIXME(MSTDL-3258): DeviceContext target type erasure
         ctx: DeviceContext.Generic,
     ) raises:
         """Retrieves the stream associated with the given device context.
