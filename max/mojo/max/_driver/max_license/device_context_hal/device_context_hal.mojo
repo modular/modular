@@ -1072,10 +1072,10 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
             self.assert_default_target()
         )
 
-        gpu_kernel._do_call_with_pack_checked(
+        gpu_kernel._do_call_closure_checked(
             self,
             execution_config,
-            host_args=(func,),
+            func,
             location=location.or_else(call_location()),
         )
 
@@ -1292,9 +1292,9 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
                 func_attribute, shared_mem_bytes
             ),
         )
-        gpu_kernel._call_with_pack_checked(
+        gpu_kernel._call_closure_checked(
             self,
-            host_args=(func,),
+            func,
             grid_dim=grid_dim,
             block_dim=block_dim,
             cluster_dim=cluster_dim,
@@ -2634,6 +2634,74 @@ struct DeviceFunction[
         )
 
     @inline(.always)
+    def _call_closure_checked[
+        FuncType: ImplicitlyCopyable & RegisterPassable & def() -> None,
+        ContextT: _HALFunctionEnqueuer,
+    ](
+        imm self,
+        ctx: ContextT,
+        closure: FuncType,
+        *,
+        grid_dim: Dim,
+        block_dim: Dim,
+        cluster_dim: OptionalReg[Dim],
+        shared_mem_bytes: OptionalReg[Int],
+        var attributes: List[LaunchAttribute],
+        var constant_memory: List[ConstantMemoryMapping],
+        location: Optional[SourceLocation],
+    ) raises:
+        # Encoding makes a captured `DevicePointer` a device address.
+        comptime if conforms_to(FuncType, DevicePassable):
+            self._call_with_pack_checked(
+                ctx,
+                rebind[downcast[FuncType, DevicePassable]](closure),
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                cluster_dim=cluster_dim,
+                shared_mem_bytes=shared_mem_bytes,
+                attributes=attributes^,
+                constant_memory=constant_memory^,
+                location=location,
+            )
+        else:
+            self._call_with_pack_checked(
+                ctx,
+                host_args=(closure,),
+                grid_dim=grid_dim,
+                block_dim=block_dim,
+                cluster_dim=cluster_dim,
+                shared_mem_bytes=shared_mem_bytes,
+                attributes=attributes^,
+                constant_memory=constant_memory^,
+                location=location,
+            )
+
+    @inline(.always)
+    def _do_call_closure_checked[
+        ExecutionConfigType: GridBlockExecutionConfig,
+        FuncType: ImplicitlyCopyable & RegisterPassable & def() -> None,
+        ContextT: _HALFunctionEnqueuer,
+    ](
+        imm self,
+        ctx: ContextT,
+        mut execution_config: ExecutionConfigType,
+        closure: FuncType,
+        location: Optional[SourceLocation],
+    ) raises:
+        # Encoding makes a captured `DevicePointer` a device address.
+        comptime if conforms_to(FuncType, DevicePassable):
+            self._do_call_with_pack_checked(
+                ctx,
+                execution_config,
+                rebind[downcast[FuncType, DevicePassable]](closure),
+                location=location,
+            )
+        else:
+            self._do_call_with_pack_checked(
+                ctx, execution_config, host_args=(closure,), location=location
+            )
+
+    @inline(.always)
     def _call_with_pack_checked[
         HostArgs: TypeList[Trait=RegisterPassable, ...],
         //,
@@ -3555,9 +3623,9 @@ struct DeviceStream(ImplicitlyCopyable, Movable, _HALFunctionEnqueuer):
             block_dim, location=call_location()
         )
         var gpu_kernel = DeviceFunction[FuncType.__call__](self._ctx)
-        gpu_kernel._call_with_pack_checked(
+        gpu_kernel._call_closure_checked(
             self,
-            host_args=(func,),
+            func,
             grid_dim=grid_dim,
             block_dim=block_dim,
             cluster_dim=cluster_dim,
@@ -3603,10 +3671,10 @@ struct DeviceStream(ImplicitlyCopyable, Movable, _HALFunctionEnqueuer):
             block_dim, location=call_location()
         )
         var gpu_kernel = DeviceFunction[FuncType.__call__](self._ctx)
-        gpu_kernel._do_call_with_pack_checked(
+        gpu_kernel._do_call_closure_checked(
             self,
             execution_config,
-            host_args=(func,),
+            func,
             location=location.or_else(call_location()),
         )
 
