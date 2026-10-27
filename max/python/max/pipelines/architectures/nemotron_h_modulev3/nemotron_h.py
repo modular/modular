@@ -25,15 +25,13 @@ from max import tree
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module, as_subgraph
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.nn.embedding import Embedding
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.nn.sequential import ModuleList
 from max.experimental.sharding import DeviceMapping, NamedMapping
 from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorValue
+from max.nn import Module, as_subgraph
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.embedding import Embedding
 from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
@@ -42,6 +40,8 @@ from max.nn.legacy.kv_cache import (
     RecurrentStateInputsPerDevice,
 )
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.norm import RMSNorm
+from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 
 from .layers.attention import NemotronHAttention

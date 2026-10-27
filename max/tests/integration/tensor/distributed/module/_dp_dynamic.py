@@ -37,7 +37,6 @@ from max.experimental.functional import (
     transpose,
     unsqueeze,
 )
-from max.experimental.nn.module import Module, module_dataclass
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -46,6 +45,7 @@ from max.experimental.sharding import (
     TensorLayout,
 )
 from max.experimental.tensor import Tensor
+from max.nn.module import Module, module_dataclass
 
 F32 = DType.float32
 H = 4

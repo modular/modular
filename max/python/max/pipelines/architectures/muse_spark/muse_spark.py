@@ -19,13 +19,13 @@ from typing import Any
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn.common_layers.embedding import VocabParallelEmbedding
-from max.experimental.nn.common_layers.linear import ColumnParallelLinear
-from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.experimental.nn.sequential import ModuleList
 from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import Tensor
+from max.nn.common_layers.embedding import VocabParallelEmbedding
+from max.nn.common_layers.linear import ColumnParallelLinear
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.sequential import ModuleList
 from max.pipelines.architectures.gemma4_modulev3.layers.rms_norm import (
     Gemma4RMSNorm,
 )

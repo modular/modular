@@ -34,7 +34,7 @@ from max.driver import (
 )
 from max.driver.driver import load_device
 from max.dtype import DType
-from max.experimental.nn._compilation_timer import collect_compilation_stats
+from max.nn._compilation_timer import collect_compilation_stats
 from max.pipelines.context import BaseContextType
 from max.pipelines.kv_cache import (
     DummyKVCache,

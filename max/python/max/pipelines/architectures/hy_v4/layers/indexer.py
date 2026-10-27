@@ -25,14 +25,13 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Linear, Module
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.quant_kernels import (
+from max.experimental.tensor import Tensor
+from max.nn import Linear, Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.quant_kernels import (
     quantize_dynamic_scaled_float8,
 )
-from max.experimental.nn.common_layers.quant_linear import QuantizedLinear
-from max.experimental.nn.norm import LayerNorm
-from max.experimental.tensor import Tensor
+from max.nn.common_layers.quant_linear import QuantizedLinear
 from max.nn.legacy.attention import MHAMaskVariant
 from max.nn.legacy.quant_config import (
     InputScaleSpec,
@@ -40,6 +39,7 @@ from max.nn.legacy.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
+from max.nn.norm import LayerNorm
 
 from ..model_config import HYV4Config
 from .functional_kernels import (

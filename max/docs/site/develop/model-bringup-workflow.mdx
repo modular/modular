@@ -1,6 +1,6 @@
 ---
 title: Model bring-up workflow
-description: Understand MAX's model architecture system and how to implement a custom architecture with max.experimental.nn by mapping config fields, translating weight names, connecting to the KV cache, and extending the module.
+description: Understand MAX's model architecture system and how to implement a custom architecture with max.nn by mapping config fields, translating weight names, connecting to the KV cache, and extending the module.
 ---
 
 :::tip
@@ -52,7 +52,7 @@ uses:
 Each file serves a distinct role:
 
 - `layers/`: holds custom layer implementations for components that
-  [`max.experimental.nn`](/api/python/experimental.nn/) doesn't provide.
+  [`max.nn`](/api/python/nn/) doesn't provide.
 - `__init__.py`: exposes the `ARCHITECTURES` list that MAX reads to register
   each entry.
 - `arch.py`: registers the architecture with MAX. It declares the architecture's
@@ -84,24 +84,23 @@ Each file serves a distinct role:
 The following sections describe how each component works and whether it
 needs customization.
 
-## Write modules with `max.experimental.nn`
+## Write modules with `max.nn`
 
 Write each model component as a subclass of
-[`Module`](/api/python/generated/max.experimental.nn.Module/) from
-[`max.experimental.nn`](/api/python/experimental.nn/). A module declares its
+[`Module`](/api/python/generated/max.nn.Module/) from
+[`max.nn`](/api/python/nn/). A module declares its
 argument and return types in its signature, such as
 `Module[[Tensor, PagedCacheValues, Tensor, Tensor], tuple[Tensor, ...]]`, and
 implements
-[`forward()`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.forward)
+[`forward()`](/api/python/generated/max.nn.Module/#max.nn.Module.forward)
 over [`Tensor`](/api/python/generated/max.experimental.tensor.Tensor/) values.
 Operations come from
 [`max.experimental.functional`](/api/python/experimental.functional/), which you
 import as `F`.
 
 Layer constructors take shapes and options only, such as
-[`Linear(in_dim, out_dim, bias=False)`](/api/python/generated/max.experimental.nn.Linear/)
-or
-[`Embedding(vocab_size, dim=hidden_size)`](/api/python/generated/max.experimental.nn.Embedding/).
+[`Linear(in_dim, out_dim, bias=False)`](/api/python/generated/max.nn.Linear/) or
+[`Embedding(vocab_size, dim=hidden_size)`](/api/python/generated/max.nn.Embedding/).
 The pipeline sets the dtype for the whole build, and your pipeline model places
 the module on a device with `.to(device)`.
 
@@ -121,9 +120,9 @@ builds the decoder:
    `_instantiate_module()`. `F.lazy()` defers tensor realization while
    `_instantiate_module()` builds the module.
 6. Traces and compiles the module with
-   [`Module.stage()`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.stage),
+   [`Module.stage()`](/api/python/generated/max.nn.Module/#max.nn.Module.stage),
    which
-   [`compile()`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.compile)
+   [`compile()`](/api/python/generated/max.nn.Module/#max.nn.Module.compile)
    wraps. The batch processor supplies the input types, and each parameter takes
    its value from the state dict by name.
 
@@ -342,7 +341,7 @@ weights rarely match those names, so you write a weight adapter function. The
 function converts the checkpoint into the weights your module expects.
 
 To list the names your module expects, build it under `F.lazy()` and read its
-[`parameters`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.parameters):
+[`parameters`](/api/python/generated/max.nn.Module/#max.nn.Module.parameters):
 
 <!-- invisible-code-block: python
 config, kv_params = smol_llama3()
@@ -484,10 +483,10 @@ unflattens them with its `kv_params`. For a single cache, call
 `self.kv_params.unflatten_kv_inputs()`. For a sliding-window and global
 cache pair, call `unflatten_basic_kv_tree()`. The `olmo3` root module wraps
 each cache in `PagedCacheValues` from
-`max.experimental.nn.common_layers.kv_cache`:
+`max.nn.common_layers.kv_cache`:
 
 <!-- invisible-code-block: python
-from max.experimental.nn import Module
+from max.nn import Module
 from max.experimental.tensor import Tensor
 from max.nn.legacy.kv_cache import KVCacheParamInterface
 from max.pipelines.architectures.olmo3.model_config import Olmo3Config
@@ -530,7 +529,7 @@ class Olmo3(Module[[Tensor, Tensor, Tensor], ModuleV3Outputs]):
 
 Each attention layer stores its layer index and receives a `PagedCacheValues`.
 It calls fused kernels from
-`max.experimental.nn.common_layers.functional_kernels`:
+`max.nn.common_layers.functional_kernels`:
 `rope_split_store_ragged()` applies RoPE and writes keys and values to the
 cache, and `flash_attention_ragged()` reads them back. MAX manages the paged
 memory behind the cache, using the settings in
@@ -572,10 +571,10 @@ Subclassing overrides attributes or methods within an existing module tree.
 Extending it changes the structure itself: how many normalization layers a block
 applies, whether attention and MLP share their input, which parameters are
 learnable. What those changes look like depends on your model's architecture.
-[`max.experimental.nn`](/api/python/experimental.nn/) provides the building
+[`max.nn`](/api/python/nn/) provides the building
 blocks, such as
-[`RMSNorm`](/api/python/generated/max.experimental.nn.norm.RMSNorm/),
-[`LayerNorm`](/api/python/generated/max.experimental.nn.norm.LayerNorm/),
+[`RMSNorm`](/api/python/generated/max.nn.norm.RMSNorm/),
+[`LayerNorm`](/api/python/generated/max.nn.norm.LayerNorm/),
 `Linear`, and `Embedding`. Its `common_layers` package adds attention, `MLP`,
 and rotary embedding layers. You can express most structural differences by
 composing these existing layers. The examples show cases where a model's
@@ -611,13 +610,13 @@ The parallel form requires one `input_layernorm` per block and a
 single residual add.
 
 When building any module that holds a list of layers, store them in
-[`ModuleList`](/api/python/generated/max.experimental.nn.ModuleList/).
+[`ModuleList`](/api/python/generated/max.nn.ModuleList/).
 `ModuleList(layers)` takes one iterable and names each layer by its numeric
 index (`0`, `1`, …), so parameter names resolve to `layers.0.*`, `layers.1.*`,
 and so on.
 
 **Learnable LayerNorm**: The `llama3_modulev3` model builds
-[`LayerNorm`](/api/python/generated/max.experimental.nn.norm.LayerNorm/) when
+[`LayerNorm`](/api/python/generated/max.nn.norm.LayerNorm/) when
 `norm_method="layer_norm"`. By default, `LayerNorm` creates a learnable `weight`
 and `bias`. Match its parameters to your checkpoint:
 
@@ -634,7 +633,7 @@ config = types.SimpleNamespace(hidden_size=8)
 -->
 
 ```python title="{model_name}.py"
-from max.experimental.nn.norm import LayerNorm
+from max.nn.norm import LayerNorm
 
 self.input_layernorm = LayerNorm(config.hidden_size, use_bias=False)
 ```
@@ -693,12 +692,11 @@ def _instantiate_module(self, model_config):
 ```
 
 Layers declare how their weights split across the mesh axes.
-`max.experimental.nn.common_layers.linear` provides `ColumnParallelLinear` and
+`max.nn.common_layers.linear` provides `ColumnParallelLinear` and
 `RowParallelLinear`, plus `col_parallel()` and `row_parallel()` to shard an
-existing `Linear`. `VocabParallelEmbedding` in
-`max.experimental.nn.common_layers.embedding` splits the vocabulary. The
-sharding picker inserts the collectives that these placements require. For an
-explicit collective, call
+existing `Linear`. `VocabParallelEmbedding` in `max.nn.common_layers.embedding`
+splits the vocabulary. The sharding picker inserts the collectives that these
+placements require. For an explicit collective, call
 [`F.allreduce_sum()`](/api/python/experimental.functional/#max.experimental.functional.allreduce_sum),
 [`F.allgather()`](/api/python/experimental.functional/#max.experimental.functional.allgather),
 [`F.reduce_scatter()`](/api/python/experimental.functional/#max.experimental.functional.reduce_scatter),

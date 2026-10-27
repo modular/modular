@@ -15,8 +15,8 @@
 
 from __future__ import annotations
 
-from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
+from max.nn import Module
 from max.nn.legacy.kv_cache import PagedCacheValues
 
 

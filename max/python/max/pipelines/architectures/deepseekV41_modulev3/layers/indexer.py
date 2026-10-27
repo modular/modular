@@ -66,11 +66,11 @@ from typing import TYPE_CHECKING
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
+from max.nn import Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
 
 from ...deepseekV41.layers.csa2 import store_compressed_kv
 from ..layer_resolver import LayerInfo

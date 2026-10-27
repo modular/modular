@@ -15,11 +15,11 @@
 from __future__ import annotations
 
 from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.linear import Linear
-from max.experimental.nn.norm import LayerNorm
-from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.nn.linear import Linear
+from max.nn.norm import LayerNorm
+from max.nn.sequential import ModuleList
 
 from ..model_config import Idefics3VisionConfig
 from .attention import Idefics3VisionAttention

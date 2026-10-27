@@ -19,7 +19,6 @@ placement, so the caller claims the one it knows they have.
 from __future__ import annotations
 
 from max.experimental import functional as F
-from max.experimental.nn.common_layers.mesh_axis import TP
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -27,6 +26,7 @@ from max.experimental.sharding import (
     Partial,
 )
 from max.experimental.tensor import Tensor
+from max.nn.common_layers.mesh_axis import TP
 
 
 def shard_axis(t: Tensor, axis: int) -> Tensor:

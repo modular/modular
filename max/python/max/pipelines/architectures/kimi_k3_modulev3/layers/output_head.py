@@ -24,7 +24,7 @@ by reaching for a framework default:
   reference lists it in ``_tied_weights_keys`` -- the tie must be decided
   from config, never assumed from the name list.
 * the final norm is ``kimi_rms_norm`` (cast-then-multiply), not
-  :class:`~max.experimental.nn.norm.RMSNorm`'s Gemma-style default.
+  :class:`~max.nn.norm.RMSNorm`'s Gemma-style default.
 * only the last token's hidden state is normalized and projected for the
   ``LAST_TOKEN`` case (the common path) -- norm and projection both run
   per-token, so gathering the last row BEFORE normalizing (not after) saves
@@ -42,9 +42,9 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn.common_layers.mesh_axis import TP
 from max.experimental.sharding import DeviceMesh, NamedMapping
 from max.experimental.tensor import Tensor
+from max.nn.common_layers.mesh_axis import TP
 from max.nn.legacy.transformer import ReturnLogits
 
 from .norm import KIMI_RMS_NORM_EPS, kimi_rms_norm

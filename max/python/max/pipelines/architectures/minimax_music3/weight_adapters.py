@@ -210,7 +210,7 @@ def convert_depth_decoder_state(
 
     This checkpoint needs no rewriting -- every key already matches the module's
     attribute path, and its embedding tables are stored the way
-    :class:`~max.experimental.nn.Embedding` wants them -- but it is one table
+    :class:`~max.nn.Embedding` wants them -- but it is one table
     short of what the module needs. A frame's semantic code is embedded by the
     *global model's* table, and this stage is the only place that table's audio
     rows are read, so they are sliced out of the checkpoint and joined here (see

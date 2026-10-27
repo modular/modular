@@ -17,9 +17,9 @@ from __future__ import annotations
 from typing import Any
 
 from max.driver import DeviceSpec, load_devices
-from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
 from max.graph import TensorType
+from max.nn import Module
 from max.pipelines.architectures.flux2.arch import FLUX2_TEXT_SEQ_LEN
 from max.pipelines.architectures.mistral3_modulev3.text_encoder.mistral3 import (
     Mistral3TextEncoderTransformer,
@@ -44,7 +44,7 @@ class TextEncoder(Module[[Tensor], Tensor]):
     wraps a source :class:`~max.pipelines.lib.weight_loader.WeightLoader`
     (typically composed by the
     :func:`~max.pipelines.lib.weight_loader.adapt_module_loader` walker
-    over a parent :class:`~max.experimental.nn.Module`) so the encoder's
+    over a parent :class:`~max.nn.Module`) so the encoder's
     parameter queries resolve against the HF Mistral3 checkpoint
     namespace.
     """

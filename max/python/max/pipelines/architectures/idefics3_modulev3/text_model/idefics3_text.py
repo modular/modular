@@ -23,15 +23,12 @@ import functools
 from max import tree
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.attention import AttentionWithRope
-from max.experimental.nn.common_layers.mlp import MLP
-from max.experimental.nn.embedding import Embedding
-from max.experimental.nn.linear import Linear
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import ops
+from max.nn import Module
+from max.nn.common_layers.attention import AttentionWithRope
+from max.nn.common_layers.mlp import MLP
+from max.nn.embedding import Embedding
 from max.nn.legacy.kernels import scatter_nd_skip_oob_indices as _scatter_nd
 from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
@@ -39,6 +36,9 @@ from max.nn.legacy.kv_cache import (
     PagedCacheValues,
 )
 from max.nn.legacy.transformer import ReturnLogits
+from max.nn.linear import Linear
+from max.nn.norm import RMSNorm
+from max.nn.sequential import ModuleList
 
 from ...llama3_modulev3.layers.mlp import LlamaStackedMLP
 from ...llama3_modulev3.layers.rotary_embedding import Llama3RotaryEmbedding

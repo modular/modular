@@ -39,14 +39,14 @@ the FFN; nothing else in the layer changes.
 from __future__ import annotations
 
 from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.nn.common_layers.multi_latent_attention import (
-    MLAPrefillMetadata,
-)
 from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.multi_latent_attention import (
+    MLAPrefillMetadata,
+)
 from max.nn.legacy.comm.ep import EPConfig
 from max.nn.legacy.kv_cache import MLAKVCacheParams
 

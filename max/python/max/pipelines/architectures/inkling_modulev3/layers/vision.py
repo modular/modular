@@ -22,12 +22,12 @@ from collections.abc import Sequence
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.linear import Linear
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
+from max.nn import Module
+from max.nn.linear import Linear
+from max.nn.norm import RMSNorm
+from max.nn.sequential import ModuleList
 
 from ...inkling.layers.vision import plan_folds
 from ...inkling.model_config import InklingVisionConfig

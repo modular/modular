@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for :class:`max.experimental.nn.TransparentModule`."""
+"""Tests for :class:`max.nn.TransparentModule`."""
 
 from __future__ import annotations
 
@@ -18,8 +18,8 @@ import numpy as np
 import pytest
 from max.dtype import DType
 from max.experimental import random
-from max.experimental.nn import Linear, Module, TransparentModule
 from max.experimental.tensor import Tensor, default_dtype
+from max.nn import Linear, Module, TransparentModule
 
 
 class _Transparent(TransparentModule[[Tensor], Tensor]):

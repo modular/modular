@@ -18,13 +18,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from max.experimental import functional as F
-from max.experimental.nn import Linear, Module
 from max.experimental.tensor import Tensor
+from max.nn import Linear, Module
 from max.nn.legacy.attention.mask_config import MHAMaskVariant
 from max.nn.legacy.kernels import flash_attention_gpu as _flash_attention_gpu
 
 if TYPE_CHECKING:
-    from max.experimental.nn.common_layers.rotary_embedding import (
+    from max.nn.common_layers.rotary_embedding import (
         RotaryEmbedding,
     )
 

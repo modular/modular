@@ -26,12 +26,12 @@ from __future__ import annotations
 from max import tree
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Linear, Module, RMSNorm
-from max.experimental.nn.common_layers.linear import col_parallel, row_parallel
-from max.experimental.nn.common_layers.mesh_axis import TP
 from max.experimental.sharding import NamedMapping
 from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorValue, ops
+from max.nn import Linear, Module, RMSNorm
+from max.nn.common_layers.linear import col_parallel, row_parallel
+from max.nn.common_layers.mesh_axis import TP
 from max.nn.legacy.state_space import gated_delta_conv1d_fwd, kda_decode
 from max.nn.legacy.state_space.kimi_delta import (
     KDA_GATE_LOWER_BOUND,

@@ -18,11 +18,11 @@ from typing import Any
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Linear, Module
-from max.experimental.nn.norm import LayerNorm, RMSNorm
-from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import TensorType
+from max.nn import Linear, Module
+from max.nn.norm import LayerNorm, RMSNorm
+from max.nn.sequential import ModuleList
 from max.pipelines.diffusion.cache import fbcache_conditional_execution
 from max.pipelines.diffusion.config import DenoisingCacheConfig
 

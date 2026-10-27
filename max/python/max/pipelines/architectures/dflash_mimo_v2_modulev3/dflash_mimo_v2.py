@@ -30,23 +30,23 @@ import numpy as np
 import numpy.typing as npt
 from max.driver import Buffer
 from max.dtype import DType
-from max.experimental.nn import (
-    Linear,
-    Module,
-    ModuleList,
-    RMSNorm,
-)
-from max.experimental.nn.common_layers.linear import (
-    ColumnParallelLinear,
-    RowParallelLinear,
-)
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.nn.common_layers.mlp import MLP
 from max.experimental.realization_context import ensure_context
 from max.experimental.sharding import NamedMapping
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorValue, ops
 from max.graph.weights import WeightData
+from max.nn import (
+    Linear,
+    Module,
+    ModuleList,
+    RMSNorm,
+)
+from max.nn.common_layers.linear import (
+    ColumnParallelLinear,
+    RowParallelLinear,
+)
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.mlp import MLP
 from max.nn.legacy.attention import MHAMaskVariant
 from max.nn.legacy.kernels import (
     flash_attention_ragged,

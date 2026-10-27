@@ -24,10 +24,6 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental import random
 from max.experimental.compilation import CompiledCallable
-from max.experimental.nn.module import (
-    Module,
-    module_dataclass,
-)
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -37,6 +33,10 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor, defaults
 from max.experimental.testing import assert_all_close
+from max.nn.module import (
+    Module,
+    module_dataclass,
+)
 
 
 @module_dataclass
@@ -296,7 +296,7 @@ def test_load_state_dict_valid_types() -> None:
     assert module.weight[0, 0].item() == 1.0
 
 
-_AUTO_CAST_LOGGER = "max.experimental.nn._weight_utils"
+_AUTO_CAST_LOGGER = "max.nn._weight_utils"
 
 
 def _auto_cast_logs(

@@ -87,7 +87,7 @@ class SpecDecodeInputTypeSpec:
     trace_owns_signal_buffers: bool = False
     """Declare no signal-buffer inputs, whatever the flags above say.
 
-    A graph traced by :meth:`~max.experimental.nn.Module.compile` appends its
+    A graph traced by :meth:`~max.nn.Module.compile` appends its
     own after every declared input, so declaring them here too would leave
     two sets."""
     signal_buffer_index: int | None = None

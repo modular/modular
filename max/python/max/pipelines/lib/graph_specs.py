@@ -36,12 +36,12 @@ from max._artifact.value_types import ArtifactError, treedef_to_json
 from max.driver import DLPackArray
 from max.engine import CompiledModel, InferenceSession, Model
 from max.experimental.compilation import CompiledCallable, StagedGraph
-from max.experimental.nn import Module as ModuleV3
 from max.experimental.sharding import TensorLayout
 from max.experimental.sharding.types import as_layout
 from max.experimental.tensor import Tensor
 from max.graph import Graph, Type
 from max.graph import Module as GraphModule
+from max.nn import Module as ModuleV3
 from max.nn.legacy import Module
 from max.nn.legacy.graph_groups import HiddenStates, Logits
 
@@ -78,8 +78,8 @@ class GraphRole(str, Enum):
 class GraphSpec:
     """A graph a pipeline compiles, as the module that traces it.
 
-    A :class:`~max.experimental.nn.Module` (ModuleV3) graph traces its
-    ``forward`` through :meth:`~max.experimental.nn.Module.stage` and
+    A :class:`~max.nn.Module` (ModuleV3) graph traces its
+    ``forward`` through :meth:`~max.nn.Module.stage` and
     compiles on its own.
 
     Args:

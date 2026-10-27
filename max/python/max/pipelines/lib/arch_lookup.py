@@ -29,7 +29,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, TypeAlias
 
-from max.experimental.nn import Module
+from max.nn import Module
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from .interfaces.pipeline_model import PipelineModel
@@ -69,7 +69,7 @@ PipelineModelType: TypeAlias = type[
 ]
 """The class of a model implementation that an architecture registers. A
 :class:`PipelineModel`, a :class:`PipelineExecutor`, or a
-:class:`~max.experimental.nn.Module`.
+:class:`~max.nn.Module`.
 """
 
 

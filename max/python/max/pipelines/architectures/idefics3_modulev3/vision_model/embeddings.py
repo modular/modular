@@ -16,10 +16,10 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.conv import Conv2d
-from max.experimental.nn.embedding import Embedding
 from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.nn.conv import Conv2d
+from max.nn.embedding import Embedding
 
 from ..model_config import Idefics3VisionConfig
 

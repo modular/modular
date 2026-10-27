@@ -22,9 +22,9 @@ from max.driver import CPU, Buffer, Device, load_devices
 from max.dtype import DType
 from max.experimental import functional
 from max.experimental import functional as F
-from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
+from max.nn import Module
 from max.pipelines.architectures.flux2.flux2_executor import (
     Flux2ExecutorOutputs,
 )
@@ -50,7 +50,7 @@ class FLUXModule(Module[..., tuple[Tensor, Tensor, Tensor]]):
 
     Expresses the entire FLUX.2 forward pass -- text encode, optional
     image encode, denoising loop, and VAE decode -- inside a single
-    :class:`~max.experimental.nn.Module` tree, with sub-Modules placed
+    :class:`~max.nn.Module` tree, with sub-Modules placed
     on the device specified by their corresponding manifest entry (for
     example, ``text_encoder`` on
     ``manifest["text_encoder"].device_specs[0]``).
@@ -66,7 +66,7 @@ class FLUXModule(Module[..., tuple[Tensor, Tensor, Tensor]]):
        materialising the Module's declared parameters into a
        compile-ready ``weights`` mapping (the walker descends into every
        ``HasLoaderAdapter`` sub-Module automatically).
-    3. Calling :meth:`~max.experimental.nn.Module.compile` with
+    3. Calling :meth:`~max.nn.Module.compile` with
        :meth:`input_types` and the materialised weights.
     4. Driving the resulting ``CompiledCallable`` against
        :meth:`prepare_inputs` and :meth:`from_outputs` for each batch.
@@ -501,7 +501,7 @@ class FLUXModule(Module[..., tuple[Tensor, Tensor, Tensor]]):
     def from_outputs(self, buffers: list[Buffer]) -> Flux2ExecutorOutputs:
         """Translate compiled-call output buffers into pipeline-facing outputs.
 
-        The compiled :class:`~max.experimental.nn.Module` returns
+        The compiled :class:`~max.nn.Module` returns
         ``(text_embeddings, image_latents, image)`` where ``image`` is
         a decoded ``(B, H, W, 3)`` uint8 buffer on CPU.  Only the last
         output is surfaced; the intermediates exist for diagnostic

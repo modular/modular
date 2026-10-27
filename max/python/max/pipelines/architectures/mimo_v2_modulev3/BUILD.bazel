@@ -6,7 +6,7 @@ modular_py_library(
     name = "mimo_v2_modulev3",
     srcs = glob(["**/*.py"]),
     # The experimental namespace re-exports these through
-    # //max/python/max/experimental/nn, which static import analysis cannot
+    # //max/python/max/nn, which static import analysis cannot
     # follow.
     ignore_unresolved_imports = [
         "max.experimental.tensor.default_device",
@@ -31,7 +31,7 @@ modular_py_library(
         "//max/python/max/engine",
         # The EP memory planner formats its reservation estimate.
         "//max/python/max/support",
-        "//max/python/max/experimental/nn",
+        "//max/python/max/nn",
         "//max/python/max/graph",
         # KV cache parameter types stay in max.nn.legacy; the module itself is V3.
         "//max/python/max/nn/legacy",

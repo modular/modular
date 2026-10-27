@@ -215,7 +215,7 @@ modular_py_library(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
+        "//max/python/max/nn",
         "//max/python/max/nn/legacy",
         "//max/python/max/support",
     ],

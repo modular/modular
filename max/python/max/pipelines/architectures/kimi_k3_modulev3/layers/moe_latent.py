@@ -40,7 +40,7 @@ what the experts actually consume. The block needs no allreduce under
 expert parallelism: the combine already returns final, correctly-ordered,
 router-weighted output.
 
-``max.experimental.nn.common_layers.moe.QuantizedMoE`` cannot be wrapped
+``max.nn.common_layers.moe.QuantizedMoE`` cannot be wrapped
 whole for this: its
 ``forward(x)`` calls ``self.gate(x)`` on the SAME ``x`` it dispatches to
 experts, so there is no seam to insert K3's entry projection (which must run
@@ -72,14 +72,6 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Linear, Module
-from max.experimental.nn.common_layers.functional_kernels import (
-    grouped_matmul_ragged,
-    moe_create_indices,
-    moe_finalize,
-)
-from max.experimental.nn.common_layers.mesh_axis import EP, TP
-from max.experimental.nn.norm import RMSNorm
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -88,12 +80,20 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorValue, ops
+from max.nn import Linear, Module
+from max.nn.common_layers.functional_kernels import (
+    grouped_matmul_ragged,
+    moe_create_indices,
+    moe_finalize,
+)
+from max.nn.common_layers.mesh_axis import EP, TP
 from max.nn.legacy.comm.ep import EPConfig
 from max.nn.legacy.kernels import (
     grouped_dynamic_block_scaled_matmul_amd,
     quantize_dynamic_block_scaled,
 )
 from max.nn.legacy.quant_config import QuantConfig
+from max.nn.norm import RMSNorm
 from max.support.math import ceildiv
 
 from . import ep

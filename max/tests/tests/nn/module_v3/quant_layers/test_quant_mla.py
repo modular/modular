@@ -24,16 +24,6 @@ from max import tree
 from max.driver import CPU, Device
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.nn.common_layers.quant_mla import (
-    QuantizedLatentAttentionWithRope,
-    tensor_parallel_latent_attention_with_rope,
-)
-from max.experimental.nn.common_layers.quant_tensor import (
-    FP8BlockTensor,
-    NVFP4Tensor,
-)
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -50,6 +40,16 @@ from max.graph import (
     Shape,
     SymbolicDim,
     TensorValue,
+)
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.quant_mla import (
+    QuantizedLatentAttentionWithRope,
+    tensor_parallel_latent_attention_with_rope,
+)
+from max.nn.common_layers.quant_tensor import (
+    FP8BlockTensor,
+    NVFP4Tensor,
 )
 from max.nn.legacy.kv_cache import (
     KVCacheParams,

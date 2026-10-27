@@ -17,11 +17,11 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn.common_layers.functional_kernels import (
+from max.experimental.tensor import Tensor
+from max.nn.common_layers.functional_kernels import (
     moe_router_group_limited,
 )
-from max.experimental.nn.common_layers.moe import MoEGate
-from max.experimental.tensor import Tensor
+from max.nn.common_layers.moe import MoEGate
 
 
 class DeepseekV3TopKRouter(MoEGate):

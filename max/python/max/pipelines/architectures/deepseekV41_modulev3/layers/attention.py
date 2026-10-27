@@ -25,8 +25,6 @@ from typing import TYPE_CHECKING
 import numpy as np
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -35,6 +33,8 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor
 from max.graph import BufferValue, DeviceRef, Dim, TensorValue, ops
+from max.nn import Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
 
 from ...deepseekV41.layers.attention import (

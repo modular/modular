@@ -22,9 +22,9 @@ from max.driver.buffer import load_max_buffer
 from max.engine import InferenceSession
 from max.engine.api import PrintStyle
 from max.experimental import functional as F
-from max.experimental.nn.module import Module, module_dataclass
 from max.experimental.tensor import Tensor, TensorType, defaults
 from max.nn.legacy.hooks.print_hook import PrintHook
+from max.nn.module import Module, module_dataclass
 
 WEIGHT = np.ones((4, 4), dtype=np.float32)
 X = np.arange(12, dtype=np.float32).reshape(3, 4)

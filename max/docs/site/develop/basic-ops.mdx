@@ -413,9 +413,9 @@ example shows a linear layer using `@` for matrix multiplication, `+` for bias
 addition, and
 [`F.relu()`](/api/python/experimental.functional/#max.experimental.functional.relu)
 for the activation step. Pre-built layers like
-[`Linear`](/api/python/generated/max.experimental.nn.Linear/) use the same
-matrix multiplication and bias addition internally. Understanding the operations
-gives you the foundation for custom layers when standard ones don't fit:
+[`Linear`](/api/python/generated/max.nn.Linear/) use the same matrix
+multiplication and bias addition internally. Understanding the operations gives
+you the foundation for custom layers when standard ones don't fit:
 
 ```python
 import max.experimental.functional as F
@@ -448,9 +448,9 @@ Now that you understand tensor operations, continue learning with these topics:
 - **[Model bring-up workflow](/develop/model-bringup-workflow/)**: Use
   operations in a module's `forward()` method to implement a model
   architecture.
-- **[Neural network modules](/api/python/experimental.nn/)**: Explore
-  pre-built layers in `max.experimental.nn` such as `Linear`,
-  [`Conv2d`](/api/python/generated/max.experimental.nn.Conv2d/), and
-  [`Embedding`](/api/python/generated/max.experimental.nn.Embedding/).
+- **[Neural network modules](/api/python/nn/)**: Explore
+  pre-built layers in `max.nn` such as `Linear`,
+  [`Conv2d`](/api/python/generated/max.nn.Conv2d/), and
+  [`Embedding`](/api/python/generated/max.nn.Embedding/).
 - **[Custom operations](/develop/custom-ops/)**: Implement your own
   operations in Mojo when built-in operations don't meet your needs.

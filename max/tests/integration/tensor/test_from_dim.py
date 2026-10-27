@@ -16,9 +16,9 @@ tensor, and using it as a runtime predicate for `F.cond`. CPU-only."""
 import max.experimental.functional as F
 import numpy as np
 import pytest
+from max import nn
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import nn
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, Dim, TensorType
 

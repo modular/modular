@@ -29,10 +29,10 @@ from max._core.driver import Device
 from max.driver import CPU, Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
 from max.graph import Graph, TensorType
 from max.graph.weights import load_weights
+from max.nn import Module
 from max.pipelines.context import PixelContext
 from max.pipelines.modeling.base.component_model import ComponentModel
 from tqdm import tqdm

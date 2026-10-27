@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for max.experimental.nn.Linear with a static FP8 quant_config."""
+"""Tests for max.nn.Linear with a static FP8 quant_config."""
 
 from __future__ import annotations
 
@@ -19,8 +19,8 @@ import pytest
 import torch
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
-from max.experimental.nn import Linear
 from max.experimental.tensor import Tensor, TensorType
+from max.nn import Linear
 from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,

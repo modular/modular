@@ -29,14 +29,6 @@ from __future__ import annotations
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Linear, Module
-from max.experimental.nn.common_layers import quant_ops
-from max.experimental.nn.common_layers.functional_kernels import (
-    moe_router_group_limited,
-)
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.nn.common_layers.quant_tensor import FP8BlockTensor
-from max.experimental.nn.sequential import ModuleList
 from max.experimental.realization_context import ensure_context
 from max.experimental.sharding import (
     DeviceMapping,
@@ -47,12 +39,20 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
+from max.nn import Linear, Module
+from max.nn.common_layers import quant_ops
+from max.nn.common_layers.functional_kernels import (
+    moe_router_group_limited,
+)
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.quant_tensor import FP8BlockTensor
 from max.nn.legacy.activation import GatedActivation
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.legacy.comm.ep.ep_kernels import fused_silu
 from max.nn.legacy.kernels import moe_create_indices, moe_finalize
 from max.nn.legacy.moe import NvMxf4f8Strategy
 from max.nn.legacy.quant_config import QuantConfig
+from max.nn.sequential import ModuleList
 
 from ..quant import FP8_BLOCK
 
@@ -436,7 +436,7 @@ class MiMoV2ExpertParallelMoE(MiMoV2MoE):
     activation quantize on the receiving device.
 
     Hand-rolled rather than the stock ModuleV3
-    :class:`~max.experimental.nn.common_layers.quant_moe.ExpertParallelMoE`,
+    :class:`~max.nn.common_layers.quant_moe.ExpertParallelMoE`,
     which a W4A8 model cannot use: its experts must be ``QuantizedMLP`` s
     backed by ``FP8BlockTensor``/``NVFP4Tensor`` (no MXFP4 quant tensor
     exists), and ``EPDispatchPayload.from_dispatch`` keys its column

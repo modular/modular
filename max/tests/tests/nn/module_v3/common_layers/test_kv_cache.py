@@ -21,7 +21,6 @@ from max import tree
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.sharding import DeviceMapping, DeviceMesh, Replicated
 from max.experimental.tensor import Tensor
 from max.graph import (
@@ -31,6 +30,7 @@ from max.graph import (
     SymbolicDim,
     TensorValue,
 )
+from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.legacy import kernels
 from max.nn.legacy.kv_cache import MHAKVCacheParams, SplitKVHeadDims
 

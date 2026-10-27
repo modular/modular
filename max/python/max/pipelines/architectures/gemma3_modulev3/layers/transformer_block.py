@@ -18,10 +18,10 @@ from __future__ import annotations
 from typing import Any
 
 from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.sharding import DeviceMapping, Replicated
 from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
 
 
 def _replicated(x: Tensor) -> Tensor:

@@ -14,7 +14,7 @@
 """Capture a MEF from a graph built with the new ``max.experimental`` API.
 
 This is the new-API counterpart to ``test_capi.py``. It builds the same
-vector-add graph as a :class:`~max.experimental.nn.Module`, compiles it, and
+vector-add graph as a :class:`~max.nn.Module`, compiles it, and
 exports the compiled artifact to a MEF file via the public
 :meth:`~max.experimental.compilation.CompiledCallable.export_mef`. The resulting
 ``graph.mef`` is consumed by the same ``example.c`` C-API executor, since both
@@ -30,9 +30,9 @@ import os
 
 from max.driver import Accelerator
 from max.dtype import DType
-from max.experimental.nn import Module, module_dataclass
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
+from max.nn import Module, module_dataclass
 
 
 @module_dataclass

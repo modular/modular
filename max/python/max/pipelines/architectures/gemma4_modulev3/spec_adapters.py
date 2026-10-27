@@ -21,9 +21,9 @@ from __future__ import annotations
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.sharding import DeviceMapping
 from max.experimental.tensor import Tensor
+from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.legacy.transformer import ReturnHiddenStates
 from max.pipelines.speculative.block_driver import BlockBatch
 from max.pipelines.speculative.config import SpeculativeConfig

@@ -42,10 +42,10 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module, module_dataclass
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import WeightData
+from max.nn import Module, module_dataclass
 from max.pipelines.architectures.flux_modulev3 import Vae
 from max.pipelines.lib.weight_loader import dict_loader
 

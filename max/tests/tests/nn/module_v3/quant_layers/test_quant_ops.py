@@ -29,8 +29,9 @@ import pytest
 from max.driver import CPU, Device
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn.common_layers import quant_ops
-from max.experimental.nn.common_layers.quant_tensor import (
+from max.experimental.tensor import Tensor, default_dtype
+from max.nn.common_layers import quant_ops
+from max.nn.common_layers.quant_tensor import (
     FP8BlockActivation,
     FP8BlockTensor,
     MXFP4Quantizer,
@@ -41,7 +42,6 @@ from max.experimental.nn.common_layers.quant_tensor import (
     NVFP4Tensor,
     NVFP4TensorQuantizer,
 )
-from max.experimental.tensor import Tensor, default_dtype
 from max.nn.legacy.comm.ep import EPConfig
 from max.nn.legacy.quant_config import QuantConfig, QuantFormat
 

@@ -19,8 +19,8 @@ import math
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
+from max.nn import Module
 
 
 class Gemma4VisionPooler(Module[..., Tensor]):

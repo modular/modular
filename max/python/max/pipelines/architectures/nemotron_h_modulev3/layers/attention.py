@@ -23,19 +23,19 @@ import math
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.functional_kernels import (
+from max.experimental.sharding import DeviceMesh, NamedMapping
+from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.nn.common_layers.functional_kernels import (
     flash_attention_ragged,
 )
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.linear import (
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.linear import (
     QKVLinear,
     RowParallelLinear,
     col_parallel,
 )
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.sharding import DeviceMesh, NamedMapping
-from max.experimental.tensor import Tensor
+from max.nn.common_layers.mesh_axis import TP
 from max.nn.legacy.attention import MHAMaskVariant
 from max.nn.legacy.kernels import fused_qkv_ragged_matmul
 from max.nn.legacy.kv_cache import KVCacheParams

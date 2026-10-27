@@ -13,8 +13,8 @@
 # DOC: develop/layers.mdx
 
 from max.driver import CPU
-from max.experimental.nn import Linear, Module, ModuleList, RMSNorm
 from max.experimental.tensor import Tensor, default_device
+from max.nn import Linear, Module, ModuleList, RMSNorm
 
 
 class NormalizedProjection(Module[[Tensor], Tensor]):

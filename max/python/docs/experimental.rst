@@ -21,9 +21,6 @@ Modules
    max.experimental.custom
    max.experimental.executor
    max.experimental.functional
-   max.experimental.nn
-   max.experimental.nn.norm
-   max.experimental.nn.rope
    max.experimental.random
    max.experimental.realization_context
    max.experimental.sharding
@@ -41,9 +38,6 @@ Modules
    experimental.custom
    experimental.executor
    experimental.functional
-   experimental.nn
-   experimental.nn.norm
-   experimental.nn.rope
    experimental.random
    experimental.realization_context
    experimental.sharding

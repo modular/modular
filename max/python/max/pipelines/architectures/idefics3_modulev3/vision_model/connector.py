@@ -18,9 +18,9 @@ Bridges vision and text modalities via pixel shuffle and modality projection.
 from __future__ import annotations
 
 from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.linear import Linear
 from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.nn.linear import Linear
 
 from ..model_config import Idefics3VisionConfig
 

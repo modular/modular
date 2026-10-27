@@ -16,13 +16,13 @@
 from __future__ import annotations
 
 from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.functional_kernels import (
+from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.nn.common_layers.functional_kernels import (
     flash_attention_ragged_gpu,
 )
-from max.experimental.nn.linear import Linear
-from max.experimental.tensor import Tensor
 from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.linear import Linear
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     apply_multidimensional_rope as _apply_multidimensional_rope,
 )

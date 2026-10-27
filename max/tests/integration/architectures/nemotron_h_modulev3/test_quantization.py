@@ -29,12 +29,12 @@ from _tiny_config import (
 )
 from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.experimental.nn import Module
 from max.experimental.realization_context import ensure_context
 from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import Tensor, default_device, default_dtype
 from max.graph import Shape
 from max.graph.weights import WeightData
+from max.nn import Module
 from max.nn.legacy.kv_cache import MHAKVCacheParams
 from max.pipelines.architectures.nemotron_h_modulev3.layers.attention import (
     NemotronHAttention,

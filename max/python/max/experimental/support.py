@@ -136,7 +136,7 @@ def set_precompiled_mefs(
     ``docs/internal/CompileOnCpuRunOnGpu.md``.
 
     Every graph compiled after this by a session that was given no artifacts of
-    its own -- whether through :meth:`~max.experimental.nn.Module.compile`,
+    its own -- whether through :meth:`~max.nn.Module.compile`,
     eager execution, or a session the caller built itself -- is matched to an
     artifact by its name and signature, so a divergence raises rather than
     quietly recompiling. The consuming run has to build the same graphs, but not

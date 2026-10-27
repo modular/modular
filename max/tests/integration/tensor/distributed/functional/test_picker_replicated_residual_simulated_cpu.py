@@ -41,7 +41,6 @@ from max.experimental.functional import (
     rms_norm,
     transfer_to,
 )
-from max.experimental.nn.module import Module, module_dataclass
 from max.experimental.sharding import (
     ALL_TRANSITIONS,
     DEFAULT_TRANSITIONS,
@@ -54,6 +53,7 @@ from max.experimental.sharding import (
 )
 from max.experimental.sharding.types import TensorLayout
 from max.experimental.tensor import Tensor
+from max.nn.module import Module, module_dataclass
 
 F32 = DType.float32
 HIDDEN = 8

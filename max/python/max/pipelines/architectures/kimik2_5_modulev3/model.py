@@ -39,9 +39,6 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental import functional as F
 from max.experimental.compilation import CompiledCallable
-from max.experimental.nn.common_layers.quant_ops import (
-    routed_weight_dtype,
-)
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -51,6 +48,9 @@ from max.experimental.sharding import (
 from max.experimental.tensor import default_device, default_dtype
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import WeightData, Weights, WeightsAdapter
+from max.nn.common_layers.quant_ops import (
+    routed_weight_dtype,
+)
 from max.nn.legacy.comm.ep import (
     EPBatchManager,
     EPCommInitializer,

@@ -5,10 +5,10 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "legacy",
     srcs = glob(["**/*.py"]),
-    # max.experimental.nn is imported only by a docstring example in
+    # max.nn is imported only by a docstring example in
     # __init__.py; it depends back on this target, so keep it out of `deps`.
     docstring_example_deps = [
-        "//max/python/max/experimental/nn",
+        "//max/python/max/nn",
     ],
     # rich is used as a runtime protocol (_rich_traceback_omit) not via import.
     # //max/python/max:tensor is an alias for //max/python/max/experimental;

@@ -28,13 +28,11 @@ from max import tree
 from max.driver import CPU, Device
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module, as_subgraph
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.experimental.nn.embedding import Embedding
-from max.experimental.nn.linear import Linear
-from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
+from max.nn import Module, as_subgraph
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.embedding import Embedding
 from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
@@ -42,6 +40,8 @@ from max.nn.legacy.kv_cache import (
     MultiKVCacheParams,
 )
 from max.nn.legacy.rotary_embedding import YarnScalingParams
+from max.nn.linear import Linear
+from max.nn.sequential import ModuleList
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     ProportionalScalingParams,
 )

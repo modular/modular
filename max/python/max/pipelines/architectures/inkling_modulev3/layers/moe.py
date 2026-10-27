@@ -19,11 +19,11 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.mlp import MLP
 from max.experimental.realization_context import ensure_context
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
+from max.nn import Module
+from max.nn.common_layers.mlp import MLP
 from max.nn.legacy.activation import GatedActivation
 from max.nn.legacy.comm.ep.ep_kernels import fused_silu
 from max.nn.legacy.kernels import (

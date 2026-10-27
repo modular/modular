@@ -16,12 +16,12 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.mlp import MLP
-from max.experimental.nn.embedding import Embedding
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.nn.common_layers.mlp import MLP
+from max.nn.embedding import Embedding
+from max.nn.norm import RMSNorm
+from max.nn.sequential import ModuleList
 
 from .attention import Qwen3AttentionNoCache
 from .pooling import last_token_pool, normalize_embeddings

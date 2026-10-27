@@ -23,13 +23,13 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Linear, Module
-from max.experimental.nn.common_layers.functional_kernels import (
+from max.experimental.tensor import Tensor, default_dtype
+from max.nn import Linear, Module
+from max.nn.common_layers.functional_kernels import (
     flash_attention_ragged,
     rope_split_store_ragged,
 )
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.tensor import Tensor, default_dtype
+from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.legacy.attention import MHAMaskVariant
 from max.nn.legacy.kv_cache import KVCacheParams
 

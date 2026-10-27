@@ -24,11 +24,11 @@ from collections.abc import Sequence
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Embedding, Linear, Module
-from max.experimental.nn.norm import LayerNorm, RMSNorm
-from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import TensorType
+from max.nn import Embedding, Linear, Module
+from max.nn.norm import LayerNorm, RMSNorm
+from max.nn.sequential import ModuleList
 
 from .layers.attention import Ideogram4Attention
 from .layers.embeddings import (

@@ -111,7 +111,7 @@ def amd_arch() -> Iterator[None]:
     to target that name rather than the one in ``max.nn.legacy.kernels``.
     """
     with patch(
-        "max.experimental.nn.common_layers.quant_ops._is_amd_gpu",
+        "max.nn.common_layers.quant_ops._is_amd_gpu",
         return_value=True,
     ):
         yield

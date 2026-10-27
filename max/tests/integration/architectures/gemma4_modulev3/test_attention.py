@@ -45,8 +45,6 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental import functional as F
 from max.experimental.compilation import CompiledCallable
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -54,6 +52,8 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
+from max.nn import Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.legacy.kv_cache import KVCacheParams
 from max.pipelines.architectures.gemma4_modulev3.layers.attention import (
     Gemma4Attention,

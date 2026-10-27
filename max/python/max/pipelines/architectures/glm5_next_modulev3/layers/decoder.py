@@ -21,11 +21,11 @@ sublayer's output back into all of them.
 from __future__ import annotations
 
 from max.experimental import functional as F
-from max.experimental.nn import HyperConnection, Module, RMSNorm
-from max.experimental.nn.common_layers.functional_kernels import mhc_post
-from max.experimental.nn.common_layers.quant_moe import ExpertParallelMoE
 from max.experimental.sharding import DeviceMapping, Sharded, auto_reshard
 from max.experimental.tensor import Tensor
+from max.nn import HyperConnection, Module, RMSNorm
+from max.nn.common_layers.functional_kernels import mhc_post
+from max.nn.common_layers.quant_moe import ExpertParallelMoE
 from max.nn.legacy.comm.ep import EPCommBuffers
 from max.nn.legacy.kernels import mhc_post_preferred
 

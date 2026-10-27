@@ -43,8 +43,8 @@ modular_py_library(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         requirement("numpy"),
         requirement("pytest"),
     ],
@@ -84,8 +84,8 @@ modular_eager_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         requirement("numpy"),
     ],
 )
@@ -194,7 +194,7 @@ modular_eager_py_test(
         ignore_extra_deps = [
             ":test_helpers",
             "//max/python/max/experimental",
-            "//max/python/max/experimental/nn",
+            "//max/python/max/nn",
         ],
         imports = ["."],
         tags = ["gpu"],
@@ -208,7 +208,7 @@ modular_eager_py_test(
             ":test_helpers",
             "//max/python/max/driver",
             "//max/python/max/experimental",
-            "//max/python/max/experimental/nn",
+            "//max/python/max/nn",
         ],
     )
     for src in glob(["module/test_*_multi_gpu.py"])

@@ -24,9 +24,9 @@ import math
 import numpy as np
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Linear, Module
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef
+from max.nn import Linear, Module
 
 
 def _mrope_axis_masks(half: int, mrope_section: tuple[int, ...]) -> np.ndarray:

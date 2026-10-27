@@ -23,16 +23,16 @@ dequantized.
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.quant_tensor import (
-    FP8BlockTensor,
-)
 from max.experimental.sharding import DeviceMapping, DeviceMesh, Sharded
 from max.experimental.sharding.action import AxisAssignment
 from max.experimental.sharding.cost import P, R
 from max.experimental.sharding.types import TensorLayout
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
+from max.nn import Module
+from max.nn.common_layers.quant_tensor import (
+    FP8BlockTensor,
+)
 from max.nn.legacy.kernels import (
     block_scales_interleave,
     dynamic_block_scaled_matmul,

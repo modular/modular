@@ -19,9 +19,9 @@ from typing import Any
 from max.driver import DeviceSpec, load_devices
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
 from max.graph.weights import WeightData
+from max.nn import Module
 from max.pipelines.architectures.flux2.model_config import Flux2Config
 from max.pipelines.architectures.flux2.nvfp4_weight_adapter import (
     convert_nvfp4_state_dict,
@@ -40,7 +40,7 @@ class Denoiser(Module[..., Tensor]):
 
     Mirrors the legacy
     :class:`max.pipelines.architectures.flux2.components.denoiser.DenoiseStep`
-    body inside a single :class:`~max.experimental.nn.Module`: concatenates
+    body inside a single :class:`~max.nn.Module`: concatenates
     optional image latents onto noise latents along the sequence axis,
     runs the FLUX.2 transformer, slices the predicted noise to the noise
     sequence length, and applies a single float32 Euler update.  The

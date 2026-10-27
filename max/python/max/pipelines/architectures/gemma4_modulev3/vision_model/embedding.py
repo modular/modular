@@ -17,9 +17,9 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.linear import Linear
 from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.nn.linear import Linear
 from max.pipelines.architectures.gemma4.model_config import (
     Gemma4ForConditionalGenerationConfig,
 )

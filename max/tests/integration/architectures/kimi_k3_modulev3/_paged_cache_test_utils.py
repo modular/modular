@@ -26,9 +26,9 @@ from collections.abc import Sequence
 import numpy as np
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.realization_context import ensure_context
 from max.experimental.tensor import Tensor
+from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.legacy.kv_cache import (
     PACKED_PAGE_STRIDE,
     KVCacheParams,

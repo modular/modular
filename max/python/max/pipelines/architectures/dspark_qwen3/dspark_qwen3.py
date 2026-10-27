@@ -50,25 +50,25 @@ from typing import Any
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Linear, Module
-from max.experimental.nn.common_layers.functional_kernels import (
-    flash_attention_ragged,
-    store_k_cache_ragged,
-)
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.linear import col_parallel, row_parallel
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.experimental.nn.embedding import Embedding
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.nn.sequential import ModuleList
 from max.experimental.sharding import NamedMapping
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue
+from max.nn import Linear, Module
+from max.nn.common_layers.functional_kernels import (
+    flash_attention_ragged,
+    store_k_cache_ragged,
+)
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.linear import col_parallel, row_parallel
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.embedding import Embedding
 from max.nn.legacy.attention import MHAMaskVariant
 from max.nn.legacy.kernels import fused_qk_ragged_rope as _fused_qk_ragged_rope
 from max.nn.legacy.kernels import store_v_cache_ragged as _store_v_cache_ragged
 from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.norm import RMSNorm
+from max.nn.sequential import ModuleList
 from max.pipelines.architectures.nemotron_h_modulev3.layers.quantized import (
     NVFP4Linear,
 )

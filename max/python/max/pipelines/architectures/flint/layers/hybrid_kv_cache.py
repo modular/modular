@@ -24,8 +24,8 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from max.dtype import DType
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.graph import DeviceRef
+from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 

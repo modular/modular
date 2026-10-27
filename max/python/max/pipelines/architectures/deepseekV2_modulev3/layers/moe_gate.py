@@ -18,9 +18,9 @@ from __future__ import annotations
 from max.driver import Device
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn.common_layers.moe import MoEGate
 from max.experimental.tensor import Tensor
 from max.graph import Shape
+from max.nn.common_layers.moe import MoEGate
 
 
 def _fill(

@@ -20,15 +20,15 @@ import numpy as np
 from max import tree
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.embedding import VocabParallelEmbedding
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.linear import ColumnParallelLinear
-from max.experimental.nn.sequential import ModuleList
 from max.experimental.sharding import DeviceMapping, DeviceMesh
 from max.experimental.tensor import Tensor, default_device, default_dtype
+from max.nn import Module
+from max.nn.common_layers.embedding import VocabParallelEmbedding
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.linear import ColumnParallelLinear
 from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, MultiKVCacheParams
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 
 if TYPE_CHECKING:

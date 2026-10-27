@@ -15,11 +15,11 @@
 
 from __future__ import annotations
 
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.mlp import MLP
-from max.experimental.nn.norm import RMSNorm
 from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.mlp import MLP
+from max.nn.norm import RMSNorm
 
 
 class Olmo3TransformerBlock(

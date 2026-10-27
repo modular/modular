@@ -13,7 +13,7 @@
 """Defines the MPNet V3 pipeline model.
 
 Implementation is based on MPNetModel from the transformers library,
-using the V3 eager API (max.experimental.nn).
+using the V3 eager API (max.nn).
 """
 
 from __future__ import annotations

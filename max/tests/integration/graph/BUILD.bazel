@@ -266,7 +266,7 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
-    # max.experimental.nn.Module.compile() reaches max.engine.InferenceSession
+    # max.nn.Module.compile() reaches max.engine.InferenceSession
     # transitively through its own lazy internals; optional at runtime, like
     # the experimental package's own ignore_extra_deps for the same target.
     ignore_unresolved_imports = ["max.engine.InferenceSession"],
@@ -278,8 +278,8 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         requirement("hypothesis"),
     ],
 )

@@ -23,13 +23,13 @@ from typing import Any, ClassVar, cast
 from max.driver import Buffer, Device
 from max.engine import InferenceSession
 from max.experimental import functional as F
-from max.experimental.nn.common_layers.mlp import MLP
-from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.experimental.nn.embedding import Embedding
-from max.experimental.nn.norm import RMSNorm
 from max.experimental.tensor import default_dtype
 from max.graph.weights import Weights, WeightsAdapter
+from max.nn.common_layers.mlp import MLP
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.embedding import Embedding
 from max.nn.legacy.transformer import ReturnLogits
+from max.nn.norm import RMSNorm
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     GraphRole,

@@ -18,24 +18,24 @@ from __future__ import annotations
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.linear import ColumnParallelLinear
-from max.experimental.nn.common_layers.mlp import MLP
-from max.experimental.nn.common_layers.quant_linear import (
+from max.experimental.sharding import DeviceMapping, DeviceMesh
+from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.linear import ColumnParallelLinear
+from max.nn.common_layers.mlp import MLP
+from max.nn.common_layers.quant_linear import (
     QuantizedMLP,
     tensor_parallel_mlp,
 )
-from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.sharding import DeviceMapping, DeviceMesh
-from max.experimental.tensor import Tensor
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,
 )
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.sequential import ModuleList
 from max.pipelines.architectures.gemma3_modulev3.layers.scaled_word_embedding import (
     ScaledEmbedding,
 )

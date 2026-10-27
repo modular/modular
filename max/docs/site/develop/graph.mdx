@@ -80,8 +80,8 @@ In fact, `max.experimental` stages operations into graphs (the same kind you'd
 build explicitly) and runs each staged graph so you get a result back. Every
 operation you run goes through this staging and realization work, which adds up
 in a production loop. For production deployment, group your ops into a
-[`Module`](/api/python/generated/max.experimental.nn.Module/) and call
-[`compile()`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.compile)<!-- rumdl-disable-line MD013 -->
+[`Module`](/api/python/generated/max.nn.Module/) and call
+[`compile()`](/api/python/generated/max.nn.Module/#max.nn.Module.compile)<!-- rumdl-disable-line MD013 -->
 on the module to capture the whole computation as a single optimized graph that
 you can run quickly and repeatedly.
 
@@ -149,7 +149,7 @@ The patterns use parallel but separate APIs:
 | **Primary data object**  | [`max.graph.TensorValue`](/api/python/generated/max.graph.TensorValue/) | [`max.experimental.tensor.Tensor`](/api/python/generated/max.experimental.tensor.Tensor/) |
 | **Built-in operations**  | [`max.graph.ops`](/api/python/graph.ops/)                               | [`max.experimental.functional`](/api/python/experimental.functional/)                     |
 | **Python operators**     | `+`, `-`, `*`, `/`, `@` on `TensorValue`                                | `+`, `-`, `*`, `/`, `@` on `Tensor`                                                       |
-| **`Module` abstraction** | [`max.nn.legacy.Module`](/api/python/generated/max.nn.legacy.Module/)   | [`max.experimental.nn.Module`](/api/python/generated/max.experimental.nn.Module/)         |
+| **`Module` abstraction** | [`max.nn.legacy.Module`](/api/python/generated/max.nn.legacy.Module/)   | [`max.nn.Module`](/api/python/generated/max.nn.Module/)                                   |
 
 ## Next steps
 

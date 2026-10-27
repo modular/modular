@@ -45,7 +45,7 @@ class UnifiedMTPGlm5_2ModuleV3Model(UnifiedMTPGlm5_2Model):
     """GLM-5.x with MTP on ModuleV3: target, draft and driver in one module.
 
     Weight loading, EP initialization and batching are the graph-API MTP
-    model's. The graph is :meth:`~max.experimental.nn.Module.compile`'s, so its
+    model's. The graph is :meth:`~max.nn.Module.compile`'s, so its
     signal buffers trail every other input.
     """
 

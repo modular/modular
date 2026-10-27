@@ -17,7 +17,7 @@ modular_py_library(
         requirement("typing-extensions"),
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental/nn",
+        "//max/python/max/nn",
         "//max/python/max/graph",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/llama3_modulev3",

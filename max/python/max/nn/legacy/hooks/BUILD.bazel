@@ -19,8 +19,8 @@ modular_py_library(
     deps = [
         ":base_print_hook",
         "//max/python/max:tensor",
-        "//max/python/max/experimental/nn",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         "//max/python/max/nn/legacy",
     ],
 )

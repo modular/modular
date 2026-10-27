@@ -42,7 +42,6 @@ from max.experimental.functional import (
     silu,
     transfer_to,
 )
-from max.experimental.nn.module import Module, module_dataclass
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -53,6 +52,7 @@ from max.experimental.sharding import (
 from max.experimental.sharding.types import TensorLayout
 from max.experimental.tensor import Tensor
 from max.graph import TensorType
+from max.nn.module import Module, module_dataclass
 
 F32 = DType.float32
 HIDDEN = 8

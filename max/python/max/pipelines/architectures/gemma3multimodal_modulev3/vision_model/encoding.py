@@ -13,10 +13,10 @@
 
 from __future__ import annotations
 
-from max.experimental.nn import Module
-from max.experimental.nn.norm.layer_norm import LayerNorm
-from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.nn.norm.layer_norm import LayerNorm
+from max.nn.sequential import ModuleList
 
 from ..model_config import Gemma3ForConditionalGenerationConfig
 from .attention import Gemma3VisionAttention

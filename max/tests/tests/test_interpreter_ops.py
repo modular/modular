@@ -71,7 +71,6 @@ from max.experimental.functional import (
 from max.experimental.functional import (
     transfer_to as df_shard,
 )
-from max.experimental.nn import Linear as ExperimentalLinear
 from max.experimental.realization_context import set_seed
 from max.experimental.sharding import (
     DeviceMapping,
@@ -84,6 +83,7 @@ from max.experimental.tensor import Tensor, realization_context
 from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
 from max.graph import ops as graph_ops
 from max.graph.ops import CoordinateTransformMode, RoundMode
+from max.nn import Linear as ExperimentalLinear
 
 
 @pytest.fixture(autouse=True)

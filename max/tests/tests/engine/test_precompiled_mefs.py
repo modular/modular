@@ -37,9 +37,9 @@ from max.engine import (
     MissingArtifactError,
 )
 from max.experimental import support
-from max.experimental.nn import Module, module_dataclass
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, Graph, TensorType
+from max.nn import Module, module_dataclass
 
 
 def _graph(name: str = "add_one", *, width: int = 4) -> Graph:

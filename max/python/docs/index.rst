@@ -33,7 +33,7 @@ Modules
    engine
    experimental
    graph
-   nn.legacy
+   nn
    pipelines
    profiler
    serve.media

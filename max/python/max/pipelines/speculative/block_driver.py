@@ -34,7 +34,6 @@ from typing import Any, Generic, Literal, Protocol, TypeVar
 
 from max import tree
 from max.dtype import DType
-from max.experimental.nn import Module as ModuleV3
 from max.experimental.realization_context import current_realization_context
 from max.experimental.tensor import Tensor
 from max.graph import (
@@ -48,6 +47,7 @@ from max.graph import (
     Value,
     ops,
 )
+from max.nn import Module as ModuleV3
 from max.nn.legacy.kernels import topk_fused_sampling_with_dist
 from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, PagedCacheValues
 from max.nn.legacy.layer import Module

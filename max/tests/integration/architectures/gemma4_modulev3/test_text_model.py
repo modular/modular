@@ -50,11 +50,11 @@ from conftest import (
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
 from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import Tensor, default_dtype
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights
+from max.nn import Module
 from max.nn.legacy.kv_cache import MHAKVCacheParams, MultiKVCacheParams
 from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.gemma4.batch_vision_inputs import (

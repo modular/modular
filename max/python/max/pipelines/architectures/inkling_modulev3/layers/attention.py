@@ -20,19 +20,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.linear import (
+from max.experimental.tensor import Tensor
+from max.graph import BufferValue, TensorValue
+from max.nn import Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.linear import (
     RowParallelLinear,
     col_parallel,
 )
-from max.experimental.nn.linear import Linear
-from max.experimental.tensor import Tensor
-from max.graph import BufferValue, TensorValue
 from max.nn.legacy.attention import MHAMaskVariant
 from max.nn.legacy.kernels import flash_attention_ragged
 from max.nn.legacy.kv_cache import MHAKVCacheParams
 from max.nn.legacy.kv_cache import PagedCacheValues as PagedCacheGraphValues
+from max.nn.linear import Linear
 
 from ...inkling.layers.attention import _scale_rows
 from ...inkling.layers.short_convolution import (

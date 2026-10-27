@@ -445,7 +445,7 @@ def test_tensor_to_unrealized_uses_graph_path() -> None:
 @pytest.mark.skipif(not accelerator_count(), reason="requires GPU")
 def test_tensor_to_idempotent_module() -> None:
     """Module.to(device) twice doesn't re-allocate parameters already there."""
-    from max.experimental.nn import Linear
+    from max.nn import Linear
 
     model = Linear(4, 3)
     gpu = Accelerator()

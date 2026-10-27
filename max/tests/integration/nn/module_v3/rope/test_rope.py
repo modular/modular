@@ -15,12 +15,12 @@
 from __future__ import annotations
 
 import pytest
-from max.experimental.nn.rope import (
+from max.experimental.tensor import Tensor, TensorType
+from max.nn.rope import (
     RotaryEmbedding,
     TransposedRotaryEmbedding,
     rope,
 )
-from max.experimental.tensor import Tensor, TensorType
 
 
 def test_repr() -> None:

@@ -21,14 +21,6 @@ from max import tree
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module, as_subgraph
-from max.experimental.nn.common_layers.embedding import VocabParallelEmbedding
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.linear import ColumnParallelLinear
-from max.experimental.nn.common_layers.mesh_axis import DP
-from max.experimental.nn.common_layers.quant_moe import QuantizedMoE
-from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.experimental.nn.sequential import ModuleList
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -38,10 +30,18 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue
+from max.nn import Module, as_subgraph
+from max.nn.common_layers.embedding import VocabParallelEmbedding
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.linear import ColumnParallelLinear
+from max.nn.common_layers.mesh_axis import DP
+from max.nn.common_layers.quant_moe import QuantizedMoE
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
 from max.nn.legacy.rotary_embedding import DeepseekYarnRopeScalingParams
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 from max.pipelines.speculative.driver import gather_variable_rows
 

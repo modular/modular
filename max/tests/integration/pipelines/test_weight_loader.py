@@ -24,9 +24,9 @@ from collections.abc import Iterable
 
 import numpy as np
 import pytest
-from max.experimental.nn import Module, ModuleList
 from max.experimental.tensor import Tensor
 from max.graph.weights import WeightData
+from max.nn import Module, ModuleList
 from max.pipelines.lib.weight_loader import (
     HasLoaderAdapter,
     WeightLoader,

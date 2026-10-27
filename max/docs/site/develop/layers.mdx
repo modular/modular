@@ -1,21 +1,20 @@
 ---
 title: Write a custom layer
 sidebar_label: Custom layers
-description: Write a custom layer for a model component that max.experimental.nn
+description: Write a custom layer for a model component that max.nn
   doesn't provide, and connect it to your model.
 ---
 
-In MAX, the [`max.experimental.nn`](/api/python/experimental.nn/) library
-contains the common layers you use to
-[bring up a model architecture](/develop/model-bringup-workflow/), such as
-[`Linear`](/api/python/generated/max.experimental.nn.Linear/),
-[`AttentionWithRope`](/api/python/generated/max.experimental.nn.common_layers.attention.AttentionWithRope/),
-and [`RMSNorm`](/api/python/generated/max.experimental.nn.norm.RMSNorm/). Newly
-released models frequently introduce novel architectures, with layers that the
-library doesn't provide yet.
+In MAX, the [`max.nn`](/api/python/nn/) library contains the common layers you
+use to [bring up a model architecture](/develop/model-bringup-workflow/), such
+as [`Linear`](/api/python/generated/max.nn.Linear/),
+[`AttentionWithRope`](/api/python/generated/max.nn.common_layers.attention.AttentionWithRope/),
+and [`RMSNorm`](/api/python/generated/max.nn.norm.RMSNorm/). Newly released
+models frequently introduce novel architectures, with layers that the library
+doesn't provide yet.
 
 To implement those parts of your model, you write a custom layer: a
-[`Module`](/api/python/generated/max.experimental.nn.Module/) you define
+[`Module`](/api/python/generated/max.nn.Module/) you define
 yourself and compose alongside the built-in layers you reuse.
 
 You can subclass the closest built-in layer, define a new module from scratch,
@@ -39,7 +38,7 @@ changes the `forward()` call and nothing else:
 
 ```python
 from max.driver import CPU
-from max.experimental.nn.norm import RMSNorm, rms_norm
+from max.nn.norm import RMSNorm, rms_norm
 from max.experimental.tensor import Tensor, default_device
 
 
@@ -82,7 +81,7 @@ learnable per-channel scale owns one weight:
 
 ```python
 from max.driver import CPU
-from max.experimental.nn import Module, module_dataclass
+from max.nn import Module, module_dataclass
 from max.experimental.tensor import Tensor, default_device
 
 
@@ -130,12 +129,12 @@ The following example composes a small model from custom and built-in layers.
 `NormalizedProjection` composes a `Linear` with an `RMSNorm`. `DecoderBlock`
 takes that custom layer and calls it beside its own projection. `MiniDecoder`
 holds two blocks in a
-[`ModuleList`](/api/python/generated/max.experimental.nn.ModuleList/)
+[`ModuleList`](/api/python/generated/max.nn.ModuleList/)
 and adds an output projection:
 
 ```python
 from max.driver import CPU
-from max.experimental.nn import Linear, Module, ModuleList, RMSNorm
+from max.nn import Linear, Module, ModuleList, RMSNorm
 from max.experimental.tensor import Tensor, default_device
 
 
@@ -214,7 +213,7 @@ and `out_types` declares the shapes it returns:
 
 ```python
 from max.experimental import functional as F
-from max.experimental.nn import Linear, Module
+from max.nn import Linear, Module
 from max.experimental.tensor import Tensor
 
 
@@ -265,7 +264,7 @@ correctly:
   the checkpoint so the weights load, or write a [weight
   adapter](/develop/weight-adapters/) when the checkpoint names differ.
 - **Stacks**: hold a repeated layer, such as a stack of transformer blocks, in a
-  [`ModuleList`](/api/python/generated/max.experimental.nn.ModuleList/), never
+  [`ModuleList`](/api/python/generated/max.nn.ModuleList/), never
   a plain Python list. A plain list still registers its children's weights
   under index paths (`layers.0.fc1.weight`), so they load. What it skips is
   placement: `children` and `to()` visit only `Module` attributes, so a layer

@@ -27,9 +27,9 @@ from typing import (
 import numpy as np
 from max.driver import load_devices
 from max.experimental import functional as F
-from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
 from max.graph import TensorType
+from max.nn import Module
 from max.pipelines.context import (
     GenerationStatus,
     PixelGenerationContextType,
@@ -69,7 +69,7 @@ class PixelGenerationModule(Protocol):
     """Interface a Module-driven architecture exposes to ``PixelGenerationPipeline``.
 
     A class satisfying this Protocol (typically also subclassing
-    :class:`~max.experimental.nn.Module`) can be driven through the
+    :class:`~max.nn.Module`) can be driven through the
     pipeline's ModuleV3 path: the pipeline wraps construction in
     :func:`~max.experimental.functional.lazy`, walks the Module tree
     via

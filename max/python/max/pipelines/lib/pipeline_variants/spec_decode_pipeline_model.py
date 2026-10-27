@@ -41,7 +41,6 @@ from max import tree
 from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.experimental.nn import Module as ModuleV3
 from max.experimental.realization_context import current_realization_context
 from max.experimental.tensor import Tensor
 from max.graph import (
@@ -58,6 +57,7 @@ from max.graph.weights import (
     load_weights,
     weights_format,
 )
+from max.nn import Module as ModuleV3
 from max.nn.legacy.comm import Signals
 from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
 from max.nn.legacy.kv_cache import (

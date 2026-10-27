@@ -37,7 +37,6 @@ from max.experimental.functional import (
     relu,
     transfer_to,
 )
-from max.experimental.nn.module import Module, module_dataclass
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -46,6 +45,7 @@ from max.experimental.sharding import (
     Sharded,
 )
 from max.experimental.tensor import Tensor, TensorType
+from max.nn.module import Module, module_dataclass
 
 D = 4
 F32 = DType.float32

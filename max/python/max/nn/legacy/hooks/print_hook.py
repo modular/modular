@@ -23,9 +23,9 @@ from types import MethodType
 from typing import Any
 
 from max.experimental import functional as F
-from max.experimental.nn import Module as ModuleV3
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue
+from max.nn import Module as ModuleV3
 from max.nn.legacy._identity import IdentitySet
 from max.nn.legacy.layer import Layer, add_layer_hook, clear_hooks
 
@@ -82,7 +82,7 @@ class PrintHook(BasePrintHook):
         else:
             raise TypeError(
                 "PrintHook.name_layers expects a max.nn.legacy (V2) Layer or a "
-                "max.experimental.nn (V3) Module, got "
+                "max.nn (V3) Module, got "
                 f"{type(model).__name__}."
             )
 

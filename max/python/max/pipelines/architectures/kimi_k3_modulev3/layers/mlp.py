@@ -19,10 +19,10 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Linear, Module
-from max.experimental.nn.common_layers.mesh_axis import TP
 from max.experimental.sharding import DeviceMesh, NamedMapping
 from max.experimental.tensor import Tensor
+from max.nn import Linear, Module
+from max.nn.common_layers.mesh_axis import TP
 
 from .tensor_parallel import shard_fused_blocks
 

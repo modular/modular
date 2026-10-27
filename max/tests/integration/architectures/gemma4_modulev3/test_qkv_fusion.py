@@ -27,9 +27,9 @@ import numpy as np
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.experimental.tensor import Tensor, default_device, default_dtype
 from max.graph import DeviceRef
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.legacy.kv_cache import MHAKVCacheParams
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     ProportionalScalingParams,

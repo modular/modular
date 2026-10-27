@@ -35,9 +35,9 @@ from typing import Any
 from max.driver import CPU, DeviceSpec, load_devices
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
+from max.nn import Module
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.weight_loader import WeightLoader, rename
 

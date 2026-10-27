@@ -26,9 +26,9 @@ import torch
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
 from max.experimental.tensor import Tensor, default_dtype
 from max.graph import DeviceRef, TensorType
+from max.nn import Module
 from max.pipelines.architectures.laguna_modulev3.layers.attention import (
     softplus,
 )

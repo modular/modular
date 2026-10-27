@@ -17,15 +17,15 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Linear
-from max.experimental.nn.common_layers import quant_ops
-from max.experimental.nn.common_layers.moe import MoEGate
-from max.experimental.nn.common_layers.quant_moe import QuantizedMoE
-from max.experimental.nn.common_layers.quant_tensor import (
+from max.experimental.tensor import Tensor, default_dtype
+from max.nn import Linear
+from max.nn.common_layers import quant_ops
+from max.nn.common_layers.moe import MoEGate
+from max.nn.common_layers.quant_moe import QuantizedMoE
+from max.nn.common_layers.quant_tensor import (
     NVFP4Tensor,
     QuantAwareTensor,
 )
-from max.experimental.tensor import Tensor, default_dtype
 from max.nn.legacy.quant_config import QuantConfig
 
 from ..model_config import MuseSparkTextConfig

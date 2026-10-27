@@ -13,8 +13,8 @@
 # DOC: develop/layers.mdx
 
 from max.driver import CPU
-from max.experimental.nn import Module, module_dataclass
 from max.experimental.tensor import Tensor, default_device
+from max.nn import Module, module_dataclass
 
 
 @module_dataclass

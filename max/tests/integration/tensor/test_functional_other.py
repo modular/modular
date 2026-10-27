@@ -23,9 +23,9 @@ import pytest
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn.module import Module, module_dataclass
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType, ops
+from max.nn.module import Module, module_dataclass
 
 DEVICE = Accelerator() if accelerator_count() else CPU()
 

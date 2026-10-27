@@ -21,15 +21,6 @@ from max import tree
 from max.driver import Device
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers import quant_ops
-from max.experimental.nn.common_layers.functional_kernels import (
-    moe_create_indices,
-    moe_finalize,
-    moe_router_group_limited,
-)
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.nn.common_layers.quant_tensor import MXFP8Tensor
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -38,6 +29,15 @@ from max.experimental.sharding import (
 )
 from max.experimental.sharding.action import PerShard
 from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.nn.common_layers import quant_ops
+from max.nn.common_layers.functional_kernels import (
+    moe_create_indices,
+    moe_finalize,
+    moe_router_group_limited,
+)
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.quant_tensor import MXFP8Tensor
 from max.pipelines.architectures.deepseekV3_modulev3.layers.moe_gate import (
     DeepseekV3TopKRouter,
 )

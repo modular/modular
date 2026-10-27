@@ -20,7 +20,7 @@ compressed-latent form K3 actually serves -- direct V3 ports of
 ``kimi_k3_mla_attention_ragged``, and ``kimi_k3_mla_attention_latent_ragged``.
 
 Neither ``deepseekV3_modulev3``'s ``QuantizedLatentAttentionWithRope`` nor the
-generic V3 building block (``max.experimental.nn.common_layers.multi_latent_attention.LatentAttentionWithRope``)
+generic V3 building block (``max.nn.common_layers.multi_latent_attention.LatentAttentionWithRope``)
 can be wrapped for this layer:
 
 * NO POSITIONAL ENCODING ANYWHERE. ``mla_use_nope`` is true: there is no
@@ -53,8 +53,10 @@ import numpy as np
 from max.driver import CPU, Device
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Linear, Module
-from max.experimental.nn.common_layers.functional_kernels import (
+from max.experimental.sharding import DeviceMesh, NamedMapping
+from max.experimental.tensor import Tensor
+from max.nn import Linear, Module
+from max.nn.common_layers.functional_kernels import (
     flare_mla_prefill_plan,
     flash_attention_gpu,
     flash_attention_ragged,
@@ -62,16 +64,14 @@ from max.experimental.nn.common_layers.functional_kernels import (
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.nn.common_layers.multi_latent_attention import (
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.multi_latent_attention import (
     MLAPrefillMetadata,
 )
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.sharding import DeviceMesh, NamedMapping
-from max.experimental.tensor import Tensor
 from max.nn.legacy.attention.mask_config import MHAMaskVariant
 from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.norm import RMSNorm
 
 from .tensor_parallel import check_divisible
 

@@ -17,9 +17,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from max.experimental import functional as F
-from max.experimental.nn.common_layers.mesh_axis import TP
 from max.experimental.sharding import DeviceMesh, NamedMapping
 from max.experimental.tensor import Tensor
+from max.nn.common_layers.mesh_axis import TP
 
 
 def shard_axis(t: Tensor, axis: int = 0) -> Tensor:

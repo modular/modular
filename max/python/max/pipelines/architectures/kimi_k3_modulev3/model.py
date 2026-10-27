@@ -53,10 +53,6 @@ from max import tree
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Embedding, Module
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.nn.sequential import ModuleList
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -65,6 +61,9 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorValue
+from max.nn import Embedding, Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.mesh_axis import TP
 from max.nn.legacy.comm.ep import EPConfig
 from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
@@ -76,6 +75,7 @@ from max.nn.legacy.kv_cache import (
 )
 from max.nn.legacy.quant_config import QuantConfig
 from max.nn.legacy.transformer import ReturnLogits
+from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 
 from .layers import ep

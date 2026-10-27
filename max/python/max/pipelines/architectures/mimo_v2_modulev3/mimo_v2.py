@@ -20,22 +20,21 @@ from dataclasses import replace
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import (
+from max.experimental.sharding import DeviceMapping, Replicated, Sharded
+from max.experimental.tensor import Tensor
+from max.graph import TensorValue, ops
+from max.nn import (
     Embedding,
     Module,
     ModuleList,
     RMSNorm,
     as_subgraph,
 )
-from max.experimental.nn.common_layers.linear import ColumnParallelLinear
-from max.experimental.nn.common_layers.mesh_axis import DP
-from max.experimental.nn.common_layers.rotary_embedding import (
+from max.nn.common_layers.linear import ColumnParallelLinear
+from max.nn.common_layers.mesh_axis import DP
+from max.nn.common_layers.rotary_embedding import (
     RotaryEmbedding,
 )
-from max.experimental.nn.norm import rms_norm
-from max.experimental.sharding import DeviceMapping, Replicated, Sharded
-from max.experimental.tensor import Tensor
-from max.graph import TensorValue, ops
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers, EPConfig
 from max.nn.legacy.kv_cache import (
     KVCacheParams,
@@ -43,6 +42,7 @@ from max.nn.legacy.kv_cache import (
     PagedCacheValues,
 )
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.norm import rms_norm
 from max.pipelines.lib import ModuleV3Outputs
 
 from ..deepseekV3_modulev3.deepseekV3 import (

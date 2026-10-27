@@ -38,10 +38,10 @@ from typing import TYPE_CHECKING
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
 from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import Tensor
 from max.graph import TensorType, TensorValue, ops
+from max.nn import Module
 from max.nn.legacy.kv_cache import PagedCacheValues
 
 from .norm import RMSNorm

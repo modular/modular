@@ -40,11 +40,11 @@ from typing import Any, cast
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Linear, Module
-from max.experimental.nn.common_layers.mesh_axis import TP
 from max.experimental.sharding import DeviceMesh, NamedMapping
 from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorType, TensorValue, ops
+from max.nn import Linear, Module
+from max.nn.common_layers.mesh_axis import TP
 
 from .norm import KimiRMSNormGated
 from .short_conv import kimi_short_conv_qkv

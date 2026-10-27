@@ -159,7 +159,7 @@ ends in `_ModuleV3`, and `max serve --prefer-module-v3` selects it.
 The `import-model` skill drives a phased workflow (decide and plan,
 implement, then verify), and you remain the coordinator and validator at each
 checkpoint. The agent writes the port with the
-[`max.experimental.nn`](/api/python/experimental.nn/) module API, as described
+[`max.nn`](/api/python/nn/) module API, as described
 in the [Model bring-up workflow](/develop/model-bringup-workflow/). The
 sections below describe what the agent delivers in each phase and how you
 steer it. For the full procedure, see the skill's
@@ -202,7 +202,7 @@ For a vision-language donor, the agent passes `--full-copy`, which copies
 every donor file and renames its classes.
 
 The skeleton still runs the donor's computation. The agent then implements
-each row of the delta list as `max.experimental.nn` modules, maps the
+each row of the delta list as `max.nn` modules, maps the
 remaining config fields, and rewrites the weight adapter for your checkpoint.
 
 Make sure the agent updates the copied docstrings and comments so they describe

@@ -15,9 +15,9 @@ import math
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import GroupNorm, Linear, Module, ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef
+from max.nn import GroupNorm, Linear, Module, ModuleList
 from max.nn.legacy.attention.mask_config import MHAMaskVariant
 from max.nn.legacy.kernels import flash_attention_gpu as _flash_attention_gpu
 

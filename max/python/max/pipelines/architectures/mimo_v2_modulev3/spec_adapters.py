@@ -31,7 +31,6 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 from max.experimental import functional as F
-from max.experimental.nn.common_layers.mesh_axis import DP
 from max.experimental.realization_context import ensure_context
 from max.experimental.sharding import (
     DeviceMapping,
@@ -41,6 +40,7 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor
 from max.graph import BufferType, TensorType, TensorValue, ops
+from max.nn.common_layers.mesh_axis import DP
 from max.nn.legacy.comm.ep import EPCommBuffers
 from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
 from max.nn.legacy.transformer import ReturnHiddenStates

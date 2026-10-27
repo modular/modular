@@ -28,9 +28,9 @@ from __future__ import annotations
 import numpy as np
 import torch
 from max.dtype import DType
-from max.experimental.nn.module import Module
 from max.experimental.sharding import DeviceMapping, DeviceMesh, Replicated
 from max.experimental.tensor import Tensor, TensorLayout
+from max.nn.module import Module
 from max.pipelines.architectures.deepseekV41_modulev3.layers.mhc import (
     mhc_initial,
 )

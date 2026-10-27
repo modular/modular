@@ -15,10 +15,10 @@
 from __future__ import annotations
 
 from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.linear import Linear
-from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.nn.linear import Linear
+from max.nn.sequential import ModuleList
 from max.pipelines.architectures.flux2.model_config import Flux2Config
 
 from .layers import (

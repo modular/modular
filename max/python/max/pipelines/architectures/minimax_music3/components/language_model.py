@@ -38,12 +38,12 @@ from __future__ import annotations
 from max.driver import Device
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Linear, Module, ModuleList, RMSNorm
-from max.experimental.nn.common_layers.attention import AttentionWithRope
-from max.experimental.nn.common_layers.mlp import MLP
-from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.experimental.tensor import Tensor
 from max.graph import BufferType, TensorType
+from max.nn import Linear, Module, ModuleList, RMSNorm
+from max.nn.common_layers.attention import AttentionWithRope
+from max.nn.common_layers.mlp import MLP
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
 
 from ..model_config import LanguageModelConfig

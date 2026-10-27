@@ -21,10 +21,10 @@ from typing import Any, ClassVar
 from max.driver import Device
 from max.engine import InferenceSession
 from max.experimental import functional as F
-from max.experimental.nn.common_layers.mesh_axis import TP
 from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import default_device, default_dtype
 from max.graph.weights import Weights, WeightsAdapter
+from max.nn.common_layers.mesh_axis import TP
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (

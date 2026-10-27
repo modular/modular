@@ -24,7 +24,7 @@ DeepSeek V3's ``noaux_tc`` router exactly, down to the shared Mojo kernel
 lower precision than the reference, which casts both the activation and the
 weight to fp32 *before* the matmul. Constructing the router inside a fp32
 ``default_dtype`` context fixes this: ``gate_score`` is a plain
-:class:`~max.experimental.nn.Linear`, built from whatever the ambient
+:class:`~max.nn.Linear`, built from whatever the ambient
 default dtype is at construction time, so it becomes fp32 too.
 """
 

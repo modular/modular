@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Validates ``max.experimental.nn.HyperConnection`` against PyTorch.
+"""Validates ``max.nn.HyperConnection`` against PyTorch.
 
 Covers the whole ModuleV3 layer -- the unweighted RMSNorm, the stream
 projection, the fused gate op, and the stream collapse -- compiled ahead of
@@ -27,8 +27,8 @@ import torch
 from max.driver import CPU, Accelerator, Device
 from max.dtype import DType
 from max.experimental.compilation import CompiledCallable
-from max.experimental.nn import HyperConnection
 from max.experimental.tensor import Tensor, TensorType
+from max.nn import HyperConnection
 from test_common.hyper_connection_reference import hyper_connection_reference
 
 _HC_MULT = 4

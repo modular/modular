@@ -31,11 +31,10 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.experimental import functional as F
 from max.experimental.compilation import CompiledCallable
-from max.experimental.nn._weight_utils import _SAFE_CAST_DTYPES, log_casts
-from max.experimental.nn.module import Module as _ModuleV3
 from max.experimental.tensor import Tensor, default_dtype
 from max.graph import DeviceRef, Graph, Value
 from max.graph.weights import WeightData, Weights, WeightsAdapter
+from max.nn._weight_utils import _SAFE_CAST_DTYPES, log_casts
 from max.nn.legacy.comm.ep import EPConfig
 from max.nn.legacy.kv_cache import (
     CacheLeafParamInterface,
@@ -46,6 +45,7 @@ from max.nn.legacy.kv_cache import (
 )
 from max.nn.legacy.layer import Module as LayerModule
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.module import Module as _ModuleV3
 from max.pipelines.context import BaseContextType, LogProbabilities
 from max.pipelines.kv_cache.config import (
     KVCacheConfig,

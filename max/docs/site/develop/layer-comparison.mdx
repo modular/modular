@@ -44,7 +44,7 @@ Before you begin the debugging process, make sure you have:
 - A trusted PyTorch reference model.
 - A small prompt or test input that reproduces the validation failure.
 - Familiarity with the MAX
-  [`Module`](/api/python/generated/max.experimental.nn.Module/) API and
+  [`Module`](/api/python/generated/max.nn.Module/) API and
   [eager execution](/develop/eager-execution/).
 
 During debugging, ensure the MAX model and the reference model receive the same
@@ -66,10 +66,10 @@ you can copy to the host with
 The following example records each layer's output:
 
 1. Look up each layer by its qualified path, such as `layers.0`, with the
-   [`descendants`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.descendants)
+   [`descendants`](/api/python/generated/max.nn.Module/#max.nn.Module.descendants)
    property.
 2. Wrap the layer's
-   [`forward()`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.forward)
+   [`forward()`](/api/python/generated/max.nn.Module/#max.nn.Module.forward)
    method so each call stores its output as a NumPy array. The context manager
    restores the original methods on exit.
 
@@ -96,7 +96,7 @@ from typing import Any
 
 import numpy as np
 from max.dtype import DType
-from max.experimental.nn import Module
+from max.nn import Module
 from max.experimental.tensor import Tensor
 
 

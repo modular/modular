@@ -26,7 +26,7 @@ the weighted output (with ``sigmoid``) -- a genuinely different operation, not
 an interchangeable fused form of the same math.
 
 This operates on whatever shape ``x``'s last axis is, matching
-:class:`~max.experimental.nn.norm.RMSNorm`'s generic last-axis behavior: KDA's
+:class:`~max.nn.norm.RMSNorm`'s generic last-axis behavior: KDA's
 ``o_norm`` normalizes per-head over a ``[T, num_heads, head_dim]`` tensor with
 a ``[head_dim]`` weight, broadcasting across ``num_heads`` for free, the same
 way K3's V2 code does.
@@ -36,9 +36,9 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.norm.rms_norm import rms_norm
 from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.nn.norm.rms_norm import rms_norm
 
 # config.rms_norm_eps: input_layernorm, post_attention_layernorm,
 # routed_expert_norm, o_norm, the residual norms and the final norm.

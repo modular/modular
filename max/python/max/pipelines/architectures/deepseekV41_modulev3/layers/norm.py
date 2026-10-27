@@ -28,7 +28,7 @@ root's argument, so an all-zero row normalizes to 0 (not NaN):
 ``ops.rms_norm`` with ``multiply_before_cast=True`` is exactly this order:
 the reduction runs in float32, the weight multiply happens in the
 reduction dtype, and only the product is cast back to the input dtype.
-The V3 experimental :class:`~max.experimental.nn.norm.RMSNorm` instead
+The V3 experimental :class:`~max.nn.norm.RMSNorm` instead
 applies the Llama-style default (normalize, cast, then scale), which
 differs by one rounding -- small, but this stack's KV path feeds a
 bit-exact FP8 grid check, so the norm is pinned here rather than
@@ -43,8 +43,8 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn.module import Module
 from max.experimental.tensor import Tensor
+from max.nn.module import Module
 
 # ``rms_norm_eps`` from the V4.1 ``config.json``.
 EPS = 1e-20

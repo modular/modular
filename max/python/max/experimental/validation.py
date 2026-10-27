@@ -49,6 +49,7 @@ _FRAMEWORK_MODULES = (
     "max.engine",
     "max.experimental",
     "max.graph",
+    "max.nn.",
     "asyncio",
     "concurrent.",
     "contextlib",

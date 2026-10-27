@@ -22,10 +22,10 @@ import pytest
 from max.driver import Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
 from max.experimental.sharding import DeviceMapping, DeviceMesh, Sharded
 from max.experimental.tensor import Tensor, default_device
 from max.graph import DeviceRef, TensorType
+from max.nn import Module
 from max.pipelines.architectures.deepseekV41_modulev3.interface import (
     V41Config,
     build_kv_params,

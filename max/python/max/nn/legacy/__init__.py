@@ -36,7 +36,7 @@ compiles the finished graph into an optimized executable that runs on
         weights_registry={"weight": np.zeros((32, 64), dtype=np.float32)},
     )
 
-In eager execution, :mod:`max.experimental.nn` runs the same layer
+In eager execution, :mod:`max.nn` runs the same layer
 abstractions directly on :class:`~max.experimental.tensor.Tensor` values,
 executing each operation immediately, PyTorch-style.
 """

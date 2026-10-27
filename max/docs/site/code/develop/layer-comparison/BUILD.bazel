@@ -20,7 +20,7 @@ modular_py_binary(
         "//max/python/max/_interpreter_ops",
         "//max/python/max/dtype",
         "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
+        "//max/python/max/nn",
         requirement("numpy"),
         requirement("torch"),
     ],

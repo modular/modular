@@ -18,7 +18,7 @@ modular_eager_py_test(
     env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
     deps = [
         "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
+        "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
         requirement("numpy"),
     ],
@@ -98,8 +98,8 @@ modular_eager_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
         "//max/python/max/pipelines/lib",
         requirement("numpy"),

@@ -15,10 +15,10 @@
 
 from __future__ import annotations
 
-from max.experimental.nn import Module
-from max.experimental.nn.norm.rms_norm import rms_norm
 from max.experimental.sharding import DeviceMapping
 from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.nn.norm.rms_norm import rms_norm
 
 
 class Gemma4RMSNorm(Module[[Tensor], Tensor]):

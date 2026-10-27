@@ -46,10 +46,6 @@ from max.experimental.compilation import (
     compile,
     stage,
 )
-from max.experimental.nn.common_layers.functional_kernels import (
-    flash_attention_ragged,
-)
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.sharding import (
     BufferLayout,
     DeviceMapping,
@@ -60,6 +56,10 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor
 from max.graph import BufferType, BufferValue, DeviceRef, TensorType
+from max.nn.common_layers.functional_kernels import (
+    flash_attention_ragged,
+)
+from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.legacy.attention import MHAMaskVariant
 from max.nn.legacy.kv_cache import MHAKVCacheParams
 from max.tree import flatten as tree_flatten

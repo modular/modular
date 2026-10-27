@@ -39,10 +39,10 @@ import numpy as np
 import torch
 from max.driver import Accelerator, Device, DLPackArray, accelerator_count
 from max.dtype import DType
-from max.experimental.nn.module import Module
 from max.experimental.sharding import DeviceMapping, DeviceMesh, Replicated
 from max.experimental.tensor import Tensor, TensorLayout, TensorType
 from max.graph import DeviceRef
+from max.nn.module import Module
 from max.pipelines.architectures.deepseekV41_modulev3.layers.mhc import (
     mhc_final_collapse,
     mhc_initial,

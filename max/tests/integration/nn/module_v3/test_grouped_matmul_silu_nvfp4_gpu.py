@@ -27,13 +27,13 @@ import numpy as np
 import pytest
 from max.driver import CPU, Accelerator
 from max.dtype import DType
-from max.experimental.nn.common_layers import quant_ops
-from max.experimental.nn.common_layers.quant_tensor import (
+from max.experimental.tensor import Tensor
+from max.nn.common_layers import quant_ops
+from max.nn.common_layers.quant_tensor import (
     NVFP4Activation,
     NVFP4Tensor,
     QuantAwareTensor,
 )
-from max.experimental.tensor import Tensor
 from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,

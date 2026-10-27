@@ -18,10 +18,10 @@ from __future__ import annotations
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
 from max.experimental.sharding import AxisAssignment, replicated_rows
 from max.experimental.sharding.types import TensorLayout
 from max.experimental.tensor import Tensor
+from max.nn import Module
 from max.nn.legacy.kernels import tpool_patch_merger as _tpool_patch_merger
 
 from ...model_config import VisionConfig

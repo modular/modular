@@ -20,11 +20,11 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.quant_linear import QuantizedMLP
-from max.experimental.nn.common_layers.quant_moe import QuantizedMoE
 from max.experimental.tensor import Tensor, default_dtype
+from max.nn import Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.quant_linear import QuantizedMLP
+from max.nn.common_layers.quant_moe import QuantizedMoE
 from max.nn.legacy.kv_cache import KVCacheParams
 from max.pipelines.architectures.laguna.model_config import (
     LagunaConfig,

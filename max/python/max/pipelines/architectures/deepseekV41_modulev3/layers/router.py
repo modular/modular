@@ -24,8 +24,8 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn.module import Module
 from max.experimental.tensor import Tensor
+from max.nn.module import Module
 
 # The graph-level tie-break loop needs python-level k unrolling, so the
 # supported top-k is fixed at V4.1's 6 (config `num_experts_per_tok`).

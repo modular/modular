@@ -319,7 +319,7 @@ class AutoModel:
             graphs. Steps stay synchronous unless
             ``enable_overlap_scheduler=True`` is also passed.
         prefer_module_v3: Loads the architecture's ModuleV3 version, built
-            with ``max.experimental.nn``, where it has one.
+            with ``max.nn``, where it has one.
         **config_overrides: Flat :class:`~max.pipelines.lib.PipelineArgs`
             field names, such as ``device_specs`` or
             ``enable_prefix_caching``. They win over the debug defaults.

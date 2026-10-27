@@ -17,12 +17,12 @@ import math
 import numpy as np
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Embedding, LayerNorm, Linear, Module, ModuleList
-from max.experimental.nn.common_layers.activation import (
-    activation_function_from_name,
-)
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef
+from max.nn import Embedding, LayerNorm, Linear, Module, ModuleList
+from max.nn.common_layers.activation import (
+    activation_function_from_name,
+)
 
 from .model_config import MPNetConfig
 

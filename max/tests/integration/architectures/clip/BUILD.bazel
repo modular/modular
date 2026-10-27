@@ -21,8 +21,8 @@ modular_py_library(
     deps = [
         "//max/python/max:tensor",
         "//max/python/max/dtype",
-        "//max/python/max/experimental/nn",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         "//max/python/max/pipelines/lib",
         requirement("pydantic"),
     ],

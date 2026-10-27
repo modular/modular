@@ -25,10 +25,10 @@ from typing import Any, Protocol, runtime_checkable
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.sharding import DeviceMapping, DeviceMesh
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, DimLike, TensorValue, ops
+from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.legacy.transformer import (
     DecoderOutputs,
     ReturnHiddenStates,

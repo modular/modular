@@ -28,11 +28,11 @@ from __future__ import annotations
 
 from max.experimental import random
 from max.experimental.compilation import CompiledCallable
-from max.experimental.nn.module import (
+from max.experimental.tensor import Tensor, TensorType, defaults
+from max.nn.module import (
     Module,
     module_dataclass,
 )
-from max.experimental.tensor import Tensor, TensorType, defaults
 from typing_extensions import assert_type
 
 

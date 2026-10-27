@@ -58,9 +58,9 @@ modular_eager_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
         "//max/python/max/experimental/testing",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         requirement("ml-dtypes"),
         requirement("numpy"),
     ],
@@ -123,8 +123,8 @@ modular_py_test(
     deps = [
         "//max/python/max:tensor",
         "//max/python/max/dtype",
-        "//max/python/max/experimental/nn",
         "//max/python/max/experimental/testing",
+        "//max/python/max/nn",
     ],
 )
 
@@ -246,8 +246,8 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         requirement("numpy"),
     ],
 )
@@ -269,8 +269,8 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         requirement("numpy"),
     ],
 )

@@ -489,7 +489,7 @@ Structural fields signal that the model departs from a standard transformer
 architecture and requires custom layer logic. When you identify these fields,
 prepare to declare or extend custom layers in the model's implementation file
 (such as `llama3_modulev3/llama3.py` or `deepseekV3_modulev3/deepseekV3.py`)
-using [`max.experimental.nn`](/api/python/experimental.nn/) modules:
+using [`max.nn`](/api/python/nn/) modules:
 
 - **Grouped-query or multi-query attention** (`num_key_value_heads` below
   `num_attention_heads`, or `multi_query`) shares keys and values across query

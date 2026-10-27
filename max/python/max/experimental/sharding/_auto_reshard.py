@@ -359,7 +359,7 @@ _FRAMEWORK_MODULE_PREFIXES = (
     "max.experimental.functional.",
     "max.experimental.tensor",
     "max.experimental.realization_context",
-    "max.experimental.nn.",
+    "max.nn.",
     "max.experimental.sharding.",
     "contextlib",
 )

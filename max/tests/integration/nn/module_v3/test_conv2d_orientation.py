@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Orientation regression test for ``max.experimental.nn.Conv2d``.
+"""Orientation regression test for ``max.nn.Conv2d``.
 
 Loads identical weights into V3 ``Conv2d(permute=True)`` and
 ``torch.nn.Conv2d``, feeds an explicitly asymmetric input (linear
@@ -33,9 +33,9 @@ import torch
 from max.driver import CPU, Accelerator, Device, accelerator_count
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Conv2d
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
+from max.nn import Conv2d
 from torch import nn
 
 

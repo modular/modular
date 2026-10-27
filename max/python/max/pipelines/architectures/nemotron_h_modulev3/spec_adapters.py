@@ -43,10 +43,10 @@ from typing import TYPE_CHECKING, Any
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.sharding import DeviceMapping, DeviceMesh
 from max.experimental.tensor import Tensor
 from max.graph import BufferType, DeviceRef, TensorType, TensorValue, ops
+from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.legacy.kernels import argmax_with_bias
 from max.nn.legacy.kv_cache import RecurrentStateInputsPerDevice
 from max.nn.legacy.transformer import ReturnHiddenStates

@@ -15,9 +15,9 @@ import math
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Linear, Module
 from max.experimental.tensor import Tensor
 from max.graph import DimLike
+from max.nn import Linear, Module
 
 
 def apply_rotary_emb(

@@ -77,8 +77,8 @@ You write `Module` subclasses for the layers, and the pipeline model compiles
 the graph those modules describe.
 
 Standard architectures like Llama 3 compose mostly from built-in modules.
-`Linear`, `Embedding`, and `RMSNorm` come from `max.experimental.nn`; `MLP` and
-`AttentionWithRope` from `max.experimental.nn.common_layers`. The transformer
+`Linear`, `Embedding`, and `RMSNorm` come from `max.nn`; `MLP` and
+`AttentionWithRope` from `max.nn.common_layers`. The transformer
 block that ties them together belongs to the architecture. You need a custom
 `Module` subclass only for model-specific behavior (such as novel attention or
 custom MoE gating).

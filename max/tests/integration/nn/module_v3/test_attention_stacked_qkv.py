@@ -17,12 +17,12 @@ from __future__ import annotations
 import numpy as np
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental.nn import TransparentModule
-from max.experimental.nn.common_layers.attention import AttentionWithRope
-from max.experimental.nn.common_layers.linear import QKVLinear
-from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.experimental.tensor import Tensor, default_dtype
 from max.graph import DeviceRef
+from max.nn import TransparentModule
+from max.nn.common_layers.attention import AttentionWithRope
+from max.nn.common_layers.linear import QKVLinear
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.legacy.kv_cache import MHAKVCacheParams
 
 HEAD_DIM = 16

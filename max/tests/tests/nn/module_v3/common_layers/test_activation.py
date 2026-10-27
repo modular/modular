@@ -18,7 +18,7 @@ from functools import partial
 
 import pytest
 from max.experimental import functional as F
-from max.experimental.nn.common_layers.activation import (
+from max.nn.common_layers.activation import (
     activation_function_from_name,
 )
 

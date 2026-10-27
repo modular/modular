@@ -70,7 +70,7 @@ module:
 
 ```python
 from max.experimental import functional as F
-from max.experimental.nn import Module, module_dataclass
+from max.nn import Module, module_dataclass
 from max.experimental.tensor import Tensor
 
 
@@ -95,11 +95,10 @@ The expected output is:
 [Dim(2), Dim(3)]
 ```
 
-Built-in layers such as
-[`RMSNorm`](/api/python/generated/max.experimental.nn.norm.RMSNorm/) call graph
-ops that MAX already wraps with `F.functional()`. To run a whole module as one
-graph, compile it with
-[`Module.compile()`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.compile),
+Built-in layers such as [`RMSNorm`](/api/python/generated/max.nn.norm.RMSNorm/)
+call graph ops that MAX already wraps with `F.functional()`. To run a whole
+module as one graph, compile it with
+[`Module.compile()`](/api/python/generated/max.nn.Module/#max.nn.Module.compile),
 which compiles `forward()` into a callable. Because of this, you don't typically
 need to use `F.functional()` yourself.
 
@@ -110,7 +109,7 @@ advanced topics, see:
 
 - [Model bring-up workflow](/develop/model-bringup-workflow/): Implement a
   model architecture with
-  [`max.experimental.nn`](/api/python/experimental.nn/) and compile it.
+  [`max.nn`](/api/python/nn/) and compile it.
 - [Build custom ops](/develop/build-custom-ops/): Extend MAX with your own
   ops.
 - [Trace execution](/develop/debugging-tracing/): See which ops MAX

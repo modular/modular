@@ -24,12 +24,12 @@ modular_py_library(
         "sharding/**/*.py",
     ]),
     docstring_example_deps = [
-        # Some examples in this package import max.experimental.nn; the
+        # Some examples in this package import max.nn; the
         # library must not depend on it (nn depends on this package), so
         # it joins the test's runfiles only. The macro excludes nested
         # package deps from collection, so nn's examples run only in
         # nn's own docstring test.
-        "//max/python/max/experimental/nn",
+        "//max/python/max/nn",
     ],
     # 150+ examples, each compiling interpreter kernels on the fly; CI
     # clamps every test to 800s and the slowest shard ran ~730s on

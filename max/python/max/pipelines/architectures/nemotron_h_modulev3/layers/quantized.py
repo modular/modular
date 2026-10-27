@@ -18,13 +18,6 @@ from collections.abc import Sequence
 
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental.nn import Linear, Module
-from max.experimental.nn.common_layers.linear import (
-    col_parallel,
-    row_parallel,
-)
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.nn.linear import _float8_matmul_op, _matmul_mapping
 from max.experimental.realization_context import ensure_context
 from max.experimental.sharding import (
     DeviceMapping,
@@ -35,8 +28,15 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorValue, ops
+from max.nn import Linear, Module
+from max.nn.common_layers.linear import (
+    col_parallel,
+    row_parallel,
+)
+from max.nn.common_layers.mesh_axis import TP
 from max.nn.legacy import kernels
 from max.nn.legacy.quant_config import QuantConfig
+from max.nn.linear import _float8_matmul_op, _matmul_mapping
 from max.support.math import ceildiv
 
 from ..model_config import NemotronHConfig

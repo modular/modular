@@ -75,7 +75,7 @@ with randomly initialized weights before loading weights
 .. code-block:: python
 
     from max.experimental import functional as F
-    from max.experimental.nn import Linear
+    from max.nn import Linear
     from max.experimental.sharding import TensorLayout
     from max.experimental.tensor import Tensor, defaults
 
@@ -911,7 +911,7 @@ class Tensor(DLPackArray, HasTensorValue):
             from max.driver import CPU
             from max.dtype import DType
             from max.experimental import functional as F
-            from max.experimental.nn import Module
+            from max.nn import Module
             from max.experimental.sharding import TensorLayout
             from max.experimental.tensor import Tensor
             from max.graph import TensorType

@@ -13,8 +13,8 @@
 # DOC: develop/tensor-realization.mdx
 
 from max.experimental import functional as F
-from max.experimental.nn import Module, module_dataclass
 from max.experimental.tensor import Tensor
+from max.nn import Module, module_dataclass
 
 
 @module_dataclass

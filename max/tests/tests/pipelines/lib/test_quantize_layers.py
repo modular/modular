@@ -21,16 +21,16 @@ from max._entrypoints.cli.quantize import (
     quant_formats,
 )
 from max.experimental import functional as F
-from max.experimental.nn import Linear, Module
-from max.experimental.nn.common_layers.linear import QKVLinear
-from max.experimental.nn.common_layers.mlp import MLP
-from max.experimental.nn.common_layers.quant_linear import (
+from max.experimental.tensor import Tensor
+from max.nn import Linear, Module
+from max.nn.common_layers.linear import QKVLinear
+from max.nn.common_layers.mlp import MLP
+from max.nn.common_layers.quant_linear import (
     QuantizedLinear,
     QuantizedMLP,
     QuantizedQKVLinear,
 )
-from max.experimental.nn.common_layers.quant_tensor import NVFP4TensorQuantizer
-from max.experimental.tensor import Tensor
+from max.nn.common_layers.quant_tensor import NVFP4TensorQuantizer
 from max.nn.legacy.quant_config import WeightSource
 
 

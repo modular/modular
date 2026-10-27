@@ -35,8 +35,8 @@ from __future__ import annotations
 
 import numpy as np
 from max.experimental import functional as F
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.tensor import Tensor
+from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.pipelines.architectures.deepseekV41_modulev3.layers.attention import (
     RaggedRows,
     live_rows,

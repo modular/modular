@@ -34,12 +34,12 @@ import math
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import LayerNorm, Linear, Module, ModuleList
-from max.experimental.nn.common_layers.functional_kernels import (
-    flash_attention_gpu,
-)
 from max.experimental.tensor import Tensor
 from max.graph import DimLike, TensorType
+from max.nn import LayerNorm, Linear, Module, ModuleList
+from max.nn.common_layers.functional_kernels import (
+    flash_attention_gpu,
+)
 from max.nn.legacy.attention import MHAMaskVariant
 
 from ..model_config import TransformerConfig

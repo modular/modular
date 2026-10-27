@@ -35,12 +35,12 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn.common_layers.functional_kernels import (
-    hyper_connection_gates,
-)
 from max.experimental.sharding import DeviceMapping
 from max.experimental.tensor import Tensor
 from max.graph import Dim
+from max.nn.common_layers.functional_kernels import (
+    hyper_connection_gates,
+)
 
 
 class _PreMixOmitted:
@@ -202,7 +202,7 @@ def mhc_pre(
 
             - *omitted* (the default): this site's own freshly computed
               ``pre`` collapses the stream (the classic ModuleV3
-              :class:`~max.experimental.nn.HyperConnection` reading).
+              :class:`~max.nn.HyperConnection` reading).
             - ``None``: the identity carry. The trunk's first attention site
               copies stream 0 unweighted, because
               every stream holds the same broadcast embedding there.

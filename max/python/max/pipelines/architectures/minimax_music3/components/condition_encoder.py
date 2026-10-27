@@ -26,9 +26,9 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
 from max.graph import TensorType
+from max.nn import Module
 
 from ..layers.conv import ShiftedConv1d
 from ..model_config import ConditionEncoderConfig

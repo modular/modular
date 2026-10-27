@@ -45,44 +45,44 @@ infrastructure, including batching, caching, compilation, and serving.
 ## The packages pipelines build on
 
 Pipelines build on [`max.nn.legacy`](/api/python/nn.legacy/),
-[`max.experimental.nn`](/api/python/experimental.nn/), and
+[`max.nn`](/api/python/nn/), and
 [`max.pipelines.kv_cache`](/api/python/pipelines.kv_cache/).
 
 ### Neural network modules
 
 MAX architectures build their layers with
-[`max.experimental.nn`](/api/python/experimental.nn/), the module API for
+[`max.nn`](/api/python/nn/), the module API for
 ModuleV3 architectures. It includes common components like:
 
 - **Core modules**:
-  [`Module`](/api/python/generated/max.experimental.nn.Module/),
-  [`Linear`](/api/python/generated/max.experimental.nn.Linear/),
-  [`Embedding`](/api/python/generated/max.experimental.nn.Embedding/),
-  [`Sequential`](/api/python/generated/max.experimental.nn.Sequential/),
-  [`ModuleList`](/api/python/generated/max.experimental.nn.ModuleList/).
+  [`Module`](/api/python/generated/max.nn.Module/),
+  [`Linear`](/api/python/generated/max.nn.Linear/),
+  [`Embedding`](/api/python/generated/max.nn.Embedding/),
+  [`Sequential`](/api/python/generated/max.nn.Sequential/),
+  [`ModuleList`](/api/python/generated/max.nn.ModuleList/).
 - **Normalization**:
-  [`RMSNorm`](/api/python/generated/max.experimental.nn.norm.RMSNorm/),
-  [`GemmaRMSNorm`](/api/python/generated/max.experimental.nn.norm.GemmaRMSNorm/),
-  and [`LayerNorm`](/api/python/generated/max.experimental.nn.norm.LayerNorm/).
+  [`RMSNorm`](/api/python/generated/max.nn.norm.RMSNorm/),
+  [`GemmaRMSNorm`](/api/python/generated/max.nn.norm.GemmaRMSNorm/),
+  and [`LayerNorm`](/api/python/generated/max.nn.norm.LayerNorm/).
 - **Positional encodings**:
-  [`RotaryEmbedding`](/api/python/generated/max.experimental.nn.common_layers.rotary_embedding.RotaryEmbedding/)
+  [`RotaryEmbedding`](/api/python/generated/max.nn.common_layers.rotary_embedding.RotaryEmbedding/)
   and
-  [`TransposedRotaryEmbedding`](/api/python/generated/max.experimental.nn.rope.TransposedRotaryEmbedding/).
+  [`TransposedRotaryEmbedding`](/api/python/generated/max.nn.rope.TransposedRotaryEmbedding/).
 - **Attention**:
-  [`AttentionWithRope`](/api/python/generated/max.experimental.nn.common_layers.attention.AttentionWithRope/).
+  [`AttentionWithRope`](/api/python/generated/max.nn.common_layers.attention.AttentionWithRope/).
 
 The [`max.nn.legacy`](/api/python/nn.legacy/) package builds MAX graphs directly
 and backs architectures written against it. To port one to ModuleV3, see
 [Migrate an existing architecture to ModuleV3](/develop/model-bringup-skills/#migrate-an-existing-architecture-to-modulev3).
 
-The [`Module`](/api/python/generated/max.experimental.nn.Module/) base class in
-`max.experimental.nn` standardizes how modules manage weights and devices.
+The [`Module`](/api/python/generated/max.nn.Module/) base class in
+`max.nn` standardizes how modules manage weights and devices.
 Here's an example of building a simple multi-layer perceptron with the
 ModuleV3 API:
 
 ```python
 from max.driver import Accelerator
-from max.experimental.nn import Linear, Module, module_dataclass
+from max.nn import Linear, Module, module_dataclass
 
 @module_dataclass
 class MLP(Module):
@@ -111,7 +111,7 @@ In this example, the `Module` base class automatically tracks all parameters
 through the module hierarchy, letting you iterate over them or inspect them. The
 `to()` method moves the model to a different device in one call. Fields
 annotated
-[`PinnedDeviceTensor`](/api/python/generated/max.experimental.nn.PinnedDeviceTensor/),
+[`PinnedDeviceTensor`](/api/python/generated/max.nn.PinnedDeviceTensor/),
 such as a quantized layer's scales, stay on the device that created them.
 
 ### The KV cache manager
@@ -133,7 +133,7 @@ with MAX. When you build a model for the pipeline system, define your
 architecture as a module, using either the graph API
 ([`max.nn.legacy.Module`](/api/python/generated/max.nn.legacy.Module/)) or the
 ModuleV3 API
-([`max.experimental.nn.Module`](/api/python/generated/max.experimental.nn.Module/)).
+([`max.nn.Module`](/api/python/generated/max.nn.Module/)).
 MAX then compiles your module into an optimized executable for the target
 device, and the pipeline orchestrates execution.
 
@@ -144,7 +144,7 @@ Here's the workflow:
    processing inputs:
    [`__call__()`](/api/python/generated/max.nn.legacy.Module/)
    for the graph API, or
-   [`forward()`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.forward)
+   [`forward()`](/api/python/generated/max.nn.Module/#max.nn.Module.forward)
    for the ModuleV3 API.
 
 2. **MAX compiles your model**: MAX compiles the module into an optimized
@@ -159,7 +159,7 @@ Here's the workflow:
 
 This separation lets you work at the right level of abstraction: use
 [`max.nn.legacy`](/api/python/nn.legacy/) or
-[`max.experimental.nn`](/api/python/experimental.nn/) to define model
+[`max.nn`](/api/python/nn/) to define model
 architectures, let MAX handle compilation, and rely on pipelines for
 production serving.
 

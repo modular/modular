@@ -22,10 +22,10 @@ import numpy as np
 import pytest
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental.nn import Linear
 from max.experimental.tensor import default_device
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import WeightData
+from max.nn import Linear
 from max.pipelines.lib import (
     GraphRole,
     ModelInputs,
@@ -130,9 +130,7 @@ def test_float32_checkpoint_loads_into_bfloat16_module(
     model._batch_processor = None
     model._checkpoint = _float32_checkpoint()
 
-    with caplog.at_level(
-        logging.WARNING, logger="max.experimental.nn._weight_utils"
-    ):
+    with caplog.at_level(logging.WARNING, logger="max.nn._weight_utils"):
         specs = model.graph_specs(model._create_model_config(model._checkpoint))
 
     assert (
@@ -153,9 +151,7 @@ def test_auto_cast_env_var_turns_the_cast_off(
     model._batch_processor = None
     model._checkpoint = _float32_checkpoint()
 
-    with caplog.at_level(
-        logging.WARNING, logger="max.experimental.nn._weight_utils"
-    ):
+    with caplog.at_level(logging.WARNING, logger="max.nn._weight_utils"):
         specs = model.graph_specs(model._create_model_config(model._checkpoint))
 
     assert (

@@ -5,7 +5,7 @@ description: Learn how to compose modules, name their parameters, load checkpoin
   data, trace a module to a graph, and compile it.
 ---
 
-A [`Module`](/api/python/generated/max.experimental.nn.Module/) holds your
+A [`Module`](/api/python/generated/max.nn.Module/) holds your
 model's parameters and defines the computation that runs on them. The same
 `forward()` method runs eagerly on real tensors, traces to a
 [`Graph`](/api/python/generated/max.graph.Graph/), or compiles into a callable
@@ -47,19 +47,19 @@ constructors take shapes and options only.
 ## Define and compose modules
 
 Compose a module from built-in layers when they cover what you need:
-[`Linear`](/api/python/generated/max.experimental.nn.Linear/),
-[`Embedding`](/api/python/generated/max.experimental.nn.Embedding/),
-[`RMSNorm`](/api/python/generated/max.experimental.nn.norm.RMSNorm/),
-[`LayerNorm`](/api/python/generated/max.experimental.nn.norm.LayerNorm/), and
+[`Linear`](/api/python/generated/max.nn.Linear/),
+[`Embedding`](/api/python/generated/max.nn.Embedding/),
+[`RMSNorm`](/api/python/generated/max.nn.norm.RMSNorm/),
+[`LayerNorm`](/api/python/generated/max.nn.norm.LayerNorm/), and
 others. Subclass `Module` directly and assign each child layer to an attribute.
 Here two `Linear` projections form a feed-forward block, and a
-[`ModuleList`](/api/python/generated/max.experimental.nn.ModuleList/) stacks two
+[`ModuleList`](/api/python/generated/max.nn.ModuleList/) stacks two
 blocks:
 
 ```python
 from max.driver import CPU
 from max.experimental import functional as F
-from max.experimental.nn import Linear, Module, ModuleList
+from max.nn import Linear, Module, ModuleList
 from max.experimental.tensor import Tensor, default_device
 
 
@@ -118,7 +118,7 @@ keyed by those paths:
 
 ```python
 from max.driver import CPU
-from max.experimental.nn import Linear
+from max.nn import Linear
 from max.experimental.tensor import Tensor, default_device
 
 
@@ -149,7 +149,7 @@ model runs. Here the checkpoint has a `bias` that the layer doesn't:
 
 ```python
 from max.driver import CPU
-from max.experimental.nn import Linear
+from max.nn import Linear
 from max.experimental.tensor import Tensor, default_device
 
 
@@ -179,15 +179,15 @@ parameter names.
 ## Walk a module's parameters
 
 A module's parameter names are paths through its attributes.
-[`module.parameters`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.parameters)
+[`module.parameters`](/api/python/generated/max.nn.Module/#max.nn.Module.parameters)
 yields every parameter in the module and its submodules as `(name, tensor)`
 pairs, where the name is the tensor's dotted path through the module, such as
 `encoder.layer1.weight`.
-[`module.local_parameters`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.local_parameters)
+[`module.local_parameters`](/api/python/generated/max.nn.Module/#max.nn.Module.local_parameters)
 yields the tensors held directly on that module, keyed by attribute name.
-[`module.children`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.children)
+[`module.children`](/api/python/generated/max.nn.Module/#max.nn.Module.children)
 yields the direct submodules, and
-[`module.descendants`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.descendants)
+[`module.descendants`](/api/python/generated/max.nn.Module/#max.nn.Module.descendants)
 yields every module below it keyed by path.
 
 A module is also a tree: each attribute is a child keyed by attribute name,
@@ -211,7 +211,7 @@ without `leaf=Tensor`, then doubles every weight with `tree.map()`:
 ```python
 from max import tree
 from max.driver import CPU
-from max.experimental.nn import Linear, Module
+from max.nn import Linear, Module
 from max.experimental.tensor import Tensor, default_device
 
 
@@ -276,7 +276,7 @@ name:
 ```python
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental.nn import Linear
+from max.nn import Linear
 from max.experimental.tensor import Tensor, TensorType, default_device
 
 

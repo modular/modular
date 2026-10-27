@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for max.experimental.nn.norm.group_norm."""
+"""Tests for max.nn.norm.group_norm."""
 
 from __future__ import annotations
 
@@ -18,9 +18,9 @@ import pytest
 import torch
 from max.driver import Accelerator, accelerator_count
 from max.dtype import DType
-from max.experimental.nn.norm import GroupNorm
-from max.experimental.nn.norm.group_norm import group_norm
 from max.experimental.tensor import Tensor
+from max.nn.norm import GroupNorm
+from max.nn.norm.group_norm import group_norm
 
 
 def test_repr() -> None:

@@ -25,9 +25,9 @@ compiles and runs.
 
 import max.experimental.functional as F
 import numpy as np
+from max import nn
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import nn
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
 

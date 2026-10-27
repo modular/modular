@@ -36,9 +36,9 @@ from typing import cast
 from max.driver import Accelerator
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Linear, Module, ModuleList, RMSNorm
 from max.experimental.tensor import Tensor, TensorType
 from max.graph import DeviceRef
+from max.nn import Linear, Module, ModuleList, RMSNorm
 
 
 @dataclass

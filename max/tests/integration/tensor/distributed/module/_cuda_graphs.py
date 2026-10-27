@@ -36,9 +36,9 @@ from max.dtype import DType
 from max.engine import Model
 from max.experimental.compilation import CompiledCallable
 from max.experimental.functional import full, matmul
-from max.experimental.nn.module import Module, module_dataclass
 from max.experimental.tensor import Tensor, TensorType
 from max.graph import DeviceRef
+from max.nn.module import Module, module_dataclass
 
 D = 4
 F32 = DType.float32

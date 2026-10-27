@@ -23,7 +23,9 @@ import pytest
 from max import tree
 from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.experimental.nn import (
+from max.experimental.tensor import Tensor, default_dtype
+from max.graph.weights import WeightData
+from max.nn import (
     Linear,
     LoRA,
     Module,
@@ -31,9 +33,7 @@ from max.experimental.nn import (
     TransparentModule,
     lora_layers,
 )
-from max.experimental.nn.common_layers.linear import QKVLinear
-from max.experimental.tensor import Tensor, default_dtype
-from max.graph.weights import WeightData
+from max.nn.common_layers.linear import QKVLinear
 from max.pipelines.lora import (
     LoRAConfig,
     LoRAManagerV3,

@@ -22,9 +22,9 @@ from pathlib import Path
 import pytest
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn.module import Module, module_dataclass
 from max.experimental.tensor import Tensor, TensorType
 from max.experimental.testing import assert_all_close
+from max.nn.module import Module, module_dataclass
 
 
 @pytest.fixture

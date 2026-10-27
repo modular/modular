@@ -16,9 +16,9 @@ from __future__ import annotations
 from max.driver import CPU, Device
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
 from max.experimental.sharding import DeviceMapping, DeviceMesh, Replicated
 from max.experimental.tensor import Tensor
+from max.nn import Module
 from typing_extensions import Self
 
 

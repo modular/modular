@@ -25,10 +25,10 @@ from typing import ClassVar
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers import quant_ops
-from max.experimental.nn.common_layers.quant_linear import QuantizedMLP
 from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.nn.common_layers import quant_ops
+from max.nn.common_layers.quant_linear import QuantizedMLP
 from max.nn.legacy.comm.ep import EPBatchManager
 
 from ...deepseekV3_2_modulev3.layers.moe import (

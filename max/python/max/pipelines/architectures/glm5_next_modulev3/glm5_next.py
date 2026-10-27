@@ -24,22 +24,22 @@ from max import tree
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module, as_subgraph
-from max.experimental.nn.common_layers.embedding import VocabParallelEmbedding
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.linear import ColumnParallelLinear
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.experimental.nn.sequential import ModuleList
 from max.experimental.sharding import DeviceMapping, NamedMapping
 from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorValue
+from max.nn import Module, as_subgraph
+from max.nn.common_layers.embedding import VocabParallelEmbedding
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.linear import ColumnParallelLinear
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     RecurrentStateInputsPerDevice,
 )
+from max.nn.sequential import ModuleList
 from max.pipelines.architectures.glm5_next.model_config import SPARSE_ATTENTION
 from max.pipelines.architectures.glm5_next.state_cache import (
     CONV_LEAF_ID,

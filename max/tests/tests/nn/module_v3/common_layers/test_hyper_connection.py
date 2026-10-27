@@ -26,8 +26,6 @@ import pytest
 from max.driver import Device
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import HyperConnection
-from max.experimental.nn.common_layers.mesh_axis import TP
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -36,6 +34,8 @@ from max.experimental.sharding import (
     Sharded,
 )
 from max.experimental.tensor import Tensor, default_device
+from max.nn import HyperConnection
+from max.nn.common_layers.mesh_axis import TP
 
 _HIDDEN = 128
 _HC_MULT = 4

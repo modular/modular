@@ -26,10 +26,6 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import Model
 from max.experimental.compilation import CompiledCallable
-from max.experimental.nn.module import (
-    Module,
-    module_dataclass,
-)
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -38,6 +34,10 @@ from max.experimental.sharding import (
     TensorLayout,
 )
 from max.experimental.tensor import Tensor, default_device
+from max.nn.module import (
+    Module,
+    module_dataclass,
+)
 
 # ── Inline mesh helpers (no conftest dependency) ──────────────────────
 

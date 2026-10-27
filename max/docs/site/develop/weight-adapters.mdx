@@ -6,13 +6,13 @@ description: Load a checkpoint into a MAX model by writing a weight adapter that
 Most model architectures need a weight adapter. Write a weight adapter to
 convert checkpoint weights (most often published on Hugging Face) into the
 format expected by your MAX
-[`Module`](/api/python/generated/max.experimental.nn.Module/). Then, integrate
+[`Module`](/api/python/generated/max.nn.Module/). Then, integrate
 the weight adapter into the [model pipeline](/develop/pipelines/).
 
 :::note
 
 This page assumes you know the `Module` class from
-[`max.experimental.nn`](/api/python/experimental.nn/) before writing a weight
+[`max.nn`](/api/python/nn/) before writing a weight
 adapter. To learn more, see
 [Neural network modules](/develop/pipelines/#neural-network-modules).
 
@@ -70,9 +70,9 @@ entire weight loading flow:
    [`F.lazy()`](/api/python/experimental.functional/#max.experimental.functional.lazy)
    block, which defers tensor realization.
 10. `compile_and_init_graphs()` traces and compiles each graph through
-    [`Module.stage()`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.stage),
+    [`Module.stage()`](/api/python/generated/max.nn.Module/#max.nn.Module.stage),
     which
-    [`compile()`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.compile)
+    [`compile()`](/api/python/generated/max.nn.Module/#max.nn.Module.compile)
     wraps. Each parameter of the `Module` takes the state dictionary entry with
     the same name.
 
@@ -140,7 +140,7 @@ Each parameter name is the
 [attribute path](/develop/modules/#walk-a-modules-parameters) from the root
 `Module` to the parameter tensor, joined with dots. To list them, construct your
 `Module` inside an `F.lazy()` block and iterate over its
-[`parameters`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.parameters)
+[`parameters`](/api/python/generated/max.nn.Module/#max.nn.Module.parameters)
 property:
 
 <!-- invisible-code-block: python
@@ -395,7 +395,7 @@ parameter, so an `lm_head.weight` entry in the checkpoint matches nothing.
 
 :::note
 
-[`Module.load_state_dict()`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.load_state_dict)
+[`Module.load_state_dict()`](/api/python/generated/max.nn.Module/#max.nn.Module.load_state_dict)
 loads values into an eager module outside the pipeline. With its default
 `strict=True`, it raises a `ValueError` for entries that match no parameter.
 With `strict=False`, it ignores those entries. It raises a `KeyError` for a

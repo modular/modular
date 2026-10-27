@@ -26,10 +26,10 @@ import numpy as np
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.sharding import DeviceMapping, DeviceMesh, Replicated
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, DimLike, TensorType, TensorValue, Value
+from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.legacy.kv_cache import PagedCacheValues as GraphPagedCacheValues
 from max.nn.legacy.transformer import ReturnHiddenStates
 from max.pipelines.context import TextContext

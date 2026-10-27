@@ -19,20 +19,20 @@ import functools
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.mlp import MLP
-from max.experimental.nn.common_layers.rotary_embedding import (
-    RotaryEmbedding,
-)
-from max.experimental.nn.embedding import Embedding
-from max.experimental.nn.linear import Linear
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import ops
+from max.nn import Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.mlp import MLP
+from max.nn.common_layers.rotary_embedding import (
+    RotaryEmbedding,
+)
+from max.nn.embedding import Embedding
 from max.nn.legacy.kv_cache import KVCacheParamInterface, MultiKVCacheParams
 from max.nn.legacy.transformer import ReturnLogits
+from max.nn.linear import Linear
+from max.nn.norm import RMSNorm
+from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 
 from .layers.attention import FlintAttention

@@ -17,16 +17,16 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.functional_kernels import (
-    flash_attention_ragged_gpu,
-)
-from max.experimental.nn.linear import Linear
-from max.experimental.nn.norm import LayerNorm
-from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
+from max.nn import Module
+from max.nn.common_layers.functional_kernels import (
+    flash_attention_ragged_gpu,
+)
 from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.linear import Linear
+from max.nn.norm import LayerNorm
+from max.nn.sequential import ModuleList
 from max.pipelines.architectures.gemma4_modulev3.layers.rms_norm import (
     Gemma4RMSNorm,
 )

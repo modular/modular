@@ -15,11 +15,11 @@
 from __future__ import annotations
 
 from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.linear import Linear
 from max.experimental.tensor import Tensor
+from max.nn import Module
 from max.nn.legacy.attention.mask_config import MHAMaskVariant
 from max.nn.legacy.kernels import flash_attention_gpu as _flash_attention_gpu
+from max.nn.linear import Linear
 
 flash_attention_gpu = F.functional(_flash_attention_gpu)
 

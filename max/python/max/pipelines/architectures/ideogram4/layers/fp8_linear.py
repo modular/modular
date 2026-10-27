@@ -33,9 +33,9 @@ import operator
 
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
 from max.graph import DimLike
+from max.nn import Module
 from max.nn.legacy.kernels import (
     dynamic_scaled_matmul,
     quantize_dynamic_scaled_float8,
@@ -108,7 +108,7 @@ class Ideogram4FP8Linear(Module[[Tensor], Tensor]):
     """A bias-free linear projection executed as a native FP8 GEMM.
 
     By convention the weight is stored transposed; that is, ``weight.shape ==
-    [out_dim, in_dim]``, matching :class:`~max.experimental.nn.Linear` and the
+    [out_dim, in_dim]``, matching :class:`~max.nn.Linear` and the
     checkpoint layout.
 
     Args:

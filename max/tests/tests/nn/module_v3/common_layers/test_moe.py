@@ -21,12 +21,6 @@ import pytest
 from max.driver import Device
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn.common_layers.functional_kernels import moe_finalize
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.nn.common_layers.moe import (
-    MoE,
-    TensorParallelMoE,
-)
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -36,6 +30,12 @@ from max.experimental.sharding import (
     Sharded,
 )
 from max.experimental.tensor import Tensor, default_device
+from max.nn.common_layers.functional_kernels import moe_finalize
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.moe import (
+    MoE,
+    TensorParallelMoE,
+)
 
 # Small dimensions for fast graph-trace tests.
 _HIDDEN_DIM = 256

@@ -17,12 +17,12 @@ from __future__ import annotations
 import pytest
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
-from max.experimental.nn.module import (
+from max.experimental.tensor import Tensor
+from max.nn.module import (
     Module,
     PinnedDeviceTensor,
     module_dataclass,
 )
-from max.experimental.tensor import Tensor
 
 
 @module_dataclass

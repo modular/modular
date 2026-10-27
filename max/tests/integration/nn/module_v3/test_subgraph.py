@@ -43,12 +43,6 @@ import pytest
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import (
-    Module,
-    ModuleList,
-    as_subgraph,
-    module_dataclass,
-)
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
@@ -58,6 +52,12 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef
+from max.nn import (
+    Module,
+    ModuleList,
+    as_subgraph,
+    module_dataclass,
+)
 
 F32 = DType.float32
 D = 4

@@ -14,10 +14,10 @@
 
 import math
 
-from max.experimental.nn import Module
-from max.experimental.nn.linear import Linear
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, TensorValueLike, ops
+from max.nn import Module
+from max.nn.linear import Linear
 
 from .attention_utils import rotate_half
 

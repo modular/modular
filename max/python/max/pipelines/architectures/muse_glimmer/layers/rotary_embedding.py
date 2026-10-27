@@ -17,8 +17,8 @@ from __future__ import annotations
 
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.experimental.tensor import Tensor
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 
 
 class NoPERotaryEmbedding(RotaryEmbedding):

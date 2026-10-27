@@ -34,14 +34,14 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from max.experimental import functional as F
-from max.experimental.nn import Linear, Module, RMSNorm
-from max.experimental.nn.common_layers.linear import RowParallelLinear
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.nn.common_layers.rotary_embedding import (
-    RotaryEmbedding,
-)
 from max.experimental.sharding import NamedMapping
 from max.experimental.tensor import Tensor
+from max.nn import Linear, Module, RMSNorm
+from max.nn.common_layers.linear import RowParallelLinear
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.rotary_embedding import (
+    RotaryEmbedding,
+)
 
 from ..dflash_mimo_v2 import DFlashMiMoV2Config
 
