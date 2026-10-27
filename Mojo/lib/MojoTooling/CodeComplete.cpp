@@ -119,12 +119,13 @@ struct CodeCompletionListener : public BaseCompletionListener {
       // Grab the documentation for the import. Do this out of the current
       // context to avoid pulling in a bunch of unwanted state.
       MLIRContext ctx{MLIRContext::Threading::DISABLED};
-      ParserConfig config(parserContext->getParserConfig());
-      config.context = &ctx;
-      config.autoFixItHandler = nullptr;
-      config.useMLIRDiagnostics = false;
-      config.parserListener = nullptr;
-      MojoParserContext importContext(sourceMgr, config);
+      FrontendOptions frontendOptions = parserContext->getFrontendOptions();
+      frontendOptions.autoFixItHandler = nullptr;
+      frontendOptions.useMLIRDiagnostics = false;
+      frontendOptions.parserListener = nullptr;
+      MojoParserContext importContext(sourceMgr, &ctx,
+                                      parserContext->getCompilationOptions(),
+                                      frontendOptions);
       if (auto module = importContext.parseFileOrPackageNonRecursive(path)) {
         if (auto decl = getPublicDecl(module))
           results.back().documentation =
@@ -539,11 +540,12 @@ static void parseCompletionImpl(
   // Suppress diagnostics during completion.
   listener.sourceMgr.setDiagHandler([](const llvm::SMDiagnostic &, void *) {});
 
-  ParserConfig config(context, options);
-  config.parserListener = &listener;
-  config.maxNotesPerDiagnostic = 0;
+  FrontendOptions frontendOptions;
+  frontendOptions.parserListener = &listener;
+  frontendOptions.maxNotesPerDiagnostic = 0;
 
-  MojoParserContext parserContext(listener.sourceMgr, config);
+  MojoParserContext parserContext(listener.sourceMgr, context, options,
+                                  frontendOptions);
   listener.parserContext = &parserContext;
 
   computeCompletionRange(parserContext.getSharedState(), buffer,

@@ -775,8 +775,9 @@ static int build(const State &subcommandState) {
       options::OPT_D, options::OPT_strip_file_prefix,
       options::OPT_disable_builtins, options::OPT_mojo_search_paths,
       options::OPT_fixit, options::OPT_export_fixit, &timing.rootScope(),
-      [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
-        return LIT::importMojoFile(ctx, sourceMgr, parserConfig, ts, nullptr);
+      [&](const FrontendOptions &frontendOptions, mlir::TimingScope &ts) {
+        return LIT::importMojoFile(ctx, sourceMgr, &mlirCtx, options,
+                                   frontendOptions, ts, nullptr);
       });
   if (failed(moduleOp))
     return state.reportError(moduleOp.getError());

@@ -326,9 +326,6 @@ struct SharedState::Impl {
   /// Flag indicating if the deps of a module are currently being resolved.
   bool activelyResolvingModuleDeps = false;
 
-  /// Flag indicating if we should diagnose missing doc strings while parsing.
-  bool diagnoseMissingDocStrings = false;
-
   /// This keeps track of body decorators for a given declaration, this is
   /// logically part of ASTDecl, but is stored out of line to reduce its size
   /// since these are uncommon.
@@ -430,27 +427,24 @@ static std::string canonicalizeFileCompilationDir(StringRef stripFilePrefix) {
   return workingFileCompilationDir.str().str();
 }
 
-SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
-    : diags(sourceMgr, config.context, config.useMLIRDiagnostics,
-            config.maxNotesPerDiagnostic,
-            canonicalizeFileCompilationDir(config.stripFilePrefix),
-            /*disableWarnings=*/config.options.disableWarnings,
-            /*warningsAsErrors=*/config.options.warningsAsErrors,
+SharedState::SharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
+                         const CompilationOptions &options,
+                         const FrontendOptions &frontendOptions)
+    : diags(sourceMgr, context, frontendOptions.useMLIRDiagnostics,
+            frontendOptions.maxNotesPerDiagnostic,
+            canonicalizeFileCompilationDir(frontendOptions.stripFilePrefix),
+            /*disableWarnings=*/options.disableWarnings,
+            /*warningsAsErrors=*/options.warningsAsErrors,
             /*extraContext=*/this,
-            /*autoFixItHandler=*/config.autoFixItHandler),
-      options(config.options),
+            /*autoFixItHandler=*/frontendOptions.autoFixItHandler),
+      options(options), frontendOptions(frontendOptions),
       declResolver(std::make_unique<DeclResolver>(*this)),
       moduleLoader(std::make_unique<ModuleLoader>(*this)),
-      parserListener(config.parserListener),
-      extensionsScopeMarker(StringAttr::get(config.context, "extension:")),
-      disablePrebuiltPackages(config.disablePrebuiltPackages),
-      useBuiltinModule(config.useBuiltinModule),
+      parserListener(frontendOptions.parserListener),
+      extensionsScopeMarker(StringAttr::get(context, "extension:")),
       impl(std::make_unique<Impl>(*this)) {
-  impl->diagnoseMissingDocStrings = config.diagnoseMissingDocStrings;
-  docsBasePath = config.docsBasePath;
-
-  preloadAllKGENDialects(config.context);
-  compilerCaches = KGEN::CompilerCaches::getOrCreate(config.context);
+  preloadAllKGENDialects(context);
+  compilerCaches = KGEN::CompilerCaches::getOrCreate(context);
 
   // Record any existing buffers in the source manager.
   for (int i = 0, e = sourceMgr.getNumBuffers(); i < e; ++i) {
@@ -465,7 +459,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
       [this](SMLoc &loc) { adjustTokenEndPoint(*this, loc); });
 
   if (options.getDebugInfoLevelForInput() > CompilationOptions::kSynthetic) {
-    diBuilder = std::make_unique<DebugInfo::DIBuilder>(config.context);
+    diBuilder = std::make_unique<DebugInfo::DIBuilder>(context);
 
     diBuilder->initializeCompileUnit(
         options.debugInfoLanguage,
@@ -479,7 +473,7 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config)
 SharedState::~SharedState() { declResolver.reset(); }
 
 bool SharedState::shouldDiagnoseMissingDocStrings() const {
-  return impl->diagnoseMissingDocStrings;
+  return frontendOptions.diagnoseMissingDocStrings;
 }
 
 void SharedState::initialize(TopLevelModuleASTDecl &topLevelDecl) {
@@ -963,7 +957,9 @@ void SharedState::recordDepEdge(ASTDecl *importer, ASTDecl *imported) {
   return getModuleLoader().recordDepEdge(importer, imported);
 }
 
-bool SharedState::hasBuiltinModule() const { return useBuiltinModule; }
+bool SharedState::hasBuiltinModule() const {
+  return frontendOptions.useBuiltinModule;
+}
 
 /// Builds the fully-qualified cache key for a builtin/std lookup into a stack
 /// buffer, so the hot lookup path allocates nothing and interns nothing. The

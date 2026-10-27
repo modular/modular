@@ -15,7 +15,7 @@
 // Callers are responsible for creating the Init context, resolving the input
 // path, setting up the MLIRContext (with registerAllKGENDialects), and managing
 // the output file lifetime. This helper constructs a SourceMgr and
-// LIT::ParserConfig internally for the parse/serialize steps.
+// KGEN::FrontendOptions internally for the parse/serialize steps.
 //
 //===----------------------------------------------------------------------===//
 

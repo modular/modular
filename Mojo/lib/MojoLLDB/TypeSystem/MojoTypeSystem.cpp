@@ -136,9 +136,8 @@ struct MojoTypeSystem::Impl {
     compilationOptions.enableParallelLLC = false;
 
     // Configure the parser context.
-    LIT::ParserConfig parserConfig(&mlirContext, compilationOptions);
-    parserContext =
-        std::make_unique<MojoParserContext>(sourceMgr, parserConfig);
+    parserContext = std::make_unique<MojoParserContext>(
+        sourceMgr, &mlirContext, compilationOptions, KGEN::FrontendOptions());
 
     auto targetInfoOr = M::getTargetInfoFor(
         &mlirContext, compilationOptions.targetTriple,

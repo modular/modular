@@ -43,9 +43,9 @@ class CPUDevice;
 struct CPUDeviceOptions;
 } // namespace AsyncRT
 
-namespace KGEN::LIT {
-struct ParserConfig;
-} // namespace KGEN::LIT
+namespace KGEN {
+struct FrontendOptions;
+} // namespace KGEN
 
 class TargetInfoAttr;
 
@@ -369,7 +369,7 @@ ErrorOr<OwningOpRef<ModuleOp>> invokeMojoParser(
     llvm::opt::OptSpecifier disableBuiltins, llvm::opt::OptSpecifier stdlibPath,
     llvm::opt::OptSpecifier autoFixIt, llvm::opt::OptSpecifier exportFixit,
     mlir::TimingScope *timingScope,
-    function_ref<OwningOpRef<ModuleOp>(KGEN::LIT::ParserConfig &,
+    function_ref<OwningOpRef<ModuleOp>(const KGEN::FrontendOptions &,
                                        mlir::TimingScope &)>
         parseFn);
 

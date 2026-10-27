@@ -288,11 +288,12 @@ static int precompile(const State &subcommandState) {
       options::OPT_disable_builtins, options::OPT_mojo_search_paths,
       options::OPT_fixit, options::OPT_export_fixit,
       /*timingScope=*/nullptr,
-      [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
+      [&](const FrontendOptions &frontendOptions, mlir::TimingScope &ts) {
         OwningOpRef<ModuleOp> moduleOp;
         std::tie(moduleOp, packageOp) = LIT::importMojoPackage(
             ctx, precompileArgs.inputPath, precompileArgs.sourceName, sourceMgr,
-            parserConfig, ts);
+            &precompileArgs.ctx, precompileArgs.compileOptions, frontendOptions,
+            ts);
         return moduleOp;
       });
   if (failed(module))

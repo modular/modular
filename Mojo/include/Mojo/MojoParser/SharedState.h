@@ -26,6 +26,7 @@
 #include "Mojo/MojoParser/ModuleSpec.h"
 #include "Mojo/MojoParser/MojoDiags.h"
 #include "Mojo/Support/TriBool.h"
+#include "Mojo/ToolCommon/FrontendOptions.h"
 
 #include "Support/BumpAllocator.h"
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
@@ -77,7 +78,6 @@ class TraitASTDecl;
 class TraitType;
 class CallOperands;
 class ParserEvaluationContext;
-struct ParserConfig;
 class CachedOriginFinder;
 class TraitDeclOp;
 enum class CallSyntax : uint8_t;
@@ -135,11 +135,14 @@ class SharedState {
   friend class ModuleLoader;
 
 public:
-  SharedState(llvm::SourceMgr &sourceMgr, ParserConfig &config);
+  SharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
+              const CompilationOptions &options,
+              const FrontendOptions &frontendOptions);
   ~SharedState();
 
   MojoDiags diags; // Contains SourceMgr and MLIRContext pointers.
   const CompilationOptions &options;
+  const FrontendOptions frontendOptions;
 
   std::unique_ptr<DeclResolver> declResolver;
   std::unique_ptr<ModuleLoader> moduleLoader;
@@ -187,10 +190,12 @@ public:
 
   /// Returns true if `.mojoc` candidates should be ignored when resolving
   /// imports, so that a source build never picks up a prebuilt package.
-  bool arePrebuiltPackagesDisabled() const { return disablePrebuiltPackages; }
+  bool arePrebuiltPackagesDisabled() const {
+    return frontendOptions.disablePrebuiltPackages;
+  }
 
   /// Get the library base path for documentation generation.
-  StringRef getDocsBasePath() const { return docsBasePath; }
+  StringRef getDocsBasePath() const { return frontendOptions.docsBasePath; }
 
   /// Initialize the shared state for the given top-level decl.
   void initialize(TopLevelModuleASTDecl &topLevelDecl);
@@ -671,16 +676,6 @@ private:
   /// Claim `key` for `thunk`, returning false when a thunk is already
   /// registered under it and this one is a redundant copy.
   bool tryRegisterConversionThunk(Attribute key, FnOp thunk);
-
-  /// A flag indicating if prebuilt packages should not be considered during
-  /// parsing.
-  bool disablePrebuiltPackages = false;
-
-  /// If true, auto-import the builtin package.
-  bool useBuiltinModule = true;
-
-  /// Base library path prefix for generated documentation links.
-  std::string docsBasePath;
 
   std::unique_ptr<Impl> impl;
 };

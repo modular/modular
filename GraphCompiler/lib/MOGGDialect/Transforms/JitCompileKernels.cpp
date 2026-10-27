@@ -34,6 +34,7 @@
 #include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/Support/CompilerProfiling.h"
 #include "Mojo/Support/Constants.h"
+#include "Mojo/ToolCommon/FrontendOptions.h"
 #include "Mojo/ToolCommon/KGENPasses.h"
 #include "Support/CacheLog.h"
 #include "Support/HashUtils.h"
@@ -366,10 +367,10 @@ struct JitCompileKernels
     llvm::SourceMgr src;
     src.AddNewSourceBuffer(std::move(mojoTextBuffer), llvm::SMLoc());
 
-    KGEN::LIT::ParserConfig config(ctx, opts);
+    KGEN::FrontendOptions frontendOptions;
     mlir::TimingScope ts;
-    auto parsedMojoModule =
-        KGEN::LIT::importMojoFile(maxContext, src, config, ts);
+    auto parsedMojoModule = KGEN::LIT::importMojoFile(
+        maxContext, src, ctx, opts, frontendOptions, ts);
     if (!parsedMojoModule)
       return Error("The GC could not parse the generated Mojo code");
 

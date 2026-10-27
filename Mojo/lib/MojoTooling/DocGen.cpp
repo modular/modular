@@ -18,6 +18,7 @@
 #include "Mojo/MojoTooling/ParserDriver.h"
 #include "Mojo/MojoTooling/PublicASTDecl.h"
 #include "Mojo/ToolCommon/CompilationOptions.h"
+#include "Mojo/ToolCommon/FrontendOptions.h"
 #include "Support/Driver/DiagnosticFormat.h"
 
 #include "mlir/IR/MLIRContext.h"
@@ -45,13 +46,14 @@ bool M::generateMojoDocJSON(const std::filesystem::path &resolvedPath,
   compilationOptions.warningsAsErrors = config.warningsAsErrors;
   compilationOptions.ignoredDeprecations =
       llvm::to_vector_of<std::string>(config.ignoredDeprecations);
-  LIT::ParserConfig parserConfig(&context, compilationOptions);
-  parserConfig.diagnoseMissingDocStrings = config.diagnoseMissingDocStrings;
-  parserConfig.maxNotesPerDiagnostic = config.maxNotesPerDiagnostic;
-  parserConfig.stripFilePrefix = config.stripFilePrefix;
-  parserConfig.docsBasePath = config.docsBasePath;
+  FrontendOptions frontendOptions;
+  frontendOptions.diagnoseMissingDocStrings = config.diagnoseMissingDocStrings;
+  frontendOptions.maxNotesPerDiagnostic = config.maxNotesPerDiagnostic;
+  frontendOptions.stripFilePrefix = config.stripFilePrefix;
+  frontendOptions.docsBasePath = config.docsBasePath;
 
-  MojoParserContext parserContext(sourceManager, parserConfig);
+  MojoParserContext parserContext(sourceManager, &context, compilationOptions,
+                                  frontendOptions);
   LIT::ASTDecl *moduleDecl = parserContext.parseFileOrPackage(resolvedPath);
   if (!moduleDecl || parserContext.wasErrorEmitted())
     return false;

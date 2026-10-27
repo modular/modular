@@ -405,11 +405,11 @@ importMojoFileImpl(ContextRef context, SourceMgr &sourceMgr,
       });
 }
 
-std::pair<OwningOpRef<ModuleOp>, PackageOp>
-LIT::importMojoPackage(ContextRef context, StringRef path,
-                       StringRef packageName, llvm::SourceMgr &sourceMgr,
-                       ParserConfig &config, mlir::TimingScope &ts,
-                       SmallVectorImpl<std::string> *includedFiles) {
+std::pair<OwningOpRef<ModuleOp>, PackageOp> LIT::importMojoPackage(
+    ContextRef context, StringRef path, StringRef packageName,
+    llvm::SourceMgr &sourceMgr, MLIRContext *mlirContext,
+    const CompilationOptions &options, const FrontendOptions &frontendOptions,
+    mlir::TimingScope &ts, SmallVectorImpl<std::string> *includedFiles) {
   // Emit an error if the path doesn't actually correspond with a package.
   if (!Filesystem::isMojoSourcePackagePath(path.str())) {
     sourceMgr.PrintMessage({}, llvm::SourceMgr::DK_Error,
@@ -417,7 +417,7 @@ LIT::importMojoPackage(ContextRef context, StringRef path,
                                "' does not correspond to a package");
     return {};
   }
-  SharedState sharedState(sourceMgr, config);
+  SharedState sharedState(sourceMgr, mlirContext, options, frontendOptions);
   DebugInfo::DIBuilder::ScopeGuard fileGuard;
 
   auto [module, packageDecl] = importMojoImpl(
@@ -451,11 +451,11 @@ LIT::importMojoPackage(ContextRef context, StringRef path,
   return {std::move(module), cast<PackageASTDecl>(packageDecl)->getOp()};
 }
 
-OwningOpRef<mlir::ModuleOp>
-LIT::importMojoFile(ContextRef context, llvm::SourceMgr &sourceMgr,
-                    ParserConfig &config, mlir::TimingScope &ts,
-                    SmallVectorImpl<std::string> *includedFiles) {
-  SharedState sharedState(sourceMgr, config);
+OwningOpRef<mlir::ModuleOp> LIT::importMojoFile(
+    ContextRef context, llvm::SourceMgr &sourceMgr, MLIRContext *mlirContext,
+    const CompilationOptions &options, const FrontendOptions &frontendOptions,
+    mlir::TimingScope &ts, SmallVectorImpl<std::string> *includedFiles) {
+  SharedState sharedState(sourceMgr, mlirContext, options, frontendOptions);
   auto [module, topLevelDecl] =
       importMojoFileImpl(context, sourceMgr, sharedState, ts, includedFiles);
   return std::move(module);

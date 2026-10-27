@@ -29,10 +29,10 @@ class SourceMgr;
 namespace M {
 namespace KGEN {
 class CompilationOptions;
+struct FrontendOptions;
 namespace LIT {
 class ASTDecl;
 class SharedState;
-struct ParserConfig;
 class MojoParserContext;
 } // namespace LIT
 namespace Mojo {
@@ -97,7 +97,9 @@ public:
 /// modules.
 class MojoParserContext {
 public:
-  MojoParserContext(llvm::SourceMgr &sourceMgr, ParserConfig &config);
+  MojoParserContext(llvm::SourceMgr &sourceMgr, MLIRContext *context,
+                    const KGEN::CompilationOptions &options,
+                    const FrontendOptions &frontendOptions);
   ~MojoParserContext();
 
   /// Return the current module being parsed.
@@ -116,8 +118,8 @@ public:
   /// Return the compilation options used by the parser.
   const KGEN::CompilationOptions &getCompilationOptions();
 
-  /// Return the configuration this context was created with.
-  const ParserConfig &getParserConfig();
+  /// Return the frontend options used by the parser.
+  const FrontendOptions &getFrontendOptions();
 
   /// Parse a SourceMgr file given its id as a module.
   ///

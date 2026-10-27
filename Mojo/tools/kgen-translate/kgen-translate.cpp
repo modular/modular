@@ -22,6 +22,7 @@
 #include "Mojo/Support/CompilerProfiling.h"
 #include "Mojo/ToolCommon/CLOptions.h"
 #include "Mojo/ToolCommon/CompilationOptions.h"
+#include "Mojo/ToolCommon/FrontendOptions.h"
 #include "Mojo/ToolCommon/InitAllDialects.h"
 #include "Mojo/ToolCommon/KGENPasses.h"
 #include "Support/Driver/DiagnosticFormat.h"
@@ -301,13 +302,13 @@ int main(int argc, char *argv[]) {
         mlir::TimingScope ts;
         CompilationOptions options = clOptions.getCompilationOptions();
         options.searchPaths = llvm::join(parserSearchPaths, ",");
-        LIT::ParserConfig config(context, options);
-        config.stripFilePrefix = clOptions.stripFilePrefix;
-        config.useMLIRDiagnostics = effectiveUseMLIRDiagnostics;
-        config.diagnoseMissingDocStrings = diagnoseMissingDocStrings;
-        config.maxNotesPerDiagnostic = maxNotesPerDiagnostic;
-        config.disablePrebuiltPackages = !enablePrebuiltPackages;
-        config.useBuiltinModule = !disableBuiltinModule;
+        FrontendOptions frontendOptions;
+        frontendOptions.stripFilePrefix = clOptions.stripFilePrefix;
+        frontendOptions.useMLIRDiagnostics = effectiveUseMLIRDiagnostics;
+        frontendOptions.diagnoseMissingDocStrings = diagnoseMissingDocStrings;
+        frontendOptions.maxNotesPerDiagnostic = maxNotesPerDiagnostic;
+        frontendOptions.disablePrebuiltPackages = !enablePrebuiltPackages;
+        frontendOptions.useBuiltinModule = !disableBuiltinModule;
 
         OwningOpRef<ModuleOp> output;
         if (lspMode) {
@@ -321,9 +322,10 @@ int main(int argc, char *argv[]) {
           // (member lookups, reference resolution, import resolution) that are
           // otherwise skipped when no listener is present.
           MainFileParserListener lspListener(sourceMgr);
-          config.parserListener = &lspListener;
+          frontendOptions.parserListener = &lspListener;
 
-          MojoParserContext parserContext(sourceMgr, config);
+          MojoParserContext parserContext(sourceMgr, context, options,
+                                          frontendOptions);
           LIT::ASTDecl *decl =
               parserContext.parseFileForLSP(sourceMgr.getMainFileID());
           parserContext.ensureSignaturesResolved();
@@ -335,7 +337,8 @@ int main(int argc, char *argv[]) {
           // snapshot the pre-finalization "LSP view" the server sees.
           output = OwningOpRef<ModuleOp>(parserContext.getModule().clone());
         } else {
-          output = LIT::importMojoFile(*ctxOr, sourceMgr, config, ts,
+          output = LIT::importMojoFile(*ctxOr, sourceMgr, context, options,
+                                       frontendOptions, ts,
                                        /*includedFiles=*/nullptr);
         }
 

@@ -18,6 +18,7 @@
 #include "Mojo/LITDialect/LITOps.h"
 #include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/Support/Configuration.h"
+#include "Mojo/ToolCommon/FrontendOptions.h"
 #include "Mojo/ToolCommon/InitAllDialects.h"
 #include "Mojo/ToolCommon/PipelineTiming.h"
 #include "Support/Compiler/Diags.h"
@@ -880,7 +881,8 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
     llvm::opt::OptSpecifier disableBuiltins, llvm::opt::OptSpecifier stdLibPath,
     llvm::opt::OptSpecifier autoFixIt, llvm::opt::OptSpecifier exportFixit,
     mlir::TimingScope *timingScope,
-    function_ref<OwningOpRef<ModuleOp>(ParserConfig &, mlir::TimingScope &)>
+    function_ref<OwningOpRef<ModuleOp>(const FrontendOptions &,
+                                       mlir::TimingScope &)>
         parseFn) {
   // Mutual exclusion check for fixit flags.
   if (args.hasArg(autoFixIt) && args.hasArg(exportFixit)) {
@@ -902,26 +904,26 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
     compilationOptions.searchPaths = value;
   }
   // Parse the input Mojo file into an MLIR module.
-  ParserConfig parseConfig(ctx, compilationOptions);
-  parseConfig.diagnoseMissingDocStrings = args.hasArg(docDiagnoseMissingId);
+  FrontendOptions frontendOptions;
+  frontendOptions.diagnoseMissingDocStrings = args.hasArg(docDiagnoseMissingId);
   int maxNotes = 0;
   if (!args.getLastArgValue(maxNotesId).getAsInteger(10, maxNotes))
-    parseConfig.maxNotesPerDiagnostic = maxNotes;
-  parseConfig.stripFilePrefix = args.getLastArgValue(stripFilePrefixId);
-  parseConfig.useBuiltinModule = !args.hasArg(disableBuiltins);
+    frontendOptions.maxNotesPerDiagnostic = maxNotes;
+  frontendOptions.stripFilePrefix = args.getLastArgValue(stripFilePrefixId);
+  frontendOptions.useBuiltinModule = !args.hasArg(disableBuiltins);
 
   std::unique_ptr<AutoFixItHandler> fixItHandler;
   if (args.hasArg(autoFixIt)) {
     fixItHandler = std::make_unique<AutoFixItHandler>();
-    parseConfig.autoFixItHandler = fixItHandler.get();
+    frontendOptions.autoFixItHandler = fixItHandler.get();
   } else if (args.hasArg(exportFixit)) {
     StringRef exportPath = args.getLastArgValue(exportFixit);
     fixItHandler = std::make_unique<AutoFixItHandler>(exportPath);
-    parseConfig.autoFixItHandler = fixItHandler.get();
+    frontendOptions.autoFixItHandler = fixItHandler.get();
   }
 
   mlir::TimingScope mojoScope = timing.nest("Import Mojo");
-  OwningOpRef<ModuleOp> module = parseFn(parseConfig, mojoScope);
+  OwningOpRef<ModuleOp> module = parseFn(frontendOptions, mojoScope);
 
   // Handle fix-it output based on mode.
   if (fixItHandler) {
