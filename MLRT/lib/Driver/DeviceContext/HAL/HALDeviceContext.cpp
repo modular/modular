@@ -1307,6 +1307,12 @@ using M::AsyncRT::CPUDevice;
 using M::Driver::DeviceBuffer;
 using M::Driver::DeviceBufferRef;
 
+// Backs the HAL Mojo `DeviceStream.wait_for_host_value`.
+MODULAR_EXPORT uint64_t
+AsyncRT_CompletionFlag_devicePtr(M::Driver::CompletionFlag *flag) {
+  return flag->devicePtr();
+}
+
 // Backs the HAL Mojo `DeviceBuffer.take_handle()`, so `takeRCRef` consumers
 // receive a refcount-1 shim `DeviceBuffer`, as with the legacy handle.
 MODULAR_EXPORT DeviceBuffer *

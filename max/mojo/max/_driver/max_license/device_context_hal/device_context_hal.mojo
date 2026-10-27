@@ -3401,9 +3401,10 @@ struct DeviceStream(ImplicitlyCopyable, Movable, _HALFunctionEnqueuer):
             If the underlying device does not support stream memory ops,
             or if enqueueing the wait fails.
         """
-        # The flag's value slot lives inside a C++-driver-owned object; the
-        # exchange becomes functional once the HAL C++ runtime shim lands.
-        raise Error("wait_for_host_value requires the HAL C++ runtime shim")
+        var device_addr = external_call[
+            "AsyncRT_CompletionFlag_devicePtr", UInt64
+        ](flag._handle)
+        self._stream[].wait_value64(device_addr, value)
 
     def _native_stream[
         origin: Origin, //
@@ -5486,18 +5487,15 @@ struct DevicePointer[
 #
 # The HAL `DeviceContext` targets basic device execution. The following
 # types exist so the `gpu.host` package surface matches the AsyncRT
-# implementation, but their features (CUDA-graph capture, multicast,
-# host-visible completion flags) are not implemented here.
+# implementation, but their features (CUDA-graph capture, multicast) are not
+# implemented here.
 
 
 struct CompletionFlag(ImplicitlyCopyable):
     """Host-visible completion flag.
 
     This struct is intentionally non-owning: it wraps the raw address of a
-    ``M::Driver::CompletionFlag`` created by the C++ driver layer. The HAL
-    backend has no C++ counterpart yet, so the handle is inert until the HAL
-    C++ runtime shim lands; `DeviceStream.wait_for_host_value` raises before
-    dereferencing it.
+    ``M::Driver::CompletionFlag`` created by the C++ driver layer.
     """
 
     # ===-------------------------------------------------------------------===#
