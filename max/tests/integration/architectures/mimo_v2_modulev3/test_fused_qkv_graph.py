@@ -14,7 +14,7 @@
 
 Staged on virtual B200s over the tiny fixture at TP2 and TP4 and never
 compiled. Attention runs inline, once per device, so every layer of a fused
-attention type is one op site per device.
+attention type is one op site per device, each writing the split cache.
 """
 
 from __future__ import annotations
@@ -97,6 +97,7 @@ def test_fused_qkv_sites(
     with F.lazy(), default_device(mesh), default_dtype(config.dtype):
         staged, _registry = model.stage(*inputs, weights=adapted)
         text = str(staged)
-    assert text.count(FUSED_QKV) == n_devices * (
-        SLIDING_LAYERS * sliding + FULL_LAYERS * full
-    )
+    sites = n_devices * (SLIDING_LAYERS * sliding + FULL_LAYERS * full)
+    assert text.count(FUSED_QKV) == sites
+    # Every site writes the split cache's packed rows, not padded planes.
+    assert text.count("split_cache = true") == sites

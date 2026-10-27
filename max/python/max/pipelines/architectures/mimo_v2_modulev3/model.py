@@ -64,7 +64,7 @@ from typing_extensions import override
 from ..mimo_v2.model import text_model_weights
 from .memory_planner import ep_dispatch_row_budget
 from .mimo_v2 import MiMoV2, MiMoV2SpecTarget
-from .model_config import MiMoV2Config
+from .model_config import MiMoV2Config, check_split_verify_rows
 from .quant import MXFP8_DISPATCH_QUANT_CONFIG
 
 
@@ -441,7 +441,9 @@ class MiMoV2ModuleV3Model(
 
         Raises:
             ValueError: If the data-parallel degree isn't one replica per
-                device, with expert parallelism over all of them.
+                device, with expert parallelism over all of them, or if the
+                passed KV params' verify step leaves the split KV cache's
+                split-K decode route.
             NotImplementedError: Under expert parallelism without data
                 parallelism, whose speculative signature has no slot for
                 the EP buffers.
@@ -468,6 +470,12 @@ class MiMoV2ModuleV3Model(
         kv_params = context.kv_params
         if kv_params is not None:
             assert isinstance(kv_params, MultiKVCacheParams)
+            # A speculative pairing stamps its draft's block on this tree,
+            # which the config's own tree never carries.
+            check_split_verify_rows(
+                pipeline_config.model.huggingface_config.num_attention_heads,
+                kv_params,
+            )
             max_seq_len += spec_decode_cache_slack(kv_params)
         config = MiMoV2Config.initialize(
             pipeline_config, max_seq_len=max_seq_len

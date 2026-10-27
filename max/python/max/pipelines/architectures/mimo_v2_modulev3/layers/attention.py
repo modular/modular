@@ -124,29 +124,17 @@ class ChunkedQkvProj(Module[[], None]):
 def _split_heads(x: Tensor, head_dim: int) -> Tensor:
     """Views ``[tokens, chunks, heads * head_dim]`` as its heads.
 
-    Returns ``[tokens, chunks, heads, head_dim]``. When a whole chunk is a
-    whole number of ``head_dim`` rows, this stays a view of the chunk slice,
-    which the pad's concat reads in place; otherwise the compiler copies the
-    slice first. Merging ``chunks`` and ``heads`` before the pad copies it
-    either way.
+    Returns ``[tokens, chunks, heads, head_dim]``.
     """
     tokens, chunks, rows = x.shape
     return x.reshape([tokens, chunks, int(rows) // head_dim, head_dim])
 
 
-def _pad_heads(x: Tensor, depth: int) -> Tensor:
-    """Zero-pads each head of ``[tokens, chunks, heads, dim]`` to ``depth``.
-
-    Returns ``[tokens, chunks * heads, depth]``.
-    """
+def _merge_heads(x: Tensor) -> Tensor:
+    """Returns ``[tokens, chunks, heads, dim]`` as ``[tokens, chunks * heads,
+    dim]``."""
     tokens, chunks, heads, dim = x.shape
-    if depth != int(dim):
-        zeros = F.broadcast_to(
-            F.constant(0, x.dtype, device=x.device),
-            [tokens, chunks, heads, depth - int(dim)],
-        )
-        x = F.concat([x, zeros], axis=-1)
-    return x.reshape([tokens, int(chunks) * int(heads), depth])
+    return x.reshape([tokens, int(chunks) * int(heads), dim])
 
 
 def prepare_qkv_unfused(
@@ -180,7 +168,7 @@ def prepare_qkv_unfused(
         v_head_dim: Unpadded value width.
 
     Returns:
-        Rotated queries padded to the cache head width.
+        Rotated queries.
     """
     assert qkv.shape[1] == layout.chunks
     k_start = layout.q_rows
@@ -195,23 +183,28 @@ def prepare_qkv_unfused(
     # BF16 tensor by a Python float does. The cache holds scaled V.
     v = (v.cast(DType.float32) * value_scale).cast(v.dtype)
 
-    depth = kv_params.head_dim
-    q = _pad_heads(q, depth)
+    # The cache's key and value widths are the heads' own (see
+    # ``MiMoV2Attention``), so nothing is padded.
+    split_v_head_dim = (
+        kv_params.v_head_dim if kv_params.has_split_head_dims else None
+    )
     store_k_cache_ragged(
         kv_collection,
-        _pad_heads(k, depth),
+        _merge_heads(k),
         input_row_offsets,
         layer_idx,
+        v_head_dim=split_v_head_dim,
     )
     store_v_cache_ragged(
         kv_collection,
-        _pad_heads(v, depth),
+        _merge_heads(v),
         input_row_offsets,
         layer_idx,
+        v_head_dim=split_v_head_dim,
     )
     return fused_qk_ragged_rope(
         kv_params,
-        q,
+        _merge_heads(q),
         input_row_offsets,
         kv_collection,
         freqs_cis,
@@ -226,9 +219,8 @@ class MiMoV2Attention(Module[..., Tensor]):
     ``qkv_proj`` is FP8 in Xiaomi's chunk order: each chunk holds a slice of
     the query heads and the KV heads they read (see :class:`ChunkedQkvProj`).
     The pad rows' outputs are dropped here. Q and K are ``head_dim`` wide and
-    V is ``v_head_dim`` wide; each is zero-padded to the KV cache head dim
-    after the projection, which leaves ``QK^T`` unchanged, and the output is
-    cut back to ``v_head_dim`` before ``o_proj``. RoPE rotates the leading
+    V is ``v_head_dim`` wide, and the KV cache stores them at those widths,
+    packed into one row per head when they differ. RoPE rotates the leading
     dims that ``freqs_cis`` covers, NeoX style.
 
     Each device holds whole chunks, so its shard holds its heads in order;
@@ -268,7 +260,8 @@ class MiMoV2Attention(Module[..., Tensor]):
             head_dim: The Q and K head dim.
             v_head_dim: The V head dim.
             hidden_size: The model width.
-            kv_params: The KV cache group this layer writes.
+            kv_params: The KV cache group this layer writes, at the
+                heads' key and value widths.
             layer_idx: The layer's index within its KV group.
             scale: The softmax scale.
             value_scale: The factor V is multiplied by before the cache
@@ -282,7 +275,19 @@ class MiMoV2Attention(Module[..., Tensor]):
             fused_qkv: Whether to prepare Q, K and V with the fused chunked
                 QKV op, which raises on an unsupported layout. Defaults to
                 ``False``.
+
+        Raises:
+            ValueError: If the cache's key or value width is not the heads'.
         """
+        cache_dims = (
+            kv_params.head_dim,
+            kv_params.v_head_dim or kv_params.head_dim,
+        )
+        if cache_dims != (head_dim, v_head_dim):
+            raise ValueError(
+                f"MiMo-V2: the KV cache's key and value widths {cache_dims} "
+                f"are not the heads' ({head_dim}, {v_head_dim})."
+            )
         self.layout = layout
         self.head_dim = head_dim
         self.v_head_dim = v_head_dim
@@ -403,11 +408,7 @@ class MiMoV2Attention(Module[..., Tensor]):
                     sinks.local_shards[d] if sinks is not None else None
                 ),
             )
-            attns.append(
-                attn[:, :, : self.v_head_dim].reshape(
-                    [tokens, local_heads * self.v_head_dim]
-                )
-            )
+            attns.append(attn.reshape([tokens, local_heads * self.v_head_dim]))
         # Each shard's columns are its heads' ``o_proj`` inputs, in order;
         # the row-parallel projection leaves each device a partial sum, which
         # the residual add reduces. Under DP each shard is a complete

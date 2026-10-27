@@ -197,7 +197,8 @@ def target_kv_params(
     num_draft_tokens: int,
     data_parallel_degree: int = 1,
 ) -> MultiKVCacheParams:
-    """The target's ``{sliding, full}`` tree at the speculative build's widths."""
+    """The target's ``{sliding, full}`` tree at the speculative build's
+    widths: both groups at their native 192/128."""
     hf = _FakeAttrConfig
     n_sliding = sum(hf.hybrid_layer_pattern)
 
@@ -206,7 +207,8 @@ def target_kv_params(
             num_layers=num_layers,
             n_kv_heads=n_kv_heads,
             dtype=DType.bfloat16,
-            head_dim=256,
+            head_dim=192,
+            v_head_dim=128,
             devices=devices,
             data_parallel_degree=data_parallel_degree,
             enable_prefix_caching=False,

@@ -27,6 +27,7 @@ ModuleV3 test does.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import re
 from pathlib import Path
@@ -39,6 +40,7 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights, WeightData
 from max.nn.legacy import kernels
+from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import MiMoV2
 from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
@@ -49,12 +51,14 @@ from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
 from max.pipelines.architectures.mimo_v2_modulev3.weight_adapters import (
     convert_safetensor_state_dict,
 )
+from max.pipelines.kv_cache import KVCacheConfig
 from max.pipelines.lib.interfaces.batch_processor import (
     modulev3_ragged_kv_symbolic_inputs,
 )
+from max.pipelines.speculative import SpeculativeConfig, SpeculativeMethod
 from max.tensor import default_device, default_dtype
 from max.tensor.sharding import DeviceMesh
-from mimo_v3_runner import kv_params
+from mimo_v3_runner import kv_params, pipeline_config
 from transformers.configuration_utils import PretrainedConfig
 
 N_DEVICES = 2
@@ -88,6 +92,94 @@ def test_config_builds_from_the_tiny_fixture(checkpoint: Path) -> None:
     assert config.layer_types == [FULL, SLIDING, SLIDING, FULL]
     assert config.moe_layers == {1, 2, 3}
     assert config.dtype == DType.bfloat16
+
+
+def test_both_groups_cache_unpadded_head_dims(checkpoint: Path) -> None:
+    """The KV tree the config builds: each group packs a head's 192-wide key
+    and 128-wide value into one 320-wide row, and the sliding group keeps
+    its 128-key window, which bounds its split-K partition count."""
+    tree = _config(checkpoint).kv_params
+    assert isinstance(tree, MultiKVCacheParams)
+    full, sliding = tree.children[FULL], tree.children[SLIDING]
+    assert isinstance(full, KVCacheParams)
+    assert isinstance(sliding, KVCacheParams)
+    for group in (full, sliding):
+        assert (
+            group.head_dim,
+            group.v_head_dim,
+            group.storage_head_dim,
+            group.has_split_head_dims,
+        ) == (192, 128, 320, True)
+    assert (full.window_size, sliding.window_size) == (None, 128)
+
+
+def test_a_cache_wider_than_the_heads_is_refused(checkpoint: Path) -> None:
+    """Attention writes keys and values at the heads' widths, so a sliding
+    group padded to 256 is refused at build rather than half-filled."""
+    config = _config(checkpoint)
+    tree = config.kv_params
+    assert isinstance(tree, MultiKVCacheParams)
+    sliding = tree.children[SLIDING]
+    assert isinstance(sliding, KVCacheParams)
+    config.kv_params = MultiKVCacheParams.from_params(
+        {
+            SLIDING: dataclasses.replace(
+                sliding, head_dim=256, v_head_dim=None
+            ),
+            FULL: tree.children[FULL],
+        }
+    )
+    with (
+        F.lazy(),
+        default_device(_mesh()),
+        default_dtype(config.dtype),
+        pytest.raises(ValueError, match=r"\(256, 256\) are not the heads'"),
+    ):
+        MiMoV2(config)
+
+
+@pytest.mark.parametrize(
+    ("method", "drafts", "refused"),
+    [
+        ("mtp", 31, False),
+        ("mtp", 32, True),
+        ("dflash", 32, False),
+        ("dflash", 33, True),
+    ],
+)
+def test_a_verify_wider_than_the_split_decode_route_is_refused(
+    checkpoint: Path, method: SpeculativeMethod, drafts: int, refused: bool
+) -> None:
+    """The tiny fixture's full group runs 4 query heads per KV head, so a
+    verify step keeps the split cache's metadata partition count up to 32
+    tokens: an MTP step verifies its drafts plus the bonus token, a DFlash
+    step its block."""
+    hf = PretrainedConfig(
+        **json.loads((checkpoint / "config.json").read_text())
+    )
+    refs = [DeviceRef.CPU() for _ in range(N_DEVICES)]
+    params = MiMoV2Config.construct_kv_params(
+        hf,
+        pipeline_config(
+            SpeculativeConfig(
+                speculative_method=method, num_speculative_tokens=drafts
+            )
+        ),
+        refs,
+        KVCacheConfig(enable_prefix_caching=False),
+        DType.bfloat16,
+    )
+
+    def build() -> MiMoV2Config:
+        return MiMoV2Config.from_huggingface_config(
+            hf, devices=refs, kv_params=params, max_seq_len=256
+        )
+
+    if refused:
+        with pytest.raises(ValueError, match="query rows"):
+            build()
+    else:
+        build()
 
 
 def test_compile_inputs_follow_the_modulev3_ragged_abi(
@@ -184,3 +276,27 @@ def test_staged_trace_has_one_shared_moe_subgraph(
     # extracting another body must update this consciously, not slip past it.
     graphs = set(re.findall(r"mo\.graph @([A-Za-z0-9_]+)", text))
     assert graphs - {"MiMoV2"} == {"mimo_v2_moe"}, graphs
+
+
+def test_every_layer_runs_on_the_split_cache(
+    monkeypatch: pytest.MonkeyPatch,
+    checkpoint: Path,
+    adapted: dict[str, WeightData],
+) -> None:
+    """Every layer's key store, value store, RoPE and attention, sliding
+    and full, read the split cache by its value width, on every device."""
+    monkeypatch.setattr(kernels, "_is_sm10x_gpu", lambda: True)
+    config = _config(checkpoint)
+    mesh = _mesh()
+    with F.lazy(), default_device(mesh), default_dtype(config.dtype):
+        model = MiMoV2(config)
+        inputs = modulev3_ragged_kv_symbolic_inputs(
+            kv_params=config.kv_params,
+            device_refs=[DeviceRef.CPU() for _ in range(N_DEVICES)],
+        )
+    with F.lazy(), default_device(mesh), default_dtype(config.dtype):
+        staged, _registry = model.stage(*inputs, weights=adapted)
+        text = str(staged)
+    layers = len(config.layer_types)
+    assert text.count("v_head_dim = 128") == 4 * layers * N_DEVICES
+    assert "v_head_dim = " not in text.replace("v_head_dim = 128", "")

@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -52,8 +53,18 @@ from max.nn.legacy.kv_cache import (
     KVConnectorType,
     MultiKVCacheParams,
 )
+from max.nn.legacy.transformer import ReturnHiddenStates
+from max.pipelines.architectures.dflash_mimo_v2_modulev3.arch import (
+    dflash_mimo_v2_modulev3_draft_arch,
+)
 from max.pipelines.architectures.dflash_mimo_v2_modulev3.model import (
     DFlashMiMoV2ModuleV3DraftArchConfig,
+)
+from max.pipelines.architectures.mimo_v2_modulev3.arch import (
+    mimo_v2_modulev3_arch,
+)
+from max.pipelines.architectures.mimo_v2_modulev3.model import (
+    MiMoV2ModuleV3Model,
 )
 from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
     MiMoV2Config,
@@ -61,6 +72,11 @@ from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
 from max.pipelines.kv_cache.config import KVCacheConfig, KVConnectorConfig
 from max.pipelines.kv_cache.connectors.dkv.connector import (
     _validate_dkv_leaves,
+)
+from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
+from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
+    _kv_tree,
+    _Pairing,
 )
 from max.pipelines.speculative import SpeculativeConfig
 from max.pipelines.weights import HuggingFaceRepo
@@ -158,6 +174,102 @@ def test_construct_kv_params_builds_a_tree_the_dkv_connector_serves(
     # serves. A restored refusal, or a leaf kind dKV cannot serve, fails
     # here.
     _validate_dkv_leaves(leaves)
+    # The target's groups cache their 192-wide keys and 128-wide values
+    # unpadded, as the base build's do.
+    target = params.children["target"]
+    assert isinstance(target, MultiKVCacheParams)
+    dims = {
+        name: (leaf.head_dim, leaf.storage_head_dim)
+        for name, leaf in target.children.items()
+        if isinstance(leaf, KVCacheParams)
+    }
+    assert dims == {
+        "sliding_attention": (192, 320),
+        "full_attention": (192, 320),
+    }
+
+
+class _PastTheCheck(Exception):
+    """Raised where the target's build reads its config, past the check."""
+
+
+@pytest.mark.parametrize(("block", "refused"), [(8, False), (9, True)])
+def test_a_drafter_block_past_the_split_decode_route_is_refused(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    block: int,
+    refused: bool,
+) -> None:
+    """A verify step runs the drafter's block, whatever
+    ``num_speculative_tokens`` says.
+
+    At 7 speculative tokens the base tree's own check counts 7 x 16 = 112
+    query rows on the full group (64 Q heads over 4 KV heads). The pairing
+    stamps the block on the tree it hands the target's build: 8 x 16 = 128
+    keeps the split cache's decode route, and 9 x 16 = 144 leaves it, so
+    the build refuses it.
+    """
+    draft_dir = tmp_path / "dflash"
+    draft_dir.mkdir()
+    (draft_dir / "config.json").write_text(
+        json.dumps({**DFLASH_CONFIG, "block_size": block})
+    )
+    kv_cache_config = KVCacheConfig(kv_cache_page_size=128)
+    pipeline_config = cast(
+        Any,
+        SimpleNamespace(
+            draft_model=SimpleNamespace(
+                huggingface_weight_repo=HuggingFaceRepo(repo_id=str(draft_dir)),
+                huggingface_config=None,
+            ),
+            model=SimpleNamespace(
+                data_parallel_degree=1,
+                device_specs=[None],
+                huggingface_config=_FakeAttrConfig(),
+                kv_cache=kv_cache_config,
+            ),
+            runtime=SimpleNamespace(ep_size=1),
+            speculative=SpeculativeConfig(
+                speculative_method="dflash", num_speculative_tokens=7
+            ),
+        ),
+    )
+    target_kv = MiMoV2Config.construct_kv_params(
+        _FakeAttrConfig(),
+        pipeline_config,
+        [DeviceRef.GPU(0)],
+        kv_cache_config,
+        DType.bfloat16,
+    )
+    tree = _kv_tree(
+        pipeline_config,
+        _Pairing(
+            "MiMoV2ForCausalLM",
+            mimo_v2_modulev3_arch,
+            dflash_mimo_v2_modulev3_draft_arch,
+        ),
+        target_kv,
+    )
+    context = cast(
+        ModelLoadContext,
+        SimpleNamespace(
+            pipeline_config=pipeline_config,
+            return_hidden_states=ReturnHiddenStates.SELECTED_LAYERS,
+            max_seq_len=1024,
+            kv_params=tree.children["target"],
+        ),
+    )
+
+    def initialize(*args: object, **kwargs: object) -> MiMoV2Config:
+        raise _PastTheCheck
+
+    monkeypatch.setattr(MiMoV2Config, "initialize", initialize)
+    if refused:
+        with pytest.raises(ValueError, match="144 query rows"):
+            MiMoV2ModuleV3Model.build_module(context)
+    else:
+        with pytest.raises(_PastTheCheck):
+            MiMoV2ModuleV3Model.build_module(context)
 
 
 @pytest.fixture(scope="module")
@@ -295,6 +407,18 @@ def test_the_trace_carries_the_drafter_kernels(
     ):
         n = text.count(op)
         assert n == expected, f"{op}: expected {expected}, got {n}"
+
+
+def test_the_target_layers_read_the_split_cache(
+    staged: tuple[StagedGraph[Any, Any], str],
+) -> None:
+    """The target's layers, sliding and full, store, rotate and attend over
+    the split cache by its value width; the drafter's ops do not."""
+    _, text = staged
+    # The K store, V store, RoPE and attention of each of the 4 target
+    # layers; the full-attention layer alone was 4.
+    assert text.count("v_head_dim = 128") == 4 * 4
+    assert "v_head_dim = " not in text.replace("v_head_dim = 128", "")
 
 
 def test_the_trace_carries_the_verify_path(

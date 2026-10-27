@@ -132,8 +132,9 @@ def _kv_block(
 
     A block is the writable cache pool
     ``[pages, arity, layers, page_size, heads, head_dim]``; the tiny
-    fixture runs 2 sliding and 2 full layers over 8 and 4 KV heads, and
-    every head is padded to the 256-wide cache.
+    fixture runs 2 sliding and 2 full layers over 8 and 4 KV heads. Each
+    head packs its 192-wide key and 128-wide value into one 320-wide plane,
+    the geometry the registry entry's groups declare.
     """
     block = types[slot]
     assert isinstance(block, BufferType), f"slot {slot} is not a cache pool"
@@ -141,7 +142,7 @@ def _kv_block(
     dims = [
         int(dim) if isinstance(dim, StaticDim) else None for dim in block.shape
     ]
-    assert dims == [None, 2, layers, 128, heads, 256], (
+    assert dims == [None, 1, layers, 128, heads, 320], (
         f"slot {slot}: {block.shape}"
     )
 
