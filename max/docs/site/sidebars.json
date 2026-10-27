@@ -727,6 +727,17 @@
                 },
                 {
                   "type": "category",
+                  "label": "graph_specs",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.lib.graph_specs"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.lib.graph_specs__"
+                  ]
+                },
+                {
+                  "type": "category",
                   "label": "interfaces",
                   "link": {
                     "type": "doc",
