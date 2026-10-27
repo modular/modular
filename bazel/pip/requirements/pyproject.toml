@@ -285,7 +285,7 @@ nvidia-bench = [
 # Separate dependency groups for large dependencies used in a few places,
 # to avoid conflicts with the other groups (mainly torch versions).
 nvidia-vllm = [
-  "vllm==0.30.0; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
+  "vllm==0.31.0; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
   "torch; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
   "torchaudio; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
   "torchvision; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version >= '3.11'",
@@ -368,13 +368,14 @@ environments = [
 
 override-dependencies = [
   "numba==0.65.0",
+  # vllm 0.31.0 pins protobuf==7.36.1 on s390x, which we never install on
+  "protobuf==6.33.5",
   "numpy>=2.2.0",
   # Pin packages to avoid duplicates between dependency groups
   "aiohttp==3.13.3",
   "mistral-common==1.11.6",
 
   # Various duplicates between groups
-  "xgrammar==0.2.1",
   "openai-harmony==0.0.8",
   "grpcio==1.80.0",
   "grpcio-reflection==1.80.0",

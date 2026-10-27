@@ -62,7 +62,7 @@ _ALLOWED_DUPLICATE_PACKAGES = (
         "idna",  # Follows mcp's split
         "llguidance",  # Not used by MAX directly; vllm pulls 1.7.5, sglang pins 0.7.30
         "mcp",  # vllm 0.30.0 needs mcp 2.x; MAX and sglang use 1.30.0
-        "nvidia-cudnn-frontend",  # flashinfer 0.7.0 needs >=1.29; vllm 0.30.0 resolves 1.26.0
+        "nvidia-cudnn-frontend",  # flashinfer 0.7 needs >=1.29 (bench, vllm); MAX and sglang use 1.26.0
         "nvidia-cublas",  # Differs between vllm's and sglang's torch versions
         "nvidia-cudnn-cu13",  # Differs between vllm's and sglang's torch versions
         "nvidia-cusparselt-cu13",  # Differs between vllm's and sglang's torch versions
@@ -80,6 +80,7 @@ _ALLOWED_DUPLICATE_PACKAGES = (
         "tilelang",  # MAX itself doesn't use tilelang, but the default environment group does; vllm 0.30.0 hard-pins 0.1.12
         "tokenspeed-mla",  # vllm pins ==0.1.8, sglang pins ==0.1.1
         "torchcodec",  # vllm pins a newer version than sglang
+        "xgrammar",  # vllm 0.31.0 pins 0.2.7; sglang pins 0.2.0
         "transformers",  # MAX pins 5.12.x; sglang pins 5.3.0, vllm aligns on 5.12.x
         "vllm",
         "sglang",
