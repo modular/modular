@@ -68,15 +68,16 @@ run eagerly during development and compile for serving.
 
 ### Modules and eager execution
 
-With [`max.experimental`](/api/python/experimental/), you write code that
-you can run directly. You define your model computation with operations on
+With [`max.tensor`](/api/python/tensor/) and
+[`max.functional`](/api/python/functional/), you write code that you can run
+directly. You define your model computation with operations on
 [`Tensor`](/api/python/generated/max.tensor.Tensor/) objects
 and execute that computation immediately without explicitly creating a graph.
 
 This pattern is eager because every operation returns a result right away, even
 though MAX builds and runs a graph behind the call.
 
-In fact, `max.experimental` stages operations into graphs (the same kind you'd
+In fact, MAX stages eager operations into graphs (the same kind you'd
 build explicitly) and runs each staged graph so you get a result back. Every
 operation you run goes through this staging and realization work, which adds up
 in a production loop. For production deployment, group your ops into a
@@ -85,7 +86,7 @@ in a production loop. For production deployment, group your ops into a
 on the module to capture the whole computation as a single optimized graph that
 you can run quickly and repeatedly.
 
-This example runs a ReLU operation with the experimental API:
+This example runs a ReLU operation with the eager API:
 
 ```python
 from max import functional as F

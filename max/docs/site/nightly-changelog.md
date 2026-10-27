@@ -124,9 +124,10 @@ This version is still a work in progress.
   `RuntimeError` subclass that is also a `ValueError`, so existing
   `except ValueError` handlers keep working.
 
-- `max.nn.Transformer`, `DistributedTransformer`, `logits_postprocess()` and
-  `distributed_logits_postprocess()` return a
-  `max.nn.graph_groups.DecoderOutputs` of named groups instead of a tuple.
+- `max.nn.legacy.Transformer`, `DistributedTransformer`,
+  `logits_postprocess()` and `distributed_logits_postprocess()` return a
+  `max.nn.legacy.graph_groups.DecoderOutputs` of named groups instead of a
+  tuple.
   Read the logits as
   `outputs.logits["logits"]` rather than `outputs[1]`, and pass the outputs to
   `Graph.output(outputs)` rather than unpacking them. The graph's outputs keep
@@ -136,10 +137,9 @@ This version is still a work in progress.
   dtype. The inputs keep their own dtypes and are no longer cast to a common
   one, so `bfloat16` inputs with `out_dtype=DType.float32` keep the float32
   accumulator. Without `out_dtype`, `ops.matmul()`, the `@` operator and
-  `max.experimental.functional`'s `matmul()` require both inputs to share a
-  dtype, which the result keeps, so `max.nn.Linear` raises when its input and
-  weight dtypes differ.
-  `max.experimental.nn.Linear` casts its input to the weight's dtype, so a
+  `max.functional`'s `matmul()` require both inputs to share a dtype, which
+  the result keeps, so `max.nn.legacy.Linear` raises when its input and weight
+  dtypes differ. `max.nn.Linear` casts its input to the weight's dtype, so a
   float32 input to a bfloat16 `Linear` now gives bfloat16 instead of float32.
 
 - Added `max.driver.Buffer.memset(value)` to fill a contiguous buffer or
@@ -149,8 +149,8 @@ This version is still a work in progress.
   slice in place with a byte value, without allocating a source buffer.
 
 - Added the `ops.CoordinateTransformMode` and `ops.RoundMode` enums.
-  `ops.resize_linear`, `ops.resize_nearest`, and their `max.experimental`
-  functional counterparts take them for `coordinate_transform_mode` and
+  `ops.resize_linear`, `ops.resize_nearest`, and their `max.functional`
+  counterparts take them for `coordinate_transform_mode` and
   `round_mode` in place of the integer codes 0-3. The integer codes still
   work.
 
@@ -172,9 +172,9 @@ This version is still a work in progress.
   `after` event and no longer syncs implicitly. Mojo's `reassign_ownership_to()`
   is removed; use `enqueue_wait_for()` and keep buffers alive until synced.
 
-- Removed `max.nn.FusedMLP`. Use `max.nn.MLP`, which takes the separate
-  `gate_proj` and `up_proj` weights a checkpoint ships and fuses their matmuls
-  in the graph.
+- Removed `max.nn.legacy.FusedMLP`. Use `max.nn.legacy.MLP`, which takes the
+  separate `gate_proj` and `up_proj` weights a checkpoint ships and fuses their
+  matmuls in the graph.
 
 - Removed `max_single_alloc_size()` and `run_healthcheck()` from the Mojo
   `DeviceContext`. On NVIDIA and AMD GPUs the health check still runs when a

@@ -3,19 +3,13 @@ title: Eager execution
 description: Use the eager API to create tensors, apply operations, inspect intermediate values, and run a forward pass.
 ---
 
-The [`max.experimental`](/api/python/experimental/) API abstracts the MAX
-framework's [graph](/develop/graph/) foundation so you can write and run
-models using PyTorch-like programming patterns. In other words, this API lets
-you execute models eagerly, without thinking about graph compilation. The
-fastest way to learn the API is to walk through the steps of building a small
-forward pass.
-
-:::note
-
-Names and module structure in the `max.experimental` package can change
-between releases.
-
-:::
+The eager API in [`max.tensor`](/api/python/tensor/),
+[`max.functional`](/api/python/functional/), and [`max.nn`](/api/python/nn/)
+abstracts the MAX framework's [graph](/develop/graph/) foundation so you can
+write and run models using PyTorch-like programming patterns. In other words,
+this API lets you execute models eagerly, without thinking about graph
+compilation. The fastest way to learn the API is to walk through the steps of
+building a small forward pass.
 
 ## Create a tensor
 

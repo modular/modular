@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Module framework for :mod:`max.experimental`.
+"""Module framework for models built on :mod:`max.tensor`.
 
 Provides the :class:`Module` base class, the :func:`module_dataclass`
 decorator, and :meth:`Module.compile`, which traces ``forward`` against
