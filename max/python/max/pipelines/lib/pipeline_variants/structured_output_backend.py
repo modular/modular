@@ -343,6 +343,12 @@ def special_token_ids_for_markers(
 # stays emittable where the grammar references it by id.
 STRUCTURAL_MARKERS_BY_MODEL: dict[str, tuple[str, ...]] = {
     "glm_4_7": ("<arg_key>", "</arg_key>", "<arg_value>", "</arg_value>"),
+    "hy_v4": (
+        "<arg_key:opensource>",
+        "</arg_key:opensource>",
+        "<arg_value:opensource>",
+        "</arg_value:opensource>",
+    ),
 }
 
 

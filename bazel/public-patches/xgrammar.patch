@@ -6458,7 +6458,7 @@ diff --git c/cpp/json_schema_converter.cc w/cpp/json_schema_converter.cc
    if (spec_result.IsErr()) {
      XGRAMMAR_LOG(FATAL) << std::move(spec_result).UnwrapErr().what();
    }
-@@ -3372,18 +6388,37 @@ std::string JSONSchemaToEBNF(
+@@ -3372,18 +6388,38 @@ std::string JSONSchemaToEBNF(
      return std::move(r).Unwrap();
    };
  
@@ -6494,11 +6494,12 @@ diff --git c/cpp/json_schema_converter.cc w/cpp/json_schema_converter.cc
 -    case JSONFormat::kGlmXML: {
 +    case JSONFormat::kDeepSeekV41XML:
 +    case JSONFormat::kGlmXML:
-+    case JSONFormat::kMiniMaxM3XML: {
++    case JSONFormat::kMiniMaxM3XML:
++    case JSONFormat::kHyV4XML: {
        XMLToolCallingConverter converter(
            indent,
            separators,
-@@ -3391,7 +6426,15 @@ std::string JSONSchemaToEBNF(
+@@ -3391,7 +6427,15 @@ std::string JSONSchemaToEBNF(
            max_whitespace_cnt,
            ref_resolver,
            json_format,
@@ -6515,7 +6516,7 @@ diff --git c/cpp/json_schema_converter.cc w/cpp/json_schema_converter.cc
        );
        return converter.Convert(spec);
      }
-@@ -3414,7 +6457,9 @@ std::string GenerateFloatRangeRegex(
+@@ -3414,7 +6458,9 @@ std::string GenerateFloatRangeRegex(
    );
  }
  
@@ -6526,7 +6527,7 @@ diff --git c/cpp/json_schema_converter.cc w/cpp/json_schema_converter.cc
    picojson::value json_value;
    std::string err = picojson::parse(json_value, schema);
    if (!err.empty()) {
-@@ -3428,11 +6473,16 @@ std::string QwenXMLToolCallingToEBNF(const std::string& schema, bool any_order)
+@@ -3428,11 +6474,16 @@ std::string QwenXMLToolCallingToEBNF(const std::string& schema, bool any_order)
        true,
        std::nullopt,
        JSONFormat::kQwenXML,
@@ -6545,7 +6546,7 @@ diff --git c/cpp/json_schema_converter.cc w/cpp/json_schema_converter.cc
    picojson::value json_value;
    std::string err = picojson::parse(json_value, schema);
    if (!err.empty()) {
-@@ -3446,11 +6496,16 @@ std::string MiniMaxXMLToolCallingToEBNF(const std::string& schema, bool any_orde
+@@ -3446,11 +6497,16 @@ std::string MiniMaxXMLToolCallingToEBNF(const std::string& schema, bool any_orde
        true,
        std::nullopt,
        JSONFormat::kMiniMaxXML,
@@ -6564,7 +6565,7 @@ diff --git c/cpp/json_schema_converter.cc w/cpp/json_schema_converter.cc
    picojson::value json_value;
    std::string err = picojson::parse(json_value, schema);
    if (!err.empty()) {
-@@ -3464,11 +6519,16 @@ std::string DeepSeekXMLToolCallingToEBNF(const std::string& schema, bool any_ord
+@@ -3464,11 +6520,16 @@ std::string DeepSeekXMLToolCallingToEBNF(const std::string& schema, bool any_ord
        true,
        std::nullopt,
        JSONFormat::kDeepSeekXML,
@@ -6583,7 +6584,7 @@ diff --git c/cpp/json_schema_converter.cc w/cpp/json_schema_converter.cc
    picojson::value json_value;
    std::string err = picojson::parse(json_value, schema);
    if (!err.empty()) {
-@@ -3482,7 +6542,33 @@ std::string GlmXMLToolCallingToEBNF(const std::string& schema, bool any_order) {
+@@ -3482,7 +6543,33 @@ std::string GlmXMLToolCallingToEBNF(const std::string& schema, bool any_order) {
        true,
        std::nullopt,
        JSONFormat::kGlmXML,
@@ -6664,7 +6665,7 @@ diff --git c/cpp/json_schema_converter.h w/cpp/json_schema_converter.h
  
    std::string ToString() const;
  };
-@@ -188,6 +198,30 @@ enum class JSONFormat : int {
+@@ -188,6 +198,31 @@ enum class JSONFormat : int {
    kMiniMaxXML = 2,
    kDeepSeekXML = 3,
    kGlmXML = 4,
@@ -6672,6 +6673,7 @@ diff --git c/cpp/json_schema_converter.h w/cpp/json_schema_converter.h
 +  // DeepSeek V4.1 DSML: spaced tag names and a string attribute correlated
 +  // with the parameter's schema type. See XMLToolCallingConverter.
 +  kDeepSeekV41XML = 6,
++  kHyV4XML = 7,
 +};
 +
 +// First-char and rest-char sets of a positional first/rest terminal, plus the
@@ -6695,7 +6697,7 @@ diff --git c/cpp/json_schema_converter.h w/cpp/json_schema_converter.h
  };
  
  /*!
-@@ -195,14 +229,20 @@ enum class JSONFormat : int {
+@@ -195,14 +230,20 @@ enum class JSONFormat : int {
   */
  class GenerateCacheManager {
   public:
@@ -6721,7 +6723,7 @@ diff --git c/cpp/json_schema_converter.h w/cpp/json_schema_converter.h
      if (it != cache_.end()) {
        return it->second;
      }
-@@ -210,7 +250,14 @@ class GenerateCacheManager {
+@@ -210,7 +251,14 @@ class GenerateCacheManager {
    }
  
   private:
@@ -6737,7 +6739,7 @@ diff --git c/cpp/json_schema_converter.h w/cpp/json_schema_converter.h
  };
  
  /*!
-@@ -262,7 +309,11 @@ class JSONSchemaConverter {
+@@ -262,7 +310,11 @@ class JSONSchemaConverter {
        bool any_whitespace,
        std::optional<int> max_whitespace_cnt,
        RefResolver ref_resolver = nullptr,
@@ -6750,7 +6752,7 @@ diff --git c/cpp/json_schema_converter.h w/cpp/json_schema_converter.h
    );
  
    virtual ~JSONSchemaConverter() = default;
-@@ -278,55 +329,175 @@ class JSONSchemaConverter {
+@@ -278,55 +330,175 @@ class JSONSchemaConverter {
    // ==================== Virtual methods for generation ====================
    // Subclasses can override these to customize output format
  
@@ -6947,7 +6949,7 @@ diff --git c/cpp/json_schema_converter.h w/cpp/json_schema_converter.h
    /*! \brief Add basic rules for the format. Override for different formats. */
    virtual void AddBasicRules();
  
-@@ -336,13 +507,26 @@ class JSONSchemaConverter {
+@@ -336,13 +508,26 @@ class JSONSchemaConverter {
    /*! \brief Get cached value by key. Returns std::nullopt if not found. */
    virtual std::optional<std::string> GetCache(const std::string& key) const;
  
@@ -6976,7 +6978,7 @@ diff --git c/cpp/json_schema_converter.h w/cpp/json_schema_converter.h
  
    /*! \brief Get next separator from indent manager. */
    virtual std::string NextSeparator(bool is_end = false);
-@@ -350,6 +534,11 @@ class JSONSchemaConverter {
+@@ -350,6 +535,11 @@ class JSONSchemaConverter {
    /*! \brief Get whitespace pattern. */
    std::string GetWhitespacePattern() const;
  
@@ -6988,7 +6990,7 @@ diff --git c/cpp/json_schema_converter.h w/cpp/json_schema_converter.h
    /*! \brief Helper to create rule with repetition constraints. */
    std::string GetPropertyWithNumberConstraints(
        const std::string& pattern,
-@@ -359,6 +548,7 @@ class JSONSchemaConverter {
+@@ -359,6 +549,7 @@ class JSONSchemaConverter {
    );
  
    /*! \brief Generate partial rule for object properties.
@@ -6996,7 +6998,7 @@ diff --git c/cpp/json_schema_converter.h w/cpp/json_schema_converter.h
     *  \param additional_prop_pattern_override When non-empty, used as the additional property
     *         pattern instead of the default GetKeyPattern() : value. This supports patternProperties
     *         and propertyNames constraints on additional keys.
-@@ -371,12 +561,14 @@ class JSONSchemaConverter {
+@@ -371,12 +562,14 @@ class JSONSchemaConverter {
        const std::string& additional_suffix,
        int min_properties,
        int max_properties,
@@ -7011,7 +7013,7 @@ diff --git c/cpp/json_schema_converter.h w/cpp/json_schema_converter.h
     */
    std::string GetAnyOrderRuleForProperties(
        const std::vector<ObjectSpec::Property>& properties,
-@@ -386,6 +578,7 @@ class JSONSchemaConverter {
+@@ -386,6 +579,7 @@ class JSONSchemaConverter {
        const std::string& additional_suffix,
        int min_properties,
        int max_properties,
@@ -7019,7 +7021,7 @@ diff --git c/cpp/json_schema_converter.h w/cpp/json_schema_converter.h
        const std::string& additional_prop_pattern_override = ""
    );
  
-@@ -394,12 +587,23 @@ class JSONSchemaConverter {
+@@ -394,12 +588,23 @@ class JSONSchemaConverter {
    EBNFScriptCreator ebnf_script_creator_;
    IndentManager indent_manager_;
    std::string colon_pattern_;
@@ -7043,7 +7045,7 @@ diff --git c/cpp/json_schema_converter.h w/cpp/json_schema_converter.h
  
   public:
    // Basic rule names
-@@ -413,17 +617,45 @@ class JSONSchemaConverter {
+@@ -413,17 +618,45 @@ class JSONSchemaConverter {
    static const std::string kBasicObject;
    static const std::string kBasicEscape;
    static const std::string kBasicStringSub;
@@ -7092,7 +7094,7 @@ diff --git c/cpp/json_schema_converter.h w/cpp/json_schema_converter.h
    // For string spec deduplication
    struct StringSpecKey {
      std::string pattern;
-@@ -447,12 +679,10 @@ class JSONSchemaConverter {
+@@ -447,12 +680,10 @@ class JSONSchemaConverter {
        bool exclusive_end = false
    );
  
@@ -7106,7 +7108,7 @@ diff --git c/cpp/json_schema_converter.h w/cpp/json_schema_converter.h
    // Expose for testing
    friend std::string GenerateRangeRegex(std::optional<int64_t> start, std::optional<int64_t> end);
    friend std::string GenerateFloatRangeRegex(
-@@ -499,7 +729,28 @@ std::string JSONSchemaToEBNF(
+@@ -499,7 +730,28 @@ std::string JSONSchemaToEBNF(
      bool strict_mode = true,
      std::optional<int> max_whitespace_cnt = std::nullopt,
      JSONFormat json_format = JSONFormat::kJSON,
@@ -7136,7 +7138,7 @@ diff --git c/cpp/json_schema_converter.h w/cpp/json_schema_converter.h
  );
  
  /*!
-@@ -535,7 +786,25 @@ std::string JSONSchemaToEBNF(
+@@ -535,7 +787,25 @@ std::string JSONSchemaToEBNF(
      bool strict_mode = true,
      std::optional<int> max_whitespace_cnt = std::nullopt,
      JSONFormat json_format = JSONFormat::kJSON,
@@ -7163,7 +7165,7 @@ diff --git c/cpp/json_schema_converter.h w/cpp/json_schema_converter.h
  );
  
  /*!
-@@ -559,7 +828,12 @@ std::string GenerateFloatRangeRegex(
+@@ -559,7 +829,12 @@ std::string GenerateFloatRangeRegex(
   * \return The ebnf-grammar to match the requirements of the schema, and
   * in Qwen xml style.
   */
@@ -7177,7 +7179,7 @@ diff --git c/cpp/json_schema_converter.h w/cpp/json_schema_converter.h
  
  /*!
   * \brief Convert a function call to a Grammar.
-@@ -567,7 +841,12 @@ std::string QwenXMLToolCallingToEBNF(const std::string& schema, bool any_order =
+@@ -567,7 +842,12 @@ std::string QwenXMLToolCallingToEBNF(const std::string& schema, bool any_order =
   * \return The ebnf-grammar to match the requirements of the schema, and
   * in MiniMax xml style.
   */
@@ -7191,7 +7193,7 @@ diff --git c/cpp/json_schema_converter.h w/cpp/json_schema_converter.h
  
  /*!
   * \brief Convert a function call to a Grammar.
-@@ -575,7 +854,12 @@ std::string MiniMaxXMLToolCallingToEBNF(const std::string& schema, bool any_orde
+@@ -575,7 +855,12 @@ std::string MiniMaxXMLToolCallingToEBNF(const std::string& schema, bool any_orde
   * \return The ebnf-grammar to match the requirements of the schema, and
   * in DeepSeek xml style.
   */
@@ -7205,7 +7207,7 @@ diff --git c/cpp/json_schema_converter.h w/cpp/json_schema_converter.h
  
  /*!
   * \brief Convert a function call to a Grammar.
-@@ -583,7 +867,26 @@ std::string DeepSeekXMLToolCallingToEBNF(const std::string& schema, bool any_ord
+@@ -583,7 +868,26 @@ std::string DeepSeekXMLToolCallingToEBNF(const std::string& schema, bool any_ord
   * \return The ebnf-grammar to match the requirements of the schema, and
   * in GLM xml style (<arg_key>key</arg_key><arg_value>value</arg_value>).
   */
@@ -7258,7 +7260,7 @@ diff --git c/cpp/json_schema_converter_ext.cc w/cpp/json_schema_converter_ext.cc
  
  namespace xgrammar {
  
-@@ -17,17 +28,90 @@ const std::string XMLToolCallingConverter::kXMLString = "xml_string";
+@@ -17,17 +28,107 @@ const std::string XMLToolCallingConverter::kXMLString = "xml_string";
  const std::string XMLToolCallingConverter::kXMLAny = "xml_any";
  const std::string XMLToolCallingConverter::kXMLObject = "xml_object";
  const std::string XMLToolCallingConverter::kXMLVariableName = "xml_variable_name";
@@ -7341,6 +7343,23 @@ diff --git c/cpp/json_schema_converter_ext.cc w/cpp/json_schema_converter_ext.cc
 +          /*value_framing_stripped=*/false,
 +          /*bare_value_regex_exact=*/false,
 +          /*any_string_is_json=*/true}},
++        // Hy4 writes GLM's argument pairs with ":opensource" tags and no framing whitespace,
++        // and its reader strips none.
++        {JSONFormat::kHyV4XML,
++         {"<arg_key:opensource>",
++          "</arg_key:opensource>",
++          "<arg_value:opensource>",
++          "</arg_value:opensource>",
++          /*key_is_tag=*/false,
++          /*xml_all_depths=*/false,
++          /*array_item_tag=*/"",
++          /*value_framing_stripped=*/false,
++          /*bare_value_regex_exact=*/false,
++          /*any_string_is_json=*/true,
++          /*container_value_balanced=*/false,
++          /*value_excluded_text=*/"",
++          /*json_string_excluded_chars=*/"",
++          /*exact_parameter_terminator=*/""}},
 +        {JSONFormat::kMiniMaxM3XML,
 +         {"",
 +          "",
@@ -7352,7 +7371,7 @@ diff --git c/cpp/json_schema_converter_ext.cc w/cpp/json_schema_converter_ext.cc
  };
  
  XMLToolCallingConverter::XMLToolCallingConverter(
-@@ -37,19 +121,258 @@ XMLToolCallingConverter::XMLToolCallingConverter(
+@@ -37,19 +138,258 @@ XMLToolCallingConverter::XMLToolCallingConverter(
      std::optional<int> max_whitespace_cnt,
      RefResolver ref_resolver,
      JSONFormat json_format,
@@ -7615,7 +7634,7 @@ diff --git c/cpp/json_schema_converter_ext.cc w/cpp/json_schema_converter_ext.cc
    ebnf_script_creator_.AddRuleWithAllocatedName(root_rule_name, root_body);
  
    return ebnf_script_creator_.GetScript();
-@@ -63,41 +386,65 @@ void XMLToolCallingConverter::AddBasicRules() {
+@@ -63,41 +403,65 @@ void XMLToolCallingConverter::AddBasicRules() {
    JSONSchemaConverter::AddBasicRules();
    nested_object_level_ = 1;
    // The outer part, xml format, is at level 1.
@@ -7699,7 +7718,7 @@ diff --git c/cpp/json_schema_converter_ext.cc w/cpp/json_schema_converter_ext.cc
  }
  
  std::string XMLToolCallingConverter::GetKeyPattern() const {
-@@ -114,36 +461,84 @@ std::string XMLToolCallingConverter::GetBasicAnyRuleName() const {
+@@ -114,36 +478,84 @@ std::string XMLToolCallingConverter::GetBasicAnyRuleName() const {
    return kBasicAny;
  }
  
@@ -7789,7 +7808,7 @@ diff --git c/cpp/json_schema_converter_ext.cc w/cpp/json_schema_converter_ext.cc
          std::string converted_regex = RegexToEBNF(regex_pattern.value(), false);
          return converted_regex;
        }
-@@ -151,137 +546,941 @@ std::string XMLToolCallingConverter::GenerateString(
+@@ -151,137 +563,941 @@ std::string XMLToolCallingConverter::GenerateString(
  
      // Check for pattern
      if (spec.pattern.has_value()) {
@@ -8786,7 +8805,7 @@ diff --git c/cpp/json_schema_converter_ext.cc w/cpp/json_schema_converter_ext.cc
    return result;
  }
  
-@@ -289,14 +1488,29 @@ void XMLToolCallingConverter::AddCache(const std::string& key, const std::string
+@@ -289,14 +1505,29 @@ void XMLToolCallingConverter::AddCache(const std::string& key, const std::string
    if (key.empty()) {
      return;
    }
@@ -10288,12 +10307,12 @@ diff --git a/cpp/structural_tag.cc b/cpp/structural_tag.cc
        if (style != "json" && style != "qwen_xml" && style != "minimax_xml" &&
 -          style != "deepseek_xml" && style != "glm_xml") {
 +          style != "deepseek_xml" && style != "deepseek_v41_xml" && style != "glm_xml" &&
-+          style != "minimax_m3_xml") {
++          style != "minimax_m3_xml" && style != "hy_v4_xml") {
          return ResultErr<ISTError>(
 -            "style must be \"json\", \"qwen_xml\", \"minimax_xml\", \"deepseek_xml\", or "
 -            "\"glm_xml\""
 +            "style must be \"json\", \"qwen_xml\", \"minimax_xml\", \"deepseek_xml\", "
-+            "\"deepseek_v41_xml\", \"glm_xml\", or \"minimax_m3_xml\""
++            "\"deepseek_v41_xml\", \"glm_xml\", \"minimax_m3_xml\", or \"hy_v4_xml\""
          );
        }
      }
@@ -10475,19 +10494,23 @@ diff --git a/cpp/structural_tag.cc b/cpp/structural_tag.cc
  
    const std::optional<TokenizerInfo>& tokenizer_info_;
  };
-@@ -1251,6 +1448,84 @@ std::optional<ISTError> StructuralTagTokenResolver::ResolveIntOrStringVec(
+@@ -1251,6 +1448,88 @@ std::optional<ISTError> StructuralTagTokenResolver::ResolveIntOrStringVec(
    return std::nullopt;
  }
  
 +// Structural XML markers that are single tokens in the vocabulary, in
 +// XMLWrapper order (key-open, key-close, value-open, value-close). Only glm_xml
-+// currently uses atomic single-token markers; the other XML styles embed the
++// and hy_v4_xml use atomic single-token markers; the other XML styles embed the
 +// key/name inside the marker, so they have no single-token form and keep their
-+// byte-literal emission. Mirrors kKeyWrapperMap[kGlmXML] in
++// byte-literal emission. Mirrors kKeyWrapperMap[kGlmXML] and [kHyV4XML] in
 +// json_schema_converter_ext.cc.
 +static std::vector<std::string> XMLMarkerStringsForStyle(const std::string& style) {
 +  if (style == "glm_xml") {
 +    return {"<arg_key>", "</arg_key>", "<arg_value>", "</arg_value>"};
++  }
++  if (style == "hy_v4_xml") {
++    return {"<arg_key:opensource>", "</arg_key:opensource>", "<arg_value:opensource>",
++            "</arg_value:opensource>"};
 +  }
 +  return {};
 +}
@@ -10560,7 +10583,7 @@ diff --git a/cpp/structural_tag.cc b/cpp/structural_tag.cc
  std::optional<ISTError> StructuralTagTokenResolver::ResolveTagFormat(TagFormat* tag) {
    if (std::holds_alternative<TokenFormat>(tag->begin)) {
      auto err = ResolveTokenFormat(&std::get<TokenFormat>(tag->begin));
-@@ -1337,6 +1612,8 @@ std::optional<ISTError> StructuralTagTokenResolver::ResolveFormat(Format* format
+@@ -1337,6 +1616,8 @@ std::optional<ISTError> StructuralTagTokenResolver::ResolveFormat(Format* format
          } else if constexpr (std::is_same_v<T, OptionalFormat> || std::is_same_v<T, PlusFormat> ||
                               std::is_same_v<T, StarFormat>) {
            return ResolveFormat(arg.content.get());
@@ -10569,7 +10592,7 @@ diff --git a/cpp/structural_tag.cc b/cpp/structural_tag.cc
          } else {
            return std::nullopt;
          }
-@@ -1785,7 +2062,8 @@ bool StructuralTagGrammarConverter::IsPrefix(
+@@ -1785,7 +2066,8 @@ bool StructuralTagGrammarConverter::IsPrefix(
           std::string_view(full_str).substr(0, prefix.size()) == prefix;
  }
  
@@ -10579,7 +10602,7 @@ diff --git a/cpp/structural_tag.cc b/cpp/structural_tag.cc
  ) {
    StructuralTagGrammarConverter converter;
    auto result = converter.Visit(structural_tag.format);
-@@ -1834,43 +2112,47 @@ Result<int, ISTError> StructuralTagGrammarConverter::VisitSub(const ConstStringF
+@@ -1834,43 +2116,48 @@ Result<int, ISTError> StructuralTagGrammarConverter::VisitSub(const ConstStringF
  }
  
  Result<int, ISTError> StructuralTagGrammarConverter::VisitSub(const JSONSchemaFormat& format) {
@@ -10625,6 +10648,7 @@ diff --git a/cpp/structural_tag.cc b/cpp/structural_tag.cc
 +      {"deepseek_v41_xml", JSONFormat::kDeepSeekV41XML},
 +      {"glm_xml", JSONFormat::kGlmXML},
 +      {"minimax_m3_xml", JSONFormat::kMiniMaxM3XML},
++      {"hy_v4_xml", JSONFormat::kHyV4XML},
 +  };
 +  auto json_format_it = style_to_json_format.find(format.style);
 +  if (json_format_it == style_to_json_format.end()) {
@@ -10695,8 +10719,8 @@ diff --git a/cpp/structural_tag.h b/cpp/structural_tag.h
 +  std::vector<int32_t> resolved_string_value_forbidden_token_ids_;
 +  // Structural XML markers resolved to atomic token ids, in XMLWrapper order
 +  // (key-open, key-close, value-open, value-close). Empty unless the style is an
-+  // XML format whose markers are single tokens in the vocabulary (currently
-+  // glm_xml). A resolved marker is emitted as a Token(id) reference and must be
++  // XML format whose markers are single tokens in the vocabulary (glm_xml,
++  // hy_v4_xml). A resolved marker is emitted as a Token(id) reference and must be
 +  // registered special so its bytes cannot satisfy a string body length bound.
 +  std::vector<int32_t> resolved_xml_marker_token_ids_;
 +  JSONSchemaFormat(
