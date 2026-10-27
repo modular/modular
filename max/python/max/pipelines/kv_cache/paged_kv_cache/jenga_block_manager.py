@@ -38,6 +38,7 @@ from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import (
     BlockCount,
+    CompletedLookup,
     CompletedTransfer,
     KVConnector,
     KVLoadFailed,
@@ -134,7 +135,9 @@ PROBED_MISS_SKIP_ENV_VAR = "MAX_SERVE_CONNECTOR_PROBED_MISS_SKIP"
 
 1 by default. 0 keeps pricing on the started probe but leaves every lease to
 run, so a request whose prefix a sibling is still offloading loads it rather
-than computing it again.
+than computing it again. It also stops a connector whose probe is its lookup,
+such as the tiered one, from loading from the probe's answer, so its first
+allocation looks up again.
 """
 
 
@@ -710,6 +713,12 @@ class JengaBlockManager:
 
         # State for the KVConnector.
         self._connector = connector
+        # Admission recency touches, applied once the forward has launched so
+        # they stay off the allocation path. Only recency: a block being loaded
+        # is pinned by the load. A device hit's host copy is not, so one at
+        # the tier's LRU tail can be evicted by an offload that runs first,
+        # which costs a later refetch and is accepted.
+        self._deferred_touches: list[tuple[list[bytes], int]] = []
 
         self.with_checkpointer(Checkpointer.factory().disabled().build())
 
@@ -816,6 +825,7 @@ class JengaBlockManager:
         for group in self._groups.values():
             group.release(req_id, replica_idx)
 
+        self._apply_deferred_touches()
         self._touch_committed_sequence(ctx)
 
         # The pages are already free, so the request goes before the hand
@@ -840,6 +850,14 @@ class JengaBlockManager:
         pending, state.pending_lookup = state.pending_lookup, None
         if pending is not None:
             pending.abandon()
+
+    def _apply_deferred_touches(self) -> None:
+        """Sends the connector the admission touches queued since the last."""
+        touches, self._deferred_touches = self._deferred_touches, []
+        connector = self._connector
+        for hashes, replica_idx in touches:
+            assert connector is not None
+            connector.touch(hashes, replica_idx=replica_idx)
 
     def _touch_committed_sequence(self, ctx: TextContext) -> None:
         """Re-ranks the request's whole committed sequence in the external tier.
@@ -1072,6 +1090,7 @@ class JengaBlockManager:
         Each cache then frees the blocks the request no longer needs, keeping
         what resuming at ``resumable``'s boundaries needs.
         """
+        self._apply_deferred_touches()
         replica_idx = self._replica_of(ctx)
         write_ranges = ctx.kv_cache_write_ranges
         ctx.kv_cache_write_ranges = {}
@@ -2227,9 +2246,11 @@ class JengaBlockManager:
         # never reports one -- so the path would go unexercised in exactly the
         # configuration that leans on the connector hardest.
         if self._connector is not None and committed_blocks + num_reused:
-            self._connector.touch(
-                self._state_of(ctx).hashes[: committed_blocks + num_reused],
-                replica_idx=replica_idx,
+            self._deferred_touches.append(
+                (
+                    self._state_of(ctx).hashes[: committed_blocks + num_reused],
+                    replica_idx,
+                )
             )
 
         self._metrics.device_blocks_served += num_hit_blocks
@@ -2312,7 +2333,27 @@ class JengaBlockManager:
             # the reuse serves the chunk from the device hit alone.
             first = state.committed_idx // self._block_size + num_device_blocks
             probed = self._probed_run(ctx, replica_idx, first, remaining)
-            self._pending_probes.pop(ctx.request_id, None)
+            probe = self._pending_probes.pop(ctx.request_id, None)
+            # A probe that is the connector's lookup, read fresh enough to
+            # trust, is loaded from rather than asked again, and a miss it
+            # reports reads as a miss without asking either.
+            if probed is not None and connector.probe_is_lookup():
+                assert probe is not None
+                answers = probe.answers()
+                assert answers is not None
+                last = first + len(remaining)
+                state.pending_lookup = _PendingLookup(
+                    connector,
+                    CompletedLookup(
+                        {
+                            leaf_id: mask[first:last]
+                            for leaf_id, mask in answers[replica_idx].items()
+                        }
+                    ),
+                    first_block=num_device_blocks,
+                    started_at=time.monotonic() - probe.age_s(),
+                )
+                return True
             if probed == 0:
                 return True
             pending = self._start_connector_lookup(

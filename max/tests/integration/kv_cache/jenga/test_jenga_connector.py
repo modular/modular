@@ -188,6 +188,9 @@ class FakeConnector:
         self.probe_answers = probe_answers
         self.deferred_probes = deferred_probes
         self.probe_leaves: Sequence[str] | None = None
+        # Whether a probe answer may be loaded from, as the tiered
+        # connector's, which is one lookup, may.
+        self.probes_are_lookups = False
         self.started: list[FakeLookup] = []
         self.started_probes: list[FakeProbe] = []
         self.loaded_from: list[KVLookup] = []
@@ -261,6 +264,9 @@ class FakeConnector:
 
     def defers_lookup(self, replica_idx: int = 0) -> bool:
         return self.deferred_lookups
+
+    def probe_is_lookup(self) -> bool:
+        return self.probes_are_lookups
 
     def load_lookup(
         self,
@@ -701,7 +707,10 @@ def test_device_hit_and_onload_splice_into_one_run() -> None:
     # MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE, where there is never one.
     # `release` also re-ranks a finished request's sequence (CLIN-1893), so
     # earlier releases in this test contribute touches of their own. The
-    # admission touch is the one under test, and it is the most recent.
+    # admission touch is the one under test, and it is the most recent. It
+    # goes out at the step, once the forward has launched.
+    second.update(9)
+    manager.step(second)
     assert connector.touches[-1] == (list(reusable), 0)
     # One contiguous row: the device page first, then the onloaded ones,
     # then whatever the forward still has to fill.
@@ -799,6 +808,8 @@ def test_last_level_cache_only_forces_every_hit_through_the_connector(
     # configuration that leans on the connector hardest. No other test can see
     # that mutation, because every other one has a device hit and the touch
     # argument is byte-identical either way.
+    second.update(9)
+    manager.step(second)
     assert connector.touches[-1] == (list(offloaded[:-1]), 0)
 
 
@@ -2981,6 +2992,97 @@ def test_release_drops_the_probe_and_the_next_pricing_starts_afresh() -> None:
     assert len(connector.started_probes) == 2
     manager.abandon_presence(ctx)
     assert ctx.request_id not in manager._pending_probes
+
+
+def _lookup_probe_setup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[JengaBlockManager, FakeConnector, TextContext, list[bytes], _Clock]:
+    """Prices a request on a connector whose probe is its lookup.
+
+    Returns the hashes the connector can load for it.
+    """
+    clock = _Clock()
+    monkeypatch.setattr(jenga_block_manager, "time", clock)
+    connector = _probing_connector(deferred_lookups=False)
+    connector.probes_are_lookups = True
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    held = _hold_only_in_the_connector(manager, connector, tokens)
+    ctx = make_ctx(tokens)
+    manager.get_prefix_cache_hit_counts(ctx)
+    (probe,) = connector.started_probes
+    probe.answer()
+    connector.lookups.clear()
+    manager.claim(ctx)
+    return manager, connector, ctx, held[:-1], clock
+
+
+def test_a_probe_that_is_the_lookup_is_loaded_from(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The pricing answer of a connector whose probe is its lookup is loaded.
+
+    Asking again at admission would repeat the lookup pricing just made.
+    """
+    manager, connector, ctx, loadable, _ = _lookup_probe_setup(monkeypatch)
+
+    transfer = manager.alloc(ctx, defer_lookup=True)
+
+    assert transfer.is_complete()
+    assert connector.lookups == []
+    assert connector.loads[-1][1][FULL] == loadable
+    assert ctx.cached_prefix_external_length == len(loadable)
+
+
+def test_a_stale_probe_that_is_the_lookup_is_asked_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An answer past the probe age is not trusted, so the lookup runs."""
+    manager, connector, ctx, loadable, clock = _lookup_probe_setup(monkeypatch)
+    clock.now += jenga_block_manager._PROBED_MISS_AGE_S
+
+    manager.alloc(ctx, defer_lookup=True)
+
+    assert connector.lookups == [(loadable, 0, None)]
+    assert ctx.cached_prefix_external_length == len(loadable)
+
+
+def test_a_block_gone_since_the_probe_serves_a_miss(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A block evicted after pricing refuses the load, as after a lookup."""
+    manager, connector, ctx, loadable, _ = _lookup_probe_setup(monkeypatch)
+    connector.evict_before_load.add(loadable[-1])
+
+    transfer = manager.alloc(ctx, defer_lookup=True)
+
+    assert transfer.is_complete()
+    assert connector.lookups == []
+    assert ctx.cached_prefix_length == 0
+
+
+def test_a_probed_miss_that_is_the_lookup_skips_it() -> None:
+    """A fresh miss from a probe that is the lookup is not asked again.
+
+    The connector answers its lookup in place, so without the probe's
+    answer the admission would look up on the scheduler thread.
+    """
+    connector = _probing_connector(deferred_lookups=False)
+    connector.probes_are_lookups = True
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    ctx = make_ctx(tokens)
+    manager.get_prefix_cache_hit_counts(ctx)
+    (probe,) = connector.started_probes
+    probe.answer()
+    manager.claim(ctx)
+
+    transfer = manager.alloc(ctx, defer_lookup=True)
+
+    assert transfer.is_complete()
+    assert connector.lookups == [] and connector.loads == []
+    assert ctx.cached_prefix_length == 0
+    assert manager.num_req_blocks(ctx) == len(tokens)
 
 
 def test_a_probe_covering_no_leaf_leaves_the_lease_to_decide() -> None:

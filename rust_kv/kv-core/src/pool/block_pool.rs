@@ -295,7 +295,7 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
         ];
         for (source, list) in lists {
             if list
-                .peek_front()
+                .peek_front(&self.huge_blocks)
                 .is_some_and(|bid| self.little_blocks[cache][bid].block_hash.is_none())
             {
                 return Some(source);
@@ -313,7 +313,7 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
         lists
             .into_iter()
             .filter_map(|(source, list)| {
-                list.peek_front()
+                list.peek_front(&self.huge_blocks)
                     .map(|bid| (source, self.little_blocks[cache][bid].free))
             })
             .min_by_key(|&(_, stamp)| stamp)
@@ -347,14 +347,19 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
         let bid = match self.alloc_source(cache) {
             None => return Err(JengaError::InsufficientBlocks(cache)),
             Some(AllocSource::Claimed) => self.free_little_blocks[cache]
-                .pop_front(&mut self.little_blocks[cache])
+                .pop_front(&mut self.huge_blocks, &mut self.little_blocks[cache], ratio)
                 .expect("alloc_source checked the list"),
             Some(AllocSource::Parked) => {
                 let bid = self.parked_little_blocks[cache]
-                    .peek_front()
+                    .peek_front(&self.huge_blocks)
                     .expect("alloc_source checked the list");
                 self.claim_huge_block(bid / ratio, cache);
-                self.free_little_blocks[cache].remove(&mut self.little_blocks[cache], bid);
+                self.free_little_blocks[cache].remove(
+                    &mut self.huge_blocks,
+                    &mut self.little_blocks[cache],
+                    ratio,
+                    bid,
+                );
                 bid
             }
             Some(AllocSource::Huge) => {
@@ -369,7 +374,7 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
                 retyped = self.huge_blocks[huge_bid].little_block_type.is_some();
                 self.claim_huge_block(huge_bid, cache);
                 self.free_little_blocks[cache]
-                    .pop_front(&mut self.little_blocks[cache])
+                    .pop_front(&mut self.huge_blocks, &mut self.little_blocks[cache], ratio)
                     .expect("a claimed huge block puts its little blocks in circulation")
             }
         };
@@ -464,9 +469,9 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
         let huge_bid = bid / ratio;
         huge_blocks[huge_bid].num_referenced -= 1;
         if blocks[bid].block_hash.is_none() {
-            free.append_front(stamps, blocks, bid);
+            free.append_front(stamps, huge_blocks, blocks, ratio, bid);
         } else {
-            free.append_back(stamps, blocks, bid);
+            free.append_back(stamps, huge_blocks, blocks, ratio, bid);
             num_cached[cache] += 1;
         }
 
@@ -491,8 +496,6 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
     /// free lists, which holds them all while no request references any. Each
     /// keeps its turn, so eviction order survives the move.
     fn move_free_pages(&mut self, cache: usize, huge_bid: usize, park: bool) {
-        let ratio = self.cache_ratios[cache];
-        let blocks = &self.little_blocks[cache];
         let (from, to) = if park {
             (
                 &mut self.free_little_blocks[cache],
@@ -504,9 +507,7 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
                 &mut self.free_little_blocks[cache],
             )
         };
-        for bid in huge_bid * ratio..(huge_bid + 1) * ratio {
-            from.move_to(to, blocks, bid);
-        }
+        from.move_huge_to(to, &self.huge_blocks[huge_bid], huge_bid);
     }
 
     /// Commits a block, or returns the twin already holding its bytes.
@@ -574,7 +575,7 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
             }
             let free = self.free_little_blocks.get_mut(cache).unwrap();
             let blocks = self.little_blocks.get_mut(cache).unwrap();
-            free.remove(blocks, bid);
+            free.remove(&mut self.huge_blocks, blocks, ratio, bid);
             if blocks[bid].block_hash.is_some() {
                 self.num_cached[cache] -= 1;
             }
@@ -598,7 +599,8 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
         if self.is_null(bid) || self.little_blocks[cache][bid].ref_cnt > 0 {
             return;
         }
-        let huge_bid = bid / self.cache_ratios[cache];
+        let ratio = self.cache_ratios[cache];
+        let huge_bid = bid / ratio;
         let queue = if self.huge_blocks[huge_bid].is_free() {
             self.free_huge_blocks
                 .remove(&mut self.huge_blocks, huge_bid);
@@ -609,8 +611,8 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
             &mut self.free_little_blocks[cache]
         };
         let blocks = &mut self.little_blocks[cache];
-        queue.remove(blocks, bid);
-        queue.append_back(&mut self.stamps, blocks, bid);
+        queue.remove(&mut self.huge_blocks, blocks, ratio, bid);
+        queue.append_back(&mut self.stamps, &mut self.huge_blocks, blocks, ratio, bid);
     }
 
     /// Returns how many more blocks of `cache` the pool can still serve.
@@ -810,7 +812,12 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
         if let Some(previous) = previous {
             let ratio = self.cache_ratios[previous];
             for bid in huge_bid * ratio..(huge_bid + 1) * ratio {
-                self.parked_little_blocks[previous].remove(&mut self.little_blocks[previous], bid);
+                self.parked_little_blocks[previous].remove(
+                    &mut self.huge_blocks,
+                    &mut self.little_blocks[previous],
+                    ratio,
+                    bid,
+                );
                 self.uncommit_block(previous, bid);
             }
         }
@@ -823,9 +830,9 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
         // ascending bid order, not descending.
         for bid in (huge_bid * ratio..(huge_bid + 1) * ratio).rev() {
             if blocks[bid].block_hash.is_none() {
-                free.append_front(&mut self.stamps, blocks, bid);
+                free.append_front(&mut self.stamps, &mut self.huge_blocks, blocks, ratio, bid);
             } else {
-                free.append_back(&mut self.stamps, blocks, bid);
+                free.append_back(&mut self.stamps, &mut self.huge_blocks, blocks, ratio, bid);
             }
         }
     }
@@ -943,7 +950,12 @@ mod tests {
                                 &p.free_little_blocks[cache]
                             };
                             assert!(
-                                queue.contains(&p.little_blocks[cache], bid),
+                                queue.contains(
+                                    &p.huge_blocks,
+                                    &p.little_blocks[cache],
+                                    *ratio,
+                                    bid
+                                ),
                                 "{cache}/{bid} is free on the wrong queue"
                             );
                         }
@@ -955,7 +967,24 @@ mod tests {
             }
         }
 
-        for (cache, ratio) in p.cache_ratios.iter().enumerate() {
+        for (cache, &ratio) in p.cache_ratios.iter().enumerate() {
+            // Each queue's front is its least recently used page, by stamp.
+            let oldest = |parked: bool| {
+                (0..p.little_blocks[cache].len())
+                    .filter(|&bid| {
+                        p.little_blocks[cache][bid].is_free()
+                            && p.huge_blocks[bid / ratio].is_free() == parked
+                    })
+                    .min_by_key(|&bid| p.little_blocks[cache][bid].free)
+            };
+            assert_eq!(
+                p.free_little_blocks[cache].peek_front(&p.huge_blocks),
+                oldest(false)
+            );
+            assert_eq!(
+                p.parked_little_blocks[cache].peek_front(&p.huge_blocks),
+                oldest(true)
+            );
             assert_eq!(
                 p.parked_little_blocks[cache].len(),
                 p.parked_and_typed[cache] * ratio,
@@ -1238,6 +1267,72 @@ mod tests {
             assert_eq!(refreshed, touched);
             assert_ne!(refreshed, run(null_block, &|_, _| {}));
         }
+    }
+
+    /// Random churn over three caches whose huge blocks park, are claimed
+    /// back, retyped, touched and refreshed. The fingerprint folds in every
+    /// allocation's result, so it pins the eviction and retype order the
+    /// per-page queues produced before parking moved huge blocks whole.
+    #[test]
+    fn churn_keeps_the_eviction_order() {
+        let fingerprint = |null_block: bool| {
+            let mut p = pool(12, &[3, 5, 2], null_block);
+            let mut rng = 0x2545_f491_4f6c_dd1du64;
+            let mut next = |n: u64| {
+                rng ^= rng << 13;
+                rng ^= rng >> 7;
+                rng ^= rng << 17;
+                (rng % n) as usize
+            };
+            let hashes = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"];
+            let mut held: Vec<(usize, usize)> = Vec::new();
+            let mut fold = 0xcbf2_9ce4_8422_2325u64;
+            for step in 0..4000 {
+                // Alternate pressure with slack, which parks, and move demand
+                // between caches, which retypes.
+                let allocs = if step % 1000 < 500 { 4 } else { 2 };
+                let cache = if next(2) == 0 {
+                    step / 250 % 3
+                } else {
+                    next(3)
+                };
+                let hash = hashes[next(12)];
+                match next(8) {
+                    op if op < allocs => {
+                        let outcome = p.alloc_block_with_retype(cache).ok();
+                        if let Some((bid, _)) = outcome {
+                            held.push((cache, bid));
+                            if next(2) == 0 && p.lookup_hash(cache, hash).is_none() {
+                                p.commit_into_prefix_cache(cache, hash, bid);
+                            }
+                        }
+                        let value = outcome.map_or(u64::MAX, |(bid, retyped)| {
+                            (cache as u64) << 32 | (bid as u64) << 1 | u64::from(retyped)
+                        });
+                        fold = (fold ^ value).wrapping_mul(0x100_0000_01b3);
+                    }
+                    op if op < 6 && !held.is_empty() => {
+                        let (cache, bid) = held.swap_remove(next(held.len() as u64));
+                        p.free_block(cache, bid);
+                    }
+                    6 => {
+                        if let Some(bid) = p.lookup_hash(cache, hash) {
+                            p.touch(cache, bid);
+                            held.push((cache, bid));
+                        }
+                    }
+                    _ => {
+                        if let Some(bid) = p.lookup_hash(cache, hash) {
+                            p.refresh(cache, bid);
+                        }
+                    }
+                }
+                check_invariants(&p);
+            }
+            fold
+        };
+        assert_eq!(fingerprint(false), 7_631_814_408_683_305_336);
+        assert_eq!(fingerprint(true), 9_593_804_921_475_115_732);
     }
 
     #[test]

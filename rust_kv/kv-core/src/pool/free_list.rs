@@ -37,7 +37,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::pool::block::LittleBlock;
+use crate::pool::block::{HugeBlock, LittleBlock};
 
 /// A block's place in a free list -- Python's `prev_free_block` and
 /// `next_free_block`, plus the membership its queue keeps in a set.
@@ -189,26 +189,39 @@ impl Default for Stamps {
 /// block parks or is claimed back. A [`FreeList`] would put them at an end and
 /// lose the order requests released them in, which keeps the tail of a prefix
 /// evicted before its head. Here each block carries the stamp it was appended
-/// with, so the move keeps its place. O(log n) per operation.
+/// with, so the move keeps its place. The queue holds huge blocks, each with
+/// its free pages by stamp, ordered by their oldest page, so the move is one
+/// huge block rather than a ratio's worth of pages. O(log n) per operation.
 #[derive(Debug, Default)]
 pub struct FreeQueue {
+    /// Each huge block with a page on the queue, by its oldest page's stamp.
     order: BTreeMap<u64, usize>,
+    len: usize,
 }
 
 impl FreeQueue {
     pub fn len(&self) -> usize {
-        self.order.len()
+        self.len
     }
 
     pub fn is_empty(&self) -> bool {
-        self.order.is_empty()
+        self.len == 0
     }
 
     /// Whether `id` is on this queue rather than another.
-    pub fn contains<H>(&self, nodes: &[LittleBlock<H>], id: usize) -> bool {
-        nodes[id]
-            .free
-            .is_some_and(|stamp| self.order.get(&stamp) == Some(&id))
+    pub fn contains<H>(
+        &self,
+        huge_blocks: &[HugeBlock],
+        nodes: &[LittleBlock<H>],
+        ratio: usize,
+        id: usize,
+    ) -> bool {
+        let huge_bid = id / ratio;
+        nodes[id].is_free()
+            && huge_blocks[huge_bid]
+                .pages
+                .first_key_value()
+                .is_some_and(|(stamp, _)| self.order.get(stamp) == Some(&huge_bid))
     }
 
     /// Puts a block where it is popped next.
@@ -218,63 +231,127 @@ impl FreeQueue {
     pub fn append_front<H>(
         &mut self,
         stamps: &mut Stamps,
+        huge_blocks: &mut [HugeBlock],
         nodes: &mut [LittleBlock<H>],
+        ratio: usize,
         id: usize,
     ) {
         stamps.front -= 1;
-        self.insert(nodes, id, stamps.front);
+        self.insert(huge_blocks, nodes, ratio, id, stamps.front);
     }
 
     /// Puts a block where it is popped last.
     ///
     /// # Panics
     /// If the block is already on a queue.
-    pub fn append_back<H>(&mut self, stamps: &mut Stamps, nodes: &mut [LittleBlock<H>], id: usize) {
+    pub fn append_back<H>(
+        &mut self,
+        stamps: &mut Stamps,
+        huge_blocks: &mut [HugeBlock],
+        nodes: &mut [LittleBlock<H>],
+        ratio: usize,
+        id: usize,
+    ) {
         stamps.back += 1;
-        self.insert(nodes, id, stamps.back);
+        self.insert(huge_blocks, nodes, ratio, id, stamps.back);
     }
 
-    fn insert<H>(&mut self, nodes: &mut [LittleBlock<H>], id: usize, stamp: u64) {
+    fn insert<H>(
+        &mut self,
+        huge_blocks: &mut [HugeBlock],
+        nodes: &mut [LittleBlock<H>],
+        ratio: usize,
+        id: usize,
+        stamp: u64,
+    ) {
         assert!(!nodes[id].is_free(), "block {id} is already free");
         nodes[id].free = Some(stamp);
-        self.order.insert(stamp, id);
+        let huge_bid = id / ratio;
+        let pages = &mut huge_blocks[huge_bid].pages;
+        let oldest = pages.first_key_value().map(|(&oldest, _)| oldest);
+        if let Some(oldest) = oldest {
+            assert_eq!(
+                self.order.get(&oldest),
+                Some(&huge_bid),
+                "huge block {huge_bid} is on another queue"
+            );
+        }
+        if oldest.is_none_or(|oldest| stamp < oldest) {
+            if let Some(oldest) = oldest {
+                self.order.remove(&oldest);
+            }
+            self.order.insert(stamp, huge_bid);
+        }
+        pages.insert(stamp, id);
+        self.len += 1;
     }
 
     /// Unlinks a block from anywhere in the queue.
     ///
     /// # Panics
     /// If the block is not on this queue.
-    pub fn remove<H>(&mut self, nodes: &mut [LittleBlock<H>], id: usize) {
+    pub fn remove<H>(
+        &mut self,
+        huge_blocks: &mut [HugeBlock],
+        nodes: &mut [LittleBlock<H>],
+        ratio: usize,
+        id: usize,
+    ) {
         let stamp = nodes[id].free.take().expect("block is not free");
+        let huge_bid = id / ratio;
+        let pages = &mut huge_blocks[huge_bid].pages;
+        let (&oldest, _) = pages.first_key_value().expect("block is not free");
         assert_eq!(
-            self.order.remove(&stamp),
-            Some(id),
+            self.order.get(&oldest),
+            Some(&huge_bid),
             "block {id} is on another queue"
         );
+        assert_eq!(pages.remove(&stamp), Some(id), "block {id} is not free");
+        if stamp == oldest {
+            self.order.remove(&oldest);
+            if let Some((&next, _)) = pages.first_key_value() {
+                self.order.insert(next, huge_bid);
+            }
+        }
+        self.len -= 1;
     }
 
-    /// Moves a block onto `to`, keeping its turn.
+    /// Moves every page of a huge block onto `to`, each keeping its turn.
     ///
     /// # Panics
-    /// If the block is not on this queue.
-    pub fn move_to<H>(&mut self, to: &mut FreeQueue, nodes: &[LittleBlock<H>], id: usize) {
-        let stamp = nodes[id].free.expect("block is not free");
+    /// If the huge block has no page on this queue.
+    pub fn move_huge_to(&mut self, to: &mut FreeQueue, huge: &HugeBlock, huge_bid: usize) {
+        let (&oldest, _) = huge
+            .pages
+            .first_key_value()
+            .expect("huge block has no free page");
         assert_eq!(
-            self.order.remove(&stamp),
-            Some(id),
-            "block {id} is on another queue"
+            self.order.remove(&oldest),
+            Some(huge_bid),
+            "huge block {huge_bid} is on another queue"
         );
-        to.order.insert(stamp, id);
+        to.order.insert(oldest, huge_bid);
+        self.len -= huge.pages.len();
+        to.len += huge.pages.len();
     }
 
-    pub fn pop_front<H>(&mut self, nodes: &mut [LittleBlock<H>]) -> Option<usize> {
-        let id = self.peek_front()?;
-        self.remove(nodes, id);
+    pub fn pop_front<H>(
+        &mut self,
+        huge_blocks: &mut [HugeBlock],
+        nodes: &mut [LittleBlock<H>],
+        ratio: usize,
+    ) -> Option<usize> {
+        let id = self.peek_front(huge_blocks)?;
+        self.remove(huge_blocks, nodes, ratio, id);
         Some(id)
     }
 
-    pub fn peek_front(&self) -> Option<usize> {
-        self.order.first_key_value().map(|(_, &id)| id)
+    pub fn peek_front(&self, huge_blocks: &[HugeBlock]) -> Option<usize> {
+        let (_, &huge_bid) = self.order.first_key_value()?;
+        huge_blocks[huge_bid]
+            .pages
+            .first_key_value()
+            .map(|(_, &id)| id)
     }
 }
 
@@ -284,7 +361,6 @@ impl FreeQueue {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pool::block::HugeBlock;
 
     type Block = HugeBlock;
 

@@ -80,9 +80,11 @@ from max.support.human_readable_formatter import to_human_readable_bytes
 
 from ..kv_connector import (
     ByteCount,
+    CompletedProbe,
     KVConnector,
     KVConnectorTransfer,
     KVLoadRefused,
+    KVProbe,
     KVTransfer,
 )
 from ..paged_kv_cache._common import (
@@ -882,6 +884,23 @@ class TierConnector(KVConnector):
         blocks.
         """
         return [self.lookup(block_hashes, hint=hint)] * len(replica_idxs)
+
+    def start_probe(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idxs: Sequence[int],
+        hint: bytes | None = None,
+    ) -> KVProbe:
+        """Answers :meth:`probe` at once, as a handle the manager keeps.
+
+        The manager reads it again at the request's first allocation, which
+        then loads from it rather than looking up again.
+        """
+        return CompletedProbe(self.probe(block_hashes, replica_idxs, hint))
+
+    def probe_is_lookup(self) -> bool:
+        """Returns ``True``, since :meth:`probe` is one :meth:`lookup`."""
+        return True
 
     def load(
         self,

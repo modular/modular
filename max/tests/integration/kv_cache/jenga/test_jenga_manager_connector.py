@@ -157,6 +157,9 @@ class ScriptedConnector:
     def defers_lookup(self, replica_idx: int = 0) -> bool:
         return False
 
+    def probe_is_lookup(self) -> bool:
+        return False
+
     def load_lookup(
         self,
         lookup: KVLookup,
@@ -479,7 +482,8 @@ def test_a_host_only_hit_touches_once_after_the_load(
     Nothing is on the device, so the prefix is pulled from the connector. The
     touch carries the root-anchored run the request reused, not the uncached
     tail past it, and fires after the load so that no touch the load makes
-    itself can invert it (CLIN-1533).
+    itself can invert it (CLIN-1533). It waits for the step, once the forward
+    has launched, so the allocation does not pay for it.
     """
     mgr, connector = make_manager(monkeypatch)
     hashes = leave_prompt_in_the_connector(mgr, connector)
@@ -490,8 +494,34 @@ def test_a_host_only_hit_touches_once_after_the_load(
     mgr.alloc(ctx)
 
     assert ctx.cached_prefix_external_length == PROMPT_PAGES * PAGE
-    assert call_names(connector) == ["lookup", "load", "touch"]
+    assert call_names(connector) == ["lookup", "load"]
+
+    run(mgr, ctx)
+
     assert calls_named(connector, "touch") == [("touch", hashes, 0)]
+
+
+def test_a_release_sends_the_admission_touch_before_its_own(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A request released before its step still has its admission touched.
+
+    The queued touch goes out first, so the release's re-ranking stays the
+    most recent.
+    """
+    mgr, connector = make_manager(monkeypatch)
+    hashes = leave_prompt_in_the_connector(mgr, connector)
+    ctx = make_ctx(PROMPT)
+    mgr.claim(ctx)
+    mgr.alloc(ctx)
+    assert calls_named(connector, "touch") == []
+
+    mgr.release(ctx)
+
+    assert calls_named(connector, "touch") == [
+        ("touch", hashes, 0),
+        ("touch", hashes, 0),
+    ]
 
 
 # ===--------------------------------------------------------------------=== #
@@ -523,6 +553,7 @@ def test_a_peer_copy_touches_the_full_sequence_for_the_serving_replica(
 
     assert second.cached_prefix_length == PROMPT_PAGES * PAGE
     assert second.cached_prefix_external_length == 0
+    run(mgr, second, replica_idx=1)
     assert calls_named(connector, "touch") == [("touch", hashes, 1)]
     assert calls_named(connector, "load") == []
     metrics = mgr.take_metrics_aggregated()
@@ -554,7 +585,7 @@ def test_a_peer_page_is_served_by_the_connector_when_copies_are_off(
 
     assert second.cached_prefix_length == PROMPT_PAGES * PAGE
     assert second.cached_prefix_external_length == PROMPT_PAGES * PAGE
-    assert call_names(connector) == ["lookup", "load", "touch"]
+    assert call_names(connector) == ["lookup", "load"]
     assert mgr.take_metrics_aggregated().cross_replica_blocks_copied == 0
 
 

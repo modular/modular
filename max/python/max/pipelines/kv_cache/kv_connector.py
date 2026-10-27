@@ -474,6 +474,17 @@ class KVConnector(Protocol):
         """
         return False
 
+    def probe_is_lookup(self) -> bool:
+        """Returns whether :meth:`probe` answers as :meth:`lookup` would.
+
+        Only a connector whose lookup holds nothing a load reads out of can
+        say so. The manager then loads from a fresh pricing answer rather
+        than looking up again, and a block gone since then surfaces as
+        :class:`KVLoadRefused`, as it would after a lookup. ``False`` by
+        default.
+        """
+        return False
+
     def load_lookup(
         self,
         lookup: KVLookup,
