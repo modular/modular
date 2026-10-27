@@ -97,19 +97,17 @@ struct ArgMax:
     @staticmethod
     def execute[
         target: StaticString,
-        rank: Int,
         axis: Int,
         _trace_name: StaticString,
     ](
-        output: FusedOutputTensor[rank=rank, ...],
-        input: FusedInputTensor[rank=rank, ...],
+        output: Some[Output & Fused & StoreAccess],
+        input: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
     ) raises:
         """Executes the `mo.reduce.arg_max` graph op.
 
         Parameters:
             target: Compilation target string.
-            rank: Tensor rank of the input and output tensors.
             axis: Dimension along which to reduce.
             _trace_name: Name used for tracing and debugging.
 
@@ -123,31 +121,43 @@ struct ArgMax:
         """
         # `axis` is normalized at comptime (Row `reduce_dim` is comptime);
         # the new impl handles CPU + GPU and any axis.
+        comptime dtype = type_of(input).dtype
+        comptime rank = type_of(input).rank
+        comptime assert type_of(output).rank == rank
         comptime reduce_dim = axis if axis >= 0 else axis + rank
+
+        # Project the host proxy to its access-enabled view so the closures can
+        # load/store on the GPU lane the reduction dispatches to internally.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var in_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(in_view), Loadable)
+        comptime assert conforms_to(type_of(output), UnsafeFusedView)
+        var out_view = unsafe_fused_view(output)
+        comptime assert conforms_to(type_of(out_view), Storable)
 
         @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](coords: Coord) {var input} -> SIMD[input.dtype, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                coords
+        ](coords: Coord) {var in_view} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](
+                in_view.load[width=width, element_alignment=alignment](coords)
             )
 
         @inline(.always)
         def output_fn[
             width: SIMDLength
-        ](coords: Coord, val: SIMD[.int64, width]) {var output}:
-            output._lambda_store[width=width](
+        ](coords: Coord, val: SIMD[.int64, width]) {var out_view}:
+            out_view.store[width=width](
                 coords,
-                rebind[SIMD[output.dtype, width]](val),
+                rebind[SIMD[type_of(out_view).dtype, width]](val),
             )
 
         reduce_argmax[
-            input.dtype,
+            dtype,
             target=target,
             reduce_dim=reduce_dim,
             name=_trace_name,
-        ](input_fn, output_fn, input.shape_coord(), ctx)
+        ](input_fn, output_fn, input.shape().flatten(), ctx)
 
 
 @extensibility.register("mo.reduce.arg_min")
@@ -157,19 +167,17 @@ struct ArgMin:
     @staticmethod
     def execute[
         target: StaticString,
-        rank: Int,
         axis: Int,
         _trace_name: StaticString,
     ](
-        output: FusedOutputTensor[rank=rank, ...],
-        input: FusedInputTensor[rank=rank, ...],
+        output: Some[Output & Fused & StoreAccess],
+        input: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
     ) raises:
         """Executes the `mo.reduce.arg_min` graph op.
 
         Parameters:
             target: Compilation target string.
-            rank: Tensor rank of the input and output tensors.
             axis: Dimension along which to reduce.
             _trace_name: Name used for tracing and debugging.
 
@@ -183,31 +191,43 @@ struct ArgMin:
         """
         # `axis` is normalized at comptime (Row `reduce_dim` is comptime);
         # the new impl handles CPU + GPU and any axis.
+        comptime dtype = type_of(input).dtype
+        comptime rank = type_of(input).rank
+        comptime assert type_of(output).rank == rank
         comptime reduce_dim = axis if axis >= 0 else axis + rank
+
+        # Project the host proxy to its access-enabled view so the closures can
+        # load/store on the GPU lane the reduction dispatches to internally.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var in_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(in_view), Loadable)
+        comptime assert conforms_to(type_of(output), UnsafeFusedView)
+        var out_view = unsafe_fused_view(output)
+        comptime assert conforms_to(type_of(out_view), Storable)
 
         @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](coords: Coord) {var input} -> SIMD[input.dtype, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                coords
+        ](coords: Coord) {var in_view} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](
+                in_view.load[width=width, element_alignment=alignment](coords)
             )
 
         @inline(.always)
         def output_fn[
             width: SIMDLength
-        ](coords: Coord, val: SIMD[.int64, width]) {var output}:
-            output._lambda_store[width=width](
+        ](coords: Coord, val: SIMD[.int64, width]) {var out_view}:
+            out_view.store[width=width](
                 coords,
-                rebind[SIMD[output.dtype, width]](val),
+                rebind[SIMD[type_of(out_view).dtype, width]](val),
             )
 
         reduce_argmin[
-            input.dtype,
+            dtype,
             target=target,
             reduce_dim=reduce_dim,
             name=_trace_name,
-        ](input_fn, output_fn, input.shape_coord(), ctx)
+        ](input_fn, output_fn, input.shape().flatten(), ctx)
 
 
 @extensibility.register("mo.arg_nonzero")
@@ -2004,8 +2024,8 @@ struct Softmax:
         target: StaticString,
         axis: Int,
     ](
-        output: OutputTensor,
-        input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
+        output: Some[Output & Tensor],
+        input: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
     ) raises:
         """Executes the `mo.reduce.softmax` graph op.
@@ -2023,35 +2043,47 @@ struct Softmax:
             Error: If the operation parameters are invalid.
         """
 
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime rank = type_of(output).rank
+        comptime assert type_of(input).dtype == dtype
+        comptime assert type_of(input).rank == rank
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # load on the GPU lane `softmax` dispatches to internally.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var in_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(in_view), Loadable)
+
         @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](coords: Coord) {var input} -> SIMD[output.dtype, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                coords
+        ](coords: Coord) {var in_view} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](
+                in_view.load[width=width, element_alignment=alignment](coords)
             )
 
         # Pass the static reduced-axis width when known so the Row
         # register-caches the input strip (`_fuse`), avoiding a second global
         # read of the input in the map phase; a dynamic width falls back to
         # streaming.
-        comptime sm_cols = Int(input.static_spec.shape_tuple[axis])
+        comptime sm_cols = type_of(input)._shape_types[axis].static_value
 
         comptime if sm_cols != UNKNOWN_VALUE:
-            softmax[output.dtype, output.rank, target=target, reduce_dim=axis](
+            softmax[dtype, rank, target=target, reduce_dim=axis](
                 input_fn,
-                output.shape_coord(),
+                output.shape().flatten(),
                 ComptimeInt[sm_cols](),
-                output.to_tile_tensor[.int64](),
+                output.to_tile_tensor(),
                 axis,
                 context=ctx,
             )
         else:
-            softmax[output.dtype, output.rank, target=target, reduce_dim=axis](
+            softmax[dtype, rank, target=target, reduce_dim=axis](
                 input_fn,
-                output.shape_coord(),
-                Int(input.shape()[axis]),
-                output.to_tile_tensor[.int64](),
+                output.shape().flatten(),
+                Int(input.shape()[axis].value()),
+                output.to_tile_tensor(),
                 axis,
                 context=ctx,
             )
@@ -2066,8 +2098,8 @@ struct LogSoftmax:
         target: StaticString,
         axis: Int,
     ](
-        output: OutputTensor,
-        input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
+        output: Some[Output & Tensor],
+        input: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
     ) raises:
         """Executes the `mo.reduce.logsoftmax` graph op.
@@ -2085,47 +2117,59 @@ struct LogSoftmax:
             Error: If the operation parameters are invalid.
         """
 
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime rank = type_of(output).rank
+        comptime assert type_of(input).dtype == dtype
+        comptime assert type_of(input).rank == rank
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # load on the GPU lane `softmax` dispatches to internally.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var in_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(in_view), Loadable)
+
         @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](coords: Coord) {var input} -> SIMD[output.dtype, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                coords
+        ](coords: Coord) {var in_view} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](
+                in_view.load[width=width, element_alignment=alignment](coords)
             )
 
         # Pass the static reduced-axis width when known so the Row
         # register-caches the input strip (`_fuse`), avoiding a second global
         # read of the input in the map phase; a dynamic width falls back to
         # streaming.
-        comptime lsm_cols = Int(input.static_spec.shape_tuple[axis])
+        comptime lsm_cols = type_of(input)._shape_types[axis].static_value
 
         comptime if lsm_cols != UNKNOWN_VALUE:
             softmax[
-                output.dtype,
-                output.rank,
+                dtype,
+                rank,
                 target=target,
                 logsoftmax=True,
                 reduce_dim=axis,
             ](
                 input_fn,
-                output.shape_coord(),
+                output.shape().flatten(),
                 ComptimeInt[lsm_cols](),
-                output.to_tile_tensor[.int64](),
+                output.to_tile_tensor(),
                 axis,
                 context=ctx,
             )
         else:
             softmax[
-                output.dtype,
-                output.rank,
+                dtype,
+                rank,
                 target=target,
                 logsoftmax=True,
                 reduce_dim=axis,
             ](
                 input_fn,
-                output.shape_coord(),
-                Int(input.shape()[axis]),
-                output.to_tile_tensor[.int64](),
+                output.shape().flatten(),
+                Int(input.shape()[axis].value()),
+                output.to_tile_tensor(),
                 axis,
                 context=ctx,
             )
