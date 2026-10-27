@@ -42,6 +42,33 @@ __enum IOErrorKind(Equatable, Hashable, ImplicitlyCopyable, Writable):
     """An argument was invalid."""
     case write_zero
     """A write that had to make progress wrote zero bytes."""
+    case connection_refused
+    """The remote host refused the connection."""
+    case connection_reset
+    """The remote host reset the connection."""
+    case connection_aborted
+    """The local host aborted the connection."""
+    case not_connected
+    """The operation needs a connected socket, and the socket isn't
+    connected."""
+    case address_in_use
+    """The local address is already in use."""
+    case address_not_available
+    """The requested address isn't local or doesn't exist."""
+    case host_unreachable
+    """The remote host couldn't be reached."""
+    case network_unreachable
+    """The network containing the remote host couldn't be reached."""
+    case network_down
+    """The network is down."""
+    case broken_pipe
+    """The other end of a pipe or connection has closed."""
+    case would_block
+    """The operation would block, and blocking wasn't requested."""
+    case timed_out
+    """The operation timed out."""
+    case interrupted
+    """The operation was interrupted, typically by a signal."""
     case uncategorized
     """An operating system error that no other kind covers."""
     # TODO: Add more ErrNo/IOErrorKind mappings
@@ -78,6 +105,32 @@ def _kind_from_errno(errno: ErrNo) -> IOErrorKind:
             return .already_exists
         case == ErrNo.EINVAL:
             return .invalid_input
+        case == ErrNo.ECONNREFUSED:
+            return .connection_refused
+        case == ErrNo.ECONNRESET:
+            return .connection_reset
+        case == ErrNo.ECONNABORTED:
+            return .connection_aborted
+        case == ErrNo.ENOTCONN:
+            return .not_connected
+        case == ErrNo.EADDRINUSE:
+            return .address_in_use
+        case == ErrNo.EADDRNOTAVAIL:
+            return .address_not_available
+        case == ErrNo.EHOSTUNREACH:
+            return .host_unreachable
+        case == ErrNo.ENETUNREACH:
+            return .network_unreachable
+        case == ErrNo.ENETDOWN:
+            return .network_down
+        case == ErrNo.EPIPE:
+            return .broken_pipe
+        case == ErrNo.EAGAIN:
+            return .would_block
+        case == ErrNo.ETIMEDOUT:
+            return .timed_out
+        case == ErrNo.EINTR:
+            return .interrupted
         # TODO: Add more ErrNo cases
         case _:
             return .uncategorized

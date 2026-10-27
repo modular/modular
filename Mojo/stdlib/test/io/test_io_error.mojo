@@ -34,6 +34,20 @@ def test_errno_kinds() raises:
     assert_kind(ErrNo.EACCES, IOErrorKind.permission_denied)
     assert_kind(ErrNo.EEXIST, IOErrorKind.already_exists)
     assert_kind(ErrNo.EINVAL, IOErrorKind.invalid_input)
+    assert_kind(ErrNo.ECONNREFUSED, IOErrorKind.connection_refused)
+    assert_kind(ErrNo.ECONNRESET, IOErrorKind.connection_reset)
+    assert_kind(ErrNo.ECONNABORTED, IOErrorKind.connection_aborted)
+    assert_kind(ErrNo.ENOTCONN, IOErrorKind.not_connected)
+    assert_kind(ErrNo.EADDRINUSE, IOErrorKind.address_in_use)
+    assert_kind(ErrNo.EADDRNOTAVAIL, IOErrorKind.address_not_available)
+    assert_kind(ErrNo.EHOSTUNREACH, IOErrorKind.host_unreachable)
+    assert_kind(ErrNo.ENETUNREACH, IOErrorKind.network_unreachable)
+    assert_kind(ErrNo.ENETDOWN, IOErrorKind.network_down)
+    assert_kind(ErrNo.EPIPE, IOErrorKind.broken_pipe)
+    assert_kind(ErrNo.EAGAIN, IOErrorKind.would_block)
+    assert_kind(ErrNo.EWOULDBLOCK, IOErrorKind.would_block)
+    assert_kind(ErrNo.ETIMEDOUT, IOErrorKind.timed_out)
+    assert_kind(ErrNo.EINTR, IOErrorKind.interrupted)
 
 
 def test_unmapped_errno_is_uncategorized() raises:
