@@ -185,3 +185,9 @@ modular_py_test(
         requirement("click"),
     ],
 )
+
+modular_py_test(
+    name = "test_eval_metrics",
+    srcs = ["test_eval_metrics.py"],
+    deps = [":eval_runner"],
+)

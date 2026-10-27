@@ -27,9 +27,11 @@ from prometheus_client.parser import text_string_to_metric_families
 
 from .backend_metric_names import (
     BATCH_METRIC_NAMES,
+    BATCH_TYPE_LABELS,
     BatchPhase,
     MetricAvailability,
     engine_family,
+    metric_name_candidates,
     resolve_batch_metric,
     resolve_spec_decode_metric,
 )
@@ -150,8 +152,23 @@ class ParsedMetrics:
             ...     "maxserve_batch_execution_time_milliseconds", {"batch_type": "TG"}
             ... )
         """
-        key = _format_metric_key(metric_name, labels or {})
-        return self.histograms.get(key)
+        for candidate in metric_name_candidates(metric_name):
+            key = _format_metric_key(candidate, labels or {})
+            if key in self.histograms:
+                return self.histograms[key]
+        return None
+
+    def histogram_family(self, metric_name: str) -> dict[str, HistogramData]:
+        """Returns one naming generation without counting aliases twice."""
+        for candidate in metric_name_candidates(metric_name):
+            family = {
+                key: hist
+                for key, hist in self.histograms.items()
+                if key == candidate or key.startswith(f"{candidate}{{")
+            }
+            if family:
+                return family
+        return {}
 
     def to_dict(self) -> dict[str, object]:
         """Serialize to a JSON-ready dict."""
@@ -331,6 +348,31 @@ def fetch_and_parse_metrics(backend: Backend, base_url: str) -> ParsedMetrics:
     return parsed
 
 
+# TODO(MAX-1007): Remove these two generation-check helpers and their calls
+# with the legacy live-reader aliases after rollout and the rollback window close.
+def _canonical_engine_metric_key(name: str) -> str:
+    for prefix in ("maxserve_", "mach_"):
+        if name.startswith(prefix):
+            return "max_" + name.removeprefix(prefix)
+    return name
+
+
+def _verify_delta_generation(
+    baseline: Mapping[str, object], final: Mapping[str, object]
+) -> None:
+    baseline_keys = {_canonical_engine_metric_key(name) for name in baseline}
+    if any(
+        name not in baseline
+        and _canonical_engine_metric_key(name) in baseline_keys
+        for name in final
+    ):
+        raise MissingEngineMetricsError(
+            "Engine metric naming generation changed between baseline and final "
+            "scrapes; cumulative values cannot be treated as benchmark deltas. "
+            "Pin both scrapes to one engine build and rerun the benchmark."
+        )
+
+
 def compute_metrics_delta(
     baseline: ParsedMetrics, final: ParsedMetrics
 ) -> ParsedMetrics:
@@ -346,6 +388,9 @@ def compute_metrics_delta(
     Returns:
         ParsedMetrics object containing the deltas
     """
+    _verify_delta_generation(baseline.counters, final.counters)
+    _verify_delta_generation(baseline.histograms, final.histograms)
+
     # Compute delta for counters (monotonically increasing)
     delta_counters = {}
     for name, final_value in final.counters.items():
@@ -483,9 +528,12 @@ def verify_always_emitted_metrics(
             or spec.name is None
         ):
             continue
+        histograms = parsed.histogram_family(spec.name)
+        allowed_types = set(BATCH_TYPE_LABELS[family].values())
         if not any(
-            key == spec.name or key.startswith(f"{spec.name}{{")
-            for key in parsed.histograms
+            match is not None and match.group(1) in allowed_types
+            for key in histograms
+            for match in [re.search(r'(?:\{|,)batch_type="([^"]*)"', key)]
         ):
             missing.append(spec.name)
     if missing:
@@ -580,9 +628,7 @@ def parse_spec_decode_metrics(
                 num_accepted_tokens += int(value)
 
     if acceptance_rate.name is not None:
-        for key, hist in parsed.histograms.items():
-            if not key.startswith(acceptance_rate.name):
-                continue
+        for key, hist in parsed.histogram_family(acceptance_rate.name).items():
             pos = _extract_position(key)
             if pos is None:
                 continue
@@ -593,7 +639,7 @@ def parse_spec_decode_metrics(
             )
 
     al_hist = (
-        parsed.histograms.get(avg_acceptance_length.name)
+        parsed.get_histogram(avg_acceptance_length.name)
         if avg_acceptance_length.name is not None
         else None
     )

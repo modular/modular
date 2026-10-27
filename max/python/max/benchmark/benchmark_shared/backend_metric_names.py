@@ -22,8 +22,8 @@ change; only the Prometheus names the values are looked up under do.
 Batch-histogram table keys are the metric's MAX Serve name (matching the
 ``HistogramMetric`` members in ``benchmark_shared.metrics``).
 
-TODO(MAX-938): this table collapses once MSN settles on one metric-naming
-scheme across engines.
+The tables retain historical identities while readers also accept the
+unified ``max_*`` exposition during rolling upgrades.
 """
 
 from __future__ import annotations
@@ -303,3 +303,31 @@ def resolve_spec_decode_metric(
         caller must skip it.
     """
     return SPEC_DECODE_METRIC_NAMES[client_metric][engine_family(backend)]
+
+
+def metric_name_candidates(name: str) -> tuple[str, ...]:
+    """Returns current wire names first, then historical spellings.
+
+    Known spec-decode unit suffixes precede the older unsuffixed reader names.
+    Backend label vocabularies remain distinct.
+    """
+    suffixes = {
+        "spec_decode_acceptance_rate_per_position": "_percent",
+        "spec_decode_avg_acceptance_length": "_tokens",
+    }
+    for prefix in ("maxserve_", "mach_"):
+        if name.startswith(prefix):
+            stem = name.removeprefix(prefix)
+            unit = suffixes.get(stem, "")
+            # TODO(MAX-1007): Drop the legacy wire-name fallback after rollout
+            # and the rollback window close. Update engine spec wire names to
+            # max_ while preserving benchmark result keys and unit handling.
+            generations = ("max_" + stem, name)
+            return tuple(
+                candidate
+                for generation in generations
+                for candidate in (
+                    (generation + unit, generation) if unit else (generation,)
+                )
+            )
+    return (name,)
