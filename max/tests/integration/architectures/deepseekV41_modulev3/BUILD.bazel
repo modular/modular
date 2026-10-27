@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_test")
+load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -39,5 +39,21 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/speculative",
+    ],
+)
+
+# Resolver regressions against the published checkpoint's layer mapping,
+# including its three trailing DSpark draft ratio rows.
+modular_py_test(
+    name = "test_layer_resolver",
+    srcs = ["test_layer_resolver.py"],
+    data = ["//max/tests/integration/architectures/deepseekV41/testdata"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/lib",
+        requirement("transformers"),
     ],
 )

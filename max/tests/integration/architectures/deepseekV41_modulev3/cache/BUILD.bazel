@@ -1,0 +1,114 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+load(
+    "//max/tests/integration/xarch_warm:eager_py_test.bzl",
+    "modular_eager_py_test",
+)
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+# The ModuleV3 interface's KV leaf geometry against the canonical record
+# layout the registered V2 CSA2 cache, attention and indexer ops address.
+modular_py_test(
+    name = "test_cache_geometry",
+    srcs = ["test_cache_geometry.py"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# The thin CSA adapter's index-list placement: per-request page-table
+# placement, the window leaf's layer offset, ring page aliasing and ``-1``
+# handling, and the one-request-id-per-query-row [T, 1] contract.
+modular_py_test(
+    name = "test_adapter_placement",
+    srcs = ["test_adapter_placement.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+# The registered V2 CSA2 store and attention ops over cache blocks sized by
+# the ModuleV3 interface: ring wrap, layer bounds, skipped stores, both
+# compression ratios, a nonzero SWA begin, empty selections and prefill,
+# against a float64 oracle.
+modular_py_test(
+    name = "test_csa2_cache_ops",
+    size = "large",
+    srcs = ["test_csa2_cache_ops.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+# The compressor's pooling ops and the indexer's MXFP4 ops, through the
+# ModuleV3 bindings the trunk calls, on cache blocks the interface sizes:
+# closed-pair pooling against a float64 oracle, the state ring's save and
+# straddled carry, the k-store's records, and the causal top-1 selection.
+#
+# No precompile_mefs: the eager executor stages device state before the
+# first compile and compiles each op as it executes, so a CPU record
+# captures none of these graphs (docs/internal/CompileOnCpuRunOnGpu.md,
+# "When record cannot help").
+modular_eager_py_test(
+    name = "test_csa2_compress_indexer_ops",
+    size = "large",
+    srcs = ["test_csa2_compress_indexer_ops.py"],
+    env = {
+        # These tests execute the layers' real fused/graph ops (the CSA2
+        # pooling and MXFP4 indexer kernels), which the interpreter
+        # refuses: compile them.
+        "MAX_EAGER_EXECUTOR": "fallback-internal",
+    },
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],  # Too slow under ASAN
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/architectures/deepseekV41_modulev3/assembly:runtime_config",
+        requirement("numpy"),
+    ],
+)

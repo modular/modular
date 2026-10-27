@@ -49,13 +49,16 @@ def _text_config(**overrides: Any) -> dict[str, Any]:
         "compress_ratios": [0, 2, 1, 2],
         "kv_source_layer_ids": [1, 2],
         "index_source_layer_ids": [3],
-        "index_head_dim": 128,
         "candidate_source_layer_id": 1,
         "engram_layer_ids": [3],
         "engram_num_embeddings": [2],
         "engram_head_dim": 256,
         "dspark_target_layer_ids": [3],
         "index_topk": 4,
+        # The indexer geometry keys are required here as they are in
+        # ``V41Config.from_hf``; the published checkpoint defines both.
+        "index_n_heads": 32,
+        "index_head_dim": 128,
         "rope_theta": 10000.0,
         "rope_scaling": None,
         "compress_rope_theta": 160000.0,
@@ -99,6 +102,10 @@ def test_resolve_text_fields() -> None:
     assert fields["num_hash_layers"] == 0
     assert fields["routed_scaling_factor"] == 1.5
     assert fields["candidate_topk_blocks"] == 0
+    # The indexer geometry is required, not defaulted, in this view as
+    # in the interface's.
+    assert fields["index_n_heads"] == 32
+    assert fields["index_head_dim"] == 128
 
 
 def _mock_pipeline_config(*, speculative: object = None) -> Mock:

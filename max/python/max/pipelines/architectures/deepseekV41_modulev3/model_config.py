@@ -139,6 +139,13 @@ class DeepseekV41Config(ArchConfigWithKVCache):
 
     # Sparse indexer top-k, one global constant (not per-layer).
     index_topk: int | None = None
+    # Indexer geometry (``text_config``): the MXFP4 index-key width and
+    # the scoring heads. The interface's ``V41Config`` keeps its own
+    # ``index_head_dim`` copy for the KV leaf geometry; both views
+    # require the checkpoint's fields (``resolve_text_fields`` reads
+    # them like ``V41Config.from_hf`` does).
+    index_n_heads: int = 32
+    index_head_dim: int = 128
 
     # RoPE / YaRN: theta 160000 + YaRN factor 16 on compressed layers,
     # theta 10000 on sliding-window-only layers.
@@ -278,6 +285,8 @@ class DeepseekV41Config(ArchConfigWithKVCache):
                 getattr(text_config, "dspark_target_layer_ids", [])
             ),
             index_topk=text_config.index_topk,
+            index_n_heads=text_config.index_n_heads,
+            index_head_dim=text_config.index_head_dim,
             rope_theta=get_rope_theta(text_config),
             rope_scaling=text_config.rope_scaling,
             compress_rope_theta=text_config.compress_rope_theta,
