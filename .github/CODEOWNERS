@@ -45,6 +45,7 @@
 /bazel/public-patches/rules_pycross_versions.patch @modular/sdlc
 /bazel/public-patches/rules_python_revert.patch @modular/sdlc
 /bazel/public-patches/rules_python_wheel.patch @modular/sdlc
+/bazel/public-patches/rules_rust_pyo3_no_rustfmt_aspect.patch @modular/sdlc
 /bazel/public-patches/tomlplusplus-visibility.patch @modular/sdlc
 /bazel/public-patches/torch-cuda-deps.patch @modular/sdlc
 /bazel/public-patches/with_cfg_visibility.patch @modular/sdlc
