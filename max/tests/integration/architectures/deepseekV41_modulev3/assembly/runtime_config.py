@@ -33,7 +33,12 @@ def text_config(**overrides: Any) -> SimpleNamespace:
         head_dim=512,
         q_lora_rank=64,
         o_groups=2,
-        o_lora_rank=32,
+        # The grouped wo_a's production arm (the block-diagonal launch)
+        # reads one B-scales interleave per shard, viewed per group over
+        # whole 128-row interleave blocks, so this fixture stages the
+        # production geometry. Smaller ranks (a multiple of 32) keep the
+        # grouped reference arm.
+        o_lora_rank=128,
         hc_mult=4,
         sliding_window=128,
         n_routed_experts=8,

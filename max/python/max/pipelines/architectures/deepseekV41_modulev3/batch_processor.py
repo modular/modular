@@ -46,6 +46,11 @@ from .interface import extra_input_names, extra_inputs
 _NUM_LOOKBACK = 3
 
 
+def decoder_row_count(row_offsets: np.ndarray, window: int) -> int:
+    """Rows the decoder layers run: each request's last ``window`` rows."""
+    return int(np.minimum(np.diff(row_offsets.astype(np.int64)), window).sum())
+
+
 class DeepseekV41BatchProcessor(
     ModuleV3SingleReplicaBatchProcessor[TextContext, DeepseekV41Inputs]
 ):
@@ -53,8 +58,8 @@ class DeepseekV41BatchProcessor(
 
     The inputs after the KV leaves are produced in
     :func:`~.interface.extra_input_names` order, so the compile ABI is read
-    from one place. The Engram tables are static: the model binds them
-    after loading with :meth:`bind_engram`.
+    from one place. The Engram tables and token map are static: the model binds
+    them after loading with :meth:`bind_engram`.
     """
 
     def __init__(
@@ -67,7 +72,7 @@ class DeepseekV41BatchProcessor(
         self._ep_comm_initializer: EPCommInitializer | None = None
 
     def bind_engram(self, static_inputs: Mapping[str, Buffer]) -> None:
-        """Hands over the ``engram_table_*`` buffers the model pinned."""
+        """Hands over the ``engram_table_*`` and ``engram_token_map`` buffers."""
         self._engram_static = dict(static_inputs)
 
     def bind_ep_comm_initializer(
@@ -146,6 +151,11 @@ class DeepseekV41BatchProcessor(
                 _NUM_LOOKBACK,
             ).astype(np.int32),
             "engram_lookback_dead": np.zeros((batch, _NUM_LOOKBACK), np.uint8),
+            # The graph reads only the extent: the rows the decoder layers run.
+            "decoder_rows": np.zeros(
+                decoder_row_count(row_offsets, self._v41.sliding_window),
+                np.uint8,
+            ),
         }
         buffers = {
             name: Buffer.from_numpy(array).to(device0)
@@ -160,7 +170,7 @@ class DeepseekV41BatchProcessor(
         if missing:
             raise RuntimeError(
                 f"no value for the DeepSeek-V4.1 inputs {missing}; the Engram "
-                "tables must be bound before the first batch."
+                "tables and token map must be bound before the first batch."
             )
         return tuple(
             buffers[name] if name in buffers else self._engram_static[name]
@@ -185,8 +195,9 @@ class DeepseekV41BatchProcessor(
                 f"batches, got {len(replica_batches)}."
             )
         assert kv_cache_inputs is not None
-        # An empty replica contributes a zero-width boundary; the in-graph
-        # split still hands it a 0-token shard.
+        # All replicas pack as one device-0 batch (the deepseekV3 ModuleV3
+        # DP_EP pattern). An empty replica contributes a zero-width
+        # boundary; the in-graph split still hands it a 0-token shard.
         context_batch = [ctx for batch in replica_batches for ctx in batch]
         if context_batch:
             tokens_np, offsets_np = build_single_replica_ragged_token_arrays(

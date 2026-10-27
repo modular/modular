@@ -10,14 +10,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The DP4+EP4 graph stages on virtual devices, without an all-reduce.
+"""The DP4+EP4 graph stages and compiles on virtual devices, no all-reduce.
 
 Exercises the data-parallel attention + expert-parallel MoE wiring end to
 end at the IR level (the deepseekV3 ModuleV3 ``DP_EP`` pattern): the batch
 splits per rank from ``data_parallel_splits``, the attention weights stay
 whole per rank, and the routed experts dispatch/combine through the EP
-buffers. Graph construction only: virtual SM100 devices, never compiled
-or executed, so it needs no GPU. The step's collective inventory is also
+buffers. Staging runs on virtual SM100 devices; the compile leg then runs
+the staged graph through ``InferenceSession.compile_reusing_mefs`` -- the
+entry point the MEF export compiles through -- still without a GPU, so a
+graph that builds but whose operands disagree with a kernel's signature
+(a dtype drift the CSA2 and Engram kernels reject) fails here in CI rather
+than twenty minutes into an export. The step's collective inventory is also
 pinned, so no unplanned cross-device transfer can slip into the captured
 step.
 """
@@ -39,6 +43,7 @@ from max.driver import (
     set_virtual_device_target_arch,
 )
 from max.dtype import DType
+from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.legacy.comm.ep import EPBatchManager, EPConfig
 from max.nn.legacy.kv_cache import MultiKVCacheParams
@@ -98,8 +103,28 @@ def _dp_text_config() -> SimpleNamespace:
     (two layers, n-gram width 4, 8 heads, 256-byte rows), so the config
     carries that geometry and the table row counts the hash layout
     derives for it.
+
+    The kernel-facing geometry is the checkpoint's, not the staging
+    fixture's: the compile leg instantiates the real kernels, whose
+    comptime constraints the real config satisfies and the tiny staging
+    values do not -- the MXFP4 indexer's SM100 scorer takes only 64, 32,
+    8 or 4-head queries (mla_index_fp8.mojo), the CSA2 attention tiles
+    cover whole eight-row atoms (tensor_core_async.mojo), the expert
+    FFN's K dims must be multiples of its BK (mega_ffn_kernel.mojo),
+    the EP combine chunks the hidden size (ep_comm.mojo), and a
+    candidate block must fit one warp's key span (mla_index_fp8.mojo
+    again). Everything with no kernel constraint -- layer count,
+    vocabulary, expert count, table rows -- stays tiny.
     """
     text = text_config()
+    text.index_n_heads = 32
+    text.num_attention_heads = 64
+    text.hidden_size = 5120
+    text.moe_intermediate_size = 2304
+    text.q_lora_rank = 1280
+    text.o_lora_rank = 1024
+    text.o_groups = 8
+    text.candidate_block_size = 8
     layout = EngramLayout(
         layer_ids=(0, 1),
         num_embeddings=(0, 0),
@@ -294,3 +319,21 @@ def test_dp4_ep4_step_collectives_are_only_the_designed_ones(
         "mo.distributed.ep.combine",
         "mo.distributed.ep.dispatch.block.scaled.nv",
     }, sorted(ops)
+
+
+def test_dp4_ep4_graph_compiles() -> None:
+    """The staged DP4+EP4 graph clears the graph compiler, no GPU.
+
+    Staging alone cannot catch an operand whose dtype drifted from its
+    kernel's signature: the CSA2, indexer and Engram custom ops
+    type-check when the compiler parses the Mojo it generates for them,
+    which is where a DP4/EP4 export failed after a seventeen-minute
+    compile. Compiling the same staged graph through the export's entry
+    point (``InferenceSession.compile_reusing_mefs``) fails on that drift
+    in CI; the weights stay external, so no checkpoint is read.
+    """
+    with _virtual_devices(_DP):
+        module, _, inputs = _build_dp4_ep4()
+        staged = module.trace(*inputs)
+        session = InferenceSession(devices=[Accelerator(i) for i in range(_DP)])
+        session.compile_reusing_mefs(staged.graph)

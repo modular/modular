@@ -19,16 +19,26 @@ block-scaled matmul's atom layout, and runs
 ``dynamic_block_scaled_matmul``. The checkpoint holds the weights as
 compact E4M3 codes with one E8M0 scale per 32x32 block, never
 dequantized.
+
+The one grouped site -- the attention output's ``wo_a`` -- runs the same
+quantize once, token-major, and one block-diagonal block-scaled matmul
+(main #105486's mechanism, :func:`grouped_dense_op`); CPU and Apple
+traces, and a shard too narrow to tile, keep the grouped reference
+launch.
 """
 
 from max import functional as F
+from max.driver import Accelerator
 from max.dtype import DType
-from max.graph import TensorValue, ops
+from max.graph import DeviceRef, TensorValue, ops
 from max.nn import Module
 from max.nn.common_layers.quant_tensor import (
     FP8BlockTensor,
 )
 from max.nn.legacy.kernels import (
+    _is_apple_gpu,
+    _is_sm10x_gpu,
+    block_diagonal_block_scaled_matmul,
     block_scales_interleave,
     dynamic_block_scaled_matmul,
 )
@@ -131,6 +141,179 @@ def _dense_rule(
 
 
 _dense_op = F.functional(_dense, rule=_dense_rule)
+
+
+def _trace_device_is_gpu(device: object) -> bool:
+    """Whether a trace-time device names a GPU, in either of its two forms.
+
+    A guard runs on devices in two flavors: the raw driver ``Accelerator``
+    of a tensor the op built itself, and the graph ``DeviceRef`` of every
+    value ``F.functional`` converts for a wrapped op's parameters and
+    every ``ops.*`` result. No single method or isinstance answers both;
+    this call does.
+    """
+    if isinstance(device, DeviceRef):
+        return device.is_gpu()
+    return isinstance(device, Accelerator)
+
+
+def _use_block_diagonal_woa(x: TensorValue) -> bool:
+    """Whether the block-diagonal grouped matmul can take these operands.
+
+    The op is SM100-only; CPU and Apple traces keep the grouped
+    reference launch below.
+    """
+    return (
+        _trace_device_is_gpu(x.device)
+        and not _is_apple_gpu()
+        and _is_sm10x_gpu()
+    )
+
+
+def _grouped_dense(
+    x: TensorValue,
+    weight: TensorValue,
+    scale: TensorValue,
+    group_rows: int,
+    amax_floor: float,
+) -> TensorValue:
+    """``[T, g * d] -> [T, g * group_rows]``: group ``j`` uses its own rows.
+
+    Runs per shard, where ``g`` is the shard's group count. Each group is a
+    dense projection, so the weight is read as FP8 and never dequantized.
+    With two or more groups on SM100 the groups run as ONE
+    block-diagonal block-scaled matmul (main #105486's mechanism): one
+    token-major quantize over the whole width, one launch. The per-32
+    amax blocks the quantize computes are independent of the group
+    slicing, so the one launch's codes are the bytes the per-group
+    chains produce, and each output column keeps its separate-launch
+    value. Every other trace -- a non-SM100 device, or a site whose K
+    or group rank is not whole 128-block tiles -- runs the grouped
+    reference launch (:func:`_grouped_dense_reference`); a rank below a
+    whole 32-row scale block is refused below, before any arm runs.
+    """
+    if (
+        weight.dtype != DType.float8_e4m3fn
+        or scale.dtype != DType.float8_e8m0fnu
+    ):
+        raise ValueError(
+            "V4.1 dense weights require E4M3 and compact E8M0 scales"
+        )
+    rows = int(weight.shape[0])
+    if rows % group_rows:
+        raise ValueError(
+            f"grouped weight holds {rows} rows, not a whole multiple of the"
+            f" {group_rows}-row group"
+        )
+    if group_rows % 32:
+        # A rank below a whole 32-row scale block has no scale rows for
+        # its own group: the reference arm would slice its compact scales
+        # an empty range, and the single-group dense path would read a
+        # degenerate zero-row scale leaf as fabricated unit scales.
+        raise ValueError(
+            f"group rank {group_rows} must hold whole 32-row scale blocks"
+        )
+    groups = rows // group_rows
+    if groups == 1:
+        return _dense(x, weight, scale, amax_floor)
+    k = int(weight.shape[1])
+    # The block-diagonal launch also needs whole 128-column scale tiles
+    # along K, and its B-scales are one interleave over the whole shard
+    # split per group by a view, so a group must cover whole 128-row
+    # interleave blocks. A site that misses either -- rank 64 included --
+    # keeps the grouped reference launch, which needs only the whole
+    # 32-row blocks above.
+    if _use_block_diagonal_woa(x) and k % 128 == 0 and group_rows % 128 == 0:
+        return _grouped_dense_block_diagonal(
+            x, weight, scale, group_rows, amax_floor
+        )
+    return _grouped_dense_reference(x, weight, scale, group_rows, amax_floor)
+
+
+def _grouped_dense_block_diagonal(
+    x: TensorValue,
+    weight: TensorValue,
+    scale: TensorValue,
+    group_rows: int,
+    amax_floor: float,
+) -> TensorValue:
+    """The production launch: one token-major quantize, one matmul.
+
+    The whole-width quantize's codes and interleaved scales are
+    byte-identical to the per-group chains the reference arm runs (the
+    per-32 amax blocks never straddle a group boundary), so the matmul
+    reads the same values the grouped launch would -- without the
+    per-group chains, their interleaves and the per-group concat of the
+    products.
+    """
+    groups = int(weight.shape[0]) // group_rows
+    codes, scales = _act_quant(x, amax_floor)
+    a_scales = block_scales_interleave(scales, sf_vector_size=32)
+    # The weight-side interleave is the same bytes the reference arm
+    # builds per group, unsplit: [rows / 128, k / 128, 32, 4, 4].
+    expanded = ops.repeat_interleave(scale, 32, axis=0)
+    b_scales = block_scales_interleave(expanded, sf_vector_size=32)
+    return block_diagonal_block_scaled_matmul(
+        codes, weight, a_scales, b_scales, groups
+    )
+
+
+def _grouped_dense_reference(
+    x: TensorValue,
+    weight: TensorValue,
+    scale: TensorValue,
+    group_rows: int,
+    amax_floor: float,
+) -> TensorValue:
+    """The reference arm: one quantize chain and one dense launch per group.
+
+    The values every arm must reproduce: each group quantizes its own
+    K-slice of ``x`` through the reference chain and multiplies it by
+    its own rows of the leaf -- the per-group dense launches the
+    block-diagonal matmul replaces with one batched kernel.
+    """
+    groups = int(weight.shape[0]) // group_rows
+    width = int(x.shape[-1]) // groups
+    outputs: list[TensorValue] = []
+    for j in range(groups):
+        codes, group_scales = _act_quant(
+            x[:, j * width : (j + 1) * width], amax_floor
+        )
+        a_scales = block_scales_interleave(group_scales, sf_vector_size=32)
+        # Group j's compact scale rows are its own weight rows' blocks:
+        # the leaf's rows are group-ordered.
+        blocks = scale[j * group_rows // 32 : (j + 1) * group_rows // 32]
+        b_scales = block_scales_interleave(
+            ops.repeat_interleave(blocks, 32, axis=0), sf_vector_size=32
+        )
+        outputs.append(
+            dynamic_block_scaled_matmul(
+                codes,
+                weight[j * group_rows : (j + 1) * group_rows],
+                a_scales,
+                b_scales,
+                sf_vector_size=32,
+                out_type=DType.bfloat16,
+            )
+        )
+    return ops.concat(outputs, axis=1)
+
+
+def _grouped_dense_rule(
+    x: TensorLayout,
+    weight: TensorLayout,
+    scale: TensorLayout,
+    group_rows: int,
+    amax_floor: float,
+) -> list[AxisAssignment]:
+    return [
+        AxisAssignment((R, R, R), (R,)),
+        AxisAssignment((Sharded(0), R, R), (Sharded(0),)),
+        AxisAssignment((Sharded(1), Sharded(0), Sharded(0)), (Sharded(1),)),
+    ]
+
+
+grouped_dense_op = F.functional(_grouped_dense, rule=_grouped_dense_rule)
 
 
 def _gate_up(x: TensorValue) -> tuple[TensorValue, TensorValue]:

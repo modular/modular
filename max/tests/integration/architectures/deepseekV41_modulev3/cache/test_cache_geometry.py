@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """Cache-geometry tests for the V4.1 ModuleV3 interface.
 
-The interface must build the canonical current-main CSA2 record leaves --
-the geometry the registered V2 cache, attention and indexer kernels address
--- not the draft interface's packed-float8 rows. Every record constant here
-is imported from the V2 modules the kernels' wrappers live in, so a drift in
-either direction fails these tests.
+The interface freezes the packed record rows the registered CSA2 kernels
+address -- opaque-byte MXFP8 window records, NVFP4 compressed records and
+MXFP4 index keys -- and these tests pin their row bytes, dtypes and page
+geometry against the V2 modules the kernels' wrappers live in, so a drift
+in either direction fails.
 """
 
 from __future__ import annotations
@@ -37,6 +37,8 @@ from max.pipelines.architectures.deepseekV41.layers.csa2 import (
 )
 from max.pipelines.architectures.deepseekV41_modulev3.interface import (
     PAGE_SIZE,
+    STATE_RING_ROWS,
+    STATE_STRIDE_ALIGNMENT,
     V41Config,
     build_kv_params,
     kv_leaf_specs,
@@ -58,6 +60,19 @@ def _hf_config(**overrides: Any) -> dict[str, Any]:
         "engram_num_embeddings": [2],
         "engram_head_dim": 256,
         "dspark_target_layer_ids": [3],
+        "hidden_size": 512,
+        "moe_intermediate_size": 128,
+        "q_lora_rank": 64,
+        "o_lora_rank": 64,
+        "o_groups": 2,
+        "n_routed_experts": 4,
+        "index_source_layer_ids": [1, 2],
+        "candidate_source_layer_id": 2,
+        "index_n_heads": 4,
+        "index_topk": 8,
+        "candidate_topk_blocks": 4,
+        "hc_mult": 2,
+        "engram_layer_ids": [0],
     }
     text_config.update(overrides)
     return {"text_config": text_config}
@@ -78,16 +93,19 @@ def _params(config: V41Config | None = None) -> dict[str, KVCacheParams]:
 
 
 def test_record_leaves_match_the_registered_ops() -> None:
-    """The window, compressed and index leaves hold exactly the opaque
-    ``uint8`` records the V2 store, attention and indexer kernels read."""
+    """The window, compressed and index leaves hold the packed record rows
+    the V2 store, attention and indexer kernels read: opaque byte rows at
+    the frozen record widths."""
     specs = {s.key: s for s in kv_leaf_specs(V41Config.from_hf(_hf_config()))}
-    assert specs["swa"].record_bytes == WINDOW_RECORD_BYTES
-    assert specs["c2a"].record_bytes == COMPRESSED_RECORD_BYTES
-    assert specs["c1a"].record_bytes == COMPRESSED_RECORD_BYTES
-    assert specs["idx_c2a"].record_bytes == v2_kv_leaves.MXFP4_INDEX_KEY_BYTES
+    assert specs["swa"].row_bytes == WINDOW_RECORD_BYTES
+    assert specs["c2a"].row_bytes == COMPRESSED_RECORD_BYTES
+    assert specs["c1a"].row_bytes == COMPRESSED_RECORD_BYTES
+    assert specs["idx_c2a"].row_bytes == v2_kv_leaves.MXFP4_INDEX_KEY_BYTES
     for key in ("swa", "c2a", "c1a", "idx_c2a", "idx_c1a"):
+        # The kernels address the packed record rows as raw bytes: the
+        # interface declares the uint8 view they read, never the payload's
+        # own dtype.
         assert specs[key].dtype == DType.uint8, key
-        assert specs[key].row_bytes == specs[key].record_bytes, key
 
 
 @pytest.mark.parametrize("ratio", [1, 2])
@@ -120,8 +138,7 @@ def test_record_pages_are_readably_laid_out(key: str, data: int) -> None:
     16-byte aligned."""
     specs = {s.key: s for s in kv_leaf_specs(V41Config.from_hf(_hf_config()))}
     spec = specs[key]
-    slots, record = spec.slots_per_page, spec.record_bytes
-    assert record is not None
+    slots, record = spec.slots_per_page, spec.row_bytes
     assert cache_page_bytes(slots, record, data) == slots * record
     page = slots * record
     assert page % 16 == 0
@@ -129,8 +146,7 @@ def test_record_pages_are_readably_laid_out(key: str, data: int) -> None:
     # The index-key pages need only the stride alignment the indexer ops
     # take; check the same invariant for them at both ratios.
     for idx_spec in (specs["idx_c2a"], specs["idx_c1a"]):
-        assert idx_spec.record_bytes is not None
-        idx_page = idx_spec.slots_per_page * idx_spec.record_bytes
+        idx_page = idx_spec.slots_per_page * idx_spec.row_bytes
         assert idx_page % v2_kv_leaves.INDEX_KEY_STRIDE_ALIGNMENT == 0
 
 
@@ -160,14 +176,15 @@ def test_built_blocks_stay_within_page_and_layer_bounds() -> None:
 
 def test_ratio2_state_is_a_scratch_ring() -> None:
     """The ratio-2 compressor carry is a per-request scratch ring of raw
-    float32 rows -- a token's KV row then its score row -- two rows while
-    no layer runs speculative decoding, not a token-paged float8 leaf."""
+    float32 rows -- a token's KV row then its score row -- sized for the
+    production draft count the interface freezes, not a token-paged float8
+    leaf, so the ABI never moves when speculative decoding lands."""
     specs = {s.key: s for s in kv_leaf_specs(V41Config.from_hf(_hf_config()))}
     state = specs["c2a_state"]
     assert state.dtype == DType.float32
     assert state.row_bytes == 2 * 512
-    assert state.slots_per_page == v2_kv_leaves.state_ring_rows(0)
-    assert state.stride_alignment == v2_kv_leaves.STATE_STRIDE_ALIGNMENT
+    assert state.slots_per_page == STATE_RING_ROWS
+    assert state.stride_alignment == STATE_STRIDE_ALIGNMENT
     built = _params()["c2a_state"]
     assert built.scratch
     assert built.dtype == DType.float32

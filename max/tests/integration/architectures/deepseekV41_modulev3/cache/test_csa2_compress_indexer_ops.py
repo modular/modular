@@ -115,6 +115,19 @@ def _hf_config() -> dict[str, Any]:
             "engram_num_embeddings": [2],
             "engram_head_dim": 256,
             "dspark_target_layer_ids": [],
+            "hidden_size": 512,
+            "moe_intermediate_size": 128,
+            "q_lora_rank": 64,
+            "o_lora_rank": 64,
+            "o_groups": 2,
+            "n_routed_experts": 4,
+            "index_source_layer_ids": [1, 2],
+            "candidate_source_layer_id": 2,
+            "index_n_heads": 4,
+            "index_topk": 8,
+            "candidate_topk_blocks": 4,
+            "hc_mult": 2,
+            "engram_layer_ids": [0],
         }
     }
 
@@ -199,7 +212,10 @@ def test_compress_pools_each_token() -> None:
 def test_compress_paged_pools_pairs_and_carries_the_ring() -> None:
     """Ratio 2: pair pooling, the ring save, and the straddled carry."""
     state_shape = _shape("c2a_state")
-    assert state_shape[2] == 2 and state_shape[4] == 2 * HEAD, state_shape
+    # The ring is sized for the production draft count the interface
+    # freezes, so its slot count never moves when decoding turns
+    # speculative.
+    assert state_shape[2] == 8 and state_shape[4] == 2 * HEAD, state_shape
     rng = np.random.default_rng(29)
     state_blocks = _dev(np.zeros((1, *state_shape), dtype=np.float32))
     state = _leaf(
@@ -246,11 +262,11 @@ def test_compress_paged_pools_pairs_and_carries_the_ring() -> None:
     np.testing.assert_allclose(latent, want, rtol=2.0**-7, atol=2.0**-7)
     assert not latent[[0, 2, 4]].any(), "rows that close no pair are zero"
 
-    # The ring save: the prefill's last two raw rows, at their positions'
-    # slots -- position 4 in slot 0, position 3 in slot 1.
-    ring = state_blocks.to_numpy().reshape(2, 2 * HEAD)
-    np.testing.assert_array_equal(ring[0], pre[4])
-    np.testing.assert_array_equal(ring[1], pre[3])
+    # The ring save: the prefill's last two raw rows at their positions'
+    # slots -- position 4 in slot 4, position 3 in slot 3.
+    ring = state_blocks.to_numpy().reshape(-1, 2 * HEAD)
+    np.testing.assert_array_equal(ring[4], pre[4])
+    np.testing.assert_array_equal(ring[3], pre[3])
 
     # Decode at position 5: the straddled pair pools against the row the
     # ring holds at position 4, then the row saves into its own slot.
@@ -265,9 +281,9 @@ def test_compress_paged_pools_pairs_and_carries_the_ring() -> None:
         weight.astype(np.float64),
     )
     np.testing.assert_allclose(latent[0], want, rtol=2.0**-7, atol=2.0**-7)
-    ring = state_blocks.to_numpy().reshape(2, 2 * HEAD)
-    np.testing.assert_array_equal(ring[1], dec[0])
-    np.testing.assert_array_equal(ring[0], pre[4])
+    ring = state_blocks.to_numpy().reshape(-1, 2 * HEAD)
+    np.testing.assert_array_equal(ring[5], dec[0])
+    np.testing.assert_array_equal(ring[4], pre[4])
 
 
 def test_indexer_stores_and_selects_the_matching_visible_key() -> None:
@@ -500,10 +516,10 @@ def test_compress_ratio_two_pools_and_saves_the_ring() -> None:
         valid.to_numpy(), [False, True, False, True, False]
     )
     # The ring save: the last two raw rows, at their positions' slots --
-    # position 8 in slot 0, position 7 in slot 1.
-    ring = state_blocks.to_numpy().reshape(2, 2 * HEAD)
+    # position 8 in slot 0, position 7 in slot 7.
+    ring = state_blocks.to_numpy().reshape(-1, 2 * HEAD)
     np.testing.assert_array_equal(ring[0], raw[4])
-    np.testing.assert_array_equal(ring[1], raw[3])
+    np.testing.assert_array_equal(ring[7], raw[3])
 
 
 def test_indexer_forward_consumes_a_staged_rope_table() -> None:

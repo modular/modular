@@ -32,7 +32,8 @@ from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, DeviceMesh
 
-from ..layer_resolver import LayerInfo, block_group
+from ..interface import block_group
+from ..layer_resolver import LayerInfo
 from .attention import Attention, RaggedRows
 from .compressor import Compressor
 from .indexer import Indexer

@@ -23,10 +23,6 @@ leaves, the KV cache memory planner, the weight adapter, and norms/RoPE all
 consume this resolver's output; call it once at config-resolution time and
 thread the result through as plain data, rather than recomputing these rules
 ad hoc at each call site.
-
-This module also owns :func:`block_group`, the shared-subgraph body a layer
-runs: the base model has no DSpark stages, so the resolver yields one row
-per trunk layer.
 """
 
 from __future__ import annotations
@@ -297,23 +293,3 @@ def resolve(config: DeepseekV41Config) -> list[LayerInfo]:
             )
         )
     return rows
-
-
-def block_group(config: DeepseekV41Config, layer: int) -> str:
-    """The shared-subgraph body a layer runs (design section (e)).
-
-    The base model's four kinds: a window-only layer, the KV-source
-    owners (the candidate source among them), the reindex layers that
-    rescore the candidate source's keys, and the reuse layers that
-    inherit a source's selection.
-    """
-    ratio = config.compress_ratios[layer]
-    if ratio == 0:
-        return "swa_only"
-    if layer in config.kv_source_layer_ids:
-        if layer == config.candidate_source_layer_id:
-            return f"full_r{ratio}_cand"
-        return f"full_r{ratio}"
-    if layer in config.index_source_layer_ids:
-        return f"reindex_r{ratio}"
-    return f"reuse_r{ratio}"

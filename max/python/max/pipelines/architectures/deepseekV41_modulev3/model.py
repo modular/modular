@@ -548,6 +548,13 @@ class DeepseekV41Model(
         # are the only copies now: dropping the checkpoint views releases a
         # second full mapping of every table for the model's lifetime.
         self._engram_tables = []
+        # The engine feeds the token map through the ABI's
+        # ``engram_token_map`` input; the trunk's Engram layers also read
+        # it as a constructor constant, so the input and the constant
+        # carry the same bytes.
+        static["engram_token_map"] = Buffer.from_numpy(self._token_map).to(
+            self.devices[0]
+        )
         processor.bind_engram(static)
 
     def _validate_engram_tables(self, config: DeepseekV41Config) -> None:
@@ -593,8 +600,10 @@ class DeepseekV41Model(
         from a hub repo id works without any pre-seeded snapshot -- and
         checked against the recorded sha256, so a ``tokenizers`` Unicode
         bump or a swapped checkpoint fails here instead of serving
-        meaningless Engram output. The model constructor bakes the array
-        into the graph as a constant: no forward input carries it.
+        meaningless Engram output. The model binds the array once as the
+        ``engram_token_map`` graph input the engine feeds at boot; the
+        trunk's Engram layers also read it as a constructor constant, so
+        the input and the constant carry the same bytes.
 
         Args:
             config: The frozen interface view, whose ``vocab_size`` sizes

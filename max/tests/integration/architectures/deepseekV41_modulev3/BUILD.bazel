@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -6,16 +6,129 @@ package(default_visibility = [
     "//oss/modular/max/tests:__subpackages__",
 ])
 
-modular_py_test(
-    name = "test_interface",
-    srcs = ["test_interface.py"],
+# Stages the V4.1 stub on SM100 virtual devices, with no GPU, so the input ABI
+# Mach transcribes is recorded from the graph the stub builds. The stub itself
+# is test-only: no served graph ever reads it, so it lives here, not in the
+# production package.
+modular_py_library(
+    name = "abi_contract",
+    testonly = True,
+    srcs = [
+        "abi_contract.py",
+        "f1_config.py",
+        "stub.py",
+    ],
+    data = ["//max/tests/integration/architectures/deepseekV41_modulev3/testdata"],
+    imports = ["."],
+    # The Mach contract recorder wraps this library's staging; the package
+    # default stays //max/tests-only.
+    visibility = [
+        "//:__pkg__",
+        "//mach/tools/deepseek-v41-contract:__pkg__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+    ],
     deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         "//max/python/max/nn/legacy",
-        "//max/python/max/pipelines/architectures/deepseekV41",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
         "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_binary(
+    name = "record_abi_contract",
+    testonly = True,
+    srcs = ["record_abi_contract.py"],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/deepseekV41_modulev3/testdata",
+    },
+    imports = ["."],
+    main = "record_abi_contract.py",
+    tags = ["manual"],
+    deps = [":abi_contract"],
+)
+
+modular_py_test(
+    name = "test_param_tree",
+    size = "large",
+    srcs = ["test_param_tree.py"],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/deepseekV41_modulev3/testdata",
+    },
+    imports = ["."],
+    deps = [
+        ":abi_contract",
+        "//max/python/max:tensor",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+    ],
+)
+
+# The real module's declared parameters against the checkpoint census,
+# leaf for leaf in dtype and byte extent -- the property Mach's weight
+# registry checks at boot, so a host transform that writes new bytes
+# fails here in CI and not on the engine box.
+modular_py_test(
+    name = "test_model_census",
+    size = "large",
+    srcs = ["test_model_census.py"],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/deepseekV41_modulev3/testdata",
+    },
+    imports = ["."],
+    deps = [
+        ":abi_contract",
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_abi_contract",
+    size = "large",
+    srcs = ["test_abi_contract.py"],
+    data = ["//max/tests/integration/architectures/deepseekV41_modulev3/testdata"],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/deepseekV41_modulev3/testdata",
+    },
+    imports = ["."],
+    deps = [
+        ":abi_contract",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# The graph compiler has no NVPTX target on macOS, so this runs on Linux:
+# ./bazelw test --config=remote-intel
+modular_py_test(
+    name = "test_stub_compile",
+    size = "large",
+    srcs = ["test_stub_compile.py"],
+    data = ["//max/tests/integration/architectures/deepseekV41_modulev3/testdata"],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/deepseekV41_modulev3/testdata",
+    },
+    imports = ["."],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":abi_contract",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
     ],
 )
 

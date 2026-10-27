@@ -23,7 +23,7 @@ from unittest.mock import Mock
 import numpy as np
 import pytest
 from max import functional as F
-from max.driver import CPU
+from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
@@ -112,19 +112,31 @@ def test_real_module_parameter_tree() -> None:
             token_map=np.arange(128, dtype=np.int32),
         )
     params = dict(module.parameters)
-    assert params["layers.0.attn.wo_a.weight"].dtype == DType.bfloat16
-    assert "layers.0.attn.wo_a.scale" not in params
+    # ``wo_a`` keeps the checkpoint's own pair, like every dense FP8
+    # projection: E4M3 codes plus compact E8M0 block scales, never a
+    # bf16 expansion.
+    assert params["layers.0.attn.wo_a.weight"].dtype == DType.float8_e4m3fn
+    assert params["layers.0.attn.wo_a.scale"].dtype == DType.float8_e8m0fnu
+    assert [int(d) for d in params["layers.0.attn.wo_a.scale"].shape] == [
+        text.o_groups * text.o_lora_rank // 32,
+        text.num_attention_heads * text.head_dim // text.o_groups // 32,
+    ]
     for projection in ("w1", "w3", "w2"):
         prefix = f"layers.0.ffn.experts.0.{projection}.weight"
         for leaf in ("weight", "weight_scale", "weight_scale_2", "input_scale"):
             assert f"{prefix}.{leaf}" in params
     assert "layers.0.ffn.routed.experts.0.w1.weight.weight" not in params
+    # The token map is a graph input the model binds once and the decoder's
+    # row count rides its input's extent; this fixture carries no Engram
+    # layers, so no table extras.
     assert set(extra_input_names(interface)) == {
         "swa_begin",
         "global_write_floor",
         "image_token_mask",
         "engram_lookback",
         "engram_lookback_dead",
+        "engram_token_map",
+        "decoder_rows",
     }
 
 
@@ -185,8 +197,9 @@ def test_bind_engram_static_inputs_pins_against_the_device_and_drops(
         "max.pipelines.architectures.deepseekV41_modulev3.model._pinned_table",
         fake_pinned,
     )
-    device = Mock()
+    device = CPU()
     monkeypatch.setattr(model, "devices", [device], raising=False)
+    model._token_map = np.arange(7, dtype=np.int32)
     processor = Mock(spec=DeepseekV41BatchProcessor)
     monkeypatch.setattr(model, "_batch_processor", processor, raising=False)
     model._bind_engram_static_inputs()
@@ -206,12 +219,12 @@ def test_bind_engram_static_inputs_pins_against_the_device_and_drops(
             DType.float8_e8m0fnu,
         ),
     }
-    processor.bind_engram.assert_called_once_with(
-        {
-            "engram_table_0_weight": stubs[0],
-            "engram_table_0_scale": stubs[1],
-        }
-    )
+    bound = processor.bind_engram.call_args[0][0]
+    assert bound["engram_table_0_weight"] is stubs[0]
+    assert bound["engram_table_0_scale"] is stubs[1]
+    # The token map rides the first device as the ABI's own input.
+    assert bound["engram_token_map"].dtype == DType.int32
+    assert bound["engram_token_map"].shape == (7,)
     assert model._engram_tables == []
 
 
@@ -573,6 +586,12 @@ def _processor(monkeypatch: pytest.MonkeyPatch) -> DeepseekV41BatchProcessor:
     processor._engram_static = {}
     monkeypatch.setattr(
         processor, "runtime", SimpleNamespace(devices=[CPU()]), raising=False
+    )
+    # The extras' static tail (here only the token map; this config
+    # declares no Engram tables) is the model's to bind, so this test
+    # binds it directly.
+    processor.bind_engram(
+        {"engram_token_map": Buffer.from_numpy(np.zeros(1, np.int32))}
     )
     return processor
 

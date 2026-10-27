@@ -163,6 +163,11 @@ def test_prepare_inputs_flattens_replica_batches_at_dp() -> None:
     """
     processor = _batch_processor(dp=2)
     processor.runtime.devices = [CPU()]
+    # The static tail of the ABI (the token map) is fed from whatever the
+    # model bound; this test binds it directly instead.
+    processor.bind_engram(
+        {"engram_token_map": Buffer.from_numpy(np.zeros(1, np.int32))}
+    )
     replica_batches = [
         [
             create_text_context(np.array([1, 2, 3], dtype=np.int64)),
@@ -178,7 +183,9 @@ def test_prepare_inputs_flattens_replica_batches_at_dp() -> None:
     assert inputs.data_parallel_splits.to_numpy().tolist() == [0, 2, 2]
     assert inputs.input_row_offsets_i64 is not None
     assert inputs.input_row_offsets_i64.to_numpy().tolist() == [0, 3, 4]
-    _swa_begin, _floor, mask, lookback, _dead = inputs.extras
+    # The leading per-request extras, in ABI order; the static tail (the
+    # token map and the decoder row extent) follows them.
+    _swa_begin, _floor, mask, lookback, _dead, *_tail = inputs.extras
     assert mask.to_numpy().shape == (4,)
     assert lookback.to_numpy().shape == (2, 3)
 

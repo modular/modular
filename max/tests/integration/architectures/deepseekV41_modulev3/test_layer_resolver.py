@@ -22,10 +22,10 @@ from max.graph import DeviceRef
 from max.pipelines.architectures import register_all_models
 from max.pipelines.architectures.deepseekV41_modulev3.interface import (
     V41Config,
+    block_group,
     build_kv_params,
 )
 from max.pipelines.architectures.deepseekV41_modulev3.layer_resolver import (
-    block_group,
     resolve,
 )
 from max.pipelines.architectures.deepseekV41_modulev3.model_config import (
@@ -80,9 +80,9 @@ def test_published_checkpoint_resolves_the_trunk() -> None:
         str(_V2_TESTDATA / "config.json"), local_files_only=True
     )
     text = DeepseekV41Config.get_text_config(hf)
-    interface = V41Config.from_hf({"text_config": vars(text)})
+    interface_config = V41Config.from_hf({"text_config": vars(text)})
     kv_params = build_kv_params(
-        interface,
+        interface_config,
         KVCacheConfig(kv_cache_page_size=128),
         [DeviceRef.CPU()],
     )
@@ -137,13 +137,14 @@ def test_published_checkpoint_resolves_the_trunk() -> None:
     # SWA-only layers use plain rope; compressed layers use YaRN.
     assert rows[0].rope_regime == "plain"
     assert rows[2].rope_regime == "yarn"
-    # The shared-subgraph bodies the trunk runs.
-    assert block_group(config, 0) == "swa_only"
-    assert block_group(config, 2) == "full_r2"
-    assert block_group(config, 3) == "reuse_r2"
-    assert block_group(config, 20) == "full_r1_cand"
-    assert block_group(config, 21) == "reuse_r1"
-    assert block_group(config, 24) == "reindex_r1"
+    # The shared-subgraph bodies the trunk runs, from the interface's own
+    # frozen grouping.
+    assert block_group(interface_config, 0) == "swa_only"
+    assert block_group(interface_config, 2) == "full_r2"
+    assert block_group(interface_config, 3) == "reuse_r2"
+    assert block_group(interface_config, 20) == "full_r1_cand"
+    assert block_group(interface_config, 21) == "reuse_r1"
+    assert block_group(interface_config, 24) == "reindex_r1"
 
 
 def test_short_ratio_list_is_rejected() -> None:

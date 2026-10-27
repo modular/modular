@@ -1,0 +1,77 @@
+load(
+    "//bazel:api.bzl",
+    "modular_py_library",
+    "modular_py_test",
+    "requirement",
+)
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+_PARENT = "//max/tests/integration/architectures/deepseekV41_modulev3"
+
+_ARCH = "//max/python/max/pipelines/architectures/deepseekV41_modulev3"
+
+# The inputs the pipeline model compiles with; the Mach contract recorder
+# stages the stub through them.
+modular_py_library(
+    name = "pipeline_inputs",
+    testonly = True,
+    srcs = ["pipeline_inputs.py"],
+    imports = ["."],
+    visibility = [
+        "//mach/tools/deepseek-v41-contract:__pkg__",
+        "//max/tests:__subpackages__",
+    ],
+    deps = [
+        _ARCH,
+        _PARENT + ":abi_contract",
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# The batch processor's extras: staged in the recorded ABI order, the
+# loud refusal when a declared name has no feeder, and the model-side
+# binding of the Engram tables and token map.
+modular_py_test(
+    name = "test_batch_inputs",
+    srcs = ["test_batch_inputs.py"],
+    data = ["//max/tests/integration/architectures/deepseekV41_modulev3/testdata"],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/deepseekV41_modulev3/testdata",
+    },
+    deps = [
+        _PARENT + ":abi_contract",
+        _ARCH,
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+# The pipeline's own compile-input path must stage the recorded contract:
+# the engine's graph compiles from the same ABI the stub records.
+modular_py_test(
+    name = "test_pipeline_contract",
+    size = "large",
+    srcs = ["test_pipeline_contract.py"],
+    data = ["//max/tests/integration/architectures/deepseekV41_modulev3/testdata"],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/deepseekV41_modulev3/testdata",
+    },
+    deps = [
+        _PARENT + ":abi_contract",
+        ":pipeline_inputs",
+    ],
+)

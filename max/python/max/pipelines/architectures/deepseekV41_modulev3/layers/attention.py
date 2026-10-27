@@ -14,11 +14,11 @@
 
 The stacked q/KV projection feeds the query and cache paths. Attention
 uses the canonical MXFP8 window and NVFP4 compressed records, then inverse
-RoPE, a BF16 grouped wo_a projection, and the FP8 row-parallel wo_b."""
+RoPE, the FP8 grouped wo_a projection (one block-diagonal MXFP8 launch),
+and the FP8 row-parallel wo_b."""
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -38,7 +38,6 @@ from max.tensor.sharding import (
 )
 
 from ...deepseekV41.layers.attention import (
-    bf16_grouped_projection,
     prefill_rows_bound,
 )
 from ...deepseekV41.layers.csa2 import (
@@ -52,7 +51,7 @@ from ...deepseekV41.layers.csa2 import (
     window_entries,
 )
 from ..layer_resolver import LayerInfo
-from .mxfp8_linear import MXFP8Linear
+from .mxfp8_linear import MXFP8Linear, grouped_dense_op
 from .norm import RMSNorm
 from .rope import RopeParams, apply_rope_tail, rope_for_layer
 
@@ -80,7 +79,6 @@ _DECODE_MAX_QUERY_TOKENS = 8
 # ``F.functional`` machinery converts each tensor argument to the graph
 # value its parameter's hint names (``BufferValue`` for the cache blocks)
 # and each KV record through ``to_graph_values``.
-_bf16_grouped_projection_op = F.functional(bf16_grouped_projection)
 _prefill_rows_bound_op = F.functional(prefill_rows_bound)
 
 
@@ -321,13 +319,31 @@ def position_rope_table(
     return F.concat([F.cos(angles), F.sin(angles)], axis=-1)
 
 
-class _Weight(Module[..., None]):
-    """A bare ``.weight`` leaf: the checkpoint path ``...attn.wo_a.weight``
-    maps attribute -> sub-module -> ``weight``."""
+class _GroupedWoA(Module[[Tensor], Tensor]):
+    """``wo_a``: FP8 weight and compact E8M0 scales, grouped per output rows.
 
-    def __init__(self, shape: Sequence[int], dtype: DType) -> None:
+    ``[T, g * d] -> [T, g * r]``, group ``j`` applying rows ``j * r`` onward.
+    The groups run as one block-diagonal MXFP8 launch on the FP8 weight,
+    so decode neither dequantizes the weight nor reads it back at bf16:
+    the checkpoint's own codes and scale bytes are the graph's operands.
+    """
+
+    weight: Tensor
+    scale: Tensor
+
+    def __init__(self, out_dim: int, in_dim: int, group_rank: int) -> None:
         super().__init__()
-        self.weight = Tensor.zeros(shape, dtype=dtype)
+        self.group_rank = group_rank
+        self.amax_floor = 1e-4
+        self.weight = Tensor.zeros([out_dim, in_dim], dtype=DType.float8_e4m3fn)
+        self.scale = Tensor.zeros(
+            [out_dim // 32, in_dim // 32], dtype=DType.float8_e8m0fnu
+        )
+
+    def forward(self, o: Tensor) -> Tensor:
+        return grouped_dense_op(
+            o, self.weight, self.scale, self.group_rank, self.amax_floor
+        )
 
 
 class Attention(Module[..., Tensor]):
@@ -398,15 +414,16 @@ class Attention(Module[..., Tensor]):
         self.q_norm = RMSNorm(config.q_lora_rank, eps=config.rms_norm_eps)
         self.wq_b = MXFP8Linear(config.q_lora_rank, h * d)
         self.kv_norm = RMSNorm(d, eps=config.rms_norm_eps)
-        # ``wo_a`` follows the official BF16 baseline: the adapter
-        # expands the checkpoint's E4M3 codes and E8M0 block scales
-        # into one bf16 leaf at load (main's
-        # ``dequantize_fp8_blocks``), and the projection is the plain
-        # grouped bf16 matmul -- no activation quantize. ``wo_b`` stays
-        # the FP8 MXFP8 projection.
-        self.wo_a = _Weight(
-            [self.o_groups * self.o_lora_rank, h * d // self.o_groups],
-            DType.bfloat16,
+        # ``wo_a`` keeps the checkpoint's own E4M3 codes and compact
+        # E8M0 block scales -- the adapter never converts a byte -- and
+        # the projection runs the grouped MXFP8 path (one block-diagonal
+        # launch on SM100, per-group reference chains elsewhere), with
+        # the activation quantized like every dense FP8 site.
+        # ``wo_b`` likewise stays the FP8 MXFP8 projection.
+        self.wo_a = _GroupedWoA(
+            self.o_groups * self.o_lora_rank,
+            h * d // self.o_groups,
+            self.o_lora_rank,
         )
         self.wo_b = MXFP8Linear(
             self.o_groups * self.o_lora_rank, config.hidden_size
@@ -439,6 +456,7 @@ class Attention(Module[..., Tensor]):
         self.wo_b.shard(1, mesh)
         self.attn_sink = self.attn_sink.to(by_rows)
         self.wo_a.weight = self.wo_a.weight.to(by_rows)
+        self.wo_a.scale = self.wo_a.scale.to(by_rows)
 
     def _q_path(self, q_a: Tensor, cos_sin: Tensor) -> Tensor:
         """``wq_b(q_norm(q_a))`` reshaped to heads, RoPE on the tail."""
@@ -546,26 +564,18 @@ class Attention(Module[..., Tensor]):
         """``[T, heads, head_dim]`` -> ``[T, hidden]``: the grouped path.
 
         The inverse rotation runs as an explicit chain first (the
-        MXFP8 API has no fused rope-quantize kwargs). ``wo_a``
-        is the official BF16 baseline: a block-diagonal bf16 grouped
-        matmul over its groups, never an activation quantize; ``wo_b``
-        stays the FP8 MXFP8 projection and quantizes its own input.
-        Row-parallel partial sums: one all-reduce completes it. Under
-        data parallelism the projection is whole per rank and its
-        output carries the rows' own placement -- nothing to reduce.
+        MXFP8 API has no fused rope-quantize kwargs). ``wo_a`` then
+        quantizes the rotated rows like every dense FP8 site and
+        projects each group on its own rows through the grouped MXFP8
+        op -- one block-diagonal launch on SM100, whose sharding rule
+        pairs each rank's K-slice with its weight shard; ``wo_b``
+        quantizes its own input. Row-parallel partial sums: one
+        all-reduce completes it. Under data parallelism the projection
+        is whole per rank and its output carries the rows' own
+        placement -- nothing to reduce.
         """
         flat = o.reshape([o.shape[0], self.n_heads * self.head_dim])
-        if flat.is_distributed:
-            groups = self.o_groups // flat.mesh.num_devices
-            grouped = F.call_on_mesh(
-                lambda x, w: _bf16_grouped_projection_op(x, w, groups),
-                flat.mesh,
-                out_specs=DeviceMapping(flat.mesh, (Sharded(1),)),
-            )(flat, self.wo_a.weight)
-        else:
-            grouped = _bf16_grouped_projection_op(
-                flat, self.wo_a.weight, self.o_groups
-            )
+        grouped = self.wo_a(flat)
         out = self.wo_b(grouped)
         if out.is_distributed and any(
             isinstance(p, Partial) for p in out.placements

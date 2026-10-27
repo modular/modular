@@ -10,27 +10,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The ModuleV3 weight adapter's ``wo_a`` expansion, end to end.
-
-The one deliberate dequant in the adapter: each ``attn.wo_a`` FP8 pair
-(E4M3 codes plus compact E8M0 block scales) becomes a single bf16 leaf,
-the official BF16 baseline the model's grouped projection runs. The
-regression covers multiple layers' pairs at once -- the transform must
-consume each pair exactly once (the group's two tensors map to one
-path, so a per-name walk would raise for the second tensor's
-already-consumed partner) -- and pins the expanded keys, shapes and
-values against the reference E4M3 x E8M0 arithmetic, plus the no-vision
-gate drop on the same pass. The stacked-projection tests cover the
-``w13`` fold directly: the TP1 concatenation and its scale-block
-placement, the per-rank TP2 interleave each rank's slice loads, the
-never-interleaved dense pair, zero-byte stand-ins, the scale-block
-rank-split rejection, and the plain concat data parallelism stacks
-(the stacked pair stays whole per rank). The derived-dispatch-scale
-tests pin the uniform NVFP4 dispatch scale the EP MoE path quantizes
-with: the bit-exact global max over the experts' ``w1`` and ``w3``
-scales, order-free, with the per-expert leaves it reduces left in the
-tree. The pipeline-entry tests pin what only the entry point knows:
-the DP-aware stacking degree and the EP gate/up scale-pair refusal.
+"""Every dense FP8 pair keeps its checkpoint bytes, ``wo_a`` included: the
+E4M3 codes pass through with their dtype and shape, and the compact
+E8M0 block scales are dtype-relabeled only. The model's grouped MXFP8
+projection runs on those very bytes -- Mach hands the compiled graph a
+bare pointer per checkpoint tensor, so a leaf whose declared extent
+disagrees with the safetensors header is a boot failure, not a numeric
+one. The regression covers multiple layers' pairs at once and pins the
+kept keys, dtypes, shapes and bytes, plus the no-vision gate drop on
+the same pass. The stacked-projection tests cover the ``w13`` fold
+directly: the TP1 concatenation and its scale-block placement, the
+per-rank TP2 interleave each rank's slice loads, the never-interleaved
+dense pair, zero-byte stand-ins, the scale-block rank-split rejection,
+and the plain concat data parallelism stacks (the stacked pair stays
+whole per rank). The derived-dispatch-scale tests pin the uniform NVFP4
+dispatch scale the EP MoE path quantizes with: the bit-exact global max
+over the experts' ``w1`` and ``w3`` scales, order-free, with the
+per-expert leaves it reduces left in the tree. The pipeline-entry tests
+pin what only the entry point knows: the DP-aware stacking degree and
+the EP gate/up scale-pair refusal.
 """
 
 from __future__ import annotations
@@ -53,23 +51,6 @@ from max.pipelines.architectures.deepseekV41_modulev3.weight_adapters import (
 from transformers import PretrainedConfig
 
 
-def _e4m3_table() -> np.ndarray:
-    b = np.arange(256)
-    e, m = (b >> 3) & 15, (b & 7).astype(np.float64)
-    v = np.where(e == 0, m / 8 * 2.0**-6, (1 + m / 8) * 2.0 ** (e - 7))
-    v[(e == 15) & ((b & 7) == 7)] = np.nan
-    return np.where(b & 0x80, -v, v)
-
-
-_E4M3 = _e4m3_table()
-
-
-def _bf16_bits(x: np.ndarray) -> np.ndarray:
-    bits = np.ascontiguousarray(x, np.float32).view(np.uint32)
-    rounded = (bits + 0x7FFF + ((bits >> 16) & 1)) >> 16 << 16
-    return rounded.astype(np.uint32)
-
-
 def _wd(array: np.ndarray, name: str, dtype: DType) -> WeightData:
     return WeightData(
         Buffer.from_numpy(np.ascontiguousarray(array)),
@@ -81,22 +62,19 @@ def _wd(array: np.ndarray, name: str, dtype: DType) -> WeightData:
 
 def _woa_pair(
     layer: int, rows: int, cols: int, seed: int
-) -> tuple[dict[str, WeightData], np.ndarray]:
-    """One layer's E4M3/E8M0 pair and its expected bf16 expansion."""
+) -> tuple[dict[str, WeightData], dict[str, np.ndarray]]:
+    """One layer's E4M3/E8M0 pair and its raw checkpoint bytes.
+
+    The scale arrives as ``uint8``, the way a safetensors reader yields
+    the ``F8_E8M0`` header dtype; the adapter must relabel it, never
+    convert it.
+    """
     rng = np.random.default_rng(seed)
     weight_u8 = rng.integers(1, 250, size=(rows, cols), dtype=np.uint8)
     # Exponent bytes in a safe E8M0 range (2^-3 .. 2^3).
     scale_u8 = rng.integers(124, 131, size=(rows // 32, cols // 32)).astype(
         np.uint8
     )
-    values = _E4M3[weight_u8]
-    blocks = np.power(2.0, scale_u8.astype(np.float64) - 127.0).astype(
-        np.float32
-    )
-    expanded = np.repeat(np.repeat(blocks, 32, axis=0), 32, axis=1)[
-        :rows, :cols
-    ]
-    expected_bits = _bf16_bits(values.astype(np.float32) * expanded)
     return {
         f"layers.{layer}.attn.wo_a.weight": _wd(
             weight_u8,
@@ -106,25 +84,29 @@ def _woa_pair(
         f"layers.{layer}.attn.wo_a.scale": _wd(
             scale_u8,
             f"layers.{layer}.attn.wo_a.scale",
-            DType.float8_e8m0fnu,
+            DType.uint8,
         ),
-    }, expected_bits
+    }, {
+        "weight": weight_u8,
+        "scale": scale_u8,
+    }
 
 
-def test_convert_weight_data_expands_woa_pairs() -> None:
-    """Two layers' pairs expand once each: keys, shapes and exact values.
+def test_convert_weight_data_keeps_woa_pairs_in_fp8() -> None:
+    """Two layers' pairs keep their checkpoint keys, dtypes and bytes.
 
+    ``wo_a`` must load from the checkpoint's own tensors: Mach hands
+    the compiled graph a bare pointer per safetensors tensor, so the
+    adapter may rename and relabel but never convert or fold this pair.
     Layer 0 carries a 64x64 pair (four 32x32 blocks), layer 1 a 32x64
-    pair (two blocks beside two whole ones) -- the multi-group walk a
-    per-name (non-deduplicated) iteration would break on the second
-    tensor of the first group.
+    pair (two blocks beside two whole ones).
     """
     state: dict[str, WeightData] = {}
-    expected: dict[int, np.ndarray] = {}
+    raw: dict[int, dict[str, np.ndarray]] = {}
     for layer, (rows, cols) in ((0, (64, 64)), (1, (32, 64))):
-        pair, bits = _woa_pair(layer, rows, cols, seed=layer + 5)
+        pair, arrays = _woa_pair(layer, rows, cols, seed=layer + 5)
         state.update(pair)
-        expected[layer] = bits
+        raw[layer] = arrays
     # A couple of bystander tensors prove the pass keeps them intact.
     state["layers.0.attn_norm.weight"] = _wd(
         np.ones(8, np.float32), "layers.0.attn_norm.weight", DType.float32
@@ -132,19 +114,17 @@ def test_convert_weight_data_expands_woa_pairs() -> None:
     result = convert_weight_data(state, has_vision=False)
     out = result.state_dict
     for layer, (rows, cols) in ((0, (64, 64)), (1, (32, 64))):
-        name = f"layers.{layer}.attn.wo_a.weight"
-        assert f"layers.{layer}.attn.wo_a.scale" not in out, layer
-        leaf = out[name]
-        assert leaf.dtype == DType.bfloat16, layer
-        assert [int(d) for d in leaf.shape] == [rows, cols], layer
-        buffer = (
-            leaf.data
-            if isinstance(leaf.data, Buffer)
-            else Buffer.from_dlpack(leaf.data)
-        )
-        raw = np.from_dlpack(buffer.view(DType.uint16))
-        got = (raw.astype(np.uint32) << 16).view(np.float32)
-        np.testing.assert_array_equal(got.view(np.uint32), expected[layer])
+        weight = out[f"layers.{layer}.attn.wo_a.weight"]
+        assert weight.dtype == DType.float8_e4m3fn, layer
+        assert [int(d) for d in weight.shape] == [rows, cols], layer
+        scale = out[f"layers.{layer}.attn.wo_a.scale"]
+        assert scale.dtype == DType.float8_e8m0fnu, layer
+        assert [int(d) for d in scale.shape] == [
+            rows // 32,
+            cols // 32,
+        ], layer
+        np.testing.assert_array_equal(_leaf_u8(weight), raw[layer]["weight"])
+        np.testing.assert_array_equal(_leaf_u8(scale), raw[layer]["scale"])
     # Bystanders pass through untouched.
     np.testing.assert_array_equal(
         np.from_dlpack(out["layers.0.attn_norm.weight"].data),
@@ -270,7 +250,7 @@ def _shared_pair(
 
 
 def test_convert_weight_data_folds_shared_experts_one_device() -> None:
-    """The ``w13`` fold runs on the same pass as the ``wo_a`` expansion.
+    """The ``w13`` fold runs on the same pass as the ``wo_a`` passthrough.
 
     One device stacks the pair's own rows in order -- ``[w1; w3]`` -- with
     each scale block of ``w3`` landing at block ``N1 / 32 + i``, exactly

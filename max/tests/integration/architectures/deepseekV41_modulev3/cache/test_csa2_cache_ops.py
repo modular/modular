@@ -118,6 +118,19 @@ def _hf_config() -> dict[str, Any]:
             "engram_num_embeddings": [2],
             "engram_head_dim": 256,
             "dspark_target_layer_ids": [],
+            "hidden_size": 512,
+            "moe_intermediate_size": 128,
+            "q_lora_rank": 64,
+            "o_lora_rank": 64,
+            "o_groups": 2,
+            "n_routed_experts": 4,
+            "index_source_layer_ids": [1, 2],
+            "candidate_source_layer_id": 2,
+            "index_n_heads": 4,
+            "index_topk": 8,
+            "candidate_topk_blocks": 4,
+            "hc_mult": 2,
+            "engram_layer_ids": [0],
         }
     }
 

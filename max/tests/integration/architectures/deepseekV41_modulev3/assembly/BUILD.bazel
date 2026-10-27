@@ -24,9 +24,9 @@ modular_eager_py_test(
     ],
 )
 
-# The weight adapter's wo_a bf16 expansion (the official baseline), the
-# stacked-projection fold and the no-vision gate drop, on real
-# E4M3/E8M0 pair arithmetic.
+# The weight adapter's wo_a FP8 passthrough (the checkpoint's own
+# bytes), the stacked-projection fold and the no-vision gate drop, on
+# real E4M3/E8M0 pair arithmetic.
 modular_py_test(
     name = "test_weight_adapters",
     srcs = ["test_weight_adapters.py"],

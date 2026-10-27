@@ -21,7 +21,10 @@ from unittest.mock import Mock
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.pipelines.architectures.deepseekV41_modulev3.interface import PAGE_SIZE
+from max.pipelines.architectures.deepseekV41_modulev3.interface import (
+    PAGE_SIZE,
+    V41Config,
+)
 from max.pipelines.architectures.deepseekV41_modulev3.model_config import (
     DeepseekV41Config,
 )
@@ -117,9 +120,16 @@ def _mock_pipeline_config(*, speculative: object = None) -> Mock:
 
 
 def _construct_kv_params(speculative: object) -> None:
-    """Runs ``construct_kv_params`` under the given speculative config."""
+    """Runs ``construct_kv_params`` under the given speculative config.
+
+    The interface's ``from_hf`` requires the candidate block count like
+    the published checkpoint does, while the shared fixture omits it to
+    pin the trunk view's own default of zero.
+    """
     huggingface_config = Mock()
-    huggingface_config.to_dict.return_value = {"text_config": _text_config()}
+    huggingface_config.to_dict.return_value = {
+        "text_config": _text_config(candidate_topk_blocks=2)
+    }
     DeepseekV41Config.construct_kv_params(
         huggingface_config=huggingface_config,
         pipeline_config=_mock_pipeline_config(speculative=speculative),
@@ -136,12 +146,12 @@ def test_construct_kv_params_without_a_speculative_method() -> None:
 
 
 def test_construct_kv_params_rejects_a_speculative_method() -> None:
-    """Refuses a named speculative method until DSpark sizes the ring.
+    """Refuses a named speculative method until the trunk runs DSpark.
 
-    The compressor-state ring rides at its no-draft depth until the
-    DSpark sizing lands, so a speculative verify step would wrap and
-    corrupt it; the config fails at startup instead of corrupting at
-    verify time.
+    The trunk's speculative path lands with the DSpark model and engine
+    PRs, so a speculative config would build a graph whose verify step
+    nothing feeds; the config fails at startup instead of serving a
+    target that cannot verify.
     """
     speculative = SpeculativeConfig(
         speculative_method="dspark",
@@ -149,3 +159,32 @@ def test_construct_kv_params_rejects_a_speculative_method() -> None:
     )
     with pytest.raises(ValueError, match="speculative decoding with dspark"):
         _construct_kv_params(speculative=speculative)
+
+
+def test_v41_config_from_hf_reads_the_nested_text_config() -> None:
+    """The interface config reads the published ``text_config`` nesting.
+
+    Every field is required as the published checkpoint defines it, so
+    the candidate block count is passed here explicitly -- the shared
+    fixture omits it to pin the trunk view's own default. The draft
+    stages resolve the way V2's ``num_dspark_stages`` resolves them, so
+    a config that names no MTP key serves the default three.
+    """
+    config = V41Config.from_hf(
+        {"text_config": _text_config(candidate_topk_blocks=2)}
+    )
+    assert config.vocab_size == 128
+    assert config.compress_ratios == (0, 2, 1, 2)
+    assert config.kv_source_layer_ids == (1, 2)
+    assert config.engram_num_embeddings == (2,)
+    assert config.num_dspark_stages == 3
+    assert (
+        V41Config.from_hf(
+            {
+                "text_config": _text_config(
+                    candidate_topk_blocks=2, n_mtp_layers=1
+                )
+            }
+        ).num_dspark_stages
+        == 1
+    )

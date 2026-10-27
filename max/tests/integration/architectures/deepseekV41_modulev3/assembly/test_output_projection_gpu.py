@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Executes the BF16 grouped wo_a and FP8 wo_b path on one and two GPUs."""
+"""Executes the FP8 grouped wo_a and FP8 wo_b path on one and two GPUs."""
 
 from __future__ import annotations
 
@@ -61,7 +61,10 @@ class _Projection(Module[[Tensor], Tensor]):
         text = text_config()
         text.num_attention_heads = 64
         text.o_groups = 8
-        text.o_lora_rank = 32
+        # A group rank that is a whole 128-row scale tile, like the
+        # checkpoint's own 1024: the grouped wo_a interleaves its B
+        # scales over whole 128-row blocks.
+        text.o_lora_rank = 128
         interface = V41Config.from_hf({"text_config": vars(text)})
         kv = build_kv_params(
             interface,
@@ -117,22 +120,26 @@ def projection(
         else:
             raw = np.zeros(shape, np.uint8)
         weights[name] = _buffer(raw, parameter.dtype)
-    # Sparse one-hot rows keep this independent reference exact in BF16
-    # and FP8, while selecting different local groups on each rank.
-    woa = np.zeros((8 * 32, 4096), np.float32)
+    # Sparse one-hot E4M3 rows keep this independent reference exact
+    # through the MXFP8 quantize (every activation block's amax is a
+    # power of two, so the ceil-pow2 scale and the codes are exact),
+    # while selecting different local groups on each rank.
+    woa = np.zeros((8 * 128, 4096), np.uint8)
     for group in range(8):
-        for row in range(32):
-            woa[group * 32 + row, (row * 37 + group * 11) % 4096] = (
-                -1.0 if row % 2 else 1.0
+        for row in range(128):
+            woa[group * 128 + row, (row * 37 + group * 11) % 4096] = np.uint8(
+                0xB8 if row % 2 else 0x38
             )
-    weights["attn.wo_a.weight"] = _buffer(
-        (woa.view(np.uint32) >> 16).astype(np.uint16), DType.bfloat16
+    weights["attn.wo_a.weight"] = _buffer(woa, DType.float8_e4m3fn)
+    weights["attn.wo_a.scale"] = _buffer(
+        np.full((8 * 128 // 32, 4096 // 32), 127, np.uint8),
+        DType.float8_e8m0fnu,
     )
-    wob = np.zeros((64, 256), np.uint8)
-    wob[np.arange(64), (np.arange(64) * 13 + 7) % 256] = np.uint8(0x38)
+    wob = np.zeros((64, 8 * 128), np.uint8)
+    wob[np.arange(64), (np.arange(64) * 13 + 7) % (8 * 128)] = np.uint8(0x38)
     weights["attn.wo_b.weight"] = _buffer(wob, DType.float8_e4m3fn)
     weights["attn.wo_b.scale"] = _buffer(
-        np.full((2, 8), 127, np.uint8), DType.float8_e8m0fnu
+        np.full((2, 8 * 128 // 32), 127, np.uint8), DType.float8_e8m0fnu
     )
     run = module.compile(
         TensorType(DType.bfloat16, ["rows", 64, 512], DeviceRef.GPU(0)),
@@ -153,13 +160,15 @@ def test_output_projection_tp(
         rows, 64, 512
     )
     flat = values.reshape(rows, 8, 4096)
-    grouped = np.empty((rows, 8, 32), np.float32)
+    grouped = np.empty((rows, 8, 128), np.float32)
     for group in range(8):
-        for row in range(32):
+        for row in range(128):
             grouped[:, group, row] = flat[
                 :, group, (row * 37 + group * 11) % 4096
             ] * (-1.0 if row % 2 else 1.0)
-    expected = grouped.reshape(rows, 256)[:, (np.arange(64) * 13 + 7) % 256]
+    expected = grouped.reshape(rows, 8 * 128)[
+        :, (np.arange(64) * 13 + 7) % (8 * 128)
+    ]
     values_bf16 = _buffer(
         (values.view(np.uint32) >> 16).astype(np.uint16), DType.bfloat16
     )

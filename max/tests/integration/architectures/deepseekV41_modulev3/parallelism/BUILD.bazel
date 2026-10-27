@@ -7,8 +7,11 @@ package(default_visibility = [
     "//oss/modular/max/tests:__subpackages__",
 ])
 
-# The DP4+EP4 graph stages on virtual SM100 devices and holds no
-# residual-path all-reduce (graph construction only, no GPU):
+# The DP4+EP4 graph stages on virtual SM100 devices, holds no
+# residual-path all-reduce, and compiles through the export's entry point
+# (the compile leg catches kernel-signature dtype drift without a GPU; it
+# is the leg a DP4/EP4 MEF export failed on, and it instantiates the real
+# CSA2, indexer and Engram kernels, so it runs minutes, not seconds):
 #   ./bazelw test //max/tests/integration/architectures/deepseekV41_modulev3/parallelism:test_dp4_graph
 modular_py_test(
     name = "test_dp4_graph",
@@ -24,6 +27,7 @@ modular_py_test(
         "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
+        "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/deepseekV41",

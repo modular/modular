@@ -34,10 +34,10 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.pipelines.architectures.deepseekV41_modulev3.interface import (
     V41Config,
+    block_group,
     build_kv_params,
 )
 from max.pipelines.architectures.deepseekV41_modulev3.layer_resolver import (
-    block_group,
     resolve,
 )
 from max.pipelines.architectures.deepseekV41_modulev3.layers.attention import (

@@ -12,9 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """Maps text-trunk weights and extracts the pinned host Engram tables.
 
-Dense FP8 pairs retain compact scales, except wo_a, which is dequantized
-to BF16 for the reference grouped projection. Routed NVFP4 projections
-keep their separate per-expert input and weight scales."""
+Every dense FP8 pair retains its compact E8M0 scales, wo_a included: the
+adapter never converts a byte, so the model loads the checkpoint's own
+codes and Mach hands the compiled graph the checkpoint's own tensors.
+Routed NVFP4 projections keep their separate per-expert input and weight
+scales."""
 
 from __future__ import annotations
 
@@ -31,7 +33,6 @@ from max.graph.weights import WeightData, Weights
 
 from ..deepseekV41.weight_adapters import (
     as_uint8,
-    dequantize_fp8_blocks,
     resolve_quantization_info,
 )
 from .model_config import DeepseekV41Config
@@ -645,17 +646,13 @@ def convert_weight_data(
        (:func:`derive_global_input_scales`) -- the max of the layer's
        experts' static ``w1``/``w3`` ``input_scale`` values, a new tree
        leaf the EP dispatch reads instead of reducing it in-graph.
-    6. Expand each ``attn.wo_a`` FP8 pair (E4M3 codes plus its compact
-       E8M0 block scales) into one bf16 leaf -- the official BF16
-       baseline, exact: an E4M3 value times a power of two fits bf16
-       (:func:`dequantize_fp8_blocks`); the graph runs the plain
-       grouped bf16 matmul and never activation-quantizes it.
-    7. Stack the :data:`STACKED_PROJECTIONS` pairs into their one-GEMM
+    6. Stack the :data:`STACKED_PROJECTIONS` pairs into their one-GEMM
        leaves, trunk tensors only.
 
     Nothing else changes a byte: no dense scale expansion, no norm
-    upcast, no head upcast; ``wo_a`` is the one deliberate
-    dequant (the BF16 baseline the model runs).
+    upcast, no head upcast; ``wo_a`` keeps its checkpoint E4M3 codes
+    and compact E8M0 scales like every other dense FP8 pair, so the
+    graph runs the MXFP8 projection on the checkpoint's own bytes.
 
     Args:
         state_dict: The checkpoint's weights, keyed by checkpoint tensor
@@ -685,37 +682,8 @@ def convert_weight_data(
         tables = []
     out = _rename_checkpoint(state_dict, has_vision=has_vision)
     derive_global_input_scales(out)
-    expand_wo_a_blocks(out)
     stack_projections(out, n_devices)
     return AdapterResult(out, tables)
-
-
-_WO_A = re.compile(r"^(?P<path>.*\.attn\.wo_a)\.(?P<kind>weight|scale)$")
-"""The one FP8 pair the tree expands: ``attn.wo_a.{weight,scale}``."""
-
-
-def expand_wo_a_blocks(state_dict: dict[str, WeightData]) -> None:
-    """Expands each ``attn.wo_a`` FP8 pair into its single bf16 leaf.
-
-    The official BF16 baseline: the E4M3 codes times their compact
-    E8M0 block scales, exact in bf16 (:func:`dequantize_fp8_blocks`,
-    main's shared helper); the tree holds one ``wo_a.weight`` leaf and
-    the graph runs the grouped bf16 matmul with no activation quantize.
-    """
-    paths = sorted(
-        {match["path"] for name in state_dict if (match := _WO_A.match(name))}
-    )
-    for path in paths:
-        weight = state_dict.pop(f"{path}.weight", None)
-        scale = state_dict.pop(f"{path}.scale", None)
-        if weight is None or scale is None:
-            raise ValueError(
-                f"{path}.weight and {path}.scale must arrive together: "
-                "wo_a is the one FP8 pair the tree expands to bf16"
-            )
-        state_dict[f"{path}.weight"] = dequantize_fp8_blocks(
-            weight, scale, f"{path}.weight"
-        )
 
 
 def _rename_checkpoint(
@@ -740,14 +708,10 @@ def _rename_checkpoint(
                 "earlier tensor: the checkpoint-to-tree map must be "
                 "injective"
             )
-        if (
-            name.endswith(".scale")
-            and not name.endswith("weight_scale")
-            and _WO_A.match(name) is None
-        ):
+        if name.endswith(".scale") and not name.endswith("weight_scale"):
             # The only ``.scale`` leaves the tree holds are the dense
-            # FP8 compact E8M0 scales -- relabel only. ``wo_a``'s scale
-            # is consumed by :func:`expand_wo_a_blocks` below.
+            # FP8 compact E8M0 scales -- ``wo_a``'s included -- relabel
+            # only.
             data = _relabel_dense_scale(name, data)
         out[tree_name] = data
     return out
