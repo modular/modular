@@ -3072,48 +3072,64 @@ struct Struct_mla_decode_ragged_paged:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType,
-        q_dtype: DType,
-        kv_dtype: DType,
-        //,
         mask_str: StaticString,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=3, ...],
-        q: InputTensor[dtype=q_dtype, rank=3, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        output: Some[Output & Tensor],
+        q: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
         layer_idx: UInt32,
         scale: Float32,
-        scalar_args: InputTensor[dtype=.int64, rank=1, ...],
+        scalar_args: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(q), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime assert conforms_to(type_of(scalar_args), TileTensorable)
+        comptime assert type_of(output).rank == 3
+        comptime assert type_of(q).rank == 3
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
+        comptime assert type_of(scalar_args).rank == 1
         comptime assert (
-            Int(kv_blocks.static_spec.shape_tuple[1]) == 1
+            type_of(kv_blocks)._shape_types[1].static_value == 1
         ), "Only support only_k=True for MLA decompress"
         var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            page_stride,
-            cache_lengths,
-            kv_lookup_table,
-            max_prompt_length,
-            max_cache_length,
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
         )
         generic_flare_mla_decode_kv_cache_ragged[
             target=target,
             mask_str=mask_str,
         ](
-            q.to_tile_tensor[.int64](),
-            input_row_offsets.to_tile_tensor[.int64](),
+            q.to_tile_tensor(),
+            input_row_offsets.to_tile_tensor[.uint32](),
             kv_collection,
             layer_idx,
             scale,
-            output.to_tile_tensor[.int64](),
+            output.to_tile_tensor(),
             scalar_args.to_tile_tensor[.int64](),
             context,
         )
@@ -3127,43 +3143,70 @@ struct Struct_mla_decode_ragged_paged_scaled:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType,
-        q_dtype: DType,
-        kv_dtype: DType,
-        //,
         mask_str: StaticString,
         target: StaticString,
         per_token_scale_rope_aware: Int = 0,
         quantization_granularity: Int = 640,
     ](
-        output: OutputTensor[dtype=dtype, rank=3, ...],
-        q: InputTensor[dtype=q_dtype, rank=3, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_blocks: MutableInputTensor[dtype=kv_dtype, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_scales: MutableInputTensor[dtype=.float32, rank=6, ...],
-        scales_page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        output: Some[Output & Tensor],
+        q: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
+        kv_scales: Some[MutableInput & Tensor],
+        scales_page_stride: Some[Input & Tensor],
         # Resolves a request's scale pages. Pass `kv_lookup_table` itself when
         # the scales share the values' block-id space; pass a distinct table
         # when they are paged independently.
-        kv_scales_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        q_scales: InputTensor[dtype=.float32, rank=1, ...],
+        kv_scales_lookup_table: Some[Input & Tensor],
+        q_scales: Some[Input & Tensor],
         layer_idx: UInt32,
         scale: Float32,
-        scalar_args: InputTensor[dtype=.int64, rank=1, ...],
+        scalar_args: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(q), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime assert conforms_to(type_of(kv_scales), TileTensorable)
+        comptime assert conforms_to(type_of(scales_page_stride), TileTensorable)
+        comptime assert conforms_to(
+            type_of(kv_scales_lookup_table), TileTensorable
+        )
+        comptime assert conforms_to(type_of(q_scales), TileTensorable)
+        comptime assert conforms_to(type_of(scalar_args), TileTensorable)
+        comptime kv_dtype = type_of(kv_blocks).dtype
+        comptime assert type_of(output).rank == 3
+        comptime assert type_of(q).rank == 3
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
+        comptime assert type_of(kv_scales).rank == 6
+        comptime assert type_of(scales_page_stride).rank == 1
+        comptime assert type_of(kv_scales_lookup_table).rank == 2
+        comptime assert type_of(q_scales).rank == 1
+        comptime assert type_of(scalar_args).rank == 1
         comptime assert (
-            Int(kv_blocks.static_spec.shape_tuple[1]) == 1
+            type_of(kv_blocks)._shape_types[1].static_value == 1
         ), "Only support only_k=True for MLA decompress"
 
-        comptime page_size = Int(kv_blocks.static_spec.shape_tuple[3])
-        comptime head_dim = Int(kv_blocks.static_spec.shape_tuple[5])
-        comptime kv_num_heads = Int(kv_blocks.static_spec.shape_tuple[4])
+        comptime page_size = type_of(kv_blocks)._shape_types[3].static_value
+        comptime head_dim = type_of(kv_blocks)._shape_types[5].static_value
+        comptime kv_num_heads = type_of(kv_blocks)._shape_types[4].static_value
         comptime kv_params = KVCacheStaticParams(kv_num_heads, head_dim, True)
 
         var kv_collection = generic_get_paged_cache_with_scales[
@@ -3173,31 +3216,48 @@ struct Struct_mla_decode_ragged_paged_scaled:
             page_size,
             quantization_granularity,
         ](
-            kv_blocks.to_tile_tensor(),
-            page_stride.to_tile_tensor(),
-            cache_lengths.to_tile_tensor(),
-            kv_lookup_table.to_tile_tensor(),
-            max_prompt_length.to_tile_tensor(),
-            max_cache_length.to_tile_tensor(),
-            kv_scales.to_tile_tensor(),
-            scales_page_stride.to_tile_tensor(),
-            kv_scales_lookup_table.to_tile_tensor(),
+            _mut_pointer_tile(kv_blocks.to_tile_tensor()),
+            _imm_pointer_tile(page_stride.to_tile_tensor[.int64]().as_imm()),
+            _imm_pointer_tile(cache_lengths.to_tile_tensor[.uint32]().as_imm()),
+            _imm_pointer_tile(
+                kv_lookup_table.to_tile_tensor[.uint32]().as_imm()
+            ),
+            _imm_pointer_tile(
+                max_prompt_length.to_tile_tensor[.uint32]().as_imm()
+            ),
+            _imm_pointer_tile(
+                max_cache_length.to_tile_tensor[.uint32]().as_imm()
+            ),
+            _mut_pointer_tile(kv_scales.to_tile_tensor[.float32]()),
+            _imm_pointer_tile(
+                scales_page_stride.to_tile_tensor[.int64]().as_imm()
+            ),
+            _imm_pointer_tile(
+                kv_scales_lookup_table.to_tile_tensor[.uint32]().as_imm()
+            ),
         )
 
-        # Get the q_scales raw pointer for per-token Q scaling.
-        var q_scale_ptr = q_scales.unsafe_ptr()
+        # Get the q_scales raw pointer for per-token Q scaling. The helper
+        # takes a mutable pointer but only reads it; a non-pointer storage
+        # policy aborts here at run time.
+        var q_scale_ptr = (
+            q_scales.to_tile_tensor[.float32]()
+            .as_imm()
+            .ptr.unsafe_mut_cast[True]()
+            .unsafe_origin_cast[MutAnyOrigin]()
+        )
 
         generic_flare_mla_decode_kv_cache_ragged[
             target=target,
             mask_str=mask_str,
             per_token_scale_rope_aware=per_token_scale_rope_aware != 0,
         ](
-            q.to_tile_tensor[.int64](),
-            input_row_offsets.to_tile_tensor[.int64](),
+            q.to_tile_tensor(),
+            input_row_offsets.to_tile_tensor[.uint32](),
             kv_collection,
             layer_idx,
             scale,
-            output.to_tile_tensor[.int64](),
+            output.to_tile_tensor(),
             scalar_args.to_tile_tensor[.int64](),
             context,
             q_scale_ptr,
