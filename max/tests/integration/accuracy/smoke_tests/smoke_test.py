@@ -202,14 +202,13 @@ VARIANT_REPOS: Mapping[str, tuple[str, ...]] = {
 
 # Servers for frameworks whose serving code is internal. Their internal
 # entrypoint registers them here before running the smoke test. Each takes the
-# model, the startup timeout in seconds, whether the model is a vision model, so
-# a framework that builds its vision graph separately builds it, and the
-# variant's recipe file, or None. A server refuses a recipe it cannot serve.
+# model key (an HF repo, or `<repo>__<variant>`), the startup timeout in
+# seconds, and whether the model is a vision model, so a framework that builds
+# its vision graph separately builds it. They get no MAX recipe: a server maps
+# a variant to its own config and refuses one it has none for.
 SERVERS: dict[
     str,
-    Callable[
-        [str, int, bool, str | None], AbstractContextManager[RunningServer]
-    ],
+    Callable[[str, int, bool], AbstractContextManager[RunningServer]],
 ] = {}
 
 
@@ -779,6 +778,8 @@ def smoke_test(
         result_dir = output_path / safe_model_name(model)
         result_dir.mkdir(parents=True, exist_ok=True)
 
+    if recipe_path and framework in SERVERS:
+        raise ValueError(f"{framework} serves its own config, not a recipe")
     hf_model_path, recipe_path = resolve_model_path(model, recipe_path)
     cascade = recipe_path is not None and _load_recipe(recipe_path).cascade
     if cascade and framework not in ("max", "max-ci"):
@@ -793,15 +794,10 @@ def smoke_test(
         # TODO(GEX-3508): Reduce timeout once model build time is optimized
         timeout = 2700
     if framework in SERVERS:
-        serving = SERVERS[framework](
-            hf_model_path,
-            timeout,
-            is_vision_model(model),
-            _resolve_recipe_path(recipe_path) if recipe_path else None,
-        )
         # A variant selects how the server serves its base repo, which
         # requests name.
-        served = hf_model_path.split("__", 1)[0]
+        served = model.split("__", 1)[0]
+        serving = SERVERS[framework](model, timeout, is_vision_model(model))
     else:
         cmd, server_env = get_server_cmd(
             framework,
