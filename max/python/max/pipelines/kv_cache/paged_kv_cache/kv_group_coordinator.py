@@ -385,8 +385,18 @@ class KVGroupCoordinatorInterface:
         req_id: RequestID,
         num_committed_blocks: int,
         replica_idx: int,
+        keep: Sequence[int] = (),
     ) -> None:
-        """Frees the blocks the group no longer reads, nulling their slots."""
+        """Frees the blocks the group no longer reads, nulling their slots.
+
+        Args:
+            req_id: The request whose row to trim.
+            num_committed_blocks: How many blocks the request has filled.
+            replica_idx: Which pool the blocks live in.
+            keep: Page boundaries the request can resume from, in blocks,
+                lowest first. The cache keeps the blocks needed to resume at
+                each.
+        """
         raise NotImplementedError("Subclasses must implement this method.")
 
     def blocks_held_of_connector_hit(self, num_hit_blocks: int) -> int:
@@ -443,7 +453,11 @@ class KVGroupCoordinatorInterface:
         return {}
 
     def checkpoint(
-        self, ctx: TextContext, replica_idx: int
+        self,
+        ctx: TextContext,
+        replica_idx: int,
+        *,
+        allocation_owner: JengaBlockManager,
     ) -> Mapping[str, tuple[int | None, int]]:
         """Returns the block each leaf carries onto its successor.
 
@@ -456,6 +470,7 @@ class KVGroupCoordinatorInterface:
         Args:
             ctx: The request whose forward just ran.
             replica_idx: Which pool its blocks belong to.
+            allocation_owner: Allocates any successor the leaf draws.
         """
         return {}
 
@@ -492,6 +507,7 @@ class FullKVGroupCoordinator(KVGroupCoordinatorInterface):
         req_id: RequestID,
         num_committed_blocks: int,
         replica_idx: int,
+        keep: Sequence[int] = (),
     ) -> None:
         """Keeps every block: this group reads its whole history."""
         return
@@ -632,10 +648,17 @@ class SlidingWindowKVGroupCoordinator(KVGroupCoordinatorInterface):
         req_id: RequestID,
         num_committed_blocks: int,
         replica_idx: int,
+        keep: Sequence[int] = (),
     ) -> None:
-        """Frees the blocks below the window, nulling their slots."""
+        """Frees the blocks below the window, nulling their slots.
+
+        Keeps the window ending at the lowest boundary in ``keep``, which also
+        covers every higher one. With nothing in ``keep``, keeps the window
+        ending at the committed depth.
+        """
         pool = self.pools[replica_idx]
-        first_needed = max(0, num_committed_blocks - self._blocks_in_window)
+        end = min(keep) if keep else num_committed_blocks
+        first_needed = max(0, end - self._blocks_in_window)
         req_blocks = self.rows[req_id][self.leaf_id]
         null_block = pool.null_little_blocks[self.leaf_id]
         for idx in range(first_needed - 1, -1, -1):

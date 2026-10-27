@@ -55,11 +55,12 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
     successors: dict[RequestID, LittleKVCacheBlock] = field(
         default_factory=dict, kw_only=True
     )
-    """The block each request's next checkpoint continues the state in.
+    """The block each request's state moves into when it is next published.
 
-    Held from admission to release while prefix caching is on, which is
-    the second block ``blocks_to_reserve`` budgets. Drawing it in ``step``
-    instead would be a draw no admission check priced.
+    It is the second block ``blocks_to_reserve`` counts. It is drawn at
+    admission while the request holds no published state; otherwise it is
+    drawn when the held state is replaced, just after that state is freed, so
+    the request never holds more than two blocks.
     """
 
     loading: dict[RequestID, LittleKVCacheBlock] = field(
@@ -174,15 +175,57 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
     # Demand
     # ============================================================================
 
+    def _kept_states(self, req_id: RequestID) -> list[int]:
+        """Returns the row positions of the request's published states.
+
+        The block the request is running in is not included.
+        """
+        row = self.rows[req_id][self.leaf_id]
+        live = self._live(req_id, row)
+        return [
+            idx
+            for idx, block in enumerate(row)
+            if block is not live
+            and not block.is_null
+            and block.block_hash is not None
+        ]
+
     def _needs_successor(self, req_id: RequestID) -> bool:
         """Whether admission must draw the request's successor.
 
         Not while a checkpoint is still unpublished: ``checkpoint`` runs one
         at a time, so the request holds at most its live block and one more.
+        Nor while it holds a published state: the successor is then drawn when
+        that state is replaced, after it is freed.
         """
         if not self.enable_prefix_caching or req_id in self.successors:
             return False
+        if self._kept_states(req_id):
+            return False
         return not self._awaits_hash(req_id)
+
+    def _replace_kept_state(
+        self,
+        req_id: RequestID,
+        replica_idx: int,
+        allocation_owner: JengaBlockManager,
+    ) -> LittleKVCacheBlock | None:
+        """Frees the published states being replaced and draws the next block.
+
+        The next block is the one the state continues in. Freeing normally
+        makes a block available, but not when another request shares the freed
+        state; then, if the pool is full, there is no block to draw and this
+        returns ``None``.
+        """
+        pool = self.pools[replica_idx]
+        row = self.rows[req_id][self.leaf_id]
+        null_block = pool.null_little_blocks[self.leaf_id]
+        for idx in self._kept_states(req_id):
+            pool.free_block(row[idx])
+            row[idx] = null_block
+        if not pool.can_satisfy_demand({self.leaf_id: 1}):
+            return None
+        return allocation_owner.allocate_block(replica_idx, self.leaf_id)
 
     def blocks_to_allocate(
         self, req_id: RequestID, num_required_blocks: int
@@ -283,16 +326,25 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
         return {self.leaf_id: live.bid}
 
     def advance(
-        self, req_id: RequestID, num_committed_blocks: int, replica_idx: int
+        self,
+        req_id: RequestID,
+        num_committed_blocks: int,
+        replica_idx: int,
+        keep: Sequence[int] = (),
     ) -> None:
-        """Frees every published block behind the live one, nulling its slot."""
+        """Frees every published state behind the live one, nulling its slot.
+
+        Keeps the published states at the boundaries in ``keep``. The state at
+        boundary ``b`` is at row position ``b - 1``.
+        """
+        kept_slots = {b - 1 for b in keep}
         pool = self.pools[replica_idx]
         leaf_id = self.leaf_id
         row = self.rows[req_id][leaf_id]
         null_block = pool.null_little_blocks[leaf_id]
         live = self._live(req_id, row)
         for idx, block in enumerate(row):
-            if block is live or block.is_null:
+            if block is live or block.is_null or idx in kept_slots:
                 continue
             if block.block_hash is None:
                 continue
@@ -337,7 +389,11 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
 
     @traced
     def checkpoint(
-        self, ctx: TextContext, replica_idx: int
+        self,
+        ctx: TextContext,
+        replica_idx: int,
+        *,
+        allocation_owner: JengaBlockManager,
     ) -> Mapping[str, tuple[int | None, int]]:
         """Publishes the block just run in and fills the one that succeeds it.
 
@@ -369,15 +425,15 @@ class RecurrentKVGroupCoordinator(KVGroupCoordinatorInterface):
         if self._awaits_hash(ctx.request_id):
             return {}  # one checkpoint at a time
 
-        # Admission reserves the successor alongside the block being
-        # published, so a missing one is an accounting bug, not pressure.
         pool = self.pools[replica_idx]
         successor = self.successors.pop(ctx.request_id, None)
         if successor is None:
-            raise AssertionError(
-                f"{ctx.request_id} reached a checkpoint with no successor"
-                " reserved; was the group built with enable_prefix_caching?"
+            successor = self._replace_kept_state(
+                ctx.request_id, replica_idx, allocation_owner
             )
+        if successor is None:
+            # No free block, so the state keeps running in its current one.
+            return {}
         drawn = {self.leaf_id: successor}
 
         fills: dict[str, tuple[int | None, int]] = {}

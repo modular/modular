@@ -520,7 +520,7 @@ def forward_to_boundary(manager: JengaBlockManager, ctx: TextContext) -> None:
     manager.alloc(ctx)
     ctx.update(9)
     for group in manager.groups.values():
-        group.checkpoint(ctx, 0)
+        group.checkpoint(ctx, 0, allocation_owner=manager)
     manager.step(ctx)
 
 
@@ -1363,7 +1363,9 @@ def test_a_state_reloads_from_the_connector_at_the_deepest_checkpoint() -> None:
 
     # The forward ends on the next boundary, and the successor is there.
     second.update(9)
-    assert state_group.checkpoint(second, 0), "the boundary found no successor"
+    assert state_group.checkpoint(second, 0, allocation_owner=manager), (
+        "the boundary found no successor"
+    )
     manager.step(second)
 
 

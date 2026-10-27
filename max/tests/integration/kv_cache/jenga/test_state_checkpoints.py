@@ -119,7 +119,7 @@ def checkpoint(
     """The blocks the forward that just ran should be copied between."""
     merged: dict[str, tuple[int | None, int]] = {}
     for group in state_groups(bm):
-        merged.update(group.checkpoint(ctx, 0))
+        merged.update(group.checkpoint(ctx, 0, allocation_owner=bm))
     return merged
 
 
@@ -400,6 +400,131 @@ def test_a_forward_ending_on_a_boundary_checkpoints() -> None:
             )
 
 
+def commit_without_advancing(bm: JengaBlockManager, ctx: TextContext) -> None:
+    """Runs a forward up to the commit, before ``advance`` frees anything."""
+    bm.alloc(ctx)
+    resume(bm, ctx)
+    ctx.update(42)
+    checkpoint(bm, ctx)
+    bm._commit_blocks_into_prefix_cache(ctx, 0)
+
+
+def test_a_boundary_is_resumable_once_its_state_is_published() -> None:
+    bm = make_manager()
+    ctx = make_ctx(16)
+    bm.claim(ctx)
+
+    commit_without_advancing(bm, ctx)
+
+    assert bm._resumable_at(ctx.request_id, 4)
+    # No state was published at the boundary below, so nothing resumes there.
+    assert not bm._resumable_at(ctx.request_id, 3)
+    # The rows agree with the prefix cache, which holds the same state.
+    hashes = bm._state_of(ctx).hashes
+    assert bm._find_longest_device_prefix_cache_hit(hashes[:4], 0, False) == 4
+
+
+def test_a_forward_ending_off_a_boundary_is_not_resumable_there() -> None:
+    bm = make_manager()
+    ctx = make_ctx(18)
+    bm.claim(ctx)
+
+    commit_without_advancing(bm, ctx)
+
+    assert bm._state_of(ctx).committed_idx // BLOCK_SIZE == 4
+    assert not bm._resumable_at(ctx.request_id, 4)
+
+
+def kept_state_slots(bm: JengaBlockManager, ctx: TextContext) -> set[int]:
+    """Returns the row slots holding a published state, across state leaves."""
+    slots: set[int] = set()
+    for group in state_groups(bm):
+        row = group.rows[ctx.request_id][group.leaf_id]
+        live = group.live_blocks(ctx.request_id) or {}
+        slots |= {
+            idx
+            for idx, block in enumerate(row)
+            if not block.is_null
+            and block.block_hash is not None
+            and block.bid != live.get(group.leaf_id)
+        }
+    return slots
+
+
+def test_a_step_keeps_the_state_a_boundary_resumes_from() -> None:
+    bm = make_manager()
+    ctx = make_ctx(16)
+    bm.claim(ctx)
+
+    forward(bm, ctx)
+
+    assert bm._state_of(ctx).resumable.boundaries == (4,)
+    assert bm._resumable_at(ctx.request_id, 4)
+    assert kept_state_slots(bm, ctx) == {3}
+
+
+def test_the_next_boundary_replaces_the_kept_state() -> None:
+    bm = make_manager()
+    ctx = make_ctx(16)
+    bm.claim(ctx)
+    forward(bm, ctx)
+
+    for _ in range(BLOCK_SIZE):
+        forward(bm, ctx)
+
+    assert bm._state_of(ctx).resumable.boundaries == (5,)
+    assert kept_state_slots(bm, ctx) == {4}
+    assert not bm._resumable_at(ctx.request_id, 4)
+
+
+def test_a_request_that_keeps_a_state_draws_no_successor() -> None:
+    """The checkpoint that replaces the kept state draws it instead."""
+    bm = make_manager()
+    ctx = make_ctx(16)
+    bm.claim(ctx)
+    forward(bm, ctx)
+
+    bm.alloc(ctx)
+
+    assert all(ctx.request_id not in g.successors for g in state_groups(bm))
+    assert held_state_blocks(bm, ctx) == 2 * len(state_groups(bm))
+
+
+def test_a_forward_past_a_boundary_keeps_nothing() -> None:
+    bm = make_manager()
+    ctx = make_ctx(18)
+    bm.claim(ctx)
+
+    forward(bm, ctx)
+
+    assert bm._state_of(ctx).resumable.boundaries == ()
+    assert kept_state_slots(bm, ctx) == set()
+
+
+def test_a_kept_state_is_not_copied_over_the_live_state() -> None:
+    bm = make_manager()
+    ctx = make_ctx(16)
+    bm.claim(ctx)
+    forward(bm, ctx)
+
+    bm.alloc(ctx)
+
+    assert kept_state_slots(bm, ctx)
+    assert resume(bm, ctx) == {}
+
+
+def test_release_frees_the_kept_state() -> None:
+    bm = make_manager()
+    free_before = bm.huge_block_count().free
+    ctx = make_ctx(16)
+    bm.claim(ctx)
+    forward(bm, ctx)
+
+    bm.release(ctx)
+
+    assert bm.huge_block_count().free == free_before
+
+
 def test_a_forward_ending_mid_block_rotates_nothing() -> None:
     # Shorter than one block: there is no boundary behind it to name.
     bm = make_manager()
@@ -545,9 +670,10 @@ def test_a_state_holds_its_successor_from_admission_only_with_caching(
 
 
 def test_a_state_never_holds_more_than_its_two_budgeted_blocks() -> None:
-    # A checkpoint takes the successor, and admission does not replace it
-    # until the checkpoint is published, so the budget's two blocks hold
-    # across a boundary. Release gives every one back.
+    # A state keeps its newest checkpoint beside its live block, and the
+    # checkpoint that replaces it frees it before drawing the successor, so
+    # the budget's two blocks hold across a boundary. Release gives every
+    # one back.
     bm = make_manager()
     free_before = bm.huge_block_count().free
     ctx = make_ctx(BLOCK_SIZE)
@@ -559,7 +685,9 @@ def test_a_state_never_holds_more_than_its_two_budgeted_blocks() -> None:
         assert held_state_blocks(bm, ctx) <= budget
         ctx.update(42)
         checkpoint(bm, ctx)
+        assert held_state_blocks(bm, ctx) <= budget
         bm.step(ctx)
+        assert held_state_blocks(bm, ctx) <= budget
 
     bm.release(ctx)
     assert bm.huge_block_count().free == free_before

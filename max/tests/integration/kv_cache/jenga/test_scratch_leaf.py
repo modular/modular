@@ -145,7 +145,7 @@ def forward(bm: JengaBlockManager, ctx: TextContext, token: int = 42) -> None:
     bm.alloc(ctx)
     state_group(bm).resume(ctx, 0)
     ctx.update(token)
-    state_group(bm).checkpoint(ctx, 0)
+    state_group(bm).checkpoint(ctx, 0, allocation_owner=bm)
     bm.step(ctx)
 
 

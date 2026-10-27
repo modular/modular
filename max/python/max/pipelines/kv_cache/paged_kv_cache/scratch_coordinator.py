@@ -118,7 +118,11 @@ class ScratchKVGroupCoordinator(KVGroupCoordinatorInterface):
         return
 
     def advance(
-        self, req_id: RequestID, num_committed_blocks: int, replica_idx: int
+        self,
+        req_id: RequestID,
+        num_committed_blocks: int,
+        replica_idx: int,
+        keep: Sequence[int] = (),
     ) -> None:
         """Frees nothing: the request reads its block until it is released."""
         return

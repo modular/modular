@@ -752,7 +752,10 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
             return
         replica_idx = self._replica_of(ctx)
         for group in self._groups.values():
-            self._fill_state(replica_idx, group.checkpoint(ctx, replica_idx))
+            self._fill_state(
+                replica_idx,
+                group.checkpoint(ctx, replica_idx, allocation_owner=self),
+            )
         super().step(ctx)
 
     # ============================================================================

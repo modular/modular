@@ -499,6 +499,19 @@ def create_kv_group_coordinator(
     raise ValueError(f"no coordinator holds a {group_id} group")
 
 
+@dataclass(frozen=True)
+class _RequestResumableState:
+    """Where a request can resume."""
+
+    boundaries: tuple[int, ...] = ()
+    """Page boundaries, counted in blocks, lowest first. Each cache keeps the
+    blocks needed to resume at any of them."""
+
+    committed_idx: int = -1
+    """The request's committed index when ``boundaries`` was computed. If it
+    has not changed, nothing new was committed, so ``boundaries`` is reused."""
+
+
 @dataclass
 class RequestCacheState:
     """Everything the manager tracks for one live request."""
@@ -532,6 +545,9 @@ class RequestCacheState:
     connector_lookup_hand_backs: int = 0
     """How often the scheduler handed back an answered lookup, which
     ``_MAX_CONNECTOR_LOOKUP_HAND_BACKS`` bounds."""
+
+    resumable: _RequestResumableState = _RequestResumableState()
+    """Where the request can currently resume."""
 
     def lookup_is_stale(self) -> bool:
         """Returns whether the answer is too old to load and is asked again.
@@ -988,7 +1004,11 @@ class JengaBlockManager:
 
     @traced
     def step(self, ctx: TextContext) -> None:
-        """Records what the forward just wrote and slides every window."""
+        """Records what the forward just wrote and slides every window.
+
+        Each cache then frees the blocks the request no longer needs, keeping
+        what resuming at ``resumable``'s boundaries needs.
+        """
         replica_idx = self._replica_of(ctx)
         write_ranges = ctx.kv_cache_write_ranges
         ctx.kv_cache_write_ranges = {}
@@ -1010,12 +1030,32 @@ class JengaBlockManager:
                 group.record_full_write(
                     ctx.request_id, ctx.tokens.processed_length
                 )
+        keep: tuple[int, ...] = ()
         if self._enable_prefix_caching:
             self._commit_blocks_into_prefix_cache(ctx, replica_idx)
+            keep = self._update_resumable(ctx)
 
         num_filled_blocks = self._num_filled_blocks(ctx)
         for group in self._groups.values():
-            group.advance(ctx.request_id, num_filled_blocks, replica_idx)
+            group.advance(
+                ctx.request_id, num_filled_blocks, replica_idx, keep=keep
+            )
+
+    def _update_resumable(self, ctx: TextContext) -> tuple[int, ...]:
+        """Returns where the request can resume, and records it on the request.
+
+        That is the committed boundary if every cache holds what resuming there
+        needs, and nowhere otherwise. Recomputed only after a commit, since
+        nothing else changes what the caches hold.
+        """
+        state = self._state_of(ctx)
+        if state.resumable.committed_idx != state.committed_idx:
+            boundary = state.committed_idx // self._block_size
+            can_resume = self._resumable_at(ctx.request_id, boundary)
+            state.resumable = _RequestResumableState(
+                (boundary,) if can_resume else (), state.committed_idx
+            )
+        return state.resumable.boundaries
 
     def get_prefix_cache_hit_counts(
         self, ctx: TextContext
@@ -1615,6 +1655,7 @@ class JengaBlockManager:
             group.release(ctx.request_id, replica_idx)
             group.claim(ctx.request_id)
         state.committed_idx = 0
+        state.resumable = _RequestResumableState()
         ctx.tokens.rewind_processing(ctx.tokens.processed_length)
         self._metrics.cache_tokens -= splice.end_idx - splice.start_idx
         ctx.cached_prefix_length = 0
@@ -1827,6 +1868,28 @@ class JengaBlockManager:
             )
         )
         return hashes
+
+    def _resumable_at(self, req_id: RequestID, num_blocks: int) -> bool:
+        """Returns whether every cache can resume after ``num_blocks`` blocks.
+
+        Only published blocks count. Each cache applies the same rule as its
+        prefix-cache lookup.
+        """
+        num_committed_blocks = (
+            self._requests[req_id].committed_idx // self._block_size
+        )
+        if not 0 < num_blocks <= num_committed_blocks:
+            return False
+        for group in self._cacheable_groups.values():
+            row = group.blocks_of(req_id)[group.leaf_id][:num_blocks]
+            published = [
+                not block.is_null and block.block_hash is not None
+                for block in row
+            ]
+            hit = group.group_id.longest_hit(self._block_size, published)
+            if hit != num_blocks:
+                return False
+        return True
 
     def _find_longest_device_prefix_cache_hit(
         self,
@@ -2241,7 +2304,11 @@ class JengaBlockManager:
         self, ctx: TextContext, replica_idx: int
     ) -> None:
         """Drops the blocks past the committed index, in every cache."""
-        committed_idx = self._state_of(ctx).committed_idx
+        state = self._state_of(ctx)
+        # The rows are about to change, so where the request can resume is
+        # recomputed.
+        state.resumable = _RequestResumableState()
+        committed_idx = state.committed_idx
         num_committed_blocks = committed_idx // self._block_size
 
         for group in self._groups.values():

@@ -671,6 +671,48 @@ def test_swa_reserves_a_replay_window_page_with_prefix_caching(
     assert leaf.blocks_to_reserve(2, enable_prefix_caching=caching) == 2
 
 
+def test_a_window_resumes_only_where_its_row_still_holds_it() -> None:
+    """The current window is held; a window the group slid past is not."""
+    bm = make_manager(
+        {FULL: full(), SLIDING: sliding(ratio=1, window=9)},
+        block_size=4,
+        num_huge_blocks=20,
+        enable_prefix_caching=True,
+    )
+    ctx = make_ctx(num_tokens=24)
+    bm.claim(ctx)
+    bm.alloc(ctx)
+    ctx.update(42)
+    bm.step(ctx)
+
+    # A window of 9 reads 2 pages behind the query, so the row keeps pages
+    # 4 and 5 and nulls the rest.
+    assert bm._state_of(ctx).committed_idx // 4 == 6
+    assert bm._resumable_at(ctx.request_id, 6)
+    assert not bm._resumable_at(ctx.request_id, 5)
+    assert not bm._resumable_at(ctx.request_id, 7)
+    hashes = bm._state_of(ctx).hashes
+    assert bm._find_longest_device_prefix_cache_hit(hashes[:6], 0, False) == 6
+
+
+def test_a_short_prompt_resumes_from_a_root_anchored_window() -> None:
+    bm = make_manager(
+        {FULL: full(), SLIDING: sliding(ratio=1, window=9)},
+        block_size=4,
+        num_huge_blocks=20,
+        enable_prefix_caching=True,
+    )
+    ctx = make_ctx(num_tokens=8)
+    bm.claim(ctx)
+    bm.alloc(ctx)
+    ctx.update(42)
+    bm.step(ctx)
+
+    assert bm._resumable_at(ctx.request_id, 2)
+    assert bm._resumable_at(ctx.request_id, 1)
+    assert not bm._resumable_at(ctx.request_id, 0)
+
+
 def test_swa_reuses_the_blocks_it_freed() -> None:
     """The window walks forward through a pool far smaller than the sequence.
 
