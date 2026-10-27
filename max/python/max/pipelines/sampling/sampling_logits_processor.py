@@ -39,6 +39,7 @@ from max.pipelines.context import (
 from max.profiler import Tracer, traced
 from typing_extensions import Self
 
+from .sampling_config import SamplingConfig
 from .seeds import request_row_seed
 
 if TYPE_CHECKING:
@@ -60,6 +61,46 @@ class FrequencyData:
     offsets: Buffer
     """Row offsets: shape [batch_size + 1] indicating start of each
     sequence's data."""
+
+
+def greedy_argmax_suffices(
+    context_batch: Sequence[TextContext],
+    sampling_config: SamplingConfig,
+    *,
+    constrained_decoding: bool,
+) -> bool:
+    """Returns whether a plain argmax over the raw logits picks every token.
+
+    A model that samples on device may return its argmax as
+    ``ModelOutputs.next_tokens`` only for a batch where this holds; the
+    pipeline then skips the sampler graph for that step.
+
+    Args:
+        context_batch: The contexts of the step.
+        sampling_config: The pipeline's sampling configuration.
+        constrained_decoding: Whether the pipeline can apply a structured
+            output bitmask (``PipelineConfig.needs_bitmask_constraints``).
+
+    Returns:
+        ``True`` if every context samples greedily and nothing in the batch
+        reshapes the logits or needs them after sampling (log-probabilities
+        and label scoring both read the full logits).
+    """
+    if constrained_decoding:
+        return False
+    for ctx in context_batch:
+        params = ctx.sampling_params
+        if params.top_k != 1 or params.logits_processors:
+            return False
+        if sampling_config.enable_penalties and params.needs_penalties:
+            return False
+        if sampling_config.enable_min_tokens and params.min_new_tokens > 0:
+            return False
+        if ctx.log_probabilities or ctx.log_probabilities_echo:
+            return False
+        if ctx.label_token_ids:
+            return False
+    return True
 
 
 def _to_pinned_host_buffer(

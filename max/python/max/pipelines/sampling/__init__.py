@@ -42,6 +42,7 @@ from .sampling_logits_processor import (
     PenaltyInputs,
     SamplerInputs,
     batch_max_k,
+    greedy_argmax_suffices,
 )
 from .seeds import request_row_seed
 
@@ -64,6 +65,7 @@ __all__ = [
     "build_greedy_acceptance_sampler_graph",
     "build_stochastic_acceptance_sampler_graph",
     "build_synthetic_acceptance_sampler_graph",
+    "greedy_argmax_suffices",
     "rejection_runner_registry",
     "rejection_sampler",
     "rejection_sampler_with_residuals",

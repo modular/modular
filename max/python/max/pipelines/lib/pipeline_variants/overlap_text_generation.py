@@ -1115,6 +1115,7 @@ def build_realize_future_token_graph(
     num_speculative_tokens: int,
     data_parallel_degree: int = 1,
     sampled_draft_vocab_size: int | None = None,
+    custom_extensions: Sequence[Path] = (),
 ) -> Graph:
     """Builds a graph that prepares the input for the next batch.
 
@@ -1135,6 +1136,8 @@ def build_realize_future_token_graph(
             ``[batch, K, vocab_size]`` ``draft_probs_full`` paired with
             ``draft_tokens``, on the same slot indices so a distribution
             cannot drift away from the token it proposed.
+        custom_extensions: Custom-op extension paths to compile the graph
+            with.
     """
     device0 = devices[0]
     if num_speculative_tokens > 0:
@@ -1252,6 +1255,7 @@ def build_realize_future_token_graph(
     with Graph(
         "realize_future_token_graph",
         input_types=flat_input_types,
+        custom_extensions=custom_extensions,
     ) as graph:
         input_values = tree.unflatten(input_treedef, graph.inputs)
 
@@ -1489,6 +1493,7 @@ class RealizeFutureTokenProcessor:
         enable_dp: bool = False,
         data_parallel_degree: int = 1,
         sampled_draft_vocab_size: int | None = None,
+        custom_extensions: Sequence[Path] = (),
     ) -> None:
         with CompilationTimer("realize_future_token") as timer:
             graph = build_realize_future_token_graph(
@@ -1497,6 +1502,7 @@ class RealizeFutureTokenProcessor:
                 enable_dp=enable_dp,
                 data_parallel_degree=data_parallel_degree,
                 sampled_draft_vocab_size=sampled_draft_vocab_size,
+                custom_extensions=custom_extensions,
             )
             timer.mark_build_complete()
             self._graph = session.load(graph)
@@ -2092,6 +2098,9 @@ class OverlapTextGenerationPipeline(
                 num_speculative_tokens=num_speculative_tokens,
                 enable_dp=model_config.data_parallel_degree > 1,
                 data_parallel_degree=model_config.data_parallel_degree,
+                # The graph runs on the model's devices, so their kernels
+                # (e.g. an accelerator's own scatter) must resolve.
+                custom_extensions=self._pipeline_model.sampler_custom_extensions,
                 # Derived from the one existing source of truth: the
                 # persistent probs buffer exists iff
                 # speculative.draft_proposal == "sampled".
@@ -3236,7 +3245,6 @@ class OverlapTextGenerationPipeline(
         Returns:
             An AsyncBatch with the sampled tokens and copy event.
         """
-        device0 = self._devices[0]
         flat_batch = inputs.flat_batch
 
         if model_outputs.logit_offsets is None:
@@ -3278,9 +3286,41 @@ class OverlapTextGenerationPipeline(
             dtype=generated_tokens.dtype,
             shape=(generated_tokens.shape[0],),
         )
+        return self._async_batch(
+            inputs,
+            generated_tokens,
+            on_host=self._sampler_device.is_host,
+            label_log_probabilities=label_log_probabilities,
+        )
 
+    def _async_batch(
+        self,
+        inputs: TextGenerationInputs[TextGenerationContextType],
+        generated_tokens: Buffer,
+        *,
+        on_host: bool,
+        label_log_probabilities: dict[RequestID, list[float]] | None = None,
+    ) -> AsyncBatch[TextGenerationContextType]:
+        """Starts the D2H copy of the batch's ``[B]`` generated tokens.
+
+        Returns the AsyncBatch that waits on it.
+
+        Args:
+            inputs: The text generation inputs.
+            generated_tokens: The generated tokens, on the host when
+                ``on_host`` is set and on the first model device otherwise.
+            on_host: Whether ``generated_tokens`` is on the host.
+            label_log_probabilities: Label scores for this batch's scoring
+                requests. ``None`` on the path where the model returns
+                ``next_tokens``, which never materializes the logits a score
+                would need.
+
+        Returns:
+            An AsyncBatch with the generated tokens and copy event.
+        """
+        device0 = self._devices[0]
         with Tracer("D2H generated_tokens"):
-            if self._sampler_device.is_host:
+            if on_host:
                 generated_tokens_host = generated_tokens
                 generated_tokens_device = generated_tokens.to(device0)
             else:
@@ -3289,7 +3329,7 @@ class OverlapTextGenerationPipeline(
                 # of page-locking a fresh one every decode step (this allocation
                 # was exposed host time on the per-step critical path). The
                 # overlap scheduler reads the previous batch's copy in
-                # sync_and_process_outputs strictly before _sample_logits writes
+                # sync_and_process_outputs strictly before _async_batch writes
                 # the next batch's copy, so a single reused buffer is race-free.
                 d2h_batch = int(generated_tokens_device.shape[0])
                 pinned = self._pinned_generated_tokens_host
@@ -3330,7 +3370,7 @@ class OverlapTextGenerationPipeline(
             # sync_and_process_outputs() with the real token.
             overwrite_future=True,
             structured_output=self._structured_output,
-            label_log_probabilities=label_log_probabilities,
+            label_log_probabilities=label_log_probabilities or {},
         )
 
     def _assign_bitmask_inputs(
@@ -4240,10 +4280,14 @@ class OverlapTextGenerationPipeline(
                 # and host token lengths are unchanged by the forward launch),
                 # and both still precede the previous-batch sync / FSM advance
                 # below, so ordering and results are identical.
+                #
+                # A model that returns ``next_tokens`` sampled the batch itself
+                # (see ``greedy_argmax_suffices``), so it gets no sampler.
                 model_outputs = self._run_forward(inputs)
-                sampling_processor, bitmask = self._create_sampling_processor(
-                    inputs.flat_batch
-                )
+                if model_outputs.next_tokens is None:
+                    sampling_processor, bitmask = (
+                        self._create_sampling_processor(inputs.flat_batch)
+                    )
 
         elif self.pipeline_config.runtime.execute_empty_batches:
             # If the batch is empty and execute_empty_batches is True, we will
@@ -4288,14 +4332,15 @@ class OverlapTextGenerationPipeline(
             self._prev_batch = None
 
         # Sample logits for current batch (if we have inputs).
-        if (
-            inputs
-            and model_outputs is not None
-            and sampling_processor is not None
-        ):
-            curr_batch = self._sample_logits(
-                inputs, model_outputs, sampling_processor
-            )
+        if inputs and model_outputs is not None:
+            if model_outputs.next_tokens is not None:
+                curr_batch = self._async_batch(
+                    inputs, model_outputs.next_tokens, on_host=False
+                )
+            elif sampling_processor is not None:
+                curr_batch = self._sample_logits(
+                    inputs, model_outputs, sampling_processor
+                )
 
         if curr_batch is not None:
             for context in inputs.flat_batch:

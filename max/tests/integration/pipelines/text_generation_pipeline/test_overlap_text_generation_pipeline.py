@@ -178,6 +178,8 @@ def test_forward_launched_before_sampling_processor_build() -> None:
     call_order: list[str] = []
 
     mock_model_outputs = MagicMock(name="model_outputs")
+    # A model that returns no tokens of its own takes the sampling path.
+    mock_model_outputs.next_tokens = None
     mock_sampling_processor = MagicMock(name="sampling_processor")
     mock_curr_batch = MagicMock(name="curr_batch")
 

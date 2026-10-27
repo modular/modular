@@ -209,6 +209,15 @@ class ModelOutputs:
     next_token_logits: Buffer | None = None
     """Next-token logits for text generation, shape ``[B, V]`` when present."""
 
+    next_tokens: Buffer | None = None
+    """Greedy next tokens the model sampled itself, int64 of shape ``[B]``.
+
+    Set only for a batch where ``greedy_argmax_suffices`` holds; the pipeline
+    then uses these tokens instead of running the sampler and does not read
+    :attr:`logits`, which a model may fill with any buffer of the right
+    dtype (a vocab shard, say) rather than the full logits.
+    """
+
     logit_offsets: Buffer | None = None
     """Cumulative row offsets into ``logits`` for text generation.
 
