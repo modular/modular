@@ -301,8 +301,8 @@ int main(int argc, char *argv[]) {
 
         mlir::TimingScope ts;
         CompilationOptions options = clOptions.getCompilationOptions();
-        options.searchPaths = llvm::join(parserSearchPaths, ",");
-        FrontendOptions frontendOptions;
+        FrontendOptions frontendOptions = clOptions.getFrontendOptions();
+        frontendOptions.searchPaths = llvm::join(parserSearchPaths, ",");
         frontendOptions.stripFilePrefix = clOptions.stripFilePrefix;
         frontendOptions.useMLIRDiagnostics = effectiveUseMLIRDiagnostics;
         frontendOptions.diagnoseMissingDocStrings = diagnoseMissingDocStrings;

@@ -43,10 +43,10 @@ bool M::generateMojoDocJSON(const std::filesystem::path &resolvedPath,
                                    llvm::SMLoc());
 
   CompilationOptions compilationOptions;
-  compilationOptions.warningsAsErrors = config.warningsAsErrors;
-  compilationOptions.ignoredDeprecations =
-      llvm::to_vector_of<std::string>(config.ignoredDeprecations);
   FrontendOptions frontendOptions;
+  frontendOptions.warningsAsErrors = config.warningsAsErrors;
+  frontendOptions.ignoredDeprecations =
+      llvm::to_vector_of<std::string>(config.ignoredDeprecations);
   frontendOptions.diagnoseMissingDocStrings = config.diagnoseMissingDocStrings;
   frontendOptions.maxNotesPerDiagnostic = config.maxNotesPerDiagnostic;
   frontendOptions.stripFilePrefix = config.stripFilePrefix;

@@ -48,7 +48,7 @@ static void eraseDepGraph(ModuleOp module) {
 
 void LIT::writeIncrParsingCache(SharedState &sharedState, ModuleOp module,
                                 const ASTDecl &moduleDecl) {
-  StringRef cachePath = sharedState.options.incrParsingCacheFile;
+  StringRef cachePath = sharedState.frontendOptions.incrParsingCacheFile;
 
   // Mark declarations the lazy parse left unresolved so a later cache-served
   // compilation can resume them from source instead of consuming garbage.

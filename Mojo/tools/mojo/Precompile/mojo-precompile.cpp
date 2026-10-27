@@ -90,6 +90,8 @@ struct PrecompileArgs {
   std::string outputPath;
   /// Compilation options common to all Mojo builds.
   CompilationOptions compileOptions;
+  /// Parser options common to all Mojo builds.
+  FrontendOptions frontendOptions;
   /// The MLIR context used for compilation.
   MLIRContext ctx{MLIRContext::Threading::DISABLED};
 };
@@ -177,8 +179,9 @@ static ErrorOrSuccess parsePrecompileArgs(const State &state,
   // Set up the compilation options now, so we can use them as a single source
   // of truth.
   if (auto err = parseCompilationOptions(
-          state, args, pkgArgs.compileOptions, sourceMgr, pkgArgs.ctx,
-          options::OPT_I, /*optimizationLevelId=*/{}, /*debugLevelId=*/{},
+          state, args, pkgArgs.compileOptions, pkgArgs.frontendOptions,
+          sourceMgr, pkgArgs.ctx, options::OPT_I,
+          /*optimizationLevelId=*/{}, /*debugLevelId=*/{},
           /*sanitizeId=*/{}, /*sharedLibasan=*/{}, /*externalLibasan=*/{},
           /*bitcodeLibs=*/{}, /*debugInfoLanguageId=*/{}, /*numThreadsId=*/{},
           /*stdLibPath=*/{}, /*loopUnrollingWarnThresholdId=*/{},
@@ -190,7 +193,7 @@ static ErrorOrSuccess parsePrecompileArgs(const State &state,
           /*fpModeId=*/{}, options::OPT_ignore_deprecated,
           /*incrParsingCacheFileId=*/options::OPT_incr_parsing_cache_file))
     return err.takeError();
-  pkgArgs.compileOptions.warnOnUnstableAPIs =
+  pkgArgs.frontendOptions.warnOnUnstableAPIs =
       args.hasArg(options::OPT_warn_on_unstable_apis);
 
   // Precompiled files are built with the intention of being agnostic, so use
@@ -277,22 +280,22 @@ static int precompile(const State &subcommandState) {
   }
 
   ScopedMLIRWarningHandler warningHandler(
-      &precompileArgs.ctx, precompileArgs.compileOptions.disableWarnings,
-      precompileArgs.compileOptions.warningsAsErrors);
+      &precompileArgs.ctx, precompileArgs.frontendOptions.disableWarnings,
+      precompileArgs.frontendOptions.warningsAsErrors);
 
   ErrorOr<OwningOpRef<ModuleOp>> module = invokeMojoParser(
-      state, args, precompileArgs.compileOptions, &precompileArgs.ctx,
-      cpuDevice, options::OPT_diagnose_missing_doc_strings,
-      options::OPT_max_notes,
+      state, args, precompileArgs.compileOptions,
+      precompileArgs.frontendOptions, &precompileArgs.ctx, cpuDevice,
+      options::OPT_diagnose_missing_doc_strings, options::OPT_max_notes,
       /*definesId=*/llvm::opt::OptSpecifier(), options::OPT_strip_file_prefix,
       options::OPT_disable_builtins, options::OPT_mojo_search_paths,
       options::OPT_fixit, options::OPT_export_fixit,
       /*timingScope=*/nullptr,
-      [&](const FrontendOptions &frontendOptions, mlir::TimingScope &ts) {
+      [&](const FrontendOptions &parserOptions, mlir::TimingScope &ts) {
         OwningOpRef<ModuleOp> moduleOp;
         std::tie(moduleOp, packageOp) = LIT::importMojoPackage(
             ctx, precompileArgs.inputPath, precompileArgs.sourceName, sourceMgr,
-            &precompileArgs.ctx, precompileArgs.compileOptions, frontendOptions,
+            &precompileArgs.ctx, precompileArgs.compileOptions, parserOptions,
             ts);
         return moduleOp;
       });

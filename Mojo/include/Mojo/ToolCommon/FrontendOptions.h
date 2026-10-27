@@ -14,6 +14,7 @@
 #ifndef KGEN_TOOLCOMMON_FRONTENDOPTIONS_H
 #define KGEN_TOOLCOMMON_FRONTENDOPTIONS_H
 
+#include "llvm/ADT/SmallVector.h"
 #include <string>
 
 namespace M {
@@ -62,6 +63,27 @@ struct FrontendOptions {
 
   /// Base library path prefix for generated documentation links.
   std::string docsBasePath;
+
+  /// Comma-separated directories that replace the default auto-import search
+  /// path, set via `-mojo-search-paths`.
+  std::string searchPaths;
+
+  /// Directories searched for auto-imports in addition to `searchPaths`.
+  llvm::SmallVector<std::string> extraSearchPaths;
+
+  bool disableWarnings = false;
+  bool warningsAsErrors = false;
+  bool warnOnUnstableAPIs = false;
+  bool ignoreIncompatiblePrecompiledFileErrors = false;
+
+  /// Qualified names (e.g. `Foo.bar`, or just `some_fn` for a top-level
+  /// declaration) of `@deprecated` declarations whose deprecation warning
+  /// should be suppressed, set via `--ignore-deprecated`.
+  llvm::SmallVector<std::string> ignoredDeprecations;
+
+  /// Experimental incremental parsing cache file backing
+  /// `--experimental-incr-parsing`; empty when the option is off.
+  std::string incrParsingCacheFile;
 };
 
 } // namespace M::KGEN

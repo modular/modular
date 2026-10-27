@@ -310,8 +310,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   options.verboseOutput = isEmitCmd(clOptions.cmd, kAsmVerboseKind);
   options.bitcodeLibs = llvm::to_vector_of<std::string>(clOptions.bitcodeLibs);
   options.cacheBaseExtra = "kgen";
-  options.warnOnUnstableAPIs = clOptions.warnOnUnstableAPIs;
-  options.ignoredDeprecations = clOptions.ignoredDeprecations;
 
   OwningOpRef<ModuleOp> theModule;
   auto inputFileName = llvm::StringRef(clOptions.inputFilename);
@@ -424,7 +422,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
           return failure();
         });
 
-    FrontendOptions frontendOptions;
+    FrontendOptions frontendOptions = clOptions.getFrontendOptions();
     frontendOptions.stripFilePrefix = clOptions.stripFilePrefix;
     frontendOptions.useMLIRDiagnostics = true;
     frontendOptions.disablePrebuiltPackages = clOptions.disablePrebuiltPackages;
@@ -460,7 +458,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   if (inputFileName.ends_with(".mojo")) {
     TimingScope litScope = timing.nest("Import Mojo source");
-    FrontendOptions frontendOptions;
+    FrontendOptions frontendOptions = clOptions.getFrontendOptions();
     frontendOptions.stripFilePrefix = clOptions.stripFilePrefix;
     frontendOptions.useMLIRDiagnostics = clOptions.enableMLIRDiagnostics;
     frontendOptions.disablePrebuiltPackages = clOptions.disablePrebuiltPackages;
@@ -863,14 +861,12 @@ static LogicalResult runPrecompile(CLOptions &clOptions) {
 
   CompilationOptions options = clOptions.getCompilationOptions();
   options.bitcodeLibs = llvm::to_vector_of<std::string>(clOptions.bitcodeLibs);
-  options.warnOnUnstableAPIs = clOptions.warnOnUnstableAPIs;
-  options.ignoredDeprecations = clOptions.ignoredDeprecations;
   // Precompiled packages are built to be agnostic of how their importers
   // compile them, so match `mojo precompile`'s conservative settings.
   options.debugLevel = CompilationOptions::kFullDebugInfo;
   options.optimizationLevel = 0;
 
-  FrontendOptions frontendOptions;
+  FrontendOptions frontendOptions = clOptions.getFrontendOptions();
   frontendOptions.stripFilePrefix = clOptions.stripFilePrefix;
   frontendOptions.useMLIRDiagnostics = clOptions.enableMLIRDiagnostics;
   frontendOptions.disablePrebuiltPackages = clOptions.disablePrebuiltPackages;

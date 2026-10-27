@@ -20,6 +20,7 @@
 
 #include "Mojo/ExecutionEngine/ExecutionEngine.h"
 #include "Mojo/ToolCommon/CompilationOptions.h"
+#include "Mojo/ToolCommon/FrontendOptions.h"
 #include "Mojo/ToolCommon/PassManagerConfigOptions.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/ErrorOr.h"
@@ -42,10 +43,6 @@ namespace AsyncRT {
 class CPUDevice;
 struct CPUDeviceOptions;
 } // namespace AsyncRT
-
-namespace KGEN {
-struct FrontendOptions;
-} // namespace KGEN
 
 class TargetInfoAttr;
 
@@ -143,6 +140,9 @@ struct CommonParseResult {
   /// The parsed compilation options.
   KGEN::CompilationOptions compilationOptions;
 
+  /// The parsed frontend options.
+  KGEN::FrontendOptions frontendOptions;
+
   /// The parsed target information.
   TargetInfoAttr target;
 };
@@ -172,11 +172,13 @@ parseCommonMojoArguments(State &state, llvm::SourceMgr &sourceManager,
                          const CommonParseConfig &config);
 
 /// Parse the common configuration options for Mojo related to compilation,
-/// populating the provided `compilationOptions` argument. An error is returned
-/// if any of the provided option values are invalid.
+/// populating the provided `compilationOptions` and `frontendOptions`
+/// arguments. An error is returned if any of the provided option values are
+/// invalid.
 ErrorOrSuccess parseCompilationOptions(
     const State &state, const llvm::opt::InputArgList &args,
-    KGEN::CompilationOptions &compilationOptions, llvm::SourceMgr &sourceMgr,
+    KGEN::CompilationOptions &compilationOptions,
+    KGEN::FrontendOptions &frontendOptions, llvm::SourceMgr &sourceMgr,
     MLIRContext &ctx, llvm::opt::OptSpecifier includeDirsId,
     llvm::opt::OptSpecifier optimizationLevelId = {},
     llvm::opt::OptSpecifier debugLevelId = {},
@@ -357,12 +359,14 @@ private:
 
 /// Wrap a parser invocation to Mojo, populating the necessary parsing context,
 /// and attaching post parse metadata. On success, returns the parsed module
-/// operation. If the `autoFixIt` flag is set and the parser collects any
+/// operation. The given `frontendOptions` are extended with the parser settings
+/// read from `args`. If the `autoFixIt` flag is set and the parser collects any
 /// fix-its, they will be applied, and the returned module will be null.
 /// If `exportFixit` is set, fix-its will be exported to a YAML file instead.
 ErrorOr<OwningOpRef<ModuleOp>> invokeMojoParser(
     const State &state, const llvm::opt::InputArgList &args,
-    KGEN::CompilationOptions &compilationOptions, MLIRContext *ctx,
+    KGEN::CompilationOptions &compilationOptions,
+    KGEN::FrontendOptions frontendOptions, MLIRContext *ctx,
     AsyncRT::CPUDevice &cpuDevice, llvm::opt::OptSpecifier docDiagnoseMissingId,
     llvm::opt::OptSpecifier maxNotesId, llvm::opt::OptSpecifier definesId,
     llvm::opt::OptSpecifier stripFilePrefixId,

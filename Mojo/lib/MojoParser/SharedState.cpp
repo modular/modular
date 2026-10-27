@@ -433,8 +433,8 @@ SharedState::SharedState(llvm::SourceMgr &sourceMgr, MLIRContext *context,
     : diags(sourceMgr, context, frontendOptions.useMLIRDiagnostics,
             frontendOptions.maxNotesPerDiagnostic,
             canonicalizeFileCompilationDir(frontendOptions.stripFilePrefix),
-            /*disableWarnings=*/options.disableWarnings,
-            /*warningsAsErrors=*/options.warningsAsErrors,
+            /*disableWarnings=*/frontendOptions.disableWarnings,
+            /*warningsAsErrors=*/frontendOptions.warningsAsErrors,
             /*extraContext=*/this,
             /*autoFixItHandler=*/frontendOptions.autoFixItHandler),
       options(options), frontendOptions(frontendOptions),
@@ -1298,7 +1298,7 @@ bool SharedState::tryRegisterConversionThunk(Attribute key, FnOp thunk) {
 }
 
 bool SharedState::isIncrParsingEnabled() const {
-  return !options.incrParsingCacheFile.empty();
+  return !frontendOptions.incrParsingCacheFile.empty();
 }
 
 void SharedState::addIncrParsingCacheResumeAttrs(

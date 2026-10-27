@@ -29,15 +29,13 @@ CompilationOptions::CompilationOptions(
     std::string targetAccelerator, int elaborationErrorLimit,
     bool elaborationErrorIncludePrelude,
     ErrorVerboseLevel elaborationErrorVerbose, unsigned elaborationMaxDepth,
-    DebugInfoLanguage debugInfoLanguage, std::string searchPaths,
-    SmallVector<std::string> extraSearchPaths)
+    DebugInfoLanguage debugInfoLanguage)
     : optimizationLevel(optimizationLevel), debugLevel(debugLevel),
       debugAtLevel(debugAtLevel), sanitizers(sanitizers),
       targetTriple(std::move(targetTriple)), targetCpu(std::move(targetCpu)),
       targetFeatures(std::move(targetFeatures)),
       targetAccelerator(std::move(targetAccelerator)),
-      debugInfoLanguage(debugInfoLanguage), searchPaths(searchPaths),
-      extraSearchPaths(extraSearchPaths),
+      debugInfoLanguage(debugInfoLanguage),
       elaborationErrorLimit(elaborationErrorLimit),
       elaborationErrorIncludePrelude(elaborationErrorIncludePrelude),
       elaborationErrorVerbose(elaborationErrorVerbose),

@@ -97,6 +97,7 @@ struct BuildOptTable : public llvm::opt::OptTable {
 static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
                                     llvm::SourceMgr &sourceManager,
                                     CompilationOptions &compilationOptions,
+                                    FrontendOptions &frontendOptions,
                                     MLIRContext &ctx, TargetInfoAttr &target,
                                     BuildOptTable &options) {
 
@@ -211,6 +212,7 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
   // Extract results.
   args = std::move(result->args);
   compilationOptions = std::move(result->compilationOptions);
+  frontendOptions = std::move(result->frontendOptions);
   target = std::move(result->target);
   return {};
 }
@@ -645,6 +647,7 @@ static int linkOutput(LinkProduct product, const State &state,
 /// failure code.
 static int build(const State &subcommandState) {
   CompilationOptions options;
+  FrontendOptions frontendOptions;
   BuildOptTable optTable;
 
   // Parse arguments.
@@ -654,7 +657,8 @@ static int build(const State &subcommandState) {
   llvm::opt::InputArgList args;
   llvm::SourceMgr sourceMgr;
   if (std::optional<int> exitCode =
-          parseArgs(state, args, sourceMgr, options, mlirCtx, target, optTable))
+          parseArgs(state, args, sourceMgr, options, frontendOptions, mlirCtx,
+                    target, optTable))
     return *exitCode;
 
 #ifdef KGEN_ENABLE_PASS_OPTIONS
@@ -758,8 +762,9 @@ static int build(const State &subcommandState) {
   // Lower the input file to an MLIR module.
   AsyncRT::CPUDevice &cpuDevice = *ctx->get<AsyncRT::CPUDevice>();
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, &mlirCtx);
-  ScopedMLIRWarningHandler warningHandler(&mlirCtx, options.disableWarnings,
-                                          options.warningsAsErrors);
+  ScopedMLIRWarningHandler warningHandler(&mlirCtx,
+                                          frontendOptions.disableWarnings,
+                                          frontendOptions.warningsAsErrors);
 
   // The timing shows the parse, the passes, and the code generation. The
   // manager prints the report at the end of this function.
@@ -770,14 +775,14 @@ static int build(const State &subcommandState) {
     return state.reportError(err.getError());
 
   ErrorOr<OwningOpRef<ModuleOp>> moduleOp = invokeMojoParser(
-      state, args, options, &mlirCtx, cpuDevice,
+      state, args, options, frontendOptions, &mlirCtx, cpuDevice,
       options::OPT_diagnose_missing_doc_strings, options::OPT_max_notes,
       options::OPT_D, options::OPT_strip_file_prefix,
       options::OPT_disable_builtins, options::OPT_mojo_search_paths,
       options::OPT_fixit, options::OPT_export_fixit, &timing.rootScope(),
-      [&](const FrontendOptions &frontendOptions, mlir::TimingScope &ts) {
+      [&](const FrontendOptions &parserOptions, mlir::TimingScope &ts) {
         return LIT::importMojoFile(ctx, sourceMgr, &mlirCtx, options,
-                                   frontendOptions, ts, nullptr);
+                                   parserOptions, ts, nullptr);
       });
   if (failed(moduleOp))
     return state.reportError(moduleOp.getError());

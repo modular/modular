@@ -353,7 +353,8 @@ struct JitCompileKernels
   // Parse Mojo text from resources
   ErrorOr<OwningOpRef<ModuleOp>>
   parseMojoText(MLIRContext *ctx, ContextRef maxContext,
-                const KGEN::CompilationOptions &opts) {
+                const KGEN::CompilationOptions &opts,
+                ArrayRef<std::string> kernelLibraryPaths) {
     auto resourceManager = DenseResourceElementsHandle::getManagerInterface(
         getOperation()->getContext());
     auto mojoTextResource = resourceManager.getBlobManager().lookup("mojo");
@@ -368,6 +369,11 @@ struct JitCompileKernels
     src.AddNewSourceBuffer(std::move(mojoTextBuffer), llvm::SMLoc());
 
     KGEN::FrontendOptions frontendOptions;
+    for (const auto &libraryPath : kernelLibraryPaths) {
+      frontendOptions.extraSearchPaths.push_back(
+          std::filesystem::path(libraryPath).parent_path().string());
+    }
+
     mlir::TimingScope ts;
     auto parsedMojoModule = KGEN::LIT::importMojoFile(
         maxContext, src, ctx, opts, frontendOptions, ts);
@@ -378,9 +384,7 @@ struct JitCompileKernels
   }
 
   // Setup compilation options
-  KGEN::CompilationOptions
-  setupCompilationOptions(TargetInfoAttr targetInfo,
-                          ArrayRef<std::string> kernelLibraryPaths) {
+  KGEN::CompilationOptions setupCompilationOptions(TargetInfoAttr targetInfo) {
     KGEN::CompilationOptions opts;
     // opts (not the module target-info stamp) drives the ObjectCompiler, so the
     // virtual-CPU override must reach it too or the cache key and codegen
@@ -392,10 +396,6 @@ struct JitCompileKernels
       opts.targetFeatures = targetInfo.getFeatures();
     }
     opts.targetAccelerator = targetInfo.getAcceleratorArch();
-    for (const auto &libraryPath : kernelLibraryPaths) {
-      opts.extraSearchPaths.push_back(
-          std::filesystem::path(libraryPath).parent_path().string());
-    }
     opts.saveTempsPrefix = saveTempPrefix.getValue();
     return opts;
   }
@@ -543,9 +543,10 @@ struct JitCompileKernels
     auto cpuDevice = maxContext->get<AsyncRT::CPUDevice>();
 
     auto targetInfo = targetInfoAttr.takeValue();
-    auto opts = setupCompilationOptions(targetInfo, kernelLibraryPaths);
+    auto opts = setupCompilationOptions(targetInfo);
 
-    auto parsedMojoModuleOr = parseMojoText(ctx, maxContext, opts);
+    auto parsedMojoModuleOr =
+        parseMojoText(ctx, maxContext, opts, kernelLibraryPaths);
     if (parsedMojoModuleOr.isError()) {
       return module->emitError(
           "The graph compiler could not parse its Mojo generated code");

@@ -16,6 +16,7 @@
 
 #include "AsyncRT/Runtime/RuntimeCLOptions.h"
 #include "Mojo/ToolCommon/CompilationOptions.h"
+#include "Mojo/ToolCommon/FrontendOptions.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/ErrorOr.h"
 #include "Support/Profiling/TimeProfiler.h"
@@ -151,10 +152,6 @@ public:
         targetCpu, targetFeatures, targetAccelerator, elaborationErrorLimit,
         elaborationErrorIncludePrelude, elaborationErrorVerbose,
         elaborationMaxDepth);
-    options.warnOnUnstableAPIs = warnOnUnstableAPIs;
-    options.ignoredDeprecations = ignoredDeprecations;
-    options.disableWarnings = disableWarnings;
-    options.warningsAsErrors = warningsAsErrors;
     // LLVM's MC layer already owns a global `-target-abi` flag (see the
     // comment by `targetFeatures` above); read its value instead of adding a
     // second one under the same name. `getABIName()` asserts unless this
@@ -164,6 +161,16 @@ public:
     static llvm::mc::RegisterMCTargetOptionsFlags mcTargetOptionsFlags;
     options.targetAbi = std::string(llvm::mc::getABIName());
 
+    return options;
+  }
+
+  /// Return a frontend options object based on the command line options.
+  FrontendOptions getFrontendOptions() const {
+    FrontendOptions options;
+    options.warnOnUnstableAPIs = warnOnUnstableAPIs;
+    options.ignoredDeprecations = ignoredDeprecations;
+    options.disableWarnings = disableWarnings;
+    options.warningsAsErrors = warningsAsErrors;
     return options;
   }
 
