@@ -1460,7 +1460,7 @@ modular_cc_library(
         ":MojoParser",
         # DocGen.cpp uses getMojoVersionString() for the JSON version wrapper.
         "//Config",
-        # DocGen.h exposes DiagnosticFormat in the DocGenConfig struct.
+        # DocGen.h exposes DiagnosticFormat in generateMojoDocJSON.
         "//Support:Driver",
     ],
 )

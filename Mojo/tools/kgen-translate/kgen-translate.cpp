@@ -71,13 +71,10 @@ std::optional<int> tryEmitMojoDoc(int argc, char *argv[], ContextRef &ctxRef) {
   // kgen-translate invocation also passes through this loop.
   SmallVector<StringRef> unknownArguments;
   std::vector<std::string> includePaths;
-  std::vector<std::string> ignoredDeprecations;
+  FrontendOptions frontendOptions;
   bool emitMojoDoc = false;
-  bool diagnoseMissingDocStrings = false;
-  bool warningsAsErrors = false;
   bool hasExplicitWarningPolicy = false;
   bool validateDocStrings = false;
-  std::string stripFilePrefix;
   std::string outputPath = "-";
   DiagnosticFormat diagnosticFormat = DiagnosticFormat::Text;
   for (int i = 1; i < argc; ++i) {
@@ -95,16 +92,16 @@ std::optional<int> tryEmitMojoDoc(int argc, char *argv[], ContextRef &ctxRef) {
       continue;
     }
     if (argument == "--diagnose-missing-doc-strings") {
-      diagnoseMissingDocStrings = true;
+      frontendOptions.diagnoseMissingDocStrings = true;
       continue;
     }
     if (argument == "-Werror") {
-      warningsAsErrors = true;
+      frontendOptions.warningsAsErrors = true;
       hasExplicitWarningPolicy = true;
       continue;
     }
     if (argument == "-Wno-error") {
-      warningsAsErrors = false;
+      frontendOptions.warningsAsErrors = false;
       hasExplicitWarningPolicy = true;
       continue;
     }
@@ -113,11 +110,11 @@ std::optional<int> tryEmitMojoDoc(int argc, char *argv[], ContextRef &ctxRef) {
       continue;
     }
     if (argument.consume_front("--ignore-deprecated=")) {
-      ignoredDeprecations.push_back(argument.str());
+      frontendOptions.ignoredDeprecations.push_back(argument.str());
       continue;
     }
     if (argument.consume_front("-strip-file-prefix=")) {
-      stripFilePrefix = argument.str();
+      frontendOptions.stripFilePrefix = argument.str();
       continue;
     }
     if (argument.consume_front("--diagnostic-format=")) {
@@ -167,7 +164,7 @@ std::optional<int> tryEmitMojoDoc(int argc, char *argv[], ContextRef &ctxRef) {
   if (validateDocStrings && !hasExplicitWarningPolicy) {
     llvm::errs() << "warning: --validate-doc-strings is deprecated, use "
                     "-Werror instead\n";
-    warningsAsErrors = true;
+    frontendOptions.warningsAsErrors = true;
   }
 
   std::string outputError;
@@ -183,14 +180,8 @@ std::optional<int> tryEmitMojoDoc(int argc, char *argv[], ContextRef &ctxRef) {
   registerContext(registry, ctxRef);
   MLIRContext context(registry);
 
-  DocGenConfig config;
-  config.includePaths = std::move(includePaths);
-  config.ignoredDeprecations = std::move(ignoredDeprecations);
-  config.diagnoseMissingDocStrings = diagnoseMissingDocStrings;
-  config.warningsAsErrors = warningsAsErrors;
-  config.stripFilePrefix = std::move(stripFilePrefix);
-  config.diagnosticFormat = diagnosticFormat;
-  if (!generateMojoDocJSON(*inputPath, context, config, output->os())) {
+  if (!generateMojoDocJSON(*inputPath, context, frontendOptions, includePaths,
+                           diagnosticFormat, output->os())) {
     llvm::errs() << "kgen-translate: error: could not generate documentation\n";
     return 1;
   }

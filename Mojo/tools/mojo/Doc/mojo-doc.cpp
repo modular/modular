@@ -18,6 +18,7 @@
 #include "AsyncRT/Runtime/WorkQueue.h"
 #include "Init/Init.h"
 #include "Mojo/MojoTooling/DocGen.h"
+#include "Mojo/ToolCommon/FrontendOptions.h"
 #include "Mojo/ToolCommon/InitAllDialects.h"
 #include "Support/Driver/DriverSupport.h"
 
@@ -120,23 +121,25 @@ static int doc(const State &subcommandState) {
   if (!out)
     return state.reportError(outputError);
 
-  DocGenConfig config;
-  config.warningsAsErrors = state.areWarningsAsErrors();
-  config.diagnoseMissingDocStrings =
+  KGEN::FrontendOptions frontendOptions;
+  frontendOptions.warningsAsErrors = state.areWarningsAsErrors();
+  frontendOptions.diagnoseMissingDocStrings =
       args.hasArg(options::OPT_diagnose_missing_doc_strings);
   int maxNotes = 0;
   if (!args.getLastArgValue(options::OPT_max_notes).getAsInteger(10, maxNotes))
-    config.maxNotesPerDiagnostic = maxNotes;
-  config.stripFilePrefix = args.getLastArgValue(options::OPT_strip_file_prefix);
-  config.docsBasePath = args.getLastArgValue(options::OPT_docs_base_path);
-  config.includePaths = args.getAllArgValues(options::OPT_I);
-  config.diagnosticFormat = state.diagnosticFormat;
-  config.ignoredDeprecations =
-      args.getAllArgValues(options::OPT_ignore_deprecated);
+    frontendOptions.maxNotesPerDiagnostic = maxNotes;
+  frontendOptions.stripFilePrefix =
+      args.getLastArgValue(options::OPT_strip_file_prefix);
+  frontendOptions.docsBasePath =
+      args.getLastArgValue(options::OPT_docs_base_path);
+  frontendOptions.ignoredDeprecations = llvm::to_vector_of<std::string>(
+      args.getAllArgValues(options::OPT_ignore_deprecated));
 
   // Note: timing scope removed during DocGen extraction — it was never
   // surfaced to users.
-  if (!generateMojoDocJSON(*pathOrErr, context, config, out->os()))
+  if (!generateMojoDocJSON(*pathOrErr, context, frontendOptions,
+                           args.getAllArgValues(options::OPT_I),
+                           state.diagnosticFormat, out->os()))
     return state.reportError("could not generate documentation");
 
   out->keep();

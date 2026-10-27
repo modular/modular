@@ -31,10 +31,13 @@ using namespace M::KGEN;
 
 bool M::generateMojoDocJSON(const std::filesystem::path &resolvedPath,
                             mlir::MLIRContext &context,
-                            const DocGenConfig &config, llvm::raw_ostream &os) {
+                            const FrontendOptions &frontendOptions,
+                            llvm::ArrayRef<std::string> includePaths,
+                            DiagnosticFormat diagnosticFormat,
+                            llvm::raw_ostream &os) {
   llvm::SourceMgr sourceManager;
-  sourceManager.setDiagHandler(getDiagHandler(config.diagnosticFormat));
-  sourceManager.setIncludeDirs(config.includePaths);
+  sourceManager.setDiagHandler(getDiagHandler(diagnosticFormat));
+  sourceManager.setIncludeDirs(includePaths);
 
   // Add a sentinel buffer as the "main file" so that diagnostics emitted for
   // decls without valid source locations (e.g., from bytecode packages) have a
@@ -43,15 +46,6 @@ bool M::generateMojoDocJSON(const std::filesystem::path &resolvedPath,
                                    llvm::SMLoc());
 
   CompilationOptions compilationOptions;
-  FrontendOptions frontendOptions;
-  frontendOptions.warningsAsErrors = config.warningsAsErrors;
-  frontendOptions.ignoredDeprecations =
-      llvm::to_vector_of<std::string>(config.ignoredDeprecations);
-  frontendOptions.diagnoseMissingDocStrings = config.diagnoseMissingDocStrings;
-  frontendOptions.maxNotesPerDiagnostic = config.maxNotesPerDiagnostic;
-  frontendOptions.stripFilePrefix = config.stripFilePrefix;
-  frontendOptions.docsBasePath = config.docsBasePath;
-
   MojoParserContext parserContext(sourceManager, &context, compilationOptions,
                                   frontendOptions);
   LIT::ASTDecl *moduleDecl = parserContext.parseFileOrPackage(resolvedPath);
