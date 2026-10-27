@@ -35,6 +35,12 @@ def test_ipv4_bits() raises:
     assert_equal(Ipv4Addr(bits=0xC0A80001).bits(), 0xC0A80001)
 
 
+def test_ipv4_octets() raises:
+    var addr = Ipv4Addr(0x12, 0x34, 0x56, 0x78)
+    assert_equal(addr.octets(), [0x12, 0x34, 0x56, 0x78])
+    assert_equal(Ipv4Addr(octets=addr.octets()), addr)
+
+
 def test_ipv4_write_to() raises:
     assert_equal(String(Ipv4Addr(192, 168, 0, 1)), "192.168.0.1")
     assert_equal(String(Ipv4Addr.unspecified), "0.0.0.0")
@@ -101,6 +107,15 @@ def test_ipv6_bits() raises:
         0x102030405060708090A0B0C0D0E0F00D,
     )
     assert_equal(Ipv6Addr.localhost.bits(), 1)
+
+
+def test_ipv6_octets() raises:
+    var addr = Ipv6Addr(0x2001, 0xDB8, 0, 0, 0, 0, 0, 1)
+    assert_equal(
+        addr.octets(),
+        [0x20, 0x01, 0x0D, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01],
+    )
+    assert_equal(Ipv6Addr(octets=addr.octets()), addr)
 
 
 def test_ipv6_write_to() raises:
