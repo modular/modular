@@ -16,7 +16,7 @@
 # or through the shared package decl of an unrelated import of the same
 # package.
 
-# RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics -I=%S/inputs %s
+# RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics -I%S/inputs %s
 
 # An import in one function is not visible in a sibling function, even when
 # the importer is parsed first.

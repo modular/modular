@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated -verify-diagnostics %s -I=%S/inputs
+# RUN: %parse-mojo-isolated -verify-diagnostics %s -I%S/inputs
 
 struct HasIntParam[x: Int](Movable where False):
   def __init__(out self): pass

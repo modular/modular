@@ -21,8 +21,8 @@
 # RUN: echo "    pass" >> %t.dir/one/foo/util/inner.mojo
 # RUN: echo "def util_fn():" > %t.dir/two/foo/util.mojo
 # RUN: echo "    pass" >> %t.dir/two/foo/util.mojo
-# RUN: %parse-mojo-isolated -verify-diagnostics -I=%t.dir/one -I=%t.dir/two %s
-# RUN: %parse-mojo-isolated -verify-diagnostics -I=%t.dir/two -I=%t.dir/one %s
+# RUN: %parse-mojo-isolated -verify-diagnostics -I%t.dir/one -I%t.dir/two %s
+# RUN: %parse-mojo-isolated -verify-diagnostics -I%t.dir/two -I%t.dir/one %s
 
 # expected-error @+1 {{'util' is a module, not a package; it has no nested module or package 'inner'}}
 import foo.util.inner

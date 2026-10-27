@@ -18,8 +18,8 @@
 # symbol path the type is uniqued under.
 
 # RUN: %parse-mojo-isolated -verify-diagnostics \
-# RUN:   -I=%S/inputs/dual_mount_pkg/lib \
-# RUN:   -I=%S/inputs/dual_mount_pkg/lib/mylib %s \
+# RUN:   -I%S/inputs/dual_mount_pkg/lib \
+# RUN:   -I%S/inputs/dual_mount_pkg/lib/mylib %s \
 # RUN: | FileCheck %s
 
 # CHECK: !lit.struct<@utils::@a::@Thing>

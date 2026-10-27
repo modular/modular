@@ -17,7 +17,7 @@
 # qualified access or its own import - importing both under one name is
 # deprecated (see decls/conflicting_imports_errors.mojo).
 
-# RUN: %parse-mojo-isolated -split-input-file -I=%S/inputs -verify-diagnostics %s
+# RUN: %parse-mojo-isolated -split-input-file -I%S/inputs -verify-diagnostics %s
 
 import fn_overload_package
 

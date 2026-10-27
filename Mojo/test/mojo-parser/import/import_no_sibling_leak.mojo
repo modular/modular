@@ -20,7 +20,7 @@
 # *outside* but must NOT make `producer` visible to its siblings.
 #
 # Note - diagnostics are emitted in the no_sibling_leak package: see there.
-# RUN: %parse-mojo-isolated -verify-diagnostics -split-input-file -I=%S/inputs %s
+# RUN: %parse-mojo-isolated -verify-diagnostics -split-input-file -I%S/inputs %s
 
 from no_sibling_leak.consumer_module import consume
 

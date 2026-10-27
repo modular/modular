@@ -13,7 +13,7 @@
 
 # Tests for @deprecated decorator warning emission.
 
-# RUN: %parse-mojo-isolated -verify-diagnostics %s -I=%S/inputs
+# RUN: %parse-mojo-isolated -verify-diagnostics %s -I%S/inputs
 
 
 # ===----------------------------------------------------------------------=== #

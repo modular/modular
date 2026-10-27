@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated %s -I=%S/inputs | FileCheck %s
+# RUN: %parse-mojo-isolated %s -I%S/inputs | FileCheck %s
 
 from test_package.module import ParameterizedType
 

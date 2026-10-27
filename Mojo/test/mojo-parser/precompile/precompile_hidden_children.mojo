@@ -15,10 +15,10 @@
 # from its __init__, whether the package was built from source or loaded from a
 # precompiled file. Each split runs against both, and they must agree.
 
-# RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics -I=%S/inputs %s
+# RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics -I%S/inputs %s
 # RUN: rm -rf %t && mkdir -p %t
 # RUN: %precompile-mojo-isolated %S/inputs/hidden_children_pkg -o %t/hidden_children_pkg.mojoc
-# RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics -I=%t %s
+# RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics -I%t %s
 
 # A bare import does not expose a submodule that __init__ doesn't re-export.
 import hidden_children_pkg
