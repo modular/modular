@@ -1148,46 +1148,6 @@ struct Struct_rms_norm_value_cache_ragged_paged:
         )
 
 
-@extensibility.register("mo.print_kv_cache.paged")
-struct Struct_print_kv_cache_paged:
-    """Registers the `mo.print_kv_cache.paged` graph op with the graph compiler.
-    """
-
-    @inline(.always)
-    @staticmethod
-    def execute[
-        dtype: DType,
-        //,
-        target: StaticString,
-    ](
-        valid_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
-        layer_idx: UInt32,
-        is_print_compact: InputTensor[dtype=.bool, rank=1, ...],
-        context: DeviceContext,
-    ) raises:
-        var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            page_stride,
-            cache_lengths,
-            kv_lookup_table,
-            max_prompt_length,
-            max_cache_length,
-        )
-        print_kv_cache_paged_generic_kernel_api[target](
-            valid_lengths,
-            kv_collection,
-            layer_idx,
-            is_print_compact,
-            context,
-        )
-
-
 @extensibility.register("mo.kv_matmul.ragged.paged")
 struct Struct_kv_matmul_ragged_paged:
     """Registers the `mo.kv_matmul.ragged.paged` graph op with the graph compiler.

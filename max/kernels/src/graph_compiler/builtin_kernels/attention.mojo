@@ -26,7 +26,6 @@ import extensibility
 # ===-----------------------------------------------------------------------===#
 
 from max.gpu.host import DeviceAttribute, DeviceBuffer, DeviceContext
-from layout.tile_tensor import row_major
 from layout import Coord
 from max.gpu.host.info import is_cpu, is_gpu
 from kv_cache.paged_sparse_kv_index_remap import (
@@ -43,11 +42,8 @@ from layout import (
     TileTensor,
     RowMajorLayout,
     UNKNOWN_VALUE,
-    coord_to_index_list,
-    row_major,
 )
 from nn.attention.cpu.mha import flash_attention as nn_flash_attention
-from nn.attention.cpu.mha import flash_attention_split_kv
 from nn.kv_cache import (
     generic_flash_attention_kv_cache_padded,
     generic_fused_qkv_matmul_kv_cache_bshd_paged,
@@ -73,7 +69,6 @@ from nn.attention.gpu.nvidia.common import (
 )
 from nn.attention.gpu.mha_decode_partition_heuristic import (
     amd_sparse_mla_inplace_decode_num_partitions,
-    mha_decoding_num_partitions,
 )
 from nn.attention.mha_mask import MHAMask
 from nn.attention.mha_utils import dispatch_mask, maybe_null_pointer
@@ -96,17 +91,9 @@ from nn.attention.indexer_score import indexer_score_ragged_paged
 from nn.attention.latent_sparse_attention import (
     latent_sparse_attention_ragged_paged,
 )
-from nn.attention.gpu.mla_decode_dispatch_scalars import (
-    mla_decode_dispatch_scalars,
-)
 from nn.attention.gpu.nvidia.sm100.mla_decode_utils import SparseRowLayout
-from nn.attention.gpu.nvidia.sm100.mla_prefill import (
-    mla_sm100_prefill_sparse,
-    mla_sm100_prefill_sparse_fp8,
-)
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from extensibility import DynamicTensor, InputTensor, OutputTensor
-from extensibility import Tensor
 from extensibility import (
     _FusedInputTensor as FusedInputTensor,
 )
@@ -1356,129 +1343,6 @@ struct NoMaskFlashAttentionCPU:
             scale.cast[.float32](),
             ctx=Optional(ctx.assert_cpu_target()),
         )
-
-
-@extensibility.register("with_mask_flash_attention_split_kv_cpu")
-struct WithMaskFlashAttentionSplitKVCPU:
-    """Registers the `with_mask_flash_attention_split_kv_cpu` graph op with the graph compiler.
-    """
-
-    @staticmethod
-    def execute[
-        dtype: DType,
-        rank: Int,
-        target: StaticString,
-    ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        q: InputTensor[dtype=dtype, rank=rank, ...],
-        k: FusedInputTensor[dtype=dtype, rank=rank, ...],
-        v: FusedInputTensor[dtype=dtype, rank=rank, ...],
-        k_cache: FusedInputTensor[dtype=dtype, rank=rank + 1, ...],
-        v_cache: FusedInputTensor[dtype=dtype, rank=rank + 1, ...],
-        mask: FusedInputTensor[dtype=dtype, ...],
-        scale: Scalar[dtype=DType.float32],
-        ctx: DeviceContext,
-    ) raises:
-        comptime assert is_cpu[target](), "only valid on CPUs"
-
-        @inline(.always)
-        def k_input_fn[
-            width: Int, rank: Int
-        ](coords: IndexList[rank]) {imm} -> SIMD[k.dtype, width]:
-            return k._lambda_load[width=width](
-                rebind[IndexList[k.rank]](coords)
-            )
-
-        @inline(.always)
-        def v_input_fn[
-            width: Int, rank: Int
-        ](coords: IndexList[rank]) {imm} -> SIMD[v.dtype, width]:
-            return v._lambda_load[width=width](
-                rebind[IndexList[v.rank]](coords)
-            )
-
-        @inline(.always)
-        def k_cache_input_fn[
-            width: Int, rank: Int
-        ](coords: IndexList[rank]) {imm} -> SIMD[k_cache.dtype, width]:
-            return k_cache._lambda_load[width=width](
-                rebind[IndexList[k_cache.rank]](coords)
-            )
-
-        @inline(.always)
-        def v_cache_input_fn[
-            width: Int, rank: Int
-        ](coords: IndexList[rank]) {imm} -> SIMD[v_cache.dtype, width]:
-            return v_cache._lambda_load[width=width](
-                rebind[IndexList[v_cache.rank]](coords)
-            )
-
-        @inline(.always)
-        def mask_input_fn[
-            width: Int, rank: Int
-        ](coords: IndexList[rank]) {imm} -> SIMD[mask.dtype, width]:
-            return mask._lambda_load[width=width](
-                rebind[IndexList[mask.rank]](coords)
-            )
-
-        flash_attention_split_kv(
-            k_input_fn,
-            v_input_fn,
-            k_cache_input_fn,
-            v_cache_input_fn,
-            mask_input_fn,
-            q.to_tile_tensor[.int64](),
-            k.shape(),
-            v.shape(),
-            k_cache.shape(),
-            v_cache.shape(),
-            mask.shape(),
-            output.to_tile_tensor[.int64](),
-            scale.cast[.float32](),
-            ctx=Optional(ctx.assert_cpu_target()),
-        )
-
-
-@extensibility.register_shape_function("with_mask_flash_attention_split_kv_cpu")
-def with_mask_flash_attention_split_kv_cpu_shape(
-    q: Some[Tensor],
-    k: Some[Tensor],
-    v: Some[Tensor],
-    k_cache: Some[Tensor],
-    v_cache: Some[Tensor],
-    mask: Some[Tensor],
-    scale: Scalar[dtype=DType.float32],
-) -> IndexList[type_of(q).rank]:
-    """Computes the output shape for the `with_mask_flash_attention_split_kv_cpu` graph op.
-    """
-    comptime assert (
-        type_of(k).dtype == type_of(q).dtype
-    ), "k and q must share a dtype"
-    comptime assert (
-        type_of(v).dtype == type_of(q).dtype
-    ), "v and q must share a dtype"
-    comptime assert (
-        type_of(k_cache).dtype == type_of(q).dtype
-    ), "k_cache and q must share a dtype"
-    comptime assert (
-        type_of(v_cache).dtype == type_of(q).dtype
-    ), "v_cache and q must share a dtype"
-    comptime assert (
-        type_of(mask).dtype == type_of(q).dtype
-    ), "mask and q must share a dtype"
-    comptime assert (
-        type_of(k).rank == type_of(q).rank
-    ), "k and q must share a rank"
-    comptime assert (
-        type_of(v).rank == type_of(q).rank
-    ), "v and q must share a rank"
-    comptime assert (
-        type_of(k_cache).rank == type_of(q).rank + 1
-    ), "k_cache rank must be q rank + 1"
-    comptime assert (
-        type_of(v_cache).rank == type_of(q).rank + 1
-    ), "v_cache rank must be q rank + 1"
-    return rebind[IndexList[type_of(q).rank]](coord_to_index_list(q.shape()))
 
 
 @extensibility.register("mo.composite.masked_flash_attention_cpu")
@@ -2733,53 +2597,6 @@ struct Struct_mha_padded_paged:
         )
 
 
-@extensibility.register("mo.mha.decode.get_num_partitions")
-struct Struct_mha_decode_num_partitions:
-    """Registers the `mo.mha.decode.get_num_partitions` graph op with the graph compiler.
-    """
-
-    @inline(.always)
-    @staticmethod
-    def execute[
-        *, n_kv_heads: Int
-    ](
-        num_partitions: OutputTensor[dtype=.int64, rank=1, ...],
-        decode_num_partitions_request: InputTensor[
-            dtype=DType.int64, rank=1, ...
-        ],
-        context: DeviceContext,
-    ) raises:
-        if decode_num_partitions_request.dim_size[0]() != 2:
-            raise Error(
-                "Expected decode_num_partitions_request to have shape [2]."
-            )
-
-        var request_ptr = decode_num_partitions_request.unsafe_ptr()
-        var batch_size = Int(request_ptr[0])
-        var max_cache_valid_length = Int(request_ptr[1])
-
-        if batch_size < 1:
-            raise Error(
-                "decode_num_partitions_request[0] (batch size) must be "
-                "positive."
-            )
-
-        if max_cache_valid_length < 0:
-            raise Error(
-                "decode_num_partitions_request[1] (max cache length) must be "
-                "non-negative."
-            )
-
-        num_partitions[0] = Int64(
-            mha_decoding_num_partitions(
-                batch_size,
-                max_cache_valid_length,
-                n_kv_heads,
-                context,
-            )
-        )
-
-
 @extensibility.register("mo.mha.ragged.paged")
 struct Struct_mha_ragged_paged_scalar_args:
     """Registers the `mo.mha.ragged.paged` graph op with the graph compiler."""
@@ -3352,63 +3169,6 @@ struct Struct_mla_prefill_graph_paged:
             kv_input_fn,
             context,
         )
-
-
-@extensibility.register("mo.mla.compute_dispatch_args.scalar")
-struct Struct_mla_compute_dispatch_args_scalar:
-    """Registers the `mo.mla.compute_dispatch_args.scalar` graph op with the graph compiler.
-    """
-
-    @inline(.always)
-    @staticmethod
-    def execute[
-        num_heads: Int,
-        is_fp8_kv: Bool,
-        target: StaticString,
-    ](
-        output: OutputTensor[dtype=DType.int64, rank=1, ...],
-        batch_size_tensor: InputTensor[dtype=DType.int64, rank=1, ...],
-        max_cache_valid_length_tensor: InputTensor[
-            dtype=DType.int64, rank=1, ...
-        ],
-        q_max_seq_len_tensor: InputTensor[dtype=DType.int64, rank=1, ...],
-        context: DeviceContext,
-    ) raises:
-        comptime assert is_gpu[
-            target
-        ](), "mo.mla.compute_dispatch_args.scalar is only supported on GPU"
-
-        var ctx = context
-        var batch_size = Int(batch_size_tensor.unsafe_ptr()[0])
-        var max_cache_valid_length = Int(
-            max_cache_valid_length_tensor.unsafe_ptr()[0]
-        )
-        var q_max_seq_len = Int(q_max_seq_len_tensor.unsafe_ptr()[0])
-
-        if batch_size < 0:
-            raise Error("batch_size must be non-negative.")
-        if batch_size == 0:
-            output[0] = Int64(0)
-            output[1] = Int64(q_max_seq_len)
-            output[2] = Int64(1)
-            return
-
-        # Route through the device-generic helper so this op (the test
-        # reference) stays in lockstep with the `mla_dispatch_args_scalar`
-        # binding the runtime resolver calls: HIP -> AMD heuristic, CUDA ->
-        # SM100 runtime heuristic.
-        var scalars = mla_decode_dispatch_scalars(
-            batch_size,
-            max_cache_valid_length,
-            q_max_seq_len,
-            num_heads,
-            is_fp8_kv,
-            ctx,
-        )
-
-        output[0] = Int64(scalars[0])
-        output[1] = Int64(scalars[1])
-        output[2] = Int64(scalars[2])
 
 
 @extensibility.register("mo.mla.graph.decode.paged.fp8")
@@ -4553,226 +4313,6 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
                 ),
                 prefill_d_indices=prefill_indices,
                 selection_lag=Int(selection_lag),
-            )
-            _ = scratch_sparse_indices^
-
-
-@extensibility.register("mo.mla.prefill.sparse.paged")
-struct Struct_mla_prefill_sparse_paged:
-    """Registers the `mo.mla.prefill.sparse.paged` graph op with the graph compiler.
-    """
-
-    @inline(.always)
-    @staticmethod
-    def execute[
-        dtype: DType,
-        cache_dtype: DType,
-        //,
-        target: StaticString,
-        indices_stride: Int,
-    ](
-        output: OutputTensor[dtype=dtype, rank=3, ...],
-        q: InputTensor[dtype=dtype, rank=3, ...],
-        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
-        layer_idx: UInt32,
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        sparse_indices: InputTensor[dtype=.int32, rank=2, ...],
-        topk_lengths: InputTensor[dtype=.int32, rank=1, ...],
-        attn_sink: InputTensor[dtype=.float32, rank=1, ...],
-        scale: Float32,
-        context: DeviceContext,
-    ) raises:
-        comptime assert is_gpu[
-            target
-        ](), "mo.mla.prefill.sparse.paged is only supported on GPU"
-
-        var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            page_stride,
-            cache_lengths,
-            kv_lookup_table,
-            max_prompt_length,
-            max_cache_length,
-        )
-
-        # The underlying kernel asserts qk_depth == 576, num_q_heads == 128,
-        # num_kv_heads == 1; pull those from the input static shapes.
-        comptime num_q_heads = Int(q.static_spec.shape_tuple[1])
-        comptime qk_depth = Int(q.static_spec.shape_tuple[2])
-        comptime v_depth = Int(output.static_spec.shape_tuple[2])
-        comptime mla_page_size = Int(kv_blocks.static_spec.shape_tuple[3])
-
-        var num_indices_sparse = sparse_indices.size()
-
-        var attn_sink_ptr = ImmPointer[Float32, origin=ImmutAnyOrigin](
-            attn_sink.unsafe_ptr()
-        )
-
-        var k_cache = kv_collection.get_key_cache(Int(layer_idx))
-
-        with Trace[TraceLevel.OP, target=target](
-            "mo.mla.prefill.sparse.paged",
-            task_id=get_safe_task_id(context),
-        ):
-            # The kernel expects each selected key as
-            # `Int32(physical_block_id * page_size + token_offset_within_page)`.
-            var scratch_sparse_indices = Optional[DeviceBuffer[DType.int32]]()
-            var gather_indices = _sparse_gather_indices[
-                target,
-                mla_page_size,
-                indices_stride,
-                cache_dtype,
-            ](
-                scratch_sparse_indices,
-                sparse_indices,
-                input_row_offsets,
-                kv_lookup_table,
-                kv_blocks,
-                context,
-            )
-
-            # The kernel's `indices` / `topk_lengths` tile tensors are
-            # `DType.uint32`. Invalid sparse slots are encoded as `Int32(-1)`
-            # which has the same bit pattern as `UInt32(0xFFFFFFFF)`; the
-            # producer in the kernel reads them as int32 and rejects the
-            # negative ones (cf. the `idx >= 0` check in the gather4 path),
-            # so reinterpreting the bits via `unsafe_bitcast` is sound.
-            var indices_tt = TileTensor(
-                gather_indices.unsafe_bitcast[UInt32](),
-                row_major(num_indices_sparse),
-            )
-            var topk_lengths_tt = TileTensor(
-                topk_lengths.unsafe_ptr().unsafe_bitcast[UInt32](),
-                row_major(Int(topk_lengths.dim_size(0))),
-            )
-
-            mla_sm100_prefill_sparse[
-                num_q_heads=num_q_heads,
-                qk_depth=qk_depth,
-                v_depth=v_depth,
-                indices_stride=indices_stride,
-            ](
-                output.to_tile_tensor[.int64](),
-                q.to_tile_tensor[.int64](),
-                k_cache,
-                indices_tt,
-                topk_lengths_tt,
-                attn_sink_ptr,
-                scale,
-                context,
-            )
-            _ = scratch_sparse_indices^
-
-
-@extensibility.register("mo.mla.prefill.sparse.paged.fp8")
-struct Struct_mla_prefill_sparse_paged_fp8:
-    """Registers the `mo.mla.prefill.sparse.paged.fp8` graph op with the graph compiler.
-    """
-
-    @inline(.always)
-    @staticmethod
-    def execute[
-        dtype: DType,
-        //,
-        target: StaticString,
-        indices_stride: Int,
-    ](
-        output: OutputTensor[dtype=dtype, rank=3, ...],
-        q: InputTensor[dtype=dtype, rank=3, ...],
-        kv_blocks: MutableInputTensor[dtype=.float8_e4m3fn, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
-        layer_idx: UInt32,
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        sparse_indices: InputTensor[dtype=.int32, rank=2, ...],
-        topk_lengths: InputTensor[dtype=.int32, rank=1, ...],
-        attn_sink: InputTensor[dtype=.float32, rank=1, ...],
-        kv_scales: InputTensor[dtype=.float32, rank=1, ...],
-        scale: Float32,
-        context: DeviceContext,
-    ) raises:
-        comptime assert is_gpu[
-            target
-        ](), "mo.mla.prefill.sparse.paged.fp8 is only supported on GPU"
-
-        var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            page_stride,
-            cache_lengths,
-            kv_lookup_table,
-            max_prompt_length,
-            max_cache_length,
-        )
-
-        comptime num_q_heads = Int(q.static_spec.shape_tuple[1])
-        comptime qk_depth = Int(q.static_spec.shape_tuple[2])
-        comptime v_depth = Int(output.static_spec.shape_tuple[2])
-        comptime mla_page_size = Int(kv_blocks.static_spec.shape_tuple[3])
-
-        var num_indices_sparse = sparse_indices.size()
-
-        var attn_sink_ptr = ImmPointer[Float32, origin=ImmutAnyOrigin](
-            attn_sink.unsafe_ptr()
-        )
-
-        var scales_ptr = ImmPointer[Float32, ImmutAnyOrigin](
-            kv_scales.unsafe_ptr()
-        )
-
-        var k_cache = kv_collection.get_key_cache(Int(layer_idx))
-
-        with Trace[TraceLevel.OP, target=target](
-            "mo.mla.prefill.sparse.paged.fp8",
-            task_id=get_safe_task_id(context),
-        ):
-            var scratch_sparse_indices = Optional[DeviceBuffer[DType.int32]]()
-            var gather_indices = _sparse_gather_indices[
-                target,
-                mla_page_size,
-                indices_stride,
-                DType.float8_e4m3fn,
-            ](
-                scratch_sparse_indices,
-                sparse_indices,
-                input_row_offsets,
-                kv_lookup_table,
-                kv_blocks,
-                context,
-            )
-
-            var indices_tt = TileTensor(
-                gather_indices.unsafe_bitcast[UInt32](),
-                row_major(num_indices_sparse),
-            )
-            var topk_lengths_tt = TileTensor(
-                topk_lengths.unsafe_ptr().unsafe_bitcast[UInt32](),
-                row_major(Int(topk_lengths.dim_size(0))),
-            )
-
-            mla_sm100_prefill_sparse_fp8[
-                num_q_heads=num_q_heads,
-                qk_depth=qk_depth,
-                v_depth=v_depth,
-                indices_stride=indices_stride,
-                scale_block_size=qk_depth,
-            ](
-                output.to_tile_tensor[.int64](),
-                q.to_tile_tensor[.int64](),
-                k_cache,
-                indices_tt,
-                topk_lengths_tt,
-                attn_sink_ptr,
-                scales_ptr,
-                scale,
-                context,
             )
             _ = scratch_sparse_indices^
 

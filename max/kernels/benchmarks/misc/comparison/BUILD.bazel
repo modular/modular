@@ -281,46 +281,6 @@ modular_py_binary(
     ],
 )
 
-modular_py_binary(
-    name = "bench_mla_prefill_sparse",
-    srcs = ["bench_blackwell_mla_prefill_sparse.py"],
-    main = "bench_blackwell_mla_prefill_sparse.py",
-    tags = [
-        "gpu",
-        "manual",
-    ],
-    target_compatible_with = ["//:b200_gpu"],
-    deps = [
-        "//max/kernels/benchmarks/misc/utils:bench_utils",
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/graph",
-        "//max/python/max/nn",
-        requirement("torch"),
-    ],
-)
-
-modular_py_binary(
-    name = "bench_mla_prefill_sparse_fp8",
-    srcs = ["bench_blackwell_mla_prefill_sparse_fp8.py"],
-    main = "bench_blackwell_mla_prefill_sparse_fp8.py",
-    tags = [
-        "gpu",
-        "manual",
-    ],
-    target_compatible_with = ["//:b200_gpu"],
-    deps = [
-        "//max/kernels/benchmarks/misc/utils:bench_utils",
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/graph",
-        "//max/python/max/nn",
-        requirement("torch"),
-    ],
-)
-
 modular_py_library(
     name = "gpu_telemetry",
     srcs = ["gpu_telemetry.py"],

@@ -16,7 +16,7 @@
 This is the varlen (ragged, `query_start_loc`) Mamba-2 SSD forward op, matching
 `mamba_chunk_scan_combined` semantics for the `NemotronHMamba2Mixer`
 (Nemotron-H). It serves both prefill and decode. It differs from the Mamba-1
-ops in `varlen_selective_scan.mojo` in three ways that the math requires:
+per-channel `A` `(dim, dstate)` diagonal in three ways that the math requires:
 
   - `A` is a per-head SCALAR `(nheads,)` (shared across all head_dim channels
     and all dstate), not a per-channel `(dim, dstate)` diagonal.

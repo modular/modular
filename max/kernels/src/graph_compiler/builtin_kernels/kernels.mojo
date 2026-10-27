@@ -71,11 +71,7 @@ from nn.conv.conv_transpose import (
 from nn.fold import fold, fold_shape
 from nn.gather_scatter import apply_packed_bitmask, normalize_neg_index
 from nn.irfft import irfft
-from nn.kv_cache import (
-    generic_get_paged_cache,
-    print_kv_cache_paged_generic_cpu,
-    print_kv_cache_paged_generic_gpu,
-)
+from nn.kv_cache import generic_get_paged_cache
 from nn.chunked_qkv_rope_store import chunked_qkv_rope_store_paged_ragged
 from nn.rope_split_store import (
     rope_split_store_paged_ragged,
@@ -3011,66 +3007,6 @@ def _layout_transform_conv_filter_from_fcrs[
 # Expected kernel name format:
 # mo.rms_norm_kv_cache.<padded/ragged>.paged
 # ===-----------------------------------------------------------------------===#
-
-
-# ===-----------------------------------------------------------------------===#
-# Print KV Cache
-#
-# Expected kernel name format:
-# mo.print_kv_cache.paged
-# ===-----------------------------------------------------------------------===#
-
-
-def print_kv_cache_paged_generic_kernel_api[
-    dtype: DType,
-    //,
-    target: StaticString,
-    kv_params: KVCacheStaticParams,
-    page_size: Int,
-](
-    valid_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-    kv_collection: PagedKVCacheCollection[dtype, kv_params, page_size, ...],
-    layer_idx: UInt32,
-    is_print_compact: InputTensor[dtype=.bool, rank=1, ...],
-    context: DeviceContext,
-) raises:
-    """Prints the contents of a paged KV cache for debugging.
-
-    Parameters:
-        dtype: Element type of the KV cache `blocks` tensor (inferred).
-        target: Target device identifier for kernel dispatch.
-        kv_params: Static KV cache parameters carrying `num_heads` and
-            `head_size`.
-        page_size: Number of tokens stored per page in the paged KV cache.
-
-    Args:
-        valid_lengths: One-dimensional tensor of shape `[batch]` giving the
-            valid length of each sequence; only positions within these
-            lengths are printed.
-        kv_collection: Paged KV cache collection holding the keys and values
-            to print; the cache for this layer is retrieved via `layer_idx`.
-        layer_idx: Index of the layer whose key and value caches are printed.
-        is_print_compact: One-element boolean tensor; when element zero is
-            true, abbreviates the output with ellipses (CPU only).
-        context: Device context used to copy device buffers to host on GPU
-            targets.
-    """
-    comptime if is_gpu[target]():
-        print_kv_cache_paged_generic_gpu[target](
-            valid_lengths.to_tile_tensor(),
-            kv_collection,
-            layer_idx,
-            True,
-            context,
-        )
-    elif is_cpu[target]():
-        print_kv_cache_paged_generic_cpu[target](
-            valid_lengths.to_tile_tensor(),
-            kv_collection,
-            layer_idx,
-            is_print_compact[0],
-            context,
-        )
 
 
 # ===-----------------------------------------------------------------------===#

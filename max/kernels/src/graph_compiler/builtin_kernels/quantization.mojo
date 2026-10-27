@@ -86,7 +86,6 @@ from quantization import (
 from quantization.qmatmul import matmul_qint4, matmul_qint4_pack_b
 from quantization.qmatmul_gpu import (
     gpu_qint4_repack_GPTQ,
-    gpu_qint4_repack_Q4_0,
     matmul_gpu_qint4,
 )
 from quantization.qmatmul_k import (
@@ -767,42 +766,6 @@ def vroom_q6_k_repack_weights_shape(
     return rebind[IndexList[type_of(b).rank]](coord_to_index_list(b.shape()))
 
 
-@extensibility.register("qmatmul_b4_g32")
-struct QMatmulGPU_b4_g32:
-    """Registers the `qmatmul_b4_g32` graph op with the graph compiler."""
-
-    @staticmethod
-    @inline(.always)
-    def execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        c: OutputTensor[dtype=.bfloat16, rank=2, ...],
-        a: InputTensor[dtype=.bfloat16, rank=2, ...],
-        b: InputTensor[dtype=.uint8, rank=2, ...],
-        ctx: DeviceContext,
-    ) raises:
-        comptime assert is_gpu[target](), "only valid on GPUs"
-
-        matmul_gpu_qint4[32, target](
-            c.to_tile_tensor[.int64](),
-            a.to_tile_tensor[.int64](),
-            b.to_tile_tensor[.int64](),
-            ctx,
-        )
-
-
-@extensibility.register_shape_function("qmatmul_b4_g32")
-def qmatmul_b4_g32_shape(a: Some[Tensor], b: Some[Tensor]) -> IndexList[2]:
-    """Computes the output shape for the `qmatmul_b4_g32` graph op."""
-    comptime assert type_of(a).rank == 2, "a must be rank 2"
-    comptime assert type_of(b).rank == 2, "b must be rank 2"
-    return IndexList[2](
-        Int(coord_to_index_list(a.shape())[0]),
-        Int(coord_to_index_list(b.shape())[0]),
-    )
-
-
 @extensibility.register("qmatmul_b4_g128")
 struct QMatmulGPU_b4_g128:
     """Registers the `qmatmul_b4_g128` graph op with the graph compiler."""
@@ -843,37 +806,6 @@ def qmatmul_b4_g128_shape(a: Some[Tensor], b: Some[Tensor]) -> IndexList[2]:
         Int(coord_to_index_list(a.shape())[0]),
         Int(coord_to_index_list(b.shape())[0]),
     )
-
-
-@extensibility.register("GGUF_gpu_repack_q4_0")
-struct QMatmulGPURepackGGUF:
-    """Registers the `GGUF_gpu_repack_q4_0` graph op with the graph compiler."""
-
-    @staticmethod
-    @inline(.always)
-    def execute[
-        target: StaticString,
-        _trace_name: StaticString,
-    ](
-        b_packed: OutputTensor[dtype=.uint8, rank=2, ...],
-        b: InputTensor[dtype=.uint8, rank=2, ...],
-        ctx: DeviceContext,
-    ) raises:
-        comptime assert is_gpu[target](), "only valid on GPUs"
-
-        gpu_qint4_repack_Q4_0[target](
-            b.to_tile_tensor(), b_packed.to_tile_tensor(), ctx
-        )
-
-
-@extensibility.register_shape_function("GGUF_gpu_repack_q4_0")
-def GGUF_gpu_repack_q4_0_shape(
-    b: Some[Tensor],
-) -> IndexList[type_of(b).rank]:
-    """Computes the output shape for the `GGUF_gpu_repack_q4_0` graph op."""
-    comptime assert type_of(b).dtype == .uint8, "b must be uint8"
-    comptime assert type_of(b).rank == 2, "b must be rank 2"
-    return rebind[IndexList[type_of(b).rank]](coord_to_index_list(b.shape()))
 
 
 @extensibility.register("GPTQ_gpu_repack_b4_g128")

@@ -65,7 +65,6 @@ from linalg.gemv import router_gate_mixed_gemv, router_gate_use_mixed_gemv
 from linalg.matmul.gpu.amd.smallm_streaming_matmul import (
     smallm_streaming_matmul,
 )
-from linalg.mxfp4_matmul_sm90 import mxfp4_matmul_sm90
 from linalg.matmul.gpu.apple.fp4_matmul import enqueue_apple_fp4_matmul
 from linalg.matmul.gpu.apple.fp8_gemv import enqueue_apple_fp8_matmul
 from linalg.matmul.gpu.apple.int8_matmul import (
@@ -87,9 +86,6 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.row_scales import (
 from linalg.swiglu_activation import get_swiglu_activation
 from linalg.matmul.gpu.sm100_structured.default.dispatch_fused_bias_residual import (
     fused_bias_residual_matmul_dispatch_sm100,
-)
-from linalg.matmul.gpu.sm100_structured.fused_swiglu import (
-    matmul_swiglu_dispatch_sm100_bf16,
 )
 from linalg.bmm import batched_matmul_dynamic_scaled_fp8
 from linalg.grouped_matmul import (
@@ -1869,58 +1865,6 @@ struct Struct_matmul_dynamic_block_scaled_mxfp6[
         )
 
 
-@extensibility.register("mo.matmul.mxfp4.dequant.fp8")
-struct Struct_matmul_mxfp4_dequant_fp8:
-    """Registers the `mo.matmul.mxfp4.dequant.fp8` graph op with the graph compiler.
-    """
-
-    @inline(.always)
-    @staticmethod
-    def execute[
-        target: StaticString,
-    ](
-        c: Some[Output & Tensor],
-        a: Some[Input & Tensor],
-        b: Some[Input & Tensor],
-        b_scales: Some[Input & Tensor],
-        context: DeviceContext,
-    ) raises:
-        comptime assert conforms_to(type_of(c), TileTensorable)
-        comptime assert conforms_to(type_of(a), TileTensorable)
-        comptime assert conforms_to(type_of(b), TileTensorable)
-        comptime assert conforms_to(type_of(b_scales), TileTensorable)
-        comptime c_type = type_of(c).dtype
-        comptime a_type = type_of(a).dtype
-        comptime b_type = type_of(b).dtype
-        comptime b_scales_type = type_of(b_scales).dtype
-        comptime assert is_gpu[
-            target
-        ](), "MXFP4 dequant-to-FP8 matmul only supports GPUs"
-        comptime assert (
-            "sm_90" in _accelerator_arch()
-        ), "MXFP4 dequant-to-FP8 matmul requires SM90"
-        comptime assert (
-            c_type == .bfloat16
-        ), "MXFP4 matmul output must be bfloat16"
-        comptime assert (
-            a_type == .bfloat16
-        ), "MXFP4 matmul activations must be bfloat16"
-        comptime assert (
-            b_type == .uint8
-        ), "MXFP4 matmul weights must be uint8 (packed FP4)"
-        comptime assert (
-            b_scales_type == .float8_e8m0fnu
-        ), "MXFP4 matmul scales must be float8_e8m0fnu"
-
-        mxfp4_matmul_sm90(
-            c.to_tile_tensor(),
-            a.to_tile_tensor[a_type](),
-            b.to_tile_tensor[b_type](),
-            b_scales.to_tile_tensor[b_scales_type](),
-            context,
-        )
-
-
 @extensibility.register("mo.matmul.weight.only.block.scaled.apple")
 struct Struct_matmul_weight_only_block_scaled_apple:
     """Apple M5 weight-only NVFP4 (W4A16) matmul: `out = a @ dequant(b)^T`.
@@ -2567,71 +2511,6 @@ struct Struct_lora_sgmv_qkv_shrink_ragged:
             min(Int(max_seq_length), a.dim_size[0]()),
             lora_ids.dim_size[0](),
             context,
-        )
-
-
-@extensibility.register("mo.matmul_swiglu", type="gpu")
-struct MatmulSwiGLU:
-    """Fused GEMM+SwiGLU on SM100 for BF16 inputs.
-
-    Computes ``output[m, h] = silu(x @ W_gate[h, :]) * (x @ W_up[h, :])``
-    in a single SM100 kernel. The weight ``b`` must be pre-permuted on its N
-    axis so that gate/up column pairs are adjacent (sigma permutation:
-    ``sigma(2i)=i, sigma(2i+1)=H+i`` where ``H=N/2``).
-
-    Output shape is ``[M, H]`` where ``H = N/2``, saving the slice+silu+mul
-    elementwise kernel entirely.
-    """
-
-    @inline(.always)
-    @staticmethod
-    def execute[
-        target: StaticString,
-    ](
-        output: OutputTensor[dtype=.bfloat16, rank=2, ...],
-        a: InputTensor[dtype=.bfloat16, rank=2, ...],
-        b: InputTensor[dtype=.bfloat16, rank=2, ...],
-        ctx: DeviceContext,
-    ) raises:
-        matmul_swiglu_dispatch_sm100_bf16(
-            output.to_tile_tensor[.int64](),
-            a.to_tile_tensor[.int64](),
-            b.to_tile_tensor[.int64](),
-            ctx,
-        )
-
-
-@extensibility.register("mo.matmul_swiglu_bias", type="gpu")
-struct MatmulSwiGLUBias:
-    """Fused GEMM+SwiGLU+bias on SM100 for BF16 inputs.
-
-    Like ``mo.matmul_swiglu`` but adds a 1D bias vector before the activation.
-    The bias must be sigma-permuted to match the weight layout: even element
-    ``bias[2h]`` is added to the gate column and odd element ``bias[2h+1]`` to
-    the up column before ``silu(gate) * up`` is computed.
-    """
-
-    @inline(.always)
-    @staticmethod
-    def execute[
-        target: StaticString,
-    ](
-        output: OutputTensor[dtype=.bfloat16, rank=2, ...],
-        a: InputTensor[dtype=.bfloat16, rank=2, ...],
-        b: InputTensor[dtype=.bfloat16, rank=2, ...],
-        bias: InputTensor[dtype=.bfloat16, rank=1, ...],
-        ctx: DeviceContext,
-    ) raises:
-        matmul_swiglu_dispatch_sm100_bf16[has_bias=True](
-            output.to_tile_tensor[.int64](),
-            a.to_tile_tensor[.int64](),
-            b.to_tile_tensor[.int64](),
-            ctx,
-            OptionalReg(
-                ImmPointer[BFloat16, ImmutAnyOrigin](
-                    unsafe_from_address=Int(bias.unsafe_ptr())
-                )
-            ),
         )
 
 
