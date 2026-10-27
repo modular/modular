@@ -680,6 +680,9 @@ class JengaBlockManager:
         # Pricing probes by request, claimed or not: a request is priced
         # before it is claimed, and its probe is read at its first alloc.
         self._pending_probes: dict[RequestID, _PendingProbe] = {}
+        # Pricing's hash chain by request, until a claim takes it over. An
+        # unrun request's tokens do not change, so neither does its chain.
+        self._priced_hashes: dict[RequestID, list[bytes]] = {}
         self._async_presence = _env_flag(ASYNC_PRESENCE_ENV_VAR)
         self._probed_miss_skip = _env_flag(PROBED_MISS_SKIP_ENV_VAR)
 
@@ -708,7 +711,10 @@ class JengaBlockManager:
                 f"Request is already claimed, on replica "
                 f"{existing.replica_idx}: {req_id}"
             )
-        self._requests[req_id] = RequestCacheState(replica_idx=replica_idx)
+        self._requests[req_id] = RequestCacheState(
+            replica_idx=replica_idx,
+            hashes=list(self._priced_hashes.pop(req_id, ())),
+        )
         for group in self._groups.values():
             group.claim(req_id)
 
@@ -737,11 +743,13 @@ class JengaBlockManager:
         # back and one that raises cannot leave it claimed over them.
         state = self._requests.pop(req_id)
         self._pending_probes.pop(req_id, None)
+        self._priced_hashes.pop(req_id, None)
         self._abandon_pending_lookup(state)
 
     def abandon_presence(self, ctx: TextContext) -> None:
         """Drops the request's pricing probe, for one released unclaimed."""
         self._pending_probes.pop(ctx.request_id, None)
+        self._priced_hashes.pop(ctx.request_id, None)
 
     def awaits_presence(self, ctx: TextContext) -> bool:
         """Returns whether the request's pricing probe is still out."""
@@ -1033,14 +1041,25 @@ class JengaBlockManager:
         desired_hashes = (
             probe.hashes
             if probe is not None
-            else self._compute_block_hashes(ctx, [])
+            else self._priced_hashes.get(ctx.request_id)
         )
-        device_hits = [
-            self._find_longest_device_prefix_cache_hit(
-                desired_hashes, replica_idx, self._cross_replica_copy_enabled
-            )
-            for replica_idx in range(self._num_replicas)
-        ]
+        if desired_hashes is None:
+            desired_hashes = self._compute_block_hashes(ctx, [])
+            self._priced_hashes[ctx.request_id] = desired_hashes
+        if self._cross_replica_copy_enabled:
+            # A hash any replica holds counts for every replica.
+            device_hits = [
+                self._find_longest_device_prefix_cache_hit(
+                    desired_hashes, 0, True
+                )
+            ] * self._num_replicas
+        else:
+            device_hits = [
+                self._find_longest_device_prefix_cache_hit(
+                    desired_hashes, replica_idx, False
+                )
+                for replica_idx in range(self._num_replicas)
+            ]
         probed = None
         if connector is not None and any(
             num_hit_blocks < len(desired_hashes)
@@ -1816,14 +1835,24 @@ class JengaBlockManager:
         allow_cross_replica: bool,
     ) -> int:
         """Returns how many blocks every leaf can serve at once."""
-        # One residency pass per leaf, read repeatedly by the settling loop
-        # below. It used to re-read the prefix caches on every turn, because
-        # narrowing meant re-slicing the hashes rather than moving a bound.
+        # A full leaf's hit is its run from the root, which bounds the joint
+        # hit, so the other leaves are read only that far (vLLM's rule). Every
+        # leaf's answer under a bound depends only on the blocks below it, so
+        # this settles where reading the whole chain would.
+        for group in self._cacheable_groups.values():
+            if group.group_id.is_full():
+                desired_hashes = desired_hashes[
+                    : group.resident_run(
+                        desired_hashes, replica_idx, allow_cross_replica
+                    )
+                ]
         return longest_joint_prefix_hit(
             [
                 (
                     group.group_id.prefix_hit_shape(self._block_size),
-                    group.residency(
+                    [True] * len(desired_hashes)
+                    if group.group_id.is_full()
+                    else group.residency(
                         desired_hashes, replica_idx, allow_cross_replica
                     ),
                 )

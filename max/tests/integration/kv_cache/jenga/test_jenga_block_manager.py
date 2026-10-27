@@ -14,11 +14,13 @@
 
 from __future__ import annotations
 
+import random
 from collections.abc import Mapping, Sequence
 from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
+from max._kv_core import longest_joint_prefix_hit
 from max.driver import Buffer
 from max.nn.kv_cache import KVCacheGroupId, PagedKVLeafRegion
 from max.nn.kv_cache.cache_params import KVCacheMemory
@@ -26,6 +28,7 @@ from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache import InsufficientBlocksError
 from max.pipelines.kv_cache.kv_connector import BlockCount, KVConnector
+from max.pipelines.kv_cache.paged_kv_cache import jenga_block_manager
 from max.pipelines.kv_cache.paged_kv_cache._common import PrefixCacheHits
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_manager import (
     JengaBlockManager,
@@ -2008,6 +2011,89 @@ def test_cross_replica_lookup_needs_every_leaf_of_the_group() -> None:
 
     commit_hashes(bm, [SCALES], [b"a"], replica_idx=1)
     assert bm._find_longest_device_prefix_cache_hit([b"a"], 0, True) == 1
+
+
+def exhaustive_device_hit(
+    bm: JengaBlockManager,
+    hashes: Sequence[bytes],
+    replica_idx: int,
+    cross: bool,
+) -> int:
+    """The device hit from every leaf's full residency mask."""
+    return longest_joint_prefix_hit(
+        [
+            (
+                group.group_id.prefix_hit_shape(1),
+                [
+                    group.find_replica_with_hash(h, replica_idx, cross)
+                    is not None
+                    for h in hashes
+                ],
+            )
+            for group in bm.groups.values()
+        ]
+    )
+
+
+@pytest.mark.parametrize("cross_replica_copy", [False, True])
+def test_device_hit_matches_an_exhaustive_scan(
+    cross_replica_copy: bool,
+) -> None:
+    """Stopping the full leaves at their first miss changes no hit or price."""
+    rng = random.Random(0)
+    kinds = {
+        FULL: full(),
+        VALUES: full(),
+        SLIDING: sliding(window=3),
+        SCALES: sliding(window=6),
+        "state": KVLeafInfo(1, KVCacheGroupId.recurrent()),
+    }
+    for _ in range(100):
+        leaf_infos = dict(rng.sample(sorted(kinds.items()), rng.randint(1, 5)))
+        bm = make_manager(
+            leaf_infos,
+            num_huge_blocks=256,
+            enable_prefix_caching=True,
+            num_replicas=4,
+            replica_kv_memory=[{}] * 4,
+            enable_dp_cross_replica_prefix_copy=cross_replica_copy,
+        )
+        ctx = make_ctx(num_tokens=13)
+        hashes = bm._compute_block_hashes(ctx, [])
+        density = rng.uniform(0.5, 1.0)
+        for replica_idx in range(4):
+            for leaf_id in leaf_infos:
+                held = [h for h in hashes if rng.random() < density]
+                commit_hashes(bm, [leaf_id], held, replica_idx)
+
+        for replica_idx in range(4):
+            for cross in (False, True):
+                assert bm._find_longest_device_prefix_cache_hit(
+                    hashes, replica_idx, cross
+                ) == exhaustive_device_hit(bm, hashes, replica_idx, cross)
+        # The DP CE balancer's weights come from these.
+        hits = bm.get_prefix_cache_hit_counts(ctx)
+        assert [h.device_blocks for h in hits] == [
+            exhaustive_device_hit(bm, hashes, replica_idx, cross_replica_copy)
+            for replica_idx in range(4)
+        ]
+
+
+def test_a_claim_takes_over_the_chain_pricing_hashed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    spy = MagicMock(wraps=jenga_block_manager.compute_block_hashes)
+    monkeypatch.setattr(jenga_block_manager, "compute_block_hashes", spy)
+    bm = make_manager({FULL: full()}, enable_prefix_caching=True)
+    ctx = make_ctx(num_tokens=5)
+
+    bm.get_prefix_cache_hit_counts(ctx)
+    bm.get_prefix_cache_hit_counts(ctx)
+    bm.claim(ctx)
+    bm.alloc(ctx)
+
+    # Only pricing hashed the prompt from its root.
+    assert [len(call.args[1]) for call in spy.call_args_list] == [0, 4]
 
 
 def test_copy_prefix_from_peers_commits_the_blocks_locally() -> None:

@@ -870,6 +870,19 @@ class TierConnector(KVConnector):
             )
         return dict(zip(leaf_ids, resident, strict=True))
 
+    def probe(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idxs: Sequence[int],
+        hint: bytes | None = None,
+    ) -> Sequence[Mapping[str, Sequence[bool]]]:
+        """Answers every replica with one :meth:`lookup`.
+
+        The tiers are keyed by hash alone, so every replica can load the same
+        blocks.
+        """
+        return [self.lookup(block_hashes, hint=hint)] * len(replica_idxs)
+
     def load(
         self,
         block_ids: Mapping[str, Sequence[int]],

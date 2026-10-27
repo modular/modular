@@ -19,7 +19,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar
 
-from max._kv_core import blocks_held_of_hit
+from max._kv_core import PrefixCache, blocks_held_of_hit
 from max.nn.kv_cache import KVCacheGroupId
 from max.pipelines.context import TextContext
 from max.pipelines.modeling.types import RequestID
@@ -155,13 +155,38 @@ class KVGroupCoordinatorInterface:
         allow_cross_replica: bool = False,
     ) -> list[bool]:
         """Which of ``desired_hashes`` this leaf can serve, positionally."""
+        local, *peers = self._searched_caches(replica_idx, allow_cross_replica)
         return [
-            self.find_replica_with_hash(
-                block_hash, replica_idx, allow_cross_replica
-            )
-            is not None
+            block_hash in local or any(block_hash in peer for peer in peers)
             for block_hash in desired_hashes
         ]
+
+    def resident_run(
+        self,
+        desired_hashes: Sequence[bytes],
+        replica_idx: int,
+        allow_cross_replica: bool = False,
+    ) -> int:
+        """How many of ``desired_hashes``, from the first, this leaf holds.
+
+        Stops at the first miss, unlike :meth:`residency`.
+        """
+        local, *peers = self._searched_caches(replica_idx, allow_cross_replica)
+        for run, block_hash in enumerate(desired_hashes):
+            if block_hash not in local and not any(
+                block_hash in peer for peer in peers
+            ):
+                return run
+        return len(desired_hashes)
+
+    def _searched_caches(
+        self, replica_idx: int, allow_cross_replica: bool
+    ) -> list[PrefixCache]:
+        """The prefix caches :meth:`find_replica_with_hash` searches."""
+        caches = [pool.prefix_caches[self.leaf_id] for pool in self.pools]
+        if not allow_cross_replica:
+            return [caches[replica_idx]]
+        return [caches.pop(replica_idx), *caches]
 
     def longest_cache_hit(
         self,
