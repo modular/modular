@@ -586,6 +586,33 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
         self.little_blocks[cache][bid].ref_cnt += 1;
     }
 
+    /// Moves an unreferenced block to the most-recently-used end of its free
+    /// queue, and a parked huge block holding it to the end of the huge free
+    /// list: what [`Self::touch`] then [`Self::free_block`] do, without
+    /// claiming and re-parking every page of the huge block. A referenced
+    /// block is left alone.
+    ///
+    /// # Panics
+    /// If the pool does not serve `cache`.
+    pub fn refresh(&mut self, cache: usize, bid: usize) {
+        if self.is_null(bid) || self.little_blocks[cache][bid].ref_cnt > 0 {
+            return;
+        }
+        let huge_bid = bid / self.cache_ratios[cache];
+        let queue = if self.huge_blocks[huge_bid].is_free() {
+            self.free_huge_blocks
+                .remove(&mut self.huge_blocks, huge_bid);
+            self.free_huge_blocks
+                .append_back(&mut self.huge_blocks, huge_bid);
+            &mut self.parked_little_blocks[cache]
+        } else {
+            &mut self.free_little_blocks[cache]
+        };
+        let blocks = &mut self.little_blocks[cache];
+        queue.remove(blocks, bid);
+        queue.append_back(&mut self.stamps, blocks, bid);
+    }
+
     /// Returns how many more blocks of `cache` the pool can still serve.
     ///
     /// # Panics
@@ -1175,6 +1202,41 @@ mod tests {
             assert_eq!(next, bids[1]);
             assert_eq!(p.little_blocks[0][bids[0]].block_hash, Some("prefix"));
             check_invariants(&p);
+        }
+    }
+
+    #[test]
+    fn refresh_reorders_eviction_as_touch_then_free_does() {
+        // Huge block 0 parks, 1 stays claimed by a held page, 2 parks. Refresh
+        // a parked page, a claimed free page and the held page, then record
+        // which huge block another cache retypes and what cache 0 evicts.
+        let run = |null_block: bool, op: &dyn Fn(&mut Pool, usize)| {
+            let mut p = pool(3, &[2, 1], null_block);
+            let bids = alloc_n(&mut p, 0, 6);
+            for (bid, hash) in bids.iter().zip(["a", "b", "c", "d", "e", "f"]) {
+                p.commit_into_prefix_cache(0, hash, *bid);
+            }
+            for i in [0, 1, 2, 4, 5] {
+                p.free_block(0, bids[i]);
+            }
+            for i in [3, 2, 0] {
+                op(&mut p, bids[i]);
+            }
+            check_invariants(&p);
+            let mut order = vec![p.alloc_block(1).expect("a parked huge block")];
+            while let Ok(bid) = p.alloc_block(0) {
+                order.push(bid);
+            }
+            order
+        };
+        for null_block in [false, true] {
+            let refreshed = run(null_block, &|p, bid| p.refresh(0, bid));
+            let touched = run(null_block, &|p, bid| {
+                p.touch(0, bid);
+                p.free_block(0, bid);
+            });
+            assert_eq!(refreshed, touched);
+            assert_ne!(refreshed, run(null_block, &|_, _| {}));
         }
     }
 

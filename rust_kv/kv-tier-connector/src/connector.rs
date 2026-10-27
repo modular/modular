@@ -311,8 +311,7 @@ fn touch_order(recency: LeafRecency, hashes: &[BlockHash]) -> Vec<BlockHash> {
 /// `leaf_idx`'s free queue, if the host tier holds one.
 fn touch_host(pool: &mut JengaBlockPool<BlockHash>, leaf_idx: usize, block_hash: BlockHash) {
     if let Some(host_bid) = pool.lookup_hash(leaf_idx, block_hash) {
-        pool.touch(leaf_idx, host_bid);
-        pool.free_block(leaf_idx, host_bid);
+        pool.refresh(leaf_idx, host_bid);
     }
 }
 
