@@ -27,12 +27,11 @@ from contextlib import (
 )
 from dataclasses import dataclass
 from multiprocessing.queues import Queue
-from multiprocessing.synchronize import Event
 from typing import Any
 
 import prometheus_client
 from max.serve.config import MetricRecordingMethod, Settings
-from max.serve.process_control import subprocess_manager
+from max.serve.process_control import Liveness, subprocess_manager
 from max.serve.telemetry._tracing import configure_tracing
 from max.serve.telemetry.common import configure_metrics
 from max.serve.telemetry.metrics import (
@@ -158,19 +157,23 @@ async def start_process_consumer(
     async with subprocess_manager("Metrics Worker") as proc:
         metrics_q = mp.Queue()
         controller = ProcessTelemetryController(metrics_q)
-        alive = mp.Event()
+        liveness = Liveness(mp)
 
         try:
-            proc.start(init_and_process, settings, metrics_q, alive, handle_fn)
+            proc.start(
+                init_and_process, settings, metrics_q, liveness, handle_fn
+            )
 
-            await proc.ready(alive, settings.telemetry_worker_spawn_timeout)
+            await proc.ready(liveness, settings.telemetry_worker_spawn_timeout)
 
             if settings.use_heartbeat:
                 # Use the same limit as the model worker. Under memory
                 # pressure the host can stall all processes for seconds.
                 # A crash is seen at once by the process sentinel, so this
                 # only needs to catch a hang.
-                proc.watch_heartbeat(alive, timeout=settings.mw_health_fail_s)
+                proc.watch_heartbeat(
+                    liveness, timeout=settings.mw_health_fail_s
+                )
 
             yield controller
         finally:
@@ -180,7 +183,7 @@ async def start_process_consumer(
 def init_and_process(
     settings: Settings,
     metrics_q: Queue[list[MaxMeasurement]],
-    alive: Event,
+    liveness: Liveness,
     commit_fn: TelemetryFn,
 ) -> None:
     """Initialize logging & metrics, and start the metrics server if enabled. This is expected to run from the Telemetry process."""
@@ -216,12 +219,12 @@ def init_and_process(
         server_thread = threading.Thread(target=run_server, daemon=True)
         server_thread.start()
 
-    return process_telemetry(metrics_q, alive, commit_fn)
+    return process_telemetry(metrics_q, liveness, commit_fn)
 
 
 def process_telemetry(
     metrics_q: Queue[list[MaxMeasurement]],
-    alive: Event,
+    liveness: Liveness,
     commit_fn: TelemetryFn,
 ) -> None:
     """Long running function to read from a queue & process each element"""
@@ -237,9 +240,10 @@ def process_telemetry(
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
 
+    liveness.set_ready()
     try:
         while not should_exit:
-            alive.set()
+            liveness.beat()
 
             try:
                 ms = metrics_q.get(block=True, timeout=100e-3)

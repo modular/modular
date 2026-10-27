@@ -23,7 +23,6 @@ from contextlib import (
     AsyncExitStack,
     asynccontextmanager,
 )
-from multiprocessing.synchronize import Event
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import uvloop
@@ -64,7 +63,7 @@ from max.serve.pipelines.eplb_stats_rpc import (
 )
 from max.serve.pipelines.reset_prefix_cache import ResetPrefixCacheBackend
 from max.serve.pipelines.telemetry_worker import MetricClient
-from max.serve.process_control import subprocess_manager
+from max.serve.process_control import Liveness, subprocess_manager
 from max.serve.scheduler import load_scheduler
 from max.serve.scheduler.base import SchedulerProgress
 from max.serve.telemetry import _log_context, _tracing
@@ -338,7 +337,7 @@ class ModelWorker:
     @staticmethod
     @traced
     async def run(
-        alive: Event,
+        liveness: Liveness,
         model_factory: PipelinesFactory[PipelineInputsType, PipelineOutputType],
         pipeline_config: PipelineConfig,
         settings: Settings,
@@ -655,8 +654,9 @@ class ModelWorker:
             logger.debug("Started model worker!")
 
             count_no_progress = 0
+            liveness.set_ready()
             while True:
-                alive.set()
+                liveness.beat()
                 # Checks for new LoRA requests and processes them.
                 if lora_request_processor is not None:
                     lora_request_processor.process_lora_requests()
@@ -689,7 +689,7 @@ class ModelWorker:
     @staticmethod
     @traced
     def __call__(
-        alive: Event,
+        liveness: Liveness,
         model_factory: PipelinesFactory[PipelineInputsType, PipelineOutputType],
         pipeline_config: PipelineConfig,
         settings: Settings,
@@ -721,7 +721,7 @@ class ModelWorker:
         try:
             uvloop.run(
                 ModelWorker.run(
-                    alive,
+                    liveness,
                     model_factory,
                     pipeline_config,
                     settings,
@@ -805,11 +805,11 @@ async def start_model_worker(
 
     mp = multiprocessing.get_context("spawn")
     async with subprocess_manager("Model Worker") as proc:
-        alive = mp.Event()
+        liveness = Liveness(mp)
         spawn_start_wall_ts = time.time()
         proc.start(
             ModelWorker(),
-            alive,
+            liveness,
             model_factory,
             pipeline_config,
             settings,
@@ -821,11 +821,11 @@ async def start_model_worker(
         )
 
         logger.info("Waiting for model worker readiness")
-        await proc.ready(alive, timeout=settings.mw_timeout_s)
+        await proc.ready(liveness, timeout=settings.mw_timeout_s)
         logger.info("Model worker ready")
 
         if settings.use_heartbeat:
-            proc.watch_heartbeat(alive, timeout=settings.mw_health_fail_s)
+            proc.watch_heartbeat(liveness, timeout=settings.mw_health_fail_s)
 
         logger.debug("Model worker task is ready")
 

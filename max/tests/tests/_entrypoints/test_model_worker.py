@@ -76,7 +76,7 @@ async def test_model_worker_rejects_replica_draft_probs_before_loading(
         match="MAX Serve does not support draft_probs_layout='replica'",
     ):
         await ModelWorker.run(
-            alive=Mock(),
+            liveness=Mock(),
             model_factory=factory,
             pipeline_config=config,
             settings=Settings(),
