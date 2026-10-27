@@ -127,7 +127,7 @@ public:
   /// elaborate the generator or interface and return the first concrete
   /// implementation. Return none if the specialization is not ready yet.
   ErrorTreeOr<FuncOp> getConcreteFunction(ImplNode *parent, Location loc,
-                                          SymbolConstantAttr symbol);
+                                          FuncSymbolGenerator symbol);
 
   /// Resolve `node` to its concrete function on behalf of `parent`, going
   /// through the readiness/error protocol: return none if the node is not
@@ -255,7 +255,7 @@ private:
   /// Process a generator user. In general, this is anything that can call into
   /// a generator and might therefore need to be multi-versioned.
   ElaborationState processGeneratorUser(GeneratorUserOpInterface user,
-                                        SymbolConstantAttr calleeSymbol,
+                                        FuncSymbolGenerator calleeSymbol,
                                         ImplNode *parent);
 
   /// Process a comptime.if op by evaluating the condition and elaborating and
@@ -336,7 +336,7 @@ private:
   /// implementations of a reference. `inputParamKey` is populated only for a
   /// callee named by its generator, not one named by its concrete name.
   std::pair<ElaborationState, ImplNode *> instantiateGeneratorReference(
-      ImplNode *parent, Operation *user, SymbolConstantAttr calleeSymbol,
+      ImplNode *parent, Operation *user, FuncSymbolGenerator calleeSymbol,
       ParameterExprArrayAttr &inputParamKey, GeneratorOpInterface &gen,
       function_ref<bool(ParamNode *)> shouldWait = [](ParamNode *) {
         return true;

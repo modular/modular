@@ -207,14 +207,14 @@ public:
   /// concrete subclass's hooks. Returns:
   ///   - `nullopt`: `generator` is not a transparent thunk; nothing to do.
   ///   - error: rebinding produced an error; the caller should propagate it.
-  ///   - null `SymbolConstantAttr`: rebinding is not yet ready (a
+  ///   - null `FuncSymbolGenerator`: rebinding is not yet ready (a
   ///     sub-dependency is still being elaborated); the caller should
   ///     skip/retry.
-  ///   - non-null `SymbolConstantAttr`: the fully resolved wrapped callee.
+  ///   - non-null `FuncSymbolGenerator`: the fully resolved wrapped callee.
   ///     Nested thunks are peeled, so this is never itself a thunk.
-  std::optional<ErrorTreeOr<SymbolConstantAttr>>
+  std::optional<ErrorTreeOr<FuncSymbolGenerator>>
   resolveTransparentThunkCallee(GeneratorOp generator,
-                                SymbolConstantAttr symbol, Location loc);
+                                FuncSymbolGenerator symbol, Location loc);
 
 protected:
   /// Evaluate an apply-like operator.
@@ -290,11 +290,19 @@ private:
 // Utils
 //===----------------------------------------------------------------------===//
 
-SymbolConstantAttr extractSymbolConstantAttr(TypedAttr attr);
+/// Returns the function reference `attr` denotes, or null if it is not one.
+/// Accepts a `FuncSymbolGenerator`, a function literal, or a fully bound
+/// `SymbolConstantAttr`.
+FuncSymbolGenerator extractFuncSymbolGenerator(TypedAttr attr);
 
 /// Return true if `symbol` binds any of its input parameters directly to
 /// `#kgen.unbound` or `#kgen.unknown`.
-bool hasUnresolvedParamValue(SymbolConstantAttr symbol);
+bool hasUnresolvedParamValue(FuncSymbolGenerator symbol);
+
+/// Returns the `SymbolConstantAttr` equivalent of the fully bound `symbol`.
+// TODO: Remove once kernel compilation and callee concretization take a
+// `FuncSymbolGenerator`.
+SymbolConstantAttr toSymbolConstantAttr(FuncSymbolGenerator symbol);
 
 /// Decomposed view of a `compile_offload` op's `func` attribute. Populated by
 /// `extractOffloadFunc` when the func resolves to a fully-bound

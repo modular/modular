@@ -992,6 +992,66 @@ bool FuncTypeGeneratorType::classof(Type type) {
 }
 
 //===----------------------------------------------------------------------===//
+// FuncSymbolGenerator
+//===----------------------------------------------------------------------===//
+
+static bool isFuncSymbolGenerator(TypedAttr attr) {
+  auto gen = sugarDynCast<GeneratorAttr>(attr);
+  return gen && sugarIsa<FuncSymbolAttr>(gen.getBody());
+}
+
+FuncSymbolGenerator::FuncSymbolGenerator(TypedAttr attr) : storage(attr) {
+  assert((!attr || isFuncSymbolGenerator(attr)) &&
+         "expected a GeneratorAttr wrapping a FuncSymbolAttr");
+}
+
+FuncSymbolGenerator FuncSymbolGenerator::get(ArrayRef<Type> inputParamTypes,
+                                             FuncSymbolAttr funcSymbol,
+                                             Attribute metadata) {
+  return FuncSymbolGenerator(cast<TypedAttr>(
+      GeneratorAttr::get(inputParamTypes, funcSymbol, metadata)));
+}
+
+FuncSymbolGenerator FuncSymbolGenerator::dynCast(TypedAttr attr) {
+  if (attr && isFuncSymbolGenerator(attr))
+    return FuncSymbolGenerator(attr);
+  return {};
+}
+
+GeneratorAttr FuncSymbolGenerator::getGenerator() const {
+  return sugarCast<GeneratorAttr>(storage);
+}
+
+FuncTypeGeneratorType FuncSymbolGenerator::getType() const {
+  return ::cast<FuncTypeGeneratorType>(storage.getType());
+}
+
+ArrayRef<Type> FuncSymbolGenerator::getInputParamTypes() const {
+  return getGenerator().getInputParamTypes();
+}
+
+bool FuncSymbolGenerator::isFullyBound() const {
+  return getGenerator().isFullyBound();
+}
+
+FuncSymbolAttr FuncSymbolGenerator::getFuncSymbol() const {
+  return sugarCast<FuncSymbolAttr>(getGenerator().getBody());
+}
+
+SymbolRefAttr FuncSymbolGenerator::getSymbol() const {
+  return getFuncSymbol().getSymbol();
+}
+
+FuncSymbolAttr FuncSymbolGenerator::getInstantiatedFuncSymbol() const {
+  assert(isFullyBound() && "cannot instantiate a parameterized generator");
+  return sugarCast<FuncSymbolAttr>(getGenerator().getInstantiatedValue());
+}
+
+ArrayRef<TypedAttr> FuncSymbolGenerator::getParamValues() const {
+  return getInstantiatedFuncSymbol().getParamValues();
+}
+
+//===----------------------------------------------------------------------===//
 // FuncLiteralTypeGeneratorType
 //===----------------------------------------------------------------------===//
 

@@ -310,9 +310,9 @@ IREvaluator::evaluateContextSpecific(ContextuallyEvaluatedAttrInterface attr) {
 
 FailureOr<TypedAttr> IREvaluator::evaluateApplyLike(ParamOperatorAttr op,
                                                     bool withResultSlot) {
-  SymbolConstantAttr callee =
-      extractSymbolConstantAttr(op.getOperands().front());
-  if (hasUnresolvedParamValue(callee))
+  FuncSymbolGenerator callee =
+      extractFuncSymbolGenerator(op.getOperands().front());
+  if (!callee || hasUnresolvedParamValue(callee))
     return failure();
 
   // Attempt to concretize the function first.

@@ -34,6 +34,7 @@ class ParamDeclAttr;
 class ParamDeclArrayAttr;
 struct PartiallySpecializedInputParams;
 class FuncSymbolAttr;
+class GeneratorAttr;
 class FuncTypeGeneratorType;
 class FuncLiteralTypeGeneratorType;
 class ConstraintAttr;
@@ -93,6 +94,49 @@ public:
   /// A FuncTypeGeneratorType is a GeneratorType containing a FuncType.
   static bool classof(GeneratorType type);
   static bool classof(Type type);
+};
+
+//===----------------------------------------------------------------------===//
+// FuncSymbolGenerator
+//===----------------------------------------------------------------------===//
+
+/// A view of a `GeneratorAttr` whose body is a `FuncSymbolAttr`.
+class FuncSymbolGenerator {
+public:
+  FuncSymbolGenerator() = default;
+  /// Wraps `attr`, which must be null or a `GeneratorAttr` wrapping a
+  /// `FuncSymbolAttr`.
+  /*implicit*/ FuncSymbolGenerator(TypedAttr attr);
+
+  /// Returns a generator over `inputParamTypes` whose body is `funcSymbol`.
+  static FuncSymbolGenerator get(ArrayRef<Type> inputParamTypes,
+                                 FuncSymbolAttr funcSymbol,
+                                 Attribute metadata = {});
+
+  /// Wraps `attr` if it is a `GeneratorAttr` wrapping a `FuncSymbolAttr`,
+  /// otherwise returns null.
+  static FuncSymbolGenerator dynCast(TypedAttr attr);
+
+  /*implicit*/ operator TypedAttr() const { return storage; }
+  explicit operator bool() const { return static_cast<bool>(storage); }
+
+  GeneratorAttr getGenerator() const;
+  FuncTypeGeneratorType getType() const;
+  ArrayRef<Type> getInputParamTypes() const;
+  bool isFullyBound() const;
+
+  /// Returns the wrapped `FuncSymbolAttr`. Its parameter values are inside the
+  /// generator, one scope deeper than the generator itself.
+  FuncSymbolAttr getFuncSymbol() const;
+  SymbolRefAttr getSymbol() const;
+
+  /// Returns the wrapped `FuncSymbolAttr` as seen from the scope enclosing the
+  /// generator. The generator must be fully bound.
+  FuncSymbolAttr getInstantiatedFuncSymbol() const;
+  ArrayRef<TypedAttr> getParamValues() const;
+
+private:
+  TypedAttr storage;
 };
 
 //===----------------------------------------------------------------------===//
