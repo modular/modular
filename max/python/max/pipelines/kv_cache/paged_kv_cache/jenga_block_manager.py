@@ -1271,10 +1271,12 @@ class JengaBlockManager:
         """Offloads the recently committed blocks and the pending checkpoints.
 
         A checkpoint offloads what each leaf needs to resume at it, except
-        the leaves streamed as they commit. An attention leaf's run stops at
-        the first hash it has evicted, since the blocks past it are
-        unreachable; a recurrent leaf holds only checkpoint boundaries, so its
-        missing hashes are skipped.
+        the leaves streamed as they commit. Each leaf's run stops at the
+        first block the leaf has evicted since it was queued, since a reload
+        needs everything before it. A request holds its committed blocks
+        until it is released, which offloads first, and keeps what a
+        checkpoint reads until after the next offload, so only a streamed
+        leaf that frees blocks as it slides can stop short.
         """
         connector = self._connector
         if connector is None:
@@ -1303,8 +1305,6 @@ class JengaBlockManager:
                 for block_hash in hashes:
                     block = prefix_cache.get(block_hash)
                     if block is None:
-                        if self._groups[leaf_id].group_id.is_recurrent():
-                            continue
                         break
                     src[leaf_id].append(block)
                     block_hashes[leaf_id].append(block_hash)

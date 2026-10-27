@@ -480,7 +480,7 @@ PAGE = 4
 
 
 def make_hybrid_manager(
-    connector: KVConnector, num_huge_blocks: int = 64
+    connector: KVConnector, num_huge_blocks: int = 64, num_replicas: int = 1
 ) -> JengaBlockManager:
     """A full-attention leaf beside a recurrent state."""
     state_params = RecurrentStateParams(
@@ -498,7 +498,7 @@ def make_hybrid_manager(
         FULL: KVLeafInfo(1, KVCacheGroupId.full()),
         STATE: KVLeafInfo(1, KVCacheGroupId.recurrent()),
     }
-    pools = create_pools(leaf_infos, num_huge_blocks)
+    pools = create_pools(leaf_infos, num_huge_blocks, num_replicas)
     manager = JengaBlockManager(
         pools=pools,
         groups=create_groups(
@@ -3191,3 +3191,36 @@ def test_a_prompt_ending_on_a_page_checkpoints_where_a_replay_resumes() -> None:
     assert replay.tokens.processed_length == 5
     _, asked, _ = connector.loads[-1]
     assert asked[SLIDING] == hashes[5 - window : 5]
+
+
+def test_a_checkpoint_waiting_on_another_replica_is_sent_whole() -> None:
+    """A release on one replica can resolve another replica's checkpoint.
+
+    The checkpoint then waits for its own replica's next offload, while
+    admissions may evict any page no request holds. The request keeps what
+    the checkpoint reads, so the eviction cannot reach it.
+    """
+    connector = hybrid_connector()
+    manager = make_hybrid_manager(connector, num_replicas=2)
+    ctx = make_ctx(list(range(1, 2 * PAGE + 1)))
+    manager.claim(ctx, replica_idx=0)
+    forward_to_boundary(manager, ctx)
+    manager.offload(0)
+    ((_, streamed),) = connector.offloads
+    other = make_ctx([100, 101])
+    manager.claim(other, replica_idx=1)
+    manager.alloc(other)
+
+    manager._checkpointer.record(
+        CheckpointEvent(
+            ctx.request_id, CheckpointEventKind.END_OF_PROMPT, 2 * PAGE
+        )
+    )
+    manager.release(other)
+    assert manager._pending_offloads[0], "the release left it unresolved"
+    assert len(connector.offloads) == 1, "sent before its replica's offload"
+    manager.reset_prefix_cache()
+    manager.offload(0)
+
+    _, checkpoint = connector.offloads[-1]
+    assert checkpoint[STATE] == streamed[FULL][1:]
