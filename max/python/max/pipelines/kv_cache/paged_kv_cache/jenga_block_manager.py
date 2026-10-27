@@ -711,7 +711,7 @@ class JengaBlockManager:
         # State for the KVConnector.
         self._connector = connector
 
-        self._checkpointer = Checkpointer.factory().disabled().build()
+        self.with_checkpointer(Checkpointer.factory().disabled().build())
 
         self._pending_transfers: list[list[_PendingTransfer]] = [
             [] for _ in range(self._num_replicas)
@@ -779,8 +779,21 @@ class JengaBlockManager:
         return factory.with_candidate_at_or_before(candidate_at_or_before)
 
     def with_checkpointer(self, checkpointer: Checkpointer) -> None:
-        """Sets the checkpointer that decides where this cache checkpoints."""
+        """Sets the checkpointer that decides where this cache checkpoints.
+
+        A cache with a full prefix dependency is offloaded as each block
+        commits. Every other cacheable leaf is offloaded only at checkpoints,
+        unless the checkpointer takes none, in which case it streams too.
+        """
         self._checkpointer = checkpointer
+        checkpoints = any(
+            checkpointer.handles(kind) for kind in CheckpointEventKind
+        )
+        self._streamed_leaf_ids = [
+            leaf_id
+            for leaf_id, group in self._cacheable_groups.items()
+            if group.has_full_prefix_dependency or not checkpoints
+        ]
 
     def contains(self, ctx: TextContext) -> bool:
         """Returns whether the request is registered with the block manager."""
@@ -1271,7 +1284,7 @@ class JengaBlockManager:
             num_blocks = checkpoint.position // self._block_size
             needed: dict[str, Sequence[bytes]] = {}
             for leaf_id, group in self._cacheable_groups.items():
-                if group.has_full_prefix_dependency:
+                if leaf_id in self._streamed_leaf_ids:
                     continue
                 held = group.blocks_held_of_connector_hit(num_blocks)
                 needed[leaf_id] = state.hashes[num_blocks - held : num_blocks]
@@ -2439,10 +2452,18 @@ class JengaBlockManager:
 
         self._state_of(ctx).committed_idx = last_block * self._block_size
 
-        # Queue the newly committed run for the next `offload`. Every leaf
-        # commits the same hashes in lockstep, so one run covers them all.
-        if self._connector is not None and last_block > first_block:
-            run = list(req_hashes[first_block:last_block])
-            self._pending_offloads[self._replica_of(ctx)].append(
-                dict.fromkeys(self._cacheable_leaf_ids, run)
+        # Queue the newly committed run for the next `offload`, per leaf, as
+        # far as the leaf published it: a recurrent leaf holds only states.
+        if (
+            self._connector is not None
+            and self._streamed_leaf_ids
+            and last_block > first_block
+        ):
+            run = req_hashes[first_block:last_block]
+            prefix_caches = self.pools[replica_idx].prefix_caches
+            self._pending_offloads[replica_idx].append(
+                {
+                    leaf_id: [h for h in run if h in prefix_caches[leaf_id]]
+                    for leaf_id in self._streamed_leaf_ids
+                }
             )

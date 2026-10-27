@@ -547,6 +547,29 @@ def forward_to_boundary(manager: JengaBlockManager, ctx: TextContext) -> None:
     manager.step(ctx)
 
 
+def end_prompt(manager: JengaBlockManager, ctx: TextContext) -> None:
+    """Reports the end of the prompt and offloads, as the scheduler does."""
+    manager._checkpointer.record(
+        CheckpointEvent(
+            ctx.request_id,
+            CheckpointEventKind.END_OF_PROMPT,
+            ctx.tokens.prompt_length,
+        )
+    )
+    manager.offload(0)
+
+
+def sent_by_leaf(
+    offloads: Sequence[tuple[object, Mapping[str, Sequence[bytes]]]],
+) -> dict[str, list[bytes]]:
+    """Returns every hash ``offloads`` sent, per leaf, in send order."""
+    sent: dict[str, list[bytes]] = {}
+    for _, hashes in offloads:
+        for leaf_id, leaf_hashes in hashes.items():
+            sent.setdefault(leaf_id, []).extend(leaf_hashes)
+    return sent
+
+
 def test_offload_then_onload_defers_publish_until_the_copy_lands() -> None:
     connector = FakeConnector([FULL])
     manager = make_manager(connector)
@@ -1025,13 +1048,13 @@ def _hold_only_in_the_connector(
     tier, so the same prompt can only come back over an onload. Returns the
     run of hashes the full-attention leaf holds.
     """
+    start = len(connector.offloads)
     first = make_ctx(tokens)
     manager.claim(first)
     manager.alloc(first)
     first.update(9)
     manager.step(first)
-    manager.offload(0)
-    _, offloaded = connector.offloads[-1]
+    end_prompt(manager, first)
     for pending in connector.transfers:
         pending.synchronize()
     manager.poll_transfers()
@@ -1042,6 +1065,7 @@ def _hold_only_in_the_connector(
         pending.synchronize()
     manager.poll_transfers()
     manager.reset_prefix_cache()
+    offloaded = sent_by_leaf(connector.offloads[start:])
     for leaf_id, hashes in offloaded.items():
         connector.held[leaf_id].update(hashes)
     return offloaded[FULL]
@@ -1245,8 +1269,8 @@ def test_a_failed_onload_leaves_the_state_row_a_fresh_admission_holds() -> None:
     first = make_ctx(list(range(1, 2 * PAGE + 1)))
     manager.claim(first)
     forward_to_boundary(manager, first)
-    manager.offload(0)
-    _, offloaded = connector.offloads[-1]
+    end_prompt(manager, first)
+    offloaded = sent_by_leaf(connector.offloads)
     manager.release(first)
     for pending in connector.transfers:
         pending.synchronize()
@@ -1331,8 +1355,23 @@ def test_step_without_a_connector_still_commits() -> None:
     manager.release(ctx)
 
 
+def test_without_a_checkpointer_every_cache_streams_as_it_commits() -> None:
+    """Nothing would offload the state later, so it streams with attention."""
+    connector = hybrid_connector()
+    manager = make_hybrid_manager(connector)
+    manager.with_checkpointer(Checkpointer.factory().disabled().build())
+    ctx = make_ctx(list(range(1, 2 * PAGE + 1)))
+    manager.claim(ctx)
+    forward_to_boundary(manager, ctx)
+    manager.offload(0)
+
+    ((_, hashes),) = connector.offloads
+    assert len(hashes[FULL]) == 2
+    assert hashes[STATE] == hashes[FULL][1:]
+
+
 def test_a_state_offloads_only_where_a_checkpoint_landed() -> None:
-    """The attention run offloads whole, the state only at its checkpoint."""
+    """The attention run streams as it commits, the state only at a checkpoint."""
     connector = hybrid_connector()
     manager = make_hybrid_manager(connector)
     ctx = make_ctx(list(range(1, 2 * PAGE + 1)))
@@ -1340,15 +1379,20 @@ def test_a_state_offloads_only_where_a_checkpoint_landed() -> None:
     forward_to_boundary(manager, ctx)
     manager.offload(0)
 
-    assert connector.offloads, "no offload issued"
-    block_ids, hashes = connector.offloads[-1]
+    ((block_ids, hashes),) = connector.offloads
     assert len(hashes[FULL]) == 2, "the attention run was cut short"
-    assert hashes[STATE] == hashes[FULL][1:], (
+    assert len(block_ids[FULL]) == 2
+    assert hashes[STATE] == [], "the state streamed without a checkpoint"
+
+    end_prompt(manager, ctx)
+
+    _, (block_ids, checkpoint) = connector.offloads
+    assert checkpoint[FULL] == []
+    assert checkpoint[STATE] == hashes[FULL][1:], (
         "the state checkpoints at the boundary the forward ended on"
     )
-    assert len(block_ids[FULL]) == 2
     assert len(block_ids[STATE]) == 1
-    assert set(hashes[STATE]) == set(manager.pools[0].prefix_caches[STATE])
+    assert set(checkpoint[STATE]) == set(manager.pools[0].prefix_caches[STATE])
 
 
 def test_a_state_reloads_from_the_connector_at_the_deepest_checkpoint() -> None:
@@ -1360,8 +1404,8 @@ def test_a_state_reloads_from_the_connector_at_the_deepest_checkpoint() -> None:
     first = make_ctx(list(range(1, 2 * PAGE + 1)))
     manager.claim(first)
     forward_to_boundary(manager, first)
-    manager.offload(0)
-    _, offloaded = connector.offloads[-1]
+    end_prompt(manager, first)
+    offloaded = sent_by_leaf(connector.offloads)
     manager.release(first)
     for pending in connector.transfers:
         pending.synchronize()
