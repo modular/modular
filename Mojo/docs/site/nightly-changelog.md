@@ -191,6 +191,11 @@ This version is still a work in progress.
   instead. `std.sys.intrinsics.ballot()` is removed; use
   `max.gpu.primitives.warp.vote()`, which works on every GPU vendor.
 
+- The `Powable` and `CeilDivableRaising` traits are removed. A type that
+  defines `__pow__()` still supports the `**` operator without conforming to a
+  trait, and `pow()` now takes `SIMD` values only. Nothing conformed to
+  `CeilDivableRaising`, so the raising `ceildiv()` overload is removed too.
+
 ## Fixed
 
 - `SIMD.slice()` no longer passes `llvm.vector.extract` an offset that is not

@@ -98,7 +98,7 @@ def test_sized() raises:
 
 
 def test_unary_math() raises:
-    # Absable / Powable / Roundable
+    # Absable / Roundable
     assert_equal(abs(-5), 5)
     assert_equal(2**8, 256)
     assert_equal(round(3.6), 4.0)

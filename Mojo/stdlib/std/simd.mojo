@@ -70,7 +70,7 @@ from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.format_int import _write_int
 from std.builtin.simd_length import SIMDLength
 from std.builtin.int import _FromInt
-from std.math import DivModable, Powable
+from std.math import DivModable
 from std.memory import bitcast, unsafe_memcpy, pack_bits
 from std.os import abort
 from std.python import (
@@ -476,7 +476,6 @@ struct SIMD[dtype: DType, length: SIMDLength](
     Indexer,
     Intable,
     IntervalElement,
-    Powable,
     Roundable,
     Sized,
     TrivialRegisterPassable,

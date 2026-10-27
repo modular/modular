@@ -174,8 +174,8 @@ def _exp_concrete(x: SIMD) -> type_of(x):
     """The concrete implementation of the exp function.
 
     This is a helper function that is used to provide a concrete implementation
-    of the exp function. This is necessary because exp uses the _Expable trait
-    and mojo cannot disambiguate between the different exp functions otherwise.
+    of the exp function. This is necessary because exp is overloaded and mojo
+    cannot disambiguate between the different exp functions otherwise.
     """
     comptime assert x.dtype.is_floating_point(), "dtype must be floating point"
     return exp(x)

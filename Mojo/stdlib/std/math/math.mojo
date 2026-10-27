@@ -35,6 +35,7 @@ from std.bit import count_leading_zeros, count_trailing_zeros
 from std.builtin.dtype import _integral_type_of
 from std.simd import _modf, _simd_apply
 from std.collections import Span
+from std.complex import ComplexSIMD
 from . import pi, inf, isfinite, isinf, isnan, nan, nextafter
 
 from std.utils.numerics import FPUtils, isnan, nan
@@ -106,28 +107,6 @@ def ceildiv[T: CeilDivable, //](numerator: T, denominator: T) -> T:
 
     Returns:
         The ceiling of dividing numerator by denominator.
-    """
-    return numerator.__ceildiv__(denominator)
-
-
-@inline(.always)
-def ceildiv[
-    T: CeilDivableRaising, //
-](numerator: T, denominator: T) raises -> T:
-    """Return the rounded-up result of dividing numerator by denominator, potentially raising.
-
-    Parameters:
-        T: A type that support floor division.
-
-    Args:
-        numerator: The numerator.
-        denominator: The denominator.
-
-    Returns:
-        The ceiling of dividing numerator by denominator.
-
-    Raises:
-        If the operation fails.
     """
     return numerator.__ceildiv__(denominator)
 
@@ -504,18 +483,6 @@ def ldexp[
 # ===----------------------------------------------------------------------=== #
 
 
-trait _Expable:
-    """Trait for types that support the exp function."""
-
-    def __exp__(self) -> Self:
-        """Computes the exponential of the input value.
-
-        Returns:
-            The exponential of the input value.
-        """
-        ...
-
-
 @inline(.always)
 def _exp_taylor[
     dtype: DType, width: SIMDLength, //
@@ -607,14 +574,11 @@ def _exp_impl[
 
 
 @inline(.always)
-def exp[T: _Expable](x: T) -> T:
-    """Computes the exponential of the input value.
-
-    Parameters:
-        T: The type of the input value.
+def exp(x: ComplexSIMD[...]) -> type_of(x):
+    """Computes the elementwise exponential of a complex value.
 
     Args:
-        x: The input value.
+        x: The input complex value.
 
     Returns:
         The exponential of the input value.
@@ -3154,42 +3118,6 @@ trait CeilDivable:
         ...
 
 
-trait CeilDivableRaising:
-    """
-    The `CeilDivable` trait describes a type that define a floor division and
-    negation operation that can raise.
-
-    Types that conform to `CeilDivableRaising` will work with the `//` operator
-    as well as the `math.ceildiv` function.
-
-    For example:
-    ```mojo
-    from std.math import CeilDivableRaising
-
-    @fieldwise_init
-    struct Foo(CeilDivableRaising, ImplicitlyCopyable):
-        var x: Float64
-
-        def __ceildiv__(self, denominator: Self) raises -> Self:
-            return Self(self.x // denominator.x)
-    ```
-    """
-
-    def __ceildiv__(self, denominator: Self) raises -> Self:
-        """Return the rounded-up result of dividing self by denominator.
-
-        Args:
-            denominator: The denominator.
-
-        Returns:
-            The ceiling of dividing numerator by denominator.
-
-        Raises:
-            If the operation fails.
-        """
-        ...
-
-
 # ===----------------------------------------------------------------------=== #
 # Truncable
 # ===----------------------------------------------------------------------=== #
@@ -3450,86 +3378,37 @@ def min[T: Copyable & Comparable & Deinitable](x: T, *ys: T) -> T:
 # ===----------------------------------------------------------------------=== #
 
 
-trait Powable:
-    """
-    The `Powable` trait describes a type that defines a power operation (i.e.
-    exponentiation) with the same base and exponent types.
+def pow(base: SIMD, exp: SIMD[_, _]) -> type_of(base):
+    """Computes the `base` raised elementwise to the power of the `exp`.
 
-    Types that conform to `Powable` will work with the builtin `pow` function,
-    which will return the same type as the inputs.
+    For an integral `base`, a negative exponent aborts.
 
-    For example:
-    ```mojo
-    struct Rational(Powable):
-        var numerator: Float64
-        var denominator: Float64
-
-        def __init__(out self, numerator: Float64, denominator: Float64):
-            self.numerator = numerator
-            self.denominator = denominator
-
-        def __pow__(self, exp: Self)  -> Self:
-            var exp_value = exp.numerator / exp.denominator
-            return Self(pow(self.numerator, exp_value), pow(self.denominator, exp_value))
-    ```
-
-    You can now use the ** operator to exponentiate objects
-    inside generic functions:
-
-    ```mojo
-    def exponentiate[T: Powable](base: T, exp: T) -> T:
-        return base ** exp
-
-    var base = Rational(Float64(3.0), 5.0)
-    var exp = Rational(Float64(1.0), 2.0)
-    var res = exponentiate(base, exp)
-    ```
-
-    ```plaintext
-    raising to power
-    ```
-    """
-
-    # TODO(MOCO-333): Reconsider the signature when we have parametric traits or
-    # associated types.
-    def __pow__(self, exp: Self) -> Self:
-        """Return the value raised to the power of the given exponent.
-
-        Args:
-            exp: The exponent value.
-
-        Returns:
-            The value of `self` raised to the power of `exp`.
-        """
-        ...
-
-
-def pow[T: Powable](base: T, exp: T) -> T:
-    """Computes the `base` raised to the power of the `exp`.
-
-    Parameters:
-        T: A type conforming to the `Powable` trait.
+    Constraints:
+        The `exp` must have the same dtype and width as the `base`, or be a
+        scalar. An integral `base` requires an integral `exp`.
 
     Args:
         base: The base of the power operation.
         exp: The exponent of the power operation.
 
     Returns:
-        The `base` raised to the power of the `exp`.
+        The `base` raised elementwise to the power of the `exp`.
     """
     return base.__pow__(exp)
 
 
-def pow(base: SIMD, exp: Int) -> type_of(base):
-    """Computes elementwise value of a SIMD vector raised to the power of the
-    given integer.
+def pow(base: SIMD, exp: FloatLiteral) -> type_of(base):
+    """Computes the `base` raised elementwise to the power of a float literal.
+
+    Constraints:
+        The `base` must be floating point.
 
     Args:
-        base: The first input argument.
-        exp: The second input argument.
+        base: The base of the power operation.
+        exp: The exponent, converted to the dtype of `base`.
 
     Returns:
-        The `base` elementwise raised raised to the power of `exp`.
+        The `base` raised elementwise to the power of the `exp`.
     """
     return base.__pow__(exp)
 

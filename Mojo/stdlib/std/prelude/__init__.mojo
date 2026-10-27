@@ -81,7 +81,6 @@ from std.builtin.int_literal import IntLiteral
 from std.builtin.len import Sized, SizedRaising, len
 from std.math.math import (
     Absable,
-    Powable,
     Roundable,
     abs,
     divmod,
