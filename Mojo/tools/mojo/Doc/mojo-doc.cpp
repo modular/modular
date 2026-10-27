@@ -69,9 +69,8 @@ static int doc(const State &subcommandState) {
   }
 
   if (int result = state.parseDiagnosticFormatArguments(
-          args, options::OPT_diagnostic_format,
-          /*disableWarningsId=*/llvm::opt::OptSpecifier(), options::OPT_werror,
-          options::OPT_wno_error))
+          args, options::OPT_diagnostic_format, options::OPT_disable_warnings,
+          options::OPT_werror, options::OPT_wno_error))
     return result;
 
   // Handle deprecated --validate-doc-strings flag as an alias for -Werror.
@@ -125,11 +124,16 @@ static int doc(const State &subcommandState) {
   KGEN::FrontendOptions frontendOptions = buildFrontendOptions(
       state, args,
       {
+          .mojoSearchPaths = options::OPT_mojo_search_paths,
+          .ignoreIncompatiblePrecompiledFileErrors =
+              options::OPT_ignore_incompatible_precompiled_file_errors,
           .ignoreDeprecated = options::OPT_ignore_deprecated,
+          .warnOnUnstableAPIs = options::OPT_warn_on_unstable_apis,
           .diagnoseMissingDocStrings =
               options::OPT_diagnose_missing_doc_strings,
           .maxNotes = options::OPT_max_notes,
           .stripFilePrefix = options::OPT_strip_file_prefix,
+          .disableBuiltins = options::OPT_disable_builtins,
           .docsBasePath = options::OPT_docs_base_path,
       });
 

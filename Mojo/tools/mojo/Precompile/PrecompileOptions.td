@@ -15,21 +15,16 @@ include "Precompile/PrecompileDescription.td"
 
 include "Common/DiagnosticFormatOptions.td"
 include "Common/DiagnosticOptions.td"
+include "Common/FixItOptions.td"
+include "Common/IncludeOptions.td"
 include "Support/Driver/CommonOptions.td"
 
 //===----------------------------------------------------------------------===//
 // Compilation Options
 //===----------------------------------------------------------------------===//
 
-def CompilationOptionGroup : OptionGroup<"Compilation options">, Index<5>;
-
-def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<1>,
-  MetaVarName<"PATH">,
-  HelpText<"Appends the given path to the list of directories to search for "
-           "imported Mojo files.">;
-
 defm bitcode_libs : CommandOptionHidden<["--", "-"], "bitcode-libs",
-  CompilationOptionGroup, Index<3>, MetaVarName<"LIBS">,
+  CompilationOptionGroup, Index<4>, MetaVarName<"LIBS">,
   HelpText<
     "External bitcode libraries to package into the generated package."
   >>;

@@ -60,19 +60,6 @@ def disable_warnings : Flag<["--", "-"],
   "disable-warnings">, Group<DiagnosticOptionGroup>, Index<7>,
   HelpText<"Do not print warning messages.">;
 
-def fixit : Flag<["--", "-"],
-  "experimental-fixit">, Group<DiagnosticOptionGroup>, Index<8>,
-  HelpText<"Automatically apply fix-its to the code, and rerun the command "
-           "again after the fix-its are applied. WARNING: this feature is "
-           "highly experimental and may result in irreversible data loss.">;
-
-defm export_fixit : CommandOption<["--", "-"], "experimental-export-fixit",
-  DiagnosticOptionGroup, Index<9>, MetaVarName<"YAML_FILE">,
-  HelpText<"Export fix-its to a YAML file in clang-tidy format instead of "
-           "applying them directly. The file can be applied using "
-           "'clang-apply-replacements'. WARNING: this feature is highly "
-           "experimental.">>;
-
 def werror : Flag<["--", "-"], "Werror">,
   Group<DiagnosticOptionGroup>, Index<10>,
   HelpText<"Treat warnings as errors.">;

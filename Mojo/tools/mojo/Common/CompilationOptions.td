@@ -21,13 +21,12 @@
 #ifndef KGEN_TOOLS_MOJO_COMMON_COMPILATIONOPTIONS_TD
 #define KGEN_TOOLS_MOJO_COMMON_COMPILATIONOPTIONS_TD
 
+include "Common/IncludeOptions.td"
 include "Support/Driver/DriverCommand.td"
 
 //===----------------------------------------------------------------------===//
 // Compilation Options
 //===----------------------------------------------------------------------===//
-
-def CompilationOptionGroup : OptionGroup<"Compilation options">, Index<5>;
 
 defm optimization_level : CommandOption<["--", "-"], "optimization-level",
   CompilationOptionGroup, Index<0>, MetaVarName<"LEVEL">,
@@ -50,11 +49,6 @@ defm fp_mode : CommandOption<["--", "-"], "fp-mode",
     "statements and breaking strict IEEE compliance. "
     "`contract=off` disables contraction."
   >>;
-
-def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<3>,
-  MetaVarName<"PATH">,
-  HelpText<"Appends the given path to the list of directories to search for "
-           "imported Mojo files.">;
 
 def D : JoinedOrSeparate<["-"], "D">, Group<CompilationOptionGroup>, Index<4>,
   MetaVarName<"KEY=VALUE">,
