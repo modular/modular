@@ -178,23 +178,25 @@ static ErrorOrSuccess parsePrecompileArgs(const State &state,
 
   // Set up the compilation options now, so we can use them as a single source
   // of truth.
-  if (auto err = parseCompilationOptions(
-          state, args, pkgArgs.compileOptions, pkgArgs.frontendOptions,
-          sourceMgr, pkgArgs.ctx, options::OPT_I,
-          /*optimizationLevelId=*/{}, /*debugLevelId=*/{},
-          /*sanitizeId=*/{}, /*sharedLibasan=*/{}, /*externalLibasan=*/{},
-          /*bitcodeLibs=*/{}, /*debugInfoLanguageId=*/{}, /*numThreadsId=*/{},
-          /*stdLibPath=*/{}, /*loopUnrollingWarnThresholdId=*/{},
-          /*elaborationErrorLimitId=*/{},
-          /*elaborationErrorIncludePreludeId=*/{},
-          /*elaborationErrorVerbose=*/{}, /*elaborationMaxDepth=*/{},
-          /*ignoreIncompatiblePrecompiledFileErrorsId=*/
-          options::OPT_ignore_incompatible_precompiled_file_errors,
-          /*fpModeId=*/{}, options::OPT_ignore_deprecated,
-          /*incrParsingCacheFileId=*/options::OPT_incr_parsing_cache_file))
+  if (auto err =
+          parseCompilationOptions(state, args, pkgArgs.compileOptions,
+                                  sourceMgr, pkgArgs.ctx, options::OPT_I))
     return err.takeError();
-  pkgArgs.frontendOptions.warnOnUnstableAPIs =
-      args.hasArg(options::OPT_warn_on_unstable_apis);
+  pkgArgs.frontendOptions = buildFrontendOptions(
+      state, args,
+      {
+          .mojoSearchPaths = options::OPT_mojo_search_paths,
+          .ignoreIncompatiblePrecompiledFileErrors =
+              options::OPT_ignore_incompatible_precompiled_file_errors,
+          .ignoreDeprecated = options::OPT_ignore_deprecated,
+          .incrParsingCacheFile = options::OPT_incr_parsing_cache_file,
+          .warnOnUnstableAPIs = options::OPT_warn_on_unstable_apis,
+          .diagnoseMissingDocStrings =
+              options::OPT_diagnose_missing_doc_strings,
+          .maxNotes = options::OPT_max_notes,
+          .stripFilePrefix = options::OPT_strip_file_prefix,
+          .disableBuiltins = options::OPT_disable_builtins,
+      });
 
   // Precompiled files are built with the intention of being agnostic, so use
   // conservative compilation settings as a default.
@@ -286,10 +288,8 @@ static int precompile(const State &subcommandState) {
   ErrorOr<OwningOpRef<ModuleOp>> module = invokeMojoParser(
       state, args, precompileArgs.compileOptions,
       precompileArgs.frontendOptions, &precompileArgs.ctx, cpuDevice,
-      options::OPT_diagnose_missing_doc_strings, options::OPT_max_notes,
-      /*definesId=*/llvm::opt::OptSpecifier(), options::OPT_strip_file_prefix,
-      options::OPT_disable_builtins, options::OPT_mojo_search_paths,
-      options::OPT_fixit, options::OPT_export_fixit,
+      /*definesId=*/llvm::opt::OptSpecifier(), options::OPT_fixit,
+      options::OPT_export_fixit,
       /*timingScope=*/nullptr,
       [&](const FrontendOptions &parserOptions, mlir::TimingScope &ts) {
         OwningOpRef<ModuleOp> moduleOp;

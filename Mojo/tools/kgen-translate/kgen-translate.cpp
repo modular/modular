@@ -294,7 +294,6 @@ int main(int argc, char *argv[]) {
         CompilationOptions options = clOptions.getCompilationOptions();
         FrontendOptions frontendOptions = clOptions.getFrontendOptions();
         frontendOptions.searchPaths = llvm::join(parserSearchPaths, ",");
-        frontendOptions.stripFilePrefix = clOptions.stripFilePrefix;
         frontendOptions.useMLIRDiagnostics = effectiveUseMLIRDiagnostics;
         frontendOptions.diagnoseMissingDocStrings = diagnoseMissingDocStrings;
         frontendOptions.maxNotesPerDiagnostic = maxNotesPerDiagnostic;

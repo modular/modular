@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "mojo-doc.h"
+#include "../Common/Compilation.h"
 
 #include "AsyncRT/Runtime/Allocator.h"
 #include "AsyncRT/Runtime/CPUDevice.h"
@@ -121,19 +122,16 @@ static int doc(const State &subcommandState) {
   if (!out)
     return state.reportError(outputError);
 
-  KGEN::FrontendOptions frontendOptions;
-  frontendOptions.warningsAsErrors = state.areWarningsAsErrors();
-  frontendOptions.diagnoseMissingDocStrings =
-      args.hasArg(options::OPT_diagnose_missing_doc_strings);
-  int maxNotes = 0;
-  if (!args.getLastArgValue(options::OPT_max_notes).getAsInteger(10, maxNotes))
-    frontendOptions.maxNotesPerDiagnostic = maxNotes;
-  frontendOptions.stripFilePrefix =
-      args.getLastArgValue(options::OPT_strip_file_prefix);
-  frontendOptions.docsBasePath =
-      args.getLastArgValue(options::OPT_docs_base_path);
-  frontendOptions.ignoredDeprecations = llvm::to_vector_of<std::string>(
-      args.getAllArgValues(options::OPT_ignore_deprecated));
+  KGEN::FrontendOptions frontendOptions = buildFrontendOptions(
+      state, args,
+      {
+          .ignoreDeprecated = options::OPT_ignore_deprecated,
+          .diagnoseMissingDocStrings =
+              options::OPT_diagnose_missing_doc_strings,
+          .maxNotes = options::OPT_max_notes,
+          .stripFilePrefix = options::OPT_strip_file_prefix,
+          .docsBasePath = options::OPT_docs_base_path,
+      });
 
   // Note: timing scope removed during DocGen extraction — it was never
   // surfaced to users.

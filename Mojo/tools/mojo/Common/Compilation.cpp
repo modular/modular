@@ -145,18 +145,18 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
 
   // Parse compilation options.
   if (ErrorOrSuccess err = parseCompilationOptions(
-          state, args, result.compilationOptions, result.frontendOptions,
-          sourceManager, ctx, optionIDs.includeDirs,
-          optionIDs.optimizationLevel, optionIDs.debugLevel, optionIDs.sanitize,
-          optionIDs.sharedLibasan, optionIDs.externalLibasan,
-          optionIDs.bitcodeLibs, optionIDs.debugInfoLanguage,
-          optionIDs.numThreads, optionIDs.mojoSearchPaths,
+          state, args, result.compilationOptions, sourceManager, ctx,
+          optionIDs.includeDirs, optionIDs.optimizationLevel,
+          optionIDs.debugLevel, optionIDs.sanitize, optionIDs.sharedLibasan,
+          optionIDs.externalLibasan, optionIDs.bitcodeLibs,
+          optionIDs.debugInfoLanguage, optionIDs.numThreads,
           optionIDs.loopUnrollingWarnThreshold, optionIDs.elaborationErrorLimit,
           optionIDs.elaborationErrorIncludePrelude,
           optionIDs.elaborationErrorVerbose, optionIDs.elaborationMaxDepth,
-          optionIDs.ignoreIncompatiblePrecompiledFileErrors, optionIDs.fpMode,
-          optionIDs.ignoreDeprecated, optionIDs.incrParsingCacheFile))
+          optionIDs.fpMode))
     return err.takeError();
+  result.frontendOptions =
+      buildFrontendOptions(state, args, optionIDs.frontend);
 
   // Parse target options.
   if (ErrorOrSuccess err = parseTargetOptions(
@@ -172,11 +172,6 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
     result.exitCode = printEffectiveTarget(result.target);
     return result;
   }
-
-  // Parse stability options.
-  if (optionIDs.warnOnUnstableAPIs.isValid())
-    result.frontendOptions.warnOnUnstableAPIs =
-        args.hasArg(optionIDs.warnOnUnstableAPIs);
 
   // Apply the lld path override (equivalent to MODULAR_MOJO_MAX_LLD_PATH). This
   // installs a process-wide override so every later `MojoConfig::open()` (for
@@ -196,34 +191,21 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
 
 ErrorOrSuccess M::parseCompilationOptions(
     const State &state, const llvm::opt::InputArgList &args,
-    CompilationOptions &compilationOptions, FrontendOptions &frontendOptions,
-    llvm::SourceMgr &sourceMgr, MLIRContext &ctx,
-    llvm::opt::OptSpecifier includeDirsId,
+    CompilationOptions &compilationOptions, llvm::SourceMgr &sourceMgr,
+    MLIRContext &ctx, llvm::opt::OptSpecifier includeDirsId,
     llvm::opt::OptSpecifier optimizationLevelId,
     llvm::opt::OptSpecifier debugLevelId, llvm::opt::OptSpecifier sanitizeId,
     llvm::opt::OptSpecifier sharedLibasan,
     llvm::opt::OptSpecifier externalLibasan,
     llvm::opt::OptSpecifier bitcodeLibs,
     llvm::opt::OptSpecifier debugInfoLanguageId,
-    llvm::opt::OptSpecifier numThreadsId, llvm::opt::OptSpecifier stdLibPath,
+    llvm::opt::OptSpecifier numThreadsId,
     llvm::opt::OptSpecifier loopUnrollingWarnThresholdId,
     llvm::opt::OptSpecifier elaborationErrorLimitId,
     llvm::opt::OptSpecifier elaborationErrorIncludePreludeId,
     llvm::opt::OptSpecifier elaborationErrorVerboseId,
     llvm::opt::OptSpecifier elaborationMaxDepthId,
-    llvm::opt::OptSpecifier ignoreIncompatiblePrecompiledFileErrorsId,
-    llvm::opt::OptSpecifier fpModeId,
-    llvm::opt::OptSpecifier ignoreDeprecatedId,
-    llvm::opt::OptSpecifier incrParsingCacheFileId) {
-
-  // Parse the deprecation-warning ignore list.
-  if (ignoreDeprecatedId.isValid())
-    frontendOptions.ignoredDeprecations = llvm::to_vector_of<std::string>(
-        args.getAllArgValues(ignoreDeprecatedId));
-
-  if (incrParsingCacheFileId.isValid())
-    frontendOptions.incrParsingCacheFile =
-        args.getLastArgValue(incrParsingCacheFileId).str();
+    llvm::opt::OptSpecifier fpModeId) {
 
   // Process the sanitizers.
   if (sanitizeId.isValid()) {
@@ -266,13 +248,6 @@ ErrorOrSuccess M::parseCompilationOptions(
   if (bitcodeLibs.isValid()) {
     compilationOptions.bitcodeLibs =
         llvm::to_vector_of<std::string>(args.getAllArgValues(bitcodeLibs));
-  }
-
-  // Enable overwriting of the auto-imported paths, which is where the compiler
-  // first looks for builtins.
-  if (stdLibPath.isValid()) {
-    StringRef value = args.getLastArgValue(stdLibPath);
-    frontendOptions.searchPaths = value;
   }
 
   // Process the debug info language.
@@ -449,16 +424,6 @@ ErrorOrSuccess M::parseCompilationOptions(
     }
   }
 
-  frontendOptions.ignoreIncompatiblePrecompiledFileErrors =
-      args.hasArg(ignoreIncompatiblePrecompiledFileErrorsId);
-
-  // Unike other command line options, disableWarnings is parsed
-  // in State::parseDiagnosticFormatArguments(), because there is another
-  // warning emission mechanism in State::reportWarning(), and the option
-  // is single-sourced to affect both places.
-  frontendOptions.disableWarnings = state.areWarningsDisabled();
-  frontendOptions.warningsAsErrors = state.areWarningsAsErrors();
-
   sourceMgr.setIncludeDirs(args.getAllArgValues(includeDirsId));
 
   // Initialize the MLIR context.
@@ -469,6 +434,49 @@ ErrorOrSuccess M::parseCompilationOptions(
   ctx.loadDialect<MDialect>();
 
   return success();
+}
+
+FrontendOptions M::buildFrontendOptions(const State &state,
+                                        const llvm::opt::InputArgList &args,
+                                        const FrontendOptionIDs &ids) {
+  FrontendOptions options;
+
+  // Unlike other command line options, disableWarnings is parsed
+  // in State::parseDiagnosticFormatArguments(), because there is another
+  // warning emission mechanism in State::reportWarning(), and the option
+  // is single-sourced to affect both places.
+  options.disableWarnings = state.areWarningsDisabled();
+  options.warningsAsErrors = state.areWarningsAsErrors();
+
+  // Enable overwriting of the auto-imported paths, which is where the compiler
+  // first looks for builtins.
+  if (ids.mojoSearchPaths.isValid())
+    options.searchPaths = args.getLastArgValue(ids.mojoSearchPaths);
+  if (ids.ignoreIncompatiblePrecompiledFileErrors.isValid())
+    options.ignoreIncompatiblePrecompiledFileErrors =
+        args.hasArg(ids.ignoreIncompatiblePrecompiledFileErrors);
+  if (ids.ignoreDeprecated.isValid())
+    options.ignoredDeprecations = llvm::to_vector_of<std::string>(
+        args.getAllArgValues(ids.ignoreDeprecated));
+  if (ids.incrParsingCacheFile.isValid())
+    options.incrParsingCacheFile =
+        args.getLastArgValue(ids.incrParsingCacheFile).str();
+  if (ids.warnOnUnstableAPIs.isValid())
+    options.warnOnUnstableAPIs = args.hasArg(ids.warnOnUnstableAPIs);
+  if (ids.diagnoseMissingDocStrings.isValid())
+    options.diagnoseMissingDocStrings =
+        args.hasArg(ids.diagnoseMissingDocStrings);
+  int maxNotes = 0;
+  if (ids.maxNotes.isValid() &&
+      !args.getLastArgValue(ids.maxNotes).getAsInteger(10, maxNotes))
+    options.maxNotesPerDiagnostic = maxNotes;
+  if (ids.stripFilePrefix.isValid())
+    options.stripFilePrefix = args.getLastArgValue(ids.stripFilePrefix);
+  if (ids.disableBuiltins.isValid())
+    options.useBuiltinModule = !args.hasArg(ids.disableBuiltins);
+  if (ids.docsBasePath.isValid())
+    options.docsBasePath = args.getLastArgValue(ids.docsBasePath);
+  return options;
 }
 
 void M::warnBuildingForDebugWithDebugBuiltCompiler(
@@ -877,10 +885,7 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
     const State &state, const llvm::opt::InputArgList &args,
     KGEN::CompilationOptions &compilationOptions,
     KGEN::FrontendOptions frontendOptions, MLIRContext *ctx,
-    AsyncRT::CPUDevice &cpuDevice, llvm::opt::OptSpecifier docDiagnoseMissingId,
-    llvm::opt::OptSpecifier maxNotesId, llvm::opt::OptSpecifier definesId,
-    llvm::opt::OptSpecifier stripFilePrefixId,
-    llvm::opt::OptSpecifier disableBuiltins, llvm::opt::OptSpecifier stdLibPath,
+    AsyncRT::CPUDevice &cpuDevice, llvm::opt::OptSpecifier definesId,
     llvm::opt::OptSpecifier autoFixIt, llvm::opt::OptSpecifier exportFixit,
     mlir::TimingScope *timingScope,
     function_ref<OwningOpRef<ModuleOp>(const FrontendOptions &,
@@ -901,18 +906,8 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
   DialectRegistry registry;
   registerAllKGENDialects(registry);
   ctx->appendDialectRegistry(registry);
-  if (stdLibPath.isValid()) {
-    StringRef value = args.getLastArgValue(stdLibPath);
-    frontendOptions.searchPaths = value;
-  }
-  // Parse the input Mojo file into an MLIR module.
-  frontendOptions.diagnoseMissingDocStrings = args.hasArg(docDiagnoseMissingId);
-  int maxNotes = 0;
-  if (!args.getLastArgValue(maxNotesId).getAsInteger(10, maxNotes))
-    frontendOptions.maxNotesPerDiagnostic = maxNotes;
-  frontendOptions.stripFilePrefix = args.getLastArgValue(stripFilePrefixId);
-  frontendOptions.useBuiltinModule = !args.hasArg(disableBuiltins);
 
+  // Parse the input Mojo file into an MLIR module.
   std::unique_ptr<AutoFixItHandler> fixItHandler;
   if (args.hasArg(autoFixIt)) {
     fixItHandler = std::make_unique<AutoFixItHandler>();

@@ -46,6 +46,21 @@ struct CPUDeviceOptions;
 
 class TargetInfoAttr;
 
+/// Holds the option IDs that buildFrontendOptions reads. A subcommand leaves
+/// an ID unset when it does not accept the option.
+struct FrontendOptionIDs {
+  llvm::opt::OptSpecifier mojoSearchPaths = {};
+  llvm::opt::OptSpecifier ignoreIncompatiblePrecompiledFileErrors = {};
+  llvm::opt::OptSpecifier ignoreDeprecated = {};
+  llvm::opt::OptSpecifier incrParsingCacheFile = {};
+  llvm::opt::OptSpecifier warnOnUnstableAPIs = {};
+  llvm::opt::OptSpecifier diagnoseMissingDocStrings = {};
+  llvm::opt::OptSpecifier maxNotes = {};
+  llvm::opt::OptSpecifier stripFilePrefix = {};
+  llvm::opt::OptSpecifier disableBuiltins = {};
+  llvm::opt::OptSpecifier docsBasePath = {};
+};
+
 /// Holds the option IDs that are common between mojo build and mojo run.
 /// These are passed to parseCommonMojoArguments to avoid duplicating the
 /// option ID mappings.
@@ -56,7 +71,6 @@ struct CommonOptionIDs {
   llvm::opt::OptSpecifier disableWarnings;
   llvm::opt::OptSpecifier warningsAsErrors;
   llvm::opt::OptSpecifier noWarningsAsErrors;
-  llvm::opt::OptSpecifier ignoreIncompatiblePrecompiledFileErrors;
   llvm::opt::OptSpecifier unknown;
   llvm::opt::OptSpecifier input;
 
@@ -71,7 +85,6 @@ struct CommonOptionIDs {
   llvm::opt::OptSpecifier bitcodeLibs;
   llvm::opt::OptSpecifier debugInfoLanguage;
   llvm::opt::OptSpecifier numThreads;
-  llvm::opt::OptSpecifier mojoSearchPaths;
   llvm::opt::OptSpecifier loopUnrollingWarnThreshold;
   llvm::opt::OptSpecifier elaborationErrorLimit;
   llvm::opt::OptSpecifier elaborationErrorIncludePrelude;
@@ -98,23 +111,15 @@ struct CommonOptionIDs {
   llvm::opt::OptSpecifier printSupportedAccelerators;
 
   // Parser options
-  llvm::opt::OptSpecifier diagnoseMissingDocStrings;
-  llvm::opt::OptSpecifier maxNotes;
   llvm::opt::OptSpecifier defines;
-  llvm::opt::OptSpecifier stripFilePrefix;
-  llvm::opt::OptSpecifier disableBuiltins;
   llvm::opt::OptSpecifier fixit;
   llvm::opt::OptSpecifier exportFixit;
-
-  // Stability options
-  llvm::opt::OptSpecifier warnOnUnstableAPIs;
-  llvm::opt::OptSpecifier ignoreDeprecated;
 
   // Linker options
   llvm::opt::OptSpecifier lldPath;
 
-  // Experimental incremental parsing cache file.
-  llvm::opt::OptSpecifier incrParsingCacheFile;
+  // Frontend options
+  FrontendOptionIDs frontend;
 };
 
 /// Configuration flags for common argument parsing behavior.
@@ -172,13 +177,11 @@ parseCommonMojoArguments(State &state, llvm::SourceMgr &sourceManager,
                          const CommonParseConfig &config);
 
 /// Parse the common configuration options for Mojo related to compilation,
-/// populating the provided `compilationOptions` and `frontendOptions`
-/// arguments. An error is returned if any of the provided option values are
-/// invalid.
+/// populating the provided `compilationOptions` argument. An error is returned
+/// if any of the provided option values are invalid.
 ErrorOrSuccess parseCompilationOptions(
     const State &state, const llvm::opt::InputArgList &args,
-    KGEN::CompilationOptions &compilationOptions,
-    KGEN::FrontendOptions &frontendOptions, llvm::SourceMgr &sourceMgr,
+    KGEN::CompilationOptions &compilationOptions, llvm::SourceMgr &sourceMgr,
     MLIRContext &ctx, llvm::opt::OptSpecifier includeDirsId,
     llvm::opt::OptSpecifier optimizationLevelId = {},
     llvm::opt::OptSpecifier debugLevelId = {},
@@ -188,16 +191,18 @@ ErrorOrSuccess parseCompilationOptions(
     llvm::opt::OptSpecifier bitcodeLibs = {},
     llvm::opt::OptSpecifier debugInfoLanguageId = {},
     llvm::opt::OptSpecifier numThreadsId = {},
-    llvm::opt::OptSpecifier stdLibPath = {},
     llvm::opt::OptSpecifier loopUnrollingWarnThresholdId = {},
     llvm::opt::OptSpecifier elaborationErrorLimitId = {},
     llvm::opt::OptSpecifier elaborationErrorIncludePreludeId = {},
     llvm::opt::OptSpecifier elaborationErrorVerbose = {},
     llvm::opt::OptSpecifier elaborationMaxDepth = {},
-    llvm::opt::OptSpecifier ignoreIncompatiblePrecompiledFilesId = {},
-    llvm::opt::OptSpecifier fpModeId = {},
-    llvm::opt::OptSpecifier ignoreDeprecatedId = {},
-    llvm::opt::OptSpecifier incrParsingCacheFileId = {});
+    llvm::opt::OptSpecifier fpModeId = {});
+
+/// Build the parser settings from `args`. The warning policy comes from
+/// `state`, which parsed it with the diagnostic format.
+KGEN::FrontendOptions buildFrontendOptions(const State &state,
+                                           const llvm::opt::InputArgList &args,
+                                           const FrontendOptionIDs &ids);
 
 /// Warn users when doing debug builds with a compiler in debug mode.
 void warnBuildingForDebugWithDebugBuiltCompiler(
@@ -359,18 +364,14 @@ private:
 
 /// Wrap a parser invocation to Mojo, populating the necessary parsing context,
 /// and attaching post parse metadata. On success, returns the parsed module
-/// operation. The given `frontendOptions` are extended with the parser settings
-/// read from `args`. If the `autoFixIt` flag is set and the parser collects any
+/// operation. If the `autoFixIt` flag is set and the parser collects any
 /// fix-its, they will be applied, and the returned module will be null.
 /// If `exportFixit` is set, fix-its will be exported to a YAML file instead.
 ErrorOr<OwningOpRef<ModuleOp>> invokeMojoParser(
     const State &state, const llvm::opt::InputArgList &args,
     KGEN::CompilationOptions &compilationOptions,
     KGEN::FrontendOptions frontendOptions, MLIRContext *ctx,
-    AsyncRT::CPUDevice &cpuDevice, llvm::opt::OptSpecifier docDiagnoseMissingId,
-    llvm::opt::OptSpecifier maxNotesId, llvm::opt::OptSpecifier definesId,
-    llvm::opt::OptSpecifier stripFilePrefixId,
-    llvm::opt::OptSpecifier disableBuiltins, llvm::opt::OptSpecifier stdlibPath,
+    AsyncRT::CPUDevice &cpuDevice, llvm::opt::OptSpecifier definesId,
     llvm::opt::OptSpecifier autoFixIt, llvm::opt::OptSpecifier exportFixit,
     mlir::TimingScope *timingScope,
     function_ref<OwningOpRef<ModuleOp>(const KGEN::FrontendOptions &,

@@ -159,8 +159,6 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
       .disableWarnings = options::OPT_disable_warnings,
       .warningsAsErrors = options::OPT_werror,
       .noWarningsAsErrors = options::OPT_wno_error,
-      .ignoreIncompatiblePrecompiledFileErrors =
-          options::OPT_ignore_incompatible_precompiled_file_errors,
       .unknown = options::OPT_UNKNOWN,
       .input = options::OPT_INPUT,
       .includeDirs = options::OPT_I,
@@ -173,7 +171,6 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
       .bitcodeLibs = options::OPT_bitcode_libs,
       .debugInfoLanguage = options::OPT_debug_info_language,
       .numThreads = options::OPT_num_threads,
-      .mojoSearchPaths = options::OPT_mojo_search_paths,
       .loopUnrollingWarnThreshold = options::OPT_loop_unrolling_warn_threshold,
       .elaborationErrorLimit = options::OPT_elaboration_error_limit,
       .elaborationErrorIncludePrelude =
@@ -195,17 +192,24 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
       .printSupportedTargets = options::OPT_print_supported_targets,
       .printSupportedCpus = options::OPT_print_supported_cpus,
       .printSupportedAccelerators = options::OPT_print_supported_accelerators,
-      .diagnoseMissingDocStrings = options::OPT_diagnose_missing_doc_strings,
-      .maxNotes = options::OPT_max_notes,
       .defines = options::OPT_D,
-      .stripFilePrefix = options::OPT_strip_file_prefix,
-      .disableBuiltins = options::OPT_disable_builtins,
       .fixit = options::OPT_fixit,
       .exportFixit = options::OPT_export_fixit,
-      .warnOnUnstableAPIs = options::OPT_warn_on_unstable_apis,
-      .ignoreDeprecated = options::OPT_ignore_deprecated,
       .lldPath = options::OPT_lld_path,
-      .incrParsingCacheFile = options::OPT_incr_parsing_cache_file,
+      .frontend =
+          {
+              .mojoSearchPaths = options::OPT_mojo_search_paths,
+              .ignoreIncompatiblePrecompiledFileErrors =
+                  options::OPT_ignore_incompatible_precompiled_file_errors,
+              .ignoreDeprecated = options::OPT_ignore_deprecated,
+              .incrParsingCacheFile = options::OPT_incr_parsing_cache_file,
+              .warnOnUnstableAPIs = options::OPT_warn_on_unstable_apis,
+              .diagnoseMissingDocStrings =
+                  options::OPT_diagnose_missing_doc_strings,
+              .maxNotes = options::OPT_max_notes,
+              .stripFilePrefix = options::OPT_strip_file_prefix,
+              .disableBuiltins = options::OPT_disable_builtins,
+          },
   };
 
   // Configure parsing for `mojo run` - only parse args up to the input file.
@@ -419,10 +423,8 @@ static int run(const State &subcommandState) {
 
   ErrorOr<OwningOpRef<ModuleOp>> moduleOp = invokeMojoParser(
       state, args, options, frontendOptions, &mlirCtx, cpuDevice,
-      options::OPT_diagnose_missing_doc_strings, options::OPT_max_notes,
-      options::OPT_D, options::OPT_strip_file_prefix,
-      options::OPT_disable_builtins, options::OPT_mojo_search_paths,
-      options::OPT_fixit, options::OPT_export_fixit, &timing.rootScope(),
+      options::OPT_D, options::OPT_fixit, options::OPT_export_fixit,
+      &timing.rootScope(),
       [&](const FrontendOptions &parserOptions, mlir::TimingScope &ts) {
         return LIT::importMojoFile(ctx, sourceManager, &mlirCtx, options,
                                    parserOptions, ts);

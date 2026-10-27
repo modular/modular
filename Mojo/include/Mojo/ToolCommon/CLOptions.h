@@ -167,6 +167,7 @@ public:
   /// Return a frontend options object based on the command line options.
   FrontendOptions getFrontendOptions() const {
     FrontendOptions options;
+    options.stripFilePrefix = stripFilePrefix;
     options.warnOnUnstableAPIs = warnOnUnstableAPIs;
     options.ignoredDeprecations = ignoredDeprecations;
     options.disableWarnings = disableWarnings;

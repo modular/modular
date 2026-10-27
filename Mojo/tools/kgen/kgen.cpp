@@ -148,6 +148,14 @@ public:
       cl::desc(
           "External bitcode libraries to link into the generated LLVM IR.")};
 
+  /// Return the frontend options for parsing Mojo input.
+  FrontendOptions getFrontendOptions() const {
+    FrontendOptions options = KGENOptions::getFrontendOptions();
+    options.useMLIRDiagnostics = enableMLIRDiagnostics;
+    options.disablePrebuiltPackages = disablePrebuiltPackages;
+    return options;
+  }
+
   /// Add all the input files provided on the command line to the SourceMgr.
   /// This is how MLIR parses multiple files.
   ErrorOrSuccess addInputFilesToSourceMgr(llvm::SourceMgr &mgr);
@@ -423,9 +431,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
         });
 
     FrontendOptions frontendOptions = clOptions.getFrontendOptions();
-    frontendOptions.stripFilePrefix = clOptions.stripFilePrefix;
     frontendOptions.useMLIRDiagnostics = true;
-    frontendOptions.disablePrebuiltPackages = clOptions.disablePrebuiltPackages;
     MainFileParserListener lspListener(mgr);
     frontendOptions.parserListener = &lspListener;
 
@@ -458,12 +464,9 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   if (inputFileName.ends_with(".mojo")) {
     TimingScope litScope = timing.nest("Import Mojo source");
-    FrontendOptions frontendOptions = clOptions.getFrontendOptions();
-    frontendOptions.stripFilePrefix = clOptions.stripFilePrefix;
-    frontendOptions.useMLIRDiagnostics = clOptions.enableMLIRDiagnostics;
-    frontendOptions.disablePrebuiltPackages = clOptions.disablePrebuiltPackages;
-    theModule = LIT::importMojoFile(*ctxOr, mgr, ctx, options, frontendOptions,
-                                    litScope, &includedFiles);
+    theModule = LIT::importMojoFile(*ctxOr, mgr, ctx, options,
+                                    clOptions.getFrontendOptions(), litScope,
+                                    &includedFiles);
   } else {
     theModule = parseSourceFile<ModuleOp>(mgr, ctx);
   }
@@ -866,15 +869,10 @@ static LogicalResult runPrecompile(CLOptions &clOptions) {
   options.debugLevel = CompilationOptions::kFullDebugInfo;
   options.optimizationLevel = 0;
 
-  FrontendOptions frontendOptions = clOptions.getFrontendOptions();
-  frontendOptions.stripFilePrefix = clOptions.stripFilePrefix;
-  frontendOptions.useMLIRDiagnostics = clOptions.enableMLIRDiagnostics;
-  frontendOptions.disablePrebuiltPackages = clOptions.disablePrebuiltPackages;
-
   TimingScope ts;
-  auto [module, packageOp] =
-      LIT::importMojoPackage(*ctxOr, packagePath.string(), sourceName,
-                             sourceMgr, &context, options, frontendOptions, ts);
+  auto [module, packageOp] = LIT::importMojoPackage(
+      *ctxOr, packagePath.string(), sourceName, sourceMgr, &context, options,
+      clOptions.getFrontendOptions(), ts);
   if (!module)
     return failure(clOptions.reportError("could not parse the package"));
 
