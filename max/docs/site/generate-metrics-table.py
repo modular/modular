@@ -64,8 +64,8 @@ TYPE_LABEL = {
 # Exported metrics that stay off the page entirely, and why. They are
 # absent from the rendered tables and from --report.
 UNDOCUMENTED_ON_PURPOSE = {
-    "maxserve_dkv_": "The dKV connector is available only in Modular Cloud.",
-    "maxserve_tokenizer_chat_encoder_": (
+    "max_dkv_": "The dKV connector is available only in Modular Cloud.",
+    "max_tokenizer_chat_encoder_": (
         "Emitted only when --tokenizer-impl names a chat encoder."
     ),
 }

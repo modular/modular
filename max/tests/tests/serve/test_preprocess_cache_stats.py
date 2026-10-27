@@ -389,7 +389,7 @@ class TestHitMissSurfacing:
         metrics.vision_preprocess_cache_misses.assert_called_once_with(3)
 
     def test_video_lookups_do_not_feed_the_image_pair(self) -> None:
-        """``maxserve.vision.preprocess_cache_*`` counts images and is untagged."""
+        """``max.vision.preprocess_cache_*`` counts images and is untagged."""
         recorder, metrics = _recorder(
             _CachingTokenizer(
                 {

@@ -174,13 +174,13 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
         # There shouldn't be any request metrics yet since the server is just started up.
         assert_metrics(
             expected_metrics=[
-                "maxserve_model_load_time_milliseconds_bucket",
+                "max_model_load_time_milliseconds_bucket",
                 # Per-phase startup breakdown on the same metric, split by
                 # the component tag.
                 'component="total"',
                 'component="compile"',
             ],
-            absent_metrics=["maxserve_request_time_milliseconds_bucket"],
+            absent_metrics=["max_request_time_milliseconds_bucket"],
         )
 
         # The histogram must carry the real measured duration, not 0.
@@ -189,12 +189,11 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
         ).text
         total = _series_value(
             metrics_text,
-            "maxserve_model_load_time_milliseconds_sum",
+            "max_model_load_time_milliseconds_sum",
             component="total",
         )
         assert total is not None, (
-            "maxserve_model_load_time_milliseconds_sum{component='total'} "
-            "not found"
+            "max_model_load_time_milliseconds_sum{component='total'} not found"
         )
         assert total > 0.0, (
             f"model_load_time total sum should be > 0, got {total}"
@@ -224,18 +223,18 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
         # Wait for request metrics to propagate
         assert_metrics(
             expected_metrics=[
-                "maxserve_num_input_tokens_total",
-                "maxserve_request_time_milliseconds_bucket",
-                "maxserve_time_to_first_token_milliseconds_bucket",
-                "maxserve_num_output_tokens_total",
-                "maxserve_batch_size",
-                "maxserve_cache_request_prefix_coverage",
-                f'maxserve_pipeline_load_total{{model="{MODEL_NAME}"}} 1.0',
+                "max_num_input_tokens_total",
+                "max_request_time_milliseconds_bucket",
+                "max_time_to_first_token_milliseconds_bucket",
+                "max_num_output_tokens_total",
+                "max_batch_size",
+                "max_cache_request_prefix_coverage",
+                f'max_pipeline_load_total{{model="{MODEL_NAME}"}} 1.0',
             ],
             # This model is text-only, so the media family must be entirely
             # absent. ``absent_metrics`` matches a substring, so the family
             # prefix covers every name in it, present and future.
-            absent_metrics=["maxserve_media_"],
+            absent_metrics=["max_media_"],
         )
 
         # Once all requests land in the histogram, assert the counter matches
@@ -248,15 +247,15 @@ async def test_metrics_e2e_v1(app: FastAPI) -> None:
                 "http://localhost:8001/metrics", timeout=1
             ).text
             hist_count = _metric_total(
-                metrics_text, "maxserve_input_tokens_per_request_tokens_count"
+                metrics_text, "max_input_tokens_per_request_tokens_count"
             )
             if hist_count == num_requests:
                 input_counter = _metric_total(
-                    metrics_text, "maxserve_num_input_tokens_total"
+                    metrics_text, "max_num_input_tokens_total"
                 )
                 input_hist_sum = _metric_total(
                     metrics_text,
-                    "maxserve_input_tokens_per_request_tokens_sum",
+                    "max_input_tokens_per_request_tokens_sum",
                 )
                 break
             time.sleep(0.5)
@@ -305,7 +304,7 @@ async def test_metrics_e2e_v0(app: FastAPI) -> None:
     async with TestClient(app, timeout=720.0) as client:
         # Wait for the pipeline load metric to be available (metrics propagate async)
         assert_metrics(
-            expected_metrics=["maxserve_pipeline_load_total"],
+            expected_metrics=["max_pipeline_load_total"],
             absent_metrics=None,
         )
 
@@ -327,18 +326,18 @@ async def test_metrics_e2e_v0(app: FastAPI) -> None:
         # Wait for request metrics to propagate
         assert_metrics(
             expected_metrics=[
-                "maxserve_num_input_tokens_total",
-                "maxserve_request_time_milliseconds_bucket",
-                "maxserve_time_to_first_token_milliseconds_bucket",
-                "maxserve_num_output_tokens_total",
-                "maxserve_batch_size",
-                "maxserve_cache_request_prefix_coverage",
-                f'maxserve_pipeline_load_total{{model="{MODEL_NAME}"}} 1.0',
+                "max_num_input_tokens_total",
+                "max_request_time_milliseconds_bucket",
+                "max_time_to_first_token_milliseconds_bucket",
+                "max_num_output_tokens_total",
+                "max_batch_size",
+                "max_cache_request_prefix_coverage",
+                f'max_pipeline_load_total{{model="{MODEL_NAME}"}} 1.0',
             ],
             # This model is text-only, so the media family must be entirely
             # absent. ``absent_metrics`` matches a substring, so the family
             # prefix covers every name in it, present and future.
-            absent_metrics=["maxserve_media_"],
+            absent_metrics=["max_media_"],
         )
 
 
@@ -431,10 +430,10 @@ async def test_metrics_e2e_otlp_endpoint_uses_exponential_histograms(
         # keep serving.
         assert_metrics(
             expected_metrics=[
-                "maxserve_num_input_tokens_total",
-                "maxserve_time_to_first_token_milliseconds_bucket",
-                "maxserve_itl_milliseconds_bucket",
-                "maxserve_request_time_milliseconds_bucket",
+                "max_num_input_tokens_total",
+                "max_time_to_first_token_milliseconds_bucket",
+                "max_itl_milliseconds_bucket",
+                "max_request_time_milliseconds_bucket",
             ],
             absent_metrics=None,
         )
@@ -453,21 +452,19 @@ async def test_metrics_e2e_otlp_endpoint_uses_exponential_histograms(
                 for resource_metrics in request.resource_metrics:
                     for scope_metrics in resource_metrics.scope_metrics:
                         for metric in scope_metrics.metrics:
-                            assert (
-                                metric.name != "maxserve.time_to_first_token"
-                            ), (
+                            assert metric.name != "max.time_to_first_token", (
                                 "the classic explicit-bucket metric should "
                                 "not also reach the OTLP endpoint"
                             )
                             if (
                                 metric.name
-                                == "maxserve.time_to_first_token.exponential"
+                                == "max.time_to_first_token.exponential"
                             ):
                                 assert (
                                     metric.WhichOneof("data")
                                     == "exponential_histogram"
                                 ), (
-                                    "maxserve.time_to_first_token.exponential "
+                                    "max.time_to_first_token.exponential "
                                     "should export as an exponential "
                                     "histogram, not a bucketed one"
                                 )
@@ -477,6 +474,6 @@ async def test_metrics_e2e_otlp_endpoint_uses_exponential_histograms(
             time.sleep(0.5)
 
         assert exported_names, (
-            "maxserve.time_to_first_token.exponential never reached the "
+            "max.time_to_first_token.exponential never reached the "
             "OTLP endpoint"
         )

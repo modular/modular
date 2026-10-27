@@ -483,7 +483,7 @@ class DecodeScheduler(Scheduler):
             )
             # Decode-local postprocessing before the result leaves this
             # process. Does not cover the subsequent API-process hop -- see
-            # maxserve.response_queue_time for the tail end of that on the
+            # max.response_queue_time for the tail end of that on the
             # API side.
             METRICS.di_decode_postprocess_time(
                 (time.monotonic() - postprocess_start) * 1000

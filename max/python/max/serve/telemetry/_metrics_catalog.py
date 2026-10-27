@@ -41,7 +41,7 @@ from prometheus_client import REGISTRY, generate_latest
 
 _HELP = re.compile(r"^# HELP (?P<name>\S+) (?P<help>.*)$", re.MULTILINE)
 _TYPE = re.compile(r"^# TYPE (?P<name>\S+) (?P<type>\S+)$", re.MULTILINE)
-_EXPORTED_PREFIX = "maxserve_"
+_EXPORTED_PREFIX = "max_"
 
 
 @dataclass(frozen=True)

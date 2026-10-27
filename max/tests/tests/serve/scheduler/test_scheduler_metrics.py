@@ -1698,7 +1698,7 @@ def test_scheduler_overlap_attributes_execution_metrics_to_completed_batch() -> 
 
     Regression test: previously a CE batch's execution time was published
     under the next iteration's batch type (usually TG), corrupting the CE/TG
-    split of maxserve.batch_execution_time and both throughput histograms.
+    split of max.batch.execution_time and both throughput histograms.
     """
     recorder = _ExecMetricsRecorder()
     with patch("max.serve.scheduler.utils.METRICS", recorder):
@@ -1993,7 +1993,7 @@ def test_dp_context_occupancy_in_log_line_and_extra() -> None:
 
 
 def test_cache_hit_tiers_sum_to_the_untagged_total() -> None:
-    """CLIN-1785: ``maxserve.cache.hits`` carries a ``tier`` attribute.
+    """CLIN-1785: ``max.cache.hits`` carries a ``tier`` attribute.
 
     The whole design rests on one invariant: the per-tier points SUM to the
     counter's untagged total. That is what lets the dashboard replace a
@@ -2052,7 +2052,7 @@ def test_cold_cache_still_stamps_the_device_tier() -> None:
 
     Before the tier label this recorded ``cache_hits(0)``, which creates and
     keeps the series alive. Skipping every empty tier would leave
-    ``maxserve_cache_hits_tokens_total`` absent on a cold server, and
+    ``max_cache_hits_tokens_total`` absent on a cold server, and
     ``rate()``/``sum()`` over an absent series returns no data rather than
     zero, which reads as a broken panel instead of a cold cache.
     """

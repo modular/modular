@@ -398,7 +398,7 @@ def record_request_end(
     turn: ConversationTurn | None = None,
     cached_tokens: int | None = None,
 ) -> None:
-    # The HTTP status code is labeled onto ``maxserve.request_count`` by the
+    # The HTTP status code is labeled onto ``max.request_count`` by the
     # ``register_request`` middleware, which knows the code actually returned to
     # the client (see ``max/python/max/serve/request.py``).
     METRICS.reqs_running(-1)

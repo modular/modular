@@ -66,7 +66,7 @@ class ModelWorkerProxy(ABC, Generic[BaseContextType, PipelineOutputType]):
     # off to this worker (the ingress backlog: tokenization / pre-submit).
     # Maintained by ``note_awaiting_admission``; implementations with a
     # periodic loop (e.g. the zmq proxy's response worker) sample it into the
-    # ``maxserve.requests_awaiting_admission`` histogram. Declared as a
+    # ``max.requests_awaiting_admission`` histogram. Declared as a
     # class-level default; the ``+=`` in ``note_awaiting_admission`` rebinds it
     # as a per-instance attribute on first use (int is immutable, so instances
     # never share state).
@@ -77,9 +77,9 @@ class ModelWorkerProxy(ABC, Generic[BaseContextType, PipelineOutputType]):
 
         Call with ``1`` when a request is accepted by the API server (before
         tokenization) and ``-1`` once it is handed off to the worker. Updates
-        both the live ``maxserve.num_requests_awaiting_admission`` up/down
+        both the live ``max.num_requests_awaiting_admission`` up/down
         counter and the running count that implementations sample into the
-        ``maxserve.requests_awaiting_admission`` histogram.
+        ``max.requests_awaiting_admission`` histogram.
         """
         self._awaiting_admission_count += delta
         METRICS.reqs_awaiting_admission(delta)

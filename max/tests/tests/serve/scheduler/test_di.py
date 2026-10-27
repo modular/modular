@@ -3062,7 +3062,7 @@ def test_decode_insufficient_blocks_defers_with_pending_prefill() -> None:
 
 
 # ---------------------------------------------------------------------------
-# maxserve.num_requests_queued gauge (MXSERV-29).
+# max.num_requests_queued gauge (MXSERV-29).
 #
 # The gauge is a synchronous OTel Gauge: ``BatchMetrics.publish_metrics``
 # samples ``num_pending_reqs`` once per scheduler iteration and replaces

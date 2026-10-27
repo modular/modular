@@ -36,22 +36,22 @@ from max.serve.telemetry import common, metrics
 
 # One measurement per new instrument, with a representative attribute set.
 _MEDIA_MEASUREMENTS: tuple[tuple[str, float, dict[str, str]], ...] = (
-    ("maxserve.media.items", 1, {"media_kind": "image", "source": "inline"}),
-    ("maxserve.media.resolve_time", 12.5, {"source": "inline"}),
-    ("maxserve.media.item_size", 4096, {"media_kind": "image"}),
-    ("maxserve.media.image_size", 65536, {"format": "png"}),
-    ("maxserve.media.image_decodes", 1, {"format": "png"}),
-    ("maxserve.media.image_decode_ms", 3.25, {"format": "png"}),
-    ("maxserve.media.rejections", 1, {"reason": "undecodable"}),
-    ("maxserve.media.items_per_request", 2, {"media_kind": "image"}),
+    ("max.media.items", 1, {"media_kind": "image", "source": "inline"}),
+    ("max.media.resolve_time", 12.5, {"source": "inline"}),
+    ("max.media.item_size", 4096, {"media_kind": "image"}),
+    ("max.media.image_size", 65536, {"format": "png"}),
+    ("max.media.image_decodes", 1, {"format": "png"}),
+    ("max.media.image_decode_ms", 3.25, {"format": "png"}),
+    ("max.media.rejections", 1, {"reason": "undecodable"}),
+    ("max.media.items_per_request", 2, {"media_kind": "image"}),
     (
-        "maxserve.media.preprocess_cache_evictions",
+        "max.media.preprocess_cache_evictions",
         1,
         {"media_kind": "image"},
     ),
-    ("maxserve.media.preprocess_cache_size", 4096, {"media_kind": "image"}),
+    ("max.media.preprocess_cache_size", 4096, {"media_kind": "image"}),
     (
-        "maxserve.media.preprocess_cache_capacity",
+        "max.media.preprocess_cache_capacity",
         8192,
         {"media_kind": "image"},
     ),
@@ -60,15 +60,15 @@ _MEDIA_MEASUREMENTS: tuple[tuple[str, float, dict[str, str]], ...] = (
 # The admission and TTFT metrics that show where a connector's deferred
 # lookups spend a request's TTFT.
 _ADMISSION_MEASUREMENTS: tuple[tuple[str, float, dict[str, str]], ...] = (
-    ("maxserve.cache.connector_cordon_wait_time", 12.5, {}),
-    ("maxserve.cache.connector_cordon_passes", 2, {}),
+    ("max.cache.connector_cordon_wait_time", 12.5, {}),
+    ("max.cache.connector_cordon_passes", 2, {}),
     (
-        "maxserve.cache.connector_lookup_admission_stops",
+        "max.cache.connector_lookup_admission_stops",
         1,
         {"reason": "budget"},
     ),
     (
-        "maxserve.time_to_first_token_by_prompt_length",
+        "max.time_to_first_token_by_prompt_length",
         125.0,
         {"prompt_length": "8k-32k"},
     ),
@@ -78,26 +78,26 @@ _ADMISSION_MEASUREMENTS: tuple[tuple[str, float, dict[str, str]], ...] = (
 # ``docs/max/serve/metrics.mdx`` is copied from these lists.
 _EXPECTED_MEDIA_LINES = frozenset(
     {
-        "maxserve_media_items_total",
-        "maxserve_media_resolve_time_milliseconds",
-        "maxserve_media_item_size_bytes",
-        "maxserve_media_image_size_pixels",
-        "maxserve_media_image_decodes_total",
-        "maxserve_media_image_decode_ms_total",
-        "maxserve_media_rejections_total",
-        "maxserve_media_items_per_request_items",
-        "maxserve_media_preprocess_cache_evictions_total",
-        "maxserve_media_preprocess_cache_size_bytes",
-        "maxserve_media_preprocess_cache_capacity_bytes",
+        "max_media_items_total",
+        "max_media_resolve_time_milliseconds",
+        "max_media_item_size_bytes",
+        "max_media_image_size_pixels",
+        "max_media_image_decodes_total",
+        "max_media_image_decode_ms_total",
+        "max_media_rejections_total",
+        "max_media_items_per_request_items",
+        "max_media_preprocess_cache_evictions_total",
+        "max_media_preprocess_cache_size_bytes",
+        "max_media_preprocess_cache_capacity_bytes",
     }
 )
 
 _EXPECTED_ADMISSION_LINES = frozenset(
     {
-        "maxserve_cache_connector_cordon_wait_time_milliseconds",
-        "maxserve_cache_connector_cordon_passes",
-        "maxserve_cache_connector_lookup_admission_stops_total",
-        "maxserve_time_to_first_token_by_prompt_length_milliseconds",
+        "max_cache_connector_cordon_wait_time_milliseconds",
+        "max_cache_connector_cordon_passes",
+        "max_cache_connector_lookup_admission_stops_total",
+        "max_time_to_first_token_by_prompt_length_milliseconds",
     }
 )
 
@@ -139,8 +139,8 @@ def _line_names(scrape: str, prefix: str) -> set[str]:
 
 def test_scrape_is_not_empty(media_scrape: str) -> None:
     """Guards every other assertion in this file against a vacuous pass."""
-    assert _line_names(media_scrape, "maxserve_"), (
-        "no maxserve_ series on the scrape at all -- the meter provider this"
+    assert _line_names(media_scrape, "max_"), (
+        "no max_ series on the scrape at all -- the meter provider this"
         " test installed is not the one the instruments are bound to, so the"
         " name assertions below would pass against an empty string"
     )
@@ -149,15 +149,13 @@ def test_scrape_is_not_empty(media_scrape: str) -> None:
 def test_media_metrics_export_under_their_documented_names(
     media_scrape: str,
 ) -> None:
-    assert _line_names(media_scrape, "maxserve_media") == (
-        _EXPECTED_MEDIA_LINES
-    )
+    assert _line_names(media_scrape, "max_media") == (_EXPECTED_MEDIA_LINES)
 
 
 def test_admission_metrics_export_under_their_documented_names(
     media_scrape: str,
 ) -> None:
-    exported = _line_names(media_scrape, "maxserve_cache_connector_") | (
-        _line_names(media_scrape, "maxserve_time_to_first_token_by_")
+    exported = _line_names(media_scrape, "max_cache_connector_") | (
+        _line_names(media_scrape, "max_time_to_first_token_by_")
     )
     assert exported == _EXPECTED_ADMISSION_LINES

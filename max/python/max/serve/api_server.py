@@ -329,7 +329,7 @@ async def _request_queue_full_exception_handler(
     before any response status is committed) by any endpoint that submits to the
     worker, so it is handled centrally here rather than per route. Returns the
     OpenAI ``rate_limit_error`` envelope with a ``Retry-After`` hint; the
-    rejection rate is observable via ``maxserve.request_count{code="429"}``.
+    rejection rate is observable via ``max.request_count{code="429"}``.
     """
     assert isinstance(exc, RequestQueueFull)
     request_id = getattr(request.state, "request_id", "<unknown>")

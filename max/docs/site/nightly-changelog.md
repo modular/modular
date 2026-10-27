@@ -41,6 +41,13 @@ This version is still a work in progress.
 
 ## Inference server
 
+- Serving metric names now use `max.*` instead of `maxserve.*`. Batch
+  instruments use `max.batch.*`, such as `max.batch.size`. Prometheus
+  exposes the corresponding `max_*` families. Update collector allowlists,
+  dashboards, and alerts with the deployment; existing metric history stays
+  under its previous names. Units, labels, histogram boundaries, and
+  benchmark result fields are unchanged.
+
 - `max serve` now rejects an image generation request that asks for more
   than 4 images with a 422 error naming `num_images`, the same response as
   other out-of-range image options. `generate_images()` and

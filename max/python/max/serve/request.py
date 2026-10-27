@@ -39,7 +39,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 logger = logging.getLogger("max.serve")
 
 # Liveness/observability endpoints are hit by periodic probes and scrapers.
-# Counting them would swamp the ``maxserve.request_count`` metric (which tracks
+# Counting them would swamp the ``max.request_count`` metric (which tracks
 # API request volume), so they are excluded. ``/metrics`` is a mounted sub-app,
 # so its subpaths are excluded too.
 _UNCOUNTED_PATH_RE = re.compile(r"/(?:health|version|ping|metrics(?:/.*)?)")
@@ -122,7 +122,7 @@ def register_request(app: FastAPI, *, structured_logging: bool = False) -> None:
         elif structured_logging:
             request_id_ctx.set(request_id)
         # Record the request against the final HTTP status code. This is the
-        # authoritative place to label ``maxserve.request_count`` with the
+        # authoritative place to label ``max.request_count`` with the
         # return code: it sees the status of every request, including failures
         # (e.g. a bad image URL) that are rejected before reaching the response
         # generator, and it reflects the code actually sent to the client

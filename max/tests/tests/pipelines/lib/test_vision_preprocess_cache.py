@@ -183,7 +183,7 @@ class TestVisionPreprocessCache:
 
 
 class TestStats:
-    """The snapshot the API server publishes as ``maxserve.media.*``."""
+    """The snapshot the API server publishes as ``max.media.*``."""
 
     def test_budget_pressure_counts_evictions(self) -> None:
         # Room for two entries, so the third forces one out.
