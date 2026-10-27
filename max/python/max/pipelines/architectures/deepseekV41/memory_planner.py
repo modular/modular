@@ -23,6 +23,7 @@ from __future__ import annotations
 import functools
 import json
 import logging
+import os
 import struct
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -181,6 +182,25 @@ def graph_arena_bytes(
     if live_rows <= 0:
         return 0
     return _mm_pages(_ARENA_FIXED_BYTES + live_rows * row_bytes)
+
+
+def replay_enabled() -> bool:
+    """Whether the decoder replay graph is requested (same gate as trim)."""
+    value = int(os.environ.get("MODULAR_DEEPSEEK_V41_REPLAY_MIN_TOKENS", "0"))
+    if value < 0:
+        raise ValueError("Replay threshold must be nonnegative")
+    return value > 0
+
+
+def replay_rows_bound(
+    *, live_rows: int, max_batch_size: int, window_size: int
+) -> int:
+    """Returns the most rows one replica's replay step can keep.
+
+    A request keeps its final window plus the alignment remainder, fewer
+    than ``2 * window_size`` rows (see ``build_replay_plan``).
+    """
+    return min(live_rows, max_batch_size * (2 * window_size - 1))
 
 
 def ep_receive_pool_bytes(
@@ -675,8 +695,9 @@ class DeepseekV41MemoryPlanner(PagedMemoryPlanner):
         Returns:
             :func:`graph_arena_bytes`, :func:`indexer_activation_bytes`,
             the expert-parallel buffers, :func:`graph_capture_pool_bytes`
-            with device graph capture, :func:`csa2_activation_bytes`, and
-            fragmentation headroom per device, summed over devices (free
+            with device graph capture, :func:`csa2_activation_bytes`, the
+            replay graph's arena and EP receive pool when replay is enabled,
+            and fragmentation headroom per device, summed over devices (free
             memory is summed the same way), plus
             :func:`vision_activation_bytes` of one largest image on device 0.
             Excludes KV leaf storage (see module docstring).
@@ -793,24 +814,47 @@ class DeepseekV41MemoryPlanner(PagedMemoryPlanner):
                 ),
                 ep_pool_bytes=ep_pool,
             )
+        replay_pool = 0
+        if replay_enabled():
+            # The replay graph is a second compiled graph whose transients
+            # are freed asynchronously, so its arena and EP receive tensors
+            # sit beside the full graph's. The coefficients reuse the full
+            # graph's and are an upper bound until calibrated on a GPU run.
+            assert runtime.max_batch_size is not None
+            kept_rows = replay_rows_bound(
+                live_rows=live_rows,
+                max_batch_size=runtime.max_batch_size,
+                window_size=int(text_config.sliding_window),
+            )
+            replay_arena = graph_arena_bytes(
+                live_rows=kept_rows, row_bytes=row_bytes
+            )
+            replay_pool = replay_arena + ep_pool
         # Freed transients are reused only in place, so a fragmented free
         # list must still fit a fresh copy of the largest one.
         headroom = max(ep_pool, _MM_PAGE_BYTES)
         per_device = (
-            arena + indexer + attention + moe_rows + graph_pool + headroom
+            arena
+            + indexer
+            + attention
+            + moe_rows
+            + graph_pool
+            + replay_pool
+            + headroom
         )
 
         logger.info(
             "Estimated DeepSeek-V4.1-Flash forward activation memory: %s per "
             "device x %d devices (graph arena %s + indexer %s + attention %s "
-            "+ device graph pool %s + fragmentation headroom %s; %d live "
-            "rows, %d candidate blocks)",
+            "+ device graph pool %s + replay graph %s + fragmentation "
+            "headroom %s; %d live rows, %d candidate blocks)",
             to_human_readable_bytes(per_device),
             num_devices,
             to_human_readable_bytes(arena),
             to_human_readable_bytes(indexer),
             to_human_readable_bytes(attention),
             to_human_readable_bytes(graph_pool),
+            to_human_readable_bytes(replay_pool),
             to_human_readable_bytes(headroom),
             live_rows,
             blocks,
