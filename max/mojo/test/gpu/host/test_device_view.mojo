@@ -13,7 +13,7 @@
 """Tests the `Device` view returned by `DeviceContext.device()`."""
 
 from max.gpu.host import DeviceAttribute, DeviceContext
-from std.testing import assert_equal, assert_true, TestSuite
+from std.testing import assert_equal, assert_false, assert_true, TestSuite
 
 
 def _multiprocessor_count(ctx: DeviceContext) raises -> Int:
@@ -29,6 +29,18 @@ def test_device_queries() raises:
             device.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT) > 0
         )
         _ = device.is_host_unified()
+        assert_true(device.get_arch().byte_length() > 0)
+
+
+def test_device_cannot_peer_itself() raises:
+    with DeviceContext() as ctx:
+        assert_false(ctx.device().can_access_peer(ctx.device()))
+
+
+def test_device_cannot_peer_cpu() raises:
+    var cpu = DeviceContext(api="cpu")
+    with DeviceContext() as ctx:
+        assert_false(ctx.device().can_access_peer(cpu.device()))
 
 
 def test_device_through_borrowed_context() raises:

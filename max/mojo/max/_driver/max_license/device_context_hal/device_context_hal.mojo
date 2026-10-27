@@ -2154,6 +2154,9 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
             UInt64(size_of[dtype]()),
         )
 
+    @deprecated(
+        "Use `DeviceContext.device().can_access_peer(peer.device())` instead."
+    )
     def can_access(self, peer: DeviceContext) raises -> Bool:
         """Returns True if this device can access the identified peer device.
 
@@ -2167,16 +2170,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         Raises:
             If the plugin query fails.
         """
-        # A foreign handle would be misread; CPU and GPU 0 also share id 0.
-        if not (self._driver is peer._driver):
-            return False
-        if self._device[].id == peer._device[].id:
-            return False
-        comptime Ext = type_of(self._device[].extensions())
-        comptime if conforms_to(Ext, SupportsPeerAccessV1):
-            return self._device[].can_access_peer(peer._device[])
-        else:
-            return False
+        return self.device().can_access_peer(peer.device())
 
     def enable_peer_access(self, peer: DeviceContext) raises:
         """Enables direct memory access to the peer device.
@@ -2419,22 +2413,17 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         # driver version.
         return 0
 
+    @deprecated("Use `DeviceContext.device().get_arch()` instead.")
     def arch_name(self) raises -> String:
         """Returns the architecture name of this device.
 
-        This internal method retrieves the architecture name of AMD GPUs.
-
         Returns:
-            The compute capability as a string (e.g., `gfx942` for `MI300`).
+            The architecture name, such as `gfx942`.
 
         Raises:
-            If there's an error retrieving the compute capability.
-
-        Notes:
-
-        This is a private method intended for internal use only.
+            If there's an error retrieving the architecture name.
         """
-        return self._device[].get_arch()
+        return self.device().get_arch()
 
     @deprecated("Use `DeviceContext.device().is_host_unified()` instead.")
     def is_host_unified(self) raises -> Bool:
@@ -2511,6 +2500,49 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
             If the device cannot be queried.
         """
         return self._ctx[]._device[].is_host_unified()
+
+    def get_arch(self) raises -> String:
+        """Returns the compilation target architecture of this device.
+
+        Returns:
+            The architecture name, such as `sm_100a` or `gfx942`.
+
+        Raises:
+            If the plugin does not report an architecture.
+        """
+        return self._ctx[]._device[].get_arch()
+
+    def can_access_peer[
+        peer_target: CompilationTarget, peer_origin: ImmOrigin, //
+    ](self, peer: Device[peer_target, peer_origin]) raises -> Bool:
+        """Returns True if this device can directly access memory on `peer`.
+
+        Parameters:
+            peer_target: The compilation target of the peer's context.
+            peer_origin: The origin of the peer's context.
+
+        Args:
+            peer: The device to check access to.
+
+        Returns:
+            False for this device itself, a peer on another driver, or a build
+            without peer access; otherwise the plugin's answer.
+
+        Raises:
+            If the plugin query fails.
+        """
+        ref ctx = self._ctx[]
+        ref peer_ctx = peer._ctx[]
+        # A foreign handle would be misread; CPU and GPU 0 also share id 0.
+        if not (ctx._driver is peer_ctx._driver):
+            return False
+        if self.id == peer.id:
+            return False
+        comptime Ext = type_of(ctx._device[].extensions())
+        comptime if conforms_to(Ext, SupportsPeerAccessV1):
+            return ctx._device[].can_access_peer(peer_ctx._device[])
+        else:
+            return False
 
 
 struct _DeviceContextScopeHAL(Movable):

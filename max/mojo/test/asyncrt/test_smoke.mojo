@@ -132,7 +132,11 @@ def _run_peer_access(ctx: DeviceContext) raises:
     print("-")
     print("_run_peer_access()")
 
-    assert_equal(ctx.can_access(ctx), False, "self access is not enabled")
+    assert_equal(
+        ctx.device().can_access_peer(ctx.device()),
+        False,
+        "self access is not enabled",
+    )
 
     var num_gpus = DeviceContext.number_of_devices(api=ctx.api())
     print("Number of GPU devices: ", num_gpus)
@@ -141,7 +145,7 @@ def _run_peer_access(ctx: DeviceContext) raises:
         var peer = create_test_device_context(device_id=1)
         print("peer context on GPU[1]")
 
-        if ctx.can_access(peer):
+        if ctx.device().can_access_peer(peer.device()):
             ctx.enable_peer_access(peer)
             print("Enabled peer access.")
 

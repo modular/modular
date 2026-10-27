@@ -6587,29 +6587,19 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         )
         return Int(compute_capability)
 
+    @deprecated("Use `DeviceContext.device().get_arch()` instead.")
     @doc_hidden
     @inline(.always)
     def arch_name(self) raises -> String:
         """Returns the architecture name of this device.
 
-        This internal method retrieves the architecture name of AMD GPUs.
-
         Returns:
-            The compute capability as a string (e.g., `gfx942` for `MI300`).
+            The architecture name, such as `gfx942`.
 
         Raises:
-            If there's an error retrieving the compute capability.
-
-        Notes:
-
-        This is a private method intended for internal use only.
+            If there's an error retrieving the architecture name.
         """
-        var arch_name = StaticString()
-        external_call[
-            "AsyncRT_DeviceContext_archName",
-            NoneType,
-        ](Pointer(to=arch_name), self._handle)
-        return String(arch_name)
+        return self.device().get_arch()
 
     @inline(.always)
     def get_memory_info(self) raises -> Tuple[c_size_t, c_size_t]:
@@ -6660,14 +6650,12 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
 
         return (free, total)
 
+    @deprecated(
+        "Use `DeviceContext.device().can_access_peer(peer.device())` instead."
+    )
     @inline(.always)
     def can_access(self, peer: DeviceContext) raises -> Bool:
         """Returns True if this device can access the identified peer device.
-
-        This method checks whether the current device can directly access memory on
-        the specified peer device. Peer-to-peer access allows for direct memory transfers
-        between devices without going through host memory, which can significantly
-        improve performance in multi-GPU scenarios.
 
         Args:
             peer: The peer device to check for accessibility.
@@ -6677,41 +6665,8 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
 
         Raises:
             If there's an error checking peer access capability.
-
-        Example:
-
-        ```mojo
-        from max.gpu.host import DeviceContext
-        var ctx1 = DeviceContext(0)  # First GPU
-        var ctx2 = DeviceContext(1)  # Second GPU
-
-        try:
-            if ctx1.can_access(ctx2):
-                print("Direct peer access is possible")
-                ctx1.enable_peer_access(ctx2)
-            else:
-                print("Direct peer access is not supported")
-        except:
-            print("Failed to check peer access capability")
-        ```
         """
-        var result: Bool = False
-        # const char *AsyncRT_DeviceContext_canAccess(bool *result, const DeviceContext *ctx, const DeviceContext *peer)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceContext_canAccess",
-                _CString[],
-                Pointer[Bool, origin_of(result)],
-                _DeviceContextPtr[mut=True],
-                _DeviceContextPtr[mut=True],
-            ](
-                Pointer(to=result),
-                self._handle,
-                peer._handle,
-            ),
-            location=call_location(),
-        )
-        return result
+        return self.device().can_access_peer(peer.device())
 
     @inline(.always)
     def enable_peer_access(self, peer: DeviceContext) raises:
@@ -6731,7 +6686,8 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
 
         Notes:
 
-        - It's recommended to call `can_access()` first to check if peer access is possible.
+        - It's recommended to call `Device.can_access_peer()` first to check if
+          peer access is possible.
         - Peer access is not always symmetric; you may need to enable access in both directions.
 
         Example:
@@ -6743,12 +6699,12 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         var ctx2 = DeviceContext(1)  # Second GPU
 
         try:
-            if ctx1.can_access(ctx2):
+            if ctx1.device().can_access_peer(ctx2.device()):
                 ctx1.enable_peer_access(ctx2)
                 print("Peer access enabled from device 0 to device 1")
 
                 # For bidirectional access
-                if ctx2.can_access(ctx1):
+                if ctx2.device().can_access_peer(ctx1.device()):
                     ctx2.enable_peer_access(ctx1)
                     print("Peer access enabled from device 1 to device 0")
             else:
@@ -7056,6 +7012,84 @@ struct Device[target: CompilationTarget, origin: ImmOrigin](
             ](
                 Pointer(to=result),
                 self._ctx[]._handle,
+            ),
+            location=call_location(),
+        )
+        return result
+
+    def get_arch(self) raises -> String:
+        """Returns the compilation target architecture of this device.
+
+        Returns:
+            The architecture name, such as `sm_100a` or `gfx942`.
+
+        Raises:
+            If the device does not report an architecture.
+        """
+        var arch_name = StaticString()
+        # The export reports a failed query as an empty name.
+        external_call[
+            "AsyncRT_DeviceContext_archName",
+            NoneType,
+        ](Pointer(to=arch_name), self._ctx[]._handle)
+        if not arch_name:
+            raise Error(
+                t"device {self.id} does not report a compilation target"
+                t" architecture"
+            )
+        return String(arch_name)
+
+    def can_access_peer[
+        peer_target: CompilationTarget, peer_origin: ImmOrigin, //
+    ](self, peer: Device[peer_target, peer_origin]) raises -> Bool:
+        """Returns True if this device can directly access memory on `peer`.
+
+        Peer access lets kernels on this device read and write the peer's
+        memory without staging through the host. Enable it with
+        `DeviceContext.enable_peer_access()`.
+
+        Example:
+
+        ```mojo
+        from max.gpu.host import DeviceContext
+
+        def main() raises:
+            var ctx0 = DeviceContext(0)
+            var ctx1 = DeviceContext(1)
+            if ctx0.device().can_access_peer(ctx1.device()):
+                ctx0.enable_peer_access(ctx1)
+        ```
+
+        Parameters:
+            peer_target: The compilation target of the peer's context.
+            peer_origin: The origin of the peer's context.
+
+        Args:
+            peer: The device to check access to.
+
+        Returns:
+            False for a peer on another API; otherwise the native API's
+            answer.
+
+        Raises:
+            If the peer access query fails.
+        """
+        # `CUDADevice::canAccess()` assumes the peer is a CUDA device.
+        if self._ctx[].api() != peer._ctx[].api():
+            return False
+        var result: Bool = False
+        # const char *AsyncRT_DeviceContext_canAccess(bool *result, const DeviceContext *ctx, const DeviceContext *peer)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_canAccess",
+                _CString[],
+                Pointer[Bool, origin_of(result)],
+                _DeviceContextPtr[mut=True],
+                _DeviceContextPtr[mut=True],
+            ](
+                Pointer(to=result),
+                self._ctx[]._handle,
+                peer._ctx[]._handle,
             ),
             location=call_location(),
         )

@@ -284,10 +284,12 @@ This version is still a work in progress.
   take a length and an `input_fn` are unchanged.
 
 - Added `DeviceContext.device()`, which returns a `Device` view of the
-  accelerator with an `id` field and `get_name()`, `get_attribute()` and
-  `is_host_unified()` methods. `DeviceContext.id()`, `name()`,
-  `get_attribute()` and `is_host_unified()` are deprecated: write
-  `ctx.device().id`, `ctx.device().get_name()` and so on.
+  accelerator with an `id` field and `get_name()`, `get_attribute()`,
+  `is_host_unified()`, `get_arch()` and `can_access_peer()` methods.
+  `DeviceContext.id()`, `name()`, `get_attribute()`, `is_host_unified()` and
+  `can_access()` are deprecated: write `ctx.device().id`,
+  `ctx.device().get_name()`, `ctx.device().can_access_peer(peer.device())`
+  and so on.
 
 ## Tools
 

@@ -386,7 +386,7 @@ def MojoHAL_DeviceContext_getArchName(
     ctx: _DeviceContextBoxPtr,
 ) abi("C") -> _CString[]:
     try:
-        out_name[] = _alloc_cstr(ctx[].arch_name())
+        out_name[] = _alloc_cstr(ctx[].device().get_arch())
         return None
     except e:
         return _err_cstr(String(e))
@@ -466,7 +466,7 @@ def MojoHAL_DeviceContext_canAccess(
 ) abi("C") -> Bool:
     # The C++ signature has no error channel; a failed query is "no".
     try:
-        return ctx[].can_access(peer[])
+        return ctx[].device().can_access_peer(peer[].device())
     except:
         return False
 

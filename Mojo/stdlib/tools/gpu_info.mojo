@@ -59,7 +59,7 @@ def main() raises:
     var ctx = host.DeviceContext(device_id, api=api)
 
     var compute_capability = ctx.compute_capability()
-    var arch_name = ctx.arch_name()
+    var arch_name = ctx.device().get_arch()
     var major, minor = divmod(compute_capability, 10)
 
     if ctx.api() == "cuda":

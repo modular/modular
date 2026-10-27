@@ -94,19 +94,22 @@ def test_cross_device_copy_wrong_destination_raises() raises:
 
 def test_can_access_self_is_false() raises:
     var ctx0 = DeviceContext(device_id=0)
-    assert_false(ctx0.can_access(ctx0))
+    assert_false(ctx0.device().can_access_peer(ctx0.device()))
 
 
 def test_can_access_is_symmetric() raises:
     var ctx0 = DeviceContext(device_id=0)
     var ctx1 = DeviceContext(device_id=1)
-    assert_equal(ctx0.can_access(ctx1), ctx1.can_access(ctx0))
+    assert_equal(
+        ctx0.device().can_access_peer(ctx1.device()),
+        ctx1.device().can_access_peer(ctx0.device()),
+    )
 
 
 def test_all_peer_access_enabled_transitions() raises:
     var ctx0 = DeviceContext(device_id=0)
     var ctx1 = DeviceContext(device_id=1)
-    if not ctx0.can_access(ctx1):
+    if not ctx0.device().can_access_peer(ctx1.device()):
         print("pair has no peer access; skipping")
         return
     # Runs after `test_enable_all_concurrent`, so these calls pin idempotence.
@@ -119,13 +122,7 @@ def test_all_peer_access_enabled_transitions() raises:
 def test_cpu_peer_is_not_accessible() raises:
     var gpu1 = DeviceContext(device_id=1)
     var cpu = DeviceContext(api="cpu")
-    var accessible: Bool
-    try:
-        accessible = gpu1.can_access(cpu)
-    except:
-        # AsyncRT raises for a CPU peer; HAL answers False.
-        accessible = False
-    assert_false(accessible)
+    assert_false(gpu1.device().can_access_peer(cpu.device()))
     with assert_raises():
         gpu1.enable_peer_access(cpu)
 
@@ -162,7 +159,7 @@ def _enable_all_worker(
 def test_enable_all_concurrent() raises:
     var ctx0 = DeviceContext(device_id=0)
     var ctx1 = DeviceContext(device_id=1)
-    if not ctx0.can_access(ctx1):
+    if not ctx0.device().can_access_peer(ctx1.device()):
         print("pair has no peer access; skipping")
         return
     # Runs before any enable, so every worker races the full enable.
@@ -201,7 +198,7 @@ def _write_peer(ptr: MutPointer[Int32, MutAnyOrigin], value: Int32):
 def test_kernel_writes_through_peer_pointer() raises:
     var ctx0 = DeviceContext(device_id=0)
     var ctx1 = DeviceContext(device_id=1)
-    if not ctx0.can_access(ctx1):
+    if not ctx0.device().can_access_peer(ctx1.device()):
         print("pair has no peer access; skipping")
         return
     DeviceContext.enable_all_peer_access()
