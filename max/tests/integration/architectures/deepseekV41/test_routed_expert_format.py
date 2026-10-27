@@ -15,20 +15,28 @@
 DeepSeek's own release stores the trunk's routed experts in MXFP4, the
 format of the DSpark stages' experts; NVIDIA's ModelOpt release stores them
 in NVFP4. The format decides the quant-config validation, the weight
-adapter's stacking and the expert-parallel dispatch.
+adapter's stacking, the MoE module and the expert-parallel dispatch.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
 from max.dtype import DType
+from max.graph import DeviceRef
 from max.graph.weights import WeightData
 from max.pipelines.architectures.deepseekV41 import weight_adapters
+from max.pipelines.architectures.deepseekV41.layers.moe import (
+    DeepseekV41MoE,
+    DeepseekV41Mxfp4RoutedExperts,
+    DeepseekV41NvFp4RoutedExperts,
+)
 from max.pipelines.architectures.deepseekV41.model_config import (
+    DeepseekV41Config,
     RoutedExpertFormat,
 )
 from max.pipelines.architectures.deepseekV41.weight_adapters import (
@@ -319,3 +327,48 @@ def test_packed_weights_of_the_other_format_are_refused() -> None:
             num_routed_experts=EXPERTS,
             routed_expert_format=RoutedExpertFormat.NVFP4,
         )
+
+
+def _config(expert_format: RoutedExpertFormat) -> DeepseekV41Config:
+    return DeepseekV41Config(
+        dtype=DType.bfloat16,
+        kv_params=MagicMock(num_draft_tokens=0),
+        devices=[DeviceRef.CPU()],
+        max_seq_len=64,
+        hidden_size=HIDDEN,
+        num_hidden_layers=1,
+        n_routed_experts=EXPERTS,
+        moe_intermediate_size=INTER,
+        num_experts_per_tok=2,
+        routed_expert_format=expert_format,
+    )
+
+
+def test_trunk_moe_builds_the_format_experts() -> None:
+    nvfp4 = DeepseekV41MoE(
+        _config(RoutedExpertFormat.NVFP4), 0, DeviceRef.CPU()
+    )
+    assert isinstance(nvfp4.experts, DeepseekV41NvFp4RoutedExperts)
+    mxfp4 = DeepseekV41MoE(
+        _config(RoutedExpertFormat.MXFP4), 0, DeviceRef.CPU()
+    )
+    assert isinstance(mxfp4.experts, DeepseekV41Mxfp4RoutedExperts)
+
+
+def test_converted_mxfp4_experts_strict_load_into_the_trunk_experts() -> None:
+    """Names, dtypes and shapes match the trunk's MXFP4 experts exactly."""
+    moe = DeepseekV41MoE(_config(RoutedExpertFormat.MXFP4), 0, DeviceRef.CPU())
+    out = convert_weight_data(
+        _mxfp4_experts(PREFIX, EXPERTS, np.random.default_rng(5)),
+        num_routed_experts=EXPERTS,
+        routed_expert_format=RoutedExpertFormat.MXFP4,
+    )
+    part = {name.removeprefix(f"{PREFIX}."): data for name, data in out.items()}
+    moe.experts.load_state_dict(part, weight_alignment=1, strict=True)
+    declared = moe.experts.raw_state_dict()
+    assert set(declared) == set(part)
+    for name, weight in declared.items():
+        assert part[name].dtype == weight.dtype, name
+        assert tuple(int(d) for d in part[name].shape) == tuple(
+            int(d) for d in weight.shape
+        ), name

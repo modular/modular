@@ -43,9 +43,8 @@ from max.pipelines.architectures.deepseekV41.layers.engram_lookup import (
     EngramLookup,
 )
 from max.pipelines.architectures.deepseekV41.model_config import (
-    NVFP4_ACTIVATION_QUANT_CONFIG,
     DeepseekV41Config,
-    routed_expert_format,
+    RoutedExpertFormat,
 )
 from max.pipelines.architectures.dspark_deepseekV41 import (
     DSparkDeepseekV41DraftConfig,
@@ -74,6 +73,7 @@ def _model_config(
     devices: list[DeviceRef],
     data_parallel_degree: int,
     expert_parallel: bool = False,
+    expert_format: RoutedExpertFormat = RoutedExpertFormat.NVFP4,
 ) -> DeepseekV41Config:
     text_config = DeepseekV41Config.get_text_config(config)
     pipeline_config = Mock()
@@ -89,8 +89,8 @@ def _model_config(
     text_fields = DeepseekV41Config.resolve_text_fields(text_config)
     ep_config = (
         EPConfig(
-            dispatch_dtype=DType.uint8,
-            dispatch_quant_config=NVFP4_ACTIVATION_QUANT_CONFIG,
+            dispatch_dtype=expert_format.dispatch_dtype,
+            dispatch_quant_config=expert_format.activation_quant_config,
             combine_dtype=DType.bfloat16,
             hidden_size=text_fields["hidden_size"],
             top_k=text_fields["num_experts_per_tok"],
@@ -111,7 +111,7 @@ def _model_config(
         data_parallel_degree=data_parallel_degree,
         kv_leaf_specs=kv_leaves.kv_leaf_specs(text_config),
         **text_fields,
-        routed_expert_format=routed_expert_format(config),
+        routed_expert_format=expert_format,
     )
 
 
@@ -140,15 +140,28 @@ def _pipeline_config(
     )
 
 
+_NVFP4 = RoutedExpertFormat.NVFP4
+_MXFP4 = RoutedExpertFormat.MXFP4
+
+
 @pytest.mark.parametrize(
-    ("num_devices", "data_parallel_degree", "expert_parallel", "mixed_width"),
+    (
+        "num_devices",
+        "data_parallel_degree",
+        "expert_parallel",
+        "mixed_width",
+        "expert_format",
+    ),
     [
-        (1, 1, False, None),
-        (4, 1, False, None),
-        (4, 4, False, None),
-        (4, 4, True, None),
-        (1, 1, False, 2),
-        (4, 4, False, 2),
+        (1, 1, False, None, _NVFP4),
+        (4, 1, False, None, _NVFP4),
+        (4, 4, False, None, _NVFP4),
+        (4, 4, True, None, _NVFP4),
+        (1, 1, False, 2, _NVFP4),
+        (4, 4, False, 2, _NVFP4),
+        (1, 1, False, None, _MXFP4),
+        (4, 1, False, None, _MXFP4),
+        (4, 4, True, None, _MXFP4),
     ],
 )
 def test_unified_dspark_graph_traces(
@@ -156,6 +169,7 @@ def test_unified_dspark_graph_traces(
     data_parallel_degree: int,
     expert_parallel: bool,
     mixed_width: int | None,
+    expert_format: RoutedExpertFormat,
 ) -> None:
     """One spec-decode step traces, its weights named but not loaded.
 
@@ -165,12 +179,14 @@ def test_unified_dspark_graph_traces(
     expert-parallel graph inputs. With ``mixed_width`` set, a mixed prefill
     and decode step verifies fewer drafts than a decode step; the step's
     verification width is a graph dimension, so the same graph serves both
-    kinds of step and still drafts the full block.
+    kinds of step and still drafts the full block. ``expert_format`` picks
+    the trunk's routed experts: NVFP4 rows dispatch to the fused expert
+    kernel, MXFP4 rows dispatch as MXFP8 to the W4A8 GEMMs.
     """
     config = AutoConfig.from_pretrained(str(TESTDATA / "config.json"))
     devices = [DeviceRef.GPU(i) for i in range(num_devices)]
     model_config = _model_config(
-        config, devices, data_parallel_degree, expert_parallel
+        config, devices, data_parallel_degree, expert_parallel, expert_format
     )
     kv_params = model_config.kv_params
     assert isinstance(kv_params, MultiKVCacheParams)

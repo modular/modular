@@ -829,11 +829,6 @@ class DeepseekV41Config(ArchConfigWithKVCache):
         )
         runtime = pipeline_config.runtime
         expert_format = routed_expert_format(config)
-        if expert_format is RoutedExpertFormat.MXFP4:
-            raise ValueError(
-                "the DeepSeek-V4.1 trunk MoE does not run MXFP4 routed "
-                "experts yet; serve the NVFP4 checkpoint"
-            )
         return cls(
             dtype=dtype,
             kv_params=kv_params,

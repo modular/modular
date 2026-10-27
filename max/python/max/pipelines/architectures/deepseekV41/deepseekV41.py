@@ -83,7 +83,7 @@ from .layers.hyper_connection import Mxfp8Rows
 from .layers.moe import (
     IMAGE_SENTINEL_BASE_ID,
     DeepseekV41MoE,
-    nvfp4_moe_ffn_factory,
+    moe_ffn_factory,
 )
 from .layers.ragged import ReplicaTokens
 from .layers.ragged import V41RaggedRows as RaggedRows
@@ -1324,7 +1324,7 @@ class DeepseekV41(Module):
             device,
             position_capacity(config),
             attn_factory=attn_factory,
-            ffn_factory=nvfp4_moe_ffn_factory,
+            ffn_factory=moe_ffn_factory,
             engram_factory=_engram_factory,
         )
         self.norm = RMSNorm(

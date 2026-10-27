@@ -363,6 +363,30 @@ modular_py_test(
     ],
 )
 
+# The trunk's MXFP4 routed experts, routed and expert-parallel, against the
+# reference's W4A8 math. Guards nn/kernels grouped_matmul_block_scaled (W4A8)
+# and grouped_quantize_dynamic_block_scaled (MXFP8).
+modular_py_test(
+    name = "test_mxfp4_experts_gpu",
+    srcs = ["test_mxfp4_experts_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    # Each test compiles its own graphs; shards compile them in parallel.
+    shard_count = 2,
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
 # Guards strict state-dict loading (nn/layer Module.load_state_dict).
 modular_py_test(
     name = "test_dspark_weight_adapter",

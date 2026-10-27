@@ -19,145 +19,17 @@ target model's.
 
 from __future__ import annotations
 
-import numpy as np
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.kernels import (
-    grouped_matmul_block_scaled,
-    grouped_quantize_dynamic_block_scaled,
-)
 from max.nn.layer import Module
 
-from ...deepseekV4.layers.moe import (
-    DeepseekV4RoutedExperts,
-    _PackedExpertWeight,
-)
 from ..model_config import DeepseekV41Config
 from .hyper_connection import Mxfp8Rows
-from .moe import DeepseekV41Gate, DeepseekV41SharedExpert
-
-# OCP MXFP8: one E8M0 scale per 32 activation elements along K.
-DSPARK_ACTIVATION_QUANT_GROUP = 32
-
-
-def dspark_activation_quantize(
-    x: TensorValue,
-    row_offsets: TensorValue,
-    scales_offsets: TensorValue,
-    expert_ids: TensorValue,
-) -> tuple[TensorValue, TensorValue]:
-    """Quantizes expert-sorted activations to MXFP8, one scale per 32 values.
-
-    There is no per-expert static input scale, so the kernel's tensor-wise
-    scale is one.
-
-    Args:
-        x: ``[total_tokens, K]``, one row per token slot sorted by expert;
-            any float dtype (cast to bf16 for the kernel).
-        row_offsets: Cumulative token offsets per expert, ``[num_experts+1]``
-            uint32.
-        scales_offsets: Per-expert scale-tile offset corrections,
-            ``[num_experts]`` uint32.
-        expert_ids: Expert id mapping, ``[num_experts]`` int32.
-
-    Returns:
-        ``(quantized, a_scales)``: ``float8_e4m3fn[total_tokens, K]`` and
-        ``float8_e8m0fnu`` scales ``[total_m_tiles, K/128, 32, 4, 4]``, in
-        the interleaved layout ``grouped_matmul_block_scaled`` takes.
-    """
-    device = x.device
-    # Pure block scaling: the per-expert tensor-wise factor is one.
-    sf_tensor = ops.broadcast_to(
-        ops.constant(1.0, DType.float32, device=device), expert_ids.shape
-    )
-    return grouped_quantize_dynamic_block_scaled(
-        ops.cast(x, DType.bfloat16),
-        row_offsets=row_offsets,
-        scales_offsets=scales_offsets,
-        expert_ids=expert_ids,
-        sf_tensor=sf_tensor,
-        sf_vector_size=DSPARK_ACTIVATION_QUANT_GROUP,
-        scales_type=DType.float8_e8m0fnu,
-        out_type=DType.float8_e4m3fn,
-    )
-
-
-class DSparkRoutedExperts(DeepseekV4RoutedExperts):
-    """One stage's MXFP4-weight routed experts with MXFP8 activations.
-
-    Weights are ``[E, N, K/2]`` uint8 (two E2M1 values per byte) with
-    ``[E, N, K/32]`` E8M0 scales.
-    """
-
-    # The routing weight scales the down projection's input, before it is
-    # quantized.
-    _weight_after_down_proj = False
-
-    def __init__(
-        self,
-        n_experts: int,
-        hidden_size: int,
-        moe_intermediate_size: int,
-        num_experts_per_tok: int,
-        swiglu_limit: float,
-        device: DeviceRef,
-    ) -> None:
-        Module.__init__(self)
-        self.n_experts = n_experts
-        self.topk = num_experts_per_tok
-        self.hidden = hidden_size
-        self.inter = moe_intermediate_size
-        self.swiglu_limit = swiglu_limit
-        self.gate_up_proj = _PackedExpertWeight(
-            n_experts, 2 * moe_intermediate_size, hidden_size, device
-        )
-        self.down_proj = _PackedExpertWeight(
-            n_experts, hidden_size, moe_intermediate_size, device
-        )
-        self.expert_offset = 0
-        self.n_global_experts = n_experts
-
-    def _grouped(
-        self,
-        proj: _PackedExpertWeight,
-        x: TensorValue,
-        a_offsets: TensorValue,
-        scale_offsets: TensorValue,
-        scale_slot: TensorValue,
-        expert_ids: TensorValue,
-    ) -> TensorValue:
-        # Quantized at group 32 directly; no reslice.
-        del scale_slot
-        device = x.device
-        quantized, a_scales = dspark_activation_quantize(
-            x, a_offsets, scale_offsets, expert_ids
-        )
-        ones_f32 = ops.constant(
-            np.ones(self.n_experts, np.float32), DType.float32, device
-        )
-        usage = ops.concat(
-            [
-                ops.cast(ops.shape_to_tensor([x.shape[0]]), DType.uint32),
-                ops.constant(
-                    np.array([self.n_experts], np.uint32),
-                    DType.uint32,
-                    DeviceRef.CPU(),
-                ),
-            ],
-            axis=0,
-        )
-        return grouped_matmul_block_scaled(
-            quantized,
-            proj.weight.to(device),
-            a_scales,
-            proj(device),
-            a_offsets,
-            scale_offsets,
-            expert_ids,
-            ones_f32,
-            usage,
-            out_type=DType.bfloat16,
-        )
+from .moe import (
+    DeepseekV41Gate,
+    DeepseekV41Mxfp4RoutedExperts,
+    DeepseekV41SharedExpert,
+)
 
 
 class DeepseekV41DSparkMoE(Module):
@@ -182,7 +54,7 @@ class DeepseekV41DSparkMoE(Module):
             dtype=DType.bfloat16,
             device=device,
         )
-        self.experts = DSparkRoutedExperts(
+        self.experts = DeepseekV41Mxfp4RoutedExperts(
             n_experts=config.dspark_n_routed_experts,
             hidden_size=config.hidden_size,
             moe_intermediate_size=config.moe_intermediate_size,
