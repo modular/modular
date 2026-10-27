@@ -17,6 +17,7 @@
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "llvm/ADT/SmallVector.h"
 
 #define DEBUG_TYPE "hlcf-canonicalize"
@@ -188,19 +189,26 @@ struct HoistYieldResults : public OpRewritePattern<IfOp> {
       }
     }
 
-    auto hasOnlyYield = [](Region &region) {
-      Block &block = region.front();
-      Operation &operation = block.front();
-      return isa<YieldOp, IfElifCondYieldOp>(operation);
-    };
+    if (!op.use_empty())
+      return changed ? success() : failure();
 
-    // Erase the unused if when its bodies and conditions contain only yield
-    // terminators.
-    if (op.use_empty() && llvm::all_of(op->getRegions(), hasOnlyYield)) {
-      rewriter.eraseOp(op);
-      return success();
+    if (op.getElifRegions().size() > 0) {
+      WalkResult effects =
+          op->walk<mlir::WalkOrder::PreOrder>([&](Operation *operation) {
+            if (operation == op.getOperation() ||
+                isa<YieldOp, IfElifCondYieldOp>(operation))
+              return WalkResult::advance();
+            if (operation->hasTrait<mlir::OpTrait::IsTerminator>())
+              return WalkResult::interrupt();
+            return isMemoryEffectFree(operation) ? WalkResult::skip()
+                                                 : WalkResult::interrupt();
+          });
+      if (effects.wasInterrupted())
+        return changed ? success() : failure();
     }
-    return changed ? success() : failure();
+
+    rewriter.eraseOp(op);
+    return success();
   }
 };
 
