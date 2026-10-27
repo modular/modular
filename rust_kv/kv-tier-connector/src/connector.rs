@@ -408,6 +408,13 @@ impl TieredConnector {
         (i, Arc::clone(&self.onload_lanes[i]))
     }
 
+    /// The connector's leaf count, carried from construction: the width of
+    /// the per-leaf lists [`Self::load`] and [`Self::offload`] take.
+    #[must_use]
+    pub fn num_leaves(&self) -> usize {
+        self.num_leaves
+    }
+
     /// Which of `hashes` each of `leaf_idxs` holds, one mask per leaf.
     ///
     /// Presence only: how deep a prefix these add up to depends on how far each

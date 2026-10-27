@@ -83,12 +83,13 @@ MODELS: Mapping[str, set[str]] = {
     "google/gemma-4-31B-it": NIGHTLY | _1xB200 | _1xMI355,
     "google/gemma-4-31B-it__cascade": NIGHTLY | VARIANT | _1xB200,
     "google/gemma-4-31B-it__modulev3": VARIANT | _1xB200 | _1xMI355,
+    "google/gemma-4-31B-it__rust_tiered_kvconnector": VARIANT | _1xB200 | _1xMI355,
     "google/gemma-4-31B-it__tuned": NIGHTLY | VARIANT | _1xB200,
     "meta-llama/Llama-3.1-8B-Instruct": _1xB200 | _1xMI355,
     "meta-llama/Llama-3.1-8B-Instruct__dflash": VARIANT | _1xB200 | _1xMI355,  # TODO(SERVOPT-1168)
     "meta-llama/Llama-3.1-8B-Instruct__eagle": VARIANT | _1xB200 | _1xMI355,  # TODO(SERVOPT-1168)
     "meta-llama/Llama-3.1-8B-Instruct__modulev3": VARIANT | _1xB200 | _1xMI355,
-    "meta-llama/Llama-3.1-8B-Instruct__rust_tiered_kvconnector": VARIANT | _1xB200,
+    "meta-llama/Llama-3.1-8B-Instruct__rust_tiered_kvconnector": VARIANT | _1xB200 | _1xMI355,
     "meta-models/Muse-Glimmer-30B": NIGHTLY | _1xB200,
     "microsoft/Phi-3.5-mini-instruct": _1xB200 | _1xMI355,
     "microsoft/Phi-3.5-mini-instruct__modulev3": VARIANT | _1xB200 | _1xMI355,
@@ -131,6 +132,7 @@ MODELS: Mapping[str, set[str]] = {
     "Qwen/Qwen3.5-9B": _1xB200,
     "Qwen/Qwen3.6-27B": _1xB200,
     "Qwen/Qwen3.8-27B": NIGHTLY | _1xB200 | _1xMI355 | _2xB200 | _2xMI355,
+    "Qwen/Qwen3.8-27B__rust_tiered_kvconnector": VARIANT | _1xB200 | _1xMI355,
     "RadixArk/GLM-5.3-NVFP4__mtp_tpep": NIGHTLY | VARIANT | _8xB200,
     "RadixArk/Qwen3.8-27B-NVFP4": NIGHTLY | _1xB200,
     "RadixArk/Qwen3.8-27B-NVFP4__dflash2": NIGHTLY | VARIANT | _1xB200,

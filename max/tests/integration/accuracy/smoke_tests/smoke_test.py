@@ -102,6 +102,7 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "google/gemma-4-26B-A4B-it__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_tuned.yaml",
     "google/gemma-4-31B-it__cascade": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_cascade.yaml",
     "google/gemma-4-31B-it__modulev3": "max/pipelines/architectures/gemma4_modulev3/recipes/gemma4_31b.yaml",
+    "google/gemma-4-31B-it__rust_tiered_kvconnector": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_rust_tiered_kvconnector.yaml",
     "google/gemma-4-31B-it__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_tuned.yaml",
     "nvidia/Gemma-4-26B-A4B-NVFP4__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_nvfp4_tuned.yaml",
     "nvidia/Gemma-4-31B-IT-NVFP4__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_nvfp4_tuned.yaml",
@@ -139,6 +140,7 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "thinkingmachines/Inkling-Small-NVFP4__mtp": "max/pipelines/architectures/inkling/recipes/inkling_small_nvfp4_mtp.yaml",
     "RadixArk/Qwen3.8-27B-NVFP4__mtp": "max/pipelines/architectures/qwen3_5/recipes/qwen38_27b_nvfp4_mtp.yaml",
     "RadixArk/Qwen3.8-27B-NVFP4__dflash2": "max/pipelines/architectures/qwen3_5/recipes/qwen38_27b_nvfp4_dflash2.yaml",
+    "Qwen/Qwen3.8-27B__rust_tiered_kvconnector": "max/pipelines/architectures/qwen3_5/recipes/qwen38_27b_rust_tiered_kvconnector.yaml",
 })
 # fmt: on
 
