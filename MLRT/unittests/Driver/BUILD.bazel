@@ -62,7 +62,7 @@ modular_cc_library(
     visibility = [
         "//GraphCompiler:__subpackages__",
         "//MLRT/unittests/Driver/NIXL:__subpackages__",
-        "//plugins/internal-trainium/runtime/test:__pkg__",
+        "//plugins:__subpackages__",
     ],
     deps = [
         "@llvm-project//third-party/unittest:gmock",
