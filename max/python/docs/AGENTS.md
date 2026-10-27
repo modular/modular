@@ -172,7 +172,3 @@ packages are in scope and which are excluded.
 - **`finfo` on `DType`**: `finfo` is monkey-patched onto `DType` in
   `dtype_extension.py`. There is an explicit skip in `conf.py.in` to prevent
   it from appearing inside `DType`'s member list (it has its own page).
-- **`PACKED_PAGE_STRIDE` on macOS**: that constant and `packed_page_stride`
-  generate filenames that differ only by case. `conf.py.in` renames the
-  constant's generated page to `PACKED_PAGE_STRIDE-data` on macOS, in
-  `use_macos_autosummary_filenames`. Linux keeps both natural filenames.

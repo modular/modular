@@ -103,7 +103,6 @@ Constants
    :template: autosummary/data.rst
 
    KVHashAlgo
-   PACKED_PAGE_STRIDE
 
 Functions
 ---------
