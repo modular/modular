@@ -137,10 +137,10 @@ struct MLAKPoolExpandTopK:
         pool_topk: Int,
         always_select_tail: Bool,
     ](
-        out_indices: OutputTensor[dtype=.int32, rank=2, ...],
-        pool_ids: InputTensor[dtype=.int32, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        out_indices: Some[Output & Tensor],
+        pool_ids: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
         """Turns selected pool ids back into the token positions they cover.
@@ -166,12 +166,20 @@ struct MLAKPoolExpandTopK:
             cache_lengths: Cached tokens per request, `[batch]`.
             ctx: Device context for GPU execution.
         """
-        var out_tt = out_indices.to_tile_tensor[.int64]()
-        var pool_tt = pool_ids.to_tile_tensor[.int64]()
-        var iro_tt = input_row_offsets.to_tile_tensor[.int64]()
-        var clen_tt = cache_lengths.to_tile_tensor[.int64]()
+        comptime assert conforms_to(type_of(out_indices), TileTensorable)
+        comptime assert conforms_to(type_of(pool_ids), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert type_of(out_indices).rank == 2
+        comptime assert type_of(pool_ids).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        var out_tt = out_indices.to_tile_tensor[.int32]()
+        var pool_tt = pool_ids.to_tile_tensor[.int32]()
+        var iro_tt = input_row_offsets.to_tile_tensor[.uint32]()
+        var clen_tt = cache_lengths.to_tile_tensor[.uint32]()
 
-        var total_seq_len = pool_ids.dim_size(0)
+        var total_seq_len = Int(pool_ids.shape()[0].value())
         if total_seq_len == 0:
             # The architecture sets `supports_empty_batches`, so a step with
             # no tokens reaches here, and a zero-width grid is a launch error.
@@ -217,13 +225,13 @@ struct MLAKPoolCompress:
         head_dim: Int,
         kpool: Int,
     ](
-        pooled: OutputTensor[rank=2, ...],
-        k: InputTensor[rank=2, ...],
-        gate: InputTensor[rank=2, ...],
-        ape: InputTensor[dtype=.float32, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        pool_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        pooled: Some[Output & Tensor],
+        k: Some[Input & Tensor],
+        gate: Some[Input & Tensor],
+        ape: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        pool_row_offsets: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
         """Compresses each complete k-pool into one candidate key.
@@ -244,15 +252,29 @@ struct MLAKPoolCompress:
                 tokens on the pool grid.
             ctx: Device context for GPU execution.
         """
-        var pooled_tt = pooled.to_tile_tensor[.int64]()
-        var k_tt = k.to_tile_tensor[.int64]()
-        var gate_tt = gate.to_tile_tensor[.int64]()
-        var ape_tt = ape.to_tile_tensor[.int64]()
-        var iro_tt = input_row_offsets.to_tile_tensor[.int64]()
-        var pro_tt = pool_row_offsets.to_tile_tensor[.int64]()
-        var clen_tt = cache_lengths.to_tile_tensor[.int64]()
+        comptime assert conforms_to(type_of(pooled), TileTensorable)
+        comptime assert conforms_to(type_of(k), TileTensorable)
+        comptime assert conforms_to(type_of(gate), TileTensorable)
+        comptime assert conforms_to(type_of(ape), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(pool_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert type_of(pooled).rank == 2
+        comptime assert type_of(k).rank == 2
+        comptime assert type_of(gate).rank == 2
+        comptime assert type_of(ape).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(pool_row_offsets).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        var pooled_tt = pooled.to_tile_tensor()
+        var k_tt = k.to_tile_tensor()
+        var gate_tt = gate.to_tile_tensor()
+        var ape_tt = ape.to_tile_tensor[.float32]()
+        var iro_tt = input_row_offsets.to_tile_tensor[.uint32]()
+        var pro_tt = pool_row_offsets.to_tile_tensor[.uint32]()
+        var clen_tt = cache_lengths.to_tile_tensor[.uint32]()
 
-        var total_pools = pooled.dim_size(0)
+        var total_pools = Int(pooled.shape()[0].value())
         if total_pools == 0:
             # A step can legitimately close no pool: a decode step carries one
             # token per request, and a pool needs `kpool` of them. There is
@@ -261,7 +283,7 @@ struct MLAKPoolCompress:
 
         ctx.enqueue_function[
             kpool_compress_kernel[
-                k.dtype,
+                type_of(k).dtype,
                 type_of(k_tt.as_imm()).LayoutType,
                 ImmOrigin(k_tt.origin),
                 type_of(gate_tt.as_imm()).LayoutType,
@@ -310,16 +332,16 @@ struct MLAKPoolSeedTail:
         kpool: Int,
     ](
         # `tail` is a slot-indexed ring, read+written in place at
-        # `slot_idx[r]`. It must be a `MutableInputTensor` (not an
-        # `OutputTensor`) so the graph binds the caller's persistent ring
-        # rather than treating it as a freshly-produced output -- mirroring
-        # the `state_pool` precedent in `kda.mojo`.
-        tail: MutableInputTensor[rank=4, ...],
-        k: InputTensor[rank=2, ...],
-        gate: InputTensor[rank=2, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
+        # `slot_idx[r]`. It must be a `MutableInput` (not an `Output`) so
+        # the graph binds the caller's persistent ring rather than treating
+        # it as a freshly-produced output -- mirroring the `state_pool`
+        # precedent in `kda.mojo`.
+        tail: Some[MutableInput & Tensor],
+        k: Some[Input & Tensor],
+        gate: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        slot_idx: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
         """Stashes a prefill chunk's trailing tokens into the tail ring.
@@ -344,14 +366,26 @@ struct MLAKPoolSeedTail:
             slot_idx: Ring slot per request `[batch]`.
             ctx: Device context for GPU execution.
         """
-        var tail_tt = tail.to_tile_tensor[.int64]()
-        var k_tt = k.to_tile_tensor[.int64]()
-        var gate_tt = gate.to_tile_tensor[.int64]()
-        var iro_tt = input_row_offsets.to_tile_tensor[.int64]()
-        var clen_tt = cache_lengths.to_tile_tensor[.int64]()
-        var slot_tt = slot_idx.to_tile_tensor[.int64]()
+        comptime assert conforms_to(type_of(tail), TileTensorable)
+        comptime assert conforms_to(type_of(k), TileTensorable)
+        comptime assert conforms_to(type_of(gate), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(slot_idx), TileTensorable)
+        comptime assert type_of(tail).rank == 4
+        comptime assert type_of(k).rank == 2
+        comptime assert type_of(gate).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(slot_idx).rank == 1
+        var tail_tt = tail.to_tile_tensor()
+        var k_tt = k.to_tile_tensor()
+        var gate_tt = gate.to_tile_tensor()
+        var iro_tt = input_row_offsets.to_tile_tensor[.uint32]()
+        var clen_tt = cache_lengths.to_tile_tensor[.uint32]()
+        var slot_tt = slot_idx.to_tile_tensor[.uint32]()
 
-        var batch_size = input_row_offsets.dim_size(0) - 1
+        var batch_size = Int(input_row_offsets.shape()[0].value()) - 1
         if batch_size == 0:
             # A step can legitimately carry no requests, and a zero-width
             # grid is a launch error.
@@ -359,7 +393,7 @@ struct MLAKPoolSeedTail:
 
         ctx.enqueue_function[
             kpool_seed_tail_kernel[
-                k.dtype,
+                type_of(k).dtype,
                 tail_tt.LayoutType,
                 tail_tt.origin,
                 type_of(k_tt.as_imm()).LayoutType,
@@ -405,22 +439,22 @@ struct MLAKPoolRingClose:
         head_dim: Int,
         kpool: Int,
     ](
-        pooled: OutputTensor[rank=2, ...],
-        closed_pool: OutputTensor[dtype=.int32, rank=1, ...],
+        pooled: Some[Output & Tensor],
+        closed_pool: Some[Output & Tensor],
         # `tail` is only read here, but `mo.mla.kpool.seed_tail` mutates the
         # same buffer in this same step (to extend whatever pool this op
-        # leaves pending), so it must stay a `MutableInputTensor` to get
+        # leaves pending), so it must stay a `MutableInput` argument to get
         # correct ordering against that writer -- mirroring how
         # `MLAIndexerRaggedFloat8Paged` above reads `k_blocks`/`k_scales`
         # through `MutableInputTensor` even though it never writes them,
         # because `mo.kv_cache.store.paged.ragged` does.
-        tail: MutableInputTensor[rank=4, ...],
-        k: InputTensor[rank=2, ...],
-        gate: InputTensor[rank=2, ...],
-        ape: InputTensor[dtype=.float32, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
+        tail: Some[MutableInput & Tensor],
+        k: Some[Input & Tensor],
+        gate: Some[Input & Tensor],
+        ape: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        slot_idx: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
         """Closes each request's pending tail-ring pool, ragged and
@@ -445,17 +479,35 @@ struct MLAKPoolRingClose:
             slot_idx: Ring slot per request `[batch]`.
             ctx: Device context for GPU execution.
         """
-        var pooled_tt = pooled.to_tile_tensor[.int64]()
-        var closed_tt = closed_pool.to_tile_tensor[.int64]()
-        var tail_tt = tail.to_tile_tensor[.int64]()
-        var k_tt = k.to_tile_tensor[.int64]()
-        var gate_tt = gate.to_tile_tensor[.int64]()
-        var ape_tt = ape.to_tile_tensor[.int64]()
-        var iro_tt = input_row_offsets.to_tile_tensor[.int64]()
-        var clen_tt = cache_lengths.to_tile_tensor[.int64]()
-        var slot_tt = slot_idx.to_tile_tensor[.int64]()
+        comptime assert conforms_to(type_of(pooled), TileTensorable)
+        comptime assert conforms_to(type_of(closed_pool), TileTensorable)
+        comptime assert conforms_to(type_of(tail), TileTensorable)
+        comptime assert conforms_to(type_of(k), TileTensorable)
+        comptime assert conforms_to(type_of(gate), TileTensorable)
+        comptime assert conforms_to(type_of(ape), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(slot_idx), TileTensorable)
+        comptime assert type_of(pooled).rank == 2
+        comptime assert type_of(closed_pool).rank == 1
+        comptime assert type_of(tail).rank == 4
+        comptime assert type_of(k).rank == 2
+        comptime assert type_of(gate).rank == 2
+        comptime assert type_of(ape).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(slot_idx).rank == 1
+        var pooled_tt = pooled.to_tile_tensor()
+        var closed_tt = closed_pool.to_tile_tensor[.int32]()
+        var tail_tt = tail.to_tile_tensor()
+        var k_tt = k.to_tile_tensor()
+        var gate_tt = gate.to_tile_tensor()
+        var ape_tt = ape.to_tile_tensor[.float32]()
+        var iro_tt = input_row_offsets.to_tile_tensor[.uint32]()
+        var clen_tt = cache_lengths.to_tile_tensor[.uint32]()
+        var slot_tt = slot_idx.to_tile_tensor[.uint32]()
 
-        var batch_size = pooled.dim_size(0)
+        var batch_size = Int(pooled.shape()[0].value())
         if batch_size == 0:
             # A step can legitimately carry no requests, and a zero-width
             # grid is a launch error.
@@ -463,7 +515,7 @@ struct MLAKPoolRingClose:
 
         ctx.enqueue_function[
             kpool_ring_close_kernel[
-                k.dtype,
+                type_of(k).dtype,
                 pooled_tt.LayoutType,
                 pooled_tt.origin,
                 closed_tt.LayoutType,
@@ -961,13 +1013,13 @@ struct MaskedFlashAttentionGPU:
 
     @staticmethod
     def execute[
-        target: StaticString, rank: Int
+        target: StaticString,
     ](
-        output: OutputTensor[rank=rank, ...],
-        q: InputTensor[rank=rank, ...],
-        k: InputTensor[rank=rank, ...],
-        v: InputTensor[rank=rank, ...],
-        mask: InputTensor,
+        output: Some[Output & Tensor],
+        q: Some[Input & Tensor],
+        k: Some[Input & Tensor],
+        v: Some[Input & Tensor],
+        mask: Some[Input & Tensor],
         scale: Float32,
         ctx: DeviceContext,
     ) raises:
@@ -1017,7 +1069,6 @@ struct MaskedFlashAttentionGPU:
 
         Parameters:
             target: Target device identifier; must resolve to a GPU.
-            rank: Rank of the `q`, `k`, `v`, and `output` tensors.
 
         Args:
             output: Output attention tensor with the same shape as `q`.
@@ -1029,6 +1080,15 @@ struct MaskedFlashAttentionGPU:
             scale: Scaling factor applied to attention scores before softmax.
             ctx: Device context for GPU execution.
         """
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(q), TileTensorable)
+        comptime assert conforms_to(type_of(k), TileTensorable)
+        comptime assert conforms_to(type_of(v), TileTensorable)
+        comptime assert conforms_to(type_of(mask), TileTensorable)
+        comptime rank = type_of(output).rank
+        comptime assert type_of(q).rank == rank
+        comptime assert type_of(k).rank == rank
+        comptime assert type_of(v).rank == rank
         comptime assert is_gpu[target](), "only valid on GPUs"
 
         flash_attention(
@@ -1048,16 +1108,14 @@ struct FlashAttentionGPU:
 
     @staticmethod
     def execute[
-        rank: Int,
-        //,
         target: StaticString,
         mask_str: StaticString,
         local_window_size: Int = -1,
     ](
-        output: OutputTensor[rank=rank, ...],
-        q: InputTensor[rank=rank, ...],
-        k: InputTensor[rank=rank, ...],
-        v: InputTensor[rank=rank, ...],
+        output: Some[Output & Tensor],
+        q: Some[Input & Tensor],
+        k: Some[Input & Tensor],
+        v: Some[Input & Tensor],
         scale: Float32,
         ctx: DeviceContext,
     ) raises:
@@ -1102,8 +1160,6 @@ struct FlashAttentionGPU:
         by Tri Dao et al.
 
         Parameters:
-            rank: Rank of the `q`, `k`, `v`, and `output` tensors
-                (inferred).
             target: Target device identifier; must resolve to a GPU.
             mask_str: Attention mask type string passed to
                 `dispatch_mask` to select the mask functor.
@@ -1118,6 +1174,14 @@ struct FlashAttentionGPU:
             scale: Scaling factor applied to attention scores before softmax.
             ctx: Device context for GPU execution.
         """
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(q), TileTensorable)
+        comptime assert conforms_to(type_of(k), TileTensorable)
+        comptime assert conforms_to(type_of(v), TileTensorable)
+        comptime rank = type_of(output).rank
+        comptime assert type_of(q).rank == rank
+        comptime assert type_of(k).rank == rank
+        comptime assert type_of(v).rank == rank
         comptime assert is_gpu[target](), "only valid on GPUs"
 
         var output_buffer = output.to_tile_tensor()
@@ -1213,18 +1277,16 @@ struct RaggedFlashAttentionGPU:
 
     @staticmethod
     def execute[
-        rank: Int,
-        //,
         target: StaticString,
         mask_str: StaticString,
         local_window_size: Int = -1,
     ](
-        output: OutputTensor[rank=rank, ...],
-        q: InputTensor[rank=rank, ...],
-        k: InputTensor[rank=rank, ...],
-        v: InputTensor[rank=rank, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        q_max_seq_len: InputTensor[dtype=.uint32, rank=1, ...],
+        output: Some[Output & Tensor],
+        q: Some[Input & Tensor],
+        k: Some[Input & Tensor],
+        v: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        q_max_seq_len: Some[Input & Tensor],
         scale: Float32,
         ctx: DeviceContext,
     ) raises:
@@ -1234,8 +1296,6 @@ struct RaggedFlashAttentionGPU:
         input_row_offsets indicates where each sequence starts and ends in the ragged tensors.
 
         Parameters:
-            rank: Rank of the `q`, `k`, `v`, and `output` tensors
-                (inferred).
             target: Target device identifier; must resolve to a GPU.
             mask_str: Attention mask type string passed to
                 `dispatch_mask` to select the mask functor.
@@ -1256,6 +1316,18 @@ struct RaggedFlashAttentionGPU:
             scale: Scaling factor applied to attention scores before softmax.
             ctx: Device context for GPU execution.
         """
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(q), TileTensorable)
+        comptime assert conforms_to(type_of(k), TileTensorable)
+        comptime assert conforms_to(type_of(v), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(q_max_seq_len), TileTensorable)
+        comptime rank = type_of(output).rank
+        comptime assert type_of(q).rank == rank
+        comptime assert type_of(k).rank == rank
+        comptime assert type_of(v).rank == rank
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(q_max_seq_len).rank == 1
         comptime assert is_gpu[target](), "only valid on GPUs"
 
         var output_buffer = output.to_tile_tensor()
@@ -1263,7 +1335,7 @@ struct RaggedFlashAttentionGPU:
         var k_buffer = k.to_tile_tensor()
         var v_buffer = v.to_tile_tensor()
 
-        var _input_row_offsets = input_row_offsets.to_tile_tensor()
+        var _input_row_offsets = input_row_offsets.to_tile_tensor[.uint32]()
 
         def _dispatch_flash_attention[
             mask_t: MHAMask
@@ -1280,7 +1352,7 @@ struct RaggedFlashAttentionGPU:
                 k_buffer,
                 v_buffer,
                 _input_row_offsets,
-                q_max_seq_len.to_tile_tensor(),
+                q_max_seq_len.to_tile_tensor[.uint32](),
                 mask,
                 scale,
                 ctx,

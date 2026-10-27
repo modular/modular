@@ -947,28 +947,21 @@ struct Struct_swiglu_quantize_dynamic_block_scaled:
     @inline(.always)
     @staticmethod
     def execute[
-        out_dtype: DType,
-        scales_type: DType,
-        in_dtype: DType,
-        //,
         SF_VECTOR_SIZE: Int,
         activation: StaticString,
         swiglu_alpha: Float32,
         swiglu_limit: Float32,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=out_dtype, rank=2, ...],
-        scales: OutputTensor[dtype=scales_type, rank=5, ...],
-        gate_up: InputTensor[dtype=in_dtype, rank=2, ...],
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        gate_up: Some[Input & Tensor],
         tensor_sf: Float32,
         context: DeviceContext,
     ) raises:
         """Quantizes `activation(gate, up)` of a `[gate | up]` input to a block-scaled format.
 
         Parameters:
-            out_dtype: The quantized output data type.
-            scales_type: The block scale data type.
-            in_dtype: The input data type.
             SF_VECTOR_SIZE: Elements per block scale.
             activation: Activation name, bound from the op's same-named
                 attribute; the activation is built at compile time.
@@ -984,6 +977,15 @@ struct Struct_swiglu_quantize_dynamic_block_scaled:
             tensor_sf: The tensor-wise scale factor.
             context: The device context.
         """
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(gate_up), TileTensorable)
+        comptime out_dtype = type_of(output).dtype
+        comptime scales_type = type_of(scales).dtype
+        comptime in_dtype = type_of(gate_up).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(scales).rank == 5
+        comptime assert type_of(gate_up).rank == 2
         comptime assert is_gpu[target](), (
             "gated block-scaled quantization only supports GPUs with native"
             " block scaled support"
@@ -994,9 +996,9 @@ struct Struct_swiglu_quantize_dynamic_block_scaled:
         swiglu_quantize_dynamic_block_scaled[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE, activation=act
         ](
-            output.to_tile_tensor[.int64](),
-            scales.to_tile_tensor[.int64](),
-            gate_up.to_tile_tensor[.int64](),
+            output.to_tile_tensor(),
+            scales.to_tile_tensor(),
+            gate_up.to_tile_tensor(),
             tensor_sf,
             context,
         )
@@ -1010,28 +1012,21 @@ struct Struct_rope_quantize_dynamic_block_scaled:
     @inline(.always)
     @staticmethod
     def execute[
-        out_dtype: DType,
-        scales_type: DType,
-        in_dtype: DType,
-        //,
         SF_VECTOR_SIZE: Int,
         head_dim: Int,
         inverse: Bool,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=out_dtype, rank=2, ...],
-        scales: OutputTensor[dtype=scales_type, rank=5, ...],
-        input: InputTensor[dtype=in_dtype, rank=2, ...],
-        freqs: InputTensor[dtype=DType.float32, rank=2, ...],
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        freqs: Some[Input & Tensor],
         tensor_sf: Float32,
         context: DeviceContext,
     ) raises:
         """Rotates each head's trailing columns by RoPE, then quantizes to a block-scaled format.
 
         Parameters:
-            out_dtype: The quantized output data type.
-            scales_type: The block scale data type.
-            in_dtype: The input data type.
             SF_VECTOR_SIZE: Elements per block scale.
             head_dim: Columns per head.
             inverse: Whether to rotate by the conjugate of each frequency.
@@ -1047,6 +1042,17 @@ struct Struct_rope_quantize_dynamic_block_scaled:
             tensor_sf: The tensor-wise scale factor.
             context: The device context.
         """
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(freqs), TileTensorable)
+        comptime out_dtype = type_of(output).dtype
+        comptime scales_type = type_of(scales).dtype
+        comptime in_dtype = type_of(input).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(scales).rank == 5
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(freqs).rank == 2
         comptime assert is_gpu[target](), (
             "RoPE block-scaled quantization only supports GPUs with native"
             " block scaled support"
@@ -1054,10 +1060,10 @@ struct Struct_rope_quantize_dynamic_block_scaled:
         rope_quantize_dynamic_block_scaled[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE, head_dim=head_dim, inverse=inverse
         ](
-            output.to_tile_tensor[.int64](),
-            scales.to_tile_tensor[.int64](),
-            input.to_tile_tensor[.int64](),
-            freqs.to_tile_tensor[.int64](),
+            output.to_tile_tensor(),
+            scales.to_tile_tensor(),
+            input.to_tile_tensor(),
+            freqs.to_tile_tensor[DType.float32](),
             tensor_sf,
             context,
         )
@@ -1073,12 +1079,12 @@ struct Struct_rms_norm_quantize_mxfp8_q_kv:
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor[dtype=DType.float8_e4m3fn, rank=2, ...],
-        scales: OutputTensor[dtype=DType.float8_e8m0fnu, rank=5, ...],
-        kv_output: OutputTensor[dtype=DType.bfloat16, rank=2, ...],
-        input: InputTensor[dtype=DType.bfloat16, rank=2, ...],
-        q_gamma: InputTensor[dtype=DType.bfloat16, rank=1, ...],
-        kv_gamma: InputTensor[dtype=DType.bfloat16, rank=1, ...],
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        kv_output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        q_gamma: Some[Input & Tensor],
+        kv_gamma: Some[Input & Tensor],
         epsilon: Float32,
         context: DeviceContext,
     ) raises:
@@ -1097,17 +1103,29 @@ struct Struct_rms_norm_quantize_mxfp8_q_kv:
             epsilon: The RMS norm epsilon.
             context: The device context.
         """
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(kv_output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(q_gamma), TileTensorable)
+        comptime assert conforms_to(type_of(kv_gamma), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(scales).rank == 5
+        comptime assert type_of(kv_output).rank == 2
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(q_gamma).rank == 1
+        comptime assert type_of(kv_gamma).rank == 1
         comptime assert is_gpu[target](), (
             "RMS norm MXFP8 quantization only supports GPUs with native"
             " block scaled support"
         )
         rms_norm_quantize_mxfp8_q_kv(
-            output.to_tile_tensor[.int64](),
-            scales.to_tile_tensor[.int64](),
-            kv_output.to_tile_tensor[.int64](),
-            input.to_tile_tensor[.int64](),
-            q_gamma.to_tile_tensor[.int64](),
-            kv_gamma.to_tile_tensor[.int64](),
+            output.to_tile_tensor[DType.float8_e4m3fn](),
+            scales.to_tile_tensor[DType.float8_e8m0fnu](),
+            kv_output.to_tile_tensor[DType.bfloat16](),
+            input.to_tile_tensor[DType.bfloat16](),
+            q_gamma.to_tile_tensor[DType.bfloat16](),
+            kv_gamma.to_tile_tensor[DType.bfloat16](),
             epsilon,
             context,
         )
@@ -1614,29 +1632,33 @@ struct Struct_block_scaled_preshuffle_scale_4d_per_expert:
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor[dtype=.float8_e8m0fnu, rank=2, ...],
-        input: InputTensor[dtype=.float8_e8m0fnu, rank=2, ...],
-        expert_start_indices: InputTensor[dtype=.uint32, rank=1, ...],
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        expert_start_indices: Some[Input & Tensor],
         max_num_tokens_per_expert: UInt32,
         num_active_experts: UInt32,
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(
+            type_of(expert_start_indices), TileTensorable
+        )
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(expert_start_indices).rank == 1
         comptime assert is_gpu[
             target
         ](), "mo.block.scaled.preshuffle.scale.4d_per_expert is GPU-only"
 
         # E8M0 bytes feed the launcher as raw uint8 (the cell-packing is
-        # byte-level). Bitcast the input/output tile pointers so dtype
-        # metadata matches the launcher's `DType.uint8` TileTensor sig.
-        var raw_e8 = input.to_tile_tensor[.int64]()
-        var dst_e8 = output.to_tile_tensor[.int64]()
-        var raw_tt = TileTensor[mut=False](
-            raw_e8._storage.unsafe_bitcast[UInt8](), raw_e8.layout
+        # byte-level). Bitcast the tiles so dtype metadata matches the
+        # launcher's `DType.uint8` TileTensor sig.
+        var raw_tt = (
+            input.to_tile_tensor[.float8_e8m0fnu]().as_imm().bitcast[.uint8]()
         )
-        var dst_tt = TileTensor[mut=True](
-            dst_e8._storage.unsafe_bitcast[UInt8](), dst_e8.layout
-        )
-        var a_off_tt = expert_start_indices.to_tile_tensor[.int64]()
+        var dst_tt = output.to_tile_tensor[.float8_e8m0fnu]().bitcast[.uint8]()
+        var a_off_tt = expert_start_indices.to_tile_tensor[.uint32]()
         comptime K_SCALES = type_of(raw_tt).static_shape[1]
         # Persistent grid: one CTA per WG slot, grid-strides real tiles.
         # `cu_count * 2` matches the matmul's persistent dispatch (see

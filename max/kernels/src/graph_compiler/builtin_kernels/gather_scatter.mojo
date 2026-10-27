@@ -2497,19 +2497,26 @@ struct Struct_sliced_add_ragged:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType,
-        //,
         target: StaticString,
     ](
-        c: OutputTensor[dtype=dtype, rank=2, ...],
-        a: InputTensor[dtype=dtype, rank=2, ...],
-        b: InputTensor[dtype=dtype, rank=2, ...],
-        lora_end_idx: InputTensor[dtype=.int64, rank=1, ...],
+        c: Some[Output & Tensor],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
+        lora_end_idx: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
-        var c_tile_tensor = c.to_tile_tensor[.int64]()
-        var a_tile_tensor = a.to_tile_tensor[.int64]()
-        var b_tile_tensor = b.to_tile_tensor[.int64]()
+        comptime assert conforms_to(type_of(c), TileTensorable)
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime assert conforms_to(type_of(lora_end_idx), TileTensorable)
+        comptime dtype = type_of(c).dtype
+        comptime assert type_of(c).rank == 2
+        comptime assert type_of(a).rank == 2
+        comptime assert type_of(b).rank == 2
+        comptime assert type_of(lora_end_idx).rank == 1
+        var c_tile_tensor = c.to_tile_tensor()
+        var a_tile_tensor = a.to_tile_tensor[dtype]()
+        var b_tile_tensor = b.to_tile_tensor[dtype]()
 
         sliced_add[target=target](
             c_tile_tensor,
