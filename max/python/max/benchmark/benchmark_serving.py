@@ -133,6 +133,7 @@ from max.benchmark.benchmark_shared.single_turn import (
 )
 from max.benchmark.benchmark_shared.utils import (
     argmedian,
+    fetch_model_config_max_length,
     fetch_server_max_model_len,
     get_tokenizer,
     openai_bearer_auth_headers,
@@ -1183,6 +1184,11 @@ def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
     tokenizer: PreTrainedTokenizerBase | None = None
 
     if benchmark_task == "text-generation":
+        # An explicit revision wins: ``resolve_revision`` asks the Hub and
+        # returns None for a repo it cannot see, which loads ``main``.
+        tokenizer_revision = args.tokenizer_revision or resolve_revision(
+            tokenizer_id
+        )
         model_max_length = args.model_max_length
         if model_max_length is None:
             # Best-effort: when the server is already up (e.g. benchmarking a
@@ -1204,19 +1210,26 @@ def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
                     model_max_length,
                     base_url,
                 )
-            elif args.dry_run:
+            else:
+                model_max_length = fetch_model_config_max_length(
+                    tokenizer_id,
+                    revision=tokenizer_revision,
+                    trust_remote_code=args.trust_remote_code,
+                    local_files_only=args.tokenizer_local_files_only,
+                )
                 logger.warning(
-                    "No server reachable at %s; --dry-run is using the"
-                    " tokenizer's context limit, so any workload the server"
-                    " would truncate is reported here as if it fit.",
+                    "No server reachable at %s; sampling against %s. A"
+                    " deployment's KV budget may plan lower.",
                     base_url,
+                    "the model config's max_position_embeddings"
+                    f" ({model_max_length})"
+                    if model_max_length is not None
+                    else "the tokenizer's own context limit",
                 )
         logger.info(f"getting tokenizer. api url: {api_url}")
         tokenizer = get_tokenizer(
             tokenizer_id,
-            # An explicit revision wins: ``resolve_revision`` asks the Hub and
-            # returns None for a repo it cannot see, which loads ``main``.
-            revision=args.tokenizer_revision or resolve_revision(tokenizer_id),
+            revision=tokenizer_revision,
             local_files_only=args.tokenizer_local_files_only,
             model_max_length=model_max_length,
             trust_remote_code=args.trust_remote_code,
