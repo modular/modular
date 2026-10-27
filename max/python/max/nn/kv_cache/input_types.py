@@ -85,20 +85,6 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
     draft_mla_num_partitions: _Tensor | None = None
     """The analog of :attr:`mla_num_partitions` for the draft-forward query
     width, carried by target cache leaves as well as draft ones."""
-    kv_blocks_per_layer: list[_Buffer] | None = None
-    """One single-layer KV buffer per layer, used when the backing pool
-    allocates a standalone buffer per layer
-    (``KVCacheParams.per_layer_buffers``) instead of one multi-layer buffer.
-    ``kv_blocks`` aliases ``kv_blocks_per_layer[0]`` so single-buffer
-    consumers stay valid; a per-layer attention dispatch picks
-    ``kv_blocks_per_layer[layer_idx]``. ``None`` (the default) for every
-    non-per-layer cache."""
-    kv_scales_per_layer: list[_Buffer] | None = None
-    """One single-layer scale buffer per layer, the quantized-scale analog of
-    ``kv_blocks_per_layer`` (used with ``per_layer_buffers`` + a quantized
-    KV cache). ``kv_scales`` aliases ``kv_scales_per_layer[0]``; a per-layer
-    attention dispatch picks ``kv_scales_per_layer[layer_idx]``. ``None``
-    for every non-per-layer / unquantized cache."""
     split_head_dims: SplitKVHeadDims | None = None
     """Set when each cache row packs a key and a value of different widths.
     The blocks alone cannot say so: one plane also means an MLA cache. An op
@@ -153,17 +139,6 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
                 Pass ``False`` for an op that reads only the cache's lengths
                 and page table, so one registration serves every cache format.
         """
-        scales: tuple[_Tensor | _Buffer, ...] = ()
-        if include_scales and self.kv_scales is not None:
-            assert (
-                self.scales_page_stride is not None
-                and self.scales_lookup_table is not None
-            )
-            scales = (
-                self.kv_scales,
-                self.scales_page_stride,
-                self.scales_lookup_table,
-            )
         return [
             self.kv_blocks,
             self.page_stride,
@@ -171,11 +146,18 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             self.lookup_table,
             self.max_prompt_length,
             self.max_cache_length,
-            *scales,
-            # Tail per-layer buffers (see ``flatten``). Attention dispatch clears
-            # this field before calling an op, so this is ``()`` at op sites.
-            *(self.kv_blocks_per_layer or ()),
-            *((self.kv_scales_per_layer or ()) if include_scales else ()),
+            *(
+                (
+                    self.kv_scales,
+                    self.scales_page_stride,
+                    self.scales_lookup_table,
+                )
+                if include_scales
+                and self.kv_scales is not None
+                and self.scales_page_stride is not None
+                and self.scales_lookup_table is not None
+                else ()
+            ),
         ]
 
 

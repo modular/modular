@@ -527,7 +527,6 @@ def test_slots_per_page_sets_the_slot_dimension() -> None:
     """A compressed cache stores fewer slots than the tokens a page covers."""
     params = _mla_params(slots_per_page=4)
     assert params.shape_per_block == [1, 4, 4, 1, 576]
-    assert params.shape_per_layer_block == [1, 1, 4, 1, 576]
     # The block shrinks with the slot count; the tokens it covers do not.
     assert params.bytes_per_block == _mla_params().bytes_per_block // 32
     assert params.page_size == 128
@@ -552,7 +551,6 @@ def test_slots_per_page_applies_to_scale_blocks() -> None:
         ),
     )
     assert params.shape_per_scale_block == [1, 4, 32, 1, 576 // 64]
-    assert params.shape_per_layer_scale_block[2] == 32
 
 
 @pytest.mark.parametrize("slots_per_page", [48, 256, 0, -4])

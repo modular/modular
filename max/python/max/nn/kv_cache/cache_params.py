@@ -736,61 +736,12 @@ class KVCacheBuffer(KVCacheBufferInterface):
     this leaf."""
     scales_padded: list[Buffer] | None = None
     """The same as :attr:`values_padded`, for :attr:`scales`."""
-    values_per_layer: list[list[Buffer]] | None = None
-    """Per-TP-shard, per-layer value buffers when the pool uses
-    :attr:`~max.nn.kv_cache.KVCacheParams.per_layer_buffers`.
-
-    ``values_per_layer[shard]`` is the list of single-layer buffers for that
-    shard, and ``values[shard]`` aliases ``values_per_layer[shard][0]`` so the
-    single-buffer ``values`` invariants (and consumers) stay valid. ``None``
-    for a normal single multi-layer buffer."""
-    scales_per_layer: list[list[Buffer]] | None = None
-    """Per-TP-shard, per-layer scale buffers for a quantized KV cache backed by
-    :attr:`~max.nn.kv_cache.KVCacheParams.per_layer_buffers` (mirrors
-    :attr:`values_per_layer`). ``scales[shard]`` aliases
-    ``scales_per_layer[shard][0]``. ``None`` for a single multi-layer scale
-    buffer or an unquantized cache."""
 
     def __post_init__(self) -> None:
         all_buffers = self.all_buffers
 
         if len(self.values) == 0:
             raise ValueError("List of values must be non-empty")
-
-        if self.values_per_layer is not None:
-            if len(self.values_per_layer) != len(self.values):
-                raise ValueError(
-                    "values_per_layer must have one entry per TP shard"
-                )
-            for shard_layers, value in zip(
-                self.values_per_layer, self.values, strict=True
-            ):
-                if len(shard_layers) == 0:
-                    raise ValueError(
-                        "each values_per_layer shard must be non-empty"
-                    )
-                if shard_layers[0] is not value:
-                    raise ValueError(
-                        "values[i] must alias values_per_layer[i][0]"
-                    )
-
-        if self.scales_per_layer is not None:
-            assert self.scales is not None
-            if len(self.scales_per_layer) != len(self.scales):
-                raise ValueError(
-                    "scales_per_layer must have one entry per TP shard"
-                )
-            for shard_layers, scale in zip(
-                self.scales_per_layer, self.scales, strict=True
-            ):
-                if len(shard_layers) == 0:
-                    raise ValueError(
-                        "each scales_per_layer shard must be non-empty"
-                    )
-                if shard_layers[0] is not scale:
-                    raise ValueError(
-                        "scales[i] must alias scales_per_layer[i][0]"
-                    )
 
         if self.replicates_kv_across_tp and len(self.values) <= 1:
             raise ValueError(
@@ -852,10 +803,6 @@ class KVCacheBuffer(KVCacheBufferInterface):
         Every buffer is re-viewed as 2-D ``uint8`` pages so consumers can treat
         all caches uniformly regardless of dtype or shape. A padded leaf hands
         over its padded grid instead, so a page's pad travels with it.
-
-        Per-layer buffers are deliberately not enumerated -- only each shard's
-        layer-0 alias -- which is why ``allocate_buffers`` rejects
-        ``per_layer_buffers`` alongside off-device connectors and DP > 1.
 
         Returns:
             This cache's values leaf, plus its scales leaf when quantized.
@@ -1551,16 +1498,6 @@ class KVCacheParams(KVCacheParamInterface):
     the shared external tier via the KV connector (or recomputed). Only
     relevant when ``data_parallel_degree > 1`` and prefix caching is enabled."""
 
-    per_layer_buffers: bool = False
-    """When ``True``, allocate one standalone single-layer buffer per layer
-    instead of one ``[..., num_layers, ...]`` multi-layer buffer.
-
-    Each attention dispatch then binds only its own per-layer buffer, so the
-    pool total can exceed a per-allocation size cap (such as a device's maximum
-    single allocation) while every individual buffer stays under it. Defaults
-    to ``False`` (one multi-layer buffer), keeping all other backends and
-    models byte-identical."""
-
     kv_hash_algo: KVHashAlgo = "ahash64"
     """Hash algorithm used for KV-cache block identity."""
 
@@ -1932,20 +1869,6 @@ class KVCacheParams(KVCacheParamInterface):
         ]
 
     @property
-    def shape_per_layer_block(self) -> list[int]:
-        """Returns the block shape for a single-layer buffer.
-
-        Same as :attr:`shape_per_block` but with the layer dimension pinned to
-        ``1``. Used when :attr:`per_layer_buffers` is set: the pool allocates
-        ``num_layers`` such buffers per device instead of one multi-layer
-        buffer. The attention kernel derives ``num_layers`` from this dim, so a
-        single-layer buffer (``num_layers == 1``) with ``layer_idx == 0`` is
-        self-consistent.
-        """
-        kv_dim, _num_layers, slots, n_kv_heads, head_dim = self.shape_per_block
-        return [kv_dim, 1, slots, n_kv_heads, head_dim]
-
-    @property
     def shape_per_scale_block(self) -> list[int]:
         """Returns the shape of each scale block used for KVCache quantization
 
@@ -1961,18 +1884,6 @@ class KVCacheParams(KVCacheParamInterface):
             (self.head_dim - self._fp8_tail_dim) / granularity
         )
         return shape_per_block
-
-    @property
-    def shape_per_layer_scale_block(self) -> list[int]:
-        """Scale-block shape for a single-layer buffer (layer dim pinned to 1).
-
-        The scale analog of :attr:`shape_per_layer_block`: used with
-        :attr:`per_layer_buffers` on a quantized cache, where the pool allocates
-        one single-layer scale buffer per layer instead of one multi-layer one.
-        """
-        shape = self.shape_per_scale_block
-        shape[1] = 1
-        return shape
 
     @property
     def bytes_per_block(self) -> int:
@@ -2079,36 +1990,6 @@ class KVCacheParams(KVCacheParamInterface):
         self, total_num_pages: int, _prefix: str = ""
     ) -> list[KVCacheBuffer]:
         """Allocates the buffers for the KV cache."""
-        if self.per_layer_buffers:
-            # Validate the per-layer configuration before materializing any
-            # device buffers. These guards live here, not in ``__post_init__``,
-            # because call sites set ``per_layer_buffers`` after construction.
-            if self.num_layers < 1:
-                # ``values`` aliases layer 0, so the pool needs at least one
-                # layer; otherwise ``layer_buffers[0]`` below raises an opaque
-                # IndexError.
-                raise ValueError(
-                    f"per_layer_buffers requires num_layers >= 1, got {self.num_layers}"
-                )
-            connector = self.kv_connector_config.type
-            if (
-                connector in TIERED_CONNECTOR_TYPES
-                or connector == KVConnectorType.dkv
-            ):
-                # KVCacheBuffer.all_buffers / to_memory enumerate only the
-                # layer-0 alias, so an off-device connector would move layers
-                # 1..N-1 nowhere. Reject until that enumeration covers per-layer
-                # buffers.
-                raise NotImplementedError(
-                    "per_layer_buffers is not supported with an off-device KV"
-                    f" connector ('{connector.value}')"
-                )
-            if self.data_parallel_degree > 1:
-                # Cross-replica block copy enumerates the same layer-0 alias.
-                raise NotImplementedError(
-                    "per_layer_buffers is not supported with data parallelism"
-                    " (data_parallel_degree > 1)"
-                )
         # ``Buffer.zeros`` needs concrete devices, so materialize the per-replica
         # device groups from the ``DeviceRef``s here.
         devices_per_replica = split_into_groups(
@@ -2118,79 +1999,35 @@ class KVCacheParams(KVCacheParamInterface):
         kv_cache_buffers: list[KVCacheBuffer] = []
         for devices in devices_per_replica:
             values: list[Buffer] = []
-            values_per_layer: list[list[Buffer]] | None = None
-            if self.per_layer_buffers:
-                # One standalone single-layer buffer per layer (num_layers==1 in
-                # dim-2). ``values`` aliases each shard's layer-0 buffer so the
-                # single-buffer invariants and consumers stay valid.
-                values_per_layer = []
-                for device in devices:
-                    layer_buffers = [
-                        Buffer.zeros(
-                            shape=[
-                                total_num_pages,
-                                *self.shape_per_layer_block,
-                            ],
-                            dtype=self.dtype,
-                            device=device,
-                        )
-                        for _ in range(self.num_layers)
-                    ]
-                    values_per_layer.append(layer_buffers)
-                    values.append(layer_buffers[0])
-            else:
-                for device in devices:
-                    value = Buffer.zeros(
-                        shape=[total_num_pages, *self.shape_per_block],
-                        dtype=self.dtype,
-                        device=device,
-                    )
-                    values.append(value)
+            for device in devices:
+                value = Buffer.zeros(
+                    shape=[total_num_pages, *self.shape_per_block],
+                    dtype=self.dtype,
+                    device=device,
+                )
+                values.append(value)
 
             scales: list[Buffer] | None = None
-            scales_per_layer: list[list[Buffer]] | None = None
             if self.quantized_kv_cache:
                 scales = []
                 assert self.kvcache_quant_config is not None
                 scale_dtype = self.kvcache_quant_config.scale_dtype
-                if self.per_layer_buffers:
-                    # One single-layer scale buffer per layer, parallel to
-                    # ``values_per_layer``. ``scales`` aliases each shard's
-                    # layer-0 scale so single-buffer consumers stay valid.
-                    scales_per_layer = []
-                    for device in devices:
-                        layer_scales = [
-                            Buffer.zeros(
-                                shape=[
-                                    total_num_pages,
-                                    *self.shape_per_layer_scale_block,
-                                ],
-                                dtype=scale_dtype,
-                                device=device,
-                            )
-                            for _ in range(self.num_layers)
-                        ]
-                        scales_per_layer.append(layer_scales)
-                        scales.append(layer_scales[0])
-                else:
-                    for device in devices:
-                        scale = Buffer.zeros(
-                            shape=[
-                                total_num_pages,
-                                *self.shape_per_scale_block,
-                            ],
-                            dtype=scale_dtype,
-                            device=device,
-                        )
-                        scales.append(scale)
+                for device in devices:
+                    scale = Buffer.zeros(
+                        shape=[
+                            total_num_pages,
+                            *self.shape_per_scale_block,
+                        ],
+                        dtype=scale_dtype,
+                        device=device,
+                    )
+                    scales.append(scale)
 
             kv_cache_buffer = KVCacheBuffer(
                 leaf_id=self.leaf_id(_prefix),
                 values=values,
                 scales=scales,
                 replicates_kv_across_tp=self.replicates_kv_across_tp,
-                values_per_layer=values_per_layer,
-                scales_per_layer=scales_per_layer,
             )
             kv_cache_buffers.append(kv_cache_buffer)
         return kv_cache_buffers
@@ -2206,8 +2043,6 @@ class KVCacheParams(KVCacheParamInterface):
         scales_lookup_table: Buffer | None,
         target_key: AttnKeyInterface,
         draft_key: AttnKeyInterface | None,
-        blocks_per_layer: list[Buffer] | None = None,
-        scales_per_layer: list[Buffer] | None = None,
         *,
         page_stride: Buffer,
         scales_page_stride: Buffer | None = None,
@@ -2291,16 +2126,6 @@ class KVCacheParams(KVCacheParamInterface):
                     if buffer.scales is not None
                     else None
                 )
-                blocks_per_layer = (
-                    buffer.values_per_layer[i]
-                    if buffer.values_per_layer is not None
-                    else None
-                )
-                scales_per_layer = (
-                    buffer.scales_per_layer[i]
-                    if buffer.scales_per_layer is not None
-                    else None
-                )
                 tp_shards.append(
                     self._build_kvcache_inputs_per_device(
                         # A padded leaf binds its contiguous alias, since
@@ -2333,8 +2158,6 @@ class KVCacheParams(KVCacheParamInterface):
                             if kv_scales is not None
                             else None
                         ),
-                        blocks_per_layer=blocks_per_layer,
-                        scales_per_layer=scales_per_layer,
                     )
                 )
         return tuple(tp_shards)
@@ -2605,54 +2428,6 @@ class MHAKVCacheParams(KVCacheParams):
         # binds the two counts equal, which a separate symbol still accepts.
         scale_page_dim = page_namespace + "total_num_scale_pages"
 
-        def _blocks_per_layer(
-            device: DeviceRef,
-        ) -> list[BufferType] | None:
-            # One single-layer BufferType per layer. Must stay in exact
-            # lock-step with ``flatten``/``unflatten`` (tail order) and with the
-            # runtime buffers built by ``allocate_buffers`` / ``build_runtime_inputs``.
-            if not self.per_layer_buffers:
-                return None
-            return [
-                BufferType(
-                    self.dtype,
-                    shape=[page_dim, *self.shape_per_layer_block],
-                    device=device,
-                )
-                for _ in range(self.num_layers)
-            ]
-
-        def _scales_per_layer(
-            device: DeviceRef,
-        ) -> list[BufferType] | None:
-            # Scale analog of ``_blocks_per_layer`` (per-layer + quantized).
-            # Same lock-step requirement; appended after kv_blocks_per_layer.
-            if not (self.per_layer_buffers and self.quantized_kv_cache):
-                return None
-            return [
-                BufferType(
-                    self.kv_cache_scale_dtype,
-                    shape=[scale_page_dim, *self.shape_per_layer_scale_block],
-                    device=device,
-                )
-                for _ in range(self.num_layers)
-            ]
-
-        def _kv_blocks(device: DeviceRef) -> BufferType:
-            # ``per_layer_buffers`` aliases ``kv_blocks`` to the first per-layer
-            # buffer so single-buffer consumers stay valid.
-            if self.per_layer_buffers:
-                return BufferType(
-                    self.dtype,
-                    shape=[page_dim, *self.shape_per_layer_block],
-                    device=device,
-                )
-            return BufferType(
-                self.dtype,
-                shape=[page_dim, *self.shape_per_block],
-                device=device,
-            )
-
         def _lookup_table(device: DeviceRef) -> TensorType:
             return TensorType(
                 DType.uint32,
@@ -2665,7 +2440,11 @@ class MHAKVCacheParams(KVCacheParams):
 
         return [
             KVCacheInputsPerDevice(
-                kv_blocks=_kv_blocks(device),
+                kv_blocks=BufferType(
+                    self.dtype,
+                    shape=[page_dim, *self.shape_per_block],
+                    device=device,
+                ),
                 # Read off the buffer's stride when the inputs are bound.
                 page_stride=TensorType(
                     DType.int64, shape=[1], device=DeviceRef.CPU()
@@ -2688,16 +2467,7 @@ class MHAKVCacheParams(KVCacheParams):
                 ),
                 kv_scales=BufferType(
                     self.kv_cache_scale_dtype,
-                    # Per-layer buffers alias ``kv_scales`` to a single-layer
-                    # scale (mirrors ``_kv_blocks`` for the KV data).
-                    shape=[
-                        scale_page_dim,
-                        *(
-                            self.shape_per_layer_scale_block
-                            if self.per_layer_buffers
-                            else self.shape_per_scale_block
-                        ),
-                    ],
+                    shape=[scale_page_dim, *self.shape_per_scale_block],
                     device=device,
                 )
                 if self.quantized_kv_cache
@@ -2719,8 +2489,6 @@ class MHAKVCacheParams(KVCacheParams):
                 )
                 if self.speculative_method is not None
                 else None,
-                kv_blocks_per_layer=_blocks_per_layer(device),
-                kv_scales_per_layer=_scales_per_layer(device),
                 split_head_dims=self._split_head_dims_marker,
             )
             for device in devices
@@ -2737,8 +2505,6 @@ class MHAKVCacheParams(KVCacheParams):
         scales_lookup_table: Buffer | None,
         target_key: AttnKeyInterface,
         draft_key: AttnKeyInterface | None,
-        blocks_per_layer: list[Buffer] | None = None,
-        scales_per_layer: list[Buffer] | None = None,
         *,
         page_stride: Buffer,
         scales_page_stride: Buffer | None = None,
@@ -2757,8 +2523,6 @@ class MHAKVCacheParams(KVCacheParams):
             scales_lookup_table=scales_lookup_table,
             attention_dispatch_metadata=attention_dispatch_metadata,
             draft_attention_dispatch_metadata=draft_attention_dispatch_metadata,
-            kv_blocks_per_layer=blocks_per_layer,
-            kv_scales_per_layer=scales_per_layer,
             split_head_dims=self._split_head_dims_marker,
         )
 
@@ -2982,18 +2746,12 @@ class MLAKVCacheParams(KVCacheParams):
         scales_lookup_table: Buffer | None,
         target_key: AttnKeyInterface,
         draft_key: AttnKeyInterface | None,
-        blocks_per_layer: list[Buffer] | None = None,
-        scales_per_layer: list[Buffer] | None = None,
         *,
         page_stride: Buffer,
         scales_page_stride: Buffer | None = None,
         attention_dispatch_metadata: Buffer,
         draft_attention_dispatch_metadata: Buffer | None,
     ) -> KVCacheInputsPerDevice[Buffer, Buffer]:
-        # MLA never uses per-layer buffers; the parameters exist only to match
-        # the base signature threaded by ``build_runtime_inputs``.
-        assert blocks_per_layer is None
-        assert scales_per_layer is None
         assert isinstance(target_key, MLAAttnKey)
         assert draft_key is None or isinstance(draft_key, MLAAttnKey)
         return KVCacheInputsPerDevice(

@@ -210,7 +210,6 @@ def target_kv_params(
             devices=devices,
             data_parallel_degree=data_parallel_degree,
             enable_prefix_caching=False,
-            per_layer_buffers=False,
             speculative_method="dflash",
             num_draft_tokens=num_draft_tokens,
         )
@@ -237,7 +236,6 @@ def draft_kv_params(
         devices=devices,
         data_parallel_degree=data_parallel_degree,
         enable_prefix_caching=False,
-        per_layer_buffers=False,
         speculative_method="dflash",
         num_draft_tokens=BLOCK,
         window_size=1024,

@@ -100,7 +100,6 @@ def test_split_head_dims_pack_one_unpadded_row() -> None:
     assert params.kv_dim == 1
     assert params.storage_head_dim == 320
     assert params.shape_per_block == [1, 2, 128, 4, 320]
-    assert params.shape_per_layer_block == [1, 1, 128, 4, 320]
     assert params.row_bytes == 4 * 320 * 2
     # Padding both to 256 stores 512 values per head and token.
     padded = _params(head_dim=256)

@@ -384,8 +384,6 @@ def fused_chunked_qkv_rope_store_ragged(
         )
     if kv_collection.kv_scales is not None:
         raise ValueError("quantized KV caches are unsupported")
-    if kv_collection.kv_blocks_per_layer is not None:
-        raise ValueError("per-layer KV buffers are unsupported")
     if not all(
         isinstance(dim, StaticDim)
         for dim in (*qkv.shape[1:], freqs_cis.shape[1], *blocks.shape[1:])

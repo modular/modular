@@ -238,6 +238,12 @@ This version is still a work in progress.
   from the Mojo `DeviceContext.create_event()`, along with `EventFlags`. Events
   never record timing; use `DeviceContext.execution_time()` to time kernels.
 
+- Removed the `per_layer_buffers` KV cache option, which gave each layer its
+  own buffer to get past a device's per-allocation size limit, along with the
+  `kv_blocks_per_layer` and `kv_scales_per_layer` fields of
+  `KVCacheInputsPerDevice`. A KV cache is again one buffer per device, capped
+  at that limit.
+
 ## C API
 
 ## Kernels and GPU programming
