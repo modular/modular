@@ -31,7 +31,7 @@ repository:
   ```
 
 - Run `max` to generate text with a model (requires a
-  [compatible GPU](https://max.modular.com/packages#gpu-compatibility)):
+  [compatible GPU](https://max.modular.com/system-requirements/#gpu-compatibility)):
 
   ```bash
   ./bazelw run //max/python/max/_entrypoints:pipelines -- generate \
