@@ -946,29 +946,43 @@ struct RandomNormal:
 
     @staticmethod
     def execute[
-        dtype: DType,
         target: StaticString,
     ](
-        output: FusedOutputTensor[dtype=dtype, ...],
-        shape: InputTensor[rank=1, ...],
+        output: Some[Output & Fused & StoreAccess],
+        shape: Some[Input & Tensor],
         mean: Float32,
         variance: Float32,
-        seed_value: InputTensor[dtype=.uint64, rank=1, ...],
+        seed_value: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(seed_value), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(shape).rank == 1
+        comptime assert type_of(seed_value).rank == 1
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # store on the GPU lane.
+        comptime assert conforms_to(type_of(output), UnsafeFusedView)
+        var output_view = unsafe_fused_view(output)
+        comptime assert conforms_to(type_of(output_view), Storable)
+
         @inline(.always)
         def output_fn[
             _width: SIMDLength
-        ](coords: Coord, val: SIMD[dtype, _width]) {imm output}:
-            output._lambda_store[width=_width](
-                coords, rebind[SIMD[output.dtype, _width]](val)
+        ](coords: Coord, val: SIMD[dtype, _width]) {var output_view}:
+            output_view.store[width=_width](
+                coords, rebind[SIMD[type_of(output_view).dtype, _width]](val)
             )
 
+        # The seed is read through its flat pointer; a non-pointer storage
+        # policy aborts here at run time.
         random_normal[target=target](
-            output.shape_coord(),
+            output.shape().flatten(),
             mean,
             variance,
-            seed_value.unsafe_ptr[.uint64](),
+            seed_value.to_tile_tensor[.uint64]()
+            .as_imm()
+            .ptr.unsafe_origin_cast[ImmutAnyOrigin](),
             ctx,
             output_fn,
         )
@@ -1024,26 +1038,41 @@ struct RandomUniform:
         dtype: DType,
         target: StaticString,
     ](
-        output: FusedOutputTensor[dtype=dtype, ...],
-        shape: InputTensor[rank=1, ...],
+        output: Some[Output & Fused & StoreAccess],
+        shape: Some[Input & Tensor],
         lower_bound: Scalar[dtype],
         upper_bound: Scalar[dtype],
-        seed_value: InputTensor[dtype=.uint64, rank=1, ...],
+        seed_value: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(seed_value), TileTensorable)
+        comptime assert type_of(output).dtype == dtype
+        comptime assert type_of(shape).rank == 1
+        comptime assert type_of(seed_value).rank == 1
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # store on the GPU lane.
+        comptime assert conforms_to(type_of(output), UnsafeFusedView)
+        var output_view = unsafe_fused_view(output)
+        comptime assert conforms_to(type_of(output_view), Storable)
+
         @inline(.always)
         def output_fn[
             _width: SIMDLength
-        ](coords: Coord, val: SIMD[dtype, _width]) {imm output}:
-            output._lambda_store[width=_width](
-                coords, rebind[SIMD[output.dtype, _width]](val)
+        ](coords: Coord, val: SIMD[dtype, _width]) {var output_view}:
+            output_view.store[width=_width](
+                coords, rebind[SIMD[type_of(output_view).dtype, _width]](val)
             )
 
+        # The seed is read through its flat pointer; a non-pointer storage
+        # policy aborts here at run time.
         random_uniform[target=target](
-            output.shape_coord(),
+            output.shape().flatten(),
             lower_bound,
             upper_bound,
-            seed_value.unsafe_ptr[.uint64](),
+            seed_value.to_tile_tensor[.uint64]()
+            .as_imm()
+            .ptr.unsafe_origin_cast[ImmutAnyOrigin](),
             ctx,
             output_fn,
         )

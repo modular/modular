@@ -701,22 +701,40 @@ struct LinalgBandPart:
     @staticmethod
     def execute[
         target: StaticString,
-        dtype: DType,
-        int_type: DType,
-        rank: Int,
     ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
-        num_lower: InputTensor[dtype=int_type, rank=1, ...],
-        num_upper: InputTensor[dtype=int_type, rank=1, ...],
-        exclude: InputTensor[rank=1, ...],
+        output: Some[Output & Tensor],
+        input: Some[Input & Fused & LoadAccess],
+        num_lower: Some[Input & Tensor],
+        num_upper: Some[Input & Tensor],
+        exclude: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(num_lower), TileTensorable)
+        comptime assert conforms_to(type_of(num_upper), TileTensorable)
+        comptime assert conforms_to(type_of(exclude), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime int_type = type_of(num_lower).dtype
+        comptime rank = type_of(output).rank
+        comptime assert type_of(input).dtype == dtype
+        comptime assert type_of(input).rank == rank
+        comptime assert type_of(num_lower).rank == 1
+        comptime assert type_of(num_upper).rank == 1
+        comptime assert type_of(exclude).rank == 1
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # load on the GPU lane.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var input_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(input_view), Loadable)
+
         @inline(.always)
         def input_fn[
             width: Int
-        ](coords: Coord) {var input} -> SIMD[output.dtype, width]:
-            return input._lambda_load[width=width](coords)
+        ](coords: Coord) {var input_view} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](
+                input_view.load[width=width](coords)
+            )
 
         matrix_band_part[
             rank=rank,
@@ -724,11 +742,11 @@ struct LinalgBandPart:
             target=target,
         ](
             input_fn,
-            input.shape_coord(),
-            num_lower.to_tile_tensor[int_type](),
+            input.shape().flatten(),
+            num_lower.to_tile_tensor(),
             num_upper.to_tile_tensor[int_type](),
-            exclude.to_tile_tensor[.int64](),
-            output.to_tile_tensor[dtype](),
+            exclude.to_tile_tensor(),
+            output.to_tile_tensor(),
             ctx,
         )
 
