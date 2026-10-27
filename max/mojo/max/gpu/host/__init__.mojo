@@ -64,7 +64,7 @@ from ._overlay import (
     CUstream,
     _CUstream_st,
 )
-from ._legacy._amdgpu_hip import HIP, HIP_MODULE, hipDevice_t, hipStream_t
+from ._overlay import HIP, HIP_MODULE, hipDevice_t, hipStream_t
 from ._legacy._kernel_load_gate import (
     CollectiveEnqueueScope,
     CollectiveGate,

@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Selects the `DeviceContext` implementation behind `max.gpu.host`.
 
-`max.gpu.host` takes the `device_context`, `device_graph`, and
-`_nvidia_cuda` names from here. This variant names the legacy
+`max.gpu.host` takes the `device_context`, `device_graph`, `_nvidia_cuda`,
+and `_amdgpu_hip` names from here. This variant names the legacy
 implementation; an overlay replaces this file to swap in another one that
 exports the same names.
 """
@@ -30,3 +30,4 @@ from ._legacy.device_context import (
 from ._legacy.device_graph import *
 from ._legacy._nvidia_cuda import *
 from ._legacy._nvidia_cuda import _CUstream_st
+from ._legacy._amdgpu_hip import HIP, HIP_MODULE, hipDevice_t, hipStream_t
