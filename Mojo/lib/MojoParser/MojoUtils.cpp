@@ -172,7 +172,7 @@ public:
         // preserve sugar.
         return ParamDeclRefAttr::get(
             explicitParamDecls[indexRef.getIndex()].getName(),
-            replace(indexRef.getType()));
+            replaceImpl(indexRef.getType(), depth));
       }
       return {};
     }
