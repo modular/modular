@@ -73,6 +73,15 @@ from .topk_fi import (
 # than the added parallelism supplies.
 comptime _MAX_CUTOFF_CLUSTER = 4
 
+# Whether a row whose constraints cannot bind skips the cutoff search, which
+# is the fast path the single-block kernels already take (`topk_fi.mojo:2487`
+# in the sampler and the mask-disabled guard of the masked-probs kernel at
+# `:3519`). A row qualifies when `k == d` (no top-k), `p >= 1` (no top-p,
+# so `_topp_budget` returns `Float32.MAX`) and nothing zeroed its weights.
+# The search reaches the same cutoff -- it walks its bracket down to the
+# smallest staged weight -- so skipping it is a pure work saving and the
+# row's own scalars decide it.
+
 # The largest shared-memory request that a CTA makes to stage its part of a
 # row. B200 supplies 228 KiB per SM. Keep some for the reduction scratch and
 # the publish slots.
@@ -496,7 +505,25 @@ def TopKTopPMaskedProbsClusterKernel[
 
     var cut = Float32(0)
     var mass_s = z
-    if total_count >= Int32(k) or z > p_eff:
+
+    # Does this row need the search at all? A constraint that cannot bind
+    # leaves every positive weight above a zero cutoff and the plain softmax
+    # mass behind it -- the answer the single-block kernel short-circuits to
+    # rather than searching for. `k` and `p` are row scalars that every CTA
+    # of the cluster holds identically, so the extra test is cluster-uniform
+    # and the branch below still takes the search on the same rows on every
+    # CTA.
+    var search = total_count >= Int32(k) or z > p_eff
+    # `k == _d` keeps every token and `p >= 1` puts the budget at
+    # `Float32.MAX` (`_topp_budget`), so nothing can fail the predicate the
+    # search exists to invert: the answer is a zero cutoff over the whole
+    # row. Walking the bracket down to it costs a staged read of the slice
+    # plus a cluster combine per round, and the API defaults (`top_k` unset,
+    # `top_p` 1) land here on every decode step.
+    if k == _d and p >= 1.0:
+        search = False
+
+    if search:
         # The search reads elements other lanes staged, so order the writes
         # against it -- cluster-wide, since the search's own combines assume
         # every CTA has arrived.
@@ -1241,32 +1268,53 @@ def TopKTopPSamplingEmitDistClusterKernel[
     # callers read that as "no distribution for this row".
     var cutoff = Float32.MAX_FINITE
     var kept_mass = Float32(1)
-    if accepted_e >= 0:
-        # The search reads elements other lanes staged, so order the staging
-        # writes against it -- cluster-wide, since the search's own combines
-        # assume every CTA has arrived.
-        cluster_sync()
 
-        # The search needs `mass(> low)` over the staged (masked) weights. A
-        # refined `q` came from staged sums and is exactly that; the initial
-        # budget is the unmasked `z`, which overstates it whenever min-p
-        # zeroed weight.
-        var mass_above_low = q if low > 0 else masked_z
-        var refined = _cluster_cutoff_search[
-            vec_size, block_size, cluster_size
-        ](
-            _d,
-            Int32(k),
-            p_eff,
-            low,
-            accepted_e,
-            mass_above_low,
-            smem,
-            vec_begin,
-            vec_end,
-        )
-        cutoff = refined[0]
-        kept_mass = refined[1]
+    # Whether this row needs the search for its reported distribution. A row
+    # whose constraints cannot bind emits the staged weights whole: a zero
+    # cutoff keeps every positive weight and `z` -- the unmasked total this
+    # CTA's staging pass already produced -- normalizes them. That is the
+    # answer the single-block kernel short-circuits to (`topk_fi.mojo:2487`),
+    # and the one the search walks its bracket down to, so skipping it is a
+    # pure work saving on exactly the rows the API defaults produce.
+    var search_for_dist = True
+    # `k == _d` keeps every token and `p >= 1` puts the budget at
+    # `Float32.MAX` (`_topp_budget`); `min_p_thresh > 0` is exactly when the
+    # staging pass zeroed weights, so with no threshold the staged row is the
+    # whole softmax and `masked_z == z`. All three are row scalars held
+    # identically by every CTA of the cluster, so the test is cluster-uniform
+    # and the branch below still searches on the same rows on every CTA.
+    if k == _d and p >= 1.0 and min_p_thresh <= 0:
+        cutoff = 0
+        kept_mass = z
+        search_for_dist = False
+
+    if accepted_e >= 0:
+        if search_for_dist:
+            # The search reads elements other lanes staged, so order the
+            # staging writes against it -- cluster-wide, since the search's
+            # own combines assume every CTA has arrived.
+            cluster_sync()
+
+            # The search needs `mass(> low)` over the staged (masked) weights.
+            # A refined `q` came from staged sums and is exactly that; the
+            # initial budget is the unmasked `z`, which overstates it whenever
+            # min-p zeroed weight.
+            var mass_above_low = q if low > 0 else masked_z
+            var refined = _cluster_cutoff_search[
+                vec_size, block_size, cluster_size
+            ](
+                _d,
+                Int32(k),
+                p_eff,
+                low,
+                accepted_e,
+                mass_above_low,
+                smem,
+                vec_begin,
+                vec_end,
+            )
+            cutoff = refined[0]
+            kept_mass = refined[1]
 
     # Masks the staged weights; each lane owns the elements it wrote (the
     # same partition as the staging pass), so this needs no barrier against
