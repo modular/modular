@@ -18,8 +18,10 @@
 
 """Registers quantization and dequantization graph ops backed by the `quantization` and `linalg` kernels."""
 
+from std.sys import align_of
 from std.sys.info import size_of
 import extensibility
+from max.algorithm import elementwise
 
 # ===-----------------------------------------------------------------------===#
 # Kernel imports
@@ -29,7 +31,6 @@ from max.gpu.host import DeviceContext
 from layout.tile_tensor import row_major
 from max.gpu.host.info import is_cpu, is_gpu
 from internal_utils.fp8_utils import fp8_quantize
-from builtin_primitives.primitives import foreach
 from layout import (
     Coord,
     TileTensor,
@@ -95,12 +96,18 @@ from quantization.qmatmul_k import (
     matmul_Q6_K_pack_b,
 )
 from extensibility import (
+    Fused,
     Input,
     InputTensor,
+    LoadAccess,
+    Loadable,
     Output,
     OutputTensor,
     Tensor,
     TileTensorable,
+    UnsafeFusedView,
+    get_kernel_simd_width,
+    unsafe_fused_view,
 )
 from extensibility import (
     _FusedInputTensor as FusedInputTensor,
@@ -245,24 +252,37 @@ struct RMSNormQuantizeDynamicScaledFloat8:
     @staticmethod
     def execute[
         input_type: DType,
-        scales_type: DType,
-        output_type: DType,
         //,
         group_size_or_per_token: Int,
         multiply_before_cast: Bool,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=output_type, rank=2, ...],
-        scales: OutputTensor[dtype=scales_type, rank=2, ...],
-        input: FusedInputTensor[dtype=input_type, rank=2, ...],
-        gamma: InputTensor[dtype=input_type, rank=1, ...],
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        input: Some[Input & Fused & LoadAccess],
+        gamma: Some[Input & Tensor],
         epsilon: Float32,
         weight_offset: Scalar[dtype=input_type],
         scale_ub: Float32,
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(gamma), TileTensorable)
+        comptime assert type_of(input).dtype == input_type
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(scales).rank == 2
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(gamma).rank == 1
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # load on the GPU lane.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var input_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(input_view), Loadable)
+
         comptime assert is_gpu[target](), "only valid on GPUs"
-        comptime num_cols = Int(input.static_spec.shape_tuple[1])
+        comptime num_cols = type_of(input)._shape_types[1].static_value
         comptime assert (
             num_cols != UNKNOWN_VALUE
         ), "rms_norm_quantize_dynamic_scaled_float8 needs a static row width"
@@ -270,9 +290,11 @@ struct RMSNormQuantizeDynamicScaledFloat8:
         @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](row: Int, col: Int) {var input} -> SIMD[input_type, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                (row, col)
+        ](row: Int, col: Int) {var input_view} -> SIMD[input_type, width]:
+            return rebind[SIMD[input_type, width]](
+                input_view.load[width=width, element_alignment=alignment](
+                    Coord(row, col)
+                )
             )
 
         rms_norm_quantize_dynamic_scaled_fp8[
@@ -281,14 +303,14 @@ struct RMSNormQuantizeDynamicScaledFloat8:
             multiply_before_cast=multiply_before_cast,
         ](
             input_fn,
-            output.to_tile_tensor[.int64](),
-            scales.to_tile_tensor[.int64](),
-            gamma.to_tile_tensor[.int64](),
+            output.to_tile_tensor(),
+            scales.to_tile_tensor(),
+            gamma.to_tile_tensor[input_type](),
             epsilon.cast[input_type](),
             weight_offset,
             scale_ub,
             ctx,
-            input.dim_size(0),
+            Int(input.shape()[0].value()),
         )
 
 
@@ -1770,16 +1792,19 @@ struct QuantizeStaticScaledFloat8[*, scale_is_inverted: Bool]:
     @inline(.always)
     @staticmethod
     def execute[
-        input_type: DType,
-        output_type: DType,
         scale_type: DType,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=output_type, rank=2, ...],
-        input: FusedInputTensor[dtype=input_type, rank=2, ...],
+        output: Some[Output & Tensor],
+        input: Some[Input & Fused & LoadAccess],
         scale: Scalar[scale_type],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime input_type = type_of(input).dtype
+        comptime output_type = type_of(output).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(input).rank == 2
         comptime assert is_gpu[target](), "only valid on GPUs"
         comptime assert output_type in (
             DType.float8_e4m3fn,
@@ -1795,21 +1820,35 @@ struct QuantizeStaticScaledFloat8[*, scale_is_inverted: Bool]:
         # `scale_is_inverted` param and always used `1.0/scale`; preserved here.
         var inversed_scale = 1.0 / scale.cast[.float32]()
 
+        # Project the host proxy to its access-enabled view so the body can
+        # load on the GPU lane; the dense output is stored through its tile.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var input_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(input_view), Loadable)
+        var output_tile = output.to_tile_tensor()
+
         @inline(.always)
         def quant_fn[
-            width: Int, element_alignment: Int
-        ](idx: IndexList[2]) {var input, var inversed_scale} -> SIMD[
-            output_type, width
-        ]:
-            var v = input._fused_load[
-                width, element_alignment=element_alignment
-            ](idx).cast[.float32]()
-            return fp8_quantize[output_type, use_clamp=True](v, inversed_scale)
+            width: Int, element_alignment: Int = 1
+        ](idx: Coord) {var input_view, var inversed_scale, var output_tile}:
+            var v = rebind[SIMD[input_type, width]](
+                input_view.load[
+                    width=width, element_alignment=element_alignment
+                ](idx)
+            ).cast[.float32]()
+            output_tile.store[
+                width=width,
+                alignment=min(
+                    type_of(output).alignment,
+                    element_alignment * align_of[output_type](),
+                ),
+            ](idx, fp8_quantize[output_type, use_clamp=True](v, inversed_scale))
 
-        foreach[
+        elementwise[
+            simd_width=get_kernel_simd_width[output_type, target](),
             target=target,
-            _trace_name="scaled_fp8_quant",
-        ](quant_fn, output, ctx)
+            _trace_description="scaled_fp8_quant",
+        ](quant_fn, output.shape().flatten(), ctx)
 
 
 @extensibility.register("mo.quantize_tensor_dynamic_scaled_float8")
@@ -1820,40 +1859,51 @@ struct QuantizeTensorDynamicScaledFloat8:
     @inline(.always)
     @staticmethod
     def execute[
-        input_type: DType,
-        scales_type: DType,
-        output_type: DType,
-        //,
         group_size_or_per_token: Int,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=output_type, rank=2, ...],
-        scales: OutputTensor[dtype=scales_type, rank=2, ...],
-        input: FusedInputTensor[dtype=input_type, rank=2, ...],
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        input: Some[Input & Fused & LoadAccess],
         scale_ub: Float32,
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime input_type = type_of(input).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(scales).rank == 2
+        comptime assert type_of(input).rank == 2
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # load on the GPU lane.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var input_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(input_view), Loadable)
+
         comptime assert is_gpu[target](), "only valid on GPUs"
 
         @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](row: Int, col: Int) {var input} -> SIMD[input_type, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                (row, col)
+        ](row: Int, col: Int) {var input_view} -> SIMD[input_type, width]:
+            return rebind[SIMD[input_type, width]](
+                input_view.load[width=width, element_alignment=alignment](
+                    Coord(row, col)
+                )
             )
 
         quantize_tensor_dynamic_scaled_fp8[
             in_dtype=input_type,
             group_size_or_per_token=group_size_or_per_token,
-            num_cols=Int(input.static_spec.shape_tuple[1]),
+            num_cols=type_of(input)._shape_types[1].static_value,
         ](
             input_fn,
-            output.to_tile_tensor[.int64](),
-            scales.to_tile_tensor[.int64](),
+            output.to_tile_tensor(),
+            scales.to_tile_tensor(),
             scale_ub,
             ctx,
-            num_rows=input.dim_size(0),
+            num_rows=Int(input.shape()[0].value()),
         )
 
 
@@ -1865,20 +1915,29 @@ struct QuantizeDynamicScaledFloat8:
     @inline(.always)
     @staticmethod
     def execute[
-        input_type: DType,
-        scales_type: DType,
-        output_type: DType,
-        //,
         group_size_or_per_token: Int,
         target: StaticString,
         amax_floor: Float32 = 0,
     ](
-        output: OutputTensor[dtype=output_type, rank=2, ...],
-        scales: OutputTensor[dtype=scales_type, rank=2, ...],
-        input: FusedInputTensor[dtype=input_type, rank=2, ...],
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        input: Some[Input & Fused & LoadAccess],
         scale_ub: Float32,
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime input_type = type_of(input).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(scales).rank == 2
+        comptime assert type_of(input).rank == 2
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # load on the GPU lane.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var input_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(input_view), Loadable)
+
         comptime assert is_gpu[target](), "only valid on GPUs"
 
         # The `0` default leaves the dynamic-scale floor unset.
@@ -1886,22 +1945,24 @@ struct QuantizeDynamicScaledFloat8:
         @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](row: Int, col: Int) {var input} -> SIMD[input_type, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                (row, col)
+        ](row: Int, col: Int) {var input_view} -> SIMD[input_type, width]:
+            return rebind[SIMD[input_type, width]](
+                input_view.load[width=width, element_alignment=alignment](
+                    Coord(row, col)
+                )
             )
 
         quantize_dynamic_scaled_fp8[
             in_dtype=input_type,
             group_size_or_per_token=group_size_or_per_token,
-            num_cols=Int(input.static_spec.shape_tuple[1]),
+            num_cols=type_of(input)._shape_types[1].static_value,
         ](
             input_fn,
-            output.to_tile_tensor[.int64](),
-            scales.to_tile_tensor[.int64](),
+            output.to_tile_tensor(),
+            scales.to_tile_tensor(),
             scale_ub,
             ctx,
-            num_rows=input.dim_size(0),
+            num_rows=Int(input.shape()[0].value()),
             amax_floor=amax_floor,
         )
 
@@ -1924,46 +1985,61 @@ struct QuantizeDynamicScaledFloat8RowBounded:
     @inline(.always)
     @staticmethod
     def execute[
-        input_type: DType,
-        scales_type: DType,
-        output_type: DType,
-        //,
         group_size_or_per_token: Int,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=output_type, rank=2, ...],
-        scales: OutputTensor[dtype=scales_type, rank=2, ...],
-        input: FusedInputTensor[dtype=input_type, rank=2, ...],
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        input: Some[Input & Fused & LoadAccess],
         scale_ub: Float32,
-        row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        row_offsets: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(row_offsets), TileTensorable)
+        comptime input_type = type_of(input).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(scales).rank == 2
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(row_offsets).rank == 1
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # load on the GPU lane.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var input_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(input_view), Loadable)
+
         comptime assert is_gpu[target](), "only valid on GPUs"
 
         @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](row: Int, col: Int) {var input} -> SIMD[input_type, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                (row, col)
+        ](row: Int, col: Int) {var input_view} -> SIMD[input_type, width]:
+            return rebind[SIMD[input_type, width]](
+                input_view.load[width=width, element_alignment=alignment](
+                    Coord(row, col)
+                )
             )
 
         # `row_offsets` is the grouped-matmul prefix sum, so its last entry is
         # the total row count across all groups.
-        var offsets = row_offsets.to_tile_tensor[.int64]()
-        var row_limit = offsets.ptr.unsafe_offset(row_offsets.dim_size(0) - 1)
+        var offsets = row_offsets.to_tile_tensor[.uint32]().as_imm()
+        var row_limit = offsets.ptr.unsafe_offset(
+            Int(row_offsets.shape()[0].value()) - 1
+        )
 
         quantize_dynamic_scaled_fp8[
             in_dtype=input_type,
             group_size_or_per_token=group_size_or_per_token,
-            num_cols=Int(input.static_spec.shape_tuple[1]),
+            num_cols=type_of(input)._shape_types[1].static_value,
             row_bounded=True,
         ](
             input_fn,
-            output.to_tile_tensor[.int64](),
-            scales.to_tile_tensor[.int64](),
+            output.to_tile_tensor(),
+            scales.to_tile_tensor(),
             scale_ub,
             ctx,
-            num_rows=input.dim_size(0),
+            num_rows=Int(input.shape()[0].value()),
             row_limit=OptionalPointer[UInt32, ImmUntrackedOrigin](row_limit),
         )
