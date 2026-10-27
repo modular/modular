@@ -1027,17 +1027,7 @@
                 "__AUTOGEN:max.tensor.testing__"
               ]
             },
-            {
-              "type": "category",
-              "label": "validation",
-              "link": {
-                "type": "doc",
-                "id": "api/python/tensor.validation"
-              },
-              "items": [
-                "__AUTOGEN:max.tensor.validation__"
-              ]
-            },
+            "api/python/tensor.validation",
             "__AUTOGEN:max.tensor__"
           ]
         },

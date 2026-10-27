@@ -1,4 +1,5 @@
 :title: max.tensor.validation
+:sidebar_label: validation
 :type: module
 :lang: python
 :wrapper_class: rst-module-autosummary
