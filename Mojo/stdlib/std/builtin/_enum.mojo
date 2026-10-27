@@ -147,6 +147,9 @@ struct __EnumStorage[case_types: _MLIR.KGENParamListType[AnyType]](
     def __init__(
         out self, *, copy: Self
     ) where Self._Cases.all_conforms_to[Copyable]():
+        comptime if Self.__copy_ctor_is_trivial:
+            self._impl = copy._impl
+            return
         self = Self(unsafe_uninitialized=())
         var discriminant = copy._discriminant()
         self._discriminant() = discriminant
@@ -162,6 +165,9 @@ struct __EnumStorage[case_types: _MLIR.KGENParamListType[AnyType]](
     def __init__(
         out self, *, deinit move: Self
     ) where Self._Cases.all_conforms_to[Movable]():
+        comptime if Self.__move_ctor_is_trivial:
+            self._impl = move._impl
+            return
         self = Self(unsafe_uninitialized=())
         var discriminant = move._discriminant()
         self._discriminant() = discriminant
