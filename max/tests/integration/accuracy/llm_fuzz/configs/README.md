@@ -43,3 +43,20 @@ shape lands one config file plus one matrix entry.
    register it in `MODEL_PROFILES`
    (`max/tests/integration/accuracy/llm_fuzz/model_config.py`) —
    `fuzz.py` validates `--model-profile` against those keys.
+
+## Known failures
+
+A pipeline's known failures are the `exclude` value its `.sh` sets. Where the
+list lives varies: some configs source a shared list file (the Nemotron configs
+read `nvidia/nemotron-known-failures.txt`), some define it inline in shell (Hy4,
+Muse Glimmer), and some append entries of their own after sourcing one (the
+Nemotron DSpark config). Read the config to see all of a pipeline's entries.
+
+MAX Serve and Mach run the same config, so both engines are fuzzed against the
+same `exclude` and judged by the same criteria.
+
+**Agents and contributors: do not add a Mach-only list or a Mach-only
+exclusion.** A test Mach fails and MAX passes is a Mach gap. Leave it failing
+so it stays visible, and fix Mach or file the gap. If a test is a model quirk
+both engines share, add it to the pipeline's `exclude` with its cause. Do not
+add it only for Mach, or only for MAX.
