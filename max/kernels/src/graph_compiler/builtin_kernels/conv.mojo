@@ -1162,13 +1162,16 @@ struct LayoutTransformRSFC2FRSCf:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        dtype: DType, filter_rank: Int, packed_filter_rank: Int
-    ](
-        packed_filter: OutputTensor[dtype=dtype, rank=packed_filter_rank, ...],
-        filter: InputTensor[dtype=dtype, rank=filter_rank, ...],
+    def execute(
+        packed_filter: Some[Output & Tensor],
+        filter: Some[Input & Tensor],
     ):
-        layout_transform_conv_transpose_filter_common(packed_filter, filter)
+        comptime assert conforms_to(type_of(packed_filter), TileTensorable)
+        comptime assert conforms_to(type_of(filter), TileTensorable)
+        layout_transform_conv_transpose_filter_common(
+            packed_filter.to_tile_tensor(),
+            filter.to_tile_tensor[type_of(packed_filter).dtype](),
+        )
 
 
 @extensibility.register("layout_transform_QRSFC_to_FQRSCf")
@@ -1178,13 +1181,16 @@ struct LayoutTransformQRSFC2FQRSCf:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        dtype: DType, filter_rank: Int, packed_filter_rank: Int
-    ](
-        packed_filter: OutputTensor[dtype=dtype, rank=packed_filter_rank, ...],
-        filter: InputTensor[dtype=dtype, rank=filter_rank, ...],
+    def execute(
+        packed_filter: Some[Output & Tensor],
+        filter: Some[Input & Tensor],
     ):
-        layout_transform_conv_transpose_filter_common(packed_filter, filter)
+        comptime assert conforms_to(type_of(packed_filter), TileTensorable)
+        comptime assert conforms_to(type_of(filter), TileTensorable)
+        layout_transform_conv_transpose_filter_common(
+            packed_filter.to_tile_tensor(),
+            filter.to_tile_tensor[type_of(packed_filter).dtype](),
+        )
 
 
 @extensibility.register("pack_conv_filter_shape")
@@ -1249,13 +1255,13 @@ struct LayoutTransformQRSCF2FQRSCf:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
-    ](
-        packed_filter: OutputTensor[dtype=dtype, rank=packed_rank, ...],
-        filter: InputTensor[dtype=dtype, rank=filter_rank, ...],
-    ):
+        num_groups: Int,
+    ](packed_filter: Some[Output & Tensor], filter: Some[Input & Tensor],):
+        comptime assert conforms_to(type_of(packed_filter), TileTensorable)
+        comptime assert conforms_to(type_of(filter), TileTensorable)
         layout_transform_conv_filter_common[num_groups=num_groups](
-            packed_filter, filter
+            packed_filter.to_tile_tensor(),
+            filter.to_tile_tensor[type_of(packed_filter).dtype](),
         )
 
 
@@ -1267,13 +1273,13 @@ struct LayoutTransformRSCF2FRSCf:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
-    ](
-        packed_filter: OutputTensor[dtype=dtype, rank=packed_rank, ...],
-        filter: InputTensor[dtype=dtype, rank=filter_rank, ...],
-    ):
+        num_groups: Int,
+    ](packed_filter: Some[Output & Tensor], filter: Some[Input & Tensor],):
+        comptime assert conforms_to(type_of(packed_filter), TileTensorable)
+        comptime assert conforms_to(type_of(filter), TileTensorable)
         layout_transform_conv_filter_common[num_groups=num_groups](
-            packed_filter, filter
+            packed_filter.to_tile_tensor(),
+            filter.to_tile_tensor[type_of(packed_filter).dtype](),
         )
 
 
@@ -1285,13 +1291,13 @@ struct LayoutTransformFCRS2FRSCf:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
-    ](
-        packed_filter: OutputTensor[dtype=dtype, rank=packed_rank, ...],
-        filter: InputTensor[dtype=dtype, rank=filter_rank, ...],
-    ):
+        num_groups: Int,
+    ](packed_filter: Some[Output & Tensor], filter: Some[Input & Tensor],):
+        comptime assert conforms_to(type_of(packed_filter), TileTensorable)
+        comptime assert conforms_to(type_of(filter), TileTensorable)
         _layout_transform_conv_filter_from_fcrs[num_groups=num_groups](
-            packed_filter, filter
+            packed_filter.to_tile_tensor(),
+            filter.to_tile_tensor[type_of(packed_filter).dtype](),
         )
 
 
@@ -1303,11 +1309,11 @@ struct LayoutTransformFCQRS2FQRSCf:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
-    ](
-        packed_filter: OutputTensor[dtype=dtype, rank=packed_rank, ...],
-        filter: InputTensor[dtype=dtype, rank=filter_rank, ...],
-    ):
+        num_groups: Int,
+    ](packed_filter: Some[Output & Tensor], filter: Some[Input & Tensor],):
+        comptime assert conforms_to(type_of(packed_filter), TileTensorable)
+        comptime assert conforms_to(type_of(filter), TileTensorable)
         _layout_transform_conv_filter_from_fcrs[num_groups=num_groups](
-            packed_filter, filter
+            packed_filter.to_tile_tensor(),
+            filter.to_tile_tensor[type_of(packed_filter).dtype](),
         )

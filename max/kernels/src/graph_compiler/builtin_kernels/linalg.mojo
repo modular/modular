@@ -648,26 +648,37 @@ struct FusedMatmulAdd:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        c: OutputTensor[rank=2, ...],
-        a: InputTensor[rank=2, ...],
-        b: InputTensor[rank=2, ...],
-        residual: InputTensor[dtype=c.dtype, ...],
+        c: Some[Output & Tensor],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
+        residual: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(c), TileTensorable)
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime assert conforms_to(type_of(residual), TileTensorable)
+        comptime assert type_of(c).rank == 2
+        comptime assert type_of(a).rank == 2
+        comptime assert type_of(b).rank == 2
         comptime assert (
-            residual.rank == 1 or residual.rank == 2
+            type_of(residual).rank == 1 or type_of(residual).rank == 2
         ), "residual must be rank 1 (bias) or rank 2"
-        comptime epilogue_is_1d = residual.rank == 1
+        comptime epilogue_is_1d = type_of(residual).rank == 1
         var epi_m: Int64
         var epi_n: Int64
         comptime if epilogue_is_1d:
             epi_m = 1
-            epi_n = Int64(residual.dim_size(0))
+            epi_n = Int64(Int(residual.shape()[0].value()))
         else:
-            epi_m = Int64(residual.dim_size(0))
-            epi_n = Int64(residual.dim_size(1))
+            epi_m = Int64(Int(residual.shape()[0].value()))
+            epi_n = Int64(Int(residual.shape()[1].value()))
+        # The epilogue views `residual` through its flat pointer; a non-pointer storage policy aborts here at run time.
         var epilogue = TileTensor(
-            residual.unsafe_ptr(), row_major(epi_m, epi_n)
+            residual.to_tile_tensor[type_of(c).dtype]()
+            .as_unsafe_any_origin()
+            .ptr,
+            row_major(epi_m, epi_n),
         ).as_imm()
 
         fused_bias_residual_matmul_dispatch_sm100[
@@ -675,9 +686,9 @@ struct FusedMatmulAdd:
             has_epilogue_tensor=True,
             epilogue_is_1d=epilogue_is_1d,
         ](
-            c.to_tile_tensor[.int64](),
-            a.to_tile_tensor[.int64](),
-            b.to_tile_tensor[.int64](),
+            c.to_tile_tensor(),
+            a.to_tile_tensor(),
+            b.to_tile_tensor(),
             epilogue,
             ctx,
         )
@@ -808,25 +819,19 @@ struct Struct_grouped_matmul_block_scaled:
     @inline(.always)
     @staticmethod
     def execute[
-        c_type: DType,
-        a_type: DType,
-        b_type: DType,
-        scales_type: DType,
-        row_scales_type: DType,
-        //,
         has_a_row_scales: Bool,
         target: StaticString,
     ](
-        c: OutputTensor[dtype=c_type, rank=2, ...],
-        a: InputTensor[dtype=a_type, rank=2, ...],
-        b: InputTensor[dtype=b_type, rank=3, ...],
-        a_scales: InputTensor[dtype=scales_type, rank=5, ...],
-        b_scales: InputTensor[dtype=scales_type, rank=6, ...],
-        expert_start_indices: InputTensor[dtype=.uint32, rank=1, ...],
-        expert_ids: InputTensor[dtype=.int32, rank=1, ...],
-        a_scale_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        expert_scales: InputTensor[dtype=.float32, rank=1, ...],
-        a_row_scales: InputTensor[dtype=row_scales_type, rank=1, ...],
+        c: Some[Output & Tensor],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
+        a_scales: Some[Input & Tensor],
+        b_scales: Some[Input & Tensor],
+        expert_start_indices: Some[Input & Tensor],
+        expert_ids: Some[Input & Tensor],
+        a_scale_offsets: Some[Input & Tensor],
+        expert_scales: Some[Input & Tensor],
+        a_row_scales: Some[Input & Tensor],
         estimated_total_m: UInt32,
         num_active_experts: UInt32,
         context: DeviceContext,
@@ -840,18 +845,6 @@ struct Struct_grouped_matmul_block_scaled:
         `block_scaled_umma_kind`): NVFP4, MXFP4, MXFP8, or the mixed W4A8 pair.
 
         Parameters:
-            c_type: The output tensor data type.
-            a_type: The input A data type.
-                Constraints: Must be `uint8` (NVFP4/MXFP4) or `float8_e4m3fn`
-                (MXFP8/W4A8).
-            b_type: The input B data type.
-                Constraints: Must equal `a_type`, except for W4A8, which pairs
-                a `float8_e4m3fn` A with a `uint8` B.
-            scales_type: The scale factor data type.
-                Constraints: Must be `float8_e4m3fn` (NVFP4) or
-                `float8_e8m0fnu` (MXFP4/MXFP8/W4A8).
-            row_scales_type: The per-row input scale data type.
-                Constraints: Must be `bfloat16` when `has_a_row_scales`.
             has_a_row_scales: Whether `a_row_scales` holds per-row input
                 scales. Constraints: NVFP4 only.
             target: The target GPU device.
@@ -875,6 +868,33 @@ struct Struct_grouped_matmul_block_scaled:
             num_active_experts: The number of active experts.
             context: The device context pointer.
         """
+        comptime assert conforms_to(type_of(c), TileTensorable)
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime assert conforms_to(type_of(a_scales), TileTensorable)
+        comptime assert conforms_to(type_of(b_scales), TileTensorable)
+        comptime assert conforms_to(
+            type_of(expert_start_indices), TileTensorable
+        )
+        comptime assert conforms_to(type_of(expert_ids), TileTensorable)
+        comptime assert conforms_to(type_of(a_scale_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(expert_scales), TileTensorable)
+        comptime assert conforms_to(type_of(a_row_scales), TileTensorable)
+        comptime c_type = type_of(c).dtype
+        comptime a_type = type_of(a).dtype
+        comptime b_type = type_of(b).dtype
+        comptime scales_type = type_of(a_scales).dtype
+        comptime row_scales_type = type_of(a_row_scales).dtype
+        comptime assert type_of(c).rank == 2
+        comptime assert type_of(a).rank == 2
+        comptime assert type_of(b).rank == 3
+        comptime assert type_of(a_scales).rank == 5
+        comptime assert type_of(b_scales).rank == 6
+        comptime assert type_of(expert_start_indices).rank == 1
+        comptime assert type_of(expert_ids).rank == 1
+        comptime assert type_of(a_scale_offsets).rank == 1
+        comptime assert type_of(expert_scales).rank == 1
+        comptime assert type_of(a_row_scales).rank == 1
         comptime assert is_gpu[
             target
         ](), "grouped block-scaled matmul only supports GPUs"
@@ -889,21 +909,23 @@ struct Struct_grouped_matmul_block_scaled:
                 target=target,
                 RowScalesT=RealRowScales,
             ](
-                c.to_tile_tensor[.int64](),
-                a.to_tile_tensor[.int64](),
-                b.to_tile_tensor[.int64](),
-                a_scales.to_tile_tensor[.int64](),
-                b_scales.to_tile_tensor[.int64](),
-                expert_start_indices.to_tile_tensor[.int64](),
-                a_scale_offsets.to_tile_tensor[.int64](),
-                expert_ids.to_tile_tensor[.int64](),
-                expert_scales.to_tile_tensor[.int64](),
+                c.to_tile_tensor(),
+                a.to_tile_tensor(),
+                b.to_tile_tensor(),
+                a_scales.to_tile_tensor(),
+                b_scales.to_tile_tensor[scales_type](),
+                expert_start_indices.to_tile_tensor[.uint32](),
+                a_scale_offsets.to_tile_tensor[.uint32](),
+                expert_ids.to_tile_tensor[.int32](),
+                expert_scales.to_tile_tensor[.float32](),
                 Int(num_active_experts),
                 Int(estimated_total_m),
                 context,
+                # The row scales are read through their flat pointer; a non-pointer
+                # storage policy aborts here at run time.
                 a_row_scales=RealRowScales(
                     rebind[Pointer[BFloat16, ImmutAnyOrigin]](
-                        a_row_scales.unsafe_ptr()
+                        a_row_scales.to_tile_tensor().as_unsafe_any_origin().ptr
                     )
                 ),
             )
@@ -912,15 +934,15 @@ struct Struct_grouped_matmul_block_scaled:
             grouped_matmul_block_scaled_dispatch[
                 transpose_b=True, target=target
             ](
-                c.to_tile_tensor[.int64](),
-                a.to_tile_tensor[.int64](),
-                b.to_tile_tensor[.int64](),
-                a_scales.to_tile_tensor[.int64](),
-                b_scales.to_tile_tensor[.int64](),
-                expert_start_indices.to_tile_tensor[.int64](),
-                a_scale_offsets.to_tile_tensor[.int64](),
-                expert_ids.to_tile_tensor[.int64](),
-                expert_scales.to_tile_tensor[.int64](),
+                c.to_tile_tensor(),
+                a.to_tile_tensor(),
+                b.to_tile_tensor(),
+                a_scales.to_tile_tensor(),
+                b_scales.to_tile_tensor[scales_type](),
+                expert_start_indices.to_tile_tensor[.uint32](),
+                a_scale_offsets.to_tile_tensor[.uint32](),
+                expert_ids.to_tile_tensor[.int32](),
+                expert_scales.to_tile_tensor[.float32](),
                 Int(num_active_experts),
                 Int(estimated_total_m),
                 context,
@@ -940,30 +962,24 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
     @inline(.always)
     @staticmethod
     def execute[
-        c_type: DType,
-        a_type: DType,
-        b_type: DType,
-        scales_type: DType,
-        row_scales_type: DType,
-        //,
         activation: StaticString,
         swiglu_alpha: Float32,
         swiglu_limit: Float32,
         has_a_row_scales: Bool,
         target: StaticString,
     ](
-        c_packed: OutputTensor[dtype=c_type, rank=2, ...],
-        c_swiglu_scales: OutputTensor[dtype=scales_type, rank=5, ...],
-        a: InputTensor[dtype=a_type, rank=2, ...],
-        b: InputTensor[dtype=b_type, rank=3, ...],
-        a_scales: InputTensor[dtype=scales_type, rank=5, ...],
-        b_scales: InputTensor[dtype=scales_type, rank=6, ...],
-        expert_start_indices: InputTensor[dtype=.uint32, rank=1, ...],
-        expert_ids: InputTensor[dtype=.int32, rank=1, ...],
-        a_scale_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        expert_scales: InputTensor[dtype=.float32, rank=1, ...],
-        a_row_scales: InputTensor[dtype=row_scales_type, rank=1, ...],
-        c_input_scales: InputTensor[dtype=.float32, rank=1, ...],
+        c_packed: Some[Output & Tensor],
+        c_swiglu_scales: Some[Output & Tensor],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
+        a_scales: Some[Input & Tensor],
+        b_scales: Some[Input & Tensor],
+        expert_start_indices: Some[Input & Tensor],
+        expert_ids: Some[Input & Tensor],
+        a_scale_offsets: Some[Input & Tensor],
+        expert_scales: Some[Input & Tensor],
+        a_row_scales: Some[Input & Tensor],
+        c_input_scales: Some[Input & Tensor],
         estimated_total_m: UInt32,
         num_active_experts: UInt32,
         context: DeviceContext,
@@ -977,13 +993,6 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
         `(gate, up)` pairs that the epilogue consumes in-place.
 
         Parameters:
-            c_type: The output tensor data type.
-            a_type: The input A data type. Constraints: Must be `uint8`.
-            b_type: The input B data type. Constraints: Must be `uint8`.
-            scales_type: The scale factor data type.
-                Constraints: Must be `float8_e4m3fn`.
-            row_scales_type: The per-row input scale data type.
-                Constraints: Must be `bfloat16` when `has_a_row_scales`.
             activation: Activation name, bound from the op's same-named
                 attribute; the activation is built at compile time.
             swiglu_alpha: The activation's alpha constant.
@@ -1011,6 +1020,37 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
             num_active_experts: The number of active experts.
             context: The device context pointer.
         """
+        comptime assert conforms_to(type_of(c_packed), TileTensorable)
+        comptime assert conforms_to(type_of(c_swiglu_scales), TileTensorable)
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime assert conforms_to(type_of(a_scales), TileTensorable)
+        comptime assert conforms_to(type_of(b_scales), TileTensorable)
+        comptime assert conforms_to(
+            type_of(expert_start_indices), TileTensorable
+        )
+        comptime assert conforms_to(type_of(expert_ids), TileTensorable)
+        comptime assert conforms_to(type_of(a_scale_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(expert_scales), TileTensorable)
+        comptime assert conforms_to(type_of(a_row_scales), TileTensorable)
+        comptime assert conforms_to(type_of(c_input_scales), TileTensorable)
+        comptime c_type = type_of(c_packed).dtype
+        comptime a_type = type_of(a).dtype
+        comptime b_type = type_of(b).dtype
+        comptime scales_type = type_of(c_swiglu_scales).dtype
+        comptime row_scales_type = type_of(a_row_scales).dtype
+        comptime assert type_of(c_packed).rank == 2
+        comptime assert type_of(c_swiglu_scales).rank == 5
+        comptime assert type_of(a).rank == 2
+        comptime assert type_of(b).rank == 3
+        comptime assert type_of(a_scales).rank == 5
+        comptime assert type_of(b_scales).rank == 6
+        comptime assert type_of(expert_start_indices).rank == 1
+        comptime assert type_of(expert_ids).rank == 1
+        comptime assert type_of(a_scale_offsets).rank == 1
+        comptime assert type_of(expert_scales).rank == 1
+        comptime assert type_of(a_row_scales).rank == 1
+        comptime assert type_of(c_input_scales).rank == 1
         comptime assert is_gpu[
             target
         ](), "fused SwiGLU+NVFP4 grouped matmul only supports GPUs"
@@ -1031,23 +1071,25 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
                 activation=act,
                 RowScalesT=RealRowScales,
             ](
-                c_packed.to_tile_tensor[.int64](),
-                c_swiglu_scales.to_tile_tensor[.int64](),
-                a.to_tile_tensor[.int64](),
-                b.to_tile_tensor[.int64](),
-                a_scales.to_tile_tensor[.int64](),
-                b_scales.to_tile_tensor[.int64](),
-                expert_start_indices.to_tile_tensor[.int64](),
-                a_scale_offsets.to_tile_tensor[.int64](),
-                expert_ids.to_tile_tensor[.int64](),
-                expert_scales.to_tile_tensor[.int64](),
-                c_input_scales.to_tile_tensor[.int64](),
+                c_packed.to_tile_tensor(),
+                c_swiglu_scales.to_tile_tensor(),
+                a.to_tile_tensor(),
+                b.to_tile_tensor(),
+                a_scales.to_tile_tensor[scales_type](),
+                b_scales.to_tile_tensor[scales_type](),
+                expert_start_indices.to_tile_tensor[.uint32](),
+                a_scale_offsets.to_tile_tensor[.uint32](),
+                expert_ids.to_tile_tensor[.int32](),
+                expert_scales.to_tile_tensor[.float32](),
+                c_input_scales.to_tile_tensor[.float32](),
                 Int(num_active_experts),
                 Int(estimated_total_m),
                 context,
+                # The row scales are read through their flat pointer; a non-pointer
+                # storage policy aborts here at run time.
                 RealRowScales(
                     rebind[Pointer[BFloat16, ImmutAnyOrigin]](
-                        a_row_scales.unsafe_ptr()
+                        a_row_scales.to_tile_tensor().as_unsafe_any_origin().ptr
                     )
                 ),
             )
@@ -1058,17 +1100,17 @@ struct Struct_grouped_matmul_swiglu_nvfp4:
                 target=target,
                 activation=act,
             ](
-                c_packed.to_tile_tensor[.int64](),
-                c_swiglu_scales.to_tile_tensor[.int64](),
-                a.to_tile_tensor[.int64](),
-                b.to_tile_tensor[.int64](),
-                a_scales.to_tile_tensor[.int64](),
-                b_scales.to_tile_tensor[.int64](),
-                expert_start_indices.to_tile_tensor[.int64](),
-                a_scale_offsets.to_tile_tensor[.int64](),
-                expert_ids.to_tile_tensor[.int64](),
-                expert_scales.to_tile_tensor[.int64](),
-                c_input_scales.to_tile_tensor[.int64](),
+                c_packed.to_tile_tensor(),
+                c_swiglu_scales.to_tile_tensor(),
+                a.to_tile_tensor(),
+                b.to_tile_tensor(),
+                a_scales.to_tile_tensor[scales_type](),
+                b_scales.to_tile_tensor[scales_type](),
+                expert_start_indices.to_tile_tensor[.uint32](),
+                a_scale_offsets.to_tile_tensor[.uint32](),
+                expert_ids.to_tile_tensor[.int32](),
+                expert_scales.to_tile_tensor[.float32](),
+                c_input_scales.to_tile_tensor[.float32](),
                 Int(num_active_experts),
                 Int(estimated_total_m),
                 context,
@@ -2634,9 +2676,9 @@ struct Struct_router_gate_mixed_gemv:
     def execute[
         target: StaticString,
     ](
-        c: OutputTensor[dtype=.float32, rank=2, ...],
-        a: InputTensor[dtype=.bfloat16, rank=2, ...],
-        b: InputTensor[dtype=.float32, rank=2, ...],
+        c: Some[Output & Tensor],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
         """Executes the mixed bf16-A × fp32-B router-gate GEMV with an M-based
@@ -2652,9 +2694,15 @@ struct Struct_router_gate_mixed_gemv:
             b: Weight `[N, K]` fp32 tensor (transpose_b layout).
             context: The device context.
         """
+        comptime assert conforms_to(type_of(c), TileTensorable)
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime assert type_of(c).rank == 2
+        comptime assert type_of(a).rank == 2
+        comptime assert type_of(b).rank == 2
         comptime assert is_gpu[target](), "router-gate mixed GEMV is GPU-only"
 
-        var M = c.dim_size[0]()
+        var M = Int(c.shape()[0].value())
         # Empty-launch guard: a graph-capture warmup can call with M == 0.
         if M == 0:
             return
@@ -2663,21 +2711,29 @@ struct Struct_router_gate_mixed_gemv:
         # the standard projection drives the compile-time N/K specialization the
         # kernels rely on (`N` picks the `check_bounds_n` guard). `c`/`a` stay
         # manual because their M dimension is runtime-dynamic.
-        var b_tt = b.to_tile_tensor()
+        var b_tt = b.to_tile_tensor[.float32]()
         comptime N = type_of(b_tt).static_shape[0]
         comptime K = type_of(b_tt).static_shape[1]
         comptime assert (
             N != UNKNOWN_VALUE and K != UNKNOWN_VALUE
         ), "router-gate mixed GEMV requires a static [N, K] weight shape"
 
-        var c_tt = TileTensor(c.unsafe_ptr(), row_major(M, Idx[N]))
+        # The GEMV paths view `c` and `a` through their flat pointers; a
+        # non-pointer storage policy aborts here at run time.
+        var c_tt = TileTensor(
+            c.to_tile_tensor[.float32]().as_unsafe_any_origin().ptr,
+            row_major(M, Idx[N]),
+        )
 
         # SM100's fused window reaches M = 128 (c128 decode); above it the
         # TF32 tile GEMM below wins on weight reuse.
         comptime max_m = 64 if context.target.is_amd_gpu() else 128
         if router_gate_use_mixed_gemv(M, max_m):
             # Tiny-M decode: fused mixed bf16-A × fp32-B GEMV, one launch.
-            var a_tt = TileTensor(a.unsafe_ptr(), row_major(M, Idx[K]))
+            var a_tt = TileTensor(
+                a.to_tile_tensor[.bfloat16]().as_unsafe_any_origin().ptr,
+                row_major(M, Idx[K]),
+            )
             router_gate_mixed_gemv[N](
                 c_tt,
                 a_tt.as_imm(),
@@ -2694,7 +2750,10 @@ struct Struct_router_gate_mixed_gemv:
         # avoids), then run the ordinary fp32 matmul against the fp32 weight.
         # Routing large M through the tiny-M GEMV is catastrophically slow.
         var a_f32 = context.enqueue_create_buffer[.float32](M * K)
-        var a_bf16_tt = TileTensor(a.unsafe_ptr(), row_major(M, Idx[K]))
+        var a_bf16_tt = TileTensor(
+            a.to_tile_tensor[.bfloat16]().as_unsafe_any_origin().ptr,
+            row_major(M, Idx[K]),
+        )
         var a_f32_tt = TileTensor(a_f32, row_major(M, Idx[K]))
 
         @inline(.always)
@@ -2742,11 +2801,11 @@ struct Struct_smallm_streaming_matmul:
     def execute[
         target: StaticString,
     ](
-        c: OutputTensor[dtype=.bfloat16, rank=2, ...],
-        a_scratch: OutputTensor[dtype=.bfloat16, rank=2, ...],
-        a: InputTensor[dtype=.bfloat16, rank=2, ...],
-        b_shuffled: InputTensor[dtype=.bfloat16, rank=2, ...],
-        b: InputTensor[dtype=.bfloat16, rank=2, ...],
+        c: Some[Output & Tensor],
+        a_scratch: Some[Output & Tensor],
+        a: Some[Input & Tensor],
+        b_shuffled: Some[Input & Tensor],
+        b: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
         """Executes the streaming matmul over a preshuffled weight.
@@ -2767,13 +2826,23 @@ struct Struct_smallm_streaming_matmul:
             b: The same weight, row-major (the above-band fallback operand).
             context: The device context.
         """
+        comptime assert conforms_to(type_of(c), TileTensorable)
+        comptime assert conforms_to(type_of(a_scratch), TileTensorable)
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b_shuffled), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime assert type_of(c).rank == 2
+        comptime assert type_of(a_scratch).rank == 2
+        comptime assert type_of(a).rank == 2
+        comptime assert type_of(b_shuffled).rank == 2
+        comptime assert type_of(b).rank == 2
         comptime assert is_gpu[target](), "smallm streaming matmul is GPU-only"
 
-        var M = c.dim_size[0]()
+        var M = Int(c.shape()[0].value())
         if M == 0:
             return
 
-        var b_tt = b_shuffled.to_tile_tensor()
+        var b_tt = b_shuffled.to_tile_tensor[.bfloat16]()
         comptime N = type_of(b_tt).static_shape[0]
         comptime K = type_of(b_tt).static_shape[1]
         comptime assert (
@@ -2781,23 +2850,37 @@ struct Struct_smallm_streaming_matmul:
         ), "smallm streaming matmul requires a static [N, K] weight shape"
 
         if M <= 32:
+            # The kernel takes raw addresses; a non-pointer storage policy
+            # aborts here at run time.
             var b_ptr = ImmPointer[BFloat16, ImmutAnyOrigin](
-                unsafe_from_address=Int(b_shuffled.unsafe_ptr())
+                unsafe_from_address=Int(
+                    b_shuffled.to_tile_tensor[.bfloat16]()
+                    .as_unsafe_any_origin()
+                    .ptr
+                )
             )
             var c_ptr = MutPointer[BFloat16, MutAnyOrigin](
-                unsafe_from_address=Int(c.unsafe_ptr())
+                unsafe_from_address=Int(
+                    c.to_tile_tensor[.bfloat16]().as_unsafe_any_origin().ptr
+                )
             )
             var c_tt = TileTensor[
                 .bfloat16, type_of(row_major(1, Idx[N])), MutAnyOrigin
             ](c_ptr, row_major(M, Idx[N]))
             var a_ptr = ImmPointer[BFloat16, ImmutAnyOrigin](
-                unsafe_from_address=Int(a.unsafe_ptr())
+                unsafe_from_address=Int(
+                    a.to_tile_tensor[.bfloat16]().as_unsafe_any_origin().ptr
+                )
             )
             var a_tt = TileTensor[
                 .bfloat16, type_of(row_major(1, Idx[K])), ImmutAnyOrigin
             ](a_ptr, row_major(M, Idx[K]))
             var scratch_ptr = MutPointer[BFloat16, MutAnyOrigin](
-                unsafe_from_address=Int(a_scratch.unsafe_ptr())
+                unsafe_from_address=Int(
+                    a_scratch.to_tile_tensor[.bfloat16]()
+                    .as_unsafe_any_origin()
+                    .ptr
+                )
             )
             smallm_streaming_matmul[k_static=K](
                 c_tt, a_tt, b_ptr, scratch_ptr, M, N, context
@@ -2805,8 +2888,8 @@ struct Struct_smallm_streaming_matmul:
             return
 
         matmul[transpose_b=True, target=target](
-            c.to_tile_tensor[.int64](),
-            a.to_tile_tensor[.int64](),
-            b.to_tile_tensor[.int64](),
+            c.to_tile_tensor[.bfloat16](),
+            a.to_tile_tensor[.bfloat16](),
+            b.to_tile_tensor[.bfloat16](),
             context,
         )

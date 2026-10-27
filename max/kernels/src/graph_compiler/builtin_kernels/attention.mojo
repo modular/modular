@@ -1218,20 +1218,28 @@ struct PaddedFlashAttentionGPU:
 
     @staticmethod
     def execute[
-        rank: Int,
-        //,
         target: StaticString,
         mask_str: StaticString,
         local_window_size: Int = -1,
     ](
-        output: OutputTensor[rank=rank, ...],
-        q: InputTensor[rank=rank, ...],
-        k: InputTensor[rank=rank, ...],
-        v: InputTensor[rank=rank, ...],
-        valid_length: InputTensor[dtype=.uint32, rank=1, ...],
+        output: Some[Output & Tensor],
+        q: Some[Input & Tensor],
+        k: Some[Input & Tensor],
+        v: Some[Input & Tensor],
+        valid_length: Some[Input & Tensor],
         scale: Float32,
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(q), TileTensorable)
+        comptime assert conforms_to(type_of(k), TileTensorable)
+        comptime assert conforms_to(type_of(v), TileTensorable)
+        comptime assert conforms_to(type_of(valid_length), TileTensorable)
+        comptime rank = type_of(output).rank
+        comptime assert type_of(q).rank == rank
+        comptime assert type_of(k).rank == rank
+        comptime assert type_of(v).rank == rank
+        comptime assert type_of(valid_length).rank == 1
         comptime assert is_gpu[target](), "only valid on GPUs"
 
         var output_buffer = output.to_tile_tensor()
@@ -1240,8 +1248,10 @@ struct PaddedFlashAttentionGPU:
         var v_buffer = v.to_tile_tensor()
 
         comptime valid_length_t = ImmutTileTensor1D[.uint32]
+        # `valid_length` is read through its flat pointer; a non-pointer storage policy aborts here at run time.
         var _valid_length = immut_tile_tensor_1d(
-            valid_length.unsafe_ptr(), valid_length.dim_size(0)
+            valid_length.to_tile_tensor[.uint32]().as_unsafe_any_origin().ptr,
+            Int(valid_length.shape()[0].value()),
         )
 
         def _dispatch_flash_attention[

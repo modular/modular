@@ -2916,35 +2916,24 @@ struct Struct_mhc_post:
 # TODO(GEX-1492): use filter_rank+1 instead of packed_filter_rank
 def layout_transform_conv_transpose_filter_common[
     dtype: DType,
-    filter_rank: Int,
-    packed_filter_rank: Int,
 ](
-    packed_filter: ManagedTensorSlice[
-        dtype=dtype, rank=packed_filter_rank, ...
-    ],
-    filter: ManagedTensorSlice[dtype=dtype, rank=filter_rank, ...],
+    packed_filter: TileTensor[mut=True, dtype, ...],
+    filter: TileTensor[dtype, ...],
 ):
     """Packs a transposed-convolution filter into the layout expected by the conv_transpose kernels.
 
     Parameters:
         dtype: Element type of the `filter` and `packed_filter` tensors.
-        filter_rank: Number of dimensions of the input `filter` tensor.
-        packed_filter_rank: Number of dimensions of the `packed_filter`
-            output tensor; must equal `filter_rank + 1`.
 
     Args:
         packed_filter: Output tensor holding the packed filter in the
             layout expected by the conv_transpose kernels.
         filter: Input transposed-convolution filter tensor to pack.
     """
-    comptime assert filter_rank + 1 == packed_filter_rank
+    comptime assert filter.rank + 1 == packed_filter.rank
     # last param is num_groups which is currently not an available
     # arg for the MO level op
-    _pack_conv_transpose_filter(
-        filter.to_tile_tensor[.int64](),
-        packed_filter.to_tile_tensor[.int64](),
-        1,
-    )
+    _pack_conv_transpose_filter(filter, packed_filter, 1)
 
 
 @extensibility.register("pack_conv_transpose_filter_shape")
@@ -2980,18 +2969,15 @@ def pack_conv_transpose_filter_shape_shape(
 # This is required unti `mo.layout.transform` passes `num_groups` as a runtime
 # value.
 def layout_transform_conv_filter_common[
-    dtype: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
+    dtype: DType, //, num_groups: Int
 ](
-    packed_filter: ManagedTensorSlice[dtype=dtype, rank=packed_rank, ...],
-    filter: ManagedTensorSlice[dtype=dtype, rank=filter_rank, ...],
+    packed_filter: TileTensor[mut=True, dtype, ...],
+    filter: TileTensor[dtype, ...],
 ):
     """Packs a convolution filter into the layout expected by the conv kernels.
 
     Parameters:
         dtype: Element type of the `filter` and `packed_filter` tensors.
-        filter_rank: Number of dimensions of the input `filter` tensor.
-        packed_rank: Number of dimensions of the `packed_filter` output
-            tensor; must equal `filter_rank + 1`.
         num_groups: Number of convolution groups for groupwise
             convolution.
 
@@ -3000,33 +2986,25 @@ def layout_transform_conv_filter_common[
             layout expected by the conv kernels.
         filter: Input convolution filter tensor to pack.
     """
-    comptime assert packed_rank == filter_rank + 1
+    comptime assert packed_filter.rank == filter.rank + 1
 
     # last param is num_groups which is currently not an available
     # arg for the MO level op
-    _pack_conv_filter(
-        filter.to_tile_tensor[.int64](),
-        packed_filter.to_tile_tensor[.int64](),
-        num_groups,
-    )
+    _pack_conv_filter(filter, packed_filter, num_groups)
 
 
 def _layout_transform_conv_filter_from_fcrs[
-    dtype: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
+    dtype: DType, //, num_groups: Int
 ](
-    packed_filter: ManagedTensorSlice[dtype=dtype, rank=packed_rank, ...],
-    filter: ManagedTensorSlice[dtype=dtype, rank=filter_rank, ...],
+    packed_filter: TileTensor[mut=True, dtype, ...],
+    filter: TileTensor[dtype, ...],
 ):
-    comptime assert packed_rank == filter_rank + 1
+    comptime assert packed_filter.rank == filter.rank + 1
 
     # With the compiler-level FCRS→RSCF transpose in PatternFusion,
     # this kernel should no longer be called. But keep it as a fallback
     # using int64 convention (same as the RSCF path).
-    _pack_conv_filter_from_fcrs(
-        filter.to_tile_tensor[.int64](),
-        packed_filter.to_tile_tensor[.int64](),
-        num_groups,
-    )
+    _pack_conv_filter_from_fcrs(filter, packed_filter, num_groups)
 
 
 # Note: These FCRS/FCQRS kernels are currently unused — the compiler
@@ -6033,12 +6011,16 @@ struct Sleep:
     ](
         # In order to prevent this kernel from being DCE'd, we pass in a mutable
         # input buffer. A fix is tracked in GEX-3080.
-        duration_sec_buffer: MutableInputTensor[
-            dtype=DType.float64, rank=1, ...
-        ],
+        duration_sec_buffer: Some[MutableInput & Tensor],
         ctx: DeviceContext,
     ) raises:
-        var duration_sec = duration_sec_buffer[0]
+        comptime assert conforms_to(
+            type_of(duration_sec_buffer), TileTensorable
+        )
+        comptime assert type_of(duration_sec_buffer).rank == 1
+        var duration_sec = duration_sec_buffer.to_tile_tensor[.float64]().load[
+            width=1
+        ](Coord(0))
         if duration_sec < 0:
             raise Error(
                 "Sleep duration must be non-negative. Found: ", duration_sec
@@ -6225,12 +6207,15 @@ struct LaunchHostFunc:
     ](
         # A mutable input buffer prevents the op from being DCE'd (see
         # `mo.sleep` above; tracked in GEX-3080).
-        payload: MutableInputTensor[dtype=.int64, rank=1, ...],
+        payload: Some[MutableInput & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(payload), TileTensorable)
+        comptime assert type_of(payload).rank == 1
         comptime _HostFuncTy = def(OpaquePointer[MutAnyOrigin]) thin -> None
-        var tr_addr = Int(payload[0])
-        var ud_addr = Int(payload[1])
+        var payload_tile = payload.to_tile_tensor[.int64]()
+        var tr_addr = Int(payload_tile.load[width=1](Coord(0)))
+        var ud_addr = Int(payload_tile.load[width=1](Coord(1)))
         var tr_ptr = OpaquePointer[MutAnyOrigin](unsafe_from_address=tr_addr)
         var ud_ptr = OpaquePointer[MutAnyOrigin](unsafe_from_address=ud_addr)
         # Reinterpret the raw trampoline address as a thin function value.
@@ -6267,14 +6252,19 @@ struct WaitHostValue:
     def execute[
         target: StaticString,
     ](
-        # MutableInputTensor mirrors `mo.launch_host_func` so this op is
+        # A `MutableInput` payload mirrors `mo.launch_host_func` so this op is
         # not DCE'd. Both the CompletionFlag pointer and the expected
         # value encode into 64-bit elements.
-        payload: MutableInputTensor[dtype=.int64, rank=1, ...],
+        payload: Some[MutableInput & Tensor],
         ctx: DeviceContext,
     ) raises:
-        var flag = CompletionFlag(unsafe_from_address=Int(payload[0]))
-        var value = UInt64(Int(payload[1]))
+        comptime assert conforms_to(type_of(payload), TileTensorable)
+        comptime assert type_of(payload).rank == 1
+        var payload_tile = payload.to_tile_tensor[.int64]()
+        var flag = CompletionFlag(
+            unsafe_from_address=Int(payload_tile.load[width=1](Coord(0)))
+        )
+        var value = UInt64(Int(payload_tile.load[width=1](Coord(1))))
         ctx.stream().wait_for_host_value(flag, value)
 
 
@@ -6300,18 +6290,22 @@ struct WaitHostValueWithDep:
     @staticmethod
     def execute[
         target: StaticString,
-        dep_dtype: DType,
-        dep_rank: Int,
     ](
-        payload: MutableInputTensor[dtype=.int64, rank=1, ...],
+        payload: Some[MutableInput & Tensor],
         # `dep` is intentionally unused: it exists only to register a
         # mutation on the buffer so downstream consumers of the same
         # buffer chain after this op.
-        dep: MutableInputTensor[dtype=dep_dtype, rank=dep_rank, ...],
+        dep: Some[MutableInput & Tensor],
         ctx: DeviceContext,
     ) raises:
-        var flag = CompletionFlag(unsafe_from_address=Int(payload[0]))
-        var value = UInt64(Int(payload[1]))
+        comptime assert conforms_to(type_of(payload), TileTensorable)
+        comptime assert conforms_to(type_of(dep), TileTensorable)
+        comptime assert type_of(payload).rank == 1
+        var payload_tile = payload.to_tile_tensor[.int64]()
+        var flag = CompletionFlag(
+            unsafe_from_address=Int(payload_tile.load[width=1](Coord(0)))
+        )
+        var value = UInt64(Int(payload_tile.load[width=1](Coord(1))))
         ctx.stream().wait_for_host_value(flag, value)
 
 

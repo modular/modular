@@ -1916,21 +1916,18 @@ struct TopKPerRow:
 
     @staticmethod
     def execute[
-        dtype: DType,
-        //,
         max_k: Int,
         target: StaticString,
     ](
-        values: OutputTensor[dtype=dtype, rank=2, ...],
-        indices: OutputTensor[dtype=.int64, rank=2, ...],
-        input: InputTensor[dtype=dtype, rank=2, ...],
-        k: InputTensor[dtype=.int64, rank=1, ...],
+        values: Some[Output & Tensor],
+        indices: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        k: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
         """Executes the `mo.top_k.per_row` graph op.
 
         Parameters:
-            dtype: Element type of the input and values.
             max_k: Output width, the largest count any row may ask for.
             target: Compilation target string.
 
@@ -1944,15 +1941,24 @@ struct TopKPerRow:
         Raises:
             Error: If the operation parameters are invalid.
         """
+        comptime assert conforms_to(type_of(values), TileTensorable)
+        comptime assert conforms_to(type_of(indices), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(k), TileTensorable)
+        comptime dtype = type_of(values).dtype
+        comptime assert type_of(values).rank == 2
+        comptime assert type_of(indices).rank == 2
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(k).rank == 1
         # `top_k` fixes the layout of its `k`; the kernels it forwards to
         # infer it, the way `sampler.fused_token_sampling` calls them.
         var k_tt = k.to_tile_tensor[.int64]().as_unsafe_any_origin().as_imm()
         comptime if is_cpu[target]():
             _top_k_cpu[largest=True](
-                input.to_tile_tensor[.int64](),
+                input.to_tile_tensor[dtype](),
                 max_k,
                 1,
-                values.to_tile_tensor[.int64](),
+                values.to_tile_tensor(),
                 indices.to_tile_tensor[.int64](),
                 1000,
                 sorted=True,
@@ -1964,22 +1970,26 @@ struct TopKPerRow:
             and 0 < max_k <= TOPK_PER_ROW_MAX_K
             and not ctx.target.is_apple_gpu()
         ):
+            # The per-row kernel takes flat pointers; a non-pointer storage
+            # policy aborts here at run time.
             topk_per_row_gpu(
                 ctx,
-                input.unsafe_ptr().as_unsafe_any_origin().as_imm(),
-                k.unsafe_ptr().as_unsafe_any_origin().as_imm(),
-                values.unsafe_ptr().as_unsafe_any_origin(),
-                indices.unsafe_ptr().as_unsafe_any_origin(),
-                input.shape()[0],
-                input.shape()[1],
+                input.to_tile_tensor[dtype]()
+                .as_unsafe_any_origin()
+                .ptr.as_imm(),
+                k.to_tile_tensor[.int64]().as_unsafe_any_origin().ptr.as_imm(),
+                values.to_tile_tensor().as_unsafe_any_origin().ptr,
+                indices.to_tile_tensor[.int64]().as_unsafe_any_origin().ptr,
+                Int(input.shape()[0].value()),
+                Int(input.shape()[1].value()),
                 max_k,
             )
         else:
             topk_gpu[sampling=False, largest=True](
                 ctx,
                 max_k,
-                input.to_tile_tensor[.int64](),
-                values.to_tile_tensor[.int64](),
+                input.to_tile_tensor[dtype](),
+                values.to_tile_tensor(),
                 indices.to_tile_tensor[.int64](),
                 k=k_tt,
             )

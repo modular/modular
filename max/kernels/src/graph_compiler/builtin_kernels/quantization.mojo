@@ -1414,17 +1414,22 @@ struct Struct_dequant_mxfp4:
     @inline(.always)
     @staticmethod
     def execute[
-        out_type: DType,
-        in_type: DType,
-        scales_type: DType,
-        //,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=out_type, rank=2, ...],
-        input: InputTensor[dtype=in_type, rank=2, ...],
-        scales: InputTensor[dtype=scales_type, rank=2, ...],
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        scales: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime out_type = type_of(output).dtype
+        comptime in_type = type_of(input).dtype
+        comptime scales_type = type_of(scales).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(scales).rank == 2
         comptime assert is_gpu[target](), "MXFP4 dequant only supports GPUs"
         comptime assert out_type in (
             DType.bfloat16,
@@ -1437,9 +1442,9 @@ struct Struct_dequant_mxfp4:
             scales_type == .float8_e8m0fnu
         ), "MXFP4 dequant scales must be float8_e8m0fnu"
 
-        var in_tt = input.to_tile_tensor[.int64]()
-        var scales_tt = scales.to_tile_tensor[.int64]()
-        var out_tt = output.to_tile_tensor[.int64]()
+        var in_tt = input.to_tile_tensor()
+        var scales_tt = scales.to_tile_tensor()
+        var out_tt = output.to_tile_tensor()
 
         var num_rows = Int(in_tt.dim[0]())
         # num_cols is the unpacked column count (2x packed)
@@ -1501,18 +1506,23 @@ struct Struct_dequant_mxfp6:
     @inline(.always)
     @staticmethod
     def execute[
-        out_type: DType,
-        in_type: DType,
-        scales_type: DType,
-        //,
         FP6_FORMAT: Int,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=out_type, rank=2, ...],
-        input: InputTensor[dtype=in_type, rank=2, ...],
-        scales: InputTensor[dtype=scales_type, rank=2, ...],
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        scales: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime out_type = type_of(output).dtype
+        comptime in_type = type_of(input).dtype
+        comptime scales_type = type_of(scales).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(scales).rank == 2
         comptime assert is_gpu[target](), "MXFP6 dequant only supports GPUs"
         comptime assert out_type in (
             DType.bfloat16,
@@ -1529,9 +1539,9 @@ struct Struct_dequant_mxfp6:
             1,
         ), "FP6_FORMAT must be 0 (E2M3) or 1 (E3M2)"
 
-        var in_tt = input.to_tile_tensor[.int64]()
-        var scales_tt = scales.to_tile_tensor[.int64]()
-        var out_tt = output.to_tile_tensor[.int64]()
+        var in_tt = input.to_tile_tensor()
+        var scales_tt = scales.to_tile_tensor()
+        var out_tt = output.to_tile_tensor()
 
         var num_rows = Int(in_tt.dim[0]())
         var num_cols = (Int(in_tt.dim[1]()) * 8) // 6
