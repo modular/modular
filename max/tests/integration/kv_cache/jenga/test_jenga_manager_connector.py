@@ -669,14 +669,14 @@ def test_a_failure_the_scheduler_already_saw_still_blocks_the_commit(
 # ===--------------------------------------------------------------------=== #
 
 
-def test_an_offload_stops_at_the_first_evicted_page(
+def test_a_release_offloads_its_pages_before_freeing_them(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Pages evicted before the offload ran are left out, with their tail.
+    """A release sends what the request committed while it still holds it.
 
     The first request's four pages are committed but not yet sent when it
-    releases them and a second request takes two of them back. What reaches
-    the connector is the run up to the first page that is gone.
+    releases them, and a second request then takes every page back. The pages
+    reached the connector before they were freed, so none is lost.
     """
     # Five allocable pages: the first request holds all five.
     reference, reference_connector = make_manager(
@@ -692,29 +692,13 @@ def test_an_offload_stops_at_the_first_evicted_page(
     first = make_ctx(PROMPT)
     forward(mgr, first)
     mgr.release(first)
-    # One free page, then the tails of the released prefix: two are evicted.
-    squatter = make_ctx(3 * PAGE, offset=1000)
-    mgr.claim(squatter)
-    mgr.alloc(squatter)
-    run(mgr, squatter)
-
-    assert len(calls_named(connector, "offload")) == 1
-    assert offloaded_hashes(connector) == hashes[:2]
-
-
-def test_an_offload_of_pages_that_are_all_evicted_sends_nothing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    mgr, connector = make_manager(monkeypatch, num_huge_blocks=6)
-    first = make_ctx(PROMPT)
-    forward(mgr, first)
-    mgr.release(first)
     squatter = make_ctx(5 * PAGE, offset=1000)
     mgr.claim(squatter)
     mgr.alloc(squatter)
     mgr.runtime_inputs([[squatter]])
 
-    assert calls_named(connector, "offload") == []
+    assert len(calls_named(connector, "offload")) == 1
+    assert offloaded_hashes(connector) == hashes
 
 
 def test_runs_reach_the_connector_in_commit_order(

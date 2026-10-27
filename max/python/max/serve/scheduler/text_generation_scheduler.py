@@ -27,6 +27,12 @@ from max.pipelines.context import (
     TextGenerationOutput,
 )
 from max.pipelines.kv_cache import PagedKVCacheManagerInterface
+from max.pipelines.kv_cache.checkpoint import (
+    Checkpointer,
+    CheckpointerFactory,
+    checkpoint_at_end_of_prompt,
+    checkpoint_at_release,
+)
 from max.pipelines.lib import (
     PIPELINE_REGISTRY,
     MemoryPlan,
@@ -183,6 +189,7 @@ class TokenGenerationScheduler(Scheduler):
         max_pending_requests: int | None = None,
         kernel_capture: KernelCapture | None = None,
         max_batch_links: int = _DEFAULT_MAX_BATCH_LINKS,
+        checkpointer_factory: CheckpointerFactory | None = None,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
@@ -216,6 +223,8 @@ class TokenGenerationScheduler(Scheduler):
                     f"Using default: {BatchSchedulingStrategy.PER_REPLICA.value}"
                 )
 
+        if checkpointer_factory is not None:
+            kv_cache.populate_checkpointer(checkpointer_factory)
         self.batch_constructor = TextBatchConstructor(
             scheduler_config=scheduler_config,
             pipeline=pipeline,
@@ -241,6 +250,10 @@ class TokenGenerationScheduler(Scheduler):
         self._batch_links = _BatchLinks(
             self._batch_spans_enabled, max_batch_links
         )
+
+    def with_checkpointer(self, checkpointer: Checkpointer) -> None:
+        """Uses ``checkpointer`` to checkpoint requests."""
+        self.batch_constructor.with_checkpointer(checkpointer)
 
     @traced
     def _retrieve_pending_requests(self) -> None:
@@ -621,8 +634,10 @@ def load_text_generation_scheduler(
             context_type=context_type,
         )
 
-    # Return Scheduler
-    return TokenGenerationScheduler(
+    checkpointer_factory = Checkpointer.factory().with_heuristics(
+        checkpoint_at_end_of_prompt(), checkpoint_at_release()
+    )
+    scheduler = TokenGenerationScheduler(
         scheduler_config=scheduler_config,
         pipeline=pipeline,
         # For spec decoding, there may be multiple KVCaches. The scheduler
@@ -637,4 +652,7 @@ def load_text_generation_scheduler(
         max_pending_requests=max_pending_requests,
         kernel_capture=kernel_capture,
         max_batch_links=pipeline_config.profiling.kernel_trace_max_batch_links,
+        checkpointer_factory=checkpointer_factory,
     )
+    scheduler.with_checkpointer(checkpointer_factory.build())
+    return scheduler

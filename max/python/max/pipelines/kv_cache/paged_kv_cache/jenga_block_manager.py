@@ -50,6 +50,12 @@ from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
 from max.support.math import ceildiv
 
+from ..checkpoint import (
+    Checkpointer,
+    CheckpointerFactory,
+    CheckpointEvent,
+    CheckpointEventKind,
+)
 from ._common import (
     PrefixCacheHits,
     _compute_seq_len,
@@ -705,11 +711,13 @@ class JengaBlockManager:
         # State for the KVConnector.
         self._connector = connector
 
+        self._checkpointer = Checkpointer.factory().disabled().build()
+
         self._pending_transfers: list[list[_PendingTransfer]] = [
             [] for _ in range(self._num_replicas)
         ]
-        # Runs of newly committed hashes awaiting an `offload` call.
-        self._pending_offloads: list[list[list[bytes]]] = [
+        # Each leaf's hashes to offload at the next `offload` call, per entry.
+        self._pending_offloads: list[list[dict[str, Sequence[bytes]]]] = [
             [] for _ in range(self._num_replicas)
         ]
 
@@ -739,6 +747,41 @@ class JengaBlockManager:
         """The per-leaf coordinators this manager owns, keyed by leaf id."""
         return self._groups
 
+    def populate_checkpointer(
+        self, factory: CheckpointerFactory
+    ) -> CheckpointerFactory:
+        """Populates ``factory`` with the queries this cache answers.
+
+        Disables the factory unless this cache has a connector and prefix
+        caching enabled: checkpoints are persisted through the connector, and
+        only committed blocks can be checkpointed.
+
+        Returns:
+            ``factory``, for chaining.
+        """
+        if self._connector is None or not self._enable_prefix_caching:
+            return factory.disabled()
+
+        def candidate_at_or_before(
+            request_id: RequestID, position: int
+        ) -> int | None:
+            # Only a boundary the request can resume from is resident.
+            state = self._requests.get(request_id)
+            if state is None:
+                return None
+            fits = [
+                p
+                for b in state.resumable.boundaries
+                if (p := b * self._block_size) <= position
+            ]
+            return fits[-1] if fits else None
+
+        return factory.with_candidate_at_or_before(candidate_at_or_before)
+
+    def with_checkpointer(self, checkpointer: Checkpointer) -> None:
+        """Sets the checkpointer that decides where this cache checkpoints."""
+        self._checkpointer = checkpointer
+
     def contains(self, ctx: TextContext) -> bool:
         """Returns whether the request is registered with the block manager."""
         return ctx.request_id in self._requests
@@ -749,6 +792,13 @@ class JengaBlockManager:
         ctx.kv_cache_write_ranges.clear()
         req_id = ctx.request_id
         replica_idx = self._replica_of(ctx)
+
+        self._checkpointer.record(
+            CheckpointEvent(
+                req_id, CheckpointEventKind.RELEASE, ctx.tokens.processed_length
+            )
+        )
+        self.offload(replica_idx)
 
         for group in self._groups.values():
             group.release(req_id, replica_idx)
@@ -1160,38 +1210,46 @@ class JengaBlockManager:
 
     @traced
     def offload(self, replica_idx: int = 0) -> None:
-        """Offloads the recently committed blocks to the connector.
+        """Offloads the recently committed blocks and the pending checkpoints.
 
-        A run stops at the first hash an attention leaf has evicted. A
-        recurrent leaf holds only checkpoint boundaries, so its missing hashes
-        are skipped.
+        A checkpoint offloads what each leaf needs to resume at it, except
+        the leaves streamed as they commit. An attention leaf's run stops at
+        the first hash it has evicted, since the blocks past it are
+        unreachable; a recurrent leaf holds only checkpoint boundaries, so its
+        missing hashes are skipped.
         """
         connector = self._connector
         if connector is None:
             return
+        for checkpoint in self._checkpointer.checkpoint():
+            state = self._requests[checkpoint.request_id]
+            num_blocks = checkpoint.position // self._block_size
+            needed: dict[str, Sequence[bytes]] = {}
+            for leaf_id, group in self._cacheable_groups.items():
+                if group.has_full_prefix_dependency:
+                    continue
+                held = group.blocks_held_of_connector_hit(num_blocks)
+                needed[leaf_id] = state.hashes[num_blocks - held : num_blocks]
+            if needed:
+                self._pending_offloads[state.replica_idx].append(needed)
         pool = self.pools[replica_idx]
-        for hashes in self._pending_offloads[replica_idx]:
+        for hashes_by_leaf in self._pending_offloads[replica_idx]:
             src: dict[str, list[LittleKVCacheBlock]] = {
                 leaf_id: [] for leaf_id in self._cacheable_leaf_ids
             }
             block_hashes: dict[str, list[bytes]] = {
                 leaf_id: [] for leaf_id in self._cacheable_leaf_ids
             }
-            for block_hash in hashes:
-                held = {
-                    leaf_id: pool.prefix_caches[leaf_id].get(block_hash)
-                    for leaf_id in self._cacheable_leaf_ids
-                }
-                if any(
-                    block is None
-                    for leaf_id, block in held.items()
-                    if not self._groups[leaf_id].group_id.is_recurrent()
-                ):
-                    break
-                for leaf_id, block in held.items():
-                    if block is not None:
-                        src[leaf_id].append(block)
-                        block_hashes[leaf_id].append(block_hash)
+            for leaf_id, hashes in hashes_by_leaf.items():
+                prefix_cache = pool.prefix_caches[leaf_id]
+                for block_hash in hashes:
+                    block = prefix_cache.get(block_hash)
+                    if block is None:
+                        if self._groups[leaf_id].group_id.is_recurrent():
+                            continue
+                        break
+                    src[leaf_id].append(block)
+                    block_hashes[leaf_id].append(block_hash)
             if not any(block_hashes.values()):
                 continue
             bids = {
@@ -2339,6 +2397,7 @@ class JengaBlockManager:
         # Queue the newly committed run for the next `offload`. Every leaf
         # commits the same hashes in lockstep, so one run covers them all.
         if self._connector is not None and last_block > first_block:
+            run = list(req_hashes[first_block:last_block])
             self._pending_offloads[self._replica_of(ctx)].append(
-                list(req_hashes[first_block:last_block])
+                dict.fromkeys(self._cacheable_leaf_ids, run)
             )

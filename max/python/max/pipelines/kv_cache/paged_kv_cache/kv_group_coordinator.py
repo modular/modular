@@ -399,6 +399,16 @@ class KVGroupCoordinatorInterface:
         """
         raise NotImplementedError("Subclasses must implement this method.")
 
+    @property
+    def has_full_prefix_dependency(self) -> bool:
+        """Whether a hit on this cache reads every block before its depth.
+
+        Each block such a cache commits is then needed by every later hit, so
+        it is worth offloading as soon as it is committed rather than at a
+        checkpoint.
+        """
+        return False
+
     def blocks_held_of_connector_hit(self, num_hit_blocks: int) -> int:
         """How many blocks of a hit that deep this group actually holds.
 
@@ -511,6 +521,11 @@ class FullKVGroupCoordinator(KVGroupCoordinatorInterface):
     ) -> None:
         """Keeps every block: this group reads its whole history."""
         return
+
+    @property
+    def has_full_prefix_dependency(self) -> bool:
+        """Returns true: this group reads its whole history."""
+        return True
 
     def blocks_held_of_connector_hit(self, num_hit_blocks: int) -> int:
         """All of it: this group reads its whole history."""

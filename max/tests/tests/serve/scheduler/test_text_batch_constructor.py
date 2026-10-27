@@ -28,6 +28,10 @@ from max.pipelines.context import (
     TokenBuffer,
 )
 from max.pipelines.kv_cache import InsufficientBlocksError
+from max.pipelines.kv_cache.checkpoint import (
+    CheckpointEvent,
+    CheckpointEventKind,
+)
 from max.pipelines.kv_cache.connectors.null_connector import NullConnector
 from max.pipelines.kv_cache.kv_connector import (
     BlockCount,
@@ -1264,6 +1268,59 @@ def test_text_batch_constructor__advance_requests_requeues_every_chunked_request
         mid_prefill_b.request_id,
     ]
     assert list(replica.tg_reqs) == [finished.request_id]
+
+
+def test_text_batch_constructor__advance_requests_records_each_finished_prompt(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+) -> None:
+    """A prefill that produced a token reports where its prompt ended.
+
+    A request still mid-prefill has not finished its prompt, and a decode
+    request finished it on an earlier step, so neither reports one.
+    """
+    kv_cache = create_mock_kv_cache()
+    batch_constructor = TextBatchConstructor(
+        scheduler_config=TokenGenerationSchedulerConfig(
+            max_batch_size=5,
+            max_batch_total_tokens=None,
+            enable_in_flight_batching=False,
+            enable_chunked_prefill=True,
+            target_tokens_per_batch_ce=30,
+        ),
+        pipeline=pipeline,
+        kv_cache=kv_cache,
+    )
+    checkpointer = Mock()
+    batch_constructor.with_checkpointer(checkpointer)
+    kv_cache.with_checkpointer.assert_called_once_with(checkpointer)
+
+    mid_prefill, finished, decoding = (
+        TextContext(
+            request_id=RequestID(),
+            tokens=TokenBuffer(np.ones(9, dtype=np.int64)),
+            max_length=100,
+        )
+        for _ in range(3)
+    )
+    for context in (mid_prefill, finished, decoding):
+        batch_constructor.enqueue_new_request(context, replica_idx=0)
+
+    replica = batch_constructor.replicas[0]
+    # Stands in for _add_ce_requests draining the queue into the batch.
+    replica.ce_reqs.clear()
+    decoding.update(ARBITRARY_TOKEN_ID)
+    replica.tg_reqs[decoding.request_id] = decoding
+    finished.update(ARBITRARY_TOKEN_ID)
+
+    batch_constructor.advance_requests(
+        TextGenerationInputs(batches=[[mid_prefill, finished, decoding]])
+    )
+
+    checkpointer.record.assert_called_once_with(
+        CheckpointEvent(
+            finished.request_id, CheckpointEventKind.END_OF_PROMPT, 9
+        )
+    )
 
 
 def _prefill_cap_constructor(

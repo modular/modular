@@ -704,6 +704,17 @@
               "items": [
                 {
                   "type": "category",
+                  "label": "checkpoint",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.kv_cache.checkpoint"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.kv_cache.checkpoint__"
+                  ]
+                },
+                {
+                  "type": "category",
                   "label": "paged_kv_cache",
                   "link": {
                     "type": "doc",

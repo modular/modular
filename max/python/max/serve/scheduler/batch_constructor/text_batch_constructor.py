@@ -28,6 +28,11 @@ from max.pipelines.kv_cache import (
     InsufficientBlocksError,
     PagedKVCacheManagerInterface,
 )
+from max.pipelines.kv_cache.checkpoint import (
+    Checkpointer,
+    CheckpointEvent,
+    CheckpointEventKind,
+)
 from max.pipelines.kv_cache.kv_connector import KVLoadFailed, KVTransfer
 from max.pipelines.lora import LoRAManagerV3, get_lora_manager
 from max.pipelines.modeling.types import (
@@ -565,6 +570,7 @@ class TextBatchConstructor:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
         self.kv_cache = kv_cache
+        self._checkpointer = Checkpointer.factory().disabled().build()
         self.batch_scheduling_strategy = batch_scheduling_strategy
         self._get_inflight_kv_transfer_count = get_inflight_kv_transfer_count
         self.tg_priority_kv_percentage = float(
@@ -1023,6 +1029,11 @@ class TextBatchConstructor:
             max(1, active_length - page_size * h.total_blocks) for h in hits
         ]
 
+    def with_checkpointer(self, checkpointer: Checkpointer) -> None:
+        """Propagates the checkpointer."""
+        self._checkpointer = checkpointer
+        self.kv_cache.with_checkpointer(checkpointer)
+
     def advance_requests(
         self, inputs: TextGenerationInputs[TextContext]
     ) -> None:
@@ -1052,6 +1063,19 @@ class TextBatchConstructor:
             for context in per_replica_batch:
                 if not self.contains(context.request_id):
                     continue
+                # A prefill request is out of the TG queue while it runs, and
+                # one that produced a token has finished its prompt.
+                if (
+                    context.request_id not in replica.tg_reqs
+                    and context.tokens.generated_length > 0
+                ):
+                    self._checkpointer.record(
+                        CheckpointEvent(
+                            context.request_id,
+                            CheckpointEventKind.END_OF_PROMPT,
+                            context.tokens.prompt_length,
+                        )
+                    )
                 replica.tg_reqs[context.request_id] = context
 
             # Move chunked requests back to the CE request queue. A request that

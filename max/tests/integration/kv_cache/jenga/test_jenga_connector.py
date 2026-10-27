@@ -39,6 +39,13 @@ from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache import InsufficientBlocksError
+from max.pipelines.kv_cache.checkpoint import (
+    Checkpointer,
+    CheckpointEvent,
+    CheckpointEventKind,
+    checkpoint_at_end_of_prompt,
+    checkpoint_at_release,
+)
 from max.pipelines.kv_cache.connectors.null_connector import NullConnector
 from max.pipelines.kv_cache.kv_connector import (
     ByteCount,
@@ -415,6 +422,17 @@ class FakeConnector:
         return ByteCount(free=3, total=4)
 
 
+def attach_checkpointing(manager: JengaBlockManager) -> Checkpointer:
+    """Builds and attaches a checkpointer, as the scheduler does."""
+    checkpointer = manager.populate_checkpointer(
+        Checkpointer.factory().with_heuristics(
+            checkpoint_at_end_of_prompt(), checkpoint_at_release()
+        )
+    ).build()
+    manager.with_checkpointer(checkpointer)
+    return checkpointer
+
+
 def make_ctx(tokens: Sequence[int]) -> TextContext:
     return TextContext(
         request_id=RequestID(),
@@ -433,7 +451,7 @@ def make_manager(
         leaf: KVLeafInfo(1, KVCacheGroupId.full()) for leaf in leaves
     }
     pools = create_pools(leaf_infos, num_huge_blocks)
-    return JengaBlockManager(
+    manager = JengaBlockManager(
         pools=pools,
         groups=create_groups(leaf_infos, pools, 1, enable_prefix_caching=True),
         leaves={
@@ -453,6 +471,8 @@ def make_manager(
         num_draft_tokens_per_step=0,
         connector=connector,
     )
+    attach_checkpointing(manager)
+    return manager
 
 
 PAGE = 4
@@ -479,7 +499,7 @@ def make_hybrid_manager(
         STATE: KVLeafInfo(1, KVCacheGroupId.recurrent()),
     }
     pools = create_pools(leaf_infos, num_huge_blocks)
-    return JengaBlockManager(
+    manager = JengaBlockManager(
         pools=pools,
         groups=create_groups(
             leaf_infos, pools, PAGE, enable_prefix_caching=True
@@ -500,6 +520,8 @@ def make_hybrid_manager(
         num_draft_tokens_per_step=0,
         connector=connector,
     )
+    attach_checkpointing(manager)
+    return manager
 
 
 def hybrid_connector() -> FakeConnector:
@@ -955,6 +977,11 @@ def test_a_failed_poll_unpins_without_publishing() -> None:
         pending.synchronize()
     manager.poll_transfers()
     manager.release(first)
+    # Release checkpoints the request; land that copy too so its pins do not
+    # keep the pages on the device.
+    for pending in connector.transfers:
+        pending.synchronize()
+    manager.poll_transfers()
     manager.reset_prefix_cache()
 
     connector.hold(offloaded_hashes)
@@ -1008,6 +1035,11 @@ def _hold_only_in_the_connector(
         pending.synchronize()
     manager.poll_transfers()
     manager.release(first)
+    # Release checkpoints the request; land that copy too so its pins do not
+    # keep the pages on the device.
+    for pending in connector.transfers:
+        pending.synchronize()
+    manager.poll_transfers()
     manager.reset_prefix_cache()
     for leaf_id, hashes in offloaded.items():
         connector.held[leaf_id].update(hashes)
@@ -1075,6 +1107,9 @@ def _hold_in_connector_with_a_device_hit(
     device.update(9)
     manager.step(device)
     manager.release(device)
+    for pending in connector.transfers:
+        pending.synchronize()
+    manager.poll_transfers()
     for leaf_id, hashes in by_leaf.items():
         connector.held[leaf_id].update(hashes)
     return held
@@ -1123,6 +1158,9 @@ def test_a_failed_onload_recomputes_from_the_device_hit() -> None:
     assert manager.take_metrics().connector_load_failures == 1
 
     manager.release(ctx)
+    for pending in connector.transfers:
+        pending.synchronize()
+    manager.poll_transfers()
     assert pool.num_free_blocks(FULL) == free_before, "every page went back"
 
 
@@ -1250,6 +1288,9 @@ def test_a_failed_onload_leaves_the_state_row_a_fresh_admission_holds() -> None:
     ], "one device checkpoint, then one live block"
 
     manager.release(ctx)
+    for pending in connector.transfers:
+        pending.synchronize()
+    manager.poll_transfers()
     assert pool.num_free_blocks(STATE) == free_before
 
 
@@ -2916,3 +2957,128 @@ def test_a_probe_covering_no_leaf_leaves_the_lease_to_decide() -> None:
     assert manager.starts_lookup(ctx)
     manager.alloc(ctx, defer_lookup=True)
     assert len(connector.started) == 1
+
+
+def test_a_manager_without_a_connector_disables_checkpointing() -> None:
+    """Nothing could persist a checkpoint, so every event is dropped."""
+    manager = make_manager(None)
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.claim(ctx)
+    manager.alloc(ctx)
+    ctx.update(9)
+    manager.step(ctx)
+    checkpointer = attach_checkpointing(manager)
+
+    checkpointer.record(
+        CheckpointEvent(ctx.request_id, CheckpointEventKind.RELEASE, 4)
+    )
+
+    assert checkpointer.checkpoint() == set()
+
+
+def test_release_checkpoints_every_leaf_before_freeing_it() -> None:
+    """Releasing checkpoints the request while it still holds its pages.
+
+    The attention run already streamed as it committed, so the checkpoint
+    sends only the state at the boundary. The copy pins its source past the
+    free.
+    """
+    connector = hybrid_connector()
+    manager = make_hybrid_manager(connector)
+    ctx = make_ctx(list(range(1, 2 * PAGE + 1)))
+    manager.claim(ctx)
+    forward_to_boundary(manager, ctx)
+    manager.offload(0)
+    streamed = len(connector.offloads)
+    ctx_hashes = connector.offloads[-1][1][FULL]
+    for transfer in connector.transfers:
+        transfer.synchronize()
+    manager.poll_transfers()
+    assert not manager.pending_transfers_exist(0)
+
+    manager.release(ctx)
+
+    assert len(connector.offloads) == streamed + 1
+    _, hashes = connector.offloads[-1]
+    assert hashes[FULL] == []
+    assert hashes[STATE] == ctx_hashes[1:]
+    assert manager.pending_transfers_exist(0), (
+        "the checkpoint's copy has to pin its sources past the release"
+    )
+
+
+def test_end_of_prompt_offloads_its_checkpoint_at_the_next_offload() -> None:
+    connector = hybrid_connector()
+    manager = make_hybrid_manager(connector)
+    ctx = make_ctx(list(range(1, 2 * PAGE + 1)))
+    manager.claim(ctx)
+    forward_to_boundary(manager, ctx)
+    manager.offload(0)
+    streamed = len(connector.offloads)
+    ctx_hashes = connector.offloads[-1][1][FULL]
+
+    checkpointer = attach_checkpointing(manager)
+    checkpointer.record(
+        CheckpointEvent(
+            ctx.request_id, CheckpointEventKind.END_OF_PROMPT, 2 * PAGE
+        )
+    )
+    manager.offload(0)
+
+    assert len(connector.offloads) == streamed + 1
+    _, hashes = connector.offloads[-1]
+    assert hashes[FULL] == [], "the attention run streams as it commits"
+    assert hashes[STATE] == ctx_hashes[1:]
+
+
+def test_a_checkpoint_lands_only_where_every_leaf_can_resume() -> None:
+    """Between two state boundaries no position resumes, so none is offloaded.
+
+    The attention leaf could resume one block in, but the state was published
+    only at the end of the forward, so there is no candidate at or before an
+    event inside the second page.
+    """
+    connector = hybrid_connector()
+    manager = make_hybrid_manager(connector)
+    ctx = make_ctx(list(range(1, 2 * PAGE + 1)))
+    manager.claim(ctx)
+    forward_to_boundary(manager, ctx)
+    manager.offload(0)
+    streamed = len(connector.offloads)
+
+    checkpointer = attach_checkpointing(manager)
+    checkpointer.record(
+        CheckpointEvent(
+            ctx.request_id, CheckpointEventKind.END_OF_PROMPT, 2 * PAGE - 1
+        )
+    )
+    manager.offload(0)
+
+    assert len(connector.offloads) == streamed
+
+
+def test_a_boundary_the_state_cannot_resume_at_is_not_checkpointed() -> None:
+    """A forward that ran past the boundary published no state there.
+
+    The attention leaf could resume at the boundary, and it is at or before
+    the event, but the state cannot, so the event checkpoints nothing.
+    """
+    connector = hybrid_connector()
+    manager = make_hybrid_manager(connector)
+    ctx = make_ctx(list(range(1, 2 * PAGE + 3)))
+    manager.claim(ctx)
+    manager.alloc(ctx)
+    ctx.update(9)
+    manager.step(ctx)
+    assert manager._state_of(ctx).committed_idx == 2 * PAGE
+
+    checkpointer = attach_checkpointing(manager)
+    checkpointer.record(
+        CheckpointEvent(
+            ctx.request_id,
+            CheckpointEventKind.RELEASE,
+            ctx.tokens.processed_length,
+        )
+    )
+
+    assert checkpointer.checkpoint() == set()

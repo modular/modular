@@ -40,6 +40,7 @@ from max.pipelines.kv_cache.kv_connector import (
     KVTransfer,
 )
 
+from ..checkpoint import Checkpointer, CheckpointerFactory
 from ._common import PrefixCacheHits
 
 
@@ -243,6 +244,22 @@ class PagedKVCacheManagerInterface(ABC):
         Zero when no group of this cache needs the alignment.
         """
         return 0
+
+    def populate_checkpointer(
+        self, factory: CheckpointerFactory
+    ) -> CheckpointerFactory:
+        """Populates ``factory`` with the queries this cache answers.
+
+        Disables it by default, since this cache does not persist checkpoints.
+
+        Returns:
+            ``factory``, for chaining.
+        """
+        return factory.disabled()
+
+    def with_checkpointer(self, checkpointer: Checkpointer) -> None:
+        """Sets the checkpointer that decides where this cache checkpoints."""
+        del checkpointer
 
     @property
     @abstractmethod
