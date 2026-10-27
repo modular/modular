@@ -28,7 +28,9 @@ in particular: nothing else in the tree runs the KDA recurrence at
 
 Everything is float32 here, weights included, so the comparison is not blunted
 by bfloat16 rounding. The real model runs bfloat16 projections into the same
-float32 recurrence and float32 gated norm.
+float32 recurrence and float32 gated norm. The one exception is prefill on
+gfx950, where the layer rounds q/k/v and the recurrence output through bf16
+for the chunk kernel.
 """
 
 from __future__ import annotations
@@ -99,6 +101,26 @@ PREFILL_LENGTHS = (5, 3)
 # so the budget is a small multiple of that unit rather than a round number.
 TENSOR_CORE_ULP = 2.0**-11
 LAYER_REL_RMS = 16 * TENSOR_CORE_ULP
+
+MULTI_CHUNK_PREFILL_LENGTHS = (130, 67)
+"""Three and two of the gfx950 chunk kernel's 64-token chunks, with tails."""
+CONTINUATION_DECODE_STEPS = 4
+
+CARRY_GATE_ARGUMENT = -6.0
+"""Mean of ``exp(A_log) * (g + dt_bias)`` in the continuation fixture.
+
+The bounded gate is ``LOWER_BOUND * sigmoid`` of it, about -0.012 per token, so
+a state keeps about a fifth of itself across the 130-token prefill. The shared
+fixture centers it at 0, a decay of about -2.5 per token that erases the state
+within a few tokens and so hides any error the prefill writes into it.
+"""
+CARRY_BETA_LOGIT = -5.0
+"""Mean of beta's pre-sigmoid logit in the continuation fixture.
+
+``b_proj`` has no bias, so the fixture's hidden states carry a constant 1 in
+feature 0 and ``b_proj`` weights that feature by this value.
+"""
+
 REFERENCE_REL_RMS = 1e-5
 """How close the float32 reference must be to its own float64 evaluation.
 
@@ -227,8 +249,7 @@ def weights() -> dict[str, torch.Tensor]:
     }
 
 
-@pytest.fixture(scope="module")
-def reference_weights(weights: dict[str, torch.Tensor]) -> KdaWeights:
+def _reference_weights(weights: dict[str, torch.Tensor]) -> KdaWeights:
     return KdaWeights(
         q_proj=weights["q_proj.weight"],
         k_proj=weights["k_proj.weight"],
@@ -244,6 +265,44 @@ def reference_weights(weights: dict[str, torch.Tensor]) -> KdaWeights:
         o_norm=weights["o_norm.weight"],
         o_proj=weights["o_proj.weight"],
     )
+
+
+@pytest.fixture(scope="module")
+def reference_weights(weights: dict[str, torch.Tensor]) -> KdaWeights:
+    return _reference_weights(weights)
+
+
+@pytest.fixture(scope="module")
+def carry_weights(weights: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+    """:func:`weights` with slow forget gates and low beta, so state carries.
+
+    ``f_b_proj`` shrinks so the raw gate spreads by about 0.4 around
+    ``dt_bias``, and ``A_log`` narrows so ``exp(A_log)`` stays near 1: the
+    gate's sigmoid argument then sits near :data:`CARRY_GATE_ARGUMENT` in every
+    head. ``dt_bias`` keeps its per-channel spread.
+    """
+    generator = torch.Generator().manual_seed(20261022)
+
+    def normal(*shape: int, std: float) -> torch.Tensor:
+        return torch.randn(*shape, generator=generator) * std
+
+    b_proj = normal(HEADS, HIDDEN, std=0.005)
+    b_proj[:, 0] = CARRY_BETA_LOGIT
+    return weights | {
+        "f_b_proj.weight": normal(QKV_DIM, HEAD_DIM, std=0.03),
+        "dt_bias": CARRY_GATE_ARGUMENT + normal(QKV_DIM, std=0.5),
+        "A_log": normal(HEADS, std=0.1),
+        "b_proj.weight": b_proj,
+    }
+
+
+def _carry_hidden_states(
+    generator: torch.Generator, num_tokens: int
+) -> torch.Tensor:
+    """Random hidden states whose feature 0 is the constant beta offset input."""
+    x = torch.randn(num_tokens, HIDDEN, generator=generator)
+    x[:, 0] = 1.0
+    return x
 
 
 @pytest.fixture(scope="module")
@@ -270,14 +329,27 @@ def hidden_states() -> torch.Tensor:
     return torch.randn(sum(PREFILL_LENGTHS), HIDDEN, generator=generator)
 
 
+def _load(
+    session: InferenceSession, weights: dict[str, torch.Tensor], name: str
+) -> Model:
+    layer = _KdaGraph()
+    layer.load_state_dict(weights)
+    graph = Graph(name, layer, input_types=_input_types())
+    return session.load(graph, weights_registry=layer.state_dict())
+
+
 @pytest.fixture(scope="module")
 def decode_model(
     session: InferenceSession, weights: dict[str, torch.Tensor]
 ) -> Model:
-    layer = _KdaGraph()
-    layer.load_state_dict(weights)
-    graph = Graph("Glm5NextKdaDecode", layer, input_types=_input_types())
-    return session.load(graph, weights_registry=layer.state_dict())
+    return _load(session, weights, "Glm5NextKdaDecode")
+
+
+@pytest.fixture(scope="module")
+def carry_model(
+    session: InferenceSession, carry_weights: dict[str, torch.Tensor]
+) -> Model:
+    return _load(session, carry_weights, "Glm5NextKdaCarry")
 
 
 def _run(
@@ -476,6 +548,93 @@ def test_decode_step_matches_reference(
                 torch.from_numpy(max_recurrent[slot]),
             )
             < LAYER_REL_RMS
+        )
+
+
+def test_decode_continues_a_multi_chunk_prefill(
+    carry_model: Model,
+    carry_weights: dict[str, torch.Tensor],
+    initial_pools: tuple[np.ndarray, np.ndarray],
+) -> None:
+    """Float32 decode steps after a prefill that spans several chunks.
+
+    :data:`PREFILL_LENGTHS` fit inside one 64-token chunk; these lengths span
+    several, with ragged tails. Each side decodes from the pools its own
+    prefill left, so whatever error the prefill wrote into the state is
+    carried into every step. On gfx950 that prefill is the bf16 chunk path and
+    the steps are float32 ``kda_decode``.
+
+    The weights decay slowly and write weakly, so the state carries across
+    chunks and steps. The reference decoding the same steps from a zeroed
+    recurrent state shows it: it has to land far outside the tolerance.
+    """
+    reference_weights = _reference_weights(carry_weights)
+    lengths = MULTI_CHUNK_PREFILL_LENGTHS
+    generator = torch.Generator().manual_seed(17)
+    x = _carry_hidden_states(generator, sum(lengths))
+    max_out, max_conv, max_recurrent = _run(
+        carry_model, x, lengths, initial_pools
+    )
+    ref_out, ref_conv, ref_recurrent = _reference(
+        x, lengths, reference_weights, initial_pools
+    )
+    error = _rel_rms(ref_out, max_out)
+    print(f"multi-chunk prefill output relative RMS {error:.3e}")
+    assert error < LAYER_REL_RMS
+
+    dropped_recurrent = ref_recurrent.copy()
+    dropped_recurrent[list(SLOTS)] = 0.0
+    dropped_conv = ref_conv
+    decode_lengths = [1] * len(SLOTS)
+    for step in range(CONTINUATION_DECODE_STEPS):
+        x = _carry_hidden_states(generator, len(SLOTS))
+        max_out, max_conv, max_recurrent = _run(
+            carry_model, x, decode_lengths, (max_conv, max_recurrent)
+        )
+        ref_out, ref_conv, ref_recurrent = _reference(
+            x, decode_lengths, reference_weights, (ref_conv, ref_recurrent)
+        )
+        dropped_out, dropped_conv, dropped_recurrent = _reference(
+            x,
+            decode_lengths,
+            reference_weights,
+            (dropped_conv, dropped_recurrent),
+        )
+        error = _rel_rms(ref_out, max_out)
+        drift = _rel_rms(ref_out, dropped_out)
+        print(
+            f"decode step {step} output relative RMS {error:.3e}, "
+            f"from a zeroed carried state {drift:.3e}"
+        )
+        assert error < LAYER_REL_RMS, f"decode step {step}: {error}"
+        assert drift > WRONG_VARIANT_MIN_REL_DIFF, (
+            f"decode step {step} barely depends on the carried state "
+            f"({drift}), so this check would not catch it being dropped"
+        )
+
+    for slot in SLOTS:
+        for name, mine, ref in (
+            ("conv", max_conv, ref_conv),
+            ("recurrent", max_recurrent, ref_recurrent),
+        ):
+            error = _rel_rms(
+                torch.from_numpy(ref[slot]), torch.from_numpy(mine[slot])
+            )
+            print(f"{name} pool slot {slot} relative RMS {error:.3e}")
+            assert error < LAYER_REL_RMS, (
+                f"{name} pool slot {slot} is {error} from the reference"
+            )
+        drift = _rel_rms(
+            torch.from_numpy(ref_recurrent[slot]),
+            torch.from_numpy(dropped_recurrent[slot]),
+        )
+        print(
+            f"recurrent pool slot {slot} from a zeroed carried state "
+            f"relative RMS {drift:.3e}"
+        )
+        assert drift > WRONG_VARIANT_MIN_REL_DIFF, (
+            f"zeroing the carried state barely moves recurrent pool slot "
+            f"{slot} ({drift}), so this check would not catch it being dropped"
         )
 
 

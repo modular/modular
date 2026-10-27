@@ -50,7 +50,8 @@ modular_py_test(
     exec_properties = {
         "test.resources:gpu-memory": "8",
     },
-    gpu_constraints = ["//:b200_gpu"],
+    # SM100 and gfx950 cases; each skips on any other GPU.
+    gpu_constraints = ["//:has_gpu"],
     tags = ["gpu"],
     # Needs kda_chunk, registered only by the closed-source kernels.
     target_compatible_with = select({
@@ -65,6 +66,28 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/glm5_next_modulev3",
+    ],
+)
+
+modular_py_test(
+    name = "test_kda_prefill_routing",
+    srcs = ["test_kda_prefill_routing.py"],
+    tags = ["skip-external-ci"],
+    # Checks prefill routes to kda_chunk, registered only by the closed-source
+    # kernels.
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        requirement("numpy"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/glm5_next",
+        "//max/python/max/pipelines/architectures/glm5_next_modulev3",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
     ],
 )
 

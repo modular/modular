@@ -39,7 +39,7 @@ import torch
 from max.driver import accelerator_architecture_name, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
+from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue, ops
 from max.nn.legacy.state_space import (
     kda_chunk,
     kda_chunk_supports_head_dims,
@@ -852,6 +852,165 @@ def test_kda_chunk_amd_graph_capture(
         seq_lens=seq_lens,
         capture=True,
     )
+
+
+@pytest.mark.skipif(
+    not _is_gfx950_gpu(), reason="AMD kda_chunk path is gfx950-only"
+)
+def test_kda_chunk_amd_k_first_flash_heads(session: InferenceSession) -> None:
+    """kda_chunk on gfx950 at one GLM-5.3-Flash TP2 rank: K_FIRST, 32 heads."""
+    _run_kda_chunk_amd_case(
+        session,
+        state_layout="K_FIRST",
+        beta_mode="logits",
+        heads=32,
+        seq_lens=[300, 65, 1],
+    )
+
+
+_COND_HEADS = 4
+_COND_HEAD_DIM = 128
+_COND_SLOTS = 5
+
+
+def _kda_prefill_cond_graph() -> Graph:
+    """The GLM KDA layer's routing, as one graph over symbolic extents.
+
+    Prefill (more tokens than sequences) takes bf16 ``kda_chunk`` and decode
+    takes float32 ``kda_decode``; both mutate the same pool and return
+    float32.
+    """
+    gpu = DeviceRef.GPU()
+    f32 = DType.float32
+    h, d = _COND_HEADS, _COND_HEAD_DIM
+    act = TensorType(f32, ["total_tokens", h, d], device=gpu)
+    with Graph(
+        "kda_prefill_cond",
+        input_types=[
+            act,
+            act,
+            act,
+            act,
+            TensorType(f32, ["total_tokens", h], device=gpu),
+            TensorType(f32, [h], device=gpu),
+            TensorType(f32, [h, d], device=gpu),
+            TensorType(DType.int32, ["batch_plus_one"], device=gpu),
+            BufferType(f32, [_COND_SLOTS, h, d, d], device=gpu),
+            TensorType(DType.int32, ["batch"], device=gpu),
+        ],
+    ) as graph:
+        q, k, v, gate, beta, a_log, dt_bias, cu_seqlens = (
+            inp.tensor for inp in graph.inputs[:8]
+        )
+        pool = graph.inputs[8].buffer
+        state_indices = graph.inputs[9].tensor
+
+        def recurrence(chunked: bool) -> TensorValue:
+            op = kda_chunk if chunked else kda_decode
+            io_dtype = DType.bfloat16 if chunked else f32
+            out = op(
+                q.cast(io_dtype),
+                k.cast(io_dtype),
+                v.cast(io_dtype),
+                gate,
+                beta,
+                a_log,
+                dt_bias,
+                cu_seqlens,
+                pool,
+                state_indices,
+                output_dtype=io_dtype,
+                gate_mode="safe",
+                beta_mode="logits",
+                state_layout="K_FIRST",
+            ).cast(f32)
+            return ops.rebind(out, q.shape)
+
+        total_tokens = ops.shape_to_tensor(q.shape)[0]
+        batch = ops.shape_to_tensor(cu_seqlens.shape)[0] - 1
+        graph.output(
+            ops.cond(
+                total_tokens > batch,
+                [TensorType(f32, q.shape, gpu)],
+                lambda: recurrence(chunked=True),
+                lambda: recurrence(chunked=False),
+            )[0]
+        )
+    return graph
+
+
+@pytest.mark.skipif(
+    not _is_gfx950_gpu(), reason="AMD kda_chunk path is gfx950-only"
+)
+def test_kda_chunk_amd_cond_graph_capture(session: InferenceSession) -> None:
+    """The prefill/decode ``ops.cond`` captured per branch and replayed.
+
+    Each branch is captured under its own key, then replayed twice from the
+    initial pool. The second replay starts from the pool the first one left,
+    so both must match two eager executions bit for bit. A chunk output is
+    bf16-rounded and a decode output is not, which shows each capture recorded
+    the branch its batch selects.
+    """
+    model = session.load(_kda_prefill_cond_graph())
+    device = model.input_devices[0]
+    h, d = _COND_HEADS, _COND_HEAD_DIM
+    rng = np.random.default_rng(29)
+
+    def normal(*shape: int, mean: float = 0.0) -> np.ndarray:
+        return (rng.standard_normal(shape) * 0.5 + mean).astype(np.float32)
+
+    a_log = normal(h)
+    dt_bias = normal(h, d)
+    pool_initial = normal(_COND_SLOTS, h, d, d)
+    state_indices = np.asarray([3, 1], dtype=np.int32)
+
+    def inputs(seq_lens: list[int]) -> list[md.Buffer]:
+        t = sum(seq_lens)
+        arrays = [
+            normal(t, h, d),
+            normal(t, h, d),
+            normal(t, h, d),
+            normal(t, h, d, mean=-6.0),
+            normal(t, h),
+            a_log,
+            dt_bias,
+            np.concatenate([[0], np.cumsum(seq_lens)]).astype(np.int32),
+            pool_initial.copy(),
+            state_indices,
+        ]
+        return [md.Buffer.from_numpy(a).to(device) for a in arrays]
+
+    def reset_pool(args: list[md.Buffer]) -> None:
+        args[8].inplace_copy_from(
+            md.Buffer.from_numpy(pool_initial.copy()).to(device)
+        )
+
+    def read(buf: md.Buffer) -> np.ndarray:
+        return torch.from_dlpack(buf).cpu().numpy().copy()
+
+    for graph_key, seq_lens, chunked in (
+        (1, [300, 65], True),
+        (2, [1, 1], False),
+    ):
+        args = inputs(seq_lens)
+        eager = []
+        for _ in range(2):
+            (out,) = model.execute(*args)
+            eager.append((read(out), read(args[8])))
+        assert not np.array_equal(eager[1][1], pool_initial)
+        rounded = (
+            torch.from_numpy(eager[0][0]).to(torch.bfloat16).float().numpy()
+        )
+        assert np.array_equal(eager[0][0], rounded) == chunked
+
+        reset_pool(args)
+        (out_buf,) = model.capture(graph_key, *args)
+        reset_pool(args)
+        for replay, (want_out, want_pool) in enumerate(eager):
+            model.replay(graph_key, *args)
+            tag = f"chunked={chunked} replay {replay}"
+            np.testing.assert_array_equal(read(out_buf), want_out, err_msg=tag)
+            np.testing.assert_array_equal(read(args[8]), want_pool, err_msg=tag)
 
 
 @pytest.mark.skipif(

@@ -25,18 +25,23 @@ from __future__ import annotations
 
 from max import functional as F
 from max import tree
+from max.driver import accelerator_api
 from max.dtype import DType
-from max.graph import BufferValue, TensorValue, ops
+from max.graph import BufferValue, DimLike, TensorType, TensorValue, ops
 from max.nn import Linear, Module, RMSNorm
 from max.nn.common_layers.linear import col_parallel, row_parallel
 from max.nn.common_layers.mesh_axis import TP
-from max.nn.legacy.state_space import gated_delta_conv1d_fwd, kda_decode
-from max.nn.legacy.state_space.kimi_delta import (
-    KDA_GATE_LOWER_BOUND,
-    KdaGateMode,
+from max.nn.legacy.state_space import (
+    gated_delta_conv1d_fwd,
+    kda_chunk,
+    kda_decode,
 )
+from max.nn.legacy.state_space.kimi_delta import KdaGateMode
 from max.pipelines.architectures.glm5_next.layers.kimi_delta_attention import (
     STATE_LAYOUT,
+    kda_chunk_predicate,
+    kda_chunk_servable,
+    kda_gate_mode,
 )
 from max.tensor import Tensor
 from max.tensor.sharding import NamedMapping
@@ -61,17 +66,6 @@ class KdaStateAccess:
     recurrent_rows: Tensor
     layer: Tensor
     """int64 CPU scalar: this layer's position among the KDA layers."""
-
-
-def _gate_mode(lower_bound: float) -> KdaGateMode:
-    """The kernel's bounded forget gate, which compiles in its lower bound."""
-    if lower_bound != KDA_GATE_LOWER_BOUND:
-        raise ValueError(
-            f"KDA's bounded forget gate is compiled with a lower bound of "
-            f"{KDA_GATE_LOWER_BOUND}, but this checkpoint asks for "
-            f"{lower_bound}."
-        )
-    return "safe"
 
 
 def _layer_rows(rows: TensorValue, layer: TensorValue) -> TensorValue:
@@ -130,22 +124,75 @@ def _kda_core_graph(
         for part in ops.split(conv_out, [qkv_dim] * 3, axis=-1)
     )
 
-    core = kda_decode(
-        q,
-        k,
-        v,
-        ops.reshape(raw_gate.cast(DType.float32), head_shape),
-        beta_logits.cast(DType.float32),
-        a_log,
-        ops.reshape(dt_bias, head_shape[1:]),
-        input_row_offsets.cast(DType.int32),
-        recurrent_pool,
-        _layer_rows(recurrent_rows, layer).cast(DType.int32),
-        output_dtype=DType.float32,
-        gate_mode=gate_mode,
-        beta_mode="logits",
-        state_layout=STATE_LAYOUT,
-    )
+    raw_gate = ops.reshape(raw_gate.cast(DType.float32), head_shape)
+    beta_logits = beta_logits.cast(DType.float32)
+    dt_bias = ops.reshape(dt_bias, head_shape[1:])
+    cu_seqlens = input_row_offsets.cast(DType.int32)
+    state_indices = _layer_rows(recurrent_rows, layer).cast(DType.int32)
+    out_shape: list[DimLike] = [q.shape[0], *head_shape[1:]]
+
+    def decode() -> TensorValue:
+        return kda_decode(
+            q,
+            k,
+            v,
+            raw_gate,
+            beta_logits,
+            a_log,
+            dt_bias,
+            cu_seqlens,
+            recurrent_pool,
+            state_indices,
+            output_dtype=DType.float32,
+            gate_mode=gate_mode,
+            beta_mode="logits",
+            state_layout=STATE_LAYOUT,
+        )
+
+    def chunk() -> TensorValue:
+        # The gfx950 chunk kernels take only bf16 q/k/v and output, so this
+        # branch rounds at the op boundary and nowhere else; the state stays
+        # float32 because eligibility requires a float32 pool.
+        out = kda_chunk(
+            q.cast(DType.bfloat16),
+            k.cast(DType.bfloat16),
+            v.cast(DType.bfloat16),
+            raw_gate,
+            beta_logits,
+            a_log,
+            dt_bias,
+            cu_seqlens,
+            recurrent_pool,
+            state_indices,
+            output_dtype=DType.bfloat16,
+            gate_mode=gate_mode,
+            beta_mode="logits",
+            state_layout=STATE_LAYOUT,
+        ).cast(DType.float32)
+        return ops.rebind(out, out_shape, "kda chunk output rebind")
+
+    # Only gfx950 takes the chunk op here: this graph has no speculative
+    # verify or state replay, but its NVIDIA chunk path has no numerics
+    # coverage yet, so NVIDIA prefill keeps the sequential recurrence. A
+    # decode batch (one token per sequence) stays on float32 `kda_decode`, and
+    # so does the device graph captured for it: `ops.cond` branches are
+    # separate regions. A mixed prefill+decode batch takes the chunk branch
+    # whole, decode rows included.
+    if accelerator_api() == "hip" and kda_chunk_servable(
+        head_dim, gate_mode, recurrent_pool.dtype
+    ):
+        total_tokens = ops.shape_to_tensor(q.shape)[0]
+        batch_size = ops.shape_to_tensor(input_row_offsets.shape)[0] - 1
+        core = ops.cond(
+            kda_chunk_predicate(
+                total_tokens, batch_size, head_shape[1], head_dim
+            ),
+            [TensorType(DType.float32, out_shape, q.device)],
+            chunk,
+            lambda: ops.rebind(decode(), out_shape, "kda decode output rebind"),
+        )[0]
+    else:
+        core = decode()
     # Normalize, scale, and only then gate.
     normed = ops.rms_norm(
         core, norm_weight, norm_eps, multiply_before_cast=False
@@ -167,7 +214,7 @@ class KimiDeltaAttention(Module[[Tensor, KdaStateAccess, Tensor], Tensor]):
         self.num_heads = config.linear_num_heads
         self.head_dim = config.linear_head_dim
         self.norm_eps = config.rms_norm_eps
-        self.gate_mode = _gate_mode(config.linear_lower_bound)
+        self.gate_mode = kda_gate_mode(config.linear_lower_bound)
         qkv_dim = self.num_heads * self.head_dim
         kernel = config.linear_conv_kernel_dim
 
