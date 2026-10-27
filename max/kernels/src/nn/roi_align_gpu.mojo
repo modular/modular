@@ -231,7 +231,9 @@ def _roi_align_impl[
 
     comptime assert threads_per_row > 0 and max_threads % threads_per_row == 0
 
-    var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+    var sm_count = ctx.device().get_attribute(
+        DeviceAttribute.MULTIPROCESSOR_COUNT
+    )
 
     var linear_block_count: Int
     var rows_per_block: Int

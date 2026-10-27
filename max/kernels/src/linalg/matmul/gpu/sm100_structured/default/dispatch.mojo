@@ -1130,7 +1130,7 @@ def _outlier_fits_device[
         tuning_config.cluster_shape[1],
         tuning_config.num_split_k,
     )
-    return grid[0] * grid[1] * grid[2] <= ctx.get_attribute(
+    return grid[0] * grid[1] * grid[2] <= ctx.device().get_attribute(
         DeviceAttribute.MULTIPROCESSOR_COUNT
     )
 

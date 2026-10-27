@@ -20,6 +20,7 @@ from ._legacy.device_attribute import DeviceAttribute
 from ._overlay import (
     CompletionFlag,
     DefaultDeviceTypeEncoder,
+    Device,
     DeviceBuffer,
     DeviceContext,
     DeviceContextArray,

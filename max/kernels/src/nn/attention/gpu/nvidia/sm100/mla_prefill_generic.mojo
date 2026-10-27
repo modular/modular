@@ -2928,7 +2928,9 @@ def _mla_prefill_sm100_valid_length_dispatch[
                 max_prompt_len.as_uint32(),
                 UInt32(PartitionType().num_partitions()),
                 UInt32(batch_size),
-                ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
+                ctx.device().get_attribute(
+                    DeviceAttribute.MULTIPROCESSOR_COUNT
+                ),
             ):
                 _launch[cfg_1q]()
             else:

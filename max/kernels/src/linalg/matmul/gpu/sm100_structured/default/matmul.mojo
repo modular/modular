@@ -1384,7 +1384,9 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
                 c_row_stride,
             )
         var ctas = grid_dim[0] * grid_dim[1] * grid_dim[2]
-        var resident = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+        var resident = ctx.device().get_attribute(
+            DeviceAttribute.MULTIPROCESSOR_COUNT
+        )
         if ctas > resident:
             raise Error(
                 "split-K parallel reduction needs every CTA resident: grid of ",

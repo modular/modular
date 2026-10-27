@@ -3493,7 +3493,7 @@ def _amd_sparse_decode_partitions(
             batch_size,
             indices_stride,
             num_heads,
-            ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
+            ctx.device().get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
         )
     return None
 

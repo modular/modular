@@ -105,7 +105,9 @@ def _topk_stage2_smem_budget(ctx: DeviceContext) raises -> Int:
     """
     comptime if ctx.target.is_nvidia_gpu():
         return (
-            ctx.get_attribute(DeviceAttribute.MAX_SHARED_MEMORY_PER_BLOCK_OPTIN)
+            ctx.device().get_attribute(
+                DeviceAttribute.MAX_SHARED_MEMORY_PER_BLOCK_OPTIN
+            )
             - _TOPK_STAGE2_SMEM_HEADROOM_BYTES
         )
     else:

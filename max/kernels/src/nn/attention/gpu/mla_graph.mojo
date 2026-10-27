@@ -2083,7 +2083,9 @@ def mla_decode_branch_fp8[
                     batch_size,
                     indices_stride,
                     num_heads,
-                    ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
+                    ctx.device().get_attribute(
+                        DeviceAttribute.MULTIPROCESSOR_COUNT
+                    ),
                 ),
             )
     else:
@@ -3641,7 +3643,9 @@ def mla_decode_branch_bf16[
                     tokens,
                     indices_stride,
                     num_heads,
-                    ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
+                    ctx.device().get_attribute(
+                        DeviceAttribute.MULTIPROCESSOR_COUNT
+                    ),
                 ),
             )
         _ = compact_buf^

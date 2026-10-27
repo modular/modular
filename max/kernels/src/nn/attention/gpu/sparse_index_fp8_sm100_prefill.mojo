@@ -2933,7 +2933,7 @@ def fp8_index_score_sm100_prefill[
         var score_rows = min(out_rows, batch_size * max_seq_len)
         var score_bytes = score_rows * max_num_keys * size_of[out_dtype]()
         var k_bytes = batch_size * max_num_keys * depth * size_of[dtype]()
-        evict_k = score_bytes + k_bytes > ctx.get_attribute(
+        evict_k = score_bytes + k_bytes > ctx.device().get_attribute(
             DeviceAttribute.L2_CACHE_SIZE
         )
 

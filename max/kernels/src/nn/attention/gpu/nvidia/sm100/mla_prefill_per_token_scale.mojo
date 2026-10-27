@@ -2287,7 +2287,9 @@ def mla_sm100_prefill_per_token_scale[
                 max_prompt_len.as_uint32(),
                 UInt32(PartitionType().num_partitions()),
                 UInt32(batch_size),
-                ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
+                ctx.device().get_attribute(
+                    DeviceAttribute.MULTIPROCESSOR_COUNT
+                ),
             ):
                 _launch[cfg_1q]()
             else:

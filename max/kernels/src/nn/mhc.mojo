@@ -620,7 +620,9 @@ def mhc_post[
         )
 
     var gpu_ctx = context
-    var num_cus = gpu_ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+    var num_cus = gpu_ctx.device().get_attribute(
+        DeviceAttribute.MULTIPROCESSOR_COUNT
+    )
     var non_temporal = mhc_post_non_temporal(num_rows, num_cus)
     if force_non_temporal:
         non_temporal = force_non_temporal.value()

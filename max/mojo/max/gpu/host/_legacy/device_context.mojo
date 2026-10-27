@@ -4503,6 +4503,14 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
     # Methods
     # ===-------------------------------------------------------------------===#
 
+    def device(ref self) -> Device[Self.target, ImmOrigin(origin_of(self))]:
+        """Returns a view of the device this context runs on.
+
+        Returns:
+            A `Device` that borrows this context.
+        """
+        return {Pointer(to=self).as_imm()}
+
     def name(self) -> String:
         """Returns the device name, an ASCII string identifying this device,
         defined by the native device API.
@@ -7001,6 +7009,79 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
             location=call_location(),
         )
         return result
+
+
+struct Device[target: CompilationTarget, origin: ImmOrigin](
+    TrivialRegisterPassable
+):
+    """A view of the accelerator device behind a `DeviceContext`.
+
+    Groups the queries that describe the hardware itself, as opposed to the
+    context's allocations or the stream's queued work. The method names match
+    the neo-driver `Device` API. Get one from `DeviceContext.device()`; the view
+    is valid for as long as that context is.
+
+    Parameters:
+        target: The compilation target of the owning context.
+        origin: The origin of the owning context.
+
+    Example:
+
+    ```mojo
+    from max.gpu.host import DeviceAttribute, DeviceContext
+
+    def main() raises:
+        var ctx = DeviceContext()
+        var device = ctx.device()
+        print(device.get_name())
+        print(device.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT))
+    ```
+    """
+
+    var _ctx: Pointer[DeviceContextBase[Self.target], Self.origin]
+
+    @doc_hidden
+    def __init__(
+        out self, ctx: Pointer[DeviceContextBase[Self.target], Self.origin]
+    ):
+        self._ctx = ctx
+
+    def get_name(self) raises -> String:
+        """Returns the device name, as reported by the native device API.
+
+        Returns:
+            A string identifying the device, such as `NVIDIA B200`.
+
+        Raises:
+            If the device name cannot be queried.
+        """
+        return self._ctx[].name()
+
+    def get_attribute(self, attr: DeviceAttribute) raises -> Int:
+        """Returns the specified attribute for this device.
+
+        Args:
+            attr: The device attribute to query.
+
+        Returns:
+            The value of `attr` on this device.
+
+        Raises:
+            If the attribute cannot be queried.
+        """
+        return self._ctx[].get_attribute(attr)
+
+    def is_host_unified(self) raises -> Bool:
+        """Returns True if this device and the host share one physical memory
+        pool.
+
+        Returns:
+            True if device and host memory are one physical pool.
+
+        Raises:
+            If the device cannot be queried.
+        """
+        return self._ctx[].is_host_unified()
 
 
 struct DeviceContextArray[length: Int](Copyable, Sized):

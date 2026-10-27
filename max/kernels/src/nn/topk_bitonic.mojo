@@ -4111,7 +4111,7 @@ def persistent_topk_block_split[
                 topk_cluster_split,
             )
 
-            var sm_count = ctx.get_attribute(
+            var sm_count = ctx.device().get_attribute(
                 DeviceAttribute.MULTIPROCESSOR_COUNT
             )
             if (
@@ -4138,7 +4138,7 @@ def persistent_topk_block_split[
     if N >= _HSEL_MIN_N:
         # Both selects below want the same question answered: do the rows fill
         # the GPU?
-        var hsel_fills_gpu = total_seq_len >= ctx.get_attribute(
+        var hsel_fills_gpu = total_seq_len >= ctx.device().get_attribute(
             DeviceAttribute.MULTIPROCESSOR_COUNT
         )
 
@@ -4491,7 +4491,9 @@ def persistent_topk_block_split[
 
     var _N = Int(N)
     var num_tiles = ceildiv(_N, _TILE)
-    var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+    var sm_count = ctx.device().get_attribute(
+        DeviceAttribute.MULTIPROCESSOR_COUNT
+    )
     var S = _choose_split_factor(total_seq_len, num_tiles, sm_count)
     if S <= 1:
         persistent_topk_block(ctx, in_scores, out_idxs, N, K, total_seq_len)

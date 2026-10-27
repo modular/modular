@@ -3056,7 +3056,7 @@ def _gemv_gpu_impl[
             DType.float8_e4m3fn,
         ):
             if k % simd_width == 0:
-                if ceildiv(n, 2) <= ctx.get_attribute(
+                if ceildiv(n, 2) <= ctx.device().get_attribute(
                     DeviceAttribute.MAX_GRID_DIM_Y
                 ):
                     kernel_func = GEMVAlgorithm.GemvSplitK

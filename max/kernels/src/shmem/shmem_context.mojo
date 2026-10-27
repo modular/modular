@@ -224,12 +224,12 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         self._end_event = self._ctx.create_event()
 
         # Store attributes to avoid retrieving them in each collective launch.
-        self._multiprocessor_count = self._ctx.get_attribute(
+        self._multiprocessor_count = self._ctx.device().get_attribute(
             DeviceAttribute.MULTIPROCESSOR_COUNT
         )
 
         self._cooperative = Bool(
-            self._ctx.get_attribute(DeviceAttribute.COOPERATIVE_LAUNCH)
+            self._ctx.device().get_attribute(DeviceAttribute.COOPERATIVE_LAUNCH)
         )
         self._thread_per_gpu = False
 
@@ -259,12 +259,12 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         self._end_event = self._ctx.create_event()
 
         # Store attributes to avoid retrieving them in each collective launch.
-        self._multiprocessor_count = self._ctx.get_attribute(
+        self._multiprocessor_count = self._ctx.device().get_attribute(
             DeviceAttribute.MULTIPROCESSOR_COUNT
         )
 
         self._cooperative = Bool(
-            self._ctx.get_attribute(DeviceAttribute.COOPERATIVE_LAUNCH)
+            self._ctx.device().get_attribute(DeviceAttribute.COOPERATIVE_LAUNCH)
         )
         self._thread_per_gpu = True
 
@@ -300,7 +300,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         self._end_event = self._ctx.create_event()
 
         # Store attributes to avoid retrieving them in each collective launch.
-        self._multiprocessor_count = self._ctx.get_attribute(
+        self._multiprocessor_count = self._ctx.device().get_attribute(
             DeviceAttribute.MULTIPROCESSOR_COUNT
         )
         # TODO(MSTDL-1761): add ability to query AMD cooperative launch

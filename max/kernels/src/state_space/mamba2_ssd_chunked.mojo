@@ -1167,7 +1167,7 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
         ):
             if (
                 use_grouped_cb_ssd(total_len, batch, nheads, head_dim, ngroups)
-                and ctx.name() == "NVIDIA B200"
+                and ctx.device().get_name() == "NVIDIA B200"
             ):
                 launch_output[True]()
                 return

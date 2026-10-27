@@ -94,7 +94,7 @@ def mla_decode_dispatch_scalars(
     if ctx.api() == "hip":
         var np: Int
         if sparse_indices_stride > 0:
-            var sm_count = ctx.get_attribute(
+            var sm_count = ctx.device().get_attribute(
                 DeviceAttribute.MULTIPROCESSOR_COUNT
             )
             if q_max_seq_len == 1 and is_fp8_kv:
@@ -134,7 +134,7 @@ def mla_decode_dispatch_scalars(
             q_max_seq_len,
             num_heads,
             is_fp8_kv,
-            ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
+            ctx.device().get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
         )
     else:
         raise Error(

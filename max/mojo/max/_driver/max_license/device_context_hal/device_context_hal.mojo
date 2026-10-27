@@ -56,7 +56,7 @@ from std.time import monotonic
 from ..hal import (
     Buffer,
     Context,
-    Device,
+    Device as _HALDevice,
     Driver,
     Event,
     FunctionHandle,
@@ -402,7 +402,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
     # ===-------------------------------------------------------------------===#
 
     var _driver: ArcPointer[Driver]
-    var _device: ArcPointer[Device[Self.device_spec]]
+    var _device: ArcPointer[_HALDevice[Self.device_spec]]
     var _context: ArcPointer[Context[Self.device_spec]]
     var _stream: ArcPointer[Stream[Self.device_spec]]
     # Null until the C++ runtime shim provides it; read by the CUDA/HIP
@@ -509,7 +509,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
                 )
             self._driver = driver
             # The spec stays id 0 for typing; the runtime id picks the device.
-            self._device = rebind[ArcPointer[Device[Self.device_spec]]](
+            self._device = rebind[ArcPointer[_HALDevice[Self.device_spec]]](
                 self._driver[].get_device_dynamic[Optional[Int64](0)](
                     Int64(device_id)
                 )
@@ -697,6 +697,14 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
+
+    def device(ref self) -> Device[Self.target, ImmOrigin(origin_of(self))]:
+        """Returns a view of the device this context runs on.
+
+        Returns:
+            A `Device` that borrows this context.
+        """
+        return {Pointer(to=self).as_imm()}
 
     def synchronize(self) raises:
         """Blocks until all asynchronous calls on the stream associated with
@@ -2213,7 +2221,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         Raises:
             On the first pair the plugin refuses.
         """
-        comptime Ext = Device[Self.device_spec].Extensions
+        comptime Ext = _HALDevice[Self.device_spec].Extensions
         comptime if conforms_to(Ext, SupportsPeerAccessV1):
             var maybe_driver = _GPU_DRIVER.get_or_create_ptr()
             if not maybe_driver[]:
@@ -2228,7 +2236,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
             var contexts = List[ArcPointer[Context[Self.device_spec]]]()
             for i in range(count):
                 # Matches `__init__`'s lookup, so the contexts are shared.
-                var device = rebind[ArcPointer[Device[Self.device_spec]]](
+                var device = rebind[ArcPointer[_HALDevice[Self.device_spec]]](
                     driver[].get_device_dynamic[Optional[Int64](0)](Int64(i))
                 )
                 # A non-vendor `.so` may lack the group; stay a no-op.
@@ -2449,6 +2457,65 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
             If there's an error querying the device.
         """
         return self._device[].is_host_unified()
+
+
+struct Device[target: CompilationTarget, origin: ImmOrigin](
+    TrivialRegisterPassable
+):
+    """A view of the accelerator device behind a `DeviceContext`.
+
+    Mirrors the legacy backend's `Device`. The view is valid for as long as
+    the context it came from is.
+
+    Parameters:
+        target: The compilation target of the owning context.
+        origin: The origin of the owning context.
+    """
+
+    var _ctx: Pointer[DeviceContextBase[Self.target], Self.origin]
+
+    @doc_hidden
+    def __init__(
+        out self, ctx: Pointer[DeviceContextBase[Self.target], Self.origin]
+    ):
+        self._ctx = ctx
+
+    def get_name(self) raises -> String:
+        """Returns the device name, as reported by the native device API.
+
+        Returns:
+            A string identifying the device.
+
+        Raises:
+            If the device name cannot be queried.
+        """
+        return self._ctx[].name()
+
+    def get_attribute(self, attr: DeviceAttribute) raises -> Int:
+        """Returns the specified attribute for this device.
+
+        Args:
+            attr: The device attribute to query.
+
+        Returns:
+            The value of `attr` on this device.
+
+        Raises:
+            If the attribute cannot be queried.
+        """
+        return self._ctx[].get_attribute(attr)
+
+    def is_host_unified(self) raises -> Bool:
+        """Returns True if this device and the host share one physical memory
+        pool.
+
+        Returns:
+            True if device and host memory are one physical pool.
+
+        Raises:
+            If the device cannot be queried.
+        """
+        return self._ctx[].is_host_unified()
 
 
 struct _DeviceContextScopeHAL(Movable):

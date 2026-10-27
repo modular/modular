@@ -859,7 +859,7 @@ def _matmul_gpu_impl[
     logger.info("---- MATMUL GPU execution started ----")
     logger.info("MxNxK: ", m, "x", n, "x", k, sep="")
     logger.info("Data types: A=", a_type, " B=", b_type, " C=", c_type)
-    logger.info("Device: ", ctx.name())
+    logger.info("Device: ", ctx.device().get_name())
     logger.info(
         "Transpose B: ",
         transpose_b,

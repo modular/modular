@@ -492,7 +492,9 @@ def mha_decoding_num_partitions(
     if api == "hip" or api == "cuda":
         # MULTIPROCESSOR_COUNT is only meaningful for the split-K heuristics,
         # so query it lazily here rather than for every backend.
-        var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+        var sm_count = ctx.device().get_attribute(
+            DeviceAttribute.MULTIPROCESSOR_COUNT
+        )
         if api == "hip":
             return hip_mha_decoding_num_partitions(
                 batch_size,
@@ -542,7 +544,9 @@ def mha_decoding_max_num_partitions(
     # max == actual so the (max >= actual) invariant holds and no over-launch
     # path is taken.
     if ctx.api() == "cuda":
-        var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+        var sm_count = ctx.device().get_attribute(
+            DeviceAttribute.MULTIPROCESSOR_COUNT
+        )
         return cuda_mha_decoding_max_num_partitions(
             batch_size, heads_per_group, sm_count
         )

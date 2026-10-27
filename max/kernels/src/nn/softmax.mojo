@@ -829,7 +829,9 @@ def _softmax_gpu[
 
     var shape_il = rebind[IndexList[rank]](coord_to_index_list(shape))
     var num_rows = shape_il.flattened_length() // shape_il[axis]
-    var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+    var sm_count = ctx.device().get_attribute(
+        DeviceAttribute.MULTIPROCESSOR_COUNT
+    )
     comptime sm_overprovision_factor = 32  # tunable
 
     # Single-pass online softmax. The sink and logsoftmax variants stay on

@@ -107,6 +107,19 @@ def _run_get_attribute(ctx: DeviceContext) raises:
     print("warp_size: ", ctx.get_attribute(DeviceAttribute.WARP_SIZE))
 
 
+def _run_device_view(ctx: DeviceContext) raises:
+    print("-")
+    print("_run_device_view()")
+
+    var device = ctx.device()
+    assert_equal(device.get_name(), ctx.name())
+    assert_equal(
+        device.get_attribute(DeviceAttribute.WARP_SIZE),
+        ctx.get_attribute(DeviceAttribute.WARP_SIZE),
+    )
+    assert_equal(device.is_host_unified(), ctx.is_host_unified())
+
+
 def _run_get_stream(ctx: DeviceContext) raises:
     print("-")
     print("_run_get_stream()")
@@ -145,6 +158,7 @@ def test_smoke() raises:
     _run_device_info(ctx)
     _run_compute_capability(ctx)
     _run_get_attribute(ctx)
+    _run_device_view(ctx)
     _run_get_stream(ctx)
     _run_peer_access(ctx)
 

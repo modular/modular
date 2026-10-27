@@ -283,6 +283,10 @@ This version is still a work in progress.
   per row. The `Span` overloads and the 1-D `sum` and `mean` overloads that
   take a length and an `input_fn` are unchanged.
 
+- Added `DeviceContext.device()`, which returns a `Device` view of the
+  accelerator with `get_name()`, `get_attribute()` and `is_host_unified()`.
+  The same queries on `DeviceContext` still work.
+
 ## Tools
 
 - Added the ability to install `max-serve` and `max-benchmark` as Conda extras,
