@@ -15,6 +15,7 @@
 #define MLRT_GRAPHRT_MEFEXECUTOR_MEFFILE_H
 
 #include "AsyncRT/ForwardDecls.h"
+#include "Support/Buffer.h"
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/ML/CompiledFrameworkLabel.h"
@@ -42,11 +43,9 @@ public:
   /// Note that this doesn't set up the primitive table, it requires an explicit
   /// call to `installPrimitives` to do so.
   ///
-  /// TODO: This should (optionally) manage ownership of the underlying data
-  /// passed in.  For example, we could take a closure to run when the lifetime
-  /// of the MEFFile is done, or have a reference counted abstraction for
-  /// holding memory buffers.
-  static ErrorOr<RCRef<MEFFile>> open(StringRef file);
+  /// The file retains `buffer` until it and all invokables and asynchronous
+  /// executions retaining it have been released.
+  static ErrorOr<RCRef<MEFFile>> open(BufferRef buffer);
 
   /// Check that the primitives name table is valid and can be resolved to
   /// entries in the specified registry.
@@ -56,20 +55,8 @@ public:
   /// guess of what it contains, allowing for better QoI and usability of tools.
   CompiledFrameworkLabel sniffFileContents() const;
 
-  /// Open and read a MEF file, setting up our internal state and returning a
-  /// pointer to our initialized object on success.  On an initial parse
-  /// failure, an error message is returned in the `ErrorOr`.  MEF file format
-  /// errors discovered lazily when running invokables, so they are returned
-  /// through the invokable's result AsyncValue's.
-  ///
-  /// Note that this doesn't set up the primitive table, it requires an explicit
-  /// call to `installPrimitives` to do so.
-  ///
-  /// TODO: This should (optionally) manage ownership of the underlying data
-  /// passed in.  For example, we could take a closure to run when the lifetime
-  /// of the MEFFile is done, or have a reference counted abstraction for
-  /// holding memory buffers.
-  static ErrorOr<RCRef<MEFFile>> open(StringRef file,
+  /// Open a MEF file and install its primitives.
+  static ErrorOr<RCRef<MEFFile>> open(BufferRef buffer,
                                       const PrimitiveRegistry &registry);
 
   /// Return the top level invokable in the file. This object corresponds to the

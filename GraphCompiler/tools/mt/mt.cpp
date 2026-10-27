@@ -304,7 +304,7 @@ int main(int argc, char **argv) {
       return options.reportError("Unknown command:");
     }
 
-    auto mefFileOr = MEFFile::open(inputInfo.file->getBuffer());
+    auto mefFileOr = MEFFile::open(inputInfo.file.copy());
     if (failed(mefFileOr))
       return options.reportError(mefFileOr.getError());
     auto modelsOr = M::loadMGPMEFFile(*mefFileOr);

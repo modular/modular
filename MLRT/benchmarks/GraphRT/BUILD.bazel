@@ -39,6 +39,7 @@ modular_cc_test(
         "//MLRT:GraphRT/GRTRuntime",
         "//MLRT:GraphRT/MEFExecutor",
         "//MLRT:GraphRT/Primitives",
+        "//Support:Buffer",
         "//Support:Globals",
         "//Support:ML",
         "@bazel_tools//tools/cpp/runfiles",

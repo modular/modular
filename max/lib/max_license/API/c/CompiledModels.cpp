@@ -29,7 +29,7 @@ using namespace Detail;
 static ErrorOr<UninitializedModel>
 loadModelsFromMEF(BufferRef compiledModelBuffer) {
 
-  auto mefFileOr = MEFFile::open(compiledModelBuffer->getBuffer());
+  auto mefFileOr = MEFFile::open(compiledModelBuffer.copy());
   if (mefFileOr.isError())
     return mefFileOr.takeError();
 

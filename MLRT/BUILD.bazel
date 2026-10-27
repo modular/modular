@@ -416,6 +416,7 @@ modular_cc_library(
         "//AsyncRT:Support",
         "//Support:ADT",
         "//Support:Base",
+        "//Support:Buffer",
         "//Support:ML",
         "//Support:Profiling",
         "//Support:ProfilingRanges",

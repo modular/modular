@@ -20,6 +20,7 @@ modular_cc_binary(
         "//MLRT:GraphRT/MEFExecutor",
         "//MLRT:GraphRT/Primitives",
         "//Support:Base",
+        "//Support:Buffer",
         "//Support:CommonCLOptions",
         "//Support:Globals",
         "//Support:ML",

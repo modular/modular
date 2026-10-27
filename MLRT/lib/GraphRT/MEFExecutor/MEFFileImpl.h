@@ -53,6 +53,9 @@ public:
     uint16_t numArgs, numResults;
   };
 
+  /// Backing storage for the sections below.
+  BufferRef buffer;
+
   // These are sections that we expect to be in the MEF file.  They are lazily
   // decoded when executing invokables.
   ArrayRef<uint8_t> primitiveNames;
