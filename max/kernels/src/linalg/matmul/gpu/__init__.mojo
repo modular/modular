@@ -53,7 +53,8 @@ from ...gemv import (
     gemm_mma_cpasync,
     gemv_gpu,
     gemv_gpu_dispatch,
-    is_minimax_router_gemm,
+    _amd_small_m_gemv_route,
+    _is_amd_small_m_gemv,
 )
 from ...utils import (
     ElementwiseComputeFn,
@@ -1180,11 +1181,13 @@ def _matmul_gpu_impl[
 
                 comptime if (
                     transpose_b
-                    and is_minimax_router_gemm[
+                    and _is_amd_small_m_gemv[
                         c_type, a_type, b_type, static_N, static_K
                     ]()
                 ):
-                    if m <= 16:
+                    if _amd_small_m_gemv_route[
+                        c_type, a_type, b_type, static_N, static_K
+                    ](m)[0] and (m != 1 or not has_compute_fn):
                         comptime if has_epilogue_fn:
                             return gemv_gpu_dispatch[
                                 transpose_b=True,
