@@ -1555,6 +1555,20 @@ def _batch_inplace_copy(dsts: Sequence[Buffer], srcs: Sequence[Buffer]) -> None:
     (``dst is src``) are skipped. All buffers must have matching sizes.
     """
 
+def _batch_copy_rows(
+    dsts: Sequence[Buffer],
+    srcs: Sequence[Buffer],
+    dst_rows: Sequence[int],
+    src_rows: Sequence[int],
+) -> None:
+    """
+    Batched copy of ``srcs[i][src_rows[i]]`` into ``dsts[i][dst_rows[i]]``.
+
+    Same as :func:`_batch_inplace_copy` over those row views, without
+    building a buffer per row. A row is one index of the leading axis.
+    Buffers must be contiguous and not host-hazard tracked.
+    """
+
 class _ChunkedStagingRegion:
     """
     A host mapping made device-accessible in chunks.

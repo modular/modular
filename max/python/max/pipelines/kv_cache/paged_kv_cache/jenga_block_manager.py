@@ -30,8 +30,9 @@ from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from itertools import chain
 
+from max._core.driver import _batch_copy_rows
 from max._kv_core import longest_joint_prefix_hit
-from max.driver import Buffer, batch_inplace_copy
+from max.driver import Buffer
 from max.nn.legacy.kv_cache import KVCacheGroupId, KVLeafRegion
 from max.nn.legacy.kv_cache.cache_params import KVCacheMemory
 from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
@@ -2160,8 +2161,8 @@ class JengaBlockManager:
     ) -> int:
         """Batch-copies pages from other replicas into ``dst_replica``.
 
-        Every page view is built before the call so host-side getitem work
-        does not sit between the peer copies. Destinations all live on
+        Pages are passed as row indices, not Python views, so a long prefix
+        costs no per-page buffer objects. Destinations all live on
         ``dst_replica``, so mixed sources still cost one submission.
 
         Returns:
@@ -2175,8 +2176,10 @@ class JengaBlockManager:
         assert self._replica_kv_memory is not None
 
         num_bytes = 0
-        dst_pages: list[Buffer] = []
-        src_pages: list[Buffer] = []
+        dsts: list[Buffer] = []
+        srcs: list[Buffer] = []
+        dst_rows: list[int] = []
+        src_rows: list[int] = []
         for page in copies:
             src_unit = self._replica_kv_memory[page.src_replica][page.leaf_id]
             dst_unit = self._replica_kv_memory[dst_replica][page.leaf_id]
@@ -2184,11 +2187,13 @@ class JengaBlockManager:
             for src_buf, dst_buf in zip(
                 src_unit.buffers, dst_unit.buffers, strict=True
             ):
-                dst_pages.append(dst_buf[page.dst_bid, :])
-                src_pages.append(src_buf[page.src_bid, :])
+                dsts.append(dst_buf)
+                srcs.append(src_buf)
+                dst_rows.append(page.dst_bid)
+                src_rows.append(page.src_bid)
             num_bytes += src_unit.bytes_per_page * len(src_unit.buffers)
 
-        batch_inplace_copy(dst_pages, src_pages)
+        _batch_copy_rows(dsts, srcs, dst_rows, src_rows)
         return num_bytes
 
     def _reuse_blocks_from_prefix_cache(
