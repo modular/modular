@@ -2004,6 +2004,12 @@ ErrorOr<DeviceContextRef> DeviceContext::selectStream(unsigned streamId) {
 
 bool DeviceContext::flushIdleStreamViews() { return false; }
 
+ErrorOr<DeviceEventRef> DeviceContext::enqueueBaseStreamEvent() {
+  return DeviceEventRef();
+}
+
+bool DeviceContext::isBaseStreamCapturing() const { return false; }
+
 MemoryManagerFreeList &DeviceContext::freeList() const { return *freeList_; }
 MemoryManagerFreeList &DeviceContext::hostFreeList() const {
   return *hostFreeList_;

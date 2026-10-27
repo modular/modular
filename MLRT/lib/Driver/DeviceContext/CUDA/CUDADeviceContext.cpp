@@ -2439,8 +2439,7 @@ bool CUDADeviceContext::flushIdleStreamViews() {
       continue;
     // Only the ordinary free list: `graphFreeList` backs captured graphs that
     // may still replay.
-    cudaView.freeList().flushCachedToParent();
-    flushed = true;
+    flushed |= cudaView.freeList().deferCachedToParent();
   }
   return flushed;
 }
@@ -2474,6 +2473,24 @@ ErrorOr<DeviceEventRef> CUDADeviceContext::enqueueEvent() {
   CUDA_CHECK_ERR(driver_.cuEventRecord(event, stream_));
   return CUDADeviceEventRef::create(CUDADevice::cast(this->device()), event,
                                     recordedDuringCapture);
+}
+
+ErrorOr<DeviceEventRef> CUDADeviceContext::enqueueBaseStreamEvent() {
+  CUstream base = streamPool_->get(0);
+  if (base == stream_)
+    return DeviceEventRef();
+  CUDA_WITH_CTX_ERR(*this);
+  const bool recordedDuringCapture = isStreamCapturing(driver_, base);
+  DEFINE_OR_RETURN_ERROR(CUevent, event,
+                         CUDADevice::cast(device()).eventCachePop(
+                             /*useCache=*/!recordedDuringCapture));
+  CUDA_CHECK_ERR(driver_.cuEventRecord(event, base));
+  return CUDADeviceEventRef::create(CUDADevice::cast(this->device()), event,
+                                    recordedDuringCapture);
+}
+
+bool CUDADeviceContext::isBaseStreamCapturing() const {
+  return isStreamCapturing(driver_, streamPool_->get(0));
 }
 
 ErrorOrSuccess CUDADeviceContext::enqueueEvent(const DeviceEvent &event) {

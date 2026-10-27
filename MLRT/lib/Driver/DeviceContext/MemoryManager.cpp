@@ -19,6 +19,7 @@
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "Support/StringExtras.h"
 #include "Support/max_license/Tracy/Tracy.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -491,9 +492,10 @@ MemoryManagerFreeList::~MemoryManagerFreeList() {
   flushToParent();
 }
 
-void MemoryManager::PendingFrees::add(DeviceEventRef event,
-                                      MemoryManagerFreeList *fl, int bufferId) {
-  records_.push_back({++nextSeq_, std::move(event), fl, bufferId});
+void MemoryManager::PendingFrees::add(
+    llvm::SmallVector<DeviceEventRef, 2> events, MemoryManagerFreeList *fl,
+    int bufferId) {
+  records_.push_back({++nextSeq_, std::move(events), fl, bufferId});
   syncCount();
 }
 
@@ -519,7 +521,8 @@ MemoryManager::PendingFrees::collect(const MemoryManagerFreeList *fl) const {
   llvm::SmallVector<std::pair<uint64_t, DeviceEventRef>> out;
   for (const Record &record : records_) {
     if (fl == nullptr || record.fl == fl)
-      out.emplace_back(record.seq, record.event);
+      for (const DeviceEventRef &event : record.events)
+        out.emplace_back(record.seq, event);
   }
   return out;
 }
@@ -564,19 +567,26 @@ MemoryManager::drainCompletedFrees(const MemoryManagerFreeList *only) {
   }
 
   llvm::SmallVector<uint64_t> completed;
+  // A record completes only once every one of its events has.
+  llvm::SmallDenseSet<uint64_t> blocked;
   ErrorOrSuccess firstError = success();
   for (auto &[seq, event] : candidates) {
-    // Each record has its own event, so a busy stream must not block recovery
+    // Each record has its own events, so a busy stream must not block recovery
     // of an idle one -- keep going past a failed query and report it below.
     ErrorOr<bool> ready = event->isReady();
     if (ready.isError()) {
       if (!firstError.isError())
         firstError = ready.takeError();
+      blocked.insert(seq);
       continue;
     }
     if (*ready)
       completed.push_back(seq);
+    else
+      blocked.insert(seq);
   }
+  llvm::erase_if(completed,
+                 [&](uint64_t seq) { return blocked.contains(seq); });
   if (completed.empty())
     return firstError;
 
@@ -615,9 +625,36 @@ void MemoryManagerFreeList::flushCachedToParentLocked() {
   }
 }
 
-void MemoryManagerFreeList::flushCachedToParent() {
+bool MemoryManagerFreeList::deferCachedToParent() {
   std::lock_guard<std::mutex> lock(memoryManager_.mu_);
-  flushCachedToParentLocked();
+  if (empty() || ctx_->isGraphCapturing() || ctx_->isBaseStreamCapturing())
+    return false;
+  // Recorded under `mu_`, so they follow the device work of every free made so
+  // far, even one racing this call.
+  ErrorOr<DeviceEventRef> event = ctx_->enqueueEvent();
+  ErrorOr<DeviceEventRef> baseEvent =
+      event.isError() ? DeviceEventRef() : ctx_->enqueueBaseStreamEvent();
+  if (event.isError() || baseEvent.isError())
+    return false;
+  // Gather both lists into the non-primary one under a single record, which
+  // replaces any record already queued: its events precede these.
+  if (!handlerPending_)
+    primaryFreeBuffers_ = (primaryFreeBuffers_ + 1) & (kNumFreeBufferLists - 1);
+  handlerPending_ = true;
+  const int primary = primaryFreeBuffers_;
+  const int gated = (primary + 1) & (kNumFreeBufferLists - 1);
+  primaryFreeBuffers_ = gated;
+  while (MemoryManager::Desc *desc = freeBuffers_[primary]) {
+    removeFromFreeList(desc);
+    addToFreeList(desc);
+  }
+  primaryFreeBuffers_ = primary;
+  memoryManager_.pendingFrees_.cancel(this);
+  llvm::SmallVector<DeviceEventRef, 2> events = {event.takeValue()};
+  if (*baseEvent)
+    events.push_back(baseEvent.takeValue());
+  memoryManager_.pendingFrees_.add(std::move(events), this, gated);
+  return true;
 }
 
 void MemoryManagerFreeList::flushToParent() {
@@ -2390,6 +2427,7 @@ ErrorOr<void *> MemoryManagerFreeList::allocate(size_t size,
           wrappedSize <= memoryManager_.chunkSize_) {
         LOG_MSG("alloc miss: flushed idle stream views (size " +
                 TWINE(wrappedSize) + ")");
+        (void)memoryManager_.drainCompletedFrees();
         std::lock_guard<std::mutex> lock(memoryManager_.mu_);
         desc = allocateDesc(wrappedSize);
       }
@@ -2924,12 +2962,13 @@ MemoryManagerFreeList::freeAllocatedDesc(MemoryManager::Desc *desc, void *ptr) {
 
   freeDesc(desc);
 
-  // Skip the deferral during graph capture, matching the immediate free in
-  // CUDADeviceContext::memFree: an event recorded into a capturing stream
-  // becomes a graph node and reports ready before the graph has ever run. The
-  // blocks stay put and migrate on a later free or at teardown.
+  // Skip the deferral during graph capture on this or the base stream, matching
+  // the immediate free in CUDADeviceContext::memFree: an event recorded into a
+  // capturing stream becomes a graph node and reports ready before the graph
+  // has ever run. The blocks stay put and migrate on a later free or at
+  // teardown.
   if ((ctx_ != nullptr) && !handlerPending_ && !disableFlush_ &&
-      !ctx_->isGraphCapturing()) {
+      !ctx_->isGraphCapturing() && !ctx_->isBaseStreamCapturing()) {
     // Free the list preceding the next primary so that we can keep buffers
     // cached for an extended period.
     // primaryFreeBuffers + 0: current primary
@@ -2943,7 +2982,11 @@ MemoryManagerFreeList::freeAllocatedDesc(MemoryManager::Desc *desc, void *ptr) {
     handlerPending_ = true;
 
     ErrorOr<DeviceEventRef> event = ctx_->enqueueEvent();
-    if (event.isError()) {
+    // A side-stream view's results are read on the base stream after the
+    // region joins it, so the base stream gates their reuse too.
+    ErrorOr<DeviceEventRef> baseEvent =
+        event.isError() ? DeviceEventRef() : ctx_->enqueueBaseStreamEvent();
+    if (event.isError() || baseEvent.isError()) {
       // Undo the rotation: `handlerPending_` is only cleared by a completed
       // drain, so leaving it set would stop this freelist deferring for the
       // rest of the process. Safe to unwind because `mu_` has been held
@@ -2951,9 +2994,12 @@ MemoryManagerFreeList::freeAllocatedDesc(MemoryManager::Desc *desc, void *ptr) {
       primaryFreeBuffers_ = (primaryFreeBuffers_ + kNumFreeBufferLists - 1) &
                             (kNumFreeBufferLists - 1);
       handlerPending_ = false;
-      return event.takeError();
+      return event.isError() ? event.takeError() : baseEvent.takeError();
     }
-    memoryManager_.pendingFrees_.add(event.takeValue(), this, toFreeId);
+    llvm::SmallVector<DeviceEventRef, 2> events = {event.takeValue()};
+    if (*baseEvent)
+      events.push_back(baseEvent.takeValue());
+    memoryManager_.pendingFrees_.add(std::move(events), this, toFreeId);
     LOG_MSG("Queued deferred free id: " + TWINE(toFreeId));
   }
 

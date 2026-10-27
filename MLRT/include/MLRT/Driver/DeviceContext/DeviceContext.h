@@ -1204,7 +1204,8 @@ public:
   // Moves the cached free memory of every `selectStream` view that no caller
   // holds back to the device memory pool, so an allocation miss can retry.
   // Memory those views allocated during a graph capture stays with them.
-  // Blocks until each such view's stream is idle. Returns whether any view was
+  // Blocks until each such view's stream is idle, then gates the move on the
+  // work queued so far on the base stream. Returns whether any view was
   // flushed. The caller must not hold the memory manager lock.
   virtual bool flushIdleStreamViews();
 
@@ -1221,6 +1222,10 @@ public:
 
   virtual ErrorOr<DeviceEventRef> enqueueEvent() = 0;
   virtual ErrorOrSuccess enqueueEvent(const DeviceEvent &event) = 0;
+  // Records an event on the base stream of a `selectStream` view. Returns a
+  // null ref on a context that is its own base.
+  virtual ErrorOr<DeviceEventRef> enqueueBaseStreamEvent();
+  virtual bool isBaseStreamCapturing() const;
 
   /// Creates a device event. Defaults to a not-supported error; backends with
   /// an event model override this.

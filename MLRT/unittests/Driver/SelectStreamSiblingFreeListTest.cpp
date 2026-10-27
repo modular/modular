@@ -32,6 +32,7 @@
 #include "gtest/gtest.h"
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <thread>
 #include <vector>
@@ -90,7 +91,8 @@ TEST_F(SelectStreamSiblingFreeListTest, SelectStreamSideStreamAllocates) {
 // a view is never destroyed and never flushes its free list on teardown. Frees
 // made on the view while its list already has a deferred flush in flight are
 // queued behind no event, so the sibling drain cannot reach them. A base
-// allocation miss must still recover them once no caller holds the view.
+// allocation miss must still recover them once no caller holds the view, but
+// only after the base stream has run the reads queued before their free.
 TEST_F(SelectStreamSiblingFreeListTest, BaseMissRecoversIdleViewFrees) {
   ASSIGN_NO_ERR(DeviceContextRef, base, baseContext());
   ensureSideStream(*base);
@@ -113,6 +115,12 @@ TEST_F(SelectStreamSiblingFreeListTest, BaseMissRecoversIdleViewFrees) {
     ASSIGN_NO_ERR(void *, ptr, viewFreeList.allocate(kBlockBytes, mode));
     ptrs.push_back(ptr);
   }
+  ASSIGN_NO_ERR(DeviceStreamRef, baseStream, base->stream());
+  ASSIGN_NO_ERR(CompletionFlagRef, flag, base->allocateCompletionFlag());
+  ASSIGN_NO_ERR(DeviceBufferRef, readback, base->createHostBuffer(64));
+  flag->reset();
+  EXPECT_NO_ERR(baseStream->enqueueWaitOnHostValue(*flag, 1));
+  EXPECT_NO_ERR(base->enqueueCopyFromDevice(readback->ptr(), ptrs[0], 64));
   // The first free queues a deferred flush; the rest land behind no event.
   for (void *ptr : ptrs)
     EXPECT_NO_ERR(viewFreeList.free(ptr));
@@ -127,8 +135,22 @@ TEST_F(SelectStreamSiblingFreeListTest, BaseMissRecoversIdleViewFrees) {
     EXPECT_NO_ERR(baseFreeList.free(held.takeValue()));
 
   view.reset();
-  ASSIGN_NO_ERR(void *, ptr, baseFreeList.allocate(kBaseBytes, mode));
-  EXPECT_NO_ERR(baseFreeList.free(ptr));
+  ErrorOr<void *> baseBusy = baseFreeList.allocate(kBaseBytes, mode);
+  EXPECT_TRUE(baseBusy.isError());
+  if (!baseBusy.isError())
+    EXPECT_NO_ERR(baseFreeList.free(baseBusy.takeValue()));
+
+  // The miss's drain retry recovers them once the base read runs.
+  std::thread release([&] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    flag->signal(1);
+  });
+  ErrorOr<void *> recovered = baseFreeList.allocate(kBaseBytes, mode);
+  release.join();
+  EXPECT_FALSE(recovered.isError());
+  if (!recovered.isError())
+    EXPECT_NO_ERR(baseFreeList.free(recovered.takeValue()));
+  EXPECT_NO_ERR(base->synchronize());
 }
 
 TEST_F(SelectStreamSiblingFreeListTest,
