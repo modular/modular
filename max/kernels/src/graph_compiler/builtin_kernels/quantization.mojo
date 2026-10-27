@@ -925,20 +925,30 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        b_packed: OutputTensor[dtype=.uint8, rank=2, ...],
-        b: InputTensor[dtype=.uint8, rank=2, ...],
-        perm_idx: InputTensor[dtype=.int32, rank=1, ...],
+        b_packed: Some[Output & Tensor],
+        b: Some[Input & Tensor],
+        perm_idx: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(b_packed), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime assert conforms_to(type_of(perm_idx), TileTensorable)
+        comptime assert type_of(b_packed).rank == 2
+        comptime assert type_of(b).rank == 2
+        comptime assert type_of(perm_idx).rank == 1
         comptime assert is_gpu[target](), "only valid on GPUs"
 
-        var permutation = perm_idx.to_tile_tensor()
+        var permutation = perm_idx.to_tile_tensor[.int32, mut=False]()
+        # The helper takes the permutation as a pointer-backed tile, so rebuild
+        # one over the argument's data; a non-pointer storage policy aborts
+        # here at run time.
         gpu_qint4_repack_GPTQ[128, target](
-            b.to_tile_tensor(),
-            b_packed.to_tile_tensor(),
-            permutation.reshape(row_major(Int(permutation.dim[0]())))
-            .as_imm()
-            .as_unsafe_any_origin(),
+            b.to_tile_tensor[.uint8](),
+            b_packed.to_tile_tensor[.uint8](),
+            TileTensor(
+                ptr=permutation.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+                layout=row_major(Int(permutation.dim[0]())),
+            ),
             ctx=ctx,
         )
 
@@ -966,20 +976,20 @@ struct Struct_quantize_dynamic_block_scaled:
     @inline(.always)
     @staticmethod
     def execute[
-        out_dtype: DType,
-        scales_type: DType,
-        in_dtype: DType,
-        //,
-        scales_rank: Int,
         SF_VECTOR_SIZE: Int,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=out_dtype, rank=2, ...],
-        scales: OutputTensor[dtype=scales_type, rank=scales_rank, ...],
-        input: InputTensor[dtype=in_dtype, rank=2, ...],
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        input: Some[Input & Tensor],
         tensor_sf: Float32,
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(input).rank == 2
         comptime assert is_gpu[target](), (
             "quantize dynamic block scaled only support GPUs with native"
             " block scaled support"
@@ -989,9 +999,9 @@ struct Struct_quantize_dynamic_block_scaled:
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             target=target,
         ](
-            output.to_tile_tensor[.int64](),
-            scales.to_tile_tensor[.int64](),
-            input.to_tile_tensor[.int64](),
+            output.to_tile_tensor(),
+            scales.to_tile_tensor(),
+            input.to_tile_tensor(),
             tensor_sf,
             context,
         )
@@ -1179,34 +1189,42 @@ struct Struct_grouped_quantize_dynamic_block_scaled:
     @inline(.always)
     @staticmethod
     def execute[
-        out_dtype: DType,
-        scales_type: DType,
-        in_dtype: DType,
-        //,
-        scales_rank: Int,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=out_dtype, rank=2, ...],
-        scales: OutputTensor[dtype=scales_type, rank=scales_rank, ...],
-        input: InputTensor[dtype=in_dtype, rank=2, ...],
-        row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        scales_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        expert_ids: InputTensor[dtype=.int32, rank=1, ...],
-        sf_tensor: InputTensor[dtype=.float32, rank=1, ...],
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        row_offsets: Some[Input & Tensor],
+        scales_offsets: Some[Input & Tensor],
+        expert_ids: Some[Input & Tensor],
+        sf_tensor: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(scales_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(expert_ids), TileTensorable)
+        comptime assert conforms_to(type_of(sf_tensor), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(row_offsets).rank == 1
+        comptime assert type_of(scales_offsets).rank == 1
+        comptime assert type_of(expert_ids).rank == 1
+        comptime assert type_of(sf_tensor).rank == 1
         comptime assert is_gpu[
             target
         ](), "grouped quantize dynamic block scaled only supports GPUs"
 
         grouped_quantize_dynamic_scaled_fp4_async(
-            output.to_tile_tensor[.int64](),
-            scales.to_tile_tensor[.int64](),
-            input.to_tile_tensor[.int64](),
-            row_offsets.to_tile_tensor[.int64](),
-            scales_offsets.to_tile_tensor[.int64](),
-            expert_ids.to_tile_tensor[.int64](),
-            sf_tensor.to_tile_tensor[.int64](),
+            output.to_tile_tensor(),
+            scales.to_tile_tensor(),
+            input.to_tile_tensor(),
+            row_offsets.to_tile_tensor[.uint32](),
+            scales_offsets.to_tile_tensor[.uint32](),
+            expert_ids.to_tile_tensor[.int32](),
+            sf_tensor.to_tile_tensor[.float32](),
             context,
         )
 
@@ -1288,22 +1306,28 @@ struct Struct_grouped_quantize_nvfp4_row_scaled:
     @inline(.always)
     @staticmethod
     def execute[
-        out_dtype: DType,
-        scales_type: DType,
-        in_dtype: DType,
-        //,
-        scales_rank: Int,
         apply_relu2: Int,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=out_dtype, rank=2, ...],
-        scales: OutputTensor[dtype=scales_type, rank=scales_rank, ...],
-        row_scales: OutputTensor[dtype=.bfloat16, rank=1, ...],
-        input: InputTensor[dtype=in_dtype, rank=2, ...],
-        row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        scales_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        row_scales: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        row_offsets: Some[Input & Tensor],
+        scales_offsets: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(row_scales), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(scales_offsets), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(row_scales).rank == 1
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(row_offsets).rank == 1
+        comptime assert type_of(scales_offsets).rank == 1
         comptime assert is_gpu[
             target
         ](), "grouped quantize nvfp4 row scaled only supports GPUs"
@@ -1319,12 +1343,12 @@ struct Struct_grouped_quantize_nvfp4_row_scaled:
                 return v
 
         grouped_quantize_nvfp4_row_amax[input_fn=input_fn](
-            output.to_tile_tensor[.int64](),
-            scales.to_tile_tensor[.int64](),
-            row_scales.to_tile_tensor[.int64](),
-            input.to_tile_tensor[.int64](),
-            row_offsets.to_tile_tensor[.int64](),
-            scales_offsets.to_tile_tensor[.int64](),
+            output.to_tile_tensor(),
+            scales.to_tile_tensor(),
+            row_scales.to_tile_tensor[.bfloat16](),
+            input.to_tile_tensor(),
+            row_offsets.to_tile_tensor[.uint32](),
+            scales_offsets.to_tile_tensor[.uint32](),
             context,
         )
 
@@ -1342,25 +1366,33 @@ struct Struct_grouped_quantize_nvfp4_row_scaled_with_row_indices:
     @inline(.always)
     @staticmethod
     def execute[
-        out_dtype: DType,
-        scales_type: DType,
-        in_dtype: DType,
-        row_indices_dtype: DType,
-        //,
-        scales_rank: Int,
         apply_relu2: Int,
         row_index_divisor: Int,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=out_dtype, rank=2, ...],
-        scales: OutputTensor[dtype=scales_type, rank=scales_rank, ...],
-        row_scales: OutputTensor[dtype=.bfloat16, rank=1, ...],
-        input: InputTensor[dtype=in_dtype, rank=2, ...],
-        row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        scales_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        row_indices: InputTensor[dtype=row_indices_dtype, rank=1, ...],
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        row_scales: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        row_offsets: Some[Input & Tensor],
+        scales_offsets: Some[Input & Tensor],
+        row_indices: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(row_scales), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(scales_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(row_indices), TileTensorable)
+        comptime row_indices_dtype = type_of(row_indices).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(row_scales).rank == 1
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(row_offsets).rank == 1
+        comptime assert type_of(scales_offsets).rank == 1
+        comptime assert type_of(row_indices).rank == 1
         comptime assert is_gpu[
             target
         ](), "grouped quantize nvfp4 row scaled only supports GPUs"
@@ -1380,16 +1412,14 @@ struct Struct_grouped_quantize_nvfp4_row_scaled_with_row_indices:
             row_indices_dtype=row_indices_dtype,
             row_index_divisor=row_index_divisor,
         ](
-            output.to_tile_tensor[.int64](),
-            scales.to_tile_tensor[.int64](),
-            row_scales.to_tile_tensor[.int64](),
-            input.to_tile_tensor[.int64](),
-            row_offsets.to_tile_tensor[.int64](),
-            scales_offsets.to_tile_tensor[.int64](),
+            output.to_tile_tensor(),
+            scales.to_tile_tensor(),
+            row_scales.to_tile_tensor[.bfloat16](),
+            input.to_tile_tensor(),
+            row_offsets.to_tile_tensor[.uint32](),
+            scales_offsets.to_tile_tensor[.uint32](),
             context,
-            row_indices.to_tile_tensor[.int64]()
-            .as_unsafe_any_origin()
-            .as_imm(),
+            row_indices.to_tile_tensor().as_unsafe_any_origin().as_imm(),
         )
 
 
@@ -1401,24 +1431,28 @@ struct Struct_quantize_dynamic_block_scaled_mxfp4:
     @inline(.always)
     @staticmethod
     def execute[
-        in_dtype: DType,
-        //,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=.uint8, rank=2, ...],
-        scales: OutputTensor[dtype=.float8_e8m0fnu, rank=2, ...],
-        input: InputTensor[dtype=in_dtype, rank=2, ...],
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        input: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(scales).rank == 2
+        comptime assert type_of(input).rank == 2
         comptime assert is_gpu[target](), (
             "quantize dynamic block scaled only support GPUs with native"
             " block scaled support"
         )
 
         quantize_dynamic_block_scaled_mxfp4(
-            output.to_tile_tensor[.int64](),
-            scales.to_tile_tensor[.int64](),
-            input.to_tile_tensor[.int64](),
+            output.to_tile_tensor[.uint8](),
+            scales.to_tile_tensor[.float8_e8m0fnu](),
+            input.to_tile_tensor(),
             context,
         )
 
@@ -1478,16 +1512,20 @@ struct Struct_quantize_dynamic_block_scaled_mxfp6:
     @inline(.always)
     @staticmethod
     def execute[
-        in_dtype: DType,
-        //,
         FP6_FORMAT: Int,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=.uint8, rank=2, ...],
-        scales: OutputTensor[dtype=.float8_e8m0fnu, rank=2, ...],
-        input: InputTensor[dtype=in_dtype, rank=2, ...],
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        input: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(scales).rank == 2
+        comptime assert type_of(input).rank == 2
         comptime assert is_gpu[
             target
         ](), (
@@ -1500,9 +1538,9 @@ struct Struct_quantize_dynamic_block_scaled_mxfp6:
 
         quantize_mxfp6_amd[FP6Format(FP6_FORMAT)](
             context,
-            output.to_tile_tensor[.int64](),
-            scales.to_tile_tensor[.int64](),
-            input.to_tile_tensor[.int64](),
+            output.to_tile_tensor[.uint8](),
+            scales.to_tile_tensor[.float8_e8m0fnu](),
+            input.to_tile_tensor(),
         )
 
 
@@ -1566,23 +1604,26 @@ struct Struct_interleave_block_scales:
     @inline(.always)
     @staticmethod
     def execute[
-        scales_type: DType,
-        //,
         SF_VECTOR_SIZE: Int,
         target: StaticString,
     ](
-        output_scales: OutputTensor[dtype=scales_type, rank=5, ...],
-        input_scales: InputTensor[dtype=scales_type, rank=2, ...],
+        output_scales: Some[Output & Tensor],
+        input_scales: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output_scales), TileTensorable)
+        comptime assert conforms_to(type_of(input_scales), TileTensorable)
+        comptime scales_type = type_of(output_scales).dtype
+        comptime assert type_of(output_scales).rank == 5
+        comptime assert type_of(input_scales).rank == 2
         comptime assert is_gpu[target](), (
             "quantize dynamic block scaled only support GPUs with native"
             " block scaled support"
         )
 
         block_scales_interleave[SF_VECTOR_SIZE=SF_VECTOR_SIZE, target=target](
-            output_scales.to_tile_tensor[.int64](),
-            input_scales.to_tile_tensor[.int64](),
+            output_scales.to_tile_tensor(),
+            input_scales.to_tile_tensor[scales_type](),
             context,
         )
 

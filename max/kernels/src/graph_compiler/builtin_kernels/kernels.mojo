@@ -391,20 +391,26 @@ struct NanCheckCountOp:
 
     @staticmethod
     def execute[
-        dtype: DType,
-        rank: Int,
         target: StaticString,
         _trace_name: StaticString = "",
     ](
-        nan_count_out: OutputTensor[dtype=.int32, rank=1, ...],
-        inf_count_out: OutputTensor[dtype=.int32, rank=1, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
+        nan_count_out: Some[Output & Tensor],
+        inf_count_out: Some[Output & Tensor],
+        input: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(nan_count_out), TileTensorable)
+        comptime assert conforms_to(type_of(inf_count_out), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert type_of(nan_count_out).rank == 1
+        comptime assert type_of(inf_count_out).rank == 1
         from .nan_check import nan_check_count
 
-        nan_check_count[dtype, rank, target](
-            nan_count_out, inf_count_out, input, ctx
+        nan_check_count[target](
+            nan_count_out.to_tile_tensor[.int32](),
+            inf_count_out.to_tile_tensor[.int32](),
+            input.to_tile_tensor(),
+            ctx,
         )
 
 
@@ -422,13 +428,20 @@ struct NanCheckRaiseOp:
         label: StaticString = "",
         type_str: StaticString = "",
     ](
-        nan_count: InputTensor[dtype=.int32, rank=1, ...],
-        inf_count: InputTensor[dtype=.int32, rank=1, ...],
+        nan_count: Some[Input & Tensor],
+        inf_count: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(nan_count), TileTensorable)
+        comptime assert conforms_to(type_of(inf_count), TileTensorable)
+        comptime assert type_of(nan_count).rank == 1
+        comptime assert type_of(inf_count).rank == 1
         from .nan_check import nan_check_raise
 
-        nan_check_raise[label, type_str](nan_count, inf_count)
+        nan_check_raise[label, type_str](
+            nan_count.to_tile_tensor[.int32](),
+            inf_count.to_tile_tensor[.int32](),
+        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -2191,21 +2204,37 @@ struct Struct_moe_create_indices:
     def execute[
         target: StaticString,
     ](
-        token_expert_order: OutputTensor[dtype=.uint32, rank=1, ...],
-        expert_start_indices: OutputTensor[dtype=.uint32, rank=1, ...],
-        restore_token_order: OutputTensor[dtype=.uint32, rank=1, ...],
-        expert_ids: OutputTensor[dtype=.int32, rank=1, ...],
-        expert_usage_stats: OutputTensor[dtype=.uint32, rank=1, ...],
-        topk_ids: InputTensor[dtype=.int32, rank=1, ...],
+        token_expert_order: Some[Output & Tensor],
+        expert_start_indices: Some[Output & Tensor],
+        restore_token_order: Some[Output & Tensor],
+        expert_ids: Some[Output & Tensor],
+        expert_usage_stats: Some[Output & Tensor],
+        topk_ids: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(token_expert_order), TileTensorable)
+        comptime assert conforms_to(
+            type_of(expert_start_indices), TileTensorable
+        )
+        comptime assert conforms_to(
+            type_of(restore_token_order), TileTensorable
+        )
+        comptime assert conforms_to(type_of(expert_ids), TileTensorable)
+        comptime assert conforms_to(type_of(expert_usage_stats), TileTensorable)
+        comptime assert conforms_to(type_of(topk_ids), TileTensorable)
+        comptime assert type_of(token_expert_order).rank == 1
+        comptime assert type_of(expert_start_indices).rank == 1
+        comptime assert type_of(restore_token_order).rank == 1
+        comptime assert type_of(expert_ids).rank == 1
+        comptime assert type_of(expert_usage_stats).rank == 1
+        comptime assert type_of(topk_ids).rank == 1
         moe_create_indices[target=target](
-            token_expert_order.to_tile_tensor[.int64](),
-            expert_start_indices.to_tile_tensor[.int64](),
-            restore_token_order.to_tile_tensor[.int64](),
-            expert_ids.to_tile_tensor[.int64](),
-            expert_usage_stats.to_tile_tensor[.int64](),
-            topk_ids.to_tile_tensor[.int64](),
+            token_expert_order.to_tile_tensor[.uint32](),
+            expert_start_indices.to_tile_tensor[.uint32](),
+            restore_token_order.to_tile_tensor[.uint32](),
+            expert_ids.to_tile_tensor[.int32](),
+            expert_usage_stats.to_tile_tensor[.uint32](),
+            topk_ids.to_tile_tensor[.int32, mut=False](),
             context,
         )
 
@@ -2217,23 +2246,29 @@ struct Struct_moe_finalize:
     @inline(.always)
     @staticmethod
     def execute[
-        out_type: DType,
-        down_type: DType,
-        weight_type: DType,
-        //,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=out_type, rank=2, ...],
-        down: InputTensor[dtype=down_type, rank=2, ...],
-        restore_token_order: InputTensor[dtype=.uint32, rank=1, ...],
-        router_weight: InputTensor[dtype=weight_type, rank=2, ...],
+        output: Some[Output & Tensor],
+        down: Some[Input & Tensor],
+        restore_token_order: Some[Input & Tensor],
+        router_weight: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(down), TileTensorable)
+        comptime assert conforms_to(
+            type_of(restore_token_order), TileTensorable
+        )
+        comptime assert conforms_to(type_of(router_weight), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(down).rank == 2
+        comptime assert type_of(restore_token_order).rank == 1
+        comptime assert type_of(router_weight).rank == 2
         moe_finalize[target=target](
-            output.to_tile_tensor[.int64](),
-            down.to_tile_tensor[.int64](),
-            restore_token_order.to_tile_tensor[.int64](),
-            router_weight.to_tile_tensor[.int64](),
+            output.to_tile_tensor(),
+            down.to_tile_tensor[mut=False](),
+            restore_token_order.to_tile_tensor[.uint32, mut=False](),
+            router_weight.to_tile_tensor[mut=False](),
             context,
         )
 
@@ -2300,24 +2335,46 @@ struct Struct_moe_create_indices_with_scales_offset:
     def execute[
         target: StaticString,
     ](
-        token_expert_order: OutputTensor[dtype=.uint32, rank=1, ...],
-        expert_start_indices: OutputTensor[dtype=.uint32, rank=1, ...],
-        restore_token_order: OutputTensor[dtype=.uint32, rank=1, ...],
-        expert_ids: OutputTensor[dtype=.int32, rank=1, ...],
-        expert_usage_stats: OutputTensor[dtype=.uint32, rank=1, ...],
-        scales_offset: OutputTensor[dtype=.uint32, rank=1, ...],
-        topk_ids: InputTensor[dtype=.int32, rank=1, ...],
+        token_expert_order: Some[Output & Tensor],
+        expert_start_indices: Some[Output & Tensor],
+        restore_token_order: Some[Output & Tensor],
+        expert_ids: Some[Output & Tensor],
+        expert_usage_stats: Some[Output & Tensor],
+        scales_offset: Some[Output & Tensor],
+        topk_ids: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(token_expert_order), TileTensorable)
+        comptime assert conforms_to(
+            type_of(expert_start_indices), TileTensorable
+        )
+        comptime assert conforms_to(
+            type_of(restore_token_order), TileTensorable
+        )
+        comptime assert conforms_to(type_of(expert_ids), TileTensorable)
+        comptime assert conforms_to(type_of(expert_usage_stats), TileTensorable)
+        comptime assert conforms_to(type_of(scales_offset), TileTensorable)
+        comptime assert conforms_to(type_of(topk_ids), TileTensorable)
+        comptime assert type_of(token_expert_order).rank == 1
+        comptime assert type_of(expert_start_indices).rank == 1
+        comptime assert type_of(restore_token_order).rank == 1
+        comptime assert type_of(expert_ids).rank == 1
+        comptime assert type_of(expert_usage_stats).rank == 1
+        comptime assert type_of(scales_offset).rank == 1
+        comptime assert type_of(topk_ids).rank == 1
+        # `scales_offset` is handed to the helper as a flat pointer; a
+        # non-pointer storage policy aborts here at run time.
         moe_create_indices[target=target](
-            token_expert_order.to_tile_tensor[.int64](),
-            expert_start_indices.to_tile_tensor[.int64](),
-            restore_token_order.to_tile_tensor[.int64](),
-            expert_ids.to_tile_tensor[.int64](),
-            expert_usage_stats.to_tile_tensor[.int64](),
-            topk_ids.to_tile_tensor[.int64](),
+            token_expert_order.to_tile_tensor[.uint32](),
+            expert_start_indices.to_tile_tensor[.uint32](),
+            restore_token_order.to_tile_tensor[.uint32](),
+            expert_ids.to_tile_tensor[.int32](),
+            expert_usage_stats.to_tile_tensor[.uint32](),
+            topk_ids.to_tile_tensor[.int32, mut=False](),
             context,
-            scales_offset_p=scales_offset._ptr.as_unsafe_any_origin(),
+            scales_offset_p=scales_offset.to_tile_tensor[.uint32]()
+            .as_unsafe_any_origin()
+            .ptr,
         )
 
 
@@ -2334,32 +2391,64 @@ struct Struct_moe_create_indices_with_slots:
         local_experts: Int,
         target: StaticString,
     ](
-        token_expert_order: OutputTensor[dtype=.uint32, rank=1, ...],
-        expert_start_indices: OutputTensor[dtype=.uint32, rank=1, ...],
-        restore_token_order: OutputTensor[dtype=.int32, rank=1, ...],
-        expert_ids: OutputTensor[dtype=.int32, rank=1, ...],
-        expert_usage_stats: OutputTensor[dtype=.uint32, rank=1, ...],
-        scales_offset: OutputTensor[dtype=.uint32, rank=1, ...],
-        slot_token: OutputTensor[dtype=.int32, rank=1, ...],
-        slot_weight: OutputTensor[dtype=.float32, rank=1, ...],
-        scale_slot: OutputTensor[dtype=.int32, rank=1, ...],
-        topk_ids: InputTensor[dtype=.int32, rank=1, ...],
-        slot_weights: InputTensor[dtype=.float32, rank=1, ...],
+        token_expert_order: Some[Output & Tensor],
+        expert_start_indices: Some[Output & Tensor],
+        restore_token_order: Some[Output & Tensor],
+        expert_ids: Some[Output & Tensor],
+        expert_usage_stats: Some[Output & Tensor],
+        scales_offset: Some[Output & Tensor],
+        slot_token: Some[Output & Tensor],
+        slot_weight: Some[Output & Tensor],
+        scale_slot: Some[Output & Tensor],
+        topk_ids: Some[Input & Tensor],
+        slot_weights: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(token_expert_order), TileTensorable)
+        comptime assert conforms_to(
+            type_of(expert_start_indices), TileTensorable
+        )
+        comptime assert conforms_to(
+            type_of(restore_token_order), TileTensorable
+        )
+        comptime assert conforms_to(type_of(expert_ids), TileTensorable)
+        comptime assert conforms_to(type_of(expert_usage_stats), TileTensorable)
+        comptime assert conforms_to(type_of(scales_offset), TileTensorable)
+        comptime assert conforms_to(type_of(slot_token), TileTensorable)
+        comptime assert conforms_to(type_of(slot_weight), TileTensorable)
+        comptime assert conforms_to(type_of(scale_slot), TileTensorable)
+        comptime assert conforms_to(type_of(topk_ids), TileTensorable)
+        comptime assert conforms_to(type_of(slot_weights), TileTensorable)
+        comptime assert type_of(token_expert_order).rank == 1
+        comptime assert type_of(expert_start_indices).rank == 1
+        comptime assert type_of(restore_token_order).rank == 1
+        comptime assert type_of(expert_ids).rank == 1
+        comptime assert type_of(expert_usage_stats).rank == 1
+        comptime assert type_of(scales_offset).rank == 1
+        comptime assert type_of(slot_token).rank == 1
+        comptime assert type_of(slot_weight).rank == 1
+        comptime assert type_of(scale_slot).rank == 1
+        comptime assert type_of(topk_ids).rank == 1
+        comptime assert type_of(slot_weights).rank == 1
+        var scale_slot_tile = scale_slot.to_tile_tensor[.int32]()
+        # The slot maps are handed to the helper as flat pointers; a
+        # non-pointer storage policy aborts here at run time. The helper takes
+        # `slot_weights` as a mutable pointer but only reads it.
         moe_create_indices_with_slots[slot_stride, target=target](
-            token_expert_order.to_tile_tensor[.int64](),
-            expert_start_indices.to_tile_tensor[.int64](),
-            restore_token_order.to_tile_tensor[.int64](),
-            expert_ids.to_tile_tensor[.int64](),
-            expert_usage_stats.to_tile_tensor[.int64](),
-            scales_offset._ptr.as_unsafe_any_origin(),
-            slot_token._ptr.as_unsafe_any_origin(),
-            slot_weight._ptr.as_unsafe_any_origin(),
-            scale_slot._ptr.as_unsafe_any_origin(),
-            scale_slot.dim_size(0),
-            topk_ids.to_tile_tensor[.int64](),
-            slot_weights._ptr.as_unsafe_any_origin(),
+            token_expert_order.to_tile_tensor[.uint32](),
+            expert_start_indices.to_tile_tensor[.uint32](),
+            restore_token_order.to_tile_tensor[.int32](),
+            expert_ids.to_tile_tensor[.int32](),
+            expert_usage_stats.to_tile_tensor[.uint32](),
+            scales_offset.to_tile_tensor[.uint32]().as_unsafe_any_origin().ptr,
+            slot_token.to_tile_tensor[.int32]().as_unsafe_any_origin().ptr,
+            slot_weight.to_tile_tensor[.float32]().as_unsafe_any_origin().ptr,
+            scale_slot_tile.as_unsafe_any_origin().ptr,
+            Int(scale_slot_tile.dim[0]()),
+            topk_ids.to_tile_tensor[.int32, mut=False](),
+            slot_weights.to_tile_tensor[.float32, mut=False]()
+            .ptr.unsafe_mut_cast[True]()
+            .unsafe_origin_cast[MutAnyOrigin](),
             expert_offset,
             local_experts,
             context,
@@ -2544,34 +2633,41 @@ struct Struct_moe_sigmoid_gemv_single_group_router:
     @inline(.always)
     @staticmethod
     def execute[
-        hidden_type: DType,
-        weight_type: DType,
-        bias_type: DType,
-        //,
         n_routed_experts: Int,
         n_experts_per_tok: Int,
         norm_weights: Bool,
         target: StaticString,
     ](
-        expert_indices: OutputTensor[dtype=.int32, rank=2, ...],
-        expert_weights: OutputTensor[dtype=weight_type, rank=2, ...],
-        hidden: InputTensor[dtype=hidden_type, rank=2, ...],
-        gate_weight: InputTensor[dtype=weight_type, rank=2, ...],
-        expert_bias: InputTensor[dtype=bias_type, rank=1, ...],
+        expert_indices: Some[Output & Tensor],
+        expert_weights: Some[Output & Tensor],
+        hidden: Some[Input & Tensor],
+        gate_weight: Some[Input & Tensor],
+        expert_bias: Some[Input & Tensor],
         routed_scaling_factor: Float32,
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(expert_indices), TileTensorable)
+        comptime assert conforms_to(type_of(expert_weights), TileTensorable)
+        comptime assert conforms_to(type_of(hidden), TileTensorable)
+        comptime assert conforms_to(type_of(gate_weight), TileTensorable)
+        comptime assert conforms_to(type_of(expert_bias), TileTensorable)
+        comptime weight_type = type_of(expert_weights).dtype
+        comptime assert type_of(expert_indices).rank == 2
+        comptime assert type_of(expert_weights).rank == 2
+        comptime assert type_of(hidden).rank == 2
+        comptime assert type_of(gate_weight).rank == 2
+        comptime assert type_of(expert_bias).rank == 1
         sigmoid_gemv_single_group_router[
             n_routed_experts,
             n_experts_per_tok,
             norm_weights=norm_weights,
             target=target,
         ](
-            expert_indices.to_tile_tensor[.int64](),
-            expert_weights.to_tile_tensor[.int64](),
-            hidden.to_tile_tensor[.int64]().as_imm(),
-            gate_weight.to_tile_tensor[.int64]().as_imm(),
-            expert_bias.to_tile_tensor[.int64]().as_imm(),
+            expert_indices.to_tile_tensor[.int32](),
+            expert_weights.to_tile_tensor(),
+            hidden.to_tile_tensor[mut=False](),
+            gate_weight.to_tile_tensor[weight_type, mut=False](),
+            expert_bias.to_tile_tensor[mut=False](),
             routed_scaling_factor,
             context,
         )
@@ -2585,35 +2681,45 @@ struct Struct_moe_sink_gate_router:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType,
-        bias_type: DType,
-        //,
         n_routed_experts: Int,
         n_experts_per_tok: Int,
         n_shared_experts: Int,
         target: StaticString,
     ](
-        expert_indices: OutputTensor[dtype=.int32, rank=2, ...],
-        expert_weights: OutputTensor[dtype=dtype, rank=2, ...],
-        sink_weights: OutputTensor[dtype=dtype, rank=2, ...],
-        logits: InputTensor[dtype=dtype, rank=2, ...],
-        expert_bias: InputTensor[dtype=bias_type, rank=1, ...],
-        global_scale: InputTensor[dtype=.float32, rank=1, ...],
+        expert_indices: Some[Output & Tensor],
+        expert_weights: Some[Output & Tensor],
+        sink_weights: Some[Output & Tensor],
+        logits: Some[Input & Tensor],
+        expert_bias: Some[Input & Tensor],
+        global_scale: Some[Input & Tensor],
         route_scale: Float32,
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(expert_indices), TileTensorable)
+        comptime assert conforms_to(type_of(expert_weights), TileTensorable)
+        comptime assert conforms_to(type_of(sink_weights), TileTensorable)
+        comptime assert conforms_to(type_of(logits), TileTensorable)
+        comptime assert conforms_to(type_of(expert_bias), TileTensorable)
+        comptime assert conforms_to(type_of(global_scale), TileTensorable)
+        comptime dtype = type_of(expert_weights).dtype
+        comptime assert type_of(expert_indices).rank == 2
+        comptime assert type_of(expert_weights).rank == 2
+        comptime assert type_of(sink_weights).rank == 2
+        comptime assert type_of(logits).rank == 2
+        comptime assert type_of(expert_bias).rank == 1
+        comptime assert type_of(global_scale).rank == 1
         sink_gate_router[
             n_routed_experts,
             n_experts_per_tok,
             n_shared_experts,
             target=target,
         ](
-            expert_indices.to_tile_tensor[.int64](),
-            expert_weights.to_tile_tensor[.int64](),
-            sink_weights.to_tile_tensor[.int64](),
-            logits.to_tile_tensor[.int64]().as_imm(),
-            expert_bias.to_tile_tensor[.int64]().as_imm(),
-            global_scale.to_tile_tensor[.int64]().as_imm(),
+            expert_indices.to_tile_tensor[.int32](),
+            expert_weights.to_tile_tensor(),
+            sink_weights.to_tile_tensor[dtype](),
+            logits.to_tile_tensor[dtype, mut=False](),
+            expert_bias.to_tile_tensor[mut=False](),
+            global_scale.to_tile_tensor[.float32, mut=False](),
             route_scale,
             context,
         )
@@ -2632,13 +2738,23 @@ struct Struct_moe_eplb_remap:
         hash_decorrelate: Bool,
         target: StaticString,
     ](
-        phy_idx: OutputTensor[dtype=.int32, rank=2, ...],
-        router_idx: InputTensor[dtype=.int32, rank=2, ...],
-        logcnt: InputTensor[dtype=.int32, rank=2, ...],
-        log2phy: InputTensor[dtype=.int32, rank=3, ...],
-        layer_idx: InputTensor[dtype=.int32, rank=1, ...],
+        phy_idx: Some[Output & Tensor],
+        router_idx: Some[Input & Tensor],
+        logcnt: Some[Input & Tensor],
+        log2phy: Some[Input & Tensor],
+        layer_idx: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(phy_idx), TileTensorable)
+        comptime assert conforms_to(type_of(router_idx), TileTensorable)
+        comptime assert conforms_to(type_of(logcnt), TileTensorable)
+        comptime assert conforms_to(type_of(log2phy), TileTensorable)
+        comptime assert conforms_to(type_of(layer_idx), TileTensorable)
+        comptime assert type_of(phy_idx).rank == 2
+        comptime assert type_of(router_idx).rank == 2
+        comptime assert type_of(logcnt).rank == 2
+        comptime assert type_of(log2phy).rank == 3
+        comptime assert type_of(layer_idx).rank == 1
         eplb_remap[
             num_log=num_log,
             max_replicas=max_replicas,
@@ -2646,11 +2762,11 @@ struct Struct_moe_eplb_remap:
             hash_decorrelate=hash_decorrelate,
             target=target,
         ](
-            phy_idx.to_tile_tensor[.int64](),
-            router_idx.to_tile_tensor[.int64]().as_imm(),
-            logcnt.to_tile_tensor[.int64]().as_imm(),
-            log2phy.to_tile_tensor[.int64]().as_imm(),
-            layer_idx.to_tile_tensor[.int64]().as_imm(),
+            phy_idx.to_tile_tensor[.int32](),
+            router_idx.to_tile_tensor[.int32, mut=False](),
+            logcnt.to_tile_tensor[.int32, mut=False](),
+            log2phy.to_tile_tensor[.int32, mut=False](),
+            layer_idx.to_tile_tensor[.int32, mut=False](),
             context,
         )
 
@@ -2672,26 +2788,40 @@ struct Struct_hyper_connection_gates:
         hc_sinkhorn_iters: Int,
         target: StaticString,
     ](
-        pre: OutputTensor[dtype=.float32, rank=2, ...],
-        post: OutputTensor[dtype=.float32, rank=2, ...],
-        comb: OutputTensor[dtype=.float32, rank=2, ...],
-        hc_proj: InputTensor[dtype=.float32, rank=2, ...],
-        pre_post_comb_b: InputTensor[dtype=.float32, rank=1, ...],
-        pre_post_comb_scale: InputTensor[dtype=.float32, rank=1, ...],
+        pre: Some[Output & Tensor],
+        post: Some[Output & Tensor],
+        comb: Some[Output & Tensor],
+        hc_proj: Some[Input & Tensor],
+        pre_post_comb_b: Some[Input & Tensor],
+        pre_post_comb_scale: Some[Input & Tensor],
         hc_eps: Float32,
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(pre), TileTensorable)
+        comptime assert conforms_to(type_of(post), TileTensorable)
+        comptime assert conforms_to(type_of(comb), TileTensorable)
+        comptime assert conforms_to(type_of(hc_proj), TileTensorable)
+        comptime assert conforms_to(type_of(pre_post_comb_b), TileTensorable)
+        comptime assert conforms_to(
+            type_of(pre_post_comb_scale), TileTensorable
+        )
+        comptime assert type_of(pre).rank == 2
+        comptime assert type_of(post).rank == 2
+        comptime assert type_of(comb).rank == 2
+        comptime assert type_of(hc_proj).rank == 2
+        comptime assert type_of(pre_post_comb_b).rank == 1
+        comptime assert type_of(pre_post_comb_scale).rank == 1
         hyper_connection_gates[
             hc_mult=hc_mult,
             hc_sinkhorn_iters=hc_sinkhorn_iters,
             target=target,
         ](
-            pre.to_tile_tensor[.int64](),
-            post.to_tile_tensor[.int64](),
-            comb.to_tile_tensor[.int64](),
-            hc_proj.to_tile_tensor[.int64]().as_imm(),
-            pre_post_comb_b.to_tile_tensor[.int64]().as_imm(),
-            pre_post_comb_scale.to_tile_tensor[.int64]().as_imm(),
+            pre.to_tile_tensor[.float32](),
+            post.to_tile_tensor[.float32](),
+            comb.to_tile_tensor[.float32](),
+            hc_proj.to_tile_tensor[.float32, mut=False](),
+            pre_post_comb_b.to_tile_tensor[.float32, mut=False](),
+            pre_post_comb_scale.to_tile_tensor[.float32, mut=False](),
             hc_eps,
             context,
         )
@@ -2704,30 +2834,39 @@ struct Struct_mhc_post:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType,
-        //,
         hc_mult: Int,
         hidden_size: Int,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=3, ...],
-        streams: InputTensor[dtype=dtype, rank=3, ...],
-        y: InputTensor[dtype=dtype, rank=2, ...],
-        post: InputTensor[dtype=.float32, rank=2, ...],
-        comb: InputTensor[dtype=.float32, rank=3, ...],
+        output: Some[Output & Tensor],
+        streams: Some[Input & Tensor],
+        y: Some[Input & Tensor],
+        post: Some[Input & Tensor],
+        comb: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(streams), TileTensorable)
+        comptime assert conforms_to(type_of(y), TileTensorable)
+        comptime assert conforms_to(type_of(post), TileTensorable)
+        comptime assert conforms_to(type_of(comb), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(output).rank == 3
+        comptime assert type_of(streams).rank == 3
+        comptime assert type_of(y).rank == 2
+        comptime assert type_of(post).rank == 2
+        comptime assert type_of(comb).rank == 3
         mhc_post[
             hc_mult=hc_mult,
             hidden_size=hidden_size,
             target=target,
             block_size=mhc_post_block_size[dtype, hidden_size](),
         ](
-            output.to_tile_tensor[.int64](),
-            streams.to_tile_tensor[.int64]().as_imm(),
-            y.to_tile_tensor[.int64]().as_imm(),
-            post.to_tile_tensor[.int64]().as_imm(),
-            comb.to_tile_tensor[.int64]().as_imm(),
+            output.to_tile_tensor(),
+            streams.to_tile_tensor[dtype, mut=False](),
+            y.to_tile_tensor[dtype, mut=False](),
+            post.to_tile_tensor[.float32, mut=False](),
+            comb.to_tile_tensor[.float32, mut=False](),
             context,
         )
 
@@ -2963,23 +3102,35 @@ struct Struct_fused_token_sampling:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType,
-        rank: Int,
-        out_idx_type: DType,
         target: StaticString,
         _trace_name: StaticString,
     ](
-        out_idxs: OutputTensor[dtype=out_idx_type, rank=rank, ...],
-        K: InputTensor[dtype=.int64, rank=1, ...],
+        out_idxs: Some[Output & Tensor],
+        K: Some[Input & Tensor],
         max_k: Scalar,
-        temperature: InputTensor[dtype=.float32, rank=1, ...],
-        top_p: InputTensor[dtype=.float32, rank=1, ...],
+        temperature: Some[Input & Tensor],
+        top_p: Some[Input & Tensor],
         min_top_p: Float32,
-        min_p: InputTensor[dtype=.float32, rank=1, ...],
-        seed: InputTensor[dtype=.uint64, rank=1, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
+        min_p: Some[Input & Tensor],
+        seed: Some[Input & Tensor],
+        input: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(out_idxs), TileTensorable)
+        comptime assert conforms_to(type_of(K), TileTensorable)
+        comptime assert conforms_to(type_of(temperature), TileTensorable)
+        comptime assert conforms_to(type_of(top_p), TileTensorable)
+        comptime assert conforms_to(type_of(min_p), TileTensorable)
+        comptime assert conforms_to(type_of(seed), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime rank = type_of(out_idxs).rank
+        comptime assert type_of(K).rank == 1
+        comptime assert type_of(temperature).rank == 1
+        comptime assert type_of(top_p).rank == 1
+        comptime assert type_of(min_p).rank == 1
+        comptime assert type_of(min_p).dtype == DType.float32
+        comptime assert type_of(seed).rank == 1
+        comptime assert type_of(input).rank == rank
         comptime assert is_valid_target[target](), "not a valid target"
 
         comptime if is_cpu[target]():
@@ -2988,24 +3139,24 @@ struct Struct_fused_token_sampling:
             # drop in q4_k benchmarking for llama 3.
             if max_k == 1:
                 argmax(
-                    input.to_tile_tensor[.int64](),
+                    input.to_tile_tensor(),
                     rank - 1,
-                    out_idxs.to_tile_tensor[.int64](),
+                    out_idxs.to_tile_tensor(),
                     Optional(ctx.assert_cpu_target()),
                 )
                 return
             _fused_token_sampling_cpu(
                 Int(max_k),
-                input.to_tile_tensor[.int64](),
-                out_idxs.to_tile_tensor[.int64](),
+                input.to_tile_tensor(),
+                out_idxs.to_tile_tensor(),
                 k=K.to_tile_tensor[.int64]().as_unsafe_any_origin().as_imm(),
-                temperature=temperature.to_tile_tensor[.int64]()
+                temperature=temperature.to_tile_tensor[.float32]()
                 .as_unsafe_any_origin()
                 .as_imm(),
-                top_p=top_p.to_tile_tensor[.int64]()
+                top_p=top_p.to_tile_tensor[.float32]()
                 .as_unsafe_any_origin()
                 .as_imm(),
-                seed=seed.to_tile_tensor[.int64]()
+                seed=seed.to_tile_tensor[.uint64]()
                 .as_unsafe_any_origin()
                 .as_imm(),
             )
@@ -3014,19 +3165,19 @@ struct Struct_fused_token_sampling:
                 ctx,
                 Int(max_k),
                 min_top_p,
-                input.to_tile_tensor[.int64](),
-                out_idxs.to_tile_tensor[.int64](),
+                input.to_tile_tensor(),
+                out_idxs.to_tile_tensor(),
                 k=K.to_tile_tensor[.int64]().as_unsafe_any_origin().as_imm(),
-                temperature=temperature.to_tile_tensor[.int64]()
+                temperature=temperature.to_tile_tensor[.float32]()
                 .as_unsafe_any_origin()
                 .as_imm(),
-                top_p=top_p.to_tile_tensor[.int64]()
+                top_p=top_p.to_tile_tensor[.float32]()
                 .as_unsafe_any_origin()
                 .as_imm(),
-                min_p=min_p.to_tile_tensor[.int64]()
+                min_p=min_p.to_tile_tensor[.float32]()
                 .as_unsafe_any_origin()
                 .as_imm(),
-                seed=seed.to_tile_tensor[.int64]()
+                seed=seed.to_tile_tensor[.uint64]()
                 .as_unsafe_any_origin()
                 .as_imm(),
             )
@@ -3047,21 +3198,34 @@ struct Struct_fused_token_sampling_with_dist:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType,
-        dist_dtype: DType,
         target: StaticString,
         _trace_name: StaticString,
     ](
-        out_tokens: OutputTensor[dtype=.int64, rank=1, ...],
-        out_dist: OutputTensor[dtype=dist_dtype, rank=2, ...],
-        K: InputTensor[dtype=.int64, rank=1, ...],
+        out_tokens: Some[Output & Tensor],
+        out_dist: Some[Output & Tensor],
+        K: Some[Input & Tensor],
         max_k: Scalar,
-        temperature: InputTensor[dtype=.float32, rank=1, ...],
-        top_p: InputTensor[dtype=.float32, rank=1, ...],
-        seed: InputTensor[dtype=.uint64, rank=1, ...],
-        input: InputTensor[dtype=dtype, rank=2, ...],
+        temperature: Some[Input & Tensor],
+        top_p: Some[Input & Tensor],
+        seed: Some[Input & Tensor],
+        input: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(out_tokens), TileTensorable)
+        comptime assert conforms_to(type_of(out_dist), TileTensorable)
+        comptime assert conforms_to(type_of(K), TileTensorable)
+        comptime assert conforms_to(type_of(temperature), TileTensorable)
+        comptime assert conforms_to(type_of(top_p), TileTensorable)
+        comptime assert conforms_to(type_of(seed), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime dist_dtype = type_of(out_dist).dtype
+        comptime assert type_of(out_tokens).rank == 1
+        comptime assert type_of(out_dist).rank == 2
+        comptime assert type_of(K).rank == 1
+        comptime assert type_of(temperature).rank == 1
+        comptime assert type_of(top_p).rank == 1
+        comptime assert type_of(seed).rank == 1
+        comptime assert type_of(input).rank == 2
         comptime assert is_gpu[
             target
         ](), "sampler.fused_token_sampling_with_dist is GPU-only"
@@ -3069,24 +3233,22 @@ struct Struct_fused_token_sampling_with_dist:
             from_logits=True, emit_dist=True, dist_dtype=dist_dtype
         ](
             ctx,
-            input.to_tile_tensor[.int64](),
+            input.to_tile_tensor(),
             out_tokens.to_tile_tensor[.int64](),
             Int(max_k),
             top_k_arr=K.to_tile_tensor[.int64]()
             .as_unsafe_any_origin()
             .as_imm(),
-            top_p_arr=top_p.to_tile_tensor[.int64]()
+            top_p_arr=top_p.to_tile_tensor[.float32]()
             .as_unsafe_any_origin()
             .as_imm(),
-            temperature=temperature.to_tile_tensor[.int64]()
+            temperature=temperature.to_tile_tensor[.float32]()
             .as_unsafe_any_origin()
             .as_imm(),
-            rng_seed=seed.to_tile_tensor[.int64]()
+            rng_seed=seed.to_tile_tensor[.uint64]()
             .as_unsafe_any_origin()
             .as_imm(),
-            out_dist=out_dist.to_tile_tensor[
-                DType.int64
-            ]().as_unsafe_any_origin(),
+            out_dist=out_dist.to_tile_tensor().as_unsafe_any_origin(),
         )
 
 
@@ -3103,32 +3265,41 @@ struct Struct_topk_topp_masked_probs:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType,
         target: StaticString,
         _trace_name: StaticString,
     ](
-        probs: OutputTensor[dtype=.float32, rank=2, ...],
-        K: InputTensor[dtype=.int64, rank=1, ...],
-        temperature: InputTensor[dtype=.float32, rank=1, ...],
-        top_p: InputTensor[dtype=.float32, rank=1, ...],
-        input: InputTensor[dtype=dtype, rank=2, ...],
+        probs: Some[Output & Tensor],
+        K: Some[Input & Tensor],
+        temperature: Some[Input & Tensor],
+        top_p: Some[Input & Tensor],
+        input: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(probs), TileTensorable)
+        comptime assert conforms_to(type_of(K), TileTensorable)
+        comptime assert conforms_to(type_of(temperature), TileTensorable)
+        comptime assert conforms_to(type_of(top_p), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert type_of(probs).rank == 2
+        comptime assert type_of(K).rank == 1
+        comptime assert type_of(temperature).rank == 1
+        comptime assert type_of(top_p).rank == 1
+        comptime assert type_of(input).rank == 2
         comptime assert is_gpu[
             target
         ](), "sampler.topk_topp_masked_probs is GPU-only"
         topk_topp_masked_probs(
             ctx,
-            input.to_tile_tensor[.int64](),
-            probs.to_tile_tensor[.int64]().as_unsafe_any_origin(),
+            input.to_tile_tensor(),
+            probs.to_tile_tensor[.float32]().as_unsafe_any_origin(),
             top_k_val=-1,
             top_k_arr=K.to_tile_tensor[.int64]()
             .as_unsafe_any_origin()
             .as_imm(),
-            top_p_arr=top_p.to_tile_tensor[.int64]()
+            top_p_arr=top_p.to_tile_tensor[.float32]()
             .as_unsafe_any_origin()
             .as_imm(),
-            temperature=temperature.to_tile_tensor[.int64]()
+            temperature=temperature.to_tile_tensor[.float32]()
             .as_unsafe_any_origin()
             .as_imm(),
         )
@@ -3151,19 +3322,25 @@ struct Struct_gumbel_argmax_from_probs:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        out_tokens: OutputTensor[dtype=.int64, rank=1, ...],
-        seed: InputTensor[dtype=.uint64, rank=1, ...],
-        probs: InputTensor[dtype=.float32, rank=2, ...],
+        out_tokens: Some[Output & Tensor],
+        seed: Some[Input & Tensor],
+        probs: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(out_tokens), TileTensorable)
+        comptime assert conforms_to(type_of(seed), TileTensorable)
+        comptime assert conforms_to(type_of(probs), TileTensorable)
+        comptime assert type_of(out_tokens).rank == 1
+        comptime assert type_of(seed).rank == 1
+        comptime assert type_of(probs).rank == 2
         comptime assert is_gpu[
             target
         ](), "sampler.gumbel_argmax_from_probs is GPU-only"
         gumbel_sampling_fused_gpu[from_probs=True](
             ctx,
-            probs.to_tile_tensor[.int64](),
+            probs.to_tile_tensor[.float32](),
             out_tokens.to_tile_tensor[.int64](),
-            seed=seed.to_tile_tensor[.int64]().as_unsafe_any_origin().as_imm(),
+            seed=seed.to_tile_tensor[.uint64]().as_unsafe_any_origin().as_imm(),
         )
 
 
@@ -3180,22 +3357,26 @@ struct Struct_argmax_with_bias:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType,
-        bias_dtype: DType,
         target: StaticString,
         _trace_name: StaticString,
     ](
-        out_tokens: OutputTensor[dtype=.int64, rank=1, ...],
+        out_tokens: Some[Output & Tensor],
         position: Scalar,
-        logits: InputTensor[dtype=dtype, rank=3, ...],
-        bias: InputTensor[dtype=bias_dtype, rank=2, ...],
+        logits: Some[Input & Tensor],
+        bias: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(out_tokens), TileTensorable)
+        comptime assert conforms_to(type_of(logits), TileTensorable)
+        comptime assert conforms_to(type_of(bias), TileTensorable)
+        comptime assert type_of(out_tokens).rank == 1
+        comptime assert type_of(logits).rank == 3
+        comptime assert type_of(bias).rank == 2
         comptime assert is_gpu[target](), "sampler.argmax_with_bias is GPU-only"
         argmax_with_bias_gpu(
             ctx,
-            logits.to_tile_tensor[.int64](),
-            bias.to_tile_tensor[.int64](),
+            logits.to_tile_tensor(),
+            bias.to_tile_tensor(),
             Int(position),
             out_tokens.to_tile_tensor[.int64](),
         )
@@ -3219,13 +3400,17 @@ struct Struct_keyed_uniform:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        out_values: OutputTensor[dtype=.float32, rank=1, ...],
-        seed: InputTensor[dtype=.uint64, rank=1, ...],
+        out_values: Some[Output & Tensor],
+        seed: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(out_values), TileTensorable)
+        comptime assert conforms_to(type_of(seed), TileTensorable)
+        comptime assert type_of(out_values).rank == 1
+        comptime assert type_of(seed).rank == 1
         keyed_uniform[target=target](
-            out_values.to_tile_tensor[.int64]().as_unsafe_any_origin(),
-            seed.to_tile_tensor[.int64]().as_unsafe_any_origin().as_imm(),
+            out_values.to_tile_tensor[.float32]().as_unsafe_any_origin(),
+            seed.to_tile_tensor[.uint64]().as_unsafe_any_origin().as_imm(),
             ctx,
         )
 
@@ -3238,32 +3423,46 @@ struct Struct_min_p_sampling:
     @staticmethod
     def execute[
         dtype: DType,
-        rank: Int,
-        out_idx_type: DType,
         target: StaticString,
         _trace_name: StaticString,
     ](
-        out_token_ids: OutputTensor[dtype=out_idx_type, rank=rank, ...],
-        min_ps: InputTensor[dtype=dtype, rank=1, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
+        out_token_ids: Some[Output & Tensor],
+        min_ps: Some[Input & Tensor],
+        input: Some[Input & Tensor],
         temperature: Scalar[dtype],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(out_token_ids), TileTensorable)
+        comptime assert conforms_to(type_of(min_ps), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime rank = type_of(out_token_ids).rank
+        comptime assert type_of(min_ps).rank == 1
+        comptime assert type_of(input).rank == rank
         comptime assert is_valid_target[target](), "not a valid target"
 
         comptime if is_cpu[target]():
+            # The CPU helper writes probabilities back into its logits, which
+            # the legacy input projection allowed. Rebuild a mutable view from
+            # the pointer to keep that behavior; a non-pointer storage policy
+            # aborts here at run time.
+            var input_tile = input.to_tile_tensor[dtype]()
             min_p_sampling_cpu(
-                min_ps.to_tile_tensor[.int64](),
-                input.to_tile_tensor[.int64](),
-                out_token_ids.to_tile_tensor[.int64](),
+                min_ps.to_tile_tensor[dtype](),
+                TileTensor(
+                    ptr=input_tile.ptr.unsafe_mut_cast[
+                        True
+                    ]().unsafe_origin_cast[MutAnyOrigin](),
+                    layout=input_tile.layout,
+                ),
+                out_token_ids.to_tile_tensor(),
                 temperature,
             )
         else:
             min_p_sampling_gpu(
                 ctx,
-                min_ps.to_tile_tensor[.int64](),
-                input.to_tile_tensor[.int64](),
-                out_token_ids.to_tile_tensor[.int64](),
+                min_ps.to_tile_tensor[dtype](),
+                input.to_tile_tensor[dtype](),
+                out_token_ids.to_tile_tensor(),
                 temperature,
             )
 
@@ -3320,37 +3519,53 @@ struct Struct_sampler_apply_packed_bitmask_with_penalties:
     @staticmethod
     def execute[
         dtype: DType,
-        penalty_type: DType,
         //,
         target: StaticString,
         _trace_name: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=2, ...],
-        logits: InputTensor[dtype=dtype, rank=2, ...],
-        packed: InputTensor[dtype=.int32, rank=2, ...],
+        output: Some[Output & Tensor],
+        logits: Some[Input & Tensor],
+        packed: Some[Input & Tensor],
         fill_value: Scalar[dtype],
-        compressed_frequency_data: InputTensor[dtype=.int32, rank=2, ...],
-        frequency_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        frequency_penalty: InputTensor[dtype=penalty_type, rank=1, ...],
-        presence_penalty: InputTensor[dtype=penalty_type, rank=1, ...],
+        compressed_frequency_data: Some[Input & Tensor],
+        frequency_offsets: Some[Input & Tensor],
+        frequency_penalty: Some[Input & Tensor],
+        presence_penalty: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(logits), TileTensorable)
+        comptime assert conforms_to(type_of(packed), TileTensorable)
+        comptime assert conforms_to(
+            type_of(compressed_frequency_data), TileTensorable
+        )
+        comptime assert conforms_to(type_of(frequency_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(frequency_penalty), TileTensorable)
+        comptime assert conforms_to(type_of(presence_penalty), TileTensorable)
+        comptime penalty_type = type_of(frequency_penalty).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(logits).rank == 2
+        comptime assert type_of(packed).rank == 2
+        comptime assert type_of(compressed_frequency_data).rank == 2
+        comptime assert type_of(frequency_offsets).rank == 1
+        comptime assert type_of(frequency_penalty).rank == 1
+        comptime assert type_of(presence_penalty).rank == 1
         comptime assert is_valid_target[target](), "not a valid target"
 
         apply_packed_bitmask[target](
-            output.to_tile_tensor(),
-            logits.to_tile_tensor(),
-            packed.to_tile_tensor(),
+            output.to_tile_tensor[dtype](),
+            logits.to_tile_tensor[dtype](),
+            packed.to_tile_tensor[.int32](),
             fill_value,
             ctx,
         )
         apply_masked_penalties_to_logits[target=target](
-            output.to_tile_tensor[.int64](),
-            packed.to_tile_tensor[.int64](),
-            compressed_frequency_data.to_tile_tensor[.int64](),
-            frequency_offsets.to_tile_tensor[.int64](),
-            frequency_penalty.to_tile_tensor[.int64](),
-            presence_penalty.to_tile_tensor[.int64](),
+            output.to_tile_tensor[dtype](),
+            packed.to_tile_tensor[.int32](),
+            compressed_frequency_data.to_tile_tensor[.int32](),
+            frequency_offsets.to_tile_tensor[.uint32](),
+            frequency_penalty.to_tile_tensor(),
+            presence_penalty.to_tile_tensor[penalty_type](),
             ctx,
         )
 
