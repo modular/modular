@@ -49,13 +49,17 @@ class Checkpointer:
             heuristic.subscribe(self._triggers)
         return self
 
+    def handles(self, kind: EventKind) -> bool:
+        """Returns whether any heuristic runs on events of ``kind``."""
+        return self._triggers.handles(kind)
+
     def record(self, event: Event) -> None:
         """Records an event for the next checkpoint step.
 
         Call it before the request's cache can change, for example before
         releasing it. Events no heuristic handles are dropped.
         """
-        if not self._triggers.handles(event.kind):
+        if not self.handles(event.kind):
             return
         self._ctx.record(event)
         self._pending.add(event.kind)

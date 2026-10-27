@@ -541,8 +541,9 @@ def forward_to_boundary(manager: JengaBlockManager, ctx: TextContext) -> None:
         ctx.tokens.chunk(cut)
     manager.alloc(ctx)
     ctx.update(9)
-    for group in manager.groups.values():
-        group.checkpoint(ctx, 0, allocation_owner=manager)
+    if manager._publishes_states(ctx):
+        for group in manager.groups.values():
+            group.checkpoint(ctx, 0, allocation_owner=manager)
     manager.step(ctx)
 
 
@@ -3082,3 +3083,67 @@ def test_a_boundary_the_state_cannot_resume_at_is_not_checkpointed() -> None:
     )
 
     assert checkpointer.checkpoint() == set()
+
+
+def test_a_prompt_ending_on_a_page_checkpoints_where_a_replay_resumes() -> None:
+    """A replay recomputes the last prompt token, so it resumes a page short.
+
+    End of prompt checkpoints both depths, and the windowed leaf keeps the
+    page below the replay's window past ``advance`` so that checkpoint can
+    send it. A replay then resumes from the checkpoints alone.
+    """
+    groups = {
+        FULL: KVCacheGroupId.full(),
+        SLIDING: KVCacheGroupId("sliding_window", 4),
+    }
+    connector = FakeConnector(groups, asynchronous=False)
+    manager = make_manager(
+        connector,
+        leaf_infos={
+            FULL: KVLeafInfo(1, groups[FULL]),
+            SLIDING: KVLeafInfo(1, groups[SLIDING]),
+        },
+    )
+    window = groups[SLIDING].blocks_in_window(1)
+    first = make_ctx([1, 2, 3, 4, 5, 6])
+    manager.claim(first)
+    manager.alloc(first)
+    first.update(9)
+    manager.step(first)
+    manager.offload(0)
+    hashes = connector.offloads[-1][1][FULL]
+    streamed = len(connector.offloads)
+
+    checkpointer = attach_checkpointing(manager)
+    checkpointer.record(
+        CheckpointEvent(first.request_id, CheckpointEventKind.END_OF_PROMPT, 6)
+    )
+    manager.offload(0)
+
+    checkpoints = connector.offloads[streamed:]
+    assert {tuple(sent[SLIDING]) for _, sent in checkpoints} == {
+        tuple(hashes[5 - window : 5]),
+        tuple(hashes[6 - window : 6]),
+    }
+    assert all(sent[FULL] == [] for _, sent in checkpoints)
+
+    # The next step keeps only the window at its own boundary.
+    manager.alloc(first)
+    first.update(10)
+    manager.step(first)
+    assert manager._resumable_at(first.request_id, 7)
+    assert not manager._resumable_at(first.request_id, 5)
+
+    manager.release(first)
+    manager.reset_prefix_cache()
+    connector.held[FULL].update(hashes)
+    for _, sent in checkpoints:
+        connector.held[SLIDING].update(sent[SLIDING])
+
+    replay = make_ctx([1, 2, 3, 4, 5, 6])
+    manager.claim(replay)
+    manager.alloc(replay)
+
+    assert replay.tokens.processed_length == 5
+    _, asked, _ = connector.loads[-1]
+    assert asked[SLIDING] == hashes[5 - window : 5]

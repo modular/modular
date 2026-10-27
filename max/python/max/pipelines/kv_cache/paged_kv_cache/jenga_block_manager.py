@@ -1094,18 +1094,63 @@ class JengaBlockManager:
     def _update_resumable(self, ctx: TextContext) -> tuple[int, ...]:
         """Returns where the request can resume, and records it on the request.
 
-        That is the committed boundary if every cache holds what resuming there
-        needs, and nowhere otherwise. Recomputed only after a commit, since
-        nothing else changes what the caches hold.
+        That is the committed boundary and, on the step that commits past the
+        end of a page-aligned prompt, the boundary a replay of it resumes from,
+        each only if every cache holds what resuming there needs.
         """
         state = self._state_of(ctx)
-        if state.resumable.committed_idx != state.committed_idx:
-            boundary = state.committed_idx // self._block_size
-            can_resume = self._resumable_at(ctx.request_id, boundary)
-            state.resumable = _RequestResumableState(
-                (boundary,) if can_resume else (), state.committed_idx
+        last = state.resumable
+        if (
+            last.committed_idx == state.committed_idx
+            and len(last.boundaries) <= 1
+        ):
+            return last.boundaries
+        candidates: list[int] = []
+        if self._checkpointer.handles(CheckpointEventKind.END_OF_PROMPT) and (
+            replay := self._distinct_replay_boundary(
+                ctx, last.committed_idx, state.committed_idx
             )
+        ):
+            candidates.append(replay)
+        candidates.append(state.committed_idx // self._block_size)
+        state.resumable = _RequestResumableState(
+            tuple(
+                b for b in candidates if self._resumable_at(ctx.request_id, b)
+            ),
+            state.committed_idx,
+        )
         return state.resumable.boundaries
+
+    def _distinct_replay_boundary(
+        self, ctx: TextContext, start: int, end: int
+    ) -> int | None:
+        """Returns where a replay resumes, if not where the prompt's end commits.
+
+        Only for a prompt that ends after ``start`` and at or before ``end``.
+        A replay recomputes the prompt's last token, so it resumes at the
+        start of the page holding that token. Unless the prompt ends on a page
+        boundary, that is the boundary its end commits, and this returns
+        ``None``.
+        """
+        prompt_end = ctx.tokens.prompt_length
+        if prompt_end % self._block_size or not start < prompt_end <= end:
+            return None
+        return prompt_end // self._block_size - 1 or None
+
+    def _publishes_states(self, ctx: TextContext) -> bool:
+        """Whether the forward that just ran may publish its recurrent state.
+
+        Not when it ends a page-aligned prompt whose replay can already
+        resume; the request keeps that state and continues in place.
+        """
+        state = self._state_of(ctx)
+        replay = self._distinct_replay_boundary(
+            ctx, state.committed_idx, ctx.tokens.processed_length
+        )
+        return not (
+            self._checkpointer.handles(CheckpointEventKind.END_OF_PROMPT)
+            and replay in state.resumable.boundaries
+        )
 
     def get_prefix_cache_hit_counts(
         self, ctx: TextContext

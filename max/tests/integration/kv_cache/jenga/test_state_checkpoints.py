@@ -30,6 +30,10 @@ from max.nn.kv_cache import (
 )
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache import InsufficientBlocksError
+from max.pipelines.kv_cache.checkpoint import (
+    Checkpointer,
+    checkpoint_at_end_of_prompt,
+)
 from max.pipelines.kv_cache.paged_kv_cache.block_utils import (
     LittleKVCacheBlock,
 )
@@ -118,6 +122,8 @@ def checkpoint(
 ) -> Mapping[str, tuple[int | None, int]]:
     """The blocks the forward that just ran should be copied between."""
     merged: dict[str, tuple[int | None, int]] = {}
+    if not bm._publishes_states(ctx):
+        return merged
     for group in state_groups(bm):
         merged.update(group.checkpoint(ctx, 0, allocation_owner=bm))
     return merged
@@ -511,6 +517,43 @@ def test_a_kept_state_is_not_copied_over_the_live_state() -> None:
 
     assert kept_state_slots(bm, ctx)
     assert resume(bm, ctx) == {}
+
+
+def test_a_page_aligned_prompt_keeps_the_replay_state_it_already_has() -> None:
+    """Publishing at the prompt's end would keep two states, so it keeps R.
+
+    The chunk before the last one ended on the replay boundary, so its state
+    is already kept. The forward that ends the prompt continues in the block
+    it ran in instead of moving onto a successor.
+    """
+    bm = make_manager()
+    bm.with_checkpointer(
+        Checkpointer.factory()
+        .with_heuristics(checkpoint_at_end_of_prompt())
+        .with_candidate_at_or_before(lambda request_id, position: None)
+        .build()
+    )
+    ctx = make_ctx(2 * BLOCK_SIZE)
+    bm.claim(ctx)
+    ctx.tokens.chunk(BLOCK_SIZE)
+    bm.alloc(ctx)
+    resume(bm, ctx)
+    ctx.tokens.advance_chunk()
+    checkpoint(bm, ctx)
+    bm.step(ctx)
+    assert bm._state_of(ctx).resumable.boundaries == (1,)
+    bm.alloc(ctx)
+    runs_in = live(bm, ctx)
+
+    resume(bm, ctx)
+    ctx.update(42)
+    assert checkpoint(bm, ctx) == {}
+    bm.step(ctx)
+
+    assert bm._state_of(ctx).resumable.boundaries == (1,)
+    assert kept_state_slots(bm, ctx) == {0}
+    assert live(bm, ctx) == runs_in, "it continues in the block it ran in"
+    assert held_state_blocks(bm, ctx) == 2 * len(state_groups(bm))
 
 
 def test_release_frees_the_kept_state() -> None:

@@ -28,4 +28,9 @@ class Heuristic(Protocol):
         ...
 
 
-__all__ = ["AtEventHeuristic", "Heuristic", "end_of_prompt", "release"]
+__all__ = [
+    "AtEventHeuristic",
+    "Heuristic",
+    "end_of_prompt",
+    "release",
+]

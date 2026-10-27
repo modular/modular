@@ -76,6 +76,26 @@ def test_an_event_checkpoints_at_the_last_candidate_at_or_before_it() -> None:
     assert checkpointer.checkpoint() == {Checkpoint(request, 8)}
 
 
+def test_a_prompt_ending_on_a_candidate_checkpoints_a_replay_too() -> None:
+    """A replay recomputes the prompt's last token, so it hits one short."""
+    request = RequestID()
+    checkpointer = (
+        Checkpointer.factory()
+        .with_heuristics(checkpoint_at_end_of_prompt())
+        .with_candidate_at_or_before(_Candidates({request: [4, 8]}))
+        .build()
+    )
+
+    checkpointer.record(
+        CheckpointEvent(request, CheckpointEventKind.END_OF_PROMPT, 8)
+    )
+
+    assert checkpointer.checkpoint() == {
+        Checkpoint(request, 4),
+        Checkpoint(request, 8),
+    }
+
+
 def test_an_event_with_no_candidate_before_it_checkpoints_nothing() -> None:
     request = RequestID()
     checkpointer = (
@@ -200,6 +220,18 @@ def test_the_context_asks_the_cache_once_per_query_per_step() -> None:
 def test_an_enabled_manager_needs_a_candidate_query() -> None:
     with pytest.raises(ValueError, match="candidate_at_or_before"):
         Checkpointer.factory().with_heuristics(checkpoint_at_release()).build()
+
+
+def test_a_checkpointer_handles_only_its_heuristics_event_kinds() -> None:
+    checkpointer = (
+        Checkpointer.factory()
+        .with_heuristics(checkpoint_at_release())
+        .with_candidate_at_or_before(_Candidates({}))
+        .build()
+    )
+
+    assert checkpointer.handles(CheckpointEventKind.RELEASE)
+    assert not checkpointer.handles(CheckpointEventKind.END_OF_PROMPT)
 
 
 def test_a_disabled_manager_drops_every_event() -> None:
