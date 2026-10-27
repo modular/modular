@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# DOC: Mojo/docs/site/reference/cheat-sheets/types-and-literals.mdx
 # test_types_and_literals.mojo
 # Tests for the Mojo "Types & Literals" cheat-sheet card.
 #

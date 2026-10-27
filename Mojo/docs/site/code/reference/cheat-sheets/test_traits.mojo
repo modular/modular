@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# DOC: Mojo/docs/site/reference/cheat-sheets/traits.mdx
 # test_traits.mojo
 # Tests for the Mojo "traits" cheat-sheet card.
 #
