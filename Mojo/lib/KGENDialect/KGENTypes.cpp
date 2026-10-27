@@ -1032,6 +1032,18 @@ FuncLiteralTypeGeneratorType::getSpecializedGenerator(
                                              location));
 }
 
+TypedAttr FuncLiteralTypeGeneratorType::getFuncSymbolAttr() {
+  return GeneratorAttr::get(getInputParamTypes(), getBody().getTargetLiteral(),
+                            getParamListAttrs());
+}
+
+FuncTypeGeneratorType
+FuncLiteralTypeGeneratorType::getNonLiteralGeneratorType() {
+  auto directSymbol = getBody().getTargetLiteral();
+  return GeneratorType::get(getInputParamTypes(), directSymbol.getType(),
+                            getParamListAttrs());
+}
+
 SymbolConstantAttr FuncLiteralTypeGeneratorType::getSymbolConstantAttr() {
   auto directSymbol = getBody().getTargetLiteral();
   auto sig = GeneratorType::get(getInputParamTypes(), directSymbol.getType(),

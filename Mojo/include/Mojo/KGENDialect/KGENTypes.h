@@ -119,7 +119,13 @@ public:
                           Location location);
 
   // Unwrap the target literal from the literal type.
+  // TODO: the function will soon be deleted.
   SymbolConstantAttr getSymbolConstantAttr();
+  // Unwrap the target literal from the literal type.
+  TypedAttr getFuncSymbolAttr();
+  /// Return the signature of the target literal, i.e. this generator with the
+  /// FuncLiteralType body replaced by its FuncType.
+  FuncTypeGeneratorType getNonLiteralGeneratorType();
 
   FuncLiteralType getBody();
   FuncLiteralType getInstantiatedBody();

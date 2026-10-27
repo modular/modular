@@ -1569,7 +1569,7 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
   if (auto fnLiteralGen = type.getIfFnLiteralTypeGenerator()) {
     os << " "
        << getNameFromSymbolRef(
-              fnLiteralGen.getSymbolConstantAttr().getSymbol());
+              fnLiteralGen.getBody().getTargetLiteral().getSymbol());
   }
 
   FuncType fnType = type.getBodyFnType();

@@ -668,7 +668,8 @@ static std::optional<StringRef> extractDecoratorName(TypedAttr attr) {
   if (auto cst = dyn_cast<SymbolConstantAttr>(attr))
     return extractFromSymbolRef(cst.getSymbol());
   if (auto fnLiteral = dyn_cast<FnLiteralTypeGeneratorType>(attr.getType()))
-    return extractDecoratorName(fnLiteral.getSymbolConstantAttr());
+    return extractFromSymbolRef(
+        fnLiteral.getBody().getTargetLiteral().getSymbol());
 
   if (auto call = dyn_cast<ParamOperatorAttr>(attr)) {
     // Only process if it's an Apply operator with at least one operand

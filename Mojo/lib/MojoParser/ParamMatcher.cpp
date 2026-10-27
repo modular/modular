@@ -655,8 +655,7 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
   // Allowing match a FnLiteralType To a FuncType, but not vice versa.
   if (auto actual = dyn_cast<FnLiteralTypeGeneratorType>(actualType))
     if (auto expected = dyn_cast<FnTypeGeneratorType>(expectedType))
-      return matchFunctionTypes(actual.getSymbolConstantAttr().getType(),
-                                expected);
+      return matchFunctionTypes(actual.getNonLiteralGeneratorType(), expected);
 
   // Handle GeneratorType
   if (auto actual = dyn_cast<GeneratorType>(actualType)) {
@@ -708,14 +707,13 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
   if (auto expectedTrait = dyn_cast<TraitType>(expectedType)) {
     if (auto expected = extractClosureSymbol(shared, expectedTrait)) {
       // We can infer from a parametric closure trait and a fn literal type.
-      FnTypeGeneratorType fnSigActual = [&]() {
+      FnTypeGeneratorType fnSigActual = [&]() -> FnTypeGeneratorType {
         if (auto actual = extractClosureSymbol(
                 shared, ASTType(actualType).getProvidedTrait(shared))) {
           return shared.getClosureFnSigWithoutSelf(actual);
         } else if (auto actual =
                        dyn_cast<FnLiteralTypeGeneratorMetaType>(actualType)) {
-          return cast<FnTypeGeneratorType>(
-              actual.getType().getSymbolConstantAttr().getType());
+          return actual.getType().getNonLiteralGeneratorType();
         }
         return FnTypeGeneratorType();
       }();
