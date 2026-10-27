@@ -83,12 +83,24 @@ SMLoc OverloadSet::getExprLoc() const { return getExpr()->getLoc(); }
 static ParamBindings getBindingsForDeclaredType(ASTDecl &declScope,
                                                 ASTType type,
                                                 const ExprNode *expr) {
-  // We need to do extra work to forward a generator's parameters.
-  assert(!sugarIsa<GeneratorType>(type.extractMetaType()));
-
   ParamBindings paramBindings(declScope, expr);
-  ASTDecl *decl = type.getDecl(declScope.getShared());
+  // We need to do extra work to forward a generator's parameters.
+  if (auto genAttr = sugarDynCast<GeneratorAttr>(PValue(type));
+      genAttr && sugarIsa<LIT::StructType>(ASTType(genAttr.getBody()))) {
+    auto genType = cast<GeneratorType>(genAttr.getType());
+    auto pogs = genType.getParamListAttrs().getPogs();
+    // The generator's inputs are prepended to the callee's full signature,
+    // so its constraints (e.g. `comptime A[c: Bool] where c = S[c]`) index
+    // them without adjustment.
+    paramBindings.addConstraints(genType.getBodyConstraints());
+    for (auto [type, pog] :
+         llvm::zip_equal(genAttr.getInputParamTypes(), pogs)) {
+      paramBindings.add(expr, UnboundAttr::get(type), pog.getName());
+    }
+    return paramBindings;
+  }
 
+  ASTDecl *decl = type.getDecl(declScope.getShared());
   auto traitSelfName = StringAttr::get(decl->getContext(), "_Self");
   // When binding a trait function, add the self type bindings.
   if (isa_and_nonnull<TraitASTDecl>(decl)) {
@@ -157,30 +169,8 @@ ASTType OverloadSet::getContextualType(ASTDecl *candidate) const {
 
 ParamBindings OverloadSet::getParamBindings(ASTDecl *candidate) const {
   ParamBindings result(getDeclScope(), getExpr());
-  ASTType contextualType = getContextualType(candidate);
-  /// FIXME: this is very bad, this has to be keep in sync with how full
-  /// signature is computed during overload resolution.
-  if (contextualType) {
-    if (auto genAttr = sugarDynCast<GeneratorAttr>(PValue(contextualType));
-        genAttr && sugarIsa<StructType>(ASTType(genAttr.getBody()))) {
-      auto genType = cast<GeneratorType>(genAttr.getType());
-      auto pogs = genType.getParamListAttrs().getPogs();
-      // The generator's inputs are prepended to the callee's full signature,
-      // so its constraints (e.g. `comptime A[c: Bool] where c = S[c]`) index
-      // them without adjustment.
-      result.addConstraints(genType.getBodyConstraints());
-      for (auto [type, pog] :
-           llvm::zip_equal(genAttr.getInputParamTypes(), pogs)) {
-        // TODO: We really should unify `getBindingsForDeclaredType` with
-        // `getFullSig`.
-        result.add(getExpr(), UnboundAttr::get(type), pog.getName());
-      }
-    } else {
-      result =
-          getBindingsForDeclaredType(getDeclScope(), contextualType, getExpr());
-    }
-  }
-
+  if (ASTType ctxType = getContextualType(candidate))
+    result = getBindingsForDeclaredType(getDeclScope(), ctxType, getExpr());
   result.append(explicitParamBindings);
   return result;
 }
