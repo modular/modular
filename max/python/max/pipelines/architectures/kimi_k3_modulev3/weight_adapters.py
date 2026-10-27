@@ -30,6 +30,10 @@ loads through the dense path unchanged.
 
 from __future__ import annotations
 
+import os
+import tempfile
+from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import numpy as np
@@ -180,6 +184,108 @@ def _canonical_a_log(
     return _rewrap(broadcast, a_log, name)
 
 
+# Each expert copy is a memcpy plus a page fault per source page, and numpy
+# releases the GIL for both, so overlapping several copies in threads hides
+# that latency; bounded low since the win is concurrent faults, not cores.
+_STACK_WORKERS = min(16, os.cpu_count() or 8)
+
+# Above this, an expert stack is backed by a file instead of anonymous memory,
+# so its pages stay reclaimable under memory pressure.
+_SPILL_BYTES = int(os.environ.get("MAX_KIMI_K3_STACK_SPILL_BYTES", 4 << 30))
+_SPILL_DIR = os.environ.get("MAX_KIMI_K3_STACK_SPILL_DIR") or None
+
+
+def _stack_output(shape: tuple[int, ...], dtype: np.dtype) -> np.ndarray:
+    """Allocates an expert stack, spilling to a file past ``_SPILL_BYTES``.
+
+    The file is unlinked as soon as it is mapped: the mapping keeps the inode
+    alive, so the space is returned when the array is freed and nothing is
+    left behind if the process dies.
+    """
+    nbytes = int(np.prod(shape)) * np.dtype(dtype).itemsize
+    if nbytes < _SPILL_BYTES:
+        return np.empty(shape, dtype=dtype)
+
+    fd, path = tempfile.mkstemp(prefix="max-k3-expert-stack-", dir=_SPILL_DIR)
+    os.close(fd)
+    try:
+        out = np.memmap(path, dtype=dtype, mode="w+", shape=shape)
+    finally:
+        os.unlink(path)
+    return out
+
+
+def _settle(out: np.ndarray) -> np.ndarray:
+    """Writes a spilled stack back, so its pages become reclaimable.
+
+    Spilling makes the bytes file-backed, but a freshly written shared mapping
+    is DIRTY, and dirty page cache is no more reclaimable than anonymous
+    memory -- so one ``msync`` per stack makes the pages clean and lets the
+    kernel drop them under pressure.
+    """
+    if isinstance(out, np.memmap):
+        out.flush()
+    return out
+
+
+def _copy_into(pairs: Sequence[tuple[np.ndarray, np.ndarray]]) -> None:
+    """Runs ``dst[...] = src`` for each pair, concurrently.
+
+    Every ``dst`` is a disjoint slice of one preallocated output, so the
+    writes do not race and the peak stays one output rather than two.
+    """
+    if len(pairs) < 2 or _STACK_WORKERS < 2:
+        for dst, src in pairs:
+            dst[...] = src
+        return
+
+    def one(pair: tuple[np.ndarray, np.ndarray]) -> None:
+        dst, src = pair
+        dst[...] = src
+
+    with ThreadPoolExecutor(max_workers=_STACK_WORKERS) as pool:
+        # list() rather than a bare map(): map is lazy, and an exception in a
+        # worker only surfaces when its result is consumed.
+        list(pool.map(one, pairs))
+
+
+def _stack_experts_arrays(parts: Sequence[np.ndarray]) -> np.ndarray:
+    """Stacks per-expert arrays into ``[E, *parts[0].shape]``.
+
+    ``np.stack`` allocates the same output and fills it serially; this fills
+    it through :func:`_copy_into` instead.
+    """
+    if not parts:
+        raise ValueError("_stack_experts_arrays needs at least one expert")
+    out = _stack_output((len(parts), *parts[0].shape), parts[0].dtype)
+    _copy_into([(out[e], p) for e, p in enumerate(parts)])
+    return _settle(out)
+
+
+def _stack_gate_up_arrays(
+    gate: Sequence[np.ndarray], up: Sequence[np.ndarray]
+) -> np.ndarray:
+    """Stacks per-expert gate and up into ``[E, gate_rows + up_rows, cols]``.
+
+    Writes each expert into a preallocated output instead of fusing every
+    expert first and stacking the list, which costs the same result at twice
+    the peak memory and serializes every expert's page faults.
+    """
+    if not gate:
+        raise ValueError("_stack_gate_up_arrays needs at least one expert")
+    split = gate[0].shape[0]
+    out = _stack_output(
+        (len(gate), split + up[0].shape[0], *gate[0].shape[1:]),
+        gate[0].dtype,
+    )
+    pairs: list[tuple[np.ndarray, np.ndarray]] = []
+    for e, (g, u) in enumerate(zip(gate, up, strict=True)):
+        pairs.append((out[e, :split], g))
+        pairs.append((out[e, split:], u))
+    _copy_into(pairs)
+    return _settle(out)
+
+
 def _stack_expert_weights(
     w1: list[WeightData], w2: list[WeightData], w3: list[WeightData], name: str
 ) -> tuple[WeightData, WeightData]:
@@ -191,14 +297,10 @@ def _stack_expert_weights(
     case's ``weight_scale`` tensors, since the stacking itself is the same
     whether the values are packed or dense.
     """
-    gate_up = np.stack(
-        [
-            np.concatenate([_elements(g), _elements(u)], axis=0)
-            for g, u in zip(w1, w3, strict=True)
-        ],
-        axis=0,
+    gate_up = _stack_gate_up_arrays(
+        [_elements(g) for g in w1], [_elements(u) for u in w3]
     )
-    down = np.stack([_elements(w) for w in w2], axis=0)
+    down = _stack_experts_arrays([_elements(w) for w in w2])
     return (
         _rewrap(gate_up, w1[0], f"{name}.experts_gate_up_proj"),
         _rewrap(down, w2[0], f"{name}.experts_down_proj"),
