@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import json
 import os
 import re
 import sys
@@ -254,7 +255,9 @@ def populate_sidebar_items(docs_path: str, sidebar_file: str) -> None:
 
     Markers like "__AUTOGEN:max.profiler.gpu__" are replaced with the list of
     generated API doc paths matching that module prefix. Works with both JS and
-    JSON sidebar files.
+    JSON sidebar files. A JSON sidebar is expanded on its parsed lists, so a
+    marker with no generated files drops out of its list and the output stays
+    valid JSON.
     """
     sidebar_path = os.path.join(docs_path, sidebar_file)
     python_api_path = os.path.join(docs_path, "api/python")
@@ -282,12 +285,7 @@ def populate_sidebar_items(docs_path: str, sidebar_file: str) -> None:
     pattern = r'"__AUTOGEN:([^"]+)__"'
     all_prefixes = set(re.findall(pattern, content))
 
-    def replace_marker(match) -> str:  # noqa: ANN001
-        prefix = match.group(1)
-
-        line_start = content.rfind("\n", 0, match.start()) + 1
-        indent = " " * (match.start() - line_start)
-
+    def items_for(prefix: str) -> list[str]:
         items = []
         for filename, doc_id in generated_entries:
             if not filename.startswith(prefix + ".") or not filename.endswith(
@@ -308,8 +306,39 @@ def populate_sidebar_items(docs_path: str, sidebar_file: str) -> None:
         items.sort()
         if not items:
             print(f"Warning: No generated files found for prefix: {prefix}")
-            if sidebar_path.endswith(".json"):
-                return ""
+        return items
+
+    if sidebar_path.endswith(".json"):
+        marker = re.compile(r"__AUTOGEN:([^\"]+)__")
+
+        def expand(node: object) -> object:
+            if isinstance(node, list):
+                expanded: list[object] = []
+                for item in node:
+                    match = (
+                        marker.fullmatch(item)
+                        if isinstance(item, str)
+                        else None
+                    )
+                    if match:
+                        expanded.extend(items_for(match.group(1)))
+                    else:
+                        expanded.append(expand(item))
+                return expanded
+            if isinstance(node, dict):
+                return {key: expand(value) for key, value in node.items()}
+            return node
+
+        with open(sidebar_path, "w") as f:
+            json.dump(expand(json.loads(content)), f, indent=2)
+            f.write("\n")
+        return
+
+    def replace_marker(match) -> str:  # noqa: ANN001
+        line_start = content.rfind("\n", 0, match.start()) + 1
+        indent = " " * (match.start() - line_start)
+        items = items_for(match.group(1))
+        if not items:
             return "/* No generated files found */"
         return (",\n" + indent).join(f'"{item}"' for item in items)
 

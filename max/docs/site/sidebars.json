@@ -261,8 +261,7 @@
               "items": [
                 "__AUTOGEN:max.experimental.torch__"
               ]
-            },
-            "__AUTOGEN:max.experimental__"
+            }
           ]
         },
         {
