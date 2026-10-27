@@ -640,7 +640,8 @@ def PointerType : KGENType<"Pointer", "pointer", [
 
 class PointerElementType<string lhs, string rhs> : TypesMatchWith<
     "pointer element type", lhs, rhs,
-    "llvm::cast<PointerType>($_self).getElementType()">;
+    "llvm::isa<PointerType>($_self) ? "
+    "llvm::cast<PointerType>($_self).getElementType() : Type()">;
 
 class PointerOf<Type type> : ConfinedType<PointerType,
     [CPred<"llvm::cast<PointerType>($_self).getElementType()">,
@@ -697,7 +698,8 @@ def KGEN_ParamListType : KGENType<"ParamList", "param_list", [
 
 class ParamListElementType<string lhs, string rhs> : TypesMatchWith<
     "value type matches variadic element type", lhs, rhs,
-    "llvm::cast<KGEN::ParamListType>($_self).getElementType()",
+    "llvm::isa<KGEN::ParamListType>($_self) ? "
+    "llvm::cast<KGEN::ParamListType>($_self).getElementType() : Type()",
     "typeRangeMatches">;
 
 //===----------------------------------------------------------------------===//
@@ -1321,7 +1323,8 @@ def UnboundOrIndexOrInt : AnyTypeOf<[
 // Matches if Value has size=1 and same dtype as Operand
 class SIMDSizeOneOfSameDType<string operand, string value> : TypesMatchWith<
     value # " type matches dtype of the " # operand # " operand", operand,
-    value, "KGEN::SIMDType::get(1, llvm::cast<SIMDType>($_self).getDType())">;
+    value, "llvm::isa<SIMDType>($_self) ? "
+    "KGEN::SIMDType::get(1, llvm::cast<SIMDType>($_self).getDType()) : Type()">;
 
 class SIMDSize<string name> :
     StrFunc<"$" # name # ".getType().cast<KGEN::SIMDType>().getResolvedSize()">;
@@ -1331,12 +1334,16 @@ class SIMDOfSameSize<string lhs, string rhs> :
 
 class AddressSIMDOfSameSize<string operand, string value> : TypesMatchWith<
     value # " type matches simd type of the " # operand # " operand", operand,
-    value, "KGEN::SIMDType::get(llvm::cast<SIMDType>($_self).getSize(), "
-    "DTypeConstantAttr::get($_self.getContext(), KGEN::KGENDType::address))">;
+    value, "llvm::isa<SIMDType>($_self) ? "
+    "KGEN::SIMDType::get(llvm::cast<SIMDType>($_self).getSize(), "
+    "DTypeConstantAttr::get($_self.getContext(), KGEN::KGENDType::address)) "
+    ": Type()">;
 
 class BoolSIMDOfSameSize<string operand, string value> : TypesMatchWith<
     value # " type matches simd type of the " # operand # " operand", operand,
-    value, "KGEN::SIMDType::get(llvm::cast<SIMDType>($_self).getSize(), "
-    "DTypeConstantAttr::get($_self.getContext(), KGEN::KGENDType::kBool))">;
+    value, "llvm::isa<SIMDType>($_self) ? "
+    "KGEN::SIMDType::get(llvm::cast<SIMDType>($_self).getSize(), "
+    "DTypeConstantAttr::get($_self.getContext(), KGEN::KGENDType::kBool)) "
+    ": Type()">;
 
 #endif // KGEN_KGENDIALECT_KGENTYPES_TD

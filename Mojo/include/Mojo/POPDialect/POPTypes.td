@@ -75,7 +75,8 @@ def POP_ArrayType : POPType<"Array", "array", [
 
 class ArrayElementType<string lhs, string rhs> : TypesMatchWith<
     "value type matches array element type", lhs, rhs,
-    "llvm::cast<POP::ArrayType>($_self).getElementType()",
+    "llvm::isa<POP::ArrayType>($_self) ? "
+    "llvm::cast<POP::ArrayType>($_self).getElementType() : Type()",
     "typeRangeMatches">;
 
 def ArrayKnownSize : ConfinedType<POP_ArrayType,
