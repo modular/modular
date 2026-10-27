@@ -1954,8 +1954,24 @@ LogicalResult CallOpaqueOp::emitMojo(EmitMojoState &state) {
     return emitDeclarativeLaunch(*this, state, execAdaptor, kernelOperands,
                                  inferParam);
 
-  for (Value ctx : getDeviceContexts())
-    kernelOperands.push_back(state.getMojoValueFor(ctx));
+  // The stub's contexts are all typed as the default accelerator's, even on the
+  // CPU. A callee generic over the context's target is handed the CPU target
+  // it will run on instead.
+  //
+  // TODO(MSTDL-3265): Once every context is generic over its target, this
+  // cast belongs in `FuncOp::emitMojo`, where the stub's contexts are bound,
+  // rather than here: it makes `CallOpaqueOp` look at its parent op.
+  bool isCpuStub = (*this)->getParentOfType<FuncOp>().getDevice() == kCPULabel;
+  bool hasGenericTargetContext = llvm::any_of(
+      execFnAdaptor.inputArguments, [](const KernelDeclOperandAdaptor &arg) {
+        return arg.isGenericTargetContextType();
+      });
+  for (Value ctx : getDeviceContexts()) {
+    MojoValue ctxValue = state.getMojoValueFor(ctx);
+    if (isCpuStub && hasGenericTargetContext)
+      ctxValue = state.builder.var(ctxValue.get(kFnAssertCpuTarget)({}, {}));
+    kernelOperands.push_back(ctxValue);
+  }
 
   auto maybeParams = inferKernelParameters(
       execAdaptor, KernelFunctionKind::Execute, inferParam);
