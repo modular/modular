@@ -345,8 +345,9 @@ def estimate_ep_memory_usage(
             ``uint8`` dispatch dtype (see
             :attr:`~max.nn.quant_config.QuantConfig.mx_element_dtype`). ``uint8``
             alone cannot say whether the bytes are FP4 or FP6, and the two pack
-            to different widths, so sizing needs the element type. ``None`` for
-            formats whose dtype already identifies them.
+            to different widths, so sizing needs the element type. For a
+            float8 dispatch dtype it marks MXFP8, whose rows carry E8M0 block
+            scales. ``None`` for formats whose dtype already identifies them.
 
     Returns:
         Total estimated memory usage in bytes per device per buffer group.
@@ -363,8 +364,10 @@ def estimate_ep_memory_usage(
             # share one FP8 scale factor. The size of the scales is one eighth
             # of the size of the FP4 quants (8 bits / (16 * 4 bits)).
             return int(n_elems // 2 * dtype.size_in_bytes * 1.125)
-        else:
-            return n_elems * dtype.size_in_bytes
+        if dtype.is_float8() and dispatch_element_dtype is not None:
+            # MXFP8: each row carries one E8M0 scale per 32 elements.
+            return n_elems + n_elems // 32
+        return n_elems * dtype.size_in_bytes
 
     n_local_experts = n_experts // (n_gpus_per_node * n_nodes)
     d_token_size = _n_elems_to_bytes(dispatch_dtype, hidden_size)

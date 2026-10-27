@@ -40,6 +40,7 @@ from max.pipelines.architectures.deepseekV41.memory_planner import (
 )
 from max.pipelines.architectures.deepseekV41.model_config import (
     DeepseekV41Config,
+    RoutedExpertFormat,
     data_parallel_ep_config,
 )
 from max.pipelines.kv_cache.memory_planner import ModelConfigWithKVCache
@@ -74,6 +75,27 @@ def _pipeline_config(
 def _real_huggingface_config() -> AutoConfig:
     """Returns the real checkpoint's top-level config, text config nested."""
     return AutoConfig.from_pretrained(str(TESTDATA / "config.json"))
+
+
+# DeepSeek's own release of the checkpoint: MXFP4 routed experts.
+_MXFP4_QUANTIZATION_CONFIG = {
+    "quant_method": "fp8",
+    "activation_scheme": "dynamic",
+    "weight_block_size": [32, 32],
+    "scale_fmt": "ue8m0",
+    "expert_dtype": "fp4",
+}
+
+
+def _mxfp4_huggingface_config() -> AutoConfig:
+    """Returns the real config with DeepSeek's own quantization config."""
+    config = _real_huggingface_config()
+    config.quantization_config = dict(_MXFP4_QUANTIZATION_CONFIG)
+    return config
+
+
+# The routed experts' intermediate width.
+_INTER = 2304
 
 
 def _planner() -> DeepseekV41MemoryPlanner:
@@ -140,6 +162,17 @@ _REAL_CHECKPOINT = [
     # Not loaded by the trunk: DSpark stages and the vision tower.
     CheckpointTensor("mtp.0.ffn.experts.0.w1.weight", "I8", 7_572_112_128),
     CheckpointTensor("vision.blocks.0.mlp.w1.weight", "BF16", 1_331_299_464),
+]
+
+# The same checkpoint with DeepSeek's MXFP4 routed experts: the packed E2M1
+# bytes match, with one E8M0 scale per 32 values and no per-expert scalars.
+_MXFP4_EXPERT_SCALE_BYTES = 271_790_899_200 // 16
+_REAL_MXFP4_CHECKPOINT = [
+    CheckpointTensor("layers.0.ffn.experts.0.w1.weight", "I8", 271_790_899_200),
+    CheckpointTensor(
+        "layers.0.ffn.experts.0.w1.scale", "F8_E8M0", _MXFP4_EXPERT_SCALE_BYTES
+    ),
+    *(t for t in _REAL_CHECKPOINT if ".ffn.experts." not in t.name),
 ]
 
 _DEFAULT_LAYOUT = DeviceWeightLayout(
@@ -350,12 +383,14 @@ def test_dp4_reserves_the_expert_parallel_buffers() -> None:
         - _planner().estimate_activation_memory(_dp4_config(1), hf_config)
     ) // 4
     ep = data_parallel_ep_config(
-        _dp4_config(4), DeepseekV41Config.get_text_config(hf_config)
+        _dp4_config(4),
+        DeepseekV41Config.get_text_config(hf_config),
+        RoutedExpertFormat.NVFP4,
     )
     assert ep is not None
     rows = 4 * 8192 * 6
     assert ep.get_max_recv_tokens() == rows
-    pool = ep_receive_pool_bytes(ep)
+    pool = ep_receive_pool_bytes(ep, RoutedExpertFormat.NVFP4, _INTER)
     # NVFP4 rows, bf16 down projection, source info, block scales.
     assert pool >= rows * (5120 // 2 + 5120 * 2 + 8)
     arena_drop = 8192 * ((2 << 20) - (5 << 18))
@@ -401,10 +436,11 @@ def test_dp4_reserves_the_measured_graph_pool_and_eager_peak() -> None:
     ep = data_parallel_ep_config(
         _dp4_served_config(graph_capture=True),
         DeepseekV41Config.get_text_config(hf_config),
+        RoutedExpertFormat.NVFP4,
     )
     assert ep is not None
     assert ep.get_max_recv_tokens() == (8192 + 128 * 5) * 24
-    pool = ep_receive_pool_bytes(ep)
+    pool = ep_receive_pool_bytes(ep, RoutedExpertFormat.NVFP4, _INTER)
     assert pool >= _DP4_MEASURED_FORWARD_POOL
     graph_pool = (captured - eager_only) // 4
     assert graph_pool >= _DP4_MEASURED_GRAPH_POOL
@@ -510,3 +546,67 @@ def test_dp4_kv_capacity_per_device() -> None:
     assert 60 * GIB < budget < 61 * GIB
     assert 15.2e6 < capacity[False] < 15.3e6
     assert 73.0e6 < capacity[True] < 73.2e6
+
+
+def test_mxfp4_expert_scales_load_compact() -> None:
+    """MXFP4 expert scales stay ``[E, N, K/32]`` on device, unlike the dense
+    MXFP8 linears' row-expanded scales, so a DP4 device holds about 76 GiB;
+    interleaving them in the graph doubles them."""
+    nvfp4, _ = device_weight_bytes(
+        _REAL_CHECKPOINT, 4, layout=_DEFAULT_LAYOUT, data_parallel=True
+    )
+    mxfp4, _ = device_weight_bytes(
+        _REAL_MXFP4_CHECKPOINT, 4, layout=_DEFAULT_LAYOUT, data_parallel=True
+    )
+    nvfp4_scales = 33_973_862_400 + 368_640
+    assert (
+        abs(mxfp4 - (nvfp4 - (nvfp4_scales - _MXFP4_EXPERT_SCALE_BYTES) / 4))
+        <= 1
+    )
+    assert 75 * GIB < mxfp4 < 77 * GIB
+    in_graph, _ = device_weight_bytes(
+        _REAL_MXFP4_CHECKPOINT,
+        4,
+        layout=dataclasses.replace(
+            _DEFAULT_LAYOUT, expert_scales_preinterleaved=False
+        ),
+        data_parallel=True,
+    )
+    assert in_graph - mxfp4 == _MXFP4_EXPERT_SCALE_BYTES // 4
+
+
+def test_dp4_mxfp4_dispatches_mxfp8_and_reserves_the_unfused_chain() -> None:
+    """MXFP4 experts dispatch MXFP8 rows, and each DP4 device reserves the
+    receive tensors of the unfused gate/up, SwiGLU and down chain."""
+    hf_config = _mxfp4_huggingface_config()
+    extra = (
+        _planner().estimate_activation_memory(_dp4_config(4), hf_config)
+        - _planner().estimate_activation_memory(_dp4_config(1), hf_config)
+    ) // 4
+    ep = data_parallel_ep_config(
+        _dp4_config(4),
+        DeepseekV41Config.get_text_config(hf_config),
+        RoutedExpertFormat.MXFP4,
+    )
+    assert ep is not None
+    assert ep.dispatch_dtype == DType.float8_e4m3fn
+    assert ep.dispatch_quant_config is not None
+    assert ep.dispatch_quant_config.is_mxfp8
+    rows = 4 * 8192 * 6
+    pool = ep_receive_pool_bytes(ep, RoutedExpertFormat.MXFP4, _INTER)
+    # E4M3 rows, bf16 down projection, source info, bf16 gate/up and
+    # SwiGLU, and the down projection's E4M3 input; block scales on top.
+    assert pool >= rows * (
+        5120 + 5120 * 2 + 8 + 2 * _INTER * 2 + _INTER * 2 + _INTER
+    )
+    nvfp4 = data_parallel_ep_config(
+        _dp4_config(4),
+        DeepseekV41Config.get_text_config(hf_config),
+        RoutedExpertFormat.NVFP4,
+    )
+    assert nvfp4 is not None
+    assert pool > ep_receive_pool_bytes(nvfp4, RoutedExpertFormat.NVFP4, _INTER)
+    arena_drop = 8192 * ((2 << 20) - (5 << 18))
+    assert extra == (
+        ep.estimate_memory_usage() + 2 * pool - (256 << 20) - arena_drop
+    )

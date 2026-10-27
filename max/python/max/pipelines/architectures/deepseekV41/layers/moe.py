@@ -774,7 +774,9 @@ class DeepseekV41MoE(Module):
         self.experts.gate_up_interleaved = (
             config.ep_config is not None
             and gate_up_rows_interleaved(
-                config.n_routed_experts, config.data_parallel_degree
+                config.n_routed_experts,
+                config.data_parallel_degree,
+                config.routed_expert_format,
             )
         )
         self.ep_batch_manager: EPBatchManager | None = None

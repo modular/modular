@@ -348,6 +348,21 @@ modular_py_test(
     ],
 )
 
+# The routed-expert format a quantization config selects, and the trunk's
+# MXFP4 expert stacking. Guards strict state-dict loading
+# (nn/layer Module.load_state_dict). CPU only.
+modular_py_test(
+    name = "test_routed_expert_format",
+    srcs = ["test_routed_expert_format.py"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
 # Guards strict state-dict loading (nn/layer Module.load_state_dict).
 modular_py_test(
     name = "test_dspark_weight_adapter",

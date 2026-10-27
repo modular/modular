@@ -45,6 +45,7 @@ from max.pipelines.architectures.deepseekV41.layers.engram_lookup import (
 from max.pipelines.architectures.deepseekV41.model_config import (
     NVFP4_ACTIVATION_QUANT_CONFIG,
     DeepseekV41Config,
+    routed_expert_format,
 )
 from max.pipelines.architectures.dspark_deepseekV41 import (
     DSparkDeepseekV41DraftConfig,
@@ -110,7 +111,7 @@ def _model_config(
         data_parallel_degree=data_parallel_degree,
         kv_leaf_specs=kv_leaves.kv_leaf_specs(text_config),
         **text_fields,
-        **DeepseekV41Config.resolve_quantization_fields(config),
+        routed_expert_format=routed_expert_format(config),
     )
 
 

@@ -143,6 +143,41 @@ def test_estimate_ep_memory_usage_distinguishes_fp6_from_fp4_packing() -> None:
     assert _ep_memory_usage(DType.bfloat16, None) == 1024  # Unpacked.
 
 
+def test_estimate_ep_memory_usage_counts_mxfp8_block_scales() -> None:
+    """An MXFP8 dispatch row carries one E8M0 scale per 32 elements.
+
+    The dispatch kernels size each message as the fp8 row plus its scales,
+    so a float8 dispatch dtype with an MX element dtype adds one byte per
+    32 to every send and receive slot.
+    """
+    assert _ep_memory_usage(DType.float8_e4m3fn, None) == 640
+    assert (
+        _ep_memory_usage(DType.float8_e4m3fn, DType.float8_e4m3fn) == 652
+    )  # 12 message slots, one scale byte each at hidden_size 32.
+
+
+def test_ep_config_mxfp8_estimate_includes_block_scales() -> None:
+    config = dataclasses.replace(
+        _base_ep_config(),
+        dispatch_dtype=DType.float8_e4m3fn,
+        dispatch_quant_config=_mxfp8_quant_config(),
+    )
+    without_scales = estimate_ep_memory_usage(
+        hidden_size=config.hidden_size,
+        dispatch_dtype=config.dispatch_dtype,
+        combine_dtype=config.combine_dtype,
+        max_tokens_per_rank=config.max_tokens_per_rank,
+        n_experts=config.n_experts,
+        n_nodes=config.n_nodes,
+        n_gpus_per_node=config.n_gpus_per_node,
+        top_k=config.top_k,
+    )
+    slots = config.max_tokens_per_rank * (1 + config.n_experts)
+    assert config.estimate_memory_usage() == (
+        without_scales + slots * config.hidden_size // 32
+    )
+
+
 def _base_ep_config() -> EPConfig:
     """An EP config with every field the send's guard reads left at default.
 
