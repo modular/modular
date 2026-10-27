@@ -111,6 +111,11 @@ from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.host import HIP
 from max.gpu.host import CUDA
 from max.gpu.host.info import _is_sm10x_gpu
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from layout import (
     Coord,
     IntTuple,
@@ -3699,16 +3704,17 @@ def conv2d_gpu_naive_nhwc_rscf[
         num_groups: Number of convolution groups for grouped
             convolution.
     """
-    _conv2d_gpu_naive_nhwc_rscf_impl[has_epilogue_fn=False](
-        input,
-        filter,
-        output,
-        stride,
-        dilation,
-        padding,
-        num_groups,
-        no_conv_simd_epilogue_fn,
-    )
+    with PDL():
+        _conv2d_gpu_naive_nhwc_rscf_impl[has_epilogue_fn=False](
+            input,
+            filter,
+            output,
+            stride,
+            dilation,
+            padding,
+            num_groups,
+            no_conv_simd_epilogue_fn,
+        )
 
 
 @__name(
@@ -3776,16 +3782,17 @@ def conv2d_gpu_naive_nhwc_rscf_epilogue_fn[
         epilogue_fn: SIMD elementwise epilogue that stores each output
             value in place of the kernel.
     """
-    _conv2d_gpu_naive_nhwc_rscf_impl[has_epilogue_fn=True](
-        input,
-        filter,
-        output,
-        stride,
-        dilation,
-        padding,
-        num_groups,
-        epilogue_fn,
-    )
+    with PDL():
+        _conv2d_gpu_naive_nhwc_rscf_impl[has_epilogue_fn=True](
+            input,
+            filter,
+            output,
+            stride,
+            dilation,
+            padding,
+            num_groups,
+            epilogue_fn,
+        )
 
 
 @inline(.always)
@@ -5909,6 +5916,7 @@ def conv_gpu[
                     host_args=(epilogue_fn,),
                     grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
                     block_dim=(block_size, block_size),
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
             else:
                 ctx.enqueue_function[conv_gpu_n](
@@ -5921,6 +5929,7 @@ def conv_gpu[
                     Int32(num_groups),
                     grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
                     block_dim=(block_size, block_size),
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
                 comptime if has_compute_fn:
                     _conv_compute_in_place(output, compute_fn, ctx)
@@ -6252,6 +6261,7 @@ def conv3d_gpu_naive_ndhwc_qrscf[
             width)`.
         num_groups: Number of convolution groups for grouped convolution.
     """
+
     _conv3d_gpu_naive_ndhwc_qrscf_impl[has_epilogue_fn=False](
         input,
         filter,
@@ -6329,6 +6339,7 @@ def conv3d_gpu_naive_ndhwc_qrscf_epilogue_fn[
         epilogue_fn: Elementwise SIMD epilogue that stores each computed
             output value in place of a direct store.
     """
+
     _conv3d_gpu_naive_ndhwc_qrscf_impl[has_epilogue_fn=True](
         input,
         filter,

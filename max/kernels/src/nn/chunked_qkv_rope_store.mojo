@@ -17,6 +17,11 @@ from std.math import ceildiv
 from std.sys import align_of
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCache,
@@ -346,15 +351,18 @@ def chunked_qkv_rope_store_paged_ragged[
         var q_output,
         var value_scale,
     }:
-        chunked_qkv_rope_store_kernel[qk_head_dim, v_head_dim, chunk_padding](
-            qkv,
-            row_offsets,
-            freqs,
-            k_cache,
-            v_cache,
-            q_output,
-            value_scale,
-        )
+        with PDL():
+            chunked_qkv_rope_store_kernel[
+                qk_head_dim, v_head_dim, chunk_padding
+            ](
+                qkv,
+                row_offsets,
+                freqs,
+                k_cache,
+                v_cache,
+                q_output,
+                value_scale,
+            )
 
     comptime assert conforms_to(
         type_of(kernel), DevicePassable
@@ -363,4 +371,5 @@ def chunked_qkv_rope_store_paged_ragged[
         kernel,
         grid_dim=ceildiv(count, 128),
         block_dim=128,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )

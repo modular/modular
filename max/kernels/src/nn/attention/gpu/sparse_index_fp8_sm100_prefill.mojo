@@ -120,6 +120,11 @@ from max.gpu.primitives.cluster import (
     clusterlaunchcontrol_query_cancel_is_canceled,
     clusterlaunchcontrol_try_cancel,
 )
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_cp,
@@ -1738,899 +1743,935 @@ def _fp8_index_score_prefill_kernel_sm100[
                 return it
             issue_cancel()
 
-    var item = decode(b, Int32(block_idx.y), UInt32(block_idx.z))
-    var start_of_seq = item.start_of_seq
-    var seq_len = item.seq_len
-    var tok0 = item.tok0
-    var tok_hi = item.tok_hi
-    var out_row0 = item.out_row0
-    var num_keys = item.num_keys
-    var tile_begin = item.tile_begin
-    var n_tiles_local = item.n_tiles
-    # An empty item steals one instead of retiring, below; the CTA exits only
-    # when that steal finds nothing. The exit is uniform (every thread, after
-    # the CTA barrier) and ahead of any collective op (TMA mbar / tcgen05
-    # alloc), since a divergent early return deadlocks them.
-    var own_empty = n_tiles_local <= 0
-    var wid = warp_id[broadcast=True]()
-    # Parity of the next `clc_full` completion; the load warp's alone.
-    var clc_phase: UInt32 = 0
-    if wid == TMA_WARP:
-        if lane_id() == 0:
-            clc_full[0].init(1)
-            fence_mbarrier_init()
-        syncwarp()
-        # Only the load warp needs the item itself -- every other role reads it
-        # off the Q slot -- so it steals alone and the CTA barrier below
-        # publishes just whether it found one.
-        if own_empty:
-            issue_cancel()
-            var it = resolve_steal(b, clc_phase)
+    with PDL():
+        var item = decode(b, Int32(block_idx.y), UInt32(block_idx.z))
+        var start_of_seq = item.start_of_seq
+        var seq_len = item.seq_len
+        var tok0 = item.tok0
+        var tok_hi = item.tok_hi
+        var out_row0 = item.out_row0
+        var num_keys = item.num_keys
+        var tile_begin = item.tile_begin
+        var n_tiles_local = item.n_tiles
+        # An empty item steals one instead of retiring, below; the CTA exits only
+        # when that steal finds nothing. The exit is uniform (every thread, after
+        # the CTA barrier) and ahead of any collective op (TMA mbar / tcgen05
+        # alloc), since a divergent early return deadlocks them.
+        var own_empty = n_tiles_local <= 0
+        var wid = warp_id[broadcast=True]()
+        # Parity of the next `clc_full` completion; the load warp's alone.
+        var clc_phase: UInt32 = 0
+        if wid == TMA_WARP:
             if lane_id() == 0:
-                clc_found[0] = it.n_tiles
-            start_of_seq = it.start_of_seq
-            seq_len = it.seq_len
-            tok0 = it.tok0
-            tok_hi = it.tok_hi
-            out_row0 = it.out_row0
-            num_keys = it.num_keys
-            tile_begin = it.tile_begin
-            n_tiles_local = it.n_tiles
-    barrier()
-    if own_empty and clc_found[0] <= 0:
-        return
+                clc_full[0].init(1)
+                fence_mbarrier_init()
+            syncwarp()
+            # Only the load warp needs the item itself -- every other role reads it
+            # off the Q slot -- so it steals alone and the CTA barrier below
+            # publishes just whether it found one.
+            if own_empty:
+                issue_cancel()
+                var it = resolve_steal(b, clc_phase)
+                if lane_id() == 0:
+                    clc_found[0] = it.n_tiles
+                start_of_seq = it.start_of_seq
+                seq_len = it.seq_len
+                tok0 = it.tok0
+                tok_hi = it.tok_hi
+                out_row0 = it.out_row0
+                num_keys = it.num_keys
+                tile_begin = it.tile_begin
+                n_tiles_local = it.n_tiles
+        barrier()
+        if own_empty and clc_found[0] <= 0:
+            return
 
-    comptime k_bytes = k_elems * size_of[dtype]()
-    comptime q_bytes = q_elems * size_of[dtype]()
-    comptime qs_bytes = MMA_N * size_of[Float32]()
-    comptime ks_bytes = KS_COPIES * KS_BOX * size_of[KS_DTYPE]()
+        comptime k_bytes = k_elems * size_of[dtype]()
+        comptime q_bytes = q_elems * size_of[dtype]()
+        comptime qs_bytes = MMA_N * size_of[Float32]()
+        comptime ks_bytes = KS_COPIES * KS_BOX * size_of[KS_DTYPE]()
 
-    if wid < CONS_WARPS:
-        warpgroup_reg_alloc[CFG.reg_consumer]()
-        # The MMA warp arrives once it has allocated TMEM, so this publishes
-        # the TMEM address.
-        named_barrier[Int32(CONS_THREADS + WARP_SIZE)](_CONSUMER_BAR)
-        var tmem_addr: UInt32 = ptr_tmem[0]
-        # `tcgen05_ld[datapaths=32]` maps warp w, lane l -> accumulator row
-        # `WARP_SIZE * (w % 4) + l`, so the consumer warpgroup's 4 warps cover
-        # all BM_key rows one-per-thread. A thread owning a whole key row makes
-        # the head sum thread-local (no cross-lane reduction) and puts 32
-        # consecutive `key_local` in each warp, so each store is one 128B
-        # transaction. `llvm_opaque_tid` is FA4's anti-hoist intrinsic; it does
-        # NOT bind here (exactly one `%tid.x` read either way), and is kept only
-        # for the cheaper spelling.
-        var row = Int32(llvm_opaque_tid() & (_NUM_SOFTMAX_THREADS - 1))
-        # `PipelineState[N].step()` is `index += 1; if index == N { index = 0;
-        # phase ^= 1 }`. The consumer walks the S^T ring in issue order, so
-        # after `k` tiles it sits on the slot and lap parity of issue `k` --
-        # what the MMA wrote.
-        var c_state = PipelineState[N_S]()
+        if wid < CONS_WARPS:
+            warpgroup_reg_alloc[CFG.reg_consumer]()
+            # The MMA warp arrives once it has allocated TMEM, so this publishes
+            # the TMEM address.
+            named_barrier[Int32(CONS_THREADS + WARP_SIZE)](_CONSUMER_BAR)
+            var tmem_addr: UInt32 = ptr_tmem[0]
+            # `tcgen05_ld[datapaths=32]` maps warp w, lane l -> accumulator row
+            # `WARP_SIZE * (w % 4) + l`, so the consumer warpgroup's 4 warps cover
+            # all BM_key rows one-per-thread. A thread owning a whole key row makes
+            # the head sum thread-local (no cross-lane reduction) and puts 32
+            # consecutive `key_local` in each warp, so each store is one 128B
+            # transaction. `llvm_opaque_tid` is FA4's anti-hoist intrinsic; it does
+            # NOT bind here (exactly one `%tid.x` read either way), and is kept only
+            # for the cheaper spelling.
+            var row = Int32(llvm_opaque_tid() & (_NUM_SOFTMAX_THREADS - 1))
+            # `PipelineState[N].step()` is `index += 1; if index == N { index = 0;
+            # phase ^= 1 }`. The consumer walks the S^T ring in issue order, so
+            # after `k` tiles it sits on the slot and lap parity of issue `k` --
+            # what the MMA wrote.
+            var c_state = PipelineState[N_S]()
 
-        # Which K ring slot holds this warpgroup's current tile. The MMA warp
-        # walks tiles 0,1,2,... assigning slots 0,1,2,... mod NSTAGE, so local
-        # tile `j` is always in slot `j % NSTAGE` -- and this cursor is built and
-        # stepped exactly like `c_state` so it lands on the same tile's slot at
-        # every iteration. Only the INDEX is read (the slot's data is already
-        # published by `s_full`), so the phase is unused here.
-        var k_state = PipelineState[NSTAGE]()
+            # Which K ring slot holds this warpgroup's current tile. The MMA warp
+            # walks tiles 0,1,2,... assigning slots 0,1,2,... mod NSTAGE, so local
+            # tile `j` is always in slot `j % NSTAGE` -- and this cursor is built and
+            # stepped exactly like `c_state` so it lands on the same tile's slot at
+            # every iteration. Only the INDEX is read (the slot's data is already
+            # published by `s_full`), so the phase is unused here.
+            var k_state = PipelineState[NSTAGE]()
 
-        # How many keys the producer's alignment round-down put in front of the
-        # item's first key, and so where a slot's tile actually starts. The
-        # per-tile term the producer adds (`it * BM_key`) is a multiple of
-        # `KS_ALIGN`, so the residual is the batch entry's own and is the same on
-        # every tile; the load warp computes it once per item. It is zero on
-        # every paged operand (`page_size % BM_key == 0` forces it) and non-zero
-        # only on a ragged batch whose per-entry key count is not a multiple of
-        # `KS_ALIGN`.
-        var ks_off: Int32 = 0
+            # How many keys the producer's alignment round-down put in front of the
+            # item's first key, and so where a slot's tile actually starts. The
+            # per-tile term the producer adds (`it * BM_key`) is a multiple of
+            # `KS_ALIGN`, so the residual is the batch entry's own and is the same on
+            # every tile; the load warp computes it once per item. It is zero on
+            # every paged operand (`page_size % BM_key == 0` forces it) and non-zero
+            # only on a ragged batch whose per-entry key count is not a multiple of
+            # `KS_ALIGN`.
+            var ks_off: Int32 = 0
 
-        # The q_scales a thread needs are item-invariant, and re-reading them
-        # from SMEM on every key tile measured at 128 columns as 1,295,264
-        # `LDS`, 7.8% of the instruction stream and 36% of the shared-load pipe,
-        # with the stalls landing on the consuming `FFMA2` rather than on the
-        # `LDS` itself. So each item hoists them into `qs_reg` once, taking the
-        # in-loop `LDS` count to ZERO. A thread folds every column of its own
-        # key row, so the hoist costs exactly `mma_n` registers.
-        #
-        # Raising the register budget does NOT make a wider hoist fit: a
-        # uniform 168 at 128 columns spills 56-220 B, because with more
-        # registers ptxas commits to the aggressive schedule that hoists all 8
-        # `LDTM.x16` across the folds and then does not fit. Slack is capacity,
-        # not a guarantee.
-        #
-        # Held as LANE PAIRS so that at `FT == bfloat16` one slot is one packed
-        # register: `MMA_N` scales become `MMA_N / 2`. At f32 the pairing is
-        # pure spelling -- same storage, same `fma.rn.f32x2` operands.
-        var qs_reg = Array[SIMD[FT, 2], MMA_N // 2](uninitialized=True)
+            # The q_scales a thread needs are item-invariant, and re-reading them
+            # from SMEM on every key tile measured at 128 columns as 1,295,264
+            # `LDS`, 7.8% of the instruction stream and 36% of the shared-load pipe,
+            # with the stalls landing on the consuming `FFMA2` rather than on the
+            # `LDS` itself. So each item hoists them into `qs_reg` once, taking the
+            # in-loop `LDS` count to ZERO. A thread folds every column of its own
+            # key row, so the hoist costs exactly `mma_n` registers.
+            #
+            # Raising the register budget does NOT make a wider hoist fit: a
+            # uniform 168 at 128 columns spills 56-220 B, because with more
+            # registers ptxas commits to the aggressive schedule that hoists all 8
+            # `LDTM.x16` across the folds and then does not fit. Slack is capacity,
+            # not a guarantee.
+            #
+            # Held as LANE PAIRS so that at `FT == bfloat16` one slot is one packed
+            # register: `MMA_N` scales become `MMA_N / 2`. At f32 the pairing is
+            # pure spelling -- same storage, same `fma.rn.f32x2` operands.
+            var qs_reg = Array[SIMD[FT, 2], MMA_N // 2](uninitialized=True)
 
-        # The epilogue stores in place today because a token's sum is final at
-        # its last column, which collapses the accumulator to one f32x2. That
-        # collapse is NOT what this undoes -- the fold still collapses per token
-        # and `acc` still resets. What is deferred is only the STORE, so the
-        # cost is `N_TOKENS` finished f32 values rather than the `N_TOKENS`
-        # running accumulators plus all `MMA_N` q-scales (~250 registers) that
-        # the original design rejected.
-        #
-        # Every index MUST stay comptime, exactly as for `qs_reg`: a runtime
-        # index forces the array to local memory and the arm becomes a spill
-        # experiment instead of a scheduling one.
+            # The epilogue stores in place today because a token's sum is final at
+            # its last column, which collapses the accumulator to one f32x2. That
+            # collapse is NOT what this undoes -- the fold still collapses per token
+            # and `acc` still resets. What is deferred is only the STORE, so the
+            # cost is `N_TOKENS` finished f32 values rather than the `N_TOKENS`
+            # running accumulators plus all `MMA_N` q-scales (~250 registers) that
+            # the original design rejected.
+            #
+            # Every index MUST stay comptime, exactly as for `qs_reg`: a runtime
+            # index forces the array to local memory and the arm becomes a spill
+            # experiment instead of a scheduling one.
 
-        # `k_scale` now comes out of SMEM, staged by the TMA warp into this
-        # tile's own K ring slot. What it replaces was a TWO-HOP dependent global
-        # load (block table -> scale row) issued by every consumer thread and
-        # rotated one key tile ahead to cover its own miss: 37% L2 hit, with 5.5%
-        # of warp-stall samples landing on the `FMUL` that consumed it against
-        # 0.2% on the identical one a token later. An `LDS` has none of that
-        # variance, and the producer warp that now issues the load is 57-70%
-        # idle.
-        #
-        # A row past `num_rows` reads pool data rather than the `0.0` the old
-        # guard returned. Safe for the same reason the K tile's own out-of-range
-        # rows are: the epilogue store is gated on `key_local < key_bound`, and
-        # `key_bound <= num_rows` always, so such a score is folded and then
-        # discarded, never written.
-        # Raw base of the score buffer.
-        var out_base = output.ptr
+            # `k_scale` now comes out of SMEM, staged by the TMA warp into this
+            # tile's own K ring slot. What it replaces was a TWO-HOP dependent global
+            # load (block table -> scale row) issued by every consumer thread and
+            # rotated one key tile ahead to cover its own miss: 37% L2 hit, with 5.5%
+            # of warp-stall samples landing on the `FMUL` that consumed it against
+            # 0.2% on the identical one a token later. An `LDS` has none of that
+            # variance, and the producer warp that now issues the load is 57-70%
+            # idle.
+            #
+            # A row past `num_rows` reads pool data rather than the `0.0` the old
+            # guard returned. Safe for the same reason the K tile's own out-of-range
+            # rows are: the epilogue store is gated on `key_local < key_bound`, and
+            # `key_bound <= num_rows` always, so such a score is folded and then
+            # discarded, never written.
+            # Raw base of the score buffer.
+            var out_base = output.ptr
 
-        # One item per pass: each item is read off its slot's metadata, its
-        # q-scales re-hoisted, then the slot freed for the load warp. Every ring
-        # cursor carries over.
-        @inline(.always)
-        def consume_item() {mut c_state, mut k_state, mut qs_reg, imm}:
-            # `n_tiles_local` is `Int32`, so `range` yields an `Int32` induction
-            # variable directly (`range.mojo:495`) -- the whole key-index chain
-            # stays 32-bit with no per-iteration cast, which is what the narrowing
-            # rule requires.
-            for tile_i in range(n_tiles_local):
-                var key_local = (tile_begin + tile_i) * Int32(BM_key) + row
+            # One item per pass: each item is read off its slot's metadata, its
+            # q-scales re-hoisted, then the slot freed for the load warp. Every ring
+            # cursor carries over.
+            @inline(.always)
+            def consume_item() {mut c_state, mut k_state, mut qs_reg, imm}:
+                # `n_tiles_local` is `Int32`, so `range` yields an `Int32` induction
+                # variable directly (`range.mojo:495`) -- the whole key-index chain
+                # stays 32-bit with no per-iteration cast, which is what the narrowing
+                # rule requires.
+                for tile_i in range(n_tiles_local):
+                    var key_local = (tile_begin + tile_i) * Int32(BM_key) + row
 
-                # `PipelineState.index()` is already `UInt32`; keep it that way
-                # rather than round-tripping through 64-bit `Int`.
-                var cs = c_state.index()
-                s_full[cs].wait(c_state.phase())
-                var s_it = tmem_addr + cs * UInt32(S_COLS)
+                    # `PipelineState.index()` is already `UInt32`; keep it that way
+                    # rather than round-tripping through 64-bit `Int`.
+                    var cs = c_state.index()
+                    s_full[cs].wait(c_state.phase())
+                    var s_it = tmem_addr + cs * UInt32(S_COLS)
 
-                # No `k_full` wait here: the MMA warp waited it before issuing, and
-                # `s_full` is armed by that MMA's completion, so the scales are
-                # already visible transitively. Read then release immediately --
-                # before the fold, not after -- so the TMA gets the slot back as
-                # early as possible now that the consumer sits in its WAR loop.
-                # `mbarrier.arrive`'s release orders the `LDS` ahead of the arrive
-                # for later GENERIC-proxy accesses only. The refill is an async-proxy
-                # TMA write, so the load warp fences after its wait (see the refill
-                # loop) -- without it the TMA can land the slot's next tile before
-                # this read returns.
-                # MXFP4 keys carry their scales into the MMA, so there is no
-                # per-key factor here and the slot is the MMA warp's to release.
-                var k_scale: Float32 = 1.0
-                comptime if not FP4:
-                    var ks = k_state.index()
-                    var ks_idx: Int32
-                    comptime if pool_row_tokens == 1 and KS_COPIES == 1:
-                        ks_idx = ks_off + row
-                    else:
-                        ks_idx = (
-                            row // Int32(KS_KEYS) * Int32(KS_STRIDE)
-                            + ks_off
-                            + row % Int32(KS_KEYS) * Int32(pool_row_tokens)
-                        )
-                    k_scale = ks_smem[
-                        ks * UInt32(KS_SLOT) + UInt32(ks_idx)
-                    ].cast[.float32]()
-                    _ = k_empty[ks].arrive()
+                    # No `k_full` wait here: the MMA warp waited it before issuing, and
+                    # `s_full` is armed by that MMA's completion, so the scales are
+                    # already visible transitively. Read then release immediately --
+                    # before the fold, not after -- so the TMA gets the slot back as
+                    # early as possible now that the consumer sits in its WAR loop.
+                    # `mbarrier.arrive`'s release orders the `LDS` ahead of the arrive
+                    # for later GENERIC-proxy accesses only. The refill is an async-proxy
+                    # TMA write, so the load warp fences after its wait (see the refill
+                    # loop) -- without it the TMA can land the slot's next tile before
+                    # this read returns.
+                    # MXFP4 keys carry their scales into the MMA, so there is no
+                    # per-key factor here and the slot is the MMA warp's to release.
+                    var k_scale: Float32 = 1.0
+                    comptime if not FP4:
+                        var ks = k_state.index()
+                        var ks_idx: Int32
+                        comptime if pool_row_tokens == 1 and KS_COPIES == 1:
+                            ks_idx = ks_off + row
+                        else:
+                            ks_idx = (
+                                row // Int32(KS_KEYS) * Int32(KS_STRIDE)
+                                + ks_off
+                                + row % Int32(KS_KEYS) * Int32(pool_row_tokens)
+                            )
+                        k_scale = ks_smem[
+                            ks * UInt32(KS_SLOT) + UInt32(ks_idx)
+                        ].cast[.float32]()
+                        _ = k_empty[ks].arrive()
 
-                # Legacy order: a token owns a CONTIGUOUS column range (`col //
-                # num_heads`), so its sum is final at its last column: store it right
-                # there and the accumulator collapses to one `SIMD[AT, ACCW]`, rather
-                # than keeping every token sum and all `MMA_N` q-scales live at once
-                # (~250 registers, which spilled). Interleaved order: lane `L` of
-                # `acc` is token `L % N_TOKENS` throughout, so the same
-                # `ACC_LANES` registers hold every token's sum and all T stores
-                # happen after the last group.
-                #
-                # `num_heads` and `EPI_CHUNK` are both powers of two, so a chunk
-                # never straddles a token partway and the completion test stays
-                # comptime. A *runtime* token index would spill `acc` to local
-                # memory.
-                @inline(.always)
-                def consume_group[
-                    col: Int
-                ](
-                    frag: Array[Scalar[AT], EPI_CHUNK],
-                    mut acc: Array[SIMD[FT, ACCW], ACC_SLICES],
-                ) {mut qs_reg, imm}:
-                    # `ACCW / 2` disjoint lane pairs either way, so the chains
-                    # differ but the accumulate count does not.
-                    comptime base = col % EPI_CHUNK
-                    comptime k = (col % ACC_LANES) // ACCW
-                    comptime if FT == DType.bfloat16:
-                        # `relu_cvt_bf16x2` takes the HIGH lane first, the
-                        # reverse of the SIMD index order.
-                        #
-                        # `FT` comes from `get_defined_dtype`, which the parser
-                        # does not fold, so `SIMD[FT, 2]` needs a `rebind` even
-                        # inside the arm that pins `FT` to bf16.
-                        comptime for h in range(ACCW // 2):
-                            var folded = relu_cvt_bf16x2(
-                                frag[base + 2 * h + 1], frag[base + 2 * h]
-                            ).fma(
-                                rebind[SIMD[.bfloat16, 2]](
+                    # Legacy order: a token owns a CONTIGUOUS column range (`col //
+                    # num_heads`), so its sum is final at its last column: store it right
+                    # there and the accumulator collapses to one `SIMD[AT, ACCW]`, rather
+                    # than keeping every token sum and all `MMA_N` q-scales live at once
+                    # (~250 registers, which spilled). Interleaved order: lane `L` of
+                    # `acc` is token `L % N_TOKENS` throughout, so the same
+                    # `ACC_LANES` registers hold every token's sum and all T stores
+                    # happen after the last group.
+                    #
+                    # `num_heads` and `EPI_CHUNK` are both powers of two, so a chunk
+                    # never straddles a token partway and the completion test stays
+                    # comptime. A *runtime* token index would spill `acc` to local
+                    # memory.
+                    @inline(.always)
+                    def consume_group[
+                        col: Int
+                    ](
+                        frag: Array[Scalar[AT], EPI_CHUNK],
+                        mut acc: Array[SIMD[FT, ACCW], ACC_SLICES],
+                    ) {mut qs_reg, imm}:
+                        # `ACCW / 2` disjoint lane pairs either way, so the chains
+                        # differ but the accumulate count does not.
+                        comptime base = col % EPI_CHUNK
+                        comptime k = (col % ACC_LANES) // ACCW
+                        comptime if FT == DType.bfloat16:
+                            # `relu_cvt_bf16x2` takes the HIGH lane first, the
+                            # reverse of the SIMD index order.
+                            #
+                            # `FT` comes from `get_defined_dtype`, which the parser
+                            # does not fold, so `SIMD[FT, 2]` needs a `rebind` even
+                            # inside the arm that pins `FT` to bf16.
+                            comptime for h in range(ACCW // 2):
+                                var folded = relu_cvt_bf16x2(
+                                    frag[base + 2 * h + 1], frag[base + 2 * h]
+                                ).fma(
+                                    rebind[SIMD[.bfloat16, 2]](
+                                        qs_reg[col // 2 + h]
+                                    ),
+                                    rebind[SIMD[.bfloat16, 2]](
+                                        acc[k].slice[2, offset=2 * h]()
+                                    ),
+                                )
+                                acc[k] = acc[k].insert[offset=2 * h](
+                                    rebind[SIMD[FT, 2]](folded)
+                                )
+                        else:
+                            # `.fma()` is required over `a * b + c`: LLVM does not
+                            # contract an f32 pair into one FFMA2. The relu is a
+                            # vector op but PTX has no `max.f32x2` at any ISA
+                            # version, so it lowers to one FMNMX per column.
+                            #
+                            # `frag` stays element-addressed: it is a
+                            # register-resident `tcgen05.ld` result, and taking a
+                            # pointer to it to load a pair would put it in local
+                            # memory.
+                            var raw = SIMD[FT, ACCW]()
+                            var qsv = SIMD[FT, ACCW]()
+                            comptime for e in range(ACCW):
+                                raw[e] = rebind[Scalar[FT]](frag[base + e])
+                            comptime for h in range(ACCW // 2):
+                                qsv = qsv.insert[offset=2 * h](
                                     qs_reg[col // 2 + h]
-                                ),
-                                rebind[SIMD[.bfloat16, 2]](
-                                    acc[k].slice[2, offset=2 * h]()
-                                ),
+                                )
+                            acc[k] = max(raw, SIMD[FT, ACCW](0)).fma(
+                                qsv, acc[k]
                             )
-                            acc[k] = acc[k].insert[offset=2 * h](
-                                rebind[SIMD[FT, 2]](folded)
-                            )
-                    else:
-                        # `.fma()` is required over `a * b + c`: LLVM does not
-                        # contract an f32 pair into one FFMA2. The relu is a
-                        # vector op but PTX has no `max.f32x2` at any ISA
-                        # version, so it lowers to one FMNMX per column.
-                        #
-                        # `frag` stays element-addressed: it is a
-                        # register-resident `tcgen05.ld` result, and taking a
-                        # pointer to it to load a pair would put it in local
-                        # memory.
-                        var raw = SIMD[FT, ACCW]()
-                        var qsv = SIMD[FT, ACCW]()
-                        comptime for e in range(ACCW):
-                            raw[e] = rebind[Scalar[FT]](frag[base + e])
-                        comptime for h in range(ACCW // 2):
-                            qsv = qsv.insert[offset=2 * h](qs_reg[col // 2 + h])
-                        acc[k] = max(raw, SIMD[FT, ACCW](0)).fma(qsv, acc[k])
-                    # Legacy closes a token at its last column; interleaved, every
-                    # token is still open until the tile's last group.
-                    comptime closes = (
-                        col + ACCW == MMA_N
-                    ) if Q_INTERLEAVE else ((col + ACCW) % num_heads == 0)
-                    comptime if closes:
-                        comptime for s in range(
-                            N_TOKENS if Q_INTERLEAVE else 1
-                        ):
-                            comptime t = s if Q_INTERLEAVE else col // num_heads
-                            # The token sum is taken in f32 whatever `FT` is.
-                            var tok_sum: Scalar[AT]
-                            comptime if Q_INTERLEAVE:
-                                tok_sum = acc[t // ACCW][t % ACCW].cast[AT]()
-                                comptime for l in range(
-                                    t + N_TOKENS, ACC_LANES, N_TOKENS
-                                ):
-                                    tok_sum += acc[l // ACCW][l % ACCW].cast[
+                        # Legacy closes a token at its last column; interleaved, every
+                        # token is still open until the tile's last group.
+                        comptime closes = (
+                            col + ACCW == MMA_N
+                        ) if Q_INTERLEAVE else ((col + ACCW) % num_heads == 0)
+                        comptime if closes:
+                            comptime for s in range(
+                                N_TOKENS if Q_INTERLEAVE else 1
+                            ):
+                                comptime t = s if Q_INTERLEAVE else col // num_heads
+                                # The token sum is taken in f32 whatever `FT` is.
+                                var tok_sum: Scalar[AT]
+                                comptime if Q_INTERLEAVE:
+                                    tok_sum = acc[t // ACCW][t % ACCW].cast[
                                         AT
                                     ]()
-                            else:
-                                tok_sum = acc[0].cast[AT]().reduce_add()
-                            var tok_local = tok0 + Int32(t)
-                            # Fused causal mask (branchless): token tok_local sees
-                            # keys up to cache_len + tok_local, so forbidden slots
-                            # are left unwritten and the separate mask pass is
-                            # skipped. What carries the mask downstream is the
-                            # top-k's per-row bound, not a sentinel: the top-k
-                            # computes this same `indexer_key_bound` and pads
-                            # past it in-register, so the buffer is left
-                            # uninitialized.
-                            # The liveness half is memory safety rather than
-                            # masking -- a dead token's row belongs to the NEXT
-                            # batch entry.
-                            #
-                            # The guard skips no work worth skipping (0.03%
-                            # divergence), but as a BRANCH it costs a
-                            # `BSSY`/`BRA`/`NOP`/`BSYNC` quartet per token per key
-                            # tile: 4.6% of the instruction stream at 96 columns,
-                            # 10.6% at 128. store_global_pred folds it into a PTX
-                            # `@%p st.global.bXX` instead, measured at -5.4% to
-                            # 0.0% wall clock over five shapes with none
-                            # regressing. Predicating only the STORE leaves every
-                            # register dependency intact, so ptxas does NOT hoist
-                            # the 8 `LDTM.x16` across the folds: zero `STL`/`LDL`
-                            # in both arms at MMA_N 96 and 128, nh 32 and 64.
-                            var key_bound = (
-                                num_keys - (seq_len - 1 - tok_local) * causal
-                            ) // Int32(kpool)
-                            # The OFFSET must be 64-bit: the score buffer is
-                            # `total_seq_len * max_num_keys` elements, so the flat
-                            # index passes 2^31 at ~13.1K tokens x 163840 keys and
-                            # 2^32 at 32K x 163840, both reachable by configuration
-                            # with no allocation guard on that path. Both factors
-                            # are `Int32` though, so this is one `IMAD.WIDE`
-                            # (32x32->64) rather than a 64-bit multiply. Do NOT
-                            # narrow it.
-                            var out_row = out_row0 + tok_local
-                            var key_live = key_local < key_bound
-                            var row_live = tok_local < tok_hi
-                            var value = (k_scale * tok_sum).cast[out_dtype]()
-                            comptime if H.enabled:
-                                value = score_hook.score[lane_keys=WARP_SIZE](
+                                    comptime for l in range(
+                                        t + N_TOKENS, ACC_LANES, N_TOKENS
+                                    ):
+                                        tok_sum += acc[l // ACCW][
+                                            l % ACCW
+                                        ].cast[AT]()
+                                else:
+                                    tok_sum = acc[0].cast[AT]().reduce_add()
+                                var tok_local = tok0 + Int32(t)
+                                # Fused causal mask (branchless): token tok_local sees
+                                # keys up to cache_len + tok_local, so forbidden slots
+                                # are left unwritten and the separate mask pass is
+                                # skipped. What carries the mask downstream is the
+                                # top-k's per-row bound, not a sentinel: the top-k
+                                # computes this same `indexer_key_bound` and pads
+                                # past it in-register, so the buffer is left
+                                # uninitialized.
+                                # The liveness half is memory safety rather than
+                                # masking -- a dead token's row belongs to the NEXT
+                                # batch entry.
+                                #
+                                # The guard skips no work worth skipping (0.03%
+                                # divergence), but as a BRANCH it costs a
+                                # `BSSY`/`BRA`/`NOP`/`BSYNC` quartet per token per key
+                                # tile: 4.6% of the instruction stream at 96 columns,
+                                # 10.6% at 128. store_global_pred folds it into a PTX
+                                # `@%p st.global.bXX` instead, measured at -5.4% to
+                                # 0.0% wall clock over five shapes with none
+                                # regressing. Predicating only the STORE leaves every
+                                # register dependency intact, so ptxas does NOT hoist
+                                # the 8 `LDTM.x16` across the folds: zero `STL`/`LDL`
+                                # in both arms at MMA_N 96 and 128, nh 32 and 64.
+                                var key_bound = (
+                                    num_keys
+                                    - (seq_len - 1 - tok_local) * causal
+                                ) // Int32(kpool)
+                                # The OFFSET must be 64-bit: the score buffer is
+                                # `total_seq_len * max_num_keys` elements, so the flat
+                                # index passes 2^31 at ~13.1K tokens x 163840 keys and
+                                # 2^32 at 32K x 163840, both reachable by configuration
+                                # with no allocation guard on that path. Both factors
+                                # are `Int32` though, so this is one `IMAD.WIDE`
+                                # (32x32->64) rather than a 64-bit multiply. Do NOT
+                                # narrow it.
+                                var out_row = out_row0 + tok_local
+                                var key_live = key_local < key_bound
+                                var row_live = tok_local < tok_hi
+                                var value = (k_scale * tok_sum).cast[
+                                    out_dtype
+                                ]()
+                                comptime if H.enabled:
+                                    value = score_hook.score[
+                                        lane_keys=WARP_SIZE
+                                    ](
+                                        value,
+                                        out_row,
+                                        key_local,
+                                        key_live,
+                                        row_live,
+                                    )
+                                store_global_pred(
+                                    out_base.unsafe_offset(
+                                        Int(out_row) * Int(max_num_keys)
+                                        + Int(key_local)
+                                    ),
                                     value,
-                                    out_row,
-                                    key_local,
-                                    key_live,
-                                    row_live,
+                                    Int32(key_live and row_live),
                                 )
-                            store_global_pred(
-                                out_base.unsafe_offset(
-                                    Int(out_row) * Int(max_num_keys)
-                                    + Int(key_local)
-                                ),
-                                value,
-                                Int32(key_live and row_live),
-                            )
-                        comptime if not Q_INTERLEAVE:
-                            acc[0] = SIMD[FT, ACCW](0)
+                            comptime if not Q_INTERLEAVE:
+                                acc[0] = SIMD[FT, ACCW](0)
 
-                # Drain this thread's key row in `EPI_CHUNK`-column chunks. The
-                # chunk loads carry no wait between them, so they pipeline against
-                # the folds: `tcgen05.ld` register outputs are automatically
-                # ordered, and the single `tcgen05_load_wait` is only the WAR fence
-                # before the stage is released.
-                var acc = Array[SIMD[FT, ACCW], ACC_SLICES](
-                    fill=SIMD[FT, ACCW](0)
-                )
-                comptime for c in range(MMA_N // EPI_CHUNK):
-                    var frag = TMemTile[AT, BM_key, EPI_CHUNK](
-                        s_it + UInt32(c * EPI_CHUNK)
-                    ).load_async()
-                    comptime for g in range(EPI_CHUNK // ACCW):
-                        consume_group[c * EPI_CHUNK + ACCW * g](frag, acc)
-                tcgen05_load_wait()
-                tcgen05_fence_before()
-                _ = s_empty[cs].arrive()
+                    # Drain this thread's key row in `EPI_CHUNK`-column chunks. The
+                    # chunk loads carry no wait between them, so they pipeline against
+                    # the folds: `tcgen05.ld` register outputs are automatically
+                    # ordered, and the single `tcgen05_load_wait` is only the WAR fence
+                    # before the stage is released.
+                    var acc = Array[SIMD[FT, ACCW], ACC_SLICES](
+                        fill=SIMD[FT, ACCW](0)
+                    )
+                    comptime for c in range(MMA_N // EPI_CHUNK):
+                        var frag = TMemTile[AT, BM_key, EPI_CHUNK](
+                            s_it + UInt32(c * EPI_CHUNK)
+                        ).load_async()
+                        comptime for g in range(EPI_CHUNK // ACCW):
+                            consume_group[c * EPI_CHUNK + ACCW * g](frag, acc)
+                    tcgen05_load_wait()
+                    tcgen05_fence_before()
+                    _ = s_empty[cs].arrive()
 
-                c_state.step()
-                k_state.step()
+                    c_state.step()
+                    k_state.step()
 
-        # Interleaved, the slot is consumable only once warp 6 has transposed
-        # it; `qs_ready` also forwards the end-of-stream sentinel. The CTA's
-        # FIRST item is the exception: nothing precedes it for warp 6 to hide
-        # behind, and its MMA needs only Q, so the consumers transpose it
-        # themselves while that MMA runs instead of paying warp 6's extra hop.
-        var first = True
-        var q_state = PipelineState[Q_SLOTS]()
-        while True:
-            var qslot = q_state.index()
-            var own_xpose = Q_INTERLEAVE and first
-            if Q_INTERLEAVE and not own_xpose:
-                qs_ready[qslot].wait(q_state.phase())
-            else:
-                qs_full[qslot].wait(q_state.phase())
-            var md = md_smem.unsafe_offset(
-                qslot * UInt32(_MD_WORDS)
-            ).unsafe_load[width=_MD_WORDS, alignment=32]()
-            n_tiles_local = md[_MD_N_TILES]
-            if n_tiles_local == 0:
-                break
-            tok0 = md[_MD_TOK0]
-            tok_hi = md[_MD_TOK_HI]
-            seq_len = md[_MD_SEQ_LEN]
-            num_keys = md[_MD_NUM_KEYS]
-            out_row0 = md[_MD_OUT_ROW0]
-            tile_begin = md[_MD_TILE_BEGIN]
-            ks_off = md[_MD_KS_OFF]
-            # Interleaved, the hoist reads the slot already in column order; see
-            # the transposer role for why it is permuted in SMEM.
-            var qs_slot = qs_smem.unsafe_offset(qslot * UInt32(MMA_N))
-            if own_xpose:
-                var src = Int(row)
-                var v = Float32(0)
-                if src < MMA_N:
-                    v = qs_slot[src]
-                named_barrier[Int32(CONS_THREADS)](_CONSUMER_BAR)
-                if src < MMA_N:
-                    qs_slot[(src % num_heads) * N_TOKENS + src // num_heads] = v
-                named_barrier[Int32(CONS_THREADS)](_CONSUMER_BAR)
-            # Read FOUR at a time: adjacent scalar reads coalesce into one
-            # 16-byte access and an explicit width-2 load does not re-merge.
-            # Every index MUST stay comptime -- a runtime index forces the array
-            # to local memory.
-            comptime for j in range(MMA_N // 4):
-                var qs4 = qs_slot.unsafe_load[
-                    width=4, alignment=4 * size_of[Float32]()
-                ](4 * j)
-                qs_reg[2 * j] = qs4.slice[2, offset=0]().cast[FT]()
-                qs_reg[2 * j + 1] = qs4.slice[2, offset=2]().cast[FT]()
-            _ = q_empty[qslot].arrive()
-            consume_item()
-            q_state.step()
-            first = False
-
-        # Drain across the consumer warps: every consumer's last `s_empty`
-        # arrive happens-before this barrier, so no S^T stage is live when the
-        # MMA warp frees TMEM.
-        named_barrier[Int32(CONS_THREADS)](_CONSUMER_BAR)
-        # Re-read rather than test `wid`: keeping it live across the fold
-        # loop spilled it (4 B STL, reloaded by every role's dispatch test).
-        if llvm_opaque_tid() < UInt32(WARP_SIZE):
-            tcgen05_dealloc[1](tmem_addr, TMEM_COLS)
-    else:
-        if wid == MMA_WARP:
-            # Release registers BEFORE the TMEM alloc: the consumers'
-            # `setmaxnreg.inc` blocks until this warp's `.dec`. Deallocating
-            # after the alloc put its latency on the consumers' path, ~0.13-0.19
-            # us per launch on decode.
-            warpgroup_reg_dealloc[CFG.reg_producer]()
-            tcgen05_alloc[1](ptr_tmem, TMEM_COLS)
-            tcgen05_release_allocation_lock[1]()
-            # The role runs warp-collectively and elects one lane per issue:
-            # `SM100TensorAccumulator.mma` broadcasts the accumulator's TMEM
-            # address from lane 0 (`shfl.sync` over the full warp mask), so
-            # calling it from a single-lane region hangs the warp on a
-            # convergence barrier the other 31 lanes never reach.
-            # Nothing the consumers publish gates the MMA, so this warp only
-            # ARRIVES -- handing the consumers the TMEM address -- and runs on.
-            syncwarp()
-            named_barrier_arrive[Int32(CONS_THREADS + WARP_SIZE)](_CONSUMER_BAR)
-            var tmem_addr: UInt32 = ptr_tmem[0]
-            var e = elect()
-            var kc_state = PipelineState[NSTAGE]()
-            # The MMA warp is the PRODUCER of the S^T stages, so its WAR state starts
-            # pre-flipped: `wait(1)` on a fresh mbar tests a phase that has not been
-            # reached and falls through, replacing a prologue that pre-armed `s_empty`
-            # with 256 arrivals purely to make that same first wait pass. Same device
-            # as the K ring's `kp_state` below.
-            var sp_state = PipelineState[N_S](0, 1, 0)
-            var k = smem_descriptor[
-                BMN=BM_key,
-                BK=compute_BK,
-                swizzle_mode=SW,
-                is_k_major=True,
-            ](k_smem)
-
-            # One item per pass, like the consumers: the tile count and Q come
-            # off the item's slot, and the slot is freed behind the item's last
-            # MMA. `kc_state` and `sp_state` carry over.
+            # Interleaved, the slot is consumable only once warp 6 has transposed
+            # it; `qs_ready` also forwards the end-of-stream sentinel. The CTA's
+            # FIRST item is the exception: nothing precedes it for warp 6 to hide
+            # behind, and its MMA needs only Q, so the consumers transpose it
+            # themselves while that MMA runs instead of paying warp 6's extra hop.
+            var first = True
             var q_state = PipelineState[Q_SLOTS]()
             while True:
                 var qslot = q_state.index()
-                q_full[qslot].wait(q_state.phase())
-                n_tiles_local = md_smem[
-                    qslot * UInt32(_MD_WORDS) + UInt32(_MD_N_TILES)
-                ]
+                var own_xpose = Q_INTERLEAVE and first
+                if Q_INTERLEAVE and not own_xpose:
+                    qs_ready[qslot].wait(q_state.phase())
+                else:
+                    qs_full[qslot].wait(q_state.phase())
+                var md = md_smem.unsafe_offset(
+                    qslot * UInt32(_MD_WORDS)
+                ).unsafe_load[width=_MD_WORDS, alignment=32]()
+                n_tiles_local = md[_MD_N_TILES]
                 if n_tiles_local == 0:
                     break
-                var q0 = smem_descriptor[
-                    BMN=MMA_N,
+                tok0 = md[_MD_TOK0]
+                tok_hi = md[_MD_TOK_HI]
+                seq_len = md[_MD_SEQ_LEN]
+                num_keys = md[_MD_NUM_KEYS]
+                out_row0 = md[_MD_OUT_ROW0]
+                tile_begin = md[_MD_TILE_BEGIN]
+                ks_off = md[_MD_KS_OFF]
+                # Interleaved, the hoist reads the slot already in column order; see
+                # the transposer role for why it is permuted in SMEM.
+                var qs_slot = qs_smem.unsafe_offset(qslot * UInt32(MMA_N))
+                if own_xpose:
+                    var src = Int(row)
+                    var v = Float32(0)
+                    if src < MMA_N:
+                        v = qs_slot[src]
+                    named_barrier[Int32(CONS_THREADS)](_CONSUMER_BAR)
+                    if src < MMA_N:
+                        qs_slot[
+                            (src % num_heads) * N_TOKENS + src // num_heads
+                        ] = v
+                    named_barrier[Int32(CONS_THREADS)](_CONSUMER_BAR)
+                # Read FOUR at a time: adjacent scalar reads coalesce into one
+                # 16-byte access and an explicit width-2 load does not re-merge.
+                # Every index MUST stay comptime -- a runtime index forces the array
+                # to local memory.
+                comptime for j in range(MMA_N // 4):
+                    var qs4 = qs_slot.unsafe_load[
+                        width=4, alignment=4 * size_of[Float32]()
+                    ](4 * j)
+                    qs_reg[2 * j] = qs4.slice[2, offset=0]().cast[FT]()
+                    qs_reg[2 * j + 1] = qs4.slice[2, offset=2]().cast[FT]()
+                _ = q_empty[qslot].arrive()
+                consume_item()
+                q_state.step()
+                first = False
+
+            # Drain across the consumer warps: every consumer's last `s_empty`
+            # arrive happens-before this barrier, so no S^T stage is live when the
+            # MMA warp frees TMEM.
+            named_barrier[Int32(CONS_THREADS)](_CONSUMER_BAR)
+            # Re-read rather than test `wid`: keeping it live across the fold
+            # loop spilled it (4 B STL, reloaded by every role's dispatch test).
+            if llvm_opaque_tid() < UInt32(WARP_SIZE):
+                tcgen05_dealloc[1](tmem_addr, TMEM_COLS)
+        else:
+            if wid == MMA_WARP:
+                # Release registers BEFORE the TMEM alloc: the consumers'
+                # `setmaxnreg.inc` blocks until this warp's `.dec`. Deallocating
+                # after the alloc put its latency on the consumers' path, ~0.13-0.19
+                # us per launch on decode.
+                warpgroup_reg_dealloc[CFG.reg_producer]()
+                tcgen05_alloc[1](ptr_tmem, TMEM_COLS)
+                tcgen05_release_allocation_lock[1]()
+                # The role runs warp-collectively and elects one lane per issue:
+                # `SM100TensorAccumulator.mma` broadcasts the accumulator's TMEM
+                # address from lane 0 (`shfl.sync` over the full warp mask), so
+                # calling it from a single-lane region hangs the warp on a
+                # convergence barrier the other 31 lanes never reach.
+                # Nothing the consumers publish gates the MMA, so this warp only
+                # ARRIVES -- handing the consumers the TMEM address -- and runs on.
+                syncwarp()
+                named_barrier_arrive[Int32(CONS_THREADS + WARP_SIZE)](
+                    _CONSUMER_BAR
+                )
+                var tmem_addr: UInt32 = ptr_tmem[0]
+                var e = elect()
+                var kc_state = PipelineState[NSTAGE]()
+                # The MMA warp is the PRODUCER of the S^T stages, so its WAR state starts
+                # pre-flipped: `wait(1)` on a fresh mbar tests a phase that has not been
+                # reached and falls through, replacing a prologue that pre-armed `s_empty`
+                # with 256 arrivals purely to make that same first wait pass. Same device
+                # as the K ring's `kp_state` below.
+                var sp_state = PipelineState[N_S](0, 1, 0)
+                var k = smem_descriptor[
+                    BMN=BM_key,
                     BK=compute_BK,
                     swizzle_mode=SW,
                     is_k_major=True,
-                ](q_smem.unsafe_offset(qslot * UInt32(q_elems)))
-                comptime if FP4:
-                    # B column `n` is Q row `n`: token `n % T`, head `n // T`
-                    # in interleaved order, token `n // nh`, head `n % nh`
-                    # otherwise. Its scales landed token-major, as `q_sf`
-                    # stores them. The slot's previous B atom was read by the
-                    # MMAs of the item two back, which completed before the
-                    # load warp could refill this slot.
-                    var qsf = qsf_smem.unsafe_offset(qslot * UInt32(QSF_WORDS))
-                    var words = SIMD[DType.uint32, _SF_ATOM_COLS](0)
-                    comptime for i in range(_SF_ATOM_COLS):
-                        comptime if 32 * (i + 1) <= MMA_N:
-                            var n = Int32(lane_id()) + Int32(32 * i)
-                            comptime if Q_INTERLEAVE:
-                                words[i] = qsf[
-                                    (n % Int32(N_TOKENS)) * Int32(num_heads)
-                                    + n // Int32(N_TOKENS)
-                                ]
-                            else:
-                                words[i] = qsf[n]
-                    _store_sf_atom(qsf, words)
-                    if e != 0:
-                        tcgen05_cp[
-                            cta_group=1,
-                            datapaths=32,
-                            bits=128,
-                            multicast="warpx4",
-                        ](
-                            tmem_addr
-                            + UInt32(SFB_COL)
-                            + qslot * UInt32(_SF_ATOM_COLS),
-                            _sf_atom_desc(qsf),
+                ](k_smem)
+
+                # One item per pass, like the consumers: the tile count and Q come
+                # off the item's slot, and the slot is freed behind the item's last
+                # MMA. `kc_state` and `sp_state` carry over.
+                var q_state = PipelineState[Q_SLOTS]()
+                while True:
+                    var qslot = q_state.index()
+                    q_full[qslot].wait(q_state.phase())
+                    n_tiles_local = md_smem[
+                        qslot * UInt32(_MD_WORDS) + UInt32(_MD_N_TILES)
+                    ]
+                    if n_tiles_local == 0:
+                        break
+                    var q0 = smem_descriptor[
+                        BMN=MMA_N,
+                        BK=compute_BK,
+                        swizzle_mode=SW,
+                        is_k_major=True,
+                    ](q_smem.unsafe_offset(qslot * UInt32(q_elems)))
+                    comptime if FP4:
+                        # B column `n` is Q row `n`: token `n % T`, head `n // T`
+                        # in interleaved order, token `n // nh`, head `n % nh`
+                        # otherwise. Its scales landed token-major, as `q_sf`
+                        # stores them. The slot's previous B atom was read by the
+                        # MMAs of the item two back, which completed before the
+                        # load warp could refill this slot.
+                        var qsf = qsf_smem.unsafe_offset(
+                            qslot * UInt32(QSF_WORDS)
                         )
-                # Trip count must match the consumer's and the load warp's
-                # exactly: the k/s mbar handshakes and every `PipelineState`
-                # phase stay in lockstep only because all roles walk the same
-                # tile window.
-                for _ in range(n_tiles_local):
-                    var s = kc_state.index()
-                    k_full[s].wait(kc_state.phase())
-                    # One MMA per K tile into the ring, so the ring's issue
-                    # counter IS the tile counter. `sp_state` tracks it and is
-                    # re-read and stepped here rather than hoisted.
-                    var st = sp_state.index()
-                    comptime if FP4:
-                        # Key `m`'s word sits in copy `m // KS_KEYS` of the slot,
-                        # past that copy's alignment residual. Staged ahead of
-                        # the WAR wait, so it overlaps the consumers.
-                        var ks_atom = ks_smem.unsafe_bitcast[
-                            UInt32
-                        ]().unsafe_offset(s * UInt32(KS_SLOT))
-                        var row_off = md_smem[
-                            qslot * UInt32(_MD_WORDS) + UInt32(_MD_KS_OFF)
-                        ] + Int32(lane_id())
-                        var words = SIMD[DType.uint32, _SF_ATOM_COLS]()
+                        var words = SIMD[DType.uint32, _SF_ATOM_COLS](0)
                         comptime for i in range(_SF_ATOM_COLS):
-                            comptime row0 = 32 * i
-                            words[i] = ks_atom[
-                                Int32(
-                                    row0 // KS_KEYS * KS_STRIDE + row0 % KS_KEYS
-                                )
-                                + row_off
-                            ]
-                        _store_sf_atom(ks_atom, words)
-                    # WAR: the consumers must have drained this S stage before the
-                    # MMA overwrites it. The first pass over each stage falls through
-                    # on the pre-flipped phase (nothing to drain yet); after that
-                    # this is the consumer's `release_stage()`. MXFP4's A atom for
-                    # this stage was last read by the MMA two tiles back, which that
-                    # drain also waited out.
-                    s_empty[Int(st)].wait(sp_state.phase())
-                    comptime if FP4:
+                            comptime if 32 * (i + 1) <= MMA_N:
+                                var n = Int32(lane_id()) + Int32(32 * i)
+                                comptime if Q_INTERLEAVE:
+                                    words[i] = qsf[
+                                        (n % Int32(N_TOKENS)) * Int32(num_heads)
+                                        + n // Int32(N_TOKENS)
+                                    ]
+                                else:
+                                    words[i] = qsf[n]
+                        _store_sf_atom(qsf, words)
                         if e != 0:
-                            var sfa = (
-                                tmem_addr
-                                + UInt32(SFA_COL)
-                                + st * UInt32(_SF_ATOM_COLS)
-                            )
                             tcgen05_cp[
                                 cta_group=1,
                                 datapaths=32,
                                 bits=128,
                                 multicast="warpx4",
                             ](
-                                sfa,
-                                _sf_atom_desc(
-                                    ks_smem.unsafe_bitcast[
-                                        UInt32
-                                    ]().unsafe_offset(s * UInt32(KS_SLOT))
-                                ),
+                                tmem_addr
+                                + UInt32(SFB_COL)
+                                + qslot * UInt32(_SF_ATOM_COLS),
+                                _sf_atom_desc(qsf),
                             )
-                            # Two `KIND_MXF4` MMAs of 64 values (32 bytes)
-                            # contract a 128-value row; each reads two of a
-                            # row's four UE8M0 scales, bytes 0-1 then 2-3
-                            # (`sf_id` 0 and 2).
-                            comptime idesc = UMMAInsDescriptor[
-                                UMMAKind.KIND_MXF4
-                            ].create[
-                                DType.float32,
-                                DType.uint8,
-                                DType.uint8,
-                                DType.float8_e8m0fnu,
-                                (UInt32(BM_key), UInt32(MMA_N)),
-                                transpose_b=True,
-                            ]()
-                            var a_desc = _create_mma_desc_k_major[dtype, SW](
-                                k_smem.unsafe_offset(s * UInt32(k_elems))
-                            )
-                            var b_desc = _create_mma_desc_k_major[dtype, SW](
-                                q_smem.unsafe_offset(qslot * UInt32(q_elems))
-                            )
-                            comptime for kk in range(depth // _MXF4_K_BYTES):
-                                mma[1](
-                                    a_desc + kk * _MXF4_K_BYTES,
-                                    b_desc + kk * _MXF4_K_BYTES,
-                                    tmem_addr + st * UInt32(S_COLS),
-                                    UMMAInsDescriptor[
-                                        UMMAKind.KIND_MXF4
-                                    ].update_desc_with_sf_id[UInt32(2 * kk)](
-                                        idesc
-                                    ),
-                                    sfa,
+                    # Trip count must match the consumer's and the load warp's
+                    # exactly: the k/s mbar handshakes and every `PipelineState`
+                    # phase stay in lockstep only because all roles walk the same
+                    # tile window.
+                    for _ in range(n_tiles_local):
+                        var s = kc_state.index()
+                        k_full[s].wait(kc_state.phase())
+                        # One MMA per K tile into the ring, so the ring's issue
+                        # counter IS the tile counter. `sp_state` tracks it and is
+                        # re-read and stepped here rather than hoisted.
+                        var st = sp_state.index()
+                        comptime if FP4:
+                            # Key `m`'s word sits in copy `m // KS_KEYS` of the slot,
+                            # past that copy's alignment residual. Staged ahead of
+                            # the WAR wait, so it overlaps the consumers.
+                            var ks_atom = ks_smem.unsafe_bitcast[
+                                UInt32
+                            ]().unsafe_offset(s * UInt32(KS_SLOT))
+                            var row_off = md_smem[
+                                qslot * UInt32(_MD_WORDS) + UInt32(_MD_KS_OFF)
+                            ] + Int32(lane_id())
+                            var words = SIMD[DType.uint32, _SF_ATOM_COLS]()
+                            comptime for i in range(_SF_ATOM_COLS):
+                                comptime row0 = 32 * i
+                                words[i] = ks_atom[
+                                    Int32(
+                                        row0 // KS_KEYS * KS_STRIDE
+                                        + row0 % KS_KEYS
+                                    )
+                                    + row_off
+                                ]
+                            _store_sf_atom(ks_atom, words)
+                        # WAR: the consumers must have drained this S stage before the
+                        # MMA overwrites it. The first pass over each stage falls through
+                        # on the pre-flipped phase (nothing to drain yet); after that
+                        # this is the consumer's `release_stage()`. MXFP4's A atom for
+                        # this stage was last read by the MMA two tiles back, which that
+                        # drain also waited out.
+                        s_empty[Int(st)].wait(sp_state.phase())
+                        comptime if FP4:
+                            if e != 0:
+                                var sfa = (
                                     tmem_addr
-                                    + UInt32(SFB_COL)
-                                    + qslot * UInt32(_SF_ATOM_COLS),
-                                    c_scale=UInt32(kk),
+                                    + UInt32(SFA_COL)
+                                    + st * UInt32(_SF_ATOM_COLS)
                                 )
-                    else:
-                        QK.mma(
-                            k + s * UInt32(k_elems),
-                            q0,
-                            tmem_addr + st * UInt32(S_COLS),
-                            c_scale=0,
-                            elect=e,
-                        )
-                    elect_mma_arrive(s_full.unsafe_offset(Int(st)), e)
-                    sp_state.step()
-                    # Release K stage s only after the MMA has drained it
-                    # (tcgen05.commit tracks the async MMA); a plain mbar arrive
-                    # would let the load warp overwrite K mid-read.
-                    elect_mma_arrive(k_empty.unsafe_offset(s), e)
-                    kc_state.step()
-                # `tcgen05.commit` tracks every MMA issued before it, so the
-                # slot's Q is drained once this arrives.
-                elect_mma_arrive(q_empty.unsafe_offset(qslot), e)
-                q_state.step()
-        elif wid == TMA_WARP:
-            warpgroup_reg_dealloc[CFG.reg_producer]()
-            var kp_state = PipelineState[NSTAGE](0, 1, 0)
-            var e = elect()
+                                tcgen05_cp[
+                                    cta_group=1,
+                                    datapaths=32,
+                                    bits=128,
+                                    multicast="warpx4",
+                                ](
+                                    sfa,
+                                    _sf_atom_desc(
+                                        ks_smem.unsafe_bitcast[
+                                            UInt32
+                                        ]().unsafe_offset(s * UInt32(KS_SLOT))
+                                    ),
+                                )
+                                # Two `KIND_MXF4` MMAs of 64 values (32 bytes)
+                                # contract a 128-value row; each reads two of a
+                                # row's four UE8M0 scales, bytes 0-1 then 2-3
+                                # (`sf_id` 0 and 2).
+                                comptime idesc = UMMAInsDescriptor[
+                                    UMMAKind.KIND_MXF4
+                                ].create[
+                                    DType.float32,
+                                    DType.uint8,
+                                    DType.uint8,
+                                    DType.float8_e8m0fnu,
+                                    (UInt32(BM_key), UInt32(MMA_N)),
+                                    transpose_b=True,
+                                ]()
+                                var a_desc = _create_mma_desc_k_major[
+                                    dtype, SW
+                                ](k_smem.unsafe_offset(s * UInt32(k_elems)))
+                                var b_desc = _create_mma_desc_k_major[
+                                    dtype, SW
+                                ](q_smem.unsafe_offset(qslot * UInt32(q_elems)))
+                                comptime for kk in range(
+                                    depth // _MXF4_K_BYTES
+                                ):
+                                    mma[1](
+                                        a_desc + kk * _MXF4_K_BYTES,
+                                        b_desc + kk * _MXF4_K_BYTES,
+                                        tmem_addr + st * UInt32(S_COLS),
+                                        UMMAInsDescriptor[
+                                            UMMAKind.KIND_MXF4
+                                        ].update_desc_with_sf_id[
+                                            UInt32(2 * kk)
+                                        ](
+                                            idesc
+                                        ),
+                                        sfa,
+                                        tmem_addr
+                                        + UInt32(SFB_COL)
+                                        + qslot * UInt32(_SF_ATOM_COLS),
+                                        c_scale=UInt32(kk),
+                                    )
+                        else:
+                            QK.mma(
+                                k + s * UInt32(k_elems),
+                                q0,
+                                tmem_addr + st * UInt32(S_COLS),
+                                c_scale=0,
+                                elect=e,
+                            )
+                        elect_mma_arrive(s_full.unsafe_offset(Int(st)), e)
+                        sp_state.step()
+                        # Release K stage s only after the MMA has drained it
+                        # (tcgen05.commit tracks the async MMA); a plain mbar arrive
+                        # would let the load warp overwrite K mid-read.
+                        elect_mma_arrive(k_empty.unsafe_offset(s), e)
+                        kc_state.step()
+                    # `tcgen05.commit` tracks every MMA issued before it, so the
+                    # slot's Q is drained once this arrives.
+                    elect_mma_arrive(q_empty.unsafe_offset(qslot), e)
+                    q_state.step()
+            elif wid == TMA_WARP:
+                warpgroup_reg_dealloc[CFG.reg_producer]()
+                var kp_state = PipelineState[NSTAGE](0, 1, 0)
+                var e = elect()
 
-            # One expect-bytes with the K tile's and its scales' bytes SUMMED is
-            # the only legal shape, not one call per copy: it lowers to
-            # `mbarrier.arrive.expect_tx`, so it IS the producer's single arrival,
-            # and against an init count of 1 a second call would drive the
-            # pending-arrival count below zero -- out of spec, not merely
-            # redundant. Summed, both TMAs deposit into the one tx counter and the
-            # barrier fires when the last byte of either lands.
-            #
-            # The single-lane guard rides an `@%p` on each instruction rather than an
-            # `if e != 0:`. That is NOT a branch removal -- ptxas already if-converts
-            # the guarded form and both shapes emit the same SASS at the issue. It is
-            # worth 8 fewer instructions of uniform-datapath setup per sidecar, and
-            # consistency with every other SM100 producer.
-            @inline(.always)
-            def issue_k(it: Int32, state: PipelineState[NSTAGE]) {imm}:
-                var s = state.index()
-                var num_rows = num_keys // Int32(kpool)
-                expect_bytes_pred(
-                    k_full.unsafe_offset(s), Int32(k_bytes + ks_bytes), e
-                )
-                # One copy per page the tile spans. A copy past this batch's
-                # last key re-reads the last key's page instead of looking up a
-                # page the batch does not own; the store guard drops its scores.
+                # One expect-bytes with the K tile's and its scales' bytes SUMMED is
+                # the only legal shape, not one call per copy: it lowers to
+                # `mbarrier.arrive.expect_tx`, so it IS the producer's single arrival,
+                # and against an init count of 1 a second call would drive the
+                # pending-arrival count below zero -- out of spec, not merely
+                # redundant. Summed, both TMAs deposit into the one tx counter and the
+                # barrier fires when the last byte of either lands.
                 #
-                # Split rather than folded: the fold spans the whole shared
-                # slab and leaves the signed 32-bit TMA coordinate on a large
-                # pool. See `MHAOperand.kv_tma_coords`.
-                comptime for c in range(BM_key // K_BOX):
-                    var key_row = it * Int32(BM_key) + Int32(c * K_BOX)
-                    comptime if c > 0:
-                        key_row = min(
-                            key_row,
-                            (num_rows - 1) // Int32(K_BOX) * Int32(K_BOX),
-                        )
-                    var k_row0, k_block = k_operand.kv_tma_coords(
-                        UInt32(b), UInt32(key_row * Int32(pool_row_tokens))
+                # The single-lane guard rides an `@%p` on each instruction rather than an
+                # `if e != 0:`. That is NOT a branch removal -- ptxas already if-converts
+                # the guarded form and both shapes emit the same SASS at the issue. It is
+                # worth 8 fewer instructions of uniform-datapath setup per sidecar, and
+                # consistency with every other SM100 producer.
+                @inline(.always)
+                def issue_k(it: Int32, state: PipelineState[NSTAGE]) {imm}:
+                    var s = state.index()
+                    var num_rows = num_keys // Int32(kpool)
+                    expect_bytes_pred(
+                        k_full.unsafe_offset(s), Int32(k_bytes + ks_bytes), e
                     )
-                    var k_dst = TileTensor[
-                        dtype, type_of(k_box_layout), address_space=.SHARED
-                    ](
-                        k_smem.unsafe_offset(s * UInt32(k_elems)).unsafe_offset(
-                            UInt32(c * K_BOX * depth)
+                    # One copy per page the tile spans. A copy past this batch's
+                    # last key re-reads the last key's page instead of looking up a
+                    # page the batch does not own; the store guard drops its scores.
+                    #
+                    # Split rather than folded: the fold spans the whole shared
+                    # slab and leaves the signed 32-bit TMA coordinate on a large
+                    # pool. See `MHAOperand.kv_tma_coords`.
+                    comptime for c in range(BM_key // K_BOX):
+                        var key_row = it * Int32(BM_key) + Int32(c * K_BOX)
+                        comptime if c > 0:
+                            key_row = min(
+                                key_row,
+                                (num_rows - 1) // Int32(K_BOX) * Int32(K_BOX),
+                            )
+                        var k_row0, k_block = k_operand.kv_tma_coords(
+                            UInt32(b), UInt32(key_row * Int32(pool_row_tokens))
+                        )
+                        var k_dst = TileTensor[
+                            dtype, type_of(k_box_layout), address_space=.SHARED
+                        ](
+                            k_smem.unsafe_offset(
+                                s * UInt32(k_elems)
+                            ).unsafe_offset(UInt32(c * K_BOX * depth)),
+                            k_box_layout,
+                        )
+                        var k_coords = (
+                            0,
+                            0,
+                            Int(k_row0) // pool_row_tokens,
+                            Int(k_block),
+                        )
+                        if evict_k_dev != 0:
+                            k_tma.async_copy_4d_elect[
+                                eviction_policy=CacheEviction.EVICT_FIRST
+                            ](k_dst, k_full[s], k_coords, e)
+                        else:
+                            k_tma.async_copy_4d_elect(
+                                k_dst, k_full[s], k_coords, e
+                            )
+                    # The scales ride the K tile's barrier: the bytes are summed
+                    # into the one `expect_tx`, so the slot opens when the last byte
+                    # of either copy lands and the consumer needs no wait of its own
+                    # -- `s_full` already happens-after this.
+                    #
+                    # The scales' own row index, NOT `k_row0`: a paged scale pool
+                    # resolves its block through `scales_lookup_table` and strides
+                    # by its own block pitch, so reusing the K row silently reads
+                    # another block whenever the two LUTs differ.
+                    #
+                    # Rounded DOWN to `KS_ALIGN`: a scale "row" is a single scalar,
+                    # so this index IS the innermost TMA coordinate and must land on
+                    # a 16-byte boundary, which a ragged batch's per-entry base does
+                    # not. The window is `KS_ALIGN` keys wider to cover the shift and
+                    # the consumer skips the residual. (`k_row0` needs no such fix --
+                    # a K row is a whole `depth`-wide key, so it is always aligned.)
+                    comptime for c in range(KS_COPIES):
+                        var ks_key = it * Int32(BM_key) + Int32(c * KS_KEYS)
+                        comptime if c > 0:
+                            ks_key = min(
+                                ks_key,
+                                (num_rows - 1)
+                                // Int32(KS_KEYS)
+                                * Int32(KS_KEYS),
+                            )
+                        var ks_row0, ks_blk = ks_operand.scale_tma_coords(
+                            UInt32(b), UInt32(ks_key * Int32(pool_row_tokens))
+                        )
+                        var ks_dst = TileTensor[
+                            KS_DTYPE,
+                            type_of(ks_flat_layout),
+                            address_space=.SHARED,
+                        ](
+                            ks_smem.unsafe_offset(
+                                s * UInt32(KS_SLOT)
+                            ).unsafe_offset(UInt32(c * KS_STRIDE)),
+                            ks_flat_layout,
+                        )
+                        ks_tma.async_copy_elect(
+                            ks_dst, k_full[s], (Int(ks_row0), Int(ks_blk)), e
+                        )
+
+                # Item stream: publish the item into the next Q slot, stream its K
+                # tiles, steal the next one. A zero-tile sentinel ends the stream for
+                # the MMA and the consumers.
+                #
+                # One K loop for the whole stream. `kp_state` starts pre-flipped, so
+                # a slot's first-lap `k_empty` wait falls through on the fresh
+                # barrier; after that it is the refill wait, across items as within
+                # one.
+                var q_state = PipelineState[Q_SLOTS](0, 1, 0)
+                while True:
+                    var qslot = q_state.index()
+                    q_empty[qslot].wait(q_state.phase())
+                    # The consumers read the slot's q-scales with `LDS` (generic
+                    # proxy) before arriving; the TMA below rewrites it through the
+                    # async proxy. Same hazard as the K ring.
+                    fence_async_view_proxy()
+                    var ks_off = Int32(
+                        ks_operand.row_idx(
+                            UInt32(b),
+                            UInt32(
+                                tile_begin * Int32(BM_key * pool_row_tokens)
+                            ),
+                        )
+                        & UInt32(KS_ALIGN - 1)
+                    )
+                    # Stored by the lane that arrives below: each `arrive.expect_tx`
+                    # is a release, so it publishes the record to whoever waits that
+                    # barrier.
+                    if e != 0:
+                        md_smem.unsafe_offset(
+                            qslot * UInt32(_MD_WORDS)
+                        ).unsafe_store[alignment=32](
+                            SIMD[DType.int32, _MD_WORDS](
+                                tok0,
+                                tok_hi,
+                                seq_len,
+                                num_keys,
+                                out_row0,
+                                tile_begin,
+                                n_tiles_local,
+                                ks_off,
+                            )
+                        )
+                    var tok_row = Int(start_of_seq + tok0)
+                    # Q and q-scales on SEPARATE barriers: the MMA needs only Q, and
+                    # the consumers only the q-scales. MXFP4's block scales feed the
+                    # MMA, so they ride Q's barrier.
+                    expect_bytes_pred(
+                        q_full.unsafe_offset(qslot),
+                        Int32(q_bytes + (qs_bytes if FP4 else 0)),
+                        e,
+                    )
+                    q_tma.async_copy_3d_elect(
+                        TileTensor[
+                            dtype, type_of(q_flat_layout), address_space=.SHARED
+                        ](
+                            q_smem.unsafe_offset(qslot * UInt32(q_elems)),
+                            q_flat_layout,
                         ),
-                        k_box_layout,
+                        q_full[qslot],
+                        _q_tma_coords[Q_INTERLEAVE, num_heads](tok_row),
+                        e,
                     )
-                    var k_coords = (
-                        0,
-                        0,
-                        Int(k_row0) // pool_row_tokens,
-                        Int(k_block),
-                    )
-                    if evict_k_dev != 0:
-                        k_tma.async_copy_4d_elect[
-                            eviction_policy=CacheEviction.EVICT_FIRST
-                        ](k_dst, k_full[s], k_coords, e)
-                    else:
-                        k_tma.async_copy_4d_elect(k_dst, k_full[s], k_coords, e)
-                # The scales ride the K tile's barrier: the bytes are summed
-                # into the one `expect_tx`, so the slot opens when the last byte
-                # of either copy lands and the consumer needs no wait of its own
-                # -- `s_full` already happens-after this.
-                #
-                # The scales' own row index, NOT `k_row0`: a paged scale pool
-                # resolves its block through `scales_lookup_table` and strides
-                # by its own block pitch, so reusing the K row silently reads
-                # another block whenever the two LUTs differ.
-                #
-                # Rounded DOWN to `KS_ALIGN`: a scale "row" is a single scalar,
-                # so this index IS the innermost TMA coordinate and must land on
-                # a 16-byte boundary, which a ragged batch's per-entry base does
-                # not. The window is `KS_ALIGN` keys wider to cover the shift and
-                # the consumer skips the residual. (`k_row0` needs no such fix --
-                # a K row is a whole `depth`-wide key, so it is always aligned.)
-                comptime for c in range(KS_COPIES):
-                    var ks_key = it * Int32(BM_key) + Int32(c * KS_KEYS)
-                    comptime if c > 0:
-                        ks_key = min(
-                            ks_key,
-                            (num_rows - 1) // Int32(KS_KEYS) * Int32(KS_KEYS),
+                    comptime if FP4:
+                        qsf_tma.async_copy_elect(
+                            TileTensor[
+                                DType.float32,
+                                type_of(qs_flat_layout),
+                                address_space=.SHARED,
+                            ](
+                                (
+                                    qsf_smem.unsafe_offset(
+                                        qslot * UInt32(QSF_WORDS)
+                                    )
+                                ).unsafe_bitcast[Float32](),
+                                qs_flat_layout,
+                            ),
+                            q_full[qslot],
+                            (0, tok_row),
+                            e,
                         )
-                    var ks_row0, ks_blk = ks_operand.scale_tma_coords(
-                        UInt32(b), UInt32(ks_key * Int32(pool_row_tokens))
+                    expect_bytes_pred(
+                        qs_full.unsafe_offset(qslot), Int32(qs_bytes), e
                     )
-                    var ks_dst = TileTensor[
-                        KS_DTYPE,
-                        type_of(ks_flat_layout),
-                        address_space=.SHARED,
-                    ](
-                        ks_smem.unsafe_offset(
-                            s * UInt32(KS_SLOT)
-                        ).unsafe_offset(UInt32(c * KS_STRIDE)),
-                        ks_flat_layout,
-                    )
-                    ks_tma.async_copy_elect(
-                        ks_dst, k_full[s], (Int(ks_row0), Int(ks_blk)), e
-                    )
-
-            # Item stream: publish the item into the next Q slot, stream its K
-            # tiles, steal the next one. A zero-tile sentinel ends the stream for
-            # the MMA and the consumers.
-            #
-            # One K loop for the whole stream. `kp_state` starts pre-flipped, so
-            # a slot's first-lap `k_empty` wait falls through on the fresh
-            # barrier; after that it is the refill wait, across items as within
-            # one.
-            var q_state = PipelineState[Q_SLOTS](0, 1, 0)
-            while True:
-                var qslot = q_state.index()
-                q_empty[qslot].wait(q_state.phase())
-                # The consumers read the slot's q-scales with `LDS` (generic
-                # proxy) before arriving; the TMA below rewrites it through the
-                # async proxy. Same hazard as the K ring.
-                fence_async_view_proxy()
-                var ks_off = Int32(
-                    ks_operand.row_idx(
-                        UInt32(b),
-                        UInt32(tile_begin * Int32(BM_key * pool_row_tokens)),
-                    )
-                    & UInt32(KS_ALIGN - 1)
-                )
-                # Stored by the lane that arrives below: each `arrive.expect_tx`
-                # is a release, so it publishes the record to whoever waits that
-                # barrier.
-                if e != 0:
-                    md_smem.unsafe_offset(
-                        qslot * UInt32(_MD_WORDS)
-                    ).unsafe_store[alignment=32](
-                        SIMD[DType.int32, _MD_WORDS](
-                            tok0,
-                            tok_hi,
-                            seq_len,
-                            num_keys,
-                            out_row0,
-                            tile_begin,
-                            n_tiles_local,
-                            ks_off,
-                        )
-                    )
-                var tok_row = Int(start_of_seq + tok0)
-                # Q and q-scales on SEPARATE barriers: the MMA needs only Q, and
-                # the consumers only the q-scales. MXFP4's block scales feed the
-                # MMA, so they ride Q's barrier.
-                expect_bytes_pred(
-                    q_full.unsafe_offset(qslot),
-                    Int32(q_bytes + (qs_bytes if FP4 else 0)),
-                    e,
-                )
-                q_tma.async_copy_3d_elect(
-                    TileTensor[
-                        dtype, type_of(q_flat_layout), address_space=.SHARED
-                    ](
-                        q_smem.unsafe_offset(qslot * UInt32(q_elems)),
-                        q_flat_layout,
-                    ),
-                    q_full[qslot],
-                    _q_tma_coords[Q_INTERLEAVE, num_heads](tok_row),
-                    e,
-                )
-                comptime if FP4:
-                    qsf_tma.async_copy_elect(
+                    qs_tma.async_copy_elect(
                         TileTensor[
                             DType.float32,
                             type_of(qs_flat_layout),
                             address_space=.SHARED,
                         ](
-                            (
-                                qsf_smem.unsafe_offset(
-                                    qslot * UInt32(QSF_WORDS)
-                                )
-                            ).unsafe_bitcast[Float32](),
+                            qs_smem.unsafe_offset(qslot * UInt32(MMA_N)),
                             qs_flat_layout,
                         ),
-                        q_full[qslot],
+                        qs_full[qslot],
                         (0, tok_row),
                         e,
                     )
-                expect_bytes_pred(
-                    qs_full.unsafe_offset(qslot), Int32(qs_bytes), e
-                )
-                qs_tma.async_copy_elect(
-                    TileTensor[
-                        DType.float32,
-                        type_of(qs_flat_layout),
-                        address_space=.SHARED,
-                    ](
-                        qs_smem.unsafe_offset(qslot * UInt32(MMA_N)),
-                        qs_flat_layout,
-                    ),
-                    qs_full[qslot],
-                    (0, tok_row),
-                    e,
-                )
-                q_state.step()
-                for i in range(n_tiles_local):
-                    k_empty[kp_state.index()].wait(kp_state.phase())
-                    # Write-after-read across proxies: the consumers read this
-                    # slot's k-scales with `LDS` (generic proxy) before arriving,
-                    # and the refill below writes it through the async proxy. The
-                    # wait acquires their releases; this fence orders those reads
-                    # before the TMA write. One thread pays it, not 128.
-                    fence_async_view_proxy()
-                    issue_k(tile_begin + i, kp_state)
-                    kp_state.step()
-                # Claim the next item only now, once this CTA is nearly free: the
-                # K ring still holds up to `k_stages` of this item's tiles, which
-                # covers the response latency.
-                issue_cancel()
-                var nxt = resolve_steal(b, clc_phase)
-                if nxt.n_tiles <= 0:
-                    break
-                start_of_seq = nxt.start_of_seq
-                seq_len = nxt.seq_len
-                tok0 = nxt.tok0
-                tok_hi = nxt.tok_hi
-                out_row0 = nxt.out_row0
-                num_keys = nxt.num_keys
-                tile_begin = nxt.tile_begin
-                n_tiles_local = nxt.n_tiles
-            var qslot = q_state.index()
-            q_empty[qslot].wait(q_state.phase())
-            if e != 0:
-                md_smem[qslot * UInt32(_MD_WORDS) + UInt32(_MD_N_TILES)] = 0
-                _ = q_full[qslot].arrive()
-                _ = qs_full[qslot].arrive()
-        elif wid == XPOSE_WARP:
-            warpgroup_reg_dealloc[CFG.reg_producer]()
-            # The slot lands token-major, `[t * num_heads + h]`, as `q_s`
-            # stores it; the interleaved fold wants column order `h * T + t`.
-            # Permuting at the hoist instead puts the two columns of each
-            # `FFMA2` in two different loads, and ptxas then re-pairs them with
-            # ~88 moves on EVERY tile (measured 1.16x geomean slower). Done by
-            # the consumers it costs two named barriers per item on their
-            # critical path; here it runs while they fold the previous item,
-            # measured 1-2% faster on prefill.
-            # One warp needs no barrier between its reads and its writes:
-            # `syncwarp` orders them, so the permute stays in place.
-            comptime if Q_INTERLEAVE:
-                comptime PER_LANE = ceildiv(MMA_N, WARP_SIZE)
-                var lane = Int(lane_id())
-                var q_state = PipelineState[Q_SLOTS]()
-                # The consumers transpose the first item, which is never the
-                # sentinel: an empty CTA returns before any role starts. Still
-                # arrive for it, unread: `qs_ready` must complete once per item,
-                # or slot 0's barrier runs a phase behind the slot and its
-                # second item waits on a parity that never completes.
-                #
-                # And still WAIT for it: a parity wait cannot tell "phase 1
-                # done" from "phase 0 not yet done", so if this warp first met
-                # `qs_full[0]` at the slot's NEXT item, it would pass while the
-                # first item's TMA is still in flight and take the first item
-                # for that one -- transposing it under the consumers and
-                # handing them its stale metadata.
-                qs_full[0].wait(0)
-                _ = qs_ready[0].arrive()
-                q_state.step()
-                while True:
-                    var qslot = q_state.index()
-                    qs_full[qslot].wait(q_state.phase())
-                    if (
-                        md_smem[qslot * UInt32(_MD_WORDS) + UInt32(_MD_N_TILES)]
-                        == 0
-                    ):
-                        _ = qs_ready[qslot].arrive()
-                        break
-                    var qs_slot = qs_smem.unsafe_offset(qslot * UInt32(MMA_N))
-                    var v = SIMD[DType.float32, next_power_of_two(PER_LANE)](0)
-                    comptime for i in range(PER_LANE):
-                        var src = lane + i * WARP_SIZE
-                        if (i + 1) * WARP_SIZE <= MMA_N or src < MMA_N:
-                            v[i] = qs_slot[src]
-                    syncwarp()
-                    comptime for i in range(PER_LANE):
-                        var src = lane + i * WARP_SIZE
-                        if (i + 1) * WARP_SIZE <= MMA_N or src < MMA_N:
-                            qs_slot[
-                                (src % num_heads) * N_TOKENS + src // num_heads
-                            ] = v[i]
-                    _ = qs_ready[qslot].arrive()
                     q_state.step()
-        else:
-            # Idle warp, and the ONLY reason it is launched: it must
-            # dealloc the SAME count as the working warps, because
-            # `setmaxnreg.sync.aligned` is warpgroup-collective and a differing
-            # operand within the producer warpgroup is UB.
-            warpgroup_reg_dealloc[CFG.reg_producer]()
+                    for i in range(n_tiles_local):
+                        k_empty[kp_state.index()].wait(kp_state.phase())
+                        # Write-after-read across proxies: the consumers read this
+                        # slot's k-scales with `LDS` (generic proxy) before arriving,
+                        # and the refill below writes it through the async proxy. The
+                        # wait acquires their releases; this fence orders those reads
+                        # before the TMA write. One thread pays it, not 128.
+                        fence_async_view_proxy()
+                        issue_k(tile_begin + i, kp_state)
+                        kp_state.step()
+                    # Claim the next item only now, once this CTA is nearly free: the
+                    # K ring still holds up to `k_stages` of this item's tiles, which
+                    # covers the response latency.
+                    issue_cancel()
+                    var nxt = resolve_steal(b, clc_phase)
+                    if nxt.n_tiles <= 0:
+                        break
+                    start_of_seq = nxt.start_of_seq
+                    seq_len = nxt.seq_len
+                    tok0 = nxt.tok0
+                    tok_hi = nxt.tok_hi
+                    out_row0 = nxt.out_row0
+                    num_keys = nxt.num_keys
+                    tile_begin = nxt.tile_begin
+                    n_tiles_local = nxt.n_tiles
+                var qslot = q_state.index()
+                q_empty[qslot].wait(q_state.phase())
+                if e != 0:
+                    md_smem[qslot * UInt32(_MD_WORDS) + UInt32(_MD_N_TILES)] = 0
+                    _ = q_full[qslot].arrive()
+                    _ = qs_full[qslot].arrive()
+            elif wid == XPOSE_WARP:
+                warpgroup_reg_dealloc[CFG.reg_producer]()
+                # The slot lands token-major, `[t * num_heads + h]`, as `q_s`
+                # stores it; the interleaved fold wants column order `h * T + t`.
+                # Permuting at the hoist instead puts the two columns of each
+                # `FFMA2` in two different loads, and ptxas then re-pairs them with
+                # ~88 moves on EVERY tile (measured 1.16x geomean slower). Done by
+                # the consumers it costs two named barriers per item on their
+                # critical path; here it runs while they fold the previous item,
+                # measured 1-2% faster on prefill.
+                # One warp needs no barrier between its reads and its writes:
+                # `syncwarp` orders them, so the permute stays in place.
+                comptime if Q_INTERLEAVE:
+                    comptime PER_LANE = ceildiv(MMA_N, WARP_SIZE)
+                    var lane = Int(lane_id())
+                    var q_state = PipelineState[Q_SLOTS]()
+                    # The consumers transpose the first item, which is never the
+                    # sentinel: an empty CTA returns before any role starts. Still
+                    # arrive for it, unread: `qs_ready` must complete once per item,
+                    # or slot 0's barrier runs a phase behind the slot and its
+                    # second item waits on a parity that never completes.
+                    #
+                    # And still WAIT for it: a parity wait cannot tell "phase 1
+                    # done" from "phase 0 not yet done", so if this warp first met
+                    # `qs_full[0]` at the slot's NEXT item, it would pass while the
+                    # first item's TMA is still in flight and take the first item
+                    # for that one -- transposing it under the consumers and
+                    # handing them its stale metadata.
+                    qs_full[0].wait(0)
+                    _ = qs_ready[0].arrive()
+                    q_state.step()
+                    while True:
+                        var qslot = q_state.index()
+                        qs_full[qslot].wait(q_state.phase())
+                        if (
+                            md_smem[
+                                qslot * UInt32(_MD_WORDS) + UInt32(_MD_N_TILES)
+                            ]
+                            == 0
+                        ):
+                            _ = qs_ready[qslot].arrive()
+                            break
+                        var qs_slot = qs_smem.unsafe_offset(
+                            qslot * UInt32(MMA_N)
+                        )
+                        var v = SIMD[
+                            DType.float32, next_power_of_two(PER_LANE)
+                        ](0)
+                        comptime for i in range(PER_LANE):
+                            var src = lane + i * WARP_SIZE
+                            if (i + 1) * WARP_SIZE <= MMA_N or src < MMA_N:
+                                v[i] = qs_slot[src]
+                        syncwarp()
+                        comptime for i in range(PER_LANE):
+                            var src = lane + i * WARP_SIZE
+                            if (i + 1) * WARP_SIZE <= MMA_N or src < MMA_N:
+                                qs_slot[
+                                    (src % num_heads) * N_TOKENS
+                                    + src // num_heads
+                                ] = v[i]
+                        _ = qs_ready[qslot].arrive()
+                        q_state.step()
+            else:
+                # Idle warp, and the ONLY reason it is launched: it must
+                # dealloc the SAME count as the working warps, because
+                # `setmaxnreg.sync.aligned` is warpgroup-collective and a differing
+                # operand within the producer warpgroup is UB.
+                warpgroup_reg_dealloc[CFG.reg_producer]()
 
 
 # Route a shape here when a sequence spans at least this many token blocks: the
@@ -3072,4 +3113,5 @@ def fp8_index_score_sm100_prefill[
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(smem_bytes)
         ),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )

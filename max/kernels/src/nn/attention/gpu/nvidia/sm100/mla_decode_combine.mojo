@@ -48,16 +48,13 @@ from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from nn.attention.mha_utils import OptionalPointer, as_optional_reg
 
 
-# The kernels below already wait on dependent grids and the decode producer
-# already triggers them, but neither has an effect unless the consumer launch
-# opts in. Opting in makes that whole contract live for the first time, and a
-# rare illegal-address abort at context teardown tracks with it, so the level
-# stays off until the mechanism is settled. Enabling it is a source edit: the
-# define cannot be set through the build, because the package that reads it is
-# precompiled and `mojo precompile` takes no `-D`.
-comptime MLA_DECODE_COMBINE_PDL_LEVEL = PDLLevel.OVERLAP_AT_END if get_defined_bool[
-    "MLA_DECODE_COMBINE_PDL", False
-]() else PDLLevel.OFF
+# PDL for the MLA decode -> combine chain is always on: both launches attach
+# `pdl_launch_attributes(PDLLevel.ON)` unconditionally and both kernels wait on
+# their predecessors before touching their inputs. Historically this chain was
+# opt-in through the `MLA_DECODE_COMBINE_PDL` define (then: a rare
+# illegal-address abort at context teardown tracked with it). The define cannot
+# be set through the build anyway, because this package is precompiled and
+# `mojo precompile` takes no `-D`, so enabling it was always a source edit.
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1051,7 +1048,7 @@ def launch_mla_combine_kernel_split_parallel[
         params,
         grid_dim=grid_dim,
         block_dim=block_dim,
-        attributes=pdl_launch_attributes(MLA_DECODE_COMBINE_PDL_LEVEL),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 
@@ -1173,7 +1170,7 @@ def launch_mla_combine_kernel[
         params,
         grid_dim=grid_dim,
         block_dim=block_dim,
-        attributes=pdl_launch_attributes(MLA_DECODE_COMBINE_PDL_LEVEL),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 

@@ -30,6 +30,11 @@ from std.math.uutils import udivmod
 from std.sys.info import size_of
 from max.gpu import block_dim, block_idx, global_idx, thread_idx
 from max.gpu.host import DeviceContext
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from layout import Coord, TensorEngine, TensorLayout, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.matmul.gpu.apple import ConvIm2colParams, enqueue_apple_conv2d
@@ -96,37 +101,39 @@ def _im2col_nhwc_kernel[
     var _m_offset = Int(m_offset)
     var _m_count = Int(m_count)
     var local_m = block_idx.x
-    if local_m >= _m_count:
-        return
 
-    var K = _R * _S * _C
-    var m = _m_offset + local_m
+    with PDL():
+        if local_m >= _m_count:
+            return
 
-    # Per-block decomposition (amortized across block_dim threads).
-    var HW_out = _H_out * _W_out
-    var batch, spatial = udivmod(m, HW_out)
-    var h_out, w_out = udivmod(spatial, _W_out)
+        var K = _R * _S * _C
+        var m = _m_offset + local_m
 
-    var h_in_base = h_out * _stride_h - _pad_h
-    var w_in_base = w_out * _stride_w - _pad_w
+        # Per-block decomposition (amortized across block_dim threads).
+        var HW_out = _H_out * _W_out
+        var batch, spatial = udivmod(m, HW_out)
+        var h_out, w_out = udivmod(spatial, _W_out)
 
-    var SC = _S * _C
+        var h_in_base = h_out * _stride_h - _pad_h
+        var w_in_base = w_out * _stride_w - _pad_w
 
-    var row_base = local_m * K
-    var k = thread_idx.x
-    while k < K:
-        var r, sc = udivmod(k, SC)
-        var s, c = udivmod(sc, _C)
+        var SC = _S * _C
 
-        var h_in = h_in_base + r
-        var w_in = w_in_base + s
+        var row_base = local_m * K
+        var k = thread_idx.x
+        while k < K:
+            var r, sc = udivmod(k, SC)
+            var s, c = udivmod(sc, _C)
 
-        var val = Scalar[dtype](0)
-        if 0 <= h_in < _H and 0 <= w_in < _W:
-            val = input.load((batch, h_in, w_in, c))[0]
+            var h_in = h_in_base + r
+            var w_in = w_in_base + s
 
-        output_ptr.unsafe_store(row_base + k, val)
-        k += block_dim.x
+            var val = Scalar[dtype](0)
+            if 0 <= h_in < _H and 0 <= w_in < _W:
+                val = input.load((batch, h_in, w_in, c))[0]
+
+            output_ptr.unsafe_store(row_base + k, val)
+            k += block_dim.x
 
 
 @__name(t"conv2d_transpose_filter_to_nk_{dtype}_{filter_is_fcrs}")
@@ -153,21 +160,23 @@ def _transpose_filter_to_nk[
     var K = _R * _S * _C
     var total = _F * K
     var tid = global_idx.x
-    if tid >= total:
-        return
 
-    var f, k = udivmod(tid, K)
+    with PDL():
+        if tid >= total:
+            return
 
-    var SC = _S * _C
-    var r, sc = udivmod(k, SC)
-    var s, c = udivmod(sc, _C)
+        var f, k = udivmod(tid, K)
 
-    var val: Scalar[dtype]
-    comptime if filter_is_fcrs:
-        val = src.load((f, c, r, s))[0]
-    else:
-        val = src.load((r, s, c, f))[0]
-    dst_ptr.unsafe_store(tid, val)
+        var SC = _S * _C
+        var r, sc = udivmod(k, SC)
+        var s, c = udivmod(sc, _C)
+
+        var val: Scalar[dtype]
+        comptime if filter_is_fcrs:
+            val = src.load((f, c, r, s))[0]
+        else:
+            val = src.load((r, s, c, f))[0]
+        dst_ptr.unsafe_store(tid, val)
 
 
 # =========================================================================
@@ -343,6 +352,7 @@ def dispatch_im2col_matmul_conv2d[
         Int32(F_dim),
         grid_dim=transpose_grid,
         block_dim=transpose_block,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
     # If multiple tiles are needed, equalize to avoid a tiny ragged tail
@@ -394,6 +404,7 @@ def dispatch_im2col_matmul_conv2d[
             Int32(m_count),
             grid_dim=m_count,
             block_dim=im2col_block,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
         var a_tt = TileTensor(im2col_ptr, row_major(m_count, K))

@@ -23,6 +23,11 @@ operations).
 """
 from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext, DeviceAttribute
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from layout import TensorEngine, TensorLayout, TileTensor
 from std.math import ceil, ceildiv
 from std.utils.numerics import min_or_neg_inf
@@ -83,126 +88,129 @@ def roi_align_kernel[
     var start_row = block_idx.x * _rows_per_block
     var end_row = min(start_row + _rows_per_block, _total_rows)
 
-    for row in range(start_row + thread_idx.y, end_row, rows_per_iter):
-        var ri = row // (_pooled_height * _pooled_width)
-        var rem = row % (_pooled_height * _pooled_width)
-        var ph = rem // _pooled_width
-        var pw = rem % _pooled_width
+    with PDL():
+        for row in range(start_row + thread_idx.y, end_row, rows_per_iter):
+            var ri = row // (_pooled_height * _pooled_width)
+            var rem = row % (_pooled_height * _pooled_width)
+            var ph = rem // _pooled_width
+            var pw = rem % _pooled_width
 
-        # Region coordinates and batch index.
-        var roi_batch_idx = Int(rois_tensor[ri, 0][0])
-        var roi_start_w = Float32(rois_tensor[ri, 1][0]) * spatial_scale
-        var roi_start_h = Float32(rois_tensor[ri, 2][0]) * spatial_scale
-        var roi_end_w = Float32(rois_tensor[ri, 3][0]) * spatial_scale
-        var roi_end_h = Float32(rois_tensor[ri, 4][0]) * spatial_scale
-        comptime offset = Float32(0.5 if aligned else 0.0)
-        roi_start_w -= offset
-        roi_start_h -= offset
-        roi_end_w -= offset
-        roi_end_h -= offset
+            # Region coordinates and batch index.
+            var roi_batch_idx = Int(rois_tensor[ri, 0][0])
+            var roi_start_w = Float32(rois_tensor[ri, 1][0]) * spatial_scale
+            var roi_start_h = Float32(rois_tensor[ri, 2][0]) * spatial_scale
+            var roi_end_w = Float32(rois_tensor[ri, 3][0]) * spatial_scale
+            var roi_end_h = Float32(rois_tensor[ri, 4][0]) * spatial_scale
+            comptime offset = Float32(0.5 if aligned else 0.0)
+            roi_start_w -= offset
+            roi_start_h -= offset
+            roi_end_w -= offset
+            roi_end_h -= offset
 
-        var roi_height = roi_end_h - roi_start_h if aligned else max(
-            roi_end_h - roi_start_h, 1.0
-        )
-        var roi_width = roi_end_w - roi_start_w if aligned else max(
-            roi_end_w - roi_start_w, 1.0
-        )
+            var roi_height = roi_end_h - roi_start_h if aligned else max(
+                roi_end_h - roi_start_h, 1.0
+            )
+            var roi_width = roi_end_w - roi_start_w if aligned else max(
+                roi_end_w - roi_start_w, 1.0
+            )
 
-        var bin_size_h = roi_height / Float32(_pooled_height)
-        var bin_size_w = roi_width / Float32(_pooled_width)
+            var bin_size_h = roi_height / Float32(_pooled_height)
+            var bin_size_w = roi_width / Float32(_pooled_width)
 
-        var roi_bin_grid_h = Int(
-            sampling_ratio if sampling_ratio > 0 else ceil(bin_size_h)
-        )
-        var roi_bin_grid_w = Int(
-            sampling_ratio if sampling_ratio > 0 else ceil(bin_size_w)
-        )
-        var pool_elemn_num = max(roi_bin_grid_h * roi_bin_grid_w, 1)
+            var roi_bin_grid_h = Int(
+                sampling_ratio if sampling_ratio > 0 else ceil(bin_size_h)
+            )
+            var roi_bin_grid_w = Int(
+                sampling_ratio if sampling_ratio > 0 else ceil(bin_size_w)
+            )
+            var pool_elemn_num = max(roi_bin_grid_h * roi_bin_grid_w, 1)
 
-        for c in range(thread_idx.x, channels, block_dim.x):
-            var pool_val: Scalar[dtype]
-            comptime if mode == "AVG":
-                pool_val = 0
-            else:
-                pool_val = min_or_neg_inf[dtype]()
+            for c in range(thread_idx.x, channels, block_dim.x):
+                var pool_val: Scalar[dtype]
+                comptime if mode == "AVG":
+                    pool_val = 0
+                else:
+                    pool_val = min_or_neg_inf[dtype]()
 
-            for iy in range(roi_bin_grid_h):
-                for ix in range(roi_bin_grid_w):
-                    # Map (ph, pw, iy, ix) into the input plane.
-                    var y = (
-                        roi_start_h
-                        + Float32(ph) * bin_size_h
-                        + (Float32(iy) + Float32(0.5))
-                        * bin_size_h
-                        / Float32(roi_bin_grid_h)
-                    )
-                    var x = (
-                        roi_start_w
-                        + Float32(pw) * bin_size_w
-                        + (Float32(ix) + Float32(0.5))
-                        * bin_size_w
-                        / Float32(roi_bin_grid_w)
-                    )
-
-                    if not (Float32(-1.0) <= y <= Float32(height)) or not (
-                        Float32(-1.0) <= x <= Float32(width)
-                    ):
-                        continue
-
-                    y = max(y, 0)
-                    x = max(x, 0)
-
-                    var y_low = min(Int(y), height - 1)
-                    var x_low = min(Int(x), width - 1)
-                    var y_high = min(y_low + 1, height - 1)
-                    var x_high = min(x_low + 1, width - 1)
-
-                    var ly = y - Float32(y_low)
-                    var lx = x - Float32(x_low)
-                    var hy = 1.0 - ly
-                    var hx = 1.0 - lx
-
-                    var w1 = hy * hx
-                    var w2 = hy * lx
-                    var w3 = ly * hx
-                    var w4 = ly * lx
-
-                    var v1 = rebind[Scalar[dtype]](
-                        input_tensor.load((roi_batch_idx, y_low, x_low, c))
-                    )
-                    var v2 = rebind[Scalar[dtype]](
-                        input_tensor.load((roi_batch_idx, y_low, x_high, c))
-                    )
-                    var v3 = rebind[Scalar[dtype]](
-                        input_tensor.load((roi_batch_idx, y_high, x_low, c))
-                    )
-                    var v4 = rebind[Scalar[dtype]](
-                        input_tensor.load((roi_batch_idx, y_high, x_high, c))
-                    )
-
-                    comptime if mode == "AVG":
-                        pool_val = pool_val + (Scalar[dtype](w1) * v1)
-                        pool_val = pool_val + (Scalar[dtype](w2) * v2)
-                        pool_val = pool_val + (Scalar[dtype](w3) * v3)
-                        pool_val = pool_val + (Scalar[dtype](w4) * v4)
-                    else:
-                        pool_val = max(
-                            pool_val,
-                            max(
-                                max(
-                                    Scalar[dtype](w1) * v1,
-                                    Scalar[dtype](w2) * v2,
-                                ),
-                                max(
-                                    Scalar[dtype](w3) * v3,
-                                    Scalar[dtype](w4) * v4,
-                                ),
-                            ),
+                for iy in range(roi_bin_grid_h):
+                    for ix in range(roi_bin_grid_w):
+                        # Map (ph, pw, iy, ix) into the input plane.
+                        var y = (
+                            roi_start_h
+                            + Float32(ph) * bin_size_h
+                            + (Float32(iy) + Float32(0.5))
+                            * bin_size_h
+                            / Float32(roi_bin_grid_h)
+                        )
+                        var x = (
+                            roi_start_w
+                            + Float32(pw) * bin_size_w
+                            + (Float32(ix) + Float32(0.5))
+                            * bin_size_w
+                            / Float32(roi_bin_grid_w)
                         )
 
-            comptime if mode == "AVG":
-                pool_val = pool_val / Scalar[dtype](pool_elemn_num)
-            output_tensor.store((ri, ph, pw, c), pool_val)
+                        if not (Float32(-1.0) <= y <= Float32(height)) or not (
+                            Float32(-1.0) <= x <= Float32(width)
+                        ):
+                            continue
+
+                        y = max(y, 0)
+                        x = max(x, 0)
+
+                        var y_low = min(Int(y), height - 1)
+                        var x_low = min(Int(x), width - 1)
+                        var y_high = min(y_low + 1, height - 1)
+                        var x_high = min(x_low + 1, width - 1)
+
+                        var ly = y - Float32(y_low)
+                        var lx = x - Float32(x_low)
+                        var hy = 1.0 - ly
+                        var hx = 1.0 - lx
+
+                        var w1 = hy * hx
+                        var w2 = hy * lx
+                        var w3 = ly * hx
+                        var w4 = ly * lx
+
+                        var v1 = rebind[Scalar[dtype]](
+                            input_tensor.load((roi_batch_idx, y_low, x_low, c))
+                        )
+                        var v2 = rebind[Scalar[dtype]](
+                            input_tensor.load((roi_batch_idx, y_low, x_high, c))
+                        )
+                        var v3 = rebind[Scalar[dtype]](
+                            input_tensor.load((roi_batch_idx, y_high, x_low, c))
+                        )
+                        var v4 = rebind[Scalar[dtype]](
+                            input_tensor.load(
+                                (roi_batch_idx, y_high, x_high, c)
+                            )
+                        )
+
+                        comptime if mode == "AVG":
+                            pool_val = pool_val + (Scalar[dtype](w1) * v1)
+                            pool_val = pool_val + (Scalar[dtype](w2) * v2)
+                            pool_val = pool_val + (Scalar[dtype](w3) * v3)
+                            pool_val = pool_val + (Scalar[dtype](w4) * v4)
+                        else:
+                            pool_val = max(
+                                pool_val,
+                                max(
+                                    max(
+                                        Scalar[dtype](w1) * v1,
+                                        Scalar[dtype](w2) * v2,
+                                    ),
+                                    max(
+                                        Scalar[dtype](w3) * v3,
+                                        Scalar[dtype](w4) * v4,
+                                    ),
+                                ),
+                            )
+
+                comptime if mode == "AVG":
+                    pool_val = pool_val / Scalar[dtype](pool_elemn_num)
+                output_tensor.store((ri, ph, pw, c), pool_val)
 
 
 def _roi_align_impl[
@@ -272,6 +280,7 @@ def _roi_align_impl[
         Int32(total_rows),
         grid_dim=(linear_block_count),
         block_dim=(threads_per_row, block_rows),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 

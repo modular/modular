@@ -41,6 +41,11 @@ from std.sys import size_of
 from max.gpu import WARP_SIZE
 from max.gpu.sync import barrier
 from max.gpu.primitives.cluster import cluster_sync, elect_one_sync
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from max.gpu.memory import external_memory, fence_mbarrier_init
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.sync import syncwarp
@@ -727,21 +732,22 @@ struct Conv2dFpropKernel[
             cluster_dim: Cluster dimensions.
             mnk: GEMM dimensions (M, N, K).
         """
-        Self._run_impl[
-            has_residual=False,
-            _src_tile_shape=Self.OutTmaOp.tile_shape,
-            _src_desc_shape=Self.OutTmaOp.desc_shape,
-        ](
-            act_tma_op,
-            filter_tma_op,
-            out_tma_op,
-            out_tma_op,  # Unused dummy for src_tma_op
-            cluster_dim,
-            mnk,
-            Float32(0.0),
-            identity_compute_fn,
-            no_epilogue_fn,
-        )
+        with PDL():
+            Self._run_impl[
+                has_residual=False,
+                _src_tile_shape=Self.OutTmaOp.tile_shape,
+                _src_desc_shape=Self.OutTmaOp.desc_shape,
+            ](
+                act_tma_op,
+                filter_tma_op,
+                out_tma_op,
+                out_tma_op,  # Unused dummy for src_tma_op
+                cluster_dim,
+                mnk,
+                Float32(0.0),
+                identity_compute_fn,
+                no_epilogue_fn,
+            )
 
     @staticmethod
     @inline(.always)
@@ -781,22 +787,23 @@ struct Conv2dFpropKernel[
             mnk: GEMM dimensions (M, N, K).
             compute_fn: Element-wise epilogue applied to each output value.
         """
-        Self._run_impl[
-            has_residual=False,
-            has_compute_fn=True,
-            _src_tile_shape=Self.OutTmaOp.tile_shape,
-            _src_desc_shape=Self.OutTmaOp.desc_shape,
-        ](
-            act_tma_op,
-            filter_tma_op,
-            out_tma_op,
-            out_tma_op,  # Unused dummy for src_tma_op
-            cluster_dim,
-            mnk,
-            Float32(0.0),
-            compute_fn,
-            no_epilogue_fn,
-        )
+        with PDL():
+            Self._run_impl[
+                has_residual=False,
+                has_compute_fn=True,
+                _src_tile_shape=Self.OutTmaOp.tile_shape,
+                _src_desc_shape=Self.OutTmaOp.desc_shape,
+            ](
+                act_tma_op,
+                filter_tma_op,
+                out_tma_op,
+                out_tma_op,  # Unused dummy for src_tma_op
+                cluster_dim,
+                mnk,
+                Float32(0.0),
+                compute_fn,
+                no_epilogue_fn,
+            )
 
     @staticmethod
     @inline(.always)
@@ -836,22 +843,23 @@ struct Conv2dFpropKernel[
             mnk: GEMM dimensions (M, N, K).
             epilogue_fn: Elementwise epilogue that stores each output value.
         """
-        Self._run_impl[
-            has_residual=False,
-            has_epilogue_fn=True,
-            _src_tile_shape=Self.OutTmaOp.tile_shape,
-            _src_desc_shape=Self.OutTmaOp.desc_shape,
-        ](
-            act_tma_op,
-            filter_tma_op,
-            out_tma_op,
-            out_tma_op,  # Unused dummy for src_tma_op
-            cluster_dim,
-            mnk,
-            Float32(0.0),
-            identity_compute_fn,
-            epilogue_fn,
-        )
+        with PDL():
+            Self._run_impl[
+                has_residual=False,
+                has_epilogue_fn=True,
+                _src_tile_shape=Self.OutTmaOp.tile_shape,
+                _src_desc_shape=Self.OutTmaOp.desc_shape,
+            ](
+                act_tma_op,
+                filter_tma_op,
+                out_tma_op,
+                out_tma_op,  # Unused dummy for src_tma_op
+                cluster_dim,
+                mnk,
+                Float32(0.0),
+                identity_compute_fn,
+                epilogue_fn,
+            )
 
     @staticmethod
     @inline(.always)
@@ -889,21 +897,22 @@ struct Conv2dFpropKernel[
             mnk: GEMM dimensions (M, N, K).
             beta: Residual scale factor.
         """
-        Self._run_impl[
-            has_residual=True,
-            _src_tile_shape=Self.SrcTmaOp.tile_shape,
-            _src_desc_shape=Self.SrcTmaOp.desc_shape,
-        ](
-            act_tma_op,
-            filter_tma_op,
-            out_tma_op,
-            src_tma_op,
-            cluster_dim,
-            mnk,
-            beta,
-            identity_compute_fn,
-            no_epilogue_fn,
-        )
+        with PDL():
+            Self._run_impl[
+                has_residual=True,
+                _src_tile_shape=Self.SrcTmaOp.tile_shape,
+                _src_desc_shape=Self.SrcTmaOp.desc_shape,
+            ](
+                act_tma_op,
+                filter_tma_op,
+                out_tma_op,
+                src_tma_op,
+                cluster_dim,
+                mnk,
+                beta,
+                identity_compute_fn,
+                no_epilogue_fn,
+            )
 
     @staticmethod
     @inline(.always)
@@ -949,22 +958,23 @@ struct Conv2dFpropKernel[
             epilogue_fn: Elementwise epilogue that stores each output value
                 after the residual add.
         """
-        Self._run_impl[
-            has_residual=True,
-            has_epilogue_fn=True,
-            _src_tile_shape=Self.SrcTmaOp.tile_shape,
-            _src_desc_shape=Self.SrcTmaOp.desc_shape,
-        ](
-            act_tma_op,
-            filter_tma_op,
-            out_tma_op,
-            src_tma_op,
-            cluster_dim,
-            mnk,
-            beta,
-            identity_compute_fn,
-            epilogue_fn,
-        )
+        with PDL():
+            Self._run_impl[
+                has_residual=True,
+                has_epilogue_fn=True,
+                _src_tile_shape=Self.SrcTmaOp.tile_shape,
+                _src_desc_shape=Self.SrcTmaOp.desc_shape,
+            ](
+                act_tma_op,
+                filter_tma_op,
+                out_tma_op,
+                src_tma_op,
+                cluster_dim,
+                mnk,
+                beta,
+                identity_compute_fn,
+                epilogue_fn,
+            )
 
     # ========== Unified Kernel Implementation ==========
 

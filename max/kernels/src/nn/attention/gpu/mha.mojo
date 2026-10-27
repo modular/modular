@@ -37,6 +37,7 @@ from std.sys import (
 from std.sys.info import _is_amd_rdna
 import max.gpu.primitives.warp as warp
 from max.gpu.primitives.grid_controls import (
+    PDL,
     PDLLevel,
     launch_dependent_grids,
     pdl_launch_attributes,
@@ -1552,6 +1553,7 @@ def flash_attention_dispatch[
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                         UInt32(smem_use)
                     ),
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
         # FA3 decoding impl only support half precision, while fp32 is supported
         # for fp32 as well.
@@ -1877,6 +1879,9 @@ def flash_attention_dispatch[
                                                     - 4096
                                                 ) if ctx.target.is_nvidia_gpu() else 0
                                             )
+                                        ),
+                                        attributes=pdl_launch_attributes(
+                                            PDLLevel.ON
                                         ),
                                     )
                                     return True
@@ -2743,158 +2748,159 @@ def mha[
         return block_idx.x if is_nvidia_gpu() else block_idx.y
 
     var q_batch_offset: Int
-    comptime if ragged:
-        # treat valid_lengths as a input_row_offsets
-        var start_of_seq = Int(valid_length[batch_idx])
-        var end_of_seq = Int(valid_length[batch_idx + 1])
-        seq_len = end_of_seq - start_of_seq
+    with PDL():
+        comptime if ragged:
+            # treat valid_lengths as a input_row_offsets
+            var start_of_seq = Int(valid_length[batch_idx])
+            var end_of_seq = Int(valid_length[batch_idx + 1])
+            seq_len = end_of_seq - start_of_seq
 
-        if seq_len < q_block_idx() * config.block_m():
-            return
+            if seq_len < q_block_idx() * config.block_m():
+                return
 
-        comptime if not _is_cache_length_accurate:
-            start_pos = UInt32(k.cache_length(batch_idx))
+            comptime if not _is_cache_length_accurate:
+                start_pos = UInt32(k.cache_length(batch_idx))
 
-        # this is used for cross attention where we get the num_keys
-        # from kv_input_row_offsets. This is when num_keys != seq_len
-        if case .Some(kv_row_offsets) = kv_input_row_offsets:
-            var kv_seq_start = Int(kv_row_offsets[batch_idx])
-            var kv_seq_end = Int(kv_row_offsets[batch_idx + 1])
-            var cur_kv_len = kv_seq_end - kv_seq_start
-            num_keys = cur_kv_len + Int(start_pos)
-        else:
-            num_keys = seq_len + Int(start_pos)
+            # this is used for cross attention where we get the num_keys
+            # from kv_input_row_offsets. This is when num_keys != seq_len
+            if case .Some(kv_row_offsets) = kv_input_row_offsets:
+                var kv_seq_start = Int(kv_row_offsets[batch_idx])
+                var kv_seq_end = Int(kv_row_offsets[batch_idx + 1])
+                var cur_kv_len = kv_seq_end - kv_seq_start
+                num_keys = cur_kv_len + Int(start_pos)
+            else:
+                num_keys = seq_len + Int(start_pos)
 
-        q_batch_offset = start_of_seq * config.depth * config.num_heads
+            q_batch_offset = start_of_seq * config.depth * config.num_heads
 
-    # KVCache inputs, prompt lengths are all padded to the max in batch.
-    elif _use_valid_length and not _padded_ndbuffer:
-        # treat valid_lengths as valid lengths
-        seq_len = Int(valid_length[batch_idx])
-
-        if seq_len < q_block_idx() * config.block_m():
-            return
-
-        comptime if not _is_cache_length_accurate:
-            var cache_length = k.cache_length(batch_idx)
-            start_pos = UInt32(cache_length)
-
-        num_keys = seq_len + k.cache_length(batch_idx)
-        q_batch_offset = (
-            config.depth * config.num_heads * max_seq_len * batch_idx
-        )
-    # Dense tensor inputs, homogeneous and padded batching.
-    else:
-        comptime if _padded_ndbuffer:
+        # KVCache inputs, prompt lengths are all padded to the max in batch.
+        elif _use_valid_length and not _padded_ndbuffer:
+            # treat valid_lengths as valid lengths
             seq_len = Int(valid_length[batch_idx])
-            num_keys = seq_len
+
+            if seq_len < q_block_idx() * config.block_m():
+                return
+
+            comptime if not _is_cache_length_accurate:
+                var cache_length = k.cache_length(batch_idx)
+                start_pos = UInt32(cache_length)
+
+            num_keys = seq_len + k.cache_length(batch_idx)
+            q_batch_offset = (
+                config.depth * config.num_heads * max_seq_len * batch_idx
+            )
+        # Dense tensor inputs, homogeneous and padded batching.
         else:
-            seq_len = _seq_len_arg
-            num_keys = _num_keys_arg
+            comptime if _padded_ndbuffer:
+                seq_len = Int(valid_length[batch_idx])
+                num_keys = seq_len
+            else:
+                seq_len = _seq_len_arg
+                num_keys = _num_keys_arg
 
-        if seq_len < q_block_idx() * config.block_m():
-            return
-        q_batch_offset = (
-            config.depth * config.num_heads * max_seq_len * batch_idx
-        )
-
-        # When cache length (num_keys) is greater, we assume it has
-        # prefix preceding the input seq_len.
-        start_pos = UInt32(num_keys - seq_len)
-
-    comptime if is_nvidia_gpu():
-        comptime if is_shared_kv:
-            mha_single_batch_pipelined[
-                config=config,
-                group=group,
-                sink=sink,
-            ](
-                q_ptr.unsafe_offset(q_batch_offset),
-                k,
-                v,
-                output_ptr.unsafe_offset(q_batch_offset),
-                scale,
-                seq_len,
-                max_seq_len,
-                start_pos,
-                num_keys,
-                mask_tensor_col,
-                mask,
-                batch_idx,
-                sink_weights,
+            if seq_len < q_block_idx() * config.block_m():
+                return
+            q_batch_offset = (
+                config.depth * config.num_heads * max_seq_len * batch_idx
             )
+
+            # When cache length (num_keys) is greater, we assume it has
+            # prefix preceding the input seq_len.
+            start_pos = UInt32(num_keys - seq_len)
+
+        comptime if is_nvidia_gpu():
+            comptime if is_shared_kv:
+                mha_single_batch_pipelined[
+                    config=config,
+                    group=group,
+                    sink=sink,
+                ](
+                    q_ptr.unsafe_offset(q_batch_offset),
+                    k,
+                    v,
+                    output_ptr.unsafe_offset(q_batch_offset),
+                    scale,
+                    seq_len,
+                    max_seq_len,
+                    start_pos,
+                    num_keys,
+                    mask_tensor_col,
+                    mask,
+                    batch_idx,
+                    sink_weights,
+                )
+            else:
+                mha_single_batch[
+                    config=config,
+                    group=group,
+                    sink=sink,
+                ](
+                    q_ptr.unsafe_offset(q_batch_offset),
+                    k,
+                    v,
+                    output_ptr.unsafe_offset(q_batch_offset),
+                    scale,
+                    seq_len,
+                    max_seq_len,
+                    start_pos,
+                    num_keys,
+                    mask_tensor_col,
+                    mask,
+                    batch_idx,
+                    sink_weights,
+                )
+        elif is_amd_gpu():
+            # Single unified prefill kernel — handles BF16+FP8, any mask,
+            # depth∈{64,128,256,512}, with/without sink. Depth-supported asserts
+            # live in the kernel itself. Branches on `_is_amd_rdna()` because
+            # gfx950 (CDNA) and gfx11/12 (RDNA) need different fragment
+            # geometry / wave size / WMMA intrinsics.
+            var sink_weights_ptr = OptionalReg[
+                ImmPointer[Scalar[q_type], ImmutAnyOrigin]
+            ]()
+            comptime if sink:
+                sink_weights_ptr = sink_weights.value().ptr
+
+            comptime if _is_amd_rdna():
+                var attention = AttentionRDNA[config, group, sink](
+                    output_ptr.unsafe_offset(q_batch_offset),
+                    q_ptr.unsafe_offset(q_batch_offset),
+                    k,
+                    v,
+                    mask,
+                    sink_weights_ptr,
+                    batch_idx,
+                    scale,
+                    seq_len,
+                    num_keys,
+                    Int(start_pos),
+                )
+                attention.mha_prefill()
+            else:
+                # AMD CDNA prefill via FA2. The long-context `MhaPrefillV2` path
+                # is dispatched host-side from `flash_attention_dispatch` so the
+                # kernel keeps its tuned single-kernel register-allocation context
+                # (`def mha[]`'s body holding the FA2 fallback inflates spills when
+                # the kernel is inlined here — measured ~14% loss vs `MhaPrefillV2`
+                # as a top-level kernel).
+                var attention = Attention[config, group, sink](
+                    output_ptr.unsafe_offset(q_batch_offset),
+                    q_ptr.unsafe_offset(q_batch_offset),
+                    k,
+                    v,
+                    mask,
+                    sink_weights_ptr,
+                    batch_idx,
+                    scale,
+                    seq_len,
+                    num_keys,
+                    Int(start_pos),
+                )
+                attention.mha_prefill()
         else:
-            mha_single_batch[
-                config=config,
-                group=group,
-                sink=sink,
-            ](
-                q_ptr.unsafe_offset(q_batch_offset),
-                k,
-                v,
-                output_ptr.unsafe_offset(q_batch_offset),
-                scale,
-                seq_len,
-                max_seq_len,
-                start_pos,
-                num_keys,
-                mask_tensor_col,
-                mask,
-                batch_idx,
-                sink_weights,
-            )
-    elif is_amd_gpu():
-        # Single unified prefill kernel — handles BF16+FP8, any mask,
-        # depth∈{64,128,256,512}, with/without sink. Depth-supported asserts
-        # live in the kernel itself. Branches on `_is_amd_rdna()` because
-        # gfx950 (CDNA) and gfx11/12 (RDNA) need different fragment
-        # geometry / wave size / WMMA intrinsics.
-        var sink_weights_ptr = OptionalReg[
-            ImmPointer[Scalar[q_type], ImmutAnyOrigin]
-        ]()
-        comptime if sink:
-            sink_weights_ptr = sink_weights.value().ptr
-
-        comptime if _is_amd_rdna():
-            var attention = AttentionRDNA[config, group, sink](
-                output_ptr.unsafe_offset(q_batch_offset),
-                q_ptr.unsafe_offset(q_batch_offset),
-                k,
-                v,
-                mask,
-                sink_weights_ptr,
-                batch_idx,
-                scale,
-                seq_len,
-                num_keys,
-                Int(start_pos),
-            )
-            attention.mha_prefill()
-        else:
-            # AMD CDNA prefill via FA2. The long-context `MhaPrefillV2` path
-            # is dispatched host-side from `flash_attention_dispatch` so the
-            # kernel keeps its tuned single-kernel register-allocation context
-            # (`def mha[]`'s body holding the FA2 fallback inflates spills when
-            # the kernel is inlined here — measured ~14% loss vs `MhaPrefillV2`
-            # as a top-level kernel).
-            var attention = Attention[config, group, sink](
-                output_ptr.unsafe_offset(q_batch_offset),
-                q_ptr.unsafe_offset(q_batch_offset),
-                k,
-                v,
-                mask,
-                sink_weights_ptr,
-                batch_idx,
-                scale,
-                seq_len,
-                num_keys,
-                Int(start_pos),
-            )
-            attention.mha_prefill()
-    else:
-        CompilationTarget.unsupported_target_error[
-            operation=__get_current_function_name()
-        ]()
+            CompilationTarget.unsupported_target_error[
+                operation=__get_current_function_name()
+            ]()
 
 
 @__llvm_metadata(
@@ -6182,6 +6188,7 @@ def mha_gpu_naive[
             num_heads * batch_size,
         ),
         block_dim=_NAIVE_BMM_BLOCK_DIM,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
     def input_fn_device[
@@ -6222,6 +6229,7 @@ def mha_gpu_naive[
             num_heads * batch_size,
         ),
         block_dim=_NAIVE_BMM_BLOCK_DIM,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
     _ = p_device^

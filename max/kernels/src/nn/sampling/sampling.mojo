@@ -22,6 +22,11 @@ from max.algorithm.functional import elementwise
 from max.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_gpu
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from layout import TensorEngine, TensorLayout, TileTensor
 from nn._ragged_utils import get_batch_from_row_offsets
 
@@ -312,54 +317,57 @@ def update_frequency_data_kernel[
     var tid = thread_idx.x
     var batch_id = block_idx.x
 
-    var tok_start = Int(frequency_offsets.load[width=1]((batch_id,)))
-    var tok_end = Int(frequency_offsets.load[width=1]((batch_id + 1,)))
-    var new_token = new_tokens.load[width=1]((batch_id,)).cast[.int32]()
+    with PDL():
+        var tok_start = Int(frequency_offsets.load[width=1]((batch_id,)))
+        var tok_end = Int(frequency_offsets.load[width=1]((batch_id + 1,)))
+        var new_token = new_tokens.load[width=1]((batch_id,)).cast[.int32]()
 
-    var num_scans = ceildiv(tok_end - tok_start, block_size * simd_width)
+        var num_scans = ceildiv(tok_end - tok_start, block_size * simd_width)
 
-    # search if the new token is already in the frequency data
-    for scan_idx in range(num_scans):
-        var tok_idx = tok_start + ((tid + scan_idx * block_size) * simd_width)
+        # search if the new token is already in the frequency data
+        for scan_idx in range(num_scans):
+            var tok_idx = tok_start + (
+                (tid + scan_idx * block_size) * simd_width
+            )
 
-        var val = SIMD[.int32, simd_width](0)
+            var val = SIMD[.int32, simd_width](0)
 
-        comptime for i in range(simd_width):
-            if tok_idx + i < tok_end:
-                val[i] = compressed_frequency_data[tok_idx + i, 0][0]
-            else:
-                val[i] = Int32.MAX_FINITE
+            comptime for i in range(simd_width):
+                if tok_idx + i < tok_end:
+                    val[i] = compressed_frequency_data[tok_idx + i, 0][0]
+                else:
+                    val[i] = Int32.MAX_FINITE
 
-        var if_found = val.eq(new_token).select(
-            iota[.int32, simd_width](Int32(tok_idx)),
-            SIMD[.int32, simd_width](Int32.MIN_FINITE),
-        )
-        var first_padding_idx = val.eq(PADDING_TOKEN).select(
-            iota[.int32, simd_width](Int32(tok_idx)),
-            SIMD[.int32, simd_width](Int32.MAX_FINITE),
-        )
+            var if_found = val.eq(new_token).select(
+                iota[.int32, simd_width](Int32(tok_idx)),
+                SIMD[.int32, simd_width](Int32.MIN_FINITE),
+            )
+            var first_padding_idx = val.eq(PADDING_TOKEN).select(
+                iota[.int32, simd_width](Int32(tok_idx)),
+                SIMD[.int32, simd_width](Int32.MAX_FINITE),
+            )
 
-        var target_token_idx = block.max[block_size=block_size, broadcast=True](
-            if_found.reduce_max()
-        )
-        var padding_token_idx = block.min[
-            block_size=block_size, broadcast=True
-        ](first_padding_idx.reduce_min())
+            var target_token_idx = block.max[
+                block_size=block_size, broadcast=True
+            ](if_found.reduce_max())
+            var padding_token_idx = block.min[
+                block_size=block_size, broadcast=True
+            ](first_padding_idx.reduce_min())
 
-        if target_token_idx != Int32.MIN_FINITE:
-            # we found the target token, update the frequency data
-            if tid == 0:
-                compressed_frequency_data[Int(target_token_idx), 1] += 1
-            return
-        elif padding_token_idx != Int32.MAX_FINITE:
-            # we don't find the target token, but we found a padding token
-            if tid == 0:
-                var tidx = Int(padding_token_idx)
-                compressed_frequency_data.store(
-                    (tidx, 0), SIMD[new_token.dtype, 1](new_token)
-                )
-                compressed_frequency_data[Int(padding_token_idx), 1] = 1
-            return
+            if target_token_idx != Int32.MIN_FINITE:
+                # we found the target token, update the frequency data
+                if tid == 0:
+                    compressed_frequency_data[Int(target_token_idx), 1] += 1
+                return
+            elif padding_token_idx != Int32.MAX_FINITE:
+                # we don't find the target token, but we found a padding token
+                if tid == 0:
+                    var tidx = Int(padding_token_idx)
+                    compressed_frequency_data.store(
+                        (tidx, 0), SIMD[new_token.dtype, 1](new_token)
+                    )
+                    compressed_frequency_data[Int(padding_token_idx), 1] = 1
+                return
 
 
 def update_frequency_data[
@@ -424,6 +432,7 @@ def update_frequency_data[
             new_tokens.as_imm(),
             grid_dim=new_tokens.dim[0](),
             block_dim=block_size,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
     else:

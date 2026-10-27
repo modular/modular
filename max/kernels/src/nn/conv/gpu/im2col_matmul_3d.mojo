@@ -27,6 +27,11 @@ from std.math.uutils import udivmod
 from std.sys import align_of, simd_width_of, size_of
 from max.gpu import block_dim, block_idx, global_idx, thread_idx
 from max.gpu.host import DeviceContext
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from layout import (
     Coord,
     TensorLayout,
@@ -102,68 +107,70 @@ def _im2col_ndhwc_kernel[
     var _m_offset = Int(m_offset)
     var _m_count = Int(m_count)
     var local_m = block_idx.x
-    if local_m >= _m_count:
-        return
 
-    var batch_size = Int(input.dim[0]())
-    var D = Int(input.dim[1]())
-    var H = Int(input.dim[2]())
-    var W = Int(input.dim[3]())
+    with PDL():
+        if local_m >= _m_count:
+            return
 
-    # The filter and output are passed to this kernel to provide static shape
-    # information.
-    comptime assert filter.shape_known, "filter shape must be static"
+        var batch_size = Int(input.dim[0]())
+        var D = Int(input.dim[1]())
+        var H = Int(input.dim[2]())
+        var W = Int(input.dim[3]())
 
-    comptime Q = filter.static_shape[2 if filter_is_fcrs else 0]
-    comptime R = filter.static_shape[3 if filter_is_fcrs else 1]
-    comptime S = filter.static_shape[4 if filter_is_fcrs else 2]
-    comptime C = filter.static_shape[1 if filter_is_fcrs else 3]
-    comptime F = filter.static_shape[0 if filter_is_fcrs else 4]
+        # The filter and output are passed to this kernel to provide static shape
+        # information.
+        comptime assert filter.shape_known, "filter shape must be static"
 
-    comptime simd_width = gcd(simd_width_of[input_dtype](), C)
+        comptime Q = filter.static_shape[2 if filter_is_fcrs else 0]
+        comptime R = filter.static_shape[3 if filter_is_fcrs else 1]
+        comptime S = filter.static_shape[4 if filter_is_fcrs else 2]
+        comptime C = filter.static_shape[1 if filter_is_fcrs else 3]
+        comptime F = filter.static_shape[0 if filter_is_fcrs else 4]
 
-    var D_out = Int(output.dim[1]())
-    var H_out = Int(output.dim[2]())
-    var W_out = Int(output.dim[3]())
+        comptime simd_width = gcd(simd_width_of[input_dtype](), C)
 
-    var K = Q * R * S * C
-    var m = _m_offset + local_m
+        var D_out = Int(output.dim[1]())
+        var H_out = Int(output.dim[2]())
+        var W_out = Int(output.dim[3]())
 
-    # Per-block decomposition (amortized across block_dim threads).
-    var DHW_out = D_out * H_out * W_out
-    var HW_out = H_out * W_out
-    var batch, spatial = udivmod(m, DHW_out)
-    var d_out, rem = udivmod(spatial, HW_out)
-    var h_out, w_out = udivmod(rem, W_out)
+        var K = Q * R * S * C
+        var m = _m_offset + local_m
 
-    # Precompute the (stride, pad)-dependent input bases; within a block
-    # only (q, r, s, c) change across threads.
-    var d_in_base = d_out * _stride_d - _pad_d
-    var h_in_base = h_out * _stride_h - _pad_h
-    var w_in_base = w_out * _stride_w - _pad_w
+        # Per-block decomposition (amortized across block_dim threads).
+        var DHW_out = D_out * H_out * W_out
+        var HW_out = H_out * W_out
+        var batch, spatial = udivmod(m, DHW_out)
+        var d_out, rem = udivmod(spatial, HW_out)
+        var h_out, w_out = udivmod(rem, W_out)
 
-    var RSC = R * S * C
-    var SC = S * C
+        # Precompute the (stride, pad)-dependent input bases; within a block
+        # only (q, r, s, c) change across threads.
+        var d_in_base = d_out * _stride_d - _pad_d
+        var h_in_base = h_out * _stride_h - _pad_h
+        var w_in_base = w_out * _stride_w - _pad_w
 
-    var row_base = local_m * K
-    var k = thread_idx.x * simd_width
-    while k < K:
-        var q, rsc = udivmod(k, RSC)
-        var r, sc = udivmod(rsc, SC)
-        var s, c = udivmod(sc, C)
+        var RSC = R * S * C
+        var SC = S * C
 
-        var d_in = d_in_base + q
-        var h_in = h_in_base + r
-        var w_in = w_in_base + s
+        var row_base = local_m * K
+        var k = thread_idx.x * simd_width
+        while k < K:
+            var q, rsc = udivmod(k, RSC)
+            var r, sc = udivmod(rsc, SC)
+            var s, c = udivmod(sc, C)
 
-        var val = SIMD[input_dtype, simd_width](0)
-        if 0 <= d_in < D and 0 <= h_in < H and 0 <= w_in < W:
-            val = input.load[
-                width=simd_width, alignment=align_of[input_dtype]()
-            ](Coord(batch, d_in, h_in, w_in, c))
+            var d_in = d_in_base + q
+            var h_in = h_in_base + r
+            var w_in = w_in_base + s
 
-        im2col_ptr.unsafe_store(row_base + k, val)
-        k += block_dim.x * simd_width
+            var val = SIMD[input_dtype, simd_width](0)
+            if 0 <= d_in < D and 0 <= h_in < H and 0 <= w_in < W:
+                val = input.load[
+                    width=simd_width, alignment=align_of[input_dtype]()
+                ](Coord(batch, d_in, h_in, w_in, c))
+
+            im2col_ptr.unsafe_store(row_base + k, val)
+            k += block_dim.x * simd_width
 
 
 @__name(t"conv3d_transpose_qrscf_to_nk_{dtype}")
@@ -189,18 +196,20 @@ def _transpose_qrscf_to_nk[
     comptime K = Q * R * S * C
     comptime total = F * K
     var tid = global_idx.x
-    if tid >= total:
-        return
 
-    var f, k = udivmod(tid, K)
+    with PDL():
+        if tid >= total:
+            return
 
-    comptime RSC = R * S * C
-    comptime SC = S * C
-    var q, rsc = udivmod(k, RSC)
-    var r, sc = udivmod(rsc, SC)
-    var s, c = udivmod(sc, C)
+        var f, k = udivmod(tid, K)
 
-    dst_ptr.unsafe_store(tid, filter[q, r, s, c, f])
+        comptime RSC = R * S * C
+        comptime SC = S * C
+        var q, rsc = udivmod(k, RSC)
+        var r, sc = udivmod(rsc, SC)
+        var s, c = udivmod(sc, C)
+
+        dst_ptr.unsafe_store(tid, filter[q, r, s, c, f])
 
 
 @__name(t"conv3d_transpose_fcqrs_to_nk_{dtype}")
@@ -226,18 +235,20 @@ def _transpose_fcqrs_to_nk[
     comptime K = Q * R * S * C
     comptime total = F * K
     var tid = global_idx.x
-    if tid >= total:
-        return
 
-    var f, k = udivmod(tid, K)
+    with PDL():
+        if tid >= total:
+            return
 
-    comptime RSC = R * S * C
-    comptime SC = S * C
-    var q, rsc = udivmod(k, RSC)
-    var r, sc = udivmod(rsc, SC)
-    var s, c = udivmod(sc, C)
+        var f, k = udivmod(tid, K)
 
-    dst_ptr.unsafe_store(tid, filter[f, c, q, r, s])
+        comptime RSC = R * S * C
+        comptime SC = S * C
+        var q, rsc = udivmod(k, RSC)
+        var r, sc = udivmod(rsc, SC)
+        var s, c = udivmod(sc, C)
+
+        dst_ptr.unsafe_store(tid, filter[f, c, q, r, s])
 
 
 # =========================================================================
@@ -381,6 +392,7 @@ def dispatch_im2col_matmul_conv3d[
             filter_nk_buf,
             grid_dim=transpose_grid,
             block_dim=transpose_block,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
     else:
         ctx.enqueue_function[
@@ -392,6 +404,7 @@ def dispatch_im2col_matmul_conv3d[
             filter_nk_buf,
             grid_dim=transpose_grid,
             block_dim=transpose_block,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
     # --- Decide M-tile size so scratch stays bounded. ---
@@ -448,6 +461,7 @@ def dispatch_im2col_matmul_conv3d[
             Int32(_m_count),
             grid_dim=_m_count,
             block_dim=im2col_block,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
         var a_tt = TileTensor(im2col_buf, row_major(_m_count, K))

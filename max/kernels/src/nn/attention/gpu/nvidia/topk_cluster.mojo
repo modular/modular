@@ -88,6 +88,11 @@ from max.gpu.memory import (
 from max.gpu.intrinsics import Scope, byte_permute
 from max.gpu.sync import barrier, named_barrier, syncwarp
 import max.gpu.primitives.warp as warp
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     cluster_arrive_relaxed,
@@ -2520,9 +2525,10 @@ def _topk_cluster_kernel[
     K: Int32,
 ):
     """`_topk_cluster_impl` over the full row width `N`."""
-    _topk_cluster_impl[in_dtype, CS, TMA, PlainSink](
-        in_scores, PlainSink(out_idxs), Int(N), Int(K), Int(N)
-    )
+    with PDL():
+        _topk_cluster_impl[in_dtype, CS, TMA, PlainSink](
+            in_scores, PlainSink(out_idxs), Int(N), Int(K), Int(N)
+        )
 
 
 @__llvm_metadata(
@@ -2547,10 +2553,11 @@ def _topk_cluster_bounded_kernel[
     never read them, and the TMA streaming's 16 B copy rounding reads no
     further than the padded row's end.
     """
-    var bound, sink = row_bounds.row(Int(block_idx.x), out_idxs)
-    _topk_cluster_impl[in_dtype, CS, TMA, RB.Sink](
-        in_scores, sink, Int(N), Int(K), min(Int(N), max(0, bound))
-    )
+    with PDL():
+        var bound, sink = row_bounds.row(Int(block_idx.x), out_idxs)
+        _topk_cluster_impl[in_dtype, CS, TMA, RB.Sink](
+            in_scores, sink, Int(N), Int(K), min(Int(N), max(0, bound))
+        )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2757,6 +2764,7 @@ def topk_cluster_split[
                 func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                     UInt32(_ctopk_smem_bytes[in_dtype, CS]())
                 ),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
         else:
             ctx.enqueue_function[_topk_cluster_kernel[in_dtype, CS, TMA]](
@@ -2771,6 +2779,7 @@ def topk_cluster_split[
                 func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                     UInt32(_ctopk_smem_bytes[in_dtype, CS]())
                 ),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
     @inline(.always)

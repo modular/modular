@@ -25,7 +25,12 @@ from max.algorithm.functional import elementwise
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu, is_gpu
-from max.gpu.primitives.grid_controls import PDLLevel
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+)
 from std.collections import Optional, OptionalReg
 from kv_cache.types import (
     KVCacheStaticParams,
@@ -4941,6 +4946,7 @@ def kv_cache_row_offsets_ragged_paged[
         cache_lengths,
         grid_dim=max(ceildiv(batch_size, 128), 1),
         block_dim=128,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 
@@ -4986,19 +4992,23 @@ def kv_cache_row_offsets_ragged_paged_kernel[
 
     var batch_size = Int(input_row_offsets.dim[0]()) - 1
     var output_idx = global_idx.x
-    if output_idx > batch_size:
-        return
 
-    var running_length = 0
-    var prev_input_row_offset = Int(input_row_offsets[0])
-    for batch_idx in range(output_idx):
-        var row_offset = Int(input_row_offsets[batch_idx + 1])
-        running_length += (
-            Int(cache_lengths[batch_idx]) + row_offset - prev_input_row_offset
-        )
-        prev_input_row_offset = row_offset
+    with PDL():
+        if output_idx > batch_size:
+            return
 
-    cache_row_offsets[output_idx] = UInt32(running_length)
+        var running_length = 0
+        var prev_input_row_offset = Int(input_row_offsets[0])
+        for batch_idx in range(output_idx):
+            var row_offset = Int(input_row_offsets[batch_idx + 1])
+            running_length += (
+                Int(cache_lengths[batch_idx])
+                + row_offset
+                - prev_input_row_offset
+            )
+            prev_input_row_offset = row_offset
+
+        cache_row_offsets[output_idx] = UInt32(running_length)
 
 
 @inline(.always)

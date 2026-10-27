@@ -19,6 +19,11 @@ from std.memory.alloc import Layout as AllocLayout
 from std.sys.info import align_of, simd_width_of
 from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.primitives.warp import shuffle_xor
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.host.info import is_cpu, is_gpu
@@ -576,52 +581,62 @@ def _fused_qk_rms_norm_ragged_paged_gpu[
     var idx = tid * simd_width
     var vec_data = SIMD[accum_type, simd_width](0)
     var gamma_val = SIMD[dtype, simd_width](0)
-    if idx < _num_cols:
-        if is_k:
-            var batch_idx, token_idx = get_batch_and_token_idx_from_row_offsets(
-                input_row_offsets, global_token_idx
-            )
-            var cache_token_idx = token_idx + k_cache.cache_length(batch_idx)
-            vec_data = k_cache.load[width=simd_width](
-                bs=batch_idx,
-                tok_idx=cache_token_idx,
-                head_idx=head_idx,
-                head_dim_idx=idx,
-            ).cast[accum_type]()
-            gamma_val = k_gamma.load[width=simd_width]((idx,))
-        else:
-            vec_data = q_proj.load[width=simd_width](
-                (global_token_idx, head_idx, idx)
-            ).cast[accum_type]()
-            gamma_val = q_gamma.load[width=simd_width]((idx,))
 
-    var norm_val = _rms_norm_warp_tiling_subkernel[
-        warps_per_block, multiply_before_cast
-    ](
-        combined_row,
-        idx,
-        vec_data,
-        gamma_val,
-        epsilon,
-        weight_offset_accum,
-        _num_cols,
-    )
+    with PDL():
+        if idx < _num_cols:
+            if is_k:
+                var batch_idx, token_idx = (
+                    get_batch_and_token_idx_from_row_offsets(
+                        input_row_offsets, global_token_idx
+                    )
+                )
+                var cache_token_idx = token_idx + k_cache.cache_length(
+                    batch_idx
+                )
+                vec_data = k_cache.load[width=simd_width](
+                    bs=batch_idx,
+                    tok_idx=cache_token_idx,
+                    head_idx=head_idx,
+                    head_dim_idx=idx,
+                ).cast[accum_type]()
+                gamma_val = k_gamma.load[width=simd_width]((idx,))
+            else:
+                vec_data = q_proj.load[width=simd_width](
+                    (global_token_idx, head_idx, idx)
+                ).cast[accum_type]()
+                gamma_val = q_gamma.load[width=simd_width]((idx,))
 
-    if idx < _num_cols:
-        if is_k:
-            var batch_idx, token_idx = get_batch_and_token_idx_from_row_offsets(
-                input_row_offsets, global_token_idx
-            )
-            var cache_token_idx = token_idx + k_cache.cache_length(batch_idx)
-            k_cache.store(
-                bs=batch_idx,
-                tok_idx=cache_token_idx,
-                head_idx=head_idx,
-                head_dim_idx=idx,
-                val=norm_val.cast[cache_t.dtype](),
-            )
-        else:
-            q_output.store((global_token_idx, head_idx, idx), norm_val)
+        var norm_val = _rms_norm_warp_tiling_subkernel[
+            warps_per_block, multiply_before_cast
+        ](
+            combined_row,
+            idx,
+            vec_data,
+            gamma_val,
+            epsilon,
+            weight_offset_accum,
+            _num_cols,
+        )
+
+        if idx < _num_cols:
+            if is_k:
+                var batch_idx, token_idx = (
+                    get_batch_and_token_idx_from_row_offsets(
+                        input_row_offsets, global_token_idx
+                    )
+                )
+                var cache_token_idx = token_idx + k_cache.cache_length(
+                    batch_idx
+                )
+                k_cache.store(
+                    bs=batch_idx,
+                    tok_idx=cache_token_idx,
+                    head_idx=head_idx,
+                    head_dim_idx=idx,
+                    val=norm_val.cast[cache_t.dtype](),
+                )
+            else:
+                q_output.store((global_token_idx, head_idx, idx), norm_val)
 
 
 def fused_qk_rms_norm_ragged_paged[
@@ -760,6 +775,7 @@ def fused_qk_rms_norm_ragged_paged[
             Int32(cols),
             grid_dim=rows,
             block_dim=block_dim_value,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
 
@@ -1081,28 +1097,29 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
     else:
         global_token_idx, head_idx = divmod(combined_row, _q_num_heads)
 
-    _fused_qk_rms_norm_rope_process_row[
-        simd_width,
-        warps_per_block,
-        multiply_before_cast,
-        interleaved,
-        has_nope_prefix,
-        rope_dim,
-    ](
-        is_k,
-        global_token_idx,
-        head_idx,
-        q_output,
-        k_cache,
-        q_gamma,
-        k_gamma,
-        freqs_cis,
-        epsilon,
-        Scalar[dtype](weight_offset),
-        q_input_fn,
-        input_row_offsets,
-        _num_cols,
-    )
+    with PDL():
+        _fused_qk_rms_norm_rope_process_row[
+            simd_width,
+            warps_per_block,
+            multiply_before_cast,
+            interleaved,
+            has_nope_prefix,
+            rope_dim,
+        ](
+            is_k,
+            global_token_idx,
+            head_idx,
+            q_output,
+            k_cache,
+            q_gamma,
+            k_gamma,
+            freqs_cis,
+            epsilon,
+            Scalar[dtype](weight_offset),
+            q_input_fn,
+            input_row_offsets,
+            _num_cols,
+        )
 
 
 @inline(.always)
@@ -1299,6 +1316,7 @@ def fused_qk_rms_norm_rope_ragged_paged[
             host_args=(q_input_fn,),
             grid_dim=rows,
             block_dim=block_dim_value,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
 
@@ -1426,72 +1444,75 @@ def _fused_dual_qk_rms_norm_rope_ragged_paged_gpu[
     var k_main_rows = tsl * k_main_heads
     var main_end = q_main_rows + k_main_rows
 
-    if combined_row < main_end:
-        var is_k = combined_row >= q_main_rows
-        var global_token_idx: Int
-        var head_idx: Int
-        if is_k:
-            var k_row = combined_row - q_main_rows
-            global_token_idx, head_idx = divmod(k_row, k_main_heads)
-        else:
-            global_token_idx, head_idx = divmod(combined_row, q_main_num_heads)
+    with PDL():
+        if combined_row < main_end:
+            var is_k = combined_row >= q_main_rows
+            var global_token_idx: Int
+            var head_idx: Int
+            if is_k:
+                var k_row = combined_row - q_main_rows
+                global_token_idx, head_idx = divmod(k_row, k_main_heads)
+            else:
+                global_token_idx, head_idx = divmod(
+                    combined_row, q_main_num_heads
+                )
 
-        _fused_qk_rms_norm_rope_process_row[
-            simd_width,
-            warps_per_block,
-            multiply_before_cast,
-            interleaved,
-            has_nope_prefix,
-            rope_dim,
-        ](
-            is_k,
-            global_token_idx,
-            head_idx,
-            q_main_output,
-            main_k_cache,
-            q_main_gamma,
-            k_main_gamma,
-            freqs_cis,
-            main_epsilon,
-            Scalar[dtype](weight_offset),
-            main_q_input_fn,
-            input_row_offsets,
-            num_cols,
-        )
-    else:
-        var idx_row = combined_row - main_end
-        var q_index_rows = tsl * q_index_num_heads
-        var is_k = idx_row >= q_index_rows
-        var global_token_idx: Int
-        var head_idx: Int
-        if is_k:
-            var k_row = idx_row - q_index_rows
-            global_token_idx, head_idx = divmod(k_row, k_index_heads)
+            _fused_qk_rms_norm_rope_process_row[
+                simd_width,
+                warps_per_block,
+                multiply_before_cast,
+                interleaved,
+                has_nope_prefix,
+                rope_dim,
+            ](
+                is_k,
+                global_token_idx,
+                head_idx,
+                q_main_output,
+                main_k_cache,
+                q_main_gamma,
+                k_main_gamma,
+                freqs_cis,
+                main_epsilon,
+                Scalar[dtype](weight_offset),
+                main_q_input_fn,
+                input_row_offsets,
+                num_cols,
+            )
         else:
-            global_token_idx, head_idx = divmod(idx_row, q_index_num_heads)
+            var idx_row = combined_row - main_end
+            var q_index_rows = tsl * q_index_num_heads
+            var is_k = idx_row >= q_index_rows
+            var global_token_idx: Int
+            var head_idx: Int
+            if is_k:
+                var k_row = idx_row - q_index_rows
+                global_token_idx, head_idx = divmod(k_row, k_index_heads)
+            else:
+                global_token_idx, head_idx = divmod(idx_row, q_index_num_heads)
 
-        _fused_qk_rms_norm_rope_process_row[
-            simd_width,
-            warps_per_block,
-            multiply_before_cast,
-            interleaved,
-            has_nope_prefix,
-            rope_dim,
-        ](
-            is_k,
-            global_token_idx,
-            head_idx,
-            q_index_output,
-            index_k_cache,
-            q_index_gamma,
-            k_index_gamma,
-            freqs_cis,
-            index_epsilon,
-            Scalar[dtype](weight_offset),
-            index_q_input_fn,
-            input_row_offsets,
-            num_cols,
-        )
+            _fused_qk_rms_norm_rope_process_row[
+                simd_width,
+                warps_per_block,
+                multiply_before_cast,
+                interleaved,
+                has_nope_prefix,
+                rope_dim,
+            ](
+                is_k,
+                global_token_idx,
+                head_idx,
+                q_index_output,
+                index_k_cache,
+                q_index_gamma,
+                k_index_gamma,
+                freqs_cis,
+                index_epsilon,
+                Scalar[dtype](weight_offset),
+                index_q_input_fn,
+                input_row_offsets,
+                num_cols,
+            )
 
 
 @inline(.always)
@@ -1766,6 +1787,7 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
             host_args=(main_q_input_fn, index_q_input_fn),
             grid_dim=rows,
             block_dim=block_dim_value,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
 
@@ -2149,37 +2171,117 @@ def fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged_gpu[
     var q_index_heads = Int(q_index_num_heads_dev)
 
     var q_main_rows = tsl * q_main_heads
-    if row < q_main_rows:
-        var token, head = divmod(row, q_main_heads)
-        _fused_qk_rms_norm_rope_process_row[
-            simd_width,
-            warps_per_block,
-            multiply_before_cast,
-            interleaved,
-            has_nope_prefix,
-            rope_dim,
-            q_only=True,
-        ](
-            False,
-            token,
-            head,
-            q_main_output,
-            main_k_cache,
-            q_main_gamma,
-            k_main_gamma,
-            freqs_cis,
-            main_epsilon,
-            w_off,
-            q_main_input_fn,
-            input_row_offsets,
-            head_dim,
-        )
-        return
-    row -= q_main_rows
 
-    var kv_main_rows = tsl * k_main_heads
-    if row < kv_main_rows:
-        var token, head = divmod(row, k_main_heads)
+    with PDL():
+        if row < q_main_rows:
+            var token, head = divmod(row, q_main_heads)
+            _fused_qk_rms_norm_rope_process_row[
+                simd_width,
+                warps_per_block,
+                multiply_before_cast,
+                interleaved,
+                has_nope_prefix,
+                rope_dim,
+                q_only=True,
+            ](
+                False,
+                token,
+                head,
+                q_main_output,
+                main_k_cache,
+                q_main_gamma,
+                k_main_gamma,
+                freqs_cis,
+                main_epsilon,
+                w_off,
+                q_main_input_fn,
+                input_row_offsets,
+                head_dim,
+            )
+            return
+        row -= q_main_rows
+
+        var kv_main_rows = tsl * k_main_heads
+        if row < kv_main_rows:
+            var token, head = divmod(row, k_main_heads)
+            nvfp4_kv_write_row[
+                head_dim,
+                simd_width,
+                warps_per_block,
+                multiply_before_cast,
+                interleaved,
+                has_nope_prefix,
+                rope_dim,
+            ](
+                True,
+                token,
+                head,
+                main_k_cache,
+                k_main_gamma,
+                freqs_cis,
+                main_epsilon,
+                w_off,
+                k_main_input_fn,
+                input_row_offsets,
+            )
+            return
+        row -= kv_main_rows
+
+        if row < kv_main_rows:
+            var token, head = divmod(row, k_main_heads)
+            nvfp4_kv_write_row[
+                head_dim,
+                simd_width,
+                warps_per_block,
+                multiply_before_cast,
+                interleaved,
+                has_nope_prefix,
+                rope_dim,
+            ](
+                False,
+                token,
+                head,
+                main_v_cache,
+                k_main_gamma,
+                freqs_cis,
+                main_epsilon,
+                w_off,
+                v_main_input_fn,
+                input_row_offsets,
+            )
+            return
+        row -= kv_main_rows
+
+        var q_index_rows = tsl * q_index_heads
+        if row < q_index_rows:
+            var token, head = divmod(row, q_index_heads)
+            _fused_qk_rms_norm_rope_process_row[
+                simd_width,
+                warps_per_block,
+                multiply_before_cast,
+                interleaved,
+                has_nope_prefix,
+                rope_dim,
+                q_only=True,
+            ](
+                False,
+                token,
+                head,
+                q_index_output,
+                index_k_cache,
+                q_index_gamma,
+                k_index_gamma,
+                freqs_cis,
+                index_epsilon,
+                w_off,
+                q_index_input_fn,
+                input_row_offsets,
+                head_dim,
+            )
+            return
+        row -= q_index_rows
+
+        var token, head = divmod(row, k_index_heads)
         nvfp4_kv_write_row[
             head_dim,
             simd_width,
@@ -2192,92 +2294,14 @@ def fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged_gpu[
             True,
             token,
             head,
-            main_k_cache,
-            k_main_gamma,
-            freqs_cis,
-            main_epsilon,
-            w_off,
-            k_main_input_fn,
-            input_row_offsets,
-        )
-        return
-    row -= kv_main_rows
-
-    if row < kv_main_rows:
-        var token, head = divmod(row, k_main_heads)
-        nvfp4_kv_write_row[
-            head_dim,
-            simd_width,
-            warps_per_block,
-            multiply_before_cast,
-            interleaved,
-            has_nope_prefix,
-            rope_dim,
-        ](
-            False,
-            token,
-            head,
-            main_v_cache,
-            k_main_gamma,
-            freqs_cis,
-            main_epsilon,
-            w_off,
-            v_main_input_fn,
-            input_row_offsets,
-        )
-        return
-    row -= kv_main_rows
-
-    var q_index_rows = tsl * q_index_heads
-    if row < q_index_rows:
-        var token, head = divmod(row, q_index_heads)
-        _fused_qk_rms_norm_rope_process_row[
-            simd_width,
-            warps_per_block,
-            multiply_before_cast,
-            interleaved,
-            has_nope_prefix,
-            rope_dim,
-            q_only=True,
-        ](
-            False,
-            token,
-            head,
-            q_index_output,
             index_k_cache,
-            q_index_gamma,
             k_index_gamma,
             freqs_cis,
             index_epsilon,
             w_off,
-            q_index_input_fn,
+            k_index_input_fn,
             input_row_offsets,
-            head_dim,
         )
-        return
-    row -= q_index_rows
-
-    var token, head = divmod(row, k_index_heads)
-    nvfp4_kv_write_row[
-        head_dim,
-        simd_width,
-        warps_per_block,
-        multiply_before_cast,
-        interleaved,
-        has_nope_prefix,
-        rope_dim,
-    ](
-        True,
-        token,
-        head,
-        index_k_cache,
-        k_index_gamma,
-        freqs_cis,
-        index_epsilon,
-        w_off,
-        k_index_input_fn,
-        input_row_offsets,
-    )
 
 
 @inline(.always)
@@ -2538,6 +2562,7 @@ def fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged[
             ),
             grid_dim=rows,
             block_dim=warp_size * warps_per_block,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
 

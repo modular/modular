@@ -59,6 +59,11 @@ from max.gpu import WARP_SIZE, block_idx, lane_id, warp_id
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu, is_cpu
 import max.gpu.primitives.warp as warp
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 
 from kv_cache.types import (
     KVCacheStaticParams,
@@ -166,59 +171,65 @@ def _latent_sparse_attention_gpu_kernel[
     var lane = Int(lane_id())
     var h0 = (block_idx.y * warps_per_block + Int(warp_id())) * heads_per_warp
     var nh = Int(num_heads)
-    if h0 >= nh:
-        return
 
-    var b = _batch_of_row(t, row_offsets, Int(num_batches))
-    var pos = swa_cache.cache_length(b) + t - Int(row_offsets[unsafe_offset=b])
-    var d0 = lane * lane_width
+    with PDL():
+        if h0 >= nh:
+            return
 
-    var q = Array[SIMD[.float32, lane_width], heads_per_warp](
-        fill=SIMD[.float32, lane_width](0)
-    )
-    var m = Array[Float32, heads_per_warp](fill=min_or_neg_inf[DType.float32]())
-    var l = Array[Float32, heads_per_warp](fill=Float32(0))
-    var acc = Array[SIMD[.float32, lane_width], heads_per_warp](
-        fill=SIMD[.float32, lane_width](0)
-    )
-    comptime for i in range(heads_per_warp):
-        var h = h0 + i
-        if h < nh:
-            q[i] = (
-                q_ptr.unsafe_load[width=lane_width](
-                    t * Int(q_stride0) + h * Int(q_stride1) + d0
-                ).cast[.float32]()
-                * scale
+        var b = _batch_of_row(t, row_offsets, Int(num_batches))
+        var pos = (
+            swa_cache.cache_length(b) + t - Int(row_offsets[unsafe_offset=b])
+        )
+        var d0 = lane * lane_width
+
+        var q = Array[SIMD[.float32, lane_width], heads_per_warp](
+            fill=SIMD[.float32, lane_width](0)
+        )
+        var m = Array[Float32, heads_per_warp](
+            fill=min_or_neg_inf[DType.float32]()
+        )
+        var l = Array[Float32, heads_per_warp](fill=Float32(0))
+        var acc = Array[SIMD[.float32, lane_width], heads_per_warp](
+            fill=SIMD[.float32, lane_width](0)
+        )
+        comptime for i in range(heads_per_warp):
+            var h = h0 + i
+            if h < nh:
+                q[i] = (
+                    q_ptr.unsafe_load[width=lane_width](
+                        t * Int(q_stride0) + h * Int(q_stride1) + d0
+                    ).cast[.float32]()
+                    * scale
+                )
+
+        var start = max(pos - window + 1, 0)
+        for p in range(start, pos + 1):
+            var k = swa_cache.load[width=lane_width, output_dtype=.float32](
+                b, 0, p, d0
             )
+            _attend_key[lane_width, heads_per_warp, round_p](k, q, m, l, acc)
 
-    var start = max(pos - window + 1, 0)
-    for p in range(start, pos + 1):
-        var k = swa_cache.load[width=lane_width, output_dtype=.float32](
-            b, 0, p, d0
-        )
-        _attend_key[lane_width, heads_per_warp, round_p](k, q, m, l, acc)
-
-    for j in range(Int(num_comp)):
-        var e = Int(
-            comp_indices[
-                unsafe_offset=t * Int(idx_stride0) + j * Int(idx_stride1)
-            ]
-        )
-        if e < 0:
-            continue
-        var k = comp_cache.load[width=lane_width, output_dtype=.float32](
-            b, 0, e, d0
-        )
-        _attend_key[lane_width, heads_per_warp, round_p](k, q, m, l, acc)
-
-    comptime for i in range(heads_per_warp):
-        var h = h0 + i
-        if h < nh:
-            var den = l[i] + exp(attn_sink[unsafe_offset=h] - m[i])
-            out_ptr.unsafe_store(
-                t * Int(out_stride0) + h * Int(out_stride1) + d0,
-                (acc[i] / den).cast[out_type](),
+        for j in range(Int(num_comp)):
+            var e = Int(
+                comp_indices[
+                    unsafe_offset=t * Int(idx_stride0) + j * Int(idx_stride1)
+                ]
             )
+            if e < 0:
+                continue
+            var k = comp_cache.load[width=lane_width, output_dtype=.float32](
+                b, 0, e, d0
+            )
+            _attend_key[lane_width, heads_per_warp, round_p](k, q, m, l, acc)
+
+        comptime for i in range(heads_per_warp):
+            var h = h0 + i
+            if h < nh:
+                var den = l[i] + exp(attn_sink[unsafe_offset=h] - m[i])
+                out_ptr.unsafe_store(
+                    t * Int(out_stride0) + h * Int(out_stride1) + d0,
+                    (acc[i] / den).cast[out_type](),
+                )
 
 
 @inline(.always)
@@ -360,47 +371,51 @@ def _sm100_decode_plan_kernel[
     """
     var t = block_idx.x
     var lane = Int(lane_id())
-    var b = _batch_of_row(t, row_offsets, Int(num_batches))
-    var pos = swa_cache.cache_length(b) + t - Int(row_offsets[unsafe_offset=b])
-    var nc = Int(num_comp)
-    var out_base = t * Int(comp_stride)
 
-    var count = 0
-    for c0 in range(0, nc, WARP_SIZE):
-        var j = c0 + lane
-        var e = Int32(-1)
-        if j < nc:
-            e = comp_indices[
-                unsafe_offset=t * Int(idx_stride0) + j * Int(idx_stride1)
-            ]
-        var valid = Int32(1) if e >= 0 else Int32(0)
-        var slot = count + Int(warp.prefix_sum[exclusive=True](valid))
-        if e >= 0:
-            comp_rows[unsafe_offset=out_base + slot] = Int32(
-                comp_cache.row_idx(UInt32(b), UInt32(e))
-            )
-        count += Int(warp.sum(valid))
-    for j in range(count + lane, Int(comp_stride), WARP_SIZE):
-        comp_rows[unsafe_offset=out_base + j] = -1
+    with PDL():
+        var b = _batch_of_row(t, row_offsets, Int(num_batches))
+        var pos = (
+            swa_cache.cache_length(b) + t - Int(row_offsets[unsafe_offset=b])
+        )
+        var nc = Int(num_comp)
+        var out_base = t * Int(comp_stride)
 
-    var start = max(pos - window + 1, 0)
-    for i in range(lane, window, WARP_SIZE):
-        var p = start + i
-        var r = Int32(-1)
-        if p <= pos:
-            r = Int32(swa_cache.row_idx(UInt32(b), UInt32(p)))
-        win_rows[unsafe_offset=t * window + i] = r
+        var count = 0
+        for c0 in range(0, nc, WARP_SIZE):
+            var j = c0 + lane
+            var e = Int32(-1)
+            if j < nc:
+                e = comp_indices[
+                    unsafe_offset=t * Int(idx_stride0) + j * Int(idx_stride1)
+                ]
+            var valid = Int32(1) if e >= 0 else Int32(0)
+            var slot = count + Int(warp.prefix_sum[exclusive=True](valid))
+            if e >= 0:
+                comp_rows[unsafe_offset=out_base + slot] = Int32(
+                    comp_cache.row_idx(UInt32(b), UInt32(e))
+                )
+            count += Int(warp.sum(valid))
+        for j in range(count + lane, Int(comp_stride), WARP_SIZE):
+            comp_rows[unsafe_offset=out_base + j] = -1
 
-    if lane == 0:
-        comp_len[unsafe_offset=t] = Int32(count)
-        win_len[unsafe_offset=t] = Int32(pos - start + 1)
-        row_batches[unsafe_offset=t] = UInt32(t)
-        row_lengths[unsafe_offset=t] = UInt32(count)
-        if t == 0:
-            row_batches[unsafe_offset=Int(num_rows)] = UInt32(num_rows)
-            scalar_args[unsafe_offset=0] = Int64(num_rows)
-            scalar_args[unsafe_offset=1] = 1
-            scalar_args[unsafe_offset=2] = 0
+        var start = max(pos - window + 1, 0)
+        for i in range(lane, window, WARP_SIZE):
+            var p = start + i
+            var r = Int32(-1)
+            if p <= pos:
+                r = Int32(swa_cache.row_idx(UInt32(b), UInt32(p)))
+            win_rows[unsafe_offset=t * window + i] = r
+
+        if lane == 0:
+            comp_len[unsafe_offset=t] = Int32(count)
+            win_len[unsafe_offset=t] = Int32(pos - start + 1)
+            row_batches[unsafe_offset=t] = UInt32(t)
+            row_lengths[unsafe_offset=t] = UInt32(count)
+            if t == 0:
+                row_batches[unsafe_offset=Int(num_rows)] = UInt32(num_rows)
+                scalar_args[unsafe_offset=0] = Int64(num_rows)
+                scalar_args[unsafe_offset=1] = 1
+                scalar_args[unsafe_offset=2] = 0
 
 
 def _flat_row_view[
@@ -554,6 +569,7 @@ def _latent_sparse_attention_sm100[
         Int32(idx_stride1),
         grid_dim=num_rows,
         block_dim=ctx.default_device_info.warp_size,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
     var comp_view = _flat_row_view(
@@ -806,4 +822,5 @@ def latent_sparse_attention_ragged_paged[
             scale,
             grid_dim=(num_rows, ceildiv(num_heads, heads_per_block)),
             block_dim=warp_size * warps_per_block,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )

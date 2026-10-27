@@ -38,6 +38,11 @@ from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
 from max.gpu.memory import AddressSpace
 from max.gpu.primitives import block
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from max.gpu.sync import barrier
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 
@@ -406,19 +411,20 @@ def _cumsum_row_scan_kernel[
     chunk_len_arg: Int32,
 ):
     """Scans a chunk of a long row with the wide one-trip geometry."""
-    _row_scan_body[
-        dtype,
-        accum_type,
-        exclusive,
-        reverse,
-        has_carry,
-        _CUMSUM_SCAN_THREADS,
-        _CUMSUM_SCAN_ITEMS,
-        True,
-        OutLayoutType,
-        InLayoutType,
-        CarryLayoutType,
-    ](output, input, carry, Int(chunk_len_arg))
+    with PDL():
+        _row_scan_body[
+            dtype,
+            accum_type,
+            exclusive,
+            reverse,
+            has_carry,
+            _CUMSUM_SCAN_THREADS,
+            _CUMSUM_SCAN_ITEMS,
+            True,
+            OutLayoutType,
+            InLayoutType,
+            CarryLayoutType,
+        ](output, input, carry, Int(chunk_len_arg))
 
 
 @__llvm_metadata(
@@ -444,19 +450,20 @@ def _cumsum_row_scan_long_kernel[
 ):
     """Scans a chunk of a long row: 1024 threads x 16 elements, one trip to
     16384 elements."""
-    _row_scan_body[
-        dtype,
-        accum_type,
-        exclusive,
-        reverse,
-        has_carry,
-        _CUMSUM_LONG_THREADS,
-        _CUMSUM_LONG_ITEMS,
-        True,
-        OutLayoutType,
-        InLayoutType,
-        CarryLayoutType,
-    ](output, input, carry, Int(chunk_len_arg))
+    with PDL():
+        _row_scan_body[
+            dtype,
+            accum_type,
+            exclusive,
+            reverse,
+            has_carry,
+            _CUMSUM_LONG_THREADS,
+            _CUMSUM_LONG_ITEMS,
+            True,
+            OutLayoutType,
+            InLayoutType,
+            CarryLayoutType,
+        ](output, input, carry, Int(chunk_len_arg))
 
 
 @inline(.always)
@@ -609,8 +616,9 @@ def _cumsum_row_chain_clear_kernel[
     thread, before the split's kernel reads them as a count of this launch's
     chunk publishes."""
     var i = global_idx.x
-    if i < Int(count_arg):
-        masks[i] = 0
+    with PDL():
+        if i < Int(count_arg):
+            masks[i] = 0
 
 
 @__llvm_metadata(
@@ -637,18 +645,19 @@ def _cumsum_row_chain_kernel[
 ):
     """Scans a chunk of a long row with the wide one-trip geometry, in one
     launch over the whole row."""
-    _row_chain_body[
-        dtype,
-        accum_type,
-        exclusive,
-        reverse,
-        _CUMSUM_SCAN_THREADS,
-        _CUMSUM_SCAN_ITEMS,
-        OutLayoutType,
-        InLayoutType,
-        TotalsLayoutType,
-        MaskLayoutType,
-    ](output, input, totals, masks, Int(chunk_len_arg))
+    with PDL():
+        _row_chain_body[
+            dtype,
+            accum_type,
+            exclusive,
+            reverse,
+            _CUMSUM_SCAN_THREADS,
+            _CUMSUM_SCAN_ITEMS,
+            OutLayoutType,
+            InLayoutType,
+            TotalsLayoutType,
+            MaskLayoutType,
+        ](output, input, totals, masks, Int(chunk_len_arg))
 
 
 @__llvm_metadata(
@@ -675,18 +684,19 @@ def _cumsum_row_chain64_kernel[
 ):
     """Scans a chunk of a long 8-byte row in one launch over the whole row,
     with the 1024-thread x 8-element geometry."""
-    _row_chain_body[
-        dtype,
-        accum_type,
-        exclusive,
-        reverse,
-        _CUMSUM_WIDE64_THREADS,
-        _CUMSUM_WIDE64_ITEMS,
-        OutLayoutType,
-        InLayoutType,
-        TotalsLayoutType,
-        MaskLayoutType,
-    ](output, input, totals, masks, Int(chunk_len_arg))
+    with PDL():
+        _row_chain_body[
+            dtype,
+            accum_type,
+            exclusive,
+            reverse,
+            _CUMSUM_WIDE64_THREADS,
+            _CUMSUM_WIDE64_ITEMS,
+            OutLayoutType,
+            InLayoutType,
+            TotalsLayoutType,
+            MaskLayoutType,
+        ](output, input, totals, masks, Int(chunk_len_arg))
 
 
 @__llvm_metadata(
@@ -713,18 +723,19 @@ def _cumsum_row_chain_long_kernel[
 ):
     """Scans a chunk of a long 4-byte row: 1024 threads x 16 elements, one
     trip to 16384 elements."""
-    _row_chain_body[
-        dtype,
-        accum_type,
-        exclusive,
-        reverse,
-        _CUMSUM_LONG_THREADS,
-        _CUMSUM_LONG_ITEMS,
-        OutLayoutType,
-        InLayoutType,
-        TotalsLayoutType,
-        MaskLayoutType,
-    ](output, input, totals, masks, Int(chunk_len_arg))
+    with PDL():
+        _row_chain_body[
+            dtype,
+            accum_type,
+            exclusive,
+            reverse,
+            _CUMSUM_LONG_THREADS,
+            _CUMSUM_LONG_ITEMS,
+            OutLayoutType,
+            InLayoutType,
+            TotalsLayoutType,
+            MaskLayoutType,
+        ](output, input, totals, masks, Int(chunk_len_arg))
 
 
 @__llvm_metadata(
@@ -751,19 +762,20 @@ def _cumsum_row_scan64_kernel[
     """Scans a chunk of an 8-byte row: 1024 threads x 8 elements, one trip to
     8192 elements, the same 64 KiB per trip as the long geometry's 4-byte
     rows."""
-    _row_scan_body[
-        dtype,
-        accum_type,
-        exclusive,
-        reverse,
-        has_carry,
-        _CUMSUM_WIDE64_THREADS,
-        _CUMSUM_WIDE64_ITEMS,
-        True,
-        OutLayoutType,
-        InLayoutType,
-        CarryLayoutType,
-    ](output, input, carry, Int(chunk_len_arg))
+    with PDL():
+        _row_scan_body[
+            dtype,
+            accum_type,
+            exclusive,
+            reverse,
+            has_carry,
+            _CUMSUM_WIDE64_THREADS,
+            _CUMSUM_WIDE64_ITEMS,
+            True,
+            OutLayoutType,
+            InLayoutType,
+            CarryLayoutType,
+        ](output, input, carry, Int(chunk_len_arg))
 
 
 @__llvm_metadata(
@@ -788,19 +800,20 @@ def _cumsum_row_scan_narrow_kernel[
     chunk_len_arg: Int32,
 ):
     """Scans a chunk of a short row, one element per thread at a time."""
-    _row_scan_body[
-        dtype,
-        accum_type,
-        exclusive,
-        reverse,
-        has_carry,
-        _CUMSUM_NARROW_THREADS,
-        _CUMSUM_NARROW_ITEMS,
-        False,
-        OutLayoutType,
-        InLayoutType,
-        CarryLayoutType,
-    ](output, input, carry, Int(chunk_len_arg))
+    with PDL():
+        _row_scan_body[
+            dtype,
+            accum_type,
+            exclusive,
+            reverse,
+            has_carry,
+            _CUMSUM_NARROW_THREADS,
+            _CUMSUM_NARROW_ITEMS,
+            False,
+            OutLayoutType,
+            InLayoutType,
+            CarryLayoutType,
+        ](output, input, carry, Int(chunk_len_arg))
 
 
 @__llvm_metadata(
@@ -832,17 +845,18 @@ def _cumsum_row_total_kernel[
     var tid = thread_idx.x
 
     var total: Scalar[accum_type] = 0
-    for tile_start in range(begin, end, tile):
-        # Consecutive threads read consecutive elements for coalescing.
-        comptime for k in range(_CUMSUM_TOTAL_ITEMS):
-            var index = tile_start + k * _CUMSUM_BLOCK_SIZE + tid
-            if index < end:
-                total += input[row, _scan_pos[reverse](index, axis_len)].cast[
-                    accum_type
-                ]()
-    total = block.sum[block_size=_CUMSUM_BLOCK_SIZE, broadcast=False](total)
-    if tid == 0:
-        totals[row, chunk] = total
+    with PDL():
+        for tile_start in range(begin, end, tile):
+            # Consecutive threads read consecutive elements for coalescing.
+            comptime for k in range(_CUMSUM_TOTAL_ITEMS):
+                var index = tile_start + k * _CUMSUM_BLOCK_SIZE + tid
+                if index < end:
+                    total += input[
+                        row, _scan_pos[reverse](index, axis_len)
+                    ].cast[accum_type]()
+        total = block.sum[block_size=_CUMSUM_BLOCK_SIZE, broadcast=False](total)
+        if tid == 0:
+            totals[row, chunk] = total
 
 
 @__llvm_metadata(
@@ -882,28 +896,29 @@ def _cumsum_serial_kernel[
     var num_chunks = 1
     comptime if has_carry:
         num_chunks = ceildiv(axis_len, chunk_len)
-    if global_idx.x >= Int(input.dim[0]()) * stride * num_chunks:
-        return
-    var row_chunk, col = divmod(global_idx.x, stride)
-    var row = row_chunk
-    var chunk = 0
-    comptime if has_carry:
-        row, chunk = divmod(row_chunk, num_chunks)
-    var begin = chunk * chunk_len
-    var end = min(begin + chunk_len, axis_len)
+    with PDL():
+        if global_idx.x >= Int(input.dim[0]()) * stride * num_chunks:
+            return
+        var row_chunk, col = divmod(global_idx.x, stride)
+        var row = row_chunk
+        var chunk = 0
+        comptime if has_carry:
+            row, chunk = divmod(row_chunk, num_chunks)
+        var begin = chunk * chunk_len
+        var end = min(begin + chunk_len, axis_len)
 
-    var acc: Scalar[accum_type] = 0
-    comptime if has_carry:
-        acc = carry[row * stride + col, chunk]
-    for i in range(begin, end):
-        var pos = _scan_pos[reverse](i, axis_len)
-        var val = input[row, pos, col].cast[accum_type]()
-        comptime if exclusive:
-            output[row, pos, col] = acc.cast[dtype]()
-            acc += val
-        else:
-            acc += val
-            output[row, pos, col] = acc.cast[dtype]()
+        var acc: Scalar[accum_type] = 0
+        comptime if has_carry:
+            acc = carry[row * stride + col, chunk]
+        for i in range(begin, end):
+            var pos = _scan_pos[reverse](i, axis_len)
+            var val = input[row, pos, col].cast[accum_type]()
+            comptime if exclusive:
+                output[row, pos, col] = acc.cast[dtype]()
+                acc += val
+            else:
+                acc += val
+                output[row, pos, col] = acc.cast[dtype]()
 
 
 @__llvm_metadata(
@@ -931,19 +946,20 @@ def _cumsum_serial_total_kernel[
     var axis_len = Int(input.dim[1]())
     var stride = Int(input.dim[2]())
     var num_chunks = ceildiv(axis_len, chunk_len)
-    if global_idx.x >= Int(input.dim[0]()) * stride * num_chunks:
-        return
-    var row_chunk, col = divmod(global_idx.x, stride)
-    var row, chunk = divmod(row_chunk, num_chunks)
-    var begin = chunk * chunk_len
-    var end = min(begin + chunk_len, axis_len)
+    with PDL():
+        if global_idx.x >= Int(input.dim[0]()) * stride * num_chunks:
+            return
+        var row_chunk, col = divmod(global_idx.x, stride)
+        var row, chunk = divmod(row_chunk, num_chunks)
+        var begin = chunk * chunk_len
+        var end = min(begin + chunk_len, axis_len)
 
-    var total: Scalar[accum_type] = 0
-    for i in range(begin, end):
-        total += input[row, _scan_pos[reverse](i, axis_len), col].cast[
-            accum_type
-        ]()
-    totals[row * stride + col, chunk] = total
+        var total: Scalar[accum_type] = 0
+        for i in range(begin, end):
+            total += input[row, _scan_pos[reverse](i, axis_len), col].cast[
+                accum_type
+            ]()
+        totals[row * stride + col, chunk] = total
 
 
 def _enqueue_scan[
@@ -998,6 +1014,7 @@ def _enqueue_scan[
                     Int32(chunk_len),
                     grid_dim=num_rows * num_chunks,
                     block_dim=_CUMSUM_LONG_THREADS,
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
                 return
             if wide64:
@@ -1018,6 +1035,7 @@ def _enqueue_scan[
                     Int32(chunk_len),
                     grid_dim=num_rows * num_chunks,
                     block_dim=_CUMSUM_WIDE64_THREADS,
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
                 return
             comptime kernel = _cumsum_row_scan_kernel[
@@ -1037,6 +1055,7 @@ def _enqueue_scan[
                 Int32(chunk_len),
                 grid_dim=num_rows * num_chunks,
                 block_dim=_CUMSUM_SCAN_THREADS,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
             return
         comptime kernel = _cumsum_row_scan_narrow_kernel[
@@ -1056,6 +1075,7 @@ def _enqueue_scan[
             Int32(chunk_len),
             grid_dim=num_rows * num_chunks,
             block_dim=_CUMSUM_NARROW_THREADS,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
         return
 
@@ -1081,6 +1101,7 @@ def _enqueue_scan[
             num_rows * stride * num_chunks, _CUMSUM_SERIAL_BLOCK_SIZE
         ),
         block_dim=_CUMSUM_SERIAL_BLOCK_SIZE,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 
@@ -1114,6 +1135,7 @@ def _enqueue_chunk_totals[
             Int32(chunk_len),
             grid_dim=num_rows * num_chunks,
             block_dim=_CUMSUM_BLOCK_SIZE,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
         return
 
@@ -1129,6 +1151,7 @@ def _enqueue_chunk_totals[
             num_rows * stride * num_chunks, _CUMSUM_SERIAL_BLOCK_SIZE
         ),
         block_dim=_CUMSUM_SERIAL_BLOCK_SIZE,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 
@@ -1297,6 +1320,7 @@ def _cumsum_gpu[
                 Int32(num_lines),
                 grid_dim=ceildiv(num_lines, _CUMSUM_CHAIN_CLEAR_THREADS),
                 block_dim=_CUMSUM_CHAIN_CLEAR_THREADS,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
             var chunks_layout = row_major((num_lines, num_chunks))
             var totals = TileTensor(totals_buf, chunks_layout)
@@ -1322,6 +1346,7 @@ def _cumsum_gpu[
                     Int32(chunk_len),
                     grid_dim=num_rows * num_chunks,
                     block_dim=_CUMSUM_LONG_THREADS,
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
                 return
             if wide64:
@@ -1343,6 +1368,7 @@ def _cumsum_gpu[
                     Int32(chunk_len),
                     grid_dim=num_rows * num_chunks,
                     block_dim=_CUMSUM_WIDE64_THREADS,
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
                 return
             # Reachable by construction, not in fact: only 4-byte rows reach
@@ -1367,6 +1393,7 @@ def _cumsum_gpu[
                 Int32(chunk_len),
                 grid_dim=num_rows * num_chunks,
                 block_dim=_CUMSUM_SCAN_THREADS,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
             return
 

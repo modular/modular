@@ -25,6 +25,11 @@ from std.sys import size_of
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from layout import Coord, TensorEngine, TensorLayout, TileTensor, row_major
 from linalg.utils import (
     ElementwiseComputeFn,
@@ -59,13 +64,15 @@ def _transpose_rscf_to_krsc[
     var _C = Int(C)
     var _F = Int(F)
     var tid = global_idx.x
-    if tid >= _R * _S * _C * _F:
-        return
-    var k, rem = divmod(tid, _R * _S * _C)
-    var r: Int
-    r, rem = divmod(rem, _S * _C)
-    var s, c = divmod(rem, _C)
-    dst_ptr.unsafe_store(tid, src.load((r, s, c, k))[0])
+
+    with PDL():
+        if tid >= _R * _S * _C * _F:
+            return
+        var k, rem = divmod(tid, _R * _S * _C)
+        var r: Int
+        r, rem = divmod(rem, _S * _C)
+        var s, c = divmod(rem, _C)
+        dst_ptr.unsafe_store(tid, src.load((r, s, c, k))[0])
 
 
 @__name(t"transpose_fcrs_to_krsc_{dtype}")
@@ -88,13 +95,15 @@ def _transpose_fcrs_to_krsc[
     var _R = Int(R)
     var _S = Int(S)
     var tid = global_idx.x
-    if tid >= _F * _C * _R * _S:
-        return
-    var k, rem = divmod(tid, _R * _S * _C)
-    var r: Int
-    r, rem = divmod(rem, _S * _C)
-    var s, c = divmod(rem, _C)
-    dst_ptr.unsafe_store(tid, src.load((k, c, r, s))[0])
+
+    with PDL():
+        if tid >= _F * _C * _R * _S:
+            return
+        var k, rem = divmod(tid, _R * _S * _C)
+        var r: Int
+        r, rem = divmod(rem, _S * _C)
+        var s, c = divmod(rem, _C)
+        dst_ptr.unsafe_store(tid, src.load((k, c, r, s))[0])
 
 
 # =========================================================================
@@ -250,6 +259,7 @@ def dispatch_sm100_conv2d[
                 Int32(S),
                 grid_dim=grid,
                 block_dim=transpose_block,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
         else:
             var R = Int(filter.dim[0]())
@@ -271,6 +281,7 @@ def dispatch_sm100_conv2d[
                 Int32(F),
                 grid_dim=grid,
                 block_dim=transpose_block,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
         # Construct problem shape and TileTensors

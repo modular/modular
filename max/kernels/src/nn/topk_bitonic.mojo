@@ -35,6 +35,11 @@ from max.gpu import (
 )
 from max.gpu.memory import external_memory
 from max.gpu.sync import barrier
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 import max.gpu.primitives.block as block
 import max.gpu.primitives.warp as warp
 from max.gpu.host import DeviceAttribute, DeviceContext, FuncAttribute
@@ -712,7 +717,8 @@ def _persistent_topk_2048_kernel[
     K: Int32,
 ):
     """Block-wide bitonic top-k for `N <= _PTOPK_TOTAL` (one block per row)."""
-    _persistent_topk_2048_impl(in_scores, PlainSink(out_idxs), N, K, Int(N))
+    with PDL():
+        _persistent_topk_2048_impl(in_scores, PlainSink(out_idxs), N, K, Int(N))
 
 
 @__name(t"persistent_topk_2048_bounded_{in_dtype}")
@@ -732,10 +738,11 @@ def _persistent_topk_2048_bounded_kernel[
     the output with `-1`. Scan cost tracks each row's real length rather than
     the row stride `N`.
     """
-    var bound, sink = row_bounds.row(block_idx.x, out_idxs)
-    _persistent_topk_2048_impl(
-        in_scores, sink, N, K, min(Int(N), max(0, bound))
-    )
+    with PDL():
+        var bound, sink = row_bounds.row(block_idx.x, out_idxs)
+        _persistent_topk_2048_impl(
+            in_scores, sink, N, K, min(Int(N), max(0, bound))
+        )
 
 
 @inline(.always)
@@ -872,74 +879,80 @@ def _streaming_topk_kernel[
     var i3: Int32
 
     var num_tiles = ceildiv(_N, _TILE)
-    for t in range(num_tiles):
-        var g = t * _TILE
-        var lv, li = _load4_scores(in_scores, row, 0, g + e0, _N)
-        v0 = lv[0]
-        v1 = lv[1]
-        v2 = lv[2]
-        v3 = lv[3]
-        i0 = li[0]
-        i1 = li[1]
-        i2 = li[2]
-        i3 = li[3]
 
-        _bitonic_sort_desc(
-            v0, v1, v2, v3, i0, i1, i2, i3, scratch_v, scratch_i, tid
-        )
+    with PDL():
+        for t in range(num_tiles):
+            var g = t * _TILE
+            var lv, li = _load4_scores(in_scores, row, 0, g + e0, _N)
+            v0 = lv[0]
+            v1 = lv[1]
+            v2 = lv[2]
+            v3 = lv[3]
+            i0 = li[0]
+            i1 = li[1]
+            i2 = li[2]
+            i3 = li[3]
 
-        # Barrier before reusing `scratch` as the stash: the sort's
-        # final swizzled reads alias the canonical write indices (WAR hazard).
-        barrier()
+            _bitonic_sort_desc(
+                v0, v1, v2, v3, i0, i1, i2, i3, scratch_v, scratch_i, tid
+            )
 
-        scratch_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
-        )
-        scratch_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
-        )
-        barrier()
+            # Barrier before reusing `scratch` as the stash: the sort's
+            # final swizzled reads alias the canonical write indices (WAR hazard).
+            barrier()
 
-        # Each thread touches only its own champion slots e0..e3, so the
-        # merge needs no barrier until the write-back below.
-        var mv, mi = _halfclean4(champ_v, champ_i, scratch_v, scratch_i, tid)
-        v0 = mv[0]
-        v1 = mv[1]
-        v2 = mv[2]
-        v3 = mv[3]
-        i0 = mi[0]
-        i1 = mi[1]
-        i2 = mi[2]
-        i3 = mi[3]
-        # Barrier: finish all champion/scratch reads before the re-sort
-        # below overwrites them.
-        barrier()
+            scratch_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+                e0, SIMD[.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
+            )
+            scratch_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+                e0, SIMD[.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
+            )
+            barrier()
 
-        # The half-cleaner above already made `v` a bitonic sequence (max of a
-        # descending champion and a reversed-descending tile), so a bitonic
-        # merge finishes it — no need to pay for a full sort.
-        _bitonic_merge_desc(
-            v0, v1, v2, v3, i0, i1, i2, i3, scratch_v, scratch_i, tid
-        )
+            # Each thread touches only its own champion slots e0..e3, so the
+            # merge needs no barrier until the write-back below.
+            var mv, mi = _halfclean4(
+                champ_v, champ_i, scratch_v, scratch_i, tid
+            )
+            v0 = mv[0]
+            v1 = mv[1]
+            v2 = mv[2]
+            v3 = mv[3]
+            i0 = mi[0]
+            i1 = mi[1]
+            i2 = mi[2]
+            i3 = mi[3]
+            # Barrier: finish all champion/scratch reads before the re-sort
+            # below overwrites them.
+            barrier()
 
-        champ_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
-        )
-        champ_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
-        )
-        barrier()
+            # The half-cleaner above already made `v` a bitonic sequence (max of a
+            # descending champion and a reversed-descending tile), so a bitonic
+            # merge finishes it — no need to pay for a full sort.
+            _bitonic_merge_desc(
+                v0, v1, v2, v3, i0, i1, i2, i3, scratch_v, scratch_i, tid
+            )
 
-    var base = token * _K
-    var out_i = champ_i.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](e0)
-    if e0 < _K:
-        out_idxs[base + e0] = out_i[0]
-    if e1 < _K:
-        out_idxs[base + e1] = out_i[1]
-    if e2 < _K:
-        out_idxs[base + e2] = out_i[2]
-    if e3 < _K:
-        out_idxs[base + e3] = out_i[3]
+            champ_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+                e0, SIMD[.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
+            )
+            champ_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+                e0, SIMD[.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
+            )
+            barrier()
+
+        var base = token * _K
+        var out_i = champ_i.unsafe_load[
+            width=_PTOPK_ITEMS, alignment=_V4_ALIGN
+        ](e0)
+        if e0 < _K:
+            out_idxs[base + e0] = out_i[0]
+        if e1 < _K:
+            out_idxs[base + e1] = out_i[1]
+        if e2 < _K:
+            out_idxs[base + e2] = out_i[2]
+        if e3 < _K:
+            out_idxs[base + e3] = out_i[3]
 
 
 # Digit widths of the radix select, per round of a key half: 12 bits, then 10
@@ -1546,20 +1559,21 @@ def _histsel_topk_kernel[
     trace_buf: TraceBufT,
 ):
     """`_histsel_topk_impl` over the full row width `N` — see there."""
-    _histsel_topk_impl[
-        TraceBufT,
-        enable_trace,
-        prefetch,
-        tail_bits,
-        rank_bits,
-        rank_slots,
-        sel_cap,
-        ordered,
-        deterministic,
-        sig_bits,
-        phi_dtype,
-        scan_items,
-    ](in_scores, PlainSink(out_idxs), N, K, Int(N), trace_buf)
+    with PDL():
+        _histsel_topk_impl[
+            TraceBufT,
+            enable_trace,
+            prefetch,
+            tail_bits,
+            rank_bits,
+            rank_slots,
+            sel_cap,
+            ordered,
+            deterministic,
+            sig_bits,
+            phi_dtype,
+            scan_items,
+        ](in_scores, PlainSink(out_idxs), N, K, Int(N), trace_buf)
 
 
 @__name(t"histsel_topk_bounded_{in_dtype}")
@@ -1595,21 +1609,22 @@ def _histsel_topk_bounded_kernel[
     live column, in descending order, and pads the rest of the output row
     with `-1`.
     """
-    var bound, sink = row_bounds.row(block_idx.x, out_idxs)
-    _histsel_topk_impl[
-        TraceBufT,
-        enable_trace,
-        prefetch,
-        tail_bits,
-        rank_bits,
-        rank_slots,
-        sel_cap,
-        ordered,
-        deterministic,
-        sig_bits,
-        phi_dtype,
-        scan_items,
-    ](in_scores, sink, N, K, min(Int(N), max(0, bound)), trace_buf)
+    with PDL():
+        var bound, sink = row_bounds.row(block_idx.x, out_idxs)
+        _histsel_topk_impl[
+            TraceBufT,
+            enable_trace,
+            prefetch,
+            tail_bits,
+            rank_bits,
+            rank_slots,
+            sel_cap,
+            ordered,
+            deterministic,
+            sig_bits,
+            phi_dtype,
+            scan_items,
+        ](in_scores, sink, N, K, min(Int(N), max(0, bound)), trace_buf)
 
 
 @inline(.always)
@@ -2643,17 +2658,18 @@ def _histsel_resident_kernel[
     trace_buf: TraceBufT,
 ):
     """`_histsel_resident_impl` over the full row width `N` — see there."""
-    _histsel_resident_impl[
-        TraceBufT,
-        enable_trace,
-        sel_cap,
-        bin_digit,
-        ordered,
-        deterministic,
-        res_vecs,
-        sig_bits,
-        phi_dtype,
-    ](in_scores, PlainSink(out_idxs), N, K, Int(N), trace_buf)
+    with PDL():
+        _histsel_resident_impl[
+            TraceBufT,
+            enable_trace,
+            sel_cap,
+            bin_digit,
+            ordered,
+            deterministic,
+            res_vecs,
+            sig_bits,
+            phi_dtype,
+        ](in_scores, PlainSink(out_idxs), N, K, Int(N), trace_buf)
 
 
 @__llvm_metadata(
@@ -2688,18 +2704,19 @@ def _histsel_resident_bounded_kernel[
     `[0, row_bounds(r))` of its stripe, and a bound at or below `K` yields all
     live columns descending with a `-1` output tail.
     """
-    var bound, sink = row_bounds.row(block_idx.x, out_idxs)
-    _histsel_resident_impl[
-        TraceBufT,
-        enable_trace,
-        sel_cap,
-        bin_digit,
-        ordered,
-        deterministic,
-        res_vecs,
-        sig_bits,
-        phi_dtype,
-    ](in_scores, sink, N, K, min(Int(N), max(0, bound)), trace_buf)
+    with PDL():
+        var bound, sink = row_bounds.row(block_idx.x, out_idxs)
+        _histsel_resident_impl[
+            TraceBufT,
+            enable_trace,
+            sel_cap,
+            bin_digit,
+            ordered,
+            deterministic,
+            res_vecs,
+            sig_bits,
+            phi_dtype,
+        ](in_scores, sink, N, K, min(Int(N), max(0, bound)), trace_buf)
 
 
 @inline(.always)
@@ -3517,68 +3534,72 @@ def _split_partial_kernel[
     var i3: Int32
 
     var num_tiles = ceildiv(slice_count, _TILE)
-    for t in range(num_tiles):
-        var g = t * _TILE
-        var lv, li = _load4_scores(
-            in_scores, row_base, slice_base, g + e0, slice_count
-        )
-        v0 = lv[0]
-        v1 = lv[1]
-        v2 = lv[2]
-        v3 = lv[3]
-        i0 = li[0]
-        i1 = li[1]
-        i2 = li[2]
-        i3 = li[3]
 
-        _bitonic_sort_desc(
-            v0, v1, v2, v3, i0, i1, i2, i3, scratch_v, scratch_i, tid
-        )
+    with PDL():
+        for t in range(num_tiles):
+            var g = t * _TILE
+            var lv, li = _load4_scores(
+                in_scores, row_base, slice_base, g + e0, slice_count
+            )
+            v0 = lv[0]
+            v1 = lv[1]
+            v2 = lv[2]
+            v3 = lv[3]
+            i0 = li[0]
+            i1 = li[1]
+            i2 = li[2]
+            i3 = li[3]
 
-        # Barrier before reusing `scratch` as the stash: the sort's final
-        # swizzled reads alias the canonical write indices (WAR hazard).
-        barrier()
+            _bitonic_sort_desc(
+                v0, v1, v2, v3, i0, i1, i2, i3, scratch_v, scratch_i, tid
+            )
 
-        scratch_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
-        )
-        scratch_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
-        )
-        barrier()
+            # Barrier before reusing `scratch` as the stash: the sort's final
+            # swizzled reads alias the canonical write indices (WAR hazard).
+            barrier()
 
-        var mv, mi = _halfclean4(champ_v, champ_i, scratch_v, scratch_i, tid)
-        v0 = mv[0]
-        v1 = mv[1]
-        v2 = mv[2]
-        v3 = mv[3]
-        i0 = mi[0]
-        i1 = mi[1]
-        i2 = mi[2]
-        i3 = mi[3]
-        barrier()
+            scratch_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+                e0, SIMD[.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
+            )
+            scratch_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+                e0, SIMD[.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
+            )
+            barrier()
 
-        _bitonic_merge_desc(
-            v0, v1, v2, v3, i0, i1, i2, i3, scratch_v, scratch_i, tid
-        )
+            var mv, mi = _halfclean4(
+                champ_v, champ_i, scratch_v, scratch_i, tid
+            )
+            v0 = mv[0]
+            v1 = mv[1]
+            v2 = mv[2]
+            v3 = mv[3]
+            i0 = mi[0]
+            i1 = mi[1]
+            i2 = mi[2]
+            i3 = mi[3]
+            barrier()
 
-        champ_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
-        )
-        champ_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
-        )
-        barrier()
+            _bitonic_merge_desc(
+                v0, v1, v2, v3, i0, i1, i2, i3, scratch_v, scratch_i, tid
+            )
 
-    var out_base = (row * S + slce) * _TILE
-    part_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-        out_base + e0,
-        champ_v.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](e0),
-    )
-    part_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-        out_base + e0,
-        champ_i.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](e0),
-    )
+            champ_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+                e0, SIMD[.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
+            )
+            champ_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+                e0, SIMD[.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
+            )
+            barrier()
+
+        var out_base = (row * S + slce) * _TILE
+        part_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+            out_base + e0,
+            champ_v.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](e0),
+        )
+        part_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+            out_base + e0,
+            champ_i.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](e0),
+        )
 
 
 @__name(t"reduce_partials_topk")
@@ -3646,73 +3667,84 @@ def _reduce_partials_kernel(
 
     # Seed the champion with the group's first partial.
     var base0 = (row * count_in + first) * _TILE
-    champ_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-        e0,
-        in_v.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](base0 + e0),
-    )
-    champ_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-        e0,
-        in_i.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](base0 + e0),
-    )
-    barrier()
-
-    # Seeded to keep definite-assignment happy; the half-cleaner overwrites all
-    # four before the merge reads them.
-    var neg_inf = min_or_neg_inf[.float32]()
-    var v0 = neg_inf
-    var v1 = neg_inf
-    var v2 = neg_inf
-    var v3 = neg_inf
-    var i0 = Int32(-1)
-    var i1 = Int32(-1)
-    var i2 = Int32(-1)
-    var i3 = Int32(-1)
-
-    for s in range(1, n_parts):
-        var bs = (row * count_in + first + s) * _TILE
-        scratch_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0,
-            in_v.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](bs + e0),
-        )
-        scratch_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0,
-            in_i.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](bs + e0),
-        )
-        barrier()
-
-        var mv, mi = _halfclean4(champ_v, champ_i, scratch_v, scratch_i, tid)
-        v0 = mv[0]
-        v1 = mv[1]
-        v2 = mv[2]
-        v3 = mv[3]
-        i0 = mi[0]
-        i1 = mi[1]
-        i2 = mi[2]
-        i3 = mi[3]
-        # Finish champion/scratch reads before the merge overwrites scratch.
-        barrier()
-
-        _bitonic_merge_desc(
-            v0, v1, v2, v3, i0, i1, i2, i3, scratch_v, scratch_i, tid
-        )
-
+    with PDL():
         champ_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
+            e0,
+            in_v.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+                base0 + e0
+            ),
         )
         champ_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
+            e0,
+            in_i.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+                base0 + e0
+            ),
         )
         barrier()
 
-    var out_base = (row * count_out + grp) * _TILE
-    out_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-        out_base + e0,
-        champ_v.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](e0),
-    )
-    out_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-        out_base + e0,
-        champ_i.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](e0),
-    )
+        # Seeded to keep definite-assignment happy; the half-cleaner overwrites all
+        # four before the merge reads them.
+        var neg_inf = min_or_neg_inf[.float32]()
+        var v0 = neg_inf
+        var v1 = neg_inf
+        var v2 = neg_inf
+        var v3 = neg_inf
+        var i0 = Int32(-1)
+        var i1 = Int32(-1)
+        var i2 = Int32(-1)
+        var i3 = Int32(-1)
+
+        for s in range(1, n_parts):
+            var bs = (row * count_in + first + s) * _TILE
+            scratch_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+                e0,
+                in_v.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+                    bs + e0
+                ),
+            )
+            scratch_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+                e0,
+                in_i.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+                    bs + e0
+                ),
+            )
+            barrier()
+
+            var mv, mi = _halfclean4(
+                champ_v, champ_i, scratch_v, scratch_i, tid
+            )
+            v0 = mv[0]
+            v1 = mv[1]
+            v2 = mv[2]
+            v3 = mv[3]
+            i0 = mi[0]
+            i1 = mi[1]
+            i2 = mi[2]
+            i3 = mi[3]
+            # Finish champion/scratch reads before the merge overwrites scratch.
+            barrier()
+
+            _bitonic_merge_desc(
+                v0, v1, v2, v3, i0, i1, i2, i3, scratch_v, scratch_i, tid
+            )
+
+            champ_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+                e0, SIMD[.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
+            )
+            champ_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+                e0, SIMD[.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
+            )
+            barrier()
+
+        var out_base = (row * count_out + grp) * _TILE
+        out_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+            out_base + e0,
+            champ_v.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](e0),
+        )
+        out_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+            out_base + e0,
+            champ_i.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](e0),
+        )
 
 
 @__name(t"merge_partials_topk")
@@ -3772,79 +3804,88 @@ def _merge_partials_kernel(
 
     # Seed the champion with partial 0.
     var base0 = (row * count) * _TILE
-    champ_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-        e0,
-        part_v.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](base0 + e0),
-    )
-    champ_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-        e0,
-        part_i.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](base0 + e0),
-    )
-    barrier()
-
-    # Seeded to keep definite-assignment happy; the half-cleaner below
-    # overwrites all four before the merge reads them.
-    var neg_inf = min_or_neg_inf[.float32]()
-    var v0 = neg_inf
-    var v1 = neg_inf
-    var v2 = neg_inf
-    var v3 = neg_inf
-    var i0 = Int32(-1)
-    var i1 = Int32(-1)
-    var i2 = Int32(-1)
-    var i3 = Int32(-1)
-
-    for s in range(1, count):
-        var bs = (row * count + s) * _TILE
-        scratch_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+    with PDL():
+        champ_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
             e0,
             part_v.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-                bs + e0
+                base0 + e0
             ),
-        )
-        scratch_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0,
-            part_i.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-                bs + e0
-            ),
-        )
-        barrier()
-
-        var mv, mi = _halfclean4(champ_v, champ_i, scratch_v, scratch_i, tid)
-        v0 = mv[0]
-        v1 = mv[1]
-        v2 = mv[2]
-        v3 = mv[3]
-        i0 = mi[0]
-        i1 = mi[1]
-        i2 = mi[2]
-        i3 = mi[3]
-        # Finish champion/scratch reads before the merge overwrites scratch.
-        barrier()
-
-        _bitonic_merge_desc(
-            v0, v1, v2, v3, i0, i1, i2, i3, scratch_v, scratch_i, tid
-        )
-
-        champ_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
         )
         champ_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
-            e0, SIMD[.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
+            e0,
+            part_i.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+                base0 + e0
+            ),
         )
         barrier()
 
-    var _K = Int(K)
-    var base = row * _K
-    var out_i = champ_i.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](e0)
-    if e0 < _K:
-        out_idxs[base + e0] = out_i[0]
-    if e1 < _K:
-        out_idxs[base + e1] = out_i[1]
-    if e2 < _K:
-        out_idxs[base + e2] = out_i[2]
-    if e3 < _K:
-        out_idxs[base + e3] = out_i[3]
+        # Seeded to keep definite-assignment happy; the half-cleaner below
+        # overwrites all four before the merge reads them.
+        var neg_inf = min_or_neg_inf[.float32]()
+        var v0 = neg_inf
+        var v1 = neg_inf
+        var v2 = neg_inf
+        var v3 = neg_inf
+        var i0 = Int32(-1)
+        var i1 = Int32(-1)
+        var i2 = Int32(-1)
+        var i3 = Int32(-1)
+
+        for s in range(1, count):
+            var bs = (row * count + s) * _TILE
+            scratch_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+                e0,
+                part_v.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+                    bs + e0
+                ),
+            )
+            scratch_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+                e0,
+                part_i.unsafe_load[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+                    bs + e0
+                ),
+            )
+            barrier()
+
+            var mv, mi = _halfclean4(
+                champ_v, champ_i, scratch_v, scratch_i, tid
+            )
+            v0 = mv[0]
+            v1 = mv[1]
+            v2 = mv[2]
+            v3 = mv[3]
+            i0 = mi[0]
+            i1 = mi[1]
+            i2 = mi[2]
+            i3 = mi[3]
+            # Finish champion/scratch reads before the merge overwrites scratch.
+            barrier()
+
+            _bitonic_merge_desc(
+                v0, v1, v2, v3, i0, i1, i2, i3, scratch_v, scratch_i, tid
+            )
+
+            champ_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+                e0, SIMD[.float32, _PTOPK_ITEMS](v0, v1, v2, v3)
+            )
+            champ_i.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
+                e0, SIMD[.int32, _PTOPK_ITEMS](i0, i1, i2, i3)
+            )
+            barrier()
+
+        var _K = Int(K)
+        var base = row * _K
+        var out_i = champ_i.unsafe_load[
+            width=_PTOPK_ITEMS, alignment=_V4_ALIGN
+        ](e0)
+        if e0 < _K:
+            out_idxs[base + e0] = out_i[0]
+        if e1 < _K:
+            out_idxs[base + e1] = out_i[1]
+        if e2 < _K:
+            out_idxs[base + e2] = out_i[2]
+        if e3 < _K:
+            out_idxs[base + e3] = out_i[3]
 
 
 # ===----------------------------------------------------------------------=== #
@@ -3940,6 +3981,7 @@ def persistent_topk_block[
                 row_bounds,
                 grid_dim=total_seq_len,
                 block_dim=_PTOPK_BLOCK,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
         else:
             ctx.enqueue_function[_persistent_topk_2048_kernel[in_dtype]](
@@ -3949,6 +3991,7 @@ def persistent_topk_block[
                 Int32(K),
                 grid_dim=total_seq_len,
                 block_dim=_PTOPK_BLOCK,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
     else:
         if row_bounds:
@@ -3964,6 +4007,7 @@ def persistent_topk_block[
             Int32(K),
             grid_dim=total_seq_len,
             block_dim=_PTOPK_BLOCK,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
 
@@ -4177,6 +4221,7 @@ def persistent_topk_block_split[
                         NullTrace(),
                         grid_dim=total_seq_len,
                         block_dim=_HSEL_RES_BLOCK,
+                        attributes=pdl_launch_attributes(PDLLevel.ON),
                     )
                     return
                 ctx.enqueue_function[
@@ -4198,6 +4243,7 @@ def persistent_topk_block_split[
                     NullTrace(),
                     grid_dim=total_seq_len,
                     block_dim=_HSEL_RES_BLOCK,
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
                 return
 
@@ -4229,6 +4275,7 @@ def persistent_topk_block_split[
                         NullTrace(),
                         grid_dim=total_seq_len,
                         block_dim=_HSEL_RES_BLOCK,
+                        attributes=pdl_launch_attributes(PDLLevel.ON),
                     )
                     return
                 ctx.enqueue_function[
@@ -4247,6 +4294,7 @@ def persistent_topk_block_split[
                     NullTrace(),
                     grid_dim=total_seq_len,
                     block_dim=_HSEL_RES_BLOCK,
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
                 return
             # Below the crossover the rank's runs would go wide, so this
@@ -4273,6 +4321,7 @@ def persistent_topk_block_split[
                     NullTrace(),
                     grid_dim=total_seq_len,
                     block_dim=_HSEL_RES_BLOCK,
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
                 return
             ctx.enqueue_function[
@@ -4292,6 +4341,7 @@ def persistent_topk_block_split[
                 NullTrace(),
                 grid_dim=total_seq_len,
                 block_dim=_HSEL_RES_BLOCK,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
         if not hsel_fills_gpu:
@@ -4348,6 +4398,7 @@ def persistent_topk_block_split[
                         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                             UInt32(_HSEL_SMEM_BYTES)
                         ),
+                        attributes=pdl_launch_attributes(PDLLevel.ON),
                     )
                     return
                 ctx.enqueue_function[
@@ -4374,6 +4425,7 @@ def persistent_topk_block_split[
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                         UInt32(_HSEL_SMEM_BYTES)
                     ),
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
                 return
             if case .Some(row_bounds) = row_bounds:
@@ -4403,6 +4455,7 @@ def persistent_topk_block_split[
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                         UInt32(_HSEL_SMEM_BYTES)
                     ),
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
                 return
             ctx.enqueue_function[
@@ -4429,6 +4482,7 @@ def persistent_topk_block_split[
                 func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                     UInt32(_HSEL_SMEM_BYTES)
                 ),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
             return
 
@@ -4456,6 +4510,7 @@ def persistent_topk_block_split[
                 func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                     UInt32(_HSEL_SMEM_BYTES)
                 ),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
             return
         ctx.enqueue_function[
@@ -4479,6 +4534,7 @@ def persistent_topk_block_split[
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 UInt32(_HSEL_SMEM_BYTES)
             ),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
         return
 
@@ -4517,6 +4573,7 @@ def persistent_topk_block_split[
         Int32(S),
         grid_dim=total_seq_len * S,
         block_dim=_PTOPK_BLOCK,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
     # Phase 2: reduce the `S` partials per row toward `_MERGE_FANIN` via parallel
@@ -4554,6 +4611,7 @@ def persistent_topk_block_split[
             Int32(_MERGE_FANIN),
             grid_dim=total_seq_len * count_out,
             block_dim=_PTOPK_BLOCK,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
         var tv = src_v
         src_v = dst_v
@@ -4571,6 +4629,7 @@ def persistent_topk_block_split[
         Int32(K),
         grid_dim=total_seq_len,
         block_dim=_PTOPK_BLOCK,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
     _ = buf_a_v
