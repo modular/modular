@@ -265,6 +265,43 @@ def test_concat_nvfp4_shares_the_global_scales() -> None:
         assert fused.input_scale is gate.input_scale
 
 
+def test_concat_nvfp4_quantizers_pin_the_max_amax(sm100_arch: None) -> None:
+    """Fake-quant gate||up shares one global amax before the packed concat.
+
+    Each member still quantizes its own values. The pinned amax is the max
+    across the group, and the fused tensor keeps the first member's scale,
+    which was encoded with that same amax.
+    """
+    del sm100_arch
+    with F.lazy():
+        gate = NVFP4TensorQuantizer(
+            Tensor.zeros((128, 64), dtype=DType.bfloat16)
+        )
+        up = NVFP4TensorQuantizer(Tensor.zeros((128, 64), dtype=DType.bfloat16))
+
+        fused = quant_ops.concat_nvfp4(gate, up)
+
+        assert isinstance(fused, NVFP4Tensor)
+        assert not isinstance(fused, NVFP4TensorQuantizer)
+        assert gate._pinned_amax is up._pinned_amax
+        assert gate._pinned_amax is not None
+        assert fused.weight_scale_2 is gate.weight_scale_2
+        assert fused.input_scale is gate.input_scale
+        assert list(fused.weight.shape) == [256, 32]
+        assert list(fused.weight_scale.shape) == [256, 4]
+
+
+def test_concat_nvfp4_rejects_mixed_quantizer_and_packed() -> None:
+    """A packed checkpoint scale and a fake-quant amax cannot share one scale."""
+    with F.lazy():
+        packed = _nvfp4_weight(rows=16, cols=32)
+        quantizer = NVFP4TensorQuantizer(
+            Tensor.zeros((16, 32), dtype=DType.bfloat16)
+        )
+        with pytest.raises(TypeError, match="cannot mix"):
+            quant_ops.concat_nvfp4(packed, quantizer)
+
+
 def test_concat_nvfp4_rejects_non_row_axis() -> None:
     with F.lazy():
         with pytest.raises(ValueError, match="only supports axis=0"):

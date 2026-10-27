@@ -22,7 +22,13 @@ from max._entrypoints.cli.quantize import (
 )
 from max.experimental import functional as F
 from max.experimental.nn import Linear, Module
-from max.experimental.nn.common_layers.quant_linear import QuantizedLinear
+from max.experimental.nn.common_layers.linear import QKVLinear
+from max.experimental.nn.common_layers.mlp import MLP
+from max.experimental.nn.common_layers.quant_linear import (
+    QuantizedLinear,
+    QuantizedMLP,
+    QuantizedQKVLinear,
+)
 from max.experimental.nn.common_layers.quant_tensor import NVFP4TensorQuantizer
 from max.experimental.tensor import Tensor
 from max.nn.quant_config import WeightSource
@@ -92,3 +98,67 @@ def test_an_unknown_format_names_the_ones_that_work() -> None:
         on_the_fly_config("fp4-but-faster")
     for name in quant_formats():
         assert name in str(exc.value)
+
+
+def test_insert_swaps_fused_mlp_and_qkv() -> None:
+    """Gate/up and q/k/v become the quant fusers when every member matches."""
+    with F.lazy():
+        mlp = MLP(32, 64)
+        qkv = QKVLinear(32, 32, 32)
+        config = on_the_fly_config("nvfp4")
+        insert_quantized_linears(
+            mlp, [r"^gate_proj$", r"^up_proj$", r"^down_proj$"], config
+        )
+        insert_quantized_linears(
+            qkv, [r"^q_proj$", r"^k_proj$", r"^v_proj$"], config
+        )
+
+        assert isinstance(mlp, QuantizedMLP)
+        assert isinstance(mlp.gate_proj, QuantizedLinear)
+        assert isinstance(mlp.up_proj, QuantizedLinear)
+        assert isinstance(mlp.down_proj, QuantizedLinear)
+        assert isinstance(qkv, QuantizedQKVLinear)
+        assert isinstance(qkv.q_proj, QuantizedLinear)
+        assert isinstance(qkv.k_proj, QuantizedLinear)
+        assert isinstance(qkv.v_proj, QuantizedLinear)
+
+
+def test_insert_leaves_down_proj_on_the_plain_mlp() -> None:
+    """``down_proj`` is its own matmul, so the MLP fuser stays put."""
+    with F.lazy():
+        mlp = MLP(32, 64)
+        insert_quantized_linears(
+            mlp, [r"^down_proj$"], on_the_fly_config("nvfp4")
+        )
+
+        assert type(mlp) is MLP
+        assert isinstance(mlp.down_proj, QuantizedLinear)
+        assert type(mlp.gate_proj) is not QuantizedLinear
+        assert type(mlp.up_proj) is not QuantizedLinear
+
+
+def test_insert_verbose_prints_the_patched_module(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """``--verbose`` prints the module after the swap, before the count log."""
+    with F.lazy():
+        mlp = MLP(32, 64)
+        insert_quantized_linears(
+            mlp, [r"^down_proj$"], on_the_fly_config("nvfp4"), verbose=True
+        )
+
+    assert "QuantizedLinear" in capsys.readouterr().out
+
+
+def test_insert_rejects_half_of_a_fused_group() -> None:
+    """One side of a fused matmul cannot pick a global scale by itself."""
+    with F.lazy():
+        mlp = MLP(32, 64)
+        qkv = QKVLinear(32, 32, 32)
+        config = on_the_fly_config("nvfp4")
+        with pytest.raises(ValueError, match="one matmul"):
+            insert_quantized_linears(mlp, [r"^gate_proj$"], config)
+        with pytest.raises(ValueError, match="one matmul"):
+            insert_quantized_linears(qkv, [r"^q_proj$", r"^k_proj$"], config)
+        assert type(mlp) is MLP
+        assert type(qkv) is QKVLinear

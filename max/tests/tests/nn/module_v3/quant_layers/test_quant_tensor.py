@@ -631,6 +631,19 @@ def test_nvfp4_quantizer_packs_nvfp4_on_first_use(sm100_arch: None) -> None:
         assert list(qt.input_scale.shape) == []
 
 
+def test_nvfp4_quantizer_rejects_a_late_global_scale_pin(
+    sm100_arch: None,
+) -> None:
+    """A pin after quantization cannot rewrite block scales already encoded."""
+    del sm100_arch
+    with F.lazy():
+        qt = NVFP4TensorQuantizer(Tensor.zeros((128, 64), dtype=DType.bfloat16))
+        _ = qt.weight
+        pinned = Tensor.zeros((), dtype=DType.float32, device=CPU())
+        with pytest.raises(RuntimeError, match="before its fused"):
+            qt.pin_global_amax(pinned)
+
+
 def test_type_guards_narrow_homogeneous_bundles() -> None:
     """``all_nvfp4`` / ``all_fp8_block`` only accept a uniform bundle."""
     with F.lazy():

@@ -22,7 +22,11 @@ from max.experimental.nn import Module
 from max.experimental.nn.common_layers.activation import (
     activation_function_from_name,
 )
-from max.experimental.nn.common_layers.linear import col_parallel, row_parallel
+from max.experimental.nn.common_layers.linear import (
+    QKVLinear,
+    col_parallel,
+    row_parallel,
+)
 from max.experimental.nn.module import _TransparentKey
 from max.experimental.sharding import DeviceMapping, DeviceMesh
 from max.experimental.tensor import Tensor
@@ -84,8 +88,11 @@ class QuantizedLinear(Module[[Tensor], Tensor]):
 class QuantizedMLP(Module[[Tensor], Tensor]):
     """Quantize-aware gated MLP.
 
-    Computes ``down_proj(silu(gate_proj(x)) * up_proj(x))`` with all three
-    projections sharing the ``quant_config`` (bf16 or FP8 block-scaled).
+    Computes ``down_proj(activation(gate_proj(x)) * up_proj(x))``. Gate and
+    up are one matmul via ``quant_ops.concat_weights``. When constructed
+    with ``quant_config``, all three projections share it. The quantize
+    entrypoint also substitutes this class for a common MLP when gate and
+    up are fake-quantized, leaving ``down_proj`` as it was.
     """
 
     gate_proj: QuantizedLinear
@@ -142,6 +149,42 @@ class QuantizedMLP(Module[[Tensor], Tensor]):
         if isinstance(self.up_proj.bias, Tensor):
             up = up + self.up_proj.bias
         return self.down_proj(self.activation_function(gate) * up)
+
+
+class QuantizedQKVLinear(QKVLinear):
+    """Unstacked q/k/v projection that fuses through ``concat_weights``.
+
+    Substituted for :class:`QKVLinear` before compile when q, k, and v are
+    all targeted. A stacked checkpoint is one weight already, so it keeps
+    :class:`QKVLinear`. ``concat_weights`` dispatches on the weight type.
+    """
+
+    @property
+    def fused_weight(self) -> Tensor:
+        """Returns the stacked weight.
+
+        Unstacked rows fuse in :meth:`forward`. ``clip_qkv`` reads this
+        property and cannot clamp packed quantized weights.
+        """
+        if self._stacked:
+            return self.weight
+        raise TypeError(
+            "q, k, and v fuse in QuantizedQKVLinear.forward via concat_weights"
+        )
+
+    def forward(self, x: Tensor) -> Tensor:
+        """Applies one matmul over the fused q||k||v weight."""
+        if self._stacked:
+            return super().forward(x)
+        return (
+            quant_ops.matmul(
+                x,
+                quant_ops.concat_weights(
+                    self.q_proj.weight, self.k_proj.weight, self.v_proj.weight
+                ),
+            )
+            + self.fused_bias
+        )
 
 
 def tensor_parallel_mlp(layer: QuantizedMLP) -> QuantizedMLP:

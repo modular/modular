@@ -1294,6 +1294,30 @@ def concat_fp8_block(*tensors: FP8BlockTensor, axis: int = 0) -> FP8BlockTensor:
     )
 
 
+def _pin_shared_quantizer_amax(tensors: Sequence[NVFP4Tensor]) -> None:
+    """Pins the max amax onto every fake-quant member of a fused group.
+
+    Pre-quantized tensors already carry a checkpoint global scale and are
+    left alone. A mix of fake-quant and pre-quantized tensors cannot share
+    one ``weight_scale_2``, so that is rejected before either side is read.
+    """
+    quantizers = [t for t in tensors if isinstance(t, NVFP4TensorQuantizer)]
+    if not quantizers:
+        return
+    if len(quantizers) != len(tensors):
+        raise TypeError(
+            "concat_nvfp4 cannot mix fake-quant NVFP4 weights with "
+            "pre-quantized NVFP4 weights"
+        )
+    if len(quantizers) == 1:
+        return
+    shared = quantizers[0]._reduction_amax()
+    for quantizer in quantizers[1:]:
+        shared = F.max(shared, quantizer._reduction_amax())
+    for quantizer in quantizers:
+        quantizer.pin_global_amax(shared)
+
+
 def concat_nvfp4(*tensors: NVFP4Tensor, axis: int = 0) -> NVFP4Tensor:
     """Concatenate two or more :class:`NVFP4Tensor`s along the row axis.
 
@@ -1301,6 +1325,10 @@ def concat_nvfp4(*tensors: NVFP4Tensor, axis: int = 0) -> NVFP4Tensor:
     ``axis`` (the ``N``/row axis). The per-tensor ``weight_scale_2`` and static
     ``input_scale`` are taken from the first tensor: modelopt emits a shared
     global scale for the fused ``gate``/``up`` projections.
+
+    Fake-quant inputs are quantized here, not before the call. The group
+    pins one global amax, the max across its members, so each member's block
+    scales match that shared ``weight_scale_2``.
     """
     if not tensors:
         raise ValueError("concat_nvfp4 requires at least one tensor")
@@ -1315,6 +1343,7 @@ def concat_nvfp4(*tensors: NVFP4Tensor, axis: int = 0) -> NVFP4Tensor:
                 "All NVFP4Tensors must have the same block_size to concat; "
                 f"got {block_size} and {q.block_size}"
             )
+    _pin_shared_quantizer_amax(tensors)
     return NVFP4Tensor(
         weight=F.concat([q.weight for q in tensors], axis=0),
         weight_scale=F.concat([q.weight_scale for q in tensors], axis=0),

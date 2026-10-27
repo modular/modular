@@ -696,7 +696,15 @@ class _Quantizer(QTensor):
 
 
 class NVFP4TensorQuantizer(_Quantizer, NVFP4Tensor):
-    """On-the-fly NVFP4 quantization of a bf16 weight."""
+    """On-the-fly NVFP4 quantization of a bf16 weight.
+
+    A fused group (gate||up, q||k||v) pins one global amax, the max across
+    its members, via :meth:`pin_global_amax` before the packed leaves are
+    read. :func:`~.quant_ops.concat_nvfp4` does that so every member's block
+    scales match the single ``weight_scale_2`` concat keeps.
+    """
+
+    _pinned_amax: Tensor | None = None
 
     def __init__(
         self,
@@ -705,13 +713,46 @@ class NVFP4TensorQuantizer(_Quantizer, NVFP4Tensor):
     ):
         super().__init__(tensor, block_size)
 
-    def _quantize(self) -> NVFP4Tensor:
-        amax = (
+    def _reduction_amax(self) -> Tensor:
+        """Returns this tensor's abs-max as a CPU float32 scalar."""
+        return (
             F.abs(self._tensor)
             .max(axis=None)
             .reshape([])
             .cast(DType.float32)
             .to(CPU())
+        )
+
+    def pin_global_amax(self, amax: Tensor) -> None:
+        """Quantizes with ``amax`` instead of this tensor's own maximum.
+
+        ``concat_nvfp4`` pins the same value on every fake-quant member of a
+        fused group before reading their packed leaves. The pin has to land
+        before the first quantization; a later pin cannot change block scales
+        that were already encoded with a different global scale.
+
+        Args:
+            amax: Shared abs-max, a CPU float32 scalar.
+
+        Raises:
+            RuntimeError: If this tensor was already quantized without a pin.
+        """
+        if "quant_tensor" in self.__dict__:
+            if self._pinned_amax is None:
+                raise RuntimeError(
+                    "NVFP4TensorQuantizer was quantized before its fused "
+                    "global scale was pinned"
+                )
+            return
+        self._pinned_amax = amax
+
+    def _quantize(self) -> NVFP4Tensor:
+        # A fused group shares one global scale. Block scales encoded with a
+        # member's own amax would not match the weight_scale_2 concat keeps.
+        amax = (
+            self._pinned_amax
+            if self._pinned_amax is not None
+            else self._reduction_amax()
         )
         encode_scale = (MAX_E2M1 * MAX_E4M3) / amax
         decode_scale = 1.0 / encode_scale

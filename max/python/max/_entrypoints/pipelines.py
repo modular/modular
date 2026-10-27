@@ -850,6 +850,12 @@ def cli_pipeline(
     ),
 )
 @click.option(
+    "--verbose",
+    is_flag=True,
+    default=False,
+    help="Print the patched module before the quantizer count.",
+)
+@click.option(
     "--prompt",
     type=str,
     default="I believe the meaning of life is",
@@ -905,6 +911,7 @@ def cli_pipeline(
 def quantize(
     targets: list[str],
     quantization_format: str,
+    verbose: bool,
     prompt: str,
     image_url: list[str],
     num_warmups: int,
@@ -976,6 +983,7 @@ def quantize(
         targets=targets,
         prompt=prompt,
         quantization_format=quantization_format,
+        verbose=verbose,
         image_urls=image_url,
         num_warmups=num_warmups,
         profile=profile,
