@@ -1,0 +1,29 @@
+load(
+    "//bazel:api.bzl",
+    "modular_py_library",
+    "requirement",
+)
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "deepseekV41_modulev3",
+    srcs = [
+        "__init__.py",
+        "inputs.py",
+        "interface.py",
+        "model_config.py",
+    ],
+    deps = [
+        requirement("transformers"),
+        requirement("typing-extensions"),
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+    ],
+)
