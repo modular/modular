@@ -433,6 +433,31 @@ modular_py_test(
     ],
 )
 
+# Guards the per-replica DSpark draft head (deepseekV41/spec_adapters.py)
+# and SampledDraftSampler.split (pipelines/speculative/block_driver.py).
+modular_py_test(
+    name = "test_dspark_replica_head_gpu",
+    srcs = ["test_dspark_replica_head_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = [
+        "//:b200_gpu",
+        "//:has_multi_gpu",
+    ],
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/speculative",
+        requirement("numpy"),
+    ],
+)
+
 # Security check of model code: the host-shared Engram copy is never
 # attached through a registry directory, record or provider process that
 # another local user could control; the loader falls back to a private copy

@@ -50,6 +50,7 @@ from max.pipelines.speculative.block_driver import (
     Accepted,
     BlockBatch,
     DraftSampler,
+    SampledDraftSampler,
 )
 from max.pipelines.speculative.driver import SequentialBatch
 from max.pipelines.speculative.spec_adapters.target_adapter import TargetAdapter
@@ -341,12 +342,25 @@ def block_proposer(
     draft: Module,
     draft_config: Any,
     speculative: SpeculativeConfig,
-) -> BlockProposer[TrunkTaps, TensorValue]:
-    """Returns the proposer of the DSpark stages, on the verify's trunk."""
-    del speculative
+) -> BlockProposer[TrunkTaps, TensorValue | list[TensorValue]]:
+    """Returns the proposer of the DSpark stages, on the verify's trunk.
+
+    Raises:
+        ValueError: If ``speculative`` keeps the proposal distributions per
+            replica, which this proposer does not.
+    """
+    if speculative.draft_probs_layout != "device0":
+        raise ValueError(
+            "DeepSeek-V4.1 DSpark supports only draft_probs_layout='device0'"
+        )
     assert isinstance(verify, _Verify)
     assert isinstance(draft, DeepseekV41DSparkDrafter)
-    return _DSparkProposer(verify, draft, draft_config)
+    return _DSparkProposer(
+        verify,
+        draft,
+        draft_config,
+        per_replica_head=speculative.draft_head_parallelism == "replica",
+    )
 
 
 class _Verify:
@@ -628,13 +642,16 @@ class _DSparkProposer:
         verify: _Verify,
         draft: DeepseekV41DSparkDrafter,
         draft_config: Any,
+        per_replica_head: bool = False,
     ) -> None:
         self._verify = verify
         self.draft = draft
+        self._per_replica_head = per_replica_head
         self.config = verify.config
         self.block_size = draft_config.block_size
         self.mask_token_id = draft_config.mask_token_id
         self._stages: list[DeepseekV41DSparkDrafter] | None = None
+        self._block_ids: list[TensorValue] = []
 
     def stages(self, batch: BlockBatch) -> list[DeepseekV41DSparkDrafter]:
         """The stages, or one copy of them per device."""
@@ -671,12 +688,15 @@ class _DSparkProposer:
         )
         if batch.data_parallel_degree == 1:
             return [ops.reshape(ids, [1, -1]) for ids in per_dev]
-        return [
-            ops.reshape(ids[((rows, f"dspark_block_split_{i}"),)], [1, -1])
-            for i, (ids, rows) in enumerate(
-                zip(per_dev, self._block_ranges(batch), strict=True)
-            )
-        ]
+        # Kept for the per-replica head, which reads each block's anchor.
+        self._block_ids = []
+        embeds = []
+        for i, (ids, rows) in enumerate(
+            zip(per_dev, self._block_ranges(batch), strict=True)
+        ):
+            self._block_ids.append(ids[((rows, f"dspark_block_split_{i}"),)])
+            embeds.append(ops.reshape(self._block_ids[-1], [1, -1]))
+        return embeds
 
     def _block_ranges(self, batch: BlockBatch) -> list[slice]:
         """Each device's run of block rows: its replica's requests' blocks."""
@@ -694,10 +714,11 @@ class _DSparkProposer:
         embeds: list[TensorValue],
         offsets: list[TensorValue],
         block_kv: list[PagedCacheValues],
-    ) -> TensorValue:
+    ) -> TensorValue | list[TensorValue]:
         """Runs the DSpark stages over each request's draft block.
 
         Each stage attends over its window of stored context plus the block.
+        With a per-replica head, each device keeps its own blocks' states.
         """
         stages = self.stages(batch)
         trunks = self._verify.replicas(batch)
@@ -730,6 +751,8 @@ class _DSparkProposer:
                     ranges=[(r.start, r.stop) for r in ranges],
                 ),
             )
+            if self._per_replica_head:
+                return hs
             return ops.reshape(
                 gather_rows(hs, total * self.block_size, batch.signal_buffers),
                 [1, -1, self.config.hidden_size],
@@ -746,11 +769,13 @@ class _DSparkProposer:
     def head(
         self,
         batch: BlockBatch,
-        block_hs: TensorValue,
+        block_hs: TensorValue | list[TensorValue],
         accepted: Accepted,
         sampler: DraftSampler,
     ) -> TensorValue:
         """Turns the block's hidden states into draft tokens, one at a time."""
+        if isinstance(block_hs, list):
+            return self._replica_head(batch, block_hs, accepted, sampler)
         lead = self.stages(batch)[0]
         logits = lead.logits(
             block_hs, self._verify.replicas(batch)[0].head.weight
@@ -762,6 +787,91 @@ class _DSparkProposer:
         )
         drafts, _ = lead.draft(logits, accepted.next_tokens, sampler=sample)
         return ops.cast(drafts, accepted.next_tokens.dtype)
+
+    def _replica_head(
+        self,
+        batch: BlockBatch,
+        block_hs: list[TensorValue],
+        accepted: Accepted,
+        sampler: DraftSampler,
+    ) -> TensorValue:
+        """Drafts each replica's rows on its own device.
+
+        The sequential head then runs over a replica's few rows on every
+        device at once, rather than over the whole batch on device 0 while
+        the others wait. Only the draft tokens and a sampled draft's
+        distributions are gathered back onto device 0.
+        """
+        splits = batch.data_parallel_splits
+        assert splits is not None
+        signals = batch.signal_buffers
+        rows = [f"dspark_head_rows_{r}" for r in batch.replica_of]
+
+        def per_replica(value: TensorValue) -> list[TensorValue]:
+            # ``[batch_size]`` on device 0 -> each device's replica rows.
+            return [
+                ops.rebind(
+                    v[
+                        (
+                            (
+                                slice(splits[r], splits[r + 1]),
+                                f"dspark_head_split_{i}",
+                            ),
+                        )
+                    ],
+                    [rows[i]],
+                )
+                for i, (v, r) in enumerate(
+                    zip(
+                        broadcast_per_device(value, signals, batch.n_devs),
+                        batch.replica_of,
+                        strict=True,
+                    )
+                )
+            ]
+
+        samplers: Sequence[DraftSampler] = (
+            sampler.split(per_replica, rows)
+            if isinstance(sampler, SampledDraftSampler)
+            else [sampler] * batch.n_devs
+        )
+        drafts = [
+            stage.draft(
+                stage.logits(hs, trunk.head.weight),
+                anchors,
+                sampler=local.sample_next,
+            )[0]
+            for stage, trunk, hs, anchors, local in zip(
+                self.stages(batch),
+                self._verify.replicas(batch),
+                block_hs,
+                self._anchors(rows),
+                samplers,
+                strict=True,
+            )
+        ]
+        if isinstance(sampler, SampledDraftSampler):
+            sampler.adopt_distributions(
+                ops.allgather(
+                    [
+                        local.distributions()
+                        for local in samplers
+                        if isinstance(local, SampledDraftSampler)
+                    ],
+                    signals,
+                )[0]
+            )
+        return ops.cast(
+            ops.allgather(drafts, signals)[0], accepted.next_tokens.dtype
+        ).rebind([accepted.next_tokens.shape[0], self.block_size])
+
+    def _anchors(self, rows: list[str]) -> list[TensorValue]:
+        """Each device's blocks' first tokens, ``accepted.next_tokens``'
+        rows of its replica, read from the block ids it already holds."""
+        return [
+            ops.slice_tensor(ids, [(slice(None, None, self.block_size), n)])
+            for ids, n in zip(self._block_ids, rows, strict=True)
+        ]
 
 
 ADAPTER = TargetAdapter(

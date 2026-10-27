@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
+from typing import Literal, cast
 from unittest.mock import Mock
 
 import numpy as np
@@ -46,6 +46,9 @@ from max.pipelines.architectures.deepseekV41.model_config import (
     DeepseekV41Config,
     RoutedExpertFormat,
 )
+from max.pipelines.architectures.deepseekV41.spec_adapters import (
+    block_proposer,
+)
 from max.pipelines.architectures.dspark_deepseekV41 import (
     DSparkDeepseekV41DraftConfig,
 )
@@ -60,11 +63,17 @@ TESTDATA = Path(__file__).parent / "testdata"
 NUM_SPECULATIVE_TOKENS = 5
 
 
-def _speculative(mixed_width: int | None = None) -> SpeculativeConfig:
+def _speculative(
+    mixed_width: int | None = None,
+    draft_proposal: Literal["argmax", "sampled"] = "argmax",
+    draft_head_parallelism: Literal["device0", "replica"] = "device0",
+) -> SpeculativeConfig:
     return SpeculativeConfig(
         speculative_method="dspark",
         num_speculative_tokens=NUM_SPECULATIVE_TOKENS,
         num_speculative_tokens_mixed_batch=mixed_width,
+        draft_proposal=draft_proposal,
+        draft_head_parallelism=draft_head_parallelism,
     )
 
 
@@ -116,7 +125,9 @@ def _model_config(
 
 
 def _pipeline_config(
-    config: AutoConfig, data_parallel_degree: int, mixed_width: int | None
+    config: AutoConfig,
+    data_parallel_degree: int,
+    speculative: SpeculativeConfig,
 ) -> PipelineConfig:
     """What the pairing reads of a served config."""
     return cast(
@@ -126,7 +137,7 @@ def _pipeline_config(
                 main_architecture_name="DeepseekV41ForCausalLM"
             ),
             draft_model=None,
-            speculative=_speculative(mixed_width),
+            speculative=speculative,
             needs_bitmask_constraints=False,
             runtime=SimpleNamespace(
                 reasoning_parser=None, prefer_module_v3=False
@@ -151,17 +162,22 @@ _MXFP4 = RoutedExpertFormat.MXFP4
         "expert_parallel",
         "mixed_width",
         "expert_format",
+        "draft_proposal",
+        "draft_head_parallelism",
     ),
     [
-        (1, 1, False, None, _NVFP4),
-        (4, 1, False, None, _NVFP4),
-        (4, 4, False, None, _NVFP4),
-        (4, 4, True, None, _NVFP4),
-        (1, 1, False, 2, _NVFP4),
-        (4, 4, False, 2, _NVFP4),
-        (1, 1, False, None, _MXFP4),
-        (4, 1, False, None, _MXFP4),
-        (4, 4, True, None, _MXFP4),
+        (1, 1, False, None, _NVFP4, "argmax", "device0"),
+        (4, 1, False, None, _NVFP4, "argmax", "device0"),
+        (4, 4, False, None, _NVFP4, "argmax", "device0"),
+        (4, 4, True, None, _NVFP4, "argmax", "device0"),
+        (4, 4, True, None, _NVFP4, "sampled", "device0"),
+        (4, 4, True, None, _NVFP4, "argmax", "replica"),
+        (4, 4, True, None, _NVFP4, "sampled", "replica"),
+        (1, 1, False, 2, _NVFP4, "argmax", "device0"),
+        (4, 4, False, 2, _NVFP4, "argmax", "device0"),
+        (1, 1, False, None, _MXFP4, "argmax", "device0"),
+        (4, 1, False, None, _MXFP4, "argmax", "device0"),
+        (4, 4, True, None, _MXFP4, "argmax", "device0"),
     ],
 )
 def test_unified_dspark_graph_traces(
@@ -170,6 +186,8 @@ def test_unified_dspark_graph_traces(
     expert_parallel: bool,
     mixed_width: int | None,
     expert_format: RoutedExpertFormat,
+    draft_proposal: Literal["argmax", "sampled"],
+    draft_head_parallelism: Literal["device0", "replica"],
 ) -> None:
     """One spec-decode step traces, its weights named but not loaded.
 
@@ -181,7 +199,8 @@ def test_unified_dspark_graph_traces(
     verification width is a graph dimension, so the same graph serves both
     kinds of step and still drafts the full block. ``expert_format`` picks
     the trunk's routed experts: NVFP4 rows dispatch to the fused expert
-    kernel, MXFP4 rows dispatch as MXFP8 to the W4A8 GEMMs.
+    kernel, MXFP4 rows dispatch as MXFP8 to the W4A8 GEMMs. With
+    ``draft_head_parallelism="replica"`` each device drafts its own rows.
     """
     config = AutoConfig.from_pretrained(str(TESTDATA / "config.json"))
     devices = [DeviceRef.GPU(i) for i in range(num_devices)]
@@ -203,7 +222,11 @@ def test_unified_dspark_graph_traces(
     )
     draft = DeepseekV41DSparkDrafter(model_config, devices[0])
     spec = build_spec_graph(
-        _pipeline_config(config, data_parallel_degree, mixed_width),
+        _pipeline_config(
+            config,
+            data_parallel_degree,
+            _speculative(mixed_width, draft_proposal, draft_head_parallelism),
+        ),
         MultiKVCacheParams.from_params({"target": kv_params}),
         devices,
         include_signal_buffers=num_devices > 1,
@@ -218,11 +241,13 @@ def test_unified_dspark_graph_traces(
     assert spec.graph.name == "unified_dspark_deepseekV41"
     # The Engram lookback, the tables, then the merged-rows marker end it.
     assert str(spec.input_types[-1].shape[0]) == "merged_seq_len"
-    # (num_accepted, next_tokens, next_draft_tokens), argmax drafts.
+    # (num_accepted, next_tokens, next_draft_tokens), then a sampled draft's
+    # distributions.
     outputs = spec.graph.output_types
-    assert len(outputs) == 3
+    assert len(outputs) == 3 + (draft_proposal == "sampled")
     drafts = outputs[2]
     assert isinstance(drafts, TensorType)
+    assert str(drafts.shape[0]) == "batch_size"
     assert drafts.shape[1] == NUM_SPECULATIVE_TOKENS
 
 
@@ -261,3 +286,15 @@ def _engram_table_types(
                 )
             )
     return tables
+
+
+def test_per_replica_distributions_are_refused() -> None:
+    speculative = SpeculativeConfig(
+        speculative_method="dspark",
+        num_speculative_tokens=NUM_SPECULATIVE_TOKENS,
+        draft_proposal="sampled",
+        draft_head_parallelism="replica",
+        draft_probs_layout="replica",
+    )
+    with pytest.raises(ValueError, match="supports only"):
+        block_proposer(Mock(), Mock(), Mock(), speculative)
