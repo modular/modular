@@ -1,4 +1,9 @@
 {
+  "installSidebar": [
+    "install",
+    "packages",
+    "system-requirements"
+  ],
   "servingDevSidebar": [
     {
       "label": "Get started",
@@ -7,7 +12,6 @@
       "collapsed": false,
       "items": [
         "get-started",
-        "packages",
         "container",
         {
           "label": "Cookbook",

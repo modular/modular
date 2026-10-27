@@ -1,0 +1,139 @@
+---
+title: Install MAX
+description: Install MAX with pixi or uv to serve models, build model architectures, and program GPUs with Mojo, using a nightly or stable build.
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import CodeBlock from '@theme/CodeBlock';
+import ConditionalVersionDocs from '@site/src/components/ConditionalVersionDocs';
+import Link from '@docusaurus/Link';
+
+You can install MAX with a Python or Conda package manager on any
+[supported system](/system-requirements/).
+
+<Tabs groupId="install">
+<TabItem value="pixi" label="pixi">
+
+1. If needed, install [`pixi`](https://pixi.sh/latest/):
+
+   ```sh
+   curl -fsSL https://pixi.sh/install.sh | sh
+   ```
+
+2. Create a project:
+
+   ```sh
+   pixi init example-project \
+     -c https://conda.modular.com/max-nightly/ -c conda-forge \
+     && cd example-project
+   ```
+
+3. Install `max-all`:
+
+   <ConditionalVersionDocs version="nightly">
+   <CodeBlock language="sh">
+   {`pixi add max-all`}
+   </CodeBlock>
+   </ConditionalVersionDocs>
+   <ConditionalVersionDocs version="stable">
+   <CodeBlock language="sh">
+   {`pixi add "max-all==26.7"`}
+   </CodeBlock>
+   </ConditionalVersionDocs>
+
+   :::note
+
+   This installs MAX with all extra dependencies. You can instead install one of
+   the smaller [`max` packages](/packages/).
+
+   :::
+
+4. Start the virtual environment:
+
+   ```sh
+   pixi shell
+   ```
+
+5. Verify the installation:
+
+   ```sh
+   max --version
+   ```
+
+</TabItem>
+<TabItem value="uv" label="uv">
+
+1. If needed, install [`uv`](https://docs.astral.sh/uv/):
+
+   ```sh
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+
+2. Create a project:
+
+   ```sh
+   uv init example-project && cd example-project
+   ```
+
+3. Create and start a virtual environment:
+
+   ```sh
+   uv venv && source .venv/bin/activate
+   ```
+
+4. Install `max[all]`:
+
+   <ConditionalVersionDocs version="nightly">
+   <CodeBlock language="sh">
+   {`uv add "max[all]" \\
+   --index https://whl.modular.com/nightly/simple/ \\
+   --prerelease allow`}
+   </CodeBlock>
+   </ConditionalVersionDocs>
+   <ConditionalVersionDocs version="stable">
+   <CodeBlock language="sh">
+   {`uv add "max[all]"`}
+   </CodeBlock>
+   </ConditionalVersionDocs>
+
+   :::note
+
+   This installs MAX with all extra dependencies. You can instead install one of
+   the smaller [`max` packages](/packages/).
+
+   :::
+
+5. Verify the installation:
+
+   ```sh
+   max --version
+   ```
+
+</TabItem>
+</Tabs>
+
+<ConditionalVersionDocs version="nightly">
+
+These commands install the nightly build, which isn't complete and might have
+new bugs. If you instead want the stable build, <Link
+href="/stable/install/">switch to the stable docs</Link>.
+
+</ConditionalVersionDocs>
+<ConditionalVersionDocs version="stable">
+
+If you instead want the latest nightly build, <Link href="/install/">switch to
+the nightly docs</Link>.
+
+</ConditionalVersionDocs>
+
+## Next steps
+
+Now that you've installed MAX, pick where to start:
+
+- [Quickstart](/get-started/): Serve an LLM with an OpenAI-compatible
+  endpoint and then benchmark it.
+- [Model development overview](/develop/): Learn how to bring a trained model
+  from Hugging Face to MAX.
+- [Get started with GPU programming](/gpu/intro-tutorial/): Learn the basics
+  of GPU programming with Mojo.
