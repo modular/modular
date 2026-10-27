@@ -1661,7 +1661,22 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
             If the operation fails, or if `dst_buf` is not on this context's
             device.
         """
-        # The plugin writes `dst` through this queue's context.
+        # As in legacy: the copy waits for `src_buf`'s writes, and `src_buf`'s
+        # stream can't overwrite or free it until the copy has read it.
+        self._check_device_to_device_copy(dst_buf, src_buf)
+        var src_ctx = src_buf._ctx
+        var sync = not (src_ctx._hal_stream() is self._hal_stream())
+        if sync:
+            self.enqueue_wait_for(src_ctx)
+        self._enqueue_copy_device_to_device(dst_buf, src_buf)
+        if sync:
+            src_ctx.enqueue_wait_for(self.assert_default_target())
+
+    def _check_device_to_device_copy[
+        dtype: DType
+    ](self, dst_buf: DeviceBuffer[dtype], src_buf: DeviceBuffer[dtype]) raises:
+        # Runs before any cross-stream wait, which would hand this plugin
+        # another driver's event.
         var dst_device = dst_buf._inner[]._context[].get_device_id()
         if dst_device != self._device[].id:
             raise Error(
@@ -1671,17 +1686,23 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
                 )
             )
         var src_context = src_buf._inner[]._context
+        if src_context[].get_device_id() != self._device[].id and not (
+            src_context[]._raw is self._context[]._raw
+        ):
+            raise Error(
+                "enqueue_copy source is on another driver; cross-device"
+                " copies need both buffers on the same driver"
+            )
+
+    def _enqueue_copy_device_to_device[
+        dtype: DType
+    ](self, dst_buf: DeviceBuffer[dtype], src_buf: DeviceBuffer[dtype]) raises:
+        var src_context = src_buf._inner[]._context
         var dst_view = dst_buf._inner[]._buffer.view()
         var src_view = src_buf._inner[]._buffer.view()
         if src_context[].get_device_id() == self._device[].id:
             self._stream[].copy_intra_device(dst_view, src_view)
         else:
-            # This plugin would misread another driver's context handle.
-            if not (src_context[]._raw is self._context[]._raw):
-                raise Error(
-                    "enqueue_copy source is on another driver; cross-device"
-                    " copies need both buffers on the same driver"
-                )
             self._stream[].copy_inter_device(
                 dst_view, src_view, src_context[]._handle
             )
@@ -1974,9 +1995,8 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        # The HAL copy path never inserts cross-stream synchronization, so the
-        # plain device-to-device copy already has the required semantics.
-        self.enqueue_copy(dst_buf, src_buf)
+        self._check_device_to_device_copy(dst_buf, src_buf)
+        self._enqueue_copy_device_to_device(dst_buf, src_buf)
 
     @inline(.always)
     def enqueue_cpu_range[

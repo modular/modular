@@ -14,6 +14,7 @@
 
 from std.collections import Array, Optional
 from std.ffi import c_int, external_call
+from std.time import sleep
 
 from max.gpu.host import DeviceContext
 from std.testing import assert_equal, assert_false, assert_raises, assert_true
@@ -52,6 +53,31 @@ def test_cross_device_copy_round_trip() raises:
     with dst.map_to_host() as host:
         for i in range(N):
             assert_equal(host[i], Int32(i * 3))
+
+
+def _sleep_then_write(ptr: MutPointer[Int32, MutAnyOrigin], value: Int32):
+    sleep(0.5)
+    ptr[] = value
+
+
+def test_cross_device_copy_waits_for_source_stream() raises:
+    var ctx0 = DeviceContext(device_id=0)
+    var ctx1 = DeviceContext(device_id=1)
+    var src = ctx0.enqueue_create_buffer[.int32](1)
+    src.enqueue_fill(0)
+    var dst = ctx1.enqueue_create_buffer[.int32](1)
+    dst.enqueue_fill(-1)
+    ctx0.synchronize()
+    ctx1.synchronize()
+    ctx0.enqueue_function[_sleep_then_write](
+        src, Int32(7), grid_dim=1, block_dim=1
+    )
+    # No `enqueue_wait_for`: the copy must order itself after ctx0.
+    ctx1.enqueue_copy(dst, src)
+    ctx1.synchronize()
+    with dst.map_to_host() as host:
+        assert_equal(host[0], Int32(7))
+    ctx0.synchronize()
 
 
 def test_cross_device_copy_wrong_destination_raises() raises:
@@ -102,6 +128,25 @@ def test_cpu_peer_is_not_accessible() raises:
     assert_false(accessible)
     with assert_raises():
         gpu1.enable_peer_access(cpu)
+
+
+def test_copy_from_another_driver_fails_cleanly() raises:
+    var gpu1 = DeviceContext(device_id=1)
+    var cpu = DeviceContext(api="cpu")
+    var src = cpu.enqueue_create_buffer[.int32](1)
+    src.enqueue_fill(7)
+    var dst = gpu1.enqueue_create_buffer[.int32](1)
+    dst.enqueue_fill(-1)
+    cpu.synchronize()
+    gpu1.synchronize()
+    try:
+        gpu1.enqueue_copy(dst, src)
+    except:
+        # HAL refuses a cross-driver copy; it must not crash first.
+        return
+    gpu1.synchronize()
+    with dst.map_to_host() as host:
+        assert_equal(host[0], Int32(7))
 
 
 def _enable_all_worker(
@@ -177,10 +222,12 @@ def main() raises:
     test_device_ids_are_distinct()
     test_device_id_out_of_range()
     test_cross_device_copy_round_trip()
+    test_cross_device_copy_waits_for_source_stream()
     test_cross_device_copy_wrong_destination_raises()
     test_can_access_self_is_false()
     test_can_access_is_symmetric()
     test_cpu_peer_is_not_accessible()
+    test_copy_from_another_driver_fails_cleanly()
     test_enable_all_concurrent()
     test_all_peer_access_enabled_transitions()
     test_kernel_writes_through_peer_pointer()
