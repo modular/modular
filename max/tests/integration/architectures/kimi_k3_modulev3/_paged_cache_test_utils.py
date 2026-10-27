@@ -29,7 +29,7 @@ from max.dtype import DType
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.realization_context import ensure_context
 from max.experimental.tensor import Tensor
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     PACKED_PAGE_STRIDE,
     KVCacheParams,
     MLAAttnKey,

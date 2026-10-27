@@ -18,7 +18,7 @@ import pytest
 from max.experimental import random
 from max.experimental.nn.module import Module, module_dataclass
 from max.experimental.tensor import Tensor, TensorType, defaults
-from max.nn.hooks.print_hook import PrintHook
+from max.nn.legacy.hooks.print_hook import PrintHook
 
 
 @module_dataclass

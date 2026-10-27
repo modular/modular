@@ -14,7 +14,7 @@
 import pytest
 from max.driver import CPU, Buffer, Device
 from max.dtype import DType
-from max.nn.kv_cache.cache_params import KVCacheBuffer, KVCacheMemory
+from max.nn.legacy.kv_cache.cache_params import KVCacheBuffer, KVCacheMemory
 
 
 def _buffer(

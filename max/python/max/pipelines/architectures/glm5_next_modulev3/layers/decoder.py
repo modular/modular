@@ -26,8 +26,8 @@ from max.experimental.nn.common_layers.functional_kernels import mhc_post
 from max.experimental.nn.common_layers.quant_moe import ExpertParallelMoE
 from max.experimental.sharding import DeviceMapping, Sharded, auto_reshard
 from max.experimental.tensor import Tensor
-from max.nn.comm.ep import EPCommBuffers
-from max.nn.kernels import mhc_post_preferred
+from max.nn.legacy.comm.ep import EPCommBuffers
+from max.nn.legacy.kernels import mhc_post_preferred
 
 from ...deepseekV3_2_modulev3.layers.moe import DeepseekV3_2TensorParallelMoE
 from ..model_config import Glm5NextConfig

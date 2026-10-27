@@ -21,7 +21,7 @@ from max.experimental.nn.common_layers.rotary_embedding import (
     RotaryEmbedding,
 )
 from max.experimental.tensor import Tensor
-from max.nn.rotary_embedding import Llama3RopeScalingParams
+from max.nn.legacy.rotary_embedding import Llama3RopeScalingParams
 
 __all__ = ["Llama3RotaryEmbedding"]
 

@@ -58,7 +58,7 @@ modular_eager_py_test(
         "//max/python/max/dtype",
         "//max/python/max/experimental",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
         "//max/python/max/pipelines/context",

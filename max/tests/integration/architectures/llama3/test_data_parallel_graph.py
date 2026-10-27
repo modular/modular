@@ -20,8 +20,8 @@ from max import tree
 from max._artifact.value_types import treedef_to_json
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType
-from max.nn.graph_groups import Logits
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.legacy.graph_groups import Logits
+from max.nn.legacy.kv_cache import MHAKVCacheParams
 from max.pipelines.architectures.llama3.data_parallel_llama import (
     DataParallelLlama,
 )

@@ -36,11 +36,11 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.comm import (
+from max.nn.legacy.comm import (
     Signals,  # noqa: F401  (kept for parity; unused single-GPU)
 )
-from max.nn.kv_cache import KVCacheParams
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,

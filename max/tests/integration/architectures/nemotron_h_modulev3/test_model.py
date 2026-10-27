@@ -45,8 +45,8 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor, default_device, default_dtype
 from max.graph import DeviceRef, TensorValue
-from max.nn import kernels
-from max.nn.transformer import ReturnHiddenStates
+from max.nn.legacy import kernels
+from max.nn.legacy.transformer import ReturnHiddenStates
 from max.pipelines.architectures.nemotron_h_modulev3.layers.attention import (
     NemotronHAttention,
 )

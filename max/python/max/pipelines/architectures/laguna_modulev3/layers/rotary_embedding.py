@@ -33,7 +33,7 @@ from max.experimental.nn.common_layers.rotary_embedding import (
 )
 from max.experimental.tensor import Tensor
 from max.graph import Dim
-from max.nn.rotary_embedding import YarnScalingParams
+from max.nn.legacy.rotary_embedding import YarnScalingParams
 from max.pipelines.architectures.gemma4_modulev3.layers.rotary_embedding import (
     ProportionalRotaryEmbedding,
 )

@@ -19,8 +19,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
-from max.nn.kv_cache import KVCacheGroupId
-from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache import KVCacheGroupId
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 
 
 class KVLoadRefused(Exception):

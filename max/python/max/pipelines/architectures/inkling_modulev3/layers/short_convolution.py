@@ -19,13 +19,13 @@ from max.experimental.nn import Module
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.nn.norm.rms_norm import rms_norm
 from max.experimental.tensor import Tensor
-from max.nn.state_space import short_conv_ring
+from max.nn.legacy.state_space import short_conv_ring
 
 _short_conv_ring = F.functional(short_conv_ring)
 
 
 class InklingRMSNorm(RMSNorm):
-    """RMSNorm that scales before casting back, as max.nn.RMSNorm does."""
+    """RMSNorm that scales before casting back, as max.nn.legacy.RMSNorm does."""
 
     def forward(self, x: Tensor) -> Tensor:
         return rms_norm(x, self.weight, self.eps, multiply_before_cast=True)

@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from typing import Any, ClassVar
 
 from max.graph.weights import WeightData
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.gemma4.model_config import (
     Gemma4ForConditionalGenerationConfig,
 )

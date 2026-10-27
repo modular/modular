@@ -20,7 +20,7 @@ from max.graph import (
     TensorValueLike,
     ops,
 )
-from max.nn import MLP
+from max.nn.legacy import MLP
 
 
 class DeepseekV3_2MLP(MLP):

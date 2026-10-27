@@ -33,7 +33,7 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.layer import Module
+from max.nn.legacy.layer import Module
 
 if TYPE_CHECKING:
     from .cache import DenoisingCacheState

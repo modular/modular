@@ -41,9 +41,9 @@ from max.experimental.nn.common_layers.mesh_axis import TP
 from max.experimental.nn.common_layers.quant_tensor import FP8BlockTensor
 from max.experimental.sharding import NamedMapping
 from max.experimental.tensor import Tensor
-from max.nn.attention import MHAMaskVariant
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.quant_config import QuantConfig
 
 from ...mimo_v2.layers.attention import QkvChunkLayout
 from ..quant import FP8_BLOCK

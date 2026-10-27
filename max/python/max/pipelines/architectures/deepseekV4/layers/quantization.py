@@ -45,12 +45,12 @@ from typing import TYPE_CHECKING, NoReturn
 
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, TensorValue, ops
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     dynamic_scaled_matmul,
     quantize_dynamic_scaled_float8,
 )
-from max.nn.linear import Linear
-from max.nn.quant_config import (
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.quant_config import (
     QuantConfig,
 )
 

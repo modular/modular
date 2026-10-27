@@ -13,8 +13,8 @@
 
 from __future__ import annotations
 
-from max.nn.kv_cache import KVCacheParams
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.pipelines.speculative import DraftAliases, validate_draft_state_dict

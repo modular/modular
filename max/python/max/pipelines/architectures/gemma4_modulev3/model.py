@@ -27,8 +27,8 @@ from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import Tensor, default_device, default_dtype
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import MultiKVCacheParams
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.kv_cache import MultiKVCacheParams
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.gemma4.batch_vision_inputs import (
     VisionRawInputs,
 )

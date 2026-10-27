@@ -29,8 +29,8 @@ from max.experimental.nn.embedding import Embedding
 from max.experimental.nn.linear import Linear
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
-from max.nn.attention import MHAMaskVariant
-from max.nn.kv_cache import (
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,

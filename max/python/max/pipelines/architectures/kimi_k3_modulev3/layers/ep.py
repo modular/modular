@@ -34,8 +34,8 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor
 from max.graph import BufferValue
-from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.comm.ep import ep_kernels as kernels
+from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
+from max.nn.legacy.comm.ep import ep_kernels as kernels
 
 
 @tree.dataclass(kw_only=True)

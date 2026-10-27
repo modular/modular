@@ -27,7 +27,7 @@ from unittest.mock import Mock, PropertyMock
 import pytest
 from max.driver import CPU as HostCPU
 from max.driver import Device
-from max.nn.quant_config import QuantFormat
+from max.nn.legacy.quant_config import QuantFormat
 from max.pipelines.architectures.flux2 import model_config
 from max.pipelines.architectures.flux2.model_config import (
     Flux2Config,

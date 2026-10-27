@@ -29,9 +29,9 @@ from typing import Generic, Protocol, TypeVar
 
 from max.dtype import DType
 from max.graph import ShardingStrategy, TensorValue
-from max.nn.layer import Module
-from max.nn.norm import RMSNorm
-from max.nn.transformer.transformer import forward_sharded_layers
+from max.nn.legacy.layer import Module
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.transformer.transformer import forward_sharded_layers
 
 from ..model_config import Glm5NextConfig
 from .hyper_connection import HyperConnection, hyper_connection_site
@@ -134,7 +134,7 @@ class Glm5NextDecoderLayer(Module, Generic[AttnInputsT, MlpInputsT]):
         """Runs both sublayers and both residual sites.
 
         The bundles are positional rather than keyword-only because
-        :meth:`~max.nn.layer.Module.build_subgraph` invokes the layer as
+        :meth:`~max.nn.legacy.layer.Module.build_subgraph` invokes the layer as
         ``self(*inputs)`` when the stack is compiled as subgraphs.
 
         Args:

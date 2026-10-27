@@ -21,7 +21,7 @@ from max.experimental.nn.common_layers.multi_latent_attention import (
 )
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.tensor import Tensor
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.legacy.kv_cache import PagedCacheValues
 
 
 class DeepseekV2TransformerBlock(Module[..., Tensor]):

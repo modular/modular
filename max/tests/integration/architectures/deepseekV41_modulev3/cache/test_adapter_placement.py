@@ -41,7 +41,7 @@ from max.graph import (
     Type,
     ops,
 )
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
 from max.pipelines.architectures.deepseekV41.layers.csa2 import (
     MAX_COMPRESSED,
     leaf_slots,

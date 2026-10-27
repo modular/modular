@@ -29,7 +29,11 @@ from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.sharding import DeviceMapping, DeviceMesh
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, DimLike, TensorValue, ops
-from max.nn.transformer import DecoderOutputs, ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.transformer import (
+    DecoderOutputs,
+    ReturnHiddenStates,
+    ReturnLogits,
+)
 
 from .driver import (
     CarryDimNames,

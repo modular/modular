@@ -54,7 +54,7 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.kv_cache import KVCacheParams
 from max.pipelines.architectures.gemma4_modulev3.layers.attention import (
     Gemma4Attention,
 )

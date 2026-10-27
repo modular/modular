@@ -20,7 +20,7 @@ from typing import Any, ClassVar
 
 from max.dtype import DType
 from max.graph.weights import WeightData
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.laguna.model import (
     LagunaModel as LagunaGraphModel,
 )

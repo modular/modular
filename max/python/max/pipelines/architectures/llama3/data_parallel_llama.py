@@ -32,10 +32,10 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
-from max.nn.data_parallelism import split_batch
-from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
-from max.nn.layer import LayerList, Module
-from max.nn.transformer import DecoderOutputs
+from max.nn.legacy.data_parallelism import split_batch
+from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.transformer import DecoderOutputs
 
 from .llama3 import Llama3
 from .model_config import Llama3Config

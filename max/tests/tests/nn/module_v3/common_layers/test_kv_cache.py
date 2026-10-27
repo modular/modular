@@ -31,8 +31,8 @@ from max.graph import (
     SymbolicDim,
     TensorValue,
 )
-from max.nn import kernels
-from max.nn.kv_cache import MHAKVCacheParams, SplitKVHeadDims
+from max.nn.legacy import kernels
+from max.nn.legacy.kv_cache import MHAKVCacheParams, SplitKVHeadDims
 
 
 def _collection(params: MHAKVCacheParams) -> PagedCacheValues:

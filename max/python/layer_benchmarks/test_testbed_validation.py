@@ -22,7 +22,7 @@ import pytest
 import torch
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn import RMSNorm
+from max.nn.legacy import RMSNorm
 from testbed.correctness import print_correctness_report
 from testbed.harness import dict_to_dataclass
 from testbed.harnesses.rms_norm import (

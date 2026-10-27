@@ -47,12 +47,12 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     MHAKVCacheParams,
     PagedCacheValues,
     packed_page_stride,
 )
-from max.nn.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.qwen3_5.batch_processor import (
     Qwen3_5BatchProcessor,
 )

@@ -26,7 +26,7 @@ from __future__ import annotations
 import pytest
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Graph, TensorType
-from max.nn import Module
+from max.nn.legacy import Module
 from max.pipelines.architectures.qwen3_5.layers import gated_deltanet
 from max.pipelines.architectures.qwen3_5.layers.gated_deltanet import (
     GatedDeltaNet,

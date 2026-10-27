@@ -26,7 +26,7 @@ from max.driver import (
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, SymbolicDim, TensorType, ops
-from max.nn import kernels
+from max.nn.legacy import kernels
 
 KERNEL_DURATION_SEC = 3
 CPU_WORK_DURATION_SEC = 1

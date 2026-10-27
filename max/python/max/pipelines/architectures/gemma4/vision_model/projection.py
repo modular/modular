@@ -22,7 +22,7 @@ from max.graph import (
     ops,
 )
 from max.graph.ops import avg_pool2d
-from max.nn.layer import Module, Shardable
+from max.nn.legacy.layer import Module, Shardable
 
 from ..layers.rms_norm import Gemma4RMSNorm
 from ..model_config import Gemma4ForConditionalGenerationConfig

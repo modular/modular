@@ -19,7 +19,7 @@ from typing import Any
 from max.experimental import functional as F
 from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import default_device, default_dtype
-from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 

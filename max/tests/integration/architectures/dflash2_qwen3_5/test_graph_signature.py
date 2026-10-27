@@ -40,7 +40,7 @@ from dflash2_pairing_harness import (
 from max.driver import Buffer
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache import KVCacheInputs
 from max.pipelines.architectures.qwen3_5.spec_adapters import state_tail_types
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     _Inputs,

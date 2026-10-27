@@ -37,9 +37,9 @@ from max.experimental.tensor import default_device, default_dtype
 from max.graph import DeviceRef
 from max.graph.type import Shape
 from max.graph.weights import WeightData, Weights
-from max.nn.comm.ep import EPBatchManager, EPConfig
-from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.comm.ep import EPBatchManager, EPConfig
+from max.nn.legacy.kv_cache import MHAKVCacheParams, MultiKVCacheParams
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.dflash_mimo_v2 import (
     DFlashMiMoV2Config,
     DFlashMiMoV2DraftConfig,

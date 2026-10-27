@@ -13,7 +13,7 @@
 
 """PyTorch reference for the manifold-constrained hyper-connection layer.
 
-Shared by the ModuleV2 (:class:`max.nn.HyperConnection`) and ModuleV3
+Shared by the ModuleV2 (:class:`max.nn.legacy.HyperConnection`) and ModuleV3
 (:class:`max.experimental.nn.HyperConnection`) tests so both are measured
 against one definition of the layer.
 """

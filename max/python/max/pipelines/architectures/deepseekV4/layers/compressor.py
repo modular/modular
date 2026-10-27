@@ -43,11 +43,11 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
-from max.nn.kernels import compress_windows_ragged
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.layer import Module
-from max.nn.linear import Linear
-from max.nn.norm.rms_norm import RMSNorm
+from max.nn.legacy.kernels import compress_windows_ragged
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm.rms_norm import RMSNorm
 
 from ..model_config import DeepseekV4Config
 from .hadamard import hadamard_rotate
@@ -145,7 +145,7 @@ class DeepseekV4Compressor(Module):
         Returns:
             ``[n, head_dim]`` entries, ``n`` a bound on the window count; the
             rows past ``window_offsets[b]`` are left unwritten
-            (:func:`~max.nn.kernels.compress_windows_ragged`).
+            (:func:`~max.nn.legacy.kernels.compress_windows_ragged`).
         """
         return compress_windows_ragged(
             kv_proj,

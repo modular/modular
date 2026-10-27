@@ -17,8 +17,8 @@ import math
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.layer import Module
-from max.nn.linear import Linear
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
 
 
 def get_timestep_embedding(

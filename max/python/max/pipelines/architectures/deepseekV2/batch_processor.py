@@ -18,8 +18,8 @@ from typing import TYPE_CHECKING
 
 from max.driver import Buffer
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.kv_cache import KVCacheInputs
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
+from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.context import TextContext
 from max.pipelines.lib.interfaces.batch_processor import (
     SingleReplicaRaggedBatchProcessor,

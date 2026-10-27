@@ -25,7 +25,11 @@ from typing import Any, cast
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams, MultiKVCacheParams
+from max.nn.legacy.kv_cache import (
+    KVCacheParams,
+    MHAKVCacheParams,
+    MultiKVCacheParams,
+)
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     _kv_tree,

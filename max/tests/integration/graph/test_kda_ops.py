@@ -40,12 +40,12 @@ from max.driver import accelerator_architecture_name, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.state_space import (
+from max.nn.legacy.state_space import (
     kda_chunk,
     kda_chunk_supports_head_dims,
     kda_decode,
 )
-from max.nn.state_space.kimi_delta import KDA_GATE_LOWER_BOUND
+from max.nn.legacy.state_space.kimi_delta import KDA_GATE_LOWER_BOUND
 
 # The chunk pipeline reassociates the fp32 arithmetic, so it is graded on
 # relative RMSE at the tolerance its kernel suite documents rather than on

@@ -22,12 +22,12 @@ from max import tree
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorValue, Type, Value, ops
 from max.graph import Module as GraphModule
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
 )
-from max.nn.transformer import DecoderOutputs
+from max.nn.legacy.transformer import DecoderOutputs
 from max.pipelines.architectures.llama3.llama3 import Llama3
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.lib.interfaces.batch_processor import (

@@ -42,8 +42,8 @@ from max.experimental.sharding.types import as_layout
 from max.experimental.tensor import Tensor
 from max.graph import Graph, Type
 from max.graph import Module as GraphModule
-from max.nn import Module
-from max.nn.graph_groups import HiddenStates, Logits
+from max.nn.legacy import Module
+from max.nn.legacy.graph_groups import HiddenStates, Logits
 
 
 class GraphRole(str, Enum):
@@ -91,7 +91,7 @@ class GraphSpec:
             order. A ModuleV3 graph takes a sequence, one type per argument
             of its ``forward``.
         weights: The weight values, keyed by name. Defaults to the module's
-            :meth:`~max.nn.Module.state_dict` once traced, or a ModuleV3
+            :meth:`~max.nn.legacy.Module.state_dict` once traced, or a ModuleV3
             module's own parameters.
         group: Roles with the same group compile into one model, which
             holds each role's graph as a named submodel. ``None`` compiles
@@ -314,7 +314,7 @@ def _check_inputs(role: str, in_tree: tree.TreeDef) -> None:
             "the decoder graph's inputs "
             + ", ".join(unkinded)
             + " are in no kinded group: build them with a"
-            " max.nn.graph_groups group or a kinded KV cache input"
+            " max.nn.legacy.graph_groups group or a kinded KV cache input"
         )
 
 
@@ -350,7 +350,7 @@ def _check_outputs(role: str, out_tree: tree.TreeDef) -> None:
     ):
         raise ValueError(
             "the decoder graph's outputs have no logits group: return"
-            " max.nn.transformer.logits_outputs(...) or a DecoderOutputs"
+            " max.nn.legacy.transformer.logits_outputs(...) or a DecoderOutputs"
             " with a Logits group"
         )
 

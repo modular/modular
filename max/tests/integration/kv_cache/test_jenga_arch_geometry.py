@@ -25,7 +25,7 @@ from unittest.mock import MagicMock
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParamInterface
+from max.nn.legacy.kv_cache import KVCacheParamInterface
 from max.pipelines.architectures import hf_config_shims  # noqa: F401
 from max.pipelines.architectures.deepseekV2.model_config import (
     DeepseekV2Config,

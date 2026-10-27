@@ -35,13 +35,13 @@ from max.experimental.nn.embedding import Embedding
 from max.experimental.nn.linear import Linear
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,
 )
-from max.nn.rotary_embedding import YarnScalingParams
+from max.nn.legacy.rotary_embedding import YarnScalingParams
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     ProportionalScalingParams,
 )

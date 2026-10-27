@@ -27,13 +27,13 @@ from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Dim, Graph, TensorType, ops
-from max.nn.comm import Signals
-from max.nn.kv_cache import (
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.kv_cache import (
     MHAKVCacheParams,
     RecurrentLeafInputs,
     RecurrentStateInputsPerDevice,
 )
-from max.nn.state_space import verify_width_operand
+from max.nn.legacy.state_space import verify_width_operand
 from max.pipelines.architectures.qwen3_5.model_config import Qwen3_5Config
 from max.pipelines.architectures.qwen3_5.qwen3_5 import (
     Qwen3_5,

@@ -23,8 +23,8 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import Weights
-from max.nn.embedding import Embedding
-from max.nn.layer import Module
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.layer import Module
 from max.pipelines.architectures.llama3.weight_adapters import (
     LLAMA_SAFETENSOR_MAPPING as QWEN_SAFETENSOR_MAP,
 )

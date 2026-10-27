@@ -31,12 +31,12 @@ from typing import TYPE_CHECKING, NamedTuple
 from uuid import uuid4
 
 if TYPE_CHECKING:
-    from max.nn.kv_cache.cache_params import KVCacheMemory
+    from max.nn.legacy.kv_cache.cache_params import KVCacheMemory
 
 import msgspec
 from max._core import nixl
 from max.driver import Buffer, Device
-from max.nn.kv_cache.cache_params import recurrent_leaf
+from max.nn.legacy.kv_cache.cache_params import recurrent_leaf
 from max.pipelines.kv_cache._nixl_backend import (
     NIXL_BACKEND_ENV_VAR,
     NixlBackendType,
@@ -1790,7 +1790,7 @@ class TransferEngine:
             from max._core import nixl
             from max.driver.buffer import Buffer
             from max.dtype import DType
-            from max.nn.kv_cache.cache_params import KVCacheMemory
+            from max.nn.legacy.kv_cache.cache_params import KVCacheMemory
             from max.pipelines.kv_cache import KVTransferEngine
 
             def nixl_ucx_available() -> bool:
@@ -2008,7 +2008,7 @@ class KVTransferEngine(TransferEngine):
     """KVCache Transfer Engine with support for Data Parallelism (DP) and Tensor Parallelism (TP).
 
     The engine accepts per-replica producer-authored NIXL groups
-    (:class:`~max.nn.kv_cache.cache_params.KVCacheMemory`).  The outer list is
+    (:class:`~max.nn.legacy.kv_cache.cache_params.KVCacheMemory`).  The outer list is
     indexed by DP replica; the inner list is that replica's group list — one
     group per pool leaf, in the order the cache declares its leaves.
 
@@ -2039,7 +2039,7 @@ class KVTransferEngine(TransferEngine):
             name: Unique name for this engine.
             memory: Per-replica group lists as ``[replica][group]``.  Each entry
                 is a
-                :class:`~max.nn.kv_cache.cache_params.KVCacheMemory` — one pool
+                :class:`~max.nn.legacy.kv_cache.cache_params.KVCacheMemory` — one pool
                 leaf's unit, carrying every TP-shard view, ordered by the
                 caller.  All replicas must have the same group count and
                 consistent replication kind.  Each group's page count

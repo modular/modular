@@ -23,7 +23,7 @@ from max.experimental.nn.common_layers.linear import QKVLinear
 from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.experimental.tensor import Tensor, default_dtype
 from max.graph import DeviceRef
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.legacy.kv_cache import MHAKVCacheParams
 
 HEAD_DIM = 16
 N_HEADS = 4

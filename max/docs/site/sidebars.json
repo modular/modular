@@ -456,10 +456,10 @@
         },
         {
           "type": "category",
-          "label": "max.nn",
+          "label": "max.nn.legacy",
           "link": {
             "type": "doc",
-            "id": "api/python/nn"
+            "id": "api/python/nn.legacy"
           },
           "items": [
             {
@@ -467,10 +467,10 @@
               "label": "attention",
               "link": {
                 "type": "doc",
-                "id": "api/python/nn.attention"
+                "id": "api/python/nn.legacy.attention"
               },
               "items": [
-                "__AUTOGEN:max.nn.attention__"
+                "__AUTOGEN:max.nn.legacy.attention__"
               ]
             },
             {
@@ -478,22 +478,22 @@
               "label": "comm",
               "link": {
                 "type": "doc",
-                "id": "api/python/nn.comm"
+                "id": "api/python/nn.legacy.comm"
               },
               "items": [
-                "__AUTOGEN:max.nn.comm__"
+                "__AUTOGEN:max.nn.legacy.comm__"
               ]
             },
-            "api/python/nn.kernels",
+            "api/python/nn.legacy.kernels",
             {
               "type": "category",
               "label": "graph_groups",
               "link": {
                 "type": "doc",
-                "id": "api/python/nn.graph_groups"
+                "id": "api/python/nn.legacy.graph_groups"
               },
               "items": [
-                "__AUTOGEN:max.nn.graph_groups__"
+                "__AUTOGEN:max.nn.legacy.graph_groups__"
               ]
             },
             {
@@ -501,10 +501,10 @@
               "label": "kv_cache",
               "link": {
                 "type": "doc",
-                "id": "api/python/nn.kv_cache"
+                "id": "api/python/nn.legacy.kv_cache"
               },
               "items": [
-                "__AUTOGEN:max.nn.kv_cache__"
+                "__AUTOGEN:max.nn.legacy.kv_cache__"
               ]
             },
             {
@@ -512,10 +512,10 @@
               "label": "moe",
               "link": {
                 "type": "doc",
-                "id": "api/python/nn.moe"
+                "id": "api/python/nn.legacy.moe"
               },
               "items": [
-                "__AUTOGEN:max.nn.moe__"
+                "__AUTOGEN:max.nn.legacy.moe__"
               ]
             },
             {
@@ -523,10 +523,10 @@
               "label": "sampling",
               "link": {
                 "type": "doc",
-                "id": "api/python/nn.sampling"
+                "id": "api/python/nn.legacy.sampling"
               },
               "items": [
-                "__AUTOGEN:max.nn.sampling__"
+                "__AUTOGEN:max.nn.legacy.sampling__"
               ]
             },
             {
@@ -534,7 +534,7 @@
               "label": "state_space",
               "link": {
                 "type": "doc",
-                "id": "api/python/nn.state_space"
+                "id": "api/python/nn.legacy.state_space"
               },
               "items": [
                 {
@@ -542,16 +542,16 @@
                   "label": "kimi_delta",
                   "link": {
                     "type": "doc",
-                    "id": "api/python/nn.state_space.kimi_delta"
+                    "id": "api/python/nn.legacy.state_space.kimi_delta"
                   },
                   "items": [
-                    "__AUTOGEN:max.nn.state_space.kimi_delta__"
+                    "__AUTOGEN:max.nn.legacy.state_space.kimi_delta__"
                   ]
                 },
-                "__AUTOGEN:max.nn.state_space__"
+                "__AUTOGEN:max.nn.legacy.state_space__"
               ]
             },
-            "__AUTOGEN:max.nn__"
+            "__AUTOGEN:max.nn.legacy__"
           ]
         },
         {

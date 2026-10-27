@@ -12,7 +12,7 @@ modular_py_test(
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/deepseekV41",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
         "//max/python/max/pipelines/lib",
@@ -25,7 +25,7 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
     ],
 )

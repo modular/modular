@@ -37,7 +37,7 @@ from max.graph import (
     Graph,
     TensorType,
 )
-from max.nn.kv_cache import MLAKVCacheParams, MultiKVCacheParams
+from max.nn.legacy.kv_cache import MLAKVCacheParams, MultiKVCacheParams
 from max.pipelines.architectures.glm5_next.layers.token_parallel import (
     token_shard,
 )

@@ -13,7 +13,7 @@
 
 """Quantized kernels as ``Tensor`` ops, with their sharding rules.
 
-Each kernel from :mod:`max.nn.kernels` is wrapped with
+Each kernel from :mod:`max.nn.legacy.kernels` is wrapped with
 :func:`~max.experimental.functional.functional` and the rule that says how it
 runs on sharded inputs. :mod:`.quant_ops` dispatches onto these, and the
 on-the-fly quantizers in :mod:`.quant_tensor` call them directly; this module
@@ -32,33 +32,37 @@ from max.experimental.sharding.cost import P, R
 from max.experimental.sharding.placements import Placement, Sharded
 from max.experimental.sharding.types import TensorLayout
 from max.graph import TensorValue, ops
-from max.nn.kernels import block_scales_interleave as _block_scales_interleave
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
+    block_scales_interleave as _block_scales_interleave,
+)
+from max.nn.legacy.kernels import (
     dynamic_block_scaled_matmul as _dynamic_block_scaled_matmul,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     dynamic_block_scaled_matmul_amd as _dynamic_block_scaled_matmul_amd,
 )
-from max.nn.kernels import dynamic_scaled_matmul as _dynamic_scaled_matmul
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
+    dynamic_scaled_matmul as _dynamic_scaled_matmul,
+)
+from max.nn.legacy.kernels import (
     grouped_dynamic_scaled_fp8_matmul as _grouped_dynamic_scaled_fp8_matmul,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     grouped_matmul_block_scaled as _grouped_matmul_block_scaled,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     grouped_quantize_dynamic_block_scaled as _grouped_quantize_dynamic_block_scaled,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     quantize_dynamic_block_scaled as _quantize_dynamic_block_scaled,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     quantize_dynamic_block_scaled_mxfp4 as _quantize_dynamic_block_scaled_mxfp4,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     quantize_dynamic_scaled_float8 as _quantize_dynamic_scaled_float8,
 )
-from max.nn.quant_config import InputScaleSpec, WeightScaleSpec
+from max.nn.legacy.quant_config import InputScaleSpec, WeightScaleSpec
 
 
 def _transpose2d_placement(p: Placement) -> Placement:

@@ -33,8 +33,8 @@ from max.experimental.nn.common_layers.quant_kernels import (
 from max.experimental.nn.common_layers.quant_linear import QuantizedLinear
 from max.experimental.nn.norm import LayerNorm
 from max.experimental.tensor import Tensor
-from max.nn.attention import MHAMaskVariant
-from max.nn.quant_config import (
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     ScaleGranularity,
     ScaleOrigin,

@@ -41,15 +41,15 @@ from collections.abc import Callable, Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
-from max.nn.attention import AttentionWithRope
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.embedding import Embedding
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.layer import LayerList, Module
-from max.nn.linear import MLP, Linear
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import RotaryEmbedding
-from max.nn.transformer import TransformerBlock
+from max.nn.legacy.attention import AttentionWithRope
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import MLP, Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.transformer import TransformerBlock
 
 from ..speculators_common.d2t import map_draft_to_target_vocab
 

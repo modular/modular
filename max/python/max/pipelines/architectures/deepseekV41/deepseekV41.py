@@ -36,15 +36,15 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn.comm.ep import EPBatchManager
-from max.nn.data_parallelism import split_batch_replicated
-from max.nn.embedding import Embedding
-from max.nn.hyper_connection import HyperConnection
-from max.nn.kernels import _is_sm10x_gpu, mhc_post, mhc_post_supports
-from max.nn.layer import LayerList, Module
-from max.nn.linear import Linear
-from max.nn.norm.rms_norm import RMSNorm
-from max.nn.transformer import DecoderOutputs, logits_postprocess
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.legacy.data_parallelism import split_batch_replicated
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.hyper_connection import HyperConnection
+from max.nn.legacy.kernels import _is_sm10x_gpu, mhc_post, mhc_post_supports
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm.rms_norm import RMSNorm
+from max.nn.legacy.transformer import DecoderOutputs, logits_postprocess
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 from typing_extensions import Self
 

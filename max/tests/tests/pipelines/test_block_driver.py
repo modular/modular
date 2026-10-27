@@ -21,8 +21,8 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.identity import Identity
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.legacy.identity import Identity
+from max.nn.legacy.kv_cache import PagedCacheValues
 from max.pipelines.speculative.block_driver import (
     Accepted,
     BlockBatch,

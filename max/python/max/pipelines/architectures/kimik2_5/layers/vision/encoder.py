@@ -19,8 +19,8 @@ from collections.abc import Iterable
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue
-from max.nn.layer import LayerList, Module, Shardable
-from max.nn.norm import LayerNorm
+from max.nn.legacy.layer import LayerList, Module, Shardable
+from max.nn.legacy.norm import LayerNorm
 
 from .attention import Attention
 from .mlp import MLP2

@@ -42,8 +42,8 @@ from max.experimental.nn.common_layers.quant_tensor import (
     NVFP4TensorQuantizer,
 )
 from max.experimental.tensor import Tensor, default_dtype
-from max.nn.comm.ep import EPConfig
-from max.nn.quant_config import QuantConfig, QuantFormat
+from max.nn.legacy.comm.ep import EPConfig
+from max.nn.legacy.quant_config import QuantConfig, QuantFormat
 
 _HIDDEN_DIM = 256
 _MOE_DIM = 128

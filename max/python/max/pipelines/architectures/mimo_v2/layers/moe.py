@@ -18,13 +18,13 @@ import functools
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.moe import (
+from max.nn.legacy.moe import (
     MoEQuantized,
     NvMxf4f8Strategy,
     QuantStrategy,
     SigmoidTopKRouter,
 )
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.quant_config import QuantConfig
 
 
 class MiMoV2Router(SigmoidTopKRouter):

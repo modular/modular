@@ -25,7 +25,7 @@ from typing import cast
 import pytest
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.kv_cache import RecurrentStateRegion
+from max.nn.legacy.kv_cache import RecurrentStateRegion
 from max.pipelines.architectures.qwen3_5.model_config import Qwen3_5Config
 from max.pipelines.architectures.qwen3_5.spec_adapters import state_tail_types
 from max.pipelines.architectures.qwen3_5.state_cache import (

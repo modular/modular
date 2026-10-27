@@ -21,7 +21,7 @@ from max.experimental import functional as F
 from max.experimental.nn.common_layers.mesh_axis import TP
 from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import default_device, default_dtype
-from max.nn.kv_cache import MultiKVCacheParams
+from max.nn.legacy.kv_cache import MultiKVCacheParams
 from max.pipelines.context import TextContext
 from max.pipelines.lib import ModuleV3PipelineModelWithKVCache, PipelineConfig
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext

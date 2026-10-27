@@ -20,8 +20,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheParamInterface
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheParamInterface
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.memory_estimation import MemoryPlan
 from transformers import AutoConfig

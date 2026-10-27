@@ -22,8 +22,10 @@ from typing import TypeAlias, cast
 from max.experimental.sharding import DeviceMapping
 from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorValue
-from max.nn.kv_cache.input_types import KVCacheInputsPerDevice
-from max.nn.kv_cache.input_types import PagedCacheValues as _PagedCacheValues
+from max.nn.legacy.kv_cache.input_types import KVCacheInputsPerDevice
+from max.nn.legacy.kv_cache.input_types import (
+    PagedCacheValues as _PagedCacheValues,
+)
 
 TensorLike: TypeAlias = TensorValue | BufferValue | Tensor
 """One device's shard of a cache field: a graph value, or a single-device

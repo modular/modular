@@ -22,10 +22,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from max.graph import TensorValue, ops
-from max.nn.layer import LayerList, Module
-from max.nn.linear import Linear
-from max.nn.norm.rms_norm import RMSNorm
-from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm.rms_norm import RMSNorm
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
 
 from .layers import Qwen25VLEncoderAttention
 

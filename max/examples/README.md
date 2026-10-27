@@ -90,7 +90,7 @@ modular_py_binary(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("numpy"),
     ],
 )

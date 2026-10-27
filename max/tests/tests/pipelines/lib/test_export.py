@@ -40,9 +40,9 @@ from max.engine import InferenceSession, Model
 from max.experimental.compilation import CompiledCallable
 from max.experimental.sharding.types import as_layout
 from max.graph import BufferType, DeviceRef, TensorType, TensorValue
-from max.nn import Module
-from max.nn.graph_groups import Logits
-from max.nn.transformer import DecoderOutputs, ReturnLogits
+from max.nn.legacy import Module
+from max.nn.legacy.graph_groups import Logits
+from max.nn.legacy.transformer import DecoderOutputs, ReturnLogits
 from max.pipelines.lib import (
     GraphRole,
     GraphSpec,

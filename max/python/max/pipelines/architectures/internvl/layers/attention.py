@@ -19,13 +19,13 @@ from collections.abc import Iterable, Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
-from max.nn.attention import num_heads_for_device
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kernels import flash_attention_gpu
-from max.nn.layer import Module, Shardable
-from max.nn.linear import Linear
-from max.nn.norm import RMSNorm
-from max.nn.stacked_linear import StackedLinear
+from max.nn.legacy.attention import num_heads_for_device
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.kernels import flash_attention_gpu
+from max.nn.legacy.layer import Module, Shardable
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.stacked_linear import StackedLinear
 
 
 class InternVLMultiheadAttention(Module, Shardable):

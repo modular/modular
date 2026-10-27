@@ -30,12 +30,12 @@ from max.experimental.nn.norm import LayerNorm, RMSNorm
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import ops
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
 )
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import ModuleV3Outputs
 
 from .layers.mlp import LlamaStackedMLP

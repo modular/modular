@@ -23,7 +23,7 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     apply_packed_bitmask,
     apply_packed_bitmask_with_penalties,
 )

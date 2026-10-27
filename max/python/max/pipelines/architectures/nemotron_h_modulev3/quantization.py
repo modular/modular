@@ -24,7 +24,7 @@ from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 
 from max.dtype import DType
-from max.nn.quant_config import (
+from max.nn.legacy.quant_config import (
     NVFP4_BLOCK_SIZE,
     InputScaleSpec,
     QuantConfig,

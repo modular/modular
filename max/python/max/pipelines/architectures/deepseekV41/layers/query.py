@@ -18,11 +18,11 @@ from typing import NamedTuple
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.kernels import _is_sm10x_gpu, rms_norm_quantize_mxfp8_q_kv
-from max.nn.layer import Module
-from max.nn.linear import Linear
-from max.nn.norm.rms_norm import RMSNorm
-from max.nn.quant_config import QuantConfig, QuantFormat
+from max.nn.legacy.kernels import _is_sm10x_gpu, rms_norm_quantize_mxfp8_q_kv
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm.rms_norm import RMSNorm
+from max.nn.legacy.quant_config import QuantConfig, QuantFormat
 
 from .csa2 import WindowStore, norm_quantize_q_store_kv
 from .hyper_connection import Mxfp8Rows

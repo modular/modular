@@ -35,9 +35,12 @@ from typing import Any, TypeVar
 
 from max.driver import Buffer, Device
 from max.graph import BufferType, TensorType, Value
-from max.nn.kv_cache import MultiKVCacheParams, RecurrentStateInputsPerDevice
-from max.nn.layer import Module
-from max.nn.transformer import ReturnHiddenStates
+from max.nn.legacy.kv_cache import (
+    MultiKVCacheParams,
+    RecurrentStateInputsPerDevice,
+)
+from max.nn.legacy.layer import Module
+from max.nn.legacy.transformer import ReturnHiddenStates
 from max.pipelines.context import TextContext
 
 from ..block_driver import BlockBatch, BlockProposer

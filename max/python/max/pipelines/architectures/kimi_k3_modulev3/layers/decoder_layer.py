@@ -47,8 +47,8 @@ from max.experimental.nn.common_layers.multi_latent_attention import (
 )
 from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import Tensor
-from max.nn.comm.ep import EPConfig
-from max.nn.kv_cache import MLAKVCacheParams
+from max.nn.legacy.comm.ep import EPConfig
+from max.nn.legacy.kv_cache import MLAKVCacheParams
 
 from . import ep
 from .attn_residual import (

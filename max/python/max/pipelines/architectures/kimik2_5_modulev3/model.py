@@ -51,14 +51,14 @@ from max.experimental.sharding import (
 from max.experimental.tensor import default_device, default_dtype
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.nn.comm.ep import (
+from max.nn.legacy.comm.ep import (
     EPBatchManager,
     EPCommInitializer,
     EPConfig,
     calculate_ep_max_tokens_per_rank,
 )
-from max.nn.kv_cache import KVCacheParamInterface
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheParamInterface
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.context import ImageMetadata
 from max.pipelines.lib import (
     GraphSpec,

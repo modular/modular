@@ -30,8 +30,8 @@ from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.sharding import DeviceMapping, DeviceMesh, Replicated
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, DimLike, TensorType, TensorValue, Value
-from max.nn.kv_cache import PagedCacheValues as GraphPagedCacheValues
-from max.nn.transformer import ReturnHiddenStates
+from max.nn.legacy.kv_cache import PagedCacheValues as GraphPagedCacheValues
+from max.nn.legacy.transformer import ReturnHiddenStates
 from max.pipelines.context import TextContext
 from max.pipelines.speculative.block_driver import BlockBatch
 from max.pipelines.speculative.config import SpeculativeConfig

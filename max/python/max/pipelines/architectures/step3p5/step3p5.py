@@ -46,37 +46,37 @@ from max.graph import (
 )
 from max.graph import Module as GraphModule
 from max.graph.quantization import QuantizationEncoding
-from max.nn.comm import Signals
-from max.nn.comm.allreduce import Allreduce
-from max.nn.comm.ep import EPBatchManager
-from max.nn.data_parallelism import split_batch_replicated
-from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import (
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.comm.allreduce import Allreduce
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.legacy.data_parallelism import split_batch_replicated
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,
     PagedCacheValues,
 )
-from max.nn.layer import LayerList, Module
-from max.nn.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.moe import (
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.legacy.moe import (
     GatedActivation,
     MoE,
     make_concatenated_gated_activation_fn,
 )
-from max.nn.moe.expert_parallel import forward_moe_sharded_layers
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import (
+from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import (
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
 )
-from max.nn.transformer import (
+from max.nn.legacy.transformer import (
     DecoderOutputs,
     ReturnHiddenStates,
     forward_sequential_layers,
     logits_outputs,
 )
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
     forward_sharded_layers,
 )

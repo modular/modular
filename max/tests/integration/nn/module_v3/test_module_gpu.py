@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Accelerator-only tests for max.nn.Module (device placement and `to`)."""
+"""Accelerator-only tests for max.nn.legacy.Module (device placement and `to`)."""
 
 from __future__ import annotations
 

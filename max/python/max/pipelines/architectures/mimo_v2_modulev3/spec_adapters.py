@@ -41,9 +41,9 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor
 from max.graph import BufferType, TensorType, TensorValue, ops
-from max.nn.comm.ep import EPCommBuffers
-from max.nn.kv_cache import KVCacheInputsPerDevice
-from max.nn.transformer import ReturnHiddenStates
+from max.nn.legacy.comm.ep import EPCommBuffers
+from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
+from max.nn.legacy.transformer import ReturnHiddenStates
 from max.pipelines.speculative._tensor_compat import (
     as_graph_values,
     as_tensors,

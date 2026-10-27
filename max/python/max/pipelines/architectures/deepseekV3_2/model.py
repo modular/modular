@@ -20,7 +20,7 @@ from typing import Any, ClassVar
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph.weights import WeightData
-from max.nn.comm.ep import EPConfig
+from max.nn.legacy.comm.ep import EPConfig
 from max.pipelines.lib import GraphRole, GraphSpec
 from max.pipelines.weights.quant import parse_quant_config
 from typing_extensions import override

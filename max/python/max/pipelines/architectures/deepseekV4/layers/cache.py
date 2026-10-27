@@ -17,7 +17,7 @@ The reference keeps, per compressed layer, a two-zone flat buffer (a 128-slot
 sliding window of per-token latents plus one compressed entry per
 ``compress_ratio`` tokens), the compressor's open-window projections, and for
 ratio-4 layers the same again for the lightning indexer. Here every one of
-those is a leaf of one :class:`~max.nn.kv_cache.MultiKVCacheParams`, all paged
+those is a leaf of one :class:`~max.nn.legacy.kv_cache.MultiKVCacheParams`, all paged
 by token with one shared lookup table:
 
 * the latent window is a ``sliding_window_group(128)`` leaf;
@@ -53,8 +53,8 @@ from typing import Any
 from max import tree
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.kernels import store_k_cache_ragged, store_v_cache_ragged
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.legacy.kernels import store_k_cache_ragged, store_v_cache_ragged
+from max.nn.legacy.kv_cache import PagedCacheValues
 from max.support.math import ceildiv as ceildiv
 
 from ..model_config import DeepseekV4Config

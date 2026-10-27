@@ -27,8 +27,8 @@ from max.experimental.nn.common_layers.linear import ColumnParallelLinear
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.sharding import DeviceMapping, DeviceMesh
 from max.experimental.tensor import Tensor, default_device, default_dtype
-from max.nn.kv_cache import KVCacheInputsPerDevice, MultiKVCacheParams
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, MultiKVCacheParams
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import ModuleV3Outputs
 
 if TYPE_CHECKING:

@@ -34,7 +34,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/support",
         requirement("ml-dtypes"),
         requirement("numpy"),
@@ -78,7 +78,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("numpy"),
     ],
 )
@@ -119,7 +119,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("numpy"),
     ],
 )

@@ -118,8 +118,8 @@ class Mistral3TextEncoderTransformer(Module[[Tensor], Tensor]):
         self._output_seq_len: int | None = config.output_seq_len
 
         # Compute the rotary-embedding cos/sin lookup table on CPU to
-        # match the legacy graph API's ``max.nn.RotaryEmbedding`` (see
-        # ``max/python/max/nn/rotary_embedding.py``).  GPU and CPU fp32
+        # match the legacy graph API's ``max.nn.legacy.RotaryEmbedding`` (see
+        # ``max/python/max/nn/legacy/rotary_embedding.py``).  GPU and CPU fp32
         # transcendentals can disagree by ~1 ULP, and even tiny rope
         # offsets shift the entire denoising trajectory once they feed
         # text conditioning into 50 FLUX.2 diffusion steps -- enough to

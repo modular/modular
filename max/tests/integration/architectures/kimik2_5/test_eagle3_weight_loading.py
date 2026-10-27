@@ -14,8 +14,8 @@
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheParams, MHAKVCacheParams
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.deepseekV3.deepseekV3 import DeepseekV3
 from max.pipelines.architectures.deepseekV3.model_config import DeepseekV3Config
 from max.pipelines.architectures.eagle3_deepseekV3 import Eagle3DeepseekV3

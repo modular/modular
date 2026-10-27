@@ -26,14 +26,14 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn import (
+from max.nn.legacy import (
     LayerNorm,
     Linear,
     Module,
     QuantConfig,
 )
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kernels import (
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.kernels import (
     mla_fp8_index_top_k,
     mla_fp8_index_top_k_physical,
     mla_fp8_index_top_k_with_physical,
@@ -47,9 +47,9 @@ from max.nn.kernels import (
     store_k_cache_ragged,
     store_k_scale_cache_ragged,
 )
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.layer import Shardable
-from max.nn.quant_config import QuantFormat
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.layer import Shardable
+from max.nn.legacy.quant_config import QuantFormat
 
 from .transforms import HadamardTransform
 
@@ -362,7 +362,7 @@ class Indexer(Module, Shardable):
         things follow.
 
         The rows have to be **compacted**, because
-        :func:`~max.nn.kernels.store_k_cache_ragged` writes a request's rows
+        :func:`~max.nn.legacy.kernels.store_k_cache_ragged` writes a request's rows
         contiguously; a non-closing row left in place would be written as if it
         were a pooled key.
 
@@ -474,15 +474,15 @@ class Indexer(Module, Shardable):
         request's ragged, multi-token chunk in the same call read and wrote
         out of bounds):
 
-        - :func:`~max.nn.kernels.mla_kpool_ring_close` closes each request's
+        - :func:`~max.nn.legacy.kernels.mla_kpool_ring_close` closes each request's
           *pending* pool -- the one the ring already partly holds -- using
           the ring's members plus this call's leading new tokens, whenever
           this call brings enough of them. A request with nothing pending,
           or not yet enough new tokens to finish it, closes nothing.
-        - :func:`~max.nn.kernels.mla_kpool_compress` builds every pool that is
+        - :func:`~max.nn.legacy.kernels.mla_kpool_compress` builds every pool that is
           entirely new tokens, skipping the leading tokens the ring-close
           writer above just consumed (or none, when nothing was pending).
-        - :func:`~max.nn.kernels.mla_kpool_seed_tail` stashes whatever remains
+        - :func:`~max.nn.legacy.kernels.mla_kpool_seed_tail` stashes whatever remains
           incomplete after this call into the ring, for a later call to
           close.
 
@@ -843,7 +843,7 @@ class Indexer(Module, Shardable):
         """Declared ``head_dim`` of the pooled-key cache: 128 / 4 = 32.
 
         The paged cache manager indexes one row per *token* and every leaf of a
-        :class:`~max.nn.kv_cache.MultiKVCacheParams` shares one page table, so a
+        :class:`~max.nn.legacy.kv_cache.MultiKVCacheParams` shares one page table, so a
         cache holding one key per ``index_kpool`` tokens cannot be declared four
         times shorter. Declaring it ``index_head_dim / index_kpool`` wide
         instead spreads one 128-value pooled key across the ``index_kpool``

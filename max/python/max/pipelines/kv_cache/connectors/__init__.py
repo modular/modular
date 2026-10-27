@@ -26,8 +26,8 @@ import logging
 from collections.abc import Mapping, Sequence
 
 from max.driver import Device
-from max.nn.kv_cache import KVCacheGroupId
-from max.nn.kv_cache.cache_params import (
+from max.nn.legacy.kv_cache import KVCacheGroupId
+from max.nn.legacy.kv_cache.cache_params import (
     TIERED_CONNECTOR_TYPES,
     KVCacheMemory,
     KVCacheParamInterface,

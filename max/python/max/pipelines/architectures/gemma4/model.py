@@ -30,8 +30,8 @@ from max.graph import (
     Module,
 )
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.nn.kv_cache import MultiKVCacheParams
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.kv_cache import MultiKVCacheParams
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import ImageMetadata
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,

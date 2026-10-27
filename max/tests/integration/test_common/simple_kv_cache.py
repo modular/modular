@@ -35,7 +35,7 @@ from collections.abc import Sequence
 
 import numpy as np
 from max.driver import Buffer
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     PACKED_PAGE_STRIDE,
     KVCacheInputsPerDevice,
     KVCacheParams,

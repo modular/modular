@@ -35,7 +35,7 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor
 from max.graph import BufferValue, DeviceRef, Dim, TensorValue, ops
-from max.nn.kv_cache import KVCacheInputsPerDevice
+from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
 
 from ...deepseekV41.layers.attention import (
     bf16_grouped_projection,

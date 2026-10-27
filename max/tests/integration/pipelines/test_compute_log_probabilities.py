@@ -21,7 +21,7 @@ import pytest
 from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.gemma3multimodal.model import (
     Gemma3_MultiModalModel,
 )

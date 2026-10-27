@@ -33,7 +33,7 @@ from max.experimental.sharding.cost import P, R
 from max.experimental.sharding.types import TensorLayout
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     block_scales_interleave,
     dynamic_block_scaled_matmul,
 )

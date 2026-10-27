@@ -18,9 +18,9 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 from max.graph import BufferType, TensorType, TensorValue
-from max.nn.layer import Module
-from max.nn.transformer import ReturnHiddenStates
-from max.nn.transformer.transformer import captures_by_device
+from max.nn.legacy.layer import Module
+from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.legacy.transformer.transformer import captures_by_device
 from max.pipelines.speculative.block_driver import BlockBatch
 from max.pipelines.speculative.driver import SequentialBatch
 from max.pipelines.speculative.spec_adapters.target_adapter import TargetAdapter

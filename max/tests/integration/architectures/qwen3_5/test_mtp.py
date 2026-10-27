@@ -30,7 +30,7 @@ import numpy as np
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.legacy.kv_cache import MHAKVCacheParams
 from max.pipelines.architectures.qwen3_5.model_config import Qwen3_5Config
 from max.pipelines.architectures.qwen3_5.mtp import Qwen3_5MTP
 from max.pipelines.architectures.qwen3_5.quantization import (

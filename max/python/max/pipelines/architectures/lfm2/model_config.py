@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any, ClassVar, Literal
 
 from max.graph.weights import WeightData
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers import AutoConfig
 

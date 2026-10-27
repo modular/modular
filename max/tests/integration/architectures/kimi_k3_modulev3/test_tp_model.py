@@ -33,7 +33,7 @@ from max.dtype import DType
 from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import Tensor, default_device
 from max.graph import DeviceRef
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     MHAKVCacheParams,
     MultiKVCacheParams,
     RecurrentStateParams,

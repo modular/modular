@@ -23,14 +23,14 @@ from max.graph import (
     TensorValue,
     Weight,
 )
-from max.nn.activation import activation_function_from_name
-from max.nn.comm.allreduce import Allreduce
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.layer import Module
-from max.nn.linear import Linear
-from max.nn.moe.moe import MoE
-from max.nn.quant_config import QuantConfig
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.activation import activation_function_from_name
+from max.nn.legacy.comm.allreduce import Allreduce
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.moe.moe import MoE
+from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.transformer.distributed_transformer import (
     ShardableCallable,
     forward_sharded_layers,
 )

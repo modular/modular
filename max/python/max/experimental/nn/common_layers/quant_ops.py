@@ -31,13 +31,13 @@ from max.experimental.sharding import DeviceMapping, DeviceMesh
 from max.experimental.sharding.placements import Sharded
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue
-from max.nn.activation import GatedActivation
-from max.nn.comm.ep import EPConfig
-from max.nn.kernels import _is_amd_gpu
-from max.nn.kernels import (
+from max.nn.legacy.activation import GatedActivation
+from max.nn.legacy.comm.ep import EPConfig
+from max.nn.legacy.kernels import _is_amd_gpu
+from max.nn.legacy.kernels import (
     grouped_matmul_blocked_swiglu as _grouped_matmul_blocked_swiglu,
 )
-from max.nn.quant_config import (
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -129,7 +129,7 @@ class EPDispatchPayload:
 
         Args:
             dispatch_results: Per-device dispatch output tuples (the return of
-                :meth:`~max.nn.comm.ep.EPBatchManager.ep_dispatch`).
+                :meth:`~max.nn.legacy.comm.ep.EPBatchManager.ep_dispatch`).
             quant_config: Routed-expert quant config selecting the format.
             ep_config: EP batch-manager config; its ``dispatch_dtype`` decides
                 whether a ``scales`` column is present (a separate axis from the

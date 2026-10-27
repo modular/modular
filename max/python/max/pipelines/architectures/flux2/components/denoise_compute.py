@@ -37,8 +37,8 @@ from max.graph import (
 )
 from max.graph import Module as GraphModule
 from max.graph.weights import load_weights
-from max.nn.comm import Signals
-from max.nn.layer import Module
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.layer import Module
 from max.pipelines.lib.compiled_component import CompiledComponent
 from max.pipelines.lib.config.model_config import (
     _resolve_component_encoding_and_weights,

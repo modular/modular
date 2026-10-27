@@ -26,7 +26,7 @@ from collections.abc import Sequence
 from max import tree
 from max.dtype import DType
 from max.graph import BufferValue, TensorValue
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
     MHAKVCacheParams,

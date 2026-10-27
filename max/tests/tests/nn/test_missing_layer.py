@@ -15,7 +15,7 @@
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight
-from max.nn import LayerList, MissingLayer, Module
+from max.nn.legacy import LayerList, MissingLayer, Module
 
 
 class Scale(Module):

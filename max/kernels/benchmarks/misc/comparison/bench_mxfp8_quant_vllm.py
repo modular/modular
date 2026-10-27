@@ -82,7 +82,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.kernels import quantize_dynamic_block_scaled
+from max.nn.legacy.kernels import quantize_dynamic_block_scaled
 
 # vLLM is optional: the `//:use_vllm_setting` select can leave it out.
 _mxfp8_utils: ModuleType | None

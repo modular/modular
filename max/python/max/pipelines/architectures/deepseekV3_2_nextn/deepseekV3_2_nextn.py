@@ -30,27 +30,29 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.attention.multi_latent_attention import MLAPrefillMetadata
-from max.nn.comm import Signals
-from max.nn.comm.ep import EPBatchManager
-from max.nn.data_parallelism import split_batch_replicated
-from max.nn.embedding import VocabParallelEmbedding
-from max.nn.graph_groups import SparseIndices
-from max.nn.kernels import mtp_eh_norm
-from max.nn.kv_cache import (
+from max.nn.legacy.attention.multi_latent_attention import MLAPrefillMetadata
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.legacy.data_parallelism import split_batch_replicated
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.graph_groups import SparseIndices
+from max.nn.legacy.kernels import mtp_eh_norm
+from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
     PagedCacheValues,
 )
-from max.nn.layer import Module
-from max.nn.linear import ColumnParallelLinear, Linear
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import (
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import ColumnParallelLinear, Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
     RotaryEmbedding,
 )
-from max.nn.transformer import DecoderOutputs
-from max.nn.transformer.distributed_transformer import forward_sharded_layers
+from max.nn.legacy.transformer import DecoderOutputs
+from max.nn.legacy.transformer.distributed_transformer import (
+    forward_sharded_layers,
+)
 
 from ..deepseekV3.deepseekV3 import deepseek_logits_postprocess
 from ..deepseekV3_2.deepseekV3_2 import DeepseekV3_2DecoderLayer

@@ -38,7 +38,7 @@ splits a served model across the GPUs you name.
 | Offset RMS normalization           | [`GemmaRMSNorm`](/api/python/generated/max.experimental.nn.norm.GemmaRMSNorm/)                                         | `dim`, `eps`                                 |
 | Layer normalization                | [`LayerNorm`](/api/python/generated/max.experimental.nn.norm.LayerNorm/)                                               | `dim`, `eps`                                 |
 | Quantized projection               | [`Linear`](/api/python/generated/max.experimental.nn.Linear/)                                                          | `quant_config`, static per-tensor FP8        |
-| KV cache shape                     | `AttentionWithRope`                                                                                                    | `kv_params` from `max.nn.kv_cache`           |
+| KV cache shape                     | `AttentionWithRope`                                                                                                    | `kv_params` from `max.nn.legacy.kv_cache`    |
 | Tied input and output embedding    | model, not a layer                                                                                                     | logits computed against the embedding weight |
 
 The rotary layer builds its frequency table from `theta` and `head_dim`, and

@@ -123,7 +123,7 @@ def _make_nextn_config_kwargs(
     *, data_parallel_degree: int, num_devices: int
 ) -> dict[str, Any]:
     """Return minimal kwargs for constructing a DeepseekV3NextNConfig."""
-    from max.nn.kv_cache import MLAKVCacheParams
+    from max.nn.legacy.kv_cache import MLAKVCacheParams
 
     devices = [DeviceRef("gpu", i) for i in range(num_devices)]
     kv_params = MLAKVCacheParams(

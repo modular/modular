@@ -18,7 +18,7 @@ from __future__ import annotations
 from typing import Any, Protocol, runtime_checkable
 
 from max.driver import Device
-from max.nn.kv_cache import KVCacheParamInterface
+from max.nn.legacy.kv_cache import KVCacheParamInterface
 
 
 @runtime_checkable
@@ -173,7 +173,7 @@ class MemoryPlanner:
             and len(pipeline_config.model.device_specs) == 1
         ):
             # Import deferred to avoid circular dependency at module load time.
-            from max.nn.comm import Signals
+            from max.nn.legacy.comm import Signals
 
             return Signals.NUM_BYTES
         return pipeline_config.estimate_signal_buffer_memory(arch_config)

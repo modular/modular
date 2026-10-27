@@ -44,12 +44,12 @@ from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     msa_sparse_attention_ragged,
     msa_sparse_attention_ragged_mxfp8,
     quantize_dynamic_block_scaled,
 )
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     MHAKVCacheParams,
     PagedCacheValues,
     packed_page_stride,

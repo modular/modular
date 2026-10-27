@@ -22,8 +22,8 @@ from max import tree
 from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.kv_cache import KVCacheInputs
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
+from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.context import ImageMetadata
 from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.batch_processor import (

@@ -18,17 +18,17 @@ from __future__ import annotations
 import logging
 
 from max.dtype import DType
-from max.nn.comm.ep.ep_config import (
+from max.nn.legacy.comm.ep.ep_config import (
     EPConfig,
     _ep_fused_moe_requested,
     calculate_ep_max_tokens_per_rank,
     estimate_ep_memory_usage,
 )
-from max.nn.comm.ep.ep_manager import (
+from max.nn.legacy.comm.ep.ep_manager import (
     _bound_fused_moe_workspace,
     _ep_sync_counter_bytes,
 )
-from max.nn.kernels import nvfp4_mla_prefill_convert_bytes
+from max.nn.legacy.kernels import nvfp4_mla_prefill_convert_bytes
 from max.pipelines.kv_cache import (
     cache_dtype_for_encoding,
     is_fp4_kv_cache_format,

@@ -75,7 +75,7 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn import Signals
+from max.nn.legacy import Signals
 
 # Seeds the batch-shape generator. Random by default so repeated runs explore
 # different step sequences; each run prints it, and `STRESS_SEED` replays one.

@@ -51,11 +51,11 @@ from max.graph import (
     SymbolicDim,
     TensorValue,
 )
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     MLAKVCacheParams,
 )
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.quant_config import QuantConfig
 from max.pipelines.architectures.deepseekV3.model_config import (
     mla_kv_cache_quant_config,
 )

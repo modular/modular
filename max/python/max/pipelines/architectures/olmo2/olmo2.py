@@ -29,13 +29,13 @@ from max.graph import (
 )
 from max.graph import Module as GraphModule
 from max.graph.quantization import QuantizationEncoding
-from max.nn.embedding import Embedding
-from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
-from max.nn.layer import Module
-from max.nn.linear import MLP, Linear
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import Llama3RotaryEmbedding
-from max.nn.transformer import DecoderOutputs, Transformer
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import MLP, Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.legacy.transformer import DecoderOutputs, Transformer
 from max.pipelines.architectures.llama3.llama3 import StackedMLP
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.architectures.olmo2.layers.attention import Olmo2Attention

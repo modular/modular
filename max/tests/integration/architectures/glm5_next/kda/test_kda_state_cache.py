@@ -56,7 +56,7 @@ from max.graph import (
     TensorType,
     Type,
 )
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     MLAKVCacheParams,
     MultiKVCacheParams,
     RecurrentStateInputsPerDevice,

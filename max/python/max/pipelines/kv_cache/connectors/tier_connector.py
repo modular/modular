@@ -64,14 +64,14 @@ from max.driver import (
     _ChunkedStagingRegion,
     accelerator_api,
 )
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheGroupId,
     KVCacheMemory,
     KVCacheParamInterface,
     KVConnectorType,
 )
-from max.nn.kv_cache.cache_params import HostStagingAlloc
-from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache.cache_params import HostStagingAlloc
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_pool import (
     compute_jenga_ratios,
 )

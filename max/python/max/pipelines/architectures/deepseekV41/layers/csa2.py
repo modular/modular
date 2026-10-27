@@ -47,8 +47,8 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.kernels import _block_scaled_quantize_out_types
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.legacy.kernels import _block_scaled_quantize_out_types
+from max.nn.legacy.kv_cache import PagedCacheValues
 
 HEAD_DIM = 512
 """Channels of a query head, a latent and a dequantized record."""
@@ -404,7 +404,7 @@ def norm_quantize_q_store_kv(
     """Normalizes ``[q | kv]`` rows, quantizes q to MXFP8 and stores kv.
 
     One launch computes what
-    :func:`~max.nn.kernels.rms_norm_quantize_mxfp8_q_kv` and then
+    :func:`~max.nn.legacy.kernels.rms_norm_quantize_mxfp8_q_kv` and then
     :meth:`WindowStore.store` on its normalized kv compute, bit for bit,
     without writing the normalized kv out.
 
@@ -641,7 +641,7 @@ def csa2_attention_mxfp8(
 
     Each head's last 64 channels rotate back by the conjugate of ``freqs``,
     then every 32 channels quantize to E4M3 under an E8M0 scale, byte for
-    byte as :func:`~max.nn.kernels.rope_quantize_dynamic_block_scaled` with
+    byte as :func:`~max.nn.legacy.kernels.rope_quantize_dynamic_block_scaled` with
     ``inverse`` quantizes the bf16 output. A 64-head prefill writes them
     from the attention kernel, so the bf16 output never reaches memory.
     SM100 only.

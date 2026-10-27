@@ -21,8 +21,8 @@ import numpy as np
 from max.driver import Buffer
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.kv_cache import KVCacheInputs
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
+from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.batch_processor import (

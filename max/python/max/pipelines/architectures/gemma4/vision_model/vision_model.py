@@ -32,7 +32,7 @@ from max.graph import (
     Weight,
 )
 from max.graph import Module as GraphModule
-from max.nn.layer import Module
+from max.nn.legacy.layer import Module
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     compute_vision_freqs_cis,
 )

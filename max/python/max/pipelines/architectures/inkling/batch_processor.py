@@ -23,7 +23,7 @@ from max import tree
 from max.driver import Buffer, Device, Usage
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache import KVCacheInputs
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.graph_input_stager import InputDescriptor
 from max.pipelines.lib.interfaces.batch_processor import (

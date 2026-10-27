@@ -28,9 +28,9 @@ Weight key naming matches HuggingFace diffusers:
 
 from max.dtype import DType
 from max.graph import TensorType, TensorValue, ops
-from max.nn.layer import LayerList, Module
-from max.nn.linear import Linear
-from max.nn.norm import RMSNorm
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import RMSNorm
 
 from .layers.embeddings import (
     QwenImagePosEmbed,

@@ -46,9 +46,9 @@ from max.experimental.tensor import (
     defaults,
 )
 from max.graph import DimLike, TensorValue
-from max.nn.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.moe.expert_parallel import _SHARED_EXPERT_STREAM_ID
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
+from max.nn.legacy.moe.expert_parallel import _SHARED_EXPERT_STREAM_ID
+from max.nn.legacy.quant_config import QuantConfig
 from typing_extensions import Self
 
 from . import quant_ops

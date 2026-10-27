@@ -26,21 +26,23 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.attention.attention_with_rope import (
+from max.nn.legacy.attention.attention_with_rope import (
     AttentionWithRope,
     DataParallelAttentionWithRope,
     TensorParallelAttentionWithRope,
 )
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.layer import LayerList, Module
-from max.nn.linear import MLP, Linear
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import (
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import MLP, Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
-from max.nn.transformer.distributed_transformer import forward_sharded_layers
+from max.nn.legacy.transformer.distributed_transformer import (
+    forward_sharded_layers,
+)
 
 
 @dataclass(kw_only=True)

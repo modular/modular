@@ -43,8 +43,8 @@ from max.driver import CPU, Accelerator, Buffer, Device, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType
-from max.nn.kv_cache import BatchCharacteristics, MHAAttnKey
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.kv_cache import BatchCharacteristics, MHAAttnKey
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.deepseekV41.model import (
     DeepseekV41BatchProcessor,
     DeepseekV41Inputs,

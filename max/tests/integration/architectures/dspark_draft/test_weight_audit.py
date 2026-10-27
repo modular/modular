@@ -37,8 +37,8 @@ import pytest
 from huggingface_hub import hf_hub_download
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.embedding import Embedding
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.kv_cache import MHAKVCacheParams
 from max.pipelines.architectures.dspark_draft.dspark_speculators_draft import (
     DSparkSpeculatorsDraft,
 )

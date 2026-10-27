@@ -24,7 +24,7 @@ from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
-from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.pipelines.lib import ModuleV3Outputs
 
 from .layers.decoder import HYV4DecoderLayer

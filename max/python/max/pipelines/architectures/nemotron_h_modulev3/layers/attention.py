@@ -36,9 +36,9 @@ from max.experimental.nn.common_layers.linear import (
 from max.experimental.nn.common_layers.mesh_axis import TP
 from max.experimental.sharding import DeviceMesh, NamedMapping
 from max.experimental.tensor import Tensor
-from max.nn.attention import MHAMaskVariant
-from max.nn.kernels import fused_qkv_ragged_matmul
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kernels import fused_qkv_ragged_matmul
+from max.nn.legacy.kv_cache import KVCacheParams
 
 from ..model_config import NemotronHConfig
 

@@ -26,7 +26,7 @@ import functools
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, ShardingStrategy
-from max.nn.activation import GatedActivation
+from max.nn.legacy.activation import GatedActivation
 from max.pipelines.architectures.glm5_next.layers.mlp import (
     Glm5NextMLP,
     Glm5NextMoE,

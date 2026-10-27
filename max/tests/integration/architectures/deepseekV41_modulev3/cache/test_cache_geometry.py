@@ -26,7 +26,7 @@ from typing import Any
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.kv_cache import KVCacheParams
 from max.pipelines.architectures.deepseekV41 import kv_leaves as v2_kv_leaves
 from max.pipelines.architectures.deepseekV41.layers.csa2 import (
     COMPRESSED_DATA_BYTES,

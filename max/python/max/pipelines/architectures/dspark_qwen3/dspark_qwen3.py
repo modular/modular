@@ -65,10 +65,10 @@ from max.experimental.nn.sequential import ModuleList
 from max.experimental.sharding import NamedMapping
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue
-from max.nn.attention import MHAMaskVariant
-from max.nn.kernels import fused_qk_ragged_rope as _fused_qk_ragged_rope
-from max.nn.kernels import store_v_cache_ragged as _store_v_cache_ragged
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kernels import fused_qk_ragged_rope as _fused_qk_ragged_rope
+from max.nn.legacy.kernels import store_v_cache_ragged as _store_v_cache_ragged
+from max.nn.legacy.kv_cache import KVCacheParams
 from max.pipelines.architectures.nemotron_h_modulev3.layers.quantized import (
     NVFP4Linear,
 )

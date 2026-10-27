@@ -22,9 +22,9 @@ import numpy as np
 import pytest
 from max._kv_core import longest_joint_prefix_hit
 from max.driver import Buffer
-from max.nn.kv_cache import KVCacheGroupId, PagedKVLeafRegion
-from max.nn.kv_cache.cache_params import KVCacheMemory
-from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache import KVCacheGroupId, PagedKVLeafRegion
+from max.nn.legacy.kv_cache.cache_params import KVCacheMemory
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache import InsufficientBlocksError
 from max.pipelines.kv_cache.kv_connector import BlockCount, KVConnector

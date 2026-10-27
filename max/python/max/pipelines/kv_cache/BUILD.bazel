@@ -63,7 +63,7 @@ modular_py_library(
     name = "kv_connector",
     srcs = ["kv_connector.py"],
     deps = [
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
     ],
 )
 
@@ -125,7 +125,7 @@ modular_py_library(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/kv_cache/connectors/dkv",
         "//max/python/max/pipelines/modeling",
         "//max/python/max/profiler",

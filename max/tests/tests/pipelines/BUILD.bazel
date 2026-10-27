@@ -37,7 +37,7 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/experimental",
         "//max/python/max/experimental/torch",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/graph",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures",

@@ -33,9 +33,9 @@ from max._artifact.value_types import treedef_from_json, treedef_to_json
 from max._kv_cache_ops import mha_split_kv_decode_num_partitions
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn import kernels
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kv_cache import (
+from max.nn.legacy import kernels
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.kv_cache import (
     KVCacheQuantizationConfig,
     MHAAttnKey,
     MHAKVCacheParams,
@@ -43,7 +43,7 @@ from max.nn.kv_cache import (
     PagedCacheValues,
     SplitKVHeadDims,
 )
-from max.nn.kv_cache import cache_params as cache_params_module
+from max.nn.legacy.kv_cache import cache_params as cache_params_module
 from max.pipelines.lib import KVCacheConfig
 
 

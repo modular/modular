@@ -44,7 +44,7 @@ from max.experimental.nn.common_layers.mlp import MLP
 from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.experimental.tensor import Tensor
 from max.graph import BufferType, TensorType
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
 
 from ..model_config import LanguageModelConfig
 

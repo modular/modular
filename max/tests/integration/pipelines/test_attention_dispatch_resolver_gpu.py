@@ -17,8 +17,8 @@ import pytest
 from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import MLAKVCacheParams, MultiKVCacheParams
-from max.nn.kv_cache.utils import MLAAttnKey
+from max.nn.legacy.kv_cache import MLAKVCacheParams, MultiKVCacheParams
+from max.nn.legacy.kv_cache.utils import MLAAttnKey
 
 
 @pytest.fixture(scope="module")

@@ -36,7 +36,7 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
 from max.graph.weights import WeightData
-from max.nn.kv_cache import KVCacheInputsPerDevice
+from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
 from max.pipelines.architectures.gemma4.model import Gemma3_MultiModalModel
 from max.pipelines.lib import CompilationTimer, PipelineModel
 from max.pipelines.lib.graph_specs import GraphRole
@@ -227,7 +227,7 @@ class DiffusionGemmaForBlockDiffusionModel(Gemma3_MultiModalModel):
             DType.float32, shape=[1], device=device_ref
         )
 
-        from max.nn.comm.allreduce import Signals
+        from max.nn.legacy.comm.allreduce import Signals
 
         signals = Signals(
             devices=(DeviceRef(d.label, d.id) for d in self.devices)

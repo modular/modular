@@ -31,7 +31,7 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.graph.type import BufferType
 from max.graph.weights import WeightData, Weights
-from max.nn.comm import Signals
+from max.nn.legacy.comm import Signals
 from max.pipelines.context import TokenBuffer
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.modeling.config_enums import supported_encoding_dtype

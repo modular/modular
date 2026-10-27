@@ -22,7 +22,7 @@ import max.tests.integration.tools.debugging_utils as dbg
 import pytest
 import transformers
 from max.experimental.nn import Module as ModuleV3
-from max.nn.layer import Module
+from max.nn.legacy.layer import Module
 from max.pipelines.lib.config.model_config import MAXModelConfig
 
 

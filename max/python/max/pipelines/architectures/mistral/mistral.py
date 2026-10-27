@@ -22,13 +22,17 @@ from typing import Any
 from max import tree
 from max.graph import Graph, Type, Value
 from max.graph import Module as GraphModule
-from max.nn.attention import AttentionWithRope
-from max.nn.embedding import Embedding
-from max.nn.kv_cache import KVCacheInputsPerDevice
-from max.nn.linear import MLP, Linear
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import RotaryEmbedding
-from max.nn.transformer import DecoderOutputs, Transformer, TransformerBlock
+from max.nn.legacy.attention import AttentionWithRope
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
+from max.nn.legacy.linear import MLP, Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.transformer import (
+    DecoderOutputs,
+    Transformer,
+    TransformerBlock,
+)
 from max.pipelines.lib.interfaces.batch_processor import (
     ragged_kv_symbolic_input_tree,
 )

@@ -29,7 +29,7 @@ from max.engine import InferenceSession, ModelExecutionError
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Type, ops
 from max.graph.type import _ChainType
 from max.graph.value import _ChainValue
-from max.nn import Signals
+from max.nn.legacy import Signals
 
 M = 512
 N = 1024

@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import pytest
 from max.dtype import DType
-from max.nn.quant_config import (
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

@@ -41,7 +41,7 @@ from max.experimental.nn.common_layers.quant_moe import (
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.sharding import DeviceMapping, Partial
 from max.experimental.tensor import Tensor
-from max.nn.comm.ep import EPBatchManager, EPCommBuffers
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 
 from ..model_config import DeepseekV3Config
 from .moe_gate import DeepseekV3TopKRouter

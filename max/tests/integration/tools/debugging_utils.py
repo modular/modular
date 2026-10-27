@@ -29,8 +29,8 @@ from max.driver.buffer import load_max_buffer
 from max.engine import InferenceSession
 from max.engine.api import PrintStyle
 from max.experimental.nn import Module as ModuleV3
-from max.nn.hooks import PrintHook
-from max.nn.layer import Module
+from max.nn.legacy.hooks import PrintHook
+from max.nn.legacy.layer import Module
 from max.pipelines.lib.device_specs import (
     _default_device_specs,
     device_specs_from_normalized_device_handle,
@@ -149,7 +149,7 @@ def debug_context(
     This context manages:
     1. HuggingFace config overrides to modify the model configuration
     2. Places print hooks for both MAX and Torch models to inspect intermediate tensors
-    3. Legacy API (max.nn.layer.Layer): names layers after state dict loading
+    3. Legacy API (max.nn.legacy.layer.Layer): names layers after state dict loading
     4. v3 API (max.experimental.nn.Module): patches Module.__call__ to fire hooks
        during graph tracing, and names layers at the start of Module.compile()
     """
@@ -158,7 +158,7 @@ def debug_context(
             stack.enter_context(apply_hf_config_override(hf_config_overrides))
             stack.enter_context(apply_non_strict_load())
         hook = stack.enter_context(apply_max_hooks(output_directory))
-        # Legacy API (max.nn.layer.Layer) hooks.
+        # Legacy API (max.nn.legacy.layer.Layer) hooks.
         stack.enter_context(apply_name_layers_after_state_load(hook))
         # v3 API (max.experimental.nn.Module) hooks.
         stack.enter_context(apply_v3_hooks(hook))

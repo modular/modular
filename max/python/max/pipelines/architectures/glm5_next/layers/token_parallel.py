@@ -29,7 +29,7 @@ expression inside the subgraph body where it is legal.
 The partition is ``[T*r // G, T*(r+1) // G)``: contiguous, covering, and every
 rank lands on floor or ceil of ``T / G``. So ``ceildiv(T, G)`` remains the
 per-rank upper bound, which is exactly what
-:func:`~max.nn.comm.ep.ep_config.calculate_ep_max_tokens_per_rank` already
+:func:`~max.nn.legacy.comm.ep.ep_config.calculate_ep_max_tokens_per_rank` already
 returns -- the shared helper needs no architecture-specific override.
 :func:`~max.graph.ops.allgather` concatenates in device order, which inverts
 the split exactly.
@@ -68,7 +68,7 @@ def token_shard(
     A local slice rather than a collective: every rank already holds the whole
     tensor, so there is nothing to communicate. The result\'s row count is a
     freshly *named* dimension rather than an expression over the input\'s, the
-    same way :func:`~max.nn.data_parallelism.split_batch` names its splits --
+    same way :func:`~max.nn.legacy.data_parallelism.split_batch` names its splits --
     a named dimension is legal in the subgraph signature this crosses, and an
     expression is not.
 

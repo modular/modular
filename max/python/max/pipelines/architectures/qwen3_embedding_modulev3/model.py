@@ -29,7 +29,7 @@ from max.experimental.nn.embedding import Embedding
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.tensor import default_dtype
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     GraphRole,

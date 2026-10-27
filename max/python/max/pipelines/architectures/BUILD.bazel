@@ -7,7 +7,7 @@ modular_py_library(
     srcs = glob(["*.py"]),
     ignore_extra_deps = [
         # Hooks added for convenience for when we want to print the model layers
-        "//max/python/max/nn/hooks",
+        "//max/python/max/nn/legacy/hooks",
     ],
     ignore_unresolved_imports = [
         # Private tool parsers are imported at runtime, not directly
@@ -31,6 +31,6 @@ modular_py_library(
         requirement("transformers"),  # Used in hf_config_shims.py
         "//max/python/max/pipelines/lib",
         # Hooks added for convenience for when we want to print the model layers
-        "//max/python/max/nn/hooks",
+        "//max/python/max/nn/legacy/hooks",
     ],
 )

@@ -29,10 +29,10 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, TensorType, Value
-from max.nn import Module
-from max.nn.graph_groups import Logits, RaggedBatch
-from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
-from max.nn.transformer import DecoderOutputs, ReturnLogits
+from max.nn.legacy import Module
+from max.nn.legacy.graph_groups import Logits, RaggedBatch
+from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParamInterface
+from max.nn.legacy.transformer import DecoderOutputs, ReturnLogits
 from max.pipelines import PipelineConfig
 from max.pipelines.context import TextContext
 from max.pipelines.lib import GraphRole, GraphSpec, ModelInputs, ModelOutputs

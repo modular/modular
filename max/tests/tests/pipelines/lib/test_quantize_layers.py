@@ -31,7 +31,7 @@ from max.experimental.nn.common_layers.quant_linear import (
 )
 from max.experimental.nn.common_layers.quant_tensor import NVFP4TensorQuantizer
 from max.experimental.tensor import Tensor
-from max.nn.quant_config import WeightSource
+from max.nn.legacy.quant_config import WeightSource
 
 
 class _Block(Module[[Tensor], Tensor]):

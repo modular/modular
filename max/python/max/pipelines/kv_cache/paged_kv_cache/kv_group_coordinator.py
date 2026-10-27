@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar
 
 from max._kv_core import PrefixCache, blocks_held_of_hit
-from max.nn.kv_cache import KVCacheGroupId
+from max.nn.legacy.kv_cache import KVCacheGroupId
 from max.pipelines.context import TextContext
 from max.pipelines.modeling.types import RequestID
 

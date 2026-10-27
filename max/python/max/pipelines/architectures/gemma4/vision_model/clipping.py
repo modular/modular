@@ -31,8 +31,8 @@ from functools import partial
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
 from max.graph.quantization import QuantizationEncoding
-from max.nn import MLP, Linear
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy import MLP, Linear
+from max.nn.legacy.quant_config import QuantConfig
 
 CLAMP_BOUND_NAMES: tuple[str, ...] = (
     "input_min",
@@ -61,7 +61,7 @@ def _refuse_weight_sharding(strategy: ShardingStrategy) -> None:
 
 
 class Gemma4ClippableLinear(Linear):
-    """A :class:`~max.nn.Linear` that clamps its input and its output.
+    """A :class:`~max.nn.legacy.Linear` that clamps its input and its output.
 
     With ``use_clipping=False`` it is a plain linear that declares no extra
     weights, so an unclipped model keeps the graph and the weight names it
@@ -196,7 +196,7 @@ def _builds_clipping_linears(linear_cls: Callable[..., Linear]) -> bool:
 class Gemma4VisionMLP(MLP):
     """The vision tower's gated MLP, with clipped projections.
 
-    :class:`~max.nn.MLP` fuses the gate and up matmuls when it can, which
+    :class:`~max.nn.legacy.MLP` fuses the gate and up matmuls when it can, which
     applies neither projection's own clamp, so the fused path stays off while
     clipping is on.
     """

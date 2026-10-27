@@ -28,7 +28,7 @@ modular_py_library(
         "//max/python/max/experimental",
         "//max/python/max/experimental/nn",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/deepseekV3_modulev3",
         "//max/python/max/pipelines/architectures/llama3_modulev3",
         "//max/python/max/pipelines/context",

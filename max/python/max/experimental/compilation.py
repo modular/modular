@@ -493,7 +493,7 @@ class CompiledCallable(Generic[_P, _R]):
         """Wraps a graph compiled elsewhere, given its signature.
 
         Use this for a graph that was traced without :func:`stage`, such as
-        a :class:`~max.nn.Module` graph. Any signal buffers are among its
+        a :class:`~max.nn.legacy.Module` graph. Any signal buffers are among its
         inputs.
 
         Args:

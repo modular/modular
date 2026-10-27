@@ -30,25 +30,29 @@ from max.graph import (
     Value,
 )
 from max.graph import Module as GraphModule
-from max.nn.attention.multi_latent_attention import (
+from max.nn.legacy.attention.multi_latent_attention import (
     LatentAttentionWithRope,
 )
-from max.nn.comm import Signals
-from max.nn.embedding import Embedding
-from max.nn.kv_cache import (
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
 )
-from max.nn.layer import Module
-from max.nn.linear import MLP, Linear
-from max.nn.moe import MoE
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import (
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import MLP, Linear
+from max.nn.legacy.moe import MoE
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
-from max.nn.transformer import DecoderOutputs, Transformer, TransformerBlock
+from max.nn.legacy.transformer import (
+    DecoderOutputs,
+    Transformer,
+    TransformerBlock,
+)
 from max.pipelines.architectures.deepseekV2.layers.moe_gate import (
     DeepSeekV2MoEGate,
 )

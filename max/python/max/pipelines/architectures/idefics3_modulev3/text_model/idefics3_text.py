@@ -32,13 +32,13 @@ from max.experimental.nn.norm import RMSNorm
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import ops
-from max.nn.kernels import scatter_nd_skip_oob_indices as _scatter_nd
-from max.nn.kv_cache import (
+from max.nn.legacy.kernels import scatter_nd_skip_oob_indices as _scatter_nd
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
 )
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 
 from ...llama3_modulev3.layers.mlp import LlamaStackedMLP
 from ...llama3_modulev3.layers.rotary_embedding import Llama3RotaryEmbedding

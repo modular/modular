@@ -31,20 +31,24 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
-from max.nn.comm.allreduce import Allreduce
-from max.nn.embedding import Embedding
-from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams, PagedCacheValues
-from max.nn.layer import LayerList, Module
-from max.nn.linear import MLP, ColumnParallelLinear
-from max.nn.moe import MoEQuantized
-from max.nn.norm.rms_norm import RMSNorm
-from max.nn.rotary_embedding import RotaryEmbedding
-from max.nn.transformer import (
+from max.nn.legacy.comm.allreduce import Allreduce
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.kv_cache import (
+    KVCacheParams,
+    MultiKVCacheParams,
+    PagedCacheValues,
+)
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import MLP, ColumnParallelLinear
+from max.nn.legacy.moe import MoEQuantized
+from max.nn.legacy.norm.rms_norm import RMSNorm
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.transformer import (
     DecoderOutputs,
     ReturnHiddenStates,
     forward_sequential_layers,
 )
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
     forward_sharded_layers,
 )

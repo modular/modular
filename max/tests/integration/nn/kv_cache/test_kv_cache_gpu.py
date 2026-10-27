@@ -19,7 +19,7 @@ from max.driver import Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     MHAKVCacheParams,
 )

@@ -40,8 +40,8 @@ from max.experimental.nn.norm import LayerNorm
 from max.experimental.sharding import DeviceMapping
 from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorValue, ops
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kernels import (
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.kernels import (
     mla_fp8_index_top_k,
     mla_kpool_compress,
     mla_kpool_expand_topk,
@@ -52,8 +52,8 @@ from max.nn.kernels import (
     store_k_cache_ragged,
     store_k_scale_cache_ragged,
 )
-from max.nn.kv_cache import PagedCacheValues as GraphPagedCacheValues
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.kv_cache import PagedCacheValues as GraphPagedCacheValues
+from max.nn.legacy.quant_config import QuantConfig
 from max.pipelines.architectures.deepseekV3_2.layers.indexer import (
     exclusive_prefix_sum,
 )

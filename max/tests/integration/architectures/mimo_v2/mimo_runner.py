@@ -35,13 +35,13 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.graph.weights import SafetensorWeights
-from max.nn.comm import Signals
-from max.nn.kv_cache import (
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.kv_cache import (
     BatchCharacteristics,
     MHAKVCacheParams,
     MultiKVCacheParams,
 )
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.mimo_v2.mimo_v2 import MiMoV2
 from max.pipelines.architectures.mimo_v2.model_config import (
     FULL,

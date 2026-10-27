@@ -21,7 +21,7 @@ modular_py_library(
         "//max/python/max/dtype",
         "//max/python/max/experimental/nn",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/gemma4",
         "//max/python/max/pipelines/architectures/gemma4_modulev3",
         "//max/python/max/pipelines/architectures/laguna",

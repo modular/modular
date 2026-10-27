@@ -22,7 +22,7 @@ from max import tree
 from max.driver import Buffer, Device, DeviceSpec
 from max.engine.api import InferenceSession, Model
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     BatchProcessor,

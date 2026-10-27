@@ -26,7 +26,7 @@ from max.experimental.nn.common_layers.quant_tensor import (
     QuantAwareTensor,
 )
 from max.experimental.tensor import Tensor, default_dtype
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.quant_config import QuantConfig
 
 from ..model_config import MuseSparkTextConfig
 from .norms import CenteredRMSNorm, InputScaledRMSNorm, input_scaled_rms_norm

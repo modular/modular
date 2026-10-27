@@ -29,15 +29,15 @@ from max.graph import (
     TensorValue,
 )
 from max.graph.weights import WeightData
-from max.nn.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
-from max.nn.comm.ep.ep_kernels import (
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
+from max.nn.legacy.comm.ep.ep_kernels import (
     _ep_dispatch_output_types,
     uses_mx_ep_token_format,
 )
-from max.nn.kernels import amd_mega_ffn_workspace_words
-from max.nn.moe import GatedActivation, MoEGate, MoEQuantized, moe_fp8
-from max.nn.moe.expert_parallel import forward_moe_sharded_layers
-from max.nn.quant_config import (
+from max.nn.legacy.kernels import amd_mega_ffn_workspace_words
+from max.nn.legacy.moe import GatedActivation, MoEGate, MoEQuantized, moe_fp8
+from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

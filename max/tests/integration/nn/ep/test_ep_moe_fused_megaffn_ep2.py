@@ -66,12 +66,12 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, Shape, ShardingStrategy, TensorType
 from max.graph.weights import WeightData
-from max.nn.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
-from max.nn.comm.ep.ep_manager import _plan_fused_moe_workspace
-from max.nn.layer import LayerList, Module
-from max.nn.moe import MoEQuantized
-from max.nn.moe.expert_parallel import forward_moe_sharded_layers
-from max.nn.quant_config import (
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
+from max.nn.legacy.comm.ep.ep_manager import _plan_fused_moe_workspace
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.moe import MoEQuantized
+from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

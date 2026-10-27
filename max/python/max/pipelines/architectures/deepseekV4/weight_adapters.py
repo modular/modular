@@ -16,7 +16,7 @@ The checkpoint carries no ``model.`` prefix and names every module after the
 reference ``inference/model.py`` attributes, so the MAX modules are named to
 match. The one exception is a block's mHC triple: the checkpoint stores
 ``hc_attn_fn`` flat on the block, and the model holds it in a
-:class:`~max.nn.HyperConnection` as ``hc_attn.hc_fn``. Beyond that, the
+:class:`~max.nn.legacy.HyperConnection` as ``hc_attn.hc_fn``. Beyond that, the
 adapter changes the *storage* of the quantized tensors, which the reference's
 ``convert.py`` step would otherwise do:
 

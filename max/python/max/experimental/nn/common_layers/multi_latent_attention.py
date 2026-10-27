@@ -32,8 +32,8 @@ from max.experimental.nn.common_layers.mesh_axis import TP
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.sharding import DeviceMesh, NamedMapping
 from max.experimental.tensor import Tensor
-from max.nn.attention import MHAMaskVariant
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
 
 
 @tree.dataclass

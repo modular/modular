@@ -30,7 +30,7 @@ from max.driver import accelerator_api, accelerator_architecture_name
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType
-from max.nn.state_space import kda_chunk, kda_decode
+from max.nn.legacy.state_space import kda_chunk, kda_decode
 
 HEADS = 8
 HEAD_DIM = 128

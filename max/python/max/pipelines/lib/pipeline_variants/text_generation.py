@@ -43,7 +43,7 @@ from max.graph.weights import (
     load_weights,
     weights_format,
 )
-from max.nn import ReturnLogits
+from max.nn.legacy import ReturnLogits
 from max.pipelines.context import (
     BatchLogitsProcessor,
     LogProbabilities,

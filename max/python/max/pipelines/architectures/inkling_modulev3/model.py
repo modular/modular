@@ -25,7 +25,7 @@ from max.experimental.nn.common_layers.mesh_axis import TP
 from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import default_device, default_dtype
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
     GraphSpec,

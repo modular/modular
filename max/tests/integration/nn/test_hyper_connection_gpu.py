@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Validates ``max.nn.HyperConnection`` against the PyTorch reference.
+"""Validates ``max.nn.legacy.HyperConnection`` against the PyTorch reference.
 
 Covers the whole ModuleV2 layer: the unweighted RMSNorm, the stream
 projection, the fused gate op, and the stream collapse under each ``pre_mix``
@@ -28,7 +28,7 @@ import torch
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn import HyperConnection
+from max.nn.legacy import HyperConnection
 from test_common.hyper_connection_reference import hyper_connection_reference
 from torch.utils.dlpack import from_dlpack
 

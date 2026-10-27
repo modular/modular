@@ -30,15 +30,15 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Protocol
 
 from max.driver import Buffer, Device
-from max.nn.kv_cache import KVCacheGroupId
-from max.nn.kv_cache.cache_params import (
+from max.nn.legacy.kv_cache import KVCacheGroupId
+from max.nn.legacy.kv_cache.cache_params import (
     KVCacheMemory,
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,
 )
-from max.nn.kv_cache.data_parallelism_utils import split_into_groups
-from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache.data_parallelism_utils import split_into_groups
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache._nixl_backend import (
     NIXL_BACKEND_ENV_VAR,
     SUPPORTED_NIXL_BACKENDS,

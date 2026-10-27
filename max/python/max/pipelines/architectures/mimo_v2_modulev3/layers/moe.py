@@ -13,8 +13,8 @@
 """MiMo-V2 routed experts with MXFP8 activations, on ModuleV3.
 
 The routed experts run the same W4A8 chain as the graph-API architecture
-(:class:`max.nn.moe.MoEQuantized` on NVIDIA), through
-:class:`max.nn.moe.NvMxf4f8Strategy`; the modulev3 MoE layers have no
+(:class:`max.nn.legacy.moe.MoEQuantized` on NVIDIA), through
+:class:`max.nn.legacy.moe.NvMxf4f8Strategy`; the modulev3 MoE layers have no
 MXFP4/e8m0 path of their own. Each device holds its share of every expert's
 channels, so its chain yields a partial sum the residual add reduces.
 
@@ -47,12 +47,12 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
-from max.nn.activation import GatedActivation
-from max.nn.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.comm.ep.ep_kernels import fused_silu
-from max.nn.kernels import moe_create_indices, moe_finalize
-from max.nn.moe import NvMxf4f8Strategy
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.activation import GatedActivation
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
+from max.nn.legacy.comm.ep.ep_kernels import fused_silu
+from max.nn.legacy.kernels import moe_create_indices, moe_finalize
+from max.nn.legacy.moe import NvMxf4f8Strategy
+from max.nn.legacy.quant_config import QuantConfig
 
 from ..quant import FP8_BLOCK
 

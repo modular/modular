@@ -15,7 +15,7 @@ modular_py_library(
         # The drafter's config and checkpoint naming are shared with the
         # graph-API drafter.
         "//max/python/max/pipelines/architectures/dflash_mimo_v2",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/lib",
     ],
 )

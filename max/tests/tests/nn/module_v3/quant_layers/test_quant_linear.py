@@ -35,7 +35,7 @@ from max.experimental.nn.common_layers.quant_tensor import (
 )
 from max.experimental.tensor import Tensor, default_dtype
 from max.graph import Graph
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.quant_config import QuantConfig
 
 # Dimensions are multiples of the 128x128 weight block so the FP8 scale grid
 # divides evenly and stays easy to reason about.

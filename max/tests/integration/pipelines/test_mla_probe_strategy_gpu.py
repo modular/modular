@@ -26,8 +26,8 @@ from collections.abc import Sequence
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import MLAKVCacheParams
-from max.nn.kv_cache.utils import MLAAttnKey
+from max.nn.legacy.kv_cache import MLAKVCacheParams
+from max.nn.legacy.kv_cache.utils import MLAAttnKey
 
 NUM_HEADS = 128
 BATCH_SIZES = [1, 2, 4, 8, 16, 31, 32, 33, 63, 64, 65, 96, 128]

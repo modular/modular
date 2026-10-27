@@ -25,7 +25,7 @@ from max.driver import Buffer, Device, Usage
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.sharding import DeviceMesh
-from max.nn.kv_cache import MultiKVCacheParams
+from max.nn.legacy.kv_cache import MultiKVCacheParams
 from max.pipelines.context import TextContext
 from max.pipelines.lib import ModuleV3Outputs, ModuleV3PipelineModelWithKVCache
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin

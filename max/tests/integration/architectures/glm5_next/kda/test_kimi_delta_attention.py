@@ -51,7 +51,7 @@ from max.graph import (
     TensorType,
     TensorValue,
 )
-from max.nn.layer import Module
+from max.nn.legacy.layer import Module
 from max.pipelines.architectures.glm5_next.layers import (
     KdaReplayInputs,
     KimiDeltaAttention,

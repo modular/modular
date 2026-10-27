@@ -33,7 +33,7 @@ import pytest
 from max.driver import Accelerator, Buffer, Device, accelerator_api
 from max.dtype import DType
 from max.experimental.tensor import Tensor, default_device
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.quant_config import QuantConfig
 from max.pipelines.architectures.kimi_k3_modulev3.layers.moe_latent import (
     KimiK3LatentMoE,
 )

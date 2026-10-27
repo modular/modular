@@ -38,10 +38,10 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue
-from max.nn.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
-from max.nn.rotary_embedding import DeepseekYarnRopeScalingParams
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
+from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
+from max.nn.legacy.rotary_embedding import DeepseekYarnRopeScalingParams
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import ModuleV3Outputs
 from max.pipelines.speculative.driver import gather_variable_rows
 

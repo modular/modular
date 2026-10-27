@@ -21,7 +21,7 @@ abstractions.
 
 MAX provides two levels of abstraction for building neural networks:
 
-- **High-level layers** (`max.nn`): PyTorch-compatible layer abstractions
+- **High-level layers** (`max.nn.legacy`): PyTorch-compatible layer abstractions
 - **Low-level graph operations** (`max.graph.ops`): Fine-grained tensor
   operations
 
@@ -38,12 +38,12 @@ MAX provides two levels of abstraction for building neural networks:
 
 ### 1. Linear Layers
 
-| HuggingFace/PyTorch    | MAX Layer                       | MAX Graph Op             | Notes                             |
-|------------------------|---------------------------------|--------------------------|-----------------------------------|
-| `nn.Linear`            | `max.nn.Linear`                 | `ops.matmul` + `ops.add` | MAX supports quantization options |
-| `nn.Linear` (no bias)  | `max.nn.Linear(has_bias=False)` | `ops.matmul`             | Use `has_bias=False` parameter    |
-| Column Parallel Linear | `max.nn.ColumnParallelLinear`   | -                        | For tensor parallelism            |
-| GPTQ Quantized Linear  | `max.nn.GPTQLinear`             | -                        | GPTQ quantization support         |
+| HuggingFace/PyTorch    | MAX Layer                              | MAX Graph Op             | Notes                             |
+|------------------------|----------------------------------------|--------------------------|-----------------------------------|
+| `nn.Linear`            | `max.nn.legacy.Linear`                 | `ops.matmul` + `ops.add` | MAX supports quantization options |
+| `nn.Linear` (no bias)  | `max.nn.legacy.Linear(has_bias=False)` | `ops.matmul`             | Use `has_bias=False` parameter    |
+| Column Parallel Linear | `max.nn.legacy.ColumnParallelLinear`   | -                        | For tensor parallelism            |
+| GPTQ Quantized Linear  | `max.nn.legacy.GPTQLinear`             | -                        | GPTQ quantization support         |
 
 **Example:**
 
@@ -52,7 +52,7 @@ MAX provides two levels of abstraction for building neural networks:
 linear = nn.Linear(768, 3072)
 
 # MAX Layer
-from max import nn
+from max.nn import legacy as nn
 
 nn.linear = Linear(in_dim=768, out_dim=3072, dtype=DType.float32, device=device)
 
@@ -66,10 +66,10 @@ with Graph("linear") as g:
 
 ### 2. Embedding Layers
 
-| HuggingFace/PyTorch      | MAX Layer                       | MAX Graph Op | Notes                        |
-|--------------------------|---------------------------------|--------------|------------------------------|
-| `nn.Embedding`           | `max.nn.Embedding`              | `ops.gather` | Token embedding lookup       |
-| Vocab Parallel Embedding | `max.nn.VocabParallelEmbedding` | -            | For distributed vocabularies |
+| HuggingFace/PyTorch      | MAX Layer                              | MAX Graph Op | Notes                        |
+|--------------------------|----------------------------------------|--------------|------------------------------|
+| `nn.Embedding`           | `max.nn.legacy.Embedding`              | `ops.gather` | Token embedding lookup       |
+| Vocab Parallel Embedding | `max.nn.legacy.VocabParallelEmbedding` | -            | For distributed vocabularies |
 
 **Example:**
 
@@ -78,7 +78,7 @@ with Graph("linear") as g:
 embed = nn.Embedding(50000, 768)
 
 # MAX Layer
-from max import nn
+from max.nn import legacy as nn
 
 embed = nn.Embedding(
     vocab_size=50000, hidden_dim=768, dtype=DType.float32, device=device
@@ -87,11 +87,11 @@ embed = nn.Embedding(
 
 ### 3. Normalization Layers
 
-| HuggingFace/PyTorch | MAX Layer                   | MAX Graph Op          | Notes                       |
-|---------------------|-----------------------------|-----------------------|-----------------------------|
-| `nn.LayerNorm`      | `max.nn.LayerNorm`          | `ops.layer_norm`      | Epsilon parameter available |
-| RMSNorm (custom)    | `max.nn.RMSNorm`            | Custom implementation | Used in Llama, Gemma        |
-| `nn.GroupNorm`      | `max.nn.GroupNorm`          | Custom implementation | Group-wise normalization    |
+| HuggingFace/PyTorch | MAX Layer                 | MAX Graph Op          | Notes                       |
+|---------------------|---------------------------|-----------------------|-----------------------------|
+| `nn.LayerNorm`      | `max.nn.legacy.LayerNorm` | `ops.layer_norm`      | Epsilon parameter available |
+| RMSNorm (custom)    | `max.nn.legacy.RMSNorm`   | Custom implementation | Used in Llama, Gemma        |
+| `nn.GroupNorm`      | `max.nn.legacy.GroupNorm` | Custom implementation | Group-wise normalization    |
 
 **Example:**
 
@@ -100,7 +100,7 @@ embed = nn.Embedding(
 norm = nn.LayerNorm(768, eps=1e-5)
 
 # MAX Layer
-from max import nn
+from max.nn import legacy as nn
 
 norm = nn.LayerNorm(dims=768, eps=1e-5, device=device, dtype=DType.float32)
 
@@ -114,12 +114,12 @@ with Graph("layernorm") as g:
 
 ### 4. Attention Mechanisms
 
-| HuggingFace/PyTorch     | MAX Layer                                | MAX Graph Op | Notes                         |
-|-------------------------|------------------------------------------|--------------|-------------------------------|
-| `nn.MultiheadAttention` | `max.nn.MultiheadAttention`              | Multiple ops | Full attention implementation |
-| Attention with RoPE     | `max.nn.AttentionWithRope`               | -            | Rotary position embeddings    |
-| Distributed Attention   | `max.nn.TensorParallelAttentionWithRope` | -            | Multi-GPU attention           |
-| Quantized Attention     | `max.nn.GPTQAttentionWithRope`           | -            | GPTQ quantized attention      |
+| HuggingFace/PyTorch     | MAX Layer                                       | MAX Graph Op | Notes                         |
+|-------------------------|-------------------------------------------------|--------------|-------------------------------|
+| `nn.MultiheadAttention` | `max.nn.legacy.MultiheadAttention`              | Multiple ops | Full attention implementation |
+| Attention with RoPE     | `max.nn.legacy.AttentionWithRope`               | -            | Rotary position embeddings    |
+| Distributed Attention   | `max.nn.legacy.TensorParallelAttentionWithRope` | -            | Multi-GPU attention           |
+| Quantized Attention     | `max.nn.legacy.GPTQAttentionWithRope`           | -            | GPTQ quantized attention      |
 
 **Attention Implementation with Graph Ops:**
 
@@ -160,11 +160,11 @@ output = ops.gelu(input, approximate="tanh")
 
 ### 6. Positional Embeddings
 
-| HuggingFace/PyTorch | MAX Layer                | MAX Graph Op         | Notes               |
-|---------------------|--------------------------|----------------------|---------------------|
-| Rotary Embeddings   | `max.nn.RotaryEmbedding` | Custom ops           | RoPE implementation |
-| Sinusoidal PE       | -                        | `ops.sin`, `ops.cos` | Build with trig ops |
-| Learnable PE        | `max.nn.Embedding`       | -                    | Use embedding layer |
+| HuggingFace/PyTorch | MAX Layer                       | MAX Graph Op         | Notes               |
+|---------------------|---------------------------------|----------------------|---------------------|
+| Rotary Embeddings   | `max.nn.legacy.RotaryEmbedding` | Custom ops           | RoPE implementation |
+| Sinusoidal PE       | -                               | `ops.sin`, `ops.cos` | Build with trig ops |
+| Learnable PE        | `max.nn.legacy.Embedding`       | -                    | Use embedding layer |
 
 ### 7. Pooling and Reduction
 
@@ -219,7 +219,7 @@ output = ops.gelu(input, approximate="tanh")
 ### 1. Transformer Block in MAX
 
 ```python
-from max import nn
+from max.nn import legacy as nn
 from max.graph import ops
 
 
@@ -311,7 +311,7 @@ def multi_head_attention_graph(
 ### 3. Feed-Forward Network with Quantization
 
 ```python
-from max import nn
+from max.nn import legacy as nn
 from max.graph import ops
 from max.dtype import DType
 
@@ -378,7 +378,7 @@ dtype = DType.float16  # Use half precision for tensor cores
 
 ```python
 # Use Float8 quantization for memory efficiency
-from max import nn
+from max.nn import legacy as nn
 from max.dtype import DType
 
 config = QuantConfig(
@@ -436,7 +436,7 @@ with Graph("transformer") as g:
 
 ```python
 # For multi-GPU setups
-from max import nn
+from max.nn import legacy as nn
 
 transformer = nn.DistributedTransformer(
     devices=[Device.gpu(0), Device.gpu(1)],
@@ -482,4 +482,4 @@ For the latest updates and additional operations, refer to:
 
 - MAX Python API docs: <https://max.modular.com/api/python>
 - MAX Graph Operations: <https://max.modular.com/graph/ops/>
-- MAX Neural Network Layers: <https://max.modular.com/api/python/nn>
+- MAX Neural Network Layers: <https://max.modular.com/api/python/nn.legacy>

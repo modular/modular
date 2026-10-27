@@ -49,10 +49,10 @@ from max.experimental.tensor import (
 )
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import SafetensorWeights, WeightData
-from max.nn import kernels
-from max.nn.comm.ep import EPBatchManager, EPConfig
-from max.nn.quant_config import QuantConfig
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy import kernels
+from max.nn.legacy.comm.ep import EPBatchManager, EPConfig
+from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.mimo_v2_modulev3.layers.moe import (
     MiMoV2ExpertParallelMoE,
 )

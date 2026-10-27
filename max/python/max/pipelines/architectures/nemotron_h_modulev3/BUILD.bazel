@@ -19,7 +19,7 @@ modular_py_library(
         "//max/python/max/dtype",
         "//max/python/max/experimental/nn",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/llama3_modulev3",
         # Registers the "qwen3_5" reasoning and tool parsers the arch defaults to.
         "//max/python/max/pipelines/architectures/qwen3_5",

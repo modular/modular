@@ -37,27 +37,27 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
-from max.nn.attention.multi_latent_attention import MLAPrefillMetadata
-from max.nn.comm.ep import EPBatchManager
-from max.nn.data_parallelism import split_batch_replicated
-from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import (
+from max.nn.legacy.attention.multi_latent_attention import MLAPrefillMetadata
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.legacy.data_parallelism import split_batch_replicated
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
     MultiKVCacheParams,
     PagedCacheValues,
 )
-from max.nn.layer import LayerList, Module
-from max.nn.linear import ColumnParallelLinear
-from max.nn.moe import MoE
-from max.nn.moe.expert_parallel import forward_moe_sharded_layers
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import (
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import ColumnParallelLinear
+from max.nn.legacy.moe import MoE
+from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
     RotaryEmbedding,
 )
-from max.nn.transformer import DecoderOutputs, forward_sequential_layers
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.transformer import DecoderOutputs, forward_sequential_layers
+from max.nn.legacy.transformer.distributed_transformer import (
     forward_sharded_layers,
 )
 from max.tree import Tree

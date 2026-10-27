@@ -21,8 +21,8 @@ from unittest.mock import MagicMock, Mock, NonCallableMock
 
 import numpy as np
 import pytest
-from max.nn.kv_cache import KVCacheInputs
-from max.nn.parallel import ParallelArrayOps
+from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.legacy.parallel import ParallelArrayOps
 from max.pipelines.architectures.qwen2_5vl.batch_processor import (
     Qwen2_5VLBatchProcessor,
 )

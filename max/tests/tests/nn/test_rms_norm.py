@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Tests for RMSNorm layer in max.nn."""
+"""Tests for RMSNorm layer in max.nn.legacy."""
 
 from __future__ import annotations
 
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, ShardingStrategy, TensorType
-from max.nn.norm import RMSNorm
+from max.nn.legacy.norm import RMSNorm
 
 from .norm_test_utils import (
     COMMON_NORM_TEST_SHAPES,

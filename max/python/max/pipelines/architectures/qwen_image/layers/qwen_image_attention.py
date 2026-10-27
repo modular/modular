@@ -22,11 +22,11 @@ Weight key naming follows HuggingFace diffusers conventions:
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kernels import flash_attention_gpu
-from max.nn.layer import LayerList, Module
-from max.nn.linear import Linear
-from max.nn.norm import RMSNorm
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.kernels import flash_attention_gpu
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import RMSNorm
 
 from .embeddings import apply_rotary_emb
 from .normalizations import LayerNormNoAffine

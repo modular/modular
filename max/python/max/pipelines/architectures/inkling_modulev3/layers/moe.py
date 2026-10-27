@@ -24,16 +24,16 @@ from max.experimental.nn.common_layers.mlp import MLP
 from max.experimental.realization_context import ensure_context
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
-from max.nn.activation import GatedActivation
-from max.nn.comm.ep.ep_kernels import fused_silu
-from max.nn.kernels import (
+from max.nn.legacy.activation import GatedActivation
+from max.nn.legacy.comm.ep.ep_kernels import fused_silu
+from max.nn.legacy.kernels import (
     grouped_matmul_ragged,
     moe_create_indices,
     moe_finalize,
     moe_sink_gate_router,
 )
-from max.nn.moe.quant_strategy import Nvfp4Scales, NvMxf4f8Strategy
-from max.nn.quant_config import QuantConfig, fp4_packed_k
+from max.nn.legacy.moe.quant_strategy import Nvfp4Scales, NvMxf4f8Strategy
+from max.nn.legacy.quant_config import QuantConfig, fp4_packed_k
 
 from ...inkling.layers.moe import padded_router_rows
 from .placement import as_partial, as_replicated, shard_axis

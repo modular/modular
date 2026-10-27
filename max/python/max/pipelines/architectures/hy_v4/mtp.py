@@ -23,7 +23,7 @@ from max.experimental.nn import Embedding, Linear
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.tensor import Tensor
-from max.nn.kv_cache import MultiKVCacheParams
+from max.nn.legacy.kv_cache import MultiKVCacheParams
 
 from .layers.decoder import HYV4DecoderLayer
 from .model_config import HYV4Config

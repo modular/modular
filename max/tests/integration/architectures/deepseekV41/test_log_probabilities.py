@@ -19,7 +19,7 @@ import pytest
 from max.driver import CPU, Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.deepseekV41.model import (
     DeepseekV41Inputs,
     DeepseekV41Model,

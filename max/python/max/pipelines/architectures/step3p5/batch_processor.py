@@ -18,7 +18,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from max.driver import Buffer
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache import KVCacheInputs
 from max.pipelines.architectures.llama3.batch_processor import (
     Llama3BatchProcessor,
     Llama3EpBatchProcessor,

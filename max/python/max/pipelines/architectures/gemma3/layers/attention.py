@@ -26,21 +26,21 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.attention import MHAMaskVariant, num_heads_for_device
-from max.nn.kernels import (
+from max.nn.legacy.attention import MHAMaskVariant, num_heads_for_device
+from max.nn.legacy.kernels import (
     flash_attention_ragged,
     rope_split_store_ragged,
 )
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
     PagedCacheValues,
 )
-from max.nn.layer import Module, Shardable
-from max.nn.linear import Linear
-from max.nn.quant_config import QuantConfig
-from max.nn.rotary_embedding import Llama3RotaryEmbedding
-from max.nn.stacked_linear import StackedLinear
+from max.nn.legacy.layer import Module, Shardable
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.legacy.stacked_linear import StackedLinear
 from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
 
 

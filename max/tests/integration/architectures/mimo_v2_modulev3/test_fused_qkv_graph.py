@@ -35,7 +35,7 @@ from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import default_device, default_dtype
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import MiMoV2
 from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
     MiMoV2Config,

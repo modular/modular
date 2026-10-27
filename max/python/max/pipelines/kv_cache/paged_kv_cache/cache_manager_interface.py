@@ -25,14 +25,14 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
 from max.driver import Buffer
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     BatchCharacteristics,
     KVCacheInputs,
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
 )
-from max.nn.kv_cache.cache_params import KVCacheBufferInterface
-from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache.cache_params import KVCacheBufferInterface
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import (
     BlockCount,

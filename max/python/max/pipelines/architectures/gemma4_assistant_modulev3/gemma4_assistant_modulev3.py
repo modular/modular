@@ -44,10 +44,12 @@ from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.sharding import DeviceMapping, DeviceMesh, Replicated
 from max.experimental.tensor import Tensor
-from max.nn.attention import MHAMaskVariant
-from max.nn.kernels import cross_attention_ragged as _cross_attention_ragged
-from max.nn.kv_cache import KVCacheParams
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kernels import (
+    cross_attention_ragged as _cross_attention_ragged,
+)
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.gemma3_modulev3.layers.scaled_word_embedding import (
     ScaledEmbedding,
 )

@@ -24,7 +24,7 @@ from max.engine.api import PrintStyle
 from max.experimental import functional as F
 from max.experimental.nn.module import Module, module_dataclass
 from max.experimental.tensor import Tensor, TensorType, defaults
-from max.nn.hooks.print_hook import PrintHook
+from max.nn.legacy.hooks.print_hook import PrintHook
 
 WEIGHT = np.ones((4, 4), dtype=np.float32)
 X = np.arange(12, dtype=np.float32).reshape(3, 4)

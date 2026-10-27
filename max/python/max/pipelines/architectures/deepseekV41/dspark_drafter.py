@@ -24,10 +24,10 @@ from collections.abc import Callable, Sequence
 
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, TensorValue, ops
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.layer import LayerList, Module
-from max.nn.linear import Linear
-from max.nn.norm.rms_norm import RMSNorm
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm.rms_norm import RMSNorm
 from typing_extensions import Self
 
 from ..deepseekV4.layers import expand_copies

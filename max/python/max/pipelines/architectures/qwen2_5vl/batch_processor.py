@@ -22,9 +22,9 @@ import numpy.typing as npt
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.kv_cache import KVCacheInputs
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
-from max.nn.parallel import ParallelArrayOps
+from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
+from max.nn.legacy.parallel import ParallelArrayOps
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.batch_processor import (

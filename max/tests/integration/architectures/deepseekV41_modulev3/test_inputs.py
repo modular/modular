@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from max.driver import Buffer
 from max.dtype import DType
-from max.nn.kv_cache import KVCacheInputs, KVCacheInputsPerDevice
+from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheInputsPerDevice
 from max.pipelines.architectures.deepseekV41_modulev3.inputs import (
     DeepseekV41Inputs,
 )

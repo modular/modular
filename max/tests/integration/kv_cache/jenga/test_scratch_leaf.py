@@ -20,7 +20,7 @@ import numpy as np
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheGroupId,
     KVLeafRegion,
     PagedKVLeafRegion,
@@ -29,7 +29,7 @@ from max.nn.kv_cache import (
     RecurrentStateRegion,
     ScratchRecurrentKVLeafRegion,
 )
-from max.nn.kv_cache.cache_params import _ScratchPagedKVLeafRegion
+from max.nn.legacy.kv_cache.cache_params import _ScratchPagedKVLeafRegion
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache import InsufficientBlocksError
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_manager import (

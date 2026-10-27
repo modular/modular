@@ -42,7 +42,7 @@ from max.driver import CPU, Accelerator, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn import Signals
+from max.nn.legacy import Signals
 
 COLS = 6144  # Hidden size the fused composites are tuned for.
 EPS = 1e-6

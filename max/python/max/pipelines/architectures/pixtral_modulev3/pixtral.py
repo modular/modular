@@ -24,7 +24,7 @@ from max.experimental.nn.linear import Linear
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     KVCacheParams,

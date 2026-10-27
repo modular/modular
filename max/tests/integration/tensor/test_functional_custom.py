@@ -29,7 +29,7 @@ from max.experimental.executor import (
     set_default_executor,
 )
 from max.experimental.tensor import Tensor
-from max.nn import kernels
+from max.nn.legacy import kernels
 
 DEVICE = Accelerator() if accelerator_count() else CPU()
 

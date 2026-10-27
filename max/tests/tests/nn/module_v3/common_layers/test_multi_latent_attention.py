@@ -45,7 +45,7 @@ from max.graph import (
     SymbolicDim,
     TensorValue,
 )
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     MLAKVCacheParams,
 )

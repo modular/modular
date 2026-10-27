@@ -36,9 +36,9 @@ from max.experimental.nn.common_layers.multi_latent_attention import (
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.sharding import DeviceMapping, DeviceMesh, NamedMapping
 from max.experimental.tensor import Tensor
-from max.nn.attention import MHAMaskVariant
-from max.nn.kv_cache import KVCacheParams
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.quant_config import QuantConfig
 from typing_extensions import Self
 
 from . import quant_ops

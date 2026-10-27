@@ -21,7 +21,7 @@ from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,

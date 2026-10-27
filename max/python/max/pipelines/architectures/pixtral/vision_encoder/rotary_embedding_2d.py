@@ -17,7 +17,7 @@ from functools import cached_property
 
 from max.dtype import DType
 from max.graph import DeviceRef, DimLike, TensorValue, TensorValueLike, ops
-from max.nn.layer import Module
+from max.nn.legacy.layer import Module
 
 
 @dataclass

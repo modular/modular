@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.layer import Module
+from max.nn.legacy.layer import Module
 
 from ..model_config import DeepseekV41Config
 from .hyper_connection import Mxfp8Rows

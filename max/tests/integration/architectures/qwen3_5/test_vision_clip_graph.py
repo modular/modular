@@ -41,7 +41,7 @@ from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.comm import Signals
+from max.nn.legacy.comm import Signals
 from max.pipelines.architectures.qwen2_5vl.nn.data_processing import (
     mrope_pos_ids_3d,
 )

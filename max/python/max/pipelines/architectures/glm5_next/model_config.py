@@ -27,7 +27,7 @@ from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache.cache_params import (
+from max.nn.legacy.kv_cache.cache_params import (
     CacheLeafParamInterface,
     KVCacheParamInterface,
     KVCacheQuantizationConfig,
@@ -37,7 +37,7 @@ from max.nn.kv_cache.cache_params import (
     recurrent_leaf,
     spec_decode_cache_slack,
 )
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.quant_config import QuantConfig
 from max.pipelines.architectures.deepseekV3_2.layers.indexer import (
     indexer_selection_width,
 )

@@ -30,12 +30,12 @@ from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.sharding import DeviceMapping, DeviceMesh
 from max.experimental.tensor import Tensor
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,
 )
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.gemma3_modulev3.layers.scaled_word_embedding import (
     ScaledEmbedding,
 )

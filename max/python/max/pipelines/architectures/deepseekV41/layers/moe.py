@@ -36,10 +36,10 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn.activation import GatedActivation
-from max.nn.comm.ep import EPBatchManager
-from max.nn.comm.ep.ep_kernels import fused_silu, fused_silu_quantized
-from max.nn.kernels import (
+from max.nn.legacy.activation import GatedActivation
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.legacy.comm.ep.ep_kernels import fused_silu, fused_silu_quantized
+from max.nn.legacy.kernels import (
     _is_apple_gpu,
     _is_sm10x_gpu,
     block_scales_interleave,
@@ -49,9 +49,9 @@ from max.nn.kernels import (
     moe_router_image_bias,
     swiglu_quantize_dynamic_block_scaled,
 )
-from max.nn.layer import Module
-from max.nn.linear import Linear, linear
-from max.nn.quant_config import (
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear, linear
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

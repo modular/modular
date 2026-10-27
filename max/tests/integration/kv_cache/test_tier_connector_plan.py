@@ -27,7 +27,7 @@ from collections.abc import Mapping, Sequence
 from types import SimpleNamespace
 
 import pytest
-from max.nn.kv_cache import KVCacheGroupId
+from max.nn.legacy.kv_cache import KVCacheGroupId
 from max.pipelines.kv_cache.connectors.tier_connector import (
     TierConnector,
     _leaf_recency,

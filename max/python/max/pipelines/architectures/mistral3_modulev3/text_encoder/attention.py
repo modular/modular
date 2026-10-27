@@ -20,8 +20,8 @@ from typing import TYPE_CHECKING
 from max.experimental import functional as F
 from max.experimental.nn import Linear, Module
 from max.experimental.tensor import Tensor
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kernels import flash_attention_gpu as _flash_attention_gpu
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.kernels import flash_attention_gpu as _flash_attention_gpu
 
 if TYPE_CHECKING:
     from max.experimental.nn.common_layers.rotary_embedding import (
@@ -72,7 +72,7 @@ class EncoderAttention(Module[..., Tensor]):
         half_dim = head_dim // 2
 
         # ``rope.freqs_cis`` is precomputed on CPU (see the encoder's
-        # ``__init__``) to match the legacy graph API's ``max.nn``
+        # ``__init__``) to match the legacy graph API's ``max.nn.legacy``
         # RotaryEmbedding precision; transfer the slice to ``x.device``
         # so the bf16 multiplication below stays on-device.
         freqs_cis = rope.freqs_cis.to(x.device)

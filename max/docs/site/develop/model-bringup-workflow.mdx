@@ -385,14 +385,14 @@ transform tensor layouts. To learn how to implement these transformations, see
 :::note FP8 and FP4 checkpoints
 
 For architectures that load FP8 or FP4 checkpoints, add a
-[`QuantConfig`](/api/python/generated/max.nn.QuantConfig/) field to your config
-class. [`QuantFormat`](/api/python/generated/max.nn.QuantFormat/) identifies the
-checkpoint's quantization scheme (such as `COMPRESSED_TENSORS_FP8`, `NVFP4`,
-or `MXFP8`). `QuantConfig` carries the per-layer scaling settings: which layers
-are quantized, the granularity and dtype of weight and activation scales, and
-the block sizes that the hardware-accelerated kernels require. The
-`deepseekV3_modulev3` reference architecture implements quantized linear, MLA,
-and MoE layers.
+[`QuantConfig`](/api/python/generated/max.nn.legacy.QuantConfig/) field to your
+config class. [`QuantFormat`](/api/python/generated/max.nn.legacy.QuantFormat/)
+identifies the checkpoint's quantization scheme (such as
+`COMPRESSED_TENSORS_FP8`, `NVFP4`, or `MXFP8`). `QuantConfig` carries the
+per-layer scaling settings: which layers are quantized, the granularity and
+dtype of weight and activation scales, and the block sizes that the
+hardware-accelerated kernels require. The `deepseekV3_modulev3` reference
+architecture implements quantized linear, MLA, and MoE layers.
 
 :::
 
@@ -440,7 +440,7 @@ implementation:
 <!-- invisible-code-block: python
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParamInterface
+from max.nn.legacy.kv_cache import KVCacheParamInterface
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from transformers import AutoConfig
 -->
@@ -469,12 +469,12 @@ def construct_kv_params(
 ```
 
 Most architectures return a flat
-[`KVCacheParams`](/api/python/generated/max.nn.kv_cache.KVCacheParams/).
+[`KVCacheParams`](/api/python/generated/max.nn.legacy.kv_cache.KVCacheParams/).
 Architectures with multiple or hybrid KV caches (for example, separate
 sliding-window and full-attention caches) return a
-[`MultiKVCacheParams`](/api/python/generated/max.nn.kv_cache.MultiKVCacheParams/)
+[`MultiKVCacheParams`](/api/python/generated/max.nn.legacy.kv_cache.MultiKVCacheParams/)
 tree, which the cache manager consumes through the shared
-[`KVCacheParamInterface`](/api/python/generated/max.nn.kv_cache.KVCacheParamInterface/).
+[`KVCacheParamInterface`](/api/python/generated/max.nn.legacy.kv_cache.KVCacheParamInterface/).
 
 ### Pass the cache into the module
 
@@ -489,7 +489,7 @@ each cache in `PagedCacheValues` from
 <!-- invisible-code-block: python
 from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
-from max.nn.kv_cache import KVCacheParamInterface
+from max.nn.legacy.kv_cache import KVCacheParamInterface
 from max.pipelines.architectures.olmo3.model_config import Olmo3Config
 from max.pipelines.architectures.olmo3.olmo3 import (
     Olmo3TextModel,

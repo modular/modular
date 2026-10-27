@@ -36,8 +36,11 @@ from max.dtype import DType
 from max.engine import Model
 from max.graph import DeviceRef, TensorType, TensorValue
 from max.graph.weights import WeightData
-from max.nn.kv_cache.cache_params import KVCacheParams, MultiKVCacheParams
-from max.nn.layer import LayerList, Module
+from max.nn.legacy.kv_cache.cache_params import (
+    KVCacheParams,
+    MultiKVCacheParams,
+)
+from max.nn.legacy.layer import LayerList, Module
 from max.pipelines.architectures.deepseekV3_2.model import DeepseekV3_2Model
 from max.pipelines.context import ImageMetadata
 from max.pipelines.lib.graph_specs import GraphRole, GraphSpec

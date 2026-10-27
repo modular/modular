@@ -20,15 +20,15 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, Type
-from max.nn.comm.ep import calculate_ep_max_tokens_per_rank, ep_kernels
-from max.nn.comm.ep.ep_config import (
+from max.nn.legacy.comm.ep import calculate_ep_max_tokens_per_rank, ep_kernels
+from max.nn.legacy.comm.ep.ep_config import (
     _EP_LOCAL_SYNC_RESERVED_WORDS,
     NUM_GROUPS,
     EPConfig,
     _ep_fused_moe_requested,
     estimate_ep_memory_usage,
 )
-from max.nn.comm.ep.ep_kernels import (
+from max.nn.legacy.comm.ep.ep_kernels import (
     _call_mega_ffn_ep_fused,
     _call_mega_ffn_ep_fused_init,
     _call_mega_ffn_ep_fused_plan,
@@ -40,14 +40,14 @@ from max.nn.comm.ep.ep_kernels import (
     call_ep_dispatch_async,
     call_ep_dispatch_wait,
 )
-from max.nn.comm.ep.ep_manager import (
+from max.nn.legacy.comm.ep.ep_manager import (
     _ep_counter_words,
     _ep_sync_counter_bytes,
     _fused_moe_answer,
     _plan_fused_moe_workspace,
     get_ep_local_sync_counters_size,
 )
-from max.nn.quant_config import (
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

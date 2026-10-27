@@ -58,7 +58,7 @@ from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import Tensor, default_device
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.kv_cache import KVCacheParams
 from max.pipelines.architectures.deepseekV41_modulev3.interface import (
     PAGE_SIZE,
     V41Config,

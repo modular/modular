@@ -20,8 +20,8 @@ from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 from max.driver import CPU, DeviceSpec, load_devices
-from max.nn.comm import MulticastPool, Signals
-from max.nn.kv_cache.cache_params import KVConnectorType
+from max.nn.legacy.comm import MulticastPool, Signals
+from max.nn.legacy.kv_cache.cache_params import KVConnectorType
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -614,7 +614,7 @@ def test_estimate_signal_buffer_memory__always_signal_buffers_mixin(
     assert got == expected
 
 
-_ALLREDUCE = "max.nn.comm.allreduce"
+_ALLREDUCE = "max.nn.legacy.comm.allreduce"
 
 
 @pytest.mark.parametrize(

@@ -42,8 +42,8 @@ from max.experimental.nn.common_layers.quant_mla import (
     tensor_parallel_latent_attention_with_rope,
 )
 from max.experimental.tensor import Tensor
-from max.nn.attention import MHAMaskVariant
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.quant_config import QuantConfig
 
 from ..model_config import Glm5NextConfig
 from .indexer import KPoolTail, PooledIndexer

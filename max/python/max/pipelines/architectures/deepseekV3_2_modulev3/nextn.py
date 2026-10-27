@@ -25,7 +25,7 @@ from max.experimental.nn.common_layers.multi_latent_attention import (
 )
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.tensor import Tensor
-from max.nn.comm.ep import EPBatchManager, EPCommBuffers
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 
 from .layers.transformer_block import DeepseekV3_2TransformerBlock
 from .model_config import DeepseekV3_2Config

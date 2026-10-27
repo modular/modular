@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """A generalized Mixture of Experts (MoE) module.
 
-These classes need to be cleaned up before moving to `max.nn`.
+These classes need to be cleaned up before moving to `max.nn.legacy`.
 """
 
 from __future__ import annotations

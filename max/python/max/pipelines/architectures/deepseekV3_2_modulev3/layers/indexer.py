@@ -28,8 +28,8 @@ from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.nn.common_layers.quant_linear import QuantizedLinear
 from max.experimental.nn.norm import LayerNorm
 from max.experimental.tensor import Tensor
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.quant_config import (
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

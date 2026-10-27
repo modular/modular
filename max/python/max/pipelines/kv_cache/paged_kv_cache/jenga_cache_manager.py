@@ -22,13 +22,13 @@ import numpy as np
 from max import tree
 from max.driver import Buffer
 from max.dtype import DType
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     BatchCharacteristics,
     KVCacheInputs,
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
 )
-from max.nn.kv_cache.cache_params import (
+from max.nn.legacy.kv_cache.cache_params import (
     KVCacheAssignments,
     KVCacheBufferInterface,
     KVCacheMemory,
@@ -36,9 +36,9 @@ from max.nn.kv_cache.cache_params import (
     max_pages_per_request,
     spec_decode_cache_slack,
 )
-from max.nn.kv_cache.data_parallelism_utils import split_into_groups
-from max.nn.kv_cache.metrics import KVCacheMetrics
-from max.nn.kv_cache.utils import (
+from max.nn.legacy.kv_cache.data_parallelism_utils import split_into_groups
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache.utils import (
     build_max_lengths_tensors,
 )
 from max.pipelines.context import TextContext

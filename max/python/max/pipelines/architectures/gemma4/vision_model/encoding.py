@@ -15,8 +15,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from max.graph import DeviceRef, ShardingStrategy, TensorValue
-from max.nn import MLP
-from max.nn.layer import LayerList, Module
+from max.nn.legacy import MLP
+from max.nn.legacy.layer import LayerList, Module
 
 from ..layers.rms_norm import Gemma4RMSNorm
 from ..model_config import Gemma4ForConditionalGenerationConfig

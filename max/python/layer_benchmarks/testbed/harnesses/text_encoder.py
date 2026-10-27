@@ -30,7 +30,7 @@ from max.driver import Accelerator, Buffer, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.layer import Module
+from max.nn.legacy.layer import Module
 from max.pipelines.architectures.umt5.model_config import UMT5ConfigBase
 from max.pipelines.architectures.umt5.umt5 import UMT5EncoderModel
 from transformers import UMT5Config as HFUmt5Config

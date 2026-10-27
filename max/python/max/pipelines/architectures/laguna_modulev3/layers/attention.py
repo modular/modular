@@ -30,8 +30,8 @@ from max.experimental.nn.common_layers.functional_kernels import (
 )
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.tensor import Tensor, default_dtype
-from max.nn.attention import MHAMaskVariant
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kv_cache import KVCacheParams
 
 from .norm import LagunaRMSNorm
 

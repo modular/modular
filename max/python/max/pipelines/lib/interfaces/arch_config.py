@@ -34,8 +34,8 @@ from typing import TYPE_CHECKING, ClassVar, Protocol, cast, runtime_checkable
 from max.driver import load_devices, scan_available_devices
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams
-from max.nn.kv_cache.cache_params import (
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.kv_cache.cache_params import (
     KVCacheParamInterface,
 )
 from max.pipelines.kv_cache.config import (
@@ -219,8 +219,8 @@ class ArchConfigWithStoredKVParams(ArchConfigWithBoundedMaxSeqLen):
     """Mixin that implements :meth:`get_kv_params` as the ``kv_params`` field.
 
     Architecture dataclasses that precompute a :class:`KVCacheParamInterface`
-    (typically :class:`~max.nn.kv_cache.KVCacheParams`, or
-    :class:`~max.nn.kv_cache.MultiKVCacheParams` for hybrid SWA + full trees)
+    (typically :class:`~max.nn.legacy.kv_cache.KVCacheParams`, or
+    :class:`~max.nn.legacy.kv_cache.MultiKVCacheParams` for hybrid SWA + full trees)
     during ``initialize`` can inherit this mixin together with
     :class:`ArchConfigWithKVCache` to avoid duplicating the trivial accessor.
 

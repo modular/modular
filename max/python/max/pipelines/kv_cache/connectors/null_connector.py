@@ -21,8 +21,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from max.nn.kv_cache import KVCacheGroupId
-from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache import KVCacheGroupId
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache.kv_connector import (
     CompletedTransfer,
     KVConnector,

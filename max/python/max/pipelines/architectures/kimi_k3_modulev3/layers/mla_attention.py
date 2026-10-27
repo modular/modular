@@ -70,8 +70,8 @@ from max.experimental.nn.common_layers.multi_latent_attention import (
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.sharding import DeviceMesh, NamedMapping
 from max.experimental.tensor import Tensor
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.kv_cache import KVCacheParams
 
 from .tensor_parallel import check_divisible
 

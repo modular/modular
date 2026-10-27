@@ -95,7 +95,7 @@ def nvfp4_prefill_converts_once(
     Converting costs per context row and saves per query token, so it pays
     off while rows per query token stay under `ratio` (0 turns it off).
     `max_rows` caps the scratch, which the memory planner reserves through
-    `nvfp4_mla_prefill_convert_bytes` in `max.nn.kernels`.
+    `nvfp4_mla_prefill_convert_bytes` in `max.nn.legacy.kernels`.
     """
     return (
         ratio > 0

@@ -35,13 +35,13 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
-from max.nn.comm import Allreduce, Signals
-from max.nn.embedding import Embedding
-from max.nn.kernels import spatial_merge
-from max.nn.layer import LayerList, Module, Shardable
-from max.nn.linear import Linear
-from max.nn.norm import LayerNorm
-from max.nn.transformer.transformer import forward_sequential_layers
+from max.nn.legacy.comm import Allreduce, Signals
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.kernels import spatial_merge
+from max.nn.legacy.layer import LayerList, Module, Shardable
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import LayerNorm
+from max.nn.legacy.transformer.transformer import forward_sequential_layers
 
 from ...qwen2_5vl.nn.vision_attention import DistributedVisionWindowAttention
 from ..model_config import VisionConfig
@@ -264,7 +264,7 @@ class BilinearInterpolationPositionEmbedding(Module):
 class VisionRotaryEmbedding(Module):
     """Rotary embedding layer for the Qwen3VLMOE vision model.
 
-    Differences compared to `max.nn.RotaryEmbedding`:
+    Differences compared to `max.nn.legacy.RotaryEmbedding`:
 
     - In _compute_inv_freqs, the head dimension (n) is divided by 2.
     - inv_freqs is cached instead of freqs.

@@ -26,7 +26,7 @@ from max.experimental.nn.norm import LayerNorm
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
-from max.nn.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
 from max.pipelines.architectures.gemma4_modulev3.layers.rms_norm import (
     Gemma4RMSNorm,
 )

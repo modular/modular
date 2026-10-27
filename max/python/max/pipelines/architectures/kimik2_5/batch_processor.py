@@ -27,8 +27,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.buffer_utils import cast_tensor_to
-from max.nn.kv_cache import KVCacheInputs
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
+from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.architectures.deepseekV3.batch_processor import (
     DeepseekV3BatchProcessorBase,
 )

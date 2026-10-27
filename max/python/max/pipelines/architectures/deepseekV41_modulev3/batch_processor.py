@@ -20,8 +20,8 @@ from typing import cast
 import numpy as np
 from max.driver import Buffer
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.kv_cache import KVCacheInputs
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
+from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.architectures.deepseekV41.layers.engram_hash import (
     engram_lookback_token_ids,
 )

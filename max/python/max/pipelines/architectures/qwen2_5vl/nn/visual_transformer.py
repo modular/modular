@@ -36,11 +36,11 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
-from max.nn.comm import Allreduce, Signals
-from max.nn.layer import LayerList, Module, Shardable
-from max.nn.linear import MLP, Linear
-from max.nn.norm import RMSNorm
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.comm import Allreduce, Signals
+from max.nn.legacy.layer import LayerList, Module, Shardable
+from max.nn.legacy.linear import MLP, Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.quant_config import QuantConfig
 
 from ..model_config import VisionConfig
 from .vision_attention import DistributedVisionWindowAttention
@@ -184,7 +184,7 @@ class VisionPatchEmbed(Module, Shardable):
 class VisionRotaryEmbedding(Module):
     """Rotary embedding layer for the qwen2 vision model.
 
-    Differences compared to `max.nn.RotaryEmbedding`:
+    Differences compared to `max.nn.legacy.RotaryEmbedding`:
 
     - In _compute_inv_freqs, the head dimension (n) is divided by 2.
     - inv_freqs is cached instead of freqs.

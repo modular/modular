@@ -98,19 +98,19 @@ print(y)  # Result is available immediately
 
 ### Explicit graph construction
 
-With [`max.graph`](/api/python/graph/) and [`max.nn`](/api/python/nn/),
-you build the graph directly. You open a
-[`Graph`](/api/python/generated/max.graph.Graph/) context, declare your
-inputs as [`TensorValue`](/api/python/generated/max.graph.TensorValue/)
-objects, apply [ops](/api/python/graph.ops/) to those symbolic values, and
-mark the outputs.
+With [`max.graph`](/api/python/graph/) and
+[`max.nn.legacy`](/api/python/nn.legacy/), you build the graph directly. You
+open a [`Graph`](/api/python/generated/max.graph.Graph/) context, declare your
+inputs as [`TensorValue`](/api/python/generated/max.graph.TensorValue/) objects,
+apply [ops](/api/python/graph.ops/) to those symbolic values, and mark the
+outputs.
 
 This pattern gives you full control over graph topology and is useful when you
 need to integrate custom ops or define multi-output graphs. It backs the
-architectures written with `max.nn`, and the graph that modules stage for you is
-the same structure. The tradeoff is that you can't inspect intermediate values
-during construction, and iteration is slower, because every `TensorValue` stays
-symbolic until you compile and run.
+architectures written with `max.nn.legacy`, and the graph that modules stage for
+you is the same structure. The tradeoff is that you can't inspect intermediate
+values during construction, and iteration is slower, because every `TensorValue`
+stays symbolic until you compile and run.
 
 Here's an example using the `Graph` API to run a ReLU operation:
 
@@ -149,7 +149,7 @@ The patterns use parallel but separate APIs:
 | **Primary data object**  | [`max.graph.TensorValue`](/api/python/generated/max.graph.TensorValue/) | [`max.experimental.tensor.Tensor`](/api/python/generated/max.experimental.tensor.Tensor/) |
 | **Built-in operations**  | [`max.graph.ops`](/api/python/graph.ops/)                               | [`max.experimental.functional`](/api/python/experimental.functional/)                     |
 | **Python operators**     | `+`, `-`, `*`, `/`, `@` on `TensorValue`                                | `+`, `-`, `*`, `/`, `@` on `Tensor`                                                       |
-| **`Module` abstraction** | [`max.nn.Module`](/api/python/generated/max.nn.Module/)                 | [`max.experimental.nn.Module`](/api/python/generated/max.experimental.nn.Module/)         |
+| **`Module` abstraction** | [`max.nn.legacy.Module`](/api/python/generated/max.nn.legacy.Module/)   | [`max.experimental.nn.Module`](/api/python/generated/max.experimental.nn.Module/)         |
 
 ## Next steps
 

@@ -34,17 +34,21 @@ from max.graph import (
 )
 from max.graph import Module as GraphModule
 from max.graph.quantization import QuantizationEncoding
-from max.nn.attention import (
+from max.nn.legacy.attention import (
     AttentionWithRope,
     GGUFQAttentionWithRope,
     GPTQAttentionWithRope,
 )
-from max.nn.embedding import Embedding
-from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
-from max.nn.layer import Module
-from max.nn.linear import MLP, GPTQLinear, Linear
-from max.nn.norm import ConstantLayerNorm, RMSNorm
-from max.nn.transformer import DecoderOutputs, Transformer, TransformerBlock
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import MLP, GPTQLinear, Linear
+from max.nn.legacy.norm import ConstantLayerNorm, RMSNorm
+from max.nn.legacy.transformer import (
+    DecoderOutputs,
+    Transformer,
+    TransformerBlock,
+)
 from max.pipelines.lib.interfaces.batch_processor import (
     ragged_kv_symbolic_input_tree,
 )

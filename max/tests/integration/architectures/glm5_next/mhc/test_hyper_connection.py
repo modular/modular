@@ -29,8 +29,8 @@ from max.driver import Accelerator, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.nn.layer import Module
-from max.nn.norm import RMSNorm
+from max.nn.legacy.layer import Module
+from max.nn.legacy.norm import RMSNorm
 from max.pipelines.architectures.glm5_next.layers.hyper_connection import (
     HyperConnection,
     StreamMixing,

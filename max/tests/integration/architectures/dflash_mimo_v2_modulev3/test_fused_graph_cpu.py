@@ -47,9 +47,9 @@ from max.experimental import functional as F
 from max.experimental.compilation import StagedGraph
 from max.experimental.tensor import default_device, default_dtype
 from max.graph import DeviceRef
-from max.nn import kernels
-from max.nn.comm import Signals
-from max.nn.kv_cache import (
+from max.nn.legacy import kernels
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     KVConnectorType,
     MultiKVCacheParams,

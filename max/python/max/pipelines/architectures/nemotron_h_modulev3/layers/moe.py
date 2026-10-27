@@ -38,7 +38,7 @@ from max.experimental.sharding import (
 from max.experimental.sharding.rules import unary_rule
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
-from max.nn import kernels
+from max.nn.legacy import kernels
 
 from ..model_config import NemotronHConfig
 from ..quantization import NVFP4_GROUP_SIZE

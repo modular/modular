@@ -36,13 +36,13 @@ from max.experimental.nn.norm import rms_norm
 from max.experimental.sharding import DeviceMapping, Replicated, Sharded
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
-from max.nn.comm.ep import EPBatchManager, EPCommBuffers, EPConfig
-from max.nn.kv_cache import (
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers, EPConfig
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     MultiKVCacheParams,
     PagedCacheValues,
 )
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import ModuleV3Outputs
 
 from ..deepseekV3_modulev3.deepseekV3 import (

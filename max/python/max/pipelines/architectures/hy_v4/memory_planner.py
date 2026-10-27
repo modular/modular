@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 
-from max.nn.kv_cache import MultiKVCacheParams
+from max.nn.legacy.kv_cache import MultiKVCacheParams
 from max.pipelines.lib import PipelineConfig
 from transformers import AutoConfig
 from typing_extensions import override

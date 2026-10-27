@@ -26,9 +26,9 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from max.dtype import DType
 from max.graph import TensorValue, ops
-from max.nn.layer import Module
-from max.nn.transformer import ReturnHiddenStates
-from max.nn.transformer.transformer import (
+from max.nn.legacy.layer import Module
+from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.legacy.transformer.transformer import (
     captures_by_device,
     fuse_captured_hidden_states,
 )

@@ -42,7 +42,7 @@ from collections.abc import Sequence
 
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, Dim, TensorValue, ops
-from max.nn.state_space import (
+from max.nn.legacy.state_space import (
     GatedDeltaReplayInputs,
     gated_delta_conv1d_verify_fwd,
     gated_delta_state_fold,

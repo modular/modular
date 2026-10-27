@@ -28,11 +28,11 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor
 from max.graph import Dim, DimLike, TensorValue
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     matmul_static_scaled_float8,
     quantize_static_scaled_float8,
 )
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.quant_config import QuantConfig
 
 from .module import Module, PinnedDeviceTensor
 
@@ -90,7 +90,7 @@ class Linear(Module[[Tensor], Tensor]):
             out_dim: The dimensionality after applying the transformation
                 to the input tensor of dim `in_dim`.
             bias: Whether to use a `bias` in the transformation.
-            quant_config: The :class:`~max.nn.quant_config.QuantConfig` of a
+            quant_config: The :class:`~max.nn.legacy.quant_config.QuantConfig` of a
                 quantized weight. Only static per-tensor FP8 is supported: an
                 ``float8_e4m3fn`` weight with a ``weight_scale`` and an
                 ``input_scale``, which start as zeros.

@@ -43,7 +43,7 @@ from max.engine._compilation_stats import collect_compilation_stats
 from max.experimental.nn._compilation_timer import CompilationTimer
 from max.graph import DeviceRef, Graph, Module, TensorType, TensorValue, ops
 from max.graph.weights import WeightData
-from max.nn import Signals
+from max.nn.legacy import Signals
 
 
 @dataclass

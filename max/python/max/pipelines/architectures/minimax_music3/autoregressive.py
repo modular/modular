@@ -53,7 +53,7 @@ from max.experimental.compilation import CompiledCallable
 from max.experimental.tensor import Tensor, default_dtype
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import Weights
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     MHAKVCacheParams,
 )

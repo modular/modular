@@ -32,8 +32,8 @@ from max.experimental.nn.common_layers.multi_latent_attention import (
 from max.experimental.sharding import DeviceMapping, DeviceMesh
 from max.experimental.tensor import Tensor
 from max.graph import BufferType, DimLike, TensorType
-from max.nn.comm.ep import EPCommBuffers
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.comm.ep import EPCommBuffers
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.speculative.driver import (
     CarryDimNames,
     DecodeKVSwap,

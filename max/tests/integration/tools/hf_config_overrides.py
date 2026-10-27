@@ -211,7 +211,7 @@ def apply_hf_config_override(
 def apply_non_strict_load() -> Iterator[None]:
     """Wrap load_state_dict methods to use strict=False."""
     from max.experimental.nn import Module as ModuleV3
-    from max.nn.layer import Module
+    from max.nn.legacy.layer import Module
 
     def _wrap_non_strict(original_fn: Any) -> Any:
         def _wrapped(self: Any, *args: Any, **kwargs: Any) -> Any:

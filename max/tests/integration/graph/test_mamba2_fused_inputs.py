@@ -45,7 +45,7 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.state_space import (
+from max.nn.legacy.state_space import (
     causal_conv1d_varlen_fwd,
     gated_group_rmsnorm,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace,

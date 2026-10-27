@@ -32,12 +32,12 @@ from max.experimental.nn.linear import Linear
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
 )
-from max.nn.rotary_embedding import DeepseekYarnRopeScalingParams
+from max.nn.legacy.rotary_embedding import DeepseekYarnRopeScalingParams
 from max.pipelines.lib import ModuleV3Outputs
 
 from .layers.moe_gate import DeepSeekV2MoEGate

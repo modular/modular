@@ -27,13 +27,13 @@ from max.engine import InferenceSession
 from max.experimental.torch import torch_dtype_to_max
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
-from max.nn import AttentionWithRope, Linear, RotaryEmbedding
-from max.nn.kv_cache import (
+from max.nn.legacy import AttentionWithRope, Linear, RotaryEmbedding
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
     PagedCacheValues,
 )
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.quant_config import QuantConfig
 from max.pipelines.architectures.llama3.model_config import (
     create_rope_embedding,
 )

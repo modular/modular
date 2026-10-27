@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from max.nn import Module
+from max.nn.legacy import Module
 
 from .layers.language_model import KimiK2_5MoEDecoder
 from .layers.vision.transformer import Transformer

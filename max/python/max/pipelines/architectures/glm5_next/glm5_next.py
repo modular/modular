@@ -65,20 +65,20 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
-from max.nn.comm import Signals
-from max.nn.comm.ep import EPBatchManager
-from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import (
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
     RecurrentStateInputsPerDevice,
 )
-from max.nn.layer import LayerList, Module
-from max.nn.linear import ColumnParallelLinear
-from max.nn.norm import RMSNorm
-from max.nn.transformer import DecoderOutputs
-from max.nn.transformer.transformer import forward_sequential_layers
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import ColumnParallelLinear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.transformer import DecoderOutputs
+from max.nn.legacy.transformer.transformer import forward_sequential_layers
 from max.pipelines.architectures.deepseekV3.deepseekV3 import (
     deepseek_logits_postprocess,
 )

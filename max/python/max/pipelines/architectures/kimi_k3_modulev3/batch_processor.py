@@ -16,7 +16,7 @@ EP exchange's real buffers, bound once after the model loads."""
 from __future__ import annotations
 
 from max.driver import Buffer
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache import KVCacheInputs
 from max.pipelines.architectures.llama3_modulev3.batch_processor import (
     Llama3ModuleV3BatchProcessor,
 )

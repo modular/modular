@@ -44,8 +44,8 @@ from max.experimental.nn.common_layers.quant_linear import QuantizedLinear
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.sharding import DeviceMapping, DeviceMesh, NamedMapping
 from max.experimental.tensor import Tensor
-from max.nn.attention import MHAMaskVariant
-from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
 from typing_extensions import Self
 
 from ..model_config import HYV4Config

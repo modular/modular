@@ -46,7 +46,7 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph.weights import WeightData
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.quant_config import QuantConfig
 
 __all__ = [
     "UNQUANTIZED_ATTN_PROJECTIONS",
@@ -63,7 +63,7 @@ _WEIGHT_BLOCK_SIZE = [128, 128]
 #: folds it into the query and output paths at graph-build time, so a BF16
 #: source needs no dequant -- but MAX's FP8 MLA class asserts that weight and
 #: input scale block sizes exist
-#: (max/python/max/nn/attention/multi_latent_attention_fp8.py:146), so the
+#: (max/python/max/nn/legacy/attention/multi_latent_attention_fp8.py:146), so the
 #: sparse-MLA constructor has to take a per-projection dtype rather than one
 #: ``dtype`` for the block.
 UNQUANTIZED_ATTN_PROJECTIONS = frozenset(

@@ -28,7 +28,7 @@ The window count ``W`` is a sum of per-request ceilings, so it is data, and
 reading it back would sync every forward and rule out device graph capture.
 The cached path never needs it on the host: one op pools every window, sized
 by a bound derived from shapes
-(:func:`~max.nn.kernels.compress_windows_ragged`). Only the cache-less
+(:func:`~max.nn.legacy.kernels.compress_windows_ragged`). Only the cache-less
 reference path, whose lengths are fixed at graph build, lays the windows out
 row by row (:class:`WindowTables`).
 
@@ -268,7 +268,7 @@ class WindowTables:
 
     That path pools with graph ops over a table per window, so the window
     count ``W`` has to be known at graph build; the cached path pools in
-    place (:func:`~max.nn.kernels.compress_windows_ragged`) and builds none.
+    place (:func:`~max.nn.legacy.kernels.compress_windows_ragged`) and builds none.
     """
 
     start: TensorValue

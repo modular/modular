@@ -43,8 +43,8 @@ import torch  # type: ignore[import-not-found]
 from max.driver import DLPackArray
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.kv_cache import MHAKVCacheParams
-from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
 from max.pipelines.architectures.qwen3.layers.attention import Qwen3Attention
 from transformers.models.qwen3.configuration_qwen3 import Qwen3Config
 from transformers.models.qwen3.modeling_qwen3 import (

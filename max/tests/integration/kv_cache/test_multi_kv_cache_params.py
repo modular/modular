@@ -22,7 +22,7 @@ from max import tree
 from max.driver import Buffer, accelerator_count
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     BatchCharacteristics,
     KVCacheAssignments,
     KVCacheInputs,
@@ -40,7 +40,7 @@ from max.nn.kv_cache import (
     recurrent_leaf,
     recurrent_leaves,
 )
-from max.nn.kv_cache.utils import MultiAttnKey
+from max.nn.legacy.kv_cache.utils import MultiAttnKey
 
 
 def create_kv_cache_params(

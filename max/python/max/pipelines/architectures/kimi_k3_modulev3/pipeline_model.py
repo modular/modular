@@ -36,9 +36,9 @@ from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import default_device
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.comm.ep import EPConfig, calculate_ep_max_tokens_per_rank
-from max.nn.quant_config import QuantConfig
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.comm.ep import EPConfig, calculate_ep_max_tokens_per_rank
+from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,

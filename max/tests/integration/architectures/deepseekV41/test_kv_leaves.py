@@ -19,7 +19,7 @@ from unittest.mock import Mock
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.pipelines.architectures import hf_config_shims  # noqa: F401
 from max.pipelines.architectures.deepseekV41 import kv_leaves
 from max.pipelines.architectures.deepseekV41.layers.csa2 import (

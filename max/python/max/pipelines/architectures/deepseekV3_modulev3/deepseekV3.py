@@ -40,10 +40,10 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.data_parallelism import split_batch_replicated
-from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
-from max.nn.rotary_embedding import DeepseekYarnRopeScalingParams
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
+from max.nn.legacy.data_parallelism import split_batch_replicated
+from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
+from max.nn.legacy.rotary_embedding import DeepseekYarnRopeScalingParams
 from max.pipelines.lib import ModuleV3Outputs
 
 from ..deepseekV2_modulev3.layers.rotary_embedding import (

@@ -18,8 +18,8 @@ from unittest.mock import MagicMock, NonCallableMock
 import pytest
 from max.driver import DeviceSpec
 from max.dtype import DType
-from max.nn.comm.ep.ep_config import NUM_GROUPS, EPConfig
-from max.nn.comm.ep.ep_manager import _bound_fused_moe_workspace
+from max.nn.legacy.comm.ep.ep_config import NUM_GROUPS, EPConfig
+from max.nn.legacy.comm.ep.ep_manager import _bound_fused_moe_workspace
 from max.pipelines.architectures.deepseekV3.memory_planner import (
     DeepseekV3MemoryPlanner,
     _ep_max_rank_send_tokens_for_pipeline,

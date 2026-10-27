@@ -31,7 +31,7 @@ from max.dtype import DType
 from max.experimental import compilation
 from max.experimental.sharding import TensorLayout
 from max.experimental.tensor import Tensor
-from max.nn.kv_cache import BatchCharacteristics, MHAAttnKey
+from max.nn.legacy.kv_cache import BatchCharacteristics, MHAAttnKey
 from max.pipelines.lib.graph_capture import ServeGraphCaptureRunner
 
 

@@ -20,8 +20,8 @@ from max.experimental import functional as F
 from max.experimental.nn import Module
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.tensor import Tensor
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kernels import flash_attention_gpu as _flash_attention_gpu
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.kernels import flash_attention_gpu as _flash_attention_gpu
 
 from .embeddings import apply_mrope
 from .fp8_linear import Ideogram4FP8Linear

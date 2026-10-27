@@ -19,7 +19,7 @@ from typing import Any
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType
-from max.nn.kv_cache import MLAKVCacheParams
+from max.nn.legacy.kv_cache import MLAKVCacheParams
 from max.pipelines.architectures.deepseekV41.kv_leaves import (
     MXFP4_INDEX_KEY_BYTES,
     state_ring_rows,

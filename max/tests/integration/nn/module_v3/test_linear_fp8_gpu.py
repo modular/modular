@@ -21,7 +21,7 @@ from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.experimental.nn import Linear
 from max.experimental.tensor import Tensor, TensorType
-from max.nn.quant_config import (
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

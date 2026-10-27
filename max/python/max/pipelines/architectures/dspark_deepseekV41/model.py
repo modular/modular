@@ -23,7 +23,7 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParamInterface
+from max.nn.legacy.kv_cache import KVCacheParamInterface
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithBoundedMaxSeqLen,

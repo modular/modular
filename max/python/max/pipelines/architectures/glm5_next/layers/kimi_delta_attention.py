@@ -18,7 +18,7 @@ that state already predicts for ``k`` rather than adding to it. KDA's one
 change from Gated DeltaNet is that the forget gate decays the state **per
 channel** -- ``alpha_t`` is a ``head_dim``-wide vector per head, so
 ``S_t = diag(alpha_t) S_{t-1} + k_t delta_t^T``. MAX's
-:mod:`~max.nn.state_space.gated_delta` recurrence takes one decay per head per
+:mod:`~max.nn.legacy.state_space.gated_delta` recurrence takes one decay per head per
 token and cannot express that, which is why this is a sibling of Qwen3.5's
 ``GatedDeltaNet`` rather than a branch inside it.
 
@@ -64,17 +64,17 @@ from max.graph import (
     ops,
 )
 from max.graph.weight import Segment
-from max.nn.comm import Allreduce
-from max.nn.layer import Module, Shardable
-from max.nn.linear import Linear
-from max.nn.norm import RMSNorm
-from max.nn.state_space import (
+from max.nn.legacy.comm import Allreduce
+from max.nn.legacy.layer import Module, Shardable
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.state_space import (
     gated_delta_conv1d_fwd,
     kda_chunk,
     kda_chunk_supports_head_dims,
     kda_decode,
 )
-from max.nn.state_space.kimi_delta import (
+from max.nn.legacy.state_space.kimi_delta import (
     KDA_GATE_LOWER_BOUND,
     KdaGateMode,
     KdaStateLayout,

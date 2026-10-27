@@ -31,7 +31,9 @@ import torch
 from max.driver import CPU
 from max.engine import InferenceSession
 from max.graph import Graph
-from max.nn.rotary_embedding import RotaryEmbedding as GraphRotaryEmbedding
+from max.nn.legacy.rotary_embedding import (
+    RotaryEmbedding as GraphRotaryEmbedding,
+)
 from max.pipelines.architectures.hf_config_shims import LagunaHFConfig
 from max.pipelines.architectures.laguna import laguna as graph_laguna
 from max.pipelines.architectures.laguna.model_config import LagunaConfig

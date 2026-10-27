@@ -27,7 +27,7 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorValue, ops
-from max.nn.state_space import gated_delta_conv1d_fwd
+from max.nn.legacy.state_space import gated_delta_conv1d_fwd
 
 
 def _kimi_short_conv_qkv(

@@ -23,9 +23,9 @@ from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.attention import MHAMaskVariant
-from max.nn.kernels import flash_attention_ragged
-from max.nn.kv_cache import (
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kernels import flash_attention_ragged
+from max.nn.legacy.kv_cache import (
     MHAKVCacheParams,
 )
 from test_common.simple_kv_cache import paged_kv_cache_inputs

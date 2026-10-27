@@ -32,19 +32,19 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
-from max.nn.embedding import Embedding
-from max.nn.graph_groups import ConvStates
-from max.nn.kv_cache import (
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.graph_groups import ConvStates
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
 )
-from max.nn.layer import LayerList, Module
-from max.nn.linear import Linear
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import RotaryEmbedding
-from max.nn.transformer import DecoderOutputs
-from max.nn.transformer.transformer import logits_postprocess
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.transformer import DecoderOutputs
+from max.nn.legacy.transformer.transformer import logits_postprocess
 
 from ..llama3.model_config import create_rope_embedding
 from .full_attention import LFM2FullAttention

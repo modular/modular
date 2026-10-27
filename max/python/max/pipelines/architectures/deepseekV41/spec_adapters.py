@@ -38,10 +38,10 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.comm.ep import EPBatchManager
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.layer import Module
-from max.nn.transformer import (
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.layer import Module
+from max.nn.legacy.transformer import (
     ReturnHiddenStates,
     ReturnLogits,
     logits_postprocess,

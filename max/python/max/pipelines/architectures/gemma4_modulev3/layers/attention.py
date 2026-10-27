@@ -36,9 +36,9 @@ from max.experimental.nn.common_layers.quant_linear import (
 )
 from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.experimental.tensor import Tensor
-from max.nn.attention import MHAMaskVariant
-from max.nn.kv_cache import KVCacheParams
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.quant_config import QuantConfig
 
 from .rms_norm import Gemma4RMSNorm
 

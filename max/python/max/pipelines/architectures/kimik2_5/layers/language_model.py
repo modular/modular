@@ -32,12 +32,12 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
 )
-from max.nn.transformer import DecoderOutputs
+from max.nn.legacy.transformer import DecoderOutputs
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 
 from ...deepseekV3.deepseekV3 import (

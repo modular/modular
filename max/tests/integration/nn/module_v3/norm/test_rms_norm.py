@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for max.nn.norm.rms_norm."""
+"""Tests for max.nn.legacy.norm.rms_norm."""
 
 from __future__ import annotations
 

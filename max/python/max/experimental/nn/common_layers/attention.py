@@ -22,8 +22,8 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Linear, Module
 from max.experimental.tensor import Tensor
-from max.nn.attention import MHAMaskVariant
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
 
 from ..norm.rms_norm import rms_norm
 from .functional_kernels import (

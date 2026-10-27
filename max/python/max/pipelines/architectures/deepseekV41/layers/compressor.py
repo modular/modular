@@ -18,10 +18,10 @@ attention over long contexts reads fewer KV entries.
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType, TensorValue, ops
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.layer import Module
-from max.nn.linear import Linear, linear
-from max.nn.norm.rms_norm import RMSNorm
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear, linear
+from max.nn.legacy.norm.rms_norm import RMSNorm
 
 from .ragged import V41RaggedRows as RaggedRows
 

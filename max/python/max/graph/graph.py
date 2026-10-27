@@ -792,7 +792,7 @@ class Graph:
         )
 
     These examples only use the :obj:`max.graph` package, but most models also
-    use :class:`~max.nn.Module` and other building blocks from :obj:`max.nn`.
+    use :class:`~max.nn.legacy.Module` and other building blocks from :obj:`max.nn.legacy`.
     To learn more, see `Build a model graph with Module
     </develop/modules>`_.
 
@@ -1002,8 +1002,8 @@ class Graph:
         - **Kernel fusion:** The compiler can't fuse ops across the subgraph
           boundary, which may reduce throughput marginally.
 
-        For models with a :class:`~max.nn.Module`, prefer
-        :meth:`~max.nn.Module.build_subgraph`, which handles weight prefixes
+        For models with a :class:`~max.nn.legacy.Module`, prefer
+        :meth:`~max.nn.legacy.Module.build_subgraph`, which handles weight prefixes
         automatically.
 
         For example, define a subgraph that adds 1 to every element, then

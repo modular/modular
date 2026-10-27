@@ -29,9 +29,9 @@ from collections.abc import Callable, Iterable, Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
-from max.nn.linear import Linear
-from max.nn.moe import MoEGate
-from max.nn.moe.moe import ShardingStrategy
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.moe import MoEGate
+from max.nn.legacy.moe.moe import ShardingStrategy
 
 
 class LagunaTopKRouter(MoEGate):

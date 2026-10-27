@@ -88,12 +88,12 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.comm.ep import EPConfig
-from max.nn.kernels import (
+from max.nn.legacy.comm.ep import EPConfig
+from max.nn.legacy.kernels import (
     grouped_dynamic_block_scaled_matmul_amd,
     quantize_dynamic_block_scaled,
 )
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.quant_config import QuantConfig
 from max.support.math import ceildiv
 
 from . import ep

@@ -41,28 +41,28 @@ from max.graph import Module as GraphModule
 from max.graph.ops.allgather import allgather
 from max.graph.ops.resize import InterpolationMode
 from max.graph.weight import _compute_shard_range
-from max.nn.attention import (
+from max.nn.legacy.attention import (
     TensorParallelAttentionWithRope,
     num_heads_for_device,
 )
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.comm import Allreduce
-from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kernels import flash_attention_gpu
-from max.nn.kv_cache import (
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.comm import Allreduce
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.kernels import flash_attention_gpu
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
 )
-from max.nn.layer import LayerList, Module, Shardable
-from max.nn.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.norm import LayerNorm, RMSNorm
-from max.nn.rotary_embedding import DynamicRotaryEmbedding
-from max.nn.transformer import DecoderOutputs
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.layer import LayerList, Module, Shardable
+from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.legacy.norm import LayerNorm, RMSNorm
+from max.nn.legacy.rotary_embedding import DynamicRotaryEmbedding
+from max.nn.legacy.transformer import DecoderOutputs
+from max.nn.legacy.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
 )
-from max.nn.transformer.transformer import forward_sequential_layers
+from max.nn.legacy.transformer.transformer import forward_sequential_layers
 from max.pipelines.architectures.llama3.model_config import (
     Llama3Config as Qwen2Config,
 )

@@ -24,9 +24,9 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Graph
 from max.graph.weights import WeightData
-from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
+from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import UnifiedSpecDecodeInputs
 from max.pipelines.lib.graph_specs import GraphRole
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (

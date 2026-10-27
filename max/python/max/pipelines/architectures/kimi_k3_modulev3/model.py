@@ -65,8 +65,8 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorValue
-from max.nn.comm.ep import EPConfig
-from max.nn.kv_cache import (
+from max.nn.legacy.comm.ep import EPConfig
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     MLAKVCacheParams,
@@ -74,8 +74,8 @@ from max.nn.kv_cache import (
     RecurrentLeafInputs,
     RecurrentStateInputsPerDevice,
 )
-from max.nn.quant_config import QuantConfig
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.lib import ModuleV3Outputs
 
 from .layers import ep

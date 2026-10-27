@@ -226,7 +226,7 @@ in which each field is a class attribute. For example:
 ```python
 from dataclasses import dataclass
 
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.kv_cache import KVCacheParams
 from max.pipelines.lib.interfaces import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
@@ -506,8 +506,8 @@ using [`max.experimental.nn`](/api/python/experimental.nn/) modules:
   `embedding_multiplier`, `logits_scaling`) add norms or scale factors inside
   the block.
 - **Quantized weights** (`quantization_config`) need a
-  [`QuantConfig`](/api/python/generated/max.nn.QuantConfig/) field in your
-  config class (see
+  [`QuantConfig`](/api/python/generated/max.nn.legacy.QuantConfig/) field in
+  your config class (see
   [Map checkpoint weights](/develop/model-bringup-workflow/#map-checkpoint-weights)).
 
 Often, the closest baseline MAX architecture already implements some of these

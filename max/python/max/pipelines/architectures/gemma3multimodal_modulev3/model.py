@@ -28,7 +28,7 @@ from max.experimental.sharding import (
 from max.experimental.tensor import Tensor, default_device
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
     GraphSpec,

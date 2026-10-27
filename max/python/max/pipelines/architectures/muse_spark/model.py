@@ -27,7 +27,7 @@ from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import default_dtype
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.muse_glimmer.batch_processor import (
     MuseGlimmerBatchProcessor,
 )

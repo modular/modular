@@ -17,7 +17,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from max.dtype import DType
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheGroupId,
     RecurrentKVLeafRegion,
     RecurrentStateRegion,

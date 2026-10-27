@@ -9,7 +9,7 @@ modular_py_library(
         requirement("transformers"),
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/llama3",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",

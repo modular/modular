@@ -48,7 +48,7 @@ from max.graph import (
 )
 from max.graph.type import _ChainType
 from max.graph.value import TensorValue, _ChainValue
-from max.nn import Signals
+from max.nn.legacy import Signals
 
 NUM_ELEMENTS = 4
 DEVICES = [DeviceRef.GPU(0), DeviceRef.GPU(1)]

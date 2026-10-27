@@ -17,7 +17,7 @@ from functools import cached_property
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.layer import Module
+from max.nn.legacy.layer import Module
 
 
 class Rope2DPosEmbRepeated(Module):

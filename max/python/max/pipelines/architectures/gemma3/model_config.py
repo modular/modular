@@ -19,10 +19,10 @@ from typing import ClassVar
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
-from max.nn.quant_config import QuantConfig
-from max.nn.rotary_embedding import LinearScalingParams
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheParamInterface, MultiKVCacheParams
+from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.rotary_embedding import LinearScalingParams
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.gpt_oss.hybrid_kv_params_util import (
     hybrid_swa_full_kv_params,
 )

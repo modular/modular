@@ -27,9 +27,9 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import BufferType, Dim, TensorType, TensorValue, ops
-from max.nn.hyper_connection import HyperConnection
-from max.nn.kernels import _block_scaled_quantize_out_types
-from max.nn.norm.rms_norm import RMSNorm
+from max.nn.legacy.hyper_connection import HyperConnection
+from max.nn.legacy.kernels import _block_scaled_quantize_out_types
+from max.nn.legacy.norm.rms_norm import RMSNorm
 
 # Arrival counters one fused step keeps between calls.
 _MEGA_MHC_COUNTERS = 1136
@@ -41,7 +41,7 @@ class Mxfp8Rows:
 
     ``values`` is ``float8_e4m3fn`` ``[rows, k]``, and ``scales`` holds its
     E8M0 block scales in the layout
-    :func:`~max.nn.kernels.quantize_dynamic_block_scaled` produces.
+    :func:`~max.nn.legacy.kernels.quantize_dynamic_block_scaled` produces.
     """
 
     values: TensorValue
@@ -83,7 +83,7 @@ def fused_hc_step(
         hc: The later sublayer's hyper-connection weights.
         norm: The later sublayer's input norm.
         mxfp8: Also writes the normalized input in MXFP8, as
-            :func:`~max.nn.kernels.quantize_dynamic_block_scaled` would.
+            :func:`~max.nn.legacy.kernels.quantize_dynamic_block_scaled` would.
             SM100 only.
 
     Returns:

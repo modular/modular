@@ -23,10 +23,10 @@ import math
 
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, TensorValue, Weight, ops
-from max.nn.embedding import Embedding
-from max.nn.kernels import masked_flash_attention_gpu
-from max.nn.layer import LayerList, Module
-from max.nn.linear import Linear
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.kernels import masked_flash_attention_gpu
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import Linear
 
 from .model_config import UMT5ConfigBase
 

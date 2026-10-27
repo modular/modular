@@ -24,10 +24,10 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.kernels import MHAMaskVariant, flash_attention_ragged_gpu
-from max.nn.layer import Module
-from max.nn.linear import Linear
-from max.nn.norm import RMSNorm
+from max.nn.legacy.kernels import MHAMaskVariant, flash_attention_ragged_gpu
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import RMSNorm
 
 __all__ = ["Glm5NextVisionAttention", "apply_rotary_pos_emb_vision"]
 

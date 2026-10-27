@@ -19,7 +19,7 @@ from typing import Any
 from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
 from max.graph import BufferType, TensorType
-from max.nn.kv_cache import KVCacheParamInterface
+from max.nn.legacy.kv_cache import KVCacheParamInterface
 from max.pipelines.speculative.config import SpeculativeConfig
 from max.pipelines.speculative.driver import (
     SequentialDriver,

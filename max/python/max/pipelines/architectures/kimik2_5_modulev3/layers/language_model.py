@@ -38,8 +38,8 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue
-from max.nn.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
+from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
 from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
 
 from ...deepseekV3_modulev3.deepseekV3 import (

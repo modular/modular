@@ -23,7 +23,10 @@ import torch
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.kernels import _router_gate_mixed_gemv, moe_router_group_limited
+from max.nn.legacy.kernels import (
+    _router_gate_mixed_gemv,
+    moe_router_group_limited,
+)
 from torch.utils.dlpack import from_dlpack
 
 # Router-gate shape (KERN-3219): N experts, K hidden.

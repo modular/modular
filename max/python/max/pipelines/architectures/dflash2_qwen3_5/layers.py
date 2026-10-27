@@ -23,8 +23,8 @@ from collections.abc import Callable
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
-from max.nn.layer import Module
-from max.nn.linear import Linear
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
 
 
 class DFlash2GroupedConv(Module):

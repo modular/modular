@@ -31,7 +31,7 @@ import pytest
 from max.driver import Buffer, Device, Usage
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheGroupId,
     KVCacheInputs,
     KVCacheInputsPerDevice,
@@ -42,14 +42,14 @@ from max.nn.kv_cache import (
     RecurrentStateParams,
     RecurrentStateRegion,
 )
-from max.nn.kv_cache.cache_params import (
+from max.nn.legacy.kv_cache.cache_params import (
     KVCacheParamInterface,
     KVConnectorType,
     SpeculativeMethod,
     spec_decode_cache_slack,
 )
-from max.nn.kv_cache.metrics import KVCacheMetrics
-from max.nn.kv_cache.utils import padded_lut_cols
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache.utils import padded_lut_cols
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache import InsufficientBlocksError
 from max.pipelines.kv_cache.config import KVConnectorConfig

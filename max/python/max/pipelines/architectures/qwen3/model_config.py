@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from typing import ClassVar
 
 from max.graph import DeviceRef
-from max.nn.comm.ep import EPConfig
+from max.nn.legacy.comm.ep import EPConfig
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.modeling.config_enums import SupportedEncoding

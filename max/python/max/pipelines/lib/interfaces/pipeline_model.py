@@ -36,16 +36,16 @@ from max.experimental.nn.module import Module as _ModuleV3
 from max.experimental.tensor import Tensor, default_dtype
 from max.graph import DeviceRef, Graph, Value
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.nn.comm.ep import EPConfig
-from max.nn.kv_cache import (
+from max.nn.legacy.comm.ep import EPConfig
+from max.nn.legacy.kv_cache import (
     CacheLeafParamInterface,
     KVCacheInputs,
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
 )
-from max.nn.layer import Module as LayerModule
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.layer import Module as LayerModule
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import BaseContextType, LogProbabilities
 from max.pipelines.kv_cache.config import (
     KVCacheConfig,
@@ -170,7 +170,7 @@ class AlwaysSignalBuffersMixin:
             in compile-only mode.
         """
         # Import here to avoid circular dependency
-        from max.nn.comm import MulticastPool, Signals
+        from max.nn.legacy.comm import MulticastPool, Signals
 
         # Signals.allocate initializes the signal buffers and enables p2p access
         buffers = Signals.allocate(self.devices)
@@ -805,7 +805,7 @@ class PipelineModel(
             return []
 
         # Import here to avoid circular dependency
-        from max.nn.comm import MulticastPool, Signals
+        from max.nn.legacy.comm import MulticastPool, Signals
 
         # Signals.allocate initializes the signal buffers and enables p2p access
         buffers = Signals.allocate(self.devices)

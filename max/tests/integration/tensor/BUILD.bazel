@@ -92,7 +92,7 @@ modular_eager_py_test(
         "//max/python/max/dtype",
         "//max/python/max/experimental",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
     ],
 )
 

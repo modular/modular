@@ -19,8 +19,8 @@ from collections.abc import Iterable
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue
-from max.nn.layer import Module
-from max.nn.linear import Linear
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
 from max.pipelines.architectures.gemma4.layers.rms_norm import Gemma4RMSNorm
 
 

@@ -22,7 +22,7 @@ from max.experimental.nn import Module
 from max.experimental.sharding import AxisAssignment, replicated_rows
 from max.experimental.sharding.types import TensorLayout
 from max.experimental.tensor import Tensor
-from max.nn.kernels import tpool_patch_merger as _tpool_patch_merger
+from max.nn.legacy.kernels import tpool_patch_merger as _tpool_patch_merger
 
 from ...model_config import VisionConfig
 from .encoder import Encoder

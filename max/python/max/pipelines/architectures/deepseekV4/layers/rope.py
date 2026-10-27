@@ -44,8 +44,11 @@ from __future__ import annotations
 import numpy as np
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, StaticDim, TensorValue, ops
-from max.nn.kernels import rope_ragged
-from max.nn.rotary_embedding import YarnRotaryEmbedding, YarnScalingParams
+from max.nn.legacy.kernels import rope_ragged
+from max.nn.legacy.rotary_embedding import (
+    YarnRotaryEmbedding,
+    YarnScalingParams,
+)
 
 from ..model_config import DeepseekV4Config
 

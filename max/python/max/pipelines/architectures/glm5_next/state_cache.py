@@ -46,7 +46,7 @@ from __future__ import annotations
 from typing import Any
 
 from max.dtype import DType
-from max.nn.kv_cache import RecurrentStateRegion
+from max.nn.legacy.kv_cache import RecurrentStateRegion
 
 MLA_CACHE_KEY = "mla"
 INDEXER_CACHE_KEY = "indexer"

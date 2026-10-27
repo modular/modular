@@ -19,7 +19,7 @@ from max.experimental import functional as F
 from max.experimental.nn import Linear, Module
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.tensor import Tensor
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     masked_flash_attention_gpu as _masked_flash_attention_gpu,
 )
 

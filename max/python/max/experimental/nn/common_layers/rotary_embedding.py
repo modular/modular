@@ -22,7 +22,7 @@ from max.experimental import functional as F
 from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
 from max.graph import Dim
-from max.nn.rotary_embedding import YarnScalingParams
+from max.nn.legacy.rotary_embedding import YarnScalingParams
 
 
 class RotaryEmbedding(Module[..., Tensor]):

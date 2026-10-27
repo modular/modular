@@ -33,9 +33,9 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
-from max.nn.comm import Allreduce, Signals
-from max.nn.kernels import tpool_patch_merger
-from max.nn.layer import Module
+from max.nn.legacy.comm import Allreduce, Signals
+from max.nn.legacy.kernels import tpool_patch_merger
+from max.nn.legacy.layer import Module
 
 from ...model_config import VisionConfig
 from .encoder import Encoder

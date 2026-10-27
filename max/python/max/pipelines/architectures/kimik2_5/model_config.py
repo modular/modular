@@ -19,7 +19,7 @@ from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
     spec_decode_cache_slack,
 )

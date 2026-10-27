@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.sharding import DeviceMapping
 from max.experimental.tensor import Tensor
-from max.nn.transformer import ReturnHiddenStates
+from max.nn.legacy.transformer import ReturnHiddenStates
 from max.pipelines.speculative.block_driver import BlockBatch
 from max.pipelines.speculative.config import SpeculativeConfig
 from max.pipelines.speculative.driver import (

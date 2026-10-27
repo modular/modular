@@ -32,7 +32,7 @@ from max.experimental.nn.common_layers.quant_linear import (
     QuantizedQKVLinear,
 )
 from max.experimental.tensor import Tensor
-from max.nn.quant_config import QuantConfig, WeightSource
+from max.nn.legacy.quant_config import QuantConfig, WeightSource
 from max.pipelines import (
     PIPELINE_REGISTRY,
 )

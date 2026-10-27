@@ -48,10 +48,10 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.kernels import topk_fused_sampling_with_dist
-from max.nn.kv_cache import KVCacheInputsPerDevice, PagedCacheValues
-from max.nn.layer import Module
-from max.nn.sampling.rejection_sampler import (
+from max.nn.legacy.kernels import topk_fused_sampling_with_dist
+from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, PagedCacheValues
+from max.nn.legacy.layer import Module
+from max.nn.legacy.sampling.rejection_sampler import (
     AcceptanceSampler,
     _draft_step_seed,
 )

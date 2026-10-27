@@ -22,8 +22,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.torch import max_dtype_to_torch
 from max.graph import DeviceRef, Dim, Graph, TensorType, ops
-from max.nn.kv_cache import MHAKVCacheParams
-from max.nn.linear import Linear
+from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.legacy.linear import Linear
 from max.pipelines import KVCacheConfig
 from max.pipelines.architectures.qwen3vl_moe.nn.text_attention import (
     Qwen3VLMoEDecoderAttentionWithRope,

@@ -37,7 +37,7 @@ normalization, which drives it toward doubly stochastic -- no copy can be
 amplified or dropped across the round trip, which is what keeps the ``hc``
 lanes from collapsing into each other over 43 layers.
 
-The per-block gates and contraction run in :class:`~max.nn.HyperConnection`
+The per-block gates and contraction run in :class:`~max.nn.legacy.HyperConnection`
 (see ``deepseekV4.py``); this module keeps the write-back, the head
 contraction and the initial expansion.
 

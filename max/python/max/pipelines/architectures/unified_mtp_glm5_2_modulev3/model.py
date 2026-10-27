@@ -25,9 +25,9 @@ from max.engine import InferenceSession, Model
 from max.experimental import functional as F
 from max.experimental.compilation import CompiledCallable
 from max.experimental.tensor import default_device, default_dtype
-from max.nn.comm import Signals
-from max.nn.comm.ep import EPBatchManager
-from max.nn.kv_cache import MultiKVCacheParams
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.legacy.kv_cache import MultiKVCacheParams
 from max.profiler import traced
 from typing_extensions import override
 

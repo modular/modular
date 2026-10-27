@@ -25,8 +25,8 @@ from dataclasses import dataclass, fields, replace
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import KVCacheParams
-from max.nn.transformer import ReturnHiddenStates
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.transformer import ReturnHiddenStates
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithBoundedMaxSeqLen,

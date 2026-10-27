@@ -22,7 +22,7 @@ import pytest
 from max.driver import DeviceSpec
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.legacy.kv_cache import MHAKVCacheParams
 from max.pipelines.architectures import hf_config_shims
 from max.pipelines.architectures.mimo_v2.model_config import (
     FULL,

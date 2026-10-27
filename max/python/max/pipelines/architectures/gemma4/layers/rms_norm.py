@@ -22,7 +22,7 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn.layer import Module, Shardable
+from max.nn.legacy.layer import Module, Shardable
 
 
 class Gemma4RMSNorm(Module, Shardable):

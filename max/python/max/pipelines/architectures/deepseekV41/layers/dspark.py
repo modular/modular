@@ -27,12 +27,12 @@ from typing import TypeVar
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
-from max.nn.embedding import Embedding
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.layer import Module
-from max.nn.linear import Linear
-from max.nn.norm.rms_norm import RMSNorm
-from max.nn.quant_config import (
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm.rms_norm import RMSNorm
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -40,7 +40,7 @@ from max.nn.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.quant_ops import _matmul_float8_mxfp8
+from max.nn.legacy.quant_ops import _matmul_float8_mxfp8
 
 from ...deepseekV4.layers.ragged import arange_to
 from ..layer_resolver import LayerInfo

@@ -41,7 +41,7 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType, TensorValue, Value, ops
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.legacy.kv_cache import PagedCacheValues
 
 __all__ = [
     "INDEXER_SCORES_BUDGET_BYTES",

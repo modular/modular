@@ -47,14 +47,14 @@ from max.experimental.sharding import NamedMapping
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorValue, ops
 from max.graph.weights import WeightData
-from max.nn.attention import MHAMaskVariant
-from max.nn.kernels import (
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.legacy.kv_cache import PagedCacheValues
 
 from ..dflash_mimo_v2 import DFlashMiMoV2Config
 from .context_writer import DFlashContextWriter, _heads_per_shard

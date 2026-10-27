@@ -19,9 +19,9 @@ from copy import copy
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.clamp import clamp
-from max.nn.linear import Linear
-from max.nn.moe import GateUpFormat, MoEGate, StackedMoE
+from max.nn.legacy.clamp import clamp
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.moe import GateUpFormat, MoEGate, StackedMoE
 from typing_extensions import Self
 
 from ..model_config import GptOssConfig

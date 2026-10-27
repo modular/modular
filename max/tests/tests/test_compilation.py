@@ -60,8 +60,8 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor
 from max.graph import BufferType, BufferValue, DeviceRef, TensorType
-from max.nn.attention import MHAMaskVariant
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kv_cache import MHAKVCacheParams
 from max.tree import flatten as tree_flatten
 from max.tree import paths as tree_paths
 

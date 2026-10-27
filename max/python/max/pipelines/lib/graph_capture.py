@@ -46,8 +46,8 @@ from max._core.driver import _release_buffers_to_borrowed
 from max.driver import Buffer, batch_inplace_copy
 from max.engine import Model
 from max.experimental.compilation import CompiledCallable
-from max.nn.kv_cache import BatchCharacteristics, KVCacheParamInterface
-from max.nn.kv_cache.utils import AttnKeyInterface, MultiAttnKey
+from max.nn.legacy.kv_cache import BatchCharacteristics, KVCacheParamInterface
+from max.nn.legacy.kv_cache.utils import AttnKeyInterface, MultiAttnKey
 from max.profiler import traced
 from tqdm import tqdm
 
@@ -502,7 +502,7 @@ class ServeGraphCaptureRunner:
         length, yielding aligned characteristics for the
         ``(batch_size, q, aligned_cache_length)`` shape (a pure CPU bucketing --
         no resolver kernel op). The caller passes the returned
-        :class:`~max.nn.kv_cache.BatchCharacteristics` to
+        :class:`~max.nn.legacy.kv_cache.BatchCharacteristics` to
         ``KVCacheManager.runtime_inputs`` so the dispatch metadata is prepared
         for the aligned length, and to :meth:`replay`, which looks up the
         captured ``GraphKey`` for those characteristics.

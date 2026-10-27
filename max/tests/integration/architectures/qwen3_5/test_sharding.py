@@ -37,10 +37,10 @@ import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, Weight
 from max.graph.weight import Segment
-from max.nn.kv_cache import MHAKVCacheParams
-from max.nn.linear import Linear
-from max.nn.rotary_embedding import Llama3RotaryEmbedding
-from max.nn.stacked_linear import StackedLinear
+from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.legacy.stacked_linear import StackedLinear
 from max.pipelines.architectures.qwen3_5.layers.attention import (
     Qwen3_5Attention,
 )

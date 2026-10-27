@@ -42,7 +42,7 @@ from max.experimental.nn import Module
 from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import Tensor
 from max.graph import TensorType, TensorValue, ops
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.legacy.kv_cache import PagedCacheValues
 
 from .norm import RMSNorm
 

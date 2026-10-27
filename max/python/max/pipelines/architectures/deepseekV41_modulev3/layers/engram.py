@@ -63,7 +63,7 @@ from max.experimental.nn import Module
 from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     block_scales_interleave,
     dynamic_block_scaled_matmul,
 )

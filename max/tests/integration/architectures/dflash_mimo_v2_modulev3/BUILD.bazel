@@ -25,7 +25,7 @@ modular_py_library(
         "//max/python/max/dtype",
         "//max/python/max/experimental",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/dflash_mimo_v2",
         "//max/python/max/pipelines/architectures/dflash_mimo_v2_modulev3",
         "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
@@ -80,7 +80,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         # The pairing resolves its target and drafter by name.
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures/dflash_mimo_v2_modulev3",
@@ -117,7 +117,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/experimental",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         # The pairing resolves its target and drafter by name.
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures/dflash_mimo_v2_modulev3",

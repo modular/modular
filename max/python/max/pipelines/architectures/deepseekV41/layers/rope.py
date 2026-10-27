@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from max.graph import DeviceRef
-from max.nn.rotary_embedding import YarnScalingParams
+from max.nn.legacy.rotary_embedding import YarnScalingParams
 from transformers import AutoConfig
 
 from ...deepseekV4.layers.rope import DeepseekV4RotaryEmbedding

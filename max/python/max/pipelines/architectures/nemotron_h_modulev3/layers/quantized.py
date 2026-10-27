@@ -35,8 +35,8 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn import kernels
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy import kernels
+from max.nn.legacy.quant_config import QuantConfig
 from max.support.math import ceildiv
 
 from ..model_config import NemotronHConfig

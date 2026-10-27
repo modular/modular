@@ -18,7 +18,7 @@ import functools
 
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.nn import (
+from max.nn.legacy import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -26,7 +26,7 @@ from max.nn import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.linear import Linear
+from max.nn.legacy.linear import Linear
 from max.pipelines.architectures.deepseekV3_2.layers import (
     DeepseekV3_2MLP,
     DeepseekV3_2MoE,

@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any, Literal, TypeVar, get_args
 from max.config import ConfigFileModel
 from max.driver import SymmetricPool, accelerator_api, load_devices
 from max.engine import InferenceSession
-from max.nn.comm import MulticastPool, Signals
+from max.nn.legacy.comm import MulticastPool, Signals
 from max.pipelines.diffusion.config import resolve_denoising_cache
 from max.pipelines.kv_cache.config import KVCacheConfig, is_fp4_kv_cache_format
 from max.pipelines.lib._model_components import (
@@ -1237,7 +1237,7 @@ class PipelineConfig(ConfigFileModel):
     ) -> int:
         """Estimates total signal-buffer memory across all devices.
 
-        Signal buffers are fixed-size (:attr:`~max.nn.comm.allreduce.Signals.NUM_BYTES`)
+        Signal buffers are fixed-size (:attr:`~max.nn.legacy.comm.allreduce.Signals.NUM_BYTES`)
         per-GPU allocations used by P2P collectives. The only site visible
         from :class:`PipelineConfig` is the main model graph, and only for
         multi-GPU pipelines. The ``tiered``/``rust_tiered`` KV connectors fan

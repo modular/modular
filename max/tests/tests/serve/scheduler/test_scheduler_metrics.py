@@ -22,7 +22,7 @@ from typing import Any
 from unittest.mock import MagicMock, call, patch
 
 import pytest
-from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache import JengaKVCacheManager
 from max.pipelines.kv_cache.kv_connector import BlockCount, ByteCount
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_manager import (

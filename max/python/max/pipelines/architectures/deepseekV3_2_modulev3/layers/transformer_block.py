@@ -30,8 +30,8 @@ from max.experimental.nn.common_layers.quant_linear import (
 )
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.tensor import Tensor
-from max.nn.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.quant_config import QuantFormat
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
+from max.nn.legacy.quant_config import QuantFormat
 
 from ...deepseekV3_modulev3.layers.moe_gate import DeepseekV3TopKRouter
 from ...deepseekV3_modulev3.layers.transformer_block import (

@@ -22,8 +22,8 @@ import numpy.typing as npt
 from max import tree
 from max.driver import Buffer
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.kv_cache import KVCacheInputs
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
+from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.architectures.llama3.batch_processor import (
     Llama3BatchProcessor,
 )

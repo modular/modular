@@ -105,14 +105,14 @@ from max.graph.weights import (
     load_weights,
     weights_format,
 )
-from max.nn import kernels
-from max.nn.kv_cache import (
+from max.nn.legacy import kernels
+from max.nn.legacy.kv_cache import (
     BatchCharacteristics,
     KVCacheInputs,
     KVCacheInputsPerDevice,
     spec_decode_cache_slack,
 )
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.context import (
     EOSTracker,
     SpecDecodingState,
@@ -1352,7 +1352,7 @@ def build_realize_future_token_graph(
                 ).reshape(["curr_batch_size", "num_draft_tokens", vocab_dim])
 
             # Per-sequence increments in int64 (may be negative), then fold into
-            # uint32 cache lengths to match :class:`~max.nn.kv_cache.KVCacheParams`
+            # uint32 cache lengths to match :class:`~max.nn.legacy.kv_cache.KVCacheParams`
             # paged-cache ``cache_lengths`` dtype.
             batch_increments_i64 = ops.broadcast_to(
                 ops.constant(0, dtype=DType.int64, device=device0),

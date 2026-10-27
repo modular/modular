@@ -34,8 +34,8 @@ from max.experimental.nn.sequential import ModuleList
 from max.experimental.sharding import DeviceMapping, NamedMapping
 from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorValue
-from max.nn.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.kv_cache import (
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     RecurrentStateInputsPerDevice,

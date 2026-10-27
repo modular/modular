@@ -20,8 +20,8 @@ from typing import TYPE_CHECKING, Any
 
 from max.driver import Buffer, Device
 from max.graph import BufferType, TensorType, Value
-from max.nn.layer import Module
-from max.nn.transformer import ReturnHiddenStates
+from max.nn.legacy.layer import Module
+from max.nn.legacy.transformer import ReturnHiddenStates
 from max.pipelines.context import TextContext
 
 if TYPE_CHECKING:

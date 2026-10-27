@@ -30,7 +30,7 @@ from max.experimental.nn.common_layers.linear import (
 from max.experimental.nn.module import _TransparentKey
 from max.experimental.sharding import DeviceMapping, DeviceMesh
 from max.experimental.tensor import Tensor
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.quant_config import QuantConfig
 from typing_extensions import Self
 
 from . import quant_ops

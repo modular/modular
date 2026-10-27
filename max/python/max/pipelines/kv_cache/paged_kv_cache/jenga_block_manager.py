@@ -32,9 +32,9 @@ from itertools import chain
 
 from max._kv_core import longest_joint_prefix_hit
 from max.driver import Buffer, batch_inplace_copy
-from max.nn.kv_cache import KVCacheGroupId, KVLeafRegion
-from max.nn.kv_cache.cache_params import KVCacheMemory
-from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache import KVCacheGroupId, KVLeafRegion
+from max.nn.legacy.kv_cache.cache_params import KVCacheMemory
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import (
     BlockCount,

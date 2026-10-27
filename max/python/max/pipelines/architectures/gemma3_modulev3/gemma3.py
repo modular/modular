@@ -27,13 +27,13 @@ from max.experimental.nn.common_layers.mlp import MLP
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import Tensor
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,
 )
-from max.nn.rotary_embedding import Llama3RopeScalingParams
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.rotary_embedding import Llama3RopeScalingParams
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.lib import ModuleV3Outputs
 
 from .layers.attention import Gemma3Attention

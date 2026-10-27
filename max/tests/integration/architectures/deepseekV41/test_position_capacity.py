@@ -33,7 +33,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, ops
-from max.nn.kv_cache import spec_decode_cache_slack
+from max.nn.legacy.kv_cache import spec_decode_cache_slack
 from max.pipelines.architectures import hf_config_shims  # noqa: F401
 from max.pipelines.architectures.deepseekV41 import memory_planner
 from max.pipelines.architectures.deepseekV41.deepseekV41 import (

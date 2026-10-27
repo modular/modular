@@ -27,9 +27,9 @@ import numpy as np
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType
-from max.nn.comm.ep import EPConfig
-from max.nn.kv_cache import MultiKVCacheParams
-from max.nn.transformer import ReturnHiddenStates
+from max.nn.legacy.comm.ep import EPConfig
+from max.nn.legacy.kv_cache import MultiKVCacheParams
+from max.nn.legacy.transformer import ReturnHiddenStates
 from max.pipelines.architectures import hf_config_shims  # noqa: F401
 from max.pipelines.architectures.deepseekV41 import kv_leaves
 from max.pipelines.architectures.deepseekV41.deepseekV41 import DeepseekV41

@@ -47,10 +47,10 @@ from max.driver import (
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, ShardingStrategy, TensorType, ops
-from max.nn import Allreduce, Signals
-from max.nn.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
-from max.nn.moe import MoE
-from max.nn.moe.expert_parallel import forward_moe_sharded_layers
+from max.nn.legacy import Allreduce, Signals
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
+from max.nn.legacy.moe import MoE
+from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers
 
 N_DEVICES = 2
 # Per test run, so concurrent runs cannot see each other's dumps. The device

@@ -47,14 +47,14 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor, default_device, default_dtype
 from max.graph import Graph
-from max.nn.comm.ep import EPConfig
-from max.nn.comm.ep.ep_config import NUM_GROUPS
-from max.nn.comm.ep.ep_manager import (
+from max.nn.legacy.comm.ep import EPConfig
+from max.nn.legacy.comm.ep.ep_config import NUM_GROUPS
+from max.nn.legacy.comm.ep.ep_manager import (
     EPBatchManager,
     EPCommBuffers,
     get_ep_local_sync_counters_size,
 )
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.quant_config import QuantConfig
 from max.pipelines.architectures.deepseekV3_2_modulev3.layers.mlp import (
     DeepseekV3_2MLP,
 )

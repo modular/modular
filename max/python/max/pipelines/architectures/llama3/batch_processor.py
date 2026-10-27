@@ -20,9 +20,9 @@ from typing import TYPE_CHECKING
 import numpy as np
 from max.driver import Buffer
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.comm.ep import EPCommInitializer
-from max.nn.kv_cache import KVCacheInputs
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
+from max.nn.legacy.comm.ep import EPCommInitializer
+from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.context import TextContext
 from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.batch_processor import (

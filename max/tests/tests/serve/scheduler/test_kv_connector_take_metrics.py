@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache.connectors.null_connector import NullConnector
 
 

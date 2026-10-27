@@ -25,7 +25,7 @@ from max.driver import Buffer
 from max.engine import InferenceSession
 from max.experimental.compilation import CompiledCallable
 from max.graph.buffer_utils import cast_tensor_to
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache import KVCacheInputs
 from max.pipelines.context import ImageMetadata
 from max.pipelines.lib.vision_encoder_cache import concat_device_buffers
 

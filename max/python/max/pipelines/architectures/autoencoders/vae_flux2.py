@@ -14,7 +14,7 @@
 """Graph API VAE encoder components for Flux2.
 
 Ports the ModuleV2-based encoder from autoencoders_modulev3/ to the Graph API
-(max.nn.layer.Module) so that the ImageEncoder CompiledComponent can be built
+(max.nn.legacy.layer.Module) so that the ImageEncoder CompiledComponent can be built
 without max.experimental dependencies.
 """
 
@@ -23,12 +23,12 @@ import math
 from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType, TensorValue, ops
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.conv import Conv2d
-from max.nn.kernels import flash_attention_gpu
-from max.nn.layer import LayerList, Module
-from max.nn.linear import Linear
-from max.nn.norm.group_norm import GroupNorm
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.conv import Conv2d
+from max.nn.legacy.kernels import flash_attention_gpu
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm.group_norm import GroupNorm
 
 
 class ResnetBlock2D(Module):

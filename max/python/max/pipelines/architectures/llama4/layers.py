@@ -16,19 +16,19 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kernels import (
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.kernels import (
     flash_attention_ragged,
     rope_split_store_ragged,
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.layer import Module
-from max.nn.linear import Linear
-from max.nn.moe import MoEGate
-from max.nn.rotary_embedding import RotaryEmbedding
-from max.nn.stacked_linear import StackedLinear
+from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.moe import MoEGate
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.stacked_linear import StackedLinear
 
 
 def l2_norm(x: TensorValue, eps: float) -> TensorValue:

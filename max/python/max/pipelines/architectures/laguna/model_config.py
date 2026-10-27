@@ -28,13 +28,13 @@ from typing import Any, ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.comm.ep import EPConfig
-from max.nn.kv_cache import (
+from max.nn.legacy.comm.ep import EPConfig
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     KVCacheQuantizationConfig,
     MultiKVCacheParams,
 )
-from max.nn.rotary_embedding import Llama3RopeScalingParams
+from max.nn.legacy.rotary_embedding import Llama3RopeScalingParams
 from max.pipelines.architectures.gpt_oss.hybrid_kv_params_util import (
     hybrid_swa_full_kv_params,
 )

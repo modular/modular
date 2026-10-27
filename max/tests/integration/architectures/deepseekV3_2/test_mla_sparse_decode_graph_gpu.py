@@ -48,19 +48,21 @@ from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.attention.multi_latent_attention import LatentAttentionWithRope
-from max.nn.attention.multi_latent_attention_fp8 import (
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.attention.multi_latent_attention import (
+    LatentAttentionWithRope,
+)
+from max.nn.legacy.attention.multi_latent_attention_fp8 import (
     LatentAttentionWithRopeFp8,
 )
-from max.nn.kernels import mla_decode_graph, mla_prefill_decode_graph
-from max.nn.kv_cache import (
+from max.nn.legacy.kernels import mla_decode_graph, mla_prefill_decode_graph
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheQuantizationConfig,
     MLAKVCacheParams,
     MultiKVCacheParams,
 )
-from max.nn.quant_config import (
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -68,7 +70,7 @@ from max.nn.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.rotary_embedding import (
+from max.nn.legacy.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )

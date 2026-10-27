@@ -32,9 +32,9 @@ from max.experimental.sharding import (
 from max.experimental.tensor import default_device, default_dtype
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights
-from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
-from max.nn.quant_config import QuantConfig
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.kv_cache import MHAKVCacheParams, MultiKVCacheParams
+from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     ProportionalScalingParams,
 )

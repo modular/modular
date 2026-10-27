@@ -33,9 +33,9 @@ import pytest
 from max._kv_core import JengaBlockPool
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheGroupId, MHAKVCacheParams
-from max.nn.kv_cache.cache_params import KVConnectorType, KVHashAlgo
-from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache import KVCacheGroupId, MHAKVCacheParams
+from max.nn.legacy.kv_cache.cache_params import KVConnectorType, KVHashAlgo
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache.config import KVConnectorConfig
 from max.pipelines.kv_cache.connectors import tier_connector

@@ -19,7 +19,7 @@ from collections.abc import Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import MultiKVCacheParams
+from max.nn.legacy.kv_cache import MultiKVCacheParams
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 
 

@@ -299,12 +299,11 @@ out[max_name] = data
 ```
 
 Perform tensor-level dtype casts in the weight adapter. A cast that depends on
-the model config belongs in your pipeline model's `_prepare_state_dict()`
-hook, which receives the state dictionary and the config. Defer layer-level
-encoding decisions to
-[`QuantFormat`](/api/python/generated/max.nn.QuantFormat/) and
-[`QuantConfig`](/api/python/generated/max.nn.QuantConfig/), which configure
-the quantized layers in the module.
+the model config belongs in your pipeline model's `_prepare_state_dict()` hook,
+which receives the state dictionary and the config. Defer layer-level encoding
+decisions to [`QuantFormat`](/api/python/generated/max.nn.legacy.QuantFormat/)
+and [`QuantConfig`](/api/python/generated/max.nn.legacy.QuantConfig/), which
+configure the quantized layers in the module.
 
 ## Weights the module does not use
 

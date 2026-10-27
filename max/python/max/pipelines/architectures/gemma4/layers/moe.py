@@ -18,8 +18,8 @@ from collections.abc import Iterable, Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
-from max.nn.layer import LayerList
-from max.nn.moe.moe import MoE, MoEGate, ShardingStrategy
+from max.nn.legacy.layer import LayerList
+from max.nn.legacy.moe.moe import MoE, MoEGate, ShardingStrategy
 from max.pipelines.architectures.gemma4.layers.rms_norm import Gemma4RMSNorm
 from typing_extensions import Self
 
@@ -136,7 +136,7 @@ class Gemma4MoE(MoE):
     each expert's gate rows then its up rows, and ``experts.down_proj`` is
     ``[num_experts, hidden_dim, moe_dim]``: the stacks the grouped matmuls
     read. The NVFP4 checkpoints store each expert on its own, as
-    :class:`~max.nn.moe.MoEQuantized` declares them.
+    :class:`~max.nn.legacy.moe.MoEQuantized` declares them.
     """
 
     def _init_experts(self) -> None:

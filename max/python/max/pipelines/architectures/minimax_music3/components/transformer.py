@@ -40,7 +40,7 @@ from max.experimental.nn.common_layers.functional_kernels import (
 )
 from max.experimental.tensor import Tensor
 from max.graph import DimLike, TensorType
-from max.nn.attention import MHAMaskVariant
+from max.nn.legacy.attention import MHAMaskVariant
 
 from ..model_config import TransformerConfig
 

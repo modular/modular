@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from max.nn.layer import Module
+from max.nn.legacy.layer import Module
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 
 from .model_config import Qwen2_5VLConfig

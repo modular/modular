@@ -31,12 +31,12 @@ from collections.abc import Sequence
 
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, TensorValue, ops
-from max.nn.attention import AttentionWithRope
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.layer import LayerList, Module
-from max.nn.linear import MLP, Linear
-from max.nn.norm import RMSNorm
+from max.nn.legacy.attention import AttentionWithRope
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import MLP, Linear
+from max.nn.legacy.norm import RMSNorm
 
 from ..llama3.model_config import Llama3Config, create_rope_embedding
 from .layers import DFlash2CandidateSelector, DFlash2GroupedConv

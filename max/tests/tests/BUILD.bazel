@@ -87,7 +87,7 @@ modular_eager_py_test(
         "//max/python/max/experimental/nn",
         "//max/python/max/graph",
         "//max/python/max/mlir",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("numpy"),
     ],
 )
@@ -114,7 +114,7 @@ modular_eager_py_test(
         "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/mlir",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("numpy"),
     ],
 )
@@ -275,7 +275,7 @@ modular_eager_py_test(
         "test.resources:gpu-memory": "4",
     },
     ignore_extra_deps = [
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
     ],
     tags = ["gpu"],
     target_compatible_with = ["//:nvidia_gpu"],
@@ -286,7 +286,7 @@ modular_eager_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("numpy"),
         requirement("torch"),
     ],

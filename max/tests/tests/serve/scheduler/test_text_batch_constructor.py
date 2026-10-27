@@ -20,7 +20,7 @@ from unittest.mock import Mock, call, patch
 
 import numpy as np
 import pytest
-from max.nn.kv_cache import KVCacheGroupId, PagedKVLeafRegion
+from max.nn.legacy.kv_cache import KVCacheGroupId, PagedKVLeafRegion
 from max.pipelines.context import (
     GenerationStatus,
     TextContext,

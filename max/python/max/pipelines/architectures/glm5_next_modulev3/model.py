@@ -21,8 +21,8 @@ from max.dtype import DType
 from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import default_device
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParamInterface
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheParamInterface
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from transformers import AutoConfig
 from typing_extensions import override
 

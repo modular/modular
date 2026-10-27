@@ -34,14 +34,14 @@ from max.experimental.nn.sequential import ModuleList
 from max.experimental.sharding import DeviceMapping, NamedMapping
 from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorValue
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
     MHAKVCacheParams,
     RecurrentLeafInputs,
     RecurrentStateInputsPerDevice,
 )
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import ModuleV3Outputs
 
 from .layers.attention import NemotronHAttention

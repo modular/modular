@@ -30,8 +30,8 @@ from max.graph import (
     TensorValue,
     Value,
 )
-from max.nn.comm import Signals
-from max.nn.kv_cache import (
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.kv_cache import (
     KVCacheInputs,
     KVCacheInputsPerDevice,
     KVCacheParamInterface,

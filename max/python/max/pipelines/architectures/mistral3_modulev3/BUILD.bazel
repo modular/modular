@@ -7,7 +7,7 @@ modular_py_library(
     srcs = glob(["**/*.py"]),
     ignore_extra_deps = [
         # Hooks added for convenience for when we want to print the model layers
-        "//max/python/max/nn/hooks",
+        "//max/python/max/nn/legacy/hooks",
     ],
     deps = [
         requirement("pydantic"),
@@ -16,9 +16,9 @@ modular_py_library(
         "//max/python/max/dtype",
         "//max/python/max/experimental/nn",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         # Hooks added for convenience for when we want to print the model layers
-        "//max/python/max/nn/hooks",
+        "//max/python/max/nn/legacy/hooks",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
         "//max/python/max/pipelines/weights",

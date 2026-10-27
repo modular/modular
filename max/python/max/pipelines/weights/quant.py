@@ -32,8 +32,8 @@ from max.driver import (
 from max.dtype import DType
 from max.graph.quantization import QuantizationConfig
 from max.graph.weights import WeightData
-from max.nn.float8_scale_stacking import can_use_fused_mlp
-from max.nn.quant_config import (
+from max.nn.legacy.float8_scale_stacking import can_use_fused_mlp
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

@@ -19,8 +19,8 @@ from typing import Any
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import MHAKVCacheParams
-from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import (
     CompletedTransfer,

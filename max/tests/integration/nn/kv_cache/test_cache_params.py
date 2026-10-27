@@ -18,7 +18,7 @@ import pytest
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     AttnKey,
     BatchCharacteristics,
     KVCacheBuffer,
@@ -29,10 +29,10 @@ from max.nn.kv_cache import (
     MLAKVCacheParams,
     PagedKVLeafRegion,
 )
-from max.nn.kv_cache.cache_params import (
+from max.nn.legacy.kv_cache.cache_params import (
     SpeculativeMethod as CacheSpeculativeMethod,
 )
-from max.nn.kv_cache.cache_params import (
+from max.nn.legacy.kv_cache.cache_params import (
     page_stride_of,
 )
 from max.pipelines.speculative import SpeculativeMethod
@@ -42,7 +42,7 @@ def test_speculative_methods_match_the_pipeline_literal() -> None:
     """``cache_params`` hand-copies the pipeline literal; pin the two together.
 
     The copy exists because ``max.pipelines.speculative`` depends on
-    ``max.nn``, so importing back would cycle in bazel. Nothing but this
+    ``max.nn.legacy``, so importing back would cycle in bazel. Nothing but this
     assertion stops the copy from going stale, and a method missing here
     reaches :meth:`num_draft_tokens_per_step` as an unrecognized value.
     """

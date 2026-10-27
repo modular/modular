@@ -29,7 +29,7 @@ from max.experimental.nn import Module
 from max.experimental.nn.common_layers import quant_ops
 from max.experimental.nn.common_layers.quant_linear import QuantizedMLP
 from max.experimental.tensor import Tensor
-from max.nn.comm.ep import EPBatchManager
+from max.nn.legacy.comm.ep import EPBatchManager
 
 from ...deepseekV3_2_modulev3.layers.moe import (
     DeepseekV3_2ExpertParallelMoE,

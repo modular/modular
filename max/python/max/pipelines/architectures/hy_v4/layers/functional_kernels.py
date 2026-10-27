@@ -19,7 +19,7 @@ from typing import Any
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue
-from max.nn import kernels
+from max.nn.legacy import kernels
 
 
 def _functional(op: Callable[..., Any]) -> Callable[..., Any]:

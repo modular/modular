@@ -11,21 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Build-time tests for the MXFP8 fused QKV matmul kernel in max.nn.kernels."""
+"""Build-time tests for the MXFP8 fused QKV matmul kernel in max.nn.legacy.kernels."""
 
 from __future__ import annotations
 
 import pytest
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     _fused_qkv_ragged_matmul_scaled_mxfp8 as fused_qkv_ragged_matmul_scaled_mxfp8,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     block_scales_interleave,
     quantize_dynamic_block_scaled,
 )
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
     PagedCacheValues,

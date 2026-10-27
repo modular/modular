@@ -23,8 +23,8 @@ from max._core.engine import Model
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph.weights import WeightData
-from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.comm.ep.ep_config import (
+from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
+from max.nn.legacy.comm.ep.ep_config import (
     calculate_ep_max_tokens_per_rank,
     estimate_ep_memory_usage,
 )

@@ -34,7 +34,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.legacy.kv_cache import MHAKVCacheParams
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache import PagedKVCacheManager
 from max.pipelines.modeling.types import RequestID

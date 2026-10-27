@@ -26,7 +26,7 @@ from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import default_device, default_dtype
 from max.graph import DeviceRef
 from max.graph.weights import load_weights
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.kv_cache import KVCacheParams
 from max.pipelines.lib import KVCacheConfig
 from max.pipelines.lib.config import (
     MAXModelConfig,

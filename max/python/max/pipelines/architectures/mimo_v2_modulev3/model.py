@@ -28,19 +28,19 @@ from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import default_device, default_dtype
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.comm.ep import (
+from max.nn.legacy.comm.ep import (
     EPBatchManager,
     EPCommInitializer,
     EPConfig,
     calculate_ep_max_tokens_per_rank,
 )
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheInputs,
     KVCacheParamInterface,
     MultiKVCacheParams,
     spec_decode_cache_slack,
 )
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,

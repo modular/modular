@@ -46,8 +46,8 @@ import torch  # type: ignore[import-not-found]
 from max.driver import DLPackArray
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.kv_cache import MHAKVCacheParams
-from max.nn.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.gemma3.layers.attention import Gemma3Attention
 from transformers.models.gemma3.configuration_gemma3 import Gemma3TextConfig
 from transformers.models.gemma3.modeling_gemma3 import (

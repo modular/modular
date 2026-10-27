@@ -18,7 +18,7 @@ from max.experimental import functional as F
 from max.experimental.nn import Module
 from max.experimental.nn.common_layers.quant_linear import QuantizedLinear
 from max.experimental.tensor import Tensor
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.quant_config import QuantConfig
 
 
 class HYV4MLP(Module[[Tensor], Tensor]):

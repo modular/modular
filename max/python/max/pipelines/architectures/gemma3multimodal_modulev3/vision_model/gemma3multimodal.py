@@ -22,8 +22,8 @@ from max.experimental.nn import Module
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.nn.norm.layer_norm import LayerNorm
 from max.experimental.tensor import Tensor
-from max.nn.kv_cache import KVCacheParamInterface
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheParamInterface
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.gemma3_modulev3.gemma3 import Gemma3TextModel
 from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
 

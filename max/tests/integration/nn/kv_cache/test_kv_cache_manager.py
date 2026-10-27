@@ -19,7 +19,7 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
     KVCacheQuantizationConfig,
@@ -27,7 +27,7 @@ from max.nn.kv_cache import (
     MLAKVCacheParams,
     MultiKVCacheParams,
 )
-from max.nn.kv_cache.utils import padded_lut_cols
+from max.nn.legacy.kv_cache.utils import padded_lut_cols
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 

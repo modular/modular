@@ -29,7 +29,7 @@ import huggingface_hub
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, load_weights
-from max.nn.kv_cache import KVCacheParams, KVConnectorType
+from max.nn.legacy.kv_cache import KVCacheParams, KVConnectorType
 from max.pipelines.lib import (
     HuggingFaceRepo,
     KVCacheConfig,

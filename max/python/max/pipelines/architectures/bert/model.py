@@ -25,7 +25,7 @@ from typing import Any, ClassVar
 from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,

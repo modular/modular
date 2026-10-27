@@ -32,9 +32,9 @@ from typing import TypeVar
 
 from max.driver import Buffer, Device, is_virtual_device_mode
 from max.graph.weights import WeightData
-from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.layer import Module
-from max.nn.moe import apply_eplb_placement, router_fold_supported
+from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
+from max.nn.legacy.layer import Module
+from max.nn.legacy.moe import apply_eplb_placement, router_fold_supported
 
 from .eplb_stats import (
     EplbPlacement,

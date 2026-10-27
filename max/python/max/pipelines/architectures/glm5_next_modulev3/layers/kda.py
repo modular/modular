@@ -32,8 +32,11 @@ from max.experimental.nn.common_layers.mesh_axis import TP
 from max.experimental.sharding import NamedMapping
 from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorValue, ops
-from max.nn.state_space import gated_delta_conv1d_fwd, kda_decode
-from max.nn.state_space.kimi_delta import KDA_GATE_LOWER_BOUND, KdaGateMode
+from max.nn.legacy.state_space import gated_delta_conv1d_fwd, kda_decode
+from max.nn.legacy.state_space.kimi_delta import (
+    KDA_GATE_LOWER_BOUND,
+    KdaGateMode,
+)
 from max.pipelines.architectures.glm5_next.layers.kimi_delta_attention import (
     STATE_LAYOUT,
 )

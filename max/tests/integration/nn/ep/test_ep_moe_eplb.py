@@ -42,12 +42,12 @@ from max.graph import (
     ops,
 )
 from max.graph.value import TensorValue, Value
-from max.nn.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
-from max.nn.kernels import moe_router_group_limited
-from max.nn.layer import LayerList, Module
-from max.nn.moe import MoE, MoEGate, apply_eplb_placement
-from max.nn.moe.expert_parallel import forward_moe_sharded_layers
-from max.nn.transformer.transformer import forward_sequential_layers
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
+from max.nn.legacy.kernels import moe_router_group_limited
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.moe import MoE, MoEGate, apply_eplb_placement
+from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers
+from max.nn.legacy.transformer.transformer import forward_sequential_layers
 from max.pipelines.lib.eplb_stats import EplbPlacement, EplbTopology
 
 HIDDEN_DIM = 7168

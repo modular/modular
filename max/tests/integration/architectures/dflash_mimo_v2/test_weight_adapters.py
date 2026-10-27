@@ -26,7 +26,7 @@ import torch
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.legacy.kv_cache import MHAKVCacheParams
 from max.pipelines.architectures.dflash_mimo_v2 import (
     DFlashMiMoV2Config,
     convert_safetensor_state_dict,

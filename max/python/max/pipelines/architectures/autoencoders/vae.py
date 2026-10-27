@@ -18,9 +18,9 @@ from itertools import pairwise
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, TensorValue, Weight, ops
 from max.graph.type import FilterLayout
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kernels import flash_attention_gpu
-from max.nn.layer import LayerList, Module
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.kernels import flash_attention_gpu
+from max.nn.legacy.layer import LayerList, Module
 
 from .model_config import AutoencoderKLWanConfig
 

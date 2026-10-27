@@ -25,7 +25,7 @@ from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.nn.common_layers.quant_linear import QuantizedMLP
 from max.experimental.nn.common_layers.quant_moe import QuantizedMoE
 from max.experimental.tensor import Tensor, default_dtype
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.kv_cache import KVCacheParams
 from max.pipelines.architectures.laguna.model_config import (
     LagunaConfig,
     LagunaLayerSchedule,

@@ -31,8 +31,8 @@ from max.experimental.nn.norm import RMSNorm
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import ops
-from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheParamInterface, MultiKVCacheParams
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.lib import ModuleV3Outputs
 
 from .layers.attention import FlintAttention

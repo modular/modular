@@ -32,13 +32,13 @@ from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     fused_chunked_qkv_rope_store_ragged,
     fused_qk_ragged_rope,
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
-from max.nn.kv_cache import MHAKVCacheParams, SplitKVHeadDims
+from max.nn.legacy.kv_cache import MHAKVCacheParams, SplitKVHeadDims
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 K_DIM = 192

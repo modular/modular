@@ -28,13 +28,13 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn.attention import MHAMaskVariant
-from max.nn.kernels import flash_attention_ragged
-from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
-from max.nn.layer import Module, Shardable
-from max.nn.linear import Linear
-from max.nn.norm import RMSNorm
-from max.nn.stacked_linear import StackedLinear
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kernels import flash_attention_ragged
+from max.nn.legacy.kv_cache import MHAKVCacheParams, PagedCacheValues
+from max.nn.legacy.layer import Module, Shardable
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.stacked_linear import StackedLinear
 
 from ..model_config import InklingTextConfig
 from .short_convolution import (

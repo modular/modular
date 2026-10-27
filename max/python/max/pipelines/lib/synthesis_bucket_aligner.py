@@ -41,7 +41,7 @@ import bisect
 import logging
 from dataclasses import replace
 
-from max.nn.kv_cache import BatchCharacteristics, KVCacheParamInterface
+from max.nn.legacy.kv_cache import BatchCharacteristics, KVCacheParamInterface
 
 logger = logging.getLogger("max.pipelines")
 

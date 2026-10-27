@@ -32,7 +32,7 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, TensorValue, TensorValueLike, ops
-from max.nn.rotary_embedding import (
+from max.nn.legacy.rotary_embedding import (
     YarnRotaryEmbedding,
     YarnScalingParams,
     _yarn_find_correction_range,
@@ -107,7 +107,7 @@ class LagunaYarnPartialRotaryEmbedding(YarnRotaryEmbedding):
     The emitted table still spans the full ``head_dim``: the real angles are
     followed by identity pairs for the lanes the reference passes through. With
     ``partial_rotary_factor == 1.0`` there are no such lanes and this class
-    reduces to :class:`~max.nn.rotary_embedding.YarnRotaryEmbedding`.
+    reduces to :class:`~max.nn.legacy.rotary_embedding.YarnRotaryEmbedding`.
 
     Args:
         dim: The model's hidden dimension.

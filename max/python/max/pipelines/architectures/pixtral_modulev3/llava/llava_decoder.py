@@ -21,11 +21,11 @@ from max.experimental.nn.norm import RMSNorm
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import ops
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     PagedCacheValues,
 )
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 
 from ...llama3_modulev3.layers.transformer_block import LlamaTransformerBlock
 

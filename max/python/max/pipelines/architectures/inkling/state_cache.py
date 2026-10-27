@@ -15,7 +15,7 @@ conv site per layer per device. The K and V sites are channel-sharded with
 the qkvr projection; the two residual sites are full width on every rank.
 
 A slot is a ring of conv inputs indexed by position; see
-:mod:`max.nn.state_space.short_conv_ring`. It holds
+:mod:`max.nn.legacy.state_space.short_conv_ring`. It holds
 ``kernel_size - 1 + num_draft_tokens`` entries, enough history for a chunk
 that starts after rolling back every draft token.
 
@@ -30,7 +30,7 @@ from enum import IntEnum
 from typing import TYPE_CHECKING, Final
 
 from max.dtype import DType
-from max.nn.kv_cache import RecurrentStateRegion
+from max.nn.legacy.kv_cache import RecurrentStateRegion
 from typing_extensions import Self
 
 if TYPE_CHECKING:

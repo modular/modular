@@ -127,8 +127,8 @@ def set_seed(value: int) -> None:
 
 def _signal_bytes() -> int:
     """Returns the size in bytes of one signal buffer."""
-    # Imported here because ``max.nn`` depends on this package.
-    from max.nn.comm.allreduce import (  # type: ignore[import-not-found]
+    # Imported here because ``max.nn.legacy`` depends on this package.
+    from max.nn.legacy.comm.allreduce import (  # type: ignore[import-not-found]
         Signals,
     )
 
@@ -137,7 +137,7 @@ def _signal_bytes() -> int:
 
 def _allocate_signals(device_ids: tuple[int, ...]) -> list[driver.Buffer]:
     """Allocates and initializes one signal buffer per device."""
-    from max.nn.comm.allreduce import Signals
+    from max.nn.legacy.comm.allreduce import Signals
 
     return Signals.allocate([driver.Accelerator(id=i) for i in device_ids])
 

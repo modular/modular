@@ -26,10 +26,10 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn.kernels import moe_finalize, moe_sink_gate_router
-from max.nn.layer import LayerList
-from max.nn.moe import MoEGate, MoEQuantized
-from max.nn.quant_config import fp4_packed_k
+from max.nn.legacy.kernels import moe_finalize, moe_sink_gate_router
+from max.nn.legacy.layer import LayerList
+from max.nn.legacy.moe import MoEGate, MoEQuantized
+from max.nn.legacy.quant_config import fp4_packed_k
 from max.support.math import ceildiv
 from typing_extensions import Self
 

@@ -30,7 +30,7 @@ from max.driver import Accelerator
 from max.dtype import DType
 from max.experimental.tensor import Tensor, default_device
 from max.graph import DeviceRef
-from max.nn.kv_cache import MHAKVCacheParams, MLAKVCacheParams
+from max.nn.legacy.kv_cache import MHAKVCacheParams, MLAKVCacheParams
 from max.pipelines.architectures.kimi_k3_modulev3.layers.decoder_layer import (
     KimiK3DecoderLayer,
 )

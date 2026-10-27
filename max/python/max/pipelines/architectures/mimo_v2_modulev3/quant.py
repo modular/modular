@@ -21,7 +21,7 @@ is a ModuleV3 concern (the graph-API architecture has no EP path).
 from __future__ import annotations
 
 from max.dtype import DType
-from max.nn.quant_config import (
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

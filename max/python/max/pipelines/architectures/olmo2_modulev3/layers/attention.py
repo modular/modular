@@ -28,8 +28,8 @@ from max.experimental.nn.common_layers.functional_kernels import (
 from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.experimental.nn.linear import Linear
 from max.experimental.tensor import Tensor
-from max.nn.attention import MHAMaskVariant
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
 
 from .rms_norm import Olmo2RMSNorm
 

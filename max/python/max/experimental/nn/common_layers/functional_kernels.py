@@ -28,89 +28,89 @@ from max.experimental.sharding.cost import P, R
 from max.experimental.sharding.types import TensorLayout
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
-from max.nn.activation import GatedActivation
-from max.nn.comm.ep.ep_kernels import (
+from max.nn.legacy.activation import GatedActivation
+from max.nn.legacy.comm.ep.ep_kernels import (
     fused_silu as _fused_silu,
 )
-from max.nn.comm.ep.ep_kernels import (
+from max.nn.legacy.comm.ep.ep_kernels import (
     fused_silu_quantized as _fused_silu_quantized,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     _moe_sigmoid_gemv_router,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     flare_mla_prefill_plan as _flare_mla_prefill_plan,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     flash_attention_gpu as _flash_attention_gpu,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     flash_attention_ragged as _flash_attention_ragged,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     flash_attention_ragged_gpu as _flash_attention_ragged_gpu,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     fused_chunked_qkv_rope_store_ragged as _fused_chunked_qkv_rope_store_ragged,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     fused_qk_ragged_rope as _fused_qk_ragged_rope,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     grouped_matmul_ragged as _grouped_matmul_ragged,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     hyper_connection_gates as _hyper_connection_gates,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     mhc_post as _mhc_post,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     mla_decode_graph as _mla_decode_graph,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     mla_fp8_index_top_k as _mla_fp8_index_top_k,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     mla_fp8_index_top_k_physical as _mla_fp8_index_top_k_physical,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     mla_prefill_decode_graph as _mla_prefill_decode_graph,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     mla_prefill_graph as _mla_prefill_graph,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     moe_create_indices as _moe_create_indices,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     moe_finalize as _moe_finalize,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     moe_router_group_limited as _moe_router_group_limited,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     mtp_eh_norm as _mtp_eh_norm,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     quantize_dynamic_scaled_float8 as _quantize_dynamic_scaled_float8,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     rms_norm_key_cache as _rms_norm_key_cache,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     rope_ragged as _rope_ragged,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     rope_split_store_ragged as _rope_split_store_ragged,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     store_k_cache_ragged as _store_k_cache_ragged,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     store_k_scale_cache_ragged as _store_k_scale_cache_ragged,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     store_v_cache_ragged as _store_v_cache_ragged,
 )
 

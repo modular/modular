@@ -29,7 +29,7 @@ from max.experimental.nn.norm.rms_norm import rms_norm
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
-from max.nn.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
 
 
 @dataclass(frozen=True)

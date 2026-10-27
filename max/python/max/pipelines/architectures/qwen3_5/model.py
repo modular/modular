@@ -24,7 +24,7 @@ from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph.buffer_utils import cast_tensors_to
-from max.nn.kv_cache import KVCacheParamInterface, recurrent_leaf
+from max.nn.legacy.kv_cache import KVCacheParamInterface, recurrent_leaf
 from max.pipelines.context import ImageMetadata
 from max.pipelines.lib import (
     ModelInputs,

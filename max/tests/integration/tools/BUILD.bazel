@@ -26,7 +26,7 @@ modular_py_library(
     ],
     deps = [
         "//max/python/max/experimental/nn",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/lib",
         requirement("transformers"),
     ],
@@ -473,7 +473,7 @@ modular_py_test(
     }),
     deps = [
         "//max/python/max/experimental/nn",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/tools:hf_config_overrides",
         requirement("transformers"),

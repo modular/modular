@@ -26,7 +26,7 @@ import torch  # type: ignore[import-not-found]
 from max.driver import Accelerator, Buffer, DLPackArray
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn import RMSNorm
+from max.nn.legacy import RMSNorm
 
 from testbed.dtypes import DTYPE_MAP
 from testbed.harness import CompiledLayerBundle, LayerTestHarness

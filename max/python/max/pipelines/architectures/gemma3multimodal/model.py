@@ -24,7 +24,7 @@ from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,

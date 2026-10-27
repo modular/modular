@@ -62,7 +62,7 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     _is_apple_gpu,
     block_scales_interleave,
     grouped_matmul_block_scaled,
@@ -70,9 +70,9 @@ from max.nn.kernels import (
     moe_router_group_limited,
     quantize_dynamic_scaled_float8,
 )
-from max.nn.layer import LayerList, Module
-from max.nn.linear import Linear
-from max.nn.quant_config import QuantConfig, ceildiv
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.quant_config import QuantConfig, ceildiv
 
 from ..model_config import DeepseekV4Config
 from .quantization import LINEAR_QUANT_BLOCK, linear_for

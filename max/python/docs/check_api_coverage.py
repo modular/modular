@@ -30,8 +30,8 @@ Public scoping rules (mirroring the docs build's filtering in
   re-exported via an ancestor ``__init__.py``. Top-level non-underscore
   names with no such declaration are AMBIGUOUS.
 * A symbol re-exported by a parent ``__init__.py`` is canonicalized to
-  that parent (e.g. ``max.nn.linear.Linear`` -> ``max.nn.Linear`` when
-  ``max.nn`` re-exports ``Linear`` from ``.linear``).
+  that parent (e.g. ``max.nn.legacy.linear.Linear`` -> ``max.nn.legacy.Linear`` when
+  ``max.nn.legacy`` re-exports ``Linear`` from ``.linear``).
 
 The script intentionally has no third-party dependencies so it can run in
 a minimal CI image without installing the project.
@@ -148,7 +148,7 @@ class _ReExport:
 def _parse_reexports(source: str, package: str) -> dict[str, _ReExport]:
     """For an ``__init__.py``, return ``{local_name: _ReExport}``.
 
-    ``from .foo import Bar`` in package ``max.nn`` records
+    ``from .foo import Bar`` in package ``max.nn.legacy`` records
     ``Bar -> max.nn.foo`` (implicit). ``from .foo import Bar as Bar``
     is flagged ``explicit=True`` (PEP 484 re-export). Star imports are
     skipped.
@@ -388,6 +388,64 @@ def snapshot_at(ref: str) -> ApiSnapshot:
             snap.ambiguous[mod] = names
 
     return snap
+
+
+def module_renames(base_ref: str, head_ref: str) -> dict[str, str]:
+    """Map base module -> head module for files git detects as renamed.
+
+    Without this, moving a package reports every name it holds as added,
+    along with whatever was already undeclared or undocumented there.
+    """
+    result = subprocess.run(
+        [
+            "git",
+            "diff",
+            "--name-status",
+            # git's 50% default pairs unrelated small __init__.py files, which
+            # would hide a genuinely new module. Moves only rewrite imports.
+            "--find-renames=80%",
+            "--diff-filter=R",
+            # 0 lifts the rename-detection file limit; a package move can
+            # exceed git's default.
+            "-l0",
+            base_ref,
+            head_ref,
+            "--",
+            str(PACKAGE_ROOT),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    renames: dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        _, old, new = line.split("\t")
+        old_mod = _module_path_for(Path(old))
+        new_mod = _module_path_for(Path(new))
+        if old_mod and new_mod and old_mod != new_mod:
+            renames[old_mod] = new_mod
+    return renames
+
+
+def follow_renames(snap: ApiSnapshot, renames: dict[str, str]) -> ApiSnapshot:
+    """Re-keys a base snapshot as if its renamed modules had their new paths."""
+    if not renames:
+        return snap
+    # Longest first, so a renamed subpackage wins over its renamed parent.
+    olds = sorted(renames, key=len, reverse=True)
+
+    def rename(name: str) -> str:
+        for old in olds:
+            if name == old or name.startswith(old + "."):
+                return renames[old] + name[len(old) :]
+        return name
+
+    return ApiSnapshot(
+        symbols={rename(k): rename(v) for k, v in snap.symbols.items()},
+        module_alls={rename(k): v for k, v in snap.module_alls.items()},
+        ambiguous={rename(k): v for k, v in snap.ambiguous.items()},
+        module_files=snap.module_files,
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -724,7 +782,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    base = snapshot_at(args.base_ref)
+    base = follow_renames(
+        snapshot_at(args.base_ref),
+        module_renames(args.base_ref, args.head_ref),
+    )
     head = snapshot_at(args.head_ref)
     documented, documented_modules = documented_symbols_at(args.head_ref, head)
     report = diff_snapshots(base, head, documented, documented_modules)

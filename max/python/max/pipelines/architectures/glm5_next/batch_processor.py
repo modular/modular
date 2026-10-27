@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from max import tree
 from max.driver import Buffer
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache import KVCacheInputs
 from max.pipelines.architectures.deepseekV3.batch_processor import (
     DeepseekV3BatchProcessorBase,
 )

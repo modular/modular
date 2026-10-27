@@ -20,7 +20,7 @@ from typing import cast
 
 import pytest
 from max._kv_core import longest_joint_prefix_hit
-from max.nn.kv_cache import KVCacheGroupId
+from max.nn.legacy.kv_cache import KVCacheGroupId
 from max.pipelines.kv_cache.paged_kv_cache.block_utils import LittleKVCacheBlock
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_manager import (
     JengaBlockManager,

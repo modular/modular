@@ -18,7 +18,7 @@ from collections.abc import Sequence
 from math import lcm
 
 from max.dtype import DType
-from max.nn.kv_cache import RecurrentStateRegion
+from max.nn.legacy.kv_cache import RecurrentStateRegion
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_pool import (
     compute_jenga_ratios,
 )

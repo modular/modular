@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from max import tree
 from max.driver import Buffer
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache import KVCacheInputs
 
 from ..unified_mtp_glm5_2.batch_processor import UnifiedMTPGlm5_2BatchProcessor
 from ..unified_mtp_glm5_2.model import UnifiedMTPGlm5_2Inputs

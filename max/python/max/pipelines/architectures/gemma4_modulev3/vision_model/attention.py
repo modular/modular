@@ -22,7 +22,7 @@ from max.experimental.nn.common_layers.functional_kernels import (
 )
 from max.experimental.nn.linear import Linear
 from max.experimental.tensor import Tensor
-from max.nn.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     apply_multidimensional_rope as _apply_multidimensional_rope,
 )

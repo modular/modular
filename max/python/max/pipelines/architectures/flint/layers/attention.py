@@ -35,8 +35,8 @@ from max.experimental.nn.common_layers.rotary_embedding import (
 )
 from max.experimental.nn.norm.rms_norm import rms_norm
 from max.experimental.tensor import Tensor
-from max.nn.attention import MHAMaskVariant
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kv_cache import KVCacheParams
 
 
 class FlintAttention(Module[..., Tensor]):

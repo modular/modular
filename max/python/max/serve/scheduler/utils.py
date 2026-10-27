@@ -21,7 +21,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field, fields
 from typing import NamedTuple, TypeVar
 
-from max.nn.kv_cache.metrics import dkv_tier_degraded
+from max.nn.legacy.kv_cache.metrics import dkv_tier_degraded
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import (
     JengaKVCacheManager,

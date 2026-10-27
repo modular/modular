@@ -36,7 +36,7 @@ from max import tree
 from max.driver import Buffer, DeviceSpec, load_devices
 from max.engine import InferenceSession
 from max.graph.weights import SafetensorWeights
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,

@@ -25,7 +25,7 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.graph import Module as GraphModule
-from max.nn.layer import Module
+from max.nn.legacy.layer import Module
 from max.pipelines.lib.compiled_component import CompiledComponent
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.profiler import traced

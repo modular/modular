@@ -9,7 +9,7 @@ modular_py_library(
     # Several examples compile models; shard to stay under the 800s CI clamp.
     docstring_example_shard_count = 4,
     docstring_example_test_rule = modular_eager_py_test,
-    # numpy and support are used transitively through max.nn, not directly
+    # numpy and support are used transitively through max.nn.legacy, not directly
     # imported in experimental/nn files.
     ignore_extra_deps = [
         requirement("numpy"),
@@ -26,7 +26,7 @@ modular_py_library(
         "//max/python/max/engine",
         "//max/python/max/experimental",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/profiler",
         "//max/python/max/support",
     ],

@@ -44,7 +44,7 @@ infrastructure, including batching, caching, compilation, and serving.
 
 ## The packages pipelines build on
 
-Pipelines build on [`max.nn`](/api/python/nn/),
+Pipelines build on [`max.nn.legacy`](/api/python/nn.legacy/),
 [`max.experimental.nn`](/api/python/experimental.nn/), and
 [`max.pipelines.kv_cache`](/api/python/pipelines.kv_cache/).
 
@@ -71,8 +71,8 @@ ModuleV3 architectures. It includes common components like:
 - **Attention**:
   [`AttentionWithRope`](/api/python/generated/max.experimental.nn.common_layers.attention.AttentionWithRope/).
 
-The [`max.nn`](/api/python/nn/) package builds MAX graphs directly and backs
-architectures written against it. To port one to ModuleV3, see
+The [`max.nn.legacy`](/api/python/nn.legacy/) package builds MAX graphs directly
+and backs architectures written against it. To port one to ModuleV3, see
 [Migrate an existing architecture to ModuleV3](/develop/model-bringup-skills/#migrate-an-existing-architecture-to-modulev3).
 
 The [`Module`](/api/python/generated/max.experimental.nn.Module/) base class in
@@ -131,7 +131,8 @@ pipeline builds the cache parameters with your architecture config's
 Understanding the relationship between modules and pipelines is key to working
 with MAX. When you build a model for the pipeline system, define your
 architecture as a module, using either the graph API
-([`max.nn.Module`](/api/python/generated/max.nn.Module/)) or the ModuleV3 API
+([`max.nn.legacy.Module`](/api/python/generated/max.nn.legacy.Module/)) or the
+ModuleV3 API
 ([`max.experimental.nn.Module`](/api/python/generated/max.experimental.nn.Module/)).
 MAX then compiles your module into an optimized executable for the target
 device, and the pipeline orchestrates execution.
@@ -141,7 +142,7 @@ Here's the workflow:
 1. **Define your model**: Create a module that defines your model
    architecture. The module's computation method defines what happens when
    processing inputs:
-   [`__call__()`](/api/python/generated/max.nn.Module/)
+   [`__call__()`](/api/python/generated/max.nn.legacy.Module/)
    for the graph API, or
    [`forward()`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.forward)
    for the ModuleV3 API.
@@ -157,7 +158,7 @@ Here's the workflow:
    method, samples output tokens, and returns results.
 
 This separation lets you work at the right level of abstraction: use
-[`max.nn`](/api/python/nn/) or
+[`max.nn.legacy`](/api/python/nn.legacy/) or
 [`max.experimental.nn`](/api/python/experimental.nn/) to define model
 architectures, let MAX handle compilation, and rely on pipelines for
 production serving.
@@ -500,9 +501,9 @@ The base class delegates the following through `model_config_cls`:
   `get_kv_params()` delegates to it. Architectures with multiple or hybrid
   caches (for example, separate sliding-window and full-attention caches) return
   a
-  [`MultiKVCacheParams`](/api/python/generated/max.nn.kv_cache.MultiKVCacheParams/)
+  [`MultiKVCacheParams`](/api/python/generated/max.nn.legacy.kv_cache.MultiKVCacheParams/)
   tree instead, which the cache manager consumes through the shared
-  [`KVCacheParamInterface`](/api/python/generated/max.nn.kv_cache.KVCacheParamInterface/).
+  [`KVCacheParamInterface`](/api/python/generated/max.nn.legacy.kv_cache.KVCacheParamInterface/).
 
 You can override `calculate_max_seq_len()` (on the architecture config) or
 `get_kv_params()` if needed.

@@ -25,7 +25,7 @@ from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, ops
-from max.nn import kernels
+from max.nn.legacy import kernels
 
 
 def _build_fill_with_42_graph(

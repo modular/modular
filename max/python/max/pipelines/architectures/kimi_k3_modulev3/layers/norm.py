@@ -20,7 +20,7 @@ normalizes in fp32 (``b_x_hat = b_x * b_rstd``), multiplies by the weight
 (``b_y = b_y * tl.sigmoid(b_g)``), with a single cast to the output dtype at
 the store. Weight-multiply strictly precedes the gate -- this is why K3's own
 V2 code (``kimi_k3/layers/norm.py``) builds it from the general
-``ops.rms_norm`` primitive rather than ``max.nn.state_space.gated_group_rmsnorm``,
+``ops.rms_norm`` primitive rather than ``max.nn.legacy.state_space.gated_group_rmsnorm``,
 whose kernel gates the INPUT (with ``silu``, before normalizing) rather than
 the weighted output (with ``sigmoid``) -- a genuinely different operation, not
 an interchangeable fused form of the same math.

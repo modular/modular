@@ -24,7 +24,7 @@ from max.driver import (
     Usage,
 )
 from max.dtype import DType
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache import KVCacheInputs
 from max.pipelines.architectures.llama3.batch_processor import (
     Llama3EpBatchProcessorBase,
 )

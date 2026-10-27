@@ -28,7 +28,7 @@ from max.experimental import functional as F
 from max.experimental.tensor import default_dtype
 from max.graph.buffer_utils import cast_tensor_to
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     GraphRole,

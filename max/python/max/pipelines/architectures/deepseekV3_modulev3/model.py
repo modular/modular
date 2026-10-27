@@ -24,14 +24,14 @@ from max.experimental.sharding import DeviceMesh
 from max.experimental.tensor import default_device
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
-from max.nn.comm.ep import (
+from max.nn.legacy.comm.ep import (
     EPBatchManager,
     EPCommInitializer,
     EPConfig,
     calculate_ep_max_tokens_per_rank,
 )
-from max.nn.kv_cache import KVCacheParamInterface
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheParamInterface
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,

@@ -35,11 +35,11 @@ from max.graph import (
     ops,
 )
 from max.graph.weights import WeightData
-from max.nn.attention import MHAMaskVariant
-from max.nn.kernels import flash_attention_ragged
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.linear import MLP, Linear
-from max.nn.transformer.transformer import forward_sharded_layers
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kernels import flash_attention_ragged
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.linear import MLP, Linear
+from max.nn.legacy.transformer.transformer import forward_sharded_layers
 from typing_extensions import Self
 
 from .context_writer import (

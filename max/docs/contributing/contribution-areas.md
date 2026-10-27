@@ -71,7 +71,7 @@ To find a place to start, see the
 
 The framework is the Python API for building and running models:
 [`max/python/max/graph`](/max/python/max/graph),
-[`max/python/max/nn`](/max/python/max/nn),
+[`max/python/max/nn/legacy`](/max/python/max/nn/legacy),
 [`max/python/max/engine`](/max/python/max/engine), and the APIs under
 development in [`max/python/max/experimental`](/max/python/max/experimental).
 We accept bug fixes only.

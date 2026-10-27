@@ -20,7 +20,7 @@ from unittest.mock import Mock
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.legacy.kv_cache import MHAKVCacheParams
 from max.pipelines.architectures.gpt_oss.hybrid_kv_params_util import (
     hybrid_swa_full_kv_params,
 )

@@ -34,7 +34,7 @@ from max.experimental.nn.conv import Conv2d
 from max.experimental.sharding import AxisAssignment, replicated_rows
 from max.experimental.sharding.types import TensorLayout
 from max.experimental.tensor import Tensor
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     learnable_2d_interp_pos_emb as _learnable_2d_interp_pos_emb,
 )
 

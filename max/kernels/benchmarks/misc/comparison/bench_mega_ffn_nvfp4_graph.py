@@ -43,7 +43,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     grouped_matmul_block_scaled,
     grouped_matmul_blocked_swiglu,
 )
@@ -253,7 +253,7 @@ class Inputs:
             _gpu(self.es_down),
             _gpu(self.c_input_scales),
             # Mirrors the host values serving binds: the usage stats
-            # `max/python/max/nn/moe/quant_strategy.py` puts in place of the
+            # `max/python/max/nn/legacy/moe/quant_strategy.py` puts in place of the
             # dispatch's device ones, and the token estimate from
             # `expert_parallel.py` (tokens * top_k over the GPUs per node,
             # which is the EP degree here).
