@@ -253,106 +253,6 @@
           "items": [
             {
               "type": "category",
-              "label": "compilation",
-              "link": {
-                "type": "doc",
-                "id": "api/python/experimental.compilation"
-              },
-              "items": [
-                "__AUTOGEN:max.experimental.compilation__"
-              ]
-            },
-            {
-              "type": "category",
-              "label": "custom",
-              "link": {
-                "type": "doc",
-                "id": "api/python/experimental.custom"
-              },
-              "items": [
-                "__AUTOGEN:max.experimental.custom__"
-              ]
-            },
-            {
-              "type": "category",
-              "label": "executor",
-              "link": {
-                "type": "doc",
-                "id": "api/python/experimental.executor"
-              },
-              "items": [
-                "__AUTOGEN:max.experimental.executor__"
-              ]
-            },
-            "api/python/experimental.functional",
-            {
-              "type": "category",
-              "label": "random",
-              "link": {
-                "type": "doc",
-                "id": "api/python/experimental.random"
-              },
-              "items": [
-                "__AUTOGEN:max.experimental.random__"
-              ]
-            },
-            {
-              "type": "category",
-              "label": "realization_context",
-              "link": {
-                "type": "doc",
-                "id": "api/python/experimental.realization_context"
-              },
-              "items": [
-                "__AUTOGEN:max.experimental.realization_context__"
-              ]
-            },
-            {
-              "type": "category",
-              "label": "sharding",
-              "link": {
-                "type": "doc",
-                "id": "api/python/experimental.sharding"
-              },
-              "items": [
-                "__AUTOGEN:max.experimental.sharding__"
-              ]
-            },
-            {
-              "type": "category",
-              "label": "sharding.per_shard_dim",
-              "link": {
-                "type": "doc",
-                "id": "api/python/experimental.sharding.per_shard_dim"
-              },
-              "items": [
-                "__AUTOGEN:max.experimental.sharding.per_shard_dim__"
-              ]
-            },
-            {
-              "type": "category",
-              "label": "tensor",
-              "link": {
-                "type": "doc",
-                "id": "api/python/experimental.tensor"
-              },
-              "items": [
-                "__AUTOGEN:max.experimental.tensor__"
-              ]
-            },
-            {
-              "type": "category",
-              "label": "testing",
-              "link": {
-                "type": "doc",
-                "id": "api/python/experimental.testing"
-              },
-              "items": [
-                "__AUTOGEN:max.experimental.testing__"
-              ]
-            },
-            {
-              "type": "category",
               "label": "torch",
               "link": {
                 "type": "doc",
@@ -362,18 +262,39 @@
                 "__AUTOGEN:max.experimental.torch__"
               ]
             },
+            "__AUTOGEN:max.experimental__"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "max.functional",
+          "link": {
+            "type": "doc",
+            "id": "api/python/functional"
+          },
+          "items": [
             {
               "type": "category",
-              "label": "validation",
+              "label": "custom_op",
               "link": {
                 "type": "doc",
-                "id": "api/python/experimental.validation"
+                "id": "api/python/functional.custom_op"
               },
               "items": [
-                "__AUTOGEN:max.experimental.validation__"
+                "__AUTOGEN:max.functional.custom_op__"
               ]
             },
-            "__AUTOGEN:max.experimental__"
+            {
+              "type": "category",
+              "label": "random",
+              "link": {
+                "type": "doc",
+                "id": "api/python/functional.random"
+              },
+              "items": [
+                "__AUTOGEN:max.functional.random__"
+              ]
+            }
           ]
         },
         {
@@ -1031,6 +952,94 @@
               ]
             },
             "__AUTOGEN:max.support__"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "max.tensor",
+          "link": {
+            "type": "doc",
+            "id": "api/python/tensor"
+          },
+          "items": [
+            {
+              "type": "category",
+              "label": "compilation",
+              "link": {
+                "type": "doc",
+                "id": "api/python/tensor.compilation"
+              },
+              "items": [
+                "__AUTOGEN:max.tensor.compilation__"
+              ]
+            },
+            {
+              "type": "category",
+              "label": "executor",
+              "link": {
+                "type": "doc",
+                "id": "api/python/tensor.executor"
+              },
+              "items": [
+                "__AUTOGEN:max.tensor.executor__"
+              ]
+            },
+            {
+              "type": "category",
+              "label": "realization_context",
+              "link": {
+                "type": "doc",
+                "id": "api/python/tensor.realization_context"
+              },
+              "items": [
+                "__AUTOGEN:max.tensor.realization_context__"
+              ]
+            },
+            {
+              "type": "category",
+              "label": "sharding",
+              "link": {
+                "type": "doc",
+                "id": "api/python/tensor.sharding"
+              },
+              "items": [
+                "__AUTOGEN:max.tensor.sharding__"
+              ]
+            },
+            {
+              "type": "category",
+              "label": "sharding.per_shard_dim",
+              "link": {
+                "type": "doc",
+                "id": "api/python/tensor.sharding.per_shard_dim"
+              },
+              "items": [
+                "__AUTOGEN:max.tensor.sharding.per_shard_dim__"
+              ]
+            },
+            {
+              "type": "category",
+              "label": "testing",
+              "link": {
+                "type": "doc",
+                "id": "api/python/tensor.testing"
+              },
+              "items": [
+                "__AUTOGEN:max.tensor.testing__"
+              ]
+            },
+            {
+              "type": "category",
+              "label": "validation",
+              "link": {
+                "type": "doc",
+                "id": "api/python/tensor.validation"
+              },
+              "items": [
+                "__AUTOGEN:max.tensor.validation__"
+              ]
+            },
+            "__AUTOGEN:max.tensor__"
           ]
         },
         {

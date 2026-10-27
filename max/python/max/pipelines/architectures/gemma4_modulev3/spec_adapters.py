@@ -21,8 +21,6 @@ from __future__ import annotations
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
-from max.experimental.sharding import DeviceMapping
-from max.experimental.tensor import Tensor
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.legacy.transformer import ReturnHiddenStates
 from max.pipelines.speculative.block_driver import BlockBatch
@@ -33,6 +31,8 @@ from max.pipelines.speculative.driver import (
 )
 from max.pipelines.speculative.spec_adapters.target_adapter import TargetAdapter
 from max.pipelines.speculative.spec_target import Verified
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping
 
 from .gemma4 import Gemma4TextModel
 

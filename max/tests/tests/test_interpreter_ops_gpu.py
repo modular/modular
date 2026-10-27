@@ -26,6 +26,7 @@ import numpy as np
 import pytest
 import torch
 from max import _interpreter
+from max import functional as F
 from max._interpreter_ops import GC_FAMILIES, adopted_from_store
 from max._interpreter_ops.handlers import (
     _handle_squeeze_shape,
@@ -34,39 +35,38 @@ from max._interpreter_ops.handlers import (
 )
 from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental import random as max_random
-from max.experimental import realization_context as rc
-from max.experimental.executor import (
+from max.functional import (
+    allgather as all_gather,
+)
+from max.functional import (
+    allreduce_sum as all_reduce_sum,
+)
+from max.functional import random as max_random
+from max.functional import (
+    reduce_scatter,
+)
+from max.functional import (
+    transfer_to as df_shard,
+)
+from max.graph import BufferType as GBufferType
+from max.graph import DeviceRef, Graph, TensorType
+from max.graph import Type as GType
+from max.graph import ops as graph_ops
+from max.graph.ops import CoordinateTransformMode, RoundMode
+from max.tensor import realization_context as rc
+from max.tensor.executor import (
     InterpreterExecutor,
     set_default_executor,
 )
-from max.experimental.functional import (
-    allgather as all_gather,
-)
-from max.experimental.functional import (
-    allreduce_sum as all_reduce_sum,
-)
-from max.experimental.functional import (
-    reduce_scatter,
-)
-from max.experimental.functional import (
-    transfer_to as df_shard,
-)
-from max.experimental.realization_context import set_seed
-from max.experimental.sharding import (
+from max.tensor.realization_context import set_seed
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Partial,
     Replicated,
     Sharded,
 )
-from max.experimental.tensor import Tensor, realization_context
-from max.graph import BufferType as GBufferType
-from max.graph import DeviceRef, Graph, TensorType
-from max.graph import Type as GType
-from max.graph import ops as graph_ops
-from max.graph.ops import CoordinateTransformMode, RoundMode
+from max.tensor.tensor import Tensor, realization_context
 
 
 @pytest.fixture(autouse=True)
@@ -3730,7 +3730,7 @@ class TestScatterNdGPU:
     def test_2d_row_scatter(self) -> None:
         """Test scatter_nd on a 2D GPU tensor with 1-D partial indexing."""
         import numpy as np
-        from max.experimental.tensor import Tensor, realization_context
+        from max.tensor.tensor import Tensor, realization_context
 
         x_torch = torch.tensor(
             [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]],
@@ -3765,7 +3765,7 @@ class TestScatterNdGPU:
     def test_2d_element_scatter(self) -> None:
         """Test scatter_nd on a 2D GPU tensor with full 2-D indexing."""
         import numpy as np
-        from max.experimental.tensor import Tensor, realization_context
+        from max.tensor.tensor import Tensor, realization_context
 
         x_torch = torch.zeros(3, 3, dtype=torch.float32, device="cuda")
         updates_torch = torch.tensor(
@@ -3795,7 +3795,7 @@ class TestScatterNdGPU:
     def test_dtypes(self, dtype: DType) -> None:
         """Test scatter_nd on GPU with float32 and float16 dtypes."""
         import numpy as np
-        from max.experimental.tensor import Tensor, realization_context
+        from max.tensor.tensor import Tensor, realization_context
 
         torch_dtype = {
             DType.float32: torch.float32,
@@ -3873,7 +3873,7 @@ class TestScatterNdReduceGPU:
     def test_reduce_dtypes(self, reduce_op: str, dtype: DType) -> None:
         """scatter_nd reduce on GPU across float and int dtypes."""
         import numpy as np
-        from max.experimental.tensor import Tensor, realization_context
+        from max.tensor.tensor import Tensor, realization_context
 
         torch_dtype = {
             DType.float32: torch.float32,
@@ -3910,7 +3910,7 @@ class TestScatterNdReduceGPU:
     def test_duplicate_indices(self, reduce_op: str) -> None:
         """Two updates hit slot 1; the reducer must fold both, not race."""
         import numpy as np
-        from max.experimental.tensor import Tensor, realization_context
+        from max.tensor.tensor import Tensor, realization_context
 
         # Base + update values chosen so folding both duplicates is observable
         # for each reducer (dropping either changes slot 1).
@@ -4001,7 +4001,7 @@ class TestScatterElementsGPU:
         is no deterministic reference for collisions.
         """
         import numpy as np
-        from max.experimental.tensor import Tensor, realization_context
+        from max.tensor.tensor import Tensor, realization_context
 
         device = Accelerator()
         x_np = np.arange(12, dtype=np.float32).reshape(3, 4)
@@ -4053,7 +4053,7 @@ class TestScatterElementsGPU:
         (axis 1), exercising each reducer's atomic accumulate path.
         """
         import numpy as np
-        from max.experimental.tensor import Tensor, realization_context
+        from max.tensor.tensor import Tensor, realization_context
 
         device = Accelerator()
         x_np = np.arange(12, dtype=np.float32).reshape(3, 4)

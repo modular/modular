@@ -20,14 +20,14 @@ from max import _interpreter
 from max._interpreter_ops import _MO_OP_HANDLERS, register_op_handler
 from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.experimental.executor import (
+from max.graph import Graph, TensorType, ops
+from max.tensor.executor import (
     CompilingExecutor,
     InterpreterExecutor,
     default_executor,
 )
-from max.experimental.realization_context import EagerRealizationContext
-from max.experimental.tensor import Tensor, realization_context
-from max.graph import Graph, TensorType, ops
+from max.tensor.realization_context import EagerRealizationContext
+from max.tensor.tensor import Tensor, realization_context
 
 
 class TestValidateInputs:
@@ -416,28 +416,28 @@ class TestInterpreterMaxOps:
     def test_default_max_ops(self, monkeypatch: Any) -> None:
         """Test that the default max_ops is 1024."""
         monkeypatch.delenv("MAX_INTERPRETER_MAX_OPS", raising=False)
-        from max.experimental.executor import _interpreter_max_ops
+        from max.tensor.executor import _interpreter_max_ops
 
         assert _interpreter_max_ops() == 1024
 
     def test_env_var_overrides_max_ops(self, monkeypatch: Any) -> None:
         """Test that MAX_INTERPRETER_MAX_OPS env var overrides the default."""
         monkeypatch.setenv("MAX_INTERPRETER_MAX_OPS", "5")
-        from max.experimental.executor import _interpreter_max_ops
+        from max.tensor.executor import _interpreter_max_ops
 
         assert _interpreter_max_ops() == 5
 
     def test_env_var_max_ops_2(self, monkeypatch: Any) -> None:
         """Test setting the threshold to 2."""
         monkeypatch.setenv("MAX_INTERPRETER_MAX_OPS", "2")
-        from max.experimental.executor import _interpreter_max_ops
+        from max.tensor.executor import _interpreter_max_ops
 
         assert _interpreter_max_ops() == 2
 
     def test_invalid_env_var_uses_default(self, monkeypatch: Any) -> None:
         """Test that non-numeric env var falls back to default."""
         monkeypatch.setenv("MAX_INTERPRETER_MAX_OPS", "abc")
-        from max.experimental.executor import _interpreter_max_ops
+        from max.tensor.executor import _interpreter_max_ops
 
         assert _interpreter_max_ops() == 1024
 

@@ -21,10 +21,10 @@ modular_py_library(
     srcs = ["_attention_helpers.py"],
     imports = ["."],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/nn/legacy",
@@ -63,11 +63,11 @@ modular_eager_py_test(
     }),
     deps = [
         ":attention_helpers",
+        "//max/python/max:tensor",
         "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/nn/legacy",
@@ -109,11 +109,11 @@ modular_py_test(
     }),
     deps = [
         ":attention_helpers",
+        "//max/python/max:tensor",
         "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/nn/legacy",
@@ -143,9 +143,9 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/pipelines/speculative",
     ],
 )

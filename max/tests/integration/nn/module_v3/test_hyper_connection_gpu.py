@@ -26,9 +26,9 @@ import pytest
 import torch
 from max.driver import CPU, Accelerator, Device
 from max.dtype import DType
-from max.experimental.compilation import CompiledCallable
-from max.experimental.tensor import Tensor, TensorType
 from max.nn import HyperConnection
+from max.tensor.compilation import CompiledCallable
+from max.tensor.tensor import Tensor, TensorType
 from test_common.hyper_connection_reference import hyper_connection_reference
 
 _HC_MULT = 4

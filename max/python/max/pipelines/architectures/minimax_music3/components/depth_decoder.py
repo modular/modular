@@ -31,10 +31,10 @@ from __future__ import annotations
 
 import math
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.nn import Embedding, Linear, Module, ModuleList, RMSNorm
+from max.tensor import Tensor
 
 from ..model_config import DepthDecoderConfig
 

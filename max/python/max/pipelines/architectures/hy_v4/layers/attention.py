@@ -28,11 +28,9 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from max import functional as F
 from max.driver import CPU, Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMapping, DeviceMesh, NamedMapping
-from max.experimental.tensor import Tensor
 from max.nn import Linear, Module
 from max.nn.common_layers import quant_ops
 from max.nn.common_layers.functional_kernels import (
@@ -46,6 +44,8 @@ from max.nn.common_layers.quant_linear import QuantizedLinear
 from max.nn.legacy.attention import MHAMaskVariant
 from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.norm import RMSNorm
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, DeviceMesh, NamedMapping
 from typing_extensions import Self
 
 from ..model_config import HYV4Config

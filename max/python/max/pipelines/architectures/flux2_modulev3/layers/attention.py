@@ -21,9 +21,8 @@ rewrap pair.
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.nn import Module
 from max.nn.legacy.attention.mask_config import MHAMaskVariant
 from max.nn.legacy.kernels import (
@@ -33,6 +32,7 @@ from max.nn.legacy.kernels import (
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
 from max.nn.sequential import ModuleList
+from max.tensor import Tensor
 
 
 def _apply_flux2_qk_rope(

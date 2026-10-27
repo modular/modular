@@ -15,15 +15,15 @@ from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
 
+from max import functional as F
 from max.driver import Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights
 from max.nn import Module
 from max.pipelines.lib import SupportedEncoding
 from max.profiler import traced
+from max.tensor import Tensor
 
 from .model import BaseAutoencoderModel
 from .model_config import AutoencoderKLFlux2Config

@@ -15,9 +15,8 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.nn import Linear
 from max.nn.common_layers.functional_kernels import (
     grouped_matmul_ragged,
@@ -27,6 +26,7 @@ from max.nn.common_layers.functional_kernels import (
 from max.nn.common_layers.moe import MoEGate
 from max.nn.module import Module
 from max.nn.sequential import ModuleList
+from max.tensor import Tensor
 
 from ..model_config import GptOssConfig
 

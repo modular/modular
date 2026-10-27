@@ -16,23 +16,23 @@ from __future__ import annotations
 
 from typing import Literal
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental import random
-from max.experimental.sharding import (
-    DeviceMapping,
-    Partial,
-    Placement,
-    Sharded,
-)
-from max.experimental.tensor import Tensor
+from max.functional import random
 from max.graph import Dim, DimLike, TensorValue
 from max.nn.legacy.kernels import (
     matmul_static_scaled_float8,
     quantize_static_scaled_float8,
 )
 from max.nn.legacy.quant_config import QuantConfig
+from max.tensor import Tensor
+from max.tensor.sharding import (
+    DeviceMapping,
+    Partial,
+    Placement,
+    Sharded,
+)
 
 from .module import Module, PinnedDeviceTensor
 
@@ -50,7 +50,7 @@ class Linear(Module[[Tensor], Tensor]):
     .. code-block:: python
 
         from max.nn import Linear
-        from max.experimental.tensor import Tensor
+        from max.tensor import Tensor
 
         model = Linear(5, 10)
 
@@ -65,9 +65,9 @@ class Linear(Module[[Tensor], Tensor]):
     # By convention weight is stored transposed
     # ie. weight.shape == [out_dim, in_dim]
     weight: Tensor
-    """The weight :obj:`~max.experimental.tensor.Tensor` for the linear transformation."""
+    """The weight :obj:`~max.tensor.Tensor` for the linear transformation."""
     bias: Tensor | Literal[0]
-    """The bias :obj:`~max.experimental.tensor.Tensor` for the linear transformation (or 0 if bias is disabled)."""
+    """The bias :obj:`~max.tensor.Tensor` for the linear transformation (or 0 if bias is disabled)."""
     weight_scale: PinnedDeviceTensor
     """The per-tensor weight scale, on the CPU. Present only with a
     ``quant_config``."""

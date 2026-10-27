@@ -30,12 +30,12 @@ from typing import Any
 import numpy as np
 import pytest
 import torch
+from max import functional as F
 from max.driver import CPU, Accelerator, Device, accelerator_count
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
 from max.nn import Conv2d
+from max.tensor import Tensor
 from torch import nn
 
 

@@ -17,13 +17,13 @@ from __future__ import annotations
 
 import math
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.nn import Linear, Module
 from max.nn.legacy.attention import MHAMaskVariant
 from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.tensor import Tensor
 
 from ..norm.rms_norm import rms_norm
 from .functional_kernels import (

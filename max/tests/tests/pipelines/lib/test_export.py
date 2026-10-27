@@ -37,8 +37,6 @@ from max._artifact.serialization import deserialize, serialize
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.experimental.compilation import CompiledCallable
-from max.experimental.sharding.types import as_layout
 from max.graph import BufferType, DeviceRef, TensorType, TensorValue
 from max.nn.legacy import Module
 from max.nn.legacy.graph_groups import Logits
@@ -53,6 +51,8 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.graph_specs import compile_roles_separately
 from max.pipelines.lib.interfaces import BatchProcessorRuntime
+from max.tensor.compilation import CompiledCallable
+from max.tensor.sharding.types import as_layout
 
 X = TensorType(DType.float32, ["batch", 4], device=DeviceRef.CPU())
 

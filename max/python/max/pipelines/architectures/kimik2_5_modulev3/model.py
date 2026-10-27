@@ -34,18 +34,10 @@ from collections.abc import Sequence
 from dataclasses import replace
 from typing import Any, ClassVar
 
+from max import functional as F
 from max.driver import Buffer, Device, DeviceSpec, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental import functional as F
-from max.experimental.compilation import CompiledCallable
-from max.experimental.sharding import (
-    DeviceMapping,
-    DeviceMesh,
-    Replicated,
-    TensorLayout,
-)
-from max.experimental.tensor import default_device, default_dtype
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn.common_layers.quant_ops import (
@@ -74,6 +66,14 @@ from max.pipelines.lib.interfaces.batch_processor import (
 from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.pipelines.weights.quant import parse_quant_config
+from max.tensor import default_device, default_dtype
+from max.tensor.compilation import CompiledCallable
+from max.tensor.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    Replicated,
+    TensorLayout,
+)
 from transformers import AutoConfig
 
 from .batch_processor import KimiK2_5BatchProcessor

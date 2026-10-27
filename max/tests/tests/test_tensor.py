@@ -16,18 +16,27 @@ import asyncio
 
 import numpy as np
 import pytest
+from max import functional as F
 from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental import random
-from max.experimental.sharding import (
+from max.functional import random
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    Graph,
+    ops,
+)
+from max.graph import (
+    TensorType as GraphTensorType,
+)
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Partial,
     Replicated,
     Sharded,
 )
-from max.experimental.tensor import (
+from max.tensor.tensor import (
     Tensor,
     TensorType,
     _default_device,
@@ -37,15 +46,6 @@ from max.experimental.tensor import (
     defaults,
     defaults_like,
     driver_tensor_type,
-)
-from max.graph import (
-    BufferValue,
-    DeviceRef,
-    Graph,
-    ops,
-)
-from max.graph import (
-    TensorType as GraphTensorType,
 )
 
 

@@ -4848,7 +4848,7 @@ def masked_flash_attention_gpu(
     # ``_add_op_generated`` passes operands straight to the generated op
     # constructor without coercing ``HasTensorValue`` inputs (unlike
     # ``ops.custom``). Under the experimental ``functional`` dispatch the
-    # q/k/v/mask arrive as ``max.experimental.tensor.Tensor`` rather than
+    # q/k/v/mask arrive as ``max.tensor.Tensor`` rather than
     # ``TensorValue``, so coerce them explicitly to match ``scale_const``.
     return Graph.current._add_op_generated(
         mo.CompositeMaskedFlashAttentionGpuOp,

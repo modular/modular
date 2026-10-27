@@ -19,9 +19,7 @@ import enum
 import functools
 from typing import Any
 
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMapping, Partial
-from max.experimental.tensor import Tensor
+from max import functional as F
 from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.multi_latent_attention import (
@@ -42,6 +40,8 @@ from max.nn.common_layers.quant_moe import (
 )
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.norm import RMSNorm
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, Partial
 
 from ..model_config import DeepseekV3Config
 from .moe_gate import DeepseekV3TopKRouter

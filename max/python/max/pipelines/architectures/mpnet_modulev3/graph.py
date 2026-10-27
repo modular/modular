@@ -15,14 +15,14 @@ from __future__ import annotations
 import math
 
 import numpy as np
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef
 from max.nn import Embedding, LayerNorm, Linear, Module, ModuleList
 from max.nn.common_layers.activation import (
     activation_function_from_name,
 )
+from max.tensor import Tensor
 
 from .model_config import MPNetConfig
 

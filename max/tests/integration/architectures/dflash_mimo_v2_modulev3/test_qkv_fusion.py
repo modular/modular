@@ -20,6 +20,7 @@ drafter keeps its own preparation path.
 from __future__ import annotations
 
 import pytest
+from max import functional as F
 from max.driver import (
     Accelerator,
     set_virtual_device_api,
@@ -27,10 +28,9 @@ from max.driver import (
     set_virtual_device_target_arch,
 )
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import default_device, default_dtype
 from max.graph import DeviceRef
+from max.tensor import default_device, default_dtype
+from max.tensor.sharding import DeviceMesh
 from mimo_dflash_v3_fixtures import (
     _FakeAttrConfig,
     build_module,

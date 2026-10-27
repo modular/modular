@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # DOC: develop/basic-ops.mdx
 
-import max.experimental.functional as F
+import max.functional as F
 
 uniform_tensor = F.uniform([3, 3], range=(0.0, 1.0))
 normal_tensor = F.normal([3, 3], mean=0.0, std=1.0)

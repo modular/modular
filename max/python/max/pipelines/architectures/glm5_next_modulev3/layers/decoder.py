@@ -20,14 +20,14 @@ sublayer's output back into all of them.
 
 from __future__ import annotations
 
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMapping, Sharded, auto_reshard
-from max.experimental.tensor import Tensor
+from max import functional as F
 from max.nn import HyperConnection, Module, RMSNorm
 from max.nn.common_layers.functional_kernels import mhc_post
 from max.nn.common_layers.quant_moe import ExpertParallelMoE
 from max.nn.legacy.comm.ep import EPCommBuffers
 from max.nn.legacy.kernels import mhc_post_preferred
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, Sharded, auto_reshard
 
 from ...deepseekV3_2_modulev3.layers.moe import DeepseekV3_2TensorParallelMoE
 from ..model_config import Glm5NextConfig

@@ -23,10 +23,9 @@ from __future__ import annotations
 
 from max.driver import CPU, Accelerator
 from max.dtype import DType
-from max.experimental import compilation
-from max.experimental.sharding import DeviceMesh, TensorLayout
-from max.experimental.tensor import Tensor
 from max.pipelines.speculative.driver import gather_variable_rows
+from max.tensor import Tensor, compilation
+from max.tensor.sharding import DeviceMesh, TensorLayout
 
 
 def test_gather_variable_rows_traces_with_device_offsets() -> None:

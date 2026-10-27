@@ -17,13 +17,13 @@ from __future__ import annotations
 
 from typing import Literal, Protocol, TypeVar
 
-from max.experimental import functional as F
-from max.experimental import random
-from max.experimental.sharding import NamedMapping
-from max.experimental.tensor import Tensor
+from max import functional as F
+from max.functional import random
 from max.graph import DimLike
 from max.nn.linear import Linear
 from max.nn.transparent_module import TransparentModule
+from max.tensor import Tensor
+from max.tensor.sharding import NamedMapping
 
 from .mesh_axis import TP
 

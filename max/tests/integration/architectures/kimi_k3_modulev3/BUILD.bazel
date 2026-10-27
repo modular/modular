@@ -59,9 +59,9 @@ modular_eager_py_test(
     }),
     deps = [
         requirement("numpy"),
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )
@@ -81,9 +81,9 @@ modular_eager_py_test(
     }),
     deps = [
         requirement("numpy"),
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )
@@ -103,9 +103,9 @@ modular_eager_py_test(
     }),
     deps = [
         requirement("numpy"),
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )
@@ -125,9 +125,9 @@ modular_eager_py_test(
     }),
     deps = [
         requirement("numpy"),
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
@@ -148,9 +148,9 @@ modular_eager_py_test(
     }),
     deps = [
         requirement("numpy"),
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )
@@ -171,9 +171,9 @@ modular_eager_py_test(
     deps = [
         ":paged_cache_test_utils",
         requirement("numpy"),
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
@@ -196,9 +196,9 @@ modular_eager_py_test(
     deps = [
         ":paged_cache_test_utils",
         requirement("numpy"),
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
@@ -212,9 +212,9 @@ modular_py_library(
     imports = ["."],
     deps = [
         requirement("numpy"),
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/nn",
         "//max/python/max/nn/legacy",
         "//max/python/max/support",
@@ -237,9 +237,9 @@ modular_eager_py_test(
     deps = [
         ":paged_cache_test_utils",
         requirement("numpy"),
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
@@ -262,10 +262,10 @@ modular_eager_py_test(
     deps = [
         ":paged_cache_test_utils",
         requirement("numpy"),
+        "//max/python/max:tensor",
         "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
@@ -292,9 +292,9 @@ modular_eager_py_test(
     }),
     deps = [
         requirement("numpy"),
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )
@@ -314,9 +314,9 @@ modular_eager_py_test(
     }),
     deps = [
         requirement("numpy"),
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )
@@ -336,9 +336,9 @@ modular_eager_py_test(
     }),
     deps = [
         requirement("numpy"),
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )
@@ -362,9 +362,9 @@ modular_eager_py_test(
     }),
     deps = [
         requirement("numpy"),
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )
@@ -384,9 +384,9 @@ modular_eager_py_test(
     }),
     deps = [
         requirement("numpy"),
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
@@ -407,9 +407,9 @@ modular_eager_py_test(
     }),
     deps = [
         requirement("numpy"),
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )
@@ -429,9 +429,9 @@ modular_eager_py_test(
     }),
     deps = [
         requirement("numpy"),
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )
@@ -451,9 +451,9 @@ modular_eager_py_test(
     target_compatible_with = ["//:has_multi_gpu"],
     deps = [
         requirement("numpy"),
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )
@@ -472,9 +472,9 @@ modular_eager_py_test(
     target_compatible_with = ["//:has_multi_gpu"],
     deps = [
         requirement("numpy"),
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )
@@ -493,9 +493,9 @@ modular_eager_py_test(
     target_compatible_with = ["//:has_multi_gpu"],
     deps = [
         requirement("numpy"),
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
@@ -515,9 +515,9 @@ modular_eager_py_test(
     target_compatible_with = ["//:has_multi_gpu"],
     deps = [
         requirement("numpy"),
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )
@@ -536,9 +536,9 @@ modular_eager_py_test(
     target_compatible_with = ["//:has_multi_gpu"],
     deps = [
         requirement("numpy"),
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )
@@ -558,10 +558,10 @@ modular_eager_py_test(
     deps = [
         ":paged_cache_test_utils",
         requirement("numpy"),
+        "//max/python/max:tensor",
         "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
@@ -588,10 +588,10 @@ modular_eager_py_test(
     target_compatible_with = ["//:has_multi_gpu"],
     deps = [
         requirement("numpy"),
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )
@@ -612,10 +612,10 @@ modular_eager_py_test(
     target_compatible_with = ["//:has_multi_gpu"],
     deps = [
         requirement("numpy"),
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )

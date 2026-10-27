@@ -18,9 +18,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
 from max.nn import Module
 from max.nn.common_layers.functional_kernels import (
@@ -30,6 +29,7 @@ from max.nn.legacy.attention.mask_config import MHAMaskVariant
 from max.nn.linear import Linear
 from max.nn.norm.rms_norm import rms_norm
 from max.nn.sequential import ModuleList
+from max.tensor import Tensor
 
 
 @dataclass(frozen=True)

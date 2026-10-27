@@ -22,8 +22,8 @@ pipeline classes such as :class:`TextGenerationPipeline`,
 tokenization, weight loading, and generation.
 """
 
-from max.experimental.validation import EagerUsageValidator
 from max.pipelines.weights.hf_utils import download_weight_files
+from max.tensor.validation import EagerUsageValidator
 
 from .architectures import register_all_models
 from .diffusion.pipeline import PixelGenerationPipeline

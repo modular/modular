@@ -16,10 +16,10 @@
 from collections.abc import Callable
 from typing import Any
 
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max import functional as F
 from max.graph import TensorValue
 from max.nn.legacy import kernels
+from max.tensor import Tensor
 
 
 def _functional(op: Callable[..., Any]) -> Callable[..., Any]:

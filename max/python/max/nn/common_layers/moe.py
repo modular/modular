@@ -20,21 +20,9 @@ from __future__ import annotations
 import contextlib
 from collections.abc import Callable
 
+from max import functional as F
 from max.driver import CPU, Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.realization_context import ensure_context
-from max.experimental.sharding import (
-    DeviceMapping,
-    DeviceMesh,
-    Partial,
-)
-from max.experimental.tensor import (
-    Tensor,
-    default_device,
-    default_dtype,
-    defaults,
-)
 from max.nn import Linear
 from max.nn.common_layers.functional_kernels import (
     fused_silu,
@@ -47,6 +35,18 @@ from max.nn.common_layers.functional_kernels import (
 from max.nn.common_layers.mlp import MLP
 from max.nn.module import Module
 from max.nn.sequential import ModuleList
+from max.tensor import (
+    Tensor,
+    default_device,
+    default_dtype,
+    defaults,
+)
+from max.tensor.realization_context import ensure_context
+from max.tensor.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    Partial,
+)
 from typing_extensions import Self
 
 
@@ -282,7 +282,7 @@ class TensorParallelMoE(MoE):
     """MoE layer with tensor parallelism.
 
     Shards the experts across the mesh from
-    :func:`~max.experimental.tensor.default_device` at construction.
+    :func:`~max.tensor.default_device` at construction.
     """
 
     def __init__(self, *args, **kwargs) -> None:

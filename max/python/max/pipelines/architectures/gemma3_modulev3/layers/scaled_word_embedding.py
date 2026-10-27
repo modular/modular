@@ -13,9 +13,9 @@
 
 """Scaled Word Embedding for the ModuleV3 API."""
 
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max import functional as F
 from max.nn.common_layers.embedding import VocabParallelEmbedding
+from max.tensor import Tensor
 
 
 class ScaledEmbedding(VocabParallelEmbedding):

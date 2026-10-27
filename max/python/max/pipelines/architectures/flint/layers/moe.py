@@ -15,10 +15,10 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.nn.common_layers.moe import MoE, MoEGate
+from max.tensor import Tensor
 
 
 class FlintRouter(MoEGate):

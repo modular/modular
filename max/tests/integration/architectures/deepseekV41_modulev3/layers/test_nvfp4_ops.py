@@ -19,10 +19,10 @@ both. The oracle is NumPy: clamp, then ``silu(gate) * up`` in fp32.
 from __future__ import annotations
 
 import numpy as np
-from max.experimental.tensor import Tensor
 from max.pipelines.architectures.deepseekV41_modulev3.layers.nvfp4_ops import (
     swiglu,
 )
+from max.tensor import Tensor
 
 
 def _oracle(

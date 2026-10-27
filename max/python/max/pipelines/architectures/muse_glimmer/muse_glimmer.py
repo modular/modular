@@ -17,11 +17,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMapping, DeviceMesh
-from max.experimental.tensor import Tensor
 from max.nn import Module
 from max.nn.common_layers.embedding import VocabParallelEmbedding
 from max.nn.common_layers.kv_cache import PagedCacheValues
@@ -35,6 +33,8 @@ from max.pipelines.architectures.gemma4_modulev3.layers.rms_norm import (
     Gemma4RMSNorm,
 )
 from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, DeviceMesh
 
 from .layers.attention import MuseGlimmerAttention
 from .layers.rotary_embedding import NoPERotaryEmbedding

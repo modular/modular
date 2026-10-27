@@ -32,8 +32,6 @@ from max import tree
 from max.driver import Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import default_device
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.legacy.comm.ep import EPConfig, calculate_ep_max_tokens_per_rank
@@ -46,6 +44,8 @@ from max.pipelines.lib import (
     PipelineConfig,
 )
 from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.tensor import default_device
+from max.tensor.sharding import DeviceMesh
 
 from .batch_processor import KimiK3ModuleV3BatchProcessor
 from .layers import ep

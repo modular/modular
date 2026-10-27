@@ -15,10 +15,10 @@
 
 from __future__ import annotations
 
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max import functional as F
 from max.graph import ops
 from max.nn.module import Module
+from max.tensor import Tensor
 
 #: Functional form of group normalization for experimental tensors.
 #:
@@ -42,7 +42,7 @@ class GroupNorm(Module[[Tensor], Tensor]):
         from max.driver import CPU
         from max.dtype import DType
         from max.nn.norm import GroupNorm
-        from max.experimental.tensor import Tensor, default_device
+        from max.tensor import Tensor, default_device
 
         with default_device(CPU()):
             norm = GroupNorm(num_groups=32, num_channels=128)

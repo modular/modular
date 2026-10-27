@@ -44,13 +44,11 @@ from typing import Any, NamedTuple
 
 import numpy as np
 import numpy.typing as npt
+from max import functional as F
 from max import tree
 from max.driver import Device
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental import functional as F
-from max.experimental.compilation import CompiledCallable
-from max.experimental.tensor import Tensor, default_dtype
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import Weights
 from max.nn.legacy.kv_cache import (
@@ -59,6 +57,8 @@ from max.nn.legacy.kv_cache import (
 )
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache.paged_kv_cache import PagedKVCacheManager
+from max.tensor import Tensor, default_dtype
+from max.tensor.compilation import CompiledCallable
 
 from . import sampling
 from .components.depth_decoder import DepthDecoder

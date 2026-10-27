@@ -47,10 +47,10 @@ import numpy as np
 import pytest
 from max.driver import Accelerator
 from max.dtype import DType
-from max.experimental.tensor import Tensor, default_device
 from max.pipelines.architectures.kimi_k3_modulev3.layers.kda_attention import (
     KimiK3KDAAttention,
 )
+from max.tensor import Tensor, default_device
 
 # Same geometry as V2's test_kda_attention_gpu.py: the kernel is compiled for
 # (key_head_dim, value_head_dim) == (32, 32) or (128, 128).

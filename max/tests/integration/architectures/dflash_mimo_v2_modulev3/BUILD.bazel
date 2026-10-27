@@ -21,9 +21,9 @@ modular_py_library(
         "//oss/modular/max/tests:__subpackages__",
     ],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/dflash_mimo_v2",
@@ -44,8 +44,8 @@ modular_py_test(
     }),
     deps = [
         ":mimo_dflash_v3_fixtures",
+        "//max/python/max:tensor",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/pipelines/architectures/dflash_mimo_v2",
         "//max/python/max/pipelines/architectures/dflash_mimo_v2_modulev3",
@@ -115,7 +115,7 @@ modular_py_test(
         "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
+        "//max/python/max:tensor",
         "//max/python/max/graph",
         "//max/python/max/nn/legacy",
         # The pairing resolves its target and drafter by name.
@@ -151,7 +151,7 @@ modular_py_test(
         "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
+        "//max/python/max:tensor",
         "//max/python/max/graph",
         # The pairing resolves its target and drafter by name.
         "//max/python/max/pipelines",

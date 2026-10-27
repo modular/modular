@@ -25,13 +25,11 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, ClassVar, Generic
 
+from max import functional as F
 from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.experimental import functional as F
-from max.experimental.compilation import CompiledCallable
-from max.experimental.tensor import Tensor, default_dtype
 from max.graph import DeviceRef, Graph, Value
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn._weight_utils import _SAFE_CAST_DTYPES, log_casts
@@ -73,6 +71,8 @@ from max.pipelines.modeling.config_enums import (
 )
 from max.pipelines.weights.weight_loading import auto_cast_weights_from_env
 from max.profiler import traced
+from max.tensor import Tensor, default_dtype
+from max.tensor.compilation import CompiledCallable
 from transformers import AutoConfig
 from typing_extensions import TypeVar
 

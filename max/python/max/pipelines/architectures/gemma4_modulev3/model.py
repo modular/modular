@@ -17,14 +17,11 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any, ClassVar
 
+from max import functional as F
 from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental import functional as F
-from max.experimental.compilation import CompiledCallable
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import Tensor, default_device, default_dtype
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.legacy.kv_cache import MultiKVCacheParams
@@ -52,6 +49,9 @@ from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
+from max.tensor import Tensor, default_device, default_dtype
+from max.tensor.compilation import CompiledCallable
+from max.tensor.sharding import DeviceMesh
 from transformers import AutoConfig
 
 from .batch_processor import Gemma4ModuleV3BatchProcessor

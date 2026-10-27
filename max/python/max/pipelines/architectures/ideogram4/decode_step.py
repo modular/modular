@@ -20,12 +20,12 @@ NHWC uint8 image in ``[0, 255]``.
 
 from __future__ import annotations
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
 from max.nn import Module
+from max.tensor import Tensor
 
 from ..autoencoders_modulev3.vae import Decoder
 from .latent_norm import latent_scale_array, latent_shift_array

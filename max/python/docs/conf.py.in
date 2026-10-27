@@ -383,7 +383,7 @@ def setup(app):
     def process_bases(app, name, obj, options, bases):
         """Strip type parameters from Module generic aliases for cleaner display.
 
-        Converts ``Module[(<class 'max.experimental.tensor.Tensor'>,), Tensor]``
+        Converts ``Module[(<class 'max.tensor.Tensor'>,), Tensor]``
         to ``Module`` so that type-checking generics don't leak into the docs.
         Scoped to Module only to avoid stripping meaningful type parameters
         from other generic base classes.

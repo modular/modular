@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for `max.experimental._passes`."""
+"""Tests for `max.tensor._passes`."""
 
 from collections.abc import Iterator
 
@@ -20,8 +20,8 @@ from max._core.dialects import mo, rmo
 from max.driver import CPU
 from max.dtype import DType
 from max.engine.api import InferenceSession
-from max.experimental import _passes, support
 from max.graph import Graph, TensorType, ops
+from max.tensor import _passes, support
 
 
 @pytest.fixture

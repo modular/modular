@@ -14,12 +14,12 @@
 
 from __future__ import annotations
 
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max import functional as F
 from max.nn import Module
 from max.nn.linear import Linear
 from max.nn.norm import LayerNorm
 from max.nn.sequential import ModuleList
+from max.tensor import Tensor
 
 from ..model_config import Idefics3VisionConfig
 from .attention import Idefics3VisionAttention

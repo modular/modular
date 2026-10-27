@@ -14,7 +14,7 @@
 """Device mesh axis names to use with specific type of parallelisms.
 
 Used by layers in :mod:`max.nn.common_layers` to place weight
-tensors in the mesh (set by :func:`~max.experimental.tensor.default_device`).
+tensors in the mesh (set by :func:`~max.tensor.default_device`).
 """
 
 #: Mesh axis name for tensor parallelism.

@@ -30,10 +30,10 @@ card. See ``FINDINGS.md``.
 
 from __future__ import annotations
 
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max import functional as F
 from max.graph import TensorType
 from max.nn import Module, ModuleList
+from max.tensor import Tensor
 
 from ..layers.conv import ShiftedConv1d, SubPixelConvTranspose1d
 from ..layers.snake import Snake1d

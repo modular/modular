@@ -17,9 +17,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor, default_dtype
 from max.nn.common_layers.quant_moe import (
     QuantizedMoE,
 )
@@ -29,6 +28,7 @@ from max.nn.common_layers.quant_tensor import (
     NVFP4Tensor,
 )
 from max.nn.legacy.quant_config import QuantConfig
+from max.tensor import Tensor, default_dtype
 
 _HIDDEN_DIM = 256
 _MOE_DIM = 128

@@ -22,13 +22,13 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import TensorType
 from max.nn import Embedding, Linear, Module
 from max.nn.norm import LayerNorm, RMSNorm
 from max.nn.sequential import ModuleList
+from max.tensor import Tensor
 
 from .layers.attention import Ideogram4Attention
 from .layers.embeddings import (

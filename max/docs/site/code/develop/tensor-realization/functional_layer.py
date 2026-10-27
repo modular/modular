@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 # DOC: develop/tensor-realization.mdx
 
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max import functional as F
 from max.nn import Module, module_dataclass
+from max.tensor import Tensor
 
 
 @module_dataclass

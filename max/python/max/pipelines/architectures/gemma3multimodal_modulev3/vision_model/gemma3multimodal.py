@@ -15,10 +15,9 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.legacy.kv_cache import KVCacheParamInterface
@@ -26,6 +25,7 @@ from max.nn.legacy.transformer import ReturnLogits
 from max.nn.norm.layer_norm import LayerNorm
 from max.pipelines.architectures.gemma3_modulev3.gemma3 import Gemma3TextModel
 from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
+from max.tensor import Tensor
 
 from ..model_config import Gemma3ForConditionalGenerationConfig
 from .embedding import Gemma3VisionEmbeddings

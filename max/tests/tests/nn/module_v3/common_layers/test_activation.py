@@ -17,7 +17,7 @@ from __future__ import annotations
 from functools import partial
 
 import pytest
-from max.experimental import functional as F
+from max import functional as F
 from max.nn.common_layers.activation import (
     activation_function_from_name,
 )

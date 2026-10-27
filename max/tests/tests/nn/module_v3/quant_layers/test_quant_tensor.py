@@ -18,12 +18,10 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+from max import functional as F
 from max import tree
 from max.driver import CPU, Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMesh, Sharded
-from max.experimental.tensor import Tensor
 from max.nn import Module
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.quant_tensor import (
@@ -41,6 +39,8 @@ from max.nn.common_layers.quant_tensor import (
     all_mxfp8,
     all_nvfp4,
 )
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMesh, Sharded
 
 
 def test_init_stores_tensors_and_block_size() -> None:

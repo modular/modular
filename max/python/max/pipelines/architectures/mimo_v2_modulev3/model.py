@@ -19,13 +19,11 @@ from dataclasses import dataclass
 from typing import Any, ClassVar
 
 import numpy as np
+from max import functional as F
 from max import tree
 from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import default_device, default_dtype
 from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.legacy.comm.ep import (
@@ -59,6 +57,8 @@ from max.pipelines.lib.interfaces.batch_processor import (
 )
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.utils import compute_data_parallel_splits
+from max.tensor import default_device, default_dtype
+from max.tensor.sharding import DeviceMesh
 from typing_extensions import override
 
 from ..mimo_v2.model import text_model_weights

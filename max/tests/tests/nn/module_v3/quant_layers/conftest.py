@@ -13,7 +13,7 @@
 
 """Shared fixtures for the quant_layers lazy-trace tests.
 
-The quant layers are traced under :func:`max.experimental.functional.lazy`
+The quant layers are traced under :func:`max.functional.lazy`
 against a mocked accelerator, so they exercise GPU kernel dispatch without a
 real device. ``mock_accelerator`` provides that stand-in device;
 ``fp8_quant_config``, ``nvfp4_quant_config`` and ``mxfp8_quant_config`` provide

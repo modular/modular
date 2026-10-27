@@ -28,7 +28,7 @@ import os
 from collections.abc import Iterator
 
 import pytest
-from max.experimental import executor
+from max.tensor import executor
 from python.runfiles import runfiles
 
 

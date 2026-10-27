@@ -17,7 +17,7 @@
 # Output:
 #   [Dim(2), Dim(8), Dim(8)]
 
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 mask = Tensor.zeros([8, 8])  # (seq_len=8, seq_len=8)
 scores = Tensor.zeros([2, 8, 8])  # (batch=2, seq_len, seq_len)

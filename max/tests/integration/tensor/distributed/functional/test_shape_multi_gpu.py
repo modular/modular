@@ -22,14 +22,14 @@ not a dispatch logic bug — tracked for a proper fix.
 
 import numpy as np
 from max.driver import Accelerator
-from max.experimental.functional import (
+from max.functional import (
     permute,
     reshape,
     transfer_to,
     transpose,
 )
-from max.experimental.sharding import DeviceMapping, DeviceMesh, Sharded
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, DeviceMesh, Sharded
 
 MESH = DeviceMesh(
     devices=(Accelerator(0), Accelerator(1), Accelerator(2), Accelerator(3)),

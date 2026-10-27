@@ -24,11 +24,11 @@ from __future__ import annotations
 
 import pytest
 import torch
+from max import functional as F
 from max._interpreter_ops import gc_compile
-from max.experimental import functional as F
-from max.experimental import realization_context as rc
-from max.experimental.executor import InterpreterExecutor, set_default_executor
-from max.experimental.tensor import Tensor, realization_context
+from max.tensor import realization_context as rc
+from max.tensor.executor import InterpreterExecutor, set_default_executor
+from max.tensor.tensor import Tensor, realization_context
 
 
 def test_matmul_cpu_and_gpu_load_from_the_store(

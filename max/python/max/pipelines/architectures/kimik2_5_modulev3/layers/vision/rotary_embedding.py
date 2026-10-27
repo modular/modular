@@ -13,12 +13,12 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.driver import CPU, Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMapping, DeviceMesh, Replicated
-from max.experimental.tensor import Tensor
 from max.nn import Module
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, DeviceMesh, Replicated
 from typing_extensions import Self
 
 

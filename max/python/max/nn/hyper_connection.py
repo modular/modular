@@ -15,10 +15,10 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental import random
-from max.experimental.tensor import Tensor
+from max.functional import random
+from max.tensor import Tensor
 
 from .common_layers.functional_kernels import hyper_connection_gates
 from .module import Module

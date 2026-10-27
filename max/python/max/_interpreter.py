@@ -139,7 +139,7 @@ def _is_interpretable_custom(op: _core.Operation) -> bool:
     :class:`~max.driver.Buffer` representation for, so every other type
     (chain, buffer, opaque, and anything added later) refuses by
     construction. An op with no resolvable
-    :class:`~max.experimental.custom.CustomOp` has no shape contract to
+    :class:`~max.functional.custom_op.CustomOp` has no shape contract to
     bind, so it compiles instead. So does one whose operands and results
     don't all agree on a device, since a binding runs on a single one.
     """

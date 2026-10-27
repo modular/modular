@@ -41,10 +41,10 @@ bf16 ``self.weight`` promoted by type promotion.
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.nn.module import Module
+from max.tensor import Tensor
 
 # ``rms_norm_eps`` from the V4.1 ``config.json``.
 EPS = 1e-20

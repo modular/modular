@@ -23,13 +23,13 @@ from __future__ import annotations
 import functools
 from typing import ClassVar
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.nn import Module
 from max.nn.common_layers import quant_ops
 from max.nn.common_layers.quant_linear import QuantizedMLP
 from max.nn.legacy.comm.ep import EPBatchManager
+from max.tensor import Tensor
 
 from ...deepseekV3_2_modulev3.layers.moe import (
     DeepseekV3_2ExpertParallelMoE,

@@ -23,19 +23,19 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import (
+from max.graph import BufferValue, DeviceRef, Dim, TensorValue, ops
+from max.nn import Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
+from max.tensor import Tensor
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Partial,
     Sharded,
 )
-from max.experimental.tensor import Tensor
-from max.graph import BufferValue, DeviceRef, Dim, TensorValue, ops
-from max.nn import Module
-from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
 
 from ...deepseekV41.layers.attention import (
     bf16_grouped_projection,

@@ -179,7 +179,7 @@ class Qwen25VLEncoderModel(ComponentModel):
         result_buf = transform_result[0]
 
         if is_tensor:
-            from max.experimental.tensor import Tensor as _Tensor
+            from max.tensor import Tensor as _Tensor
 
             return (_Tensor(storage=result_buf),)
 

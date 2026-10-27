@@ -20,18 +20,10 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
+from max import functional as F
 from max import tree
 from max.driver import CPU, Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import (
-    DeviceMapping,
-    DeviceMesh,
-    Partial,
-    Replicated,
-    Sharded,
-)
-from max.experimental.tensor import Tensor, default_device, default_dtype
 from max.graph import (
     BufferType,
     BufferValue,
@@ -62,6 +54,14 @@ from max.pipelines.architectures.deepseekV3.model_config import (
 from max.pipelines.architectures.deepseekV3_2_modulev3.layers.sparse_mla import (
     QuantizedSparseLatentAttentionWithRope,
     tensor_parallel_sparse_latent_attention_with_rope,
+)
+from max.tensor import Tensor, default_device, default_dtype
+from max.tensor.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    Partial,
+    Replicated,
+    Sharded,
 )
 
 # Block-aligned dimensions (multiples of 128 on the quantized axes) so the FP8

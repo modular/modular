@@ -171,6 +171,8 @@
 /max/python/max/engine/ @modular/driver
 /max/python/max/_entrypoints/ @modular/max-sdk
 /max/python/max/experimental/ @modular/max-sdk
+/max/python/max/functional/ @modular/max-sdk
+/max/python/max/tensor/ @modular/max-sdk
 /max/python/max/experimental/cascade/ @modular/max-serve @modular/max-sdk
 /max/python/max/graph/ @modular/max-sdk
 /max/python/max/mlir/ @modular/max-sdk

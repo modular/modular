@@ -69,10 +69,10 @@ modular_py_test(
     deps = [
         "//max/python/max:_core",
         "//max/python/max:_mlir_context",
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/mlir",
         "//max/python/max/nn",
@@ -104,10 +104,10 @@ modular_py_test(
     deps = [
         "//max/python/max:_core",
         "//max/python/max:_mlir_context",
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/mlir",
         requirement("hypothesis"),

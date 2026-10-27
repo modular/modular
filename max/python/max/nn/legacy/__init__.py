@@ -37,7 +37,7 @@ compiles the finished graph into an optimized executable that runs on
     )
 
 In eager execution, :mod:`max.nn` runs the same layer
-abstractions directly on :class:`~max.experimental.tensor.Tensor` values,
+abstractions directly on :class:`~max.tensor.Tensor` values,
 executing each operation immediately, PyTorch-style.
 """
 

@@ -13,7 +13,7 @@
 """E2E tests on real GPUs -- inherits shared logic from _e2e (no IR tests)."""
 
 from max.driver import Accelerator
-from max.experimental.sharding import DeviceMesh
+from max.tensor.sharding import DeviceMesh
 
 from module._e2e import E2ETests
 

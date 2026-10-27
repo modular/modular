@@ -22,10 +22,9 @@ import logging
 from collections.abc import Callable
 from typing import Any, ClassVar
 
+from max import functional as F
 from max.driver import Buffer, Device
 from max.engine import InferenceSession
-from max.experimental import functional as F
-from max.experimental.tensor import default_dtype
 from max.graph.buffer_utils import cast_tensor_to
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.legacy.transformer import ReturnLogits
@@ -43,6 +42,7 @@ from max.pipelines.lib.interfaces.batch_processor import (
     padded_encoder_symbolic_inputs,
 )
 from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.tensor import default_dtype
 
 from .batch_processor import MPNetModuleV3BatchProcessor
 from .graph import MPNetModel

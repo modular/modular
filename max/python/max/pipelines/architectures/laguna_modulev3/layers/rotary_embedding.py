@@ -25,10 +25,9 @@ the reference's ``(j, j + rotary_dim // 2)`` pairs.
 
 from __future__ import annotations
 
+from max import functional as F
 from max.driver import CPU, Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import Dim
 from max.nn.common_layers.rotary_embedding import (
     YarnRotaryEmbedding,
@@ -37,6 +36,7 @@ from max.nn.legacy.rotary_embedding import YarnScalingParams
 from max.pipelines.architectures.gemma4_modulev3.layers.rotary_embedding import (
     ProportionalRotaryEmbedding,
 )
+from max.tensor import Tensor
 
 
 class LagunaRotaryEmbedding(ProportionalRotaryEmbedding):

@@ -34,10 +34,9 @@ _CtxT = TypeVar("_CtxT")
 
 import numpy as np
 import numpy.typing as npt
+from max import functional as F
 from max.driver import CPU, Buffer, Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor, TensorType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsAdapter, WeightsFormat
 from max.nn import LoRA, lora_layers, lora_parameters
@@ -46,6 +45,7 @@ from max.pipelines.weights.hf_utils import (
     HuggingFaceRepo,
     download_weight_files,
 )
+from max.tensor.tensor import Tensor, TensorType
 
 from .config import LoRAConfig
 from .lora import ADAPTER_CONFIG_FILE, LoRAModel, _LoRALRUCache

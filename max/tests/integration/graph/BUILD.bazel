@@ -275,9 +275,9 @@ modular_py_test(
         "gpu",
     ],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/nn",
         requirement("hypothesis"),

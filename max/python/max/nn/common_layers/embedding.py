@@ -17,18 +17,18 @@ from __future__ import annotations
 
 import itertools
 
-from max.experimental import functional as F
-from max.experimental.sharding import (
+from max import functional as F
+from max.graph import DimLike
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.embedding import Embedding
+from max.tensor import Tensor
+from max.tensor.sharding import (
     DeviceMapping,
     NamedMapping,
     Partial,
     Replicated,
 )
-from max.experimental.sharding.action import PerShard
-from max.experimental.tensor import Tensor
-from max.graph import DimLike
-from max.nn.common_layers.mesh_axis import TP
-from max.nn.embedding import Embedding
+from max.tensor.sharding.action import PerShard
 
 
 def _masked_gather(

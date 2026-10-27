@@ -8,10 +8,10 @@ modular_py_library(
     deps = [
         requirement("transformers"),
         requirement("typing-extensions"),
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/nn/legacy",

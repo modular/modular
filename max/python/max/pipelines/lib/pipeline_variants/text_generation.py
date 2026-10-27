@@ -35,7 +35,6 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.experimental.compilation import CompiledCallable
 from max.graph import DeviceRef
 from max.graph.weights import (
     WeightsAdapter,
@@ -74,6 +73,7 @@ from max.pipelines.modeling.types import (
 )
 from max.profiler import Tracer, traced
 from max.support.algorithm import flatten2d
+from max.tensor.compilation import CompiledCallable
 
 from ._label_scoring import BatchLabelScorer
 from .utils import StructuredOutputHelper, update_context_and_prepare_responses

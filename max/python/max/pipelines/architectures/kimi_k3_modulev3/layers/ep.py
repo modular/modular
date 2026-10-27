@@ -20,22 +20,22 @@ launch and a wait, so other work can run in between.
 
 from __future__ import annotations
 
+from max import functional as F
 from max import tree
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental import functional as F
-from max.experimental.realization_context import ensure_context
-from max.experimental.sharding import (
+from max.graph import BufferValue
+from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
+from max.nn.legacy.comm.ep import ep_kernels as kernels
+from max.tensor import Tensor
+from max.tensor.realization_context import ensure_context
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Sharded,
     Unknown,
 )
-from max.experimental.tensor import Tensor
-from max.graph import BufferValue
-from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
-from max.nn.legacy.comm.ep import ep_kernels as kernels
 
 
 @tree.dataclass(kw_only=True)

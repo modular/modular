@@ -17,17 +17,17 @@ from __future__ import annotations
 
 import pytest
 from max.driver import CPU, Device
-from max.experimental.sharding import (
+from max.graph import Dim, Shape, StaticDim, SymbolicDim
+from max.tensor.sharding import (
     DeviceMesh,
     Partial,
     Replicated,
     Sharded,
 )
-from max.experimental.sharding.placements import (
+from max.tensor.sharding.placements import (
     even_shard_sizes,
     local_shard_shape_from_global,
 )
-from max.graph import Dim, Shape, StaticDim, SymbolicDim
 
 
 def cpu_devices(n: int) -> tuple[Device, ...]:

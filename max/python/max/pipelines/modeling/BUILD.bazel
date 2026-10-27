@@ -20,11 +20,11 @@ modular_py_library(
     # shadowing the no-pydeps tag works around).
     deps = [
         "//max/python/max:_core",
+        "//max/python/max:tensor",
         "//max/python/max/config",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/nn/legacy",

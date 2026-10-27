@@ -29,7 +29,7 @@ import contextlib
 from collections.abc import Iterator
 from typing import Any, Literal
 
-from max.experimental.validation import EagerUsageValidator, active_validator
+from max.tensor.validation import EagerUsageValidator, active_validator
 
 from .config_enums import EagerValidatorMode
 

@@ -20,23 +20,10 @@ import os
 from collections.abc import Callable, Sequence
 from typing import Any, ClassVar, TypeVar
 
+from max import functional as F
 from max import tree
 from max.driver import CPU, Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.realization_context import ensure_context
-from max.experimental.sharding import (
-    DeviceMapping,
-    DeviceMesh,
-    Partial,
-    Sharded,
-)
-from max.experimental.tensor import (
-    Tensor,
-    default_device,
-    default_dtype,
-    defaults,
-)
 from max.graph import DimLike, TensorValue
 from max.nn import Module
 from max.nn.common_layers.functional_kernels import (
@@ -49,6 +36,19 @@ from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.legacy.moe.expert_parallel import _SHARED_EXPERT_STREAM_ID
 from max.nn.legacy.quant_config import QuantConfig
 from max.nn.sequential import ModuleList
+from max.tensor import (
+    Tensor,
+    default_device,
+    default_dtype,
+    defaults,
+)
+from max.tensor.realization_context import ensure_context
+from max.tensor.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    Partial,
+    Sharded,
+)
 from typing_extensions import Self
 
 from . import quant_ops
@@ -98,7 +98,7 @@ def _stack_experts(
             expert (homogeneous: all bf16 or all
             :class:`~.quant_tensor.FP8BlockTensor`).
         shard_axis: Tensor axis to shard along for TP; ``None`` for no shard.
-        mesh: :class:`~max.experimental.sharding.DeviceMesh` to scatter onto.
+        mesh: :class:`~max.tensor.sharding.DeviceMesh` to scatter onto.
 
     Returns:
         A single stacked :class:`~.quant_ops.QuantAwareTensor`, distributed
@@ -523,7 +523,7 @@ class ExpertParallelMoE(QuantizedMoE):
     computed locally, and combined back at the end.
 
     Places the experts round-robin across the mesh from
-    :func:`~max.experimental.tensor.default_device` at construction; the
+    :func:`~max.tensor.default_device` at construction; the
     gate and shared experts are replicated.
     """
 

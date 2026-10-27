@@ -70,7 +70,7 @@ run eagerly during development and compile for serving.
 
 With [`max.experimental`](/api/python/experimental/), you write code that
 you can run directly. You define your model computation with operations on
-[`Tensor`](/api/python/generated/max.experimental.tensor.Tensor/) objects
+[`Tensor`](/api/python/generated/max.tensor.Tensor/) objects
 and execute that computation immediately without explicitly creating a graph.
 
 This pattern is eager because every operation returns a result right away, even
@@ -88,8 +88,8 @@ you can run quickly and repeatedly.
 This example runs a ReLU operation with the experimental API:
 
 ```python
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max import functional as F
+from max.tensor import Tensor
 
 x = Tensor.ones([5])
 y = F.relu(x)
@@ -144,12 +144,12 @@ print(np.from_dlpack(result[0]))
 
 The patterns use parallel but separate APIs:
 
-|                          | Explicit graph construction                                             | Eager execution                                                                           |
-|--------------------------|-------------------------------------------------------------------------|-------------------------------------------------------------------------------------------|
-| **Primary data object**  | [`max.graph.TensorValue`](/api/python/generated/max.graph.TensorValue/) | [`max.experimental.tensor.Tensor`](/api/python/generated/max.experimental.tensor.Tensor/) |
-| **Built-in operations**  | [`max.graph.ops`](/api/python/graph.ops/)                               | [`max.experimental.functional`](/api/python/experimental.functional/)                     |
-| **Python operators**     | `+`, `-`, `*`, `/`, `@` on `TensorValue`                                | `+`, `-`, `*`, `/`, `@` on `Tensor`                                                       |
-| **`Module` abstraction** | [`max.nn.legacy.Module`](/api/python/generated/max.nn.legacy.Module/)   | [`max.nn.Module`](/api/python/generated/max.nn.Module/)                                   |
+|                          | Explicit graph construction                                             | Eager execution                                                 |
+|--------------------------|-------------------------------------------------------------------------|-----------------------------------------------------------------|
+| **Primary data object**  | [`max.graph.TensorValue`](/api/python/generated/max.graph.TensorValue/) | [`max.tensor.Tensor`](/api/python/generated/max.tensor.Tensor/) |
+| **Built-in operations**  | [`max.graph.ops`](/api/python/graph.ops/)                               | [`max.functional`](/api/python/functional/)                     |
+| **Python operators**     | `+`, `-`, `*`, `/`, `@` on `TensorValue`                                | `+`, `-`, `*`, `/`, `@` on `Tensor`                             |
+| **`Module` abstraction** | [`max.nn.legacy.Module`](/api/python/generated/max.nn.legacy.Module/)   | [`max.nn.Module`](/api/python/generated/max.nn.Module/)         |
 
 ## Next steps
 

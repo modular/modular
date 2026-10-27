@@ -23,13 +23,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMapping, DeviceMesh
-from max.experimental.tensor import Tensor
 from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, DeviceMesh
 
 from ..layer_resolver import LayerInfo, block_group
 from .attention import Attention, RaggedRows

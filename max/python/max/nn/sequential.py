@@ -15,7 +15,7 @@
 import functools
 from typing import Any
 
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 from typing_extensions import TypeVar
 
 from .module import Module
@@ -96,7 +96,7 @@ class Sequential(ModuleList[T]):
 
     .. code-block:: python
 
-        from max.experimental.tensor import Tensor
+        from max.tensor import Tensor
         from max.nn import Linear, Sequential
 
         model = Sequential(
@@ -146,7 +146,7 @@ class Sequential(ModuleList[T]):
 
         .. code-block:: python
 
-            from max.experimental.tensor import Tensor
+            from max.tensor import Tensor
             from max.nn import Linear, Sequential
 
             hidden_dims = [5, 10, 15, 20]

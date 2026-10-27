@@ -23,14 +23,14 @@ import pytest
 from max.driver import Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import Tensor, default_device
 from max.pipelines.architectures.kimi_k3_modulev3.layers import ep
 from max.pipelines.architectures.kimi_k3_modulev3.layers.moe_latent import (
     KimiK3LatentMoE,
     expert_parallel_config,
     expert_parallel_latent_moe,
 )
+from max.tensor import Tensor, default_device
+from max.tensor.sharding import DeviceMesh
 
 
 def _rel_error(a: np.ndarray, b: np.ndarray) -> float:

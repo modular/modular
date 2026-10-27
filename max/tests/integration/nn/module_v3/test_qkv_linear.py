@@ -17,9 +17,9 @@ from __future__ import annotations
 import numpy as np
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental.tensor import Tensor, default_dtype
 from max.nn import Module, TransparentModule
 from max.nn.common_layers.linear import QKVLinear
+from max.tensor import Tensor, default_dtype
 
 IN_DIM = 8
 Q_DIM = 16

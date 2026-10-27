@@ -19,12 +19,9 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from max import functional as F
 from max.driver import CPU, accelerator_api, accelerator_architecture_name
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMapping, DeviceMesh
-from max.experimental.sharding.placements import Sharded
-from max.experimental.tensor import Tensor
 from max.graph import TensorValue
 from max.nn.common_layers.functional_kernels import (
     fused_silu,
@@ -45,6 +42,9 @@ from max.nn.legacy.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, DeviceMesh
+from max.tensor.sharding.placements import Sharded
 
 from .quant_kernels import (
     block_scales_interleave,
@@ -423,7 +423,7 @@ def combine_quant_per_device(
     ``combine`` is applied to the ``weight`` and ``weight_scale_inv`` leaves
     independently and the per-device leaves are zipped back into one
     :class:`FP8BlockTensor` per device, so the FP8 invariant (``weight`` and
-    ``weight_scale_inv`` are each a single :class:`~max.experimental.tensor.Tensor`)
+    ``weight_scale_inv`` are each a single :class:`~max.tensor.Tensor`)
     is preserved without the caller transposing a struct-of-lists into a
     list-of-structs.  For plain tensors the per-device list is returned as-is.
 

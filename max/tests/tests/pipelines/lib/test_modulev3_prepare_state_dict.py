@@ -22,7 +22,6 @@ import numpy as np
 import pytest
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental.tensor import default_device
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import WeightData
 from max.nn import Linear
@@ -33,6 +32,7 @@ from max.pipelines.lib import (
     ModuleV3PipelineModelWithKVCache,
 )
 from max.pipelines.weights import AUTO_CAST_ENV_VAR
+from max.tensor import default_device
 
 
 class _Module:

@@ -20,10 +20,9 @@ import math
 from collections.abc import Callable
 from typing import Any, ClassVar, cast
 
+from max import functional as F
 from max.driver import Buffer, Device
 from max.engine import InferenceSession
-from max.experimental import functional as F
-from max.experimental.tensor import default_dtype
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.common_layers.mlp import MLP
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
@@ -46,6 +45,7 @@ from max.pipelines.lib.interfaces.batch_processor import (
 from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.utils import parse_state_dict_from_weights
+from max.tensor import default_dtype
 from typing_extensions import override
 
 from .batch_processor import Qwen3EmbeddingModuleV3BatchProcessor

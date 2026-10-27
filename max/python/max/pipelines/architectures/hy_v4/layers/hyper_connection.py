@@ -22,10 +22,10 @@ kernel always computes ``comb``.
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.nn import Module
+from max.tensor import Tensor
 
 from ..model_config import HYV4Config
 

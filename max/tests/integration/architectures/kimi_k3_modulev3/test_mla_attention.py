@@ -26,10 +26,10 @@ import numpy as np
 import pytest
 from max.driver import Accelerator
 from max.dtype import DType
-from max.experimental.tensor import Tensor, default_device
 from max.pipelines.architectures.kimi_k3_modulev3.layers.mla_attention import (
     KimiK3MLAAttention,
 )
+from max.tensor import Tensor, default_device
 
 _HIDDEN = 64
 _NUM_HEADS = 4
@@ -113,7 +113,7 @@ def test_rope_slice_is_never_rotated() -> None:
     only indirectly exercise this (attention mixes everything together);
     isolating the expression proves the specific claim directly.
     """
-    from max.experimental import functional as F
+    from max import functional as F
 
     with default_device(Accelerator()):
         nope, rope = 16, 8

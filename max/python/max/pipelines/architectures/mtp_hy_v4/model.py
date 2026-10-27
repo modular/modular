@@ -21,10 +21,8 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import default_device, default_dtype
 from max.graph import DeviceRef
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
@@ -32,6 +30,8 @@ from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.pipelines.weights.quant import parse_quant_config
+from max.tensor import default_device, default_dtype
+from max.tensor.sharding import DeviceMesh
 from transformers import AutoConfig
 
 from ..hy_v4.model_config import HYV4Config

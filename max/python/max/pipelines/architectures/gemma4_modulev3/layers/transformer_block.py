@@ -15,11 +15,11 @@
 
 from __future__ import annotations
 
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMapping, Replicated
-from max.experimental.tensor import Tensor
+from max import functional as F
 from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, Replicated
 
 from .rms_norm import Gemma4RMSNorm
 

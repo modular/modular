@@ -20,14 +20,14 @@ scaling 1.5. The oracle is an independent NumPy transcription of the HF
 from __future__ import annotations
 
 import numpy as np
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.pipelines.architectures.deepseekV41_modulev3.layers.router import (
     Router,
     _sqrt_softplus,
     _stable_top_k,
 )
+from max.tensor import Tensor
 
 _HIDDEN = 5120
 _EXPERTS = 384

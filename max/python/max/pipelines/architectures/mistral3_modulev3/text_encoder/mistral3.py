@@ -21,15 +21,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import TensorType
 from max.nn import Embedding, Linear, Module
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.norm import RMSNorm
 from max.nn.sequential import ModuleList
+from max.tensor import Tensor
 
 from .attention import EncoderAttention
 

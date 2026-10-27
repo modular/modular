@@ -15,9 +15,9 @@
 from __future__ import annotations
 
 from max.dtype import DType
-from max.experimental.tensor import Tensor
 from max.nn.norm import RMSNorm
 from max.nn.norm.rms_norm import rms_norm
+from max.tensor import Tensor
 
 
 class LagunaRMSNorm(RMSNorm):

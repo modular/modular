@@ -23,11 +23,9 @@ and are concatenated per device, not sharded as one.
 
 from __future__ import annotations
 
+from max import functional as F
 from max import tree
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import NamedMapping
-from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorValue, ops
 from max.nn import Linear, Module, RMSNorm
 from max.nn.common_layers.linear import col_parallel, row_parallel
@@ -40,6 +38,8 @@ from max.nn.legacy.state_space.kimi_delta import (
 from max.pipelines.architectures.glm5_next.layers.kimi_delta_attention import (
     STATE_LAYOUT,
 )
+from max.tensor import Tensor
+from max.tensor.sharding import NamedMapping
 
 from ..model_config import Glm5NextConfig
 

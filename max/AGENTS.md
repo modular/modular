@@ -288,7 +288,7 @@ Most neural network layers follow this structure:
 
 ### Experimental Tensor API Style
 
-When writing model code that uses `max.experimental.tensor.Tensor` (modulev3
+When writing model code that uses `max.tensor.Tensor` (modulev3
 architectures and `max.nn` layers), prefer Python operator syntax
 and instance methods over `F.*` functional calls.
 

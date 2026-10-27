@@ -23,9 +23,8 @@ from typing import Any
 
 import numpy as np
 import numpy.typing as npt
+from max import functional as F
 from max.driver import Buffer, Device
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.modeling.base.component_model import ComponentModel
@@ -35,6 +34,7 @@ from max.pipelines.modeling.dataprocessing.causal_attention_mask import (
 from max.pipelines.weights.weight_loading import (
     auto_cast_weights_from_env,
 )
+from max.tensor import Tensor
 
 from .model_config import Qwen3TextEncoderConfig
 from .qwen3 import Qwen3TextEncoderTransformer

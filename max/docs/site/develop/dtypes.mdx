@@ -56,7 +56,7 @@ stored:
 ```python
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 # Create a tensor with float32 (the default on CPU)
 float_tensor = Tensor.ones([2, 3], dtype=DType.float32, device=CPU())
@@ -84,13 +84,13 @@ Tensors created from NumPy arrays or PyTorch tensors keep the source dtype.
 ## Check tensor dtype
 
 Every tensor has a
-[`dtype`](/api/python/generated/max.experimental.tensor.Tensor/#max.experimental.tensor.Tensor.dtype)
+[`dtype`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.dtype)
 property that returns its data type:
 
 ```python
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 # Create tensors of different types
 weights = Tensor.ones([3, 3], dtype=DType.float32, device=CPU())
@@ -115,14 +115,14 @@ Weights are float32
 
 ## Convert between dtypes
 
-[`cast()`](/api/python/generated/max.experimental.tensor.Tensor/#max.experimental.tensor.Tensor.cast)
+[`cast()`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.cast)
 converts a tensor from one dtype to another, useful when you need to move
 between floating-point and integer types, or change precision:
 
 ```python
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 # Create a float32 tensor
 x = Tensor([1.7, 2.3, 3.9], dtype=DType.float32, device=CPU())
@@ -187,7 +187,7 @@ which enables zero-copy conversion when possible:
 
 ```python
 import numpy as np
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 # Create a NumPy array
 np_array = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)

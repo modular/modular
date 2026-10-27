@@ -17,7 +17,6 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 from max.dtype import DType
-from max.experimental.sharding import DeviceMesh
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
 from max.nn.legacy.kv_cache import KVCacheParamInterface, MultiKVCacheParams
@@ -42,6 +41,7 @@ from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
 )
+from max.tensor.sharding import DeviceMesh
 from transformers import AutoConfig
 from typing_extensions import Self, override
 

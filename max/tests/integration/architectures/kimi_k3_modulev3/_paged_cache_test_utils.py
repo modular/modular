@@ -26,8 +26,6 @@ from collections.abc import Sequence
 import numpy as np
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
-from max.experimental.realization_context import ensure_context
-from max.experimental.tensor import Tensor
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.legacy.kv_cache import (
     PACKED_PAGE_STRIDE,
@@ -38,6 +36,8 @@ from max.nn.legacy.kv_cache import (
     padded_lut_cols,
 )
 from max.support.math import ceildiv
+from max.tensor import Tensor
+from max.tensor.realization_context import ensure_context
 
 
 def _zeros(shape: tuple[int, ...], dtype: DType, device: Accelerator) -> Tensor:

@@ -15,10 +15,10 @@
 from __future__ import annotations
 
 import pytest
-from max.experimental import random
-from max.experimental.tensor import Tensor, TensorType, defaults
+from max.functional import random
 from max.nn.legacy.hooks.print_hook import PrintHook
 from max.nn.module import Module, module_dataclass
+from max.tensor.tensor import Tensor, TensorType, defaults
 
 
 @module_dataclass

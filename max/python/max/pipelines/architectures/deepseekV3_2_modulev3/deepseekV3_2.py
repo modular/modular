@@ -17,18 +17,10 @@ from __future__ import annotations
 import math
 from collections.abc import Callable
 
+from max import functional as F
 from max import tree
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import (
-    DeviceMapping,
-    DeviceMesh,
-    Replicated,
-    Sharded,
-    Unknown,
-)
-from max.experimental.tensor import Tensor
 from max.graph import TensorValue
 from max.nn import Module, as_subgraph
 from max.nn.common_layers.embedding import VocabParallelEmbedding
@@ -44,6 +36,14 @@ from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 from max.pipelines.speculative.driver import gather_variable_rows
+from max.tensor import Tensor
+from max.tensor.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    Replicated,
+    Sharded,
+    Unknown,
+)
 
 from ..deepseekV2_modulev3.layers.rotary_embedding import (
     DeepseekYarnRotaryEmbedding,

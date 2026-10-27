@@ -16,12 +16,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import default_device, default_dtype
+from max import functional as F
 from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.utils import parse_state_dict_from_weights
+from max.tensor import default_device, default_dtype
+from max.tensor.sharding import DeviceMesh
 
 from ..gemma4_assistant.model import Gemma4AssistantDraftConfig
 from ..gemma4_assistant.model_config import Gemma4AssistantConfig

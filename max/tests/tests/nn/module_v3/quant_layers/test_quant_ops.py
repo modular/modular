@@ -26,10 +26,9 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
+from max import functional as F
 from max.driver import CPU, Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor, default_dtype
 from max.nn.common_layers import quant_ops
 from max.nn.common_layers.quant_tensor import (
     FP8BlockActivation,
@@ -44,6 +43,7 @@ from max.nn.common_layers.quant_tensor import (
 )
 from max.nn.legacy.comm.ep import EPConfig
 from max.nn.legacy.quant_config import QuantConfig, QuantFormat
+from max.tensor import Tensor, default_dtype
 
 _HIDDEN_DIM = 256
 _MOE_DIM = 128

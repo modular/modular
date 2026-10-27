@@ -17,10 +17,10 @@ Bridges vision and text modalities via pixel shuffle and modality projection.
 
 from __future__ import annotations
 
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max import functional as F
 from max.nn import Module
 from max.nn.linear import Linear
+from max.tensor import Tensor
 
 from ..model_config import Idefics3VisionConfig
 

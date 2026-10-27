@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from max._core.driver import Device
 from max.driver import Buffer
 from max.dtype import DType
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 
 @dataclass

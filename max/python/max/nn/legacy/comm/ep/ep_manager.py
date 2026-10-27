@@ -37,7 +37,6 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.experimental.tensor import Tensor
 from max.graph import (
     BufferType,
     BufferValue,
@@ -51,6 +50,7 @@ from max.graph import (
 )
 from max.support.human_readable_formatter import to_human_readable_bytes
 from max.support.math import ceildiv
+from max.tensor import Tensor
 from numpy.typing import NDArray
 
 from ...activation import GatedActivation
@@ -257,7 +257,7 @@ class EPCommBuffers:
     by ``EPBatchManager.comm_buffers()`` into a single value so they can be
     passed through the subgraph pytree machinery as one forward argument. The
     ``@tree.dataclass`` hooks expose the
-    :class:`~max.experimental.tensor.Tensor` leaves to that machinery.
+    :class:`~max.tensor.Tensor` leaves to that machinery.
     """
 
     atomic_counters: list[list[Tensor]]

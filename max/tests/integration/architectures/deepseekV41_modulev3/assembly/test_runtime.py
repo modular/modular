@@ -22,11 +22,9 @@ from unittest.mock import Mock
 
 import numpy as np
 import pytest
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures import register_all_models
@@ -73,6 +71,8 @@ from max.pipelines.lib.interfaces.batch_processor import (
 )
 from max.pipelines.lib.registry import PIPELINE_REGISTRY
 from max.pipelines.lib.tokenizer import TextTokenizer
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMesh
 from runtime_config import text_config
 from tokenizers import Tokenizer
 from tokenizers.models import WordLevel

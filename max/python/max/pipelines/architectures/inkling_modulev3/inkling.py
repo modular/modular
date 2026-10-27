@@ -18,17 +18,10 @@ from collections.abc import Callable
 from typing import Any
 
 import numpy as np
+from max import functional as F
 from max import tree
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import (
-    DeviceMapping,
-    DeviceMesh,
-    NamedMapping,
-    Partial,
-)
-from max.experimental.tensor import Tensor
 from max.graph import BufferType, DeviceRef, TensorType, TensorValue
 from max.nn import Module, as_subgraph
 from max.nn.common_layers.embedding import VocabParallelEmbedding
@@ -47,6 +40,13 @@ from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
+from max.tensor import Tensor
+from max.tensor.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    NamedMapping,
+    Partial,
+)
 
 from ..inkling.inkling import _subgraph_layer_groups
 from ..inkling.layers.attention import log_scaling_tau

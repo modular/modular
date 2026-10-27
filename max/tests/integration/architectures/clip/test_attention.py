@@ -18,11 +18,11 @@ from typing import Any
 import torch
 from _clip_attention import CLIPAttention as MaxCLIPAttention
 from _clip_attention import ClipConfig
+from max import functional as F
 from max.driver import Accelerator
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import TensorType
+from max.tensor import Tensor
 from torch.utils.dlpack import from_dlpack
 from transformers.models.clip.modeling_clip import CLIPAttention
 

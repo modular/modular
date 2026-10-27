@@ -24,13 +24,12 @@ import pytest
 import torch
 from max.driver import CPU, Accelerator, Device, accelerator_api
 from max.dtype import DType
-from max.experimental import compilation
-from max.experimental.compilation import CompiledCallable
-from max.experimental.sharding import TensorLayout
-from max.experimental.tensor import Tensor
 from max.pipelines.architectures.glm5_next_modulev3.layers.decoder import (
     write_back,
 )
+from max.tensor import Tensor, compilation
+from max.tensor.compilation import CompiledCallable
+from max.tensor.sharding import TensorLayout
 
 HIDDEN_SIZE = 4096
 HC_MULT = 4

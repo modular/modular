@@ -17,7 +17,6 @@ from __future__ import annotations
 from typing import Any
 
 from max.driver import DeviceSpec, load_devices
-from max.experimental.tensor import Tensor
 from max.graph import TensorType
 from max.nn import Module
 from max.pipelines.architectures.flux2.arch import FLUX2_TEXT_SEQ_LEN
@@ -29,6 +28,7 @@ from max.pipelines.architectures.mistral3_modulev3.text_encoder.model_config imp
 )
 from max.pipelines.lib.weight_loader import WeightLoader, rename
 from max.pipelines.modeling.config_enums import SupportedEncoding
+from max.tensor import Tensor
 
 
 class TextEncoder(Module[[Tensor], Tensor]):
@@ -38,7 +38,7 @@ class TextEncoder(Module[[Tensor], Tensor]):
     and device specs.  Constructs the underlying
     :class:`Mistral3TextEncoderTransformer` and places itself on
     ``device_specs[0]`` so the caller only needs to wrap construction
-    in :func:`max.experimental.functional.lazy` and drive compilation.
+    in :func:`max.functional.lazy` and drive compilation.
 
     Weight loading is decoupled from construction.  :meth:`adapt_loader`
     wraps a source :class:`~max.pipelines.lib.weight_loader.WeightLoader`

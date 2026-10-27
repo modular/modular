@@ -57,10 +57,9 @@ modular_eager_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/testing",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        "//max/python/max/tensor/testing",
         requirement("ml-dtypes"),
         requirement("numpy"),
     ],
@@ -88,9 +87,9 @@ modular_eager_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/nn/legacy",
     ],
@@ -123,8 +122,8 @@ modular_py_test(
     deps = [
         "//max/python/max:tensor",
         "//max/python/max/dtype",
-        "//max/python/max/experimental/testing",
         "//max/python/max/nn",
+        "//max/python/max/tensor/testing",
     ],
 )
 
@@ -163,9 +162,8 @@ modular_eager_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/testing",
         "//max/python/max/graph",
+        "//max/python/max/tensor/testing",
     ],
 )
 
@@ -183,7 +181,6 @@ modular_py_test(
         "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         requirement("torch"),
     ],
 )
@@ -245,7 +242,6 @@ modular_py_test(
         "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/nn",
         requirement("numpy"),
@@ -268,7 +264,6 @@ modular_py_test(
         "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/nn",
         requirement("numpy"),

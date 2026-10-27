@@ -18,9 +18,9 @@ import logging
 from typing import Any, ClassVar
 
 from max.dtype import DType
-from max.experimental.tensor import default_device
 from max.graph import DeviceRef
 from max.nn.legacy.kv_cache import KVCacheParamInterface
+from max.tensor import default_device
 from transformers import AutoConfig
 from typing_extensions import override
 

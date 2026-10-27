@@ -49,17 +49,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 import numpy as np
+from max import functional as F
 from max import tree
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import (
-    DeviceMapping,
-    DeviceMesh,
-    NamedMapping,
-    Sharded,
-)
-from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorValue
 from max.nn import Embedding, Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
@@ -77,6 +70,13 @@ from max.nn.legacy.quant_config import QuantConfig
 from max.nn.legacy.transformer import ReturnLogits
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
+from max.tensor import Tensor
+from max.tensor.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    NamedMapping,
+    Sharded,
+)
 
 from .layers import ep
 from .layers.attn_residual import kimi_k3_attn_res_mix

@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max import functional as F
 from max.nn import Module
 from max.nn.linear import Linear
+from max.tensor import Tensor
 
 
 class LlavaMultiModalConnector(Module[[Tensor], Tensor]):

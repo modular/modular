@@ -21,12 +21,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, cast
 
+from max import functional as F
 from max import tree
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMapping, NamedMapping
-from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorValue
 from max.nn import Module, as_subgraph
 from max.nn.common_layers.kv_cache import PagedCacheValues
@@ -43,6 +41,8 @@ from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.nn.norm import RMSNorm
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, NamedMapping
 
 from .layers.attention import NemotronHAttention
 from .layers.mamba2 import (

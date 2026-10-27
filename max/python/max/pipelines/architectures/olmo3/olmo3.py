@@ -17,9 +17,8 @@ from __future__ import annotations
 
 import functools
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.mlp import MLP
@@ -44,6 +43,7 @@ from max.pipelines.architectures.olmo3.layers.transformer import (
     Olmo3TransformerBlock,
 )
 from max.pipelines.lib import ModuleV3Outputs
+from max.tensor import Tensor
 
 from .layers.attention import Olmo3Attention
 from .model_config import Olmo3Config

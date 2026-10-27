@@ -13,7 +13,7 @@ modular_py_library(
     srcs = ["_test_helpers.py"],
     imports = ["."],
     deps = [
-        "//max/python/max/experimental",
+        "//max/python/max:tensor",
         requirement("numpy"),
     ],
 )
@@ -42,7 +42,6 @@ modular_py_library(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/nn",
         requirement("numpy"),
@@ -83,7 +82,6 @@ modular_eager_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/nn",
         requirement("numpy"),
@@ -105,9 +103,9 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
     ],
 )
@@ -136,8 +134,8 @@ modular_eager_py_test(
     deps = [
         ":test_base",
         ":test_helpers",
+        "//max/python/max:tensor",
         "//max/python/max/driver",
-        "//max/python/max/experimental",
     ],
 )
 
@@ -172,8 +170,8 @@ modular_eager_py_test(
         deps = [
             ":test_base",
             ":test_helpers",
+            "//max/python/max:tensor",
             "//max/python/max/driver",
-            "//max/python/max/experimental",
             requirement("numpy"),
         ],
     )
@@ -193,7 +191,7 @@ modular_eager_py_test(
         gpu_constraints = ["//:has_4_gpus"],
         ignore_extra_deps = [
             ":test_helpers",
-            "//max/python/max/experimental",
+            "//max/python/max:tensor",
             "//max/python/max/nn",
         ],
         imports = ["."],
@@ -206,8 +204,8 @@ modular_eager_py_test(
         deps = [
             ":test_base",
             ":test_helpers",
+            "//max/python/max:tensor",
             "//max/python/max/driver",
-            "//max/python/max/experimental",
             "//max/python/max/nn",
         ],
     )
@@ -238,9 +236,9 @@ modular_eager_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/nn/legacy",
         requirement("numpy"),
     ],
@@ -267,8 +265,8 @@ modular_eager_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
-        "//max/python/max/experimental",
         requirement("numpy"),
     ],
 )

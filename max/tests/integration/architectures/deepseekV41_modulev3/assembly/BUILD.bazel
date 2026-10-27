@@ -17,7 +17,7 @@ modular_eager_py_test(
     cpu_only = True,
     env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
     deps = [
-        "//max/python/max/experimental",
+        "//max/python/max:tensor",
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
         requirement("numpy"),
@@ -54,9 +54,9 @@ modular_eager_py_test(
     deps = [
         ":runtime_config",
         requirement("transformers"),
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures",
@@ -95,9 +95,9 @@ modular_eager_py_test(
     tags = ["gpu"],
     deps = [
         ":runtime_config",
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",

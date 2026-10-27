@@ -42,7 +42,6 @@ from conftest import (
 from max.driver import Device
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental.tensor import default_dtype
 from max.graph import DeviceRef
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.legacy.kv_cache import KVCacheParams, MHAKVCacheParams
@@ -56,6 +55,7 @@ from max.pipelines.architectures.gemma4_modulev3.layers.rotary_embedding import 
     ProportionalRotaryEmbedding,
 )
 from max.pipelines.kv_cache import PagedKVCacheManager
+from max.tensor import default_dtype
 from transformers.models.gemma4.configuration_gemma4 import Gemma4TextConfig
 
 TORCH_DTYPE = torch.bfloat16

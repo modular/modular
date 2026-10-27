@@ -93,9 +93,9 @@ argument and return types in its signature, such as
 `Module[[Tensor, PagedCacheValues, Tensor, Tensor], tuple[Tensor, ...]]`, and
 implements
 [`forward()`](/api/python/generated/max.nn.Module/#max.nn.Module.forward)
-over [`Tensor`](/api/python/generated/max.experimental.tensor.Tensor/) values.
+over [`Tensor`](/api/python/generated/max.tensor.Tensor/) values.
 Operations come from
-[`max.experimental.functional`](/api/python/experimental.functional/), which you
+[`max.functional`](/api/python/functional/), which you
 import as `F`.
 
 Layer constructors take shapes and options only, such as
@@ -115,7 +115,7 @@ builds the decoder:
    on the config.
 4. Calls your `_init_distributed_runtime()` to set up a distributed runtime.
 5. Builds your module inside
-   [`F.lazy()`](/api/python/experimental.functional/#max.experimental.functional.lazy)
+   [`F.lazy()`](/api/python/functional/#max.functional.lazy)
    with the config's dtype as the default, by calling your
    `_instantiate_module()`. `F.lazy()` defers tensor realization while
    `_instantiate_module()` builds the module.
@@ -350,7 +350,7 @@ YourRootModule = Llama3
 -->
 
 ```python
-from max.experimental import functional as F
+from max import functional as F
 
 with F.lazy():
     model = YourRootModule(config, kv_params)
@@ -487,7 +487,7 @@ each cache in `PagedCacheValues` from
 
 <!-- invisible-code-block: python
 from max.nn import Module
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 from max.nn.legacy.kv_cache import KVCacheParamInterface
 from max.pipelines.architectures.olmo3.model_config import Olmo3Config
 from max.pipelines.architectures.olmo3.olmo3 import (
@@ -663,26 +663,26 @@ MoE routing, a non-standard transformer block), implement each in a separate
 file in `layers/`. Keep `{model_name}.py` for the root module and the layer
 loop.
 
-A layer can call any operation in `max.experimental.functional`. For a graph op
+A layer can call any operation in `max.functional`. For a graph op
 or kernel that takes
 [`TensorValue`](/api/python/generated/max.graph.TensorValue/) arguments,
-[`F.functional(fn)`](/api/python/experimental.functional/#max.experimental.functional.functional)
+[`F.functional(fn)`](/api/python/functional/#max.functional.functional)
 wraps the function into one that takes and returns `Tensor` values. The
 `functional_kernels` module wraps its kernels this way.
 
 ## Run on multiple GPUs
 
 A multi-GPU architecture builds its module on a
-[`DeviceMesh`](/api/python/generated/max.experimental.sharding.DeviceMesh/) in
+[`DeviceMesh`](/api/python/generated/max.tensor.sharding.DeviceMesh/) in
 `_instantiate_module()`. Constructing the module inside
-[`default_device(mesh)`](/api/python/generated/max.experimental.tensor.default_device/)
+[`default_device(mesh)`](/api/python/generated/max.tensor.default_device/)
 creates each weight on the mesh. `Module.to()` moves a module to one device
 only, and raises for a mesh with more than one device. The `gemma3_modulev3`
 reference architecture builds a one-axis tensor-parallel mesh:
 
 ```python title="model.py"
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import default_device
+from max.tensor.sharding import DeviceMesh
+from max.tensor import default_device
 
 
 def _instantiate_module(self, model_config):
@@ -697,11 +697,11 @@ Layers declare how their weights split across the mesh axes.
 existing `Linear`. `VocabParallelEmbedding` in `max.nn.common_layers.embedding`
 splits the vocabulary. The sharding picker inserts the collectives that these
 placements require. For an explicit collective, call
-[`F.allreduce_sum()`](/api/python/experimental.functional/#max.experimental.functional.allreduce_sum),
-[`F.allgather()`](/api/python/experimental.functional/#max.experimental.functional.allgather),
-[`F.reduce_scatter()`](/api/python/experimental.functional/#max.experimental.functional.reduce_scatter),
+[`F.allreduce_sum()`](/api/python/functional/#max.functional.allreduce_sum),
+[`F.allgather()`](/api/python/functional/#max.functional.allgather),
+[`F.reduce_scatter()`](/api/python/functional/#max.functional.reduce_scatter),
 or
-[`F.transfer_to()`](/api/python/experimental.functional/#max.experimental.functional.transfer_to).
+[`F.transfer_to()`](/api/python/functional/#max.functional.transfer_to).
 
 The [parallelism strategies](/serve/parallelism/#supported-strategies) cover how
 MAX splits a served model across several GPUs. Inside an `auto_reshard` block

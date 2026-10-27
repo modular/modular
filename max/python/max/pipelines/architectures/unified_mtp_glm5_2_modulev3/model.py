@@ -19,16 +19,16 @@ from dataclasses import replace
 from functools import cached_property
 from typing import Any, ClassVar
 
+from max import functional as F
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.experimental import functional as F
-from max.experimental.compilation import CompiledCallable
-from max.experimental.tensor import default_device, default_dtype
 from max.nn.legacy.comm import Signals
 from max.nn.legacy.comm.ep import EPBatchManager
 from max.nn.legacy.kv_cache import MultiKVCacheParams
 from max.profiler import traced
+from max.tensor import default_device, default_dtype
+from max.tensor.compilation import CompiledCallable
 from typing_extensions import override
 
 from ..deepseekV3_2_modulev3.deepseekV3_2 import DeepseekV3_2

@@ -7,10 +7,10 @@ modular_py_library(
     srcs = glob(["**/*.py"]),
     test_docstring_examples = True,
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/config",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/pipelines/modeling",

@@ -25,18 +25,18 @@ import pytest
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import Model
-from max.experimental.compilation import CompiledCallable
-from max.experimental.sharding import (
+from max.nn.module import (
+    Module,
+    module_dataclass,
+)
+from max.tensor import Tensor, default_device
+from max.tensor.compilation import CompiledCallable
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Replicated,
     Sharded,
     TensorLayout,
-)
-from max.experimental.tensor import Tensor, default_device
-from max.nn.module import (
-    Module,
-    module_dataclass,
 )
 
 # ── Inline mesh helpers (no conftest dependency) ──────────────────────

@@ -20,11 +20,9 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from max import functional as F
 from max.driver import Accelerator
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import Tensor, default_device
 from max.pipelines.architectures.kimi_k3_modulev3.layers.mlp import (
     KimiK3DenseMLP,
     tensor_parallel_dense_mlp,
@@ -33,6 +31,8 @@ from max.pipelines.architectures.kimi_k3_modulev3.layers.moe_latent import (
     KimiK3LatentMoE,
     tensor_parallel_latent_moe,
 )
+from max.tensor import Tensor, default_device
+from max.tensor.sharding import DeviceMesh
 
 
 def _rel_error(a: np.ndarray, b: np.ndarray) -> float:

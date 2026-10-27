@@ -24,9 +24,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMapping, DeviceMesh
-from max.experimental.tensor import Tensor
+from max import functional as F
 from max.graph import BufferType, DimLike, TensorType
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.multi_latent_attention import (
@@ -46,6 +44,8 @@ from max.pipelines.speculative.driver import (
     gather_variable_rows,
 )
 from max.pipelines.speculative.spec_target import Verified
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, DeviceMesh
 
 from ..deepseekV3_2.layers.sparse_mla import sparse_selection_width
 from ..deepseekV3_2_modulev3.deepseekV3_2 import (

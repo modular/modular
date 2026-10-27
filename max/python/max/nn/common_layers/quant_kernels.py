@@ -14,7 +14,7 @@
 """Quantized kernels as ``Tensor`` ops, with their sharding rules.
 
 Each kernel from :mod:`max.nn.legacy.kernels` is wrapped with
-:func:`~max.experimental.functional.functional` and the rule that says how it
+:func:`~max.functional.functional` and the rule that says how it
 runs on sharded inputs. :mod:`.quant_ops` dispatches onto these, and the
 on-the-fly quantizers in :mod:`.quant_tensor` call them directly; this module
 imports neither, so both can depend on it.
@@ -25,12 +25,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding.action import AxisAssignment
-from max.experimental.sharding.cost import P, R
-from max.experimental.sharding.placements import Placement, Sharded
-from max.experimental.sharding.types import TensorLayout
 from max.graph import TensorValue, ops
 from max.nn.legacy.kernels import (
     block_scales_interleave as _block_scales_interleave,
@@ -63,6 +59,10 @@ from max.nn.legacy.kernels import (
     quantize_dynamic_scaled_float8 as _quantize_dynamic_scaled_float8,
 )
 from max.nn.legacy.quant_config import InputScaleSpec, WeightScaleSpec
+from max.tensor.sharding.action import AxisAssignment
+from max.tensor.sharding.cost import P, R
+from max.tensor.sharding.placements import Placement, Sharded
+from max.tensor.sharding.types import TensorLayout
 
 
 def _transpose2d_placement(p: Placement) -> Placement:
@@ -72,8 +72,8 @@ def _transpose2d_placement(p: Placement) -> Placement:
     :func:`quantize_dynamic_scaled_float8` are laid out transposed relative to
     the activations they describe (``[K / block_k, M]`` vs ``[M, K]``), so a
     shard of the activations on tensor axis ``a`` corresponds to a shard of the
-    scales on axis ``1 - a``. :class:`~max.experimental.sharding.Replicated`
-    and :class:`~max.experimental.sharding.Partial` placements are unchanged.
+    scales on axis ``1 - a``. :class:`~max.tensor.sharding.Replicated`
+    and :class:`~max.tensor.sharding.Partial` placements are unchanged.
     """
     if isinstance(p, Sharded):
         return Sharded(axis=1 - p.axis)

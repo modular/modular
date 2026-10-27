@@ -19,15 +19,15 @@ from typing import Any
 import numpy as np
 from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.experimental.compilation import compile
-from max.experimental.sharding import TensorLayout
-from max.experimental.tensor import Tensor
 from max.pipelines.lib import (
     ModelInputs,
     ModelOutputs,
     ModuleV3Outputs,
     ModuleV3PipelineModelWithKVCache,
 )
+from max.tensor import Tensor
+from max.tensor.compilation import compile
+from max.tensor.sharding import TensorLayout
 
 
 class _Model(ModuleV3PipelineModelWithKVCache[Any]):

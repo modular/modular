@@ -30,9 +30,6 @@ import numpy as np
 import numpy.typing as npt
 from max.driver import Buffer
 from max.dtype import DType
-from max.experimental.realization_context import ensure_context
-from max.experimental.sharding import NamedMapping
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorValue, ops
 from max.graph.weights import WeightData
 from max.nn import (
@@ -55,6 +52,9 @@ from max.nn.legacy.kernels import (
     store_v_cache_ragged,
 )
 from max.nn.legacy.kv_cache import PagedCacheValues
+from max.tensor import Tensor
+from max.tensor.realization_context import ensure_context
+from max.tensor.sharding import NamedMapping
 
 from ..dflash_mimo_v2 import DFlashMiMoV2Config
 from .context_writer import DFlashContextWriter, _heads_per_shard

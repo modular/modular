@@ -28,7 +28,6 @@ import pytest
 from _paged_cache_test_utils import build_paged_cache
 from max.driver import Accelerator
 from max.dtype import DType
-from max.experimental.tensor import Tensor, default_device
 from max.graph import DeviceRef
 from max.nn.legacy.kv_cache import MHAKVCacheParams, MLAKVCacheParams
 from max.pipelines.architectures.kimi_k3_modulev3.layers.decoder_layer import (
@@ -42,6 +41,7 @@ from max.pipelines.architectures.kimi_k3_modulev3.layers.mla_attention import (
 from max.pipelines.architectures.kimi_k3_modulev3.layers.mlp import (
     KimiK3DenseMLP,
 )
+from max.tensor import Tensor, default_device
 
 _RNG = np.random.default_rng(20261022)
 

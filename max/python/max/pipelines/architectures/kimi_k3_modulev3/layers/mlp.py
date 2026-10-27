@@ -17,12 +17,12 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMesh, NamedMapping
-from max.experimental.tensor import Tensor
 from max.nn import Linear, Module
 from max.nn.common_layers.mesh_axis import TP
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMesh, NamedMapping
 
 from .tensor_parallel import shard_fused_blocks
 

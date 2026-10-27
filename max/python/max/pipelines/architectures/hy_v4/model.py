@@ -16,10 +16,8 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import default_device, default_dtype
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.legacy.kv_cache import MultiKVCacheParams
 from max.pipelines.context import TextContext
@@ -28,6 +26,8 @@ from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.pipelines.weights.quant import parse_quant_config
+from max.tensor import default_device, default_dtype
+from max.tensor.sharding import DeviceMesh
 from typing_extensions import override
 
 from .batch_processor import HYV4BatchProcessor

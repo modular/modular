@@ -13,7 +13,7 @@
 """Random ops tests on real 4 GPUs — inherits all logic from _random_ops."""
 
 from max.driver import Accelerator
-from max.experimental.sharding import DeviceMesh
+from max.tensor.sharding import DeviceMesh
 
 from functional._random_ops import RandomTests
 

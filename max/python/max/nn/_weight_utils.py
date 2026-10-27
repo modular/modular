@@ -35,22 +35,22 @@ import numpy.typing as npt
 from max import tree
 from max.driver import CPU, Device, DLPackArray
 from max.dtype import DType
-from max.experimental.realization_context import (
+from max.graph import Graph, Shape, ShapeLike
+from max.tensor.realization_context import (
     EagerRealizationContext,
     GraphRealizationContext,
     LazyRealizationContext,
 )
-from max.experimental.sharding import DeviceMapping, DeviceMesh
-from max.experimental.sharding.mappings import as_device_mapping
-from max.experimental.sharding.per_shard_dim import global_dim
-from max.experimental.tensor import (
+from max.tensor.sharding import DeviceMapping, DeviceMesh
+from max.tensor.sharding.mappings import as_device_mapping
+from max.tensor.sharding.per_shard_dim import global_dim
+from max.tensor.tensor import (
     GraphValue,
     Tensor,
     current_realization_context,
     defaults,
     external_shard_names,
 )
-from max.graph import Graph, Shape, ShapeLike
 
 _logger = logging.getLogger(__name__)
 

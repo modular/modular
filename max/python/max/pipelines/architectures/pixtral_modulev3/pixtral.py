@@ -13,9 +13,8 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max import tree
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
 from max.nn import Module
 from max.nn.common_layers.attention import AttentionWithRope
@@ -30,6 +29,7 @@ from max.nn.legacy.kv_cache import (
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
+from max.tensor import Tensor
 
 from ..llama3_modulev3.layers.transformer_block import LlamaTransformerBlock
 from .llava.llava_decoder import Transformer

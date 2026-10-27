@@ -47,11 +47,9 @@ from conftest import (
     TEXT_VOCAB_SIZE,
     TorchGemma4TextModel,
 )
+from max import functional as F
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import Tensor, default_dtype
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights
 from max.nn import Module
@@ -79,6 +77,8 @@ from max.pipelines.architectures.gemma4_modulev3.layers.transformer_block import
 from max.pipelines.architectures.gemma4_modulev3.weight_adapters import (
     convert_language_state_dict_for_module,
 )
+from max.tensor import Tensor, default_dtype
+from max.tensor.sharding import DeviceMesh
 
 TORCH_DTYPE = torch.bfloat16
 MAX_DTYPE = DType.bfloat16

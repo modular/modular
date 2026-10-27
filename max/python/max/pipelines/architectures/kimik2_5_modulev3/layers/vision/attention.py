@@ -18,17 +18,17 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import AxisAssignment, replicated_rows
-from max.experimental.sharding.types import TensorLayout
-from max.experimental.tensor import Tensor
 from max.nn import Module
 from max.nn.legacy.attention.mask_config import MHAMaskVariant
 from max.nn.legacy.kernels import (
     flash_attention_ragged_gpu as _flash_attention_ragged_gpu,
 )
 from max.nn.linear import Linear
+from max.tensor import Tensor
+from max.tensor.sharding import AxisAssignment, replicated_rows
+from max.tensor.sharding.types import TensorLayout
 
 
 def _flash_attention_ragged_gpu_rule(

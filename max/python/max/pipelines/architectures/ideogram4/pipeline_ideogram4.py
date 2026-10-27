@@ -27,15 +27,15 @@ from dataclasses import dataclass
 
 import numpy as np
 import numpy.typing as npt
+from max import functional as F
 from max.driver import Buffer
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.pipelines.context import PixelContext
 from max.pipelines.diffusion.interface import (
     DiffusionPipeline,
     DiffusionPipelineOutput,
 )
 from max.profiler import traced
+from max.tensor import Tensor
 
 from ..qwen3_modulev3.text_encoder.model import Qwen3TextEncoderModel
 from .denoise_step import Ideogram4CombineStep, Ideogram4PackStep

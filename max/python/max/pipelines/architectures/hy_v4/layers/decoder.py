@@ -16,10 +16,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from max.experimental.tensor import Tensor
 from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.norm import RMSNorm
+from max.tensor import Tensor
 
 from ..model_config import HYV4Config
 from .attention import HYV4Attention

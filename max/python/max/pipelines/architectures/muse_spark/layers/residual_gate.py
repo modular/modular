@@ -15,10 +15,10 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.nn import Module
+from max.tensor import Tensor
 
 
 class MuseSparkResidualGate(Module[[Tensor, Tensor], Tensor]):

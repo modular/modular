@@ -32,7 +32,6 @@ import pytest
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import Model
-from max.experimental.compilation import CompiledCallable
 from max.graph import DeviceRef
 from max.nn.legacy.kv_cache import (
     AttnKeyInterface,
@@ -46,6 +45,7 @@ from max.pipelines.lib.graph_capture import (
     ServeGraphCaptureRunner,
 )
 from max.pipelines.lib.interfaces import UnifiedEagleOutputs
+from max.tensor.compilation import CompiledCallable
 from test_common.mocks.pipeline_config import (
     DummyPipelineConfig,
     mock_huggingface_config,

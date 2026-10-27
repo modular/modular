@@ -41,11 +41,9 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.compilation import StagedGraph
-from max.experimental.tensor import default_device, default_dtype
 from max.graph import DeviceRef
 from max.nn.legacy import kernels
 from max.nn.legacy.comm import Signals
@@ -66,6 +64,8 @@ from max.pipelines.kv_cache.connectors.dkv.connector import (
 )
 from max.pipelines.speculative import SpeculativeConfig
 from max.pipelines.weights import HuggingFaceRepo
+from max.tensor import default_device, default_dtype
+from max.tensor.compilation import StagedGraph
 from mimo_dflash_v3_fixtures import (
     DFLASH_CONFIG,
     _FakeAttrConfig,

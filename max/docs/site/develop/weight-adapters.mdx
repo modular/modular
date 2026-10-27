@@ -67,7 +67,7 @@ entire weight loading flow:
    `_init_distributed_runtime()`.
 9. `graph_specs()` constructs your `Module` with `_instantiate_module()` inside
    an
-   [`F.lazy()`](/api/python/experimental.functional/#max.experimental.functional.lazy)
+   [`F.lazy()`](/api/python/functional/#max.functional.lazy)
    block, which defers tensor realization.
 10. `compile_and_init_graphs()` traces and compiles each graph through
     [`Module.stage()`](/api/python/generated/max.nn.Module/#max.nn.Module.stage),
@@ -151,8 +151,8 @@ MyModel = Llama3
 
 ```python
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import default_dtype
+from max import functional as F
+from max.tensor import default_dtype
 
 # Construct the root module the way your _instantiate_module() does.
 with F.lazy(), default_dtype(DType.bfloat16):
@@ -165,7 +165,7 @@ for name, param in model.parameters:
 
 `F.lazy()` defers tensor realization, so constructing the module doesn't
 materialize its initial parameter values.
-[`default_dtype()`](/api/python/generated/max.experimental.tensor.default_dtype/)
+[`default_dtype()`](/api/python/generated/max.tensor.default_dtype/)
 sets the dtype for parameters that don't declare one, as `load_model()` does
 with the model config's `dtype`.
 
@@ -513,8 +513,8 @@ MyModel = Llama3
 from pathlib import Path
 
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import default_dtype
+from max import functional as F
+from max.tensor import default_dtype
 from max.graph.weights import load_weights
 from transformers import AutoConfig
 

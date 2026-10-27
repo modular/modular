@@ -17,8 +17,6 @@ import logging
 from typing import Any, ClassVar
 
 from max import tree
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import default_device
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     ModelInputs,
@@ -26,6 +24,8 @@ from max.pipelines.lib import (
     ModuleV3PipelineModelWithKVCache,
 )
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
+from max.tensor import default_device
+from max.tensor.sharding import DeviceMesh
 from transformers import AutoConfig
 
 from .batch_processor import Gemma3ModuleV3BatchProcessor

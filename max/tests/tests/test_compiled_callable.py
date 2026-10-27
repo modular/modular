@@ -33,8 +33,11 @@ from max._artifact.value_types import (
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental.compilation import CompiledCallable, compile
-from max.experimental.sharding import (
+from max.graph import BufferType, DeviceRef, Graph, TensorType
+from max.nn.legacy.graph_groups import GraphGroup
+from max.tensor import Tensor
+from max.tensor.compilation import CompiledCallable, compile
+from max.tensor.sharding import (
     BufferLayout,
     DeviceMapping,
     DeviceMesh,
@@ -42,10 +45,7 @@ from max.experimental.sharding import (
     Sharded,
     TensorLayout,
 )
-from max.experimental.sharding.types import as_layout
-from max.experimental.tensor import Tensor
-from max.graph import BufferType, DeviceRef, Graph, TensorType
-from max.nn.legacy.graph_groups import GraphGroup
+from max.tensor.sharding.types import as_layout
 
 X = TensorType(DType.float32, ["batch", 4], device=DeviceRef.CPU())
 

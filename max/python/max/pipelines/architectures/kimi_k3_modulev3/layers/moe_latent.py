@@ -70,15 +70,8 @@ never in the latent, and is added last.
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import (
-    DeviceMapping,
-    DeviceMesh,
-    NamedMapping,
-    Partial,
-)
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorValue, ops
 from max.nn import Linear, Module
 from max.nn.common_layers.functional_kernels import (
@@ -95,6 +88,13 @@ from max.nn.legacy.kernels import (
 from max.nn.legacy.quant_config import QuantConfig
 from max.nn.norm import RMSNorm
 from max.support.math import ceildiv
+from max.tensor import Tensor
+from max.tensor.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    NamedMapping,
+    Partial,
+)
 
 from . import ep
 from .amd_w4a8_validation import validate_amd_packed_k, validate_amd_tp_w4a8

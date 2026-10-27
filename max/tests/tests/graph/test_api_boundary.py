@@ -17,14 +17,14 @@ import sys
 import types
 
 import pytest
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max import functional as F
 from max.graph import BufferValue, Graph, TensorValue, ops
 from max.graph._api_boundary import (
     api_boundary,
     callers_of_api,
     is_api_boundary,
 )
+from max.tensor import Tensor
 
 
 def _public_functions(namespace: dict[str, object]) -> list[str]:

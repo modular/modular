@@ -24,7 +24,7 @@ Example:
 
     from max.driver import CPU
     from max.dtype import DType
-    from max.experimental.tensor import Tensor, default_device
+    from max.tensor import Tensor, default_device
     from max.nn import Module, module_dataclass
     from max.graph import TensorType
 
@@ -54,7 +54,7 @@ Example:
     assert np.allclose(result.to_numpy(), np.zeros((3, 10)))
 """
 
-from max.experimental.compilation import as_subgraph
+from max.tensor.compilation import as_subgraph
 
 from .common_layers.lora_wrapper import LoRA, lora_layers, lora_parameters
 from .conv import Conv2d

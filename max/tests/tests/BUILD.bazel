@@ -80,10 +80,10 @@ modular_eager_py_test(
     }),  # FIXME: MOCO-2411
     deps = [
         "//max/python/max:_mlir_context",
+        "//max/python/max:tensor",
         "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/mlir",
         "//max/python/max/nn",
@@ -106,12 +106,12 @@ modular_eager_py_test(
     }),  # FIXME: MOCO-2411
     deps = [
         "//max/python/max:_mlir_context",
+        "//max/python/max:tensor",
         "//max/python/max:tree",
         "//max/python/max/_artifact",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/mlir",
         "//max/python/max/nn/legacy",
@@ -126,10 +126,10 @@ modular_py_test(
         "test_compile_pool.py",
     ],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         requirement("numpy"),
     ],
@@ -148,10 +148,10 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         requirement("numpy"),
     ],
@@ -321,11 +321,11 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     deps = [
         "//max/python/max:interpreter",
+        "//max/python/max:tensor",
         "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
     ],
 )

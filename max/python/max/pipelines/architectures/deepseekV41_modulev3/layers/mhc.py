@@ -33,14 +33,14 @@ ordinary all-reduce and then feeds the whole ``y`` to
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMapping
-from max.experimental.tensor import Tensor
 from max.graph import Dim
 from max.nn.common_layers.functional_kernels import (
     hyper_connection_gates,
 )
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping
 
 
 class _PreMixOmitted:

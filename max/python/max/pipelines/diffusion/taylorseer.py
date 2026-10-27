@@ -31,9 +31,9 @@ from max._core.driver import Device
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.nn.legacy.layer import Module
+from max.tensor import Tensor
 
 if TYPE_CHECKING:
     from .cache import DenoisingCacheState

@@ -13,7 +13,7 @@
 """Compiled tests on simulated CPU mesh -- inherits all logic from _compiled."""
 
 from max.driver import CPU
-from max.experimental.sharding import DeviceMesh
+from max.tensor.sharding import DeviceMesh
 
 from module._compiled import CompiledTests
 

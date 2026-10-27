@@ -17,11 +17,11 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from max.driver import CPU, Accelerator, accelerator_count
-from max.experimental.tensor import Tensor
 from max.graph import Dim
 from max.nn.common_layers.rotary_embedding import (
     RotaryEmbedding,
 )
+from max.tensor import Tensor
 
 _N_HEADS = 2
 _HEAD_DIM = 8

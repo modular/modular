@@ -15,10 +15,9 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.nn import Module
 from max.nn.common_layers import quant_ops
 from max.nn.common_layers.functional_kernels import (
@@ -39,6 +38,7 @@ from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.legacy.attention import MHAMaskVariant
 from max.nn.legacy.kv_cache import KVCacheParams
 from max.nn.legacy.quant_config import QuantConfig
+from max.tensor import Tensor
 
 from .rms_norm import Gemma4RMSNorm
 

@@ -37,11 +37,11 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType, TensorValue, Value, ops
 from max.nn.legacy.kv_cache import PagedCacheValues
+from max.tensor import Tensor
 
 __all__ = [
     "INDEXER_SCORES_BUDGET_BYTES",

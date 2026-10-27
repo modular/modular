@@ -25,7 +25,7 @@ ALL_MAX_PYTHON_DEPS = ALL_ARCHITECTURES + [
     "//max/python/max/experimental/cascade/serve:main_lib",
     "//max/python/max/experimental/cascade/workers",
     "//max/python/max/nn",
-    "//max/python/max/experimental/testing",
+    "//max/python/max/tensor/testing",
     "//max/python/max/experimental/torch",
     "//max/python/max/graph",
     "//max/python/max/mlir",

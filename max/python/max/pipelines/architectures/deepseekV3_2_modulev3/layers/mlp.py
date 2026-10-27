@@ -15,9 +15,9 @@
 from __future__ import annotations
 
 from max.dtype import DType
-from max.experimental.tensor import Tensor
 from max.nn.common_layers import quant_ops
 from max.nn.common_layers.quant_linear import QuantizedMLP
+from max.tensor import Tensor
 
 
 class DeepseekV3_2MLP(QuantizedMLP):

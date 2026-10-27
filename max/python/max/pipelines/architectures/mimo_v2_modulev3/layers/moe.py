@@ -26,18 +26,9 @@ transit.
 
 from __future__ import annotations
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.realization_context import ensure_context
-from max.experimental.sharding import (
-    DeviceMapping,
-    DeviceMesh,
-    NamedMapping,
-    Partial,
-    Sharded,
-)
-from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
 from max.nn import Linear, Module
 from max.nn.common_layers import quant_ops
@@ -53,6 +44,15 @@ from max.nn.legacy.kernels import moe_create_indices, moe_finalize
 from max.nn.legacy.moe import NvMxf4f8Strategy
 from max.nn.legacy.quant_config import QuantConfig
 from max.nn.sequential import ModuleList
+from max.tensor import Tensor
+from max.tensor.realization_context import ensure_context
+from max.tensor.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    NamedMapping,
+    Partial,
+    Sharded,
+)
 
 from ..quant import FP8_BLOCK
 

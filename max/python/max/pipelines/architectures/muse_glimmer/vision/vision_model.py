@@ -15,9 +15,8 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
 from max.nn import Module
 from max.nn.common_layers.functional_kernels import (
@@ -30,6 +29,7 @@ from max.nn.sequential import ModuleList
 from max.pipelines.architectures.gemma4_modulev3.layers.rms_norm import (
     Gemma4RMSNorm,
 )
+from max.tensor import Tensor
 
 from ..model_config import MuseGlimmerVisionConfig
 

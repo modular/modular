@@ -36,13 +36,13 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import Tensor
 from max.graph import TensorType, TensorValue, ops
 from max.nn import Module
 from max.nn.legacy.kv_cache import PagedCacheValues
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMesh
 
 from .norm import RMSNorm
 

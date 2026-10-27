@@ -178,7 +178,7 @@ class MambaModel(PipelineModelWithKVCache[TextContext]):
 
     @traced
     def _load_models(self, session: InferenceSession) -> tuple[Any, Any]:
-        from max.experimental import functional as F
+        from max import functional as F
         from max.graph import TensorType
         from max.pipelines.lib import CompilationTimer
 
@@ -228,7 +228,7 @@ class MambaModel(PipelineModelWithKVCache[TextContext]):
             DType.uint32, shape=["row_offsets_len"], device=device_ref
         )
 
-        from max.experimental.tensor import default_dtype
+        from max.tensor import default_dtype
 
         with CompilationTimer("prefill") as timer:
             with F.lazy(), default_dtype(self.dtype):

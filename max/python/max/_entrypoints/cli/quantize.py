@@ -23,7 +23,6 @@ from typing import TYPE_CHECKING, Any, cast
 
 import requests
 from max import tree
-from max.experimental.tensor import Tensor
 from max.nn import Linear, Module
 from max.nn.common_layers.linear import QKVLinear
 from max.nn.common_layers.mlp import MLP
@@ -50,6 +49,7 @@ from max.pipelines.modeling.types import (
     Pipeline,
 )
 from max.profiler import OneShotCapture, Tracer
+from max.tensor import Tensor
 
 from .generate import stream_text_to_console
 from .metrics import TextGenerationMetrics

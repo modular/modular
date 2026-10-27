@@ -17,9 +17,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from max.driver import CPU
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import Tensor, default_device
 from max.nn.common_layers.embedding import VocabParallelEmbedding
+from max.tensor import Tensor, default_device
+from max.tensor.sharding import DeviceMesh
 
 
 @pytest.mark.parametrize(

@@ -18,19 +18,10 @@ from collections.abc import Iterator, Sequence
 from unittest.mock import MagicMock, patch
 
 import pytest
+from max import functional as F
 from max import tree
 from max.driver import Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import (
-    DeviceMapping,
-    DeviceMesh,
-    Partial,
-    Replicated,
-    Sharded,
-    Unknown,
-)
-from max.experimental.tensor import Tensor, default_device
 from max.graph import (
     BufferType,
     BufferValue,
@@ -48,6 +39,15 @@ from max.nn.common_layers.multi_latent_attention import (
 from max.nn.legacy.kv_cache import (
     KVCacheParams,
     MLAKVCacheParams,
+)
+from max.tensor import Tensor, default_device
+from max.tensor.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    Partial,
+    Replicated,
+    Sharded,
+    Unknown,
 )
 
 # Small model dimensions for fast graph-trace tests.

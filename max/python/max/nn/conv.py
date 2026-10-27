@@ -16,14 +16,14 @@ from __future__ import annotations
 
 from typing import Literal
 
+from max import functional as F
 from max.driver import Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental import random
-from max.experimental.tensor import Tensor
+from max.functional import random
 from max.graph import DeviceRef
 from max.graph.type import FilterLayout
 from max.nn.module import Module
+from max.tensor import Tensor
 
 
 class Conv2d(Module[[Tensor], Tensor]):
@@ -45,7 +45,7 @@ class Conv2d(Module[[Tensor], Tensor]):
         from max.driver import Accelerator, accelerator_count
         from max.dtype import DType
         from max.nn import Conv2d
-        from max.experimental.tensor import Tensor
+        from max.tensor import Tensor
 
         conv = Conv2d(
             kernel_size=3,

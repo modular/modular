@@ -17,11 +17,10 @@ from __future__ import annotations
 import functools
 import math
 
+from max import functional as F
 from max import tree
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.nn import Module
 from max.nn.common_layers.mlp import MLP
 from max.nn.common_layers.moe import MoE
@@ -39,6 +38,7 @@ from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
+from max.tensor import Tensor
 
 from .layers.moe_gate import DeepSeekV2MoEGate
 from .layers.rotary_embedding import DeepseekYarnRotaryEmbedding

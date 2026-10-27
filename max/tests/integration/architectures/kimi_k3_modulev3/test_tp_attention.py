@@ -24,11 +24,9 @@ os.environ.setdefault("MODULAR_DEBUG", "source-tracebacks")
 
 import numpy as np
 import pytest
+from max import functional as F
 from max.driver import Accelerator
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMesh, NamedMapping
-from max.experimental.tensor import Tensor, default_device
 from max.pipelines.architectures.kimi_k3_modulev3.layers.kda_attention import (
     KimiK3KDAAttention,
     tensor_parallel_kda_attention,
@@ -37,6 +35,8 @@ from max.pipelines.architectures.kimi_k3_modulev3.layers.mla_attention import (
     KimiK3MLAAttention,
     tensor_parallel_mla_attention,
 )
+from max.tensor import Tensor, default_device
+from max.tensor.sharding import DeviceMesh, NamedMapping
 
 _RNG = np.random.default_rng(20261006)
 

@@ -26,15 +26,15 @@ from typing import Any, Literal
 
 import numpy as np
 import numpy.typing as npt
+from max import functional as F
 from max.driver import CPU, Buffer, Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import TensorType
 from max.pipelines.context import PixelContext, TokenBuffer
 from max.pipelines.diffusion.cache import DenoisingCacheState
 from max.pipelines.diffusion.interface import DiffusionPipeline, max_compile
 from max.profiler import Tracer, traced
+from max.tensor import Tensor
 
 from ..autoencoders import AutoencoderKLModel
 from ..qwen3_modulev3.text_encoder import Qwen3TextEncoderZImageModel

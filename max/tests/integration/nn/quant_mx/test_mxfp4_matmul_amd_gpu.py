@@ -30,9 +30,9 @@ import pytest
 import torch
 from max.driver import Accelerator, accelerator_count
 from max.dtype import DType
-from max.experimental.tensor import Tensor
 from max.nn.common_layers import quant_ops
 from max.nn.common_layers.quant_tensor import MXFP4Quantizer
+from max.tensor import Tensor
 
 _M, _N, _K = 32, 64, 128
 _MX_BLOCK = 32

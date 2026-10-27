@@ -23,17 +23,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from max import functional as F
 from max import tree
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import (
-    DeviceMapping,
-    Replicated,
-    Sharded,
-    auto_reshard,
-)
-from max.experimental.tensor import Tensor
 from max.graph import TensorValue
 from max.nn import Module, as_subgraph
 from max.nn.common_layers.kv_cache import PagedCacheValues
@@ -41,6 +34,13 @@ from max.nn.common_layers.quant_moe import QuantizedMoE
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
 from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
+from max.tensor import Tensor
+from max.tensor.sharding import (
+    DeviceMapping,
+    Replicated,
+    Sharded,
+    auto_reshard,
+)
 
 from ...deepseekV3_modulev3.deepseekV3 import (
     DeepseekV3TextModel,

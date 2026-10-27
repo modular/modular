@@ -10,9 +10,9 @@ modular_py_binary(
     ignore_extra_deps = ["//max/python/max/_interpreter_ops"],
     imports = ["."],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
-        "//max/python/max/experimental",
         "//max/python/max/nn",
     ],
 )
@@ -37,9 +37,9 @@ modular_py_binary(
     ignore_extra_deps = ["//max/python/max/_interpreter_ops"],
     imports = ["."],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
-        "//max/python/max/experimental",
         "//max/python/max/nn",
     ],
 )
@@ -64,9 +64,9 @@ modular_py_binary(
     ignore_extra_deps = ["//max/python/max/_interpreter_ops"],
     imports = ["."],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
-        "//max/python/max/experimental",
         "//max/python/max/nn",
     ],
 )

@@ -18,7 +18,6 @@ from unittest.mock import MagicMock, call, patch
 
 import numpy as np
 import pytest
-from max.experimental.validation import EagerUsageValidator
 from max.pipelines.context import (
     ImageMetadata,
     StructuredOutputRegionDelimiters,
@@ -56,6 +55,7 @@ from max.pipelines.modeling.types import (
 )
 from max.pipelines.speculative.spec_width_policy import SpecWidthPolicy
 from max.support.math import ceildiv
+from max.tensor.validation import EagerUsageValidator
 
 # Marks a request as constrained; the tests never compile it.
 _SCHEMA = '{"type": "object"}'

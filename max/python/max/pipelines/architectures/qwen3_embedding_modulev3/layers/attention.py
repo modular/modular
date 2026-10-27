@@ -16,9 +16,8 @@ from __future__ import annotations
 
 import math
 
+from max import functional as F
 from max.driver import CPU
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import Dim
 from max.nn import Linear, Module
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
@@ -27,6 +26,7 @@ from max.nn.legacy.kernels import (
     flash_attention_ragged_gpu as _flash_attention_ragged_gpu,
 )
 from max.nn.norm import RMSNorm
+from max.tensor import Tensor
 
 flash_attention_ragged_gpu = F.functional(_flash_attention_ragged_gpu)
 

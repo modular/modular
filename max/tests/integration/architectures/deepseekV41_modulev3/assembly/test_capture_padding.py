@@ -34,8 +34,7 @@ regressions pin that the padded rows can neither write nor gather:
 from __future__ import annotations
 
 import numpy as np
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max import functional as F
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.pipelines.architectures.deepseekV41_modulev3.layers.attention import (
     RaggedRows,
@@ -49,6 +48,7 @@ from max.pipelines.architectures.deepseekV41_modulev3.layers.compressor import (
 from max.pipelines.architectures.deepseekV41_modulev3.layers.indexer import (
     index_key_store_slots,
 )
+from max.tensor import Tensor
 
 _SLOTS = 128  # the interface's window-leaf page size
 

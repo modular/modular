@@ -32,14 +32,14 @@ from __future__ import annotations
 
 from typing import Any
 
+from max import functional as F
 from max.driver import CPU, DeviceSpec, load_devices
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
 from max.nn import Module
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.weight_loader import WeightLoader, rename
+from max.tensor import Tensor
 
 from .components import Decoder, Encoder
 from .model_config import AutoencoderKLFlux2Config
@@ -64,7 +64,7 @@ class Vae(Module[..., Tensor]):
     Built directly from a HuggingFace VAE config dict, quantization
     encoding, and device specs.  Places itself on ``device_specs[0]``
     so the caller only needs to wrap construction in
-    :func:`max.experimental.functional.lazy` and drive compilation
+    :func:`max.functional.lazy` and drive compilation
     on the parent Module.
 
     Weight loading is decoupled from construction.  The static

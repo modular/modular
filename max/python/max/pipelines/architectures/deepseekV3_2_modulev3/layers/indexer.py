@@ -14,9 +14,8 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.nn import Module
 from max.nn.common_layers.functional_kernels import (
     mla_fp8_index_top_k_physical,
@@ -37,6 +36,7 @@ from max.nn.legacy.quant_config import (
     WeightScaleSpec,
 )
 from max.nn.norm import LayerNorm
+from max.tensor import Tensor
 
 
 def act_quant(

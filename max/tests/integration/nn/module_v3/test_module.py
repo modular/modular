@@ -19,24 +19,24 @@ import weakref
 
 import pytest
 from max import driver
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental import random
-from max.experimental.compilation import CompiledCallable
-from max.experimental.sharding import (
+from max.functional import random
+from max.nn.module import (
+    Module,
+    module_dataclass,
+)
+from max.tensor import Tensor, defaults
+from max.tensor.compilation import CompiledCallable
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Replicated,
     Sharded,
     TensorLayout,
 )
-from max.experimental.tensor import Tensor, defaults
-from max.experimental.testing import assert_all_close
-from max.nn.module import (
-    Module,
-    module_dataclass,
-)
+from max.tensor.testing import assert_all_close
 
 
 @module_dataclass

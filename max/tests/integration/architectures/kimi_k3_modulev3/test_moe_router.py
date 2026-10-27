@@ -25,10 +25,10 @@ import numpy.typing as npt
 import pytest
 from max.driver import Accelerator
 from max.dtype import DType
-from max.experimental.tensor import Tensor, default_device, default_dtype
 from max.pipelines.architectures.kimi_k3_modulev3.layers.moe_router import (
     make_kimi_k3_moe_router,
 )
+from max.tensor import Tensor, default_device, default_dtype
 
 _TOKENS = 12
 _HIDDEN = 32

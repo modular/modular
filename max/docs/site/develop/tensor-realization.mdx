@@ -4,7 +4,7 @@ description: Understand how MAX realizes tensors so you can reason about eager p
 ---
 
 In MAX, you can read the value of any
-[`Tensor`](/api/python/generated/max.experimental.tensor.Tensor/) at any
+[`Tensor`](/api/python/generated/max.tensor.Tensor/) at any
 point in your code. This page explains the realization mechanics that make that
 possible.
 
@@ -44,7 +44,7 @@ together at the function boundary. The next section covers how that works.
 :::note Lazy execution mode
 
 The
-[`F.lazy()`](/api/python/experimental.functional/#max.experimental.functional.lazy)
+[`F.lazy()`](/api/python/functional/#max.functional.lazy)
 context manager defers realization. Ops you call inside it build one graph, and
 their tensors stay unrealized after the block exits. MAX compiles and runs that
 graph when you read a tensor's values, for example with `item()` or
@@ -63,15 +63,15 @@ they execute as a single graph that the graph compiler can fuse and optimize as
 a unit.
 
 You can manually define a fusion region with
-[`F.functional()`](/api/python/experimental.functional/#max.experimental.functional.functional).
+[`F.functional()`](/api/python/functional/#max.functional.functional).
 Apply it as a decorator on a method or call it directly to wrap a graph op. This
 example uses the decorator form on a module's `forward()` method, then calls the
 module:
 
 ```python
-from max.experimental import functional as F
+from max import functional as F
 from max.nn import Module, module_dataclass
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 
 @module_dataclass

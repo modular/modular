@@ -37,11 +37,11 @@ loop still carries ``z`` as a realized float32 tensor with no eager glue.
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
 from max.nn import Module
+from max.tensor import Tensor
 
 
 class Ideogram4PackStep(Module[..., Tensor]):

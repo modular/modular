@@ -39,7 +39,7 @@ changes the `forward()` call and nothing else:
 ```python
 from max.driver import CPU
 from max.nn.norm import RMSNorm, rms_norm
-from max.experimental.tensor import Tensor, default_device
+from max.tensor import Tensor, default_device
 
 
 class MultiplyBeforeCastRMSNorm(RMSNorm):
@@ -76,13 +76,13 @@ track upstream changes yourself.
 
 When no built-in layer is close, define a module with `@module_dataclass` and
 name each parameter as a
-[`Tensor`](/api/python/generated/max.experimental.tensor.Tensor/) field. Here a
+[`Tensor`](/api/python/generated/max.tensor.Tensor/) field. Here a
 learnable per-channel scale owns one weight:
 
 ```python
 from max.driver import CPU
 from max.nn import Module, module_dataclass
-from max.experimental.tensor import Tensor, default_device
+from max.tensor import Tensor, default_device
 
 
 @module_dataclass
@@ -135,7 +135,7 @@ and adds an output projection:
 ```python
 from max.driver import CPU
 from max.nn import Linear, Module, ModuleList, RMSNorm
-from max.experimental.tensor import Tensor, default_device
+from max.tensor import Tensor, default_device
 
 
 class NormalizedProjection(Module[[Tensor], Tensor]):
@@ -204,7 +204,7 @@ adapter](/develop/weight-adapters/) maps them.
 When you need a primitive the library lacks, or a fusion the compiler isn't
 finding, write the computation as a custom operation in Mojo and wrap it in a
 layer that calls
-[`F.custom()`](/api/python/experimental.functional/#max.experimental.functional.custom)
+[`F.custom()`](/api/python/functional/#max.functional.custom)
 in `forward()`. The op's `name` matches the string your Mojo kernel registers
 with [`@extensibility.register`](/api/mojo/extensibility/decorators/register/),
 and `out_types` declares the shapes it returns:
@@ -212,9 +212,9 @@ and `out_types` declares the shapes it returns:
 <!-- skip: next "wrapper pattern; F.custom needs a registered Mojo kernel" -->
 
 ```python
-from max.experimental import functional as F
+from max import functional as F
 from max.nn import Linear, Module
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 
 class FusedActivation(Module[[Tensor], Tensor]):

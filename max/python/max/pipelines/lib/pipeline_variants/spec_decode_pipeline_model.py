@@ -41,8 +41,6 @@ from max import tree
 from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.experimental.realization_context import current_realization_context
-from max.experimental.tensor import Tensor
 from max.graph import (
     BufferType,
     BufferValue,
@@ -92,6 +90,8 @@ from max.pipelines.speculative.driver import SequentialDriver
 from max.pipelines.speculative.spec_adapters import STAGE_BOUNDARY
 from max.pipelines.speculative.spec_input_types import SpecDecodeInputTypeSpec
 from max.profiler import traced
+from max.tensor import Tensor
+from max.tensor.realization_context import current_realization_context
 from transformers import AutoConfig
 
 from ..arch_lookup import ARCH_LOOKUP, SupportedArchitecture

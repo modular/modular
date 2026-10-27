@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # DOC: develop/basic-ops.mdx
 
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 x = Tensor([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
 print(f"Original shape: {x.shape}")

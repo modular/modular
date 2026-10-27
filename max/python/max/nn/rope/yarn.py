@@ -15,7 +15,7 @@
 import math
 
 from max.dtype import DType
-from max.experimental.tensor import Tensor, default_dtype, defaults
+from max.tensor import Tensor, default_dtype, defaults
 
 from . import rope
 

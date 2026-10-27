@@ -51,11 +51,9 @@ from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
+from max import functional as F
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import Tensor, default_device
 from max.graph import DeviceRef
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.legacy.kv_cache import KVCacheParams
@@ -93,6 +91,8 @@ from max.pipelines.architectures.deepseekV41_modulev3.model_config import (
     DeepseekV41Config,
 )
 from max.pipelines.lib import KVCacheConfig
+from max.tensor import Tensor, default_device
+from max.tensor.sharding import DeviceMesh
 from runtime_config import text_config
 
 HEAD = 512

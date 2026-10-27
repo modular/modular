@@ -40,7 +40,6 @@ import numpy.typing as npt
 from max.driver import Accelerator, Device, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental.tensor import Tensor
 from max.pipelines.audio import AudioExecutorOutputs
 from max.pipelines.context import AudioContext
 from max.pipelines.lib.model_manifest import ModelManifest
@@ -49,6 +48,7 @@ from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.modeling.base import TensorStruct
 from max.profiler import traced
 from max.support.human_readable_formatter import to_human_readable_bytes
+from max.tensor import Tensor
 
 from . import denoise
 from .autoregressive import (

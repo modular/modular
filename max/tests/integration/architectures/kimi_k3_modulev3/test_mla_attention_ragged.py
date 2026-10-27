@@ -26,12 +26,12 @@ import pytest
 from _paged_cache_test_utils import build_paged_cache
 from max.driver import Accelerator
 from max.dtype import DType
-from max.experimental.tensor import Tensor, default_device
 from max.graph import DeviceRef
 from max.nn.legacy.kv_cache import MHAKVCacheParams
 from max.pipelines.architectures.kimi_k3_modulev3.layers.mla_attention import (
     KimiK3MLAAttention,
 )
+from max.tensor import Tensor, default_device
 
 _HIDDEN = 64
 _NUM_HEADS = 4

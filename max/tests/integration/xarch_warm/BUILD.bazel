@@ -3,17 +3,17 @@ load(":eager_py_test.bzl", "modular_eager_py_test")
 load(":interp_cache.bzl", "warm_interp_cache")
 
 # oss/max-llm-book (test_gpt2_accel), max/internal/driver/test (the gpt2
-# conformance suites), //max_private's eager suites and the max/experimental
-# and max/nn docstring examples force-load this warm cache (MXF-533), so they need
+# conformance suites), //max_private's eager suites and the max.tensor, max.functional
+# and max.nn docstring examples force-load this warm cache (MXF-533), so they need
 # visibility here. This local directive extends the inherited //max/tests
 # default so gazelle (run by `//:format`) keeps the extra entries below instead
 # of regenerating them back to the parent directive's list.
-# gazelle:default_visibility //max/tests:__subpackages__,//:__pkg__,//max/internal/driver/test:__pkg__,//max/python/max/experimental:__subpackages__,//max/python/max/nn:__pkg__,//oss/modular/max/tests:__subpackages__,//oss/max-llm-book:__subpackages__,//max_private:__subpackages__,//utils/benchmarking/kepler:__pkg__
+# gazelle:default_visibility //max/tests:__subpackages__,//:__pkg__,//max/internal/driver/test:__pkg__,//max/python/max:__pkg__,//max/python/max/nn:__pkg__,//oss/modular/max/tests:__subpackages__,//oss/max-llm-book:__subpackages__,//max_private:__subpackages__,//utils/benchmarking/kepler:__pkg__
 
 package(default_visibility = [
     "//:__pkg__",
     "//max/internal/driver/test:__pkg__",
-    "//max/python/max/experimental:__subpackages__",
+    "//max/python/max:__pkg__",
     "//max/python/max/nn:__pkg__",
     "//max/tests:__subpackages__",
     "//max_private:__subpackages__",
@@ -83,7 +83,7 @@ modular_py_library(
     imports = ["."],
     visibility = ["//visibility:public"],
     deps = [
-        "//max/python/max/experimental",
+        "//max/python/max:tensor",
         "@rules_python//python/runfiles",
         requirement("pytest"),
     ],
@@ -245,7 +245,7 @@ modular_eager_py_test(
     srcs = ["test_eager_warm_plugin.py"],
     cpu_only = True,
     target_compatible_with = _MACOS_INCOMPATIBLE,
-    deps = ["//max/python/max/experimental"],
+    deps = ["//max/python/max:tensor"],
 )
 
 # The CPU-only warm on a box with its GPUs hidden.

@@ -64,13 +64,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
 from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMesh
 
 from ...deepseekV41.layers.csa2 import store_compressed_kv
 from ..layer_resolver import LayerInfo

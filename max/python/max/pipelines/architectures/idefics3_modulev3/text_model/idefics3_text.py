@@ -20,10 +20,9 @@ from __future__ import annotations
 
 import functools
 
+from max import functional as F
 from max import tree
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import ops
 from max.nn import Module
 from max.nn.common_layers.attention import AttentionWithRope
@@ -39,6 +38,7 @@ from max.nn.legacy.transformer import ReturnLogits
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
 from max.nn.sequential import ModuleList
+from max.tensor import Tensor
 
 from ...llama3_modulev3.layers.mlp import LlamaStackedMLP
 from ...llama3_modulev3.layers.rotary_embedding import Llama3RotaryEmbedding

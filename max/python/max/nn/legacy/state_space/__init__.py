@@ -16,7 +16,7 @@ The module layout mirrors ``max/kernels/src/state_space/``. All ops here are
 registered as graph-compiler builtins, so no ``custom_extensions`` plumbing
 is needed. The legacy Mamba-1 eager wrappers intentionally stay in the Mamba
 architecture (their sole consumer) to keep ``max.nn.legacy`` from depending on
-``max.experimental.functional``.
+``max.functional``.
 """
 
 from .gated_delta import (

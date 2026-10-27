@@ -27,8 +27,6 @@ import pytest
 from max.driver import Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import Tensor, default_device
 from max.pipelines.architectures.kimi_k3_modulev3.layers import ep
 from max.pipelines.architectures.kimi_k3_modulev3.layers.decoder_layer import (
     KimiK3DecoderLayer,
@@ -41,6 +39,8 @@ from max.pipelines.architectures.kimi_k3_modulev3.layers.moe_latent import (
     KimiK3LatentMoE,
     expert_parallel_config,
 )
+from max.tensor import Tensor, default_device
+from max.tensor.sharding import DeviceMesh
 
 _RNG = np.random.default_rng(20261017)
 

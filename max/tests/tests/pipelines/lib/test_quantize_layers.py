@@ -15,13 +15,12 @@
 from __future__ import annotations
 
 import pytest
+from max import functional as F
 from max._entrypoints.cli.quantize import (
     insert_quantized_linears,
     on_the_fly_config,
     quant_formats,
 )
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.nn import Linear, Module
 from max.nn.common_layers.linear import QKVLinear
 from max.nn.common_layers.mlp import MLP
@@ -32,6 +31,7 @@ from max.nn.common_layers.quant_linear import (
 )
 from max.nn.common_layers.quant_tensor import NVFP4TensorQuantizer
 from max.nn.legacy.quant_config import WeightSource
+from max.tensor import Tensor
 
 
 class _Block(Module[[Tensor], Tensor]):

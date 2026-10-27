@@ -56,11 +56,9 @@ the lookup.
 from __future__ import annotations
 
 import numpy as np
+from max import functional as F
 from max.driver import Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorValue, ops
 from max.nn import Module
 from max.nn.legacy.kernels import (
@@ -74,6 +72,8 @@ from max.pipelines.architectures.deepseekV41.layers.engram_lookup import (
     EngramLookup,
     EngramTokens,
 )
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMesh
 
 from .mhc import claim_replicated
 

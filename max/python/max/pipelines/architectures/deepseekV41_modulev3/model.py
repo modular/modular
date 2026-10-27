@@ -24,13 +24,13 @@ import numpy as np
 from max.driver import Buffer, Device, Usage
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental.sharding import DeviceMesh
 from max.nn.legacy.kv_cache import MultiKVCacheParams
 from max.pipelines.context import TextContext
 from max.pipelines.lib import ModuleV3Outputs, ModuleV3PipelineModelWithKVCache
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from max.support.host_memory import available_host_memory, host_memory_limit
 from max.support.human_readable_formatter import to_human_readable_bytes
+from max.tensor.sharding import DeviceMesh
 from transformers import AutoTokenizer
 
 from .batch_processor import DeepseekV41BatchProcessor

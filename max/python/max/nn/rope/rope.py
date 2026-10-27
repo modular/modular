@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """The rope embedding used within the model."""
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor, defaults, defaults_like
 from max.graph import Dim, DimLike
+from max.tensor import Tensor, defaults, defaults_like
 
 from ..module import Module, module_dataclass
 
@@ -99,9 +99,9 @@ class RotaryEmbedding(Module[..., Tensor]):
 
     .. code-block:: python
 
-        from max.experimental import random
+        from max.functional import random
         from max.nn.rope import RotaryEmbedding
-        from max.experimental.tensor import Tensor
+        from max.tensor import Tensor
 
         # RotaryEmbedding wraps a precomputed RoPE rotation table of shape
         # (max_sequence_length, head_dim // 2, 2).

@@ -31,10 +31,10 @@ default dtype is at construction time, so it becomes fp32 too.
 from __future__ import annotations
 
 from max.dtype import DType
-from max.experimental.tensor import default_dtype
 from max.pipelines.architectures.deepseekV3_modulev3.layers.moe_gate import (
     DeepseekV3TopKRouter,
 )
+from max.tensor import default_dtype
 
 
 def make_kimi_k3_moe_router(

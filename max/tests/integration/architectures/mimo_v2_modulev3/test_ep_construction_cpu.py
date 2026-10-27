@@ -32,6 +32,7 @@ from typing import Any, cast
 
 import numpy as np
 import pytest
+from max import functional as F
 from max.driver import (
     CPU,
     Buffer,
@@ -40,13 +41,6 @@ from max.driver import (
     set_virtual_device_target_arch,
 )
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import (
-    Tensor,
-    default_device,
-    default_dtype,
-)
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import SafetensorWeights, WeightData
 from max.nn.legacy import kernels
@@ -83,6 +77,12 @@ from max.pipelines.lib.interfaces.batch_processor import (
     modulev3_ragged_kv_symbolic_inputs,
 )
 from max.pipelines.request.base import RequestID
+from max.tensor import (
+    Tensor,
+    default_device,
+    default_dtype,
+)
+from max.tensor.sharding import DeviceMesh
 from mimo_v3_runner import kv_params
 from tiny_fixture import (
     EXPERTS,

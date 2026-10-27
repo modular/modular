@@ -15,13 +15,13 @@
 
 from __future__ import annotations
 
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max import functional as F
 from max.nn import Linear, Module
 from max.nn.legacy.kernels import (
     masked_flash_attention_gpu as _masked_flash_attention_gpu,
 )
 from max.nn.norm import RMSNorm
+from max.tensor import Tensor
 
 from .rotary_embedding import RotaryEmbedding
 

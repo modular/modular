@@ -15,11 +15,9 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMapping, DeviceMesh
-from max.experimental.tensor import Tensor
 from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.linear import ColumnParallelLinear
@@ -44,6 +42,8 @@ from max.pipelines.architectures.gemma4.model_config import (
 )
 from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
 from max.pipelines.speculative.driver import gather_variable_rows
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, DeviceMesh
 
 from .layers.attention import Gemma4Attention
 from .layers.rms_norm import Gemma4RMSNorm

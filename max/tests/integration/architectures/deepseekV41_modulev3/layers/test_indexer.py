@@ -31,7 +31,6 @@ from typing import Any
 import pytest
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental.sharding import DeviceMesh
 from max.graph import DeviceRef
 from max.pipelines.architectures.deepseekV41_modulev3.interface import (
     V41Config,
@@ -57,6 +56,7 @@ from max.pipelines.architectures.deepseekV41_modulev3.model_config import (
     DeepseekV41Config,
 )
 from max.pipelines.lib import KVCacheConfig
+from max.tensor.sharding import DeviceMesh
 from runtime_config import text_config
 
 _MESH = DeviceMesh((CPU(),), (1,), ("tp",))

@@ -12,7 +12,7 @@ the library lacks an operation, or a fusion the compiler does not find, and the
 built-in layers cannot express it.
 
 In a ModuleV3 model, call the op from a layer's `forward()` with
-[`F.custom()`](/api/python/experimental.functional/#max.experimental.functional.custom)
+[`F.custom()`](/api/python/functional/#max.functional.custom)
 and compose that layer like any other; the
 [custom layer guide](/develop/layers/#wrap-a-custom-op) shows the wrapper. If
 you construct a graph directly with `max.graph`, call
@@ -41,8 +41,8 @@ The
 in the repository cover several kernels, and
 [GPU programming with Mojo](/gpu/architecture/) covers the Mojo side. The
 [custom ops API](/api/python/graph.ops/#max.graph.ops.custom) and
-[`F.custom()`](/api/python/experimental.functional/#max.experimental.functional.custom)
-document the Python calls.
+[`F.custom()`](/api/python/functional/#max.functional.custom) document the
+Python calls.
 
 ## Next steps
 

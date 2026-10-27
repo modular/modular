@@ -16,15 +16,15 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import TensorType
 from max.nn import Linear, Module
 from max.nn.norm import LayerNorm, RMSNorm
 from max.nn.sequential import ModuleList
 from max.pipelines.diffusion.cache import fbcache_conditional_execution
 from max.pipelines.diffusion.config import DenoisingCacheConfig
+from max.tensor import Tensor
 
 from .layers.attention import ZImageAttention
 from .layers.embeddings import RopeEmbedder, TimestepEmbedder

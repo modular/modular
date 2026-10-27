@@ -28,12 +28,12 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+from max import functional as F
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
+from max.tensor import Tensor
 
 from .config import DenoisingCacheConfig
 from .taylorseer import TaylorSeer, _TaylorPredictModule, _TaylorUpdateModule

@@ -18,11 +18,9 @@ import re
 from collections.abc import Callable
 from typing import Any, ClassVar
 
+from max import functional as F
 from max.driver import Device
 from max.engine import InferenceSession
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import default_device, default_dtype
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
@@ -39,6 +37,8 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.tensor import default_device, default_dtype
+from max.tensor.sharding import DeviceMesh
 from typing_extensions import override
 
 from ..inkling.batch_processor import InklingInputs

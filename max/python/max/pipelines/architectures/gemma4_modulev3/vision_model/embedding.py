@@ -15,14 +15,14 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.nn import Module
 from max.nn.linear import Linear
 from max.pipelines.architectures.gemma4.model_config import (
     Gemma4ForConditionalGenerationConfig,
 )
+from max.tensor import Tensor
 
 
 class Gemma4VisionPatchEmbedder(Module[..., Tensor]):

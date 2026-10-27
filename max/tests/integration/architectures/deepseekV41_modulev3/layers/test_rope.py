@@ -22,14 +22,14 @@ from __future__ import annotations
 import math
 
 import numpy as np
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.pipelines.architectures.deepseekV41_modulev3.layers.rope import (
     RopeParams,
     V41RotaryEmbedding,
     apply_rope_tail,
 )
+from max.tensor import Tensor
 
 
 def _to_bf16(x: np.ndarray) -> np.ndarray:

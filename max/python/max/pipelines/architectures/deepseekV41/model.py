@@ -34,6 +34,7 @@ from typing import Any, ClassVar, Protocol, runtime_checkable
 
 import numpy as np
 import numpy.typing as npt
+from max import functional as F
 from max import tree
 from max.driver import (
     CPU,
@@ -45,9 +46,6 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.experimental import functional as F
-from max.experimental.compilation import CompiledCallable
-from max.experimental.tensor import default_dtype
 from max.graph import (
     BufferType,
     DeviceRef,
@@ -105,6 +103,8 @@ from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.profiler import traced
 from max.support.host_memory import available_host_memory, host_memory_limit
 from max.support.human_readable_formatter import to_human_readable_bytes
+from max.tensor import default_dtype
+from max.tensor.compilation import CompiledCallable
 from transformers import AutoTokenizer
 
 from . import engram_shared_host, kv_leaves, weight_adapters

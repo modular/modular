@@ -38,9 +38,9 @@ from _attention_helpers import (
 from max import tree
 from max.driver import Accelerator, Buffer, Device
 from max.engine import InferenceSession
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import Tensor
 from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMesh
 from test_common.context_utils import create_text_context
 from transformers.models.gemma4.configuration_gemma4 import Gemma4TextConfig
 

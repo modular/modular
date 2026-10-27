@@ -18,12 +18,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, ClassVar, cast
 
+from max import functional as F
 from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental import functional as F
-from max.experimental.tensor import default_dtype
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import (
     SafetensorWeights,
@@ -45,6 +44,7 @@ from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.utils import (
     parse_state_dict_from_weights,
 )
+from max.tensor import default_dtype
 
 from .batch_processor import PixtralModuleV3BatchProcessor
 from .model_config import PixtralConfig

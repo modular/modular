@@ -14,11 +14,9 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.compilation import as_subgraph
-from max.experimental.tensor import Tensor
 from max.nn import Embedding, Linear, Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
@@ -26,6 +24,8 @@ from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.nn.norm import RMSNorm
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
+from max.tensor import Tensor
+from max.tensor.compilation import as_subgraph
 
 from .layers.decoder import HYV4DecoderLayer
 from .layers.hyper_connection import HYV4HyperHead

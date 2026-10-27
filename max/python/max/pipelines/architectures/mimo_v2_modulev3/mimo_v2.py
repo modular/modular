@@ -18,10 +18,8 @@ import enum
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMapping, Replicated, Sharded
-from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
 from max.nn import (
     Embedding,
@@ -44,6 +42,8 @@ from max.nn.legacy.kv_cache import (
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.nn.norm import rms_norm
 from max.pipelines.lib import ModuleV3Outputs
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, Replicated, Sharded
 
 from ..deepseekV3_modulev3.deepseekV3 import (
     split_replicated_batch,

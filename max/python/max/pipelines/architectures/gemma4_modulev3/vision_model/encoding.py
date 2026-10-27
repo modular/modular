@@ -15,13 +15,13 @@
 
 from __future__ import annotations
 
-from max.experimental.tensor import Tensor
 from max.nn import Module
 from max.nn.common_layers.mlp import MLP
 from max.nn.sequential import ModuleList
 from max.pipelines.architectures.gemma4.model_config import (
     Gemma4ForConditionalGenerationConfig,
 )
+from max.tensor import Tensor
 
 from ..layers.rms_norm import Gemma4RMSNorm
 from .attention import Gemma4VisionAttention

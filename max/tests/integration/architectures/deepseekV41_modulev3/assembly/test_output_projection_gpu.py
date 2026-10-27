@@ -19,11 +19,9 @@ from typing import Any
 
 import numpy as np
 import pytest
+from max import functional as F
 from max.driver import Accelerator, Buffer, accelerator_count
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMapping, DeviceMesh, Sharded
-from max.experimental.tensor import Tensor, default_device
 from max.graph import DeviceRef, TensorType
 from max.nn import Module
 from max.pipelines.architectures.deepseekV41_modulev3.interface import (
@@ -52,6 +50,8 @@ from max.pipelines.architectures.deepseekV41_modulev3.model_config import (
     DeepseekV41Config,
 )
 from max.pipelines.lib import KVCacheConfig
+from max.tensor import Tensor, default_device
+from max.tensor.sharding import DeviceMapping, DeviceMesh, Sharded
 from runtime_config import text_config
 
 

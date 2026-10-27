@@ -22,14 +22,14 @@ from __future__ import annotations
 import math
 from typing import cast as typing_cast
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.nn import Module
 from max.nn.embedding import Embedding
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm, rms_norm
 from max.nn.sequential import ModuleList
+from max.tensor import Tensor
 
 from .functional_ops import (
     causal_conv1d,

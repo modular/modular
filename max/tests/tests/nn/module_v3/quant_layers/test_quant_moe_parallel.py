@@ -22,16 +22,9 @@ from typing import cast
 from unittest.mock import MagicMock
 
 import pytest
+from max import functional as F
 from max.driver import CPU, Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import (
-    DeviceMapping,
-    DeviceMesh,
-    Partial,
-    Replicated,
-)
-from max.experimental.tensor import Tensor, default_device, default_dtype
 from max.graph import Graph
 from max.nn.common_layers.functional_kernels import (
     moe_create_indices,
@@ -69,6 +62,13 @@ from max.pipelines.architectures.deepseekV3_2_modulev3.model_config import (
 )
 from max.pipelines.architectures.deepseekV3_modulev3.layers.transformer_block import (
     ParallelismMode,
+)
+from max.tensor import Tensor, default_device, default_dtype
+from max.tensor.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    Partial,
+    Replicated,
 )
 
 _HIDDEN_DIM = 256

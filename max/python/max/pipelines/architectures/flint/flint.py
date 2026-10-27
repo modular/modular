@@ -17,9 +17,8 @@ from __future__ import annotations
 
 import functools
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import ops
 from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
@@ -34,6 +33,7 @@ from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
+from max.tensor import Tensor
 
 from .layers.attention import FlintAttention
 from .layers.hybrid_kv_cache import (

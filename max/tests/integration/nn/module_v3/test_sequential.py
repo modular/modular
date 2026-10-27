@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import re
 
-from max.experimental.tensor import Tensor
 from max.nn import Module, Sequential, module_dataclass
+from max.tensor import Tensor
 
 
 @module_dataclass

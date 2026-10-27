@@ -17,10 +17,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.realization_context import ensure_context
-from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
 from max.nn import Module
 from max.nn.common_layers.mlp import MLP
@@ -34,6 +32,8 @@ from max.nn.legacy.kernels import (
 )
 from max.nn.legacy.moe.quant_strategy import Nvfp4Scales, NvMxf4f8Strategy
 from max.nn.legacy.quant_config import QuantConfig, fp4_packed_k
+from max.tensor import Tensor
+from max.tensor.realization_context import ensure_context
 
 from ...inkling.layers.moe import padded_router_rows
 from .placement import as_partial, as_replicated, shard_axis

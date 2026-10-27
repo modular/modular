@@ -22,11 +22,11 @@ from __future__ import annotations
 import math
 
 import numpy as np
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef
 from max.nn import Linear, Module
+from max.tensor import Tensor
 
 
 def _mrope_axis_masks(half: int, mrope_section: tuple[int, ...]) -> np.ndarray:

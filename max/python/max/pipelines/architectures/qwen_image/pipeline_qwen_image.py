@@ -567,7 +567,7 @@ class QwenImagePipeline(DiffusionPipeline):
             return np.from_dlpack(cpu_image).astype(np.float32)
         except (RuntimeError, TypeError):
             # bfloat16 not supported by numpy, cast via v1 Tensor
-            from max.experimental.tensor import Tensor as _Tensor
+            from max.tensor import Tensor as _Tensor
 
             if isinstance(cpu_image, _Tensor):
                 return np.from_dlpack(cpu_image.cast(DType.float32)).astype(

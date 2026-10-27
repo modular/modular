@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for max.experimental.compilation.
+"""Tests for max.tensor.compilation.
 
 Three transforms share one boundary: :func:`stage` records a graph,
 :func:`compile` records and runs one, and :func:`as_subgraph` records a body
@@ -36,25 +36,9 @@ from typing import Any, overload
 
 import numpy as np
 import pytest
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.compilation import (
-    CompiledCallable,
-    as_layout,
-    as_subgraph,
-    compile,
-    stage,
-)
-from max.experimental.sharding import (
-    BufferLayout,
-    DeviceMapping,
-    DeviceMesh,
-    Replicated,
-    Sharded,
-    TensorLayout,
-)
-from max.experimental.tensor import Tensor
 from max.graph import BufferType, BufferValue, DeviceRef, TensorType
 from max.nn.common_layers.functional_kernels import (
     flash_attention_ragged,
@@ -62,6 +46,22 @@ from max.nn.common_layers.functional_kernels import (
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.legacy.attention import MHAMaskVariant
 from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.tensor import Tensor
+from max.tensor.compilation import (
+    CompiledCallable,
+    as_layout,
+    as_subgraph,
+    compile,
+    stage,
+)
+from max.tensor.sharding import (
+    BufferLayout,
+    DeviceMapping,
+    DeviceMesh,
+    Replicated,
+    Sharded,
+    TensorLayout,
+)
 from max.tree import flatten as tree_flatten
 from max.tree import paths as tree_paths
 

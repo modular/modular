@@ -17,9 +17,9 @@
 # Output:
 #   [Dim(2), Dim(4), Dim(64)]
 
-import max.experimental.functional as F
+import max.functional as F
 from max.dtype import DType
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 embeddings = Tensor.ones((32000, 64))
 token_ids = Tensor(

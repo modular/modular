@@ -9,17 +9,17 @@ modular_py_library(
     # //max/python/max/nn, which static import analysis cannot
     # follow.
     ignore_unresolved_imports = [
-        "max.experimental.tensor.default_device",
-        "max.experimental.tensor.default_dtype",
-        "max.experimental.tensor.Tensor",
-        "max.experimental.functional",
-        "max.experimental.sharding.Partial",
-        "max.experimental.sharding.NamedMapping",
-        "max.experimental.sharding.DeviceMapping",
-        "max.experimental.sharding.DeviceMesh",
-        "max.experimental.sharding.Replicated",
-        "max.experimental.sharding.Sharded",
-        "max.experimental.realization_context.ensure_context",
+        "max.tensor.default_device",
+        "max.tensor.default_dtype",
+        "max.tensor.Tensor",
+        "max.functional",
+        "max.tensor.sharding.Partial",
+        "max.tensor.sharding.NamedMapping",
+        "max.tensor.sharding.DeviceMapping",
+        "max.tensor.sharding.DeviceMesh",
+        "max.tensor.sharding.Replicated",
+        "max.tensor.sharding.Sharded",
+        "max.tensor.realization_context.ensure_context",
     ],
     deps = [
         requirement("numpy"),

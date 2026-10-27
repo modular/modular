@@ -15,9 +15,8 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor, default_dtype
 from max.nn import Linear
 from max.nn.common_layers import quant_ops
 from max.nn.common_layers.moe import MoEGate
@@ -27,6 +26,7 @@ from max.nn.common_layers.quant_tensor import (
     QuantAwareTensor,
 )
 from max.nn.legacy.quant_config import QuantConfig
+from max.tensor import Tensor, default_dtype
 
 from ..model_config import MuseSparkTextConfig
 from .norms import CenteredRMSNorm, InputScaledRMSNorm, input_scaled_rms_norm

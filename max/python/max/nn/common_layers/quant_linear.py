@@ -18,8 +18,6 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from max.driver import Device
-from max.experimental.sharding import DeviceMapping, DeviceMesh
-from max.experimental.tensor import Tensor
 from max.nn import Module
 from max.nn.common_layers.activation import (
     activation_function_from_name,
@@ -31,6 +29,8 @@ from max.nn.common_layers.linear import (
 )
 from max.nn.legacy.quant_config import QuantConfig
 from max.nn.module import _TransparentKey
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, DeviceMesh
 from typing_extensions import Self
 
 from . import quant_ops
@@ -42,7 +42,7 @@ class QuantizedLinear(Module[[Tensor], Tensor]):
 
     weight: QuantAwareTensor
     bias: Tensor | Literal[0]
-    """Bias :obj:`~max.experimental.tensor.Tensor`, or ``0`` when disabled."""
+    """Bias :obj:`~max.tensor.Tensor`, or ``0`` when disabled."""
 
     def __init__(
         self,

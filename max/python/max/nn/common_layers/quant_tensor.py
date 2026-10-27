@@ -19,15 +19,9 @@ from collections.abc import Sequence
 from functools import cached_property
 from typing import Any, ClassVar, TypeAlias, TypeGuard
 
+from max import functional as F
 from max.driver import CPU, Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import (
-    DeviceMapping,
-    DeviceMesh,
-    Sharded,
-)
-from max.experimental.tensor import Tensor
 from max.graph import Shape
 from max.nn import Module
 from max.nn.common_layers.quant_kernels import (
@@ -35,6 +29,12 @@ from max.nn.common_layers.quant_kernels import (
     quantize_dynamic_block_scaled_mxfp4,
 )
 from max.nn.module import module_dataclass
+from max.tensor import Tensor
+from max.tensor.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    Sharded,
+)
 from typing_extensions import Self
 
 MAX_E2M1 = 6.0

@@ -31,7 +31,7 @@ from typing import ClassVar
 import numpy as np
 import pytest
 from max.dtype import DType
-from max.experimental.functional import (
+from max.functional import (
     full,
     layer_norm,
     matmul,
@@ -39,7 +39,8 @@ from max.experimental.functional import (
     relu,
     transfer_to,
 )
-from max.experimental.sharding import (
+from max.tensor import Tensor
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Partial,
@@ -47,7 +48,6 @@ from max.experimental.sharding import (
     Sharded,
     auto_reshard,
 )
-from max.experimental.tensor import Tensor
 
 _F32 = DType.float32
 

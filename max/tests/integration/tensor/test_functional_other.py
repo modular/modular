@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Smoke tests for ops in `max.experimental.functional`.
+"""Smoke tests for ops in `max.functional`.
 
 These tests exercise each expected op at least once with real data and kernels.
 They don't otherwise make any attempt at coverage, edge cases, or correctness.
@@ -20,12 +20,12 @@ from typing import cast
 
 import numpy as np
 import pytest
+from max import functional as F
 from max.driver import CPU, Accelerator, accelerator_count
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType, ops
 from max.nn.module import Module, module_dataclass
+from max.tensor import Tensor
 
 DEVICE = Accelerator() if accelerator_count() else CPU()
 

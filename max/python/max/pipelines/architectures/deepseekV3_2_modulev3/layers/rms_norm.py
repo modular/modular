@@ -14,8 +14,8 @@
 
 from __future__ import annotations
 
-from max.experimental.tensor import Tensor
 from max.nn.norm import RMSNorm, rms_norm
+from max.tensor import Tensor
 
 
 class MultiplyBeforeCastRMSNorm(RMSNorm):

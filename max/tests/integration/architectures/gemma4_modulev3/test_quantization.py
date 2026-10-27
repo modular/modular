@@ -21,15 +21,9 @@ quantized and attention stays BF16.
 from __future__ import annotations
 
 import numpy as np
+from max import functional as F
 from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import (
-    DeviceMesh,
-    Replicated,
-    Sharded,
-)
-from max.experimental.tensor import default_device, default_dtype
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights
 from max.nn.legacy.kv_cache import MHAKVCacheParams, MultiKVCacheParams
@@ -47,6 +41,12 @@ from max.pipelines.architectures.gemma4_modulev3.weight_adapters import (
     convert_language_state_dict_for_module,
 )
 from max.pipelines.weights.quant import parse_quant_config
+from max.tensor import default_device, default_dtype
+from max.tensor.sharding import (
+    DeviceMesh,
+    Replicated,
+    Sharded,
+)
 from transformers import PretrainedConfig
 
 # Small dims: TP2-divisible in the shapes that matter for scale sharding

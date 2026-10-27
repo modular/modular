@@ -19,7 +19,6 @@ import pytest
 import torch
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
-from max.experimental.tensor import Tensor, TensorType
 from max.nn import Linear
 from max.nn.legacy.quant_config import (
     InputScaleSpec,
@@ -29,6 +28,7 @@ from max.nn.legacy.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
+from max.tensor.tensor import Tensor, TensorType
 
 IN_DIM = 256
 OUT_DIM = 128

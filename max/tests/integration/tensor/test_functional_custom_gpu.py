@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Smoke tests for GPU custom ops in `max.experimental.functional`.
+"""Smoke tests for GPU custom ops in `max.functional`.
 
 These tests exercise each expected op at least once with real data and kernels.
 They don't otherwise make any attempt at coverage, edge cases, or correctness.
@@ -20,11 +20,11 @@ import os
 from pathlib import Path
 
 import pytest
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor, TensorType
-from max.experimental.testing import assert_all_close
 from max.nn.module import Module, module_dataclass
+from max.tensor.tensor import Tensor, TensorType
+from max.tensor.testing import assert_all_close
 
 
 @pytest.fixture

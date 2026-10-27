@@ -35,14 +35,11 @@ from pathlib import Path
 
 import numpy as np
 import numpy.typing as npt
+from max import functional as F
 from max import tree
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental import compilation
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import default_device, default_dtype
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights
 from max.nn.legacy.kv_cache import (
@@ -69,6 +66,8 @@ from max.pipelines.lib.interfaces.batch_processor import (
     modulev3_ragged_kv_symbolic_inputs,
 )
 from max.pipelines.modeling.types import RequestID
+from max.tensor import compilation, default_device, default_dtype
+from max.tensor.sharding import DeviceMesh
 from transformers.configuration_utils import PretrainedConfig
 
 

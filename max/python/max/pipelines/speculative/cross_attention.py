@@ -22,11 +22,9 @@ from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMapping, DeviceMesh
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, DimLike, TensorValue, ops
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.legacy.transformer import (
@@ -34,6 +32,8 @@ from max.nn.legacy.transformer import (
     ReturnHiddenStates,
     ReturnLogits,
 )
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, DeviceMesh
 
 from .driver import (
     CarryDimNames,

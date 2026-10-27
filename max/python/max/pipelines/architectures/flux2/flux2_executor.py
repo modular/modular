@@ -24,7 +24,6 @@ import numpy.typing as npt
 from max.driver import Buffer, Device, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental.tensor import Tensor
 from max.graph import Module as GraphModule
 from max.pipelines.context import PixelContext
 from max.pipelines.diffusion.cache import TaylorSeerCache
@@ -40,6 +39,7 @@ from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.modeling.base import TensorStruct
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from max.profiler import Tracer, traced
+from max.tensor import Tensor
 from typing_extensions import Self
 
 from .components import (

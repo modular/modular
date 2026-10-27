@@ -33,12 +33,12 @@ import math
 from dataclasses import dataclass
 from typing import cast
 
+from max import functional as F
 from max.driver import Accelerator
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor, TensorType
 from max.graph import DeviceRef
 from max.nn import Linear, Module, ModuleList, RMSNorm
+from max.tensor.tensor import Tensor, TensorType
 
 
 @dataclass

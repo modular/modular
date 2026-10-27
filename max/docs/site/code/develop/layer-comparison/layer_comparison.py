@@ -31,10 +31,10 @@ from typing import Any
 import numpy as np
 import torch
 import torch.nn.functional as torch_F
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.nn import Embedding, Linear, Module, ModuleList, RMSNorm
+from max.tensor import Tensor
 from torch import nn
 
 VOCAB = 32

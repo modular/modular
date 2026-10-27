@@ -23,10 +23,10 @@ import numpy as np
 import pytest
 from max.driver import Accelerator
 from max.dtype import DType
-from max.experimental.tensor import Tensor, default_device
 from max.pipelines.architectures.kimi_k3_modulev3.layers.attn_residual import (
     kimi_k3_attn_res_mix,
 )
+from max.tensor import Tensor, default_device
 
 
 def _numpy_attn_res_mix(

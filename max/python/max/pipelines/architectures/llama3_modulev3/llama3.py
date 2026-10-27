@@ -18,10 +18,9 @@ from __future__ import annotations
 import functools
 from collections.abc import Callable
 
+from max import functional as F
 from max import tree
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import ops
 from max.nn import Module
 from max.nn.common_layers.attention import AttentionWithRope
@@ -37,6 +36,7 @@ from max.nn.linear import Linear
 from max.nn.norm import LayerNorm, RMSNorm
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
+from max.tensor import Tensor
 
 from .layers.mlp import LlamaStackedMLP
 from .layers.rotary_embedding import (

@@ -14,9 +14,9 @@
 
 from __future__ import annotations
 
-from max.experimental.sharding import DeviceMesh, NamedMapping
-from max.experimental.tensor import Tensor
 from max.nn.common_layers.mesh_axis import TP
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMesh, NamedMapping
 
 
 def check_divisible(what: str, size: int, tp_size: int) -> None:

@@ -24,15 +24,15 @@ table to bf16 pre-rounded cos/sin and shifted every cached key).
 from __future__ import annotations
 
 import pytest
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor, default_device, default_dtype
 from max.graph import DeviceRef
 from max.pipelines.architectures.dflash_mimo_v2 import DFlashMiMoV2Config
 from max.pipelines.architectures.dflash_mimo_v2_modulev3 import DFlashMiMoV2
 from max.pipelines.architectures.dflash_mimo_v2_modulev3.context_writer import (
     DFlashContextWriter,
 )
+from max.tensor import Tensor, default_device, default_dtype
 from mimo_dflash_v3_fixtures import (
     BLOCK,
     adapted_draft,

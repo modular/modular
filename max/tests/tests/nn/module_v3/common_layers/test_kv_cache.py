@@ -17,12 +17,10 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from max import functional as F
 from max import tree
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMapping, DeviceMesh, Replicated
-from max.experimental.tensor import Tensor
 from max.graph import (
     BufferType,
     BufferValue,
@@ -33,6 +31,8 @@ from max.graph import (
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.legacy import kernels
 from max.nn.legacy.kv_cache import MHAKVCacheParams, SplitKVHeadDims
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, DeviceMesh, Replicated
 
 
 def _collection(params: MHAKVCacheParams) -> PagedCacheValues:

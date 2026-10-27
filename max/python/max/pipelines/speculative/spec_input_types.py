@@ -21,7 +21,6 @@ from typing import Any, Generic, overload
 
 from max import tree
 from max.dtype import DType
-from max.experimental.tensor import Tensor
 from max.graph import (
     BufferType,
     BufferValue,
@@ -36,6 +35,7 @@ from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
 )
+from max.tensor import Tensor
 from typing_extensions import TypeVar
 
 from ._tensor_compat import as_graph_values, as_tensors

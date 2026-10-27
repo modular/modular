@@ -18,15 +18,15 @@ from collections.abc import Callable
 from typing import Any
 
 import numpy as np
-from max.experimental.functional import transfer_to
-from max.experimental.sharding import (
+from max.functional import transfer_to
+from max.tensor import Tensor
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Partial,
     Placement,
     Replicated,
 )
-from max.experimental.tensor import Tensor
 
 
 def make_partial(

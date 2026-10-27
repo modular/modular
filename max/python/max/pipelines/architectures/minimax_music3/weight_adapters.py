@@ -43,8 +43,8 @@ from max.driver import (
     float32_array_to_buffer,
 )
 from max.dtype import DType
-from max.experimental.tensor import Tensor
 from max.graph.weights import WeightData, Weights
+from max.tensor import Tensor
 
 from .model_config import LanguageModelConfig
 

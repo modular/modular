@@ -18,11 +18,11 @@ import logging
 from typing import Any, ClassVar
 
 from max.dtype import DType
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import default_device
 from max.graph import DeviceRef
 from max.nn.legacy.kv_cache import KVCacheParamInterface
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.tensor import default_device
+from max.tensor.sharding import DeviceMesh
 from transformers import AutoConfig
 from typing_extensions import override
 

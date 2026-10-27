@@ -14,12 +14,12 @@
 
 from __future__ import annotations
 
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max import functional as F
 from max.nn import Module
 from max.nn.legacy.state_space import short_conv_ring
 from max.nn.norm import RMSNorm
 from max.nn.norm.rms_norm import rms_norm
+from max.tensor import Tensor
 
 _short_conv_ring = F.functional(short_conv_ring)
 

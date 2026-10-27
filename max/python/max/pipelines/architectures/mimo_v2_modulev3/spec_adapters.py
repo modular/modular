@@ -30,15 +30,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-from max.experimental import functional as F
-from max.experimental.realization_context import ensure_context
-from max.experimental.sharding import (
-    DeviceMapping,
-    DeviceMesh,
-    Replicated,
-    Sharded,
-)
-from max.experimental.tensor import Tensor
+from max import functional as F
 from max.graph import BufferType, TensorType, TensorValue, ops
 from max.nn.common_layers.mesh_axis import DP
 from max.nn.legacy.comm.ep import EPCommBuffers
@@ -61,6 +53,14 @@ from max.pipelines.speculative.spec_adapters.target_adapter import (
 )
 from max.pipelines.speculative.spec_target import Verified
 from max.pipelines.speculative.unified_graph_ops import mask_padded_tail
+from max.tensor import Tensor
+from max.tensor.realization_context import ensure_context
+from max.tensor.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    Replicated,
+    Sharded,
+)
 
 from ..dflash_mimo_v2_modulev3 import DFlashMiMoV2
 from .mimo_v2 import MiMoV2SpecTarget

@@ -14,7 +14,7 @@
 
 Direct V3 port of ``kimi_k3/layers/kda_attention.py``'s
 ``kimi_k3_kda_attention`` orchestration, calling the same ``kda_decode``
-custom op via :func:`max.experimental.functional.inplace_custom`.
+custom op via :func:`max.functional.inplace_custom`.
 
 Scope cut, explicit: this ports ``kda_decode`` only, not ``kda_chunk`` (the
 prefill-optimized arm selected by ``ops.cond`` in V2) or the speculative-
@@ -38,13 +38,13 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMesh, NamedMapping
-from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorType, TensorValue, ops
 from max.nn import Linear, Module
 from max.nn.common_layers.mesh_axis import TP
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMesh, NamedMapping
 
 from .norm import KimiRMSNormGated
 from .short_conv import kimi_short_conv_qkv

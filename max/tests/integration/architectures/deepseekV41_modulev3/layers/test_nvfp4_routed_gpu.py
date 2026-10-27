@@ -36,13 +36,13 @@ import numpy as np
 import pytest
 from max.driver import Accelerator, Device
 from max.dtype import DType
-from max.experimental.tensor import Tensor, TensorType
 from max.graph import DeviceRef
 from max.nn.common_layers.quant_tensor import NVFP4Tensor
 from max.nn.module import Module
 from max.pipelines.architectures.deepseekV41_modulev3.layers.nvfp4_ops import (
     routed,
 )
+from max.tensor.tensor import Tensor, TensorType
 
 _HIDDEN = 256
 _MOE_DIM = 128

@@ -26,12 +26,12 @@ bookkeeping produces.
 from __future__ import annotations
 
 import numpy as np
-from max.experimental.tensor import Tensor
 from max.pipelines.architectures.deepseekV41_modulev3.layers.attention import (
     absolute_positions,
     position_rope_table,
     row_ids,
 )
+from max.tensor import Tensor
 
 
 def _t32(x: np.ndarray) -> Tensor:

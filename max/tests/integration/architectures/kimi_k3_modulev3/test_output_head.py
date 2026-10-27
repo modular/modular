@@ -25,11 +25,11 @@ import numpy as np
 import pytest
 from max.driver import Accelerator
 from max.dtype import DType
-from max.experimental.tensor import Tensor, default_device
 from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.kimi_k3_modulev3.layers.output_head import (
     kimi_k3_output_head,
 )
+from max.tensor import Tensor, default_device
 
 
 def _reference_norm_and_project(

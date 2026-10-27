@@ -13,13 +13,13 @@
 
 from __future__ import annotations
 
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max import functional as F
 from max.nn import Module
 from max.nn.linear import Linear
 from max.pipelines.architectures.gemma3_modulev3.layers.rms_norm import (
     Gemma3RMSNorm,
 )
+from max.tensor import Tensor
 
 from ..model_config import Gemma3ForConditionalGenerationConfig
 

@@ -29,23 +29,23 @@ import numpy as np
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import Model
-from max.experimental.compilation import CompiledCallable
-from max.experimental.functional import (
+from max.functional import (
     full,
     matmul,
     ones,
     relu,
     transfer_to,
 )
-from max.experimental.sharding import (
+from max.nn.module import Module, module_dataclass
+from max.tensor.compilation import CompiledCallable
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Partial,
     Replicated,
     Sharded,
 )
-from max.experimental.tensor import Tensor, TensorType
-from max.nn.module import Module, module_dataclass
+from max.tensor.tensor import Tensor, TensorType
 
 D = 4
 F32 = DType.float32

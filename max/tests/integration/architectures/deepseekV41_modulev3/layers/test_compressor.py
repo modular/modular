@@ -23,11 +23,11 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from max.experimental.tensor import Tensor
 from max.pipelines.architectures.deepseekV41_modulev3.layers.compressor import (
     compressed_visibility,
     validate_chunk,
 )
+from max.tensor import Tensor
 
 
 def test_visibility_is_the_reference_compress_lens() -> None:

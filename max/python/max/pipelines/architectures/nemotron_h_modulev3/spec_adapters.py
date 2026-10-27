@@ -41,10 +41,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMapping, DeviceMesh
-from max.experimental.tensor import Tensor
 from max.graph import BufferType, DeviceRef, TensorType, TensorValue, ops
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.legacy.kernels import argmax_with_bias
@@ -64,6 +62,8 @@ from max.pipelines.speculative.spec_adapters.target_adapter import (
 )
 from max.pipelines.speculative.spec_target import Verified
 from max.pipelines.speculative.unified_graph_ops import broadcast_per_device
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, DeviceMesh
 
 from .layers.mamba2 import (
     MambaReplayCapture,

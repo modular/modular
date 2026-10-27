@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 # DOC: develop/basic-ops.mdx
 
-import max.experimental.functional as F
-from max.experimental.tensor import Tensor
+import max.functional as F
+from max.tensor import Tensor
 
 
 def linear_layer(x: Tensor, weights: Tensor, bias: Tensor) -> Tensor:

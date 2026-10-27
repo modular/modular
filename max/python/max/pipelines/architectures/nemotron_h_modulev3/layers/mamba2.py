@@ -17,12 +17,10 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Generic, TypeVar
 
+from max import functional as F
 from max import tree
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMesh, NamedMapping
-from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorValue
 from max.nn import Module
 from max.nn.common_layers.mesh_axis import TP
@@ -31,6 +29,8 @@ from max.nn.legacy.state_space import (
     gated_group_rmsnorm,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace,
 )
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMesh, NamedMapping
 
 from ..model_config import NemotronHConfig
 from .quantized import quantized_linear

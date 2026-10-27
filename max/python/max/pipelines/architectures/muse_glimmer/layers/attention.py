@@ -15,10 +15,9 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.nn import Module
 from max.nn.common_layers.functional_kernels import (
     flash_attention_ragged,
@@ -35,6 +34,7 @@ from max.nn.legacy.kv_cache import KVCacheParams
 from max.pipelines.architectures.gemma4_modulev3.layers.rms_norm import (
     Gemma4RMSNorm,
 )
+from max.tensor import Tensor
 
 
 class MuseGlimmerAttention(Module[..., Tensor]):

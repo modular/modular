@@ -13,9 +13,8 @@
 
 """Local-expert NVFP4 operations, preserving each projection's scalars."""
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.nn.common_layers import quant_ops
 from max.nn.common_layers.functional_kernels import (
     moe_create_indices,
@@ -23,6 +22,7 @@ from max.nn.common_layers.functional_kernels import (
 from max.nn.common_layers.quant_tensor import (
     NVFP4Tensor,
 )
+from max.tensor import Tensor
 
 
 def swiglu(gate: Tensor, up: Tensor, limit: float | None = 10.0) -> Tensor:

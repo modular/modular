@@ -14,12 +14,12 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.nn.common_layers.functional_kernels import (
     moe_router_group_limited,
 )
+from max.tensor import Tensor
 
 from ...deepseekV3_modulev3.layers.moe_gate import DeepseekV3TopKRouter
 

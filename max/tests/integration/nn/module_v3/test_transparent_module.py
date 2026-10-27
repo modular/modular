@@ -17,9 +17,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from max.dtype import DType
-from max.experimental import random
-from max.experimental.tensor import Tensor, default_dtype
+from max.functional import random
 from max.nn import Linear, Module, TransparentModule
+from max.tensor import Tensor, default_dtype
 
 
 class _Transparent(TransparentModule[[Tensor], Tensor]):

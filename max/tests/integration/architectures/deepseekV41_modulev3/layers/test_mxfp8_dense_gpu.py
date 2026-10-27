@@ -25,10 +25,10 @@ import numpy as np
 import torch
 from max.driver import Accelerator
 from max.dtype import DType
-from max.experimental.tensor import Tensor
 from max.pipelines.architectures.deepseekV41_modulev3.layers.mxfp8_linear import (
     MXFP8Linear,
 )
+from max.tensor import Tensor
 
 AMAX_FLOOR = 1e-4
 FP8_MAX = 448.0

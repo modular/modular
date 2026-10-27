@@ -16,10 +16,9 @@ from __future__ import annotations
 
 import functools
 
+from max import functional as F
 from max import tree
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import ops
 from max.nn import Module
 from max.nn.common_layers.mlp import MLP
@@ -35,6 +34,7 @@ from max.nn.legacy.transformer import ReturnLogits
 from max.nn.linear import Linear
 from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
+from max.tensor import Tensor
 
 from .layers.attention import Olmo2Attention
 from .layers.rms_norm import Olmo2RMSNorm

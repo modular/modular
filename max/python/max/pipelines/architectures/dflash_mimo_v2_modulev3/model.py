@@ -17,11 +17,11 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import default_device, default_dtype
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
+from max.tensor import default_device, default_dtype
+from max.tensor.sharding import DeviceMesh
 
 from ..dflash_mimo_v2.drafter import (
     DFlashMiMoV2DraftArchConfigBase,

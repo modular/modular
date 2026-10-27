@@ -36,6 +36,7 @@ import json
 
 import pytest
 import tiny_fixture
+from max import functional as F
 from max.driver import (
     Accelerator,
     set_virtual_device_api,
@@ -43,9 +44,6 @@ from max.driver import (
     set_virtual_device_target_arch,
 )
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import default_device, default_dtype
 from max.graph import BufferType, DeviceRef, StaticDim, TensorType
 from max.graph.weights import SafetensorWeights
 from max.nn.legacy.transformer import ReturnLogits
@@ -59,6 +57,8 @@ from max.pipelines.architectures.mimo_v2_modulev3.weight_adapters import (
 from max.pipelines.lib.interfaces.batch_processor import (
     modulev3_ragged_kv_symbolic_inputs,
 )
+from max.tensor import default_device, default_dtype
+from max.tensor.sharding import DeviceMesh
 from mimo_v3_runner import kv_params
 from transformers.configuration_utils import PretrainedConfig
 

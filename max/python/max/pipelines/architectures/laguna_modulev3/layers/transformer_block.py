@@ -18,9 +18,8 @@ import functools
 from collections.abc import Collection
 from dataclasses import dataclass
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor, default_dtype
 from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.quant_linear import QuantizedMLP
@@ -30,6 +29,7 @@ from max.pipelines.architectures.laguna.model_config import (
     LagunaConfig,
     LagunaLayerSchedule,
 )
+from max.tensor import Tensor, default_dtype
 
 from .attention import LagunaAttention
 from .moe_gate import LagunaTopKRouter

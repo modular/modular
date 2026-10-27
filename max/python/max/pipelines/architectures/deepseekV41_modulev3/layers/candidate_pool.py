@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """Orders selected sparse-attention entries by position."""
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.nn.legacy.kernels import top_k_per_row as _top_k_per_row
+from max.tensor import Tensor
 
 top_k_per_row = F.functional(_top_k_per_row)
 _POSITION_SENTINEL = (1 << 31) - 1

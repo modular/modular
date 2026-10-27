@@ -29,11 +29,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
+from max import functional as F
 from max.driver import Buffer
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import default_device, default_dtype
 from max.graph import DeviceRef
 from max.graph.type import Shape
 from max.graph.weights import WeightData, Weights
@@ -72,6 +70,8 @@ from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     _SpecDecodeModule,
 )
 from max.pipelines.speculative import SpeculativeConfig, spec_adapters
+from max.tensor import default_device, default_dtype
+from max.tensor.sharding import DeviceMesh
 
 BLOCK = 8
 DRAFTS = 7

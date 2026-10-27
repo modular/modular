@@ -16,7 +16,7 @@ A pipeline describes each graph it runs as a :class:`GraphSpec` under a role
 key, such as ``"decoder"`` or ``"sampler"``. The keys are whatever the
 pipeline's task defines; :class:`GraphRole` holds MAX's built-in ones.
 :func:`compile_and_init_graphs` compiles and initializes the graphs,
-returning one :class:`~max.experimental.compilation.CompiledCallable` per
+returning one :class:`~max.tensor.compilation.CompiledCallable` per
 role.
 """
 
@@ -35,15 +35,15 @@ from max import tree
 from max._artifact.value_types import ArtifactError, treedef_to_json
 from max.driver import DLPackArray
 from max.engine import CompiledModel, InferenceSession, Model
-from max.experimental.compilation import CompiledCallable, StagedGraph
-from max.experimental.sharding import TensorLayout
-from max.experimental.sharding.types import as_layout
-from max.experimental.tensor import Tensor
 from max.graph import Graph, Type
 from max.graph import Module as GraphModule
 from max.nn import Module as ModuleV3
 from max.nn.legacy import Module
 from max.nn.legacy.graph_groups import HiddenStates, Logits
+from max.tensor import Tensor
+from max.tensor.compilation import CompiledCallable, StagedGraph
+from max.tensor.sharding import TensorLayout
+from max.tensor.sharding.types import as_layout
 
 
 class GraphRole(str, Enum):

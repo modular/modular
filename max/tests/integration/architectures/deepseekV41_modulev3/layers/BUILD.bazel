@@ -38,9 +38,9 @@ modular_eager_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/pipelines/architectures/deepseekV41",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
@@ -58,9 +58,9 @@ modular_py_library(
     srcs = ["mhc_chain_reference.py"],
     imports = ["."],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
@@ -107,10 +107,10 @@ modular_eager_py_test(
     }),
     deps = [
         ":mhc_chain_reference",
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
@@ -147,8 +147,8 @@ modular_eager_py_test(
     }),
     deps = [
         ":mhc_chain_reference",
+        "//max/python/max:tensor",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
         requirement("numpy"),

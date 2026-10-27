@@ -22,12 +22,12 @@ from collections.abc import Generator
 from types import MethodType
 from typing import Any
 
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max import functional as F
 from max.graph import TensorValue
 from max.nn import Module as ModuleV3
 from max.nn.legacy._identity import IdentitySet
 from max.nn.legacy.layer import Layer, add_layer_hook, clear_hooks
+from max.tensor import Tensor
 
 from .base_print_hook import BasePrintHook
 

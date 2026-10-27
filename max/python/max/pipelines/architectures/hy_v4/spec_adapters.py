@@ -23,11 +23,9 @@ from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
+from max import functional as F
 from max.driver import Buffer, Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMapping, DeviceMesh, Replicated
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, DimLike, TensorType, TensorValue, Value
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.legacy.kv_cache import PagedCacheValues as GraphPagedCacheValues
@@ -49,6 +47,8 @@ from max.pipelines.speculative.spec_adapters.target_adapter import (
     TargetAdapter,
 )
 from max.pipelines.speculative.spec_target import Verified
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, DeviceMesh, Replicated
 
 from .batch_processor import prefill_buffer_length
 from .hy_v4 import HYV4, HYV4TextModel

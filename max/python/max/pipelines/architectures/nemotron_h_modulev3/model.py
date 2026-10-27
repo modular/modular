@@ -16,15 +16,15 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import default_device, default_dtype
+from max import functional as F
 from max.nn.legacy.kv_cache import MultiKVCacheParams
 from max.pipelines.context import TextContext
 from max.pipelines.lib import ModuleV3PipelineModelWithKVCache
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from max.pipelines.lib.utils import parse_state_dict_from_weights
+from max.tensor import default_device, default_dtype
+from max.tensor.sharding import DeviceMesh
 
 from ..llama3_modulev3.batch_processor import Llama3ModuleV3BatchProcessor
 from .model_config import LayerKind, NemotronHConfig

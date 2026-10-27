@@ -27,10 +27,10 @@ import numpy as np
 import pytest
 from max.driver import Accelerator
 from max.dtype import DType
-from max.experimental.tensor import Tensor, default_device
 from max.pipelines.architectures.kimi_k3_modulev3.layers.kda_attention import (
     KimiK3KDAAttention,
 )
+from max.tensor import Tensor, default_device
 
 _HIDDEN = 64
 _NUM_HEADS = 4

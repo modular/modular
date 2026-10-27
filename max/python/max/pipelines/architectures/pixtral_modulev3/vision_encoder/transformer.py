@@ -14,13 +14,13 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.nn import Module
 from max.nn.linear import Linear
 from max.nn.norm import RMSNorm
 from max.nn.sequential import ModuleList
+from max.tensor import Tensor
 
 from .attention import Attention
 

@@ -24,7 +24,7 @@ hand-written modules used, so weight loading, ``state_dict`` keys and the
 weights registry are unchanged.
 
 The driver runs on graph values, but nothing outside it has to. A caller may
-pass experimental :class:`~max.experimental.tensor.Tensor` inputs, one per
+pass experimental :class:`~max.tensor.Tensor` inputs, one per
 device, and gets ``Tensor`` outputs back; a proposer that subclasses
 :class:`TensorAdapter`, and a verify wrapped in :func:`tensor_compat_verify`, read and
 return ``Tensor`` values too. Both convert at the boundary, so a ModuleV3
@@ -38,12 +38,9 @@ from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Any, Generic, Literal, Protocol
 
+from max import functional as F
 from max import tree
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.realization_context import current_realization_context
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import Tensor
 from max.graph import (
     BufferType,
     BufferValue,
@@ -71,6 +68,9 @@ from max.nn.legacy.transformer import ReturnHiddenStates
 from max.pipelines.kv_cache.paged_kv_cache.increment_cache_lengths import (
     increment_cache_lengths_from_counts,
 )
+from max.tensor import Tensor
+from max.tensor.realization_context import current_realization_context
+from max.tensor.sharding import DeviceMesh
 from typing_extensions import TypeVar, override
 
 from ._tensor_compat import as_graph_values, as_tensors
@@ -132,7 +132,7 @@ class TensorAdapter:
     The driver hands such an adapter its batch and carries as single-device
     ``Tensor`` values, one per device where it holds a list, and accepts
     ``Tensor`` results back. A ModuleV3 adapter therefore builds its
-    distributed inputs with :meth:`~max.experimental.tensor.Tensor.from_shard_values`
+    distributed inputs with :meth:`~max.tensor.Tensor.from_shard_values`
     rather than converting graph values itself.
     """
 

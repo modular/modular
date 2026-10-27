@@ -15,9 +15,9 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 from ..module import Module
 
@@ -75,7 +75,7 @@ class LayerNorm(Module[[Tensor], Tensor]):
         from max.driver import CPU
         from max.dtype import DType
         from max.nn.norm import LayerNorm
-        from max.experimental.tensor import Tensor, default_device
+        from max.tensor import Tensor, default_device
 
         with default_device(CPU()):
             norm = LayerNorm(2048)

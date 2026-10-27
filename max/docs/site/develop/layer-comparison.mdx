@@ -59,9 +59,9 @@ before you use layer comparison to debug. Learn more in the
 To compare the intermediate tensors of your MAX model and reference model, you
 need to run both models and save the tensors they produce. Start with the MAX
 model. Run it eagerly, so every layer returns a
-[`Tensor`](/api/python/generated/max.experimental.tensor.Tensor/) whose values
-you can copy to the host with
-[`to_numpy()`](/api/python/generated/max.experimental.tensor.Tensor/#max.experimental.tensor.Tensor.to_numpy).
+[`Tensor`](/api/python/generated/max.tensor.Tensor/) whose values you can copy
+to the host with
+[`to_numpy()`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.to_numpy).
 
 The following example records each layer's output:
 
@@ -76,7 +76,7 @@ The following example records each layer's output:
 <!-- invisible-code-block: python
 import importlib.util
 import sys
-from max.experimental import functional as F
+from max import functional as F
 sample = DOCS_ROOT / "code/develop/layer-comparison/layer_comparison.py"
 spec = importlib.util.spec_from_file_location("lc_sample", sample)
 lc = importlib.util.module_from_spec(spec)
@@ -97,7 +97,7 @@ from typing import Any
 import numpy as np
 from max.dtype import DType
 from max.nn import Module
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 
 @contextmanager
@@ -150,7 +150,7 @@ np.savez("max_tensors.npz", **max_tensors)
 :::note
 
 To capture tensor outputs from *inside* a layer, call
-[`F.print()`](/api/python/experimental.functional/#max.experimental.functional.print)
+[`F.print()`](/api/python/functional/#max.functional.print)
 with the intermediate tensor and a name, such as `F.print(x, "attn_out")`, in
 the corresponding MAX module's `forward()` method. `F.print()` prints the
 tensor's values in eager code and inside a

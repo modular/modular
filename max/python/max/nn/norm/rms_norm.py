@@ -15,10 +15,10 @@
 
 from __future__ import annotations
 
-from max.experimental import functional as F
-from max.experimental.sharding.rules import rms_norm_rule
-from max.experimental.tensor import Tensor
+from max import functional as F
 from max.graph import Dim, ops
+from max.tensor import Tensor
+from max.tensor.sharding.rules import rms_norm_rule
 
 from ..module import Module
 
@@ -44,7 +44,7 @@ class RMSNorm(Module[[Tensor], Tensor]):
         from max.driver import CPU
         from max.dtype import DType
         from max.nn.norm import RMSNorm
-        from max.experimental.tensor import Tensor, default_device
+        from max.tensor import Tensor, default_device
 
         with default_device(CPU()):
             norm = RMSNorm(2048, eps=1e-6)

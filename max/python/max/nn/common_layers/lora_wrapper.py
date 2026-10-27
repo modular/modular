@@ -34,13 +34,13 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor, TensorType
 from max.nn.linear import Linear
 from max.nn.module import Module
 from max.nn.transparent_module import TransparentModule
+from max.tensor.tensor import Tensor, TensorType
 
 from .linear import QKVLinear
 

@@ -15,8 +15,7 @@
 
 from __future__ import annotations
 
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max import functional as F
 from max.graph import DeviceRef
 from max.nn import Module
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
@@ -25,6 +24,7 @@ from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
 from max.pipelines.architectures.gemma4.model_config import (
     Gemma4ForConditionalGenerationConfig,
 )
+from max.tensor import Tensor
 
 from .embedding import Gemma4VisionPatchEmbedder
 from .encoding import Gemma4VisionEncoder

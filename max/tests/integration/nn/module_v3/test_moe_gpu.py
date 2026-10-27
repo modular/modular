@@ -19,14 +19,14 @@ import pytest
 import torch
 from max.driver import CPU, Accelerator
 from max.dtype import DType
-from max.experimental.tensor import (
+from max.nn.common_layers.functional_kernels import moe_finalize
+from max.nn.common_layers.moe import MoE
+from max.tensor.tensor import (
     Tensor,
     TensorType,
     default_device,
     default_dtype,
 )
-from max.nn.common_layers.functional_kernels import moe_finalize
-from max.nn.common_layers.moe import MoE
 
 _HIDDEN = 256
 _EXPERTS = 8

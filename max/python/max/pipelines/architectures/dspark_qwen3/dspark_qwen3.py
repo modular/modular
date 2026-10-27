@@ -47,11 +47,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import NamedMapping
-from max.experimental.tensor import Tensor
 from max.graph import TensorValue
 from max.nn import Linear, Module
 from max.nn.common_layers.functional_kernels import (
@@ -78,6 +76,8 @@ from max.pipelines.architectures.nemotron_h_modulev3.layers.sharding import (
 from max.pipelines.architectures.nemotron_h_modulev3.quantization import (
     Parallelism,
 )
+from max.tensor import Tensor
+from max.tensor.sharding import NamedMapping
 
 store_v_cache_ragged = F.functional(_store_v_cache_ragged)
 fused_qk_ragged_rope = F.functional(_fused_qk_ragged_rope)

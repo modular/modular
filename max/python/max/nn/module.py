@@ -23,9 +23,6 @@ from typing import TYPE_CHECKING, Annotated, Any, Generic
 from max import tree
 from max.driver import CPU, Device, DLPackArray
 from max.engine import InferenceSession
-from max.experimental import compilation
-from max.experimental.sharding import DeviceMapping, DeviceMesh, TensorLayout
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, Type
 from max.nn._compilation_timer import CompilationTimer
 from max.nn._weight_utils import (
@@ -34,6 +31,8 @@ from max.nn._weight_utils import (
     name_weights,
     shard_checkpoint,
 )
+from max.tensor import Tensor, compilation
+from max.tensor.sharding import DeviceMapping, DeviceMesh, TensorLayout
 from rich.pretty import pretty_repr
 from typing_extensions import ParamSpec, Self, TypeVar, dataclass_transform
 
@@ -143,7 +142,7 @@ class Module(Generic[_P, _R]):
 
     .. code-block:: python
 
-        from max.experimental.tensor import Tensor
+        from max.tensor import Tensor
         from max.nn import Module, module_dataclass
 
         @module_dataclass
@@ -175,7 +174,7 @@ class Module(Generic[_P, _R]):
 
         from max.dtype import DType
         from max.nn import Linear
-        from max.experimental.tensor import Tensor, defaults
+        from max.tensor import Tensor, defaults
         from max.graph import TensorType
 
         model = Linear(5, 10)
@@ -313,7 +312,7 @@ class Module(Generic[_P, _R]):
         """Calls :meth:`forward`.
 
         To share one subgraph between several modules, wrap the call with
-        :func:`~max.experimental.compilation.as_subgraph`.
+        :func:`~max.tensor.compilation.as_subgraph`.
 
         Args:
             *args: The arguments to pass to ``forward``.
@@ -355,7 +354,7 @@ class Module(Generic[_P, _R]):
         Yields:
             ``(name, parameter)`` tuples where ``name`` is the
             dot-separated qualified path of the parameter and ``parameter``
-            is the :class:`~max.experimental.tensor.Tensor`.
+            is the :class:`~max.tensor.Tensor`.
         """
         return iter(tree.paths(self, leaf=Tensor).items())
 
@@ -415,7 +414,7 @@ class Module(Generic[_P, _R]):
 
         .. code-block:: python
 
-            from max.experimental.tensor import Tensor
+            from max.tensor import Tensor
             from max.nn import Module, module_dataclass
 
             @module_dataclass
@@ -450,7 +449,7 @@ class Module(Generic[_P, _R]):
         Args:
             state: Dictionary mapping qualified parameter names to tensor values.
                 Keys should match the names from :attr:`Module.parameters` property.
-                Values should be DLPack-compatible arrays or :class:`~max.experimental.tensor.Tensor` objects.
+                Values should be DLPack-compatible arrays or :class:`~max.tensor.Tensor` objects.
                 Shapes must match the existing parameters with the corresponding
                 name. Dtypes must match exactly *or* both lie in the safe-cast
                 set above. Values may be on a different device; in that case the
@@ -584,7 +583,7 @@ class Module(Generic[_P, _R]):
             from max.driver import CPU
             from max.dtype import DType
             from max.nn import Linear
-            from max.experimental.tensor import TensorType, default_device
+            from max.tensor.tensor import TensorType, default_device
 
             with default_device(CPU()):
                 linear = Linear(4, 8)
@@ -599,19 +598,19 @@ class Module(Generic[_P, _R]):
         Args:
             *input_types: The type of each tensor argument of ``forward``, as
                 a :class:`~max.graph.TensorType` or a
-                :class:`~max.experimental.sharding.TensorLayout`.
+                :class:`~max.tensor.sharding.TensorLayout`.
             name: The name of the graph. Defaults to the class's qualified
                 name.
             custom_extensions: Paths to custom Mojo kernel libraries.
             allow_subgraphs: Whether calls made through
-                :func:`~max.experimental.compilation.as_subgraph` are traced
+                :func:`~max.tensor.compilation.as_subgraph` are traced
                 as subgraphs. If ``False``, they are inlined.
             is_device_graph: Whether to build a device graph.
             signal_buffer_index: The graph input position of the signal
-                buffers. See :func:`~max.experimental.compilation.stage`.
+                buffers. See :func:`~max.tensor.compilation.stage`.
 
         Returns:
-            The :class:`~max.experimental.compilation.StagedGraph`. Print it
+            The :class:`~max.tensor.compilation.StagedGraph`. Print it
             to see the MLIR.
         """
         declared = tree.map(
@@ -652,7 +651,7 @@ class Module(Generic[_P, _R]):
 
             from max.dtype import DType
             from max.nn import Module, module_dataclass
-            from max.experimental.tensor import Tensor, TensorType, defaults
+            from max.tensor.tensor import Tensor, TensorType, defaults
 
             @module_dataclass
             class Linear(Module):
@@ -679,7 +678,7 @@ class Module(Generic[_P, _R]):
         Args:
             *input_types: The type of each tensor argument of ``forward``, as
                 a :class:`~max.graph.TensorType` or a
-                :class:`~max.experimental.sharding.TensorLayout`. The device
+                :class:`~max.tensor.sharding.TensorLayout`. The device
                 of each type determines where the computation runs.
             weights: The values of the parameters, keyed by the names that
                 :attr:`parameters` yields. Defaults to the values currently
@@ -691,18 +690,18 @@ class Module(Generic[_P, _R]):
                 name.
             custom_extensions: Paths to custom Mojo kernel libraries, required
                 when ``forward`` calls
-                :func:`~max.experimental.functional.custom`.
+                :func:`~max.functional.custom`.
             auto_cast: Whether to permit a safe ``float32``/``bfloat16`` cast
                 when shapes match. See :meth:`load_state_dict`.
             allow_subgraphs: Whether calls made through
-                :func:`~max.experimental.compilation.as_subgraph` are traced
+                :func:`~max.tensor.compilation.as_subgraph` are traced
                 as subgraphs. If ``False``, they are inlined.
             is_device_graph: Whether to build a device graph.
             signal_buffer_index: The graph input position of the signal
-                buffers. See :func:`~max.experimental.compilation.stage`.
+                buffers. See :func:`~max.tensor.compilation.stage`.
 
         Returns:
-            A :class:`~max.experimental.compilation.CompiledCallable` with
+            A :class:`~max.tensor.compilation.CompiledCallable` with
             the signature of ``forward``.
 
         Raises:
@@ -747,7 +746,7 @@ class Module(Generic[_P, _R]):
 
         This is the tracing half of :meth:`compile`. Use it to compile and
         initialize the graph yourself, then wrap the initialized model with
-        :meth:`~max.experimental.compilation.CompiledCallable.from_engine_model`.
+        :meth:`~max.tensor.compilation.CompiledCallable.from_engine_model`.
 
         Args:
             *input_types: As :meth:`compile`.
@@ -760,7 +759,7 @@ class Module(Generic[_P, _R]):
             signal_buffer_index: As :meth:`compile`.
 
         Returns:
-            The :class:`~max.experimental.compilation.StagedGraph` and the
+            The :class:`~max.tensor.compilation.StagedGraph` and the
             weight registry: a mapping from the name of each weight the
             graph declares to its data, with one entry per shard for a
             distributed weight.
@@ -840,10 +839,10 @@ def module_dataclass(  # noqa: ANN201
 
         from max.driver import CPU
         from max.dtype import DType
-        from max.experimental import functional as F
-        from max.experimental import random
+        from max import functional as F
+        from max.functional import random
         from max.nn import Module, Linear, module_dataclass
-        from max.experimental.tensor import Tensor, default_device
+        from max.tensor import Tensor, default_device
         from max.graph import TensorType
 
         @module_dataclass

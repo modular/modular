@@ -44,10 +44,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMapping
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping
 
 if TYPE_CHECKING:
     from transformers import AutoConfig

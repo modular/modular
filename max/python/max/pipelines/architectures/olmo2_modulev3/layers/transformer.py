@@ -15,11 +15,11 @@
 
 from __future__ import annotations
 
-from max.experimental.tensor import Tensor
 from max.nn import Module
 from max.nn.common_layers.mlp import MLP
 from max.nn.legacy.kv_cache import PagedCacheValues
 from max.nn.norm import RMSNorm
+from max.tensor import Tensor
 
 
 class Olmo2TransformerBlock(

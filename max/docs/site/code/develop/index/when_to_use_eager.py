@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 # DOC: develop/eager-execution.mdx
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 
 def debug_forward_pass(x: Tensor) -> Tensor:

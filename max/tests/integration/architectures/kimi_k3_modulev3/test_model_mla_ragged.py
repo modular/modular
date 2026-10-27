@@ -29,7 +29,6 @@ from _paged_cache_test_utils import build_paged_cache
 from max import tree
 from max.driver import CPU, Accelerator
 from max.dtype import DType
-from max.experimental.tensor import Tensor, default_device
 from max.graph import DeviceRef
 from max.nn.legacy.kv_cache import MHAKVCacheParams
 from max.nn.legacy.transformer import ReturnLogits
@@ -46,6 +45,7 @@ from max.pipelines.architectures.kimi_k3_modulev3.model import (
 from max.pipelines.lib.interfaces.batch_processor import (
     modulev3_ragged_kv_symbolic_inputs,
 )
+from max.tensor import Tensor, default_device
 
 _HIDDEN = 32
 _VOCAB = 40

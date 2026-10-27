@@ -18,15 +18,15 @@ placement, so the caller claims the one it knows they have.
 
 from __future__ import annotations
 
-from max.experimental import functional as F
-from max.experimental.sharding import (
+from max import functional as F
+from max.nn.common_layers.mesh_axis import TP
+from max.tensor import Tensor
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     NamedMapping,
     Partial,
 )
-from max.experimental.tensor import Tensor
-from max.nn.common_layers.mesh_axis import TP
 
 
 def shard_axis(t: Tensor, axis: int) -> Tensor:

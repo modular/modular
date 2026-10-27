@@ -64,7 +64,7 @@ from max.driver import (
     float32_to_bfloat16_as_uint16,
 )
 from max.dtype import DType
-from max.experimental import custom
+from max.functional import custom_op as custom
 from max.graph.ops.rms_norm import _float32_attr_value
 
 

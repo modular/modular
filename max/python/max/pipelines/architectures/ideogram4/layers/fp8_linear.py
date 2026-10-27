@@ -31,9 +31,8 @@ from __future__ import annotations
 import functools
 import operator
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import DimLike
 from max.nn import Module
 from max.nn.legacy.kernels import (
@@ -46,6 +45,7 @@ from max.nn.legacy.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
+from max.tensor import Tensor
 
 # Scales are kept in float32 to preserve the checkpoint's per-channel scale
 # precision (the per-token activation scales are produced in the same dtype).

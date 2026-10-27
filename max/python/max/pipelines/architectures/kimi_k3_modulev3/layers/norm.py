@@ -34,11 +34,11 @@ way K3's V2 code does.
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.nn import Module
 from max.nn.norm.rms_norm import rms_norm
+from max.tensor import Tensor
 
 # config.rms_norm_eps: input_layernorm, post_attention_layernorm,
 # routed_expert_norm, o_norm, the residual norms and the final norm.

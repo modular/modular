@@ -25,9 +25,9 @@ workflow, see the [Model development overview](/develop/).
 ## How a module runs
 
 A module declares the parameters it owns, then defines `forward()` over
-[`Tensor`](/api/python/generated/max.experimental.tensor.Tensor/) values.
+[`Tensor`](/api/python/generated/max.tensor.Tensor/) values.
 Operations come from
-[`max.experimental.functional`](/api/python/experimental.functional/), which you
+[`max.functional`](/api/python/functional/), which you
 import as `F`.
 
 A module runs in one of these ways:
@@ -58,9 +58,9 @@ blocks:
 
 ```python
 from max.driver import CPU
-from max.experimental import functional as F
+from max import functional as F
 from max.nn import Linear, Module, ModuleList
-from max.experimental.tensor import Tensor, default_device
+from max.tensor import Tensor, default_device
 
 
 class FeedForward(Module[[Tensor], Tensor]):
@@ -119,7 +119,7 @@ keyed by those paths:
 ```python
 from max.driver import CPU
 from max.nn import Linear
-from max.experimental.tensor import Tensor, default_device
+from max.tensor import Tensor, default_device
 
 
 with default_device(CPU()):
@@ -150,7 +150,7 @@ model runs. Here the checkpoint has a `bias` that the layer doesn't:
 ```python
 from max.driver import CPU
 from max.nn import Linear
-from max.experimental.tensor import Tensor, default_device
+from max.tensor import Tensor, default_device
 
 
 with default_device(CPU()):
@@ -212,7 +212,7 @@ without `leaf=Tensor`, then doubles every weight with `tree.map()`:
 from max import tree
 from max.driver import CPU
 from max.nn import Linear, Module
-from max.experimental.tensor import Tensor, default_device
+from max.tensor import Tensor, default_device
 
 
 class Projection(Module[[Tensor], Tensor]):
@@ -277,7 +277,7 @@ name:
 from max.driver import CPU
 from max.dtype import DType
 from max.nn import Linear
-from max.experimental.tensor import Tensor, TensorType, default_device
+from max.tensor.tensor import Tensor, TensorType, default_device
 
 
 with default_device(CPU()):

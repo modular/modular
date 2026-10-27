@@ -23,9 +23,8 @@ The weight adapter moves the 64 rope dims of every ``wq_b`` head, ``wk`` and
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.nn import Linear, Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.quant_kernels import (
@@ -40,6 +39,7 @@ from max.nn.legacy.quant_config import (
     WeightScaleSpec,
 )
 from max.nn.norm import LayerNorm
+from max.tensor import Tensor
 
 from ..model_config import HYV4Config
 from .functional_kernels import (

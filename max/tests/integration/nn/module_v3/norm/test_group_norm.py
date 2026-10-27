@@ -18,9 +18,9 @@ import pytest
 import torch
 from max.driver import Accelerator, accelerator_count
 from max.dtype import DType
-from max.experimental.tensor import Tensor
 from max.nn.norm import GroupNorm
 from max.nn.norm.group_norm import group_norm
+from max.tensor import Tensor
 
 
 def test_repr() -> None:

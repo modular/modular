@@ -31,7 +31,7 @@ modular_py_library(
     deps = [
         ":_artifact",
         "//max/python/max:_core",
-        "//max/python/max/experimental",
+        "//max/python/max:tensor",
         requirement("huggingface-hub"),
         requirement("typing-extensions"),
     ],
@@ -44,7 +44,7 @@ modular_py_library(
     deps = [
         ":_artifact",
         ":model_artifact",
-        "//max/python/max/experimental",
+        "//max/python/max:tensor",
         "//max/python/max/graph",
         "//max/python/max/pipelines/lib",
     ],

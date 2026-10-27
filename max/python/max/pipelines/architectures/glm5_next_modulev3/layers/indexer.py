@@ -30,11 +30,9 @@ from __future__ import annotations
 
 import dataclasses
 
+from max import functional as F
 from max import tree
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMapping
-from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorValue, ops
 from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
@@ -57,6 +55,8 @@ from max.nn.norm import LayerNorm
 from max.pipelines.architectures.deepseekV3_2.layers.indexer import (
     exclusive_prefix_sum,
 )
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping
 
 from ...deepseekV3_2_modulev3.layers.indexer import (
     act_quant,

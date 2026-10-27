@@ -13,11 +13,11 @@
 
 from __future__ import annotations
 
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max import functional as F
 from max.nn import Module
 from max.nn.linear import Linear
 from max.nn.norm.layer_norm import LayerNorm
+from max.tensor import Tensor
 
 
 class PatchMergerMLP(Module[[Tensor], Tensor]):

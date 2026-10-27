@@ -23,11 +23,11 @@ from __future__ import annotations
 import numpy as np
 from max.driver import Accelerator
 from max.dtype import DType
-from max.experimental.tensor import Tensor, default_device
 from max.pipelines.architectures.kimi_k3_modulev3.layers.norm import (
     KimiRMSNormGated,
     kimi_rms_norm_gated,
 )
+from max.tensor import Tensor, default_device
 
 
 def _numpy_reference(

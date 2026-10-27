@@ -23,15 +23,15 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import torch
+from max import functional as F
 from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor, default_dtype
 from max.graph import DeviceRef, TensorType
 from max.nn import Module
 from max.pipelines.architectures.laguna_modulev3.layers.attention import (
     softplus,
 )
+from max.tensor import Tensor, default_dtype
 
 
 class _Softplus(Module[[Tensor], Tensor]):

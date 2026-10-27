@@ -25,12 +25,12 @@ import pytest
 import torch
 from max.driver import Accelerator, accelerator_api, accelerator_count
 from max.dtype import DType
-from max.experimental.tensor import Tensor
 from max.nn.common_layers import quant_ops
 from max.nn.common_layers.quant_tensor import (
     MXFP8Quantizer,
     MXFP8Tensor,
 )
+from max.tensor import Tensor
 from test_common.graph_utils import is_b100_b200
 
 _MX_BLOCK = 32

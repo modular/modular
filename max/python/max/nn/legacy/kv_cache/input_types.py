@@ -18,13 +18,13 @@ from typing import Any, Generic, TypeAlias, TypeVar
 from max import tree
 from max.driver import Buffer
 from max.dtype import DType
-from max.experimental.tensor import Tensor
 from max.graph import (
     BufferType,
     BufferValue,
     TensorType,
     TensorValue,
 )
+from max.tensor import Tensor
 from max.tree import Tree
 
 _Tensor = TypeVar("_Tensor", TensorValue, TensorType, Buffer, Tensor)

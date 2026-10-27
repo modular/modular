@@ -588,9 +588,9 @@ for all available options.
 
 A pipeline model runs on one device until its architecture builds a device mesh.
 The reference architectures do that in `_instantiate_module()`: they build a
-[`DeviceMesh`](/api/python/generated/max.experimental.sharding.DeviceMesh/) from
+[`DeviceMesh`](/api/python/generated/max.tensor.sharding.DeviceMesh/) from
 the devices the pipeline assigned, then enter
-[`default_device(mesh)`](/api/python/generated/max.experimental.tensor.default_device/)
+[`default_device(mesh)`](/api/python/generated/max.tensor.default_device/)
 so every weight is created with a placement.
 
 Set `multi_gpu_supported=True` in `arch.py` so the registry advertises the

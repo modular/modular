@@ -20,8 +20,6 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
-from max.experimental.compilation import CompiledCallable
-from max.experimental.sharding import BufferLayout, TensorLayout
 from max.graph import SymbolicDim
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.lib.graph_specs import GraphRole, compile_roles_separately
@@ -30,6 +28,8 @@ from max.pipelines.lib.pipeline_variants.text_generation import (
     TextGenerationPipelineInterface,
 )
 from max.pipelines.lib.registry import PIPELINE_REGISTRY
+from max.tensor.compilation import CompiledCallable
+from max.tensor.sharding import BufferLayout, TensorLayout
 
 from .batch_processor import BatchProcessorDims
 from .model_artifact import ModelArtifact

@@ -21,13 +21,8 @@ compact E4M3 codes with one E8M0 scale per 32x32 block, never
 dequantized.
 """
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMapping, DeviceMesh, Sharded
-from max.experimental.sharding.action import AxisAssignment
-from max.experimental.sharding.cost import P, R
-from max.experimental.sharding.types import TensorLayout
-from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
 from max.nn import Module
 from max.nn.common_layers.quant_tensor import (
@@ -37,6 +32,11 @@ from max.nn.legacy.kernels import (
     block_scales_interleave,
     dynamic_block_scaled_matmul,
 )
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, DeviceMesh, Sharded
+from max.tensor.sharding.action import AxisAssignment
+from max.tensor.sharding.cost import P, R
+from max.tensor.sharding.types import TensorLayout
 
 
 def _act_quant(

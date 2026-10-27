@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import pytest
 from max.driver import Accelerator, accelerator_count
-from max.experimental.tensor import Tensor
 from max.nn import Conv2d
+from max.tensor import Tensor
 
 
 @pytest.mark.skip(

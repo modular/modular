@@ -31,6 +31,7 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max:tree",
         "//max/python/max/_entrypoints",
         "//max/python/max/_xgrammar",
@@ -38,7 +39,6 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/nn/legacy",
@@ -92,11 +92,11 @@ modular_py_test(
     name = "test_graph_specs",
     srcs = ["test_graph_specs.py"],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/_artifact",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/nn/legacy",
@@ -109,13 +109,13 @@ modular_py_test(
     name = "test_export",
     srcs = ["test_export.py"],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/_artifact",
         "//max/python/max/_artifact:export",
         "//max/python/max/_artifact:model_artifact",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/lib",

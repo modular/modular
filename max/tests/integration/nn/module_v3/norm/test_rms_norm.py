@@ -15,8 +15,8 @@
 from __future__ import annotations
 
 import pytest
-from max.experimental.tensor import Tensor
 from max.nn.norm import GemmaRMSNorm, RMSNorm
+from max.tensor import Tensor
 
 
 def test_repr() -> None:

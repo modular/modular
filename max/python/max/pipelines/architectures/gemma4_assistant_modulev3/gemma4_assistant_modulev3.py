@@ -29,11 +29,9 @@ the full weight, as the DeepSeek-V3.2 NextN draft's ``eh_proj`` does.
 
 from __future__ import annotations
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMapping, DeviceMesh, Replicated
-from max.experimental.tensor import Tensor
 from max.nn import Linear, Module
 from max.nn.common_layers.functional_kernels import rope_ragged
 from max.nn.common_layers.kv_cache import PagedCacheValues
@@ -60,6 +58,8 @@ from max.pipelines.architectures.gemma4_modulev3.layers.rotary_embedding import 
     ProportionalRotaryEmbedding,
 )
 from max.pipelines.speculative.driver import gather_variable_rows
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, DeviceMesh, Replicated
 
 from ..gemma4_assistant.model_config import Gemma4AssistantConfig
 

@@ -14,11 +14,11 @@
 
 from __future__ import annotations
 
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max import functional as F
 from max.nn import Module
 from max.nn.common_layers.quant_linear import QuantizedLinear
 from max.nn.legacy.quant_config import QuantConfig
+from max.tensor import Tensor
 
 
 class HYV4MLP(Module[[Tensor], Tensor]):

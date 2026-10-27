@@ -41,7 +41,6 @@ from max._kv_cache_ops import (
 from max._kv_core import LeafShape
 from max.driver import Buffer, Device
 from max.dtype import DType
-from max.experimental.sharding import TensorLayout
 from max.graph import (
     BufferType,
     BufferValue,
@@ -52,6 +51,7 @@ from max.graph import (
 )
 from max.support.human_readable_formatter import to_human_readable_bytes
 from max.support.math import ceildiv
+from max.tensor.sharding import TensorLayout
 
 from .data_parallelism_utils import split_into_groups
 from .input_types import (

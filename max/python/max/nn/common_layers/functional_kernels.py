@@ -15,18 +15,8 @@
 
 from collections.abc import Sequence
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import (
-    DeviceMapping,
-    DeviceMesh,
-    Sharded,
-    Unknown,
-)
-from max.experimental.sharding.action import AxisAssignment
-from max.experimental.sharding.cost import P, R
-from max.experimental.sharding.types import TensorLayout
-from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
 from max.nn.legacy.activation import GatedActivation
 from max.nn.legacy.comm.ep.ep_kernels import (
@@ -113,6 +103,16 @@ from max.nn.legacy.kernels import (
 from max.nn.legacy.kernels import (
     store_v_cache_ragged as _store_v_cache_ragged,
 )
+from max.tensor import Tensor
+from max.tensor.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    Sharded,
+    Unknown,
+)
+from max.tensor.sharding.action import AxisAssignment
+from max.tensor.sharding.cost import P, R
+from max.tensor.sharding.types import TensorLayout
 
 
 def grouped_matmul_ragged_rule(

@@ -45,10 +45,10 @@ import numpy as np
 from max._core.driver import _release_buffers_to_borrowed
 from max.driver import Buffer, batch_inplace_copy
 from max.engine import Model
-from max.experimental.compilation import CompiledCallable
 from max.nn.legacy.kv_cache import BatchCharacteristics, KVCacheParamInterface
 from max.nn.legacy.kv_cache.utils import AttnKeyInterface, MultiAttnKey
 from max.profiler import traced
+from max.tensor.compilation import CompiledCallable
 from tqdm import tqdm
 
 from .interfaces import ModelInputs, ModelOutputs, UnifiedEagleOutputs
@@ -193,7 +193,7 @@ def _engine_model_and_signal_buffers(
 ) -> tuple[Model, list[Buffer]]:
     """Returns the engine model to capture and the inputs appended to each call.
 
-    A :class:`~max.experimental.compilation.CompiledCallable` (ModuleV3) wraps
+    A :class:`~max.tensor.compilation.CompiledCallable` (ModuleV3) wraps
     its engine model and appends its signal buffers to every call, so capture,
     replay and verification must append them too.
     """

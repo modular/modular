@@ -15,8 +15,7 @@
 
 from __future__ import annotations
 
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max import functional as F
 from max.nn import Module
 from max.nn.common_layers.functional_kernels import (
     flash_attention_ragged_gpu,
@@ -29,6 +28,7 @@ from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
 from max.pipelines.architectures.gemma4.model_config import (
     Gemma4ForConditionalGenerationConfig,
 )
+from max.tensor import Tensor
 
 from ..layers.rms_norm import Gemma4RMSNorm
 

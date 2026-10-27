@@ -16,18 +16,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.realization_context import ensure_context
-from max.experimental.sharding import (
-    DeviceMapping,
-    DeviceMesh,
-    NamedMapping,
-    Partial,
-)
-from max.experimental.sharding.rules import unary_rule
-from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
 from max.nn import Module
 from max.nn.common_layers.functional_kernels import (
@@ -39,6 +30,15 @@ from max.nn.common_layers.quant_ops import (
     interleave_grouped_scales,
 )
 from max.nn.legacy import kernels
+from max.tensor import Tensor
+from max.tensor.realization_context import ensure_context
+from max.tensor.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    NamedMapping,
+    Partial,
+)
+from max.tensor.sharding.rules import unary_rule
 
 from ..model_config import NemotronHConfig
 from ..quantization import NVFP4_GROUP_SIZE

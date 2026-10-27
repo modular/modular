@@ -43,14 +43,14 @@ from conftest import (
     VISION_RMS_NORM_EPS,
     TorchGemma4VisionAttention,
 )
+from max import functional as F
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import default_dtype
 from max.graph import DeviceRef, TensorType
 from max.pipelines.architectures.gemma4_modulev3.vision_model.attention import (
     Gemma4VisionAttention,
 )
+from max.tensor import default_dtype
 
 # Head dim consistent with the small test dimensions.
 VISION_HEAD_DIM = VISION_EMBED_HIDDEN_SIZE // VISION_NUM_HEADS

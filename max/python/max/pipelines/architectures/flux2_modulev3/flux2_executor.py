@@ -18,11 +18,10 @@ import logging
 
 import numpy as np
 import numpy.typing as npt
+from max import functional
+from max import functional as F
 from max.driver import CPU, Buffer, Device, load_devices
 from max.dtype import DType
-from max.experimental import functional
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
 from max.nn import Module
 from max.pipelines.architectures.flux2.flux2_executor import (
@@ -38,6 +37,7 @@ from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.weight_loader import WeightLoader, swap_prefix
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
 from max.profiler import traced
+from max.tensor import Tensor
 
 from .components import Denoiser, TextEncoder
 from .flux2_inputs import Flux2ModuleV3Inputs
@@ -60,7 +60,7 @@ class FLUXModule(Module[..., tuple[Tensor, Tensor, Tensor]]):
     :class:`~max.pipelines.diffusion.pipeline.PixelGenerationPipeline`)
     is responsible for:
 
-    1. Wrapping construction in :func:`max.experimental.functional.lazy`.
+    1. Wrapping construction in :func:`max.functional.lazy`.
     2. Composing ``manifest.loader()`` through
        :func:`~max.pipelines.lib.weight_loader.adapt_module_loader` and
        materialising the Module's declared parameters into a
