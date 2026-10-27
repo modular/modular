@@ -70,8 +70,7 @@ static constexpr char kIsImplicitlyEncodableTo[] =
 static constexpr char kDeviceType[] = "device_type";
 
 static bool usesClosurePipeline(FnOp fn) {
-  return fn->getParentOfType<FnOp>() && !fn.isOptionalSymbol() &&
-         !fn.getFuncTypeGenerator().isCapturing();
+  return fn->getParentOfType<FnOp>() && !fn.isOptionalSymbol();
 }
 } // namespace
 
@@ -920,19 +919,6 @@ bool ClosureEmitter::isInflatedClosureForFnSymbol(PValue fnSymbol,
          isEqualCanon(wrapper.getParamValues().back(), fnSymbol.get());
 }
 
-static bool hasCapturingParameterType(ArrayRef<ParamDeclAttr> params) {
-  mlir::AttrTypeWalker walker;
-  walker.addWalk([](FuncType sig) {
-    if (sig.isCapturing())
-      return WalkResult::interrupt();
-    return WalkResult::advance();
-  });
-
-  return llvm::any_of(params, [&](ParamDeclAttr param) {
-    return walker.walk(param).wasInterrupted();
-  });
-}
-
 /// Prepend a new implicit origin at index 0 in `sig`, shifting all existing
 /// depth-local ImplicitOriginRefAttrs up by one and incrementing the
 /// FnMetadata origin count. This is the implicit-origin analogue of
@@ -976,8 +962,7 @@ struct PromotedSignature {
 static PromotedSignature buildPromotedSignature(
     SharedState &shared, FnTypeGeneratorType sig,
     ArrayRef<ParamDeclAttr> params, ArrayRef<ParamDeclAttr> prependedParams,
-    std::optional<ClosureEmitter::PromotedClosureSelfArg> selfArg,
-    TriBool capturingOverride = TriBool::unknown()) {
+    std::optional<ClosureEmitter::PromotedClosureSelfArg> selfArg) {
   MLIRContext *ctx = shared.getContext();
   size_t oldNumImplicitOrigins =
       sig.getFnMetaOriginData().getNumImplicitOriginDecls();
@@ -1027,16 +1012,9 @@ static PromotedSignature buildPromotedSignature(
   FunctionType promotedFunctionType = replaceIndexRefsWithNamedRefs(
       sig.getValues(), explicitParamDecls, implicitOriginDecls);
 
-  bool shouldBeCapturing;
-  if (capturingOverride.isDefinite())
-    shouldBeCapturing = capturingOverride.isTrue();
-  else
-    shouldBeCapturing =
-        sig.isCapturing() || hasCapturingParameterType(explicitPrependedParams);
   FnTypeGeneratorType promotedSignature = FnTypeGeneratorType::get(
       sig.getInputParamTypes(), sig.getValues(), sig.getArgConventions(),
-      sig.getFnEffects().setCapturing(shouldBeCapturing),
-      sig.getFnMetaOriginData(), sig.getParamListAttrs(),
+      sig.getFnEffects(), sig.getFnMetaOriginData(), sig.getParamListAttrs(),
       sig.getArgListAttrs());
 
   Type selfRuntimeArgType;
@@ -1062,8 +1040,7 @@ static PromotedSignature buildPromotedSignature(
 
 ClosureEmitter::PromotedClosure ClosureEmitter::promoteClosure(
     DefASTDecl &nestedFnDecl, ArrayRef<ParamDeclAttr> prependedParams,
-    std::optional<PromotedClosureSelfArg> selfArg, TriBool capturingOverride,
-    OpASTDecl *targetParent) {
+    std::optional<PromotedClosureSelfArg> selfArg, OpASTDecl *targetParent) {
   assert(nestedFnDecl.resolvedness == DeclResolvedness::body &&
          "nested decl must be fully resolved to promote");
   // Mark dead unparsed code as resolved to prevent resolution dependent on
@@ -1085,8 +1062,7 @@ ClosureEmitter::PromotedClosure ClosureEmitter::promoteClosure(
   auto [promotedSignature, promotedFunctionType, selfRuntimeArgType,
         newParams] =
       buildPromotedSignature(shared, function.getFuncTypeGenerator(),
-                             function.getParams(), prependedParams, selfArg,
-                             capturingOverride);
+                             function.getParams(), prependedParams, selfArg);
 
   OpBuilder builder = targetParent->getDeclEndBuilder();
   function->moveBefore(builder.getInsertionBlock(),
@@ -1205,14 +1181,12 @@ ClosureEmitter::PromotedClosure ClosureEmitter::promoteClosure(
 
 ClosureEmitter::PromotedClosure ClosureEmitter::promoteClosure(
     DefASTDecl &nestedFnDecl, ArrayRef<ParamDeclRefAttr> prependedParamRefs,
-    std::optional<PromotedClosureSelfArg> selfArg, TriBool capturingOverride,
-    OpASTDecl *targetParent) {
+    std::optional<PromotedClosureSelfArg> selfArg, OpASTDecl *targetParent) {
   SmallVector<ParamDeclAttr> prependedParams =
       llvm::map_to_vector(prependedParamRefs, [](ParamDeclRefAttr paramRef) {
         return ParamDeclAttr::get(paramRef);
       });
-  return promoteClosure(nestedFnDecl, prependedParams, selfArg,
-                        capturingOverride, targetParent);
+  return promoteClosure(nestedFnDecl, prependedParams, selfArg, targetParent);
 }
 
 template <typename T>
@@ -1659,7 +1633,7 @@ DefASTDecl *ClosureEmitter::liftClosureIntoMethod(
   // live on the storage struct, so do not prepend them to the method.
   DefASTDecl *promotedDecl =
       promoteClosure(nestedFnDecl, ArrayRef<ParamDeclAttr>{},
-                     /*selfArg=*/selfArg, /*capturingOverride=*/TriBool::yes(),
+                     /*selfArg=*/selfArg,
                      /*targetParent=*/&storageStructDecl)
           .functionDecl;
   FnOp promotedCallFunction = promotedDecl->getOp();

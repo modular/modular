@@ -59,7 +59,7 @@ import comm.vendor.ccl as vendor_ccl
 from max.gpu.host import DeviceContext, DeviceContextArray
 from max.gpu.primitives.grid_controls import PDLLevel
 from layout.tile_tensor import row_major
-from layout import Coord, TileTensor, coord_to_index_list, row_major
+from layout import Coord, TileTensor, row_major
 from layout.int_tuple import UNKNOWN_VALUE
 from extensibility import (
     InputTensor,
@@ -80,7 +80,6 @@ from std.logger import Logger
 
 comptime logger = Logger()
 
-from std.utils import IndexList
 from std.utils.index import Index
 from std.collections import Array, Optional
 
@@ -271,7 +270,7 @@ struct DistributedAllReduceSum:
                     out_tensor._lambda_store[
                         width=_width, element_alignment=alignment
                     ](
-                        rebind[IndexList[rank]](coord_to_index_list(coords)),
+                        coords,
                         rebind[SIMD[dtype, _width]](val),
                     )
 
@@ -316,7 +315,7 @@ struct DistributedAllReduceSum:
                 out_tensor._lambda_store[
                     width=_width, element_alignment=alignment
                 ](
-                    rebind[IndexList[rank]](coord_to_index_list(coords)),
+                    coords,
                     rebind[SIMD[dtype, _width]](val),
                 )
 
@@ -458,7 +457,7 @@ struct DistributedReduceScatterSum:
                 out_tensor._lambda_store[
                     width=_width, element_alignment=alignment
                 ](
-                    rebind[IndexList[rank]](coord_to_index_list(coords)),
+                    coords,
                     rebind[SIMD[dtype, _width]](val),
                 )
 

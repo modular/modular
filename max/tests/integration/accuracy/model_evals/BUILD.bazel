@@ -209,7 +209,7 @@ modular_py_library(
 # One-command GPQA-Diamond run at OpenRouter AutoExacto parity. A shell runner
 # because the task runs in openbench's pinned venv, a third-party dependency
 # tree, the same reason omnidocbench_eval_local is one. exacto_gpqa_task.py is
-# plain data: it imports inspect_ai and openbench, which only that venv has.
+# plain data: it imports inspect_ai, which only that venv has.
 #   ./bazelw run //max/tests/integration/accuracy/model_evals:exacto_gpqa_local -- \
 #     --url http://localhost:8000 --limit 4 --epochs 1
 sh_binary(
@@ -218,12 +218,88 @@ sh_binary(
     srcs = ["run_exacto_gpqa_local.sh"],
     data = [
         "exacto_gpqa_smoke.py",
-        "exacto_gpqa_task.py",
-        "exacto_streaming.py",
         ":exacto_gpqa_openrouter",
+        ":exacto_gpqa_task",
+        ":exacto_mcq",
+        ":exacto_media",
         ":exacto_report",
+        ":exacto_streaming",
     ],
     tags = ["manual"],
+)
+
+# The GPQA Inspect task, shared by the runner and its unit test. A filegroup
+# for the same reason as exacto_streaming below.
+filegroup(
+    name = "exacto_gpqa_task",
+    testonly = True,
+    srcs = ["exacto_gpqa_task.py"],
+)
+
+# The streaming Inspect provider both runners load inside the harness venv. A
+# filegroup, not a library: it imports inspect_ai, which only that venv has.
+filegroup(
+    name = "exacto_streaming",
+    testonly = True,
+    srcs = ["exacto_streaming.py"],
+)
+
+# How a video URL reaches the wire through Inspect, which cannot send one.
+# Stdlib only; exacto_streaming.py imports it inside the harness venv.
+modular_py_library(
+    name = "exacto_media",
+    testonly = True,
+    srcs = ["exacto_media.py"],
+    imports = ["."],
+)
+
+# OpenRouter's MCQ answer extraction, ported from its benchmark harness.
+modular_py_library(
+    name = "exacto_mcq",
+    testonly = True,
+    srcs = ["exacto_mcq.py"],
+    imports = ["."],
+)
+
+# OpenRouter's VGI-Bench samples and media manifest, ported from its benchmark
+# harness. Stdlib only, imported by exacto_vgi_task.py inside the harness venv.
+modular_py_library(
+    name = "exacto_vgi_openrouter",
+    testonly = True,
+    srcs = ["exacto_vgi_openrouter.py"],
+    data = ["exacto_vgi_media_manifest.json"],
+    imports = ["."],
+    deps = [":exacto_media"],
+)
+
+# One-command VGI-Bench run at OpenRouter AutoExacto parity; the same venv and
+# runner shape as exacto_gpqa_local.
+#   ./bazelw run //max/tests/integration/accuracy/model_evals:exacto_vgi_local -- \
+#     --url http://localhost:8000 --limit 2
+sh_binary(
+    name = "exacto_vgi_local",
+    testonly = True,
+    srcs = ["run_exacto_vgi_local.sh"],
+    data = [
+        "exacto_vgi_task.py",
+        ":exacto_mcq",
+        ":exacto_media",
+        ":exacto_report",
+        ":exacto_streaming",
+        ":exacto_vgi_openrouter",
+    ],
+    tags = ["manual"],
+)
+
+modular_py_test(
+    name = "test_exacto_vgi_openrouter",
+    size = "small",
+    srcs = ["test_exacto_vgi_openrouter.py"],
+    deps = [
+        ":exacto_mcq",
+        ":exacto_media",
+        ":exacto_vgi_openrouter",
+    ],
 )
 
 # One-command tau2-bench airline run, the agentic half of the AutoExacto gate.
@@ -253,6 +329,18 @@ modular_py_test(
     srcs = ["test_exacto_summary.py"],
     deps = [
         ":exacto_summary",
+    ],
+)
+
+# Stubs inspect_ai and datasets, which only the harness venv has.
+modular_py_test(
+    name = "test_exacto_gpqa_task",
+    size = "small",
+    srcs = ["test_exacto_gpqa_task.py"],
+    data = [":exacto_gpqa_task"],
+    deps = [
+        ":exacto_gpqa_openrouter",
+        ":exacto_mcq",
     ],
 )
 

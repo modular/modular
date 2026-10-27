@@ -33,6 +33,7 @@ from max.pipelines.architectures import hf_config_shims  # noqa: F401
 from max.pipelines.architectures.gemma4.model_config import (
     Gemma4ForConditionalGenerationConfig,
     Gemma4TextConfig,
+    _resolve_head_dims,
     _resolve_num_global_kv_heads,
 )
 from max.pipelines.lib import KVCacheConfig
@@ -83,6 +84,44 @@ def test_resolve_num_global_kv_heads() -> None:
         num_key_value_heads = 2
 
     assert _resolve_num_global_kv_heads(AbsentFieldConfig()) == 2
+
+
+def test_resolve_head_dims_reads_the_per_layer_config() -> None:
+    """A heterogeneous config carries the widths on the per-layer configs."""
+
+    class Layer:
+        def __init__(self, head_dim: int) -> None:
+            self.head_dim = head_dim
+
+    config = Mock(
+        layer_types=["sliding_attention", "full_attention"],
+        per_layer_config=[Layer(256), Layer(512)],
+    )
+    assert _resolve_head_dims(config) == (256, 512)
+
+
+def test_resolve_head_dims_falls_back_to_the_global_attributes() -> None:
+    """A homogeneous config (older transformers) exposes both widths."""
+
+    class HomogeneousConfig:
+        head_dim = 256
+        global_head_dim = 512
+
+    assert _resolve_head_dims(HomogeneousConfig()) == (256, 512)
+
+
+def test_resolve_head_dims_fails_loudly_when_a_width_is_missing() -> None:
+    """An unresolvable width is an error, not a silently wrong model."""
+
+    class LayerWithoutWidth:
+        pass
+
+    config = Mock(
+        layer_types=["full_attention"],
+        per_layer_config=[LayerWithoutWidth()],
+    )
+    with pytest.raises(ValueError, match="head width"):
+        _resolve_head_dims(config)
 
 
 def test_construct_kv_params_with_null_global_kv_heads() -> None:

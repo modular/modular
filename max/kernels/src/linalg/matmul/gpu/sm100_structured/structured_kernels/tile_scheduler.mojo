@@ -33,10 +33,11 @@ from std.utils.fast_div import FastDiv
 
 from linalg.structuring import SMemPtr, SMemArray
 from structured_kernels.pipeline import ProducerConsumerPipeline
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 from linalg.matmul.gpu.tile_scheduler import RasterOrder
+from std.utils.coord import Coord
 
 
 @fieldwise_init
@@ -164,7 +165,7 @@ struct WaitAndAdvanceHandle[
 
 struct WorkIterator[
     num_stages: Int,
-    cluster_shape: IndexList[3, element_type=.uint32],
+    cluster_shape: Coord[Int, Int, Int],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
 ](Copyable, Iterable, Iterator, RegisterPassable):
@@ -255,7 +256,7 @@ struct WorkIterator[
 
 struct SchedulerWorkIterator[
     num_stages: Int,
-    cluster_shape: IndexList[3, element_type=.uint32],
+    cluster_shape: Coord[Int, Int, Int],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
 ](Copyable, Iterable, Iterator, RegisterPassable):
@@ -371,9 +372,7 @@ struct SchedulerWorkIterator[
 
 struct TileScheduler[
     num_stages: Int,
-    cluster_shape: IndexList[3, element_type=.uint32] = Index[
-        dtype=DType.uint32
-    ](1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     block_swizzle_size: Int = 8,
 ](TrivialRegisterPassable):

@@ -281,7 +281,8 @@ def test_write_back_matches_reference(
     ("hc_mult", "hidden_size", "supported"),
     [
         (HC_MULT, HIDDEN_SIZE, True),
-        (HC_MULT, 1024, False),
+        (HC_MULT, 1024, True),
+        (HC_MULT, 1536, False),
         (3, HIDDEN_SIZE, False),
     ],
 )

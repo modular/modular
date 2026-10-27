@@ -10,7 +10,7 @@
 // CHECK-DAG: llvm.mlir.constant(7 : i64)
 // CHECK: llvm.mlir.global internal constant @{{.*}}("caller.mojo\00")
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
-  kgen.func @with_callsite() capturing -> !kgen.string {
+  kgen.func @with_callsite() -> !kgen.string {
     %line, %col, %fileName = kgen.source_loc[0] loc(callsite("inner.mojo":1:1 at "caller.mojo":42:7))
     hlcf.return %fileName : !kgen.string
   }
@@ -24,7 +24,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-DAG: llvm.mlir.constant(3 : i64)
 // CHECK: llvm.mlir.global internal constant @{{.*}}("bare.mojo\00")
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
-  kgen.func @plain_loc() capturing -> !kgen.string {
+  kgen.func @plain_loc() -> !kgen.string {
     %line, %col, %fileName = kgen.source_loc[0] loc("bare.mojo":9:3)
     hlcf.return %fileName : !kgen.string
   }
@@ -36,7 +36,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-LABEL: llvm.func internal @unknown_loc
 // CHECK: llvm.mlir.global internal constant @{{.*}}("<unknown location>\00")
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
-  kgen.func @unknown_loc() capturing -> !kgen.string {
+  kgen.func @unknown_loc() -> !kgen.string {
     %line, %col, %fileName = kgen.source_loc[0] loc(unknown)
     hlcf.return %fileName : !kgen.string
   }

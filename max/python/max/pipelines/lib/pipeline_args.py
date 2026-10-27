@@ -176,6 +176,15 @@ class PipelineArgs(ConfigFileModel):
         ),
     )
 
+    model_worker_impl: str | None = Field(
+        default=None,
+        description=(
+            "[--cascade] Import path of an alternative model worker "
+            "implementation, as ``'module.path:ClassName'``. Left unset, uses "
+            "the MAX Serve model worker."
+        ),
+    )
+
     cascade: bool = Field(
         default=False,
         description=(

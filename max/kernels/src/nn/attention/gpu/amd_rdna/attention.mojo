@@ -412,7 +412,7 @@ struct AttentionRDNA[
         out result: TiledTensorCore[
             get_accum_type[Self.q_type](),
             Self.q_type,
-            Self.mma_shape,
+            (Self.mma_shape[0], Self.mma_shape[1], Self.mma_shape[2]),
             group_size=Self.k_group_size,
             transpose_b=True,
         ],
@@ -425,7 +425,7 @@ struct AttentionRDNA[
         out result: TiledTensorCore[
             get_accum_type[Self.q_type](),
             Self.q_type,
-            Self.mma_shape,
+            (Self.mma_shape[0], Self.mma_shape[1], Self.mma_shape[2]),
             group_size=Self.k_group_size,
             transpose_b=False,
         ],

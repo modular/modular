@@ -1247,16 +1247,27 @@ def _chat_template_kwargs_for(payload: dict[str, Any]) -> dict[str, Any] | None:
             {
                 "enable_thinking": False,
                 "thinking": False,
+                "reasoning_effort": "none",
             },
-            id="openrouter_enabled_false_discards_effort_none",
+            id="openrouter_enabled_false_keeps_effort_none",
         ),
         pytest.param(
             {"reasoning": {"enabled": True, "effort": "none"}},
             {
                 "enable_thinking": False,
                 "thinking": False,
+                "reasoning_effort": "none",
             },
             id="openrouter_enabled_true_effort_none_is_off",
+        ),
+        pytest.param(
+            {"reasoning_effort": "high", "reasoning": {"effort": "none"}},
+            {
+                "enable_thinking": True,
+                "thinking": True,
+                "reasoning_effort": "high",
+            },
+            id="top_level_effort_wins_over_openrouter_none",
         ),
         pytest.param(
             {"reasoning_effort": "high", "reasoning": {"effort": "low"}},
@@ -1430,6 +1441,73 @@ def test_resolved_chat_template_kwargs(
 ) -> None:
     """Reasoning controls are folded into the kwargs the chat template sees."""
     assert _chat_template_kwargs_for(payload) == expected
+
+
+_THINKING_OFF = {"enable_thinking": False, "thinking": False}
+_THINKING_ON = {"enable_thinking": True, "thinking": True}
+
+
+@pytest.mark.parametrize(
+    "payloads,expected",
+    [
+        pytest.param(
+            [
+                {"reasoning_effort": "none"},
+                {"chat_template_kwargs": {"reasoning_effort": "none"}},
+                {"reasoning": {"effort": "none"}},
+                {"reasoning": {"enabled": False, "effort": "none"}},
+                {"reasoning": {"enabled": True, "effort": "none"}},
+            ],
+            {**_THINKING_OFF, "reasoning_effort": "none"},
+            id="effort_none",
+        ),
+        pytest.param(
+            [
+                {"reasoning_effort": "high"},
+                {"chat_template_kwargs": {"reasoning_effort": "high"}},
+                {"reasoning": {"effort": "high"}},
+                {"reasoning": {"enabled": True, "effort": "high"}},
+            ],
+            {**_THINKING_ON, "reasoning_effort": "high"},
+            id="effort_level",
+        ),
+        pytest.param(
+            [
+                {"chat_template_kwargs": _THINKING_OFF},
+                {"thinking": {"type": "disabled"}},
+                {"reasoning": {"enabled": False}},
+                {"reasoning": {"enabled": False, "effort": "high"}},
+            ],
+            _THINKING_OFF,
+            id="thinking_off",
+        ),
+        pytest.param(
+            [
+                {"chat_template_kwargs": _THINKING_ON},
+                {"thinking": {"type": "enabled"}},
+                {"reasoning": {"enabled": True}},
+            ],
+            _THINKING_ON,
+            id="thinking_on",
+        ),
+        pytest.param(
+            [
+                {},
+                {"thinking": {"type": "adaptive"}},
+                {"reasoning": {}},
+                {"reasoning": {"max_tokens": 64, "exclude": True}},
+            ],
+            None,
+            id="model_default",
+        ),
+    ],
+)
+def test_equivalent_reasoning_controls_render_alike(
+    payloads: list[dict[str, Any]], expected: dict[str, Any] | None
+) -> None:
+    """One intent renders the same whichever channel carries it."""
+    for payload in payloads:
+        assert _chat_template_kwargs_for(payload) == expected, payload
 
 
 # ---------------------------------------------------------------------------

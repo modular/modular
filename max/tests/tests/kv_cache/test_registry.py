@@ -92,7 +92,8 @@ class TestUseJengaKvCache:
     """Default and opt-out behavior for the Jenga manager."""
 
     @pytest.mark.parametrize(
-        "model_name", ["openai/gpt-oss-20b", "Qwen/Qwen3-8B"]
+        "model_name",
+        ["openai/gpt-oss-20b", "Qwen/Qwen3-8B", "poolside/Laguna-S-2.1-NVFP4"],
     )
     def test_legacy_env_disables_jenga(
         self, model_name: str, monkeypatch: pytest.MonkeyPatch

@@ -22,6 +22,7 @@ so a build needs no accelerator and runs anywhere bazel does.
 from __future__ import annotations
 
 from collections import OrderedDict
+from dataclasses import replace
 from typing import cast
 
 from max.driver import CPU, Buffer
@@ -32,6 +33,7 @@ from max.experimental.tensor import default_device, default_dtype
 from max.graph import DeviceRef
 from max.graph.type import Shape
 from max.graph.weights import WeightData, Weights
+from max.nn.comm.ep import EPBatchManager, EPConfig
 from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.dflash_mimo_v2 import DFlashMiMoV2Config
@@ -178,27 +180,42 @@ DFLASH_CONFIG: dict[str, object] = {
 
 
 def target_kv_params(
-    devices: list[DeviceRef], *, num_draft_tokens: int
+    devices: list[DeviceRef],
+    *,
+    num_draft_tokens: int,
+    data_parallel_degree: int = 1,
 ) -> MultiKVCacheParams:
     """The target's ``{sliding, full}`` tree at the speculative build's widths."""
+    hf = _FakeAttrConfig
+    n_sliding = sum(hf.hybrid_layer_pattern)
 
-    def group(n_kv_heads: int) -> MHAKVCacheParams:
+    def group(n_kv_heads: int, num_layers: int) -> MHAKVCacheParams:
         return MHAKVCacheParams(
-            num_layers=2,
+            num_layers=num_layers,
             n_kv_heads=n_kv_heads,
             dtype=DType.bfloat16,
             head_dim=256,
             devices=devices,
+            data_parallel_degree=data_parallel_degree,
             enable_prefix_caching=False,
             per_layer_buffers=False,
             speculative_method="dflash",
             num_draft_tokens=num_draft_tokens,
         )
 
-    return MultiKVCacheParams.from_params({SLIDING: group(4), FULL: group(4)})
+    return MultiKVCacheParams.from_params(
+        {
+            SLIDING: group(hf.swa_num_key_value_heads, n_sliding),
+            FULL: group(
+                hf.num_key_value_heads, hf.num_hidden_layers - n_sliding
+            ),
+        }
+    )
 
 
-def draft_kv_params(devices: list[DeviceRef]) -> MHAKVCacheParams:
+def draft_kv_params(
+    devices: list[DeviceRef], *, data_parallel_degree: int = 1
+) -> MHAKVCacheParams:
     """The drafter's context cache: windowed, at the block's draft width."""
     return MHAKVCacheParams(
         num_layers=2,
@@ -206,6 +223,7 @@ def draft_kv_params(devices: list[DeviceRef]) -> MHAKVCacheParams:
         dtype=DType.bfloat16,
         head_dim=128,
         devices=devices,
+        data_parallel_degree=data_parallel_degree,
         enable_prefix_caching=False,
         per_layer_buffers=False,
         speculative_method="dflash",
@@ -347,13 +365,21 @@ def mask_embedding() -> WeightData:
 
 
 def tiny_draft_config(
-    devices: list[DeviceRef], kv_params: MHAKVCacheParams
+    devices: list[DeviceRef],
+    kv_params: MHAKVCacheParams,
+    *,
+    data_parallel_degree: int = 1,
 ) -> DFlashMiMoV2Config:
-    return DFlashMiMoV2Config.from_dflash_config(
-        DFLASH_CONFIG,
-        devices=devices,
-        kv_params=kv_params,
-        max_seq_len=512 + 2 * BLOCK,
+    # The degree is threaded the way the pipeline model does, beside the
+    # shared reader: the checkpoint's config.json does not carry it.
+    return replace(
+        DFlashMiMoV2Config.from_dflash_config(
+            DFLASH_CONFIG,
+            devices=devices,
+            kv_params=kv_params,
+            max_seq_len=512 + 2 * BLOCK,
+        ),
+        data_parallel_degree=data_parallel_degree,
     )
 
 
@@ -377,20 +403,46 @@ class _IdCPU(CPU):
 
 def build_spec(
     devices: list[DeviceRef],
+    *,
+    data_parallel_degree: int = 1,
+    ep_config: EPConfig | None = None,
 ) -> tuple[
     UnifiedDflashMiMoV2Spec,
     MiMoV2Config,
     DFlashMiMoV2Config,
     MultiKVCacheParams,
 ]:
-    """The fused graph's spec and its target/drafter configs, on ``devices``."""
-    target_kv = target_kv_params(devices, num_draft_tokens=BLOCK)
-    draft_kv = draft_kv_params(devices)
-    config = MiMoV2Config.from_huggingface_config(
-        _FakeAttrConfig(), devices=devices, kv_params=target_kv, max_seq_len=512
+    """The fused graph's spec and its target/drafter configs, on ``devices``.
+
+    ``data_parallel_degree`` above 1 builds the DP form: one-device
+    replicas, the batch axis named ``dp``, dp-aware KV trees, and -- with
+    ``ep_config`` -- the P2P expert backend the replicas dispatch through.
+    """
+    target_kv = target_kv_params(
+        devices,
+        num_draft_tokens=BLOCK,
+        data_parallel_degree=data_parallel_degree,
     )
-    config.kv_params = target_kv
-    draft = tiny_draft_config(devices, draft_kv)
+    draft_kv = draft_kv_params(
+        devices, data_parallel_degree=data_parallel_degree
+    )
+    # The production call's shape: the config builder takes the whole mesh
+    # and the degree, and runs its tensor-parallel divisibility checks
+    # (whole qkv chunks per rank, whole 128-row scale granules per rank)
+    # over one replica's devices, where the weights shard -- every
+    # one-device replica holds them unsharded.
+    config = MiMoV2Config.from_huggingface_config(
+        _FakeAttrConfig(),
+        devices=devices,
+        kv_params=target_kv,
+        max_seq_len=512,
+        data_parallel_degree=data_parallel_degree,
+    )
+    config.data_parallel_degree = data_parallel_degree
+    config.ep_config = ep_config
+    draft = tiny_draft_config(
+        devices, draft_kv, data_parallel_degree=data_parallel_degree
+    )
     # Widen as the pipeline model does: the spec target builds wide.
     config.target_layer_ids = list(draft.target_layer_ids)
     config.return_logits = ReturnLogits.VARIABLE
@@ -416,10 +468,22 @@ def build_module(
     kv_tree: MultiKVCacheParams,
     *,
     structured_output: bool,
+    ep_batch_manager: EPBatchManager | None = None,
 ) -> UnifiedDflashMiMoV2ModuleV3:
-    """The fused module traced on a CPU mesh."""
+    """The fused module traced on the spec's mesh.
+
+    The mesh follows the pipeline model's: one axis over the devices, named
+    ``dp`` under data parallelism (the split placement keys on it) and
+    ``tp`` otherwise. CPU refs build a CPU mesh, as the no-GPU staging does;
+    GPU refs build over the (possibly virtual) accelerators.
+    """
     n_devices = len(spec.target.devices)
-    mesh = DeviceMesh((CPU(),) * n_devices, (n_devices,), ("tp",))
+    axis_name = "dp" if spec.target.data_parallel_degree > 1 else "tp"
+    mesh = DeviceMesh(
+        tuple(ref.to_device() for ref in spec.target.devices),
+        (n_devices,),
+        (axis_name,),
+    )
     with default_device(mesh), default_dtype(DType.bfloat16):
         with F.lazy():
             return UnifiedDflashMiMoV2ModuleV3(
@@ -427,6 +491,7 @@ def build_module(
                 mask_embedding(),
                 kv_params=kv_tree,
                 enable_structured_output=structured_output,
+                ep_batch_manager=ep_batch_manager,
             )
 
 

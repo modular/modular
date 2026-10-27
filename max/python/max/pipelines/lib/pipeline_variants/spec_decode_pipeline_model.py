@@ -73,6 +73,7 @@ from max.pipelines.speculative.config import (
     SpeculativeMethod,
 )
 from max.pipelines.speculative.driver import SequentialDriver
+from max.pipelines.speculative.spec_adapters import STAGE_BOUNDARY
 from max.pipelines.speculative.spec_input_types import SpecDecodeInputTypeSpec
 from max.profiler import traced
 from transformers import AutoConfig
@@ -93,6 +94,8 @@ from ..interfaces.pipeline_model import (
     UnifiedSpecDecodeInputs,
 )
 from ..memory_estimation import MemoryPlan
+from ..pipeline_parallel import PipelinedModel
+from ..pipeline_stage import PipelineStage
 from ..utils import CompilationTimer
 from ..vision_encoder_cache import SupportsVisionEncoding, VisionEncodeResult
 
@@ -139,7 +142,9 @@ class _UnifiedSpecDecodeModelMixin:
         graph declares it.
         """
         outputs = self._spec_decode_model.output_metadata
-        if len(outputs) != 4:
+        # Exports may have one distribution per replica; MAX Serve rejects
+        # that layout before constructing its pipeline.
+        if len(outputs) < 4:
             return None
         shape = outputs[3].shape
         assert shape is not None and isinstance(shape[-1], int), (
@@ -515,6 +520,65 @@ def _check_pairing(
             f"The {method} draft's mask_token_id must be in [0, {vocab_size})."
             f" Got {draft_config.mask_token_id}."
         )
+
+
+def _pairing_stage_error(pipeline_config: PipelineConfig) -> str | None:
+    """Returns why the configured pairing can't speculate on a pipeline stage.
+
+    Returns ``None`` if it can. Its target must build stages, and its target
+    adapter must verify from a previous stage's hidden states with a draft
+    that reads only what the last stage holds.
+    """
+    pairing = _Pairing.from_pipeline_config(pipeline_config)
+    speculative = pipeline_config.speculative
+    assert speculative is not None
+    method = speculative.speculative_method
+    assert method is not None
+    if issubclass(
+        _pipeline_model(pairing.target), PipelinedModel
+    ) and spec_adapters.speculates_on_last_stage(pairing.target_arch, method):
+        return None
+    return (
+        f"A {pairing.target_arch} target does not speculate with {method} on"
+        " a pipeline stage"
+    )
+
+
+def _stage_error(pipeline_config: PipelineConfig) -> str | None:
+    """Returns why the fused graph can't build its config's pipeline stage.
+
+    Returns ``None`` if it can, or if the config builds the whole model. The
+    draft reads what only the last stage holds, and the previous stage
+    hands on the merged window's hidden states, so only the last of two or
+    more stages speculates.
+    """
+    stage = pipeline_config.model.pipeline_stage
+    if stage is None:
+        return None
+    if stage.is_first or not stage.is_last:
+        return (
+            "A fused speculative graph builds only the last of two or more"
+            f" pipeline stages, not stage {stage.index} of {stage.num_stages}"
+        )
+    return _pairing_stage_error(pipeline_config)
+
+
+def _stage_boundary_input_types(
+    stage: PipelineStage | None,
+) -> list[TensorType]:
+    """Returns a later pipeline stage's boundary inputs.
+
+    They are the hidden states the previous stage returns, which cover the
+    merged verify window: earlier stages compute a row's drafts as tokens. The
+    previous stage traced them over its own tokens' dim, so they take the dim
+    the merge gives the window here.
+    """
+    if stage is None or stage.boundary_types is None:
+        return []
+    return [
+        TensorType(leaf.dtype, ["merged_seq_len", *leaf.shape[1:]], leaf.device)
+        for leaf in tree.leaves(stage.boundary_types)
+    ]
 
 
 @dataclass(kw_only=True)
@@ -1030,8 +1094,14 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
         )
 
 
-class SpecDecodePipelineModel(PipelineModelWithKVCache[TextContext]):
-    """Serves one fused speculative graph for any paired target and draft."""
+class SpecDecodePipelineModel(
+    PipelinedModel[TextContext], PipelineModelWithKVCache[TextContext]
+):
+    """Serves one fused speculative graph for any paired target and draft.
+
+    A pairing whose target adapter speculates on a pipeline stage also
+    builds as the last of several stages.
+    """
 
     model_config_cls: ClassVar[type[Any]] = SpecDecodeArchConfig
     batch_processor_cls: ClassVar[type[Any]] = _BatchProcessor
@@ -1080,6 +1150,16 @@ class SpecDecodePipelineModel(PipelineModelWithKVCache[TextContext]):
         self.kv_params = self.arch_config_as(SpecDecodeArchConfig).kv_params
         self.model = self.load_model(session)
 
+    @classmethod
+    def stage_speculation_error(
+        cls, pipeline_config: PipelineConfig
+    ) -> str | None:
+        """Returns why the configured pairing can't speculate on a stage.
+
+        Returns ``None`` if it can.
+        """
+        return _pairing_stage_error(pipeline_config)
+
     @property
     def sampled_draft_vocab_size(self) -> int | None:
         """The vocabulary the draft's proposal distributions span.
@@ -1090,7 +1170,9 @@ class SpecDecodePipelineModel(PipelineModelWithKVCache[TextContext]):
         graph declares it.
         """
         outputs = self.model.output_metadata
-        if len(outputs) != 4:
+        # Exports may have one distribution per replica; MAX Serve rejects
+        # that layout before constructing its pipeline.
+        if len(outputs) < 4:
             return None
         shape = outputs[3].shape
         assert shape is not None and isinstance(shape[-1], int), (
@@ -1158,6 +1240,8 @@ class SpecDecodePipelineModel(PipelineModelWithKVCache[TextContext]):
     @traced
     def load_model(self, session: InferenceSession) -> Model:
         """Builds the draft and the target, then compiles the fused graph."""
+        if error := _stage_error(self.pipeline_config):
+            raise ValueError(error)
         config = self.arch_config_as(SpecDecodeArchConfig)
         speculative = self.pipeline_config.speculative
         assert speculative is not None
@@ -1313,6 +1397,11 @@ def build_spec_graph(
             " --enable-structured-output off to benchmark it."
         )
     spec_adapters.check(target_arch, speculative, structured_output)
+    if error := _stage_error(pipeline_config):
+        raise ValueError(error)
+    boundary_types = _stage_boundary_input_types(
+        pipeline_config.model.pipeline_stage
+    )
     # A reasoning model's drafts may be accepted under the relaxed
     # in-thinking rule.
     thinking = pipeline_config.runtime.reasoning_parser is not None
@@ -1385,11 +1474,14 @@ def build_spec_graph(
         # Sizes the draft distributions under draft_proposal="sampled".
         vocab_size=huggingface_config.get_text_config().vocab_size,
         ep_input_types=spec_adapters.ep_input_types(target_arch, target),
+        # A later pipeline stage's boundary comes after the whole signature
+        # the model takes unstaged.
         trailing_input_types=[
             *spec_adapters.trailing_input_types(
                 target_arch, method, target_config
             ),
             *penalties,
+            *boundary_types,
         ],
     )
     nn_model: SequentialDriver[Any] | BlockDriver[Any, Any]
@@ -1447,6 +1539,14 @@ def build_spec_graph(
         input_types=input_types,
     ) as graph:
         graph_inputs = nn_model.decode_inputs(graph.inputs, kv_params)
+        trailing = list(graph_inputs.trailing)
+        boundary = trailing[len(trailing) - len(boundary_types) :]
+        trailing = trailing[: len(trailing) - len(boundary_types)]
+        extra = spec_adapters.extra(
+            target_arch, method, target_config, trailing
+        )
+        if boundary:
+            extra[STAGE_BOUNDARY] = [value.tensor for value in boundary]
         kv_tree = graph_inputs.kv_tree
         assert isinstance(kv_tree, Mapping)
         passthrough = _named_leaves(kv_tree["target"])
@@ -1489,15 +1589,13 @@ def build_spec_graph(
             device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
             vision_embeddings=graph_inputs.vision_embeddings,
             vision_scatter_indices=graph_inputs.vision_scatter_indices,
-            extra=spec_adapters.extra(
-                target_arch, method, target_config, graph_inputs.trailing
-            ),
+            extra=extra,
         )
         if graph_inputs.draft_probs_full is not None:
             call_kwargs["draft_probs_full"] = graph_inputs.draft_probs_full
         if penalties:
             call_kwargs["penalties"] = LogitPenalties.from_inputs(
-                [v.tensor for v in graph_inputs.trailing[-len(penalties) :]]
+                [v.tensor for v in trailing[-len(penalties) :]]
             )
         graph.output(*nn_model(**call_kwargs))
 
@@ -1522,8 +1620,15 @@ class _SpecDecodeVisionPipelineModel(SpecDecodePipelineModel):
 
     @traced
     def load_model(self, session: InferenceSession) -> Model:
-        """Compiles the fused graph, then the target's vision graph."""
+        """Compiles the fused graph, then the target's vision graph.
+
+        A pipeline stage serves text only, since the first stage merges the
+        images into the hidden states it hands on, so it compiles no vision
+        graph.
+        """
         model = super().load_model(session)
+        if self.pipeline_config.model.pipeline_stage is not None:
+            return model
         with CompilationTimer("vision model") as timer:
             graph, weights_registry = _pipeline_model(
                 self.pairing.target

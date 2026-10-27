@@ -22,7 +22,7 @@ from std.ffi import OwnedDLHandle, _Global
 from std.pathlib import Path
 from std.testing import assert_equal, assert_false, assert_true, TestSuite
 
-from max.gpu.host._legacy._tracing import (
+from max.gpu.host import (
     LIBRARY_PATHS,
     _end_range,
     _load_library,

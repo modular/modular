@@ -113,9 +113,10 @@ struct InitializationType(
 
 # TODO: refactor the following to run exactly once.
 def bench_compile_time[
-    func_type: TrivialRegisterPassable,
+    ret_type: AnyType,
+    declared_arg_types: TypeList[Trait=AnyType, ...],
     //,
-    func: func_type,
+    func: def(*args: *declared_arg_types) thin -> ret_type,
     emission_kind: StaticString = "asm",
 ](mut m: Bench, name: String) raises:
     comptime assert emission_kind in ["asm", "llvm", "ptx"]
@@ -133,9 +134,7 @@ def bench_compile_time[
                     keep(s)
                 case "ptx":
                     with DeviceContext() as ctx:
-                        var func = DeviceFunction[
-                            func, TypeList.of[Trait=AnyType]()
-                        ](ctx)
+                        var func = DeviceFunction[func](ctx)
                         # Ensure that the compilation step is not optimized away.
                         keep(Pointer(to=func))
                         clobber_memory()

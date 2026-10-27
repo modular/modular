@@ -52,6 +52,7 @@ from linalg.utils_gpu import block_swizzle
 from std.testing import assert_almost_equal
 
 from std.utils import StaticTuple
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 
@@ -94,11 +95,11 @@ struct BackToBackMatmulConfig[
             )
         ) * size_of[Self.src_type]()
 
-    def grid_dim(self, M: Int) -> IndexList[3]:
-        return Index(1, uceildiv(M, self.block_tile_shape[0]), 1)
+    def grid_dim(self, M: Int) -> DynamicCoord[.int, 3]:
+        return (1, uceildiv(M, self.block_tile_shape[0]), 1)
 
-    def block_dim(self) -> IndexList[3]:
-        return Index(self.num_threads(), 1, 1)
+    def block_dim(self) -> DynamicCoord[.int, 3]:
+        return (self.num_threads(), 1, 1)
 
     def __init__(
         out self,
@@ -225,7 +226,7 @@ def b2b_gemm[
     var block_idx = block_swizzle(
         (block_idx.x, block_idx.y),
         (grid_dim.x, grid_dim.y),
-    ) if swizzle_block else Index(block_idx.x, block_idx.y)
+    ) if swizzle_block else (block_idx.x, block_idx.y)
 
     # Coordinates of the current warp.
     var warp_y, warp_x = udivmod(warp_id, num_warps_n)

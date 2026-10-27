@@ -33,8 +33,8 @@ def test_kernel[
 ):
     var scheduler = TileScheduler[
         static_MN=20,
-        tile_shape=Index(4, 8, 16),
-        cluster=Index(1, 1, 1),
+        tile_shape=(Int(4), Int(8), Int(16)),
+        cluster=(1, 1, 1),
         swizzle=swizzle,
     ](num_offsets - 1, group_offsets)
 

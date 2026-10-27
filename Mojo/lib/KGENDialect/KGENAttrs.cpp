@@ -4693,6 +4693,40 @@ bool ParamOperatorAttr::isLessThan(Attribute rhs) const {
 }
 
 ErrorOrSuccess ParamOperatorAttr::validateForElaborator() const {
+  // If this is a shift by a constant amount that does not fit in the operand's
+  // bit width, produce a clear user-facing diagnostic instead of the generic
+  // "could not simplify" note.
+  auto opcode = getOpcode();
+  if (opcode == POC::Shr || opcode == POC::Shl) {
+    ArrayRef<TypedAttr> operands = getOperands();
+    if (operands.size() == 2) {
+      auto lhsType = sugarDynCast<SIMDType>(operands[0].getType());
+      auto rhs = sugarDynCast<SIMDAttr>(operands[1]);
+      if (lhsType && rhs) {
+        std::optional<KGENDType> dtype = lhsType.getResolvedDType();
+        if (dtype) {
+          int64_t width = dtype->getWidthInBits(nullptr);
+          if (width > 0) {
+            for (const DTypeValue &lane : rhs.getValues()) {
+              const APSInt &amount = lane.getData();
+              if (amount.isNegative() || amount.uge(width)) {
+                SmallVector<char, 16> amountStr;
+                amount.toString(amountStr);
+                std::string typeName =
+                    getTypeAsString(operands[0].getType()).str();
+                return Error(
+                    "shift amount " +
+                    StringRef(amountStr.data(), amountStr.size()).str() +
+                    " is outside the valid range 0.." +
+                    std::to_string(width - 1) + " for " + typeName);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
   // If this operator didn't fold, then it's a problem.
   // TODO: we could diagnose WHY it isn't folding more nicely now.
   return Error("could not simplify operator " + getParamAsString(*this));

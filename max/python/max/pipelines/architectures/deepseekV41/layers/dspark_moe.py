@@ -33,6 +33,7 @@ from ...deepseekV4.layers.moe import (
     _PackedExpertWeight,
 )
 from ..model_config import DeepseekV41Config
+from .hyper_connection import Mxfp8Rows
 from .moe import DeepseekV41Gate, DeepseekV41SharedExpert
 
 # OCP MXFP8: one E8M0 scale per 32 activation elements along K.
@@ -239,9 +240,17 @@ class DeepseekV41DSparkMoE(Module):
             ops.cast(routed, DType.float32), [batch, seq, hidden]
         )
 
-    def __call__(self, x: TensorValue, token_ids: TensorValue) -> TensorValue:
-        """Maps ``[1, s, hidden]`` states and ``[1, s]`` ids to the output."""
-        y = ops.cast(self.shared_experts(x), DType.float32) + self.routed(
-            x, token_ids
-        )
+    def __call__(
+        self,
+        x: TensorValue,
+        token_ids: TensorValue,
+        x_mxfp8: Mxfp8Rows | None = None,
+    ) -> TensorValue:
+        """Maps ``[1, s, hidden]`` states and ``[1, s]`` ids to the output.
+
+        The shared expert reads ``x_mxfp8`` (``x`` already in MXFP8) if given.
+        """
+        y = ops.cast(
+            self.shared_experts(x, x_mxfp8), DType.float32
+        ) + self.routed(x, token_ids)
         return ops.cast(y, x.dtype)

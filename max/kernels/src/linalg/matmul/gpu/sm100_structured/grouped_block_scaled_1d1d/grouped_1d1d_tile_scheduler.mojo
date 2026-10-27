@@ -34,7 +34,7 @@ from layout import DefaultEngine, TensorEngine, TileTensor
 from structured_kernels.tile_types import GMEMLayout1D
 
 from std.utils.fast_div import FastDiv
-from std.utils.index import Index, IndexList
+from std.utils.coord import Coord, DynamicCoord
 from std.utils.static_tuple import StaticTuple
 
 
@@ -50,7 +50,7 @@ trait GroupedWorkGeometry1D1D:
     tiles in the same order.
     """
 
-    comptime cta_group_tile_shape: IndexList[2]
+    comptime cta_group_tile_shape: Coord[Int, Int]
     """CTA-group tile extent, dynamic dimension first."""
 
     comptime div_dynamic_block: FastDiv[.uint32]
@@ -253,8 +253,8 @@ struct GroupedWorkContext1D1D(ImplicitlyCopyable, Movable):
 
 struct GroupedWorkIterator1D1D[
     static_N: Int,  # N dimension (expert output dim, static)
-    tile_shape: IndexList[3],  # Block tile shape (BM, BN, BK)
-    cluster: IndexList[3] = Index(1, 1, 1),
+    tile_shape: Coord[Int, Int, Int],  # Block tile shape (BM, BN, BK)
+    cluster: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     cta_group: Int = 1,
     AB_swapped: Bool = False,
     OffsetsEngine: TensorEngine = DefaultEngine[element_width=1],
@@ -277,7 +277,7 @@ struct GroupedWorkIterator1D1D[
             per-CTA output tile and reduction tile sizes.
         cluster: CTA cluster shape as `(M, N, K)` for threadblock cluster
             multicast. Only the M component may exceed 1; N and K must be
-            1 (defaults to `Index(1, 1, 1)`).
+            1 (defaults to `Coord[Int, Int, Int](1, 1, 1)`).
         cta_group: Number of CTAs cooperating per work tile. Must equal
             `cluster[0]` (defaults to 1).
         AB_swapped: Whether the A and B operands are swapped. When true,
@@ -331,10 +331,10 @@ struct GroupedWorkIterator1D1D[
     # For AB_swapped: m=tokens strides by MMA_N (=BN*cta_group),
     # n=weights strides by MMA_M (=BM*cta_group).
     # For non-swapped: m=tokens strides by BM, n=weights strides by MMA_N.
-    comptime cta_group_tile_shape = Index(
+    comptime cta_group_tile_shape = Coord[Int, Int](
         Self.tile_shape[1] * Self.cta_group,
         Self.tile_shape[0] * Self.cta_group,
-    ) if Self.AB_swapped else Index(
+    ) if Self.AB_swapped else Coord[Int, Int](
         Self.tile_shape[0],
         Self.tile_shape[1] * Self.cta_group,
     )

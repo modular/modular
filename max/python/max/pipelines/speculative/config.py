@@ -402,6 +402,21 @@ class SpeculativeConfig(ConfigFileModel):
         ),
     )
 
+    draft_probs_layout: Literal["device0", "replica"] = Field(
+        default="device0",
+        description=(
+            "Where the sampled draft's proposal distributions live between "
+            "steps. 'device0' (default) keeps one ``[batch, K, vocab]`` "
+            "tensor on device 0. 'replica' keeps each data-parallel "
+            "replica's rows on its own device and verifies them there, "
+            "which drops the allgather onto device 0 and the verify's "
+            "single-device cost. Requires ``draft_proposal='sampled'`` and "
+            "``draft_head_parallelism='replica'``; the engine feeding the "
+            "graph has to bind one distribution per replica. MAX Serve's "
+            "speculative pipeline does not."
+        ),
+    )
+
     logit_penalties: bool = Field(
         default=False,
         description=(
@@ -424,6 +439,15 @@ class SpeculativeConfig(ConfigFileModel):
                 " use_relaxed_acceptance_for_thinking: relaxed acceptance"
                 " takes the drafted token to be the draft's argmax, which a"
                 " sampled proposal does not guarantee"
+            )
+        if self.draft_probs_layout == "replica" and (
+            self.draft_proposal != "sampled"
+            or self.draft_head_parallelism != "replica"
+        ):
+            raise ValueError(
+                "draft_probs_layout='replica' needs draft_proposal='sampled'"
+                " and draft_head_parallelism='replica': the distributions"
+                " are drawn on each replica's device and stay there"
             )
         return self
 

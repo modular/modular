@@ -8,14 +8,16 @@ package(default_visibility = [
 
 # The CPU half of the numerics harness: the config build, the weight-adapter
 # name contract and the staged trace, all on the tiny fixture and a CPU mesh,
-# plus the base graph's input tree staged on virtual GPUs (the tree Mach's
-# modulev3 registry entry wires). The GPU targets below are the real gates;
+# plus the base graph's input tree and its fused-QKV op sites staged on
+# virtual GPUs (the tree Mach's modulev3 registry entry wires). The GPU
+# targets below are the real gates;
 # this one runs wherever bazel does.
 modular_py_test(
     name = "mimo_v2_modulev3",
     size = "medium",
     srcs = [
         "test_base_graph_tree.py",
+        "test_fused_qkv_graph.py",
         "test_harness_cpu.py",
     ],
     ignore_extra_deps = [

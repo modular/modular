@@ -30,8 +30,8 @@ from max.gpu.memory import CacheEviction, Fill, async_copy
 from layout._fillers import BATCH_SIZE
 from std.sys import prefetch
 from std.sys.intrinsics import PrefetchOptions
-from std.utils import IndexList, StaticTuple, Variant
-from std.utils.coord import _coerce_dynamic
+from std.utils import StaticTuple, Variant
+from std.utils.coord import Coord, DynamicCoord, _coerce_dynamic
 
 from .swizzle import Swizzle
 
@@ -452,6 +452,18 @@ Parameters:
 """
 
 
+trait MutabilityKnown:
+    """Exposes whether a value can write the storage it refers to.
+
+    Accelerator backends read `mutable` off kernel argument types to tell a
+    kernel's outputs from its inputs. They match the trait and the member by
+    name, so renaming either reports every argument as immutable.
+    """
+
+    comptime mutable: Bool
+    """True if the value can write the storage it refers to."""
+
+
 struct TileTensor[
     mut: Bool,
     //,
@@ -462,7 +474,13 @@ struct TileTensor[
     Engine: TensorEngine = DefaultEngine[element_width=1],
     address_space: AddressSpace = .GENERIC,
     linear_idx_type: DType = _get_index_type[LayoutType](address_space),
-](DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable, Writable):
+](
+    DevicePassable,
+    ImplicitlyCopyable,
+    MutabilityKnown,
+    TrivialRegisterPassable,
+    Writable,
+):
     """A tensor type with trait-based layouts supporting nested and hierarchical
     indexing.
 
@@ -609,6 +627,9 @@ struct TileTensor[
 
     comptime device_type = Self
     """Device-side type for GPU kernel parameter passing."""
+
+    comptime mutable = Self.mut
+    """Whether the tensor can write its storage, per `origin`."""
 
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
@@ -1972,9 +1993,9 @@ struct TileTensor[
                     dst_ptr.unsafe_offset(swizzled_idx),
                 )
 
-    @__allow_legacy_custom_self_type
+    @__unsafe_nested_origins_read_only
     def _distance(
-        self: Self.Immut,
+        self,
         other: TileTensor[
             mut=False, Self.dtype, _, address_space=Self.address_space, ...
         ],
@@ -2171,7 +2192,7 @@ struct TileTensor[
                 stride_types=Self.LayoutType._stride_types,
             ],
         ],
-        IndexList[coordinates.element_types.length],
+        DynamicCoord[.int, coordinates.element_types.length],
         Int,
     ]:
         """Like tile(), but also returns corner coordinates and linear
@@ -2203,7 +2224,7 @@ struct TileTensor[
                 stride_types=stride_layout._shape_types,
             ],
         ],
-        IndexList[coordinates.element_types.length],
+        DynamicCoord[.int, coordinates.element_types.length],
         Int,
     ]:
         """Like tile(), but with explicit static strides. Flat-layout parents
@@ -2426,7 +2447,7 @@ struct TileTensor[
             Engine=Self.Engine.OffsetResultType[TypeList.of[Int]()],
             address_space=Self.address_space,
         ],
-        IndexList[thread_layout.shape_types.length],
+        DynamicCoord[.int, thread_layout.shape_types.length],
         Int,
     ]:
         """Like distribute(), but also returns thread coordinates and offset.
@@ -4150,7 +4171,7 @@ def _distribute_with_offset[
             ],
         ],
     ],
-    IndexList[thread_layout.shape_types.length],
+    DynamicCoord[.int, thread_layout.shape_types.length],
     Int,
 ]:
     """Like _distribute, but also returns thread coordinates and offset.
@@ -4160,20 +4181,22 @@ def _distribute_with_offset[
     optional swizzling) used to advance the pointer.
     """
 
-    # Use shape_types consistently for the IndexList size (must match return type)
+    # Use shape_types consistently for the Coord size (must match return type)
     # This variant returns the offset as `Int` so callers can consume it at
     # full precision. Index arithmetic stays at `Int` here deliberately —
     # narrowing to `linear_idx_type` first would truncate before the widening
     # at the return boundary. Use `_distribute` (above) if narrow-precision
     # pointer-offset arithmetic is what you want.
     var offset: Int = 0
-    var thread_coords = IndexList[thread_layout.shape_types.length]()
+    var thread_coords = DynamicCoord[.int, thread_layout.shape_types.length]()
 
     comptime for i in range(thread_layout.shape_types.length):
         comptime stride_i = thread_layout.stride_types[i].static_value
         comptime shape_i = thread_layout.shape_types[i].static_value
         var thread_coord_i = (thread_id // stride_i) % shape_i
-        thread_coords[i] = thread_coord_i
+        Pointer(to=thread_coords[i]).write(
+            rebind[type_of(thread_coords[i])](Scalar[DType.int](thread_coord_i))
+        )
         offset += thread_coord_i * Int(data_layout_tensor.layout.stride[i]())
 
     # Swizzling applies to the index of elements rather than scalars because
@@ -4403,7 +4426,7 @@ def _tile_with_offset[
             stride_types=data_layout_tensor.LayoutType._stride_types,
         ],
     ],
-    IndexList[coord_types.length],
+    DynamicCoord[.int, coord_types.length],
     Int,
 ]:
     """Like _tile, but also returns corner coordinates and linear offset.
@@ -4415,13 +4438,17 @@ def _tile_with_offset[
 
     # Use TypeList[coord_types].length consistently (must match return type)
     # `offset` and `corner_coords` are part of the return type (`Int` and
-    # `IndexList[...].element_type=int64`), so arithmetic stays at `Int` here.
+    # `Coord` elements), so arithmetic stays at `Int` here.
     # See `_tile` above for the narrow-precision variant.
     var offset: Int = 0
-    var corner_coords = IndexList[coord_types.length]()
+    var corner_coords = DynamicCoord[.int, coord_types.length]()
 
     comptime for i in range(coord_types.length):
-        corner_coords[i] = Int(tile_coords[i]) * Int(tile_shape[i])
+        Pointer(to=corner_coords[i]).write(
+            rebind[type_of(corner_coords[i])](
+                Scalar[DType.int](Int(tile_coords[i]) * Int(tile_shape[i]))
+            )
+        )
         offset += (
             Int(tile_coords[i])
             * Int(tile_shape[i])
@@ -4525,7 +4552,7 @@ def _tile_with_offset[
             stride_types=stride_layout._shape_types,
         ],
     ],
-    IndexList[coord_types.length],
+    DynamicCoord[.int, coord_types.length],
     Int,
 ]:
     """Like _tile_with_offset, but with explicit static strides."""
@@ -4533,10 +4560,14 @@ def _tile_with_offset[
     # `offset` and `corner_coords` are part of the return type; index
     # arithmetic stays at `Int` for the same reason as `_tile_with_offset`.
     var offset: Int = 0
-    var corner_coords = IndexList[coord_types.length]()
+    var corner_coords = DynamicCoord[.int, coord_types.length]()
 
     comptime for i in range(coord_types.length):
-        corner_coords[i] = Int(tile_coords[i]) * Int(tile_shape[i])
+        Pointer(to=corner_coords[i]).write(
+            rebind[type_of(corner_coords[i])](
+                Scalar[DType.int](Int(tile_coords[i]) * Int(tile_shape[i]))
+            )
+        )
         offset += (
             Int(tile_coords[i])
             * Int(tile_shape[i])

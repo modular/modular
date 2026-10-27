@@ -50,14 +50,17 @@ from .layers.indexer import (
 from .layers.moe import router_reads_bf16_gate
 from .model_config import (
     DeepseekV41Config,
+    compressor_bf16_enabled,
     data_parallel_ep_config,
     forward_row_bound,
     head_bf16_enabled,
     max_images_per_request,
     nvfp4_sf_preinterleave_enabled,
+    q_mxfp8_enabled,
     woa_mxfp8_enabled,
 )
 from .weight_adapters import (
+    COMPRESSOR_WEIGHT_SUFFIXES,
     DSPARK_CHECKPOINT_PREFIX,
     FLOAT32_WEIGHT_SUFFIXES,
     FUSED_QUERY_PROJECTIONS,
@@ -338,10 +341,11 @@ _SHARDED_MARKERS = (
     ".attn.attn_sink",
     ".engram.wkv.",
 )
-# The fused query projection's fp8 weights are dequantized (2x) and their
-# e8m0 scales folded in.
-_FUSED_BF16_PROJECTIONS = tuple(
-    f".attn.{projection}" for projection in FUSED_QUERY_PROJECTIONS
+# The query projections. Unless they run as MXFP8, their fp8 weights are
+# dequantized (2x) and their e8m0 scales folded in.
+_QUERY_PROJECTIONS = tuple(
+    f".attn.{projection}"
+    for projection in (*FUSED_QUERY_PROJECTIONS, "wq_b", "indexer.wq_b")
 )
 # The router gate's bf16 weight, held in float32 unless the fused route
 # reads it as is.
@@ -389,6 +393,10 @@ class DeviceWeightLayout:
     expert_scales_preinterleaved: bool
     router_gate_float32: bool = True
     """Whether the router holds a float32 copy of its bf16 gate weight."""
+    q_mxfp8: bool = True
+    """Whether the query projections keep their fp8 weights."""
+    compressor_bf16: bool = True
+    """Whether the compressors' ``wkv``/``wgate`` stay bf16."""
 
     @classmethod
     def current(cls, *, router_gate_float32: bool = True) -> DeviceWeightLayout:
@@ -402,6 +410,8 @@ class DeviceWeightLayout:
             # exactly, so the env switch alone decides.
             expert_scales_preinterleaved=nvfp4_sf_preinterleave_enabled(),
             router_gate_float32=router_gate_float32,
+            q_mxfp8=q_mxfp8_enabled(),
+            compressor_bf16=compressor_bf16_enabled(),
         )
 
 
@@ -420,20 +430,22 @@ def _device_bytes_factor(
         return 1.0 if layout.head_bf16 else 2.0
     if dtype == "BF16" and name.endswith(FLOAT32_WEIGHT_SUFFIXES):
         return 2.0
+    if dtype == "BF16" and name.endswith(COMPRESSOR_WEIGHT_SUFFIXES):
+        return 1.0 if layout.compressor_bf16 else 2.0
     if dtype == "BF16" and name.endswith(_ROUTER_GATE_SUFFIX):
         return 2.0 if layout.router_gate_float32 else 1.0
     if dtype == "F8_E4M3" and name.endswith(".weight"):
         base = name[: -len(".weight")]
         if _ROUTED_EXPERT_SCALE_MARKER not in name and (
             layout.host_dequantized(base)
-            or base.endswith(_FUSED_BF16_PROJECTIONS)
+            or (not layout.q_mxfp8 and base.endswith(_QUERY_PROJECTIONS))
         ):
             return 2.0
         return 1.0
     if dtype == "F8_E8M0" and name.endswith(".scale"):
         base = name[: -len(".scale")]
-        if layout.host_dequantized(base) or base.endswith(
-            _FUSED_BF16_PROJECTIONS
+        if layout.host_dequantized(base) or (
+            not layout.q_mxfp8 and base.endswith(_QUERY_PROJECTIONS)
         ):
             return 0.0
         return float(MXFP8_BLOCK_SIZE)

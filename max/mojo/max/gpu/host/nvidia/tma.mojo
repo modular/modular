@@ -24,7 +24,8 @@ support for various data types and memory layouts.
 from max.gpu.host import DeviceBuffer
 from std.sys import size_of
 
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
+from std.utils.coord import Coord, CoordLike
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
 from max.gpu._utils import to_llvm_ptr
@@ -339,15 +340,19 @@ def prefetch_tma_descriptor(desc_ptr: OpaquePointer[mut=False, _]):
 @inline(.always)
 def create_tma_descriptor[
     dtype: DType,
-    rank: Int,
+    shape_types: TypeList[Trait=CoordLike, ...],
+    stride_types: TypeList[Trait=CoordLike, ...],
+    box_types: TypeList[Trait=CoordLike, ...],
+    /,
+    *,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     l2_promotion: TensorMapL2Promotion = TensorMapL2Promotion.NONE,
     unpack_fp4: Bool = False,
 ](
     global_buf: DeviceBuffer[dtype],
-    global_shape: IndexList[rank],
-    global_strides: IndexList[rank],
-    shared_mem_shape: IndexList[rank],
+    global_shape: Coord[*shape_types],
+    global_strides: Coord[*stride_types],
+    shared_mem_shape: Coord[*box_types],
 ) raises -> TMADescriptor:
     """Creates a TMA descriptor for tiled memory operations.
 
@@ -361,7 +366,9 @@ def create_tma_descriptor[
 
     Parameters:
         dtype: The element data type of the tensor.
-        rank: The number of dimensions (1-5).
+        shape_types: The element types of `global_shape` (1 to 5 elements).
+        stride_types: The element types of `global_strides`.
+        box_types: The element types of `shared_mem_shape`.
         swizzle_mode: The swizzle pattern to apply in shared memory.
         l2_promotion: L2 cache promotion hint for TMA loads. Defaults to NONE.
         unpack_fp4: When True, `global_buf` holds nibble-packed E2M1 (two
@@ -386,6 +393,13 @@ def create_tma_descriptor[
     Raises:
         An error if the descriptor creation fails.
     """
+    comptime rank = Coord[*shape_types].rank
+    comptime assert (
+        Coord[*stride_types].rank == rank
+    ), "global_strides must have the same rank as global_shape"
+    comptime assert (
+        Coord[*box_types].rank == rank
+    ), "shared_mem_shape must have the same rank as global_shape"
     # TMADescriptor is @align(64) so stack allocation is automatically 64-byte aligned.
     var tma_descriptor = TMADescriptor()
     var tensor_map_ptr = Pointer(to=tma_descriptor).unsafe_bitcast[NoneType]()
@@ -397,11 +411,11 @@ def create_tma_descriptor[
     var element_stride_arg = Array[Int32, rank](fill=1)
 
     comptime for i in range(rank):
-        global_dim_arg[i] = Int64(global_shape[rank - i - 1])
+        global_dim_arg[i] = Int64(Int(global_shape[rank - i - 1]))
         global_strides_arg[i] = Int64(
-            global_strides[rank - i - 1] * size_of[dtype]()
+            Int(global_strides[rank - i - 1]) * size_of[dtype]()
         )
-        box_dim_arg[i] = Int32(shared_mem_shape[rank - i - 1])
+        box_dim_arg[i] = Int32(Int(shared_mem_shape[rank - i - 1]))
 
     debug_assert(
         global_strides_arg[0] == Int64(size_of[dtype]()),

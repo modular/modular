@@ -38,7 +38,7 @@
 # CHECK-SAME:     :param_list<type> [#kgen.quote<!AnyType_Copyable_Movable>],
 # CHECK-SAME:     :param_list<type> [#kgen.quote<!lit.ref<!lit.struct<#List <:!AnyType_Copyable_Movable *(0,1)>>, imm *[0,1]>>],
 # CHECK-SAME:     :type #kgen.quote<!NoneType>,
-# CHECK-SAME:     :non_struct_type #kgen.fn_metadata<[imm_mem, imm_mem], "capturing", #lit.fn_meta_origin_data<2>>
+# CHECK-SAME:     :non_struct_type #kgen.fn_metadata<[imm_mem, imm_mem], "none", #lit.fn_meta_origin_data<2>>
 comptime ClosureTraitP = def[T: Copyable](List[T]) -> NoneType
 
 

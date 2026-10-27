@@ -14,10 +14,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    TextTokenizer,
-)
+from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
@@ -25,6 +22,7 @@ from .batch_processor import GptOssBatchProcessor
 from .memory_planner import GptOssMemoryPlanner
 from .model import GptOssModel
 from .model_config import GptOssConfig
+from .tokenizer import GptOssTokenizer
 
 gpt_oss_arch = SupportedArchitecture(
     name="GptOssForCausalLM",
@@ -38,7 +36,7 @@ gpt_oss_arch = SupportedArchitecture(
     pipeline_model=GptOssModel,
     batching=GptOssBatchProcessor,
     task=PipelineTask.TEXT_GENERATION,
-    tokenizer=TextTokenizer,
+    tokenizer=GptOssTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,

@@ -2,6 +2,12 @@ load("//bazel:api.bzl", "modular_py_binary", "modular_run_binary_test", "require
 
 package(default_visibility = ["//visibility:private"])
 
+# layer-comparison.mdx loads this sample in its hidden setup.
+exports_files(
+    ["layer_comparison.py"],
+    visibility = ["//max/docs/site/code/mdx_examples:__pkg__"],
+)
+
 # layer_comparison.py
 modular_py_binary(
     name = "layer_comparison",

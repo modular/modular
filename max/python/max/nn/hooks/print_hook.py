@@ -19,6 +19,7 @@ import logging
 import os
 from collections import deque
 from collections.abc import Generator
+from types import MethodType
 from typing import Any
 
 from max.experimental import functional as F
@@ -105,19 +106,24 @@ class PrintHook(BasePrintHook):
             return
         self._v3_wrapped.add(module)
 
-        # With no instance-level ``forward`` yet, this resolves to the bound
-        # class method, which the wrapper defers to.
-        original = module.forward
+        original = type(module).forward
 
+        # Bound rather than closing over ``module``: ``Module.compile`` traces
+        # a copy, which rebinds this to itself so the trace reads the copy's
+        # weights. The hook still names the call by the original ``module``.
         @functools.wraps(original)
-        def forward_with_hook(*args: Any, **kwargs: Any) -> Any:
-            outputs = original(*args, **kwargs)
+        def forward_with_hook(
+            bound: ModuleV3[..., Any], *args: Any, **kwargs: Any
+        ) -> Any:
+            outputs = original(bound, *args, **kwargs)
             self(module, args, kwargs, outputs)
             return outputs
 
         # ``object.__setattr__`` bypasses any custom ``__setattr__`` and works
         # even for frozen dataclasses; the attribute shadows the class method.
-        object.__setattr__(module, "forward", forward_with_hook)
+        object.__setattr__(
+            module, "forward", MethodType(forward_with_hook, module)
+        )
         self._v3_originals.append((module, original))
 
     def print_value(self, name: str, value: Any) -> bool:

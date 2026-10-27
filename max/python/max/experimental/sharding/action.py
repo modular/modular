@@ -39,8 +39,9 @@ class AxisAssignment(NamedTuple):
     """One placement choice that a sharding rule offers for its op.
 
     A sharding rule is a function with the same parameters as its op. It
-    receives the op's arguments with each tensor, at any depth, replaced by
-    its :class:`TensorLayout`, and returns a list of rows. Each row gives a
+    receives the op's arguments with defaults filled in, so every parameter of
+    the op is present, and each tensor, at any depth, replaced by its
+    :class:`TensorLayout`. It returns a list of rows. Each row gives a
     placement for every tensor operand, in argument order, and for every
     result. Some rows of the matmul rule:
 
@@ -65,9 +66,15 @@ class AxisAssignment(NamedTuple):
                 AxisAssignment((Sharded(1), Sharded(0)), (Partial(),)),
             ]
 
-    On each mesh axis, the op picks the row whose input moves cost least,
-    moves its operands there, and gives its results the row's placements.
-    A rule never changes the op's other arguments.
+    On each mesh axis, the op discards every row that needs a transition
+    outside the allowed transition set, then takes the cheapest of the rows
+    that remain; ties go to the row that moves fewer inputs. It moves its
+    operands to that row's placements and gives its results the row's
+    placements. The op never moves an operand whose own mesh holds a single
+    device, so every row must name :class:`Replicated` for it, and a row that
+    names anything else is infeasible. When no row survives on a mesh axis,
+    the op raises :class:`ShardingError` in every mode. A rule never changes
+    the op's other arguments.
     """
 
     needed_inputs: tuple[Placement, ...]

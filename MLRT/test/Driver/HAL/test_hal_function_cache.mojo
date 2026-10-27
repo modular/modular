@@ -13,8 +13,12 @@
 """Tests the HAL `Context` loaded-function cache."""
 
 from std.os import getenv
-from _hal import Context, Driver
-from _hal.device import Device, DeviceSpec, get_device_spec
+from max._driver import Context, Driver
+from max._driver.max_license.hal.device import (
+    Device,
+    DeviceSpec,
+    get_device_spec,
+)
 from max.gpu import global_idx
 from std.memory import (
     ArcPointer,
@@ -102,7 +106,7 @@ def test_compile_function_inline_launches[
 
     var data_addr = ctx.memory_get_address(buf)
     var n_val = Int(n)
-    var args = unsafe_stack_allocation[2, OpaquePointer[MutUntrackedOrigin]]()
+    var args = unsafe_stack_allocation[2, OpaquePointer[ImmUntrackedOrigin]]()
     var arg_sizes = unsafe_stack_allocation[2, UInt64]()
     args[unsafe_offset=0] = rebind[OpaquePointer[MutUntrackedOrigin]](
         Pointer(to=data_addr)
@@ -118,9 +122,7 @@ def test_compile_function_inline_launches[
         func,
         grid=(UInt32(1), UInt32(1), UInt32(1)),
         block=(UInt32(n), UInt32(1), UInt32(1)),
-        args=rebind[Pointer[OpaquePointer[MutUntrackedOrigin], MutAnyOrigin]](
-            args
-        ),
+        args=args,
         arg_sizes=rebind[Pointer[UInt64, MutAnyOrigin]](arg_sizes),
         num_args=UInt32(2),
     )

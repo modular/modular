@@ -66,8 +66,8 @@ class LagunaTopKRouter(MoEGate):
             output. Read from the HF config; donor models use 1.0.
         router_logit_softcapping: If > 0, router logits are passed
             through ``softcap * tanh(logits / softcap)`` before
-            sigmoid. Disabled (0.0) for
-            ``poolside/Laguna-M.1-NVFP4``.
+            sigmoid. Disabled (0.0) in every released Laguna
+            checkpoint.
     """
 
     def __init__(
@@ -136,14 +136,14 @@ class LagunaTopKRouter(MoEGate):
         scores = ops.sigmoid(logits)
         correction_bias = self.e_score_correction_bias.cast(DType.float32)
 
-        # Plain top-k routing — Laguna-M.1 has NO expert groups (unlike the
+        # Plain top-k routing — Laguna has NO expert groups (unlike the
         # MiniMax-M2/DeepSeek lineage this gate was adapted from). Select experts
         # by the bias-corrected score, but weight them by the *unbiased* sigmoid
         # score (HF reference). ``moe_router_group_limited(n_groups=1)`` forced
         # the single-group GPU router kernel, whose ``phase2_candidates <=
-        # WARP_SIZE`` constraint rejects top-k > 32 — M.1 is top-16 of 256
-        # (XS.2 was top-8, which is why the donor idiom slipped through).
-        # ``ops.top_k`` has no such constraint.
+        # WARP_SIZE`` constraint rejects top-k > 32 — released Laguna models are
+        # top-10 or top-16 of 256 (XS.2 was top-8, which is why the donor idiom
+        # slipped through). ``ops.top_k`` has no such constraint.
         sel = scores + correction_bias
         topk_sel, topk_idx = ops.top_k(
             sel, k=self.num_experts_per_token, axis=-1

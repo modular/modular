@@ -13,7 +13,7 @@
 
 from asyncrt_test_utils import create_test_device_context
 from max.gpu.host import DeviceContext, Dim
-from max.gpu.host._legacy._nvidia_cuda import (
+from max.gpu.host import (
     CUDA,
     CUcontext,
     CUDA_get_current_context,

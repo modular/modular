@@ -717,6 +717,18 @@ impl DiskTier {
         idx.contains(hash) && !idx.pending_writes.contains(hash)
     }
 
+    /// Moves each of `hashes` that is saved to the most-recently-used end of
+    /// the disk LRU, in order.
+    pub fn touch(&self, hashes: impl IntoIterator<Item = LeafHash>) {
+        if !self.enabled {
+            return;
+        }
+        let mut idx = self.store.index.lock().unwrap();
+        for hash in hashes {
+            idx.touch(hash);
+        }
+    }
+
     /// Clears every block from disk: empties the in-memory index and truncates
     /// every leaf's file, which releases all of its extents at once.
     ///
@@ -1158,6 +1170,29 @@ mod tests {
         for i in [30, 31] {
             assert_eq!(read_back(&tier, simple_hash(i), 8), srcs[i as usize]);
         }
+        tier.shutdown();
+        drop(std::fs::remove_dir_all(&dir));
+    }
+
+    #[test]
+    fn a_touched_block_is_evicted_after_an_untouched_one() {
+        let dir = tmpdir("touch");
+        // Capacity for 2 blocks of 8 bytes.
+        let tier = DiskTier::new(&dir, &[8], 16, 1, false).unwrap();
+        let srcs: Vec<[u8; 8]> = (0..3u8).map(|i| [i; 8]).collect();
+        for i in 0..2 {
+            tier.write_block_async(simple_hash(i), srcs[i as usize].as_ptr() as usize)
+                .unwrap();
+            tier.wait_for_writes();
+        }
+
+        tier.touch([simple_hash(0)]);
+        tier.write_block_async(simple_hash(2), srcs[2].as_ptr() as usize)
+            .unwrap();
+        tier.wait_for_writes();
+
+        assert!(tier.contains(&simple_hash(0)));
+        assert!(!tier.contains(&simple_hash(1)));
         tier.shutdown();
         drop(std::fs::remove_dir_all(&dir));
     }

@@ -59,6 +59,24 @@ class PagedKVCacheManagerInterface(ABC):
     ) -> list[PrefixCacheHits]:
         """Counts each replica's contiguous cached prefix for a request."""
 
+    def awaits_presence(self, ctx: TextContext) -> bool:
+        """Returns whether the request's external hit count is still out.
+
+        Read after ``get_prefix_cache_hit_counts``, whose external count is
+        the device tier's alone while a connector probe it started has not
+        answered, and worth asking for again once this reads ``False``. A
+        manager that prices in place reads ``False``.
+        """
+        return False
+
+    def abandon_presence(self, ctx: TextContext) -> None:
+        """Drops the probe ``get_prefix_cache_hit_counts`` started, if any.
+
+        For a request released before it was claimed, since a claimed one's
+        ``release`` drops it itself. No-op by default.
+        """
+        return
+
     @abstractmethod
     def alloc(
         self, ctx: TextContext, *, defer_lookup: bool = False

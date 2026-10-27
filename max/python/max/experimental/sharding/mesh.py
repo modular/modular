@@ -25,7 +25,19 @@ from max.driver import Device
 
 @dataclass(frozen=True)
 class DeviceMesh:
-    """An N-dimensional logical grid of devices."""
+    """An N-dimensional logical grid of devices.
+
+    ``devices`` holds ``prod(mesh_shape)`` entries in row-major order. A mesh
+    of real devices holds distinct entries; a simulated mesh repeats one
+    device in every slot, and the graph computes its collectives instead of
+    the hardware. ``axis_names`` holds one unique name per axis.
+
+    Raises:
+        ValueError: If ``devices`` is empty, its length differs from
+            ``prod(mesh_shape)``, ``axis_names`` differs in length from
+            ``mesh_shape`` or repeats a name, or ``devices`` mixes repeated
+            and distinct entries.
+    """
 
     devices: tuple[Device, ...]
     """The devices in the mesh, in row-major order."""
@@ -80,7 +92,8 @@ class DeviceMesh:
 
         For several axes, returns the number of devices they span together,
         which is the product of their sizes. On a ``(2, 3)`` mesh,
-        ``mesh.axis_size((0, 1)) == 6``.
+        ``mesh.axis_size((0, 1)) == 6``. Pass each axis at most once: a
+        repeated axis contributes its size once per occurrence.
 
         Args:
             axis: The mesh axis or axes, by name or integer index.
@@ -165,7 +178,13 @@ class DeviceMesh:
 
     @staticmethod
     def single(device: Device) -> DeviceMesh:
-        """Creates a trivial single-device mesh."""
+        """Creates a one-device mesh.
+
+        Its shape is ``(1,)`` and its single axis is named ``"_"``.
+
+        Args:
+            device: The device the mesh holds.
+        """
         return DeviceMesh(devices=(device,), mesh_shape=(1,), axis_names=("_",))
 
 

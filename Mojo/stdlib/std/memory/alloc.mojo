@@ -135,7 +135,7 @@ from std.traits import IsTriviallyDeinitable
 from std.utils._nicheable import (
     NicheIndex,
     UnsafeNicheable,
-    _FieldNiche,
+    _FieldNicheable,
     _NonNegativeScalarNiche,
 )
 
@@ -205,8 +205,8 @@ struct Allocation[T: AnyType, *, alignment: Alignment = .of[T]()](
     ),
     RegisterPassable,
     Sized,
-    UnsafeNicheable,
     Writable,
+    _FieldNicheable,
 ):
     """An owning handle to a heap allocation of `T` together with its `Layout`.
 
@@ -471,29 +471,11 @@ struct Allocation[T: AnyType, *, alignment: Alignment = .of[T]()](
         """
         self.write_to(writer)
 
-    comptime _Niche = _FieldNiche[Self, "_layout"]
-
-    @staticmethod
-    @inline(.always)
-    @doc_hidden
-    def niche_count() -> Int:
-        return Self._Niche.niche_count()
-
-    @staticmethod
-    @inline(.always)
-    @doc_hidden
-    def write_niche[index: Int](memory: MutPointer[MaybeUninit[Self], _]):
-        Self._Niche.write_niche[index](memory)
-
-    @staticmethod
-    @inline(.always)
-    @doc_hidden
-    def classify_niche(memory: ImmPointer[MaybeUninit[Self], _]) -> NicheIndex:
-        return Self._Niche.classify_niche(memory)
+    comptime _KgenNichedFieldName = "_layout".value
 
 
 struct ManagedAllocation[T: AnyType, *, alignment: Alignment = .of[T]()](
-    RegisterPassable, Sized, UnsafeNicheable, Writable
+    RegisterPassable, Sized, Writable, _FieldNicheable
 ):
     """An owning handle to a heap allocation of `T` that frees itself.
 
@@ -641,25 +623,7 @@ struct ManagedAllocation[T: AnyType, *, alignment: Alignment = .of[T]()](
         """
         return len(self._alloc)
 
-    comptime _Niche = _FieldNiche[Self, "_alloc"]
-
-    @staticmethod
-    @inline(.always)
-    @doc_hidden
-    def niche_count() -> Int:
-        return Self._Niche.niche_count()
-
-    @staticmethod
-    @inline(.always)
-    @doc_hidden
-    def write_niche[index: Int](memory: MutPointer[MaybeUninit[Self], _]):
-        Self._Niche.write_niche[index](memory)
-
-    @staticmethod
-    @inline(.always)
-    @doc_hidden
-    def classify_niche(memory: ImmPointer[MaybeUninit[Self], _]) -> NicheIndex:
-        return Self._Niche.classify_niche(memory)
+    comptime _KgenNichedFieldName = "_alloc".value
 
 
 struct ThinAllocation[T: AnyType](
@@ -671,8 +635,8 @@ struct ThinAllocation[T: AnyType](
         " `unsafe_leak()` to take ownership of the underlying pointer."
     ),
     RegisterPassable,
-    UnsafeNicheable,
     Writable,
+    _FieldNicheable,
 ):
     """An owning handle to a heap allocation of `T`, without its `Layout`.
 
@@ -812,25 +776,7 @@ struct ThinAllocation[T: AnyType](
         """
         self.write_to(writer)
 
-    comptime _Niche = _FieldNiche[Self, "_ptr"]
-
-    @staticmethod
-    @inline(.always)
-    @doc_hidden
-    def niche_count() -> Int:
-        return Self._Niche.niche_count()
-
-    @staticmethod
-    @inline(.always)
-    @doc_hidden
-    def write_niche[index: Int](memory: MutPointer[MaybeUninit[Self], _]):
-        Self._Niche.write_niche[index](memory)
-
-    @staticmethod
-    @inline(.always)
-    @doc_hidden
-    def classify_niche(memory: ImmPointer[MaybeUninit[Self], _]) -> NicheIndex:
-        return Self._Niche.classify_niche(memory)
+    comptime _KgenNichedFieldName = "_ptr".value
 
 
 def _alloc_bytes(

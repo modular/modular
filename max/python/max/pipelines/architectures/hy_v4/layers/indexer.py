@@ -27,10 +27,10 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Linear, Module
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.quant_linear import QuantizedLinear
-from max.experimental.nn.common_layers.quant_ops import (
+from max.experimental.nn.common_layers.quant_kernels import (
     quantize_dynamic_scaled_float8,
 )
+from max.experimental.nn.common_layers.quant_linear import QuantizedLinear
 from max.experimental.nn.norm import LayerNorm
 from max.experimental.tensor import Tensor
 from max.nn.attention import MHAMaskVariant

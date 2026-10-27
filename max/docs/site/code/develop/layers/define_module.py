@@ -12,24 +12,24 @@
 # ===----------------------------------------------------------------------=== #
 # DOC: develop/layers.mdx
 
-from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, Weight
-from max.nn import Module
+from max.driver import CPU
+from max.experimental.nn import Module, module_dataclass
+from max.experimental.tensor import Tensor, default_device
 
 
-class LearnedScale(Module):
+@module_dataclass
+class LearnedScale(Module[[Tensor], Tensor]):
     """A layer that owns one learnable per-channel scale weight."""
 
-    def __init__(self, dim: int, dtype: DType = DType.float32) -> None:
-        super().__init__()
-        self.weight = Weight("weight", dtype, [dim], device=DeviceRef.CPU())
+    weight: Tensor
+    """The learned per-channel scale of shape ``[dim]``."""
 
-    def __call__(self, x: TensorValue) -> TensorValue:
-        weight = self.weight.cast(x.dtype)
-        if x.device:
-            weight = weight.to(x.device)
-        return x * weight
+    def forward(self, x: Tensor) -> Tensor:
+        return x * self.weight
 
 
-layer = LearnedScale(576)
-print(sorted(layer.state_dict().keys()))
+with default_device(CPU()):
+    layer = LearnedScale(Tensor.ones([8]))
+    scaled = layer(Tensor.ones([2, 8]))
+    print([name for name, _ in layer.parameters])
+    print(float(scaled.to_numpy()[0, 0]))

@@ -29,6 +29,7 @@ from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, TensorType, TensorValue, ops
 from max.graph.dim import Dim
 
+from ..model_config import engram_host_gather_enabled
 from .engram_hash import EngramLayout, compute_hash_multipliers
 
 # The kernels' fixed layout.
@@ -44,6 +45,12 @@ _BUCKET_SHIFT = 19
 _SORT_MIN_TOKENS = 1024
 # Rows per interleaved block of the MXFP8 scales.
 _SF_ROWS = 128
+
+
+# The device stream an overlapped lookup runs on. Models get one side stream
+# by default (the `device-context.stream-count` config key is 2), and no other
+# op of the DeepSeek-V4.1 graph uses it.
+_ENGRAM_STREAM_ID = 1
 
 
 @dataclass(frozen=True)
@@ -93,12 +100,63 @@ class EngramTokens:
         ]
 
 
+@dataclass(frozen=True)
+class EngramPending:
+    """One device's operands, looked up on a side stream and not yet joined.
+
+    The graph compiler makes the main stream wait for a side-stream region
+    at the first op that reads one of its results, and the graph's schedule
+    hoists an op as early as its inputs allow. A reader of these tensors
+    that needs only them, such as the ``wkv`` projection, could therefore
+    land at the start of the trunk and make the main stream wait for the
+    whole lookup there. :meth:`join` reads them together with a tensor the
+    main stream computes late and returns the operands to use instead; their
+    scales are its outputs, so every other reader follows it.
+    """
+
+    layer_ids: tuple[int, ...]
+    """The Engram layer ids, in operand order."""
+
+    codes: tuple[TensorValue, ...]
+    """Per layer, ``[T, n_hash_cols * head_dim]`` ``float8_e4m3fn``."""
+
+    scales: tuple[TensorValue, ...]
+    """Per layer, ``[ceil(T / 128), K / 128, 32, 4, 4]`` ``float8_e8m0fnu``."""
+
+    def join(self, anchor: TensorValue) -> dict[int, EngramOperand]:
+        """Makes the main stream wait for the lookup once ``anchor`` exists.
+
+        Args:
+            anchor: A tensor on the lookup's device that the main stream
+                computes just before the operands are needed, such as the
+                stream entering the first Engram layer. Its elements are
+                not read.
+
+        Returns:
+            Each layer's operand.
+        """
+        scales = ops.custom(
+            "mo.engram.join",
+            device=anchor.device,
+            values=[anchor, *self.scales],
+            out_types=[s.type for s in self.scales],
+        )
+        return {
+            layer_id: EngramOperand(codes, scale.tensor)
+            for layer_id, codes, scale in zip(
+                self.layer_ids, self.codes, scales, strict=True
+            )
+        }
+
+
 class EngramLookup:
     """Builds the Engram hash-and-gather ops for one layout and token map.
 
     The ops' table layout (layer and head counts, n-gram size, row width) is
     fixed when the kernels are compiled, so the constructor rejects a layout
-    that differs.
+    that differs. ``host_gather`` holds
+    :func:`~..model_config.engram_host_gather_enabled` as of construction,
+    so every op it builds agrees with its inputs.
     """
 
     def __init__(
@@ -140,6 +198,7 @@ class EngramLookup:
             layout.compressed_vocab_size,
         )
         self._buckets = (max(rows) >> _BUCKET_SHIFT) + 1
+        self.host_gather = engram_host_gather_enabled()
 
     @property
     def lookback_depth(self) -> int:
@@ -178,9 +237,11 @@ class EngramLookup:
     def _work_type(
         self, tokens: Dim, heads: int, device: DeviceRef
     ) -> TensorType:
+        # rows and order, the bucket counts plus the gather's claim counter,
+        # and the bucket cursors
         return TensorType(
             DType.int32,
-            [4 * heads * tokens + 4 * self._buckets],
+            [4 * heads * tokens + 4 * self._buckets + 1],
             device=device,
         )
 
@@ -220,23 +281,107 @@ class EngramLookup:
     ) -> dict[int, EngramOperand]:
         """Both layers' operands from the full tables, on one device.
 
+        With ``host_gather``, host threads hash and gather at prefill
+        sizes (``mo.engram.hash_gather_host``).
+
         Args:
             tokens: This forward's hash inputs, on ``device``.
             tables: Each layer's pinned host codes ``[rows, head_dim]`` and
                 scales ``[rows, head_dim / 32]``, layer-major.
             device: The GPU the op runs on.
         """
-        codes, scales, _ = ops.custom(
-            "mo.engram.hash_gather",
-            device=device,
-            values=[*tokens.values(), *self._constants(device), *tables],
-            out_types=[
-                *self._operand_types(tokens.ids.shape[0], device),
-                self._work_type(tokens.ids.shape[0], self.n_hash_cols, device),
-            ],
-            parameters={"pad_id": self.pad_id, "host_tables": True},
+        codes, scales = self._lookup(
+            tokens.values(),
+            self._lookup_constants(device),
+            tables,
+            device,
         )
-        return self._split(codes.tensor, scales.tensor)
+        return self._split(codes, scales)
+
+    def _lookup_constants(self, device: DeviceRef) -> list[TensorValue]:
+        """The lookup op's constants: host copies too for the host lookup."""
+        constants = self._constants(device)
+        if self.host_gather:
+            constants += self._constants(DeviceRef.CPU())
+        return constants
+
+    def _lookup(
+        self,
+        tokens: Sequence[TensorValue],
+        constants: Sequence[TensorValue],
+        tables: Sequence[TensorValue],
+        device: DeviceRef,
+    ) -> tuple[TensorValue, TensorValue]:
+        """Both layers' stacked codes and scales from the full host tables."""
+        host = self.host_gather
+        t = tokens[0].shape[0]
+        codes, scales, _ = ops.custom(
+            "mo.engram.hash_gather_host" if host else "mo.engram.hash_gather",
+            device=device,
+            values=[*tokens, *constants, *tables],
+            out_types=[
+                *self._operand_types(t, device),
+                self._work_type(t, self.n_hash_cols, device),
+            ],
+            parameters=(
+                {"pad_id": self.pad_id}
+                if host
+                else {"pad_id": self.pad_id, "host_tables": True}
+            ),
+        )
+        return codes.tensor, scales.tensor
+
+    def full_on_side_stream(
+        self,
+        tokens: EngramTokens,
+        tables: Sequence[TensorValue],
+        device: DeviceRef,
+    ) -> EngramPending:
+        """:meth:`full` on a side stream, overlapping the main stream's work.
+
+        At prefill sizes the host lookup's stream waits milliseconds for host
+        threads and copies 100 MB to the device. On a side stream that runs
+        while the main stream works on the layers before the first Engram
+        layer, until :meth:`EngramPending.join`.
+
+        Args:
+            tokens: This forward's hash inputs, on ``device``; computed on the
+                main stream, which the side stream waits for.
+            tables: As in :meth:`full`.
+            device: The GPU the op runs on.
+
+        Returns:
+            The pending operands; join them before reading them.
+        """
+        # Constants and tables are captured from the enclosing graph rather
+        # than passed as region inputs.
+        constants = self._lookup_constants(device)
+
+        def body(*values: TensorValue) -> list[TensorValue]:
+            codes, scales = self._lookup(values, constants, tables, device)
+            return [
+                *(codes[i] for i in range(_LAYERS)),
+                *(scales[i] for i in range(_LAYERS)),
+            ]
+
+        codes_type, scales_type = self._operand_types(
+            tokens.ids.shape[0], device
+        )
+        layer_codes = TensorType(codes_type.dtype, codes_type.shape[1:], device)
+        layer_scales = TensorType(
+            scales_type.dtype, scales_type.shape[1:], device
+        )
+        out = ops.side_stream(
+            tokens.values(),
+            body,
+            result_types=[layer_codes] * _LAYERS + [layer_scales] * _LAYERS,
+            stream_id=_ENGRAM_STREAM_ID,
+        )
+        return EngramPending(
+            layer_ids=tuple(self.layer_ids),
+            codes=tuple(out[:_LAYERS]),
+            scales=tuple(out[_LAYERS:]),
+        )
 
     def sharded(
         self,

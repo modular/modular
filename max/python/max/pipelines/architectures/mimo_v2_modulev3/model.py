@@ -72,9 +72,9 @@ class MiMoV2Inputs(ModelInputs):
     leaves. Empty without expert parallelism."""
 
     data_parallel_splits: Buffer | None = None
-    """Per-replica token counts, between the batch inputs and the KV leaves
-    when DP attention runs. The forward reads them to slice each replica's
-    batch."""
+    """Int64 ``[replicas + 1]`` cumulative request boundaries, between the
+    batch inputs and the KV leaves when DP attention runs. The forward
+    reads them to slice each replica's batch."""
 
     host_input_row_offsets: Buffer | None = None
     """Host-side row offsets, right after :attr:`data_parallel_splits`."""

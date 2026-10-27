@@ -135,7 +135,7 @@ def _run_arm[
     var max_pages_per_batch = ceildiv(num_keys, page_size)
     var total_pages = batch_size * max_pages_per_batch
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         1,
         NUM_LAYERS,
@@ -622,7 +622,7 @@ def _run_amd_decode_arm[
     var max_pages_per_batch = ceildiv(max_cache_len + q_len, page_size)
     var total_pages = batch_size * max_pages_per_batch
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         1,
         NUM_LAYERS,
@@ -1036,7 +1036,7 @@ def _run_amd_prefill_arm[
     var max_pages_per_batch = ceildiv(num_keys, page_size)
     var total_pages = batch_size * max_pages_per_batch
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         1,
         NUM_LAYERS,

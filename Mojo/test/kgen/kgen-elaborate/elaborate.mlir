@@ -1063,11 +1063,11 @@ kgen.generator @callee<a>(%arg0: index) {
 }
 
 kgen.generator @entry(%arg0: index) {
-  // CHECK: create_closure[(index) -> (): @"callee,a=1"]
-  kgen.create_closure[(index) -> (): @callee<1>]()
+  // CHECK: create_func_ptr[(index) -> (): @"callee,a=1"]
+  kgen.create_func_ptr[(index) -> (): @callee<1>]()
   kgen.param.declare fn: (index) -> () = <@callee<2>>
-  // CHECK: create_closure[(index) -> (): @"callee,a=2"]
-  kgen.create_closure[(index) -> (): fn](%arg0)
+  // CHECK: create_func_ptr[(index) -> (): @"callee,a=2"]
+  kgen.create_func_ptr[(index) -> (): fn]()
   hlcf.return
 }
 
@@ -1104,23 +1104,23 @@ kgen.generator @main() {
 
 // -----
 
-kgen.generator @take_closure(%arg0: !kgen.generator<(index) capturing -> index>, %arg1: index) {
-  %0 = kgen.call_indirect %arg0(%arg1) : (index) capturing -> index
+kgen.generator @take_closure(%arg0: !kgen.generator<(index) -> index>, %arg1: index) {
+  %0 = kgen.call_indirect %arg0(%arg1) : (index) -> index
   hlcf.return
 }
 
 // COM: Ensure that regions lifted by OutlineClosures pass are not erased
-// CHECK-LABEL: kgen.func @"foo_k,N=5,M=3"() capturing -> !kgen.scalar<index> {
-kgen.generator @foo_k<N, M>() capturing -> !kgen.scalar<index> {
+// CHECK-LABEL: kgen.func @"foo_k,N=5,M=3"() -> !kgen.scalar<index> {
+kgen.generator @foo_k<N, M>() -> !kgen.scalar<index> {
   %0 = kgen.param.constant: scalar<index> = <0>
   hlcf.return %0 : !kgen.scalar<index>
 }
 
 // CHECK-LABEL: kgen.func @"foo,N=5"(%arg0: !kgen.scalar<index>) {
 kgen.generator @foo<N>(%arg0: !kgen.scalar<index>) {
-  kgen.param.declare k: <index>() capturing -> !kgen.scalar<index> = <@foo_k<N, ?>>
-  // CHECK: kgen.create_closure[() capturing -> !kgen.scalar<index>: @"foo_k,N=5,M=3"]()
-  %1 = kgen.create_closure[() capturing -> !kgen.scalar<index>: bind_params(:<index>() capturing -> !kgen.scalar<index> k, 3)]()
+  kgen.param.declare k: <index>() -> !kgen.scalar<index> = <@foo_k<N, ?>>
+  // CHECK: kgen.create_func_ptr[() -> !kgen.scalar<index>: @"foo_k,N=5,M=3"]()
+  %1 = kgen.create_func_ptr[() -> !kgen.scalar<index>: bind_params(:<index>() -> !kgen.scalar<index> k, 3)]()
   hlcf.return
 }
 
@@ -1134,19 +1134,19 @@ kgen.generator @main() {
 }
 
 // COM: Ensure that staged closures follow the global store
-kgen.generator @take_bat(%arg0: !kgen.generator<(index) capturing -> index>) {
+kgen.generator @take_bat(%arg0: !kgen.generator<(index) -> index>) {
 	hlcf.return
 }
 
-kgen.generator @bat(%arg0: index) capturing -> index {
+kgen.generator @bat(%arg0: index) -> index {
 	hlcf.return %arg0 : index
 }
 
 // CHECK-LABEL: kgen.func @bat_binder
 kgen.generator @bat_binder(%arg0: index) {
-  // CHECK: kgen.create_closure[(index) capturing -> index: @bat]()
-	%2 = kgen.create_closure[(index) capturing -> index: h]()
-	kgen.param.declare h: (index) capturing -> index = <@bat>
+  // CHECK: kgen.create_func_ptr[(index) -> index: @bat]()
+	%2 = kgen.create_func_ptr[(index) -> index: h]()
+	kgen.param.declare h: (index) -> index = <@bat>
 	hlcf.return
 }
 

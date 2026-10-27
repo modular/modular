@@ -16,6 +16,12 @@ This version is still a work in progress.
 - `__exit__(self, error: E)` now additionally supports `var self` and
   `deinit self`, similar to the non-error `__exit__`.
 
+- You can transfer ownership of a payload from an rvalue enum/tuple subject with
+  a `var` case binding, enabling `case .Some(var value):` and
+  `case (var x, var y):` without copies. This allows `match` and `if case`
+  statements work more conveniently with linear types, and reduces copies in
+  general.
+
 ## Language changes
 
 - `@explicit_destroy("<message>")` on a struct is deprecated and now emits a
@@ -106,6 +112,23 @@ This version is still a work in progress.
   dealloc(allocation^)
   ```
 
+- Raising an integral `SIMD` value (including `Int`) or a `SIMDLength` to a
+  negative power now aborts at run time instead of silently returning `0`. Use
+  a floating point base instead.
+
+- Raising an `IntLiteral` to a negative `IntLiteral` power now computes the
+  exact result as a float literal, the reciprocal of the positive power,
+  instead of evaluating to `0`. The result is a float literal even when the
+  base is `1` or `-1`, so `var x = (-1)**-3` is now a `Float64` holding
+  `-1.0`. Zero to a negative power evaluates to `nan`.
+
+  ```mojo
+  var a = 2**-1             # 0.5, same as 1 / 2
+  var b = Float64(2) ** -1  # 0.5
+  var n = 2
+  var c = n**-1             # aborts at run time
+  ```
+
 - Added `FileDescriptor` to `std.io`, an owning wrapper around
   `RawFileDescriptor`. It is a linear type: close it explicitly with
   `fd^.close()`, which raises if the close fails. It is movable but not
@@ -115,6 +138,9 @@ This version is still a work in progress.
 - Added `BorrowedFileDescriptor` to `std.io`, a copyable, non-owning view
   of a `FileDescriptor` that carries the owner's origin, so it can be
   passed around without closing the descriptor or outliving its owner.
+
+- `ArcPointer` element types no longer need to be `Deinitable`. Destroy an
+  `ArcPointer` of a non-`Deinitable` type with the new `deinit_with()` method.
 
 ## GPU programming
 
@@ -164,3 +190,6 @@ This version is still a work in progress.
   element-wise path, and aligned slices narrower than the target's native
   vector width, such as the halves `split()` returns for small vectors, now
   use the intrinsic.
+
+- Fixed rejection of negative integer and floating-point literals in `match`
+  patterns.

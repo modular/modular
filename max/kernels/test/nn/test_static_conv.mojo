@@ -221,10 +221,10 @@ def main() raises:
         3,  # R
         3,  # S
         256,  # F
-        Index(1, 1),  # stride
-        Index(1, 1),  # dilation
-        Index(1, 1),  # pad_h
-        Index(1, 1),  # pad_w
+        (1, 1),  # stride
+        (1, 1),  # dilation
+        (1, 1),  # pad_h
+        (1, 1),  # pad_w
     ]()
     test[
         1,  # N
@@ -234,8 +234,8 @@ def main() raises:
         3,  # R
         3,  # S
         64,  # F
-        Index(2, 2),  # stride
-        Index(1, 1),  # dilation
-        Index(1, 1),  # pad_h
-        Index(1, 1),  # pad_w
+        (2, 2),  # stride
+        (1, 1),  # dilation
+        (1, 1),  # pad_h
+        (1, 1),  # pad_w
     ]()

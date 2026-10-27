@@ -23,7 +23,7 @@ from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.lib.config import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces import ArchConfig
 from max.pipelines.modeling.config_enums import SupportedEncoding
-from max.pipelines.modeling.types import PipelineTask
+from max.pipelines.modeling.types import InputModality, PipelineTask
 from transformers import AutoConfig
 from typing_extensions import Self
 
@@ -68,6 +68,7 @@ class ZImageArchConfig(ArchConfig):
 z_image_arch = SupportedArchitecture(
     name="ZImagePipeline",
     task=PipelineTask.PIXEL_GENERATION,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
     default_encoding=ZImageArchConfig.DEFAULT_ENCODING,
     supported_encodings=ZImageArchConfig.SUPPORTED_ENCODINGS,
     example_repo_ids=[

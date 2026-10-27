@@ -467,6 +467,18 @@ def _alloc_chunked_staging_region(
     return region
 
 
+def _leaf_recency(group_id: KVCacheGroupId, page_size: int) -> tuple[str, int]:
+    """Returns how the native ``touch`` orders a leaf's blocks.
+
+    The kind, and for a sliding window its width in blocks.
+    """
+    if group_id.is_sliding_window():
+        return ("sliding_window", group_id.blocks_in_window(page_size))
+    if group_id.is_recurrent():
+        return ("recurrent", 0)
+    return ("full_sequence", 0)
+
+
 class TierConnector(KVConnector):
     """KVConnector backed by a native host/disk tiered connector."""
 
@@ -572,6 +584,10 @@ class TierConnector(KVConnector):
             num_disk_workers,
             num_h2d_onload_lanes,
             use_disk_direct_io,
+            leaf_recency=[
+                _leaf_recency(group_id, page_size)
+                for group_id in leaves.values()
+            ],
         )
         # Set only once the native connector exists, so `__del__` on a
         # half-built instance has nothing to stop.
@@ -965,7 +981,18 @@ class TierConnector(KVConnector):
     def touch(
         self, block_hashes: Sequence[bytes], replica_idx: int = 0
     ) -> None:
-        return None
+        """Refreshes each leaf's recency in the tiers.
+
+        Does not raise. A missed touch costs a later refetch.
+        """
+        del replica_idx
+        try:
+            self._native.reclaim()
+            self._native.touch(list(block_hashes))
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except BaseException:
+            logger.exception("Tier touch skipped")
 
     def shutdown(self) -> None:
         if self._shutdown:

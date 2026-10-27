@@ -33,6 +33,23 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_per_layer_embeddings",
+    srcs = ["test_per_layer_embeddings.py"],
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/gemma4",
+    ],
+)
+
+modular_py_test(
     name = "test_batch_vision_inputs_cpu",
     srcs = ["test_batch_vision_inputs.py"],
     deps = [
@@ -55,11 +72,14 @@ modular_py_test(
             "test_batch_vision_inputs.py",
             "test_config_init.py",
             "test_image_processor.py",
+            "test_logprobs.py",
+            "test_per_layer_embeddings.py",
             "test_reasoning.py",
             "test_tokenizer.py",
             "test_tool_parser.py",
             "test_video_processor.py",
             "test_vision_rotary_embedding.py",
+            "test_weight_adapters.py",
         ],
     ),
     data = [
@@ -125,6 +145,27 @@ modular_py_test(
         requirement("pillow"),
         requirement("pytest-asyncio"),
         requirement("pytest-mock"),
+    ],
+)
+
+modular_py_test(
+    name = "test_logprobs",
+    srcs = ["test_logprobs.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/diffusion_gemma",
+        "//max/python/max/pipelines/architectures/gemma4",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
+    name = "test_weight_adapters",
+    srcs = ["test_weight_adapters.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/gemma4",
+        requirement("numpy"),
     ],
 )
 

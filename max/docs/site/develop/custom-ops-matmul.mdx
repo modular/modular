@@ -15,11 +15,15 @@ problems. Memory access patterns, thread occupancy, and warp utilization
 determine where time actually goes — none of that is visible from the output.
 
 This tutorial uses a matrix multiplication kernel as the teaching vehicle. You
-won't end up with a production matmul — MAX already contains leading-edge
-implementations you can use with the
-[`max.graph`](/api/python/generated/max.graph.Graph) API — but you'll work
+won't end up with a production matmul — MAX already provides tuned
+implementations you can call through the Python API — but you'll work
 through optimization strategies that apply to any GPU custom op you write in
 Mojo.
+
+The examples build a graph directly with `max.graph` and call the kernel with
+`ops.custom()`. The kernel is independent of that choice: the same kernel runs
+from an eager tensor with `F.custom()` or from a layer's `forward()`. See
+[Build custom ops for GPUs](/develop/build-custom-ops/) for both entry points.
 
 :::note
 
@@ -70,7 +74,7 @@ download the code and run the benchmark script:
     pixi run python matrix_multiplication.py
     ```
 
-   As long as you have a compatible GPU, this will compile, run, and print the
+   As long as you have a compatible GPU, this compiles, runs, and prints the
    results of each matmul implementation that we'll discuss below.
 
 4. Run the `matmul` benchmarks to see the impact of each optimization:
@@ -98,12 +102,11 @@ download the code and run the benchmark script:
     ---------------------------------------------------------------------------------------------------------
     ```
 
-## Introduction
+## Writing a matmul kernel
 
 MAX models are built as computational graphs using the
-[`Graph`](/api/python/generated/max.graph.Graph) API. MAX contains within
-it a powerful graph compiler that can take these graphs and optimize them for
-best performance on a wide range of hardware.
+[`Graph`](/api/python/generated/max.graph.Graph/) API. MAX's graph compiler
+optimizes these graphs for the hardware they run on.
 
 Each node in a MAX graph is defined by an operation that performs a calculation
 on zero or more inputs and produces one or more outputs. These inputs and
@@ -136,11 +139,10 @@ performing `K` floating-point multiplications.
 
 The matrix multiplication algorithms demonstrated here are encapsulated within a
 custom MAX graph operation. AI models in MAX are built from a graph of
-operations like this, and in this case we're demonstrating one of these
-operations running in isolation. The `matrix_multiplication.py` file exercises
-seven different matrix multiplication algorithms using a single-operation graph
-and shows that the results of multiplying two random matrices are the same for
-each.
+operations like this. This example runs one such operation in isolation. The
+`matrix_multiplication.py` file exercises seven different matrix multiplication
+algorithms using a single-operation graph and shows that the results of
+multiplying two random matrices are the same for each.
 
 These results can be seen by running at the command line using
 
@@ -278,7 +280,7 @@ be the same.
 
 The `matrix_multiplication` custom operation uses
 [layouts](/api/mojo/layout/layout/) and
-[`TileTensor`](/api/mojo/layout/tile_tensor/TileTensor) to
+[`TileTensor`](/api/mojo/layout/tile_tensor/TileTensor/) to
 represent the input and output matrices, so it's helpful to understand a little
 bit about these types before getting started.
 
@@ -300,9 +302,8 @@ print_layout(my_layout)
     +----+----+----+----+----+----+
 ```
 
-A `TileTensor` consists of a layout and a pointer to memory. For example, if
-you create a `TileTensor` using the layout shown above, the value at (1, 1) is
-stored at memory offset 7.
+A `TileTensor` consists of a layout and a pointer to memory. With the layout
+`row_major[2, 6]()`, the value at (1, 1) is stored at memory offset 7.
 
 A tile tensor can point to an existing buffer, or you can allocate memory to
 store the tensor data. One `TileTensor` method you'll see a lot in the
@@ -373,10 +374,10 @@ def naive_matrix_multiplication[
         c[row, col] = dst_reg
 ```
 
-However, if you glance up at the benchmark table in the previous section, you'll
-see that the naive matrix multiplication is roughly only 2.7% as fast as sixth
-algorithm on our list. There's clearly a lot of upside if this core algorithm
-can be improved.
+However, if you glance up at the benchmark table in the previous section,
+you'll see that the naive kernel reaches roughly 2.7% of the throughput of
+`block_tiled_vectorized`. There's clearly a lot of upside if this core
+algorithm can be improved.
 
 ## Kernel 2: Apply memory coalescing
 
@@ -389,10 +390,10 @@ var col = block_dim.x * block_idx.x + thread_idx.x
 ```
 
 With this change, adjacent threads access values in the same row of the input
-matrices, which are contiguous in memory. The naive kernel above maps the x
-axis to rows instead, so its warp accesses stride across memory — that
-coordinate-mapping difference is what the A100 measurements in the benchmark
-table above show. Both kernels guard their store and size their launch grids
+matrices, which are contiguous in memory. The naive kernel maps the x
+axis to rows instead, so its warp accesses stride across memory. That coordinate
+mapping difference is what the A100 measurements in the benchmark
+table show. Both kernels guard their store and size their launch grids
 for their own mapping, so both handle rectangular matrices correctly.
 
 ## Kernel 3: Rework to use shared memory tiling
@@ -478,7 +479,7 @@ The kernel then iterates across the input matrices, loading tiles into shared
 memory.
 
 The
-[`GenericToSharedAsyncTileCopier`](/api/mojo/layout/tile_io/GenericToSharedAsyncTileCopier)
+[`GenericToSharedAsyncTileCopier`](/api/mojo/layout/tile_io/GenericToSharedAsyncTileCopier/)
 type deserves special note. This takes the place of the CUDA pattern of
 instructing each thread which value or values to copy to shared memory. The
 `thread_layout` parameter associates individual threads with values, and the
@@ -603,9 +604,9 @@ This gives a nearly 80% improvement over the previous tiling implementation.
 ## Kernel 5: Introduce block tiling
 
 We can further increase the arithmetic intensity of the calculation using a 2-D
-block tiling strategy. In this kernel, each thread is responsible for
-calculating the output values for a `TM`x`TN` tile of the output tensor. (Where
-`TM` and `TN` and kernel parameters; in this case we're using 8x8 tiles.)
+block tiling strategy. In this kernel, each thread calculates the output values
+for a `TM`x`TN` tile of the output tensor. (`TM` and `TN` are kernel
+parameters; this kernel uses 8x8 tiles.)
 
 In addition to caching a block's worth of the A & B matrices in shared memory,
 each thread copies 8-unit vectors of the input matrices into local storage to
@@ -665,7 +666,7 @@ for block in range(ntiles):
 dst.copy_from(dst_reg)
 ```
 
-In the above benchmarks, this provides an additional 50% boost over the previous
+In these benchmarks, this provides an additional 50% boost over the previous
 algorithm.
 
 ## Kernel 6: Block tiling with vectorized memory access
@@ -673,7 +674,7 @@ algorithm.
 As a final optimization to our block-tiling kernel, memory accesses can be
 vectorized to improve memory access bandwidth. The new tool in this kernel is
 the
-[`TileTensor.vectorize()`](/api/mojo/layout/tile_tensor/TileTensor#vectorize)
+[`TileTensor.vectorize()`](/api/mojo/layout/tile_tensor/TileTensor/#vectorize)
 method, which produces a vectorized view of a tile so that multiple values can
 be loaded or stored as a single SIMD vector. The `B` tile copies straight into
 row-major shared memory, but `a_smem` switches to column-major so the inner loop
@@ -755,8 +756,8 @@ for block in range(ntiles):
 dst.copy_from(dst_reg)
 ```
 
-From beginning to end, we've realized more than a 36X improvement in matrix
-multiplication speed within our MAX custom operation!
+From beginning to end, we've gained more than 36x in matrix multiplication
+speed within our MAX custom operation.
 
 ## Kernel 7: Use Tensor Cores for matrix multiplication
 
@@ -766,8 +767,8 @@ multiplications an order of magnitude or more faster than general purpose GPU
 hardware. However, they can be a challenge to work with.
 
 MAX contains interfaces that make it more ergonomic to program these dedicated
-hardware units. The following is an example of how to perform the same
-calculation as the above, only on a Tensor Core. The tensor interfaces,
+hardware units. The following example performs the same
+calculation as the preceding kernels, on a Tensor Core. The tensor interfaces,
 allocations, copies, and Tensor Core helpers all operate on `TileTensor`
 natively:
 
@@ -776,7 +777,7 @@ from std.math.uutils import udivmod
 from std.utils.index import Index
 from max.gpu import block_idx, warp_id
 from max.gpu.sync import barrier
-from layout import TensorLayout, TileTensor, row_major, stack_allocation
+from layout import TensorLayout, TileTensor, coord, row_major, stack_allocation
 from layout.tile_io import copy_dram_to_sram
 from layout.tensor_core import TensorCore
 
@@ -813,7 +814,7 @@ def tensor_core_matrix_multiplication[
         WM % MMA_M == 0 and WN % MMA_N == 0 and K % MMA_K == 0
     ), "Warp tile should be an integer multiple of instruction shape"
 
-    var mma_op = TensorCore[A.dtype, C.dtype, Index(MMA_M, MMA_N, MMA_K)]()
+    var mma_op = TensorCore[A.dtype, C.dtype, coord[MMA_M, MMA_N, MMA_K]]()
 
     var A_sram_tile = stack_allocation[A.dtype, address_space=.SHARED](
         row_major[BM, BK]()
@@ -870,18 +871,16 @@ def tensor_core_matrix_multiplication[
 
 ## Conclusion
 
-In this tutorial, we've demonstrated how to create a custom MAX graph operation
-that performs matrix multiplication using various algorithms and run that on a
-GPU. We ran benchmarks of each algorithm, showing the performance benefits of
-various algorithmic improvements. Each improvement was described in detail,
-showing pathways to get the most speed out of modern GPUs using MAX and Mojo.
+In this tutorial, we've built a custom MAX graph operation that performs matrix
+multiplication with several algorithms on a GPU, and benchmarked each one to
+show what each algorithmic change buys.
 
 ## Next steps
 
 - Follow [our tutorial for building a custom operation from
-scratch](/develop/build-custom-ops).
+scratch](/develop/build-custom-ops/).
 
-- See the [GPU programming](/gpu/architecture)
+- See the [GPU programming](/gpu/architecture/)
   page in the Mojo manual.
 
 - See the [`gpu`](https://docs.modular.com/api/mojo/max/gpu/) module for detail
@@ -893,5 +892,4 @@ scratch](/develop/build-custom-ops).
 community](https://discord.gg/modular) to share your experiences and get
 support.
 
-We're excited to see what you'll build with MAX! Share your projects and
-experiences with us using `#ModularAI` on social media.
+Share your projects and experiences with `#ModularAI` on social media.

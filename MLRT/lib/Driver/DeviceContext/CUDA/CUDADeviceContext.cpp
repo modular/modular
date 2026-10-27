@@ -2371,11 +2371,47 @@ ErrorOr<DeviceContextRef> CUDADeviceContext::selectStream(unsigned streamId) {
   if (streamPool_->get(streamId) == stream_)
     return DeviceContextRef::copy(this);
 
-  // Return a retain-all view: a new context co-owning the same stream pool and
-  // CUcontext (and therefore the same device memory pool), differing only in
-  // which pooled stream is active.
-  return DeviceContextRef::take(new CUDADeviceContext(
-      CUDADevice::cast(device()), context_, streamPool_, streamId));
+  // A retain-all view: a context co-owning the same stream pool and CUcontext
+  // (and therefore the same device memory pool), differing only in which
+  // pooled stream is active. One view per stream id, kept for this context's
+  // lifetime (see `streamViews_`).
+  std::lock_guard<std::mutex> lock(streamViewsMu_);
+  if (streamViews_.size() <= streamId)
+    streamViews_.resize(streamId + 1);
+  DeviceContextRef &view = streamViews_[streamId];
+  if (!view)
+    view = DeviceContextRef::take(new CUDADeviceContext(
+        CUDADevice::cast(device()), context_, streamPool_, streamId));
+  return view.copy();
+}
+
+bool CUDADeviceContext::flushIdleStreamViews() {
+  // Held throughout: `selectStream` is the only way to a new reference, so a
+  // view only the cache holds stays unheld until the lock is released.
+  std::lock_guard<std::mutex> lock(streamViewsMu_);
+  if (streamViews_.empty())
+    return false;
+  // Views share this context's CUcontext.
+  CUDAContextScope scope(context_, driver_);
+  if (scope.status() != CUDADriver::SUCCESS)
+    return false;
+  bool flushed = false;
+  for (DeviceContextRef &view : streamViews_) {
+    if (!view || !view->isUnique())
+      continue;
+    auto &cudaView = static_cast<CUDADeviceContext &>(*view);
+    if (cudaView.isGraphCapturing())
+      continue;
+    // A raw stream sync, not `synchronize()`: that also runs the view's event
+    // handlers, which could allocate and re-enter this lock.
+    if (driver_.cuStreamSynchronize(cudaView.stream_) != CUDADriver::SUCCESS)
+      continue;
+    // Only the ordinary free list: `graphFreeList` backs captured graphs that
+    // may still replay.
+    cudaView.freeList().flushCachedToParent();
+    flushed = true;
+  }
+  return flushed;
 }
 
 ErrorOr<DeviceStreamRef>

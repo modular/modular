@@ -2048,6 +2048,13 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "nvidia/Kimi-K2.7-Code-NVFP4": KimiK2_7PipelineOracle(
         "nvidia/Kimi-K2.7-Code-NVFP4"
     ),
+    # `transformers` cannot load Laguna S-2.1's mixed NVFP4/BF16 experts and
+    # the BF16 source is 236 GB, so the reference side has to be a vLLM golden.
+    "poolside/Laguna-S-2.1-NVFP4": GenericOracle(
+        model_path="poolside/Laguna-S-2.1-NVFP4",
+        config_params={"max_length": 512},
+        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
+    ),
     # Trimmed MiniMax-M3 (dense-only layers) for logit verification. The prompts
     # are pinned and apply_chat_template is off so the input_ids match those the
     # reference logits were generated from.

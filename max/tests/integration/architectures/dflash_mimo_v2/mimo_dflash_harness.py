@@ -367,7 +367,9 @@ def fused_graph(
             reasoning_parser="mimo" if in_thinking_phase else None
         ),
         model=SimpleNamespace(
-            data_parallel_degree=1, huggingface_config=model.hf
+            data_parallel_degree=1,
+            huggingface_config=model.hf,
+            pipeline_stage=None,
         ),
     )
     driver = (

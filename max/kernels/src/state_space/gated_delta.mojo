@@ -485,6 +485,7 @@ def gated_delta_recurrence_verify_ring_gpu[
     ring_LT: TensorLayout,
     ring_slot_idx_LT: TensorLayout,
     Engine: TensorEngine,
+    RECORDS_ONLY: Bool = False,
 ](
     batch_size: Int32,
     num_value_heads: Int32,
@@ -525,8 +526,15 @@ def gated_delta_recurrence_verify_ring_gpu[
 
     A row longer than `RING_LEN` records nothing and writes its state back
     as `gated_delta_recurrence_fwd_gpu` does, committing the whole row. The
-    fold skips a row whose count exceeds `RING_LEN`, so a caller folds such a
-    row with its full length.
+    fold skips a row whose count exceeds `RING_LEN`, so a caller folds such
+    a row with its full length. With `RECORDS_ONLY` that fallback is
+    compiled out and a longer row instead trips the kernel's safe
+    assert (the host cannot check `input_row_offsets`, device data,
+    without a sync): every row must fit the ring, which the graph's
+    verify op guarantees by rejecting a draft window wider than the
+    ring. Dropping the writeback frees the state column from being
+    live to the exit, which cost the recording path about 30% of its
+    time in spills.
 
     Parameters:
         work_dtype: `DType` of the per-token input and output tensors.
@@ -547,6 +555,16 @@ def gated_delta_recurrence_verify_ring_gpu[
         ring_LT: `TensorLayout` for `ring`.
         ring_slot_idx_LT: `TensorLayout` for `ring_slot_idx`.
         Engine: Engine shared by all tile operands.
+        RECORDS_ONLY: Compile-time contract that no row exceeds
+            `RING_LEN`; the kernel traps a longer row (safe assert)
+            rather than leaving the pool unchanged, since its state
+            would be dropped silently. Callers that can make that
+            guarantee (the graph's verify op checks the draft window
+            against the ring length) compile the long-row writeback
+            out, which keeps the state column from being live to the
+            exit and costs the recording path about 30% of its time
+            in spills.
+
 
     Args:
         batch_size: Number of sequences in the ragged batch.
@@ -677,19 +695,37 @@ def gated_delta_recurrence_verify_ring_gpu[
                     Scalar[ring_dtype](k_value),
                 )
 
-    # TODO(MXSERV-555): this writeback keeps state_col live to the exit, which
-    # costs the recording path about 5% in spills even though no row the
-    # graph builds reaches it. An early-return split spills more. If the
-    # verify shows up in a profile, launch rows longer than the ring on a
-    # separate kernel, which needs the host row offsets as an operand.
-    if not records:
-        # Reread the slot; see `gated_delta_recurrence_fwd_gpu`.
-        var final_slot = Int(slot_idx[batch_item_idx])
-        comptime for kd in range(KEY_HEAD_DIM):
-            recurrent_state.store(
-                (final_slot, value_head_idx, kd, tid),
-                Scalar[state_dtype](state_col[kd]),
-            )
+    # MXSERV-555: this writeback keeps state_col live to the exit, which
+    # costs the recording path about 30% of its time in spills. An
+    # in-kernel early-return split spills more (measured), so callers
+    # compile it out with RECORDS_ONLY. That is a contract, not a hint:
+    # the row lengths live in `input_row_offsets`, device data the host
+    # cannot check without a sync, so the kernel itself traps a row
+    # longer than `RING_LEN`, whose state would otherwise be dropped
+    # silently (`assert_mode="safe"`: fires in every build).
+    comptime if RECORDS_ONLY:
+        debug_assert[assert_mode="safe"](
+            records,
+            "gated_delta_recurrence_verify_ring_gpu[RECORDS_ONLY]: row ",
+            batch_item_idx,
+            " has ",
+            sequence_length,
+            " tokens, exceeding RING_LEN=",
+            RING_LEN,
+            (
+                "; such a row records nothing and its state is not"
+                " committed -- raise the ring length or fold the row"
+            ),
+        )
+    else:
+        if not records:
+            # Reread the slot; see `gated_delta_recurrence_fwd_gpu`.
+            var final_slot = Int(slot_idx[batch_item_idx])
+            comptime for kd in range(KEY_HEAD_DIM):
+                recurrent_state.store(
+                    (final_slot, value_head_idx, kd, tid),
+                    Scalar[state_dtype](state_col[kd]),
+                )
 
 
 def gated_delta_state_fold_gpu[

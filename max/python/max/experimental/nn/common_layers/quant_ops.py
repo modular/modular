@@ -28,36 +28,14 @@ from max.experimental.nn.common_layers.functional_kernels import (
     grouped_matmul_ragged,
 )
 from max.experimental.sharding import DeviceMapping, DeviceMesh
-from max.experimental.sharding.action import AxisAssignment
-from max.experimental.sharding.cost import P, R
-from max.experimental.sharding.placements import Placement, Sharded
-from max.experimental.sharding.types import TensorLayout
+from max.experimental.sharding.placements import Sharded
 from max.experimental.tensor import Tensor
-from max.graph import TensorValue, ops
+from max.graph import TensorValue
 from max.nn.activation import GatedActivation
 from max.nn.comm.ep import EPConfig
-from max.nn.kernels import block_scales_interleave as _block_scales_interleave
-from max.nn.kernels import (
-    dynamic_block_scaled_matmul as _dynamic_block_scaled_matmul,
-)
-from max.nn.kernels import dynamic_scaled_matmul as _dynamic_scaled_matmul
-from max.nn.kernels import (
-    grouped_dynamic_scaled_fp8_matmul as _grouped_dynamic_scaled_fp8_matmul,
-)
-from max.nn.kernels import (
-    grouped_matmul_block_scaled as _grouped_matmul_block_scaled,
-)
+from max.nn.kernels import _is_amd_gpu
 from max.nn.kernels import (
     grouped_matmul_blocked_swiglu as _grouped_matmul_blocked_swiglu,
-)
-from max.nn.kernels import (
-    grouped_quantize_dynamic_block_scaled as _grouped_quantize_dynamic_block_scaled,
-)
-from max.nn.kernels import (
-    quantize_dynamic_block_scaled as _quantize_dynamic_block_scaled,
-)
-from max.nn.kernels import (
-    quantize_dynamic_scaled_float8 as _quantize_dynamic_scaled_float8,
 )
 from max.nn.quant_config import (
     InputScaleSpec,
@@ -68,9 +46,25 @@ from max.nn.quant_config import (
     WeightScaleSpec,
 )
 
+from .quant_kernels import (
+    block_scales_interleave,
+    dynamic_block_scaled_matmul,
+    dynamic_block_scaled_matmul_amd,
+    dynamic_scaled_matmul,
+    grouped_dynamic_scaled_fp8_matmul,
+    grouped_matmul_block_scaled,
+    grouped_quantize_dynamic_block_scaled,
+    quantize_dynamic_block_scaled,
+    quantize_dynamic_block_scaled_mxfp4,
+    quantize_dynamic_scaled_float8,
+    silu_quantize_fp8,
+)
 from .quant_tensor import (
     FP8BlockActivation,
     FP8BlockTensor,
+    MXFP4Quantizer,
+    MXFP4Tensor,
+    MXFP8Quantizer,
     MXFP8Tensor,
     NVFP4Activation,
     NVFP4Tensor,
@@ -84,251 +78,8 @@ from .quant_tensor import (
 # NVFP4 packs two float4-e2m1 values per byte and uses one float8_e4m3fn scale
 # per 16-element block along K.
 _NVFP4_SF_VECTOR_SIZE = 16
-# MXFP8 stores one float8_e4m3fn value per byte and one float8_e8m0fnu scale
-# per 32-element block along K.
-_MXFP8_SF_VECTOR_SIZE = 32
-
-
-def _transpose2d_placement(p: Placement) -> Placement:
-    """Map a rank-2 tensor placement to its transpose (swap axes 0 and 1).
-
-    The activation block scales produced by
-    :func:`quantize_dynamic_scaled_float8` are laid out transposed relative to
-    the activations they describe (``[K / block_k, M]`` vs ``[M, K]``), so a
-    shard of the activations on tensor axis ``a`` corresponds to a shard of the
-    scales on axis ``1 - a``. :class:`~max.experimental.sharding.Replicated`
-    and :class:`~max.experimental.sharding.Partial` placements are unchanged.
-    """
-    if isinstance(p, Sharded):
-        return Sharded(axis=1 - p.axis)
-    return p
-
-
-def _follow_input_rows(
-    x: TensorLayout,
-    scales_placement: Callable[[Placement], Placement] | None = None,
-) -> list[AxisAssignment]:
-    """Returns rows whose results follow the rank-2 input's placement.
-
-    Covers a replicated input (the common case), a contraction-sharded input
-    (``o_proj`` under tensor parallelism), and a row-sharded input (sequence /
-    data parallel). There is no partial-sum row: quantizing is not linear,
-    so a partial input is reduced first.
-
-    Args:
-        x: The rank-2 input whose placement the results follow.
-        scales_placement: The placement of the block scales a quantize op
-            also returns, given the data's placement. ``None`` for an op
-            with one result.
-    """
-
-    def outputs(p: Placement) -> tuple[Placement, ...]:
-        return (p,) if scales_placement is None else (p, scales_placement(p))
-
-    return [
-        AxisAssignment((p,), outputs(p)) for p in (R, Sharded(0), Sharded(1))
-    ]
-
-
-def _quantize_rule(x: TensorLayout, *extras: Any) -> list[AxisAssignment]:
-    """Sharding rule for dynamic FP8 activation quantization.
-
-    The FP8 data output follows the input placement; the block-scale output
-    is its transpose.
-    """
-    return _follow_input_rows(x, _transpose2d_placement)
-
-
-def _scaled_matmul_rule(
-    a: TensorLayout,
-    b: TensorLayout,
-    a_scales: TensorLayout,
-    b_scales: TensorLayout,
-    *extras: Any,
-    **kwargs: Any,
-) -> list[AxisAssignment]:
-    """Sharding rule for the block-scaled FP8 matmul ``a @ b.T``.
-
-    ``a`` is ``[M, K]`` and ``b`` (Linear-convention weight) is ``[N, K]``, so
-    the output is ``[M, N]``. The activation scales ``a_scales`` are
-    ``[K / block_k, M]`` (transposed) while the weight scales ``b_scales`` are
-    ``[N / block_m, K / block_k]``. The rows mirror the bf16 matmul strategies:
-    column-parallel weights (shard ``N``), row-parallel weights (shard the
-    ``K`` contraction, producing a partial sum), and row-sharded activations.
-    """
-    return [
-        AxisAssignment((R, R, R, R), (R,)),
-        # Column-parallel: weight rows (N) sharded -> output columns (N).
-        AxisAssignment((R, Sharded(0), R, Sharded(0)), (Sharded(1),)),
-        # Row-parallel: contraction (K) sharded on every operand -> partial.
-        AxisAssignment((Sharded(1), Sharded(1), Sharded(0), Sharded(1)), (P,)),
-        # Row-sharded activations (sequence / data parallel) -> output rows.
-        AxisAssignment((Sharded(0), R, Sharded(1), R), (Sharded(0),)),
-    ]
-
-
-def _grouped_scaled_matmul_rule(
-    hidden_states: TensorLayout,
-    weight: TensorLayout,
-    a_scales: TensorLayout,
-    b_scales: TensorLayout,
-    expert_start_indices: TensorLayout,
-    expert_ids: TensorLayout,
-    expert_usage_stats_host: TensorLayout,
-    input_scale_spec: InputScaleSpec,
-    weight_scale_spec: WeightScaleSpec,
-    out_type: DType = DType.bfloat16,
-    static_grid_z: bool = False,
-    decode_grid_m_cap: int = 0,
-) -> list[AxisAssignment]:
-    """Sharding rule for the FP8 block-scaled grouped (MoE) matmul."""
-    return [
-        AxisAssignment((R, R, R, R, R, R, R), (R,)),
-        # Column-parallel: weight's N (out) axis sharded -> output's N axis.
-        AxisAssignment((R, Sharded(1), R, Sharded(1), R, R, R), (Sharded(1),)),
-        # Row-parallel: weight's K (contraction) axis sharded, matched by
-        # hidden_states' K axis; a_scales is transposed relative to
-        # hidden_states, so its matching axis is 0 -> partial sum.
-        AxisAssignment(
-            (Sharded(1), Sharded(2), Sharded(0), Sharded(2), R, R, R), (P,)
-        ),
-    ]
-
-
-def _nvfp4_quantize_rule(
-    input: TensorLayout,
-    tensor_sf: TensorLayout | float = 1.0,
-    sf_vector_size: int = 16,
-    scales_type: DType = DType.float8_e4m3fn,
-    out_type: DType = DType.uint8,
-) -> list[AxisAssignment]:
-    """Sharding rule for dynamic NVFP4 activation block quantization."""
-    rows = _follow_input_rows(input, lambda placement: placement)
-    if not isinstance(tensor_sf, TensorLayout):
-        return rows
-    return [
-        AxisAssignment((*row.needed_inputs, R), row.outputs) for row in rows
-    ]
-
-
-def _nvfp4_interleave_rule(
-    scales: TensorLayout, *extras: Any
-) -> list[AxisAssignment]:
-    """Sharding rule for ``block_scales_interleave`` (rank-2 -> rank-5)."""
-    return _follow_input_rows(scales)
-
-
-def _nvfp4_matmul_rule(
-    a: TensorLayout,
-    b: TensorLayout,
-    a_scales: TensorLayout,
-    b_scales: TensorLayout,
-    tensor_sf: TensorLayout | float = 1.0,
-    sf_vector_size: int = 16,
-    out_type: DType = DType.bfloat16,
-) -> list[AxisAssignment]:
-    """Sharding rule for the block-scaled NVFP4 matmul ``a @ b.T``."""
-    rows = [
-        AxisAssignment((R, R, R, R), (R,)),
-        # Column-parallel: weight rows (N) sharded -> output columns (N).
-        AxisAssignment((R, Sharded(0), R, Sharded(0)), (Sharded(1),)),
-        # Row-parallel: contraction (K) sharded on every operand -> partial.
-        AxisAssignment((Sharded(1), Sharded(1), Sharded(1), Sharded(1)), (P,)),
-        # Row-sharded activations (sequence / data parallel) -> output rows.
-        AxisAssignment((Sharded(0), R, Sharded(0), R), (Sharded(0),)),
-    ]
-    if isinstance(tensor_sf, TensorLayout):
-        rows = [
-            AxisAssignment((*row.needed_inputs, R), row.outputs) for row in rows
-        ]
-    return rows
-
-
-def _nvfp4_grouped_quantize_rule(
-    input: TensorLayout,
-    row_offsets: TensorLayout,
-    scales_offsets: TensorLayout,
-    expert_ids: TensorLayout,
-    sf_tensor: TensorLayout,
-    *extras: Any,
-    **kwargs: Any,
-) -> list[AxisAssignment]:
-    """Sharding rule for grouped NVFP4 activation quantization."""
-    # The block scales are placed like the quantized data, so each row
-    # names that placement twice: once for the data, once for the scales.
-    return [
-        AxisAssignment((R, R, R, R, R), (R, R)),
-        AxisAssignment((Sharded(1), R, R, R, R), (Sharded(1), Sharded(1))),
-    ]
-
-
-def _nvfp4_grouped_matmul_rule(
-    hidden_states: TensorLayout,
-    weight: TensorLayout,
-    a_scales: TensorLayout,
-    b_scales: TensorLayout,
-    expert_start_indices: TensorLayout,
-    a_scale_offsets: TensorLayout,
-    expert_ids: TensorLayout,
-    expert_scales: TensorLayout,
-    expert_usage_stats_host: TensorLayout,
-    out_type: DType = DType.bfloat16,
-    estimated_total_m: TensorLayout | None = None,
-) -> list[AxisAssignment]:
-    """Sharding rule for the NVFP4 block-scaled grouped (MoE) matmul."""
-    layouts = (
-        hidden_states,
-        weight,
-        a_scales,
-        b_scales,
-        expert_start_indices,
-        a_scale_offsets,
-        expert_ids,
-        expert_scales,
-        expert_usage_stats_host,
-        *((estimated_total_m,) if estimated_total_m is not None else ()),
-    )
-    metadata = (R,) * (len(layouts) - 4)
-    return [
-        AxisAssignment((R, R, R, R, *metadata), (R,)),
-        # Column-parallel: weight's N axis (1) -> output's N axis.
-        AxisAssignment(
-            (R, Sharded(1), R, Sharded(1), *metadata), (Sharded(1),)
-        ),
-        # Row-parallel: weight's K axis (2) matched by hidden/a_scales K -> P.
-        AxisAssignment(
-            (Sharded(1), Sharded(2), Sharded(1), Sharded(2), *metadata),
-            (P,),
-        ),
-    ]
-
-
-# Wrap raw graph ops so they accept ``Tensor`` and run inside an
-# ``ensure_context()``.
-quantize_dynamic_scaled_float8 = F.functional(
-    _quantize_dynamic_scaled_float8, rule=_quantize_rule
-)
-dynamic_scaled_matmul = F.functional(
-    _dynamic_scaled_matmul, rule=_scaled_matmul_rule
-)
-grouped_dynamic_scaled_fp8_matmul = F.functional(
-    _grouped_dynamic_scaled_fp8_matmul, rule=_grouped_scaled_matmul_rule
-)
-quantize_dynamic_block_scaled = F.functional(
-    _quantize_dynamic_block_scaled, rule=_nvfp4_quantize_rule
-)
-block_scales_interleave = F.functional(
-    _block_scales_interleave, rule=_nvfp4_interleave_rule
-)
-dynamic_block_scaled_matmul = F.functional(
-    _dynamic_block_scaled_matmul, rule=_nvfp4_matmul_rule
-)
-grouped_quantize_dynamic_block_scaled = F.functional(
-    _grouped_quantize_dynamic_block_scaled, rule=_nvfp4_grouped_quantize_rule
-)
-grouped_matmul_block_scaled = F.functional(
-    _grouped_matmul_block_scaled, rule=_nvfp4_grouped_matmul_rule
-)
+# Every OCP MX format uses one float8_e8m0fnu scale per 32-element block.
+_MX_SF_VECTOR_SIZE = 32
 
 
 def is_fp8_block_quantized(quant_config: QuantConfig | None) -> bool:
@@ -533,6 +284,7 @@ _CONTAINERS: dict[QuantFormat, _ContainerFactory] = {
     QuantFormat.BLOCKSCALED_FP8: FP8BlockTensor,
     QuantFormat.NVFP4: NVFP4Tensor,
     QuantFormat.MXFP8: MXFP8Tensor,
+    QuantFormat.MXFP4: MXFP4Tensor,
 }
 
 #: The wrapper that quantizes a native-precision weight on first use. Only
@@ -540,13 +292,16 @@ _CONTAINERS: dict[QuantFormat, _ContainerFactory] = {
 #: a separate mapping rather than a field on the container.
 _QUANTIZERS: dict[QuantFormat, _QuantizerFactory] = {
     QuantFormat.NVFP4: NVFP4TensorQuantizer,
+    QuantFormat.MXFP8: MXFP8Quantizer,
+    QuantFormat.MXFP4: MXFP4Quantizer,
 }
 
 #: Dtype of the weight as the CHECKPOINT holds it, per format.
 _STORAGE_DTYPES: dict[QuantFormat, DType] = {
     QuantFormat.BLOCKSCALED_FP8: DType.float8_e4m3fn,
     QuantFormat.NVFP4: DType.uint8,
-    QuantFormat.MXFP8: DType.float8_e4m3fn,
+    QuantFormat.MXFP8: MXFP8Tensor.storage_dtype,
+    QuantFormat.MXFP4: MXFP4Tensor.storage_dtype,
 }
 
 
@@ -847,10 +602,16 @@ def matmul(x: Tensor, weight: QuantAwareTensor) -> Tensor:
     - :class:`NVFP4Tensor` weight: normalizes ``x`` by the static
       ``input_scale``, dynamically block-quantizes it to FP4, then runs the
       SM100 block-scaled FP4 matmul and returns bf16.
-    - :class:`NVFP4TensorQuantizer` weight: as :class:`NVFP4Tensor`, on its
-      cached quantization.
-    - :class:`MXFP8Tensor` weight: dynamically block-quantizes ``x`` to MXFP8,
-      then runs the SM100 block-scaled FP8 matmul and returns bf16.
+    - :class:`MXFP8Tensor` weight: dynamically block-quantizes ``x`` to
+      MXFP8, then runs the SM100 block-scaled matmul and returns bf16. No
+      input scale: MX is pure block scaling.
+    - :class:`MXFP4Tensor` weight: dynamically block-quantizes ``x`` to
+      MXFP4, then runs the AMD block-scaled matmul and returns bf16. Raises
+      off AMD, where there is no MXFP4 matmul.
+    - Any on-the-fly quantizer (:class:`NVFP4TensorQuantizer`,
+      :class:`MXFP8Quantizer`, :class:`MXFP4Quantizer`): each is its format's
+      container, so it takes that container's path and reads the fields of
+      its cached quantization.
     """
     if isinstance(weight, FP8BlockTensor):
         return _matmul_fp8_block(x, weight)
@@ -858,8 +619,70 @@ def matmul(x: Tensor, weight: QuantAwareTensor) -> Tensor:
         return _matmul_nvfp4(x, weight)
     if isinstance(weight, MXFP8Tensor):
         return _matmul_mxfp8(x, weight)
+    if isinstance(weight, MXFP4Tensor):
+        return _matmul_mxfp4(x, weight)
     assert isinstance(weight, Tensor)
     return x @ weight.T
+
+
+def _matmul_mxfp8(x: Tensor, weight: MXFP8Tensor) -> Tensor:
+    """Block-scaled MXFP8 matmul ``x @ weight.T`` with dynamic activation quant.
+
+    MXFP8 is pure block scaling, so no ``tensor_sf`` is threaded through:
+    both operands carry their own E8M0 scales and nothing rescales the
+    output. Shares the SM100 kernel with NVFP4, which selects the format
+    from the operand dtype.
+    """
+    x_fp8, x_scales = quantize_dynamic_block_scaled(
+        x,
+        sf_vector_size=_MX_SF_VECTOR_SIZE,
+        scales_type=MXFP8Tensor.scale_dtype,
+        out_type=MXFP8Tensor.storage_dtype,
+    )
+    # Lift the rank-2 [N, K // 32] scales the container holds into the
+    # rank-5 SF-atom layout the MMA consumes.
+    weight_scale = block_scales_interleave(
+        weight.weight_scale, sf_vector_size=_MX_SF_VECTOR_SIZE
+    )
+    return dynamic_block_scaled_matmul(
+        x_fp8,
+        weight.weight,
+        x_scales,
+        weight_scale,
+        sf_vector_size=_MX_SF_VECTOR_SIZE,
+        out_type=DType.bfloat16,
+    )
+
+
+def _matmul_mxfp4(x: Tensor, weight: MXFP4Tensor) -> Tensor:
+    """Block-scaled MXFP4 matmul ``x @ weight.T``. AMD CDNA only.
+
+    MXFP4 has no NVIDIA path: the SM100 block-scaled op takes ``uint8``
+    operands only with ``float8_e4m3fn`` scales, so MXFP4's E8M0 scales are
+    rejected. Checked up front so the failure names the hardware rather than
+    surfacing as a scales-dtype mismatch inside the kernel.
+
+    Both operands carry rank-2 ``[N, K // 32]`` scales, which the AMD kernel
+    consumes directly -- no SF-atom interleave, unlike
+    :func:`_matmul_mxfp8`.
+    """
+    if not _is_amd_gpu():
+        raise NotImplementedError(
+            "MXFP4 matmul requires an AMD CDNA GPU. The SM100 block-scaled "
+            "kernel supports only NVFP4 or MXFP8; use MXFP8 on NVIDIA."
+        )
+    x_fp4, x_scales = quantize_dynamic_block_scaled_mxfp4(
+        x,
+        scales_type=MXFP4Tensor.scale_dtype,
+        out_type=MXFP4Tensor.storage_dtype,
+    )
+    return dynamic_block_scaled_matmul_amd(
+        x_fp4,
+        weight.weight,
+        x_scales,
+        weight.weight_scale,
+        out_type=DType.bfloat16,
+    )
 
 
 def _matmul_nvfp4(x: Tensor, weight: NVFP4Tensor) -> Tensor:
@@ -881,27 +704,6 @@ def _matmul_nvfp4(x: Tensor, weight: NVFP4Tensor) -> Tensor:
         weight_scale,
         tensor_sf=weight.weight_scale_2 * weight.input_scale,
         sf_vector_size=_NVFP4_SF_VECTOR_SIZE,
-        out_type=DType.bfloat16,
-    )
-
-
-def _matmul_mxfp8(x: Tensor, weight: MXFP8Tensor) -> Tensor:
-    """Block-scaled MXFP8 matmul ``x @ weight.T`` with dynamic activation quant."""
-    x_fp8, x_scales = quantize_dynamic_block_scaled(
-        x,
-        sf_vector_size=_MXFP8_SF_VECTOR_SIZE,
-        scales_type=DType.float8_e8m0fnu,
-        out_type=DType.float8_e4m3fn,
-    )
-    weight_scale = block_scales_interleave(
-        weight.weight_scale, sf_vector_size=_MXFP8_SF_VECTOR_SIZE
-    )
-    return dynamic_block_scaled_matmul(
-        x_fp8,
-        weight.weight,
-        x_scales,
-        weight_scale,
-        sf_vector_size=_MXFP8_SF_VECTOR_SIZE,
         out_type=DType.bfloat16,
     )
 
@@ -1035,7 +837,7 @@ def grouped_matmul(
             scales_offsets=scales_offset,
             expert_ids=expert_ids,
             sf_tensor=unit_scales,
-            sf_vector_size=_MXFP8_SF_VECTOR_SIZE,
+            sf_vector_size=_MX_SF_VECTOR_SIZE,
             scales_type=DType.float8_e8m0fnu,
             out_type=DType.float8_e4m3fn,
         )
@@ -1124,10 +926,11 @@ def _block_scaled_grouped_matmul(
     b_scales = interleave_grouped_scales(
         weight.weight_scale, sf_vector_size=weight.block_size[1]
     )
-    num_active = int(expert_ids.shape[0])
-    usage_stats_host = F.constant(
-        [8192, num_active], dtype=DType.uint32, device=CPU()
-    )
+    # With no estimate, the dispatcher picks its tile regime from the row
+    # count here, so it must be the routed rows, not a prefill-sized bound.
+    usage_stats_host = F.shape_to_tensor(
+        [x_quantized.shape[0], expert_ids.shape[0]]
+    ).cast(DType.uint32)
     return grouped_matmul_block_scaled(
         x_quantized,
         weight.weight,
@@ -1411,40 +1214,6 @@ def _bound_grid_y(usage_stats: Tensor, estimated_total_m: Tensor) -> Tensor:
     return F.stack([bounded, usage_stats[1]])
 
 
-def _silu_quantize_fp8_graph(
-    x: TensorValue,
-    row_offsets: TensorValue,
-    input_spec: InputScaleSpec,
-    weight_spec: WeightScaleSpec,
-    block_k: int,
-    swiglu_limit: float = 0.0,
-) -> tuple[TensorValue, TensorValue]:
-    """Gated SiLU of a ``[gate | up]`` grouped matmul output, FP8 block-quantized.
-
-    The graph compiler fuses the activation into the row-bounded quantize, so
-    the rows past ``row_offsets[-1]`` of the EP receive buffer are neither
-    activated nor quantized.
-    """
-    moe_dim = int(x.shape[1]) // 2
-    gate, up = x[:, :moe_dim], x[:, moe_dim:]
-    if swiglu_limit:
-        gate = ops.min(gate, swiglu_limit)
-        up = ops.min(ops.max(up, -swiglu_limit), swiglu_limit)
-    activated = ops.silu(gate) * up
-    return _quantize_dynamic_scaled_float8(
-        activated,
-        input_spec,
-        weight_spec,
-        group_size_or_per_token=block_k,
-        scales_type=DType.float32,
-        out_type=DType.float8_e4m3fn,
-        row_offsets=row_offsets,
-    )
-
-
-_silu_quantize_fp8 = F.functional(_silu_quantize_fp8_graph)
-
-
 def grouped_silu(
     x: Tensor,
     expert_start_indices: Tensor,
@@ -1484,7 +1253,7 @@ def grouped_silu(
         input_spec, weight_spec = _fp8_block_specs(
             (block_m, block_k), input_block=(1, block_k)
         )
-        data, scales = _silu_quantize_fp8(
+        data, scales = silu_quantize_fp8(
             x,
             expert_start_indices,
             input_spec,

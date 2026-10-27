@@ -55,7 +55,6 @@ from layout.tile_layout import (
 )
 from layout.swizzle import Swizzle, make_swizzle as _make_swizzle
 from layout.tma_async import TMATensorTile
-from std.utils.index import Index, IndexList
 from linalg.utils import (
     ElementwiseComputeFn,
     ElementwiseEpilogueFn,
@@ -698,8 +697,8 @@ struct TMAReduceExecutor[
 ](TrivialRegisterPassable):
     """Execute TMA reduce-add from SMEM to GMEM.
 
-    Mirrors TMAStoreExecutor but uses cp_async_bulk_tensor_reduce_global_shared_cta (add)
-    instead of cp_async_bulk_tensor_global_shared_cta (store).
+    Mirrors TMAStoreExecutor but uses cp_async_bulk_tensor_reduce_global_shared_cta(add)
+    instead of cp_async_bulk_tensor_global_shared_cta(store).
     Takes a typed TMATensorTile value (not a raw pointer) so the
     descriptor keeps its grid_constant provenance end-to-end -- otherwise
     the compiler drops the constant-memory optimization and each TMA
@@ -753,7 +752,7 @@ struct TMAReduceExecutor[
                 ](
                     c_smem_split._storage,
                     Pointer(to=c_tma_op.descriptor).unsafe_bitcast[NoneType](),
-                    Index(
+                    (
                         store_coords.coord_n,
                         store_coords.coord_m,
                         store_coords.coord_b,
@@ -765,7 +764,7 @@ struct TMAReduceExecutor[
                 ](
                     c_smem_split._storage,
                     Pointer(to=c_tma_op.descriptor).unsafe_bitcast[NoneType](),
-                    Index(store_coords.coord_n, store_coords.coord_m),
+                    (store_coords.coord_n, store_coords.coord_m),
                 )
 
             cp_async_bulk_commit_group()
@@ -1606,12 +1605,6 @@ struct TMEMToSMemWriter[
                 transpose_c=Self.transpose_c,
                 c_swizzle=Self.c_swizzle,
             ](lower_casted, c_smem_warp_tile_lower)
-
-
-# =============================================================================
-# Imports for IndexList
-# =============================================================================
-from std.utils.index import IndexList
 
 
 # =============================================================================

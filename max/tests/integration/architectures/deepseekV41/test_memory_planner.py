@@ -508,5 +508,5 @@ def test_dp4_kv_capacity_per_device() -> None:
         for records in (False, True)
     }
     assert 60 * GIB < budget < 61 * GIB
-    assert 15.1e6 < capacity[False] < 15.2e6
-    assert 72.6e6 < capacity[True] < 72.8e6
+    assert 15.2e6 < capacity[False] < 15.3e6
+    assert 73.0e6 < capacity[True] < 73.2e6

@@ -48,6 +48,7 @@ from max.pipelines.kv_cache.kv_connector import (
     KVLoadFailed,
     KVLoadRefused,
     KVLookup,
+    KVProbe,
     KVTransfer,
 )
 from max.pipelines.kv_cache.paged_kv_cache import jenga_block_manager
@@ -120,6 +121,39 @@ class FakeLookup:
         self.answered = True
 
 
+class FakeProbe:
+    """A started probe that answers only once ``answer`` is called.
+
+    Setting ``error`` makes every poll raise it, as a broken handle would,
+    and ``give_up`` completes it with no answer, as a probe the store shed
+    or timed out on does.
+    """
+
+    def __init__(self, answers: Sequence[Mapping[str, Sequence[bool]]]) -> None:
+        self._answers: Sequence[Mapping[str, Sequence[bool]]] | None = answers
+        self.answered = False
+        self.error: Exception | None = None
+        self.polls = 0
+
+    def is_complete(self) -> bool:
+        self.polls += 1
+        if self.error is not None:
+            raise self.error
+        return self.answered
+
+    def masks(self) -> Sequence[Mapping[str, Sequence[bool]]] | None:
+        if not self.answered:
+            raise RuntimeError("the probe has not answered yet")
+        return self._answers
+
+    def answer(self) -> None:
+        self.answered = True
+
+    def give_up(self) -> None:
+        self._answers = None
+        self.answered = True
+
+
 class FakeConnector:
     """Serves whatever hashes each leaf holds, and records calls.
 
@@ -128,6 +162,8 @@ class FakeConnector:
     round trip does. ``probe_answers`` makes ``probe`` answer from what the
     connector holds rather than sending the manager back to ``lookup``, and
     ``probe_leaves`` narrows that answer to the leaves it names.
+    ``deferred_probes`` makes ``start_probe`` hand back a :class:`FakeProbe`
+    over that same answer, which answers only when told to.
     """
 
     name = "FakeConnector"
@@ -139,11 +175,14 @@ class FakeConnector:
         skips_held: bool = False,
         deferred_lookups: bool = False,
         probe_answers: bool = False,
+        deferred_probes: bool = False,
     ) -> None:
         self.deferred_lookups = deferred_lookups
         self.probe_answers = probe_answers
+        self.deferred_probes = deferred_probes
         self.probe_leaves: Sequence[str] | None = None
         self.started: list[FakeLookup] = []
+        self.started_probes: list[FakeProbe] = []
         self.loaded_from: list[KVLookup] = []
         self.abandoned: list[KVLookup] = []
         self.probes: list[tuple[list[bytes], list[int], bytes | None]] = []
@@ -241,6 +280,11 @@ class FakeConnector:
         self.probes.append((list(block_hashes), list(replica_idxs), hint))
         if not self.probe_answers:
             return None
+        return self._probe_answers(block_hashes, replica_idxs)
+
+    def _probe_answers(
+        self, block_hashes: Sequence[bytes], replica_idxs: Sequence[int]
+    ) -> list[Mapping[str, Sequence[bool]]]:
         resident = {
             leaf_id: [h in self.held[leaf_id] for h in block_hashes]
             for leaf_id in (
@@ -248,6 +292,18 @@ class FakeConnector:
             )
         }
         return [resident for _ in replica_idxs]
+
+    def start_probe(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idxs: Sequence[int],
+        hint: bytes | None = None,
+    ) -> KVProbe | None:
+        if not self.deferred_probes:
+            return None
+        probe = FakeProbe(self._probe_answers(block_hashes, replica_idxs))
+        self.started_probes.append(probe)
+        return probe
 
     def load(
         self,
@@ -2431,6 +2487,8 @@ def test_pricing_probes_the_connector_once_for_every_replica() -> None:
 
     assert connector.probes == [(asked, [0, 1], None)]
     assert not connector.lookups
+    assert not manager.awaits_presence(ctx)
+    assert ctx.request_id not in manager._pending_probes
     assert hits == [
         PrefixCacheHits(device_blocks=0, external_blocks=len(asked)),
         PrefixCacheHits(device_blocks=2, external_blocks=len(asked) - 2),
@@ -2476,3 +2534,383 @@ def test_pricing_falls_back_to_a_lookup_per_replica_without_a_probe() -> None:
         PrefixCacheHits(device_blocks=0, external_blocks=len(asked)),
         PrefixCacheHits(device_blocks=2, external_blocks=len(asked) - 2),
     ]
+
+
+def _probing_connector(deferred_lookups: bool = True) -> FakeConnector:
+    """A connector whose probe is a round trip, as dKV's presence is."""
+    return FakeConnector(
+        [FULL],
+        asynchronous=False,
+        deferred_lookups=deferred_lookups,
+        probe_answers=True,
+        deferred_probes=True,
+    )
+
+
+def test_pricing_starts_a_probe_and_reads_the_device_tier_until_it_answers() -> (
+    None
+):
+    """A connector whose probe is a round trip is never asked in place.
+
+    The first pricing starts the probe and counts the device tier alone,
+    reporting the answer as still out. Pricing again once it has answered
+    reads the external run from it with nothing asked again, and neither
+    the blocking probe nor a lookup is ever called.
+    """
+    connector = _probing_connector()
+    manager, ctx, asked = _price_setup(connector)
+
+    hits = manager.get_prefix_cache_hit_counts(ctx)
+
+    (probe,) = connector.started_probes
+    assert connector.probes == [] and not connector.lookups
+    assert manager.awaits_presence(ctx)
+    assert hits == [PrefixCacheHits(), PrefixCacheHits(device_blocks=2)]
+
+    probe.answer()
+    hits = manager.get_prefix_cache_hit_counts(ctx)
+
+    assert not manager.awaits_presence(ctx)
+    assert connector.started_probes == [probe]
+    assert connector.probes == [] and not connector.lookups
+    assert hits == [
+        PrefixCacheHits(device_blocks=0, external_blocks=len(asked)),
+        PrefixCacheHits(device_blocks=2, external_blocks=len(asked) - 2),
+    ]
+
+
+def test_a_probed_miss_skips_the_first_chunk_lease() -> None:
+    """A request its probe answered a miss for leases nothing.
+
+    Its deferred alloc starts no lookup, so the request is never held out,
+    and it takes the pages to compute the prompt at once.
+    """
+    connector = _probing_connector()
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    ctx = make_ctx(tokens)
+    manager.get_prefix_cache_hit_counts(ctx)
+    (probe,) = connector.started_probes
+    probe.answer()
+
+    manager.claim(ctx)
+    assert not manager.starts_lookup(ctx)
+    transfer = manager.alloc(ctx, defer_lookup=True)
+
+    assert transfer.is_complete()
+    assert connector.started == [] and connector.blocking_lookups == 0
+    assert not manager.awaits_lookup(ctx)
+    assert manager.num_req_blocks(ctx) == len(tokens)
+    assert ctx.request_id not in manager._pending_probes
+
+
+def test_async_presence_off_prices_with_the_blocking_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With the started probe switched off, pricing asks in place as before.
+
+    No probe is kept, so nothing reports presence as out and no miss can
+    spare the request's lease.
+    """
+    monkeypatch.setenv(jenga_block_manager.ASYNC_PRESENCE_ENV_VAR, "0")
+    connector = _probing_connector()
+    manager, ctx, asked = _price_setup(connector)
+
+    hits = manager.get_prefix_cache_hit_counts(ctx)
+
+    assert connector.started_probes == []
+    assert connector.probes == [(asked, [0, 1], None)]
+    assert not manager.awaits_presence(ctx)
+    assert ctx.request_id not in manager._pending_probes
+    assert hits == [
+        PrefixCacheHits(device_blocks=0, external_blocks=len(asked)),
+        PrefixCacheHits(device_blocks=2, external_blocks=len(asked) - 2),
+    ]
+
+
+def test_probed_miss_skip_off_still_leases_a_probed_miss(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With the miss skip switched off, a probed miss leases as before.
+
+    Pricing still runs on the started probe.
+    """
+    monkeypatch.setenv(jenga_block_manager.PROBED_MISS_SKIP_ENV_VAR, "0")
+    connector = _probing_connector()
+    manager = make_manager(connector, num_huge_blocks=32)
+    ctx = make_ctx([1, 2, 3, 4, 5, 6, 7, 8])
+    manager.get_prefix_cache_hit_counts(ctx)
+    (probe,) = connector.started_probes
+    probe.answer()
+
+    manager.claim(ctx)
+
+    assert manager.starts_lookup(ctx)
+    assert connector.probes == []
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        jenga_block_manager.ASYNC_PRESENCE_ENV_VAR,
+        jenga_block_manager.PROBED_MISS_SKIP_ENV_VAR,
+    ],
+)
+def test_presence_switches_reject_anything_but_0_or_1(
+    monkeypatch: pytest.MonkeyPatch, name: str
+) -> None:
+    monkeypatch.setenv(name, "yes")
+
+    with pytest.raises(ValueError, match=name):
+        make_manager(_probing_connector())
+
+
+def test_a_probed_hit_still_leases() -> None:
+    """A probe reporting a run sends the chunk down the leased path as before.
+
+    The lease is what the load reads out of, so the probe only ever spares
+    one, never replaces it.
+    """
+    connector = _probing_connector()
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    held = _hold_only_in_the_connector(manager, connector, tokens)
+    ctx = make_ctx(tokens)
+    manager.get_prefix_cache_hit_counts(ctx)
+    (probe,) = connector.started_probes
+    probe.answer()
+
+    manager.claim(ctx)
+    assert manager.starts_lookup(ctx)
+    transfer = manager.alloc(ctx, defer_lookup=True)
+
+    assert not transfer.is_complete()
+    (lookup,) = connector.started
+    assert manager.awaits_lookup(ctx)
+    assert ctx.request_id not in manager._pending_probes
+    lookup.answer()
+    transfer = manager.alloc(ctx, defer_lookup=True)
+    assert transfer.is_complete()
+    assert connector.loaded_from == [lookup]
+    assert connector.loads[-1][1][FULL] == held[:-1]
+
+
+def test_an_unanswered_probe_leaves_the_lease_to_decide() -> None:
+    """A chunk allocated before its probe answers takes the leased path.
+
+    The probe is dropped then, since the lookup supersedes it.
+    """
+    connector = _probing_connector()
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    ctx = make_ctx(tokens)
+    manager.get_prefix_cache_hit_counts(ctx)
+    manager.claim(ctx)
+
+    assert manager.starts_lookup(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+
+    assert len(connector.started) == 1
+    assert ctx.request_id not in manager._pending_probes
+
+
+def test_a_probe_that_answered_nothing_prices_the_device_tier_and_leases() -> (
+    None
+):
+    """A probe the store shed or timed out on is read as no answer.
+
+    Pricing counts the device tier alone and stops reporting the answer as
+    out, nothing is asked again on this thread, and the lease decides what
+    the store holds, as it did before the probe.
+    """
+    connector = _probing_connector()
+    manager, ctx, _ = _price_setup(connector)
+    manager.get_prefix_cache_hit_counts(ctx)
+    (probe,) = connector.started_probes
+    probe.give_up()
+
+    hits = manager.get_prefix_cache_hit_counts(ctx)
+
+    assert not manager.awaits_presence(ctx)
+    assert hits == [PrefixCacheHits(), PrefixCacheHits(device_blocks=2)]
+    assert connector.started_probes == [probe]
+    assert connector.probes == [] and not connector.lookups
+    manager.claim(ctx, replica_idx=1)
+    assert manager.starts_lookup(ctx)
+
+
+def test_a_probe_whose_poll_raises_is_read_as_no_answer(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    connector = _probing_connector()
+    manager, ctx, _ = _price_setup(connector)
+    manager.get_prefix_cache_hit_counts(ctx)
+    (probe,) = connector.started_probes
+    probe.error = RuntimeError("broken handle")
+
+    with caplog.at_level(logging.ERROR, logger="max.pipelines"):
+        hits = manager.get_prefix_cache_hit_counts(ctx)
+
+    assert "presence answer failed" in caplog.text
+    assert not manager.awaits_presence(ctx)
+    assert hits == [PrefixCacheHits(), PrefixCacheHits(device_blocks=2)]
+    manager.claim(ctx, replica_idx=1)
+    assert manager.starts_lookup(ctx)
+
+
+def test_a_stale_probed_miss_no_longer_skips_the_lease(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A miss older than the probe age is not trusted.
+
+    The blocks it missed may have landed in the store since, so a request
+    that waited that long in its queue takes the leased path as before.
+    """
+    clock = _Clock()
+    monkeypatch.setattr(jenga_block_manager, "time", clock)
+    connector = _probing_connector()
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    ctx = make_ctx(tokens)
+    manager.get_prefix_cache_hit_counts(ctx)
+    (probe,) = connector.started_probes
+    probe.answer()
+    manager.claim(ctx)
+    assert not manager.starts_lookup(ctx)
+
+    clock.now += jenga_block_manager._PROBED_MISS_AGE_S
+
+    assert manager.starts_lookup(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+    assert len(connector.started) == 1
+
+
+def test_a_probed_miss_is_aged_from_before_its_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The start waits for the connector lock, and that wait ages the miss.
+
+    An age taken after the start would trust the miss for the wait on top
+    of its window, during which the blocks may already have landed.
+    """
+    clock = _Clock()
+    monkeypatch.setattr(jenga_block_manager, "time", clock)
+    connector = _probing_connector()
+    manager = make_manager(connector, num_huge_blocks=32)
+    start_probe = connector.start_probe
+
+    def slow_start_probe(
+        block_hashes: Sequence[bytes],
+        replica_idxs: Sequence[int],
+        hint: bytes | None = None,
+    ) -> KVProbe | None:
+        clock.now += jenga_block_manager._PROBED_MISS_AGE_S / 2
+        return start_probe(block_hashes, replica_idxs, hint=hint)
+
+    monkeypatch.setattr(connector, "start_probe", slow_start_probe)
+    ctx = make_ctx([1, 2, 3, 4, 5, 6, 7, 8])
+    manager.get_prefix_cache_hit_counts(ctx)
+    (probe,) = connector.started_probes
+    probe.answer()
+    manager.claim(ctx)
+    assert not manager.starts_lookup(ctx)
+
+    clock.now += jenga_block_manager._PROBED_MISS_AGE_S / 2
+
+    assert manager.starts_lookup(ctx)
+
+
+def test_a_probe_still_out_past_its_age_is_read_as_unanswered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A probe that has not answered by the probe age stops being waited on.
+
+    Pricing stops reporting it as out, and an answer that lands afterwards
+    is not read, so a store that never answers holds no pricing up.
+    """
+    clock = _Clock()
+    monkeypatch.setattr(jenga_block_manager, "time", clock)
+    connector = _probing_connector()
+    manager, ctx, _ = _price_setup(connector)
+    manager.get_prefix_cache_hit_counts(ctx)
+    (probe,) = connector.started_probes
+    assert manager.awaits_presence(ctx)
+
+    clock.now += jenga_block_manager._PRESENCE_PROBE_AGE_S
+
+    assert not manager.awaits_presence(ctx)
+    probe.answer()
+    hits = manager.get_prefix_cache_hit_counts(ctx)
+    assert hits == [PrefixCacheHits(), PrefixCacheHits(device_blocks=2)]
+
+
+def test_a_probed_miss_is_read_from_where_the_device_hit_ends() -> None:
+    """A device hit that grew after the probe moves where its answer is read.
+
+    The probe covers the request's whole chain, so the blocks another
+    request computed since are skipped over and the miss past them still
+    spares the lease.
+    """
+    connector = _probing_connector()
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    ctx = make_ctx(tokens)
+    manager.get_prefix_cache_hit_counts(ctx)
+    (probe,) = connector.started_probes
+    probe.answer()
+    device = make_ctx(tokens[:4])
+    manager.claim(device)
+    manager.alloc(device)
+    device.update(9)
+    manager.step(device)
+    manager.release(device)
+    asked_before = connector.blocking_lookups
+
+    manager.claim(ctx)
+    assert not manager.starts_lookup(ctx)
+    transfer = manager.alloc(ctx, defer_lookup=True)
+
+    assert transfer.is_complete()
+    assert connector.started == []
+    assert connector.blocking_lookups == asked_before
+    assert ctx.cached_prefix_length == 4
+
+
+def test_release_drops_the_probe_and_the_next_pricing_starts_afresh() -> None:
+    """A request priced again after its release gets a fresh probe.
+
+    One released before it was claimed hands its probe back the same way.
+    """
+    connector = _probing_connector()
+    manager = make_manager(connector, num_huge_blocks=32)
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.get_prefix_cache_hit_counts(ctx)
+    manager.claim(ctx)
+    manager.release(ctx)
+    assert ctx.request_id not in manager._pending_probes
+
+    manager.get_prefix_cache_hit_counts(ctx)
+    assert len(connector.started_probes) == 2
+    manager.abandon_presence(ctx)
+    assert ctx.request_id not in manager._pending_probes
+
+
+def test_a_probe_covering_no_leaf_leaves_the_lease_to_decide() -> None:
+    """An answer that names none of the manager's leaves is no answer.
+
+    Reconciled, an empty answer reads as a miss, which would spare a lease
+    the store may well have answered, so it is read as nothing known.
+    """
+    connector = _probing_connector()
+    connector.probe_leaves = []
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    ctx = make_ctx(tokens)
+    manager.get_prefix_cache_hit_counts(ctx)
+    (probe,) = connector.started_probes
+    probe.answer()
+    manager.claim(ctx)
+
+    assert manager.starts_lookup(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+    assert len(connector.started) == 1

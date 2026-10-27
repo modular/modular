@@ -141,11 +141,6 @@ comptime _CTOPK_SMEM_OPTIN: Int = (
     - 1024
 )
 
-# Row-count gate, vLLM's `AUTO_COOPERATIVE_MAX_ROWS` prior. Beyond this the
-# rows fill the GPU on their own and clustering only adds DSMEM traffic; the
-# true crossover is M4's to measure.
-comptime _CTOPK_MAX_ROWS: Int = 64
-
 # Streaming-flavor pipeline slots the staging area is carved into. Two: the
 # double buffer with an epilogue prefetch is vLLM's `kStreamingStagesCS4`.
 # More stages would buy nothing at these slice lengths -- the scan's
@@ -1938,7 +1933,6 @@ def _topk_cluster_impl[
             mbar[tid].init()
     if tid == 0:
         cbar[].init()
-        cbar[].expect_bytes(Int32(4 * 2 * CS))
         pbar[].init()
     fence_mbarrier_init()
 
@@ -1957,6 +1951,10 @@ def _topk_cluster_impl[
     if tid < 8:
         ctl[tid] = 0
     barrier()
+    # `cbar`'s byte count registers once the barrier has published its init.
+    # Peers store into `counts` only after round 0's cluster barrier.
+    if tid == 0:
+        cbar[].expect_bytes(Int32(4 * 2 * CS))
     if single_pass:
         _ctopk_scan[
             scan_items,
@@ -2589,6 +2587,14 @@ def _ctopk_resident_clusters[sm_count: Int](cs: Int) -> Int:
         else:
             at_148 = 15
         return at_148 * sm_count // 148
+
+
+def _ctopk_max_rows[sm_count: Int]() -> Int:
+    """The most rows the launcher sends to the cluster kernel: as many as
+    clusters of two keep resident in one wave. Past it a row waits for a
+    second wave, and the selects that give each row one CTA, which then fill
+    the GPU, are faster."""
+    return _ctopk_resident_clusters[sm_count](2)
 
 
 def _ctopk_passes(N: Int, cs: Int) -> Int:

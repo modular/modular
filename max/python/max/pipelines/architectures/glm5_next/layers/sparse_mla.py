@@ -416,6 +416,10 @@ class Glm5NextSparseMLASublayer(Module):
             inputs.input_row_offsets[device_idx],
             inputs.indexer_kv_collections[device_idx],
             inputs.layer_idx,
+            # The indexer's default is no mask, under which a prefill query
+            # spends its pool budget on pools after it that `_attend`'s causal
+            # mask then discards.
+            mask_variant=MHAMaskVariant.CAUSAL_MASK,
             tail=inputs.tail_pools[device_idx],
             slot_idx=inputs.tail_row_ids[device_idx],
             write_logical=True,

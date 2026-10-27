@@ -33,14 +33,30 @@ adapters under a name.
 
 A minimal `__init__.py` looks like this:
 
+<!-- skip: next "imports the arch.py module defined on this page" -->
+
 ```python title="__init__.py"
 from .arch import my_arch
 
 ARCHITECTURES = [my_arch]
 ```
 
-A typical `arch.py` defines a `SupportedArchitecture` using types from
+A typical `arch.py` builds a `SupportedArchitecture` from
+[`max.pipelines.lib`](/api/python/pipelines.lib/) with types from
 [`max.pipelines.modeling.types`](/api/python/pipelines.modeling.types/):
+
+<!-- invisible-code-block: python
+from max.pipelines.architectures.llama3_modulev3.model import Llama3Model
+from max.pipelines.architectures.llama3_modulev3.model_config import (
+    Llama3Config,
+)
+from max.pipelines.architectures.olmo3 import weight_adapters
+fake_module("mypkg")
+fake_module("mypkg.weight_adapters", **vars(weight_adapters))
+fake_module("mypkg.model", MyModel=Llama3Model)
+fake_module("mypkg.model_config", MyModelConfig=Llama3Config)
+__name__, __package__ = "mypkg.arch", "mypkg"
+-->
 
 ```python title="arch.py"
 from max.graph.weights import WeightsFormat
@@ -77,15 +93,20 @@ my_arch = SupportedArchitecture(
 )
 ```
 
+<!-- invisible-code-block: python
+fake_module("mypkg.arch", my_arch=my_arch)
+assert my_arch.name == "MyModelForCausalLM"
+-->
+
 `MyModel` subclasses
-[`ModuleV3PipelineModelWithKVCache`][modulev3-pipeline-model], which builds your
-[`max.experimental.nn`](/api/python/experimental.nn/) module and compiles it
-with the checkpoint weights. Set `model_config_cls = MyModelConfig` on
-`MyModel`: the pipeline model uses it to size the KV cache and build the batch
-processor, and raises an error at startup when it's unset. MAX reads the
-`config` field in `arch.py` to plan memory, so both name the same class. The
-`batching` field names the batch processor
-that prepares each batch's inputs, and `memory_planner` sizes the KV cache.
+[`ModuleV3PipelineModelWithKVCache`](/api/python/generated/max.pipelines.lib.ModuleV3PipelineModelWithKVCache/),
+which builds your [`max.experimental.nn`](/api/python/experimental.nn/) module
+and compiles it with the checkpoint weights. Set
+`model_config_cls = MyModelConfig` on `MyModel`: the pipeline model uses it to
+size the KV cache and build the batch processor, and raises an error at startup
+when it's unset. MAX reads the `config` field in `arch.py` to plan memory, so
+both name the same class. The `batching` field names the batch processor that
+prepares each batch's inputs, and `memory_planner` sizes the KV cache.
 
 When you pass your package to `max serve` with `--custom-architectures`, MAX
 imports it, reads the `ARCHITECTURES` list, and registers every entry. When the
@@ -112,11 +133,13 @@ max serve \
   pass a directory path followed by a colon and the Python package name, such
   as `folder/path/to/import:my_arch_package`.
 
-`--device-memory-utilization` (default `0.9`) sets the fraction of free device
-memory the server uses. The KV cache gets what remains after the weights and
-activations. If startup reports that the model and KV cache exceed available
-memory, reduce `--max-length` or `--max-batch-size`. If other processes share
-the device and allocation fails, lower the fraction, for example
+- `--device-memory-utilization` (default `0.9`) sets the fraction of free device
+  memory the server uses. The KV cache gets what remains after the weights and
+  activations.
+
+If startup reports that the model and KV cache exceed available memory, reduce
+`--max-length` or `--max-batch-size`. If other processes share the device and
+allocation fails, lower the fraction, for example
 `--device-memory-utilization 0.6`.
 
 An AI coding agent can run this for you with the `serve-model` skill. The
@@ -163,6 +186,8 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 </TabItem>
 <TabItem value="python" label="Python">
 
+<!-- skip: next "needs a running server" -->
+
 ```python
 from openai import OpenAI
 
@@ -198,12 +223,12 @@ these errors, check that:
 - `name` matches the `architectures[0]` field in your checkpoint's
   `config.json`, character for character.
 
-- `supported_encodings` includes every encoding your checkpoint ships with.
+- `supported_encodings` includes every encoding your checkpoint declares.
 
-- `weight_adapters` has an entry for each weight format you want to load.
-  For example, a `.safetensors` checkpoint needs a
-  [`WeightsFormat.safetensors`][weightsformat-safetensors] entry, and a
-  `.gguf` checkpoint needs a `WeightsFormat.gguf` entry.
+- `weight_adapters` has an entry for each weight format you want to load. For
+  example, a `.safetensors` checkpoint needs a
+  [`WeightsFormat.safetensors`](/api/python/generated/max.graph.weights.WeightsFormat/#max.graph.weights.WeightsFormat.safetensors)
+  entry, and a `.gguf` checkpoint needs a `WeightsFormat.gguf` entry.
 
 If the server fails while it compiles the model, compare your weight
 adapter's output with your module's parameter names. A parameter with no
@@ -216,17 +241,14 @@ pipeline](/develop/pipelines/#supported-architecture).
 
 ## Next steps
 
-Now that you know how to serve your model, you can layer on serving features
-and performance optimizations that work with any architecture that MAX loads.
+Serving features and performance optimizations work on any architecture that
+MAX loads.
 
-- [Prefix caching](/serve/prefix-caching): Reuse the KV cache across
+- [Prefix caching](/serve/prefix-caching/): Reuse the KV cache across
   requests that share a prompt prefix to cut time-to-first-token on repeated
   workloads.
-- [LoRA adapters](/serve/lora-adapters): Serve multiple fine-tuned
+- [LoRA adapters](/serve/lora-adapters/): Serve multiple fine-tuned
   adapters on top of your base architecture without loading separate model
   copies.
-- [Benchmark MAX on NVIDIA or AMD GPUs](/serve/benchmark): Measure the
+- [Benchmark MAX on NVIDIA or AMD GPUs](/serve/benchmark/): Measure the
   throughput and latency of the endpoint you started.
-
-[weightsformat-safetensors]: /api/python/generated/max.graph.weights.WeightsFormat/#max.graph.weights.WeightsFormat.safetensors
-[modulev3-pipeline-model]: /api/python/generated/max.pipelines.lib.ModuleV3PipelineModelWithKVCache/

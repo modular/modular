@@ -453,3 +453,67 @@ mgp.model @host_yield_in_every_region device_graph : mof devices [#M.device_ref<
   mef.output %ch0, %h, %c0, %c1
       : !mef.chain, !mgp.tensor<2x3xf32, <"gpu", 0>>, !mgp.tensor<2x3xf32, <"gpu", 0>>, !mgp.tensor<2x3xf32, <"gpu", 1>>
 }
+
+// -----
+
+// A kernel ordered after another device's kernel through a chain. Device
+// graphs have no chains and the next pass derives a graph's edges from every
+// operand, so the remote chain carries nothing this region can express: it is
+// replaced by a placeholder chain, while the own-device chain is kept. A
+// collective waits for its peers through the signal buffers instead.
+// CHECK-LABEL: mgp.model @remote_chain_is_dropped
+// CHECK:       mgp.device_graph.collective
+// CHECK:       <"gpu", 0> {
+// CHECK:         %[[PROD0:[a-z0-9_]+]] = mogg.routine.async
+// CHECK:         %[[DUMMY:[a-z0-9_]+]] = mogg.chain.dummy
+// CHECK:         mogg.routine.async (%[[PROD0]], %[[DUMMY]], %{{[a-z0-9_]+}})
+// CHECK:         mgp.device_graph.collective.yield
+// CHECK:       }, <"gpu", 1> {
+// CHECK:         mogg.routine.async
+// CHECK-NOT:     mogg.chain.dummy
+// CHECK:         mgp.device_graph.collective.yield
+// CHECK:       }
+mgp.model @remote_chain_is_dropped device_graph : mof devices [#M.device_ref<"gpu", 0>, #M.device_ref<"gpu", 1>]
+  init (%weights: !mgp.opaque<"weights_registry">, %gpu0: !mgp.device_context<<"gpu", 0>>, %gpu1: !mgp.device_context<<"gpu", 1>>) {
+  %ch0 = grt.chain.create ()
+  %ctx = mgp.context.create 2
+  mef.output %ch0, %ctx, %weights, %gpu0, %gpu1
+      : !mef.chain, !mgp.context, !mgp.opaque<"weights_registry">,
+        !mgp.device_context<<"gpu", 0>>, !mgp.device_context<<"gpu", 1>>
+} execute (%ch0: !mef.chain, %ctx: !mgp.context, %weights: !mgp.opaque<"weights_registry">,
+           %gpu0: !mgp.device_context<<"gpu", 0>>, %gpu1: !mgp.device_context<<"gpu", 1>>)
+    -> (!mef.chain, !mef.chain) {
+  %out = mgp.device_graph.staging
+      inputs(%gpu0, %gpu1
+          : !mgp.device_context<<"gpu", 0>>,
+            !mgp.device_context<<"gpu", 1>>) {
+    ^bb0(%builder: !mgp.device_graph.builder,
+         %gpu0_t: !mgp.device_context<<"gpu", 0>>,
+         %gpu1_t: !mgp.device_context<<"gpu", 1>>):
+    %a = mogg.routine.async (%gpu0_t)
+        : (%devctx: !mgp.device_context<<"gpu", 0>>) -> !mef.chain {
+      %c = mogg.async.unpack(%devctx) : !mgp.device_context<<"gpu", 0>>
+      "test.use_ctx"(%c) : (!mgp.device_context<<"gpu", 0>>) -> ()
+      %r = mogg.async.ready
+      mogg.output %r : !mef.chain
+    } fusionInfo = #mogg.fusion<#mogg.fusion_leaf<"test.producer0">> inOutSignature = <""> {device = #M.device_ref<"gpu", 0>}
+    %b = mogg.routine.async (%gpu1_t)
+        : (%devctx: !mgp.device_context<<"gpu", 1>>) -> !mef.chain {
+      %c = mogg.async.unpack(%devctx) : !mgp.device_context<<"gpu", 1>>
+      "test.use_ctx"(%c) : (!mgp.device_context<<"gpu", 1>>) -> ()
+      %r = mogg.async.ready
+      mogg.output %r : !mef.chain
+    } fusionInfo = #mogg.fusion<#mogg.fusion_leaf<"test.producer1">> inOutSignature = <""> {device = #M.device_ref<"gpu", 1>}
+    // Ordered after both producers; only the gpu:0 one exists in its region.
+    %c0 = mogg.routine.async (%a, %b, %gpu0_t)
+        : (%own: !mef.chain, %remote: !mef.chain,
+           %devctx: !mgp.device_context<<"gpu", 0>>) -> !mef.chain {
+      %c = mogg.async.unpack(%devctx) : !mgp.device_context<<"gpu", 0>>
+      "test.use_ctx"(%c) : (!mgp.device_context<<"gpu", 0>>) -> ()
+      %r = mogg.async.ready
+      mogg.output %r : !mef.chain
+    } fusionInfo = #mogg.fusion<#mogg.fusion_leaf<"test.consumer0">> inOutSignature = <""> {device = #M.device_ref<"gpu", 0>}
+    mgp.device_graph.staging.yield %c0 : !mef.chain
+  } -> !mef.chain
+  mef.output %ch0, %out : !mef.chain, !mef.chain
+}

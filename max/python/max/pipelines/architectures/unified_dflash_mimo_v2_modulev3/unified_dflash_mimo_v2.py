@@ -16,9 +16,10 @@ block driver.
 The graph stages under the graph-API build's name
 (:data:`GRAPH_NAME`), which Mach's block-spec executor binds by constant, so
 one engine serves either export. A multi-device trace inserts its signal
-buffers at the same input position the graph-API signature declares them
-(:data:`SIGNAL_BUFFER_INDEX`); a single-device one declares its own there,
-since the engine binds one at every device count.
+buffers at the same input position the canonical signature declares them
+(:data:`SIGNAL_BUFFER_INDEX`, or :data:`DP_SIGNAL_BUFFER_INDEX` once the
+data-parallel batch-split pair precedes them); a single-device one declares
+its own there, since the engine binds one at every device count.
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
 from max.graph import BufferType, TensorType
 from max.graph.weights import WeightData
+from max.nn.comm.ep import EPBatchManager
 from max.nn.kv_cache import KVCacheParamInterface
 from max.pipelines.lib import SpeculativeConfig
 from max.pipelines.speculative._tensor_compat import as_tensors
@@ -48,6 +50,7 @@ from .spec_adapters import (
 )
 
 __all__ = [
+    "DP_SIGNAL_BUFFER_INDEX",
     "GRAPH_NAME",
     "SIGNAL_BUFFER_INDEX",
     "UnifiedDflashMiMoV2ModuleV3",
@@ -62,6 +65,12 @@ SIGNAL_BUFFER_INDEX = 3
 """Where a multi-device trace inserts the mesh's signal buffers: after
 ``tokens``, ``input_row_offsets`` and ``return_n_logits``, before the KV
 tree -- where the engine's block adapter binds them at every device count."""
+
+DP_SIGNAL_BUFFER_INDEX = SIGNAL_BUFFER_INDEX + 2
+"""The same slot under data-parallel attention: the canonical distributed
+signature declares the host row offsets and the per-replica batch splits
+between the batch inputs and the signals, so the trace inserts the mesh's
+buffers two slots further in."""
 
 
 @dataclass(kw_only=True)
@@ -109,6 +118,7 @@ class UnifiedDflashMiMoV2ModuleV3(Module[..., tuple[Tensor, ...]]):
         *,
         kv_params: KVCacheParamInterface,
         enable_structured_output: bool = False,
+        ep_batch_manager: EPBatchManager | None = None,
     ) -> None:
         """Builds the fused graph's module.
 
@@ -119,9 +129,17 @@ class UnifiedDflashMiMoV2ModuleV3(Module[..., tuple[Tensor, ...]]):
             kv_params: The ``{target, draft}`` KV tree.
             enable_structured_output: Whether acceptance takes the grammar
                 bitmask.
+            ep_batch_manager: The EP buffers manager when the target serves
+                expert parallelism, whose input tail the signature then
+                declares past the KV tree. Required beside data-parallel
+                attention, whose one-device replicas the P2P dispatch needs.
         """
         self.spec = spec
-        self.target = MiMoV2SpecTarget(spec.target)
+        self.target = MiMoV2SpecTarget(spec.target, ep_batch_manager)
+        # The drafter's degree comes from the spec alone -- the pipeline
+        # model sets it beside the draft config -- so a spec whose degree
+        # mismatches trips the drafter's own guard instead of being
+        # silently repaired here.
         self.draft = DFlashMiMoV2(spec.draft, mask_embedding=mask_embedding)
         self.kv_params = kv_params
         self.enable_structured_output = enable_structured_output
@@ -135,6 +153,7 @@ class UnifiedDflashMiMoV2ModuleV3(Module[..., tuple[Tensor, ...]]):
         """
         spec = self.spec
         n_devices = len(spec.target.devices)
+        dp_degree = spec.target.data_parallel_degree
         block_target = MiMoV2BlockTarget(
             self.target,
             vocab_size=spec.target.vocab_size,
@@ -155,12 +174,18 @@ class UnifiedDflashMiMoV2ModuleV3(Module[..., tuple[Tensor, ...]]):
             draft_model=self.draft,
             input_spec=SpecDecodeInputTypeSpec(
                 devices=spec.target.devices,
-                distributed=False,
+                # The DP pair, the per-device batch context lengths and the
+                # EP tail appear only beside data parallelism; the TP
+                # export's ABI is pinned by Mach's sidecar.
+                distributed=dp_degree > 1,
+                data_parallel_degree=dp_degree,
                 # A single-device graph declares its signal buffer in tree
                 # order, as the engine's block adapter binds it; a
-                # multi-device one takes the mesh's, which the trace inserts
-                # at the same position.
+                # multi-device one takes the mesh's, which the trace
+                # inserts at the same position -- under data parallelism two
+                # slots further in, past the batch-split pair.
                 include_signal_buffers=n_devices == 1,
+                trace_owns_signal_buffers=n_devices > 1,
                 enable_structured_output=self.enable_structured_output,
             ),
             speculative_config=spec.speculative_config,
@@ -172,6 +197,7 @@ class UnifiedDflashMiMoV2ModuleV3(Module[..., tuple[Tensor, ...]]):
             use_greedy_acceptance=(
                 spec.speculative_config.use_greedy_acceptance
             ),
+            ep_input_types=block_target.ep_input_types(),
         )
 
     def input_types(self) -> tuple[TensorType | BufferType, ...]:
@@ -198,6 +224,12 @@ class UnifiedDflashMiMoV2ModuleV3(Module[..., tuple[Tensor, ...]]):
             signal_buffers=list(named.signal_buffers)
             if named.signal_buffers
             else None,
+            # None at data_parallel_degree <= 1, where the signature
+            # declares none of the distributed group.
+            host_input_row_offsets=named.host_input_row_offsets,
+            data_parallel_splits=named.data_parallel_splits,
+            batch_context_lengths=named.batch_context_lengths,
+            ep_inputs=named.ep_inputs or None,
             pinned_bitmask=named.pinned_bitmask,
             wait_payload=named.wait_payload,
             device_bitmask_scratch=named.device_bitmask_scratch,

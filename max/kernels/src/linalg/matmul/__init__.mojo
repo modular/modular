@@ -29,7 +29,7 @@ from layout import (
 )
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 from . import cpu
 from ..gemv import gemv

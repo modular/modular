@@ -13,7 +13,7 @@
 
 import extensibility
 from max.gpu.host import DeviceContext
-from max.gpu.host._legacy.device_context import DeviceExternalFunction
+from max.gpu.host import DeviceExternalFunction
 from max.gpu import global_idx
 from std.math import ceildiv
 from std.os import abort, getenv

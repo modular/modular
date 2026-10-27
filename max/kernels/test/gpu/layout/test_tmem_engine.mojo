@@ -82,7 +82,7 @@ from max.gpu.compute.arch.tcgen05 import (
 )
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.host.compile import _compile_code
-from max.gpu.host._legacy.func_attribute import Attribute
+from max.gpu.host import Attribute
 
 comptime NUM_LANES = 128
 comptime NUM_COLS = 32

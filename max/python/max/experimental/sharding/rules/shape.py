@@ -693,10 +693,12 @@ def slice_tensor_rule(
 def gather_rule(
     input: TensorLayout, indices: TensorLayout, axis: int
 ) -> list[AxisAssignment]:
-    """Strategies for ``gather``: sharding follows either input or indices axes.
+    """Returns the sharding strategies for ``gather``.
+
+    Sharding follows either the input or the indices axes.
 
     Deliberately does not emit the expert-parallel
-    ``(Sharded(a_axis), R) -> Partial(SUM)`` row. That row treats a
+    ``(Sharded(a_axis), R) -> Partial()`` row. That row treats a
     local gather on each rank as if the missing cross-rank entries
     were zero and then sums — only correct when the caller has masked
     indices to each rank's owned slice. Letting the picker pick it

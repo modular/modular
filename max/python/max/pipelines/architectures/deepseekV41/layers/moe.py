@@ -20,7 +20,7 @@ expert. Experts can be split across devices (expert parallelism).
 from __future__ import annotations
 
 import os
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from typing import Protocol
 
 import numpy as np
@@ -74,6 +74,7 @@ from ..model_config import (
     gate_up_rows_interleaved,
     nvfp4_sf_preinterleaved,
 )
+from .hyper_connection import Mxfp8Rows
 from .mxfp8_matmul import mxfp8_linear
 from .ragged import ReplicaTokens
 
@@ -677,10 +678,24 @@ class DeepseekV41SharedExpert(Module):
         self.gate_up_proj = linear(hidden_size, 2 * moe_intermediate_size)
         self.w2 = linear(moe_intermediate_size, hidden_size)
 
-    def __call__(self, x: TensorValue) -> TensorValue:
-        """``[..., hidden]`` -> ``[..., hidden]``, no routing weight applied."""
+    def __call__(
+        self, x: TensorValue, x_mxfp8: Mxfp8Rows | None = None
+    ) -> TensorValue:
+        """``[..., hidden]`` -> ``[..., hidden]``, no routing weight applied.
+
+        ``x_mxfp8``, when given, is ``x`` already in MXFP8, and the gate/up
+        projection reads it in place of quantizing ``x``.
+        """
         inter = self.moe_intermediate_size
-        gate_up = mxfp8_linear(self.gate_up_proj, x)
+        if x_mxfp8 is None:
+            gate_up = mxfp8_linear(self.gate_up_proj, x)
+        else:
+            gate_up = ops.reshape(
+                mxfp8_linear(
+                    self.gate_up_proj, x_mxfp8.values, x_scales=x_mxfp8.scales
+                ),
+                [*x.shape[:-1], 2 * inter],
+            )
         if _is_sm10x_gpu():
             return self._fused_down(gate_up)
         # Slices, not `ops.split`: `ops.split` slows the fused GEMM ~25% at
@@ -716,7 +731,7 @@ class ExpertParallelFFN(Protocol):
     """One device's replica of an expert-parallel FFN."""
 
     @property
-    def shared_experts(self) -> Callable[[TensorValue], TensorValue]:
+    def shared_experts(self) -> DeepseekV41SharedExpert:
         """The replicated shared expert."""
         ...
 
@@ -821,11 +836,13 @@ class DeepseekV41MoE(Module):
         xs: Sequence[TensorValue],
         token_ids: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
+        xs_mxfp8: Sequence[Mxfp8Rows | None] | None = None,
     ) -> list[TensorValue]:
         """Runs the MoE expert-parallel, one replica per device in ``moes``.
 
         Each device's routed share is all-reduced in float32, then each device
-        adds its replicated shared expert.
+        adds its replicated shared expert, which reads ``xs_mxfp8`` (``xs``
+        already in MXFP8) where given.
 
         Returns:
             One ``[b, s, hidden]`` output per device, in ``x``'s dtype.
@@ -837,9 +854,11 @@ class DeepseekV41MoE(Module):
         reduced = ops.allreduce.sum(partials, signal_buffers)
         return [
             ops.cast(
-                y + ops.cast(moe.shared_experts(x), DType.float32), x.dtype
+                y + ops.cast(moe.shared_experts(x, q), DType.float32), x.dtype
             )
-            for moe, x, y in zip(moes, xs, reduced, strict=True)
+            for moe, x, q, y in zip(
+                moes, xs, xs_mxfp8 or [None] * len(xs), reduced, strict=True
+            )
         ]
 
     @staticmethod
@@ -849,6 +868,7 @@ class DeepseekV41MoE(Module):
         token_ids: Sequence[TensorValue],
         replica_tokens: ReplicaTokens,
         signal_buffers: Sequence[BufferValue],
+        xs_mxfp8: Sequence[Mxfp8Rows | None] | None = None,
     ) -> list[TensorValue]:
         """Runs the MoE expert-parallel over data-parallel devices.
 
@@ -865,10 +885,13 @@ class DeepseekV41MoE(Module):
             token_ids: Per device, the whole batch's ``[1, T]`` token ids.
             replica_tokens: Where each device's rows sit in the batch.
             signal_buffers: The collectives' signal buffers.
+            xs_mxfp8: Per device, its rows already in MXFP8 for the shared
+                expert, or ``None`` to quantize them there.
 
         Returns:
             One ``[1, t_i, hidden]`` output per device, in ``x``'s dtype.
         """
+        own_mxfp8 = xs_mxfp8 or [None] * len(xs)
         own_token_ids = [
             ops.slice_tensor(
                 tok, [slice(None), (slice(start, stop), x.shape[1])]
@@ -884,7 +907,9 @@ class DeepseekV41MoE(Module):
             and moe.ep_batch_manager is not None
         ]
         if len(dispatched) == len(moes):
-            return DeepseekV41MoE.expert_parallel(dispatched, xs, own_token_ids)
+            return DeepseekV41MoE.expert_parallel(
+                dispatched, xs, own_token_ids, own_mxfp8
+            )
         hidden = int(xs[0].shape[-1])
         total = replica_tokens.total
         gathered = ops.allgather(
@@ -899,8 +924,8 @@ class DeepseekV41MoE(Module):
         ]
         reduced = ops.allreduce.sum(partials, signal_buffers)
         outs = []
-        for moe, x, y, (start, stop) in zip(
-            moes, xs, reduced, replica_tokens.ranges, strict=True
+        for moe, x, q, y, (start, stop) in zip(
+            moes, xs, own_mxfp8, reduced, replica_tokens.ranges, strict=True
         ):
             rows = ops.slice_tensor(
                 ops.reshape(y, [total, hidden]),
@@ -909,7 +934,7 @@ class DeepseekV41MoE(Module):
             local = ops.reshape(rows, x.shape)
             outs.append(
                 ops.cast(
-                    local + ops.cast(moe.shared_experts(x), DType.float32),
+                    local + ops.cast(moe.shared_experts(x, q), DType.float32),
                     x.dtype,
                 )
             )
@@ -920,6 +945,7 @@ class DeepseekV41MoE(Module):
         moes: Sequence[DeepseekV41MoE],
         xs: Sequence[TensorValue],
         token_ids: Sequence[TensorValue],
+        xs_mxfp8: Sequence[Mxfp8Rows | None] | None = None,
     ) -> list[TensorValue]:
         """Runs the routed experts through expert-parallel dispatch and combine.
 
@@ -935,6 +961,8 @@ class DeepseekV41MoE(Module):
                 :attr:`ep_batch_manager`.
             xs: Per device, its own ``[1, t_i, hidden]`` rows.
             token_ids: Per device, its own ``[1, t_i]`` token ids.
+            xs_mxfp8: Per device, its rows already in MXFP8 for the shared
+                expert, or ``None`` to quantize them there.
 
         Returns:
             One ``[1, t_i, hidden]`` output per device, in ``x``'s dtype.
@@ -951,7 +979,10 @@ class DeepseekV41MoE(Module):
             weights.append(ops.reshape(w, [-1, topk]))
             indices.append(ops.reshape(i, [-1, topk]))
         shared = [
-            moe.shared_experts(x) for moe, x in zip(moes, xs, strict=True)
+            moe.shared_experts(x, q)
+            for moe, x, q in zip(
+                moes, xs, xs_mxfp8 or [None] * len(xs), strict=True
+            )
         ]
         device_ids = [x.device.id for x in xs]
         # One global gate/up input scale, the same on every device; the
@@ -987,11 +1018,19 @@ class DeepseekV41MoE(Module):
             for x, y, s in zip(xs, combined, shared, strict=True)
         ]
 
-    def __call__(self, x: TensorValue, token_ids: TensorValue) -> TensorValue:
-        """``[1, s, hidden]``, ``[1, s]`` token ids -> ``[1, s, hidden]``."""
-        y = ops.cast(self.shared_experts(x), DType.float32) + self.routed(
-            x, token_ids
-        )
+    def __call__(
+        self,
+        x: TensorValue,
+        token_ids: TensorValue,
+        x_mxfp8: Mxfp8Rows | None = None,
+    ) -> TensorValue:
+        """``[1, s, hidden]``, ``[1, s]`` token ids -> ``[1, s, hidden]``.
+
+        The shared expert reads ``x_mxfp8`` (``x`` already in MXFP8) if given.
+        """
+        y = ops.cast(
+            self.shared_experts(x, x_mxfp8), DType.float32
+        ) + self.routed(x, token_ids)
         return ops.cast(y, x.dtype)
 
 

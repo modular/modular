@@ -725,7 +725,7 @@ class TextTokenizer(
             **chat_template_options,
         }
 
-        flattened = [message.flatten_content() for message in messages]
+        flattened = [self._flatten_message(message) for message in messages]
 
         if self._chat_template is not None:
             return _render_custom_chat_template(
@@ -743,6 +743,16 @@ class TextTokenizer(
         )
         assert isinstance(templated_message, str)
         return templated_message
+
+    def _flatten_message(
+        self, message: TextGenerationRequestMessage
+    ) -> dict[str, Any]:
+        """Returns the dict the chat template renders for ``message``.
+
+        Overridden by a tokenizer whose chat template renders media parts
+        itself, which flattening to text rejects.
+        """
+        return message.flatten_content()
 
     @property
     def expects_content_wrapping(self) -> bool:

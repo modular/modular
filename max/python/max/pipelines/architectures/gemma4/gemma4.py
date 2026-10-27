@@ -42,7 +42,7 @@ from max.nn.kv_cache import (
     PagedCacheValues,
 )
 from max.nn.layer import LayerList, MissingLayer, Module
-from max.nn.linear import MLP, ColumnParallelLinear
+from max.nn.linear import MLP, ColumnParallelLinear, Linear
 from max.nn.moe import GatedActivation, MoE, MoEQuantized
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.nn.transformer import DecoderOutputs, ReturnHiddenStates
@@ -59,6 +59,7 @@ from max.pipelines.lib.interfaces.batch_processor import (
 )
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 
+from .layers import attention as gemma4_attention_layers
 from .layers.attention import Gemma4Attention
 from .layers.decoder_layer import Gemma4TextDecoderLayer
 from .layers.moe import Gemma4MoE, Gemma4MoEGate
@@ -99,6 +100,67 @@ def language_input_tree(
     )
 
 
+def _kv_share_source_slot(
+    layer_types: Sequence[str],
+    num_hidden_layers: int,
+    num_kv_shared_layers: int,
+) -> dict[int, int]:
+    """Maps every sharing layer to the KV cache slot it reads its keys and values from.
+
+    A sharing layer projects no keys and values of its own: it reuses the
+    ones of the last layer of the same attention type before the sharing
+    point. That source layer's cache slot holds them.
+
+    Args:
+        layer_types: The attention type of every layer.
+        num_hidden_layers: The number of layers in the model.
+        num_kv_shared_layers: The number of trailing layers that share
+            their keys and values.
+
+    Returns:
+        The source layer's index within its own attention type's KV
+        cache, for every sharing layer. Empty when the model shares
+        nothing.
+
+    Raises:
+        ValueError: If a sharing layer has no layer of its own attention
+            type to share with.
+    """
+    if num_kv_shared_layers <= 0:
+        return {}
+
+    first_shared_layer = num_hidden_layers - num_kv_shared_layers
+    if first_shared_layer <= 0:
+        # Every layer shares, so there is nothing to share with. The reference
+        # treats that as sharing nothing rather than as an error, and configs
+        # of that shape loaded before this change, so match it instead of
+        # rejecting them.
+        return {}
+
+    # The index of every layer within its own attention type's KV cache.
+    slot_by_layer: dict[int, int] = {}
+    slots_by_type: dict[str, int] = {}
+    for layer_idx, layer_type in enumerate(layer_types):
+        slot_by_layer[layer_idx] = slots_by_type.get(layer_type, 0)
+        slots_by_type[layer_type] = slot_by_layer[layer_idx] + 1
+
+    # The last layer of each attention type before the sharing point.
+    source_by_type: dict[str, int] = {}
+    for layer_idx in range(first_shared_layer):
+        source_by_type[layer_types[layer_idx]] = layer_idx
+
+    source_slot_by_layer: dict[int, int] = {}
+    for layer_idx in range(first_shared_layer, num_hidden_layers):
+        layer_type = layer_types[layer_idx]
+        if (source := source_by_type.get(layer_type)) is None:
+            raise ValueError(
+                f"Gemma 4 layer {layer_idx} shares its keys and values, but "
+                f"no {layer_type} layer comes before it."
+            )
+        source_slot_by_layer[layer_idx] = slot_by_layer[source]
+    return source_slot_by_layer
+
+
 class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
     """The Gemma 4 language model."""
 
@@ -115,6 +177,24 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
         )
         self.holds_first = self.layer_ids.start == 0
         self.holds_last = self.layer_ids.stop == text_config.num_hidden_layers
+
+        # Every E-series checkpoint shares the trailing layers' K/V with an
+        # earlier layer (``num_kv_shared_layers``, 18 of 42 layers in E4B). The
+        # layers built here each compute their own K/V, which loads without
+        # complaint and then diverges from the reference at every shared layer,
+        # so refuse the config instead of serving a silently different model.
+        # This stops firing on its own once the sharing implementation lands:
+        # that change sets ``KV_SHARING_SUPPORTED`` in the attention module.
+        if text_config.num_kv_shared_layers > 0 and not getattr(
+            gemma4_attention_layers, "KV_SHARING_SUPPORTED", False
+        ):
+            raise NotImplementedError(
+                "Gemma 4 KV sharing is not implemented: this checkpoint shares "
+                f"the K/V of its last {text_config.num_kv_shared_layers} "
+                f"layers (num_kv_shared_layers) with an earlier layer, so "
+                "serving it here would diverge from the reference at every "
+                "shared layer. See #106305."
+            )
 
         # Build per-layer-type rotary embeddings.
         # sliding_attention uses default rope, full_attention uses proportional.
@@ -154,6 +234,64 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
                 embed_scale=text_config.hidden_size**0.5,
             )
 
+        # Gemma 4 per-layer embeddings (PLE): a packed embedding table whose
+        # per-layer slice is mixed into every decoder layer's residual
+        # stream.
+        self.hidden_size_per_layer_input = (
+            text_config.hidden_size_per_layer_input
+        )
+        if self.hidden_size_per_layer_input:
+            if len(self.layer_ids) != text_config.num_hidden_layers:
+                raise ValueError(
+                    "Gemma 4 per-layer embeddings are not supported with "
+                    "pipeline parallelism."
+                )
+            self._pad_token_id = text_config.pad_token_id
+            # Placeholder tokens whose per-layer embedding row is the pad
+            # row, as in the reference: image, video, and audio when the
+            # checkpoint declares an audio token at all.
+            self._placeholder_token_ids = [
+                config.image_token_index,
+                config.video_token_index,
+            ]
+            if config.audio_token_index is not None:
+                self._placeholder_token_ids.append(config.audio_token_index)
+            packed_dim = (
+                text_config.num_hidden_layers * self.hidden_size_per_layer_input
+            )
+            self.embed_tokens_per_layer = ScaledWordEmbedding(
+                text_config.vocab_size_per_layer_input,
+                packed_dim,
+                embedding_output_dtype,
+                config.devices,
+                embed_scale=self.hidden_size_per_layer_input**0.5,
+            )
+            self.per_layer_model_projection = Linear(
+                in_dim=text_config.hidden_size,
+                out_dim=packed_dim,
+                dtype=unquantized_dtype,
+                device=config.devices[0],
+                has_bias=False,
+                quant_config=quant_config,
+            )
+            self.per_layer_model_projection.sharding_strategy = (
+                ShardingStrategy.replicate(len(config.devices))
+            )
+            self.per_layer_model_projection_shards = (
+                self.per_layer_model_projection.shard(config.devices)
+            )
+            self.per_layer_projection_norm = Gemma4RMSNorm(
+                self.hidden_size_per_layer_input,
+                unquantized_dtype,
+                eps=text_config.rms_norm_eps,
+            )
+            self.per_layer_projection_norm.sharding_strategy = (
+                ShardingStrategy.replicate(len(config.devices))
+            )
+            self.per_layer_projection_norm_shards = (
+                self.per_layer_projection_norm.shard(config.devices)
+            )
+
         if self.holds_last:
             self.norm = Gemma4RMSNorm(
                 text_config.hidden_size,
@@ -189,6 +327,21 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
             "sliding_attention": 0,
             "full_attention": 0,
         }
+        # The trailing `num_kv_shared_layers` layers read the source
+        # layer's cache slot instead of projecting their own keys and values.
+        kv_share_source_slot = _kv_share_source_slot(
+            text_config.layer_types,
+            text_config.num_hidden_layers,
+            text_config.num_kv_shared_layers,
+        )
+        if kv_share_source_slot and len(self.layer_ids) != (
+            text_config.num_hidden_layers
+        ):
+            raise ValueError(
+                "Gemma 4 KV sharing needs every layer of the model in one "
+                "stage, because a sharing layer reads the source layer's "
+                "KV cache."
+            )
         layers: dict[int, Gemma4TextDecoderLayer] = {}
         for i in self.layer_ids:
             layer_type = text_config.layer_types[i]
@@ -249,6 +402,14 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
                         dtype=config.dtype,
                     )
 
+            # A sharing layer gets a double wide MLP when the config asks
+            # for one.
+            feed_forward_length = text_config.intermediate_size * (
+                2
+                if text_config.use_double_wide_mlp and i in kv_share_source_slot
+                else 1
+            )
+
             layers[i] = Gemma4TextDecoderLayer(
                 attention=Gemma4Attention(
                     rope_global=rope_global,
@@ -272,12 +433,15 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
                     quant_config=None
                     if (is_nvfp4 and not attn_quantized)
                     else quant_config,
+                    kv_share_source_layer_idx_in_cache=kv_share_source_slot.get(
+                        i
+                    ),
                 ),
                 mlp=MLP(
                     dtype=unquantized_dtype if moe_nvfp4 else config.dtype,
                     quantization_encoding=None,
                     hidden_dim=text_config.hidden_size,
-                    feed_forward_length=text_config.intermediate_size,
+                    feed_forward_length=feed_forward_length,
                     devices=config.devices,
                     activation_function=text_config.hidden_activation,
                     quant_config=None if moe_nvfp4 else quant_config,
@@ -288,6 +452,9 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
                 unquantized_dtype=unquantized_dtype,
                 enable_moe_block=text_config.enable_moe_block,
                 moe_block=moe_block,
+                hidden_size_per_layer_input=self.hidden_size_per_layer_input,
+                hidden_activation=text_config.hidden_activation,
+                quant_config=quant_config,
             )
 
         # Store the per-layer cache-tree key ("sliding_attention" /
@@ -409,6 +576,56 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
             is_device_graph=is_device_graph,
         )
 
+    def _compute_per_layer_inputs(
+        self,
+        tokens: TensorValue,
+        inputs_embeds: list[TensorValue],
+        signal_buffers: Sequence[BufferValue],
+    ) -> list[TensorValue]:
+        """Computes the per-layer input every decoder layer mixes in.
+
+        The packed per-layer embedding table holds one
+        ``hidden_size_per_layer_input`` slice per layer. A layer's input is
+        the scaled embedding lookup of its token plus the projected token
+        embedding, scaled by ``2**-0.5``. Image, video, and audio
+        placeholder tokens look up the pad token's row, as in the
+        reference.
+
+        Args:
+            tokens: The token ids of the batch.
+            inputs_embeds: The token embeddings per device.
+            signal_buffers: The buffers used for cross-device communication.
+
+        Returns:
+            The per-layer inputs per device, each with shape
+            ``[num_tokens, num_hidden_layers, hidden_size_per_layer_input]``.
+        """
+        num_layers = len(self._layer_kv_key)
+        per_layer_dim = self.hidden_size_per_layer_input
+        is_placeholder = functools.reduce(
+            ops.logical_or,
+            [
+                ops.equal(tokens, token_id)
+                for token_id in self._placeholder_token_ids
+            ],
+        )
+        lookup_tokens = ops.where(is_placeholder, self._pad_token_id, tokens)
+        identity = self.embed_tokens_per_layer(lookup_tokens, signal_buffers)
+
+        per_layer_inputs: list[TensorValue] = []
+        for device_idx, embeds in enumerate(inputs_embeds):
+            context = self.per_layer_model_projection_shards[device_idx](embeds)
+            context = context * (self.dim**-0.5)
+            context = ops.reshape(context, [-1, num_layers, per_layer_dim])
+            context = self.per_layer_projection_norm_shards[device_idx](context)
+
+            token_identity = ops.cast(identity[device_idx], context.dtype)
+            token_identity = ops.reshape(
+                token_identity, [-1, num_layers, per_layer_dim]
+            )
+            per_layer_inputs.append((context + token_identity) * (2.0**-0.5))
+        return per_layer_inputs
+
     def __call__(
         self,
         tokens: TensorValue,
@@ -456,6 +673,12 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
             )
             h = list(boundary_inputs)
 
+        per_layer_inputs = (
+            self._compute_per_layer_inputs(tokens, h, signal_buffers)
+            if self.hidden_size_per_layer_input
+            else None
+        )
+
         capture_layer_set: set[int] | None = None
         capture_hidden_states: list[list[TensorValue]] | None = None
         if (
@@ -471,12 +694,18 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
                 idx, DType.uint32, device=self.devices[0]
             )
             kv_collections = kv_collections_by_type[self._layer_kv_key[idx]]
+            per_layer_input = (
+                [p[:, idx, :] for p in per_layer_inputs]
+                if per_layer_inputs is not None
+                else None
+            )
             h = self.layers[idx](
                 layer_idx_tensor,
                 h,
                 signal_buffers,
                 kv_collections,
                 input_row_offsets=input_row_offsets,
+                per_layer_inputs=per_layer_input,
                 **kwargs,
             )
             if (

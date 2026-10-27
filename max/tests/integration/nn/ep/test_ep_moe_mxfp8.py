@@ -34,7 +34,8 @@ from max.nn.comm.ep.ep_kernels import (
     _ep_dispatch_output_types,
     uses_mx_ep_token_format,
 )
-from max.nn.moe import GatedActivation, MoEGate, MoEQuantized
+from max.nn.kernels import amd_mega_ffn_workspace_words
+from max.nn.moe import GatedActivation, MoEGate, MoEQuantized, moe_fp8
 from max.nn.moe.expert_parallel import forward_moe_sharded_layers
 from max.nn.quant_config import (
     InputScaleSpec,
@@ -372,14 +373,18 @@ def _mx_quant_config(fmt: QuantFormat) -> QuantConfig:
 
 
 def _build_ep_moe(
-    quant_config: QuantConfig, n_devices: int, max_tokens_per_rank: int
+    quant_config: QuantConfig,
+    n_devices: int,
+    max_tokens_per_rank: int,
+    hidden_dim: int = HIDDEN_DIM,
+    moe_dim: int = MOE_DIM,
 ) -> tuple[MoEQuantized, EPConfig]:
     ep_config = EPConfig(
         dispatch_dtype=(
             DType.uint8 if quant_config.is_mxfp4 else DType.float8_e4m3fn
         ),
         combine_dtype=DType.bfloat16,
-        hidden_size=HIDDEN_DIM,
+        hidden_size=hidden_dim,
         top_k=8,
         n_experts=NUM_EXPERTS,
         max_tokens_per_rank=max_tokens_per_rank,
@@ -391,12 +396,12 @@ def _build_ep_moe(
     devices_ref = [DeviceRef.GPU(i) for i in range(n_devices)]
     moe = MoEQuantized(
         devices=[DeviceRef.CPU()] + devices_ref,
-        hidden_dim=HIDDEN_DIM,
+        hidden_dim=hidden_dim,
         num_experts=NUM_EXPERTS,
         num_experts_per_token=8,
-        moe_dim=MOE_DIM,
+        moe_dim=moe_dim,
         has_shared_experts=True,
-        shared_experts_dim=MOE_DIM,
+        shared_experts_dim=moe_dim,
         ep_size=n_devices,
         dtype=ep_config.dispatch_dtype,
         ep_batch_manager=EPBatchManager(ep_config),
@@ -436,3 +441,57 @@ def test_ep_mx_scale_fold_amd(n_devices: int) -> None:
         assert ep_config._max_recv_tokens_per_expert() == expected_stride
         scales_type = _ep_dispatch_output_types(ep_config, DeviceRef.GPU(0))[1]
         assert int(scales_type.shape[0]) == n_local_experts * expected_stride
+
+
+@pytest.mark.skipif(
+    accelerator_api() != "hip", reason="The AMD MoE FFN op is gfx950-only"
+)
+def test_ep_moe_mxfp8_mega_ffn_default_amd(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """At MiniMax M3's expert shapes the MXFP8 EP MoE lowers to the AMD FFN
+    op, with a workspace sized for its dispatch buffer. Pinned at graph
+    build."""
+    sized: list[int] = []
+
+    def workspace_words(experts: int, max_rows: int, rows: int) -> int:
+        sized.append(rows)
+        return amd_mega_ffn_workspace_words(experts, max_rows, rows)
+
+    monkeypatch.setattr(
+        moe_fp8, "amd_mega_ffn_workspace_words", workspace_words
+    )
+    n_devices = 2
+    hidden_dim = 6144
+    # a DP-heavy dispatch buffer: more 128-row blocks than a fixed region of
+    # 4096 slots held
+    moe, ep_config = _build_ep_moe(
+        _mx_quant_config(QuantFormat.MXFP8),
+        n_devices,
+        32768,
+        hidden_dim=hidden_dim,
+        moe_dim=3072,
+    )
+    # no weights are loaded: name them as loading would
+    for name, weight in moe.raw_state_dict().items():
+        weight.name = name
+    devices_ref = [DeviceRef.GPU(i) for i in range(n_devices)]
+    moe.sharding_strategy = ShardingStrategy.expert_parallel(n_devices)
+    moe_shards = moe.shard(devices_ref)
+    with Graph(
+        "EPMoE_MXFP8_MegaFFN",
+        input_types=[
+            *(
+                TensorType(DType.bfloat16, (f"input_len_{i}", hidden_dim), d)
+                for i, d in enumerate(devices_ref)
+            ),
+            *moe.ep_batch_manager.input_types(),
+        ],
+    ) as graph:
+        moe.ep_batch_manager.fetch_buffers(graph.inputs[n_devices:])
+        xs = [x.tensor for x in graph.inputs[:n_devices]]
+        graph.output(*forward_moe_sharded_layers(moe_shards, xs))
+    assert "mo.grouped.ffn.block.scaled.amd" in str(graph)
+    capacity = ep_config.get_max_recv_tokens() + ep_config.max_tokens_per_rank
+    assert NUM_EXPERTS // n_devices + 1 + capacity // 128 > 4096
+    assert sized and set(sized) == {capacity}

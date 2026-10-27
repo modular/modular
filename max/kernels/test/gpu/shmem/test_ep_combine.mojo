@@ -38,7 +38,6 @@ from shmem.ep_comm import (
     dispatch_async_kernel,
 )
 from std.testing import assert_equal
-from std.utils.index import IndexList
 
 
 def is_benchmark() -> Bool:
@@ -249,11 +248,11 @@ def test_combine[
 
     @inline(.always)
     def store_output_2[
-        dtype: DType, rank: Int, width: SIMDLength, *, alignment: Int = 1
-    ](coords: IndexList[rank], val: SIMD[dtype, width]) {var output_2_tensor}:
+        dtype: DType, width: SIMDLength, *, alignment: Int = 1
+    ](coords: Coord, val: SIMD[dtype, width]) {var output_2_tensor}:
         output_2_tensor.store[
             width=width, alignment=alignment * size_of[dtype]()
-        ](Coord(coords), rebind[SIMD[input_type, width]](val))
+        ](coords, rebind[SIMD[input_type, width]](val))
 
     comptime combine_wait = combine_wait_kernel[
         input_type,

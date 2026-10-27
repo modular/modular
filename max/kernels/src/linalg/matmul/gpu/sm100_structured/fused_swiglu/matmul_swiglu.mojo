@@ -24,6 +24,7 @@ from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import B200
 from max.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
+    Coord,
     coord,
     DefaultEngine,
     RowMajorLayout,
@@ -184,11 +185,7 @@ def _blackwell_matmul_swiglu[
     else:
         bias_1d_tile = None
 
-    comptime cluster_tuple = StaticTuple[Int32, 3](
-        Int32(config.cluster_shape[0]),
-        Int32(config.cluster_shape[1]),
-        Int32(config.cluster_shape[2]),
-    )
+    comptime cluster_tuple = config.cluster_shape
 
     # Fully specialize the kernel, extracting TMA type parameters from the
     # concrete TMA op objects via type_of().  This matches the pattern in
@@ -207,7 +204,11 @@ def _blackwell_matmul_swiglu[
         transpose_b,
         config=config,
         BiasEngine=BiasEngine,
-        cluster_shape=cluster_tuple,
+        cluster_shape=(
+            Int(cluster_tuple[0]),
+            Int(cluster_tuple[1]),
+            Int(cluster_tuple[2]),
+        ),
         pdl_level=pdl_level,
     ]
 

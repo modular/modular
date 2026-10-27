@@ -21,6 +21,7 @@ from max.nn.layer import LayerList, Module
 from ..layers.rms_norm import Gemma4RMSNorm
 from ..model_config import Gemma4ForConditionalGenerationConfig
 from .attention import Gemma4VisionAttention
+from .clipping import Gemma4VisionMLP
 
 
 class Gemma4VisionEncoderLayer(Module):
@@ -62,14 +63,25 @@ class Gemma4VisionEncoderLayer(Module):
         self.pre_feedforward_layernorm = Gemma4RMSNorm(
             self.hidden_size, vision_dtype, eps=vision_config.rms_norm_eps
         )
-        self.mlp = MLP(
-            dtype=vision_dtype,
-            quantization_encoding=None,
-            hidden_dim=self.hidden_size,
-            feed_forward_length=vision_config.intermediate_size,
-            devices=[self.device],
-            activation_function=vision_config.hidden_activation,
-        )
+        if getattr(vision_config, "use_clipped_linears", False):
+            self.mlp: MLP = Gemma4VisionMLP(
+                dtype=vision_dtype,
+                quantization_encoding=None,
+                hidden_dim=self.hidden_size,
+                feed_forward_length=vision_config.intermediate_size,
+                devices=[self.device],
+                activation_function=vision_config.hidden_activation,
+                use_clipping=True,
+            )
+        else:
+            self.mlp = MLP(
+                dtype=vision_dtype,
+                quantization_encoding=None,
+                hidden_dim=self.hidden_size,
+                feed_forward_length=vision_config.intermediate_size,
+                devices=[self.device],
+                activation_function=vision_config.hidden_activation,
+            )
         self.post_feedforward_layernorm = Gemma4RMSNorm(
             self.hidden_size, vision_dtype, eps=vision_config.rms_norm_eps
         )

@@ -966,6 +966,31 @@ def MOGG_KernelDeclOp
     (`supports_unfused_execute` $supports_unfused_execute^)?
     attr-dict
   }];
+
+  let extraClassDeclaration = [{
+    /// The name the struct's location carries among the op's locations; each
+    /// function's carries `stringifyKernelFunctionKind`'s.
+    static constexpr ::llvm::StringLiteral kStructLocationName = "struct";
+
+    /// Returns the Mojo location of the kernel's struct, falling back to the
+    /// op's location.
+    ::mlir::Location getMojoStructLocation();
+
+    /// Returns the Mojo location of the kernel's `kind` function, falling
+    /// back to the struct's. A shape function lives in its own decl, so
+    /// `Shape` gets the struct's.
+    ::mlir::Location getMojoFunctionLocation(KernelFunctionKind kind);
+
+    /// Returns the name argument `position` of the `kind` function has among
+    /// the op's locations, e.g. "execute.arg2".
+    static std::string getMojoArgLocationName(KernelFunctionKind kind,
+                                              uint64_t position);
+
+    /// Returns the Mojo location of argument `position` of the `kind`
+    /// function, falling back to `getMojoFunctionLocation(kind)`.
+    ::mlir::Location getMojoArgLocation(KernelFunctionKind kind,
+                                        uint64_t position);
+  }];
 }
 
 def MOGG_PrimitiveDeclOp

@@ -286,7 +286,8 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
     /// Filling claimed huge blocks first keeps a cache's live pages packed
     /// into few huge blocks, so the rest can park for any cache to claim. A
     /// page whose loss evicts no commit comes first, and a pristine huge
-    /// block before evicting a prefix.
+    /// block before evicting a prefix. Eviction takes the least recently used
+    /// commit, parked or not: the commits beside live pages are the newest.
     fn alloc_source(&self, cache: usize) -> Option<AllocSource> {
         let lists = [
             (AllocSource::Claimed, &self.free_little_blocks[cache]),
@@ -307,12 +308,17 @@ impl<H: Copy + Eq + Hash> JengaBlockPool<H> {
         {
             return Some(AllocSource::Huge);
         }
-        for (source, list) in lists {
-            if !list.is_empty() {
-                return Some(source);
-            }
-        }
-        (self.free_huge_blocks.len > 0).then_some(AllocSource::Huge)
+        // Both queues share one set of stamps, so the smaller front stamp is
+        // the cache's least recently used commit.
+        lists
+            .into_iter()
+            .filter_map(|(source, list)| {
+                list.peek_front()
+                    .map(|bid| (source, self.little_blocks[cache][bid].free))
+            })
+            .min_by_key(|&(_, stamp)| stamp)
+            .map(|(source, _)| source)
+            .or_else(|| (self.free_huge_blocks.len > 0).then_some(AllocSource::Huge))
     }
 
     /// Returns a fresh block of `cache`, claiming huge blocks as needed. It is
@@ -1239,6 +1245,24 @@ mod tests {
         for null_block in [false, true] {
             let mut p = pool(2, &[2], null_block);
             let bids = alloc_n(&mut p, 0, 4);
+            // The first huge block frees a page while a request still holds
+            // its other one, then the second huge block parks.
+            p.free_block(0, bids[0]);
+            p.free_block(0, bids[2]);
+            p.free_block(0, bids[3]);
+
+            // Taking a parked page would unpark bytes any cache could claim.
+            assert_eq!(p.alloc_block(0).expect("a free block"), bids[0]);
+            assert_eq!(p.free_huge_blocks.len, 1);
+            check_invariants(&p);
+        }
+    }
+
+    #[test]
+    fn alloc_evicts_the_least_recently_used_commit_even_when_parked() {
+        for null_block in [false, true] {
+            let mut p = pool(2, &[2], null_block);
+            let bids = alloc_n(&mut p, 0, 4);
             for (bid, hash) in bids.iter().zip(["a", "b", "c", "d"]) {
                 p.commit_into_prefix_cache(0, hash, *bid);
             }
@@ -1248,29 +1272,26 @@ mod tests {
             p.free_block(0, bids[3]);
             p.free_block(0, bids[0]);
 
-            // The least recently used commit is in the parked huge block, but
-            // taking it would unpark bytes any cache could otherwise claim.
-            assert_eq!(p.alloc_block(0).expect("a free block"), bids[0]);
-            assert_eq!(p.free_huge_blocks.len, 1);
+            // The page beside a live one is the newest commit, so it stays.
+            assert_eq!(p.alloc_block(0).expect("a free block"), bids[2]);
+            assert_eq!(
+                p.prefix_caches[0],
+                HashMap::from([("a", bids[0]), ("b", bids[1]), ("d", bids[3])])
+            );
             check_invariants(&p);
         }
     }
 
     /// Ports the design simulation's churn: requests grow a full cache and
-    /// slide a two-page window, committing every page they free. A window
-    /// cache spread over many huge blocks pins each with a page or two.
+    /// slide a two-page window. A window cache spread over many huge blocks
+    /// pins each with a page or two. Nothing is committed, as with prefix
+    /// caching off: commits are evicted in LRU order, not packed.
     #[test]
     fn sliding_windows_pin_few_huge_blocks() {
         const FULL: usize = 0;
         const WINDOW: usize = 1;
         let mut p =
             JengaBlockPool::<u64>::new(257, vec![16, 8], WITH_NULL).expect("valid geometry");
-        let mut next_hash = 0u64;
-        let mut commit_and_free = |p: &mut JengaBlockPool<u64>, cache: usize, bid: usize| {
-            next_hash += 1;
-            p.commit_into_prefix_cache(cache, next_hash, bid);
-            p.free_block(cache, bid);
-        };
         let mut rng = 0x9e37_79b9_7f4a_7c15u64;
         let mut requests: Vec<(Vec<usize>, Vec<usize>, u64)> = Vec::new();
         for step in 0..2000 {
@@ -1286,16 +1307,16 @@ mod tests {
                 }
                 window.push(p.alloc_block(WINDOW).expect("a free block"));
                 if window.len() > 2 {
-                    commit_and_free(&mut p, WINDOW, window.remove(0));
+                    p.free_block(WINDOW, window.remove(0));
                 }
                 *steps_left -= 1;
             }
             for (full, window, _) in requests.extract_if(.., |request| request.2 == 0) {
                 for bid in full.into_iter().rev() {
-                    commit_and_free(&mut p, FULL, bid);
+                    p.free_block(FULL, bid);
                 }
                 for bid in window.into_iter().rev() {
-                    commit_and_free(&mut p, WINDOW, bid);
+                    p.free_block(WINDOW, bid);
                 }
             }
             if step >= 100 {

@@ -40,10 +40,16 @@ from max.nn.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
+from max.nn.quant_ops import _matmul_float8_mxfp8
 
 from ...deepseekV4.layers.ragged import arange_to
 from ..layer_resolver import LayerInfo
-from ..model_config import DeepseekV41Config, woa_mxfp8_enabled
+from ..model_config import (
+    DeepseekV41Config,
+    fused_kv_store_enabled,
+    q_mxfp8_enabled,
+    woa_mxfp8_enabled,
+)
 from .attention import (
     bf16_grouped_projection,
     mxfp8_grouped_projection,
@@ -52,9 +58,9 @@ from .attention import (
 )
 from .csa2 import (
     INDEX_WIDTH,
+    WindowStore,
     csa2_attention,
     leaf_slots,
-    store_window_kv,
 )
 from .indexer import rope_cos_sin_table
 from .mxfp8_matmul import mxfp8_linear
@@ -450,7 +456,8 @@ class DeepseekV41DSparkAttention(Module):
         self.rope = rope_for_layer(
             config, layer_info.layer_id, max_seq_len, device
         )
-        # Host-dequantized bf16; no per-head query renorm.
+        # MXFP8, or bf16 host-dequantized weights with `MAX_DSV41_Q_MXFP8=0`.
+        # No per-head query renorm.
         self.query_proj = DeepseekV41Query(
             config.hidden_size,
             config.q_lora_rank,
@@ -459,6 +466,9 @@ class DeepseekV41DSparkAttention(Module):
             config.rms_norm_eps,
             DType.bfloat16,
             device,
+            quant_config=(
+                dspark_main_proj_quant_config() if q_mxfp8_enabled() else None
+            ),
         )
         self.kv_norm = RMSNorm(
             self.head_dim, DType.float32, config.rms_norm_eps
@@ -489,12 +499,16 @@ class DeepseekV41DSparkAttention(Module):
     def _kv_raw(self, x: TensorValue) -> TensorValue:
         """Computes ``wkv(x)`` from the KV rows of the fused ``wq_a | wkv``."""
         q_lora_rank = self.query_proj.q_lora_rank
-        weight = self.query_proj.fused_wqa_wkv.weight
-        kv_weight = ops.slice_tensor(
-            weight.to(x.device),
-            [slice(q_lora_rank, q_lora_rank + self.head_dim), slice(None)],
+        fused = self.query_proj.fused_wqa_wkv
+        kv_rows = [slice(q_lora_rank, q_lora_rank + self.head_dim), slice(None)]
+        kv_weight = ops.slice_tensor(fused.weight.to(x.device), kv_rows)
+        if fused.weight_scale is None:
+            return ops.matmul(x, ops.transpose(kv_weight, 0, 1))
+        kv_scale = ops.slice_tensor(fused.weight_scale.to(x.device), kv_rows)
+        out = _matmul_float8_mxfp8(
+            ops.reshape(x, [-1, x.shape[-1]]), kv_weight, kv_scale
         )
-        return ops.matmul(x, ops.transpose(kv_weight, 0, 1))
+        return ops.reshape(out, [*x.shape[:-1], self.head_dim])
 
     def store_context(
         self,
@@ -526,19 +540,24 @@ class DeepseekV41DSparkAttention(Module):
         Returns:
             ``[T]`` int32, the slot each row was stored at.
         """
-        slots = leaf_slots(
-            cache, rows.bid, rows.positions, self.layer_info.layer_id
-        )
+        window = self._window(rows, cache)
         latent = self.kv_norm(kv_raw)
-        store_window_kv(
+        window.store(
+            ops.reshape(ops.cast(latent, DType.bfloat16), [-1, self.head_dim])
+        )
+        return window.slots
+
+    def _window(self, rows: RaggedRows, cache: PagedCacheValues) -> WindowStore:
+        """Returns where this stage's records of ``rows`` go."""
+        return WindowStore(
             cache.kv_blocks,
-            ops.reshape(ops.cast(latent, DType.bfloat16), [-1, self.head_dim]),
             rows.positions,
             rope_cos_sin_table(self.rope.freqs_cis_base()),
-            slots,
-            block_stride=cache.page_stride,
+            leaf_slots(
+                cache, rows.bid, rows.positions, self.layer_info.layer_id
+            ),
+            cache.page_stride,
         )
-        return slots
 
     def read_window(
         self, starts: TensorValue, swa_collection: PagedCacheValues
@@ -619,8 +638,15 @@ class DeepseekV41DSparkAttention(Module):
         t, hidden = h.shape[1], h.shape[2]
         b = cache.slots.shape[0]
         freqs_cis = self._freqs_cis(rows.positions)
-        _, q, kv_raw = self.query_proj(h, freqs_cis)
-        block_slots = self._store(kv_raw, rows, cache.cache)
+        if self.query_proj.can_fuse_norm_quant() and fused_kv_store_enabled():
+            window = self._window(rows, cache.cache)
+            _, _, q = self.query_proj.call_fused_store_kv(
+                h, freqs_cis, self.kv_norm, window
+            )
+            block_slots = window.slots
+        else:
+            _, q, kv_raw = self.query_proj(h, freqs_cis)
+            block_slots = self._store(kv_raw, rows, cache.cache)
 
         # `t` rows are `b` blocks of `k`: rebind `t` to `b * k` to split it.
         block_slots = ops.reshape(

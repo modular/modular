@@ -13,6 +13,7 @@ modular_py_library(
     deps = [
         requirement("transformers"),
         requirement("typing-extensions"),
+        requirement("numpy"),
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
@@ -26,9 +27,11 @@ modular_py_library(
         "//max/python/max/pipelines/architectures/dflash_mimo_v2",
         "//max/python/max/pipelines/architectures/dflash_mimo_v2_modulev3",
         "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
-        # mask_padded_tail, for the verify and draft logits.
+        # mask_padded_tail, for the verify and draft logits;
+        # split_replicated_batch, for the DP verify's batch split.
         "//max/python/max/pipelines/architectures/deepseekV3",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/speculative",
         "//max/python/max/profiler",
     ],

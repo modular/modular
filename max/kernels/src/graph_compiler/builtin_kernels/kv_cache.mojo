@@ -59,7 +59,12 @@ from nn.kv_cache_ragged import (
     kv_cache_store_padded,
     kv_matmul_ragged_paged,
 )
-from extensibility import InputTensor, OutputTensor
+from extensibility import (
+    Input,
+    InputTensor,
+    Output,
+    OutputTensor,
+)
 from extensibility import (
     _FusedInputTensor as FusedInputTensor,
 )
@@ -353,7 +358,7 @@ struct Struct_kv_cache_store_padded:
 
         kv_cache_store_padded[target=target](
             cache,
-            inputs.shape(),
+            inputs.shape_coord(),
             valid_lengths.to_tile_tensor(),
             input_fn,
             context,
@@ -1316,15 +1321,18 @@ struct Struct_kv_cache_row_offsets_ragged_paged:
     def execute[
         target: StaticString,
     ](
-        cache_row_offsets: OutputTensor[dtype=.uint32, rank=1, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        cache_row_offsets: Some[Output & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(cache_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
         kv_cache_row_offsets_ragged_paged[target=target](
-            cache_row_offsets.to_tile_tensor[.int64](),
-            input_row_offsets.to_tile_tensor[.int64](),
-            cache_lengths.to_tile_tensor[.int64](),
+            cache_row_offsets.to_tile_tensor[.uint32](),
+            input_row_offsets.to_tile_tensor[.uint32](),
+            cache_lengths.to_tile_tensor[.uint32](),
             context,
         )
 

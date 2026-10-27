@@ -37,7 +37,7 @@ from std.math.uutils import ufloordiv
 from std.memory import unsafe_stack_allocation
 from std.utils.static_tuple import StaticTuple
 
-from max.gpu import barrier
+from max.gpu import barrier, syncwarp
 from max.gpu import WARP_SIZE, lane_id, thread_idx, warp_id
 from max.gpu.primitives import warp
 
@@ -119,6 +119,8 @@ def _block_reduce_with_padding[
             warp_results[i] = warp_reduce_fn[reduction_idx=i](block_val)
 
         comptime if broadcast:
+            # Lane 0's stores overlap slots other lanes just read.
+            syncwarp()
             # Store the final results back to shared memory for broadcast
             if lid == 0:
                 comptime for i in range(num_reductions):

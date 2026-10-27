@@ -6,10 +6,14 @@ package(default_visibility = ["//visibility:private"])
 modular_py_binary(
     name = "subclass_rms_norm",
     srcs = ["subclass_rms_norm.py"],
+    # Eager ops use the optional _interpreter_ops kernels at runtime.
+    ignore_extra_deps = ["//max/python/max/_interpreter_ops"],
     imports = ["."],
     deps = [
-        "//max/python/max/dtype",
-        "//max/python/max/nn",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
     ],
 )
 
@@ -29,11 +33,14 @@ modular_run_binary_test(
 modular_py_binary(
     name = "define_module",
     srcs = ["define_module.py"],
+    # Eager ops use the optional _interpreter_ops kernels at runtime.
+    ignore_extra_deps = ["//max/python/max/_interpreter_ops"],
     imports = ["."],
     deps = [
-        "//max/python/max/dtype",
-        "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
     ],
 )
 
@@ -53,12 +60,14 @@ modular_run_binary_test(
 modular_py_binary(
     name = "compose_and_run",
     srcs = ["compose_and_run.py"],
+    # Eager ops use the optional _interpreter_ops kernels at runtime.
+    ignore_extra_deps = ["//max/python/max/_interpreter_ops"],
     imports = ["."],
     deps = [
+        "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
     ],
 )
 

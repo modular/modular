@@ -23,10 +23,17 @@ from max.graph.weights import WeightData
 from max.pipelines.architectures.deepseekV41.layers.attention import (
     wo_a_linear,
 )
+from max.pipelines.architectures.deepseekV41.layers.dspark import (
+    dspark_main_proj_quant_config,
+)
 from max.pipelines.architectures.deepseekV41.layers.moe import (
     DeepseekV41Gate,
     DeepseekV41SharedExpert,
 )
+from max.pipelines.architectures.deepseekV41.layers.query import (
+    DeepseekV41Query,
+)
+from max.pipelines.architectures.deepseekV41.model_config import Q_MXFP8_ENV
 from max.pipelines.architectures.deepseekV41.weight_adapters import (
     as_uint8,
     convert_weight_data,
@@ -274,3 +281,103 @@ def test_woa_mxfp8_scale_is_tile_interleaved() -> None:
         tiled[r // 128, c // 4, r % 32, (r % 128) // 32, c % 4],
         compact[r // 32, c],
     )
+
+
+_Q_HIDDEN, _Q_RANK, _Q_HEAD_DIM, _Q_HEADS = 64, 64, 32, 2
+
+
+def _query_checkpoint(attn: str) -> dict[str, WeightData]:
+    """Returns one attention's fp8 query projections as checkpointed.
+
+    Every e4m3 weight byte is 1.0, and each projection's compact e8m0
+    scale is one distinct power of two, so dequantized rows tell the
+    projections apart.
+    """
+    state_dict = {
+        f"{attn}.q_norm.weight": _f32(f"{attn}.q_norm.weight", (_Q_RANK,)),
+    }
+    for projection, out_dim, in_dim, scale_byte in (
+        ("wq_a", _Q_RANK, _Q_HIDDEN, 120),
+        ("wkv", _Q_HEAD_DIM, _Q_HIDDEN, 121),
+        ("wq_b", _Q_HEADS * _Q_HEAD_DIM, _Q_RANK, 122),
+        ("indexer.wq_b", 32, _Q_RANK, 123),
+    ):
+        base = f"{attn}.{projection}"
+        state_dict[f"{base}.weight"] = with_dtype(
+            np.full((out_dim, in_dim), 0x38, np.uint8),
+            DType.float8_e4m3fn,
+            f"{base}.weight",
+        )
+        state_dict[f"{base}.scale"] = with_dtype(
+            np.full((out_dim // 32, in_dim // 32), scale_byte, np.uint8),
+            DType.float8_e8m0fnu,
+            f"{base}.scale",
+        )
+    return state_dict
+
+
+def _bf16_values(data: WeightData) -> np.ndarray:
+    bits = as_uint8(data.data).view(np.uint16).astype(np.uint32) << 16
+    return bits.view(np.float32).reshape(data.shape.static_dims)
+
+
+@pytest.mark.parametrize("q_mxfp8", [True, False])
+def test_query_projections_strict_load(
+    q_mxfp8: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Rewired query projections strict-load into ``DeepseekV41Query``.
+
+    MXFP8 keeps the fp8 weights and the row-expanded scales, ``wq_a``'s
+    rows before ``wkv``'s; otherwise every projection is dequantized to
+    bf16.
+    """
+    monkeypatch.setenv(Q_MXFP8_ENV, "1" if q_mxfp8 else "0")
+    attn = "layers.0.attn"
+    rewired = rewire_trunk_state_dict(
+        convert_weight_data(_query_checkpoint(attn))
+    )
+    prefix = f"trunk.{attn}.query_proj."
+    query = DeepseekV41Query(
+        _Q_HIDDEN,
+        _Q_RANK,
+        _Q_HEAD_DIM,
+        _Q_HEADS,
+        1e-6,
+        DType.bfloat16,
+        DeviceRef.CPU(),
+        quant_config=dspark_main_proj_quant_config() if q_mxfp8 else None,
+    )
+    query.load_state_dict(
+        {
+            name.removeprefix(prefix): data
+            for name, data in rewired.items()
+            if name.startswith(prefix)
+        },
+        weight_alignment=1,
+        strict=True,
+    )
+    fused = rewired[f"{prefix}fused_wqa_wkv.weight"]
+    index = f"trunk.{attn}.indexer.wq_b"
+    assert f"{index}.weight" in rewired
+    if q_mxfp8:
+        assert fused.dtype == DType.float8_e4m3fn
+        scale = as_uint8(rewired[f"{prefix}fused_wqa_wkv.weight_scale"].data)
+        assert scale.shape == (_Q_RANK + _Q_HEAD_DIM, _Q_HIDDEN // 32)
+        np.testing.assert_array_equal(scale[:_Q_RANK], 120)
+        np.testing.assert_array_equal(scale[_Q_RANK:], 121)
+        assert rewired[f"{prefix}wq_b.weight_scale"].dtype == (
+            DType.float8_e8m0fnu
+        )
+        assert rewired[f"{index}.weight"].dtype == DType.float8_e4m3fn
+        assert f"{index}.weight_scale" in rewired
+    else:
+        values = _bf16_values(fused)
+        np.testing.assert_array_equal(values[:_Q_RANK], 2.0**-7)
+        np.testing.assert_array_equal(values[_Q_RANK:], 2.0**-6)
+        np.testing.assert_array_equal(
+            _bf16_values(rewired[f"{prefix}wq_b.weight"]), 2.0**-5
+        )
+        np.testing.assert_array_equal(
+            _bf16_values(rewired[f"{index}.weight"]), 2.0**-4
+        )
+        assert not any(name.endswith(".weight_scale") for name in rewired)

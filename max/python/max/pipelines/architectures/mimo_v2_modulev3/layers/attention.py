@@ -31,6 +31,7 @@ from max.experimental.nn import Linear, Module
 from max.experimental.nn.common_layers import quant_ops
 from max.experimental.nn.common_layers.functional_kernels import (
     flash_attention_ragged,
+    fused_chunked_qkv_rope_store_ragged,
     fused_qk_ragged_rope,
     store_k_cache_ragged,
     store_v_cache_ragged,
@@ -257,6 +258,7 @@ class MiMoV2Attention(Module[..., Tensor]):
         has_sinks: bool,
         quant_config: QuantConfig,
         data_parallel: bool = False,
+        fused_qkv: bool = False,
     ) -> None:
         """Initializes the layer.
 
@@ -277,6 +279,9 @@ class MiMoV2Attention(Module[..., Tensor]):
             quant_config: The dense FP8 config of ``qkv_proj``.
             data_parallel: Run replicated per data-parallel replica instead
                 of sharding the heads over tensor parallelism.
+            fused_qkv: Whether to prepare Q, K and V with the fused chunked
+                QKV op, which raises on an unsupported layout. Defaults to
+                ``False``.
         """
         self.layout = layout
         self.head_dim = head_dim
@@ -288,6 +293,7 @@ class MiMoV2Attention(Module[..., Tensor]):
         self.value_scale = value_scale
         self.sliding_window = sliding_window
         self.data_parallel = data_parallel
+        self.fused_qkv = fused_qkv
         self.n_heads = layout.chunks * layout.q_rows // head_dim
         self.qkv_proj = ChunkedQkvProj(layout, hidden_size, quant_config)
         if data_parallel:
@@ -353,18 +359,32 @@ class MiMoV2Attention(Module[..., Tensor]):
                 [tokens, layout.chunks, layout.padded_rows]
             )
             local_offsets = input_row_offsets.local_shards[d]
-            q = prepare_qkv_unfused(
-                local_qkv,
-                local_offsets,
-                freqs_cis.local_shards[d],
-                kv_collections[d],
-                layer_idx,
-                self.value_scale,
-                kv_params=self.kv_params,
-                layout=layout,
-                head_dim=self.head_dim,
-                v_head_dim=self.v_head_dim,
-            )
+            if self.fused_qkv:
+                q = fused_chunked_qkv_rope_store_ragged(
+                    local_qkv,
+                    local_offsets,
+                    freqs_cis.local_shards[d],
+                    kv_collections[d],
+                    layer_idx,
+                    self.value_scale,
+                    num_q_heads=local_heads,
+                    qk_head_dim=self.head_dim,
+                    v_head_dim=self.v_head_dim,
+                    chunk_padding=layout.padded_rows - layout.rows,
+                )
+            else:
+                q = prepare_qkv_unfused(
+                    local_qkv,
+                    local_offsets,
+                    freqs_cis.local_shards[d],
+                    kv_collections[d],
+                    layer_idx,
+                    self.value_scale,
+                    kv_params=self.kv_params,
+                    layout=layout,
+                    head_dim=self.head_dim,
+                    v_head_dim=self.v_head_dim,
+                )
             sinks = self.attention_sink_bias
             attn = flash_attention_ragged(
                 self.kv_params,

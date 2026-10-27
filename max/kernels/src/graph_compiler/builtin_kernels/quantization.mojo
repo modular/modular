@@ -52,6 +52,7 @@ from linalg.block_scaled_quantization import (
     grouped_quantize_nvfp4_row_amax,
     block_scales_interleave,
     quantize_dynamic_block_scaled_mxfp4,
+    rms_norm_quantize_mxfp8_q_kv,
     rope_quantize_dynamic_block_scaled,
     swiglu_quantize_dynamic_block_scaled,
 )
@@ -143,8 +144,8 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
 
         # The scale output holds one value per input row, laid out
         # [1, rows]. View it as rank-1 and index it by row number.
-        var in_shape = input.shape()
-        var rows = in_shape.flattened_length() // in_shape[rank - 1]
+        var in_shape = input.shape_coord()
+        var rows = Int(in_shape.product()) // Int(in_shape[rank - 1])
         var scale_t = TileTensor(
             scales.to_tile_tensor[.int64]()._storage,
             row_major(rows),
@@ -170,7 +171,7 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
         ) {var scale_t, var in_shape}:
             var row = 0
             comptime for i in range(rank - 1):
-                row = row * in_shape[i] + Int(coords[i])
+                row = row * Int(in_shape[i]) + Int(coords[i])
             scale_t.store[width=1, alignment=1](Coord(row), val)
 
         # Static row width (when known) enables the register-cached row path.
@@ -199,7 +200,7 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
                 output_fn,
                 scale_fn,
                 input.shape_coord(),
-                Int(input.shape()[rank - 1]),
+                Int(input.shape_coord()[rank - 1]),
                 gamma.to_tile_tensor[.int64](),
                 epsilon.cast[input_dtype](),
                 weight_offset.cast[input_dtype](),
@@ -432,16 +433,18 @@ struct GGMLQ40Dequantize:
     @inline(.always)
     def execute[
         _trace_name: StaticString,
-    ](
-        output: OutputTensor[dtype=.float32, rank=2, ...],
-        input: InputTensor[dtype=.uint8, rank=2, ...],
-    ) raises:
-        var input_tt = input.to_tile_tensor[.int64]()
-        var output_tt = output.to_tile_tensor[.int64]()
+    ](output: Some[Output & Tensor], input: Some[Input & Tensor],) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(input).rank == 2
+        var input_tt = input.to_tile_tensor[.uint8]()
+        var output_tt = output.to_tile_tensor[.float32]()
+        # A trait argument's shape() is already a Coord.
         Q4sym[group_size=32].dequantize_and_write_to_tensor(
             input_tt,
             output_tt,
-            output.shape(),
+            output_tt.layout.shape_coord(),
         )
 
 
@@ -636,16 +639,18 @@ struct GGMLQ6KDequantize:
     @inline(.always)
     def execute[
         _trace_name: StaticString,
-    ](
-        output: OutputTensor[dtype=.float32, rank=2, ...],
-        input: InputTensor[dtype=.uint8, rank=2, ...],
-    ) raises:
-        var input_tt = input.to_tile_tensor[.int64]()
-        var output_tt = output.to_tile_tensor[.int64]()
+    ](output: Some[Output & Tensor], input: Some[Input & Tensor],) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(input).rank == 2
+        var input_tt = input.to_tile_tensor[.uint8]()
+        var output_tt = output.to_tile_tensor[.float32]()
+        # A trait argument's shape() is already a Coord.
         q6_k_dequantize_impl(
             input_tt,
             output_tt,
-            output.shape(),
+            output_tt.layout.shape_coord(),
         )
 
 
@@ -1072,6 +1077,56 @@ struct Struct_rope_quantize_dynamic_block_scaled:
             input.to_tile_tensor[.int64](),
             freqs.to_tile_tensor[.int64](),
             tensor_sf,
+            context,
+        )
+
+
+@extensibility.register("mo.rms_norm.quantize.mxfp8.q_kv")
+struct Struct_rms_norm_quantize_mxfp8_q_kv:
+    """Registers the `mo.rms_norm.quantize.mxfp8.q_kv` graph op with the graph compiler.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=DType.float8_e4m3fn, rank=2, ...],
+        scales: OutputTensor[dtype=DType.float8_e8m0fnu, rank=5, ...],
+        kv_output: OutputTensor[dtype=DType.bfloat16, rank=2, ...],
+        input: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        q_gamma: InputTensor[dtype=DType.bfloat16, rank=1, ...],
+        kv_gamma: InputTensor[dtype=DType.bfloat16, rank=1, ...],
+        epsilon: Float32,
+        context: DeviceContext,
+    ) raises:
+        """RMS-normalizes the q and kv parts of each row, quantizing q to MXFP8.
+
+        Parameters:
+            target: The target GPU device.
+
+        Args:
+            output: The quantized q of shape `[M, q_cols]`.
+            scales: The block scales of q in the 5D TCGEN interleaved layout.
+            kv_output: The normalized kv of shape `[M, kv_cols]`.
+            input: The input of shape `[M, q_cols + kv_cols]`, q then kv.
+            q_gamma: The q weight.
+            kv_gamma: The kv weight.
+            epsilon: The RMS norm epsilon.
+            context: The device context.
+        """
+        comptime assert is_gpu[target](), (
+            "RMS norm MXFP8 quantization only supports GPUs with native"
+            " block scaled support"
+        )
+        rms_norm_quantize_mxfp8_q_kv(
+            output.to_tile_tensor[.int64](),
+            scales.to_tile_tensor[.int64](),
+            kv_output.to_tile_tensor[.int64](),
+            input.to_tile_tensor[.int64](),
+            q_gamma.to_tile_tensor[.int64](),
+            kv_gamma.to_tile_tensor[.int64](),
+            epsilon,
             context,
         )
 

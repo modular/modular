@@ -43,6 +43,7 @@ from layout import (
 )
 from layout.layout import *
 from layout.tensor_core import get_mma_shape
+from std.utils.coord import Coord, DynamicCoord
 from std.logger import Logger
 from std.memory import unsafe_stack_allocation
 from std.utils import Index, IndexList
@@ -540,10 +541,12 @@ def enqueue_matmul_kernel_naive[
         )
 
 
-def _amdgpu_get_mma_shape[dtype: DType, transpose_b: Bool]() -> IndexList[3]:
+def _amdgpu_get_mma_shape[
+    dtype: DType, transpose_b: Bool
+]() -> DynamicCoord[.int, 3]:
     comptime if transpose_b and _accelerator_arch() == "amdgpu:gfx950":
         comptime if dtype.is_half_float():
-            return Index(16, 16, 32)
+            return (16, 16, 32)
 
     return get_mma_shape[dtype, DType.float32]()
 
@@ -571,8 +574,8 @@ def _amdgpu_matmul_config_from_block_shape[
     if block_m == 16 and a_type.is_float8() and transpose_b:
         if block_n == 32 and K >= 2 * 256:
             return MatmulConfig[a_type, b_type, c_type, transpose_b](
-                block_tile_shape=Index(16, 32, 256),
-                warp_tile_shape=Index(16, 32, 256),
+                block_tile_shape=(16, 32, 256),
+                warp_tile_shape=(16, 32, 256),
                 mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
                 num_pipeline_stages=1,
                 num_warp_k_partitions=4,
@@ -580,8 +583,8 @@ def _amdgpu_matmul_config_from_block_shape[
             )
         if block_n == 64 and K >= 2 * 1024:
             return MatmulConfig[a_type, b_type, c_type, transpose_b](
-                block_tile_shape=Index(16, 64, 1024),
-                warp_tile_shape=Index(16, 16, 1024),
+                block_tile_shape=(16, 64, 1024),
+                warp_tile_shape=(16, 16, 1024),
                 mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
                 num_pipeline_stages=1,
                 num_warp_k_partitions=1,
@@ -621,8 +624,16 @@ def _amdgpu_matmul_config_from_block_shape[
             num_warps *= 2
 
     return MatmulConfig[a_type, b_type, c_type, transpose_b](
-        block_tile_shape=block_tile_shape,
-        warp_tile_shape=warp_tile_shape,
+        block_tile_shape=(
+            Int(block_tile_shape[0]),
+            Int(block_tile_shape[1]),
+            Int(block_tile_shape[2]),
+        ),
+        warp_tile_shape=(
+            Int(warp_tile_shape[0]),
+            Int(warp_tile_shape[1]),
+            Int(warp_tile_shape[2]),
+        ),
         mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
         num_pipeline_stages=1,
         num_warp_k_partitions=num_warp_k_partitions,
@@ -1150,11 +1161,15 @@ def _matmul_gpu_impl[
                     comptime config = MatmulConfig[
                         a_type, b_type, c_type, transpose_b
                     ](
-                        block_tile_shape=Index(
-                            block_m, block_n, _bk_base[a_type, True]()
+                        block_tile_shape=(
+                            block_m,
+                            block_n,
+                            _bk_base[a_type, True](),
                         ),
-                        warp_tile_shape=Index(
-                            block_m // 2, block_n // 2, _bk_base[a_type, True]()
+                        warp_tile_shape=(
+                            block_m // 2,
+                            block_n // 2,
+                            _bk_base[a_type, True](),
                         ),
                         mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
                         num_pipeline_stages=num_pipeline_stages,
@@ -1575,10 +1590,8 @@ def _matmul_gpu_impl[
                     comptime config = MatmulConfig[
                         a_type, b_type, c_type, transpose_b
                     ](
-                        block_tile_shape=Index(block_m, block_n, block_k),
-                        warp_tile_shape=Index(
-                            block_m // 2, block_n // 2, block_k
-                        ),
+                        block_tile_shape=(block_m, block_n, block_k),
+                        warp_tile_shape=(block_m // 2, block_n // 2, block_k),
                         mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
                         num_pipeline_stages=1,
                         num_k_partitions=num_k_partitions,
@@ -1604,8 +1617,8 @@ def _matmul_gpu_impl[
                             comptime config = MatmulConfig[
                                 a_type, b_type, c_type, transpose_b
                             ](
-                                block_tile_shape=Index(_bm, _bn, _bk),
-                                warp_tile_shape=Index(_bm // 2, _bn // 2, _bk),
+                                block_tile_shape=(_bm, _bn, _bk),
+                                warp_tile_shape=(_bm // 2, _bn // 2, _bk),
                                 mma_shape=_amdgpu_get_mma_shape[
                                     a_type, transpose_b
                                 ](),
@@ -1651,8 +1664,8 @@ def _matmul_gpu_impl[
                         comptime config = MatmulConfig[
                             a_type, b_type, c_type, transpose_b
                         ](
-                            block_tile_shape=Index(16, 16, 64),
-                            warp_tile_shape=Index(16, 16, 64),
+                            block_tile_shape=(16, 16, 64),
+                            warp_tile_shape=(16, 16, 64),
                             mma_shape=_amdgpu_get_mma_shape[
                                 a_type, transpose_b
                             ](),
@@ -2272,19 +2285,23 @@ def _multistage_gemm_amd[
     comptime if a_type.is_float8():
         # FP8 dispatch: ping-pong for large shapes, standard for small.
         comptime pingpong_config = KernelConfig(
-            block_shape=Index(256, 256, 128),
-            warp_shape=Index(128, 64, 128),
-            mma_shape=Index(16, 16, 128),
+            block_shape=(256, 256, 128),
+            warp_shape=(128, 64, 128),
+            mma_shape=(16, 16, 128),
         )
         comptime skinny_config = KernelConfig(
-            block_shape=Index(128, 256, 128),
-            warp_shape=Index(64, 64, 128),
-            mma_shape=Index(16, 16, 128),
+            block_shape=(128, 256, 128),
+            warp_shape=(64, 64, 128),
+            mma_shape=(16, 16, 128),
         )
         comptime std_config = MatmulConfig[a_type, b_type, c_type, True](
             block_tile_shape=config.block_tile_shape,
             warp_tile_shape=config.warp_tile_shape,
-            mma_shape=config.mma_shape,
+            mma_shape=(
+                config.mma_shape[0],
+                config.mma_shape[1],
+                config.mma_shape[2],
+            ),
             num_pipeline_stages=config.num_pipeline_stages,
         )
 
@@ -2305,7 +2322,11 @@ def _multistage_gemm_amd[
         comptime bf16_config = MatmulConfig[a_type, b_type, c_type, True](
             block_tile_shape=config.block_tile_shape,
             warp_tile_shape=config.warp_tile_shape,
-            mma_shape=config.mma_shape,
+            mma_shape=(
+                config.mma_shape[0],
+                config.mma_shape[1],
+                config.mma_shape[2],
+            ),
             num_pipeline_stages=config.num_pipeline_stages,
             num_warp_k_partitions=config.num_warp_k_partitions,
         )

@@ -1596,8 +1596,8 @@ def _online_softmax_iter_for_mma_output[
             ](score_frag_rowmax[col_tile, row])
 
     var coords = idx2crd[warp_layout](lane_id)
-    var lane_contains_first_column = coords[1] == 0
-    var lane_row = coords[0]
+    var lane_contains_first_column = Int(coords[1]) == 0
+    var lane_row = Int(coords[0])
 
     # If a row is split across multiple warps, communicate via shared memory
     # to achieve the rowwise max.

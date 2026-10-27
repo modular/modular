@@ -2699,11 +2699,17 @@ def KGEN_ExportKindAttr : EnumAttr<KGENDialect, KGEN_ExportKind, "export"> {
 //===----------------------------------------------------------------------===//
 
 def KGEN_LinkDependencyArrayAttr : ArrayOfAttr<KGENDialect,
-  "LinkDependencyArray", "link.dependencies", "FlatSymbolRefAttr"> {
+  "LinkDependencyArray", "link.dependencies", "SymbolRefAttr"> {
   let summary = "List of references to link dependencies.";
   let description = [{
     The `#kgen.link.dependencies` attribute represents a list of link
-    dependencies, which are flat symbol references.
+    dependencies.
+
+    Example:
+
+    ```mlir
+    #kgen<link.dependencies[@std, @namespace::@sub]>
+    ```
   }];
 }
 

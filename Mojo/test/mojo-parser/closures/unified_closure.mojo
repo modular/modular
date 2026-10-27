@@ -45,11 +45,11 @@
 # COM: per-signature trait, and no bridging wrapper is emitted.
 # S0: lit.struct.decl @"closure$s0_make_closure{{.*}}::my_closure::__storage"(trait<@"##__mojo_closure__##"<
 # S0-SAME: :param_list<type> [], :param_list<type> [#kgen.quote<!Int{{[0-9]*}}>], :type #kgen.quote<!Int{{[0-9]*}}>
-# S0-SAME: #kgen.fn_metadata<[imm_mem, imm], "capturing"
+# S0-SAME: #kgen.fn_metadata<[imm_mem, imm], "none"
 # S0-SAME: >, @{{.*}}::@AnyType, @{{.*}}::@Copyable, @{{.*}}::@Deinitable, @{{.*}}::@ImplicitlyCopyable, @{{.*}}::@Movable>) attributes {{{.*}}synthetic}
 # S0-NEXT: move :{{.*}}@{{.*}}::@"{{.*}}::my_closure::__storage"::@"__init__(move:
 # S0-NEXT: copy :{{.*}}@{{.*}}::@"{{.*}}::my_closure::__storage"::@"__init__(copy:
-# S0: lit.fn @"my_closure{{.*}}"[mut {{.*}}](%{{.*}}: !lit.ref<!storage{{.*}}, mut {{.*}}> imm_mem, |, %y: {{.*}}) capturing -> {{.*}}
+# S0: lit.fn @"my_closure{{.*}}"[mut {{.*}}](%{{.*}}: !lit.ref<!storage{{.*}}, mut {{.*}}> imm_mem, |, %y: {{.*}}) -> {{.*}}
 # S0: lit.fn @"__init__(move:{{.*}}::my_closure::__storage$)"
 # S0: lit.fn @"__deinit__({{.*}}::my_closure::__storage$)"
 # S0: kgen.witness "__call__" : {{.*}} = @{{.*}}::@"{{.*}}::my_closure::__storage"::@"__call__{{.*}}"
@@ -181,7 +181,7 @@ def s6_make_closure(x: Int, mem: String):
 # S7: lit.fn @"s7_take_closure{{.*}}"<f: trait<@"##__mojo_closure__##"<:param_list<type> [], :param_list<type> [#kgen.quote<!Int{{[0-9]*}}>], :type #kgen.quote<!Int{{[0-9]*}}>
 # S7-SAME: @{{.*}}::@AnyType, @{{.*}}::@Deinitable, @{{.*}}::@Movable>>[imm *"myFunc`"](%myFunc:
 # S7-NEXT: lit.call tail[!lit.generator<[1](!lit.ref<:trait<@"##__mojo_closure__##"
-# S7-SAME: capturing -> !Int{{[0-9]*}}>: #kgen.get_witness<:trait<@"##__mojo_closure__##"
+# S7-SAME: -> !Int{{[0-9]*}}>: #kgen.get_witness<:trait<@"##__mojo_closure__##"
 # S7-NEXT: lit.ownership.use %0
 # S7-NEXT: %none = kgen.param.constant: none = <#kgen.none>
 
@@ -195,7 +195,7 @@ def s7_take_closure[f: def(y: Int) -> Int](myFunc: f, x: Int):
 # COM: mangled into its symbol and declared with the bound trait.
 # S8: lit.fn @"nested[##__mojo_closure__##[
 # S8-SAME: <closure2: trait<@"##__mojo_closure__##"<:param_list<type> [], :param_list<type> [#kgen.quote<!Int{{[0-9]*}}>], :type #kgen.quote<!Int{{[0-9]*}}>
-# S8-SAME: @{{.*}}::@AnyType, @{{.*}}::@Deinitable, @{{.*}}::@Movable> closure2, imm *"impl`{{.*}}"> imm_mem, %y: !Int{{[0-9]*}}) capturing -> {{.*}}sourceName = "nested"
+# S8-SAME: @{{.*}}::@AnyType, @{{.*}}::@Deinitable, @{{.*}}::@Movable> closure2, imm *"impl`{{.*}}"> imm_mem, %y: !Int{{[0-9]*}}) -> {{.*}}sourceName = "nested"
 
 
 def s8_take_closure[closure1: def(y: Int) -> Int](x: Int):
@@ -259,7 +259,7 @@ def s11_bindIt(x: Int, y: Int, mem: String) -> Int:
 
 # S12: lit.struct.decl @"closure$s12_bindIt({{.*}})::myclosure::__storage"
 # S12: kgen.witness "__call__{{.*}}" : !lit.generator<<"my_param": !AnyType>
-# S12-SAME: [1](!lit.ref<{{.*}}, mut *[0,0]> imm_mem, |, "z": !Int{{.*}}) capturing -> !kgen.none>
+# S12-SAME: [1](!lit.ref<{{.*}}, mut *[0,0]> imm_mem, |, "z": !Int{{.*}}) -> !kgen.none>
 # S12-SAME: = @{{.*}}::@"closure$s12_bindIt({{.*}})::myclosure::__storage"::@"__call__{{.*}}"
 
 # S12-DAG: lit.file_module
@@ -330,7 +330,7 @@ def s15_bindIt(z: Int, mem: String):
 # COM: The witness keeps the closure's own names; the caller's binding renames.
 # S17-DAG: lit.struct.decl @"closure$s17_bindIt{{.*}}::myclosure::__storage"
 # S17-DAG: kgen.conformance @"##__mojo_closure__##"<{{.*}}<"", pos, not_vararg>, <"b", pos_or_kw, not_vararg>]>>> {
-# S17-DAG: kgen.witness "__call__" : !lit.generator<<"a": !Int{{[0-9]*}}>{{.*}}, "b": !Int{{[0-9]*}}) capturing -> {{.*}} = @{{.*}}::@"closure$s17_bindIt{{.*}}::myclosure::__storage"::@"__call__$trait
+# S17-DAG: kgen.witness "__call__" : !lit.generator<<"a": !Int{{[0-9]*}}>{{.*}}, "b": !Int{{[0-9]*}}) -> {{.*}} = @{{.*}}::@"closure$s17_bindIt{{.*}}::myclosure::__storage"::@"__call__$trait
 # S17-DAG: lit.fn @"s17_takeIt{{.*}}"<C: trait<@"##__mojo_closure__##"{{.*}}<"", pos, not_vararg>, <"y", pos_or_kw, not_vararg>]>>
 
 

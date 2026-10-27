@@ -39,6 +39,7 @@ from layout import (
     row_major,
     stack_allocation,
 )
+from layout.coord import DynamicCoord
 from internal_utils.fp8_utils import cast_saturating
 from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
@@ -63,7 +64,6 @@ from nn.normalization import _rms_norm_impl, _rms_norm_warp_tiling_subkernel
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from std.utils.numerics import get_accum_type
 
-from std.utils import IndexList
 from extensibility import InputTensor
 from extensibility import (
     _MutableInputTensor as MutableInputTensor,
@@ -2598,14 +2598,14 @@ def rms_norm_kv_cache_ragged_paged[
         rms_norm_cols <= kv_collection.kv_params.head_size or not per_head_norm
     ), "Length of gamma must be smaller or equal to head size"
 
-    var shape = IndexList[rank]()
-    shape[0] = Int(total_seq_len)
+    var shape = DynamicCoord[.int, rank]()
+    shape.replace_dynamic[0](Int(total_seq_len))
 
     comptime if per_head_norm:
-        shape[1] = kv_params.num_heads
-        shape[2] = rms_norm_cols
+        shape.replace_dynamic[1](kv_params.num_heads)
+        shape.replace_dynamic[2](rms_norm_cols)
     else:
-        shape[1] = rms_norm_cols
+        shape.replace_dynamic[1](rms_norm_cols)
 
     @inline(.always)
     def key_cache_input_fn[
@@ -2694,7 +2694,7 @@ def rms_norm_kv_cache_ragged_paged[
         ](
             key_cache_input_fn,
             key_cache_output_fn,
-            Coord(shape),
+            shape,
             gamma,
             context,
         )
@@ -2744,14 +2744,14 @@ def rms_norm_value_cache_ragged_paged[
         rms_norm_cols <= kv_collection.kv_params.head_size or not per_head_norm
     ), "Length of gamma must be smaller or equal to head size"
 
-    var shape = IndexList[rank]()
-    shape[0] = Int(total_seq_len)
+    var shape = DynamicCoord[.int, rank]()
+    shape.replace_dynamic[0](Int(total_seq_len))
 
     comptime if per_head_norm:
-        shape[1] = kv_params.num_heads
-        shape[2] = rms_norm_cols
+        shape.replace_dynamic[1](kv_params.num_heads)
+        shape.replace_dynamic[2](rms_norm_cols)
     else:
-        shape[1] = rms_norm_cols
+        shape.replace_dynamic[1](rms_norm_cols)
 
     @inline(.always)
     def value_cache_input_fn[
@@ -2838,7 +2838,7 @@ def rms_norm_value_cache_ragged_paged[
         ](
             value_cache_input_fn,
             value_cache_output_fn,
-            Coord(shape),
+            shape,
             gamma,
             context,
         )

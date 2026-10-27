@@ -258,27 +258,6 @@ kgen.func @use_in_region(%arg0 : index) {
   hlcf.return
 }
 
-// CHECK-LABEL: @use_crosses_region
-kgen.func @use_crosses_region(%arg0: index) {
-  // CHECK-NEXT: %0 = pop.stack_allocation
-  %0 = pop.stack_allocation 1 x index
-  // CHECK-NEXT: %1 = pop.stack_allocation
-  %1 = pop.stack_allocation 1 x index
-  // CHECK-NEXT: pop.store %arg0, %0
-  pop.store %arg0, %0 : !kgen.pointer<index>
-  // CHECK-NEXT: pop.store %arg0, %1
-  pop.store %arg0, %1 : !kgen.pointer<index>
-  // CHECK-NEXT: stage_closure
-  kgen.stage_closure = () -> () {
-    // CHECK-NEXT: pop.load %1
-    pop.load %1 : !kgen.pointer<index>
-    // CHECK-NEXT: pop.store %arg0, %0
-    pop.store %arg0, %0 : !kgen.pointer<index>
-    hlcf.return
-  }
-  hlcf.return
-}
-
 // CHECK-LABEL: @copy_elision_alias
 // TODO(#22921): The pass should be able to elide this. Just make sure it
 // doesn't crash for now.

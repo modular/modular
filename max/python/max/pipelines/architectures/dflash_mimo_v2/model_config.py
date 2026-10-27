@@ -78,6 +78,12 @@ class DFlashMiMoV2Config:
     max_seq_len: int
     devices: list[DeviceRef]
     kv_params: KVCacheParams
+    data_parallel_degree: int = 1
+    """Replicas the drafter serves. Above 1 it must equal the device count:
+    each one-device replica holds the full drafter, all its KV heads local,
+    and attends its own rows -- the placement the target's attention uses
+    under data parallelism. The default leaves the tensor-parallel sharding
+    over every device."""
     dtype: DType = DType.bfloat16
 
     @property

@@ -60,7 +60,6 @@ from nn.attention.mha_mask import (
     SlidingWindowNonCausalMask,
 )
 
-from std.utils.index import Index, IndexList
 from std.utils.numerics import min_or_neg_inf
 from max.gpu.primitives.grid_controls import PDLLevel
 
@@ -485,7 +484,9 @@ def indexer_key_bound[
 def _kernel_mask[
     dtype: DType, width: SIMDLength
 ](
-    coord: IndexList[2, ...], bound: IndexList[2, ...], vec: SIMD[dtype, width]
+    coord: Coord[Int, Int],
+    bound: Coord[Int, Int],
+    vec: SIMD[dtype, width],
 ) -> SIMD[dtype, width]:
     var columns = iota[.uint32, width](UInt32(coord[1]))
     var in_bounds = columns.lt(UInt32(bound[1])) & SIMD[.bool, width](

@@ -19,7 +19,7 @@ import time
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field, fields
-from typing import TypeVar
+from typing import NamedTuple, TypeVar
 
 from max.nn.kv_cache.metrics import dkv_tier_degraded
 from max.pipelines.context import TextContext
@@ -232,6 +232,14 @@ def _publish_jenga_occupancy(occupancy: Sequence[_PoolOccupancy]) -> None:
                 leaf="none",
                 state="empty",
             )
+
+
+class _ScheduledBatch(NamedTuple):
+    """Executor service time and returned counts for one scheduler step."""
+
+    terminated_reqs: int
+    execution_time_s: float
+    output_tokens: int
 
 
 @dataclass
@@ -457,11 +465,20 @@ class BatchMetrics:
         batch_video_metrics: VideoEncoderMetrics | None = None,
         overlap_active: bool = False,
         completed_batch_stats: CompletedBatchStats | None = None,
+        num_output_tokens: int | None = None,
     ) -> BatchMetrics:
         num_input_tokens = inputs.input_tokens
         batch_size = inputs.batch_size
-        prompt_throughput = num_input_tokens / batch_execution_time_s
-        if (
+        prompt_throughput = (
+            num_input_tokens / batch_execution_time_s
+            if batch_execution_time_s > 0.0
+            else 0.0
+        )
+        if batch_execution_time_s <= 0.0:
+            generation_throughput = 0.0
+        elif num_output_tokens is not None:
+            generation_throughput = num_output_tokens / batch_execution_time_s
+        elif (
             batch_spec_decode_metrics is not None
             and batch_spec_decode_metrics.num_verifications > 0
         ):
@@ -1332,15 +1349,16 @@ class BatchMetrics:
         METRICS.reqs_queued(self.num_pending_reqs)
 
         if not defer_execution_metrics:
-            METRICS.batch_prompt_throughput(
-                self.prompt_throughput, batch_type=bt
-            )
-            METRICS.batch_generation_throughput(
-                self.generation_throughput, batch_type=bt
-            )
             METRICS.batch_execution_time(
                 self.batch_execution_time_s * 1000, batch_type=bt
             )
+            if self.batch_execution_time_s > 0.0:
+                METRICS.batch_prompt_throughput(
+                    self.prompt_throughput, batch_type=bt
+                )
+                METRICS.batch_generation_throughput(
+                    self.generation_throughput, batch_type=bt
+                )
 
         METRICS.batch_creation_time(
             self.batch_creation_time_s * 1000, batch_type=bt
@@ -1550,18 +1568,14 @@ def publish_completed_batch_metrics(
             Derived by the scheduler rather than the pipeline, but it
             describes ``stats``' batch.
     """
-    if stats.execution_time_s <= 0.0:
-        return
     bt = stats.batch_type.value
     METRICS.batch_terminated_reqs(terminated_reqs, batch_type=bt)
-    prompt_throughput = stats.num_input_tokens / stats.execution_time_s
-    if stats.num_output_tokens is not None and stats.batch_type == BatchType.TG:
-        generation_throughput = stats.num_output_tokens / stats.execution_time_s
-    else:
-        generation_throughput = stats.batch_size / stats.execution_time_s
-    METRICS.batch_prompt_throughput(prompt_throughput, batch_type=bt)
-    METRICS.batch_generation_throughput(generation_throughput, batch_type=bt)
     METRICS.batch_execution_time(stats.execution_time_s * 1000, batch_type=bt)
+    if stats.execution_time_s > 0.0:
+        METRICS.batch_prompt_throughput(stats.prompt_throughput, batch_type=bt)
+        METRICS.batch_generation_throughput(
+            stats.generation_throughput, batch_type=bt
+        )
     if stats.early_sync_duration_s is not None:
         METRICS.di_early_sync_time(stats.early_sync_duration_s * 1000)
 
@@ -1648,6 +1662,7 @@ class SchedulerLogger:
         batch_video_metrics: VideoEncoderMetrics | None = None,
         overlap_active: bool = False,
         completed_batch_stats: CompletedBatchStats | None = None,
+        num_output_tokens: int | None = None,
         batch_id: int | None = None,
     ) -> None:
         """Periodically logs batch-level metrics to console.
@@ -1672,6 +1687,9 @@ class SchedulerLogger:
                 and termination telemetry for ``inputs`` is suppressed in
                 favor of ``completed_batch_stats``, and the log line describes
                 the enqueued and completed batches as separate clauses.
+            num_output_tokens: Tokens returned by the synchronous executor,
+                before filtering or advancing requests. Includes prefill outputs
+                and all accepted plus bonus speculative outputs.
             completed_batch_stats: Stats for the batch whose outputs were
                 synchronized this iteration (overlap scheduling), used with
                 ``num_terminated_reqs`` to publish execution-time, throughput
@@ -1698,6 +1716,7 @@ class SchedulerLogger:
             batch_video_metrics=batch_video_metrics,
             overlap_active=overlap_active,
             completed_batch_stats=completed_batch_stats,
+            num_output_tokens=num_output_tokens,
         )
 
         # Always publish metrics. Under overlap scheduling the wall-clock

@@ -56,10 +56,6 @@ namespace M::MOGG {
 
 namespace {
 
-// Mojo-source method names of extensibility kernels live in MojoIdentifiers.h
-// (`kMoggExecuteFuncName`, `kMoggShapeFuncName`, `kMoggElementwiseFuncName`,
-// `kMoggBuildGraphFuncName`).
-
 /// Return the slot names of a well-known stdlib parameterised struct whose
 /// decl lives in a dependency package the fast loader skips. A non-empty list
 /// must match `LIT::StructType::getParamValues()` in length, or
@@ -374,6 +370,7 @@ static constexpr UnfusedExecuteRegistration kUnfusedExecuteRegistrations[] = {
     {"mo.conv_transpose", "cpu"},
     {"mo.conv_transpose", "gpu"},
     {"mo.matmul", "cpu"},
+    {"mo.matmul", "gpu"},
     // Graph compiler test kernels (`GraphCompiler/test/kernels`).
     {"trait_unfused_execute"},
     {"unfused_invalid_both_fused"},
@@ -615,16 +612,18 @@ static mlir::LogicalResult scanForKernelDecls(
         continue;
       llvm::StringRef srcName = *srcNameOpt;
       bool recognized = true;
-      if (srcName == kMoggExecuteFuncName)
+      if (srcName == stringifyKernelFunctionKind(KernelFunctionKind::Execute))
         kernel.executeOverloads.push_back(func);
-      else if (srcName == kMoggShapeFuncName) {
+      else if (srcName ==
+               stringifyKernelFunctionKind(KernelFunctionKind::Shape)) {
         func.emitError()
             << "shape functions defined as methods of a kernel struct are no "
                "longer supported; use @extensibility.register_shape_function "
                "instead";
         result = mlir::failure();
         return mlir::WalkResult::interrupt();
-      } else if (srcName == kMoggElementwiseFuncName) {
+      } else if (srcName ==
+                 stringifyKernelFunctionKind(KernelFunctionKind::Elementwise)) {
         // Route to the SIMD or TileTensor slot by return type leaf name,
         // unwrapping LIT::RefType sugar as computeValueParams does.
         bool isTile = false;
@@ -645,11 +644,14 @@ static mlir::LogicalResult scanForKernelDecls(
           kernel.tileElementwiseFn = func;
         else
           kernel.elementwiseFn = func;
-      } else if (srcName == kMoggBuildGraphFuncName)
+      } else if (srcName ==
+                 stringifyKernelFunctionKind(KernelFunctionKind::BuildGraph))
         kernel.buildGraphFn = func;
-      else if (srcName == kMoggExecuteDeviceFuncName)
+      else if (srcName ==
+               stringifyKernelFunctionKind(KernelFunctionKind::ExecuteDevice))
         kernel.executeDeviceFn = func;
-      else if (srcName == kMoggExecuteConfigurationFuncName)
+      else if (srcName == stringifyKernelFunctionKind(
+                              KernelFunctionKind::ExecuteConfiguration))
         kernel.executeConfigurationFn = func;
       else
         recognized = false;
@@ -1068,21 +1070,38 @@ struct ImportPackagesPass
       }
 
       // Always attach the struct decl loc; verification of missing entry
-      // points (no execute / elementwise) blames the struct itself.
+      // points (no execute / elementwise) blames the struct itself. Each loc
+      // is named, `execute` or `execute.arg2`, for `KernelDeclOp`'s location
+      // accessors; being locations, they leave the MEF with the debug info.
       llvm::SmallVector<mlir::Location> fnLocs;
-      fnLocs.push_back(kernel.structDeclOp.getLoc());
-      if (kernel.executeFn)
-        fnLocs.push_back(kernel.executeFn.getLoc());
-      if (kernel.elementwiseFn)
-        fnLocs.push_back(kernel.elementwiseFn.getLoc());
-      if (kernel.tileElementwiseFn)
-        fnLocs.push_back(kernel.tileElementwiseFn.getLoc());
-      if (kernel.buildGraphFn)
-        fnLocs.push_back(kernel.buildGraphFn.getLoc());
-      if (kernel.executeDeviceFn)
-        fnLocs.push_back(kernel.executeDeviceFn.getLoc());
-      if (kernel.executeConfigurationFn)
-        fnLocs.push_back(kernel.executeConfigurationFn.getLoc());
+      auto addNamedLoc = [&](const llvm::Twine &name, mlir::Location loc) {
+        fnLocs.push_back(
+            mlir::NameLoc::get(mlir::StringAttr::get(ctx, name), loc));
+      };
+      addNamedLoc(KernelDeclOp::kStructLocationName,
+                  kernel.structDeclOp.getLoc());
+      auto addFnLocs = [&](KernelFunctionKind kind, KGEN::LIT::FnOp fn) {
+        if (!fn)
+          return;
+        llvm::StringRef name = stringifyKernelFunctionKind(kind);
+        addNamedLoc(name, fn.getLoc());
+        // Only the body's block arguments carry per-argument locations.
+        mlir::Region &body = fn.getBodyRegion();
+        if (body.empty() ||
+            body.getNumArguments() != fn.getArgumentTypes().size())
+          return;
+        for (mlir::BlockArgument arg : body.getArguments())
+          addNamedLoc(
+              KernelDeclOp::getMojoArgLocationName(kind, arg.getArgNumber()),
+              arg.getLoc());
+      };
+      addFnLocs(KernelFunctionKind::Execute, kernel.executeFn);
+      addFnLocs(KernelFunctionKind::Elementwise, kernel.elementwiseFn);
+      addFnLocs(KernelFunctionKind::TileElementwise, kernel.tileElementwiseFn);
+      addFnLocs(KernelFunctionKind::BuildGraph, kernel.buildGraphFn);
+      addFnLocs(KernelFunctionKind::ExecuteDevice, kernel.executeDeviceFn);
+      addFnLocs(KernelFunctionKind::ExecuteConfiguration,
+                kernel.executeConfigurationFn);
 
       // execute / build_graph may return user-defined parameterised opaque
       // structs (e.g. `SIMDPair[P0, P1]`) that `inferOpaqueParameters` needs,

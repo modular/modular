@@ -113,7 +113,7 @@ mo.graph @dg_execute_only(%x: !mo.tensor<[2, 3], f32, gpu:0>) -> !mo.tensor<[2, 
 // unchanged: every device input still routes through `builder.add_input` and
 // is passed to `DeviceGraph.create` as a cache-key input (the mutable one
 // contributes its address to the key via `write_graph_key`).
-// CHECK-DAG: unpack_tensor[{{[0-9]+}}, {{[0-9]+}}, DType.float32, kind = max.gpu.host._legacy.device_graph.DeviceGraphInputKind.mutable]
+// CHECK-DAG: unpack_tensor[{{[0-9]+}}, {{[0-9]+}}, DType.float32, kind = max.gpu.host.DeviceGraphInputKind.mutable]
 // CHECK-DAG: builder.add_input({{var[_0-9]+}})
 // CHECK-DAG: DeviceGraph.create_collective(
 
@@ -134,7 +134,7 @@ mo.graph @dg_mut_input(%buf: !mo.buffer<[2, 3], f32, gpu:0>, %x: !mo.tensor<[2, 
 // into the graph cache key. The emitter loop is unchanged: the host input
 // still routes through `builder.add_input` and is passed to
 // `DeviceGraph.create` as a cache-key input.
-// CHECK-DAG: unpack_tensor[{{[0-9]+}}, {{[0-9]+}}, DType.int64, kind = max.gpu.host._legacy.device_graph.DeviceGraphInputKind.host]
+// CHECK-DAG: unpack_tensor[{{[0-9]+}}, {{[0-9]+}}, DType.int64, kind = max.gpu.host.DeviceGraphInputKind.host]
 // CHECK-DAG: builder.add_input({{var[_0-9]+}})
 // CHECK-DAG: DeviceGraph.create_collective(
 

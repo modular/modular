@@ -60,8 +60,9 @@ Tensor-to-mesh mappings
 Sharding rules
 --------------
 
-A sharding rule returns the :class:`AxisAssignment` rows its op accepts;
-:class:`AxisAssignment` describes what a rule receives and returns. These
+A sharding rule receives the op's arguments with each tensor replaced by its
+:class:`TensorLayout`, and returns the :class:`AxisAssignment` rows the op
+accepts: what each tensor operand must hold and what the op produces. These
 functions build common rules and rows.
 
 .. autosummary::

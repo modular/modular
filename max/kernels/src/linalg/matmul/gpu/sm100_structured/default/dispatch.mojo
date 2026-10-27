@@ -26,7 +26,7 @@ from std.sys import (
 
 from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from max.gpu.host import DeviceContext
-from max.gpu.host._legacy.device_attribute import DeviceAttribute
+from max.gpu.host import DeviceAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     DefaultEngine,
@@ -36,6 +36,7 @@ from layout import (
 )
 from std.logger import Logger
 
+from std.utils.coord import Coord
 from std.utils.index import Index
 from std.collections import OptionalReg
 
@@ -334,6 +335,8 @@ def dispatch_gemv[
         Index(7168, 18432),
         Index(16384, 512),
         Index(8192, 512),
+        Index(32768, 1280),
+        Index(4096, 1280),
     ]
 
     comptime if static_NK in SM100_GEMV_SHAPES:
@@ -581,7 +584,7 @@ def _matmul_dispatch_sm100_impl[
         comptime CLUSTER_DIM_X = get_defined_int["TUNE_CLUSTER_DIM_X", 2]()
         comptime CLUSTER_DIM_Y = get_defined_int["TUNE_CLUSTER_DIM_Y", 1]()
         comptime CLUSTER_DIM_Z = get_defined_int["TUNE_CLUSTER_DIM_Z", 1]()
-        comptime CLUSTER_DIM = Index(
+        comptime CLUSTER_DIM = Coord[Int, Int, Int](
             CLUSTER_DIM_X, CLUSTER_DIM_Y, CLUSTER_DIM_Z
         )
         comptime BLOCK_SWIZZLE_SIZE = get_defined_int[
@@ -596,10 +599,14 @@ def _matmul_dispatch_sm100_impl[
         comptime NUM_ACCUM = get_defined_int["TUNE_NUM_ACCUM", 2]()
         comptime NUM_CLC = get_defined_int["TUNE_NUM_CLC", 2]()
 
-        comptime umma_shape = Index(BM * CTA_GROUP, BN * CTA_GROUP, MMA_K)
+        comptime umma_shape = (BM * CTA_GROUP, BN * CTA_GROUP, MMA_K)
 
         comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-            mma_shape=umma_shape,
+            mma_shape=(
+                Int(umma_shape[0]),
+                Int(umma_shape[1]),
+                Int(umma_shape[2]),
+            ),
             cluster_shape=CLUSTER_DIM,
             block_swizzle_size=BLOCK_SWIZZLE_SIZE,
             raster_order=RasterOrder(Int32(RASTERIZE_ORDER)),
@@ -987,7 +994,11 @@ def matmul_dispatch_sm100_fp8[
     @inline(.nodebug)
     def _dispatch[entry: TuningConfigSM100]() raises {imm}:
         comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-            mma_shape=entry.mma_shape,
+            mma_shape=(
+                entry.mma_shape[0],
+                entry.mma_shape[1],
+                entry.mma_shape[2],
+            ),
             cluster_shape=entry.cluster_shape,
             block_swizzle_size=entry.block_swizzle_size,
         )
@@ -1224,7 +1235,11 @@ def select_and_launch_sm100_config[
                     comptime matmul_config = MatmulConfig[
                         a_type, b_type, c_type, transpose_b
                     ](
-                        mma_shape=tuning_config.mma_shape,
+                        mma_shape=(
+                            tuning_config.mma_shape[0],
+                            tuning_config.mma_shape[1],
+                            tuning_config.mma_shape[2],
+                        ),
                         cta_group=tuning_config.cta_group,
                         cluster_shape=tuning_config.cluster_shape,
                         block_swizzle_size=tuning_config.block_swizzle_size,
@@ -1737,7 +1752,11 @@ def dispatch_sm100_batched_matmul[
                 comptime matmul_config = MatmulConfig[
                     a_type, b_type, c_type, transpose_b
                 ](
-                    mma_shape=tuning_config.mma_shape,
+                    mma_shape=(
+                        tuning_config.mma_shape[0],
+                        tuning_config.mma_shape[1],
+                        tuning_config.mma_shape[2],
+                    ),
                     cta_group=tuning_config.cta_group,
                     cluster_shape=tuning_config.cluster_shape,
                     block_swizzle_size=tuning_config.block_swizzle_size,

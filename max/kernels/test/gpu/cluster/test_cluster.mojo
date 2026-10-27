@@ -32,6 +32,7 @@ from max.gpu import block_id_in_cluster, lane_id
 from max.gpu.intrinsics import Scope
 from max.gpu.memory import fence_mbarrier_init
 from layout.tma_async import PipelineState, SharedMemBarrier
+from layout import Coord
 from std.memory import unsafe_stack_allocation
 from std.memory.alloc import unsafe_alloc
 from std.testing import assert_almost_equal
@@ -110,9 +111,15 @@ def cluster_launch_control(
         cluster_sync_release()
 
 
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 def pipeline_test_kernel[
-    num_stages: Int, cluster_shape: StaticTuple[Int32, 3]
+    num_stages: Int, cluster_shape: Coord[Int, Int, Int]
 ]():
     var clc_response = unsafe_stack_allocation[
         num_stages,
@@ -155,7 +162,7 @@ def pipeline_test_kernel[
     if elect_one_sync():
         comptime for i in range(num_stages):
             full_mbar[i].init(producer_arv_count)
-            empty_mbar[i].init(consumer_arv_count)
+            empty_mbar[i].init(Int32(consumer_arv_count))
 
     fence_mbarrier_init()
     cluster_sync()
@@ -225,7 +232,7 @@ def test_cluster_launch_control(ctx: DeviceContext) raises:
 
 
 def test_cluster_pipeline(ctx: DeviceContext) raises:
-    comptime kernel = pipeline_test_kernel[1, StaticTuple[Int32, 3](2, 2, 1)]
+    comptime kernel = pipeline_test_kernel[1, Coord[Int, Int, Int](2, 2, 1)]
     ctx.enqueue_function[kernel](
         # Use more blocks than SMs to ensure cancel happens.
         grid_dim=(4, 4),

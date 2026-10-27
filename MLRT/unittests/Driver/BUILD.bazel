@@ -672,6 +672,63 @@ modular_cc_test(
     ],
 )
 
+# The compiler family's local-arch query (HAL-only, like the library it tests).
+modular_cc_test(
+    name = "CompilerDeviceArchTest",
+    size = "small",
+    srcs = ["CompilerDeviceArchTest.cpp"],
+    data = ["//Target:CPUPlugin.so"] + select({
+        "//:nvidia_gpu": ["//Target:CUDAPlugin.so"],
+        "//:amd_gpu": ["//Target:HIPPlugin.so"],
+        "//:apple_gpu": ["//Target:MetalPlugin.so"],
+        "//conditions:default": [],
+    }),
+    env = select({
+        "//:nvidia_gpu": {
+            "EXPECTED_ARCH_PREFIX": "nvidia:sm_",
+            "MODULAR_DRIVER_PLUGINS": "$(rootpath //Target:CPUPlugin.so);CUDA@$(rootpath //Target:CUDAPlugin.so)",
+        },
+        "//:amd_gpu": {
+            "EXPECTED_ARCH_PREFIX": "amdgpu:gfx",
+            "MODULAR_DRIVER_PLUGINS": "$(rootpath //Target:CPUPlugin.so);HIP@$(rootpath //Target:HIPPlugin.so)",
+        },
+        "//:apple_gpu": {
+            "EXPECTED_ARCH_PREFIX": "metal:",
+            "MODULAR_DRIVER_PLUGINS": "$(rootpath //Target:CPUPlugin.so);Metal@$(rootpath //Target:MetalPlugin.so)",
+        },
+        "//conditions:default": {},
+    }),
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    deps = [
+        "//AsyncRT:RuntimeGlobals",
+        "//MLRT:Driver/CompilerDeviceArch",
+        "//MLRT:Driver/DeviceContextAPI",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+# A plugin whose api has no Mojo vendor reports no arch, so the compiler falls
+# back to an explicit target instead of a guessed one.
+modular_cc_test(
+    name = "CompilerDeviceArchMockTest",
+    size = "small",
+    srcs = ["CompilerDeviceArchTest.cpp"],
+    data = [
+        "//MLRT/test/Driver/HAL:MockPlugin.so",
+        "//Target:CPUPlugin.so",
+    ],
+    env = {
+        "MODULAR_DRIVER_PLUGINS": "CPU@$(rootpath //Target:CPUPlugin.so);Mock@$(rootpath //MLRT/test/Driver/HAL:MockPlugin.so)",
+    },
+    deps = [
+        "//AsyncRT:RuntimeGlobals",
+        "//MLRT:Driver/CompilerDeviceArch",
+        "//MLRT:Driver/DeviceContextAPI",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
 modular_cc_test(
     name = "TraceMetadataTest",
     size = "small",

@@ -29,6 +29,7 @@
 #include "nanobind/nanobind.h"
 #include "llvm/ADT/STLExtras.h"
 #include <memory>
+#include <stdexcept>
 #include <unordered_map>
 #include <vector>
 
@@ -36,6 +37,13 @@ namespace nb = nanobind;
 
 namespace M::Core {
 class ModelHandle;
+
+/// `Model.execute` failed, often in one of the model's kernels. Raised in
+/// Python as `max.engine.ModelExecutionError`.
+class ModelExecutionError : public std::runtime_error {
+public:
+  using std::runtime_error::runtime_error;
+};
 
 inline llvm::SmallVector<ModelTensorSpec>
 getModelTensorSpecs(llvm::ArrayRef<std::string> names,

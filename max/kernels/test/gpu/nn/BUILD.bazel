@@ -737,6 +737,10 @@ _FILECHECK_TESTS = [
             # PagedKVCacheCollection (//max:kv_cache) and is B200-only;
             # declared explicitly below.
             "attention/test_mha_sm100_ws_layout_e_v_alignment.mojo",
+            # Fused non-dividing-group (9, 6) tail-row canary: uses
+            # PagedKVCacheCollection (//max:kv_cache) and is B200-only;
+            # declared explicitly below.
+            "attention/test_mha_sm100_ws_bm32_fuse_gqa_tail_rows.mojo",
             # TEMPORARY (sub_rows gate): restored from a3b3414cd32^.
             "attention/test_mha_sm100_ws_shared_key_build.mojo",
             "attention/test_mha_sm100_ws_shared_key.mojo",
@@ -823,6 +827,34 @@ mojo_test(
     name = "attention/test_mha_sm100_ws_layout_e_v_alignment.mojo.test",
     size = "large",
     srcs = ["attention/test_mha_sm100_ws_layout_e_v_alignment.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    enable_assertions = True,
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:testdata",
+        "@mojo//:std",
+    ],
+)
+
+# SM100 FA4 WS BM=32 `fuse_gqa` for groups 9 and 6 (which do not divide
+# MMA_M=32): poisons shared memory before each launch and checks the fused output
+# against the naive oracle and a zero-filled control. Declared explicitly for the
+# `//max:kv_cache` dep. B200-only.
+mojo_test(
+    name = "attention/test_mha_sm100_ws_bm32_fuse_gqa_tail_rows.mojo.test",
+    size = "large",
+    srcs = ["attention/test_mha_sm100_ws_bm32_fuse_gqa_tail_rows.mojo"],
     copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
     enable_assertions = True,
     exec_properties = {
@@ -1867,6 +1899,15 @@ mojo_test(
                 "FP8_INDEX_FOLD_DTYPE=float32",
                 "-D",
                 "FP8_INDEX_Q_INTERLEAVE=0",
+            ],
+        ),
+        # K tiles loaded evict-first, which launches choose only for decode
+        # shapes larger than L2.
+        (
+            "test_mla_index_mxfp4_k_evict_first",
+            [
+                "-D",
+                "FP8_INDEX_K_EVICT_FIRST=1",
             ],
         ),
     ]

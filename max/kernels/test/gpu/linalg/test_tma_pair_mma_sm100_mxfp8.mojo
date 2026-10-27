@@ -57,6 +57,7 @@ from layout.tma_async import (
     _idx_product,
     create_tensor_tile,
 )
+from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -75,6 +76,7 @@ from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
 )
 from linalg.matmul.vendor.blas import matmul
+from std.utils.coord import Coord
 
 
 def simple_init() -> Bool:
@@ -84,7 +86,13 @@ def simple_init() -> Bool:
     return False
 
 
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
@@ -104,10 +112,10 @@ def blockscaled_pair_cta_mxfp8[
     b_scales_tile_shape: Coord,
     b_scales_desc_shape: Coord,
     c_layout: TensorLayout,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: DynamicCoord[.int, 3],
     transpose_b: Bool = True,
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     cta_group: Int = 1,
@@ -262,7 +270,7 @@ def blockscaled_pair_cta_mxfp8[
     if elect_one_warp and elect_one_thread:
         tma_mbar[0].init()
         mma_mbar[0].init(
-            cluster_shape[0] // Int32(cta_group) + cluster_shape[1] - 1
+            Int32(cluster_shape[0] // cta_group + cluster_shape[1] - 1)
         )
 
     cluster_sync()
@@ -307,7 +315,7 @@ def blockscaled_pair_cta_mxfp8[
         a_type,
         b_type,
         a_scales_type,
-        Index[dtype=.uint32](mma_shape[0], mma_shape[1]),
+        (UInt32(mma_shape[0]), UInt32(mma_shape[1])),
         transpose_b=transpose_b,
     ]()
 
@@ -580,10 +588,10 @@ def sm100_blockscaled_mxfp8_cta_pair[
     b_scales_layout: TensorLayout,
     //,
     *,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: DynamicCoord[.int, 3],
     cta_group: Int,
-    cluster_shape: StaticTuple[Int32, 3],
+    cluster_shape: Coord[Int, Int, Int],
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -750,10 +758,10 @@ def test_blockscaled_pair_cta_mxfp8[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    block_tile_shape: IndexList[3],
-    umma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    umma_shape: DynamicCoord[.int, 3],
     cta_group: Int,
-    cluster_shape: StaticTuple[Int32, 3],
+    cluster_shape: Coord[Int, Int, Int],
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -1012,9 +1020,9 @@ def main() raises:
             dtype,
             dtype,
             .bfloat16,
-            Index(128, 64, BK),
-            Index(256, 128, MMA_K),
-            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
+            (128, 64, BK),
+            (256, 128, MMA_K),
+            cluster_shape=(2, 1, 1),
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             cta_group=2,
@@ -1025,9 +1033,9 @@ def main() raises:
             dtype,
             dtype,
             .bfloat16,
-            Index(128, 64, BK),
-            Index(256, 128, MMA_K),
-            cluster_shape=StaticTuple[Int32, 3](2, 2, 1),
+            (128, 64, BK),
+            (256, 128, MMA_K),
+            cluster_shape=(2, 2, 1),
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             cta_group=2,
@@ -1038,9 +1046,9 @@ def main() raises:
             dtype,
             dtype,
             .bfloat16,
-            Index(128, 64, BK),
-            Index(256, 128, MMA_K),
-            cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+            (128, 64, BK),
+            (256, 128, MMA_K),
+            cluster_shape=(4, 4, 1),
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             cta_group=2,

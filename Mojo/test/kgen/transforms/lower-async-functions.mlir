@@ -772,7 +772,7 @@ kgen.func @coroutine(%arg0: i1) async -> index {
   }
   %true = index.bool.constant true
   // CHECK:      [[CORO:%.*]] = kgen.call @coroutine1_ramp(%true)
-  // CHECK-NEXT: [[CALLBACK:%.*]] = kgen.create_closure[(!kgen.pointer<none>) -> (): @callback]()
+  // CHECK-NEXT: [[CALLBACK:%.*]] = kgen.create_func_ptr[(!kgen.pointer<none>) -> (): @callback]()
   // CHECK-NEXT: [[SLOT:%.*]] = kgen.struct.gep [[CORO]][[[#FRAME2:]]]
   // CHECK-NEXT: [[CAST:%.*]] = pop.pointer.bitcast [[SLOT]]
   // CHECK-NEXT: [[SLOT2:%.*]] = kgen.struct.gep [[CAST]][0] : <struct<((!kgen.pointer<none>) -> (), pointer<none>)>>
@@ -782,7 +782,7 @@ kgen.func @coroutine(%arg0: i1) async -> index {
   // CHECK-NEXT: pop.store
   // CHECK-NEXT: co.suspend {
   %coro = co.invoke[(i1) async -> index: @coroutine1](%true)
-  %callback = kgen.create_closure[(!kgen.pointer<none>) -> (): @callback]()
+  %callback = kgen.create_func_ptr[(!kgen.pointer<none>) -> (): @callback]()
   %ptr = co.get_callback_ptr %coro : <struct<(!kgen.generator<(!kgen.pointer<none>) -> ()>, pointer<none>)>>
   %callbackSlot = kgen.struct.gep %ptr[0] : <struct<(!kgen.generator<(!kgen.pointer<none>) -> ()>, pointer<none>)>>
   pop.store %callback, %callbackSlot : !kgen.pointer<!kgen.generator<(!kgen.pointer<none>) -> ()>>
@@ -1154,7 +1154,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 // RESUME FNC INIT
 // CHECK-NEXT:  [[V3:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME1:]]]
-// CHECK-NEXT:  [[V4:%.*]] = kgen.create_closure{{.*}}@conditional_suspoint_resume]
+// CHECK-NEXT:  [[V4:%.*]] = kgen.create_func_ptr{{.*}}@conditional_suspoint_resume]
 // CHECK-NEXT:  [[V5:%.*]] = pop.pointer.bitcast [[V4]]
 // CHECK-NEXT:  pop.store [[V5]], [[V3]] : !kgen.pointer<pointer<none>>
 
@@ -1340,7 +1340,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 // Configure Resume
 // CHECK-NEXT: [[V3:%.*]] = kgen.struct.gep [[CONT1]][1]
-// CHECK-NEXT: [[V4:%.*]] = kgen.create_closure[({{.*}}) -> (): @needsBoth_resume]()
+// CHECK-NEXT: [[V4:%.*]] = kgen.create_func_ptr[({{.*}}) -> (): @needsBoth_resume]()
 // CHECK-NEXT: [[V5:%.*]] = pop.pointer.bitcast [[V4]]
 // CHECK-NEXT: pop.store [[V5]], [[V3]] : !kgen.pointer<pointer<none>>
 
@@ -1381,7 +1381,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 // Configure resume function.
 // CHECK-NEXT:  [[V3:%.*]] = kgen.struct.gep [[CONT]][1]
-// CHECK-NEXT:  [[V4:%.*]] = kgen.create_closure[({{.*}}) -> (): @needsBoth_resume]()
+// CHECK-NEXT:  [[V4:%.*]] = kgen.create_func_ptr[({{.*}}) -> (): @needsBoth_resume]()
 // CHECK-NEXT:  [[V5:%.*]] = pop.pointer.bitcast [[V4]]
 // CHECK-NEXT:  pop.store [[V5]], [[V3]]
 

@@ -54,7 +54,6 @@ from extensibility import (
     Tensor,
     TileTensorable,
     UnsafeFusedView,
-    to_tile_tensor,
     unsafe_fused_view,
 )
 from extensibility import (
@@ -84,13 +83,17 @@ struct ConvertE4M3FNToE4M3FNUZ:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        output: OutputTensor[dtype=.float8_e4m3fnuz, rank=2, ...],
-        input: InputTensor[dtype=.float8_e4m3fn, rank=2, ...],
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(input).rank == 2
         convert_e4m3fn_to_e4m3fnuz(
-            input.to_tile_tensor[.int64](),
-            output.to_tile_tensor[.int64](),
+            input.to_tile_tensor[.float8_e4m3fn](),
+            output.to_tile_tensor[.float8_e4m3fnuz](),
             ctx,
         )
 
@@ -301,13 +304,9 @@ struct PadConstant:
         elif is_gpu[target]():
             pad_constant_gpu(
                 output_tile.ptr,
-                rebind[IndexList[rank]](
-                    coord_to_index_list(output_tile.layout.shape_coord())
-                ),
+                output_tile.layout.shape_coord(),
                 input_tile.ptr,
-                rebind[IndexList[rank]](
-                    coord_to_index_list(input_tile.layout.shape_coord())
-                ),
+                input_tile.layout.shape_coord(),
                 paddings_ptr,
                 rebind[Scalar[out_dtype]](constant),
                 ctx,
@@ -333,9 +332,11 @@ def pad_constant_shape[
         constant_dtype == type_of(input).dtype
     ), "constant dtype must match input dtype"
     return rebind[IndexList[type_of(input).rank]](
-        pad_shape(
-            input.to_tile_tensor(),
-            padding.to_tile_tensor(),
+        coord_to_index_list(
+            pad_shape(
+                input.to_tile_tensor(),
+                padding.to_tile_tensor(),
+            )
         )
     )
 
@@ -371,13 +372,9 @@ struct PadRepeat:
         elif is_gpu[target]():
             pad_repeat_gpu(
                 output_tile.ptr,
-                rebind[IndexList[rank]](
-                    coord_to_index_list(output_tile.layout.shape_coord())
-                ),
+                output_tile.layout.shape_coord(),
                 input_tile.ptr,
-                rebind[IndexList[rank]](
-                    coord_to_index_list(input_tile.layout.shape_coord())
-                ),
+                input_tile.layout.shape_coord(),
                 paddings_ptr,
                 ctx,
             )
@@ -392,9 +389,11 @@ def pad_repeat_shape(
     """Computes the output shape for the `mo.pad.repeat` graph op."""
     comptime assert type_of(padding).rank == 1, "padding must be rank 1"
     return rebind[IndexList[type_of(input).rank]](
-        pad_shape(
-            input.to_tile_tensor(),
-            padding.to_tile_tensor(),
+        coord_to_index_list(
+            pad_shape(
+                input.to_tile_tensor(),
+                padding.to_tile_tensor(),
+            )
         )
     )
 
@@ -430,13 +429,9 @@ struct PadReflect:
         elif is_gpu[target]():
             pad_reflect_gpu(
                 output_tile.ptr,
-                rebind[IndexList[rank]](
-                    coord_to_index_list(output_tile.layout.shape_coord())
-                ),
+                output_tile.layout.shape_coord(),
                 input_tile.ptr,
-                rebind[IndexList[rank]](
-                    coord_to_index_list(input_tile.layout.shape_coord())
-                ),
+                input_tile.layout.shape_coord(),
                 paddings_ptr,
                 ctx,
             )
@@ -451,9 +446,11 @@ def pad_reflect_shape(
     """Computes the output shape for the `mo.pad.reflect` graph op."""
     comptime assert type_of(padding).rank == 1, "padding must be rank 1"
     return rebind[IndexList[type_of(input).rank]](
-        pad_shape(
-            input.to_tile_tensor(),
-            padding.to_tile_tensor(),
+        coord_to_index_list(
+            pad_shape(
+                input.to_tile_tensor(),
+                padding.to_tile_tensor(),
+            )
         )
     )
 
@@ -895,6 +892,12 @@ struct ConvTransposeCPU:
         ctx: DeviceContext,
     ) raises:
         comptime assert conforms_to(type_of(output), Storable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(filter), TileTensorable)
+        comptime assert conforms_to(type_of(strides), TileTensorable)
+        comptime assert conforms_to(type_of(dilation), TileTensorable)
+        comptime assert conforms_to(type_of(paddings), TileTensorable)
+        comptime assert conforms_to(type_of(output_paddings), TileTensorable)
         comptime assert type_of(input).rank == type_of(output).rank
         comptime dtype = type_of(output).dtype
 
@@ -916,12 +919,12 @@ struct ConvTransposeCPU:
         var scratch = TileTensor(scratch_buf, row_major(output.shape()))
         _conv_transpose_cpu[filter_layout, has_epilogue_fusion=True](
             scratch,
-            to_tile_tensor(input),
-            to_tile_tensor(filter),
-            to_tile_tensor(strides),
-            to_tile_tensor(dilation),
-            to_tile_tensor(paddings),
-            to_tile_tensor(output_paddings),
+            input.to_tile_tensor(),
+            filter.to_tile_tensor(),
+            strides.to_tile_tensor(),
+            dilation.to_tile_tensor(),
+            paddings.to_tile_tensor(),
+            output_paddings.to_tile_tensor(),
             output_fn,
             ctx,
         )
@@ -941,15 +944,22 @@ struct ConvTransposeCPU:
         output_paddings: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises where not conforms_to(type_of(output), Fused):
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(filter), TileTensorable)
+        comptime assert conforms_to(type_of(strides), TileTensorable)
+        comptime assert conforms_to(type_of(dilation), TileTensorable)
+        comptime assert conforms_to(type_of(paddings), TileTensorable)
+        comptime assert conforms_to(type_of(output_paddings), TileTensorable)
         comptime assert type_of(input).rank == type_of(output).rank
         _conv_transpose_cpu[filter_layout, has_epilogue_fusion=False](
-            to_tile_tensor(output),
-            to_tile_tensor(input),
-            to_tile_tensor(filter),
-            to_tile_tensor(strides),
-            to_tile_tensor(dilation),
-            to_tile_tensor(paddings),
-            to_tile_tensor(output_paddings),
+            output.to_tile_tensor(),
+            input.to_tile_tensor(),
+            filter.to_tile_tensor(),
+            strides.to_tile_tensor(),
+            dilation.to_tile_tensor(),
+            paddings.to_tile_tensor(),
+            output_paddings.to_tile_tensor(),
             no_conv_simd_epilogue_fn,
             ctx,
         )

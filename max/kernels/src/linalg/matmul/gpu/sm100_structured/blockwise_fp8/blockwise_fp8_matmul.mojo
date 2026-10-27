@@ -132,7 +132,11 @@ def blockwise_fp8_matmul[
         a_type, b_type, c_type, transpose_b
     ](
         cta_group=config.cta_group,
-        mma_shape=config.mma_shape,
+        mma_shape=(
+            config.mma_shape[0],
+            config.mma_shape[1],
+            config.mma_shape[2],
+        ),
         cluster_shape=config.cluster_shape,
         AB_swapped=config.AB_swapped,
         num_accum_pipeline_stages=config.num_accum_pipeline_stages,
@@ -169,11 +173,7 @@ def blockwise_fp8_matmul[
         type_of(b_scales).LayoutType,
         transpose_b=transpose_b,
         config=corrected_config,
-        cluster_shape=StaticTuple[Int32, 3](
-            Int32(corrected_config.cluster_shape[0]),
-            Int32(corrected_config.cluster_shape[1]),
-            Int32(corrected_config.cluster_shape[2]),
-        ),
+        cluster_shape=corrected_config.cluster_shape,
         n_scale_granularity=n_scale_granularity,
         b_scales_engine=type_of(b_scales).Engine,
     ]

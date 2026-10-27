@@ -34,6 +34,8 @@ const char *LIT::getContextMessage(ExprContext context) {
     return "";
   case EC_VarInit:
     return " in 'var' initializer";
+  case EC_VarInitMatchBinding:
+    return " in match binding";
   case EC_Assignment:
     return " in assignment";
   case EC_Type:

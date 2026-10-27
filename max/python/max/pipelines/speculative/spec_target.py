@@ -53,6 +53,10 @@ class Verified(Generic[_TargetHiddenT, _LogitsT]):
     """Lands state no cache length rewinds on the accepted prefix, for a
     target that keeps any. The driver calls it with its batch once the
     accepted count is set, before the draft runs."""
+    replica_logits: list[_LogitsT] | None = None
+    """The verify logits each data-parallel replica's leader holds for its own
+    rows, ``[rows * (num_steps + 1), vocab]``, for a driver that judges the
+    proposals where the rows live. ``None`` when only :attr:`logits` exists."""
 
 
 class DistributedVerify(partial[Verified[Any]]):

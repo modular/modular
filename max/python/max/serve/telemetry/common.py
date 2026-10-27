@@ -162,8 +162,11 @@ HISTOGRAM_COUNT_BUCKETS: tuple[float, ...] = log_spaced_buckets(
 
 # Batch size (number of requests in a batch), from a single request up to the
 # largest batch the scheduler forms.
-HISTOGRAM_BATCH_SIZE_BUCKETS: tuple[float, ...] = log_spaced_buckets(
-    1.0, 512.0, 1.5
+HISTOGRAM_BATCH_SIZE_BUCKETS: tuple[float, ...] = (
+    0.0,
+    *(float(size) for size in range(1, 21)),  # Tracks exactly for 1-20
+    # [2:] drops the ladder's leading 0.0 and its 20.0, already present.
+    *log_spaced_buckets(20.0, 512.0, 1.05)[2:],  # 5% steps from 21 - 512
 )
 
 # Mean speculative-decode acceptance length per batch. Because it is an average
@@ -214,11 +217,14 @@ HISTOGRAM_BUCKETS_BY_METRIC: dict[str, tuple[float, ...]] = {
     "maxserve.input_processing_time": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.output_processing_time": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.time_to_first_token": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "maxserve.time_to_first_token_by_prompt_length": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "maxserve.cache.connector_cordon_wait_time": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.response_queue_time": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.model_load_time": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.itl": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.time_per_output_token": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.batch_execution_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "maxserve.scheduler.batch_step_time": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.batch_creation_time": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.di.api_pre_tokenize": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.di.api_submit": HISTOGRAM_LATENCY_BUCKETS_MS,
@@ -273,6 +279,8 @@ HISTOGRAM_BUCKETS_BY_METRIC: dict[str, tuple[float, ...]] = {
     # Media items of one kind on a single request; the same ladder as batch
     # size, since both count per-request work items.
     "maxserve.media.items_per_request": HISTOGRAM_BATCH_SIZE_BUCKETS,
+    # Exact through 20 passes, where a cordon that costs a pass or two lives.
+    "maxserve.cache.connector_cordon_passes": HISTOGRAM_BATCH_SIZE_BUCKETS,
     # Throughput (tokens/s)
     "maxserve.batch_prompt_throughput": HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS,
     "maxserve.batch_generation_throughput": HISTOGRAM_THROUGHPUT_TOKENS_BUCKETS,

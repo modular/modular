@@ -49,6 +49,12 @@ public:
                                      llvm::raw_ostream &fullOutputStream,
                                      const mlir::Diagnostic &diag);
 
+  /// Formats `diag` and its notes the way the Mojo compiler prints them:
+  /// `file:line:col: error: message`, then the source line and a caret. A
+  /// location whose file can't be read prints without the source line. The
+  /// "see current operation" note is left out.
+  static std::string formatWithSource(const mlir::Diagnostic &diag);
+
 private:
   std::vector<mlir::Diagnostic> diagnostics;
 };

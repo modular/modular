@@ -109,8 +109,13 @@ matchOperandsOrResultsKernelDecl(ValueRange values,
                                  StringRef opName,
                                  bool hasSameVariadicOperandSize,
                                  bool hasExtraOutputShapeArgument,
-                                 bool resultLeavesByValue,
-                                 bool allowMutToImmut) {
+                                 bool resultLeavesByValue, bool allowMutToImmut,
+                                 KernelArgBlame &blame) {
+  // Records the signature position of the kernel argument an error is about.
+  auto blameArg = [&](const KernelDeclOperandAdaptor &arg) {
+    if (arg.sourceDescriptor)
+      blame = arg.sourceDescriptor->position;
+  };
   static const char *argumentKind = matchOperands ? "input" : "output";
 
   // Launch arguments (the `execute` device context, the `build_graph` graph
@@ -210,6 +215,7 @@ matchOperandsOrResultsKernelDecl(ValueRange values,
         allowMutToImmut);
 
     if (errorOnMatch.isError()) {
+      blameArg(*kernelType);
       return Error(llvm::formatv(
           "Op '{}' {} at position {} does not match registered kernel operand "
           "at position {}: {} vs {}. Detail: {}",
@@ -242,6 +248,7 @@ matchOperandsOrResultsKernelDecl(ValueRange values,
     return mapping;
 
   if (!kernelEnd) {
+    blameArg(kernelOperands[kernelIndex]);
     return Error(llvm::formatv(
         "Could not provide all {} arguments to op '{}': missing operands "
         "starting from argument named '{}'",
@@ -295,6 +302,7 @@ matchOperandsOrResultsKernelDecl(ValueRange values,
       *moTypeToKernelDeclOperand, adaptor.outputResult->underlyingType, *moType,
       /*allowMutToImmut=*/false);
   if (errorOnMatch.isError()) {
+    blameArg(*adaptor.outputResult);
     return Error(llvm::formatv(
         "Op '{}' output at position {} does not match kernel function result; "
         "op has {} but kernel has {}. Detail: {}",
@@ -306,16 +314,15 @@ matchOperandsOrResultsKernelDecl(ValueRange values,
   return mapping;
 }
 
-ErrorOr<KernelDeclOperandMapping>
-mapToKernelImplementation(ValueRange operands, ValueRange results,
-                          const KernelDeclFunctionAdaptor &adaptor,
-                          StringRef opName, bool hasSameVariadicOperandSize,
-                          bool hasExtraOutputShapeArgument,
-                          bool resultLeavesByValue, bool allowMutToImmut) {
+ErrorOr<KernelDeclOperandMapping> mapToKernelImplementation(
+    ValueRange operands, ValueRange results,
+    const KernelDeclFunctionAdaptor &adaptor, StringRef opName,
+    bool hasSameVariadicOperandSize, bool hasExtraOutputShapeArgument,
+    bool resultLeavesByValue, bool allowMutToImmut, KernelArgBlame &blame) {
   auto matchedInputsOrError = matchOperandsOrResultsKernelDecl<true>(
       operands, adaptor, opName, hasSameVariadicOperandSize,
       hasExtraOutputShapeArgument, /*resultLeavesByValue=*/false,
-      allowMutToImmut);
+      allowMutToImmut, blame);
   if (matchedInputsOrError.isError())
     return matchedInputsOrError.takeError();
 
@@ -324,7 +331,7 @@ mapToKernelImplementation(ValueRange operands, ValueRange results,
   auto matchedOutputsOrError = matchOperandsOrResultsKernelDecl<false>(
       results, adaptor, opName, hasSameVariadicOperandSize,
       hasExtraOutputShapeArgument, resultLeavesByValue,
-      /*allowMutToImmut=*/false);
+      /*allowMutToImmut=*/false, blame);
   if (matchedOutputsOrError.isError())
     return matchedOutputsOrError.takeError();
 
@@ -333,12 +340,34 @@ mapToKernelImplementation(ValueRange operands, ValueRange results,
 }
 
 ErrorOr<KernelDeclOperandMapping>
+mapToKernelImplementation(ValueRange operands, ValueRange results,
+                          const KernelDeclFunctionAdaptor &adaptor,
+                          StringRef opName, bool hasSameVariadicOperandSize,
+                          bool hasExtraOutputShapeArgument,
+                          bool resultLeavesByValue, bool allowMutToImmut) {
+  KernelArgBlame unused;
+  return mapToKernelImplementation(
+      operands, results, adaptor, opName, hasSameVariadicOperandSize,
+      hasExtraOutputShapeArgument, resultLeavesByValue, allowMutToImmut,
+      unused);
+}
+
+ErrorOr<KernelDeclOperandMapping>
 mapMOOpToKernelImplementation(Operation *op,
-                              const KernelDeclFunctionAdaptor &adaptor) {
+                              const KernelDeclFunctionAdaptor &adaptor,
+                              KernelArgBlame &blame) {
   return mapToKernelImplementation(
       op->getOperands(), op->getResults(), adaptor, moOperationName(op),
       isa<MO::SameVariadicOperandSizeInterface>(op),
-      opHasExtraOutputShapeArgument(op), /*resultLeavesByValue=*/false);
+      opHasExtraOutputShapeArgument(op), /*resultLeavesByValue=*/false,
+      /*allowMutToImmut=*/false, blame);
+}
+
+ErrorOr<KernelDeclOperandMapping>
+mapMOOpToKernelImplementation(Operation *op,
+                              const KernelDeclFunctionAdaptor &adaptor) {
+  KernelArgBlame unused;
+  return mapMOOpToKernelImplementation(op, adaptor, unused);
 }
 
 } // namespace M::MOGG

@@ -135,6 +135,17 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    ep_shared_expert_side_stream: Literal["pre", "post"] | None = Field(
+        default=None,
+        description=(
+            "Run the shared expert of a model that dispatches with per-token "
+            "NVFP4 global scales on a side stream, so it overlaps the "
+            "expert-parallel collectives instead of serializing with the "
+            "dispatch. ``pre`` issues it before the dispatch, ``post`` before "
+            "the combine. Unset keeps it inline."
+        ),
+    )
+
     eplb_profile: bool = Field(
         default_factory=lambda: (
             os.getenv("MAX_SERVE_EPLB_PROFILE", "").lower()
@@ -478,7 +489,9 @@ class PipelineRuntimeConfig(ConfigFileModel):
         description=(
             "Whether a below-threshold CE step with work on 2+ replicas "
             "runs immediately with each replica's chunk size reduced to "
-            "the balance level, deferring only the excess. When False, "
+            "the balance level, deferring only the excess. The balance level "
+            "must be at least ``chunked_prefill_min_chunk_size``, or half of "
+            "``max_batch_input_tokens`` when that is 0. When False, "
             "such steps are held whole until the threshold is met, a "
             "deadline expires, or there is nothing else to run. Only "
             "consulted when ``dp_ce_balance_timeout_ms`` > 0."

@@ -43,9 +43,10 @@ from ..block_driver import BlockBatch, BlockProposer
 from ..config import SpeculativeConfig
 from ..driver import SequentialBatch, SequentialProposer
 from ..spec_target import Verified
-from .target_adapter import TargetAdapter
+from .target_adapter import STAGE_BOUNDARY, TargetAdapter
 
 __all__ = [
+    "STAGE_BOUNDARY",
     "VerifyFn",
     "batch_distributed_buffers",
     "batch_trailing_buffers",
@@ -56,6 +57,7 @@ __all__ = [
     "extra",
     "primary_kv",
     "sequential_proposer",
+    "speculates_on_last_stage",
     "tail_buffers",
     "tail_kv",
     "trailing_buffers",
@@ -173,6 +175,12 @@ def export_contract(
         input_types,
         structured_output,
     )
+
+
+def speculates_on_last_stage(target_arch: str, method: str) -> bool:
+    """Returns whether the target's fused graph under ``method`` builds as
+    the last of several pipeline stages."""
+    return _adapter(target_arch, method).speculates_on_last_stage
 
 
 def tail_kv(target_arch: str) -> str | None:

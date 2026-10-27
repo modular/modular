@@ -28,8 +28,8 @@ frees it with `MojoHAL_strfree`.
 from std.atomic import Atomic, Ordering
 from std.ffi import c_char, CStringSpan, external_call
 from std.sys import size_of
-from max.gpu.host._hal import get_device_spec
-from max.gpu.host._hal.context import Buffer
+from max._driver import get_device_spec
+from max._driver.max_license.hal.context import Buffer
 
 comptime _HALRawBuffer = Buffer[get_device_spec[0]()]
 from max.gpu.host import (
@@ -39,9 +39,11 @@ from max.gpu.host import (
     DeviceStream,
     HostBuffer,
 )
-from max.gpu.host._legacy.device_context import _CString
-from max.gpu.host._legacy.device_attribute import DeviceAttribute
-from max.gpu.host._legacy.device_context import _DeviceContextScopeHAL
+from max.gpu.host import _CString
+from max.gpu.host import DeviceAttribute
+from max._driver.max_license.device_context_hal.device_context_hal import (
+    _DeviceContextScopeHAL,
+)
 from std.memory import (
     alloc,
     dealloc,

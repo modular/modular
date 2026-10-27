@@ -86,6 +86,51 @@ TEST_F(SelectStreamSiblingFreeListTest, SelectStreamSideStreamAllocates) {
   dropViewAfterWork(view);
 }
 
+// `selectStream` keeps one view per stream for the base context's lifetime, so
+// a view is never destroyed and never flushes its free list on teardown. Frees
+// made on the view while its list already has a deferred flush in flight are
+// queued behind no event, so the sibling drain cannot reach them. A base
+// allocation miss must still recover them once no caller holds the view.
+TEST_F(SelectStreamSiblingFreeListTest, BaseMissRecoversIdleViewFrees) {
+  ASSIGN_NO_ERR(DeviceContextRef, base, baseContext());
+  ensureSideStream(*base);
+  if (!base->device().memoryManager().isVmmEnabled())
+    GTEST_SKIP() << "the sibling-recovery path runs only on a VMM allocation "
+                    "miss; enable VMM in this test target's env";
+
+  // Against the target's 1 GiB budget: park 768 MiB on the view, then ask the
+  // base for more than the rest of the pool.
+  constexpr size_t kMiB = 1024 * 1024;
+  constexpr size_t kBlockBytes = 32 * kMiB;
+  constexpr int kBlocks = 24;
+  constexpr size_t kBaseBytes = 640 * kMiB;
+  const Device::AllocMode mode = Device::AllocMode::SYNC;
+
+  ASSIGN_NO_ERR(DeviceContextRef, view, base->selectStream(1));
+  MemoryManagerFreeList &viewFreeList = view->freeList();
+  std::vector<void *> ptrs;
+  for (int i = 0; i < kBlocks; ++i) {
+    ASSIGN_NO_ERR(void *, ptr, viewFreeList.allocate(kBlockBytes, mode));
+    ptrs.push_back(ptr);
+  }
+  // The first free queues a deferred flush; the rest land behind no event.
+  for (void *ptr : ptrs)
+    EXPECT_NO_ERR(viewFreeList.free(ptr));
+  EXPECT_NO_ERR(view->synchronize());
+
+  MemoryManagerFreeList &baseFreeList = base->freeList();
+  // A view a caller still holds may have work in flight on its stream, so its
+  // frees stay put and the miss fails.
+  ErrorOr<void *> held = baseFreeList.allocate(kBaseBytes, mode);
+  EXPECT_TRUE(held.isError());
+  if (!held.isError())
+    EXPECT_NO_ERR(baseFreeList.free(held.takeValue()));
+
+  view.reset();
+  ASSIGN_NO_ERR(void *, ptr, baseFreeList.allocate(kBaseBytes, mode));
+  EXPECT_NO_ERR(baseFreeList.free(ptr));
+}
+
 TEST_F(SelectStreamSiblingFreeListTest,
        ConcurrentViewChurnUnderSiblingFlushPressure) {
   ASSIGN_NO_ERR(DeviceContextRef, base, baseContext());
@@ -118,8 +163,8 @@ TEST_F(SelectStreamSiblingFreeListTest,
           break;
         livePtrs.push_back(ptr.takeValue());
       }
-      // Cannot fit: drives the miss path, which drains sibling freelists while
-      // views are being retired underneath it.
+      // Cannot fit: drives the miss path, which drains sibling freelists and
+      // flushes idle views while the main thread takes and drops the view.
       ErrorOr<void *> miss = baseFreeList.allocate(kMissBytes, mode);
       if (miss.isError())
         missRounds.fetch_add(1, std::memory_order_relaxed);

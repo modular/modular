@@ -271,6 +271,49 @@ class CompletedLookup:
 
 
 @runtime_checkable
+class KVProbe(Protocol):
+    """Handle for one :meth:`KVConnector.start_probe`, polled by the manager.
+
+    Read whenever the manager prices or allocates the request rather than
+    waited for, so a handle that has not answered by then costs nothing but
+    the hit it could have reported.
+    """
+
+    def is_complete(self) -> bool:
+        """Returns whether the connector has answered. Never blocks."""
+        ...
+
+    def masks(self) -> Sequence[Mapping[str, Sequence[bool]]] | None:
+        """Returns what :meth:`KVConnector.probe` would have returned.
+
+        ``None`` when the connector has no answer after all, which the
+        manager reads as knowing nothing: it prices the device tier alone
+        and leaves a lease to find out what the connector holds.
+
+        Raises:
+            RuntimeError: If the connector has not answered yet.
+        """
+        ...
+
+
+class CompletedProbe:
+    """An already-answered :class:`KVProbe`."""
+
+    def __init__(
+        self, answers: Sequence[Mapping[str, Sequence[bool]]] | None
+    ) -> None:
+        self._answers = answers
+
+    def is_complete(self) -> bool:
+        """Returns ``True`` because the answer is already here."""
+        return True
+
+    def masks(self) -> Sequence[Mapping[str, Sequence[bool]]] | None:
+        """Returns the answers the probe came back with, or ``None``."""
+        return self._answers
+
+
+@runtime_checkable
 class KVConnector(Protocol):
     """Protocol for KV cache connectors managing external (non-device) tiers.
 
@@ -480,6 +523,25 @@ class KVConnector(Protocol):
         caller reads them and never changes them. ``None`` means the
         connector has no such answer, and the manager prices each replica
         with a :meth:`lookup`. No-op by default.
+        """
+        return None
+
+    def start_probe(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idxs: Sequence[int],
+        hint: bytes | None = None,
+    ) -> KVProbe | None:
+        """Starts a :meth:`probe` and returns at once.
+
+        Same arguments and same answer as :meth:`probe`, read off the handle
+        once it completes. Asked once per arriving request, before it is
+        bound, so the scheduler thread never waits on the round trip a
+        presence query is. The manager prices the request from the device
+        tier alone until the handle answers, and reads the answer at the
+        request's first allocation, where a miss leases nothing. ``None``
+        means the connector has no such handle, and the manager asks
+        :meth:`probe` in place as before. No-op by default.
         """
         return None
 

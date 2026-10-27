@@ -82,7 +82,7 @@ def run_one_case(
 ) raises:
     var rows = spec.rows
     var cols = spec.cols
-    var shape = Index(rows, cols)
+    var shape = (rows, cols)
 
     var data_h = ctx.enqueue_create_host_buffer[rn_type](rows * cols)
     var gamma_h = ctx.enqueue_create_host_buffer[rn_type](cols)

@@ -155,7 +155,7 @@ def _run_ragged_at[
         ceildiv(max_full_context_length, page_size) * batch_size
     )
 
-    var kv_block_continuous_shape = IndexList[6](
+    var kv_block_continuous_shape = (
         num_continuous_blocks,
         2,
         num_layers,
@@ -163,7 +163,7 @@ def _run_ragged_at[
         kv_params.num_heads,
         kv_params.head_size,
     )
-    var kv_block_paged_shape = IndexList[6](
+    var kv_block_paged_shape = (
         num_paged_blocks,
         2,
         num_layers,

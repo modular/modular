@@ -23,14 +23,17 @@ socket and routes individual outputs to per-request ``asyncio.Queue`` instances.
 from __future__ import annotations
 
 import contextlib
+import importlib
 import logging
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
+from typing import cast
 
 import numpy as np
 import numpy.typing as npt
-from max.experimental.cascade.core import Worker, worker_method
+from max.experimental.cascade.core import worker_method
 from max.experimental.cascade.interfaces.gen_ai import TextGenOptions
+from max.experimental.cascade.workers.model_worker import ModelWorker
 from max.pipelines.architectures import register_all_models
 from max.pipelines.context import (
     EOSTracker,
@@ -75,7 +78,7 @@ def _sampling_params_input(req: TextGenOptions) -> SamplingParamsInput:
     )
 
 
-class MAXModelWorker(Worker):
+class MAXModelWorker(ModelWorker):
     """Cascade worker backed by a MAX Serve model-worker subprocess.
 
     The worker is constructed with a :py:class:`PipelineConfig` (typically built
@@ -255,3 +258,27 @@ class MAXModelWorker(Worker):
         """Echo the tokens back to the caller, for debugging."""
         for token in tokens:
             yield np.int32(token)
+
+
+def make_model_worker(
+    config: PipelineConfig, model_worker_impl: str | None = None
+) -> ModelWorker:
+    """Builds the model worker for *config*.
+
+    *model_worker_impl* is a ``"module.path:ClassName"`` ModelWorker subclass;
+    unset, builds :class:`MAXModelWorker`.
+    """
+    if model_worker_impl is None:
+        return MAXModelWorker(config)
+    module_path, sep, class_name = model_worker_impl.partition(":")
+    if not sep:
+        raise ValueError(
+            f"model_worker_impl {model_worker_impl!r} must be in "
+            "'module.path:ClassName' form."
+        )
+    cls = getattr(importlib.import_module(module_path), class_name)
+    if not (isinstance(cls, type) and issubclass(cls, ModelWorker)):
+        raise TypeError(
+            f"{model_worker_impl} is {cls!r}, expected a ModelWorker subclass"
+        )
+    return cast(Callable[[PipelineConfig], ModelWorker], cls)(config)

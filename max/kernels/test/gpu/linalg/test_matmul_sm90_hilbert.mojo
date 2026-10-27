@@ -46,7 +46,7 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             .bfloat16,
-            Index(1, 1, 1),
+            (1, 1, 1),
             block_tile_shape[64],
             wgmma_shape[64],
         ](ctx, Int(M), Idx[N], Idx[K])

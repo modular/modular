@@ -43,6 +43,20 @@ class MiMoV2ModuleV3MemoryPlanner(PagedMemoryPlanner):
 
     _always_signal_buffers = True
 
+    def ep_dispatch_row_budget(self, pipeline_config: PipelineConfig) -> int:
+        """Returns the rows one forward step carries; sizes the EP buffers.
+
+        The scheduler's ``max_batch_input_tokens`` bounds a step's active
+        rows -- chunked prefill makes it hard -- so the base build sizes
+        its dispatch buffers to it. A build whose steps carry rows the
+        budget never charges overrides this with its own bound.
+
+        Args:
+            pipeline_config: The pipeline whose scheduler budget bounds
+                the step's rows.
+        """
+        return pipeline_config.runtime.max_batch_input_tokens
+
     def estimate_activation_memory(
         self, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
@@ -62,7 +76,7 @@ class MiMoV2ModuleV3MemoryPlanner(PagedMemoryPlanner):
         ep_dispatch_dtype = DType.float8_e4m3fn
 
         ep_max_rank_send_tokens = calculate_ep_max_tokens_per_rank(
-            max_batch_input_tokens=pipeline_config.runtime.max_batch_input_tokens,
+            max_batch_input_tokens=self.ep_dispatch_row_budget(pipeline_config),
             ep_size=ep_size,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
             use_allreduce=pipeline_config.runtime.ep_use_allreduce,

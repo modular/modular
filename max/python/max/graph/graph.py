@@ -19,6 +19,7 @@ import functools
 import inspect
 import io
 import itertools
+import sys
 import traceback
 from collections import OrderedDict
 from collections.abc import Callable, Generator, Iterable, Mapping, Sequence
@@ -52,6 +53,7 @@ from mojo.paths import (
     is_mojo_source_package_path,
 )
 
+from ._api_boundary import api_boundary, callers_of_api
 from .type import (
     BufferType,
     DeviceRef,
@@ -453,8 +455,24 @@ def _location(
         # - Avoids reference cycles
         # - Doesn't keep references to closures
 
-        # Always remove at least _location
-        tb = traceback.extract_stack()[: -(ignore_frames + 1)]
+        # Below the call into the graph API, the frames are MAX's
+        # implementation of the op. An op built through an internal path has
+        # no boundary on its stack and keeps every frame.
+        callers = (
+            callers_of_api(sys._getframe(1))
+            if _InferenceSession.debug.source_tracebacks_hide_internal
+            else None
+        )
+        tb: list[traceback.FrameSummary]
+        if callers is not None:
+            tb = list(
+                traceback.StackSummary.extract(
+                    (frame, frame.f_lineno) for frame in callers
+                )
+            )
+        else:
+            # Always remove at least _location
+            tb = traceback.extract_stack()[: -(ignore_frames + 1)]
         location = (
             _graph.frame_loc(mlir.Context.current, tb)
             if tb
@@ -701,6 +719,15 @@ class GraphDebugConfig:
     @source_tracebacks.setter
     def source_tracebacks(self, value: bool) -> None:
         _InferenceSession.debug.source_tracebacks = value
+
+    @property
+    def source_tracebacks_hide_internal(self) -> bool:
+        """See :attr:`max.engine.DebugConfig.source_tracebacks_hide_internal`."""
+        return _InferenceSession.debug.source_tracebacks_hide_internal
+
+    @source_tracebacks_hide_internal.setter
+    def source_tracebacks_hide_internal(self, value: bool) -> None:
+        _InferenceSession.debug.source_tracebacks_hide_internal = value
 
 
 class Graph:
@@ -1393,6 +1420,7 @@ class Graph:
             entries
         )
 
+    @api_boundary
     def output(self, *outputs: GraphOutputs) -> None:
         """Sets the output values of the graph and finalizes construction.
 
@@ -1616,6 +1644,7 @@ class Graph:
         self._data_dependent_dims = index + 1
         return index
 
+    @api_boundary
     def add_weight(
         # TODO(GEX-2121): Remove `force_initial_weight_on_host`
         self,
@@ -1816,6 +1845,7 @@ class GraphBlock:
         self._block_ctx = None
         return ctx.__exit__(exc_type, exc_val, exc_tb)
 
+    @api_boundary
     def output(
         self,
         *values: Value[Any] | TensorValueLike,

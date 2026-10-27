@@ -11,8 +11,8 @@ the weight adapter into the [model pipeline](/develop/pipelines/).
 
 :::note
 
-You should be familiar with the `Module` class from
-[`max.experimental.nn`](/api/python/experimental.nn) before writing a weight
+This page assumes you know the `Module` class from
+[`max.experimental.nn`](/api/python/experimental.nn/) before writing a weight
 adapter. To learn more, see
 [Neural network modules](/develop/pipelines/#neural-network-modules).
 
@@ -54,24 +54,27 @@ entire weight loading flow:
 4. The pipeline constructs your
    [pipeline model](/api/python/generated/max.pipelines.PipelineModel/) with
    `weights` and `adapter` as arguments. Your pipeline model subclasses
-   [`ModuleV3PipelineModelWithKVCache`][modulev3-pipeline-model], whose
-   `load_model()` method runs the
-   remaining steps.
-5. `load_model()` passes the checkpoint entries to the weight adapter, along
-   with the `huggingface_config` and `pipeline_config` keyword arguments.
+   [`ModuleV3PipelineModelWithKVCache`](/api/python/generated/max.pipelines.lib.ModuleV3PipelineModelWithKVCache/),
+   whose constructor builds the decoder through `load_graphs()`.
+5. `load_graphs()` loads the checkpoint, and passes its entries to the weight
+   adapter along with the `huggingface_config` and `pipeline_config` keyword
+   arguments.
 6. The weight adapter renames and converts the tensors and returns a
    `dict[str, WeightData]`.
-7. `load_model()` builds the model config with `_create_model_config()`. Then
-   it calls `_prepare_state_dict()`, a hook where your pipeline model can cast
-   or rewrite weights that depend on the config.
-8. `load_model()` constructs your `Module` with `_instantiate_module()` inside
+7. `load_graphs()` builds the model config with `_create_model_config()`.
+8. `graph_specs()` calls `_prepare_state_dict()`, a hook where your pipeline
+   model can cast or rewrite weights that depend on the config, and
+   `_init_distributed_runtime()`.
+9. `graph_specs()` constructs your `Module` with `_instantiate_module()` inside
    an
    [`F.lazy()`](/api/python/experimental.functional/#max.experimental.functional.lazy)
    block, which defers tensor realization.
-9. `load_model()` calls
-   [`compile()`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.compile)
-   with `weights=state_dict`. `compile()` matches each parameter of the
-   `Module` to the state dictionary entry with the same name.
+10. `compile_and_init_graphs()` traces and compiles each graph through
+    [`Module.stage()`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.stage),
+    which
+    [`compile()`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.compile)
+    wraps. Each parameter of the `Module` takes the state dictionary entry with
+    the same name.
 
 ## Checkpoint and module weight formats
 
@@ -117,6 +120,8 @@ model.layers.0.self_attn.q_proj.weight: [hidden_size, hidden_size] DType.bfloat1
 Some checkpoints store their weights in multiple shard files. Inspect the
 shards by passing multiple paths to `load_weights()`:
 
+<!-- skip: next "the shard file names are placeholders" -->
+
 ```python
 sharded_paths = [
     Path("model-00001-of-00003.safetensors"),
@@ -136,6 +141,12 @@ parameter tensor, joined with dots. To list them, construct your `Module` inside
 an `F.lazy()` block and iterate over its
 [`parameters`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.parameters)
 property:
+
+<!-- invisible-code-block: python
+config, kv_params = smol_llama3()
+from max.pipelines.architectures.llama3_modulev3.llama3 import Llama3
+MyModel = Llama3
+-->
 
 ```python
 from max.dtype import DType
@@ -192,11 +203,18 @@ similar, the adapter may only need to replace a common prefix or rename a small
 number of modules.
 
 For example, Hugging Face safetensors checkpoints for OLMo 3 store the decoder
-weights under a top-level `model.` prefix. The MAX `Olmo3` module nests the
-same layers under `language_model.`. The OLMo 3 adapter in
-[`olmo3/weight_adapters.py`][olmo3-adapters] rewrites each prefix:
+weights under a top-level `model.` prefix. The MAX `Olmo3` module nests the same
+layers under `language_model.`. The OLMo 3 adapter
+([`convert_safetensor_state_dict`](https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/olmo3/weight_adapters.py))
+rewrites each prefix:
 
-```python title="olmo3/weight_adapters.py"
+<!-- invisible-code-block: python
+from max.graph.weights import WeightData, Weights, load_weights
+from max.pipelines.lib import PipelineConfig
+from transformers import AutoConfig
+-->
+
+```python title="weight_adapters.py"
 OLMO3_SAFETENSOR_MAP: dict[str, str] = {
     "model.embed_tokens.": "language_model.embed_tokens.",
     "model.norm.": "language_model.norm.",
@@ -231,6 +249,13 @@ def convert_safetensor_state_dict(
     return new_state_dict
 ```
 
+<!-- invisible-code-block: python
+smol = dict(load_weights([smol_path()]).items())
+out = convert_safetensor_state_dict(smol)
+assert "language_model.embed_tokens.weight" in out
+assert "language_model.layers.0.self_attn.q_proj.weight" in out
+-->
+
 `load_model()` calls the adapter with the checkpoint state dictionary as the
 first argument, plus `huggingface_config` and `pipeline_config` as keyword
 arguments. An adapter that doesn't read them can accept `**unused_kwargs`
@@ -253,13 +278,14 @@ error when the shapes differ.
 the default `auto_cast=False`, so a pipeline model needs the cast in its
 adapter.
 
-For example, some DeepSeek-V3 checkpoints store norm weights in `float32`,
-while the module declares them `bfloat16`. The FP8 path of the DeepSeek-V3
-adapter in
-[`deepseekV3_modulev3/weight_adapters.py`][deepseekv3-adapters] casts only
-those entries:
+For example, some DeepSeek-V3 checkpoints store norm weights in `float32`, while
+the module declares them `bfloat16`. The FP8 path of the
+[DeepSeek-V3 adapter](https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/deepseekV3_modulev3/weight_adapters.py)
+casts only those entries:
 
-```python title="deepseekV3_modulev3/weight_adapters.py"
+<!-- skip: next "excerpt of an in-tree source file" -->
+
+```python title="weight_adapters.py"
 data = value.data()
 # DeepSeek-V3.1-Terminus stores norm gammas (``model.norm.weight``,
 # the MLA ``kv_a_layernorm.weight``) in float32; the module declares
@@ -279,7 +305,7 @@ encoding decisions to
 [`QuantConfig`](/api/python/generated/max.nn.QuantConfig/), which configure
 the quantized layers in the module.
 
-## Remove unused weights
+## Weights the module does not use
 
 A checkpoint and your `Module` don't always contain the same set of weights. A
 mismatch can occur in either direction:
@@ -293,14 +319,17 @@ mismatch can occur in either direction:
 
 `compile()` ignores state dictionary entries that match no parameter, and it
 doesn't log a warning. Remove them in the adapter, so a
-[key comparison](#check-the-adapter-output) lists only naming errors.
+[key comparison](#compare-adapter-keys-with-parameter-names) lists only naming
+errors.
 
 For example, FP8 and NVFP4 checkpoints often include `.k_scale` and `.v_scale`
 tensors used to quantize the key and value caches. MAX reads KV cache scales
 from a separate configuration path, so every DeepSeek-V3 adapter path skips
 them, for example the bf16 path:
 
-```python title="deepseekV3_modulev3/weight_adapters.py"
+<!-- skip: next "excerpt of an in-tree source file" -->
+
+```python title="weight_adapters.py"
 def _convert_bf16_state_dict(
     state_dict: dict[str, Weights],
 ) -> dict[str, WeightData]:
@@ -320,7 +349,16 @@ The same adapter also deletes the multi-token prediction (MTP) layer, which
 the DeepSeek-V3 checkpoint stores as one extra decoder layer after the last
 one the module builds:
 
-```python title="deepseekV3_modulev3/weight_adapters.py"
+<!-- invisible-code-block: python
+import types
+huggingface_config = types.SimpleNamespace(num_hidden_layers=2)
+new_state_dict = {
+    "language_model.layers.1.w": 1,
+    "language_model.layers.2.w": 2,
+}
+-->
+
+```python title="weight_adapters.py"
 mtp_layer_idx = huggingface_config.num_hidden_layers
 mtp_prefix = f"language_model.layers.{mtp_layer_idx}."
 for key in list(new_state_dict.keys()):
@@ -328,14 +366,26 @@ for key in list(new_state_dict.keys()):
         del new_state_dict[key]
 ```
 
+<!-- invisible-code-block: python
+assert list(new_state_dict) == ["language_model.layers.1.w"]
+-->
+
 A checkpoint can also store a value that MAX computes at runtime. GGUF
 checkpoints bake the RoPE frequencies into a `rope_freqs.weight` tensor, so
 the `llama3_modulev3` GGUF adapter removes it:
 
-```python title="llama3_modulev3/weight_adapters.py"
+<!-- invisible-code-block: python
+new_state_dict = {"rope_freqs.weight": 1, "tok.weight": 2}
+-->
+
+```python title="weight_adapters.py"
 # GGUF bakes `rope_freqs` into the weights file; we compute them at runtime.
 new_state_dict.pop("rope_freqs.weight", None)
 ```
+
+<!-- invisible-code-block: python
+assert list(new_state_dict) == ["tok.weight"]
+-->
 
 Tied embeddings produce the same kind of extra entry. When
 `tie_word_embeddings` is true, the `Llama3TextModel` and `Olmo3TextModel`
@@ -373,10 +423,11 @@ Common cases include:
   store a `g_idx` permutation that you must convert to the inverse `perm_idx`
   representation expected by the kernel.
 
-The following example permutes the rows of each attention head in the query
-and key projection weights, the transformation a partial-RoPE layout needs. It
-follows the adapter in [`step3p5/weight_adapters.py`][step3p5-adapters]. NumPy
-has no `bfloat16` type, so the adapter views each `bfloat16`
+The following example permutes the rows of each attention head in the query and
+key projection weights, the transformation a partial-RoPE layout needs. It
+follows
+[`convert_step3p5_state_dict`](https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/step3p5/weight_adapters.py).
+NumPy has no `bfloat16` type, so the adapter views each `bfloat16`
 [`Buffer`](/api/python/generated/max.driver.Buffer/) as `uint16` while it
 reorders rows, then views the result as `bfloat16` again:
 
@@ -430,11 +481,33 @@ def convert_safetensor_state_dict(
     return new_state_dict
 ```
 
-## Check the adapter output
+<!-- invisible-code-block: python
+def build_rope_perm(head_dim):
+    half = head_dim // 2
+    return [i // 2 + (i % 2) * half for i in range(head_dim)]
+smol = dict(load_weights([smol_path()]).items())
+out = convert_safetensor_state_dict(
+    smol, huggingface_config=AutoConfig.from_pretrained(SMOL_REPO)
+)
+q = out["language_model.layers.0.self_attn.q_proj.weight"]
+assert [int(d) for d in q.shape] == [576, 576]
+assert q.dtype == DType.bfloat16
+-->
+
+## Compare adapter keys with parameter names
 
 Compare the keys produced by the weight adapter with the parameter names your
 `Module` declares. The following script runs the adapter on a local checkpoint
 and prints both differences:
+
+<!-- invisible-code-block: python
+from max.pipelines.architectures.olmo3 import weight_adapters
+fake_module("my_arch")
+fake_module("my_arch.weight_adapters", **vars(weight_adapters))
+config, kv_params = smol_llama3()
+from max.pipelines.architectures.llama3_modulev3.llama3 import Llama3
+MyModel = Llama3
+-->
 
 ```python
 from pathlib import Path
@@ -463,9 +536,13 @@ print("missing:", sorted(expected - adapted.keys()))
 print("unused:", sorted(adapted.keys() - expected))
 ```
 
+<!-- invisible-code-block: python
+assert not expected - adapted.keys()
+-->
+
 Every name under `missing` makes `compile()` raise a `KeyError`. Fix those
 first. Names under `unused` don't stop compilation, and most of them point to
-a weight the adapter should rename or remove. Expected entries include:
+a weight the adapter renames or removes. Expected entries include:
 
 - A tied `lm_head.weight`, when the module reuses the embedding weights.
 - Format-specific tensors that your `Module` doesn't use.
@@ -476,10 +553,16 @@ To wire the weight adapter function into the pipeline, add it to the
 [`SupportedArchitecture`](/api/python/generated/max.pipelines.lib.registry.SupportedArchitecture/)
 definition in `arch.py`, keyed by the corresponding
 [`WeightsFormat`](/api/python/generated/max.graph.weights.WeightsFormat/). The
-OLMo 3 architecture in [`olmo3/arch.py`][olmo3-arch] registers its safetensors
-adapter:
+OLMo 3 architecture
+([`olmo3_arch`](https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/olmo3/arch.py))
+registers its safetensors adapter:
 
-```python title="olmo3/arch.py"
+<!-- invisible-code-block: python
+from max.graph.weights import WeightsFormat
+from max.pipelines.architectures.olmo3 import weight_adapters
+-->
+
+```python title="arch.py"
 weight_adapters={
     WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
 },
@@ -503,9 +586,3 @@ steps:
 
 For the complete workflow, see
 [Model bring-up workflow](/develop/model-bringup-workflow/).
-
-[olmo3-adapters]: https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/olmo3/weight_adapters.py
-[olmo3-arch]: https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/olmo3/arch.py
-[step3p5-adapters]: https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/step3p5/weight_adapters.py
-[deepseekv3-adapters]: https://github.com/modular/modular/blob/main/max/python/max/pipelines/architectures/deepseekV3_modulev3/weight_adapters.py
-[modulev3-pipeline-model]: /api/python/generated/max.pipelines.lib.ModuleV3PipelineModelWithKVCache/

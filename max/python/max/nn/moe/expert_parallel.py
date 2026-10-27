@@ -329,15 +329,29 @@ def _ep_forward(
             for i, shard in enumerate(moe_shards)
         ]
     else:
+        # The per-token NVFP4 dispatch has no async split, so its shared
+        # expert runs inline and serializes with dispatch. Opt in to the side
+        # stream, issued before dispatch ("pre") or before the combine
+        # ("post"), so it overlaps the collectives.
+        dyn_shared_side = (
+            batch_mgr.config.shared_expert_side_stream
+            if has_unfused_shared and batch_mgr.config.nvfp4_dyn_global_scales
+            else None
+        )
+        if dyn_shared_side == "pre":
+            shared_outs = _compute_shared_experts(
+                moe_shards, xs, range(len(moe_shards))
+            )
         # Multi-device dispatch (single op).
         all_dispatch_results = batch_mgr.ep_dispatch_all(
             xs, all_topk_ids, device_ids, input_scales=scales
         )
         if has_unfused_shared and batch_mgr.config.nvfp4_dyn_global_scales:
-            shared_outs = [
-                shard.shared_experts(x)
-                for shard, x in zip(moe_shards, xs, strict=True)
-            ]
+            if dyn_shared_side is None:
+                shared_outs = [
+                    shard.shared_experts(x)
+                    for shard, x in zip(moe_shards, xs, strict=True)
+                ]
         elif has_unfused_shared:
             shared_outs = _compute_shared_experts(
                 moe_shards, xs, range(len(moe_shards))
@@ -366,6 +380,17 @@ def _ep_forward(
         raise ValueError(
             "the FFN-fused combine send must be all-or-nothing across shards:"
             " a shard that kept its output would have no send to wait on"
+        )
+
+    if (
+        not batch_mgr.config.use_allreduce
+        and not overlap_shared_expert
+        and has_unfused_shared
+        and batch_mgr.config.nvfp4_dyn_global_scales
+        and batch_mgr.config.shared_expert_side_stream == "post"
+    ):
+        shared_outs = _compute_shared_experts(
+            moe_shards, xs, range(len(moe_shards))
         )
 
     if batch_mgr.config.use_allreduce:

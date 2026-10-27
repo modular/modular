@@ -36,7 +36,7 @@ from layout import (
     row_major,
     stack_allocation,
 )
-from std.utils.index import IndexList
+from std.utils.coord import Coord, DynamicCoord
 from std.utils.static_tuple import StaticTuple
 
 from structured_kernels.tile_types import (
@@ -57,10 +57,10 @@ from ..structured_kernels.tmem import TmemAddress, TmemFragments
 def get_accumulator_dims[
     *,
     c_smem_dim1: Int,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     cta_group: Int,
-]() -> IndexList[2]:
+]() -> Coord[Int, Int]:
     """Compute register accumulator dimensions for blockwise FP8.
 
     Parameters:
@@ -95,13 +95,13 @@ def get_accumulator_dims[
     comptime fragment_size = (data_paths * num_elements_per_load) // WARP_SIZE
     comptime num_elements = repeats * fragment_size
 
-    return IndexList[2](num_stages, num_elements)
+    return (num_stages, num_elements)
 
 
 @inline(.always)
 def is_lower_fragment_required[
     cta_group: Int,
-    block_tile_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
 ]() -> Bool:
     """Determine if lower TMEM fragment is needed based on config.
 
@@ -123,8 +123,8 @@ struct BlockwiseFP8Accumulator[
     accum_num_stages: Int,
     accum_num_elements: Int,
     is_lower_required: Bool,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     cluster_size: Int,
     n_scale_granularity: Int = 128,
 ]:

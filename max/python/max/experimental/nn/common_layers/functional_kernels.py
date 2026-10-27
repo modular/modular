@@ -51,6 +51,9 @@ from max.nn.kernels import (
     flash_attention_ragged_gpu as _flash_attention_ragged_gpu,
 )
 from max.nn.kernels import (
+    fused_chunked_qkv_rope_store_ragged as _fused_chunked_qkv_rope_store_ragged,
+)
+from max.nn.kernels import (
     fused_qk_ragged_rope as _fused_qk_ragged_rope,
 )
 from max.nn.kernels import (
@@ -223,6 +226,9 @@ store_k_cache_ragged = F.functional(_store_k_cache_ragged)
 store_k_scale_cache_ragged = F.functional(_store_k_scale_cache_ragged)
 store_v_cache_ragged = F.functional(_store_v_cache_ragged)
 fused_qk_ragged_rope = F.functional(_fused_qk_ragged_rope)
+fused_chunked_qkv_rope_store_ragged = F.functional(
+    _fused_chunked_qkv_rope_store_ragged
+)
 
 
 def fused_silu_rule(
@@ -288,6 +294,7 @@ __all__ = [
     "flash_attention_gpu",
     "flash_attention_ragged",
     "flash_attention_ragged_gpu",
+    "fused_chunked_qkv_rope_store_ragged",
     "fused_qk_ragged_rope",
     "fused_silu",
     "grouped_matmul_ragged",

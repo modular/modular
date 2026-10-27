@@ -1,0 +1,52 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+# MXFP4's matmul runs only on AMD CDNA, so this is constrained to mi355
+# rather than `//:has_gpu`. `gpu_constraints` feeds `target_compatible_with`,
+# so the target is skipped elsewhere instead of failing. Presubmit has no AMD
+# job; this runs in postsubmit, or by hand with `--config=remote-mi355`.
+modular_py_test(
+    name = "quant_mx_amd_gpu_tests",
+    size = "large",
+    srcs = ["test_mxfp4_matmul_amd_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
+    gpu_constraints = ["//:mi355_gpu"],
+    imports = ["."],
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/experimental/nn",
+        requirement("torch"),
+    ],
+)
+
+# The MXFP8 block-scaled MMA is SM100-only, so this is constrained to b200 for
+# the same reason. Run by hand with `--config=remote-b200`.
+modular_py_test(
+    name = "quant_mx_b200_gpu_tests",
+    size = "large",
+    srcs = ["test_mxfp8_matmul_b200_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    imports = ["."],
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/experimental/nn",
+        "//max/tests/integration/test_common:graph_utils",
+        requirement("torch"),
+    ],
+)

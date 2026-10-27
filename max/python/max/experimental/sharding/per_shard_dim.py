@@ -11,13 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Per-shard :class:`~max.graph.Dim` wrapper carrying one value per device.
+"""Wraps one :class:`~max.graph.Dim` per device, so a dimension can vary by shard.
 
 A :class:`PerShardDim` bundles one :class:`~max.graph.Dim` per mesh shard
 (device index along a :class:`Sharded` mesh axis). Arithmetic distributes
-element-wise. :func:`make_per_shard_dim` collapses to a plain :class:`Dim`
-when every cell is equal. Wrappers must never reach MLIR; they are projected
-per shard by shape rules before any :meth:`Dim.to_mlir` call.
+element-wise. :func:`make_per_shard_dim` collapses to its first cell when
+every cell is equal, no ``global_dim`` is attached, and ``force_wrap`` is
+false. Shape rules project each wrapper per shard before any
+:meth:`Dim.to_mlir` call, so a wrapper never reaches the MLIR graph.
 """
 
 from __future__ import annotations
@@ -49,12 +50,19 @@ def _all_equal(items: Sequence[object]) -> bool:
 
 
 class PerShardDim(Dim):
-    """A :class:`~max.graph.Dim` whose ``per_shard`` tuple lists one cell per mesh shard.
+    """A :class:`~max.graph.Dim` listing one cell per mesh shard.
 
-    Used on :class:`Sharded` axes when shards hold different per-device
-    sizes (uneven static splits, dynamic axes minted per-shard). The
-    wrapper must be projected per shard via :func:`local_dim_at` before
-    reaching MLIR.
+    Appears on a :class:`Sharded` axis when the cells differ, and also when a
+    rule keeps the wrapper to record the axis's global extent
+    (``force_wrap=True`` or an attached ``global_dim``), which is what
+    :attr:`~max.experimental.tensor.Tensor.shape` does for every sharded
+    axis. Test it with :func:`is_per_shard_dim` rather than by comparing
+    cells. The wrapper must be projected per shard via :func:`local_dim_at`
+    before reaching MLIR.
+
+    Args:
+        per_shard: One cell per device, in mesh order.
+        global_dim: The global extent this wrapper records, when it has one.
     """
 
     __slots__ = ("_global", "per_shard")
@@ -257,6 +265,15 @@ def make_per_shard_dim(
     wrapper even when entries happen to be equal (used on Sharded axes so
     :func:`global_dim` recovers the global extent), or pass ``global_dim``
     to record the axis's global size for ``int()``/display.
+
+    Args:
+        per_shard: One cell per device, in mesh order.
+        global_dim: The global extent to record on the wrapper.
+        force_wrap: Whether to keep the wrapper when every cell is equal.
+            Defaults to ``False``.
+
+    Raises:
+        ValueError: If ``per_shard`` is empty.
     """
     if not per_shard:
         raise ValueError("make_per_shard_dim: empty per_shard tuple.")
@@ -269,8 +286,12 @@ def make_per_shard_dim(
 def global_dim(d: Dim) -> Dim:
     """Folds a :class:`PerShardDim` into a single global :class:`Dim`.
 
-    Returns the wrapper's recorded global when present, else sums the
+    Returns ``d`` unchanged when it is not a :class:`PerShardDim`, the
+    wrapper's recorded global when it has one, and otherwise the sum of the
     per-shard cells.
+
+    Args:
+        d: The dim to fold.
     """
     if not is_per_shard_dim(d):
         return d
@@ -312,6 +333,14 @@ def local_dim_at(d: Dim, shard: int) -> Dim:
 
     If ``d`` is a regular (non-distributed) :class:`Dim`, then ``d`` is
     returned unchanged.
+
+    Args:
+        d: The dim to read.
+        shard: The device index within the mesh.
+
+    Raises:
+        IndexError: If ``d`` is a :class:`PerShardDim` and ``shard`` is not a
+            valid index into its cells.
     """
     if is_per_shard_dim(d):
         return d.per_shard[shard]

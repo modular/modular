@@ -132,7 +132,9 @@ def test_foreach_fusion_tile_add(ctx: DeviceContext) raises:
         mut=True, io_spec=IOSpec.Unknown, static_spec=spec
     ](out_dev.unsafe_ptr(), (M, N))
 
-    foreach_fusion_tile[target="gpu", tile_shape=(TM, TN)](out_mts, elem, ctx)
+    foreach_fusion_tile[target="gpu", tile_shape=(Int(TM), Int(TN))](
+        out_mts, elem, ctx
+    )
 
     var out_host = ctx.enqueue_create_host_buffer[.float32](NUM)
     ctx.enqueue_copy(out_host, out_dev)

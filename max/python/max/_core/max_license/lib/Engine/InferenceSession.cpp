@@ -530,7 +530,7 @@ std::vector<Driver::Python::Buffer> ModelHandle::executePreparedDeviceTensors(
     auto result = M::GraphCompiler::Driver::executeFromDriver(
         runtimeCtx, loadedModel.copy(), inputValues);
     if (result.isError())
-      throw std::invalid_argument(result.takeError().get());
+      throw ModelExecutionError(result.takeError().get());
 
     return result.takeValue();
   }();

@@ -320,7 +320,7 @@ def run_one_case(
     )
     comptime kv_dim2 = 1  # MLA: is_mla=True => dim[1] == 1
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         kv_dim2,
         NUM_LAYERS,

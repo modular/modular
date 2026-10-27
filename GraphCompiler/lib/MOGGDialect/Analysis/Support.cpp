@@ -19,31 +19,11 @@
 
 namespace M::MOGG {
 
-int64_t getNumDPSStyleOutputs(KGEN::GeneratorOp mojoCode) {
-  auto count = mojoCode->getAttr(MOGG::kMoggNumDpsOutputs);
-  [[maybe_unused]] bool isExecuteFunc =
-      mojoCode->hasAttr(MOGG::kMoggExecuteFunctionLabel);
-
-  if (!count) {
-    ASSERT_STREAM(!isExecuteFunc,
-                  << "The kernel's entry point must have number of dps "
-                     "operands explicitly labeled. Kernel is "
-                  << mojoCode.getName());
-
-    return 0;
-  }
-
-  ASSERT_STREAM(isExecuteFunc, << "Only DPS operands are supported in the "
-                                  "kernel's entry point. Kernel is "
-                               << mojoCode.getName());
-  return cast<IntegerAttr>(count).getInt();
-}
-
 /// Returns the name of the given `op` is registered under in mojo.
 MojoOperationInfo getMojoOperationInfo(Operation *op) {
   // Custom operations call the symbol and function directly.
   if (auto customOp = dyn_cast<MO::CustomOp>(op))
-    return {customOp.getSymbol(), MOGG::kMoggExecuteFunctionLabel};
+    return {customOp.getSymbol()};
 
   // Layout transforms map to a hardcoded op name based on the inferred layouts
   if (auto layoutTransformOp = dyn_cast<MO::LayoutTransformOp>(op)) {
@@ -54,14 +34,14 @@ MojoOperationInfo getMojoOperationInfo(Operation *op) {
         op->getContext(), llvm::Twine("layout_transform_") +
                               startLayout.getFormat().strref() + "_to_" +
                               endLayout.getFormat().strref());
-    return {opName, MOGG::kMoggExecuteFunctionLabel};
+    return {opName};
   }
 
   if (auto shapeInvoke = dyn_cast<MO::InvokeShapeFuncOp>(op))
-    return {shapeInvoke.getShapeFuncName(), MOGG::kMoggShapeFunctionLabel};
+    return {shapeInvoke.getShapeFuncName()};
 
   // Else we register 1-1 with the official name of the operation.
-  return {op->getName().getStringRef(), MOGG::kMoggExecuteFunctionLabel};
+  return {op->getName().getStringRef()};
 }
 
 ErrorOr<KernelDeclAdaptor> getMojoKernelAdaptor(const MojoRegistry &registry,

@@ -23,6 +23,17 @@ This version is still a work in progress.
   `logprobs` in `max serve` and `output_logprobs` in `generate()` work for
   them.
 
+- Added support for
+  [`poolside/Laguna-S-2.1-NVFP4`](https://huggingface.co/poolside/Laguna-S-2.1-NVFP4)
+  on the `LagunaForCausalLM` architecture. The checkpoint interleaves 12
+  full-attention layers with 36 sliding-window layers on a 512-token window,
+  gates attention output per head rather than per element, and mixes expert
+  precisions: NVFP4 routed experts in layers 1-39 and bfloat16 ones in layers
+  40-47, with the dense first layer and every shared expert in bfloat16
+  throughout. Attention type, query-head count, RoPE scaling and MLP precision
+  are now all resolved per layer, so `poolside/Laguna-M.1-NVFP4` keeps its
+  uniform layout.
+
 ## Inference server
 
 - `/v1/completions` now returns a 400 error for `echo` with `logprobs` on a
@@ -44,6 +55,20 @@ This version is still a work in progress.
 
 ### Server metrics
 
+- `maxserve_batch_execution_time_milliseconds` now measures the executor
+  call when overlap is off. The former full scheduler-step duration is
+  available as `maxserve_scheduler_batch_step_time_milliseconds`. Batch
+  throughput uses the executor interval and counts returned output tokens,
+  including prefill outputs and accepted speculative tokens. See the
+  [batch timing contract](/serve/metrics#batch-scheduler) for overlap timing.
+  Intermediate prefill chunks returning no tokens now contribute zero to
+  the CE generation-throughput histogram, shifting its distribution on
+  chunked-prefill workloads. The benchmark harness's
+  `prefill_batch_execution_time_ms` and `decode_batch_execution_time_ms`
+  columns use `maxserve_batch_execution_time_milliseconds`, so MAX's
+  synchronous values now exclude scheduler work; comparisons with older
+  builds are not like for like.
+
 - Added `maxserve_request_client_disconnect_cancellations_total`, which
   counts streamed responses cut short by a client disconnect and completion
   requests abandoned while waiting for a result, split by `phase`. A
@@ -53,7 +78,33 @@ This version is still a work in progress.
 
 ## `max` CLI
 
+- `max generate` runs image generation models such as FLUX.2 and saves the
+  images to `--output`, which defaults to `image.png` and whose suffix picks
+  the format. A path without a suffix is a directory, created with its parents
+  if missing. It adds `--negative-prompt`, `--height`, `--width`,
+  `--num-inference-steps`, `--guidance-scale`, `--true-cfg-scale`,
+  `--strength` and `--num-images-per-prompt` for them, and takes the input
+  image from `--image_url`. A flag the user set for the other kind of model,
+  including `--max-batch-size` and `--device-graph-capture` on an image
+  model, raises an error before anything loads. Text models run as before.
+
 ## Python API
+
+- A custom op whose Mojo kernel is registered wrong, or doesn't match its
+  call, now raises `max.graph.KernelRegistrationError`, a `ValueError`
+  subclass. The message points at the Mojo code the way the Mojo compiler
+  does: the file, line and column, the source line and a caret. A custom op
+  package's kernels are now checked when it loads, so a misplaced
+  `DeviceContext` argument fails there instead of while compiling the
+  generated code.
+
+- Source tracebacks (`InferenceSession.debug.source_tracebacks`) now stop at
+  your code's call into the graph API, so errors point at the lines that
+  created each op rather than at MAX's implementation of it. Set
+  `source_tracebacks_hide_internal = False` to keep every frame. Errors
+  that `Model.execute` raises are now `max.engine.ModelExecutionError`, a
+  `RuntimeError` subclass that is also a `ValueError`, so existing
+  `except ValueError` handlers keep working.
 
 - `max.nn.Transformer`, `DistributedTransformer`, `logits_postprocess()` and
   `distributed_logits_postprocess()` return a
@@ -135,6 +186,39 @@ This version is still a work in progress.
 - `AutoProcessor` and `AutoPipeline` now read images from http(s) URLs, `data:`
   URIs and base64 data, including OpenAI `image_url` parts. URLs are fetched
   with a 30 second timeout and a 100 MiB limit per image.
+
+- Errors from `AutoModel.generate()` and `AutoModel.generate_iter()` now name
+  `AutoModel`, not `generate()`. An image part that holds its own image, or
+  an `image_url` part, now raises `ValueError` pointing to `AutoProcessor`,
+  even when `images` gives the row the right count.
+
+- Added `generate_images()` in `max.pipelines.lib.generate_images`, which runs
+  an image generation pipeline such as FLUX.2 in your own process and returns
+  one list of PIL images per prompt, in prompt order. Each prompt runs as the
+  request `max serve` builds for it, so the model's defaults are the same as in
+  serve.
+
+- `AutoModel` now loads image generation models such as FLUX.2, and
+  `AutoModel.generate(prompt=...)` runs them and returns a
+  `GenerateImagesResult`. Text models keep the same `generate()` call and
+  result. An argument for the other kind of model raises a `ValueError` that
+  names it. Image models need `max_batch_size=1` and no device graph capture.
+  `AutoPipeline` runs image models too, through
+  `AutoModel.generate(prompt=...)`, and returns a prompt's list of images.
+  On an image model, `AutoModel.generate_iter()` points to
+  `AutoModel.generate(prompt=...)`, and `generate()` points to
+  `generate_images()`.
+
+- `generate_images()`, `AutoPipeline` and the image path of
+  `AutoModel.generate()` take `images`, one list of input images per prompt as
+  for text `generate()`, each image encoded bytes or a PIL image. A list holds
+  one image, or none for a text-only prompt. FLUX.2 and Z-Image run image to
+  image this way. They also take `strength`, which Z-Image reads and FLUX.2
+  ignores. `ZImagePipeline` now lists image input.
+
+- `generate()` and `GenerateIterator` raise the same `TypeError` for a bare
+  image or bytes passed as `images` as for any other `images` that is not one
+  list of images per conversation, instead of a Python iteration error.
 
 - Removed the `blocking_sync`, `disable_timing` and `interprocess` parameters
   from the Mojo `DeviceContext.create_event()`, along with `EventFlags`. Events

@@ -26,8 +26,9 @@ from pathlib import Path
 import torch
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType
-from max.nn.kv_cache import MHAKVCacheParams
+from max.graph import DeviceRef, Graph, TensorType, TensorValue
+from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
+from max.nn.layer import Module
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.gemma4.layers.attention import (
     Gemma4Attention as MaxGemma4Attention,
@@ -286,6 +287,248 @@ def build_max_attention_graph(
     # Build graph.
     with Graph(
         "Gemma3Attention",
+        input_types=(
+            input_type,
+            input_row_offsets_type,
+            *flattened_kv_types,
+        ),
+    ) as graph:
+        inputs, input_row_offsets, *kv_cache = graph.inputs
+        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_cache))[0]
+
+        graph.output(
+            attention(
+                inputs.tensor,
+                kv_collection,
+                input_row_offsets=input_row_offsets.tensor,
+            )
+        )
+
+    return graph, attention, kv_params
+
+
+# ---------------------------------------------------------------------------
+# Gemma 4's shared keys and values
+#
+# A sharing layer projects no keys and values of its own: it reuses the
+# ones of the last layer of the same attention type before the sharing
+# point, which live in that source layer's cache slot.
+# ---------------------------------------------------------------------------
+
+SHARING_NUM_HIDDEN_LAYERS = 4
+SHARING_LAYER_TYPES = [
+    "sliding_attention",
+    "full_attention",
+    "sliding_attention",
+    "full_attention",
+]
+SHARING_NUM_KV_SHARED_LAYERS = 2
+SHARING_HIDDEN_SIZE = 64
+SHARING_NUM_HEADS = 4
+SHARING_NUM_KV_HEADS = 2
+SHARING_HEAD_DIM = 32
+SHARING_GLOBAL_HEAD_DIM = 64
+SHARING_SLIDING_WINDOW = 64
+
+
+def make_kv_sharing_text_config() -> Gemma4TextConfig:
+    """Builds a small Gemma 4 config whose trailing layers share keys and values."""
+    return Gemma4TextConfig(
+        hidden_size=SHARING_HIDDEN_SIZE,
+        intermediate_size=2 * SHARING_HIDDEN_SIZE,
+        num_hidden_layers=SHARING_NUM_HIDDEN_LAYERS,
+        num_attention_heads=SHARING_NUM_HEADS,
+        num_key_value_heads=SHARING_NUM_KV_HEADS,
+        num_global_key_value_heads=SHARING_NUM_KV_HEADS,
+        head_dim=SHARING_HEAD_DIM,
+        global_head_dim=SHARING_GLOBAL_HEAD_DIM,
+        hidden_activation="gelu_pytorch_tanh",
+        rms_norm_eps=1e-6,
+        sliding_window=SHARING_SLIDING_WINDOW,
+        layer_types=list(SHARING_LAYER_TYPES),
+        num_kv_shared_layers=SHARING_NUM_KV_SHARED_LAYERS,
+        attention_bias=False,
+        attn_implementation="eager",
+    )
+
+
+def make_kv_sharing_attention_weights(
+    text_config: Gemma4TextConfig,
+    layer_idx: int,
+    seed: int,
+) -> dict[str, torch.Tensor]:
+    """Builds random attention weights for one layer, in the reference layout.
+
+    The names match the reference implementation's, so the same tensors load
+    into both the MAX layer and the torch one.
+    """
+    generator = torch.Generator().manual_seed(seed)
+    is_sliding = text_config.layer_types[layer_idx] == "sliding_attention"
+    head_dim = (
+        text_config.head_dim if is_sliding else text_config.global_head_dim
+    )
+    num_kv_heads = (
+        text_config.num_key_value_heads
+        if is_sliding
+        else text_config.num_global_key_value_heads
+    )
+    q_dim = head_dim * text_config.num_attention_heads
+    kv_dim = head_dim * num_kv_heads
+
+    def _randn(*shape: int, std: float) -> torch.Tensor:
+        return (
+            torch.randn(shape, generator=generator, dtype=torch.float32) * std
+        ).to(TORCH_DTYPE)
+
+    # The norms scale the queries and keys, and the output projection sets
+    # the magnitude of the layer's output.
+    return {
+        "q_proj.weight": _randn(q_dim, text_config.hidden_size, std=0.05),
+        "k_proj.weight": _randn(kv_dim, text_config.hidden_size, std=0.05),
+        "v_proj.weight": _randn(kv_dim, text_config.hidden_size, std=0.05),
+        "o_proj.weight": _randn(text_config.hidden_size, q_dim, std=0.1),
+        "q_norm.weight": _randn(head_dim, std=0.7),
+        "k_norm.weight": _randn(head_dim, std=0.7),
+    }
+
+
+class SourceAndSharingAttention(Module):
+    """A source attention layer and a layer that shares its keys and values."""
+
+    def __init__(
+        self, source: MaxGemma4Attention, sharing: MaxGemma4Attention
+    ) -> None:
+        super().__init__()
+        self.source = source
+        self.sharing = sharing
+
+    def __call__(
+        self,
+        x: TensorValue,
+        kv_collection: PagedCacheValues,
+        input_row_offsets: TensorValue,
+    ) -> TensorValue:
+        """Runs the source layer, then the sharing layer over its output."""
+        h = self.source(x, kv_collection, input_row_offsets=input_row_offsets)
+        return self.sharing(
+            h, kv_collection, input_row_offsets=input_row_offsets
+        )
+
+
+def build_max_kv_sharing_attention_graph(
+    text_config: Gemma4TextConfig,
+    source_weights: dict[str, torch.Tensor],
+    sharing_weights: dict[str, torch.Tensor],
+    dtype: DType,
+    device_ref: DeviceRef,
+    source_layer_idx: int,
+    sharing_layer_idx: int,
+) -> tuple[Graph, Module, MHAKVCacheParams]:
+    """Builds a graph with a source attention layer and a sharing layer.
+
+    Both layers have the same attention type, so they share one KV cache,
+    and the sharing layer reads the source layer's slot in it.
+    """
+    layer_type = text_config.layer_types[source_layer_idx]
+    is_sliding = layer_type == "sliding_attention"
+    head_dim = (
+        text_config.head_dim if is_sliding else text_config.global_head_dim
+    )
+    num_kv_heads = (
+        text_config.num_key_value_heads
+        if is_sliding
+        else text_config.num_global_key_value_heads
+    )
+    kv_params = MHAKVCacheParams(
+        dtype=dtype,
+        devices=[device_ref],
+        n_kv_heads=num_kv_heads,
+        head_dim=head_dim,
+        num_layers=sum(1 for t in text_config.layer_types if t == layer_type),
+        page_size=256,
+    )
+
+    def _slot_in_cache(layer_idx: int) -> int:
+        """The index of a layer within its own attention type's KV cache."""
+        return sum(
+            1 for t in text_config.layer_types[:layer_idx] if t == layer_type
+        )
+
+    def _attention(
+        layer_idx: int, kv_share_source_layer_idx_in_cache: int | None = None
+    ) -> MaxGemma4Attention:
+        return MaxGemma4Attention(
+            rope_global=ProportionalRotaryEmbedding(
+                dim=text_config.hidden_size,
+                n_heads=text_config.num_attention_heads,
+                theta=1000000.0,
+                max_seq_len=text_config.max_position_embeddings,
+                head_dim=text_config.global_head_dim,
+                interleaved=False,
+                scaling_params=ProportionalScalingParams(0.25),
+            ),
+            rope_local=Llama3RotaryEmbedding(
+                dim=text_config.hidden_size,
+                n_heads=text_config.num_attention_heads,
+                theta=10000.0,
+                max_seq_len=text_config.max_position_embeddings,
+                head_dim=text_config.head_dim,
+                interleaved=False,
+                scaling_params=None,
+            ),
+            num_attention_heads=text_config.num_attention_heads,
+            num_key_value_heads=text_config.num_key_value_heads,
+            num_global_key_value_heads=text_config.num_global_key_value_heads,
+            attention_k_eq_v=text_config.attention_k_eq_v,
+            hidden_size=text_config.hidden_size,
+            kv_params=kv_params,
+            global_head_dim=text_config.global_head_dim,
+            layer_idx=layer_idx,
+            layer_idx_in_cache=_slot_in_cache(layer_idx),
+            is_sliding=is_sliding,
+            dtype=dtype,
+            devices=[device_ref],
+            qk_norm_eps=text_config.rms_norm_eps,
+            local_window_size=text_config.sliding_window,
+            kv_share_source_layer_idx_in_cache=(
+                kv_share_source_layer_idx_in_cache
+            ),
+        )
+
+    attention = SourceAndSharingAttention(
+        source=_attention(source_layer_idx),
+        sharing=_attention(
+            sharing_layer_idx,
+            kv_share_source_layer_idx_in_cache=_slot_in_cache(source_layer_idx),
+        ),
+    )
+    attention.load_state_dict(
+        {
+            **{
+                f"source.{name}": value.cpu()
+                for name, value in source_weights.items()
+            },
+            **{
+                f"sharing.{name}": value.cpu()
+                for name, value in sharing_weights.items()
+            },
+        }
+    )
+
+    # Construct input types.
+    input_type = TensorType(
+        dtype,
+        ["total_seq_len", text_config.hidden_size],
+        device=device_ref,
+    )
+    input_row_offsets_type = TensorType(
+        DType.uint32, shape=["input_row_offsets_len"], device=device_ref
+    )
+    flattened_kv_types = kv_params.flattened_kv_inputs()
+
+    # Build graph.
+    with Graph(
+        "Gemma4KVSharingAttention",
         input_types=(
             input_type,
             input_row_offsets_type,

@@ -73,7 +73,6 @@ public:
   promoteClosure(DefASTDecl &nestedFnDecl,
                  ArrayRef<ParamDeclAttr> prependedParams = {},
                  std::optional<PromotedClosureSelfArg> selfArg = std::nullopt,
-                 TriBool capturingOverride = TriBool::unknown(),
                  OpASTDecl *targetParent = nullptr);
 
   /// Adapter overload for callsites that currently hold ParamDeclRefAttr.
@@ -81,7 +80,6 @@ public:
   promoteClosure(DefASTDecl &nestedFnDecl,
                  ArrayRef<ParamDeclRefAttr> prependedParamRefs,
                  std::optional<PromotedClosureSelfArg> selfArg = std::nullopt,
-                 TriBool capturingOverride = TriBool::unknown(),
                  OpASTDecl *targetParent = nullptr);
 
   Value emitClosure(ModuleASTDecl &moduleDecl, DefASTDecl &nestedFnDecl,

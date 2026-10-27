@@ -33,7 +33,7 @@ Llama-4-Scout gate/up shape.
 """
 
 from max.gpu.host import DeviceContext
-from layout import Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major, Coord
 from layout._fillers import random
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_grouped_matmul
 from linalg.grouped_matmul import grouped_matmul_rowwise_dynamic_scaled_fp8
@@ -212,7 +212,7 @@ def test_grouped_matmul_rowwise_scaled_fp8[
         BLOCK_DIM_M=16,
         BLOCK_DIM_N=16,
         transpose_b=transpose_b,
-        scales_granularity_mnk=Index(1, 1, K),
+        scales_granularity_mnk=Coord[Int, Int, Int](1, 1, K),
     ](
         c_device_ref_tt,
         a_device_tt,
@@ -271,7 +271,7 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=1,
-            expert_shape=Index(256, 256),
+            expert_shape=(256, 256),
         ](1, [128], [0], ctx)
 
         # Single expert, partial last M-tile (100 mod 16 != 0).
@@ -279,7 +279,7 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=1,
-            expert_shape=Index(256, 256),
+            expert_shape=(256, 256),
         ](1, [100], [0], ctx)
 
         # Sparse routing: a single active expert that is NOT id 0.
@@ -287,7 +287,7 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=4,
-            expert_shape=Index(512, 1024),
+            expert_shape=(512, 1024),
         ](1, [256], [2], ctx)
 
         # Multi-expert ragged, sparse ids.
@@ -295,7 +295,7 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=4,
-            expert_shape=Index(512, 1024),
+            expert_shape=(512, 1024),
         ](2, [20, 40], [0, 2], ctx)
 
         # Zero-token expert in the middle of a ragged batch (M == 0 group).
@@ -303,7 +303,7 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=6,
-            expert_shape=Index(512, 1024),
+            expert_shape=(512, 1024),
         ](4, [20, 0, 300, 28], [0, 3, 2, 4], ctx)
 
         # Several small + medium experts, sparse ids.
@@ -311,7 +311,7 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=6,
-            expert_shape=Index(7168, 2048),
+            expert_shape=(7168, 2048),
         ](4, [20, 1500, 300, 28], [0, 3, 2, 4], ctx)
 
         # fp32 output.
@@ -319,7 +319,7 @@ def main() raises:
             .float8_e4m3fn,
             .float32,
             num_experts=4,
-            expert_shape=Index(512, 1024),
+            expert_shape=(512, 1024),
         ](2, [20, 40], [0, 2], ctx)
 
         # Llama-4-Scout gate/up shape (N x K = 8192 x 5120) with unaligned
@@ -333,7 +333,7 @@ def main() raises:
             .float8_e4m3fn,
             .bfloat16,
             num_experts=2,
-            expert_shape=Index(8192, 5120),
+            expert_shape=(8192, 5120),
         ](2, [13, 51], [0, 1], ctx)
 
         print("All rowwise grouped FP8 tests passed.")

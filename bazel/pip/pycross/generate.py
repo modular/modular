@@ -54,6 +54,7 @@ _ALLOWED_DUPLICATE_PACKAGES = (
         "cuda-python",  # vllm/sglang use CUDA 13; the default groups use CUDA 12
         "cuda-toolkit",  # Differs between vllm's and sglang's torch versions
         "fastapi",  # vllm 0.24.0 caps fastapi below what other groups resolve to
+        "flash-attn-4",  # sglang 0.5.12.post1 needs 4.0.0b9; the benchmarks use 4.0.0b31
         "flashinfer-cubin",  # sglang pins 0.6.11.post1; MAX uses 0.6.8.post1
         "flashinfer-python",  # MAX, vllm and sglang each pin a different version
         "hf-xet",  # Follows huggingface-hub's split
@@ -61,6 +62,7 @@ _ALLOWED_DUPLICATE_PACKAGES = (
         "idna",  # Follows mcp's split
         "llguidance",  # Not used by MAX directly; vllm pulls 1.7.5, sglang pins 0.7.30
         "mcp",  # vllm 0.30.0 needs mcp 2.x; MAX and sglang use 1.30.0
+        "nvidia-cudnn-frontend",  # flashinfer 0.7.0 needs >=1.29; vllm 0.30.0 resolves 1.26.0
         "nvidia-cublas",  # Differs between vllm's and sglang's torch versions
         "nvidia-cudnn-cu13",  # Differs between vllm's and sglang's torch versions
         "nvidia-cusparselt-cu13",  # Differs between vllm's and sglang's torch versions

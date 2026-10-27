@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 from std.collections.string.string_span import get_static_string
 from max.gpu.host import DeviceContext
-from max.gpu.host._legacy._amdgpu_hip import hipStream_t, HIP
+from max.gpu.host import hipStream_t, HIP
 from std.os import abort, getenv
 from std.pathlib import Path
 from std.sys import size_of

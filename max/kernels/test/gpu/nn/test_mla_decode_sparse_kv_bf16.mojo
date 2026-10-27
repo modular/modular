@@ -83,7 +83,7 @@ def run_bit_exact_vs_dense[
 
     var pages_per_batch = ceildiv(num_keys, PAGE_SIZE)
     var total_pages = batch_size * pages_per_batch
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         kv_dim2,
         NUM_LAYERS,
@@ -524,7 +524,7 @@ def run_test_sparse_kv_bf16[
     var total_pages = batch_size * ceildiv(num_keys, PAGE_SIZE)
     var max_pages_per_batch = ceildiv(num_keys, PAGE_SIZE)
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         kv_dim2,
         NUM_LAYERS,
@@ -1061,7 +1061,7 @@ def run_test_sparse_kv_bf16_variable_topk[
     )
     comptime kv_dim2 = 1
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         kv_dim2,
         NUM_LAYERS,
@@ -1371,7 +1371,7 @@ def run_test_sparse_kv_bf16_attn_sink[
     var total_pages = batch_size * ceildiv(num_keys, PAGE_SIZE)
     var max_pages_per_batch = ceildiv(num_keys, PAGE_SIZE)
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         kv_dim2,
         NUM_LAYERS,
@@ -1708,7 +1708,7 @@ def run_test_sparse_kv_bf16_extra_kv[
     var max_num_keys = max_cache_len + q_max_seq_len
     var max_pages_per_batch = ceildiv(max_num_keys, PAGE_SIZE)
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         kv_dim2,
         NUM_LAYERS,
@@ -1785,7 +1785,7 @@ def run_test_sparse_kv_bf16_extra_kv[
     var max_extra_num_keys = max_extra_cache_len + q_max_seq_len
     var max_extra_pages_per_batch = ceildiv(max_extra_num_keys, PAGE_SIZE)
 
-    var extra_block_shape = IndexList[6](
+    var extra_block_shape = (
         extra_total_pages,
         kv_dim2,
         NUM_LAYERS,
@@ -2244,7 +2244,7 @@ def run_test_sparse_kv_bf16_topk_clamping[
     )
     comptime kv_dim2 = 1
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         kv_dim2,
         NUM_LAYERS,

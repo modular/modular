@@ -17,7 +17,7 @@ from std.random import randn, random_float64, seed
 from layout import Coord, TileTensor, row_major
 from layout.tile_layout import Layout
 from max.gpu.host import DeviceAttribute, DeviceContext, default_accelerator
-from nn.mhc import mhc_post, mhc_post_non_temporal
+from nn.mhc import mhc_post, mhc_post_block_size, mhc_post_non_temporal
 from std.testing import assert_raises, assert_true
 from std.utils.numerics import FPUtils
 
@@ -85,7 +85,12 @@ def run_mhc_post[
     ctx.enqueue_copy(comb_d, comb_h)
 
     var streams_shape = row_major((num_rows, hc, hidden))
-    mhc_post[hc_mult=hc, hidden_size=hidden, target="gpu"](
+    mhc_post[
+        hc_mult=hc,
+        hidden_size=hidden,
+        target="gpu",
+        block_size=mhc_post_block_size[dtype, hidden](),
+    ](
         TileTensor(out_d, streams_shape),
         TileTensor(streams_d, streams_shape).as_imm(),
         TileTensor(y_d, row_major((num_rows, hidden))).as_imm(),
@@ -225,6 +230,9 @@ def main() raises:
         # and past 8 per SM on NVIDIA.
         for num_rows in [1, 4, 17, 64, 255, 256, 1024, 4096, 16384]:
             run_mhc_post[hc=4, hidden=4096](ctx, num_rows)
+        # 256-thread blocks do not split 5120 bf16 columns; 128 do.
+        for num_rows in [1, 17, 1185, 8168]:
+            run_mhc_post[hc=4, hidden=5120](ctx, num_rows)
         # Other element sizes change the vector width, chunk and k_blocks.
         for num_rows in [1, 17, 256]:
             run_mhc_post[hc=4, hidden=4096, dtype=.float32](ctx, num_rows)

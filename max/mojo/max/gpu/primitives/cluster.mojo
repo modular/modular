@@ -28,7 +28,7 @@ from max.gpu.sync import barrier
 from std.sys._assembly import inlined_assembly
 from std.sys.info import _is_sm_9x_or_newer, _is_sm_100x_or_newer
 
-from std.utils.index import IndexList, product
+from std.utils.coord import Coord
 
 from max.gpu import thread_idx
 from max.gpu.primitives.warp import _ReduceFn
@@ -375,7 +375,7 @@ def clusterlaunchcontrol_try_cancel[
 
 @inline(.nodebug)
 def cluster_mask_base[
-    cluster_shape: IndexList[3],
+    cluster_shape: Coord,
     axis: Int,
 ]() -> UInt16:
     """Computes the base mask for a cluster. Base mask in an axis masks
@@ -399,18 +399,19 @@ def cluster_mask_base[
 
     """
     comptime assert axis in (0, 1), "axis must be one of 0, 1"
+    comptime assert cluster_shape.rank == 3, "the cluster shape has three axes"
 
     comptime assert (
-        product(cluster_shape) <= 16
+        cluster_shape.product() <= 16
     ), "cluster size must be less than or equal to 16"
 
     comptime if axis == 0:
-        return UInt16((1 << cluster_shape[0]) - 1)
+        return UInt16((1 << Int(cluster_shape[0])) - 1)
 
     var mask: UInt16 = 0
 
-    comptime for i in range(cluster_shape[1]):
-        mask |= UInt16(1 << (i * cluster_shape[0]))
+    comptime for i in range(Int(cluster_shape[1])):
+        mask |= UInt16(1 << (i * Int(cluster_shape[0])))
 
     return mask
 

@@ -63,9 +63,15 @@ def _record(
     batch: Any,
     spec_decode_metrics: Any,
     sync_monotonic: float,
+    *,
+    num_output_tokens: int | None = None,
 ) -> None:
     OverlapTextGenerationPipeline._record_completed_batch_stats(
-        pipeline, batch, spec_decode_metrics, sync_monotonic
+        pipeline,
+        batch,
+        spec_decode_metrics,
+        sync_monotonic,
+        num_output_tokens=num_output_tokens,
     )
 
 
@@ -147,3 +153,20 @@ def test_last_sync_advances_between_batches() -> None:
     _record(pipe, _fake_batch(enqueue_monotonic=10.0), None, 10.2)
     _record(pipe, _fake_batch(enqueue_monotonic=10.1), None, 10.9)
     assert _take(pipe).execution_time_s == pytest.approx(0.7)
+
+
+@pytest.mark.parametrize("output_tokens", [0, 1, 7])
+def test_completed_prefill_counts_returned_output_tokens(
+    output_tokens: int,
+) -> None:
+    pipe = _fake_pipeline()
+    _record(
+        pipe,
+        _fake_batch(enqueue_monotonic=10.0),
+        None,
+        10.25,
+        num_output_tokens=output_tokens,
+    )
+    stats = _take(pipe)
+    assert stats.num_output_tokens == output_tokens
+    assert stats.generation_throughput == output_tokens / 0.25

@@ -134,4 +134,20 @@ def MOGG_TileFusionLane
   let genSpecializedAttr = 0;
 }
 
+// A function a Mojo kernel registers: one of its struct's methods, or its
+// shape function. Each name is the Mojo method's, except that the TileTensor
+// `elementwise` overload is "tile_elementwise" to tell the two apart.
+def MOGG_KernelFunctionKind
+    : I32Enum<"KernelFunctionKind", "kernel function kind", [
+        I32EnumCase<"Execute", 0, "execute">,
+        I32EnumCase<"Shape", 1, "shape">,
+        I32EnumCase<"Elementwise", 2, "elementwise">,
+        I32EnumCase<"TileElementwise", 3, "tile_elementwise">,
+        I32EnumCase<"BuildGraph", 4, "build_graph">,
+        I32EnumCase<"ExecuteDevice", 5, "execute_device">,
+        I32EnumCase<"ExecuteConfiguration", 6, "execute_configuration">,
+      ]> {
+  let cppNamespace = "::M::MOGG";
+}
+
 #endif // GENERICML_GRAPHCOMPILER_MOGGDIALECT_MOGGENUMS_TD

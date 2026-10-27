@@ -18,7 +18,7 @@ from std.ffi import _get_dylib_function as _ffi_get_dylib_function
 from std.ffi import _Global, OwnedDLHandle
 from std.utils import StaticTuple
 
-from max.gpu.host._legacy._amdgpu_hip import hipStream_t
+from max.gpu.host import hipStream_t
 
 comptime hipblasLtHandle_t = Optional[OpaquePointer[MutAnyOrigin]]
 comptime hipblasLtMatmulDesc_t = Optional[OpaquePointer[MutAnyOrigin]]

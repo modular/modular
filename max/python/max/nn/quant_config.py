@@ -29,6 +29,9 @@ NVFP4_BLOCK_SIZE = 16
 MXFP4_BLOCK_SIZE = 32
 """Inputs covered by one MXFP4 weight block scale."""
 
+_MXFP8_BLOCK_SIZE = 32
+"""Inputs covered by one MXFP8 weight block scale."""
+
 
 class ScaleGranularity(Enum):
     """Specifies the granularity of the quantization scale factor.
@@ -421,6 +424,53 @@ class QuantConfig:
             embedding_output_dtype=embedding_output_dtype,
             bias_dtype=bias_dtype,
             format=QuantFormat.MXFP4,
+            can_use_fused_mlp=can_use_fused_mlp,
+        )
+
+    @classmethod
+    def mxfp8(
+        cls,
+        *,
+        mlp_quantized_layers: Iterable[int],
+        attn_quantized_layers: Iterable[int] = (),
+        embedding_output_dtype: DType | None = None,
+        bias_dtype: DType | None = None,
+        can_use_fused_mlp: bool = False,
+    ) -> QuantConfig:
+        """Builds an OCP MXFP8 config with dynamic MXFP8 activations.
+
+        Weights are unpacked E4M3 values with one E8M0 scale per 32 inputs.
+        Unlike NVFP4 there is no per-tensor second scale level: MXFP8 is pure
+        block scaling, so nothing rescales the matmul output.
+
+        Args:
+            mlp_quantized_layers: Layer indices whose MLPs are quantized.
+            attn_quantized_layers: Layer indices whose attention projections
+                are quantized.
+            embedding_output_dtype: The dtype of the embedding output.
+            bias_dtype: The dtype of the bias weights.
+            can_use_fused_mlp: Whether the fused MLP path may be used.
+
+        Returns:
+            The config.
+        """
+        return cls(
+            input_scale=InputScaleSpec(
+                granularity=ScaleGranularity.BLOCK,
+                origin=ScaleOrigin.DYNAMIC,
+                dtype=DType.float8_e8m0fnu,
+                block_size=(1, _MXFP8_BLOCK_SIZE),
+            ),
+            weight_scale=WeightScaleSpec(
+                granularity=ScaleGranularity.BLOCK,
+                dtype=DType.float8_e8m0fnu,
+                block_size=(1, _MXFP8_BLOCK_SIZE),
+            ),
+            mlp_quantized_layers=set(mlp_quantized_layers),
+            attn_quantized_layers=set(attn_quantized_layers),
+            embedding_output_dtype=embedding_output_dtype,
+            bias_dtype=bias_dtype,
+            format=QuantFormat.MXFP8,
             can_use_fused_mlp=can_use_fused_mlp,
         )
 

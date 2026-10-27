@@ -155,6 +155,7 @@ def register_all_models() -> None:
             "LlamaForCausalLMEagle3", ".eagle_llama3", "eagle3_llama_arch"
         ),
         _LazyArch("LlamaForCausalLMEagle", ".eagle_llama3", "eagle_llama_arch"),
+        _LazyArch("FlintForCausalLM_ModuleV3", ".flint", "flint_arch"),
         _LazyArch("Flux2Pipeline", ".flux2", "flux2_arch"),
         _LazyArch("Flux2KleinPipeline", ".flux2", "flux2_klein_arch"),
         _LazyArch(
@@ -249,6 +250,11 @@ def register_all_models() -> None:
         _LazyArch(
             "InklingForConditionalGeneration", ".inkling", "inkling_arch"
         ),
+        _LazyArch(
+            "InklingForConditionalGeneration_ModuleV3",
+            ".inkling_modulev3",
+            "inkling_modulev3_arch",
+        ),
         _LazyArch("InternVLChatModel", ".internvl", "internvl_arch"),
         _LazyArch(
             "KimiK25ForConditionalGeneration", ".kimik2_5", "kimik2_5_arch"
@@ -265,6 +271,11 @@ def register_all_models() -> None:
             "kimivl_modulev3_arch",
         ),
         _LazyArch("LagunaForCausalLM", ".laguna", "laguna_arch"),
+        _LazyArch(
+            "LagunaForCausalLM_ModuleV3",
+            ".laguna_modulev3",
+            "laguna_modulev3_arch",
+        ),
         _LazyArch("Lfm2ForCausalLM", ".lfm2", "lfm2_arch"),
         _LazyArch("LlamaForCausalLM", ".llama3", "llama_arch"),
         _LazyArch(

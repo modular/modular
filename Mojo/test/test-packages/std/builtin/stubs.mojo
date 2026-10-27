@@ -330,6 +330,12 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
     ]:
         return {}
 
+    @always_inline("builtin")
+    def __truediv__(
+        self, rhs: FloatLiteral
+    ) -> type_of(FloatLiteral(self) / rhs):
+        return {}
+
 
 @__nonmaterializable(FloatDyn)
 struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
@@ -1509,9 +1515,9 @@ struct Pointer[
         ]
         # Do this delicately since we're manufacturing an interior origin here.
         return __get_litref_as_mvalue(
-            __mlir_op.`lit.ref.from_pointer`[_type=ptr_type._mlir_lit_ref](
-                self._mlir_value
-            )
+            __mlir_op.`lit.ref.from_pointer`[
+                _type=ptr_type._mlir_lit_ref, name="(pointer pointee)".value
+            ](self._mlir_value)
         )
 
     @always_inline
@@ -1753,7 +1759,11 @@ def paramfor_next_value[
         abort()
 
 
-struct Optional[T: Movable](Copyable, EnumLike):
+struct Optional[T: Movable](
+    Copyable,
+    EnumLike,
+    RegisterPassable where conforms_to(T, RegisterPassable),
+):
     def __deinit__(deinit self):
         pass
 

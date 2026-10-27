@@ -34,7 +34,6 @@ from layout import (
 from nn.normalization import rms_norm_fused_fp8
 
 from std.testing import assert_true
-from std.utils import IndexList
 from std.utils.index import Index
 from std.utils.numerics import max_finite
 
@@ -268,7 +267,7 @@ def test_fused_allreduce_rmsnorm_fp8[
     var gamma_dev = ctx.enqueue_create_buffer[in_dtype](cols)
     ctx.enqueue_copy(gamma_dev, gamma_host)
 
-    comptime shape = IndexList[2](rows, cols)
+    comptime shape = (rows, cols)
     var gamma_tensor = TileTensor(gamma_dev, row_major(cols))
     var epsilon = Float32(1e-5)
     var weight_offset = Scalar[in_dtype](0.0)
@@ -297,9 +296,9 @@ def test_fused_allreduce_rmsnorm_fp8[
 
     @inline(.always)
     def ref_input_fn[
-        width: Int, _rank: Int
-    ](idx: IndexList[_rank]) {var ref_sum_ptr} -> SIMD[in_dtype, width]:
-        var linear_idx = idx[0] * cols + idx[1]
+        width: Int
+    ](coords: Coord) {var ref_sum_ptr} -> SIMD[in_dtype, width]:
+        var linear_idx = Int(coords[0]) * cols + Int(coords[1])
         return ref_sum_ptr.unsafe_load[width=width, alignment=width](linear_idx)
 
     var ref_fp8_tile = TileTensor(
@@ -670,12 +669,12 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
 
     @inline(.always)
     def ref_input_fn[
-        width: Int, _rank: Int
-    ](idx: IndexList[_rank]) {var ref_sum_ptr} -> SIMD[in_dtype, width]:
-        var linear_idx = idx[0] * cols + idx[1]
+        width: Int
+    ](coords: Coord) {var ref_sum_ptr} -> SIMD[in_dtype, width]:
+        var linear_idx = Int(coords[0]) * cols + Int(coords[1])
         return ref_sum_ptr.unsafe_load[width=width, alignment=width](linear_idx)
 
-    comptime shape = IndexList[2](rows, cols)
+    comptime shape = (rows, cols)
     var ref_fp8_tile = TileTensor(
         ref_fp8_dev,
         row_major(Idx[rows], Idx[cols]),

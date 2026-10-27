@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.gpu.host import DeviceContext
-from max.gpu.host._legacy._metal_capture import (
+from max.gpu.host import (
     _end_metal_trace_capture,
     _set_metal_gpu_print_enabled,
     _start_metal_trace_capture,

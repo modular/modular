@@ -14,7 +14,7 @@
 # RUN: %mojo %s 2 1234 5678
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
-from max.gpu.host._legacy.device_context import DefaultDeviceTypeEncoder
+from max.gpu.host import DefaultDeviceTypeEncoder
 from std.reflection import reflect
 from std.testing import assert_equal
 from std.sys import argv

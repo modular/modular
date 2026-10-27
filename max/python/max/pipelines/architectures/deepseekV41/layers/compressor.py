@@ -20,7 +20,7 @@ from max.dtype import DType
 from max.graph import DeviceRef, TensorType, TensorValue, ops
 from max.nn.kv_cache import PagedCacheValues
 from max.nn.layer import Module
-from max.nn.linear import Linear
+from max.nn.linear import Linear, linear
 from max.nn.norm.rms_norm import RMSNorm
 
 from .ragged import V41RaggedRows as RaggedRows
@@ -91,10 +91,13 @@ class DeepseekV41Compressor(Module):
         device: Device of the projection weights; paired with
             ``hidden_size``.
         head_dim: Latent width; the pooling ops support only 512.
+        weight_dtype: Dtype of the ``wkv``/``wgate`` weights, bf16 or
+            float32; :meth:`project` multiplies the input in it.
 
     Raises:
         ValueError: If ``compress_ratio`` is not 1 or 2, ``head_dim`` is not
-            512, or only one of ``hidden_size`` and ``device`` is given.
+            512, only one of ``hidden_size`` and ``device`` is given, or
+            ``weight_dtype`` is neither bf16 nor float32.
     """
 
     def __init__(
@@ -105,6 +108,7 @@ class DeepseekV41Compressor(Module):
         hidden_size: int | None = None,
         device: DeviceRef | None = None,
         head_dim: int = 512,
+        weight_dtype: DType = DType.float32,
     ) -> None:
         super().__init__()
         if compress_ratio not in (1, 2):
@@ -116,38 +120,43 @@ class DeepseekV41Compressor(Module):
             )
         if (hidden_size is None) != (device is None):
             raise ValueError("hidden_size and device must be given together")
+        if weight_dtype not in (DType.bfloat16, DType.float32):
+            raise ValueError(
+                f"CSA2 compressor weights must be bf16 or float32, got"
+                f" {weight_dtype}"
+            )
         self.compress_ratio = compress_ratio
         self.head_dim = head_dim
         self.eps = eps
         self.norm = RMSNorm(head_dim, DType.float32, eps)
         if hidden_size is not None:
             assert device is not None
-            # FP32, as ``__call__`` requires; bf16 checkpoint weights must be
-            # upcast at load.
-            self.wkv = Linear(hidden_size, head_dim, DType.float32, device)
+            self.wkv = Linear(hidden_size, head_dim, weight_dtype, device)
             if compress_ratio == 2:
-                self.wgate = Linear(
-                    hidden_size, head_dim, DType.float32, device
-                )
+                self.wgate = Linear(hidden_size, head_dim, weight_dtype, device)
 
     def project(self, h: TensorValue) -> TensorValue:
         """Projects hidden states into this compressor's ``raw`` input.
 
-        Requires construction with ``hidden_size`` and ``device``.
+        Requires construction with ``hidden_size`` and ``device``. The input
+        is cast to the weights' dtype, and the matmuls accumulate and return
+        float32 either way.
 
         Args:
-            h: ``[..., hidden_size]`` hidden states of any float dtype; cast
-                to float32 before the projection.
+            h: ``[..., hidden_size]`` hidden states of any float dtype.
 
         Returns:
             ``[..., head_dim * compress_ratio]`` float32, the ``raw`` input
             of :meth:`__call__`.
         """
-        h = ops.cast(h, DType.float32)
-        raw = self.wkv(h)
+        weights = [self.wkv.weight]
         if self.compress_ratio == 2:
-            raw = ops.concat([raw, self.wgate(h)], axis=-1)
-        return raw
+            weights.append(self.wgate.weight)
+        h = ops.cast(h, weights[0].dtype)
+        raws = [
+            linear(h, w.to(h.device), out_dtype=DType.float32) for w in weights
+        ]
+        return raws[0] if len(raws) == 1 else ops.concat(raws, axis=-1)
 
     def __call__(
         self,

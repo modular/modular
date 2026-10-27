@@ -22,7 +22,10 @@ scoring it.
 ``openai-stream/<service>/<model>`` behaves like ``openai-api/<service>/<model>``
 (same ``<SERVICE>_BASE_URL`` / ``<SERVICE>_API_KEY`` lookup), except that it
 streams the completion and assembles the chunks into the ``ChatCompletion``
-Inspect already parses.
+Inspect already parses. ``openai-chat`` is ``openai-api`` without streaming.
+
+Both send a video by URL: they rewrite the marker parts of
+:mod:`exacto_media` into ``video_url`` parts, which Inspect cannot express.
 
 Runs only inside the harness venv; importing this module registers the provider.
 """
@@ -32,6 +35,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
+import exacto_media
 import httpx
 from inspect_ai.model import GenerateConfig, modelapi
 from inspect_ai.model._providers.openai_compatible import OpenAICompatibleAPI
@@ -42,10 +46,23 @@ class IncompleteStreamError(Exception):
     """The stream closed before the server sent a finish_reason."""
 
 
-class OpenAIStreamingAPI(OpenAICompatibleAPI):
+class OpenAIChatAPI(OpenAICompatibleAPI):
+    #: Lets a task that sends video refuse a provider that would send the
+    #: marker as text, which would score the model without the video.
+    expands_video_url_markers = True
+
     async def _generate_completion(
         self, request: dict[str, Any], config: GenerateConfig
     ) -> ChatCompletion:
+        exacto_media.expand_video_url_markers(request["messages"])
+        return await super()._generate_completion(request, config)
+
+
+class OpenAIStreamingAPI(OpenAIChatAPI):
+    async def _generate_completion(
+        self, request: dict[str, Any], config: GenerateConfig
+    ) -> ChatCompletion:
+        exacto_media.expand_video_url_markers(request["messages"])
         stream = await self.client.chat.completions.create(
             **request, stream=True, stream_options={"include_usage": True}
         )
@@ -119,3 +136,8 @@ class OpenAIStreamingAPI(OpenAICompatibleAPI):
 @modelapi(name="openai-stream")
 def openai_stream() -> type[OpenAIStreamingAPI]:
     return OpenAIStreamingAPI
+
+
+@modelapi(name="openai-chat")
+def openai_chat() -> type[OpenAIChatAPI]:
+    return OpenAIChatAPI

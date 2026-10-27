@@ -349,6 +349,20 @@ def test_passes_every_sampling_argument(
     ]
 
 
+def test_image_arguments_on_a_text_model_raise(
+    pipe: AutoPipeline, model_path: str
+) -> None:
+    untyped: Callable[..., object] = pipe
+    with pytest.raises(ValueError) as error:
+        untyped(TEXT, max_new_tokens=1, height=256)
+    assert str(error.value) == (
+        "height is for image generation models, and AutoModel loaded "
+        f"{model_path}, a text generation model."
+    )
+    with pytest.raises(TypeError, match="'max_new_tokens'"):
+        untyped(TEXT)
+
+
 def test_batch_errors_name_auto_pipeline(pipe: AutoPipeline) -> None:
     with pytest.raises(ValueError) as error:
         pipe([*PROMPTS, TEXT], max_new_tokens=1)

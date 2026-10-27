@@ -23,10 +23,13 @@ from max.graph import (
     TensorValue,
     Weight,
 )
+from max.nn.activation import activation_function_from_name
 from max.nn.comm.allreduce import Allreduce
 from max.nn.kv_cache import PagedCacheValues
 from max.nn.layer import Module
+from max.nn.linear import Linear
 from max.nn.moe.moe import MoE
+from max.nn.quant_config import QuantConfig
 from max.nn.transformer.distributed_transformer import (
     ShardableCallable,
     forward_sharded_layers,
@@ -45,7 +48,8 @@ class Gemma4TextDecoderLayer(Module):
     1. ``input_layernorm`` -> attention -> ``post_attention_layernorm`` -> residual
     2. ``pre_feedforward_layernorm`` -> MLP -> ``post_feedforward_layernorm`` -> residual
        (or MoE variant with parallel shared-MLP + routed-expert branches)
-    3. Multiply by ``layer_scalar``
+    3. Per-layer input (when the checkpoint has one) -> residual
+    4. Multiply by ``layer_scalar``
     """
 
     def __init__(
@@ -58,6 +62,9 @@ class Gemma4TextDecoderLayer(Module):
         unquantized_dtype: DType = DType.bfloat16,
         enable_moe_block: bool = False,
         moe_block: MoE | None = None,
+        hidden_size_per_layer_input: int = 0,
+        hidden_activation: str = "gelu_tanh",
+        quant_config: QuantConfig | None = None,
     ) -> None:
         super().__init__()
 
@@ -111,6 +118,57 @@ class Gemma4TextDecoderLayer(Module):
             self.post_feedforward_layernorm.shard(devices)
         )
 
+        # Gemma 4 per-layer embeddings (PLE): the layer mixes its slice of
+        # the packed per-layer embedding into its residual stream. The two
+        # projections are quantized when the checkpoint is (a quantized
+        # export ships ``weight_scale``/``weight_scale_2``/``input_scale``
+        # next to their weights), and stay plain BF16 linears when it is not.
+        self.hidden_size_per_layer_input = hidden_size_per_layer_input
+        if hidden_size_per_layer_input:
+            self.per_layer_activation = activation_function_from_name(
+                hidden_activation
+            )
+
+            self.per_layer_input_gate = Linear(
+                in_dim=hidden_size,
+                out_dim=hidden_size_per_layer_input,
+                dtype=unquantized_dtype,
+                device=devices[0],
+                has_bias=False,
+                quant_config=quant_config,
+            )
+            self.per_layer_input_gate.sharding_strategy = (
+                ShardingStrategy.replicate(len(devices))
+            )
+            self.per_layer_input_gate_shards = self.per_layer_input_gate.shard(
+                devices
+            )
+
+            self.per_layer_projection = Linear(
+                in_dim=hidden_size_per_layer_input,
+                out_dim=hidden_size,
+                dtype=unquantized_dtype,
+                device=devices[0],
+                has_bias=False,
+                quant_config=quant_config,
+            )
+            self.per_layer_projection.sharding_strategy = (
+                ShardingStrategy.replicate(len(devices))
+            )
+            self.per_layer_projection_shards = self.per_layer_projection.shard(
+                devices
+            )
+
+            self.post_per_layer_input_norm = Gemma4RMSNorm(
+                hidden_size, unquantized_dtype, eps=rms_norm_eps
+            )
+            self.post_per_layer_input_norm.sharding_strategy = (
+                ShardingStrategy.replicate(len(devices))
+            )
+            self.post_per_layer_input_norm_shards = (
+                self.post_per_layer_input_norm.shard(devices)
+            )
+
         self.enable_moe_block = enable_moe_block
         self.moe_block = moe_block
 
@@ -155,6 +213,7 @@ class Gemma4TextDecoderLayer(Module):
         signal_buffers: list[BufferValue],
         kv_collections: list[PagedCacheValues],
         input_row_offsets: list[TensorValue],
+        per_layer_inputs: list[TensorValue] | None = None,
         **kwargs: object,
     ) -> list[TensorValue]:
         residual = xs
@@ -215,6 +274,27 @@ class Gemma4TextDecoderLayer(Module):
         hidden_states = [
             residual[i] + hidden_states[i] for i in range(len(hidden_states))
         ]
+
+        if self.hidden_size_per_layer_input:
+            assert per_layer_inputs is not None, (
+                "A model with per-layer embeddings always passes them."
+            )
+            gated = forward_sharded_layers(
+                self.per_layer_input_gate_shards, hidden_states
+            )
+            gated = [self.per_layer_activation(g) for g in gated]
+            gated = [
+                g * p for g, p in zip(gated, per_layer_inputs, strict=True)
+            ]
+            projected = forward_sharded_layers(
+                self.per_layer_projection_shards, gated
+            )
+            projected = forward_sharded_layers(
+                self.post_per_layer_input_norm_shards, projected
+            )
+            hidden_states = [
+                h + p for h, p in zip(hidden_states, projected, strict=True)
+            ]
 
         hidden_states = [
             h * self.layer_scalar.to(h.device) for h in hidden_states

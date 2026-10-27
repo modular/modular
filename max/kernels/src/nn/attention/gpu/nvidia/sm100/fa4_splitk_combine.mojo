@@ -41,18 +41,20 @@ Everything stays in the log2 (base-2) domain to match the FA4 softmax
 ## Perf structure (adapted from `mla_decode_combine.mojo`'s
 `mla_combine_kernel` / `mla_combine_kernel_split_parallel`)
 
-One warp (`WARP_SIZE` threads) per output row-head; `ov_depth` is split across
-lanes via a vectorized `vec_size` / `elems_per_thread` partition (128-bit
-loads where `ov_depth` and the intermediate dtype allow it). The LSE
-reduction (row max, log-sum-exp, per-partition `scale_p`) is computed ONCE
-into per-lane registers -- not the 3x redundant global-memory re-read (once
-for the max, once for the denominator, once per depth-element inside the
-accumulation loop) the original correctness-first version did. The weighted
-accumulation loop broadcasts each partition's scale from its owning lane via
-`warp.shuffle_idx` and prefetches the NEXT partition's `o_partial` vector into
-registers while the CURRENT partition's contribution is folded into the
-running sum (software pipelining), so the load latency of partition `p+1`
-overlaps the FMA work of partition `p`.
+`_COMBINE_WARPS` warps per output row-head, each folding every
+`_COMBINE_WARPS`-th partition, summed through shared memory at the end.
+Within a warp `ov_depth` is split across lanes via a vectorized `vec_size` /
+`elems_per_thread` partition (128-bit loads where `ov_depth` and the
+intermediate dtype allow it). The LSE reduction (row max, log-sum-exp,
+per-partition `scale_p`) is computed ONCE into per-lane registers -- not the
+3x redundant global-memory re-read (once for the max, once for the
+denominator, once per depth-element inside the accumulation loop) the original
+correctness-first version did. The weighted accumulation loop broadcasts each
+partition's scale from its owning lane via `warp.shuffle_idx` and prefetches
+the warp's NEXT partition's `o_partial` vector into registers while the
+CURRENT partition's contribution is folded into the running sum (software
+pipelining), so the load latency of the next partition overlaps the FMA work
+of the current one.
 
 Two kernel variants share this body, selected by the comptime `P_STATIC`
 parameter:
@@ -73,7 +75,7 @@ Target hardware family: NVIDIA SM100 (B200 / B300).
 
 PDL (Item 4): this kernel is a Programmatic Dependent Launch *consumer* of the
 attention producer. It calls `wait_on_dependent_grids()` (all threads of its
-one-warp block, before the `rh >= RH` guard) and launches with
+block, before the `rh >= RH` guard) and launches with
 `pdl_launch_attributes(MHA_PDL_LEVEL)`. The attention producer does NOT emit a
 terminal `launch_dependent_grids()` for the `do_partition` config (it suppresses
 its prologue trigger instead, see kernel.mojo); this `wait` therefore releases on
@@ -93,13 +95,15 @@ this config at all.)
 """
 
 from std.math import ceildiv, exp2, log2, max, min
-from max.gpu import WARP_SIZE, block_idx, lane_id
+from max.gpu import WARP_SIZE, block_idx, lane_id, thread_idx, warp_id
+from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.primitives.grid_controls import (
     PDLLevel,
     pdl_launch_attributes,
     wait_on_dependent_grids,
 )
+from std.memory import unsafe_stack_allocation
 from std.sys import align_of, get_defined_int, size_of
 from std.utils.numerics import min_or_neg_inf
 from nn.attention.gpu.nvidia.sm100.attention import MHA_PDL_LEVEL
@@ -128,6 +132,10 @@ comptime _ACC = DType.float32
 # instead of silently corrupting the reduction or reading out of bounds.
 comptime P_MAX = get_defined_int["FA4_COMBINE_P_MAX", 160]()
 
+# Warps per row-head. Each warp folds every `_COMBINE_WARPS`-th partition, so
+# the dependent L2-latency chain is `P / _COMBINE_WARPS` loads long, not `P`.
+comptime _COMBINE_WARPS = 8
+
 
 @__name(
     t"sm100_mha_splitk_combine_d{ov_depth}_{output_type}_{intermediate_type}_p{P_STATIC}",
@@ -146,10 +154,11 @@ def _fa4_splitk_combine_kernel[
 ):
     """Reduces `P` per-partition workspace partials into one output row-head.
 
-    Launched with one warp (`WARP_SIZE` threads) per output row-head. Loads
-    each partition's fused LSE into per-lane registers, computes the row's
-    max and log-sum-exp once, then accumulates the vectorized, prefetched,
-    scale-weighted sum of `o_partial` across partitions.
+    Launched with `_COMBINE_WARPS` warps per output row-head. Each warp loads
+    every partition's fused LSE into per-lane registers, computes the row's
+    max and log-sum-exp, then accumulates the vectorized, prefetched,
+    scale-weighted sum of its share of the partitions; the warps' sums are
+    added through shared memory.
 
     Parameters:
         output_type: Element type of the final output buffer.
@@ -198,7 +207,9 @@ def _fa4_splitk_combine_kernel[
     if rh >= RH:
         return
 
+    comptime assert WARP_SIZE % _COMBINE_WARPS == 0
     var lane_idx: Int = Int(lane_id())
+    var warp_idx: Int = Int(warp_id())
     var partition_stride: Int = RH * ov_depth
 
     # `o_partial` vectorization: 128-bit loads where `ov_depth` and the
@@ -308,6 +319,13 @@ def _fa4_splitk_combine_kernel[
     comptime for k in range(num_lse_per_thread):
         local_lse[k] = exp2(local_lse[k] - global_lse)
 
+    # Per-warp partial sums; the scales are already globally normalized, so
+    # the cross-warp reduction is a plain sum.
+    var smem = unsafe_stack_allocation[
+        _COMBINE_WARPS * ov_depth, _ACC, address_space=.SHARED
+    ]()
+    var smem_warp = smem.unsafe_offset(warp_idx * ov_depth)
+
     # Scale-weighted accumulation across partitions, then store. `full_vec`
     # depths (power-of-2 `vec_size`, exact cover: 64/128/256) use the vectorized
     # + prefetched path; non-power-of-2-width (96/160/192/224) and tail (72, 80)
@@ -320,79 +338,63 @@ def _fa4_splitk_combine_kernel[
     # turning that register array into a dynamically-indexed local-memory array
     # -- the exact cost the static specialization exists to avoid.
     comptime if full_vec:
-        var datas = Array[_, elems_per_thread](
-            fill_with_unrolled=lambda [i: Int]() -> SIMD[
-                intermediate_type, vec_size
-            ]: oaccum_base.unsafe_load[width=vec_size, alignment=in_alignment](
-                lane_idx * vec_size + i * (WARP_SIZE * vec_size)
-            )
+        var datas = Array[SIMD[intermediate_type, vec_size], elems_per_thread](
+            fill=SIMD[intermediate_type, vec_size](0)
         )
+        if warp_idx < p_count:
+            comptime for i in range(elems_per_thread):
+                datas[i] = oaccum_base.unsafe_load[
+                    width=vec_size, alignment=in_alignment
+                ](
+                    warp_idx * partition_stride
+                    + lane_idx * vec_size
+                    + i * (WARP_SIZE * vec_size)
+                )
 
         var result = Array[SIMD[_ACC, vec_size], elems_per_thread](
             fill=SIMD[_ACC, vec_size](0)
         )
 
+        @inline(.always)
+        def fold(p: Int, scale: Scalar[_ACC]) {mut datas, mut result, imm}:
+            var is_valid = SIMD[.bool, vec_size](fill=scale != Scalar[_ACC](0))
+            comptime for i in range(elems_per_thread):
+                var clean = is_valid.select(
+                    datas[i].cast[_ACC](), SIMD[_ACC, vec_size](0)
+                )
+                result[i] = result[i] + scale * clean
+                if p + _COMBINE_WARPS < p_count:
+                    datas[i] = oaccum_base.unsafe_load[
+                        width=vec_size, alignment=in_alignment
+                    ](
+                        (p + _COMBINE_WARPS) * partition_stride
+                        + lane_idx * vec_size
+                        + i * (WARP_SIZE * vec_size)
+                    )
+
         comptime if P_STATIC > 0:
-            # Fully unrolled, and `k`/`src_lane` are comptime so `local_lse[k]`
-            # stays in registers: the compiler can freely schedule the prefetch
-            # load of partition `p+1` against the FMA of partition `p` (no
-            # runtime loop-carried dependency blocks the reorder).
-            comptime for p in range(P_STATIC):
-                comptime k, src_lane = divmod(p, WARP_SIZE)
-                var scale = warp.shuffle_idx(local_lse[k], UInt32(src_lane))
-                var is_valid = SIMD[.bool, vec_size](
-                    fill=scale != Scalar[_ACC](0)
-                )
-
-                comptime for i in range(elems_per_thread):
-                    var clean = is_valid.select(
-                        datas[i].cast[_ACC](), SIMD[_ACC, vec_size](0)
+            # `_COMBINE_WARPS` divides `WARP_SIZE`, so a step's LSE register
+            # index `k` is comptime and only the source lane is runtime.
+            comptime for j in range(ceildiv(P_STATIC, _COMBINE_WARPS)):
+                comptime p_base = j * _COMBINE_WARPS
+                comptime k = p_base // WARP_SIZE
+                var p = p_base + warp_idx
+                if p < P_STATIC:
+                    fold(
+                        p,
+                        warp.shuffle_idx(
+                            local_lse[k],
+                            UInt32(p_base % WARP_SIZE + warp_idx),
+                        ),
                     )
-                    result[i] = result[i] + scale * clean
-
-                    comptime if p < P_STATIC - 1:
-                        datas[i] = oaccum_base.unsafe_load[
-                            width=vec_size, alignment=in_alignment
-                        ](
-                            (p + 1) * partition_stride
-                            + lane_idx * vec_size
-                            + i * (WARP_SIZE * vec_size)
-                        )
         else:
-            # Runtime `P`: same vectorized + prefetched shape, driven by a
-            # runtime loop, and paying a dynamic `local_lse[k]` index for it.
-            # Every rung of `splitk_p_ladder` routes to the `P_STATIC > 0` arm
-            # above; this fallback covers only an OFF-rung `P` -- which
-            # `_bucket_ws` still produces when it caps at `ws_p_ceiling` (e.g.
-            # B200's 37).
-            for p in range(p_count):
+            for p in range(warp_idx, p_count, _COMBINE_WARPS):
                 var k, src_lane = divmod(p, WARP_SIZE)
-                var scale = warp.shuffle_idx(local_lse[k], UInt32(src_lane))
-                var is_valid = SIMD[.bool, vec_size](
-                    fill=scale != Scalar[_ACC](0)
-                )
-
-                comptime for i in range(elems_per_thread):
-                    var clean = is_valid.select(
-                        datas[i].cast[_ACC](), SIMD[_ACC, vec_size](0)
-                    )
-                    result[i] = result[i] + scale * clean
-
-                    if p < p_count - 1:
-                        datas[i] = oaccum_base.unsafe_load[
-                            width=vec_size, alignment=in_alignment
-                        ](
-                            (p + 1) * partition_stride
-                            + lane_idx * vec_size
-                            + i * (WARP_SIZE * vec_size)
-                        )
+                fold(p, warp.shuffle_idx(local_lse[k], UInt32(src_lane)))
 
         comptime for i in range(elems_per_thread):
-            output_ptr.unsafe_store[width=vec_size, alignment=out_alignment](
-                rh * ov_depth
-                + lane_idx * vec_size
-                + i * (WARP_SIZE * vec_size),
-                result[i].cast[output_type](),
+            smem_warp.unsafe_store(
+                lane_idx * vec_size + i * (WARP_SIZE * vec_size), result[i]
             )
     else:
         # Scalar lane-strided fallback for odd depths (72, 80) the warp cannot
@@ -403,7 +405,7 @@ def _fa4_splitk_combine_kernel[
         # the same no-init contract: it is what keeps an uninitialized
         # `o_partial` slot from injecting `0 * NaN`, not an optional guard.
         var acc = Array[Scalar[_ACC], max_d_per_lane](fill=Scalar[_ACC](0))
-        for p in range(p_count):
+        for p in range(warp_idx, p_count, _COMBINE_WARPS):
             var k, src_lane = divmod(p, WARP_SIZE)
             var scale = warp.shuffle_idx(local_lse[k], UInt32(src_lane))
             if scale != Scalar[_ACC](0):
@@ -419,7 +421,14 @@ def _fa4_splitk_combine_kernel[
         comptime for j in range(max_d_per_lane):
             var d = lane_idx + j * WARP_SIZE
             if d < ov_depth:
-                output_ptr[rh * ov_depth + d] = acc[j].cast[output_type]()
+                smem_warp[d] = acc[j]
+
+    barrier()
+    for d in range(Int(thread_idx.x), ov_depth, _COMBINE_WARPS * WARP_SIZE):
+        var total = Scalar[_ACC](0)
+        comptime for w in range(_COMBINE_WARPS):
+            total += smem[w * ov_depth + d]
+        output_ptr[rh * ov_depth + d] = total.cast[output_type]()
 
 
 @inline(.always)
@@ -437,7 +446,7 @@ def fa4_splitk_combine[
     num_q_heads: UInt32,
 ) raises:
     """Launches the workspace split-K combine over `num_rows_q * num_q_heads`
-    output row-heads, one warp (`WARP_SIZE` threads) each.
+    output row-heads, `_COMBINE_WARPS` warps each.
 
     Dispatches to a `P_STATIC > 0` comptime-unrolled kernel specialization
     when `num_partitions` lands on the same partition-count ladder
@@ -463,7 +472,7 @@ def fa4_splitk_combine[
         num_q_heads: Number of query heads.
     """
     var rows_heads: UInt32 = num_rows_q * num_q_heads
-    comptime nthreads = WARP_SIZE
+    comptime nthreads = _COMBINE_WARPS * WARP_SIZE
 
     # The SHARED rung ladder `dispatch.mojo`'s `_bucket_ws` snaps production `P`
     # onto, so every rung gets a comptime-unrolled specialization here. Reading

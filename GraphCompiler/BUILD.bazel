@@ -981,6 +981,7 @@ modular_cc_library(
         "//Mojo:ObjectCompiler",
         "//Mojo:Support",
         "//Support:Context",
+        "//Support:Diagnostics",
         "//Support:HashUtils",
     ],
 )

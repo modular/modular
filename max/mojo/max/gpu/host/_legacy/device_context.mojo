@@ -91,6 +91,7 @@ from ._device_context_metal import (
 )
 
 from .. import _launch_args
+from .._launch_args import DeviceFunctionWrapper, _IdentityWrapper
 
 from ._device_context_extras import *
 
@@ -2266,16 +2267,16 @@ trait _FunctionEnqueuer:
     """
 
     def enqueue[
-        args_origin: MutOrigin, //
+        args_origin: ImmOrigin, //
     ](
         self,
         func_handle: _DeviceFunctionPtr[mut=True],
         grid_dim: Dim,
         block_dim: Dim,
         shared_mem_bytes: Int,
-        attributes: Pointer[mut=True, LaunchAttribute, _],
+        attributes: MutPointer[LaunchAttribute, _],
         num_attributes: Int,
-        args: Pointer[mut=True, OpaquePointer[args_origin], _],
+        args: MutPointer[ImmOpaquePointer[args_origin], _],
         arg_count: UInt32,
         arg_sizes: OptionalPointer[mut=True, UInt64, _],
     ) -> _CString[]:
@@ -2413,16 +2414,16 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
 
     @inline(.always)
     def enqueue[
-        args_origin: MutOrigin, //
+        args_origin: ImmOrigin, //
     ](
         self,
         func_handle: _DeviceFunctionPtr[mut=True],
         grid_dim: Dim,
         block_dim: Dim,
         shared_mem_bytes: Int,
-        attributes: Pointer[mut=True, LaunchAttribute, _],
+        attributes: MutPointer[LaunchAttribute, _],
         num_attributes: Int,
-        args: Pointer[mut=True, OpaquePointer[args_origin], _],
+        args: MutPointer[ImmOpaquePointer[args_origin], _],
         arg_count: UInt32,
         arg_sizes: OptionalPointer[mut=True, UInt64, _],
     ) -> _CString[]:
@@ -2465,7 +2466,12 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
             c_uint(shared_mem_bytes),
             attributes,
             c_uint(num_attributes),
-            args,
+            # TODO(MSTDL-1904): Do backends really need these to be mutable? I
+            #   hope none are mutating kernel arguments. For each backend, none
+            #   specifically say they mutate these, and the API docs frequently
+            #   imply they simply copy these values, but the C function
+            #   signatures also don't specifically *promise* they're `const`.
+            args.unsafe_mut_cast[True](),
             arg_count,
             arg_sizes,
         )
@@ -2921,13 +2927,17 @@ def _max_dynamic_shared_bytes_for_load[
 
 
 @inline(.never)
-def _enqueue_packed_checked(
+def _enqueue_packed_checked[
+    # TODO(MOCO-5073): Remove once nested autoparameterization is supported
+    dense_args_origin: ImmOrigin,
+    //,
+](
     ctx: Some[_FunctionEnqueuer],
     *,
     func_handle: _DeviceFunctionPtr[mut=True],
     device_context: DeviceContext,
     func_name: StaticString,
-    dense_args_addrs: Pointer[OpaquePointer[MutAnyOrigin], MutUntrackedOrigin],
+    dense_args_addrs: MutPointer[ImmOpaquePointer[dense_args_origin], _],
     dense_args_sizes: Optional[Pointer[UInt64, MutUntrackedOrigin]],
     num_args: Int,
     grid_dim: Dim,
@@ -2966,23 +2976,6 @@ def _enqueue_packed_checked(
 
 def _is_path_like(ss: StringSlice) -> Bool:
     return ss.startswith("/") or ss.startswith("~") or ss.startswith("./")
-
-
-struct _FunctionIdentity[FuncType: AnyType, //, func: FuncType]:
-    """Gives a function value a type that is unique to that function."""
-
-    pass
-
-
-def _is_same_function[
-    LhsType: AnyType, RhsType: AnyType, //, lhs: LhsType, rhs: RhsType
-]() -> Bool:
-    """Returns whether `lhs` and `rhs` are the same function.
-
-    Function values have no `__eq__`, and the two sides may have different
-    signatures. Comparing the types of the parametrized wrappers works for both.
-    """
-    return _FunctionIdentity[lhs] == _FunctionIdentity[rhs]
 
 
 # const char *AsyncRT_DeviceContext_loadFunctionWithDebugName(
@@ -3057,10 +3050,11 @@ def _load_function(
 
 
 struct DeviceFunction[
-    func_type: TrivialRegisterPassable,
-    //,
-    func: func_type,
+    ret_type: AnyType,
     declared_arg_types: TypeList[Trait=AnyType, ...],
+    //,
+    func: def(*args: *declared_arg_types) thin -> ret_type,
+    Wrapper: DeviceFunctionWrapper = _IdentityWrapper,
     *,
     target: CompilationTarget = default_accelerator(),
     compile_options: StaticString = target.default_compile_options(),
@@ -3073,9 +3067,12 @@ struct DeviceFunction[
     It handles the compilation, loading, and resource management of device functions.
 
     Parameters:
-        func_type: The dtype of the function to compile.
-        func: The function to compile for GPU execution.
-        declared_arg_types: A variadic of the declared dtypes of the kernel signature (empty when the function is compiled without a checked signature).
+        ret_type: The return type of `func` (inferred).
+        declared_arg_types: The argument types of `func` (inferred).
+        func: The kernel to compile for GPU execution.
+        Wrapper: Selects the function that is actually compiled for `func`,
+            such as a generated entry point. Defaults to compiling `func` as
+            written.
         target: The target architecture for compilation. Defaults to the current GPU target.
         compile_options: The string of compilation options to pass to the compiler.
         link_options: The string of linker options to pass to the linker.
@@ -3105,6 +3102,8 @@ struct DeviceFunction[
         _cross_compilation() and Self.target.is_nvidia_gpu()
     ) else "object"
 
+    comptime _wrapped_func = Self.Wrapper.wrap[Self.func]
+
     # ===-------------------------------------------------------------------===#
     # Fields
     # ===-------------------------------------------------------------------===#
@@ -3112,7 +3111,9 @@ struct DeviceFunction[
     var _handle: _DeviceFunctionPtr[mut=True]
     """Internal handle to the compiled device function."""
 
-    var _func_impl: CompiledFunctionInfo[Self.func_type, Self.func, Self.target]
+    var _func_impl: CompiledFunctionInfo[
+        type_of(Self._wrapped_func), Self._wrapped_func, Self.target
+    ]
     """Compilation information for the function."""
 
     var _context: DeviceContext.Generic[Self.target]
@@ -3149,7 +3150,7 @@ struct DeviceFunction[
         ](func_attribute)
 
         self._func_impl = _compile_code[
-            Self.func,
+            Self._wrapped_func,
             emission_kind=self._emission_kind,
             target=Self.target,
             compile_options=Self.compile_options,
@@ -3428,18 +3429,17 @@ struct DeviceFunction[
         comptime num_slots = max(num_args, 1)
 
         var dense_args_addrs = unsafe_stack_allocation[
-            num_slots, OpaquePointer[MutAnyOrigin]
+            # TODO(MSTDL-1904): Remove mut cast; verify treated as immutable.
+            num_slots,
+            OpaquePointer[args.origin],
         ]()
         var dense_args_sizes = unsafe_stack_allocation[num_slots, UInt64]()
 
         comptime for i in range(num_args):
             # TODO(MSTDL-1904): Validate the safety of this.
-            dense_args_addrs[unsafe_offset=i] = (
-                Pointer(to=args[i])
-                .unsafe_bitcast[NoneType]()
-                .unsafe_mut_cast[True]()
-                .as_unsafe_any_origin()
-            )
+            dense_args_addrs[unsafe_offset=i] = Pointer(
+                to=args[i]
+            ).unsafe_bitcast[NoneType]()
 
         comptime for i in range(num_args):
             dense_args_sizes[unsafe_offset=i] = UInt64(size_of[Ts[i]]())
@@ -3581,11 +3581,6 @@ struct DeviceFunction[
             for i in range(len(constant_memory)):
                 self._copy_to_constant_memory(constant_memory[i])
 
-        # A kernel may take no arguments; keep the buffer non-empty.
-        var dense_args_addrs = unsafe_stack_allocation[
-            max(num_passed_args, 1), OpaquePointer[MutAnyOrigin]
-        ]()
-
         comptime if Self.target.is_apple_gpu():
             # `num_passed_args` sizes the offsets array, which covers encoded
             # args only, so it stays `num_encoded`; `HostArgs.length` sizes
@@ -3601,10 +3596,7 @@ struct DeviceFunction[
                 device_context=self._context.assert_default_target(),
                 translated_arg_offsets=translated_arg_offsets,
                 extra_align=extra_align,
-                translated_args_ptr=translated_args.unsafe_ptr().unsafe_origin_cast[
-                    MutAnyOrigin
-                ](),
-                dense_args_addrs=dense_args_addrs,
+                translated_args_ptr=translated_args.unsafe_ptr(),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
                 shared_mem_bytes=shared_mem_bytes.or_else(0),
@@ -3616,6 +3608,15 @@ struct DeviceFunction[
             )
 
         else:
+            comptime dense_args_origin = origin_of(
+                host_args, ImmOrigin(origin_of(translated_args))
+            )
+
+            # A kernel may take no arguments; keep the buffer non-empty.
+            var dense_args_addrs = Array[
+                OpaquePointer[dense_args_origin], max(num_passed_args, 1)
+            ](uninitialized=True)
+
             # Since we skip over zero sized declared dtypes when passing
             # arguments we need to know the current count of arguments pushed.
             var translated_arg_idx = 0
@@ -3640,9 +3641,11 @@ struct DeviceFunction[
                         device_type_encoder, first_word_addr
                     )
 
-                    dense_args_addrs[
-                        unsafe_offset=translated_arg_idx
-                    ] = first_word_addr.as_unsafe_any_origin()
+                    dense_args_addrs.unsafe_get(
+                        translated_arg_idx
+                    ) = first_word_addr.as_imm()._as_origin_superset[
+                        dense_args_origin
+                    ]()
                     translated_arg_idx += 1
 
             comptime for i in range(HostArgs.length):
@@ -3651,13 +3654,12 @@ struct DeviceFunction[
                 if arg_size == 0:
                     continue
 
-                var arg_addr = (
-                    Pointer(to=host_args[i])
-                    .unsafe_bitcast[NoneType]()
-                    .unsafe_mut_cast[True]()
-                    .as_unsafe_any_origin()
-                )
-                dense_args_addrs[unsafe_offset=translated_arg_idx] = arg_addr
+                var arg_addr = Pointer(to=host_args[i]).unsafe_bitcast[
+                    NoneType
+                ]()
+                dense_args_addrs.unsafe_get(
+                    translated_arg_idx
+                ) = arg_addr._as_origin_superset[dense_args_origin]()
                 translated_arg_idx += 1
 
             comptime func_name = reflect_fn[Self.func].display_name()
@@ -3666,7 +3668,7 @@ struct DeviceFunction[
                 func_handle=self._handle,
                 device_context=self._context.assert_default_target(),
                 func_name=func_name,
-                dense_args_addrs=dense_args_addrs,
+                dense_args_addrs=dense_args_addrs.unsafe_ptr(),
                 dense_args_sizes=None,
                 num_args=num_translated_args,
                 grid_dim=grid_dim,
@@ -3960,16 +3962,14 @@ struct DeviceExternalFunction[
 
         comptime num_args = Ts.length
 
-        var dense_args_addrs = Array[OpaquePointer[MutAnyOrigin], num_args](
+        var dense_args_addrs = Array[OpaquePointer[ImmutAnyOrigin], num_args](
             uninitialized=True
         )
 
         comptime for i in range(num_args):
-            # TODO(MSTDL-1904): Validate the safety of this.
             dense_args_addrs[i] = (
                 Pointer(to=args[i])
                 .unsafe_bitcast[NoneType]()
-                .unsafe_mut_cast[True]()
                 .as_unsafe_any_origin()
             )
 
@@ -3997,21 +3997,15 @@ struct DeviceExternalFunction[
             var dense_args_is_device_ptr = Array[Bool, num_args](fill=False)
 
             var metal_args = MetalEnqueueFunctionArgs(
-                dense_args_addrs.unsafe_ptr()
-                .unsafe_origin_cast[MutUntrackedOrigin]()
-                .unsafe_bitcast[OpaquePointer[MutUntrackedOrigin]](),
-                dense_args_sizes.unsafe_ptr().unsafe_origin_cast[
-                    MutUntrackedOrigin
-                ](),
-                dense_args_is_device_ptr.unsafe_ptr().unsafe_origin_cast[
-                    MutUntrackedOrigin
-                ](),
+                dense_args_addrs.unsafe_ptr(),
+                dense_args_sizes.unsafe_ptr(),
+                dense_args_is_device_ptr.unsafe_ptr(),
                 None,
                 Int32(0),
             )
 
             var ptr = (
-                Pointer(to=metal_args)
+                ImmPointer(to=metal_args)
                 .unsafe_bitcast[NoneType]()
                 .as_unsafe_any_origin()
             )
@@ -4025,7 +4019,7 @@ struct DeviceExternalFunction[
                     shared_mem_bytes.or_else(0),
                     attributes.unsafe_ptr(),
                     len(attributes),
-                    metal_args_addrs.unsafe_ptr().as_unsafe_any_origin(),
+                    metal_args_addrs.unsafe_ptr(),
                     UInt32(num_args),
                     no_arg_sizes,
                 ),
@@ -4041,7 +4035,7 @@ struct DeviceExternalFunction[
                 shared_mem_bytes.or_else(0),
                 attributes.unsafe_ptr(),
                 len(attributes),
-                dense_args_addrs.unsafe_ptr().as_unsafe_any_origin(),
+                dense_args_addrs.unsafe_ptr(),
                 UInt32(num_args),
                 no_arg_sizes,
             ),
@@ -4599,16 +4593,16 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
 
     @inline(.always)
     def enqueue[
-        args_origin: MutOrigin, //
+        args_origin: ImmOrigin, //
     ](
         self,
         func_handle: _DeviceFunctionPtr[mut=True],
         grid_dim: Dim,
         block_dim: Dim,
         shared_mem_bytes: Int,
-        attributes: Pointer[mut=True, LaunchAttribute, _],
+        attributes: MutPointer[LaunchAttribute, _],
         num_attributes: Int,
-        args: Pointer[mut=True, OpaquePointer[args_origin], _],
+        args: MutPointer[ImmOpaquePointer[args_origin], _],
         arg_count: UInt32,
         arg_sizes: OptionalPointer[mut=True, UInt64, _],
     ) -> _CString[]:
@@ -4654,7 +4648,12 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
             c_uint(shared_mem_bytes),
             attributes,
             c_uint(num_attributes),
-            args,
+            # TODO(MSTDL-1904): Do backends really need these to be mutable? I
+            #   hope none are mutating kernel arguments. For each backend, none
+            #   specifically say they mutate these, and the API docs frequently
+            #   imply they simply copy these values, but the C function
+            #   signatures also don't specifically *promise* they're `const`.
+            args.unsafe_mut_cast[True](),
             arg_count,
             arg_sizes,
         )
@@ -4846,8 +4845,8 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         *,
         func_attribute: OptionalReg[FuncAttribute] = None,
         out result: DeviceFunction[
-            Self.compile_function_wrapper[func],
-            declared_arg_types,
+            func,
+            Self.FunctionWrapper,
             target=Self.target,
             compile_options=compile_options,
             link_options=link_options,
@@ -4895,9 +4894,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
             ), "Requested more than available shared memory."
 
         comptime result_type = type_of(result)
-        comptime if not _is_same_function[
-            Self.compile_function_wrapper[func], func
-        ]():
+        comptime if Self.FunctionWrapper != _IdentityWrapper:
             # Surface the user kernel's name (not the wrapper name) as the
             # dispatch printName for device-level profiling.
             comptime user_name = get_linkage_name[func, target=Self.target]()
@@ -4919,9 +4916,10 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         ]()
 
     def load_function[
-        func_type: TrivialRegisterPassable,
+        ret_type: AnyType,
+        declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
-        func: func_type,
+        func: def(*args: *declared_arg_types) thin -> ret_type,
     ](
         self,
         *,
@@ -4937,8 +4935,10 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         existing CUDA/HIP code or for using specialized assembly optimizations.
 
         Parameters:
-            func_type: The dtype of the function to load.
-            func: The function reference.
+            ret_type: The return type of `func` (inferred).
+            declared_arg_types: The argument types of `func` (inferred).
+            func: A function with the loaded kernel's signature. Only its type
+                is used.
 
         Args:
             function_name: The name of the function in the assembly code.
@@ -5170,7 +5170,6 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
 
         var gpu_kernel = DeviceFunction[
             FuncType.__call__,
-            TypeList.of[Trait=AnyType, FuncType](),
             target=launch_target,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ](
@@ -5263,7 +5262,6 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
 
         var gpu_kernel = DeviceFunction[
             FuncType.__call__,
-            TypeList.of[Trait=AnyType, FuncType](),
             target=launch_target,
             _ptxas_info_verbose=_ptxas_info_verbose,
         ](

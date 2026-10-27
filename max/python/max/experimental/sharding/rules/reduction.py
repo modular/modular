@@ -83,10 +83,16 @@ def cumsum_rule(
 def linear_reduce_rule(
     x: TensorLayout, axis: int = -1, *extra: Any
 ) -> list[AxisAssignment]:
-    """Linear reduction: ``S(reduced_axis) -> Partial(SUM)``; ``P -> P``.
+    """Returns the reduction rows: ``S(reduced_axis) -> Partial()``; ``P -> P``.
 
-    Used by ``sum``. Not by ``cumsum``: a device's prefix sums along a
-    sharded axis need the totals of the shards before it.
+    ``reduced_axis`` is ``axis`` normalized against ``x``. Used by ``sum``.
+    Not by ``cumsum``: a device's prefix sums along a sharded axis need the
+    totals of the shards before it.
+
+    Args:
+        x: The input layout.
+        axis: The axis to reduce. Defaults to ``-1``.
+        extra: Further tensor arguments, which this rule ignores.
     """
     norm = axis % x.rank
     return [

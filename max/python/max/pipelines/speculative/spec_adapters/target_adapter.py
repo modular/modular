@@ -31,6 +31,12 @@ if TYPE_CHECKING:
     from . import VerifyFn
 
 
+STAGE_BOUNDARY = "stage_boundary"
+"""The key of a driver batch's ``extra`` that holds a later pipeline stage's
+boundary: the previous stage's hidden states per device, over the merged
+verify window."""
+
+
 def _default_ep_input_types(target: Any) -> Sequence[TensorType | BufferType]:
     """Returns no expert-parallel inputs."""
     del target
@@ -229,6 +235,13 @@ class TargetAdapter:
     ] = _default_sequential_proposer
     """Returns the proposer of a one-token-per-step draft that runs on the
     target's own module, or ``None``."""
+
+    speculates_on_last_stage: bool = False
+    """Whether the fused graph builds as the last of several pipeline
+    stages: the verify starts the stage's layers from the previous stage's
+    hidden states, which reach it in a driver batch's ``extra`` under
+    :data:`STAGE_BOUNDARY`, and the draft reads only what the last stage
+    holds."""
 
     by_method: Mapping[str, TargetAdapter] = field(default_factory=dict)
     """The adapter to use under a speculative method, where it differs."""

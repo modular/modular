@@ -182,7 +182,7 @@ def main() raises:
                 .bfloat16,
                 .bfloat16,
                 transpose_b=True,
-                prob_shape=IndexList[3](4096, 4096, 4096),
+                prob_shape=(4096, 4096, 4096),
                 benchmark=True,
             ](ctx)
             return
@@ -194,5 +194,5 @@ def main() raises:
             .bfloat16,
             .bfloat16,
             transpose_b=True,
-            prob_shape=IndexList[3](4096, 4096, 4096),
+            prob_shape=(4096, 4096, 4096),
         ](ctx)

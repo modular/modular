@@ -51,6 +51,9 @@ these rules, MAX raises an error."""
 from __future__ import annotations
 
 # Import types for type annotations
+import types as _types
+
+from .._api_boundary import register_api_boundaries as _register_api_boundaries
 from ..value import TensorValue, TensorValueLike
 from . import (
     allreduce,
@@ -186,3 +189,14 @@ def max(  # type: ignore[no-redef]
         raise ValueError("Axis not allowed for elementwise max.")
     axis = -1 if axis is None else axis
     return _reduce_max(x, axis=axis) if y is None else _elementwise_max(x, y)
+
+
+# Each op is where a caller's code ends and MAX's begins (see `_api_boundary`),
+# including the ones only a submodule exports, such as `ops.random.normal`.
+_register_api_boundaries(globals(), __name__)
+for _value in list(globals().values()):
+    if isinstance(_value, _types.ModuleType) and _value.__name__.startswith(
+        f"{__name__}."
+    ):
+        _register_api_boundaries(vars(_value), __name__)
+del _value

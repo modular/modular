@@ -48,6 +48,9 @@ from max.experimental.realization_context import (
 )
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, Graph, TensorType, Type, ops
+from max.graph._api_boundary import (
+    register_api_boundaries as _register_api_boundaries,
+)
 
 from .collective_ops import (
     allgather,
@@ -466,3 +469,9 @@ def inplace_custom(
             parameters=parameters,
         )
         return [Tensor.from_graph_value(v) for v in result] if result else []
+
+
+# Each op is where a caller's code ends and MAX's begins (see
+# `max.graph._api_boundary`). An op wrapped from `max.graph.ops` keeps that
+# module's name, hence the `max` prefix.
+_register_api_boundaries(globals(), "max")

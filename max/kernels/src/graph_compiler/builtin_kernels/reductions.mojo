@@ -55,12 +55,19 @@ from state_space.rms_norm_fused_residual import (
     rms_norm_fused_residual,
 )
 from extensibility import (
+    Fused,
     Input,
     InputTensor,
+    LoadAccess,
+    Loadable,
     Output,
     OutputTensor,
+    Storable,
+    StoreAccess,
     Tensor,
     TileTensorable,
+    UnsafeFusedView,
+    unsafe_fused_view,
 )
 from extensibility import (
     _FusedInputTensor as FusedInputTensor,
@@ -69,6 +76,7 @@ from extensibility import (
     _FusedOutputTensor as FusedOutputTensor,
 )
 from std.logger import Logger
+from std.sys import align_of
 
 comptime logger = Logger()
 """Logger for the reductions module."""
@@ -245,7 +253,9 @@ def arg_nonzero_shape(input_buffer: Some[TileTensorable]) -> IndexList[2]:
     Returns:
         The output shape as a rank-2 `IndexList` of nonzero element indices.
     """
-    return arg_nonzero.arg_nonzero_shape(input_buffer.to_tile_tensor())
+    return coord_to_index_list(
+        arg_nonzero.arg_nonzero_shape(input_buffer.to_tile_tensor())
+    )
 
 
 @extensibility.register("mo.reduce.row_mean_of_squares")
@@ -552,8 +562,8 @@ struct ReduceMul:
         axis: Int,
         _trace_name: StaticString,
     ](
-        output: FusedOutputTensor,
-        input: FusedInputTensor[dtype=output.dtype, rank=output.rank, ...],
+        output: Some[Output & Fused & StoreAccess],
+        input: Some[Input & Fused & LoadAccess],
         ctx: DeviceContext,
     ) raises:
         """Executes the `mo.reduce.mul` graph op.
@@ -571,30 +581,42 @@ struct ReduceMul:
         Raises:
             Error: If the operation parameters are invalid.
         """
+        comptime dtype = type_of(input).dtype
+        comptime assert type_of(output).dtype == dtype
+        comptime assert type_of(input).rank == type_of(output).rank
+
+        # Project the host proxy to its access-enabled view so the closures can
+        # load/store on the GPU lane `reduce_product` dispatches to internally.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var in_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(in_view), Loadable)
+        comptime assert conforms_to(type_of(output), UnsafeFusedView)
+        var out_view = unsafe_fused_view(output)
+        comptime assert conforms_to(type_of(out_view), Storable)
 
         @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](coords: Coord) {var input} -> SIMD[input.dtype, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                coords
+        ](coords: Coord) {var in_view} -> SIMD[dtype, width]:
+            return rebind[SIMD[dtype, width]](
+                in_view.load[width=width, element_alignment=alignment](coords)
             )
 
         @inline(.always)
         def output_fn[
             width: SIMDLength
-        ](coords: Coord, val: SIMD[output.dtype, width]) {var output}:
-            output._lambda_store[width=width](
+        ](coords: Coord, val: SIMD[dtype, width]) {var out_view}:
+            out_view.store[width=width](
                 coords,
-                rebind[SIMD[output.dtype, width]](val),
+                rebind[SIMD[type_of(out_view).dtype, width]](val),
             )
 
         reduce_product[
-            output.dtype,
+            dtype,
             target=target,
             reduce_dim=axis,
             name=_trace_name,
-        ](input_fn, output_fn, input.shape_coord(), ctx)
+        ](input_fn, output_fn, input.shape().flatten(), ctx)
 
 
 @extensibility.register_shape_function("mo.reduce.mul")
@@ -1268,31 +1290,39 @@ struct ReduceMinAndMax:
     def execute[
         target: StaticString,
         _trace_name: StaticString,
-        dtype: DType,
-        rank: Int,
         axis: Int,
     ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
         """Given a tensor of shape [A, B, C, D] and reducing along dimension 'C'
         writes to a tensor of shape [A, B, 2, D] where [:, :, 0, :] contains
         the minimum reduction and [:, :, 1, :] contains the maximum reduction.
         """
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime rank = type_of(output).rank
+        comptime assert type_of(input).rank == rank
 
         comptime norm_axis = axis + rank if axis < 0 else axis
         comptime assert (
             0 <= norm_axis < rank
         ), "axis must be between [0, <input rank>)"
 
+        var output_tile = output.to_tile_tensor()
+        var input_tile = input.to_tile_tensor[dtype]()
+        comptime input_alignment = type_of(input).alignment
+
         @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](coords: Coord) {var input} -> SIMD[dtype, width]:
-            return input._fused_load[width=width, element_alignment=alignment](
-                coords
-            )
+        ](coords: Coord) {var input_tile} -> SIMD[dtype, width]:
+            return input_tile.load[
+                width=width,
+                alignment=min(input_alignment, alignment * align_of[dtype]()),
+            ](coords)
 
         # The op packs both reductions into one `[..., 2, ...]` output tensor:
         # min at slot 0, max at slot 1 of the reduced axis. A `Coord`'s
@@ -1301,17 +1331,19 @@ struct ReduceMinAndMax:
         @inline(.always)
         def output_min_fn[
             width: SIMDLength
-        ](coords: Coord, val: SIMD[dtype, width]) {var output}:
-            output._fused_store[width=width](
-                RowCoord[output.rank](coords).at_axis[norm_axis](0).coord, val
+        ](coords: Coord, val: SIMD[dtype, width]) {var output_tile}:
+            output_tile.store[width=width, alignment=align_of[dtype]()](
+                RowCoord[rank](coords).at_axis[norm_axis](0).coord,
+                rebind[SIMD[output_tile.dtype, width]](val),
             )
 
         @inline(.always)
         def output_max_fn[
             width: SIMDLength
-        ](coords: Coord, val: SIMD[dtype, width]) {var output}:
-            output._fused_store[width=width](
-                RowCoord[output.rank](coords).at_axis[norm_axis](1).coord, val
+        ](coords: Coord, val: SIMD[dtype, width]) {var output_tile}:
+            output_tile.store[width=width, alignment=align_of[dtype]()](
+                RowCoord[rank](coords).at_axis[norm_axis](1).coord,
+                rebind[SIMD[output_tile.dtype, width]](val),
             )
 
         reduce_min_and_max[
@@ -1319,7 +1351,13 @@ struct ReduceMinAndMax:
             target=target,
             reduce_dim=norm_axis,
             name=_trace_name,
-        ](input_fn, output_min_fn, output_max_fn, input.shape_coord(), ctx)
+        ](
+            input_fn,
+            output_min_fn,
+            output_max_fn,
+            input.shape().flatten(),
+            ctx,
+        )
 
 
 @extensibility.register_shape_function("mo.reduce.reduce_min_and_max")
@@ -1988,7 +2026,7 @@ struct Softmax:
         comptime if sm_cols != UNKNOWN_VALUE:
             softmax[output.dtype, output.rank, target=target, reduce_dim=axis](
                 input_fn,
-                Coord(output.shape()),
+                output.shape_coord(),
                 ComptimeInt[sm_cols](),
                 output.to_tile_tensor[.int64](),
                 axis,
@@ -1997,7 +2035,7 @@ struct Softmax:
         else:
             softmax[output.dtype, output.rank, target=target, reduce_dim=axis](
                 input_fn,
-                Coord(output.shape()),
+                output.shape_coord(),
                 Int(input.shape()[axis]),
                 output.to_tile_tensor[.int64](),
                 axis,
@@ -2056,7 +2094,7 @@ struct LogSoftmax:
                 reduce_dim=axis,
             ](
                 input_fn,
-                Coord(output.shape()),
+                output.shape_coord(),
                 ComptimeInt[lsm_cols](),
                 output.to_tile_tensor[.int64](),
                 axis,
@@ -2071,7 +2109,7 @@ struct LogSoftmax:
                 reduce_dim=axis,
             ](
                 input_fn,
-                Coord(output.shape()),
+                output.shape_coord(),
                 Int(input.shape()[axis]),
                 output.to_tile_tensor[.int64](),
                 axis,

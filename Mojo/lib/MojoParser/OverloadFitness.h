@@ -32,6 +32,7 @@ class PogListAttr;
 namespace M::KGEN::LIT {
 class CallOperands;
 class FnTypeGeneratorType;
+class ParamBindings;
 
 /// This struct indicates whether a signature can be successfully applied to a
 /// parameter binding and argument list. If so, it keeps track of several
@@ -98,22 +99,24 @@ public:
     return getValidity() == Validity::kFunctionConstraintInconclusive;
   }
 
-  /// Determine whether the specified signature can be invoked with the
-  /// parameter bindings specified in `callable` and the arguments specified in
-  /// `callOperands`.
-  ///
-  /// The 'funcIfDirect' member is set if this is a direct call, or null if
-  /// indirect.  It can be used to tune diagnostics.
-  static OverloadFitness evaluate(FnTypeGeneratorType signature,
-                                  ASTDecl *funcIfDirect,
-                                  const OverloadSet &callable,
-                                  const CallOperands &callOperands,
-                                  bool allowImplicitConversions);
+  /// Determine whether `candidate` can be invoked with the parameter bindings
+  /// specified in `callable` and the arguments specified in `callOperands`.
+  static OverloadFitness evaluateDirectCall(ASTDecl *candidate,
+                                            const OverloadSet &callable,
+                                            const CallOperands &callOperands,
+                                            bool allowImplicitConversions);
 
-  /// Determine whether the specified signature can be invoked with the
-  /// parameter bindings specified in `callable`.
-  static OverloadFitness evaluate(ASTDecl *candidate,
-                                  const OverloadSet &callable);
+  /// Determine whether `candidate` can be invoked with the parameter bindings
+  /// specified in `callable`.
+  static OverloadFitness evaluateDirectCall(ASTDecl *candidate,
+                                            const OverloadSet &callable);
+
+  /// Determine whether a callee value of type `signature` can be invoked with
+  /// `operands`, inferring all of its parameters from them. `declScope` is the
+  /// scope the call appears in.
+  static OverloadFitness evaluateIndirectCall(FnTypeGeneratorType signature,
+                                              ASTDecl &declScope,
+                                              const CallOperands &operands);
 
   /// Build a fitness for a candidate already known to be valid. For callers
   /// that decide validity themselves.
@@ -139,6 +142,14 @@ public:
   }
 
 private:
+  /// The checks shared by direct and indirect calls: assigns `operands` to the
+  /// signature's arguments, infers its parameters, and ranks the result.
+  static OverloadFitness
+  evaluateImpl(FnTypeGeneratorType signature, ASTDecl *funcIfDirect,
+               const ParamBindings &paramBindings,
+               ArrayRef<ConstraintAttr> additionalAssumptions,
+               const CallOperands &operands, bool allowImplicitConversions);
+
   /// For valid candidates, this defines the parameter bindings to use.
   VerifiedParamBindings paramBindings;
   /// The diagnostic for invalid candidates, or null for valid ones.

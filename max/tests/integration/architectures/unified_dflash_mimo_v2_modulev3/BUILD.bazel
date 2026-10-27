@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_library", "modular_py_test")
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -15,6 +15,12 @@ modular_py_library(
     testonly = True,
     srcs = ["mimo_dflash_v3_fixtures.py"],
     imports = ["."],
+    visibility = [
+        "//:__pkg__",
+        "//mach/tools/gen-mef:__pkg__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+    ],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
@@ -66,6 +72,42 @@ modular_py_test(
     ],
 )
 
+# The data-parallel half of the no-GPU gates: the DP signature's batch-split
+# pair, context lengths and EP tail; the DP2xEP2 graph staged on virtual
+# B200s (the batch split, the dispatch/combine, the drafter's full heads per
+# replica); and the batch processor's runtime DP packing, beside the
+# refusals. Same host constraints as the TP staging gate below.
+modular_py_test(
+    name = "test_dp_construction_cpu",
+    size = "medium",
+    srcs = ["test_dp_construction_cpu.py"],
+    ignore_extra_deps = [
+        # The staged trace realizes eager tensors, which import the MO
+        # interpreter; without its compiled ops the trace crawls.
+        "//max/python/max/_interpreter_ops",
+    ],
+    imports = ["."],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":mimo_dflash_v3_fixtures",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/dflash_mimo_v2_modulev3",
+        "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
+        "//max/python/max/pipelines/architectures/unified_dflash_mimo_v2_modulev3",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/request",
+        requirement("numpy"),
+    ],
+)
+
 # Stages the fused graph on a 1-device CPU mesh: the name and input count
 # the engine binds, the weight-name contract, and the staged trace's ops.
 # Never compiles -- the W4A8 kernels have no CPU dispatch -- so it runs
@@ -96,5 +138,29 @@ modular_py_test(
         "//max/python/max/pipelines/kv_cache/connectors/dkv",
         "//max/python/max/pipelines/speculative",
         "//max/python/max/pipelines/weights",
+    ],
+)
+
+# The target's fused QKV preparation reaches the spec graph at TP2 and TP4,
+# staged on virtual B200s.
+modular_py_test(
+    name = "test_qkv_fusion",
+    size = "medium",
+    srcs = ["test_qkv_fusion.py"],
+    ignore_extra_deps = [
+        "//max/python/max/_interpreter_ops",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":mimo_dflash_v3_fixtures",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/experimental",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/unified_dflash_mimo_v2_modulev3",
     ],
 )

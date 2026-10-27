@@ -15,32 +15,6 @@ from std.os import abort
 
 
 @fieldwise_init
-struct LibraryProperty(Equatable, TrivialRegisterPassable, Writable):
-    var _value: Int32
-    comptime MAJOR_VERSION = Self(0)
-    comptime MINOR_VERSION = Self(1)
-    comptime PATCH_LEVEL = Self(2)
-
-    def __init__(out self, value: Int):
-        self._value = Int32(value)
-
-    @inline(.never)
-    def write_to(self, mut writer: Some[Writer]):
-        match self:
-            case Self.MAJOR_VERSION:
-                writer.write_string("MAJOR_VERSION")
-            case Self.MINOR_VERSION:
-                writer.write_string("MINOR_VERSION")
-            case Self.PATCH_LEVEL:
-                writer.write_string("PATCH_LEVEL")
-            case _:
-                abort("invalid LibraryProperty entry")
-
-    def __int__(self) -> Int:
-        return Int(self._value)
-
-
-@fieldwise_init
 struct Status(Equatable, Identifiable, TrivialRegisterPassable, Writable):
     var _value: Int8
     comptime CUFFT_INVALID_PLAN = Self(1)
@@ -153,65 +127,6 @@ struct Type(Equatable, Identifiable, TrivialRegisterPassable, Writable):
 
     def write_repr_to(self, mut writer: Some[Writer]):
         t"cufftType_t({self})".write_to(writer)
-
-    def __int__(self) -> Int:
-        return Int(self._value)
-
-
-@fieldwise_init
-struct Compatibility(
-    Equatable, Identifiable, TrivialRegisterPassable, Writable
-):
-    var _value: Int8
-    comptime CUFFT_COMPATIBILITY_FFTW_PADDING = Self(0)
-
-    def __init__(out self, value: Int):
-        self._value = Int8(value)
-
-    def __is__(self, other: Self) -> Bool:
-        return self == other
-
-    @inline(.never)
-    def write_to(self, mut writer: Some[Writer]):
-        match self:
-            case Self.CUFFT_COMPATIBILITY_FFTW_PADDING:
-                writer.write_string("CUFFT_COMPATIBILITY_FFTW_PADDING")
-            case _:
-                abort("invalid cufftCompatibility_t entry")
-
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cufftCompatibility_t({self})".write_to(writer)
-
-    def __int__(self) -> Int:
-        return Int(self._value)
-
-
-@fieldwise_init
-struct Property(Equatable, Identifiable, TrivialRegisterPassable, Writable):
-    var _value: Int8
-    comptime NVFFT_PLAN_PROPERTY_INT64_PATIENT_JIT = Self(0)
-    comptime NVFFT_PLAN_PROPERTY_INT64_MAX_NUM_HOST_THREADS = Self(1)
-
-    def __init__(out self, value: Int):
-        self._value = Int8(value)
-
-    def __is__(self, other: Self) -> Bool:
-        return self == other
-
-    @inline(.never)
-    def write_to(self, mut writer: Some[Writer]):
-        match self:
-            case Self.NVFFT_PLAN_PROPERTY_INT64_PATIENT_JIT:
-                writer.write_string("NVFFT_PLAN_PROPERTY_INT64_PATIENT_JIT")
-            case Self.NVFFT_PLAN_PROPERTY_INT64_MAX_NUM_HOST_THREADS:
-                writer.write_string(
-                    "NVFFT_PLAN_PROPERTY_INT64_MAX_NUM_HOST_THREADS"
-                )
-            case _:
-                abort("invalid cufftProperty_t entry")
-
-    def write_repr_to(self, mut writer: Some[Writer]):
-        t"cufftProperty_t({self})".write_to(writer)
 
     def __int__(self) -> Int:
         return Int(self._value)

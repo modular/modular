@@ -102,6 +102,21 @@ def sm100_arch() -> Iterator[None]:
 
 
 @pytest.fixture
+def amd_arch() -> Iterator[None]:
+    """Reports an AMD CDNA GPU for the duration of the test.
+
+    MXFP4's matmul has no NVIDIA path, so tracing it takes more than a fake
+    device. ``quant_ops`` binds ``_is_amd_gpu`` at import, so the patch has
+    to target that name rather than the one in ``max.nn.kernels``.
+    """
+    with patch(
+        "max.experimental.nn.common_layers.quant_ops._is_amd_gpu",
+        return_value=True,
+    ):
+        yield
+
+
+@pytest.fixture
 def fp8_quant_config() -> QuantConfig:
     """A block-scaled FP8 config matching the deepseekV3 FP8 checkpoint."""
     return QuantConfig(
@@ -172,3 +187,23 @@ def mxfp8_quant_config() -> QuantConfig:
         attn_quantized_layers={0},
         format=QuantFormat.MXFP8,
     )
+
+
+@pytest.fixture
+def mxfp8_fake_quant_config(mxfp8_quant_config: QuantConfig) -> QuantConfig:
+    """MXFP8 config whose weights are quantized from bf16 at runtime."""
+    return dataclasses.replace(mxfp8_quant_config, source=WeightSource.QUANTIZE)
+
+
+@pytest.fixture
+def mxfp4_quant_config() -> QuantConfig:
+    """An OCP MXFP4 config: packed e2m1 codes with E8M0 block scales."""
+    return QuantConfig.mxfp4(
+        mlp_quantized_layers={0}, attn_quantized_layers={0}
+    )
+
+
+@pytest.fixture
+def mxfp4_fake_quant_config(mxfp4_quant_config: QuantConfig) -> QuantConfig:
+    """MXFP4 config whose weights are quantized from bf16 at runtime."""
+    return dataclasses.replace(mxfp4_quant_config, source=WeightSource.QUANTIZE)

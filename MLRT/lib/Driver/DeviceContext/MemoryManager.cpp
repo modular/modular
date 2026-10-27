@@ -603,8 +603,7 @@ void MemoryManagerFreeList::logMsg(llvm::Twine msg, size_t info,
   memoryManager_.logErr("[" + label_ + "] " + msg, info, size);
 }
 
-void MemoryManagerFreeList::flushToParent() {
-  std::lock_guard<std::mutex> lock(memoryManager_.mu_);
+void MemoryManagerFreeList::flushCachedToParentLocked() {
   LOG_MSG("Flush all to parent");
   // The caller waited for these records' events and the loop below migrates the
   // same buffers, so they are redundant; leaving one queued would let a later
@@ -614,6 +613,16 @@ void MemoryManagerFreeList::flushToParent() {
   for (int i = 0; i < kNumFreeBufferLists; ++i) {
     flushFreeBuffersToParent(i);
   }
+}
+
+void MemoryManagerFreeList::flushCachedToParent() {
+  std::lock_guard<std::mutex> lock(memoryManager_.mu_);
+  flushCachedToParentLocked();
+}
+
+void MemoryManagerFreeList::flushToParent() {
+  std::lock_guard<std::mutex> lock(memoryManager_.mu_);
+  flushCachedToParentLocked();
   // Reassign the parent freelist as the allocator-of-record for any descriptor
   // still in use that was originally allocated through this freelist. Without
   // this, `desc->allocatedBy_` becomes a dangling pointer once this freelist
@@ -2373,7 +2382,18 @@ ErrorOr<void *> MemoryManagerFreeList::allocate(size_t size,
           desc = allocateDesc(wrappedSize);
         }
       }
-      // Both steps above only poll once: they recover frees whose gating event
+      // Still nothing: a drain only reaches frees that were queued behind an
+      // event, and a free made while its list already had one in flight is
+      // not. On a long-lived side-stream view nothing may queue them again, so
+      // ask the context to return what its idle views hold.
+      if (desc == nullptr && ctx_->flushIdleStreamViews() &&
+          wrappedSize <= memoryManager_.chunkSize_) {
+        LOG_MSG("alloc miss: flushed idle stream views (size " +
+                TWINE(wrappedSize) + ")");
+        std::lock_guard<std::mutex> lock(memoryManager_.mu_);
+        desc = allocateDesc(wrappedSize);
+      }
+      // The steps above only poll once: they recover frees whose gating event
       // has already fired. A free still gated on in-flight work is invisible to
       // them by construction, and that is exactly what the snapshot counts as
       // recoverable_by_sync. Giving up on it fails an allocation the budget can

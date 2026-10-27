@@ -22,7 +22,6 @@ from layout import Coord, TileTensor
 from layout.tile_layout import row_major as tt_row_major
 from nn.attention.gpu.nvidia.sm100.attention import (
     FA4Config,
-    ExplicitTMEMCrossP,
 )
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
@@ -268,6 +267,14 @@ def fa4_load[
     comptime q_pad_rows = config.gqa_pad_rows()
     comptime q_bytes = size_of[qkv_type]() * (
         q_elements - q_pad_rows * config.BK0
+    )
+    # `q_elements` is per TMA call, so in 2Q each half would subtract the whole
+    # tile's pad and under-expect, and the zero-fill only covers the second
+    # half's tail. This holds for any non-dividing fused group, whichever
+    # route admits it.
+    comptime assert q_pad_rows == 0 or num_q == 1, (
+        "a non-dividing fused group is only wired for the 1Q route; the 2Q"
+        " Q1 barriers still expect the full `q_bytes`"
     )
 
     var q_gmem_row: UInt32 = PositionType.get_q_gmem_row[ragged=ragged](
@@ -1236,12 +1243,15 @@ def fa4_load[
                 comptime check_mask_crossp = mask.nonfull_sets[BM_mask, BN]()[
                     0
                 ] == TileMaskStatus.UNKNOWN_MASK
-                comptime assert not (
-                    ExplicitTMEMCrossP and (needs_partial or check_mask_crossp)
-                ), (
-                    "FA4_TMEM_CROSS_P=true was requested but the K-ahead load"
-                    " is implemented for the headline regime only (no partial"
-                    " pages, no mid-range FULL_MASK skip)"
+                # Headline regime only, by construction: `CrossPEffective`
+                # (kernel.mojo) requires `crossp_on()`, whose full-pages
+                # conjunct is the negation of `needs_partial`, and excludes
+                # UNKNOWN_MASK -- the two conditions this producer cannot
+                # handle.
+                comptime assert not (needs_partial or check_mask_crossp), (
+                    "the cross-stage-P K-ahead load is implemented for the"
+                    " headline regime only (no partial pages, no mid-range"
+                    " FULL_MASK skip)"
                 )
                 # NT = total K-tiles (== total V-tiles). iter_count is the last
                 # masked set end minus one; for the dense contiguous regime that is

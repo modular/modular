@@ -163,7 +163,7 @@ def _verify_kv_cache[
                             + ", got "
                             + String(v_val)
                             + " in v_cache at index "
-                            + String(IndexList[4](i, h, actual_len, d))
+                            + String((i, h, actual_len, d))
                         )
             slice_row_offset += 1
 
@@ -474,20 +474,20 @@ def main() raises:
     # CPU tests
     with DeviceContext(api="cpu") as cpu_ctx:
         test_kv_cache_2m_iadd_cpu[.float32, 8, 128, 128, 4](
-            IndexList[4](10, 20, 30, 40),
-            IndexList[4](40, 30, 20, 10),
+            (10, 20, 30, 40),
+            (40, 30, 20, 10),
             2,
             cpu_ctx,
         )
         test_kv_cache_2m_iadd_cpu[.float32, 8, 128, 128, 4](
-            IndexList[4](10, 20, 30, 40),
-            IndexList[4](40, 30, 20, 10),
+            (10, 20, 30, 40),
+            (40, 30, 20, 10),
             4,
             cpu_ctx,
         )
         test_kv_cache_2m_iadd_cpu[.float32, 8, 128, 128, 4](
-            IndexList[4](10, 20, 30, 40),
-            IndexList[4](40, 30, 20, 10),
+            (10, 20, 30, 40),
+            (40, 30, 20, 10),
             0,
             cpu_ctx,
         )
@@ -501,20 +501,20 @@ def main() raises:
     # GPU tests
     with DeviceContext() as ctx:
         test_kv_cache_2m_iadd_gpu[.float32, 8, 128, 128, 4](
-            IndexList[4](10, 20, 30, 40),
-            IndexList[4](40, 30, 20, 10),
+            (10, 20, 30, 40),
+            (40, 30, 20, 10),
             2,
             ctx,
         )
         test_kv_cache_2m_iadd_gpu[.float32, 8, 128, 128, 4](
-            IndexList[4](10, 20, 30, 40),
-            IndexList[4](40, 30, 20, 10),
+            (10, 20, 30, 40),
+            (40, 30, 20, 10),
             4,
             ctx,
         )
         test_kv_cache_2m_iadd_gpu[.float32, 8, 128, 128, 4](
-            IndexList[4](10, 20, 30, 40),
-            IndexList[4](40, 30, 20, 10),
+            (10, 20, 30, 40),
+            (40, 30, 20, 10),
             0,
             ctx,
         )

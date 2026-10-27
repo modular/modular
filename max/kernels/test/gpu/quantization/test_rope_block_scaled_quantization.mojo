@@ -308,4 +308,16 @@ def main() raises:
                 64,
                 True,
             ](ctx, m)
+        # The model's shape at decode and prefill row counts, prime counts,
+        # and both sides of each block-size switch.
+        for m in [48, 144, 256, 257, 577, 1536, 1537, 4093, 4096, 4097, 8168]:
+            test_rope_quantize_matches_unfused[
+                DType.float8_e4m3fn,
+                MXFP8_SF_DTYPE,
+                MXFP8_SF_VECTOR_SIZE,
+                64,
+                512,
+                64,
+                True,
+            ](ctx, m)
         test_rope_quantize_rejects_unpacked_fp4_output(ctx)

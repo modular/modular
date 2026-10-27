@@ -74,6 +74,7 @@ from .config import TokenGenerationSchedulerConfig
 from .dp_padding import DPBatchPadder
 from .utils import (
     SchedulerLogger,
+    _ScheduledBatch,
     _trace_batch,
     get_cancelled_reqs,
 )
@@ -906,7 +907,9 @@ class DecodeScheduler(Scheduler):
         )
 
     @traced
-    def schedule(self, inputs: TextGenerationInputs[TextContext]) -> int:
+    def schedule(
+        self, inputs: TextGenerationInputs[TextContext]
+    ) -> _ScheduledBatch:
         """Schedules a batch of requests for token generation and handles the responses.
 
         Args:
@@ -916,7 +919,12 @@ class DecodeScheduler(Scheduler):
         if self._yield_gap:
             self._record_tg_start(inputs)
         with _trace_batch("decode", inputs):
+            execution_start = time.monotonic()
             responses = self.pipeline.execute(inputs)
+            execution_time_s = time.monotonic() - execution_start
+            output_tokens = sum(
+                len(output.tokens) for output in responses.values()
+            )
 
         # Filter out responses for already-released requests. With the
         # overlap pipeline, the previous batch may produce a token for a
@@ -968,7 +976,11 @@ class DecodeScheduler(Scheduler):
                 if response.is_done:
                     self._discard_ttft_join(request_id)
 
-        return num_terminated_requests
+        return _ScheduledBatch(
+            terminated_reqs=num_terminated_requests,
+            execution_time_s=execution_time_s,
+            output_tokens=output_tokens,
+        )
 
     @traced
     def run_iteration(self) -> SchedulerProgress:
@@ -1072,16 +1084,16 @@ class DecodeScheduler(Scheduler):
         t0 = time.monotonic()
         if inputs:
             with Tracer(f"_schedule({inputs})"):
-                num_terminated_reqs = self.schedule(inputs)
+                scheduled = self.schedule(inputs)
         else:
-            num_terminated_reqs = self.schedule(inputs)
+            scheduled = self.schedule(inputs)
         t1 = time.monotonic()
-        batch_execution_time_s = t1 - t0
+        METRICS.scheduler_batch_step_time(
+            (t1 - t0) * 1000, batch_type=inputs.batch_type.value
+        )
 
-        # Log batch metrics. When the overlap pipeline is active, the
-        # wall-clock time measured above describes the previously enqueued
-        # batch; the pipeline reports that batch's composition and timing so
-        # telemetry is attributed to the correct batch type.
+        # Overlap reports the completed batch's composition and service time;
+        # synchronous batches use the interval measured around execute().
         is_overlap_active = bool(
             getattr(self.pipeline, "overlap_active", False)
         )
@@ -1090,9 +1102,14 @@ class DecodeScheduler(Scheduler):
             inputs=inputs,
             kv_cache=self.kv_cache,
             batch_creation_time_s=batch_creation_time_s,
-            batch_execution_time_s=batch_execution_time_s,
+            batch_execution_time_s=0.0
+            if is_overlap_active
+            else scheduled.execution_time_s,
+            num_output_tokens=None
+            if is_overlap_active
+            else scheduled.output_tokens,
             num_pending_reqs=total_pending,
-            num_terminated_reqs=num_terminated_reqs,
+            num_terminated_reqs=scheduled.terminated_reqs,
             total_preemption_count=self.batch_constructor.total_preemption_count,
             batch_spec_decode_metrics=self.pipeline.batch_spec_decode_metrics()
             if hasattr(self.pipeline, "batch_spec_decode_metrics")

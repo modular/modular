@@ -69,7 +69,7 @@ mlir::Operation *M::Graph::Python::Analysis::kernelOp(const std::string &name) {
 void M::Graph::Python::Analysis::verifyCustomOp(MlirOperation op) {
   auto err = M::MOGG::verifyCustomOp(ensureRegistry(), unwrap(op));
   if (err.isError())
-    throw nb::value_error(err.getError());
+    throw KernelRegistrationError(err.getError());
 }
 
 void M::Graph::Python::Analysis::seedKernelDecls(MlirOperation target) {
@@ -161,8 +161,11 @@ void M::Graph::Python::Analysis::addPath(std::filesystem::path path) {
   // upcoming `ensureModule` call will pick it up.
   if (kernelDecls) {
     auto err = MAXG_addKernelPackage(wrap(*kernelDecls), abs);
-    if (err.isError())
-      throw nb::value_error(err.getError());
+    if (err.isError()) {
+      // The failed package was rolled back; forget it so it isn't retried.
+      libraryPathsSet.erase(abs);
+      throw KernelRegistrationError(err.getError());
+    }
     // Invalidate the cached registry: the new package's decls aren't in it.
     registry.reset();
   }
@@ -194,11 +197,17 @@ mlir::ModuleOp M::Graph::Python::Analysis::ensureModule() {
   kernelDecls = moduleOr.takeValue();
   // Load all currently-registered paths into the fresh module. The first
   // call to MAXG_addKernelPackage on an empty module also loads the built-in
-  // `kernels` / `primitives` packages; subsequent calls append.
-  for (const auto &path : libraryPathsSet) {
+  // `kernels` / `primitives` packages; subsequent calls append. A package that
+  // fails is rolled back and forgotten, and the others still load, so the
+  // module stays usable after the error is raised.
+  std::string errors;
+  for (const auto &path :
+       std::vector(libraryPathsSet.begin(), libraryPathsSet.end())) {
     auto err = MAXG_addKernelPackage(wrap(*kernelDecls), path);
-    if (err.isError())
-      throw nb::value_error(err.getError());
+    if (err.isError()) {
+      libraryPathsSet.erase(path);
+      errors += err.getError();
+    }
   }
   // If no user paths were registered, still load built-ins by importing
   // with an empty mojo-pkg-paths list. Detect this case as "module is still
@@ -208,6 +217,8 @@ mlir::ModuleOp M::Graph::Python::Analysis::ensureModule() {
     if (err.isError())
       throw nb::value_error(err.getError());
   }
+  if (!errors.empty())
+    throw KernelRegistrationError(errors);
   return *kernelDecls;
 }
 

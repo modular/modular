@@ -25,6 +25,7 @@ from std.math.uutils import udivmod
 from max.gpu import block_idx, grid_dim
 
 from std.utils.fast_div import FastDiv
+from std.utils.coord import Coord, DynamicCoord
 from std.utils.index import Index, IndexList
 
 from ...utils_gpu import block_swizzle
@@ -200,7 +201,7 @@ struct MatmulSchedule(EnumLike, TrivialRegisterPassable):
 
 struct TileScheduler[
     problem_shape: IndexList[3],
-    tile_shape: IndexList[3],
+    tile_shape: Coord[Int, Int, Int],
     grid_shape: IndexList[2],
     cluster: IndexList[3] = Index(1, 1, 1),
     raster_dim: UInt32 = 1,

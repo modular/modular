@@ -212,6 +212,48 @@ def test_a_request_that_has_run_carries_its_own_state_forward() -> None:
     )
 
 
+def test_a_live_block_is_filled_once() -> None:
+    """The fill resume returns is what fills the block, so it is not repeated."""
+    bm = make_manager()
+    first = make_ctx(16)
+    bm.claim(first)
+    for _ in range(4):
+        forward(bm, first)
+    bm.release(first)
+    second = make_ctx(24)
+    bm.claim(second)
+    bm.alloc(second)
+
+    assert resume(bm, second)
+    assert resume(bm, second) == {}
+
+
+def test_a_state_left_in_the_row_does_not_refill_the_live_block() -> None:
+    """A published state still in the row does not mean the block needs it.
+
+    Only a newly drawn live block is filled, so a state kept behind the live
+    block is never copied over what the forward wrote.
+    """
+    bm = make_manager()
+    first = make_ctx(16)
+    bm.claim(first)
+    for _ in range(4):
+        forward(bm, first)
+    bm.release(first)
+    second = make_ctx(24)
+    bm.claim(second)
+    forward(bm, second)
+
+    pool = bm.pools[0]
+    for group in state_groups(bm):
+        row = group.rows[second.request_id][group.leaf_id]
+        kept = pool.prefix_caches[group.leaf_id][published(bm)[0]]
+        pool.touch(kept)
+        row[0] = kept
+
+    assert resume(bm, second) == {}
+
+
 def test_the_blocks_are_kept_across_a_forward_that_publishes_nothing() -> None:
     # Drawn once and written in place; only publishing moves a request on.
     bm = make_manager()

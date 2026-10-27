@@ -318,8 +318,13 @@ def run_one_case(
     comptime KV_AXIS = 2  # paged cache dim[1] = {K, V}
 
     # Main cache blocks [pages, 2, layers, page_size, num_kv_heads, head_dim].
-    var main_block_shape = IndexList[6](
-        total_pages, KV_AXIS, NUM_LAYERS, PAGE_SIZE, num_kv_heads, HEAD_DIM
+    var main_block_shape = (
+        total_pages,
+        KV_AXIS,
+        NUM_LAYERS,
+        PAGE_SIZE,
+        num_kv_heads,
+        HEAD_DIM,
     )
     var main_block_elems = (
         total_pages * KV_AXIS * NUM_LAYERS * PAGE_SIZE * num_kv_heads * HEAD_DIM
@@ -329,8 +334,13 @@ def run_one_case(
     # native collection layout uses `1 if is_mla` for that axis, so the
     # runtime page stride is layers*page_size*1*idx_head_dim (no K/V doubling).
     comptime IDX_KV_AXIS = 1
-    var index_block_shape = IndexList[6](
-        total_pages, IDX_KV_AXIS, NUM_LAYERS, PAGE_SIZE, 1, IDX_HEAD_DIM
+    var index_block_shape = (
+        total_pages,
+        IDX_KV_AXIS,
+        NUM_LAYERS,
+        PAGE_SIZE,
+        1,
+        IDX_HEAD_DIM,
     )
     var index_block_elems = (
         total_pages * IDX_KV_AXIS * NUM_LAYERS * PAGE_SIZE * 1 * IDX_HEAD_DIM
@@ -348,9 +358,7 @@ def run_one_case(
     # --- rank-5 SF-atom scales for input + weight ----------------------------
     comptime k_sf = ceildiv(HIDDEN, SF_VECTOR_SIZE * SF_ATOM_K)
     var m_sf = ceildiv(M, SF_MN_GROUP_SIZE)
-    var input_scale_shape = IndexList[5](
-        m_sf, k_sf, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K
-    )
+    var input_scale_shape = (m_sf, k_sf, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K)
     var input_scale_elems = (
         max(1, m_sf) * k_sf * SF_ATOM_M[0] * SF_ATOM_M[1] * SF_ATOM_K
     )

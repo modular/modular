@@ -45,6 +45,7 @@ from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.compute.arch.tcgen05 import *
 from std.bit import prev_power_of_two
 from std.math.uutils import ufloordiv, umod
+from std.utils.coord import Coord, DynamicCoord
 from std.utils.index import Index, IndexList
 
 from linalg.structuring import SMemPtr
@@ -148,7 +149,7 @@ struct WaitAndAdvanceContextSplitK[
 struct WorkIteratorSplitK[
     num_stages: Int,
     reduction_tile_shape: IndexList[3],
-    cluster_shape: IndexList[3, element_type=.uint32],
+    cluster_shape: Coord[Int, Int, Int],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
     num_split_k: Int,
@@ -235,7 +236,7 @@ struct WorkIteratorSplitK[
 struct SchedulerWorkIteratorSplitK[
     num_stages: Int,
     reduction_tile_shape: IndexList[3],
-    cluster_shape: IndexList[3, element_type=.uint32],
+    cluster_shape: Coord[Int, Int, Int],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
     num_split_k: Int,
@@ -343,9 +344,7 @@ struct SchedulerWorkIteratorSplitK[
 struct TileScheduler[
     num_stages: Int,
     reduction_tile_shape: IndexList[3],
-    cluster_shape: IndexList[3, element_type=.uint32] = Index[
-        dtype=DType.uint32
-    ](1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     block_swizzle_size: Int = 8,
     num_split_k: Int = 1,
@@ -1181,8 +1180,8 @@ def splitk_k_tiles_per_split(
 @inline(.always)
 def get_num_tiles(
     problem_shape: IndexList[3],
-    block_tile_shape: IndexList[3],
-    cluster_shape: IndexList[2],
+    block_tile_shape: Coord[Int, Int, Int],
+    cluster_shape: Coord[Int, Int],
 ) -> IndexList[2]:
     """Computes the number of output tiles aligned up to the cluster shape.
 
@@ -1208,8 +1207,8 @@ def get_required_locks_buffer_size_bytes[
     accum_type: DType
 ](
     problem_shape: IndexList[3],
-    block_tile_shape: IndexList[3],
-    cluster_shape: IndexList[2],
+    block_tile_shape: Coord[Int, Int, Int],
+    cluster_shape: Coord[Int, Int],
 ) -> Int:
     """Computes the byte size of the lock buffer needed for split-K reduction.
 

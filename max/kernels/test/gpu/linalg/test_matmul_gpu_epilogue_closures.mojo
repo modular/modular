@@ -15,7 +15,9 @@
 The shapes land on the GEMV, small-M, tile GEMM and vendor BLAS paths of the
 SM100 dispatch, and on the 4-wave, split-K and multistage paths of the AMD
 CDNA dispatch, with and without `transpose_b`. Each epilogue scales by a power
-of two, so its result must match the plain `_matmul_gpu` exactly.
+of two, so its result must match the plain `_matmul_gpu` exactly. The store
+epilogue owns every output store, so its `c` is a shape-only tile over a null
+pointer: no path may read or write it.
 
 The tuned SM100 (N, K) = (2112, 14336) has split-K rows that the epilogues skip,
 so its plain dispatch sums K in another order and cannot match them bit for
@@ -60,6 +62,12 @@ def test_epilogues[
     var b = TileTensor(b_dev, row_major(Idx[b_rows], Idx[b_cols])).as_imm()
     var c_ref = TileTensor(c_ref_dev, row_major(m, Idx[N]))
     var c = TileTensor(c_dev, row_major(m, Idx[N]))
+    var null_c_ptr: Optional[
+        MutPointer[Scalar[dtype], MutUntrackedOrigin]
+    ] = None
+    var c_shape_only = TileTensor(
+        null_c_ptr._unsafe_nullable(), row_major(m, Idx[N])
+    )
     # A raw-pointer tile: the epilogue closure copies its capture.
     var d = TileTensor(d_dev.unsafe_ptr(), row_major(m, Idx[N]))
 
@@ -93,7 +101,7 @@ def test_epilogues[
         return val * SIMD[_dtype, width](row_scale)
 
     _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b](
-        c, a, b, epilogue_fn, ctx
+        c_shape_only, a, b, epilogue_fn, ctx
     )
     with c_ref_dev.map_to_host() as h_ref, d_dev.map_to_host() as h_d:
         for i in range(m * N):

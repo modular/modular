@@ -103,10 +103,24 @@ from linalg.matrix_band_part import matrix_band_part
 from linalg.packing import _pack_b_ndbuffer_impl, pack_matmul_b_shape_func
 from nn._ragged_utils import merge_ragged_tensors
 from nn.gemv_partial_norm import gemv_and_partial_norm
-from extensibility import InputTensor, OutputTensor
-from extensibility import Tensor, TileTensorable
-from extensibility import Fused, Input, Output, Storable, StoreAccess
-from extensibility import _FusedComputeOutputTensor
+from extensibility import (
+    Fused,
+    Input,
+    InputTensor,
+    Output,
+    OutputTensor,
+    Storable,
+    StoreAccess,
+    Tensor,
+    TileTensorable,
+    UnsafeFusedView,
+    unsafe_fused_view,
+)
+from extensibility import (
+    _FusedComputeOutputTensor,
+    _LegacyComputable,
+    _LegacyComputeOutput,
+)
 from extensibility import (
     _FusedInputTensor as FusedInputTensor,
 )
@@ -350,90 +364,142 @@ struct MatmulCPU:
 
 @extensibility.register("mo.matmul", type="gpu")
 struct MatmulGPU:
-    """Registers the `mo.matmul` graph op for GPU devices."""
+    """Registers the `mo.matmul` graph op for GPU devices.
+
+    Two `execute` overloads under one registration: the graph compiler calls
+    the fused one when the output has a fused epilogue and the plain one when
+    it has none. The fused form takes a `_LegacyComputeOutput` because kernels
+    that write output tiles with a bulk copy, such as TMA on SM100, apply the
+    epilogue's value transform before the write; when the epilogue must own
+    the store instead, the matmul gets only the output's shape. The plain form
+    has the matmul write the output directly. The pair is grandfathered on the
+    graph compiler's allow list; new kernels declare one `execute` with a
+    `StoreAccess` output.
+    """
 
     @staticmethod
     def execute[
         transpose_b: Bool,
         packed_b: Bool,
-        has_epilogue_fusion: Bool,
         target: StaticString,
         _trace_name: StaticString,
     ](
-        c: _FusedComputeOutputTensor[rank=2, ...],
-        a: InputTensor[rank=2, ...],
-        b: InputTensor[rank=2, ...],
+        c: Some[Output & Fused & _LegacyComputeOutput],
+        a: Some[Input & TileTensorable],
+        b: Some[Input & TileTensorable],
         ctx: DeviceContext,
     ) raises:
+        # TODO(KERN-3837): The store-epilogue matmul has no output buffer to
+        # write, yet every GPU matmul interface on its path still takes a
+        # `c: TileTensor`, so the store branch below hands it a tile over a
+        # null pointer (see the TODO there). Once that path takes the output
+        # dtype and layout instead, pass `c`'s layout directly.
         comptime assert not packed_b, "packed B is only supported on CPU"
+        comptime assert type_of(c).rank == 2
+        comptime dtype = type_of(c).dtype
 
-        @inline(.always)
-        def epilogue_fn[
-            _dtype: DType, _width: SIMDLength, *, alignment: Int
-        ](coords: Coord, val: SIMD[_dtype, _width]) {var c}:
+        # The epilogue runs in the kernels the matmul launches, so it
+        # copy-captures the access-enabled view rather than the host proxy.
+        comptime assert conforms_to(type_of(c), UnsafeFusedView)
+
+        comptime if conforms_to(type_of(c), _LegacyComputable):
+            var c_view = unsafe_fused_view(c)
             comptime assert (
-                coords.rank == 2
-            ), "the matmul epilogue contract is rank 2"
-            c._lambda_store[width=_width, element_alignment=alignment](
-                coords,
-                rebind[SIMD[c.dtype, _width]](val),
+                conforms_to(type_of(c_view), Output)
+                and conforms_to(type_of(c_view), _LegacyComputable)
+                and conforms_to(type_of(c_view), TileTensorable)
             )
 
-        @inline(.always)
-        def output_compute_fn[
-            _dtype: DType, _width: SIMDLength, *, alignment: Int
-        ](coords: Coord, val: SIMD[_dtype, _width]) {var c} -> SIMD[
-            _dtype, _width
-        ]:
-            comptime assert (
-                coords.rank == 2
-            ), "the matmul epilogue contract is rank 2"
-            return rebind[SIMD[_dtype, _width]](
-                c._fused_compute_output_lambda[element_alignment=alignment](
-                    coords, rebind[SIMD[c.dtype, _width]](val)
+            @inline(.always)
+            def output_compute_fn[
+                _dtype: DType, _width: SIMDLength, *, alignment: Int
+            ](coords: Coord, val: SIMD[_dtype, _width]) {var c_view} -> SIMD[
+                _dtype, _width
+            ]:
+                comptime assert (
+                    coords.rank == 2
+                ), "the matmul epilogue contract is rank 2"
+                return rebind[SIMD[_dtype, _width]](
+                    c_view.compute[
+                        width=Int(_width), element_alignment=alignment
+                    ](
+                        coords,
+                        rebind[SIMD[type_of(c_view).dtype, Int(_width)]](val),
+                    )
                 )
-            )
 
-        comptime has_compute_lambda = type_of(c)._has_compute_fusion
-
-        comptime if has_epilogue_fusion and has_compute_lambda:
             matmul[
                 transpose_a=False,
                 transpose_b=transpose_b,
                 _trace_description=_trace_name,
                 target=target,
             ](
-                c.to_tile_tensor[.int64](),
-                a.to_tile_tensor[.int64](),
-                b.to_tile_tensor[.int64](),
+                c_view.to_tile_tensor(),
+                a.to_tile_tensor(),
+                b.to_tile_tensor(),
                 output_compute_fn,
                 ctx,
             )
-        elif has_epilogue_fusion:
+        else:
+            var c_view = unsafe_fused_view(c)
+            comptime assert conforms_to(type_of(c_view), Storable)
+
+            @inline(.always)
+            def epilogue_fn[
+                _dtype: DType, _width: SIMDLength, *, alignment: Int
+            ](coords: Coord, val: SIMD[_dtype, _width]) {var c_view}:
+                comptime assert (
+                    coords.rank == 2
+                ), "the matmul epilogue contract is rank 2"
+                c_view.store[width=Int(_width), element_alignment=alignment](
+                    coords,
+                    rebind[SIMD[type_of(c_view).dtype, Int(_width)]](val),
+                )
+
+            # TODO(KERN-3837): `epilogue_fn` owns every output store, so the
+            # matmul gets only `c`'s shape, over a null pointer it never
+            # dereferences. Replace the null tile with the output layout once
+            # the store-epilogue matmul takes one.
+            var c_ptr: Optional[
+                MutPointer[Scalar[dtype], MutUntrackedOrigin]
+            ] = None
             matmul[
                 transpose_a=False,
                 transpose_b=transpose_b,
                 _trace_description=_trace_name,
                 target=target,
             ](
-                c.to_tile_tensor[.int64](),
-                a.to_tile_tensor[.int64](),
-                b.to_tile_tensor[.int64](),
+                TileTensor(c_ptr._unsafe_nullable(), row_major(c.shape())),
+                a.to_tile_tensor(),
+                b.to_tile_tensor(),
                 epilogue_fn,
                 ctx,
             )
-        else:
-            matmul[
-                transpose_a=False,
-                transpose_b=transpose_b,
-                _trace_description=_trace_name,
-                target=target,
-            ](
-                c.to_tile_tensor[.int64](),
-                a.to_tile_tensor[.int64](),
-                b.to_tile_tensor[.int64](),
-                ctx,
-            )
+
+    @staticmethod
+    def execute[
+        transpose_b: Bool,
+        packed_b: Bool,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        c: Some[Output & TileTensorable],
+        a: Some[Input & TileTensorable],
+        b: Some[Input & TileTensorable],
+        ctx: DeviceContext,
+    ) raises where not conforms_to(type_of(c), Fused):
+        comptime assert not packed_b, "packed B is only supported on CPU"
+        matmul[
+            transpose_a=False,
+            transpose_b=transpose_b,
+            _trace_description=_trace_name,
+            target=target,
+        ](
+            c.to_tile_tensor(),
+            a.to_tile_tensor(),
+            b.to_tile_tensor(),
+            ctx,
+        )
 
 
 @extensibility.register("mo.batch_matmul", type="cpu")
@@ -639,11 +705,12 @@ struct LinalgBandPart:
             return input._lambda_load[width=width](coords)
 
         matrix_band_part[
+            rank=rank,
             simd_width=simd_width_of[dtype](),
             target=target,
         ](
             input_fn,
-            input.shape(),
+            input.shape_coord(),
             num_lower.to_tile_tensor[int_type](),
             num_upper.to_tile_tensor[int_type](),
             exclude.to_tile_tensor[.int64](),
@@ -1776,19 +1843,22 @@ struct Struct_matmul_mxfp4_dequant_fp8:
     @inline(.always)
     @staticmethod
     def execute[
-        c_type: DType,
-        a_type: DType,
-        b_type: DType,
-        b_scales_type: DType,
-        //,
         target: StaticString,
     ](
-        c: OutputTensor[dtype=c_type, rank=2, ...],
-        a: InputTensor[dtype=a_type, rank=2, ...],
-        b: InputTensor[dtype=b_type, rank=2, ...],
-        b_scales: InputTensor[dtype=b_scales_type, rank=2, ...],
+        c: Some[Output & Tensor],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
+        b_scales: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(c), TileTensorable)
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime assert conforms_to(type_of(b_scales), TileTensorable)
+        comptime c_type = type_of(c).dtype
+        comptime a_type = type_of(a).dtype
+        comptime b_type = type_of(b).dtype
+        comptime b_scales_type = type_of(b_scales).dtype
         comptime assert is_gpu[
             target
         ](), "MXFP4 dequant-to-FP8 matmul only supports GPUs"
@@ -1809,10 +1879,10 @@ struct Struct_matmul_mxfp4_dequant_fp8:
         ), "MXFP4 matmul scales must be float8_e8m0fnu"
 
         mxfp4_matmul_sm90(
-            c.to_tile_tensor[.int64](),
-            a.to_tile_tensor[.int64](),
-            b.to_tile_tensor[.int64](),
-            b_scales.to_tile_tensor[.int64](),
+            c.to_tile_tensor(),
+            a.to_tile_tensor[a_type](),
+            b.to_tile_tensor[b_type](),
+            b_scales.to_tile_tensor[b_scales_type](),
             context,
         )
 
@@ -1833,16 +1903,19 @@ struct Struct_matmul_weight_only_block_scaled_apple:
     @inline(.always)
     @staticmethod
     def execute[
-        c_type: DType,
-        //,
         target: StaticString,
     ](
-        c: OutputTensor[dtype=c_type, rank=2, ...],
-        a: InputTensor[dtype=.bfloat16, rank=2, ...],
-        b: InputTensor[dtype=.uint8, rank=2, ...],
-        b_scales: InputTensor[dtype=.float8_e4m3fn, rank=2, ...],
+        c: Some[Output & Tensor],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
+        b_scales: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(c), TileTensorable)
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime assert conforms_to(type_of(b_scales), TileTensorable)
+        comptime c_type = type_of(c).dtype
         comptime assert is_gpu[
             target
         ](), "Apple weight-only block-scaled matmul only supports GPUs"
@@ -1852,10 +1925,10 @@ struct Struct_matmul_weight_only_block_scaled_apple:
         )
 
         enqueue_apple_fp4_matmul[c_type=c_type](
-            c.to_tile_tensor[.int64](),
-            a.to_tile_tensor[.int64](),
-            b.to_tile_tensor[.int64](),
-            b_scales.to_tile_tensor[.int64](),
+            c.to_tile_tensor(),
+            a.to_tile_tensor[.bfloat16](),
+            b.to_tile_tensor[.uint8](),
+            b_scales.to_tile_tensor[.float8_e4m3fn](),
             context,
         )
 
@@ -1878,15 +1951,17 @@ struct Struct_matmul_weight_only_scaled_float8_apple:
     @inline(.always)
     @staticmethod
     def execute[
-        c_type: DType,
-        //,
         target: StaticString,
     ](
-        c: OutputTensor[dtype=c_type, rank=2, ...],
-        a: InputTensor[dtype=.bfloat16, rank=2, ...],
-        b: InputTensor[dtype=.float8_e4m3fn, rank=2, ...],
+        c: Some[Output & Tensor],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(c), TileTensorable)
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime c_type = type_of(c).dtype
         comptime assert is_gpu[
             target
         ](), "Apple weight-only scaled FP8 matmul only supports GPUs"
@@ -1896,9 +1971,9 @@ struct Struct_matmul_weight_only_scaled_float8_apple:
         )
 
         enqueue_apple_fp8_matmul[c_type=c_type](
-            c.to_tile_tensor[.int64](),
-            a.to_tile_tensor[.int64](),
-            b.to_tile_tensor[.int64](),
+            c.to_tile_tensor(),
+            a.to_tile_tensor[.bfloat16](),
+            b.to_tile_tensor[.float8_e4m3fn](),
             context,
         )
 
@@ -1908,9 +1983,9 @@ def _apple_int8_w8a8_dispatch[
     c_type: DType, has_bias: Bool, target: StaticString
 ](
     c_tt: TileTensor[mut=True, c_type, ...],
-    a_tt: TileTensor[.bfloat16, ...],
-    b_tt: TileTensor[.int8, Engine=DefaultEngine[], ...],
-    bs_tt: TileTensor[.float32, ...],
+    a_tt: TileTensor[DType.bfloat16, ...],
+    b_tt: TileTensor[DType.int8, ...],
+    bs_tt: TileTensor[DType.float32, ...],
     bias_tt: TileTensor[c_type, ...],
     context: DeviceContext,
 ) raises:
@@ -1979,26 +2054,29 @@ struct Struct_matmul_int8_w8a8_apple:
     @inline(.always)
     @staticmethod
     def execute[
-        c_type: DType,
-        //,
         target: StaticString,
     ](
-        c: OutputTensor[dtype=c_type, rank=2, ...],
-        a: InputTensor[dtype=.bfloat16, rank=2, ...],
-        b: InputTensor[dtype=.int8, rank=2, ...],
-        b_scale: InputTensor[dtype=.float32, rank=1, ...],
+        c: Some[Output & Tensor],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
+        b_scale: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
-        var c_tt = c.to_tile_tensor[.int64]()
+        comptime assert conforms_to(type_of(c), TileTensorable)
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime assert conforms_to(type_of(b_scale), TileTensorable)
+        comptime c_type = type_of(c).dtype
+        var c_tt = c.to_tile_tensor()
         # No bias: a length-1 dummy bias TileTensor (the `has_bias=False` GEMM
         # path ignores it). Reuse `b_scale` as the dummy source (same dtype is
         # not required -- it is never read -- but a valid 1-elem view is).
         var dummy_bias = TileTensor(c_tt._storage, row_major(Int64(1))).as_imm()
         _apple_int8_w8a8_dispatch[c_type, has_bias=False, target=target](
             c_tt,
-            a.to_tile_tensor[.int64](),
-            b.to_tile_tensor[.int64](),
-            b_scale.to_tile_tensor[.int64](),
+            a.to_tile_tensor[.bfloat16](),
+            b.to_tile_tensor[.int8](),
+            b_scale.to_tile_tensor[.float32](),
             dummy_bias,
             context,
         )
@@ -2017,23 +2095,27 @@ struct Struct_matmul_int8_w8a8_apple_bias:
     @inline(.always)
     @staticmethod
     def execute[
-        c_type: DType,
-        //,
         target: StaticString,
     ](
-        c: OutputTensor[dtype=c_type, rank=2, ...],
-        a: InputTensor[dtype=.bfloat16, rank=2, ...],
-        b: InputTensor[dtype=.int8, rank=2, ...],
-        b_scale: InputTensor[dtype=.float32, rank=1, ...],
-        bias: InputTensor[dtype=c_type, rank=1, ...],
+        c: Some[Output & Tensor],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
+        b_scale: Some[Input & Tensor],
+        bias: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(c), TileTensorable)
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime assert conforms_to(type_of(b_scale), TileTensorable)
+        comptime assert conforms_to(type_of(bias), TileTensorable)
+        comptime c_type = type_of(c).dtype
         _apple_int8_w8a8_dispatch[c_type, has_bias=True, target=target](
-            c.to_tile_tensor[.int64](),
-            a.to_tile_tensor[.int64](),
-            b.to_tile_tensor[.int64](),
-            b_scale.to_tile_tensor[.int64](),
-            bias.to_tile_tensor[.int64](),
+            c.to_tile_tensor(),
+            a.to_tile_tensor[.bfloat16](),
+            b.to_tile_tensor[.int8](),
+            b_scale.to_tile_tensor[.float32](),
+            bias.to_tile_tensor[c_type](),
             context,
         )
 
@@ -2053,9 +2135,14 @@ struct LayoutTransformMatmulKN2KNkni:
         c_type: DType,
         c_shape: IntTuple,
     ](
-        output_buffer: OutputTensor[dtype=b_type, rank=2, ...],
-        b_input: InputTensor[dtype=b_type, rank=2, ...],
+        output_buffer: Some[Output & Tensor],
+        b_input: Some[Input & Tensor],
     ) raises:
+        comptime assert conforms_to(type_of(output_buffer), TileTensorable)
+        comptime assert conforms_to(type_of(b_input), TileTensorable)
+        comptime assert type_of(output_buffer).rank == 2
+        comptime assert type_of(b_input).rank == 2
+
         # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
         var kernel_type_m = 0
 
@@ -2066,8 +2153,8 @@ struct LayoutTransformMatmulKN2KNkni:
             c_type=c_type,
             transposed=False,
         ](
-            b_input.to_tile_tensor[.int64](),
-            output_buffer.to_tile_tensor[.int64](),
+            b_input.to_tile_tensor[b_type](),
+            output_buffer.to_tile_tensor[b_type](),
             kernel_type_m,
         )
 
@@ -2087,9 +2174,14 @@ struct LayoutTransformMatmulNK2KNkni:
         c_type: DType,
         c_shape: IntTuple,
     ](
-        output_buffer: OutputTensor[dtype=b_type, rank=2, ...],
-        b_input: InputTensor[dtype=b_type, rank=2, ...],
+        output_buffer: Some[Output & Tensor],
+        b_input: Some[Input & Tensor],
     ) raises:
+        comptime assert conforms_to(type_of(output_buffer), TileTensorable)
+        comptime assert conforms_to(type_of(b_input), TileTensorable)
+        comptime assert type_of(output_buffer).rank == 2
+        comptime assert type_of(b_input).rank == 2
+
         # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
         var kernel_type_m = 0
 
@@ -2100,8 +2192,8 @@ struct LayoutTransformMatmulNK2KNkni:
             c_type=c_type,
             transposed=True,
         ](
-            b_input.to_tile_tensor[.int64](),
-            output_buffer.to_tile_tensor[.int64](),
+            b_input.to_tile_tensor[b_type](),
+            output_buffer.to_tile_tensor[b_type](),
             kernel_type_m,
         )
 
@@ -2533,20 +2625,23 @@ struct Struct_router_gate_mixed_gemv:
     decode and prefill), so the op branches on runtime `M`:
 
     - `M == 0` (graph-capture warmup): no launch.
-    - tiny `M` (`M <= 64`, decode): the fused mixed GEMV — `a` is loaded as bf16
-      and widened to fp32 in registers, then dotted against the unchanged fp32
-      `b` in a SINGLE launch, fusing away the standalone bf16->fp32 activation
-      cast that otherwise precedes the fp32 router GEMV.
+    - tiny `M` (`M <= 64` on MI355X, `M <= 128` on SM100; decode): the fused
+      mixed GEMV — `a` is loaded as bf16 and widened to fp32 in registers, then
+      dotted against the unchanged fp32 `b` in a SINGLE launch, fusing away the
+      standalone bf16->fp32 activation cast that otherwise precedes the fp32
+      router GEMV.
     - large `M` (prefill): the fused GEMV is catastrophically slow, so the op
       falls back to the baseline chain — cast `a` to fp32, then an ordinary
       fp32 matmul against the fp32 `b` (two launches, matching baseline).
 
     Because bf16->fp32 widening is lossless, every route is numerically
-    equivalent to casting `a` to fp32 first and running the fp32 GEMM.
+    equivalent to casting `a` to fp32 first and running the fp32 GEMM. On SM100
+    the baseline's fp32 matmul switches to TF32 tensor cores above `M = 64`, so
+    the fused GEMV's IEEE-fp32 result there is the more precise of the two.
 
     This is not part of generic matmul/GEMV dispatch. The MiniMax-M3 router emits
-    this explicit graph op on MI355X; other architectures retain the standard
-    router path.
+    this explicit graph op on MI355X and SM100; other architectures retain the
+    standard router path.
 
     `N` (expert count) and `K` (hidden size) are read from the weight `b`'s
     static `[N, K]` layout at compile time — the op carries no redundant `N`/`K`
@@ -2596,7 +2691,10 @@ struct Struct_router_gate_mixed_gemv:
 
         var c_tt = TileTensor(c.unsafe_ptr(), row_major(M, Idx[N]))
 
-        if router_gate_use_mixed_gemv(M):
+        # SM100's fused window reaches M = 128 (c128 decode); above it the
+        # TF32 tile GEMM below wins on weight reuse.
+        comptime max_m = 64 if context.target.is_amd_gpu() else 128
+        if router_gate_use_mixed_gemv(M, max_m):
             # Tiny-M decode: fused mixed bf16-A × fp32-B GEMV, one launch.
             var a_tt = TileTensor(a.unsafe_ptr(), row_major(M, Idx[K]))
             router_gate_mixed_gemv[N](

@@ -81,7 +81,21 @@ _GPU_MEMORY = {
     "test_scatter.mojo": "3",
     "test_broadcast_subgroup.mojo": "2",
     "test_ep_ord_r_completion.mojo": "2",
+    # On four GPUs the 8,168-token case holds 9.1 GiB a GPU, 8.5 of it the
+    # receive buffer.
+    "test_ep_dispatch_prefill_send.mojo": "11",
     "test_kernel_load_gate.mojo": "2",
+}
+
+# Platform constraints for tests that do not run on every multi-GPU host; the
+# rest take the glob's default.
+_TARGET_COMPATIBLE_WITH = {
+    # The warp-per-token dispatch it tests is NVIDIA-only, and its NVFP4
+    # quantize needs SM100.
+    "test_ep_dispatch_prefill_send.mojo": select({
+        "//:b200_gpu": ["//:has_multi_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 }
 
 # Tests where assertions push register usage past hardware limits,
@@ -155,10 +169,13 @@ mojo_test(
         },
         main = src,
         tags = ["gpu"],
-        target_compatible_with = [
-            "//:has_gpu",
-            "//:has_multi_gpu",
-        ],
+        target_compatible_with = _TARGET_COMPATIBLE_WITH.get(
+            src,
+            [
+                "//:has_gpu",
+                "//:has_multi_gpu",
+            ],
+        ),
         deps = [
             "//max:internal_utils",
             "//max:kv_cache",

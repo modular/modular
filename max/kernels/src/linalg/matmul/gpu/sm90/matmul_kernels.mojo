@@ -69,6 +69,7 @@ from layout.tensor_core_async import (
 from layout.tma_async import (
     TMATensorTile,
 )
+from std.utils.coord import Coord, DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -245,9 +246,9 @@ struct HopperMatmulSM90Kernel[
     b_layout: TensorLayout,
     c_layout: TensorLayout,
     c_smem_layout: Layout,
-    block_tile_shape: IndexList[3],
-    wgmma_shape: IndexList[3],
-    cluster_shape: StaticTuple[Int32, 3],
+    block_tile_shape: Coord[Int, Int, Int],
+    wgmma_shape: Coord[Int, Int, Int],
+    cluster_shape: Coord[Int, Int, Int],
     num_pipeline_stages: Int,
     num_threads: Int = 128,
     transpose_b: Bool = True,
@@ -328,11 +329,15 @@ struct HopperMatmulSM90Kernel[
     comptime num_consumer = (Self.num_threads // 128) - 1
     comptime num_consumer_threads = Self.num_consumer * 128
 
-    comptime num_m_mmas = Self.BM // Self.wgmma_shape[0] // Self.num_consumer
-    comptime num_n_mmas = Self.BN // Self.wgmma_shape[1]
+    comptime num_m_mmas = (
+        Self.BM // Int(Self.wgmma_shape[0]) // Self.num_consumer
+    )
+    comptime num_n_mmas = Self.BN // Int(Self.wgmma_shape[1])
 
     comptime accum_type = get_accum_type[Self.a_type]()
-    comptime c_frag_size = Self.wgmma_shape[0] * Self.wgmma_shape[1] // 128
+    comptime c_frag_size = (
+        Int(Self.wgmma_shape[0]) * Int(Self.wgmma_shape[1]) // 128
+    )
 
     comptime a_smem_layout = tile_layout_k_major[
         Self.a_type, Self.BM, Self.BK, Self.a_swizzle
@@ -381,7 +386,7 @@ struct HopperMatmulSM90Kernel[
         Self.accum_type,
         Self.a_type,
         Self.b_type,
-        Self.wgmma_shape,
+        (Self.wgmma_shape[0], Self.wgmma_shape[1], Self.wgmma_shape[2]),
         Self.a_swizzle,
         Self.b_swizzle,
         Self.transpose_b,
@@ -455,8 +460,8 @@ struct HopperMatmulSM90Kernel[
     @staticmethod
     @inline(.always)
     def multicast_mask(rank_m: Int, rank_n: Int) -> Tuple[Int32, Int32]:
-        comptime CLUSTER_N = Self.cluster_shape[0]
-        comptime CLUSTER_M = Self.cluster_shape[1]
+        comptime CLUSTER_N = Int(Self.cluster_shape[0])
+        comptime CLUSTER_M = Int(Self.cluster_shape[1])
 
         # Setup multicast masks for cluster-wide data distribution
         var multicast_column_mask = 0
@@ -465,10 +470,8 @@ struct HopperMatmulSM90Kernel[
             multicast_column_mask |= Int(1 << (i * CLUSTER_N))
         multicast_column_mask <<= rank_n
 
-        var multicast_row_mask = ((1 << CLUSTER_N) - 1) << (
-            Int32(rank_m) * CLUSTER_N
-        )
-        return (multicast_row_mask, Int32(multicast_column_mask))
+        var multicast_row_mask = ((1 << CLUSTER_N) - 1) << (rank_m * CLUSTER_N)
+        return (Int32(multicast_row_mask), Int32(multicast_column_mask))
 
     @staticmethod
     @inline(.always)
@@ -675,7 +678,11 @@ struct HopperMatmulSM90Kernel[
             BM=Self.BM,
             BN=Self.BN,
             swizzle=Self.c_swizzle,
-            wgmma_shape=Self.wgmma_shape,
+            wgmma_shape=(
+                Self.wgmma_shape[0],
+                Self.wgmma_shape[1],
+                Self.wgmma_shape[2],
+            ),
             num_consumer=Self.num_consumer,
             use_tma_store=Self.use_tma_store,
             swapAB=Self.swapAB,
@@ -712,7 +719,7 @@ struct HopperMatmulSM90Kernel[
             a_tile_shape,
             a_desc_shape,
             BK=Self.BK,
-            cluster_size=Self.cluster_shape[0],
+            cluster_size=Int32(Self.cluster_shape[0]),
             use_partitioned_multicast=Self.partitioned_multicast,
         ],
         TileLoaderTMA[
@@ -721,7 +728,7 @@ struct HopperMatmulSM90Kernel[
             b_tile_shape,
             b_desc_shape,
             BK=Self.BK,
-            cluster_size=Self.cluster_shape[1],
+            cluster_size=Int32(Self.cluster_shape[1]),
             use_partitioned_multicast=Self.partitioned_multicast,
         ],
     ]:
@@ -735,12 +742,12 @@ struct HopperMatmulSM90Kernel[
         )
         var a_loader = TileLoaderTMA[
             BK=Self.BK,
-            cluster_size=Self.cluster_shape[0],
+            cluster_size=Int32(Self.cluster_shape[0]),
             use_partitioned_multicast=Self.partitioned_multicast,
         ](Pointer(to=a_tma_op), rank_n, UInt16(a_multicast_mask))
         var b_loader = TileLoaderTMA[
             BK=Self.BK,
-            cluster_size=Self.cluster_shape[1],
+            cluster_size=Int32(Self.cluster_shape[1]),
             use_partitioned_multicast=Self.partitioned_multicast,
         ](Pointer(to=b_tma_op), rank_m, UInt16(b_multicast_mask))
         return (a_loader, b_loader)
@@ -1195,8 +1202,8 @@ struct HopperMatmulSM90Kernel[
         comptime workspace_layout = row_major[NUM_TILES, Self.BM, Self.BN]()
         var reduction_workspace = TileTensor(workspace_ptr, workspace_layout)
 
-        comptime CLUSTER_N = Self.cluster_shape[0]
-        comptime CLUSTER_M = Self.cluster_shape[1]
+        comptime CLUSTER_N = Int(Self.cluster_shape[0])
+        comptime CLUSTER_M = Int(Self.cluster_shape[1])
 
         var scheduler = SplitKTileScheduler[
             Index(N, K),
@@ -1204,7 +1211,7 @@ struct HopperMatmulSM90Kernel[
             UInt32(splits),
             UInt32(Self.num_consumer),
             UInt32(Self.num_pipeline_stages),
-            Index(CLUSTER_M, CLUSTER_N),
+            (Int(CLUSTER_M), Int(CLUSTER_N)),
             raster_order,
         ](
             problem_shape,
@@ -1458,8 +1465,8 @@ struct HopperMatmulSM90Kernel[
         comptime N = Self.c_layout.static_shape[1]
         var b_start_row = expert * Int32(N)
 
-        comptime CLUSTER_N = Self.cluster_shape[0]
-        comptime CLUSTER_M = Self.cluster_shape[1]
+        comptime CLUSTER_N = Int(Self.cluster_shape[0])
+        comptime CLUSTER_M = Int(Self.cluster_shape[1])
 
         # Split thread blocks into producer and consumer warp groups
         if warp_group_idx == 0:

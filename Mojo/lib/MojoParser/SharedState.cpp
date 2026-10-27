@@ -1553,12 +1553,15 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
 
     // Fully resolve any dependencies of the package.
     if (LinkDependencyArrayAttr deps = declPackage.getDependenciesAttr()) {
-      // Each dependency is a top-level package's symbol name (see
-      // mojo-precompile's buildPackage), so any periods belong to the package
-      // name itself; this is never a dotted path.
-      for (FlatSymbolRefAttr dep : deps) {
+      // Each dependency is a package's symbol reference, nested when the
+      // package is within a namespace. Its components are the import path; any
+      // periods belong to a component's name itself.
+      for (SymbolRefAttr dep : deps) {
+        SmallVector<StringRef> components = {dep.getRootReference()};
+        for (FlatSymbolRefAttr nested : dep.getNestedReferences())
+          components.push_back(nested.getValue());
         ModuleASTDecl *depDecl =
-            &importModule({dep.getValue()},
+            &importModule(ImportPath(ArrayRef<StringRef>(components)),
                           /*currentPackage=*/nullptr, packageImportLoc);
         if (failed(declResolver->resolveBody(*depDecl, decl.getLoc())))
           return failure();

@@ -27,7 +27,7 @@ These primitives are essential for implementing complex GPU execution pipelines 
 multiple kernels need to execute in a specific order with minimal overhead. They
 eliminate the need for host-side synchronization when orchestrating dependent GPU work.
 """
-from max.gpu.host._legacy.launch_attribute import (
+from max.gpu.host import (
     LaunchAttribute,
     LaunchAttributeID,
     LaunchAttributeValue,

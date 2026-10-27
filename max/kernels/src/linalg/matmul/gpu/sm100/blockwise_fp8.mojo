@@ -40,7 +40,7 @@ from structured_kernels.tile_types import (
 )
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tensor_tile
 from std.logger import Logger
-from std.utils.index import IndexList
+from std.utils.coord import Coord, DynamicCoord
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
@@ -81,10 +81,10 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     b_desc_shape: Coord,
     a_scales_tile_shape: Coord,
     a_scales_desc_shape: Coord,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     transpose_b: Bool = True,
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     num_threads: Int = 128,
@@ -422,8 +422,11 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
                     Coord(4 * m_mma + warp_id, n_mma)
                 )
             )
-            var c_gmem_warp_tile_coords = ctile_coords + rebind[c_coord_type](
-                _c_gmem_warp_tile_coords
+            # `Coord` has no element-wise arithmetic, so add the two
+            # coordinate pairs element by element.
+            var c_gmem_warp_tile_coords = (
+                Int(ctile_coords[0]) + Int(_c_gmem_warp_tile_coords[0]),
+                Int(ctile_coords[1]) + Int(_c_gmem_warp_tile_coords[1]),
             )
 
             var c_gmem_frag, _c_gmem_frag_coords, _ = (
@@ -436,7 +439,10 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
             )
             new_c_gmem_frag_coords[1] *= 2
             var c_gmem_frag_coords = (
-                c_gmem_warp_tile_coords + new_c_gmem_frag_coords
+                Int(c_gmem_warp_tile_coords[0])
+                + Int(new_c_gmem_frag_coords[0]),
+                Int(c_gmem_warp_tile_coords[1])
+                + Int(new_c_gmem_frag_coords[1]),
             )
 
             comptime num_vecs_m = type_of(c_gmem_frag).static_shape[0]
@@ -480,7 +486,13 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
                             c_gmem_frag[m_vec, n_vec] = c_mn
 
 
-@__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
+@__llvm_metadata(
+    `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+        Int32(cluster_shape[0]),
+        Int32(cluster_shape[1]),
+        Int32(cluster_shape[2]),
+    )
+)
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
@@ -505,10 +517,10 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
     b_desc_shape: Coord,
     a_scales_tile_shape: Coord,
     a_scales_desc_shape: Coord,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
+    block_tile_shape: Coord[Int, Int, Int],
+    mma_shape: Coord[Int, Int, Int],
     transpose_b: Bool = True,
-    cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     num_threads: Int = 128,
@@ -581,8 +593,8 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
 def matmul_sm100_blockwise_scaled_fp8[
     *,
     transpose_b: Bool,
-    umma_shape: IndexList[3],
-    block_tile_shape: IndexList[3],
+    umma_shape: Coord[Int, Int, Int],
+    block_tile_shape: Coord[Int, Int, Int],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
@@ -641,8 +653,8 @@ def matmul_sm100_blockwise_scaled_fp8[
     //,
     *,
     transpose_b: Bool,
-    umma_shape: IndexList[3],
-    block_tile_shape: IndexList[3],
+    umma_shape: Coord[Int, Int, Int],
+    block_tile_shape: Coord[Int, Int, Int],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
@@ -691,8 +703,8 @@ def matmul_sm100_blockwise_scaled_fp8[
     //,
     *,
     transpose_b: Bool,
-    umma_shape: IndexList[3],
-    block_tile_shape: IndexList[3],
+    umma_shape: Coord[Int, Int, Int],
+    block_tile_shape: Coord[Int, Int, Int],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
@@ -741,8 +753,8 @@ def _matmul_sm100_blockwise_scaled_fp8_impl[
     //,
     *,
     transpose_b: Bool,
-    umma_shape: IndexList[3],
-    block_tile_shape: IndexList[3],
+    umma_shape: Coord[Int, Int, Int],
+    block_tile_shape: Coord[Int, Int, Int],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     has_epilogue_fn: Bool,
@@ -899,7 +911,7 @@ def _matmul_sm100_blockwise_scaled_fp8_impl[
         type_of(a_scales_tma_op).tile_shape,
         type_of(a_scales_tma_op).desc_shape,
         block_tile_shape,
-        umma_shape,
+        (umma_shape[0], umma_shape[1], umma_shape[2]),
         transpose_b=True,
         a_swizzle=a_swizzle,
         b_swizzle=b_swizzle,

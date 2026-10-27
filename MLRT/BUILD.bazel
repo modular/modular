@@ -569,6 +569,7 @@ modular_cc_library(
     }),
     visibility = [
         "//Kernels/tools/max_license/gpu-query:__pkg__",
+        "//MLRT/unittests/Driver:__pkg__",
         "//Mojo:__subpackages__",
     ],
     deps = [
@@ -689,7 +690,7 @@ mojo_shared_library(
     # under the HAL branch. No single configuration closes that loop, yet it is
     # a cycle in the unconfigured graph that `bazel query` reports.
     deps = [
-        "//max/driver/src/max_license:max",
+        "//max/mojo/max/_driver/max_license:max",
         "@mojo//:std",
     ],
 )

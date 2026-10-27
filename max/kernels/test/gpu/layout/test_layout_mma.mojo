@@ -22,12 +22,13 @@ from layout import *
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tensor_core import *
 from std.testing import *
+from std.utils.coord import DynamicCoord
 
 
 def mma_layout_tc[
     out_type: DType,
     in_type: DType,
-    shape: IndexList[3],
+    shape: DynamicCoord[.int, 3],
     layout_c: TensorLayout,
     layout_a: TensorLayout,
     layout_b: TensorLayout,
@@ -73,7 +74,7 @@ def matmul_naive[
 def test_layout_mma[
     out_type: DType,
     in_type: DType,
-    shape: IndexList[3],
+    shape: DynamicCoord[.int, 3],
     M: Int,
     N: Int,
     K: Int,
@@ -180,7 +181,7 @@ def test_layout_mma[
 
 def c_fragment_kernel[
     dtype: DType,
-    shape: IndexList[3],
+    shape: DynamicCoord[.int, 3],
     MatrixLayout: TensorLayout,
     FragmentLayout: TensorLayout,
 ](
@@ -203,7 +204,7 @@ def c_fragment_kernel[
 
 def test_c_fragment_layout[
     dtype: DType,
-    shape: IndexList[3],
+    shape: DynamicCoord[.int, 3],
     row_stride: Int,
     col_stride: Int,
 ](ctx: DeviceContext) raises:
@@ -282,7 +283,7 @@ def test_c_fragment_layout[
 
 
 def test_c_fragments[
-    dtype: DType, shape: IndexList[3]
+    dtype: DType, shape: DynamicCoord[.int, 3]
 ](ctx: DeviceContext) raises:
     test_c_fragment_layout[dtype, shape, shape[1], 1](ctx)
     test_c_fragment_layout[dtype, shape, shape[1] + 3, 1](ctx)
@@ -291,7 +292,7 @@ def test_c_fragments[
 
 def input_fragment_kernel[
     dtype: DType,
-    shape: IndexList[3],
+    shape: DynamicCoord[.int, 3],
     InputLayout: TensorLayout,
     FragmentLayout: TensorLayout,
 ](
@@ -316,7 +317,7 @@ def input_fragment_kernel[
 
 def test_input_fragment_layout[
     dtype: DType,
-    shape: IndexList[3],
+    shape: DynamicCoord[.int, 3],
     k_groups: Int,
 ](ctx: DeviceContext, column_major: Bool) raises:
     comptime warp_size = ctx.default_device_info.warp_size
@@ -385,7 +386,7 @@ def test_input_fragment_layout[
 
 
 def test_input_fragments[
-    dtype: DType, shape: IndexList[3], k_groups: Int = 1
+    dtype: DType, shape: DynamicCoord[.int, 3], k_groups: Int = 1
 ](ctx: DeviceContext) raises:
     test_input_fragment_layout[dtype, shape, k_groups](ctx, False)
     test_input_fragment_layout[dtype, shape, k_groups](ctx, True)
@@ -394,10 +395,10 @@ def test_input_fragments[
 def main() raises:
     with DeviceContext() as ctx:
         comptime if ctx.target.is_nvidia_gpu():
-            comptime shape_884 = IndexList[3](8, 8, 4)
-            comptime shape_1684 = IndexList[3](16, 8, 4)
-            comptime shape_1688 = IndexList[3](16, 8, 8)
-            comptime shape_16816 = IndexList[3](16, 8, 16)
+            comptime shape_884 = DynamicCoord[.int, 3](8, 8, 4)
+            comptime shape_1684 = DynamicCoord[.int, 3](16, 8, 4)
+            comptime shape_1688 = DynamicCoord[.int, 3](16, 8, 8)
+            comptime shape_16816 = DynamicCoord[.int, 3](16, 8, 16)
 
             test_c_fragments[.float64, shape_884](ctx)
             test_c_fragments[.float64, shape_16816](ctx)
@@ -434,8 +435,8 @@ def main() raises:
                 ctx, rtol=1e-01
             )
         elif ctx.target.is_amd_gpu():
-            comptime shape_161616 = IndexList[3](16, 16, 16)
-            comptime shape_16164 = IndexList[3](16, 16, 4)
+            comptime shape_161616 = DynamicCoord[.int, 3](16, 16, 16)
+            comptime shape_16164 = DynamicCoord[.int, 3](16, 16, 4)
 
             test_input_fragments[.float32, shape_16164](ctx)
             test_input_fragments[.float32, shape_16164, 4](ctx)

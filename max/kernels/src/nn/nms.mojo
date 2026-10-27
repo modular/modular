@@ -17,6 +17,7 @@ from std.math import iota
 from std.memory import unsafe_stack_allocation
 
 from layout import (
+    Coord,
     DefaultEngine,
     Idx,
     ImmTileTensor,
@@ -34,7 +35,6 @@ from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
 from max.gpu.sync import barrier
 
-from std.utils import IndexList
 from std.utils.index import StaticTuple
 
 
@@ -221,7 +221,7 @@ def non_max_suppression_shape_func[
     max_output_boxes_per_class: Int,
     iou_threshold: Float32,
     score_threshold: Float32,
-) -> IndexList[2]:
+) -> Coord[Int, Int]:
     """Compute the output shape for NMS without allocating the output buffer.
 
     This function performs a dry-run of NMS to determine how many boxes will be
@@ -239,7 +239,7 @@ def non_max_suppression_shape_func[
         score_threshold: Minimum score threshold.
 
     Returns:
-        A 2-element IndexList specifying the output shape (num_selected_boxes, 3).
+        A 2-element `Coord` specifying the output shape (num_selected_boxes, 3).
     """
     comptime assert boxes.flat_rank == 3, "boxes must be of rank 3"
     comptime assert scores.flat_rank == 3, "scores must be of rank 3"
@@ -262,7 +262,7 @@ def non_max_suppression_shape_func[
         incr_pred_count,
     )
 
-    return IndexList[2](Int(box_pred_count), 3)
+    return (Int(box_pred_count), 3)
 
 
 def non_max_suppression[

@@ -21,11 +21,12 @@ _EXTRA_PREFIX = "group-15-bazel-pyproject-"
 # Groups that target no GPU, so they share the plain (cpu) constraint.
 _CPU_TYPES = ("cpu", "aiperf")
 # Maps dependency-group extra names to their GPU constraint suffix.
-# nvidia-sglang and nvidia-vllm are separate conflict groups but still
-# target nvidia hardware, so they share the "nvidia" constraint.
+# nvidia-bench, nvidia-sglang and nvidia-vllm are separate conflict groups but
+# still target nvidia hardware, so they share the "nvidia" constraint.
 _GPU_TYPES: dict[str, str] = {
     "amd": "amd",
     "nvidia": "nvidia",
+    "nvidia-bench": "nvidia",
     "nvidia-sglang": "nvidia",
     "nvidia-vllm": "nvidia",
 }

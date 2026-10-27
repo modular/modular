@@ -15,6 +15,7 @@
 
 from std.collections.string.string_span import get_static_string
 from std.math import ceildiv
+from max.gpu.host.info import B200
 from std.math.uutils import ufloordiv
 from std.atomic import Atomic
 from std.sys import simd_width_of
@@ -48,7 +49,7 @@ from std.memory import bitcast
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 from max.algorithm import elementwise
 from std.utils.coord import Coord, Idx
-from std.utils.index import Index, IndexList, StaticTuple
+from std.utils.index import StaticTuple
 from std.utils.numerics import get_accum_type, max_finite
 
 from .matmul import matmul
@@ -1364,7 +1365,7 @@ def _matmul_dynamic_scaled_fp8_impl[
     comptime _trace_string = get_static_string[
         trace_arg(
             "A_scales",
-            IndexList[2](
+            (
                 a_scales.static_shape[0] if a_scales.static_shape[0]
                 > -1 else 0,
                 a_scales.static_shape[1] if a_scales.static_shape[1]
@@ -1375,7 +1376,7 @@ def _matmul_dynamic_scaled_fp8_impl[
         ";",
         trace_arg(
             "B_scales",
-            IndexList[2](
+            (
                 b_scales.static_shape[0] if b_scales.static_shape[0]
                 > -1 else 0,
                 b_scales.static_shape[1] if b_scales.static_shape[1]
@@ -1632,7 +1633,7 @@ def naive_blockwise_scaled_fp8_matmul[
     BLOCK_DIM: Int = 16,
     transpose_b: Bool = False,
     accum_type: DType = get_accum_type[c_type](),
-    scales_granularity_mnk: Optional[IndexList[3]] = None,
+    scales_granularity_mnk: Optional[Coord[Int, Int, Int]] = None,
     has_epilogue_fn: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
@@ -1761,7 +1762,7 @@ def naive_blockwise_scaled_fp8_matmul_kernel[
     b_scale_layout: TensorLayout,
     BLOCK_DIM: Int,
     transpose_b: Bool = False,
-    scales_granularity_mnk: Optional[IndexList[3]] = None,
+    scales_granularity_mnk: Optional[Coord[Int, Int, Int]] = None,
     *,
     EpilogueFnType: ElementwiseEpilogueFn,
     has_epilogue_fn: Bool,
@@ -1930,7 +1931,7 @@ def naive_blockwise_scaled_fp8_grouped_matmul[
     BLOCK_DIM_N: Int = 32,
     BLOCK_DIM_M: Int = 16,
     transpose_b: Bool = True,
-    scales_granularity_mnk: Optional[IndexList[3]] = None,
+    scales_granularity_mnk: Optional[Coord[Int, Int, Int]] = None,
 ](
     c: TileTensor[mut=True, c_type, c_layout, ...],
     a: TileTensor[mut=False, a_type, a_layout, ...],
@@ -2045,7 +2046,7 @@ def naive_blockwise_scaled_fp8_grouped_matmul_kernel[
     expert_ids_type: DType,
     accum_type: DType,
     transpose_b: Bool = True,
-    scales_granularity_mnk: Optional[IndexList[3]] = None,
+    scales_granularity_mnk: Optional[Coord[Int, Int, Int]] = None,
 ](
     c: TileTensor[c_type, c_layout, MutAnyOrigin],
     a: TileTensor[a_type, a_layout, ImmutAnyOrigin],
@@ -2225,7 +2226,7 @@ def _amd_blockwise_tiled_ok[
     a_scales_type: DType,
     b_scales_type: DType,
     transpose_b: Bool,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
     device_info: GPUInfo,
     a_static_k: Int,
     c_static_n: Int,
@@ -2267,7 +2268,7 @@ def blockwise_scaled_fp8_with_epilogue[
     EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
     //,
     *,
-    scales_granularity_mnk: IndexList[3],
+    scales_granularity_mnk: Coord[Int, Int, Int],
     transpose_b: Bool = False,
     has_epilogue_fn: Bool = False,
 ](
@@ -2299,23 +2300,71 @@ def blockwise_scaled_fp8_with_epilogue[
     ):
         comptime N_G = scales_granularity_mnk[1]
         comptime MMA_K = 32
-        comptime block_tile_shape = Index(64, 96, 128)
         # MMA_N must be <= 2 * n_scale_granularity because the accumulator
         # only loads 2 b_scales per MMA tile.
-        comptime umma_shape = Index(128, 192, MMA_K) if N_G == 128 else Index(
-            128, 128, MMA_K
-        )
-        comptime cluster_shape = Index(2, 1, 1)
-        comptime matmul_config = MatmulConfig[
+        #
+        # B200 tuning (mm-sm100 campaign, CUDA-graph replays): MMA_N=128
+        # beats the previous 192-wide tile at every measured shape —
+        # (N=2304, K=16384, M=300): 35.6 vs 47.8 us, also 4% past cuBLASLt;
+        # (N=16384, K=2048, M=4096): 182.6 vs 234.3 us with cta_group=1.
+        # cta_group=1 wins where the N/BN tile grid already covers the
+        # 148-SM device (wide N; M=512, N=16384: 31.3 vs 36.7 us): the
+        # 2-CTA MMA pair would only halve the CTA count. Narrow N keeps
+        # the 2-CTA pair (N=2304: 35.5 us at cta_group=2 vs 49.4 at 1)
+        # because one CTA per tile strand fewer SMs; the crossover is
+        # ceildiv(N, 128) >= num_SMs/4 (36 N-tiles at N=4608, B200).
+        # Three M-regimes, from the fp8vllm campaign's full
+        # bench_matmul.yaml sweep (78 cells, CUDA-graph replays, every
+        # cell bit-identical to the previous config on the campaign's
+        # exact inputs — the tile choice changes no output bit):
+        #
+        #   M <= 128   the grid is row-starved (one M-tile covering few
+        #              rows), so the 2-CTA MMA pair with a doubled
+        #              MMA_N is the fastest arm: (M=8, N=16384, K=2048)
+        #              12.4 us vs 20.5 at cta_group=1/MMA_N=128,
+        #              (M=8, N=16384, K=6656) 28.7 vs 57.4,
+        #              (M=8, N=13312, K=16384) 55.5 vs 96.9.
+        #   M <= 512   the previous N-width rule is optimal: cta_group=1
+        #              for wide N (ceildiv(N,128) >= sm_count/4),
+        #              cta_group=2 for narrow N (N=2304: 35 us vs 49).
+        #   M > 512    one CTA per tile wins even at narrow N once the
+        #              grid is tall: (M=2048, N=2304, K=16384) 98 us vs
+        #              130 at cta_group=2, (M=8192) 385 vs 516; tiny-N
+        #              shapes (ceildiv(N,128) < 8) keep the pair.
+        comptime static_N = c.static_shape[1]
+        comptime n_tiles = ceildiv(static_N, 128) if static_N > 0 else 0
+        comptime wide_N = n_tiles >= B200.sm_count // 4
+        comptime cluster_shape = (2, 1, 1)
+        # M <= 128 (runtime branch below): 2-CTA pair, wide MMA_N when
+        # the N grid is wide.
+        comptime small_m_config = MatmulConfig[
             a_type, b_type, c_type, transpose_b
         ](
-            cluster_shape=Index(
-                cluster_shape[0], cluster_shape[1], cluster_shape[2]
-            ),
-            mma_shape=umma_shape,
+            cluster_shape=cluster_shape,
+            mma_shape=(128, 256 if wide_N else 128, MMA_K),
             cta_group=2,
             gemm_kind=GEMMKind.BLOCK_SCALED_1D2D_FP8,
         )
+        # 128 < M <= 512: the previous N-width rule.
+        comptime mid_m_config = MatmulConfig[
+            a_type, b_type, c_type, transpose_b
+        ](
+            cluster_shape=cluster_shape,
+            mma_shape=(128, 128, MMA_K),
+            cta_group=1 if wide_N else 2,
+            gemm_kind=GEMMKind.BLOCK_SCALED_1D2D_FP8,
+        )
+        # M > 512: one CTA per tile for every N grid with >= 8 tiles.
+        comptime big_m_config = MatmulConfig[
+            a_type, b_type, c_type, transpose_b
+        ](
+            cluster_shape=cluster_shape,
+            mma_shape=(128, 128, MMA_K),
+            cta_group=1 if n_tiles >= 8 else 2,
+            gemm_kind=GEMMKind.BLOCK_SCALED_1D2D_FP8,
+        )
+        comptime small_m_max = 128
+        comptime mid_m_max = 512
 
         comptime if has_epilogue_fn:
             comptime simd_size = 32 // size_of[c_type]()
@@ -2328,26 +2377,61 @@ def blockwise_scaled_fp8_with_epilogue[
                 var c_val = c.load[simd_width](idx)
                 epilogue_fn[c_type, simd_width, alignment=alignment](idx, c_val)
 
-            blockwise_fp8_matmul[
-                transpose_b=transpose_b,
-                a_scales_type=a_scales_type,
-                b_scales_type=b_scales_type,
-                config=matmul_config,
-                n_scale_granularity=scales_granularity_mnk[1],
-            ](c, a, b, a_scales, b_scales, ctx)
+            if m <= small_m_max:
+                blockwise_fp8_matmul[
+                    transpose_b=transpose_b,
+                    a_scales_type=a_scales_type,
+                    b_scales_type=b_scales_type,
+                    config=small_m_config,
+                    n_scale_granularity=scales_granularity_mnk[1],
+                ](c, a, b, a_scales, b_scales, ctx)
+            elif m <= mid_m_max:
+                blockwise_fp8_matmul[
+                    transpose_b=transpose_b,
+                    a_scales_type=a_scales_type,
+                    b_scales_type=b_scales_type,
+                    config=mid_m_config,
+                    n_scale_granularity=scales_granularity_mnk[1],
+                ](c, a, b, a_scales, b_scales, ctx)
+            else:
+                blockwise_fp8_matmul[
+                    transpose_b=transpose_b,
+                    a_scales_type=a_scales_type,
+                    b_scales_type=b_scales_type,
+                    config=big_m_config,
+                    n_scale_granularity=scales_granularity_mnk[1],
+                ](c, a, b, a_scales, b_scales, ctx)
             elementwise[
                 simd_size,
                 target="gpu",
                 _trace_description="elementwise_blockwise_scaled_fp8_epilogue",
             ](value_epilogue_wrapper, Coord(m, n), ctx)
         else:
-            blockwise_fp8_matmul[
-                transpose_b=transpose_b,
-                a_scales_type=a_scales_type,
-                b_scales_type=b_scales_type,
-                config=matmul_config,
-                n_scale_granularity=scales_granularity_mnk[1],
-            ](c, a, b, a_scales, b_scales, ctx)
+            var m_runtime = Int(c.dim[0]())
+            if m_runtime <= small_m_max:
+                blockwise_fp8_matmul[
+                    transpose_b=transpose_b,
+                    a_scales_type=a_scales_type,
+                    b_scales_type=b_scales_type,
+                    config=small_m_config,
+                    n_scale_granularity=scales_granularity_mnk[1],
+                ](c, a, b, a_scales, b_scales, ctx)
+            elif m_runtime <= mid_m_max:
+                blockwise_fp8_matmul[
+                    transpose_b=transpose_b,
+                    a_scales_type=a_scales_type,
+                    b_scales_type=b_scales_type,
+                    config=mid_m_config,
+                    n_scale_granularity=scales_granularity_mnk[1],
+                ](c, a, b, a_scales, b_scales, ctx)
+            else:
+                blockwise_fp8_matmul[
+                    transpose_b=transpose_b,
+                    a_scales_type=a_scales_type,
+                    b_scales_type=b_scales_type,
+                    config=big_m_config,
+                    n_scale_granularity=scales_granularity_mnk[1],
+                ](c, a, b, a_scales, b_scales, ctx)
 
     else:
         # AMD gfx950: tiled MFMA blockwise-FP8 dense matmul for the GLM E4M3 +

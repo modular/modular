@@ -36,27 +36,65 @@ instead reserved nothing for any of them, because that base returns ``0``.
 
 Above roughly 12K context the KV cache dominates instead: 11 KiB per token
 across the 11 sparse-MLA layers, 11.8 GB for a 1M-token sequence.
+
+The vision tower adds a replica per device beyond the checkpoint's one copy,
+and its own activations.
 """
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from max.driver import Device
+from max.graph import DeviceRef
 from max.pipelines.lib import PipelineConfig
 from transformers import AutoConfig
 from typing_extensions import override
 
 from ..deepseekV3.memory_planner import DeepseekV3MemoryPlanner
+from .image_processor import Glm5NextImageProcessor
 from .model_config import Glm5NextConfig
+from .nn.visual_transformer import Glm5NextVisionTransformer
 
 __all__ = ["Glm5NextMemoryPlanner"]
+
+# Peak live activation per patch inside the vision tower, in units of the
+# tower's hidden width in bytes. A block holds the bfloat16 gate and up
+# projections at 4x the width, the float32 q and k the rotary embedding
+# upcasts, and the residual, about 40 widths in all; rounded up.
+_VISION_PEAK_HIDDEN_WIDTHS_PER_PATCH = 48
+
+
+def _vision_tower_bytes(config: Glm5NextConfig) -> int:
+    """Bytes of one tower replica, read off the module the model builds."""
+    if config.vision_config is None:
+        return 0
+    tower = Glm5NextVisionTransformer(config.vision_config, DeviceRef.CPU())
+    return sum(
+        math.prod(weight.shape.static_dims) * weight.dtype.size_in_bytes
+        for weight in tower.raw_state_dict().values()
+    )
 
 
 class Glm5NextMemoryPlanner(DeepseekV3MemoryPlanner):
     """Adds the KDA state pools and the widened mHC residual to V3's estimate."""
 
     _always_signal_buffers = True
+
+    @override
+    def estimate_weights_size(self, pipeline_config: PipelineConfig) -> int:
+        """Adds a vision tower replica on every device but the first.
+
+        The checkpoint carries one copy of the tower, which the base estimate
+        already counts.
+        """
+        config = self._config
+        assert isinstance(config, Glm5NextConfig)
+        replicas = len(config.devices) - 1
+        return super().estimate_weights_size(
+            pipeline_config
+        ) + replicas * _vision_tower_bytes(config)
 
     @override
     def infer_max_batch_size(
@@ -88,7 +126,7 @@ class Glm5NextMemoryPlanner(DeepseekV3MemoryPlanner):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
     ) -> int:
-        """Adds the widened residual to V3's estimate, and nothing else.
+        """Adds the widened residual and the vision tower to V3's estimate.
 
         The conv and recurrent pools are leaves of the multi-cache, so the
         cache allocation already pays for their pages --
@@ -103,7 +141,8 @@ class Glm5NextMemoryPlanner(DeepseekV3MemoryPlanner):
         owned by no cache. It is replicated, so it is sized from the whole
         batch. The EP dispatch buffers are not: the feed-forward sublayer
         splits the token axis, which is what makes the inherited per-rank
-        estimate right without an override here.
+        estimate right without an override here. The vision tower's
+        activations are :meth:`_vision_activation_bytes`.
         """
         config = self._config
         assert isinstance(config, Glm5NextConfig)
@@ -117,6 +156,33 @@ class Glm5NextMemoryPlanner(DeepseekV3MemoryPlanner):
                 pipeline_config, huggingface_config
             )
             + residual_bytes
+            + self._vision_activation_bytes(pipeline_config)
+        )
+
+    def _vision_activation_bytes(self, pipeline_config: PipelineConfig) -> int:
+        """The tower's peak activations, summed over its replicas.
+
+        Added to the decoder's rather than overlapped with it: under the
+        overlap scheduler a batch's encode can run while the previous batch's
+        forward still holds its activations. The model chunks an encode at
+        ``max_batch_input_tokens`` output rows but never splits an image, so
+        one encode is at most the larger of that and the largest image.
+        """
+        config = self._config
+        assert isinstance(config, Glm5NextConfig)
+        vision_config = config.vision_config
+        if vision_config is None:
+            return 0
+        rows = max(
+            pipeline_config.runtime.max_batch_input_tokens,
+            Glm5NextImageProcessor().max_image_tokens,
+        )
+        patches = rows * vision_config.spatial_merge_size**2
+        return (
+            len(config.devices)
+            * patches
+            * vision_config.hidden_size
+            * _VISION_PEAK_HIDDEN_WIDTHS_PER_PATCH
         )
 
     def describe(self) -> dict[str, Any]:

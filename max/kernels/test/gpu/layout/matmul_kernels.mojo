@@ -47,8 +47,6 @@ from layout import (
 from layout.tile_tensor import stack_allocation
 from layout.tile_io import copy_dram_to_sram_async as copy_tiles_async
 
-from std.utils.index import Index
-
 comptime NWARMUP = 1
 comptime NRUN = 1
 
@@ -1093,7 +1091,7 @@ def matmul_kernel_tc[
     ), "Warp tile should be an integer multiple of instruction shape"
 
     # Create tensor core operation object
-    var mma_op = TensorCore[A.dtype, C.dtype, Index(MMA_M, MMA_N, MMA_K)]()
+    var mma_op = TensorCore[A.dtype, C.dtype, (MMA_M, MMA_N, MMA_K)]()
 
     # Allocate shared memory for tiles of A and B
     var A_sram_tile = stack_allocation[

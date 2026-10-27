@@ -26,12 +26,16 @@ from max.experimental.nn import Module
 from max.experimental.nn.common_layers.mesh_axis import TP
 from max.experimental.nn.common_layers.quant_tensor import (
     FP8BlockTensor,
+    MXFP4Quantizer,
+    MXFP4Tensor,
+    MXFP8Quantizer,
     MXFP8Tensor,
     NVFP4Activation,
     NVFP4Tensor,
     NVFP4TensorQuantizer,
     QTensor,
     all_fp8_block,
+    all_mxfp4,
     all_mxfp8,
     all_nvfp4,
 )
@@ -591,6 +595,24 @@ def test_nvfp4_quantizer_to_moves_the_raw_tensor() -> None:
         assert qt.block_size == (1, 16)
 
 
+def test_quantizer_to_drops_the_cached_quantization() -> None:
+    """Moving a quantizer rebuilds its scales where the weight now lives.
+
+    The scales are a function of ``weight``, so ``to()`` moves the one tensor
+    it holds and drops the cached container rather than moving a stale copy.
+    """
+    with F.lazy(), patch("max.graph.type.Accelerator") as mock:
+        mock.side_effect = _fake_gpu
+        device = mock(0)
+        qt = MXFP4Quantizer(Tensor.zeros((8, 32), dtype=DType.bfloat16))
+        before = qt.quant_tensor
+
+        qt.to(device)
+
+        assert "quant_tensor" not in vars(qt)
+        assert qt.quant_tensor is not before
+
+
 def test_nvfp4_quantizer_packs_nvfp4_on_first_use(sm100_arch: None) -> None:
     """First use quantizes the bf16 tensor into packed NVFP4 leaves."""
     del sm100_arch
@@ -709,3 +731,226 @@ def test_all_mxfp8_narrows_only_homogeneous_sequences() -> None:
         mx = MXFP8Tensor.zeros((256, 512))
         assert all_mxfp8([mx, mx])
         assert not all_mxfp8([mx, NVFP4Tensor.zeros((256, 512))])
+
+
+# --------------------------------------------------------------------------- #
+# MXFP4Tensor
+# --------------------------------------------------------------------------- #
+
+
+def test_mxfp4_zeros_dtypes_and_scale_grid() -> None:
+    """Two e2m1 codes per byte and one E8M0 scale per 32 values along K."""
+    with F.lazy():
+        qt = MXFP4Tensor.zeros((256, 512))
+        assert qt.weight.dtype == DType.uint8
+        assert qt.weight_scale.dtype == DType.float8_e8m0fnu
+        assert list(qt.weight.shape) == [256, 256]
+        assert list(qt.weight_scale.shape) == [256, 16]
+        assert qt.block_size == (1, 32)
+
+
+def test_mxfp4_zeros_scale_shape_uses_ceildiv() -> None:
+    """A partial trailing block still gets a scale."""
+    with F.lazy():
+        qt = MXFP4Tensor.zeros((8, 40))
+        assert list(qt.weight.shape) == [8, 20]
+        assert list(qt.weight_scale.shape) == [8, 2]
+
+
+def test_mxfp4_local_parameters_discovered() -> None:
+    """Both leaves are discoverable, under the checkpoint's leaf names."""
+    with F.lazy():
+        qt = MXFP4Tensor.zeros((256, 512))
+        assert set(dict(qt.local_parameters)) == {"weight", "weight_scale"}
+
+
+@pytest.mark.parametrize(
+    ("axis", "data_shape", "scale_shape"),
+    [(0, [128, 256], [128, 16]), (-1, [256, 128], [256, 8])],
+)
+def test_mxfp4_shard_co_shards_scales(
+    axis: int, data_shape: list[int], scale_shape: list[int]
+) -> None:
+    """Sharding places the scales with their packed rows or K blocks."""
+    with F.lazy(), patch("max.graph.type.Accelerator") as mock:
+        mock.side_effect = _fake_gpu
+        devices = [mock(0), mock(1)]
+        mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
+        sharded = MXFP4Tensor.zeros((256, 512)).shard(axis=axis, mesh=mesh)
+
+        assert isinstance(sharded, MXFP4Tensor)
+        assert sharded.weight.placements == (Sharded(axis=axis),)
+        assert sharded.weight_scale.placements == (Sharded(axis=axis),)
+        for shard in sharded.local_shards:
+            assert list(shard.weight.shape) == data_shape
+            assert list(shard.weight_scale.shape) == scale_shape
+
+
+def test_all_mxfp4_narrows_only_homogeneous_sequences() -> None:
+    """The two MX guards reject each other's tensors, not just NVFP4's."""
+    with F.lazy():
+        mx4 = MXFP4Tensor.zeros((256, 512))
+        mx8 = MXFP8Tensor.zeros((256, 512))
+        assert all_mxfp4([mx4, mx4])
+        assert not all_mxfp4([mx4, mx8])
+        assert not all_mxfp4([mx4, NVFP4Tensor.zeros((256, 512))])
+        assert not all_mxfp8([mx8, mx4])
+
+
+# --------------------------------------------------------------------------- #
+# MX containers, both formats
+# --------------------------------------------------------------------------- #
+
+_MX_CONTAINERS = pytest.mark.parametrize(
+    ("cls", "storage_dtype", "values_per_byte"),
+    [
+        (MXFP8Tensor, DType.float8_e4m3fn, 1),
+        (MXFP4Tensor, DType.uint8, 2),
+    ],
+)
+
+
+@_MX_CONTAINERS
+def test_mx_storage_is_named_on_the_class(
+    cls: type[MXFP8Tensor | MXFP4Tensor],
+    storage_dtype: DType,
+    values_per_byte: int,
+) -> None:
+    """Each MX format names its stored dtype and packing."""
+    assert cls.storage_dtype == storage_dtype
+    assert cls.values_per_byte == values_per_byte
+    assert cls.scale_dtype == DType.float8_e8m0fnu
+
+
+@_MX_CONTAINERS
+def test_mx_zeros_keeps_leading_dims(
+    cls: type[MXFP8Tensor | MXFP4Tensor],
+    storage_dtype: DType,
+    values_per_byte: int,
+) -> None:
+    """A stacked-experts shape keeps its leading axis on both leaves."""
+    with F.lazy():
+        qt = cls.zeros((4, 256, 512))
+        assert list(qt.weight.shape) == [4, 256, 512 // values_per_byte]
+        assert list(qt.weight_scale.shape) == [4, 256, 16]
+
+
+@_MX_CONTAINERS
+def test_mx_to_moves_both_leaves(
+    cls: type[MXFP8Tensor | MXFP4Tensor],
+    storage_dtype: DType,
+    values_per_byte: int,
+) -> None:
+    """MX has no host-side scalars, so ``to()`` moves every leaf."""
+    with F.lazy(), patch("max.graph.type.Accelerator") as mock:
+        mock.side_effect = _fake_gpu
+        device = mock(0)
+        moved = cls.zeros((256, 512)).to(device)
+
+        assert moved.weight.device == device
+        assert moved.weight_scale.device == device
+
+
+# --------------------------------------------------------------------------- #
+# MXFP8Quantizer / MXFP4Quantizer
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("cls", [MXFP8Quantizer, MXFP4Quantizer])
+def test_mx_quantizer_rejects_k_not_multiple_of_block(
+    cls: type[MXFP8Quantizer | MXFP4Quantizer],
+) -> None:
+    """K must divide the 32-wide MX block."""
+    with F.lazy():
+        with pytest.raises(ValueError, match="multiple of 32"):
+            cls(Tensor.zeros((4, 48), dtype=DType.bfloat16))
+
+
+_MX_QUANTIZERS = pytest.mark.parametrize(
+    ("cls", "container"),
+    [(MXFP8Quantizer, MXFP8Tensor), (MXFP4Quantizer, MXFP4Tensor)],
+)
+
+
+@_MX_QUANTIZERS
+def test_mx_quantizer_is_its_container(
+    cls: type[MXFP8Quantizer | MXFP4Quantizer],
+    container: type[MXFP8Tensor | MXFP4Tensor],
+) -> None:
+    """A quantizer passes wherever its format's container does."""
+    with F.lazy():
+        raw = Tensor.zeros((8, 32), dtype=DType.bfloat16)
+        qt = cls(raw)
+
+        assert isinstance(qt, container)
+        assert qt._tensor is raw
+        assert qt.block_size == (1, 32)
+        assert list(qt.shape) == [8, 32]
+        assert all_mxfp8([MXFP8Tensor.zeros((8, 32)), qt]) == (
+            container is MXFP8Tensor
+        )
+        assert all_mxfp4([MXFP4Tensor.zeros((8, 32)), qt]) == (
+            container is MXFP4Tensor
+        )
+
+
+@_MX_QUANTIZERS
+def test_mx_quantizer_parameter_path_is_the_raw_weight(
+    cls: type[MXFP8Quantizer | MXFP4Quantizer],
+    container: type[MXFP8Tensor | MXFP4Tensor],
+) -> None:
+    """The bf16 tensor loads as the checkpoint's ``proj.weight``."""
+
+    class _Wrapper(Module[[], None]):
+        def __init__(self) -> None:
+            super().__init__()
+            self.proj = cls(Tensor.zeros((8, 32), dtype=DType.bfloat16))
+
+        def forward(self) -> None:  # pragma: no cover - never called
+            raise NotImplementedError
+
+    with F.lazy():
+        wrapper = _Wrapper()
+        parameters = dict(wrapper.parameters)
+
+        assert set(parameters) == {"proj.weight"}
+        assert parameters["proj.weight"] is wrapper.proj._tensor
+
+
+@_MX_QUANTIZERS
+def test_mx_quantizer_tree_roundtrip_keeps_the_raw_tensor(
+    cls: type[MXFP8Quantizer | MXFP4Quantizer],
+    container: type[MXFP8Tensor | MXFP4Tensor],
+) -> None:
+    """Rebuilding the module tree puts the bf16 tensor back as ``_tensor``."""
+    with F.lazy():
+        raw = Tensor.zeros((8, 32), dtype=DType.bfloat16)
+        leaves, treedef = tree.flatten(cls(raw))
+        rebuilt = tree.unflatten(treedef, leaves)
+
+        assert isinstance(rebuilt, cls)
+        assert rebuilt.block_size == (1, 32)
+        assert rebuilt._tensor is raw
+
+
+def test_mxfp8_quantizer_packs_on_first_use(sm100_arch: None) -> None:
+    """Its fields read the MXFP8 quantization, with rank-2 checkpoint scales."""
+    del sm100_arch
+    with F.lazy():
+        qt = MXFP8Quantizer(Tensor.zeros((128, 64), dtype=DType.bfloat16))
+
+        assert qt.weight.dtype == DType.float8_e4m3fn
+        assert list(qt.weight.shape) == [128, 64]
+        assert qt.weight_scale.dtype == DType.float8_e8m0fnu
+        assert list(qt.weight_scale.shape) == [128, 2]
+
+
+def test_mxfp4_quantizer_packs_on_first_use() -> None:
+    """Its fields read the MXFP4 quantization; the op is rank-2 everywhere."""
+    with F.lazy():
+        qt = MXFP4Quantizer(Tensor.zeros((128, 64), dtype=DType.bfloat16))
+
+        assert qt.weight.dtype == DType.uint8
+        assert list(qt.weight.shape) == [128, 32]
+        assert qt.weight_scale.dtype == DType.float8_e8m0fnu
+        assert list(qt.weight_scale.shape) == [128, 2]

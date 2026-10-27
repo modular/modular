@@ -302,6 +302,9 @@ async def test_ttft_recorded_once_per_chunk() -> None:
 
     # Verify TTFT called exactly once, ITL called for remaining 2 chunks
     assert mock_metrics.ttft.call_count == 1
+    mock_metrics.ttft_by_prompt_length.assert_called_once_with(
+        mock_metrics.ttft.call_args.args[0], 10
+    )
     assert mock_metrics.itl.call_count == 2
     assert len(chunks) == 3
 

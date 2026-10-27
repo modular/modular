@@ -1,0 +1,57 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------===##
+
+# Native-FP8 sparse MLA prefill at the GLM-5.2 / GLM-5.3 B200 shape: 64 heads
+# at TP=8 (8 per GPU), 576-wide latent row, top_k 2048, page size 128. A
+# sweep runs one process per params group.
+#
+# Usage:
+#   kbench bench_mla_prefill_sparse.yaml --timeout-secs 600
+#   kbench bench_mla_prefill_sparse.yaml --param cache_len:"[0]"
+
+name: bench_mla_prefill_sparse
+file: $KERNEL_BENCHMARKS_ROOT/sweep/bench_mla_prefill_sparse.mojo
+sweep: true
+
+params:
+
+# One prefill chunk per recipe (max_batch_input_tokens: 2048 for GLM-5.3 FP8,
+# 8192 for GLM-5.2 / 5.3 NVFP4) over a growing prefix. At cache_len 0 the
+# first 2047 positions see fewer than top_k keys; past that every position
+# reads a full 2048, so only gather locality changes along this axis.
+- num_heads: 8
+  page_size: 128
+  top_k: 2048
+  $batch_size: [1]
+  $seq_len: [2048, 8192]
+  $cache_len: [0, 8192, 65536, 131072]
+
+# The same token budget split across several shorter prompts.
+- num_heads: 8
+  page_size: 128
+  top_k: 2048
+  $batch_size: [4]
+  $seq_len: [512, 2048]
+  $cache_len: [0, 8192]

@@ -372,6 +372,15 @@ class ModelWorker:
                 process took to start (Python imports + driver init), which
                 can dominate first-run startup on cold filesystem caches.
         """
+        if (
+            pipeline_config.speculative is not None
+            and pipeline_config.speculative.draft_probs_layout == "replica"
+        ):
+            raise ValueError(
+                "MAX Serve does not support draft_probs_layout='replica':"
+                " its speculative pipeline binds one proposal-distribution"
+                " buffer. Use draft_probs_layout='device0' for MAX Serve."
+            )
         # Tracing first: configure_logging adds the dd.trace_id field only
         # when tracing is on.
         _configure_worker_tracing(settings, pipeline_config.profiling)
