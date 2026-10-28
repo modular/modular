@@ -197,6 +197,11 @@ blow-up is in CI, not locally.
   Sharding distributes tests across CI workers via round-robin. Each shard
   runs as its own pytest process, so tests that would serialize locally now
   compile in parallel across separate workers.
+
+  On a GPU test, each shard holds a GPU while it compiles, so sharding cuts
+  the wall clock but not the GPU time. Precompile first (next item), and
+  shard only what still runs on the GPU. See
+  [GPU test cost](../AGENTS.md#gpu-test-cost).
 - **Move the compiles off the GPU worker entirely**: a GPU test that compiles
   its own graphs can set `precompile_mefs = True` on its `modular_py_test`.
   Bazel then runs the test once as a CPU build action to record what each
