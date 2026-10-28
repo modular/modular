@@ -44,14 +44,25 @@ class HYV4ReasoningParser(ReasoningParser):
     Once reasoning has closed, in the prompt or in the output, a later
     ``<think:opensource>`` is content: the model emits that id as plain text
     mid-answer, and Hy4 has no second reasoning span.
+
+    Reasoning also ends at ``<tool_calls:opensource>``, where tool-call
+    grammar enforcement starts; that marker stays in content for the tool
+    parser.
     """
 
     REASONING_START: ClassVar[str] = f"<think{TOKEN_SUFFIX}>"
     REASONING_END: ClassVar[str] = f"</think{TOKEN_SUFFIX}>"
+    TOOL_SECTION_START: ClassVar[str] = f"<tool_calls{TOKEN_SUFFIX}>"
 
-    def __init__(self, think_start_token_id: int, think_end_token_id: int):
+    def __init__(
+        self,
+        think_start_token_id: int,
+        think_end_token_id: int,
+        tool_section_start_token_id: int | None = None,
+    ):
         self.think_start_token_id = think_start_token_id
         self.think_end_token_id = think_end_token_id
+        self.tool_section_start_token_id = tool_section_start_token_id
 
     def stream(
         self,
@@ -72,16 +83,22 @@ class HYV4ReasoningParser(ReasoningParser):
         for i, token_id in enumerate(delta_token_ids):
             if start_idx is None and token_id == self.think_start_token_id:
                 start_idx = i
-            elif token_id == self.think_end_token_id:
+            elif token_id in (
+                self.think_end_token_id,
+                self.tool_section_start_token_id,
+            ):
                 end_idx = i
                 break
 
         begin = 0 if start_idx is None else start_idx + 1
         begin_with_delimiters = 0 if start_idx is None else start_idx
         end = len(delta_token_ids) if end_idx is None else end_idx
-        end_with_delimiters = (
-            len(delta_token_ids) if end_idx is None else end_idx + 1
-        )
+        end_with_delimiters = end
+        if (
+            end_idx is not None
+            and delta_token_ids[end_idx] == self.think_end_token_id
+        ):
+            end_with_delimiters += 1
         return ParsedReasoningDelta(
             span=ReasoningSpan(
                 reasoning_with_delimiters=(
@@ -97,7 +114,9 @@ class HYV4ReasoningParser(ReasoningParser):
         """Returns whether the last think tag in the prompt is an opening one.
 
         Scans right to left because multi-turn prompts carry closed think
-        blocks from earlier assistant turns.
+        blocks from earlier assistant turns. Unlike :meth:`stream`, it need
+        not stop at ``<tool_calls:opensource>``: the chat template always
+        ends the generation prompt with a think tag.
         """
         for token_id in reversed(prompt_token_ids):
             if token_id == self.think_start_token_id:
@@ -118,7 +137,13 @@ class HYV4ReasoningParser(ReasoningParser):
                 f"{cls.__name__} could not locate {cls.REASONING_START} and"
                 f" {cls.REASONING_END} as single tokens in the tokenizer"
             )
-        return cls(think_start_token_id=start_id, think_end_token_id=end_id)
+        return cls(
+            think_start_token_id=start_id,
+            think_end_token_id=end_id,
+            tool_section_start_token_id=await convert_token_to_id(
+                tokenizer, cls.TOOL_SECTION_START
+            ),
+        )
 
     @classmethod
     async def reasoning_end_token_id(
