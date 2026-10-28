@@ -145,31 +145,18 @@ The following metrics track batch composition and per-batch throughput.
 
 {/* END METRICS: Batch scheduler */}
 
-Batch execution time is a host executor service interval, not GPU kernel time.
-Without overlap it measures the call to `pipeline.execute()`, excluding batch
-construction, scheduler advancement, release, and response publication. With
-overlap it is the observed completion time minus the later of the batch's
-enqueue time and the previous successful batch's observed completion time.
+Batch execution time measures host-side executor time (rather than GPU kernel
+time).
 
-Both modes include executor preparation, sampling, and synchronization. Overlap
-can also include time between the forward finishing and the host observing its
-completion, including other batches' scheduling and advancement. Successful
-completions record once, including final drains; failed launches and completions
-do not contribute a successful execution-time sample.
+Prompt and generation throughput use this execution time as their denominator.
+Prompt throughput counts active input tokens, including decode rows in mixed
+batches. Generation throughput counts returned output tokens, including prefill
+outputs and accepted speculative tokens.
 
-The prompt throughput numerator is all active input tokens, including decode
-rows in mixed batches. Generation throughput counts returned output tokens
-before scheduler filtering, including prefill outputs and accepted plus bonus
-speculative outputs. Both rates use this execution interval, and overlap labels
-and counts describe the completed batch. A completion with zero duration records
-time but omits rates.
-
-This timing change retains MAX's existing metric names and `CE` / `TG` labels.
-Mach retains its own names and `prefill` / `decode` / `mixed` labels; no shared
-name or batch-label migration is part of this change.
-
-`max.scheduler.batch_step_time` preserves the former full scheduler-step
-interval as a separate diagnostic; it is not a throughput denominator.
+All batch scheduler metrics include a `batch_type` label: `CE` for context
+encoding (prefill) and `TG` for token generation (decode). To measure the full
+scheduler step, including request advancement and response publication, use
+`max_scheduler_batch_step_time_milliseconds`.
 
 ### KV cache
 
