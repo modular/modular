@@ -224,6 +224,7 @@ modular_cc_test(
     size = "small",
     srcs = [
         "lib/Metal/Common.h",
+        "lib/Metal/MetalCpp.h",
         "test/Fixture.h",
         "test/MetalPluginTest.cpp",
     ],
@@ -236,6 +237,8 @@ modular_cc_test(
     visibility = ["//visibility:private"],
     deps = [
         ":DriverPluginTests",
+        "//Support:Base",
+        "@metal-cpp//:metal-cpp",
         "@tl_expected",
     ],
 )

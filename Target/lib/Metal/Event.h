@@ -19,19 +19,27 @@
 #include "MetalCpp.h"
 
 #include <atomic>
+#include <mutex>
+#include <optional>
 
 struct M_driver_context;
 
 struct M_driver_event {
-  // Exactly one is populated based on the EVENT_FLAG_CPU_VISIBLE bit at
+  // At most one is populated, based on the EVENT_FLAG_CPU_VISIBLE bit at
   // creation time.
   //
   // - sharedEvent: requested CPU-visible. Supports both host-side ops
   //   (setSignaledValue, signaledValue, waitUntilSignaledValue) and GPU-
   //   side encode ops via the MTL::Event base class.
-  // - deviceEvent: intra-GPU only (no host-side query/wait API).
+  // - deviceEvent: intra-GPU only (no host query/wait API). Created lazily.
   NS::SharedPtr<MTL::SharedEvent> sharedEvent;
   NS::SharedPtr<MTL::Event> deviceEvent;
+  MTL::Device *device = nullptr;
+
+  // Guards deviceEvent creation, which races across queues, and the signpost.
+  std::mutex mutex;
+  std::optional<NS::SharedPtr<MTL::Event>> signpostTimeline;
+  uint64_t signpostValue = 0; // 0: already complete
 
   // Latest recording's value; 0 = never recorded.
   std::atomic<uint64_t> targetValue{0};
@@ -42,6 +50,8 @@ struct M_driver_event {
     return sharedEvent ? static_cast<MTL::Event *>(sharedEvent.get())
                        : deviceEvent.get();
   }
+
+  bool ensureDeviceEvent();
 
   [[nodiscard]] static DriverResult<M_driver_event_t>
   create(M_driver_context &ctx, M_driver_event_flags_t flags);
