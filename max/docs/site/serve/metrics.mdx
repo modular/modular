@@ -230,8 +230,9 @@ on, set `--dp-ce-balance-timeout-ms` to `0` or higher.
 
 ### Vision and video
 
-The following metrics track vision and video encoder activity and cache
-performance.
+The following metrics track vision and video encoder activity and caching,
+including the image work the API server does at admission: checking the
+preprocess cache, then decoding what it cannot serve.
 
 {/* BEGIN METRICS: Vision and video */}
 
@@ -359,8 +360,10 @@ MAX records these metrics only in disaggregated inference deployments.
 
 ### Structured output and tool calls
 
-The following metrics track schema-conformance errors and grammar-rejection
-rates for structured output and tool calls.
+The following metrics track how requests use structured output and tools: how
+many carry a response format or declare tools, how often a response emits a
+tool call, how long a grammar build takes, and where a schema fails to compile
+or a response fails conformance.
 
 {/* BEGIN METRICS: Structured output and tool calls */}
 
