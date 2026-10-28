@@ -360,6 +360,9 @@ class BatchMetrics:
     dkv_prepare_load_degraded: int = 0
     dkv_load_with_plan_degraded: int = 0
     dkv_load_with_plan_expired: int = 0
+    # Lookups a hinted peer served while the co-located dKV was down, which
+    # read against the fail-opens show how much of an outage peers covered.
+    dkv_peer_rounds_while_degraded: int = 0
     # The dKV orphan queue: per-window outcome counts that publish as counters
     # and a depth level that publishes as a gauge, on the same guard. See
     # KVCacheMetrics for what each counts.
@@ -547,6 +550,7 @@ class BatchMetrics:
         dkv_prepare_load_degraded = 0
         dkv_load_with_plan_degraded = 0
         dkv_load_with_plan_expired = 0
+        dkv_peer_rounds_while_degraded = 0
         dkv_orphan_cleanups_reissued = 0
         dkv_orphan_cleanups_abandoned = 0
         dkv_orphan_cleanups_dropped = 0
@@ -693,6 +697,9 @@ class BatchMetrics:
                 metrics_agg.dkv_load_with_plan_degraded
             )
             dkv_load_with_plan_expired = metrics_agg.dkv_load_with_plan_expired
+            dkv_peer_rounds_while_degraded = (
+                metrics_agg.dkv_peer_rounds_while_degraded
+            )
             dkv_orphan_cleanups_reissued = (
                 metrics_agg.dkv_orphan_cleanups_reissued
             )
@@ -853,6 +860,7 @@ class BatchMetrics:
             dkv_prepare_load_degraded=dkv_prepare_load_degraded,
             dkv_load_with_plan_degraded=dkv_load_with_plan_degraded,
             dkv_load_with_plan_expired=dkv_load_with_plan_expired,
+            dkv_peer_rounds_while_degraded=dkv_peer_rounds_while_degraded,
             dkv_orphan_cleanups_reissued=dkv_orphan_cleanups_reissued,
             dkv_orphan_cleanups_abandoned=dkv_orphan_cleanups_abandoned,
             dkv_orphan_cleanups_dropped=dkv_orphan_cleanups_dropped,
@@ -1340,6 +1348,9 @@ class BatchMetrics:
             extra["dkv_load_with_plan_expired"] = (
                 self.dkv_load_with_plan_expired
             )
+            extra["dkv_peer_rounds_while_degraded"] = (
+                self.dkv_peer_rounds_while_degraded
+            )
             extra["dkv_orphan_cleanups_reissued"] = (
                 self.dkv_orphan_cleanups_reissued
             )
@@ -1561,6 +1572,9 @@ class BatchMetrics:
                 self.dkv_load_with_plan_degraded
             )
             METRICS.dkv_load_with_plan_expired(self.dkv_load_with_plan_expired)
+            METRICS.dkv_peer_rounds_while_degraded(
+                self.dkv_peer_rounds_while_degraded
+            )
             METRICS.dkv_orphan_cleanups_reissued(
                 self.dkv_orphan_cleanups_reissued
             )

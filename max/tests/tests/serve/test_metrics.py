@@ -696,6 +696,14 @@ def test_dkv_fail_open_counters_are_counters() -> None:
         metrics.MaxMeasurement(name, 7).commit()  # Should not raise
 
 
+def test_dkv_peer_rounds_while_degraded_is_a_counter() -> None:
+    """Published beside the fail-opens as a per-batch delta, so a counter."""
+    common.configure_metrics(Settings())
+    name = "max.dkv.peer_rounds_while_degraded"
+    assert isinstance(metrics.SERVE_METRICS[name], _ProxyCounter)
+    metrics.MaxMeasurement(name, 7).commit()  # Should not raise
+
+
 def test_tool_call_conformance_error_counter() -> None:
     """The tool-call conformance counter records with a bounded 'outcome' tag."""
     common.configure_metrics(Settings())

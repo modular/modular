@@ -592,19 +592,24 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="hints",
         description="Cache hints that arrived but were unusable: bytes that did not parse, an unknown version, a chain that does not describe the request, no entry for the requested group, or a source instance record that failed validation. Counted per entry on the two-phase load path and per call on the fused one.",
     ),  # type: ignore
-    # Fail-opens: loads the connector answered as misses without a transfer.
+    # Fail-opens: loads the connector answered as misses without a transfer,
+    # and the lookups hinted peers still served through the same outage.
     # Counters, since take_metrics clears them every batch like the peer set.
     "max.dkv.prepare_load_degraded": _create_counter(
         "max.dkv.prepare_load_degraded",
-        description="dKV lookups that found the connector degraded and planned nothing, so the request was served as a cache miss. Read with max.dkv.load_with_plan_degraded and max.dkv.load_with_plan_expired, which count an outage that starts after the lookup.",
+        description="dKV lookups that found the co-located dKV down and left blocks to it, so those blocks were served as cache misses. Blocks a hinted peer served load as usual. Read with max.dkv.load_with_plan_degraded and max.dkv.load_with_plan_expired, which count an outage that starts after the lookup.",
     ),
     "max.dkv.load_with_plan_degraded": _create_counter(
         "max.dkv.load_with_plan_degraded",
-        description="dKV loads whose connector degraded between the lookup and the post, so the leased blocks were released and the request was served as a cache miss.",
+        description="dKV loads whose co-located dKV went down between the lookup and the post, so the blocks leased from it were released and served as cache misses. Blocks leased from a hinted peer still load.",
     ),
     "max.dkv.load_with_plan_expired": _create_counter(
         "max.dkv.load_with_plan_expired",
         description="dKV read leases that aged past their deadline before the load posted them, released as a miss rather than read. Counted per lease, so one load spanning several dKV instances can count more than one.",
+    ),
+    "max.dkv.peer_rounds_while_degraded": _create_counter(
+        "max.dkv.peer_rounds_while_degraded",
+        description="dKV lookups that found the co-located dKV down and still leased a loadable run from a peer the request's cache hint named. Read with max.dkv.prepare_load_degraded, which counts the lookups that left blocks to the co-located dKV, to see how much of a dKV restart the peers covered.",
     ),
     # The dKV orphan queue, where failed reader-pin releases and Filling aborts
     # wait to be sent again. Counters for the outcomes, since take_metrics
@@ -2354,6 +2359,15 @@ class _AsyncMetrics:
         self.client.send_measurement(
             MaxMeasurement(
                 "max.dkv.load_with_plan_expired",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_peer_rounds_while_degraded(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.peer_rounds_while_degraded",
                 value,
                 self.extra_attributes,
             ),

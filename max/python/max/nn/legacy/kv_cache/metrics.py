@@ -231,15 +231,22 @@ class KVCacheMetrics:
     """Recency touches the client dropped because a touch it sent within the
     last second already covered their keys, each an RPC the store was spared."""
 
-    # dKV fail-opens: loads answered as misses without a transfer. Per-window
+    # dKV fail-opens: loads answered as misses without a transfer, and the
+    # lookups hinted peers still served through the same outage. Per-window
     # deltas like the peer counters, so a tier serving every load as a miss
     # reads as one rather than as a cold cache.
     dkv_prepare_load_degraded: int = 0
-    """Lookups that found the connector degraded and planned nothing."""
+    """Lookups that found the co-located dKV down and left blocks to it, which
+    missed. Blocks a hinted peer served load as usual."""
     dkv_load_with_plan_degraded: int = 0
-    """Loads whose connector degraded between the lookup and the post."""
+    """Loads whose co-located dKV went down between the lookup and the post,
+    releasing what it leased. Blocks leased from a hinted peer still load."""
     dkv_load_with_plan_expired: int = 0
     """Leases that aged past their deadline before the load posted them."""
+    dkv_peer_rounds_while_degraded: int = 0
+    """Lookups that found the co-located dKV down and still leased a loadable
+    run from a hinted peer, so they served hits the fail-opens above would
+    have missed."""
 
     # The dKV orphan queue, where a failed reader-pin release or Filling abort
     # waits to be sent again. The outcome counts are per-window deltas like the
@@ -465,6 +472,8 @@ class KVCacheMetrics:
             + other.dkv_load_with_plan_degraded,
             dkv_load_with_plan_expired=self.dkv_load_with_plan_expired
             + other.dkv_load_with_plan_expired,
+            dkv_peer_rounds_while_degraded=self.dkv_peer_rounds_while_degraded
+            + other.dkv_peer_rounds_while_degraded,
             dkv_orphan_cleanups_reissued=self.dkv_orphan_cleanups_reissued
             + other.dkv_orphan_cleanups_reissued,
             dkv_orphan_cleanups_abandoned=self.dkv_orphan_cleanups_abandoned

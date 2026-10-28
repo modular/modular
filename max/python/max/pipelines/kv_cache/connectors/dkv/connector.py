@@ -163,6 +163,8 @@ class _DkvClient(Protocol):
 
     def is_healthy(self) -> bool: ...
 
+    def attached_peers(self) -> int: ...
+
     def lookup(
         self,
         *,
@@ -1067,9 +1069,9 @@ class _DkvPendingProbe:
     """One pricing's presence calls, one per shard layout, polled as one.
 
     Answers per replica asked, as :meth:`DKVConnector.probe` does. A
-    replica that could not load when the calls started answers an empty
-    mapping, so it still leases if it reconnects. Reads ``None`` when any
-    call was shed, timed out, or reached a server without presence.
+    replica the calls did not price answers an empty mapping, so its own
+    lease decides what it loads. Reads ``None`` when any call was shed, timed
+    out, or reached a server without presence.
     """
 
     def __init__(
@@ -1654,6 +1656,12 @@ class DKVConnector(KVConnector):
             }
             for clients in self._clients
         ]
+        self._peer_count_replicas = [
+            all(
+                hasattr(client, "attached_peers") for client in clients.values()
+            )
+            for clients in self._clients
+        ]
 
     def lookup(
         self,
@@ -1726,10 +1734,13 @@ class DKVConnector(KVConnector):
         client of that layout, which is one call for a uniform tree. Every
         replica of a tenant shares one store, so one healthy replica's
         clients answer for every replica that can load, and a replica with
-        a degraded leaf client loads nothing until it reconnects, so it
-        answers all misses. Those answers share two masks mappings, one for
-        every replica that can load and one for every replica that cannot,
-        so a caller reads them and never changes them in place. Presence
+        a degraded leaf client loads nothing from that store until it
+        reconnects, so it answers all misses. When no replica can load,
+        a hint can still be served by the peers it names, so the first
+        replica whose clients have a peer attached is priced through its own
+        client instead (see :meth:`_pricing_replicas`). Those answers share
+        two masks mappings, one for every replica priced and one for every
+        other, so a caller reads them and never changes them in place. Presence
         pins nothing, stages no disk block and bumps no read tally, all
         three of which a leased ``lookup`` does, so it leaves every
         request's outstanding lease alone.
@@ -1738,12 +1749,15 @@ class DKVConnector(KVConnector):
         peer, prices with one client ``lookup`` on the first full-attention
         leaf, which pins and releases inline and stages disk blocks. It
         takes no hint, so pricing never dials a peer on the scheduler
-        thread. ``None`` only for a tree without a full-attention leaf.
+        thread, and a degraded replica priced through its peers answers
+        misses without that lookup. ``None`` only for a tree without a
+        full-attention leaf.
         """
         misses: Mapping[str, Sequence[bool]] = {
             leaf_id: [False] * len(block_hashes) for leaf_id in self._leaves
         }
-        able = [r for r in replica_idxs if self._can_load(r)]
+        usable_hint = self._usable_hint(hint)
+        able = self._pricing_replicas(replica_idxs, usable_hint)
         if not block_hashes or not able:
             return [misses for _ in replica_idxs]
 
@@ -1756,9 +1770,10 @@ class DKVConnector(KVConnector):
             and clients[leaf_ids[0]].presence_supported()
             for leaf_ids in self._presence_layouts
         ):
-            return self._probe_one_leaf(dkv_hashes, replica_idxs, able)
+            return self._probe_without_presence(
+                dkv_hashes, replica_idxs, able, misses
+            )
 
-        usable_hint = self._usable_hint(hint)
         answered: dict[str, Sequence[bool]] = {}
         for leaf_ids in self._presence_layouts:
             answer = clients[leaf_ids[0]].presence(
@@ -1767,7 +1782,9 @@ class DKVConnector(KVConnector):
                 hint=usable_hint,
             )
             if answer is None:
-                return self._probe_one_leaf(dkv_hashes, replica_idxs, able)
+                return self._probe_without_presence(
+                    dkv_hashes, replica_idxs, able, misses
+                )
             if len(answer) != len(leaf_ids) or any(
                 len(mask) != len(dkv_hashes) for mask in answer
             ):
@@ -1794,9 +1811,8 @@ class DKVConnector(KVConnector):
         """Starts :meth:`probe`'s presence calls and returns at once.
 
         Returns a handle that answers as :meth:`probe` does for the replicas
-        that could load when it started, and ``None`` when some layout's
-        client or server lacks presence, which leaves the manager on
-        :meth:`probe`.
+        it priced when it started, and ``None`` when some layout's client or
+        server lacks presence, which leaves the manager on :meth:`probe`.
         """
         if not block_hashes:
             return CompletedProbe(
@@ -1805,7 +1821,8 @@ class DKVConnector(KVConnector):
                     for _ in replica_idxs
                 ]
             )
-        able = [r for r in replica_idxs if self._can_load(r)]
+        usable_hint = self._usable_hint(hint)
+        able = self._pricing_replicas(replica_idxs, usable_hint)
         if not able:
             return CompletedProbe(None)
 
@@ -1819,7 +1836,6 @@ class DKVConnector(KVConnector):
             return None
 
         dkv_hashes = [_to_dkv_u64(h) for h in block_hashes]
-        usable_hint = self._usable_hint(hint)
         handles = [
             (
                 leaf_ids,
@@ -1834,6 +1850,24 @@ class DKVConnector(KVConnector):
         return _DkvPendingProbe(
             list(self._leaves), handles, len(dkv_hashes), replica_idxs, able
         )
+
+    def _probe_without_presence(
+        self,
+        dkv_hashes: Sequence[int],
+        replica_idxs: Sequence[int],
+        able: Sequence[int],
+        misses: Mapping[str, Sequence[bool]],
+    ) -> list[Mapping[str, Sequence[bool]]] | None:
+        """Prices :meth:`probe` where presence cannot answer.
+
+        A degraded replica is priced only through the peers its hint names,
+        and the client lookup takes no hint, so its client would answer that
+        lookup all misses behind the connector lock. Every replica then
+        answers misses and no client is asked.
+        """
+        if not self._can_load(able[0]):
+            return [misses for _ in replica_idxs]
+        return self._probe_one_leaf(dkv_hashes, replica_idxs, able)
 
     def _probe_one_leaf(
         self,
@@ -1873,6 +1907,38 @@ class DKVConnector(KVConnector):
         """Whether every leaf client of ``replica_idx`` is serving."""
         return all(
             client.is_healthy()
+            for client in self._clients[replica_idx].values()
+        )
+
+    def _pricing_replicas(
+        self, replica_idxs: Sequence[int], hint: bytes | None
+    ) -> list[int]:
+        """Returns the replicas one presence answer prices.
+
+        Every replica that can load, or, when none can, the first whose
+        clients have a peer attached that ``hint`` could name. A degraded
+        client still serves those peers and misses what it leaves to the
+        co-located dKV, so its presence answer is what its own lease would
+        find. Which peers a client has attached, and which it remembers as
+        failed, is its own, so that answer prices its replica alone. A
+        degraded replica without a hint or an attached peer would answer all
+        misses, so it is not asked and its connector lock is not taken.
+
+        TODO(CLIN-1918): pricing a degraded replica takes its connector lock
+        on the scheduler thread, so it waits out the teardown RPCs a
+        reconnect issues under that lock. They are quick on a real restart,
+        but a dKV that answers probes and stalls block operations stalls
+        pricing with them.
+        """
+        able = [r for r in replica_idxs if self._can_load(r)]
+        if able or hint is None:
+            return able
+        return next(([r] for r in replica_idxs if self._reaches_peers(r)), [])
+
+    def _reaches_peers(self, replica_idx: int) -> bool:
+        """Whether a leaf client of ``replica_idx`` has a peer attached."""
+        return self._peer_count_replicas[replica_idx] and any(
+            client.attached_peers() > 0
             for client in self._clients[replica_idx].values()
         )
 
@@ -2548,6 +2614,11 @@ class DKVConnector(KVConnector):
                     dkv_prepare_load_degraded=m["prepare_load_degraded"],
                     dkv_load_with_plan_degraded=m["load_with_plan_degraded"],
                     dkv_load_with_plan_expired=m["load_with_plan_expired"],
+                    # What the peers covered of those fail-opens. An
+                    # extension predating it reports none, read as no round.
+                    dkv_peer_rounds_while_degraded=m.get(
+                        "peer_rounds_while_degraded", 0
+                    ),
                     # The orphan queue, folded per leaf client like the settle
                     # worker below: per-window outcome counts and a depth
                     # level. An extension predating them reports none.
