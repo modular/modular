@@ -887,31 +887,33 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
           state.declScope.getKnownAssumptionsIncludingParents(assumptions);
         }
 
-        fixableByUpCast = llvm::all_of(toCheck, [&](TypedAttr typeExpr) {
-          assert(LIT::isTypeExpr(typeExpr));
-          // Try get the tightest possible metatype bound.
-          Type tightestBound = ASTType(typeExpr).extractMetaType();
-          if (!tightestBound) {
-            // `struct __MLIRType` is the corner case here :(.
-            tightestBound = typeExpr.getType();
-          }
-          FailureOr<ConstraintResult> upCastable =
-              IREmitter::canMetaTypeUpCastToWithDetails(
-                  shared, state.declScope.getLoc(), tightestBound, targetMT,
-                  &state.declScope, /*scopeDependent=*/nullptr);
-          if (succeeded(upCastable) && upCastable->isYes())
-            return true;
-          if (succeeded(upCastable))
-            upCastFailure = std::move(*upCastable);
+        fixableByUpCast =
+            !state.paramFinder.hasReferences(targetMT) &&
+            llvm::all_of(toCheck, [&](TypedAttr typeExpr) {
+              assert(LIT::isTypeExpr(typeExpr));
+              // Try get the tightest possible metatype bound.
+              Type tightestBound = ASTType(typeExpr).extractMetaType();
+              if (!tightestBound) {
+                // `struct __MLIRType` is the corner case here :(.
+                tightestBound = typeExpr.getType();
+              }
+              FailureOr<ConstraintResult> upCastable =
+                  IREmitter::canMetaTypeUpCastToWithDetails(
+                      shared, state.declScope.getLoc(), tightestBound, targetMT,
+                      &state.declScope, /*scopeDependent=*/nullptr);
+              if (succeeded(upCastable) && upCastable->isYes())
+                return true;
+              if (succeeded(upCastable))
+                upCastFailure = std::move(*upCastable);
 
-          if (!assumptions.empty()) {
-            if (auto targetTrait = dyn_cast<TraitType>(targetMT)) {
-              return (LIT::attrConformsToTraitUnderAssumptions(
-                  typeExpr, targetTrait, shared, assumptions));
-            }
-          }
-          return false;
-        });
+              if (!assumptions.empty()) {
+                if (auto targetTrait = dyn_cast<TraitType>(targetMT)) {
+                  return (LIT::attrConformsToTraitUnderAssumptions(
+                      typeExpr, targetTrait, shared, assumptions));
+                }
+              }
+              return false;
+            });
 
         if (fixableByUpCast) {
           SmallVector<TypedAttr> casted =
