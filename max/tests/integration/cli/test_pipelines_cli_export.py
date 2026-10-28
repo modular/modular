@@ -59,6 +59,10 @@ def test_export_writes_the_graphs_by_role(tmp_path: Path) -> None:
     engine_config = sections["engine_config"]
     assert engine_config["max_batch_size"] == 1
     assert engine_config["max_length"] == 128
+    # Llama's one attention cache, which is not in a tree, and its pool leaf.
+    caches = sections["kv_cache"]["caches"]
+    assert [(cache["name"], cache["kind"]) for cache in caches] == [("", "mha")]
+    assert [leaf["leaf_id"] for leaf in caches[0]["leaves"]] == ["full_group"]
     loaded = deserialize(dest).model
     assert loaded is not None
     assert set(loaded.roles) == {"decoder", "sampler"}

@@ -19,7 +19,7 @@ import shutil
 import tempfile
 from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path, PurePosixPath
 from typing import Protocol, TypeAlias, TypeVar, runtime_checkable
 
@@ -329,6 +329,36 @@ def expect(value: object, type_: type[_T]) -> _T:
     raise TypeError(
         f"expected {type_.__name__}, got {type(value).__name__}: {value!r}"
     )
+
+
+def unknown_fields(value: Mapping[str, object], cls: type) -> list[str]:
+    """Returns the keys of ``value`` that aren't fields of ``cls``, sorted.
+
+    ``cls`` is a dataclass.
+    """
+    return sorted(set(value) - {field.name for field in fields(cls)})
+
+
+def decode_object(value: ArtifactType, cls: type) -> dict[str, ArtifactType]:
+    """Returns a decoded JSON object, checked to hold only fields of ``cls``.
+
+    ``cls`` is a dataclass.
+
+    Raises:
+        TypeError: If ``value`` is not an object.
+        ValueError: If ``value`` holds a field ``cls`` doesn't have.
+    """
+    obj = expect(value, dict)
+    if unknown := unknown_fields(obj, cls):
+        raise ValueError(f"unknown fields {unknown}")
+    return obj
+
+
+def decode_optional(
+    decoder: Callable[[ArtifactType], _T],
+) -> Callable[[ArtifactType], _T | None]:
+    """Returns ``decoder`` extended to decode ``None`` as itself."""
+    return lambda value: None if value is None else decoder(value)
 
 
 def decode_field(

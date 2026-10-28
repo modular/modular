@@ -39,12 +39,22 @@ from max._artifact.engine_config import (
     EngineSamplingConfig,
     EngineSpeculativeConfig,
 )
+from max._artifact.kv_cache import (
+    KVCacheLayout,
+    KVPoolLeaf,
+    MHAKVCache,
+    MLAKVCache,
+    MSAKVCache,
+    RecurrentStateCache,
+    StateRegion,
+)
 from max._artifact.metadata import ARTIFACT_VERSION
 from max._artifact.model_artifact import ModelArtifact
 from max._artifact.pipeline_modules import PipelineModules
 from max._artifact.serialization import deserialize, serialize
 from max._artifact.value_types import sha256_file
 from max.driver import DeviceSpec
+from max.dtype import DType
 from typing_extensions import Self
 
 MODEL_REVISION = "a" * 40
@@ -447,12 +457,14 @@ def test_component_types() -> None:
         "model": PipelineModules,
         "batch_processor": BatchProcessorDims,
         "engine_config": EngineConfig,
+        "kv_cache": KVCacheLayout,
     }
     assert FakeArtifact.component_types() == {
         **dict.fromkeys(ModelArtifact.component_slots()),
         "model": PipelineModules,
         "batch_processor": BatchProcessorDims,
         "engine_config": EngineConfig,
+        "kv_cache": KVCacheLayout,
         "scratch": FakeComponent,
         "tokenizer": FakeComponent,
     }
@@ -579,4 +591,133 @@ def test_malformed_engine_config_rejected(
     edit(sections["engine_config"])
     _rewrite_sections(dest, sections)
     with pytest.raises(ArtifactError, match="component 'engine_config'"):
+        deserialize(dest)
+
+
+def _attention_fields(name: str, group: str) -> dict[str, Any]:
+    return {
+        "name": name,
+        "dtype": DType.bfloat16,
+        "num_layers": 2,
+        "head_dim": 128,
+        "v_head_dim": None,
+        "window_size": None,
+        "slots_per_page": 128,
+        "stride_alignment": None,
+        "scratch": False,
+        "kvcache_quant_config": None,
+        "leaves": (
+            KVPoolLeaf(
+                leaf_id=f"{name}.{group}",
+                group="full",
+                window_size=None,
+                bytes_per_page=131072,
+                stride_alignment=None,
+            ),
+        ),
+    }
+
+
+KV_CACHE = KVCacheLayout(
+    page_size=128,
+    caches=(
+        MHAKVCache(
+            **_attention_fields("attention", "full_group"),
+            n_kv_heads=4,
+            allow_kv_head_replication=False,
+        ),
+        MSAKVCache(
+            **_attention_fields("indexer", "full_group"),
+            n_kv_heads=1,
+            allow_kv_head_replication=False,
+        ),
+        MLAKVCache(
+            **_attention_fields("latent", "full_group"),
+            num_q_heads=16,
+            sparse_indices_stride=2048,
+        ),
+        RecurrentStateCache(
+            name="state",
+            regions=(
+                StateRegion(
+                    leaf_id="conv",
+                    num_layers=2,
+                    row_shape=(4, 8),
+                    dtype=DType.float32,
+                    scratch=False,
+                ),
+            ),
+            leaves=(
+                KVPoolLeaf(
+                    leaf_id="conv",
+                    group="recurrent",
+                    window_size=None,
+                    bytes_per_page=256,
+                    stride_alignment=None,
+                ),
+            ),
+        ),
+    ),
+)
+
+
+def test_kv_cache_round_trip(tmp_path: Path) -> None:
+    dest = serialize(ModelArtifact(kv_cache=KV_CACHE), tmp_path / "a")
+    # The layout the engine reads: caches in graph-input order, each with its
+    # kind and the pool leaves it occupies.
+    caches = json.loads((dest / "artifact.json").read_text())["kv_cache"][
+        "caches"
+    ]
+    assert [(cache["name"], cache["kind"]) for cache in caches] == [
+        ("attention", "mha"),
+        ("indexer", "msa"),
+        ("latent", "mla"),
+        ("state", "recurrent"),
+    ]
+    assert caches[0] == {
+        "name": "attention",
+        "kind": "mha",
+        "dtype": "bfloat16",
+        "num_layers": 2,
+        "n_kv_heads": 4,
+        "head_dim": 128,
+        "v_head_dim": None,
+        "window_size": None,
+        "allow_kv_head_replication": False,
+        "slots_per_page": 128,
+        "stride_alignment": None,
+        "scratch": False,
+        "kvcache_quant_config": None,
+        "leaves": [
+            {
+                "leaf_id": "attention.full_group",
+                "group": "full",
+                "window_size": None,
+                "bytes_per_page": 131072,
+                "stride_alignment": None,
+            }
+        ],
+    }
+    assert deserialize(dest).kv_cache == KV_CACHE
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        lambda section: section["caches"][0].update(kind="ssm"),
+        lambda section: section["caches"][0].pop("kind"),
+        lambda section: section["caches"][1].update(dtype="bfloat17"),
+        lambda section: section["caches"][1].update(bogus=1),
+        lambda section: section["caches"][2]["leaves"][0].update(group="lru"),
+        lambda section: section["caches"][3]["regions"][0].pop("row_shape"),
+    ],
+)
+def test_malformed_kv_cache_rejected(
+    tmp_path: Path, edit: Callable[[dict[str, Any]], object]
+) -> None:
+    dest = serialize(ModelArtifact(kv_cache=KV_CACHE), tmp_path / "a")
+    sections = json.loads((dest / "artifact.json").read_text())
+    edit(sections["kv_cache"])
+    _rewrite_sections(dest, sections)
+    with pytest.raises(ArtifactError, match="component 'kv_cache'"):
         deserialize(dest)

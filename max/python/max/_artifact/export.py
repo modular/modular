@@ -16,11 +16,22 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from max.graph import SymbolicDim
+from max.nn.legacy.kv_cache import (
+    CacheLeafParamInterface,
+    KVCacheParams,
+    KVLeafRegion,
+    MHAKVCacheParams,
+    MLAKVCacheParams,
+    MSAKVCacheParams,
+    MultiKVCacheParams,
+    RecurrentStateParams,
+)
+from max.pipelines.kv_cache import PagedKVCacheManagerInterface
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.lib.graph_specs import GraphRole, compile_roles_separately
 from max.pipelines.lib.interfaces import PipelineModelWithKVCache
@@ -37,6 +48,17 @@ from .engine_config import (
     EngineConfig,
     EngineSamplingConfig,
     EngineSpeculativeConfig,
+)
+from .kv_cache import (
+    KVCache,
+    KVCacheLayout,
+    KVCacheQuantization,
+    KVPoolLeaf,
+    MHAKVCache,
+    MLAKVCache,
+    MSAKVCache,
+    RecurrentStateCache,
+    StateRegion,
 )
 from .model_artifact import ModelArtifact
 from .pipeline_modules import PipelineModules
@@ -56,6 +78,16 @@ class SupportsCompiledModules(Protocol):
     @property
     def compiled_modules(self) -> Mapping[str, CompiledCallable[..., Any]]:
         """Each role's compiled graph, keyed by role."""
+        ...
+
+
+@runtime_checkable
+class SupportsKVManager(Protocol):
+    """A pipeline with a KV cache, as the text-generation pipelines have."""
+
+    @property
+    def kv_manager(self) -> PagedKVCacheManagerInterface:
+        """The manager of the pipeline's KV cache."""
         ...
 
 
@@ -188,6 +220,129 @@ def pipeline_engine_config(
     )
 
 
+def pipeline_kv_cache(params: CacheLeafParamInterface) -> KVCacheLayout:
+    """Returns the KV cache a pipeline's graphs are built for, for its artifact.
+
+    Each cache in the tree is recorded with every parameter its graphs are
+    built with and the pool leaves it occupies, in the order the graphs take
+    the caches as inputs and named by its path in the tree.
+
+    Args:
+        params: The pipeline's KV cache parameters.
+
+    Returns:
+        The artifact's ``kv_cache`` component.
+
+    Raises:
+        ArtifactError: If the tree holds a cache of a type the component
+            doesn't record.
+    """
+    caches = tuple(_caches(params, ""))
+    recorded = {leaf.leaf_id for cache in caches for leaf in cache.leaves}
+    assert recorded == set(params.leaves()), (
+        "each cache's pool leaves must be the tree's"
+    )
+    return KVCacheLayout(page_size=params.page_size, caches=caches)
+
+
+def _caches(params: CacheLeafParamInterface, path: str) -> Iterator[KVCache]:
+    if isinstance(params, MultiKVCacheParams):
+        for key, child in params.children.items():
+            yield from _caches(child, f"{path}.{key}" if path else key)
+        return
+    # A tree passes each child its path as the prefix of its leaf ids.
+    leaves = tuple(
+        _pool_leaf(region)
+        for region in params.leaves(f"{path}." if path else "").values()
+    )
+    # Exact types: MSA subclasses MHA, and a subclass this function doesn't
+    # know may carry parameters the component doesn't record.
+    if type(params) in (MHAKVCacheParams, MSAKVCacheParams):
+        assert isinstance(params, MHAKVCacheParams)
+        cls = MSAKVCache if type(params) is MSAKVCacheParams else MHAKVCache
+        yield cls(
+            name=path,
+            dtype=params.dtype,
+            num_layers=params.num_layers,
+            n_kv_heads=params.n_kv_heads,
+            head_dim=params.head_dim,
+            v_head_dim=params.v_head_dim,
+            window_size=params.window_size,
+            allow_kv_head_replication=params.allow_kv_head_replication,
+            slots_per_page=_slots_per_page(params),
+            stride_alignment=params.stride_alignment,
+            scratch=params.scratch,
+            kvcache_quant_config=_quantization(params),
+            leaves=leaves,
+        )
+    elif type(params) is MLAKVCacheParams:
+        assert isinstance(params, MLAKVCacheParams)
+        yield MLAKVCache(
+            name=path,
+            dtype=params.dtype,
+            num_layers=params.num_layers,
+            num_q_heads=params.num_q_heads,
+            head_dim=params.head_dim,
+            v_head_dim=params.v_head_dim,
+            window_size=params.window_size,
+            slots_per_page=_slots_per_page(params),
+            sparse_indices_stride=params.sparse_indices_stride,
+            stride_alignment=params.stride_alignment,
+            scratch=params.scratch,
+            kvcache_quant_config=_quantization(params),
+            leaves=leaves,
+        )
+    elif type(params) is RecurrentStateParams:
+        assert isinstance(params, RecurrentStateParams)
+        yield RecurrentStateCache(
+            name=path,
+            regions=tuple(
+                StateRegion(
+                    leaf_id=region.leaf_id,
+                    num_layers=region.num_layers,
+                    row_shape=tuple(region.row_shape),
+                    dtype=region.dtype,
+                    scratch=region.scratch,
+                )
+                for region in params.regions
+            ),
+            leaves=leaves,
+        )
+    else:
+        raise ArtifactError(
+            f"cannot record the {path!r} KV cache: the kv_cache component"
+            f" has no kind for a {type(params).__name__}"
+        )
+
+
+def _pool_leaf(region: KVLeafRegion) -> KVPoolLeaf:
+    group = region.group_id
+    return KVPoolLeaf(
+        leaf_id=region.leaf_id,
+        group=group.type,
+        window_size=group.window_size if group.is_sliding_window() else None,
+        bytes_per_page=region.bytes_per_page,
+        stride_alignment=region.stride_alignment,
+    )
+
+
+def _slots_per_page(params: KVCacheParams) -> int:
+    # Construction resolves an unset slot count to the page size.
+    assert params.slots_per_page is not None
+    return params.slots_per_page
+
+
+def _quantization(params: KVCacheParams) -> KVCacheQuantization | None:
+    config = params.kvcache_quant_config
+    if config is None:
+        return None
+    return KVCacheQuantization(
+        scale_dtype=config.scale_dtype,
+        quantization_granularity=config.quantization_granularity,
+        fp8_tail_dim=config.fp8_tail_dim,
+    )
+
+
 def export_pipeline(
     pipeline_config: PipelineConfig, path: str | os.PathLike[str]
 ) -> Path:
@@ -235,9 +390,17 @@ def export_pipeline(
     engine_config = pipeline_engine_config(
         pipeline_config, retrieved.memory_plan
     )
+    kv_cache = (
+        pipeline_kv_cache(pipeline.kv_manager.params)
+        if isinstance(pipeline, SupportsKVManager)
+        else None
+    )
     written = serialize(
         ModelArtifact(
-            model=model, engine_config=engine_config, batch_processor=dims
+            model=model,
+            engine_config=engine_config,
+            kv_cache=kv_cache,
+            batch_processor=dims,
         ),
         dest,
     )

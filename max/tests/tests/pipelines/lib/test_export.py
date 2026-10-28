@@ -35,7 +35,17 @@ from max._artifact.export import (
     SupportsCompiledModules,
     batch_processor_dims,
     pipeline_engine_config,
+    pipeline_kv_cache,
     pipeline_modules,
+)
+from max._artifact.kv_cache import (
+    KVCacheQuantization,
+    KVPoolLeaf,
+    MHAKVCache,
+    MLAKVCache,
+    MSAKVCache,
+    RecurrentStateCache,
+    StateRegion,
 )
 from max._artifact.model_artifact import ModelArtifact
 from max._artifact.pipeline_modules import PipelineModules
@@ -46,6 +56,15 @@ from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, TensorType, TensorValue
 from max.nn.legacy import Module
 from max.nn.legacy.graph_groups import Logits
+from max.nn.legacy.kv_cache import (
+    KVCacheQuantizationConfig,
+    MHAKVCacheParams,
+    MLAKVCacheParams,
+    MSAKVCacheParams,
+    MultiKVCacheParams,
+    RecurrentStateParams,
+    RecurrentStateRegion,
+)
 from max.nn.legacy.transformer import DecoderOutputs, ReturnLogits
 from max.pipelines.lib import (
     GraphRole,
@@ -320,3 +339,191 @@ def test_engine_config_copies_the_speculative_settings() -> None:
             reasoning_parser="gemma4",
         )
     )
+
+
+def _mha(num_layers: int, window_size: int | None = None) -> MHAKVCacheParams:
+    return MHAKVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=4,
+        head_dim=64,
+        num_layers=num_layers,
+        devices=[DeviceRef.CPU()],
+        window_size=window_size,
+    )
+
+
+def test_kv_cache_records_every_cache_in_graph_order() -> None:
+    quantized = MHAKVCacheParams(
+        dtype=DType.float8_e4m3fn,
+        n_kv_heads=4,
+        head_dim=64,
+        num_layers=1,
+        devices=[DeviceRef.CPU()],
+        kvcache_quant_config=KVCacheQuantizationConfig(
+            scale_dtype=DType.float8_e8m0fnu, quantization_granularity=32
+        ),
+    )
+    msa = MSAKVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=1,
+        head_dim=128,
+        num_layers=1,
+        devices=[DeviceRef.CPU()],
+        allow_kv_head_replication=True,
+        stride_alignment=512,
+    )
+    mla = MLAKVCacheParams(
+        dtype=DType.bfloat16,
+        head_dim=576,
+        num_layers=1,
+        devices=[DeviceRef.CPU()],
+        num_q_heads=16,
+        sparse_indices_stride=64,
+    )
+    state = RecurrentStateParams(
+        devices=[DeviceRef.CPU()],
+        regions=(
+            RecurrentStateRegion(
+                leaf_id="conv",
+                num_layers=2,
+                row_shape=(64, 3),
+                dtype=DType.bfloat16,
+            ),
+        ),
+    )
+    params = MultiKVCacheParams.from_params(
+        {
+            "target": MultiKVCacheParams.from_params(
+                {
+                    "sliding_attention": _mha(5, window_size=1024),
+                    "full_attention": quantized,
+                }
+            ),
+            "indexer": msa,
+            "latent": mla,
+            "state": state,
+        }
+    )
+    layout = pipeline_kv_cache(params)
+    assert layout.page_size == 128
+    assert [(cache.name, cache.kind) for cache in layout.caches] == [
+        ("target.sliding_attention", "mha"),
+        ("target.full_attention", "mha"),
+        ("indexer", "msa"),
+        ("latent", "mla"),
+        ("state", "recurrent"),
+    ]
+    sliding_id = "target.sliding_attention.sliding_window_group(1024)"
+    assert layout.caches[0] == MHAKVCache(
+        name="target.sliding_attention",
+        dtype=DType.bfloat16,
+        num_layers=5,
+        n_kv_heads=4,
+        head_dim=64,
+        v_head_dim=None,
+        window_size=1024,
+        allow_kv_head_replication=False,
+        slots_per_page=128,
+        stride_alignment=None,
+        scratch=False,
+        kvcache_quant_config=None,
+        leaves=(
+            KVPoolLeaf(
+                leaf_id=sliding_id,
+                group="sliding_window",
+                window_size=1024,
+                bytes_per_page=params.leaves()[sliding_id].bytes_per_page,
+                stride_alignment=None,
+            ),
+        ),
+    )
+    full = layout.caches[1]
+    assert isinstance(full, MHAKVCache)
+    assert (full.dtype, full.kvcache_quant_config) == (
+        DType.float8_e4m3fn,
+        KVCacheQuantization(
+            scale_dtype=DType.float8_e8m0fnu,
+            quantization_granularity=32,
+            fp8_tail_dim=0,
+        ),
+    )
+
+    def full_leaf(path: str) -> KVPoolLeaf:
+        leaf_id = f"{path}.full_group"
+        region = params.leaves()[leaf_id]
+        return KVPoolLeaf(
+            leaf_id=leaf_id,
+            group="full",
+            window_size=None,
+            bytes_per_page=region.bytes_per_page,
+            stride_alignment=region.stride_alignment,
+        )
+
+    assert layout.caches[2] == MSAKVCache(
+        name="indexer",
+        dtype=DType.bfloat16,
+        num_layers=1,
+        n_kv_heads=1,
+        head_dim=128,
+        v_head_dim=None,
+        window_size=None,
+        allow_kv_head_replication=True,
+        slots_per_page=128,
+        stride_alignment=512,
+        scratch=False,
+        kvcache_quant_config=None,
+        leaves=(full_leaf("indexer"),),
+    )
+    assert layout.caches[3] == MLAKVCache(
+        name="latent",
+        dtype=DType.bfloat16,
+        num_layers=1,
+        num_q_heads=16,
+        head_dim=576,
+        v_head_dim=None,
+        window_size=None,
+        slots_per_page=128,
+        sparse_indices_stride=64,
+        stride_alignment=None,
+        scratch=False,
+        kvcache_quant_config=None,
+        leaves=(full_leaf("latent"),),
+    )
+    assert layout.caches[4] == RecurrentStateCache(
+        name="state",
+        regions=(
+            StateRegion(
+                leaf_id="conv",
+                num_layers=2,
+                row_shape=(64, 3),
+                dtype=DType.bfloat16,
+                scratch=False,
+            ),
+        ),
+        leaves=(
+            KVPoolLeaf(
+                leaf_id="conv",
+                group="recurrent",
+                window_size=None,
+                bytes_per_page=2 * 64 * 3 * 2,
+                stride_alignment=None,
+            ),
+        ),
+    )
+
+
+class _CustomKVCacheParams(MHAKVCacheParams):
+    pass
+
+
+def test_kv_cache_refuses_a_cache_type_it_does_not_record() -> None:
+    custom = _CustomKVCacheParams(
+        dtype=DType.bfloat16,
+        n_kv_heads=4,
+        head_dim=64,
+        num_layers=1,
+        devices=[DeviceRef.CPU()],
+    )
+    params = MultiKVCacheParams.from_params({"custom": custom})
+    with pytest.raises(ArtifactError, match="_CustomKVCacheParams"):
+        pipeline_kv_cache(params)

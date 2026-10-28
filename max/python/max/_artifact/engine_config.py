@@ -17,16 +17,21 @@ The settings a pipeline's graphs were exported for.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass, fields
-from typing import TypeVar
+from collections.abc import Mapping
+from dataclasses import dataclass
 
 from max.driver import DeviceSpec
 from typing_extensions import Self
 
-from .value_types import ArtifactError, ArtifactType, decode_field, expect
-
-_T = TypeVar("_T")
+from .value_types import (
+    ArtifactError,
+    ArtifactType,
+    decode_field,
+    decode_object,
+    decode_optional,
+    expect,
+    unknown_fields,
+)
 
 
 @dataclass(frozen=True)
@@ -142,7 +147,7 @@ class EngineConfig:
         Raises:
             ArtifactError: If a field is missing, unknown or malformed.
         """
-        if unknown := sorted(set(value) - _field_names(cls)):
+        if unknown := unknown_fields(value, cls):
             raise ArtifactError(f"unknown fields {unknown}")
         return cls(
             max_batch_size=decode_field(value, "max_batch_size", _int),
@@ -151,7 +156,7 @@ class EngineConfig:
                 value, "max_batch_input_tokens", _int
             ),
             max_batch_total_tokens=decode_field(
-                value, "max_batch_total_tokens", _optional(_int)
+                value, "max_batch_total_tokens", decode_optional(_int)
             ),
             devices=decode_field(value, "devices", _devices),
             data_parallel_degree=decode_field(
@@ -160,20 +165,9 @@ class EngineConfig:
             ep_size=decode_field(value, "ep_size", _int),
             sampling=decode_field(value, "sampling", _sampling),
             speculative=decode_field(
-                value, "speculative", _optional(_speculative)
+                value, "speculative", decode_optional(_speculative)
             ),
         )
-
-
-def _field_names(cls: type) -> set[str]:
-    return {field.name for field in fields(cls)}
-
-
-def _object(value: ArtifactType, cls: type) -> dict[str, ArtifactType]:
-    obj = expect(value, dict)
-    if unknown := sorted(set(obj) - _field_names(cls)):
-        raise ValueError(f"unknown fields {unknown}")
-    return obj
 
 
 def _int(value: ArtifactType) -> int:
@@ -182,12 +176,6 @@ def _int(value: ArtifactType) -> int:
 
 def _str(value: ArtifactType) -> str:
     return expect(value, str)
-
-
-def _optional(
-    decoder: Callable[[ArtifactType], _T],
-) -> Callable[[ArtifactType], _T | None]:
-    return lambda value: None if value is None else decoder(value)
 
 
 def _devices(value: ArtifactType) -> tuple[DeviceSpec, ...]:
@@ -209,7 +197,7 @@ def _device(value: ArtifactType) -> DeviceSpec:
 
 
 def _sampling(value: ArtifactType) -> EngineSamplingConfig:
-    obj = _object(value, EngineSamplingConfig)
+    obj = decode_object(value, EngineSamplingConfig)
     return EngineSamplingConfig(
         needs_bitmask_constraints=expect(
             obj["needs_bitmask_constraints"], bool
@@ -220,10 +208,10 @@ def _sampling(value: ArtifactType) -> EngineSamplingConfig:
 
 
 def _speculative(value: ArtifactType) -> EngineSpeculativeConfig:
-    obj = _object(value, EngineSpeculativeConfig)
+    obj = decode_object(value, EngineSpeculativeConfig)
     return EngineSpeculativeConfig(
         speculative_method=expect(obj["speculative_method"], str),
         num_speculative_tokens=expect(obj["num_speculative_tokens"], int),
         draft_proposal=expect(obj["draft_proposal"], str),
-        reasoning_parser=_optional(_str)(obj["reasoning_parser"]),
+        reasoning_parser=decode_optional(_str)(obj["reasoning_parser"]),
     )

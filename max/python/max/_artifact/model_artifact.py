@@ -24,6 +24,7 @@ from typing_extensions import Self
 from .batch_processor import BatchProcessorDims
 from .codec import collect_hf_refs
 from .engine_config import EngineConfig
+from .kv_cache import KVCacheLayout
 from .pipeline_modules import PipelineModules
 from .value_types import ArtifactComponent, ArtifactError, HuggingFaceRef
 
@@ -36,7 +37,7 @@ class ModelArtifact:
     tokenizer: ArtifactComponent | None = None
     format_spec: ArtifactComponent | None = None
     engine_config: EngineConfig | None = None
-    kv_cache: ArtifactComponent | None = None
+    kv_cache: KVCacheLayout | None = None
     batch_processor: BatchProcessorDims | None = None
     weight_loader: ArtifactComponent | None = None
 
