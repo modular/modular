@@ -148,7 +148,7 @@ struct HoistYieldResults : public OpRewritePattern<IfOp> {
     getIfBodyRegions(op, bodies);
 
     // Check that each branch body contains only a yield. The elif condition
-    // regions are checked separately before the if is erased.
+    // regions are checked separately later on before the if is erased.
     SmallVector<YieldOp, 4> yields;
     yields.reserve(bodies.size());
     for (Region *body : bodies) {
@@ -192,7 +192,8 @@ struct HoistYieldResults : public OpRewritePattern<IfOp> {
     if (!op.use_empty())
       return changed ? success() : failure();
 
-    if (op.getElifRegions().size() > 0) {
+    // Only erase the if when its elif conditions have no side effects.
+    if (!op.getElifRegions().empty()) {
       WalkResult effects =
           op->walk<mlir::WalkOrder::PreOrder>([&](Operation *operation) {
             if (operation == op.getOperation() ||
