@@ -124,7 +124,6 @@ def _get_argparse_type_and_action(
         - type_func: The type function to pass to add_argument() or None for action args
         - action: The action string for add_argument() or None for typed args
     """
-
     # Get the origin and args for generic types (e.g., int | None -> Union, (int, NoneType))
     origin = get_origin(field_type)
     args = get_args(field_type)
@@ -523,6 +522,8 @@ def _extract_max_config_data(
         config_dict: The loaded YAML configuration dictionary.
         config_class: The config class we're extracting data for.
         section_name: Optional specific section name to look for.
+        config_file_path: Path to the config file being loaded, used to
+            resolve relative ``depends_on`` paths.
 
     Returns:
         Configuration data for the specific config class.
@@ -986,7 +987,6 @@ class MAXConfig:
             - Groups arguments by field metadata for better organization.
             - Maintains compatibility with standard ``argparse`` usage.
         """
-
         # Create parser
         additional_argument_parser_args: dict[str, Any] = {}
 
