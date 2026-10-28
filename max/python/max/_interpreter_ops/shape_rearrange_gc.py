@@ -156,8 +156,10 @@ class _ShapeRearrangeFamily(gc_compile.GCFamilySpec):
     name = "shape_rearrange"
 
     def build_module(self) -> Module:
-        """Batched module: every supported (op, device, dtype, rank), all
-        devices."""
+        """Batched module: every supported (op, device, dtype, rank).
+
+        Covers all devices.
+        """
         module = Module()
         for device in self.sweep_devices():
             self.build_module_for_device(device, module)
@@ -166,8 +168,11 @@ class _ShapeRearrangeFamily(gc_compile.GCFamilySpec):
     def build_module_for_device(
         self, device: Device, module: Module | None = None
     ) -> Module:
-        """Per-slot counterpart of :meth:`build_module`: one *device* only.
-        A ``CPU_ONLY`` op is skipped below via :func:`_devices_for`."""
+        """Builds the module for one device slot.
+
+        Per-slot counterpart of :meth:`build_module`. A ``CPU_ONLY`` op is
+        skipped below via :func:`_devices_for`.
+        """
         if module is None:
             module = Module()
         for op_type, spec in _REARRANGE_OPS.items():

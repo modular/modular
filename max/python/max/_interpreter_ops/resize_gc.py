@@ -223,8 +223,10 @@ def _spec_for(op_type: type[_core.Operation]) -> ResizeSpec | None:
 
 
 def _supported_ranks(spec: ResizeSpec) -> list[int]:
-    """Ranks a dispatch may target on any device; the lazy path builds
-    these on demand when no warm has them."""
+    """Ranks a dispatch may target on any device.
+
+    The lazy path builds these on demand when no warm has them.
+    """
     if not spec.rank_keyed:
         return [spec.max_rank]
     return list(range(1, spec.max_rank + 1))

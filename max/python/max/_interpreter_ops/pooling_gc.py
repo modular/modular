@@ -56,8 +56,11 @@ _AVG_POOL_VARIANTS: tuple[Variant, ...] = (False, True)
 
 @dataclass(frozen=True)
 class PoolSpec:
-    """How to build one pooling op's graph: its MO-analogue RMO op, whether
-    it's an avg (vs max) pool, and its variants."""
+    """How to build one pooling op's graph.
+
+    Records its MO-analogue RMO op, whether it's an avg (vs max) pool, and its
+    variants.
+    """
 
     rmo_op: type
     is_avg: bool
@@ -89,9 +92,11 @@ def _spec_for(op_type: type[_core.Operation]) -> PoolSpec | None:
 
 
 def _supported_dtypes(device: Device) -> list[DType]:
-    """The full dtype set max_pool sweeps on *device*: ``gc_compile``'s shared
-    per-device float set (see the module docstring) plus every int/uint
-    width and bool. avg_pool further excludes bool -- see ``_is_supported``.
+    """The full dtype set max_pool sweeps on *device*.
+
+    ``gc_compile``'s shared per-device float set (see the module docstring)
+    plus every int/uint width and bool. avg_pool further excludes bool -- see
+    ``_is_supported``.
     """
     return (
         gc_compile.float_dtypes(device)
@@ -144,7 +149,8 @@ def _pool_graph(
 
     filter_shape/strides/dilations/paddings are runtime host int64 tensor
     operands -- the same buffers the eager handler already unpacks -- so this
-    one graph serves every window config for (op_type, device, dtype)."""
+    one graph serves every window config for (op_type, device, dtype).
+    """
     device_ref = DeviceRef.from_device(device)
     cpu = DeviceRef.CPU()
     in_type = TensorType(dtype, ["n", "h", "w", "c"], device=device_ref)

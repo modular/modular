@@ -189,8 +189,10 @@ class _UnaryFamily(gc_compile.GCFamilySpec):
     name = "unary"
 
     def build_module(self) -> Module:
-        """Build the full batched unary module: every supported (op, device,
-        dtype) across CPU + all accelerators, in one module.
+        """Build the full batched unary module.
+
+        Every supported (op, device, dtype) across CPU and all accelerators,
+        in one module.
 
         Host-ELF and cubins both embed self-contained in the exported MEF, so
         one force-load populates every device class at once. Shared by the
@@ -206,8 +208,9 @@ class _UnaryFamily(gc_compile.GCFamilySpec):
     def build_module_for_device(
         self, device: Device, module: Module | None = None
     ) -> Module:
-        """Build the unary module for a single device slot: every supported
-        (op, dtype) on *device*, and nothing else.
+        """Build the unary module for a single device slot.
+
+        Every supported (op, dtype) on *device*, and nothing else.
 
         Per-slot counterpart of :meth:`build_module`. The warm producer
         exports one MEF per slot so the warm is device-count-independent: a

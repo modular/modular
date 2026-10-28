@@ -1271,9 +1271,11 @@ def _handle_reduce_axis(
 def _reduction_axis(
     op: _core.Operation, in_shape: Sequence[int], out_shape: Sequence[Any]
 ) -> int | None:
-    """Returns ``op``'s ``axis``, or for an op without one, the dimension that
-    becomes 1 in the result, or ``None`` when none does: the op is then the
-    identity."""
+    """Returns ``op``'s ``axis``, or the dimension reduced to 1.
+
+    For an op without an ``axis``, the result is the dimension that becomes 1
+    in the output, or ``None`` when none does: the op is then the identity.
+    """
     if hasattr(op, "axis"):
         return cast(_HasAxis, op).axis
     for axis, (in_dim, out_dim) in enumerate(
@@ -1752,8 +1754,7 @@ def _handle_gather_nd(
 def _handle_scatter_nd_family(
     op: _core.Operation, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer]:
-    """Dispatches an eager scatter-nd op via scatter_nd_gc's single fused
-    model.
+    """Dispatches an eager scatter-nd op through scatter_nd_gc's fused model.
 
     Args:
         op: The scatter-nd / scatter-nd-reduce operation being handled.
@@ -2834,8 +2835,9 @@ def _resolve_spec(op: mo.CustomOp) -> custom.CustomOp | None:
 
 
 def _check_realized_shape(out: Buffer, result: _core.Value[Any]) -> None:
-    """Raises ``RuntimeError`` when *out*'s realized rank, dtype, device, or
-    a statically-known dim disagrees with *result*'s staged type.
+    """Raises when *out* disagrees with *result*'s staged type.
+
+    Checks realized rank, dtype, device, and any statically-known dim.
 
     A binding compiled from a ``CustomOp`` (:mod:`custom_gc`) is
     rank-polymorphic: only rank, dtype, and device key the compiled model,

@@ -237,8 +237,11 @@ class _GatherFamily(gc_compile.GCFamilySpec):
     name = "gather"
 
     def build_module(self) -> Module:
-        """Batched module: every (op, device, width, index, variant), all
-        devices, plus gather_nd's fused graph per (device, width, index)."""
+        """Batched module: every (op, device, width, index, variant).
+
+        Spans all devices, plus gather_nd's fused graph per (device, width,
+        index).
+        """
         module = Module()
         for device in self.sweep_devices():
             self.build_module_for_device(device, module)
@@ -349,8 +352,10 @@ def gather_operand_views(
 def gather_nd_operand_views(
     in_shape: Sequence[int], idx_shape: Sequence[int], batch_dims: int
 ) -> tuple[tuple[int, int, int], tuple[int, int, int], list[int]]:
-    """Zero-copy view shapes for gather_nd's operands via GatherOp's own
-    canonical rank-3 form, plus the strides vector for flat-index reduction.
+    """Returns zero-copy view shapes for gather_nd's operands.
+
+    Uses GatherOp's own canonical rank-3 form, plus the strides vector for
+    flat-index reduction.
 
     Collapses ``input``'s ``index_depth`` indexed dims (after ``batch_dims``)
     into one flat axis, matching GatherOp's own ``[outer, axis, inner]``
@@ -376,12 +381,11 @@ def gather_nd_operand_views(
 def gather_nd_model(
     device: Device, data_udtype: DType, idx_dtype: DType
 ) -> engine.Model:
-    """Returns gather_nd's fused flatten-index-then-gather
-    :class:`~max.engine.Model` for the given target.
+    """Returns gather_nd's fused flatten-index-then-gather model.
 
-    Lazy by default: compiled on first use and cached for the process
-    lifetime, exactly like :func:`gather_model`; part of the ``"gather"``
-    family's own sweep, not a separate family.
+    Built for the given target. Lazy by default: compiled on first use and
+    cached for the process lifetime, exactly like :func:`gather_model`; part
+    of the ``"gather"`` family's own sweep, not a separate family.
 
     Args:
         device: The realized input's device.
