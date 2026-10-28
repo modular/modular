@@ -280,7 +280,7 @@ private:
   virtual void addDeferredFunction(OwningOpRef<FuncOp> func) = 0;
 
   virtual ErrorOr<CrossDeviceFunction>
-  compileAsm(MLIRContext *ctx, GeneratorOp, SymbolConstantAttr, StringAttr,
+  compileAsm(MLIRContext *ctx, GeneratorOp, FuncSymbolAttr, StringAttr,
              TargetInfoAttr, EmitAs, EmissionOptions emissionOptions) = 0;
 
   virtual ImplNodeBase *getParentNode() = 0;
@@ -299,23 +299,17 @@ FuncSymbolGenerator extractFuncSymbolGenerator(TypedAttr attr);
 /// `#kgen.unbound` or `#kgen.unknown`.
 bool hasUnresolvedParamValue(FuncSymbolGenerator symbol);
 
-/// Returns the `SymbolConstantAttr` equivalent of the fully bound `symbol`.
-// TODO: Remove once kernel compilation and callee concretization take a
-// `FuncSymbolGenerator`.
-SymbolConstantAttr toSymbolConstantAttr(FuncSymbolGenerator symbol);
-
 /// Decomposed view of a `compile_offload` op's `func` attribute. Populated by
-/// `extractOffloadFunc` when the func resolves to a fully-bound
-/// `SymbolConstantAttr` referencing a valid generator in the supplied symbol
-/// table.
+/// `extractOffloadFunc` when the func resolves to a fully-bound function
+/// reference to a valid generator in the supplied symbol table.
 struct OffloadFunc {
-  SymbolConstantAttr symbol;
+  FuncSymbolGenerator symbol;
   GeneratorOp generator;
 };
 
 /// Decompose a `compile_offload` op's `func` attribute. Returns an error if
-/// the func does not resolve to a `SymbolConstantAttr`, is not fully bound,
-/// or does not reference a valid generator in `symtab`.
+/// the func does not resolve to a function reference, is not fully bound, or
+/// does not reference a valid generator in `symtab`.
 ErrorTreeOr<OffloadFunc> extractOffloadFunc(CompileOffloadOp op,
                                             mlir::SymbolTable &symtab);
 

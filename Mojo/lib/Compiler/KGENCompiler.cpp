@@ -73,7 +73,7 @@ using M::HLCF::UnreachableOp;
 /// parameters, then rename it to match the expected symbol name and export it
 /// This is how compilation is rooted at instantiations of parametric functions.
 static void
-generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
+generateInstantiateStub(GeneratorOp func, FuncSymbolAttr symbol,
                         StringAttr name, IRMapping &mapping,
                         SymbolTable *symtab = nullptr,
                         std::optional<uint64_t> kernelId = std::nullopt) {
@@ -81,8 +81,9 @@ generateInstantiateStub(GeneratorOp func, SymbolConstantAttr symbol,
   GeneratorOp sliced = cast<GeneratorOp>(mapping.lookup(func));
   ImplicitLocOpBuilder b(func.getLoc(), OpBuilder(sliced));
   StringAttr stubName = b.getStringAttr(name.getValue() + "_asm_stub");
-  FuncTypeGeneratorType sigGen = symbol.getType();
-  FuncType sigBase = sigGen.getBody();
+  FuncType sigBase = symbol.getType();
+  auto sigGen = FuncTypeGeneratorType::get(/*inputParamTypes=*/{}, sigBase,
+                                           /*metadata=*/nullptr);
 
   // Build debuginfo for the stub if requested.
   if (auto sp = func.getSubprogramScope()) {
@@ -194,14 +195,15 @@ static ElaboratorCompileOffloadRetType compileOffloads(
     const SymbolTable &symtab, CompilationOptions compilationOptions,
     ElaborateGeneratorsOptions elabOptions);
 
-static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
-    GeneratorOp func, SymbolConstantAttr symbol, StringAttr name,
-    const SymbolTable &symtab, TargetInfoAttr target, EmitAs emissionKind,
-    EmissionOptions emissionOptions, CompilationOptions compilationOptions,
-    ElaborateGeneratorsOptions elaboratorOptions);
+static ErrorOr<CrossDeviceFunction>
+compileElaboratorAsm(GeneratorOp func, FuncSymbolAttr symbol, StringAttr name,
+                     const SymbolTable &symtab, TargetInfoAttr target,
+                     EmitAs emissionKind, EmissionOptions emissionOptions,
+                     CompilationOptions compilationOptions,
+                     ElaborateGeneratorsOptions elaboratorOptions);
 
 static ErrorOr<OffloadCompilationResult>
-compileElaboratorKernel(GeneratorOp func, SymbolConstantAttr symbol,
+compileElaboratorKernel(GeneratorOp func, FuncSymbolAttr symbol,
                         StringAttr name, const SymbolTable &symtab,
                         TargetInfoAttr target, ArrayRef<EmitAs> emissionKinds,
                         EmissionOptions emissionOptions,
@@ -214,7 +216,7 @@ compileElaboratorKernel(GeneratorOp func, SymbolConstantAttr symbol,
 /// symbol table `symtab`, slice out a standalone module rooted at `func`,
 /// elaborate it, and compile it for `target`.
 static ErrorOr<StringAttr> compileStandaloneKernel(
-    GeneratorOp func, SymbolConstantAttr symbol, StringAttr name,
+    GeneratorOp func, FuncSymbolAttr symbol, StringAttr name,
     const SymbolTable &symtab, TargetInfoAttr target, EmitAs emissionKind,
     EmissionOptions emissionOptions, CompilationOptions compilationOptions,
     ElaborateGeneratorsOptions elaboratorOptions) {
@@ -425,11 +427,12 @@ static ErrorOr<StringAttr> compileStandaloneKernel(
 }
 
 /// Cross-device closure compilation (the comptime `compile_closure` path).
-static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
-    GeneratorOp func, SymbolConstantAttr symbol, StringAttr name,
-    const SymbolTable &symtab, TargetInfoAttr target, EmitAs emissionKind,
-    EmissionOptions emissionOptions, CompilationOptions compilationOptions,
-    ElaborateGeneratorsOptions elaboratorOptions) {
+static ErrorOr<CrossDeviceFunction>
+compileElaboratorAsm(GeneratorOp func, FuncSymbolAttr symbol, StringAttr name,
+                     const SymbolTable &symtab, TargetInfoAttr target,
+                     EmitAs emissionKind, EmissionOptions emissionOptions,
+                     CompilationOptions compilationOptions,
+                     ElaborateGeneratorsOptions elaboratorOptions) {
   ErrorOr<StringAttr> compiledOr = compileStandaloneKernel(
       func, symbol, name, symtab, target, emissionKind, emissionOptions,
       compilationOptions, elaboratorOptions);
@@ -440,7 +443,7 @@ static ErrorOr<CrossDeviceFunction> compileElaboratorAsm(
 
 /// Per-kernel offload compilation.
 static ErrorOr<OffloadCompilationResult>
-compileElaboratorKernel(GeneratorOp func, SymbolConstantAttr symbol,
+compileElaboratorKernel(GeneratorOp func, FuncSymbolAttr symbol,
                         StringAttr name, const SymbolTable &symtab,
                         TargetInfoAttr target, ArrayRef<EmitAs> emissionKinds,
                         EmissionOptions emissionOptions,

@@ -812,7 +812,7 @@ GeneratorOp ParametricIREvaluator::getGenerator(SymbolRefAttr symbol) {
 
 ErrorOr<CrossDeviceFunction>
 ParametricIREvaluator::compileAsm(MLIRContext *ctx, GeneratorOp func,
-                                  SymbolConstantAttr symbol, StringAttr name,
+                                  FuncSymbolAttr symbol, StringAttr name,
                                   TargetInfoAttr target, EmitAs emissionKind,
                                   EmissionOptions emissionOptions) {
   SymbolTable symtabCopy = elaborator->oldSymTab;

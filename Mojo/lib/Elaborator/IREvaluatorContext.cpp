@@ -81,11 +81,6 @@ bool KGEN::hasUnresolvedParamValue(FuncSymbolGenerator symbol) {
   });
 }
 
-SymbolConstantAttr KGEN::toSymbolConstantAttr(FuncSymbolGenerator symbol) {
-  return SymbolConstantAttr::get(symbol.getSymbol(), symbol.getType(),
-                                 symbol.getParamValues());
-}
-
 ErrorTreeOr<OffloadFunc> KGEN::extractOffloadFunc(CompileOffloadOp op,
                                                   mlir::SymbolTable &symtab) {
   Location loc = op.getLoc();
@@ -114,7 +109,7 @@ ErrorTreeOr<OffloadFunc> KGEN::extractOffloadFunc(CompileOffloadOp op,
     return ErrorTree(loc, errMsg);
   }
 
-  return OffloadFunc{toSymbolConstantAttr(symbol), generator};
+  return OffloadFunc{symbol, generator};
 }
 
 //===----------------------------------------------------------------------===//
@@ -425,7 +420,7 @@ IREvaluatorContext::evaluateCompileAssemblyAttr(CompileAssemblyAttr attr) {
   // Capture the diagnostics that may be emitted.
   DiagnosticHandler handler(ctx);
   ErrorOr<CrossDeviceFunction> closure =
-      compileAsm(ctx, func, toSymbolConstantAttr(symbol), name, target,
+      compileAsm(ctx, func, symbol.getInstantiatedFuncSymbol(), name, target,
                  emissionKind, emissionOptions);
   handler.release();
 

@@ -1944,7 +1944,7 @@ ParametricElaborator::bundleCompileOffloadOp(CompileOffloadOp op,
     replacer.addReplacement(
         [&](SymbolConstantAttr ref)
             -> std::optional<std::pair<Attribute, WalkResult>> {
-          if (ref != symbol)
+          if (ref.getSymbol() != symbol.getSymbol())
             exportedSymbols.insert(
                 {ref.getSymbol().getRootReference(), ExportKind::NotExported});
           return std::nullopt;
@@ -1970,7 +1970,7 @@ ParametricElaborator::bundleCompileOffloadOp(CompileOffloadOp op,
           Attribute newGenRef = replacer.replace(genRef);
           return std::make_pair(newGenRef, WalkResult::skip());
         });
-    symbol = cast<SymbolConstantAttr>(replacer.replace(symbol));
+    symbol = cast<TypedAttr>(replacer.replace(TypedAttr(symbol)));
 
     // The replacer above reaches the offload function's parameters only, so a
     // struct referenced solely by `opaque_plugin` would never be exported.
@@ -1989,8 +1989,9 @@ ParametricElaborator::bundleCompileOffloadOp(CompileOffloadOp op,
       sourceName = StringAttr::get(ctx, *srcName);
 
     auto pair = iter->second.insert(
-        {symbol, OffloadInfo::KernelInfo{
-                     name, offloadInfo.numKernels, {}, sourceName}});
+        {symbol.getInstantiatedFuncSymbol(),
+         OffloadInfo::KernelInfo{
+             name, offloadInfo.numKernels, {}, sourceName}});
 
     if (pair.second)
       offloadInfo.numKernels += 1;
@@ -2033,7 +2034,7 @@ ParametricElaborator::processCompileOffload(PImplNode *parent,
   // function so the offload side compiles the user's kernel directly. Mutating
   // the op here keeps `bundleCompileOffloadOp` thunk-agnostic.
   if (auto thunkCallee = parent->getEvaluator().resolveTransparentThunkCallee(
-          offloadGenerator, extractFuncSymbolGenerator(symbol), op.getLoc())) {
+          offloadGenerator, symbol, op.getLoc())) {
     if (thunkCallee->isError()) {
       parent->setToError(thunkCallee->takeError());
       return ElaborationState::error();
