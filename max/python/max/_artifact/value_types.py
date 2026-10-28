@@ -354,8 +354,10 @@ def decode_field(
 
 
 def malformed(where: str, error: Exception) -> ArtifactError:
-    """Returns the error for a malformed serialized field, from what a
-    decoder raised."""
+    """Returns the error for a malformed serialized field.
+
+    The message comes from what the decoder raised.
+    """
     reason = (
         f"missing field {error.args[0]!r}"
         if isinstance(error, KeyError)

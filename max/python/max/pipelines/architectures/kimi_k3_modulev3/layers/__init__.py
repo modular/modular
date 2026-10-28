@@ -10,3 +10,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""The Kimi K3 ModuleV3 layers."""

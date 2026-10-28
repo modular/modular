@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Collective communication for the legacy NN layers."""
 
 from .allreduce import Allreduce, MulticastPool, Signals
 

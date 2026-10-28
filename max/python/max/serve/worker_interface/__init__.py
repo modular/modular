@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""The queue and message contract between the server and its model workers."""
+
 from __future__ import annotations
 
 import asyncio
@@ -54,13 +56,12 @@ async def sleep_with_backoff(count_no_progress: int) -> None:
     The step size is 1ms because of limitations around asyncio to sleep with finer granularity.
     The maximum sleep is 10ms because it resolves CPU usage overhead while maintaining minimal waiting.
     """
-
     ms_to_sleep = min(max(0, count_no_progress), 10)
     await asyncio.sleep(ms_to_sleep * 0.001)
 
 
 class ModelWorkerProxy(ABC, Generic[BaseContextType, PipelineOutputType]):
-    """Held by API worker to communicate with model worker"""
+    """Held by the API worker to communicate with the model worker."""
 
     # Running count of requests accepted by the API server but not yet handed
     # off to this worker (the ingress backlog: tokenization / pre-submit).
@@ -116,11 +117,13 @@ class ModelWorkerProxy(ABC, Generic[BaseContextType, PipelineOutputType]):
 
     @abstractmethod
     def cancel(self, req_id: RequestID) -> None:
-        pass
+        """Cancels a request the model worker has not finished."""
 
 
 @dataclass
 class WorkerQueues(Generic[BaseContextType, PipelineOutputType]):
+    """The request, response, and cancel queues a worker exchanges."""
+
     request_queue: MAXPullQueue[BaseContextType]
     response_queue: MAXPushQueue[
         dict[RequestID, SchedulerResult[PipelineOutputType]]
@@ -129,7 +132,7 @@ class WorkerQueues(Generic[BaseContextType, PipelineOutputType]):
 
 
 class ModelWorkerInterface(ABC, Generic[BaseContextType, PipelineOutputType]):
-    """Abstract Base Class for the communication mechanism between API and Model workers
+    """Abstract Base Class for the communication mechanism between API and Model workers.
 
     This needs to be picklable so it can passed to the worker subprocess
 
@@ -143,7 +146,7 @@ class ModelWorkerInterface(ABC, Generic[BaseContextType, PipelineOutputType]):
     ) -> AbstractAsyncContextManager[
         ModelWorkerProxy[BaseContextType, PipelineOutputType]
     ]:
-        """Called by API worker to communicate with model worker"""
+        """Called by the API worker to communicate with the model worker."""
 
     @abstractmethod
     def model_worker_queues(
@@ -151,4 +154,4 @@ class ModelWorkerInterface(ABC, Generic[BaseContextType, PipelineOutputType]):
     ) -> AbstractAsyncContextManager[
         WorkerQueues[BaseContextType, PipelineOutputType]
     ]:
-        """Called by model worker to get work IO streams"""
+        """Called by the model worker to get work IO streams."""

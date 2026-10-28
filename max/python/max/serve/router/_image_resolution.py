@@ -762,10 +762,12 @@ async def _fetch_validated(
     budget: _MediaByteBudget,
     client: AsyncClient,
 ) -> bytes:
-    """SSRF-safe streaming fetch: validate + pin, following redirects manually so
-    every hop is re-validated. Streams the final body under the byte cap and
-    returns it, or raises ``HTTPStatusError`` (non-2xx -> caller maps) /
-    ``InputError``.
+    """Fetches a media reference with SSRF-safe validation on every hop.
+
+    The first host is validated and pinned, then redirects are followed
+    manually so each hop is re-validated. The final body streams under the
+    byte cap and is returned, or the call raises ``HTTPStatusError`` for a
+    non-2xx response (which the caller maps) or ``InputError``.
     """
     nets, names = _parse_allowed_hosts(settings.media_url_allowed_hosts)
     current = str(image_ref)

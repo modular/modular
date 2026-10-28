@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Tensor-parallel helpers for the legacy NN layers."""
 
 from .numpy_parallel_ops import ParallelArrayOps
 

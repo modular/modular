@@ -115,8 +115,10 @@ def _rewritten_signature(
 
 
 def install_tensor_signature(fn: Callable[..., Any]) -> None:
-    """Mutate ``fn.__signature__`` and ``fn.__annotations__`` to display
-    ``Tensor`` in place of the graph-op wrapper types.
+    """Rewrites a function's signature to show ``Tensor``.
+
+    It sets ``fn.__signature__`` and ``fn.__annotations__`` so the graph-op
+    wrapper types display as ``Tensor``.
 
     Both attributes must be set: ``inspect.signature()`` consumers read
     ``__signature__``, while Sphinx autodoc reads ``__annotations__``

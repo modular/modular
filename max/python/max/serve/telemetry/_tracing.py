@@ -206,8 +206,10 @@ class _CountingQueue(collections.deque[ReadableSpan]):
 
 
 class ReportingSpanExporter(SpanExporter):
-    """Warns through a ``max.serve`` logger when span export starts failing,
-    when it recovers, and once when a full queue has dropped spans.
+    """Warns through a ``max.serve`` logger when span export starts failing.
+
+    It also reports the recovery, and reports once when a full queue has
+    dropped spans.
 
     ``configure_logging()`` drops the SDK's own ``opentelemetry.*`` records,
     and admitting them would print a metrics-export traceback every interval
@@ -299,8 +301,9 @@ class CountingSpanProcessor(BatchSpanProcessor):
 
 
 class _LinkedRootSampler(sampling.Sampler):
-    """Samples a root span with a sampled link, such as ``max.batch``, so a
-    pass follows its requests, and leaves every other span to ``fallback``.
+    """Samples a root span with a sampled link such as ``max.batch``.
+
+    A pass then follows its requests. Every other span goes to ``fallback``.
 
     Args:
         fallback: The sampler the SDK builds from ``OTEL_TRACES_SAMPLER``.
@@ -385,8 +388,11 @@ _kernel_trace_level = KernelTraceLevel.OFF
 
 
 def batch_spans_enabled() -> bool:
-    """Returns whether ``max.batch`` spans should be emitted; that is, the model
-    worker was configured with ``kernel_trace_level`` at ``batch`` or above."""
+    """Returns whether ``max.batch`` spans should be emitted.
+
+    They are emitted when the model worker was configured with
+    ``kernel_trace_level`` at ``batch`` or above.
+    """
     return _kernel_trace_level >= KernelTraceLevel.BATCH
 
 

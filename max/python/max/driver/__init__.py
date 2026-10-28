@@ -11,8 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Device programming for MAX: allocate buffers, manage devices, and
-dispatch work through device queues.
+"""Device programming for MAX.
+
+It allocates buffers, manages devices, and dispatches work through device
+queues.
 """
 
 import contextlib

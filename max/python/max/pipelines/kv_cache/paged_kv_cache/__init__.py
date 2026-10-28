@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""The paged KV cache."""
+
 from __future__ import annotations
 
 from ._common import PrefixCacheHits

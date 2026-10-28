@@ -52,8 +52,9 @@ def mha_split_kv_decode_num_partitions(
     sliding_window: int | None,
     sm_count: int,
 ) -> int:
-    """Returns the decode partition count for a KV cache whose key is wider
-    than its value.
+    """Returns the decode partition count for a KV cache.
+
+    The count covers a cache whose key is wider than its value.
 
     The SM100 kernel honors this count from the dispatch metadata, so an
     engine that keys graph captures on it must compute the same value.

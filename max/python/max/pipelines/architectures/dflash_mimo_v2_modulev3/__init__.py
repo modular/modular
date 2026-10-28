@@ -10,8 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The MiMo-V2.6-Flash DFlash drafter on ModuleV3 (``dflash/`` in the
-checkpoint)."""
+"""The MiMo-V2.6-Flash DFlash drafter on ModuleV3.
+
+The checkpoint names it ``dflash/``.
+"""
 
 from ..dflash_mimo_v2 import DFlashMiMoV2Config
 from .arch import dflash_mimo_v2_modulev3_draft_arch

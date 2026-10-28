@@ -170,8 +170,10 @@ def can_execute(graph: Graph, max_ops: int | None = None) -> bool:
 
 
 def _describe(op: _core.Operation) -> str:
-    """Names an op by its MLIR name, which an op with no Python class lacks
-    from its type."""
+    """Names an op by its MLIR name.
+
+    An op with no Python class cannot take its name from its type.
+    """
     asm = op.asm(
         print_generic_op_form=True, skip_regions=True, assume_verified=True
     )
@@ -283,7 +285,6 @@ def _walk_ops(module: builtin.ModuleOp) -> Iterator[_core.Operation]:
     Returns:
         Generator of dispatchable operations in execution order.
     """
-
     # MO graphs have the structure:
     # builtin.module -> mo.graph -> Region 0 -> Block 0 -> operations
     # SSA form guarantees operations are already in valid execution order.

@@ -11,8 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Interfaces for running models end to end: registry, configuration, and
-pipeline classes for text, embeddings, and pixel generation.
+"""Interfaces for running models end to end.
+
+They hold the registry, the configuration, and the pipeline classes for text,
+embeddings, and pixel generation.
 
 A pipeline wires a model family into an executable workflow. A
 :class:`~max.pipelines.lib.registry.SupportedArchitecture` registers the model in the

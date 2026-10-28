@@ -42,8 +42,9 @@ logger = logging.getLogger("max.pipelines")
 
 @runtime_checkable
 class SupportsCompiledModules(Protocol):
-    """A pipeline that keeps each role's compiled graph, as the
-    text-generation pipelines do.
+    """A pipeline that keeps each role's compiled graph.
+
+    The text-generation pipelines work this way.
     """
 
     @property

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Expert-parallel communication for the legacy NN layers."""
 
 from .ep_config import EPConfig, calculate_ep_max_tokens_per_rank
 from .ep_manager import (

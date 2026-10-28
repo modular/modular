@@ -169,8 +169,10 @@ def ep_input_types(
 def batch_distributed_buffers(
     target_arch: str, target_inputs: object
 ) -> tuple[Sequence[Buffer] | None, Sequence[Buffer]]:
-    """Returns the per-device context lengths and the buffers of
-    :func:`ep_input_types` that the target's batch processor prepared.
+    """Returns the per-device context lengths and the prepared buffers.
+
+    The buffers are the ones in :func:`ep_input_types` that the target's batch
+    processor prepared.
 
     ``None`` context lengths when it prepares none.
     """
@@ -186,8 +188,9 @@ def export_contract(
     input_types: Sequence[TensorType | BufferType],
     structured_output: bool,
 ) -> Mapping[str, object] | None:
-    """Returns the record an engine that serves the fused graph checks its
-    inputs against, for a target whose engine keeps one.
+    """Returns the record a fused-graph engine checks its inputs against.
+
+    Only a target whose engine keeps such a record has one.
 
     Mach's ``gen_mef`` writes it to the export's sidecar.
     """
@@ -202,14 +205,19 @@ def export_contract(
 
 
 def speculates_on_last_stage(target_arch: str, method: str) -> bool:
-    """Returns whether the target's fused graph under ``method`` builds as
-    the last of several pipeline stages."""
+    """Returns whether ``method`` builds as the last pipeline stage.
+
+    The answer covers the target's fused graph.
+    """
     return _adapter(target_arch, method).speculates_on_last_stage
 
 
 def tail_kv(target_arch: str) -> str | None:
-    """Returns the target's KV child the graph declares past the canonical
-    tail rather than among its KV inputs, if any."""
+    """Returns the target's KV child declared past the canonical tail.
+
+    The graph declares it there rather than among its KV inputs. The result is
+    none when it declares no such child.
+    """
     return _adapter(target_arch).tail_kv
 
 
@@ -217,8 +225,10 @@ def tail_buffers(
     target_arch: str,
     tail: Sequence[RecurrentStateInputsPerDevice[Buffer, Buffer]],
 ) -> list[Buffer]:
-    """Returns the inputs of the :func:`tail_kv` child, in the order the
-    graph's tail declares them."""
+    """Returns the inputs of the :func:`tail_kv` child.
+
+    They come in the order the graph's tail declares them.
+    """
     return _adapter(target_arch).tail_buffers(tail)
 
 
@@ -230,20 +240,27 @@ def check(
 
 
 def relaxed_thinking_acceptance(target_arch: str) -> bool:
-    """Returns whether a reasoning model's drafts may be accepted under the
-    relaxed in-thinking rule."""
+    """Returns whether a reasoning model's drafts may be accepted.
+
+    The relaxed in-thinking rule decides it.
+    """
     return _adapter(target_arch).relaxed_thinking_acceptance
 
 
 def prepares_every_batch(target_arch: str) -> bool:
-    """Returns whether the target's own batch processor prepares every batch
-    of a pairing, the inputs past the canonical tail included."""
+    """Returns whether the target prepares every batch of a pairing.
+
+    The inputs past the canonical tail count.
+    """
     return _adapter(target_arch).prepares_every_batch
 
 
 def signal_buffer_index(target_arch: str) -> int | None:
-    """Returns where a ModuleV3 target's fused graph takes its signal
-    buffers on every device count, if it fixes that."""
+    """Returns where a fused graph takes its signal buffers.
+
+    The result is fixed across device counts, or none when the graph does not
+    fix it.
+    """
     return _adapter(target_arch).signal_buffer_index
 
 
@@ -261,8 +278,9 @@ def trailing_buffers(
     contexts: Sequence[TextContext],
     devices: Sequence[Device],
 ) -> list[Buffer]:
-    """Returns a batch's values of :func:`trailing_input_types` that no KV
-    child holds.
+    """Returns the trailing inputs that no KV child holds.
+
+    They are a batch's values of :func:`trailing_input_types`.
 
     Args:
         target_arch: The target checkpoint's architecture name.
@@ -279,9 +297,11 @@ def trailing_buffers(
 def batch_trailing_buffers(
     target_arch: str, method: str, target_inputs: object
 ) -> list[Buffer]:
-    """Returns the batch's values of :func:`trailing_input_types` that the
-    target's own batch processor prepared, for a target whose batch
-    processor prepares the pairing's batches."""
+    """Returns the trailing inputs that the target prepared.
+
+    They are the batch's values of :func:`trailing_input_types`, for a target
+    whose batch processor prepares the pairing's batches.
+    """
     return _adapter(target_arch, method).batch_trailing_buffers(target_inputs)
 
 
@@ -318,8 +338,11 @@ def replay_input_types(
 def batch_replay_buffers(
     target_arch: str, method: str, target_inputs: object
 ) -> list[Buffer]:
-    """Returns the batch's values of :func:`replay_input_types`, which the
-    target's own batch processor prepared; empty for the full graph."""
+    """Returns the replay inputs that the target prepared.
+
+    They are the batch's values of :func:`replay_input_types`, and empty for the
+    full graph.
+    """
     return _adapter(target_arch, method).batch_replay_buffers(target_inputs)
 
 
@@ -336,8 +359,11 @@ def replay_extra(
 def takes_vision_outputs(
     target_arch: str, method: str, target_config: Any
 ) -> bool:
-    """Returns whether the graph takes a vision encoder's output that MAX
-    doesn't compute, for an engine that runs the encoder itself."""
+    """Returns whether the graph takes an external vision output.
+
+    Such an output comes from an engine that runs the encoder itself, so MAX
+    does not compute it.
+    """
     return _adapter(target_arch, method).takes_vision_outputs(target_config)
 
 
@@ -364,8 +390,9 @@ def sequential_proposer(
     draft_config: Any,
     speculative: SpeculativeConfig,
 ) -> SequentialProposer[Any] | None:
-    """Returns the proposer of a one-token-per-step draft that runs on its
-    target's own module.
+    """Returns the proposer of a one-token-per-step draft.
+
+    The draft runs on its target's own module.
 
     ``None`` for every other draft, which its method's proposer runs.
     """

@@ -11,8 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Token sampling for MAX pipelines: samplers, logits processors, and the
-acceptance runners used in speculative decoding.
+"""Token sampling for MAX pipelines.
+
+It holds the samplers, the logits processors, and the acceptance runners used in
+speculative decoding.
 """
 
 from .label_scoring import LabelScorer

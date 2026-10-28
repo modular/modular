@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Normalization layers for the legacy NN stack."""
 
 from .group_norm import GroupNorm
 from .layer_norm import ConstantLayerNorm, LayerNorm

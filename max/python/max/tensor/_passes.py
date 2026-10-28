@@ -27,8 +27,7 @@ def _graph_block(graph: Graph) -> mlir.Block:
 
 
 def _fixup_graph(graph: Graph) -> None:
-    """Updates the mo.GraphOp and Graph objects to match the internal graph
-    structure.
+    """Matches the graph ops to the internal graph structure.
 
     Assumes that the graph block definition is correct, and infers the remaining
     properties from there:

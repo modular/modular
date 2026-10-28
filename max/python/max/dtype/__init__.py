@@ -11,8 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Tensor element types for MAX: the :class:`DType` enum and the
-:func:`finfo` limits query.
+"""Tensor element types for MAX.
+
+It holds the :class:`DType` enum and the :func:`finfo` limits query.
 """
 
 from . import dtype_extension
