@@ -575,7 +575,7 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "max.dkv.peer_transfer_failures": _meter.create_counter(
         "max.dkv.peer_transfer_failures",
         unit="transfers",
-        description="Hint-routed peer leases whose NIXL read failed to build or post, counted once per peer a round leased from. The failure is the peer's alone: the connector stays healthy, and the peer is skipped for the failure memo window, so later rounds lease from the co-located dKV, and marked stale so its metadata is reloaded. The usual cause is a peer that registered memory after the connector loaded its metadata.",
+        description="Hint-routed peer leases whose NIXL read failed to build, post or complete, counted once per peer a round leased from. The failure is the peer's alone: the connector stays healthy, and the peer is skipped for the failure memo window, so later rounds lease from the co-located dKV, and marked stale so its metadata is reloaded. The usual cause of a failed post is a peer that registered memory after the connector loaded its metadata.",
     ),  # type: ignore
     "max.dkv.peer_metadata_refreshes": _meter.create_counter(
         "max.dkv.peer_metadata_refreshes",

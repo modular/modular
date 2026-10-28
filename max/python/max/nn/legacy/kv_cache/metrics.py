@@ -209,7 +209,8 @@ class KVCacheMetrics:
     affects.
     """
     dkv_peer_transfer_failures: int = 0
-    """Hint-routed peer leases whose NIXL read failed to build or post.
+    """Hint-routed peer leases whose NIXL read failed to build, post or
+    complete.
 
     Charged to the peer, which is skipped for the failure memo window and
     marked stale for a metadata refresh, rather than degrading the connector.
