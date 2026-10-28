@@ -20,6 +20,7 @@
 #include "Event.h"
 #include "Function.h"
 #include "Memory.h"
+#include "llvm/ADT/SmallVector.h"
 #include <algorithm>
 
 DriverResult<M_driver_queue_t>
@@ -356,6 +357,8 @@ M_driver_status_t M_driver_queue::fillMemory(M_driver_memory_t dst,
 
 namespace {
 MTL::Size toSize(M_driver_dim_t dim) { return {dim.x, dim.y, dim.z}; }
+
+constexpr uint64_t kSetBytesLimit = 4096;
 } // namespace
 
 M_driver_status_t
@@ -383,10 +386,6 @@ M_driver_queue::execute(M_driver_function_t function,
     if (argSizes[i] == 0)
       return context->device->driver->status.create(
           "Unknown argument size at index " + std::to_string(i));
-    // Reject per-argument buffers at or above the device's per-buffer size
-    // limit, mirroring the guard on context allocations. Checked here, before
-    // the encoder is opened, so the per-arg newBuffer() below cannot return
-    // null mid-encode.
     if (argSizes[i] >= maxBufferLength)
       return context->device->driver->status.create(
           "Failed to allocate MTL Buffer of a size " +
@@ -407,6 +406,22 @@ M_driver_queue::execute(M_driver_function_t function,
           " exceeds device limit of " + std::to_string(maxSharedMemBytes));
   }
 
+  // Allocated before the encoder opens so a failure cannot leave one open.
+  llvm::SmallVector<NS::SharedPtr<MTL::Buffer>, 8> oversizedArgBuffers(
+      function->argumentCount);
+  for (uint32_t i = 0; i < function->argumentCount; ++i) {
+    if (argSizes[i] <= kSetBytesLimit)
+      continue;
+    oversizedArgBuffers[i] =
+        NS::TransferPtr(context->device->mDevice->newBuffer(
+            args[i], argSizes[i],
+            MTL::ResourceOptions(MTL::StorageModeShared) |
+                MTL::ResourceOptions(MTL::CPUCacheModeWriteCombined)));
+    if (!oversizedArgBuffers[i])
+      return context->device->driver->status.create(
+          "Failed to allocate MTL Buffer for argument " + std::to_string(i));
+  }
+
   std::lock_guard<std::mutex> lock(mMutex);
 
   MTL::CommandBuffer *cmdBuffer = mCommandQueue->commandBuffer();
@@ -421,17 +436,11 @@ M_driver_queue::execute(M_driver_function_t function,
         "Failed to create compute command encoder");
   encoder->setComputePipelineState(function->pipelineState.get());
 
-  // Bind all buffer arguments. Arguments were validated above, before the
-  // encoder was opened.
   for (uint32_t i = 0; i < function->argumentCount; ++i) {
-    // We have more complex argument, such as pointer to a struct. Allocate
-    // new MTLBuffer and set it.
-    NS::SharedPtr<MTL::Buffer> buf =
-        NS::TransferPtr(context->device->mDevice->newBuffer(
-            args[i], argSizes[i],
-            MTL::ResourceOptions(MTL::StorageModeShared) |
-                MTL::ResourceOptions(MTL::CPUCacheModeWriteCombined)));
-    encoder->setBuffer(buf.get(), 0, i);
+    if (oversizedArgBuffers[i])
+      encoder->setBuffer(oversizedArgBuffers[i].get(), 0, i);
+    else
+      encoder->setBytes(args[i], argSizes[i], i);
   }
 
   // Set resources that might be used by the kernel

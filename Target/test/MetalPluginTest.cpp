@@ -84,6 +84,25 @@ kernel void controlled_store(
 }
 )MSL";
 
+// One launch binds `big` (> 4 KB) via setBuffer and `length` via setBytes.
+static std::string largeArgMsl = R"MSL(
+#include <metal_stdlib>
+using namespace metal;
+
+struct UintBufPtr { device uint* ptr; };
+struct LargeArg   { uint vals[1100]; };
+
+kernel void large_arg_copy(
+    device UintBufPtr& out_ref [[buffer(0)]],
+    constant LargeArg& big     [[buffer(1)]],
+    constant uint&     length  [[buffer(2)]],
+    uint tid [[thread_position_in_grid]])
+{
+    if (tid < length)
+        out_ref.ptr[tid] = big.vals[tid];
+}
+)MSL";
+
 TEST_F(DriverPluginTest, CustomStatusMessage) {
   char errorMessage[1024];
   ASSERT_EQ(M_DRIVER_STATUS_SUCCESS,
@@ -470,6 +489,69 @@ TEST_F(DriverMetalPluginFunctionTest, QueueExecuteValidSharedMem) {
           << "Mismatch at index " << j << ": expected " << expected << ", got "
           << outHost[j];
     }
+  }
+}
+
+TEST_F(DriverPluginQueueTest, QueueExecuteBindsArgOverSetBytesLimit) {
+  constexpr uint32_t length = 1100;
+  struct LargeArg {
+    uint32_t vals[length];
+  };
+  static_assert(sizeof(LargeArg) > 4096);
+
+  for (size_t i = 0; i < contexts.size(); i++) {
+    M_driver_context_t context = contexts[i];
+    M_driver_queue_t queue = queues[i];
+
+    M_driver_runtime_bundle_t library;
+    std::string fileType("msl");
+    M_driver_static_bundle staticBundle{.mapped_data =
+                                            M_driver_slice_from(largeArgMsl),
+                                        .file_type = fileType.c_str(),
+                                        .file_type_len = fileType.size()};
+    M_driver_bundle_compilation_options opts{"", 0, -1};
+    ASSERT_SUCCESS(bundle_load(context, &staticBundle, &opts, &library));
+    std::string funcName("large_arg_copy");
+    M_driver_function_t function;
+    ASSERT_SUCCESS(function_load(context, library, funcName.c_str(),
+                                 funcName.size(), &function));
+
+    constexpr size_t memorySize = length * sizeof(uint32_t);
+    M_driver_memory_t outMemory;
+    ASSERT_SUCCESS(memory_alloc_sync(context, memorySize, &outMemory));
+    auto defer = llvm::scope_exit([&]() {
+      memory_free_sync(context, outMemory);
+      function_unload(context, function);
+      bundle_unload(context, library);
+    });
+
+    void *outPtr = nullptr;
+    ASSERT_SUCCESS(memory_property(outMemory, "address", &outPtr));
+    LargeArg big;
+    for (uint32_t j = 0; j < length; ++j)
+      big.vals[j] = 7 * j + 3;
+    uint32_t lengthValue = length;
+    void *args[] = {&outPtr, &big, &lengthValue};
+    uint64_t argSizes[] = {sizeof(outPtr), sizeof(big), sizeof(lengthValue)};
+
+    constexpr uint32_t blockDim = 100;
+    M_driver_queue_execute_config_t config = {
+        .mode = M_DRIVER_QUEUE_EXECUTE_MODE_GPU,
+        .config = {.gpu = {
+                       .grid = {length / blockDim, 1, 1},
+                       .block = {blockDim, 1, 1},
+                       .shared_mem_bytes = 0,
+                       .attributes = nullptr,
+                       .num_attributes = 0,
+                   }}};
+    ASSERT_SUCCESS(queue_execute(queue, function, &config, args, argSizes, 3));
+
+    std::vector<uint32_t> outHost(length, 0);
+    M_driver_memory_view fromView{outMemory, /*offset=*/0, memorySize};
+    ASSERT_SUCCESS(queue_copy_from_device(queue, outHost.data(), &fromView));
+    ASSERT_SUCCESS(queue_synchronize(queue));
+    for (uint32_t j = 0; j < length; ++j)
+      EXPECT_EQ(outHost[j], 7 * j + 3) << "Mismatch at index " << j;
   }
 }
 
