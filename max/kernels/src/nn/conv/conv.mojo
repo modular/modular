@@ -24,7 +24,7 @@ from std.math.uutils import udivmod
 from std.memory import ThinAllocation, dealloc
 
 
-from std.os import abort, getenv
+from std.os import abort
 from std.ffi import _get_global_or_null, external_call
 from std.sys.info import align_of, simd_width_of, size_of
 
@@ -107,7 +107,7 @@ from linalg.utils import (
     partial_simd_store,
 )
 from max.gpu import block_dim, block_idx, thread_idx
-from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host import DeviceContext
 from max.gpu.host import HIP
 from max.gpu.host import CUDA
 from max.gpu.host.info import _is_sm10x_gpu
@@ -5534,165 +5534,6 @@ def conv_gpu[
                     compute_fn=gemm_compute_fn,
                 )
 
-            # MIOpen-oracle audit. Gated on `MODULAR_CONV_AUDIT_MIOPEN=1`;
-            # re-runs the same conv via MIOpen and emits a single line
-            # with `max_abs / L1_rel / mean_abs` vs the just-produced
-            # `output`.
-            #
-            # Subtlety: the user-supplied `epilogue_fn` is a
-            # closure capturing `output` that writes its
-            # result into the *real* `output` tensor (see e.g.
-            # `Conv2dResidualAdd.output_fn` in kernels) — its
-            # write destination is captured, not derived from the
-            # `output` arg of `_conv_miopen`. So we bracket the MIOpen
-            # call with snapshot/restore D2D copies: snapshot 4-wave
-            # output → run MIOpen (overwrites `output` via the user's
-            # epilogue) → diff snapshot vs `output` → restore `output`
-            # from snapshot so downstream layers still see the 4-wave
-            # result.
-            #
-            # Residual convs (`has_residual=True`) extend the host-side
-            # diff with `+ beta * source[i]`, since MIOpen has no
-            # residual path and the 4-wave kernel does the residual add
-            # in-kernel. We pull `source_ptr`'s contents to host along
-            # with the other two buffers and combine them in the loop.
-            @inline(.always)
-            def _audit_amd_4wave_vs_miopen() raises {imm}:
-                if getenv("MODULAR_CONV_AUDIT_MIOPEN", "0") != "1":
-                    return
-
-                var n_elements = output.num_elements()
-
-                # Snapshot our 4-wave result before MIOpen overwrites
-                # `output` via the user epilogue.
-                var our_buf = ctx.enqueue_create_buffer[output_type](n_elements)
-                var output_view = output.to_device_buffer(ctx)
-                ctx.enqueue_copy(our_buf, output_view)
-
-                # Run MIOpen + user's epilogue. The epilogue writes to
-                # its captured `output`, so `output` now contains
-                # MIOpen+bias.
-                _conv_miopen[
-                    has_epilogue_fn=has_epilogue_fn,
-                    filter_is_fcrs=filter_is_fcrs,
-                ](
-                    input,
-                    filter,
-                    output,
-                    stride,
-                    dilation,
-                    symmetric_padding,
-                    num_groups,
-                    ctx,
-                    epilogue_fn,
-                )
-
-                # Pull both to host for elementwise diff.
-                var host_our = ctx.enqueue_create_host_buffer[output_type](
-                    n_elements
-                )
-                var host_mio = ctx.enqueue_create_host_buffer[output_type](
-                    n_elements
-                )
-                var host_src = ctx.enqueue_create_host_buffer[output_type](
-                    n_elements if (
-                        has_residual and source_ptr.__bool__()
-                    ) else 1
-                )
-                ctx.enqueue_copy(host_our, our_buf)
-                ctx.enqueue_copy(host_mio, output_view)
-
-                comptime if has_residual:
-                    if case .Some(source_ptr) = source_ptr:
-                        var source_view = DeviceBuffer[output_type](
-                            ctx, source_ptr, n_elements, owning=False
-                        )
-                        ctx.enqueue_copy(host_src, source_view)
-                ctx.synchronize()
-
-                var max_abs: Float32 = 0
-                var sum_abs_diff: Float32 = 0
-                var sum_abs_ref: Float32 = 0
-                # The 4-wave residual path does
-                # `result = (conv + beta*source) + bias` in kernel +
-                # epilogue. Our oracle here mirrors that as
-                # `mio + beta*source` (MIOpen already includes +bias
-                # from the user epilogue). Order of `+bias` and
-                # `+beta*source` differs but they commute modulo BF16
-                # rounding; the noise floor is unaffected.
-                var beta_f32: Float32 = beta
-                for i in range(n_elements):
-                    var a = Float32(host_our[i])
-                    var b = Float32(host_mio[i])
-
-                    comptime if has_residual:
-                        if source_ptr:
-                            b += beta_f32 * Float32(host_src[i])
-
-                    var d = abs(a - b)
-                    if d > max_abs:
-                        max_abs = d
-                    sum_abs_diff += d
-                    sum_abs_ref += abs(b)
-                var l1_rel = (
-                    sum_abs_diff / sum_abs_ref if sum_abs_ref
-                    > 0 else Float32(0)
-                )
-                var mean_abs = sum_abs_diff / Float32(n_elements)
-
-                var in_n = Int(input.dim[0]())
-                var in_h = Int(input.dim[1]())
-                var in_w = Int(input.dim[2]())
-                var in_c = Int(input.dim[3]())
-                var out_c = Int(output.dim[3]())
-                var r_dim: Int
-                var s_dim: Int
-
-                comptime if filter_is_fcrs:
-                    r_dim = Int(filter.dim[2]())
-                    s_dim = Int(filter.dim[3]())
-                else:
-                    r_dim = Int(filter.dim[0]())
-                    s_dim = Int(filter.dim[1]())
-
-                var resid_flag = 1 if has_residual else 0
-                print(
-                    "[CONV_AUDIT]",
-                    " N=",
-                    in_n,
-                    " H=",
-                    in_h,
-                    " W=",
-                    in_w,
-                    " C_in=",
-                    in_c,
-                    " C_out=",
-                    out_c,
-                    " R=",
-                    r_dim,
-                    " S=",
-                    s_dim,
-                    " stride=",
-                    stride[0],
-                    " has_resid=",
-                    resid_flag,
-                    " max_abs=",
-                    max_abs,
-                    " L1_rel=",
-                    l1_rel,
-                    " mean_abs=",
-                    mean_abs,
-                )
-
-                # Restore our 4-wave output so downstream layers don't
-                # see MIOpen results.
-                ctx.enqueue_copy(output_view, our_buf)
-
-                _ = our_buf^
-                _ = host_our^
-                _ = host_mio^
-                _ = host_src^
-
             comptime if has_epilogue_fn:
                 # Wrap the 4D NHWC epilogue into a 2D GEMM-space
                 # epilogue for the AMD 4-wave kernel. The kernel calls
@@ -5731,7 +5572,6 @@ def conv_gpu[
                 if _amd_4wave_dispatch[has_gemm_epilogue_fn=True](
                     _amd_4wave_void_epilogue
                 ):
-                    _audit_amd_4wave_vs_miopen()
                     return
             elif has_compute_fn and not has_residual:
                 var _amd_4wave_out_h = Int(output.dim[1]())
@@ -5761,8 +5601,6 @@ def conv_gpu[
                         )
                     )
 
-                # The MIOpen audit compares against a conv without
-                # `compute_fn`, so it is skipped here.
                 if _amd_4wave_dispatch[
                     has_gemm_epilogue_fn=False, has_gemm_compute_fn=True
                 ](no_epilogue_fn, _amd_4wave_compute):
@@ -5775,8 +5613,6 @@ def conv_gpu[
                     # add, so a post-residual `compute_fn` runs here.
                     comptime if has_compute_fn:
                         _conv_compute_in_place(output, compute_fn, ctx)
-                    else:
-                        _audit_amd_4wave_vs_miopen()
                     return
 
         # AMD GPU path: fall back to MIOpen for conv2d.
@@ -5936,6 +5772,15 @@ def conv_gpu[
 
     elif input.rank == 5:
         comptime if filter_is_fcrs:
+            # cuDNN writes `output` directly and takes no store epilogue, so
+            # with one this path would drop the fused ops, and the fused
+            # execute overload passes it a null output. No graph reaches it
+            # today: the graph compiler rewrites FCQRS filters only on the
+            # host, and no caller builds a GPU 3D conv with one. Reject the
+            # pairing at compile time instead.
+            comptime assert (
+                not has_epilogue_fn
+            ), "a 3D conv with an FCQRS filter cannot apply a fused epilogue"
             conv3d_cudnn[input_type, filter_type, output_type](
                 input,
                 filter,
