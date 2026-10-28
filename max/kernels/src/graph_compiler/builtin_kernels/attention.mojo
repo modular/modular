@@ -575,19 +575,39 @@ def _mla_indexer_ragged_float8_paged_execute[
     kpool: Int,
     write_logical: Bool,
 ](
-    output_indices: OutputTensor[dtype=.int32, rank=2, ...],
-    q: InputTensor[dtype=.float8_e4m3fn, rank=3, ...],
-    qs: InputTensor[dtype=.float32, rank=2, ...],
-    input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-    k_blocks: MutableInputTensor[dtype=.float8_e4m3fn, rank=6, ...],
-    page_stride: InputTensor[dtype=.int64, rank=1, ...],
-    k_cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-    k_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-    k_max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-    k_max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
-    k_scales: MutableInputTensor[dtype=.float32, rank=6, ...],
-    scales_page_stride: InputTensor[dtype=.int64, rank=1, ...],
-    k_scales_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+    output_indices: TileTensor[
+        mut=True, DType.int32, address_space=.GENERIC, ...
+    ],
+    q: TileTensor[mut=False, DType.float8_e4m3fn, address_space=.GENERIC, ...],
+    qs: TileTensor[mut=False, DType.float32, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    k_blocks: TileTensor[
+        mut=True, DType.float8_e4m3fn, address_space=.GENERIC, ...
+    ],
+    page_stride: TileTensor[
+        mut=False, DType.int64, address_space=.GENERIC, ...
+    ],
+    k_cache_lengths: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    k_lookup_table: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    k_max_prompt_length: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    k_max_cache_length: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    k_scales: TileTensor[mut=True, DType.float32, address_space=.GENERIC, ...],
+    scales_page_stride: TileTensor[
+        mut=False, DType.int64, address_space=.GENERIC, ...
+    ],
+    k_scales_lookup_table: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
     layer_idx: UInt32,
     remap: R,
     ctx: DeviceContext,
@@ -597,18 +617,33 @@ def _mla_indexer_ragged_float8_paged_execute[
     `remap` is the optional second output; `Topk` is the top-k dispatch,
     which the op's registration picks.
     """
+    comptime assert output_indices.rank == 2
+    comptime assert q.rank == 3
+    comptime assert qs.rank == 2
+    comptime assert input_row_offsets.rank == 1
+    comptime assert k_blocks.rank == 6
+    comptime assert page_stride.rank == 1
+    comptime assert k_cache_lengths.rank == 1
+    comptime assert k_lookup_table.rank == 2
+    comptime assert k_max_prompt_length.rank == 1
+    comptime assert k_max_cache_length.rank == 1
+    comptime assert k_scales.rank == 6
+    comptime assert scales_page_stride.rank == 1
+    comptime assert k_scales_lookup_table.rank == 2
     # Extract cache parameters from block shapes
-    comptime page_size = Int(k_blocks.static_spec.shape_tuple[3])
-    comptime head_dim = Int(k_blocks.static_spec.shape_tuple[5])
-    comptime k_num_heads = Int(k_blocks.static_spec.shape_tuple[4])
-    comptime is_mla = Int(k_blocks.static_spec.shape_tuple[1]) == 1
+    comptime page_size = k_blocks.static_shape[3]
+    comptime head_dim = k_blocks.static_shape[5]
+    comptime k_num_heads = k_blocks.static_shape[4]
+    comptime is_mla = k_blocks.static_shape[1] == 1
     comptime kv_params = KVCacheStaticParams(k_num_heads, head_dim, is_mla)
     comptime assert quantization_granularity >= depth, (
         "quantization_granularity must be >= depth for MLA (one scale per"
         " token per head)"
     )
 
-    # K cache with scales (k_s values are stored in k_collection.scales)
+    # K cache with scales (k_s values are stored in k_collection.scales). The
+    # builder takes pointer-backed tiles; a non-pointer storage policy aborts
+    # here at run time.
     var k_collection = generic_get_paged_cache_with_scales[
         DType.float8_e4m3fn,
         DType.float32,
@@ -616,15 +651,15 @@ def _mla_indexer_ragged_float8_paged_execute[
         page_size,
         quantization_granularity,
     ](
-        k_blocks.to_tile_tensor(),
-        page_stride.to_tile_tensor(),
-        k_cache_lengths.to_tile_tensor(),
-        k_lookup_table.to_tile_tensor(),
-        k_max_prompt_length.to_tile_tensor(),
-        k_max_cache_length.to_tile_tensor(),
-        k_scales.to_tile_tensor(),
-        scales_page_stride.to_tile_tensor(),
-        k_scales_lookup_table.to_tile_tensor(),
+        _mut_pointer_tile(k_blocks),
+        _imm_pointer_tile(page_stride),
+        _imm_pointer_tile(k_cache_lengths),
+        _imm_pointer_tile(k_lookup_table),
+        _imm_pointer_tile(k_max_prompt_length),
+        _imm_pointer_tile(k_max_cache_length),
+        _mut_pointer_tile(k_scales),
+        _imm_pointer_tile(scales_page_stride),
+        _imm_pointer_tile(k_scales_lookup_table),
     )
 
     mla_indexer_ragged_float8_paged[
@@ -638,10 +673,10 @@ def _mla_indexer_ragged_float8_paged_execute[
         write_logical=write_logical,
         Topk=Topk,
     ](
-        output_indices.to_tile_tensor[.int64](),
-        q.to_tile_tensor[.int64](),
-        qs.to_tile_tensor[.int64](),
-        input_row_offsets.to_tile_tensor[.int64](),
+        _mut_pointer_tile(output_indices),
+        _imm_pointer_tile(q),
+        _imm_pointer_tile(qs),
+        _imm_pointer_tile(input_row_offsets),
         k_collection,
         layer_idx,
         ctx,
@@ -664,22 +699,22 @@ struct MLAIndexerRaggedFloat8Paged:
         mask_str: StaticString,
         kpool: Int = 1,
     ](
-        output_indices: OutputTensor[dtype=.int32, rank=2, ...],
-        q: InputTensor[dtype=.float8_e4m3fn, rank=3, ...],
-        qs: InputTensor[dtype=.float32, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        k_blocks: MutableInputTensor[dtype=.float8_e4m3fn, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        k_cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        k_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        k_max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        k_max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
-        k_scales: MutableInputTensor[dtype=.float32, rank=6, ...],
-        scales_page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        output_indices: Some[Output & Tensor],
+        q: Some[Input & Tensor],
+        qs: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        k_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        k_cache_lengths: Some[Input & Tensor],
+        k_lookup_table: Some[Input & Tensor],
+        k_max_prompt_length: Some[Input & Tensor],
+        k_max_cache_length: Some[Input & Tensor],
+        k_scales: Some[MutableInput & Tensor],
+        scales_page_stride: Some[Input & Tensor],
         # Resolves a request's scale pages. Pass `k_lookup_table` itself when
         # the scales share the values' block-id space; pass a distinct table
         # when they are paged independently.
-        k_scales_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        k_scales_lookup_table: Some[Input & Tensor],
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
@@ -724,6 +759,36 @@ struct MLAIndexerRaggedFloat8Paged:
             layer_idx: Layer index for retrieving the correct cache layer.
             ctx: Device context for GPU execution.
         """
+        comptime assert conforms_to(type_of(output_indices), TileTensorable)
+        comptime assert conforms_to(type_of(q), TileTensorable)
+        comptime assert conforms_to(type_of(qs), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(k_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(k_cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(k_lookup_table), TileTensorable)
+        comptime assert conforms_to(
+            type_of(k_max_prompt_length), TileTensorable
+        )
+        comptime assert conforms_to(type_of(k_max_cache_length), TileTensorable)
+        comptime assert conforms_to(type_of(k_scales), TileTensorable)
+        comptime assert conforms_to(type_of(scales_page_stride), TileTensorable)
+        comptime assert conforms_to(
+            type_of(k_scales_lookup_table), TileTensorable
+        )
+        comptime assert type_of(output_indices).rank == 2
+        comptime assert type_of(q).rank == 3
+        comptime assert type_of(qs).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(k_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(k_cache_lengths).rank == 1
+        comptime assert type_of(k_lookup_table).rank == 2
+        comptime assert type_of(k_max_prompt_length).rank == 1
+        comptime assert type_of(k_max_cache_length).rank == 1
+        comptime assert type_of(k_scales).rank == 6
+        comptime assert type_of(scales_page_stride).rank == 1
+        comptime assert type_of(k_scales_lookup_table).rank == 2
         _mla_indexer_ragged_float8_paged_execute[
             num_heads=num_heads,
             depth=depth,
@@ -733,19 +798,19 @@ struct MLAIndexerRaggedFloat8Paged:
             kpool=kpool,
             write_logical=True,
         ](
-            output_indices,
-            q,
-            qs,
-            input_row_offsets,
-            k_blocks,
-            page_stride,
-            k_cache_lengths,
-            k_lookup_table,
-            k_max_prompt_length,
-            k_max_cache_length,
-            k_scales,
-            scales_page_stride,
-            k_scales_lookup_table,
+            output_indices.to_tile_tensor[.int32](),
+            q.to_tile_tensor[.float8_e4m3fn](),
+            qs.to_tile_tensor[.float32](),
+            input_row_offsets.to_tile_tensor[.uint32](),
+            k_blocks.to_tile_tensor[.float8_e4m3fn](),
+            page_stride.to_tile_tensor[.int64](),
+            k_cache_lengths.to_tile_tensor[.uint32](),
+            k_lookup_table.to_tile_tensor[.uint32](),
+            k_max_prompt_length.to_tile_tensor[.uint32](),
+            k_max_cache_length.to_tile_tensor[.uint32](),
+            k_scales.to_tile_tensor[.float32](),
+            scales_page_stride.to_tile_tensor[.int64](),
+            k_scales_lookup_table.to_tile_tensor[.uint32](),
             layer_idx,
             NoRemap(),
             ctx,
@@ -772,23 +837,23 @@ struct MLAIndexerRaggedFloat8PagedRemap:
         mask_str: StaticString,
         write_logical: Bool = False,
     ](
-        output_indices: OutputTensor[dtype=.int32, rank=2, ...],
-        physical_indices: OutputTensor[dtype=.int32, rank=2, ...],
-        q: InputTensor[dtype=.float8_e4m3fn, rank=3, ...],
-        qs: InputTensor[dtype=.float32, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        k_blocks: MutableInputTensor[dtype=.float8_e4m3fn, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        k_cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        k_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        k_max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        k_max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
-        k_scales: MutableInputTensor[dtype=.float32, rank=6, ...],
-        scales_page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        k_scales_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        output_indices: Some[Output & Tensor],
+        physical_indices: Some[Output & Tensor],
+        q: Some[Input & Tensor],
+        qs: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        k_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        k_cache_lengths: Some[Input & Tensor],
+        k_lookup_table: Some[Input & Tensor],
+        k_max_prompt_length: Some[Input & Tensor],
+        k_max_cache_length: Some[Input & Tensor],
+        k_scales: Some[MutableInput & Tensor],
+        scales_page_stride: Some[Input & Tensor],
+        k_scales_lookup_table: Some[Input & Tensor],
         layer_idx: UInt32,
-        mla_kv_blocks: MutableInputTensor[rank=6, ...],
-        mla_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        mla_kv_blocks: Some[MutableInput & Tensor],
+        mla_lookup_table: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
         """Computes top-k key positions and their physical MLA cache rows.
@@ -828,13 +893,57 @@ struct MLAIndexerRaggedFloat8PagedRemap:
                 `[batch_size, pages_per_seq]`.
             ctx: Device context for GPU execution.
         """
-        comptime mla_page_size = Int(mla_kv_blocks.static_spec.shape_tuple[3])
+        comptime assert conforms_to(type_of(output_indices), TileTensorable)
+        comptime assert conforms_to(type_of(physical_indices), TileTensorable)
+        comptime assert conforms_to(type_of(q), TileTensorable)
+        comptime assert conforms_to(type_of(qs), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(k_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(k_cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(k_lookup_table), TileTensorable)
+        comptime assert conforms_to(
+            type_of(k_max_prompt_length), TileTensorable
+        )
+        comptime assert conforms_to(type_of(k_max_cache_length), TileTensorable)
+        comptime assert conforms_to(type_of(k_scales), TileTensorable)
+        comptime assert conforms_to(type_of(scales_page_stride), TileTensorable)
+        comptime assert conforms_to(
+            type_of(k_scales_lookup_table), TileTensorable
+        )
+        comptime assert conforms_to(type_of(mla_kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(mla_lookup_table), TileTensorable)
+        comptime assert type_of(output_indices).rank == 2
+        comptime assert type_of(physical_indices).rank == 2
+        comptime assert type_of(q).rank == 3
+        comptime assert type_of(qs).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(k_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(k_cache_lengths).rank == 1
+        comptime assert type_of(k_lookup_table).rank == 2
+        comptime assert type_of(k_max_prompt_length).rank == 1
+        comptime assert type_of(k_max_cache_length).rank == 1
+        comptime assert type_of(k_scales).rank == 6
+        comptime assert type_of(scales_page_stride).rank == 1
+        comptime assert type_of(k_scales_lookup_table).rank == 2
+        comptime assert type_of(mla_kv_blocks).rank == 6
+        comptime assert type_of(mla_lookup_table).rank == 2
+        comptime mla_page_size = type_of(mla_kv_blocks)._shape_types[
+            3
+        ].static_value
+        # The remap reads the index tables through their flat pointers; a
+        # non-pointer storage policy aborts here at run time.
         var remap = PagedKVRemap[mla_page_size](
-            physical_indices.unsafe_ptr(),
-            mla_lookup_table.unsafe_ptr(),
-            mla_lookup_table.dim_size(1),
-            mla_lookup_table.dim_size(0),
-            UInt32(mla_kv_blocks.dim_size(0)),
+            physical_indices.to_tile_tensor[.int32]()
+            .as_unsafe_any_origin()
+            .ptr,
+            mla_lookup_table.to_tile_tensor[.uint32]()
+            .as_unsafe_any_origin()
+            .ptr,
+            Int(mla_lookup_table.shape()[1].value()),
+            Int(mla_lookup_table.shape()[0].value()),
+            UInt32(Int(mla_kv_blocks.shape()[0].value())),
         )
         _mla_indexer_ragged_float8_paged_execute[
             num_heads=num_heads,
@@ -845,19 +954,19 @@ struct MLAIndexerRaggedFloat8PagedRemap:
             kpool=1,
             write_logical=write_logical,
         ](
-            output_indices,
-            q,
-            qs,
-            input_row_offsets,
-            k_blocks,
-            page_stride,
-            k_cache_lengths,
-            k_lookup_table,
-            k_max_prompt_length,
-            k_max_cache_length,
-            k_scales,
-            scales_page_stride,
-            k_scales_lookup_table,
+            output_indices.to_tile_tensor[.int32](),
+            q.to_tile_tensor[.float8_e4m3fn](),
+            qs.to_tile_tensor[.float32](),
+            input_row_offsets.to_tile_tensor[.uint32](),
+            k_blocks.to_tile_tensor[.float8_e4m3fn](),
+            page_stride.to_tile_tensor[.int64](),
+            k_cache_lengths.to_tile_tensor[.uint32](),
+            k_lookup_table.to_tile_tensor[.uint32](),
+            k_max_prompt_length.to_tile_tensor[.uint32](),
+            k_max_cache_length.to_tile_tensor[.uint32](),
+            k_scales.to_tile_tensor[.float32](),
+            scales_page_stride.to_tile_tensor[.int64](),
+            k_scales_lookup_table.to_tile_tensor[.uint32](),
             layer_idx,
             remap,
             ctx,
@@ -886,26 +995,26 @@ struct MLAIndexerRaggedFloat8PagedRemapNVFP4:
         mask_str: StaticString,
         write_logical: Bool = False,
     ](
-        output_indices: OutputTensor[dtype=.int32, rank=2, ...],
-        physical_indices: OutputTensor[dtype=.int32, rank=2, ...],
-        q: InputTensor[dtype=.float8_e4m3fn, rank=3, ...],
-        qs: InputTensor[dtype=.float32, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        k_blocks: MutableInputTensor[dtype=.float8_e4m3fn, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        k_cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        k_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        k_max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        k_max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
-        k_scales: MutableInputTensor[dtype=.float32, rank=6, ...],
-        scales_page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        k_scales_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        output_indices: Some[Output & Tensor],
+        physical_indices: Some[Output & Tensor],
+        q: Some[Input & Tensor],
+        qs: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        k_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        k_cache_lengths: Some[Input & Tensor],
+        k_lookup_table: Some[Input & Tensor],
+        k_max_prompt_length: Some[Input & Tensor],
+        k_max_cache_length: Some[Input & Tensor],
+        k_scales: Some[MutableInput & Tensor],
+        scales_page_stride: Some[Input & Tensor],
+        k_scales_lookup_table: Some[Input & Tensor],
         layer_idx: UInt32,
-        mla_kv_blocks: MutableInputTensor[rank=6, ...],
-        mla_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        mla_kv_scales: MutableInputTensor[dtype=.float8_e4m3fn, rank=6, ...],
-        mla_scales_page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        mla_scales_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        mla_kv_blocks: Some[MutableInput & Tensor],
+        mla_lookup_table: Some[Input & Tensor],
+        mla_kv_scales: Some[MutableInput & Tensor],
+        mla_scales_page_stride: Some[Input & Tensor],
+        mla_scales_lookup_table: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
         """Computes top-k key positions and their value and scale rows.
@@ -954,28 +1063,88 @@ struct MLAIndexerRaggedFloat8PagedRemapNVFP4:
                 `[batch_size, pages_per_seq]`.
             ctx: Device context for GPU execution.
         """
-        comptime mla_page_size = Int(mla_kv_blocks.static_spec.shape_tuple[3])
+        comptime assert conforms_to(type_of(output_indices), TileTensorable)
+        comptime assert conforms_to(type_of(physical_indices), TileTensorable)
+        comptime assert conforms_to(type_of(q), TileTensorable)
+        comptime assert conforms_to(type_of(qs), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(k_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(k_cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(k_lookup_table), TileTensorable)
+        comptime assert conforms_to(
+            type_of(k_max_prompt_length), TileTensorable
+        )
+        comptime assert conforms_to(type_of(k_max_cache_length), TileTensorable)
+        comptime assert conforms_to(type_of(k_scales), TileTensorable)
+        comptime assert conforms_to(type_of(scales_page_stride), TileTensorable)
+        comptime assert conforms_to(
+            type_of(k_scales_lookup_table), TileTensorable
+        )
+        comptime assert conforms_to(type_of(mla_kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(mla_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(mla_kv_scales), TileTensorable)
+        comptime assert conforms_to(
+            type_of(mla_scales_page_stride), TileTensorable
+        )
+        comptime assert conforms_to(
+            type_of(mla_scales_lookup_table), TileTensorable
+        )
+        comptime assert type_of(output_indices).rank == 2
+        comptime assert type_of(physical_indices).rank == 2
+        comptime assert type_of(q).rank == 3
+        comptime assert type_of(qs).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(k_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(k_cache_lengths).rank == 1
+        comptime assert type_of(k_lookup_table).rank == 2
+        comptime assert type_of(k_max_prompt_length).rank == 1
+        comptime assert type_of(k_max_cache_length).rank == 1
+        comptime assert type_of(k_scales).rank == 6
+        comptime assert type_of(scales_page_stride).rank == 1
+        comptime assert type_of(k_scales_lookup_table).rank == 2
+        comptime assert type_of(mla_kv_blocks).rank == 6
+        comptime assert type_of(mla_lookup_table).rank == 2
+        comptime assert type_of(mla_kv_scales).rank == 6
+        comptime assert type_of(mla_kv_scales).dtype == DType.float8_e4m3fn
+        comptime assert type_of(mla_scales_page_stride).rank == 1
+        comptime assert type_of(mla_scales_lookup_table).rank == 2
+        comptime mla_page_size = type_of(mla_kv_blocks)._shape_types[
+            3
+        ].static_value
         # The scale pool's blocks sit a page stride apart, which is
         # `rows_per_block` rows of `heads * scales_per_row` elements.
-        var scales_row_elems = mla_kv_scales.dim_size(
-            4
-        ) * mla_kv_scales.dim_size(5)
+        var mla_kv_scales_tile = mla_kv_scales.to_tile_tensor()
+        var scales_row_elems = Int(mla_kv_scales_tile.dim[4]()) * Int(
+            mla_kv_scales_tile.dim[5]()
+        )
         var scales_page_elems = Int(
-            mla_scales_page_stride.to_tile_tensor().as_imm()[0]
+            mla_scales_page_stride.to_tile_tensor[.int64]()
+            .as_imm()
+            .load[width=1](Coord(0))
         )
         if scales_page_elems < 0:
             scales_page_elems = scales_row_elems
             for i in range(1, 4):
-                scales_page_elems *= mla_kv_scales.dim_size(i)
+                scales_page_elems *= Int(mla_kv_scales_tile.dim(i))
+        # The remap reads the index tables through their flat pointers; a
+        # non-pointer storage policy aborts here at run time.
         var remap = PagedKVScaleRemap[mla_page_size, k](
-            physical_indices.unsafe_ptr(),
-            mla_lookup_table.unsafe_ptr(),
-            mla_scales_lookup_table.unsafe_ptr(),
-            mla_lookup_table.dim_size(1),
-            mla_scales_lookup_table.dim_size(1),
-            mla_lookup_table.dim_size(0),
-            UInt32(mla_kv_blocks.dim_size(0)),
-            UInt32(mla_kv_scales.dim_size(0)),
+            physical_indices.to_tile_tensor[.int32]()
+            .as_unsafe_any_origin()
+            .ptr,
+            mla_lookup_table.to_tile_tensor[.uint32]()
+            .as_unsafe_any_origin()
+            .ptr,
+            mla_scales_lookup_table.to_tile_tensor[.uint32]()
+            .as_unsafe_any_origin()
+            .ptr,
+            Int(mla_lookup_table.shape()[1].value()),
+            Int(mla_scales_lookup_table.shape()[1].value()),
+            Int(mla_lookup_table.shape()[0].value()),
+            UInt32(Int(mla_kv_blocks.shape()[0].value())),
+            UInt32(Int(mla_kv_scales.shape()[0].value())),
             scales_page_elems // scales_row_elems,
         )
         _mla_indexer_ragged_float8_paged_execute[
@@ -987,19 +1156,19 @@ struct MLAIndexerRaggedFloat8PagedRemapNVFP4:
             kpool=1,
             write_logical=write_logical,
         ](
-            output_indices,
-            q,
-            qs,
-            input_row_offsets,
-            k_blocks,
-            page_stride,
-            k_cache_lengths,
-            k_lookup_table,
-            k_max_prompt_length,
-            k_max_cache_length,
-            k_scales,
-            scales_page_stride,
-            k_scales_lookup_table,
+            output_indices.to_tile_tensor[.int32](),
+            q.to_tile_tensor[.float8_e4m3fn](),
+            qs.to_tile_tensor[.float32](),
+            input_row_offsets.to_tile_tensor[.uint32](),
+            k_blocks.to_tile_tensor[.float8_e4m3fn](),
+            page_stride.to_tile_tensor[.int64](),
+            k_cache_lengths.to_tile_tensor[.uint32](),
+            k_lookup_table.to_tile_tensor[.uint32](),
+            k_max_prompt_length.to_tile_tensor[.uint32](),
+            k_max_cache_length.to_tile_tensor[.uint32](),
+            k_scales.to_tile_tensor[.float32](),
+            scales_page_stride.to_tile_tensor[.int64](),
+            k_scales_lookup_table.to_tile_tensor[.uint32](),
             layer_idx,
             remap,
             ctx,
