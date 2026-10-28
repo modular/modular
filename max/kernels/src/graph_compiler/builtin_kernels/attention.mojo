@@ -2201,7 +2201,6 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8:
     def execute[
         dtype: DType,
         scale_type: DType,
-        output_type: DType,
         kv_type: DType,
         index_kv_type: DType,
         //,
@@ -2209,68 +2208,117 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8:
         IQ_DIM: Int,
         target: StaticString,
     ](
-        q_output: OutputTensor[dtype=output_type, rank=2, ...],
-        iq_output: OutputTensor[dtype=output_type, rank=2, ...],
-        hidden_state: InputTensor[dtype=dtype, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        weight: InputTensor[dtype=dtype, rank=2, ...],
-        input_scale: InputTensor[dtype=scale_type, rank=5, ...],
-        weight_scale: InputTensor[dtype=scale_type, rank=5, ...],
+        q_output: Some[Output & Tensor],
+        iq_output: Some[Output & Tensor],
+        hidden_state: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        weight: Some[Input & Tensor],
+        input_scale: Some[Input & Tensor],
+        weight_scale: Some[Input & Tensor],
         tensor_sf: Float32,
-        kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
-        index_kv_blocks: MutableInputTensor[dtype=index_kv_type, rank=6, ...],
-        index_page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        index_cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        index_kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        index_max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        index_max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
+        index_kv_blocks: Some[MutableInput & Tensor],
+        index_page_stride: Some[Input & Tensor],
+        index_cache_lengths: Some[Input & Tensor],
+        index_kv_lookup_table: Some[Input & Tensor],
+        index_max_prompt_length: Some[Input & Tensor],
+        index_max_cache_length: Some[Input & Tensor],
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(q_output), TileTensorable)
+        comptime assert conforms_to(type_of(iq_output), TileTensorable)
+        comptime assert conforms_to(type_of(hidden_state), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(weight), TileTensorable)
+        comptime assert conforms_to(type_of(input_scale), TileTensorable)
+        comptime assert conforms_to(type_of(weight_scale), TileTensorable)
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime assert conforms_to(type_of(index_kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(index_page_stride), TileTensorable)
+        comptime assert conforms_to(
+            type_of(index_cache_lengths), TileTensorable
+        )
+        comptime assert conforms_to(
+            type_of(index_kv_lookup_table), TileTensorable
+        )
+        comptime assert conforms_to(
+            type_of(index_max_prompt_length), TileTensorable
+        )
+        comptime assert conforms_to(
+            type_of(index_max_cache_length), TileTensorable
+        )
+        comptime output_type = type_of(q_output).dtype
+        comptime assert type_of(q_output).rank == 2
+        comptime assert type_of(iq_output).rank == 2
+        comptime assert type_of(hidden_state).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(weight).rank == 2
+        comptime assert type_of(input_scale).rank == 5
+        comptime assert type_of(weight_scale).rank == 5
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
+        comptime assert type_of(index_kv_blocks).rank == 6
+        comptime assert type_of(index_page_stride).rank == 1
+        comptime assert type_of(index_cache_lengths).rank == 1
+        comptime assert type_of(index_kv_lookup_table).rank == 2
+        comptime assert type_of(index_max_prompt_length).rank == 1
+        comptime assert type_of(index_max_cache_length).rank == 1
+        comptime assert type_of(kv_blocks).dtype == kv_type
+        comptime assert type_of(index_kv_blocks).dtype == index_kv_type
         var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            page_stride,
-            cache_lengths,
-            kv_lookup_table,
-            max_prompt_length,
-            max_cache_length,
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
         )
         var index_kv_collection = generic_get_paged_cache(
-            index_kv_blocks,
-            index_page_stride,
-            index_cache_lengths,
-            index_kv_lookup_table,
-            index_max_prompt_length,
-            index_max_cache_length,
+            index_kv_blocks.to_tile_tensor(),
+            index_page_stride.to_tile_tensor[.int64](),
+            index_cache_lengths.to_tile_tensor[.uint32](),
+            index_kv_lookup_table.to_tile_tensor[.uint32](),
+            index_max_prompt_length.to_tile_tensor[.uint32](),
+            index_max_cache_length.to_tile_tensor[.uint32](),
         )
         return (
             generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 target=target,
             ](
-                hidden_state.to_tile_tensor[.int64]()
-                .as_imm()
-                .as_unsafe_any_origin(),
-                input_row_offsets.to_tile_tensor[.int64](),
-                weight.to_tile_tensor[.int64]().as_imm().as_unsafe_any_origin(),
-                input_scale.to_tile_tensor[.int64]()
-                .as_imm()
-                .as_unsafe_any_origin(),
-                weight_scale.to_tile_tensor[.int64]()
-                .as_imm()
-                .as_unsafe_any_origin(),
+                _imm_pointer_tile(
+                    hidden_state.to_tile_tensor[dtype]().as_imm()
+                ),
+                input_row_offsets.to_tile_tensor[.uint32](),
+                _imm_pointer_tile(weight.to_tile_tensor[dtype]().as_imm()),
+                _imm_pointer_tile(
+                    input_scale.to_tile_tensor[scale_type]().as_imm()
+                ),
+                _imm_pointer_tile(
+                    weight_scale.to_tile_tensor[scale_type]().as_imm()
+                ),
                 tensor_sf,
                 kv_collection,
                 index_kv_collection,
                 layer_idx,
                 IQ_DIM,
-                q_output.to_tile_tensor[.int64](),
-                iq_output.to_tile_tensor[.int64](),
+                q_output.to_tile_tensor(),
+                iq_output.to_tile_tensor[output_type](),
                 ctx,
             )
         )
@@ -2302,7 +2350,6 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8_amd:
     def execute[
         dtype: DType,
         scale_type: DType,
-        output_type: DType,
         kv_type: DType,
         index_kv_type: DType,
         //,
@@ -2310,68 +2357,117 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8_amd:
         IQ_DIM: Int,
         target: StaticString,
     ](
-        q_output: OutputTensor[dtype=output_type, rank=2, ...],
-        iq_output: OutputTensor[dtype=output_type, rank=2, ...],
-        hidden_state: InputTensor[dtype=dtype, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        weight: InputTensor[dtype=dtype, rank=2, ...],
-        input_scale: InputTensor[dtype=scale_type, rank=2, ...],
-        weight_scale: InputTensor[dtype=scale_type, rank=2, ...],
+        q_output: Some[Output & Tensor],
+        iq_output: Some[Output & Tensor],
+        hidden_state: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        weight: Some[Input & Tensor],
+        input_scale: Some[Input & Tensor],
+        weight_scale: Some[Input & Tensor],
         tensor_sf: Float32,
-        kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
-        index_kv_blocks: MutableInputTensor[dtype=index_kv_type, rank=6, ...],
-        index_page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        index_cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        index_kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        index_max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        index_max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
+        index_kv_blocks: Some[MutableInput & Tensor],
+        index_page_stride: Some[Input & Tensor],
+        index_cache_lengths: Some[Input & Tensor],
+        index_kv_lookup_table: Some[Input & Tensor],
+        index_max_prompt_length: Some[Input & Tensor],
+        index_max_cache_length: Some[Input & Tensor],
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(q_output), TileTensorable)
+        comptime assert conforms_to(type_of(iq_output), TileTensorable)
+        comptime assert conforms_to(type_of(hidden_state), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(weight), TileTensorable)
+        comptime assert conforms_to(type_of(input_scale), TileTensorable)
+        comptime assert conforms_to(type_of(weight_scale), TileTensorable)
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime assert conforms_to(type_of(index_kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(index_page_stride), TileTensorable)
+        comptime assert conforms_to(
+            type_of(index_cache_lengths), TileTensorable
+        )
+        comptime assert conforms_to(
+            type_of(index_kv_lookup_table), TileTensorable
+        )
+        comptime assert conforms_to(
+            type_of(index_max_prompt_length), TileTensorable
+        )
+        comptime assert conforms_to(
+            type_of(index_max_cache_length), TileTensorable
+        )
+        comptime output_type = type_of(q_output).dtype
+        comptime assert type_of(q_output).rank == 2
+        comptime assert type_of(iq_output).rank == 2
+        comptime assert type_of(hidden_state).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(weight).rank == 2
+        comptime assert type_of(input_scale).rank == 2
+        comptime assert type_of(weight_scale).rank == 2
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
+        comptime assert type_of(index_kv_blocks).rank == 6
+        comptime assert type_of(index_page_stride).rank == 1
+        comptime assert type_of(index_cache_lengths).rank == 1
+        comptime assert type_of(index_kv_lookup_table).rank == 2
+        comptime assert type_of(index_max_prompt_length).rank == 1
+        comptime assert type_of(index_max_cache_length).rank == 1
+        comptime assert type_of(kv_blocks).dtype == kv_type
+        comptime assert type_of(index_kv_blocks).dtype == index_kv_type
         var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            page_stride,
-            cache_lengths,
-            kv_lookup_table,
-            max_prompt_length,
-            max_cache_length,
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
         )
         var index_kv_collection = generic_get_paged_cache(
-            index_kv_blocks,
-            index_page_stride,
-            index_cache_lengths,
-            index_kv_lookup_table,
-            index_max_prompt_length,
-            index_max_cache_length,
+            index_kv_blocks.to_tile_tensor(),
+            index_page_stride.to_tile_tensor[.int64](),
+            index_cache_lengths.to_tile_tensor[.uint32](),
+            index_kv_lookup_table.to_tile_tensor[.uint32](),
+            index_max_prompt_length.to_tile_tensor[.uint32](),
+            index_max_cache_length.to_tile_tensor[.uint32](),
         )
         return (
             generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 target=target,
             ](
-                hidden_state.to_tile_tensor[.int64]()
-                .as_imm()
-                .as_unsafe_any_origin(),
-                input_row_offsets.to_tile_tensor[.int64](),
-                weight.to_tile_tensor[.int64]().as_imm().as_unsafe_any_origin(),
-                input_scale.to_tile_tensor[.int64]()
-                .as_imm()
-                .as_unsafe_any_origin(),
-                weight_scale.to_tile_tensor[.int64]()
-                .as_imm()
-                .as_unsafe_any_origin(),
+                _imm_pointer_tile(
+                    hidden_state.to_tile_tensor[dtype]().as_imm()
+                ),
+                input_row_offsets.to_tile_tensor[.uint32](),
+                _imm_pointer_tile(weight.to_tile_tensor[dtype]().as_imm()),
+                _imm_pointer_tile(
+                    input_scale.to_tile_tensor[scale_type]().as_imm()
+                ),
+                _imm_pointer_tile(
+                    weight_scale.to_tile_tensor[scale_type]().as_imm()
+                ),
                 tensor_sf,
                 kv_collection,
                 index_kv_collection,
                 layer_idx,
                 IQ_DIM,
-                q_output.to_tile_tensor[.int64](),
-                iq_output.to_tile_tensor[.int64](),
+                q_output.to_tile_tensor(),
+                iq_output.to_tile_tensor[output_type](),
                 ctx,
             )
         )
@@ -2389,7 +2485,6 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp6_amd:
     def execute[
         dtype: DType,
         scale_type: DType,
-        output_type: DType,
         kv_type: DType,
         index_kv_type: DType,
         //,
@@ -2398,44 +2493,93 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp6_amd:
         FP6_FORMAT: Int,
         target: StaticString,
     ](
-        q_output: OutputTensor[dtype=output_type, rank=2, ...],
-        iq_output: OutputTensor[dtype=output_type, rank=2, ...],
-        hidden_state: InputTensor[dtype=dtype, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        weight: InputTensor[dtype=dtype, rank=2, ...],
-        input_scale: InputTensor[dtype=scale_type, rank=2, ...],
-        weight_scale: InputTensor[dtype=scale_type, rank=2, ...],
+        q_output: Some[Output & Tensor],
+        iq_output: Some[Output & Tensor],
+        hidden_state: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        weight: Some[Input & Tensor],
+        input_scale: Some[Input & Tensor],
+        weight_scale: Some[Input & Tensor],
         tensor_sf: Float32,
-        kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
-        index_kv_blocks: MutableInputTensor[dtype=index_kv_type, rank=6, ...],
-        index_page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        index_cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        index_kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        index_max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        index_max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
+        index_kv_blocks: Some[MutableInput & Tensor],
+        index_page_stride: Some[Input & Tensor],
+        index_cache_lengths: Some[Input & Tensor],
+        index_kv_lookup_table: Some[Input & Tensor],
+        index_max_prompt_length: Some[Input & Tensor],
+        index_max_cache_length: Some[Input & Tensor],
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(q_output), TileTensorable)
+        comptime assert conforms_to(type_of(iq_output), TileTensorable)
+        comptime assert conforms_to(type_of(hidden_state), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(weight), TileTensorable)
+        comptime assert conforms_to(type_of(input_scale), TileTensorable)
+        comptime assert conforms_to(type_of(weight_scale), TileTensorable)
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime assert conforms_to(type_of(index_kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(index_page_stride), TileTensorable)
+        comptime assert conforms_to(
+            type_of(index_cache_lengths), TileTensorable
+        )
+        comptime assert conforms_to(
+            type_of(index_kv_lookup_table), TileTensorable
+        )
+        comptime assert conforms_to(
+            type_of(index_max_prompt_length), TileTensorable
+        )
+        comptime assert conforms_to(
+            type_of(index_max_cache_length), TileTensorable
+        )
+        comptime output_type = type_of(q_output).dtype
+        comptime assert type_of(q_output).rank == 2
+        comptime assert type_of(iq_output).rank == 2
+        comptime assert type_of(hidden_state).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(weight).rank == 2
+        comptime assert type_of(input_scale).rank == 2
+        comptime assert type_of(weight_scale).rank == 2
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
+        comptime assert type_of(index_kv_blocks).rank == 6
+        comptime assert type_of(index_page_stride).rank == 1
+        comptime assert type_of(index_cache_lengths).rank == 1
+        comptime assert type_of(index_kv_lookup_table).rank == 2
+        comptime assert type_of(index_max_prompt_length).rank == 1
+        comptime assert type_of(index_max_cache_length).rank == 1
+        comptime assert type_of(kv_blocks).dtype == kv_type
+        comptime assert type_of(index_kv_blocks).dtype == index_kv_type
         var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            page_stride,
-            cache_lengths,
-            kv_lookup_table,
-            max_prompt_length,
-            max_cache_length,
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
         )
         var index_kv_collection = generic_get_paged_cache(
-            index_kv_blocks,
-            index_page_stride,
-            index_cache_lengths,
-            index_kv_lookup_table,
-            index_max_prompt_length,
-            index_max_cache_length,
+            index_kv_blocks.to_tile_tensor(),
+            index_page_stride.to_tile_tensor[.int64](),
+            index_cache_lengths.to_tile_tensor[.uint32](),
+            index_kv_lookup_table.to_tile_tensor[.uint32](),
+            index_max_prompt_length.to_tile_tensor[.uint32](),
+            index_max_cache_length.to_tile_tensor[.uint32](),
         )
         comptime assert FP6_FORMAT in (
             0,
@@ -2450,24 +2594,24 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp6_amd:
                 target=target,
                 mx_format=fmt,
             ](
-                hidden_state.to_tile_tensor[.int64]()
-                .as_imm()
-                .as_unsafe_any_origin(),
-                input_row_offsets.to_tile_tensor[.int64](),
-                weight.to_tile_tensor[.int64]().as_imm().as_unsafe_any_origin(),
-                input_scale.to_tile_tensor[.int64]()
-                .as_imm()
-                .as_unsafe_any_origin(),
-                weight_scale.to_tile_tensor[.int64]()
-                .as_imm()
-                .as_unsafe_any_origin(),
+                _imm_pointer_tile(
+                    hidden_state.to_tile_tensor[dtype]().as_imm()
+                ),
+                input_row_offsets.to_tile_tensor[.uint32](),
+                _imm_pointer_tile(weight.to_tile_tensor[dtype]().as_imm()),
+                _imm_pointer_tile(
+                    input_scale.to_tile_tensor[scale_type]().as_imm()
+                ),
+                _imm_pointer_tile(
+                    weight_scale.to_tile_tensor[scale_type]().as_imm()
+                ),
                 tensor_sf,
                 kv_collection,
                 index_kv_collection,
                 layer_idx,
                 IQ_DIM,
-                q_output.to_tile_tensor[.int64](),
-                iq_output.to_tile_tensor[.int64](),
+                q_output.to_tile_tensor(),
+                iq_output.to_tile_tensor[output_type](),
                 ctx,
             )
         )
@@ -2492,59 +2636,101 @@ struct Struct_fused_qkv_index_matmul_padded_ragged:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType,
         kv_type: DType,
         index_kv_type: DType,
         //,
         IQ_DIM: Int,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=2, ...],
-        hidden_state: InputTensor[dtype=dtype, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        weight: InputTensor[dtype=dtype, rank=2, ...],
-        kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
-        index_kv_blocks: MutableInputTensor[dtype=index_kv_type, rank=6, ...],
-        index_page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        index_cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        index_kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        index_max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        index_max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        output: Some[Output & Tensor],
+        hidden_state: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        weight: Some[Input & Tensor],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
+        index_kv_blocks: Some[MutableInput & Tensor],
+        index_page_stride: Some[Input & Tensor],
+        index_cache_lengths: Some[Input & Tensor],
+        index_kv_lookup_table: Some[Input & Tensor],
+        index_max_prompt_length: Some[Input & Tensor],
+        index_max_cache_length: Some[Input & Tensor],
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(hidden_state), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(weight), TileTensorable)
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime assert conforms_to(type_of(index_kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(index_page_stride), TileTensorable)
+        comptime assert conforms_to(
+            type_of(index_cache_lengths), TileTensorable
+        )
+        comptime assert conforms_to(
+            type_of(index_kv_lookup_table), TileTensorable
+        )
+        comptime assert conforms_to(
+            type_of(index_max_prompt_length), TileTensorable
+        )
+        comptime assert conforms_to(
+            type_of(index_max_cache_length), TileTensorable
+        )
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(hidden_state).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(weight).rank == 2
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
+        comptime assert type_of(index_kv_blocks).rank == 6
+        comptime assert type_of(index_page_stride).rank == 1
+        comptime assert type_of(index_cache_lengths).rank == 1
+        comptime assert type_of(index_kv_lookup_table).rank == 2
+        comptime assert type_of(index_max_prompt_length).rank == 1
+        comptime assert type_of(index_max_cache_length).rank == 1
+        comptime assert type_of(kv_blocks).dtype == kv_type
+        comptime assert type_of(index_kv_blocks).dtype == index_kv_type
         var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            page_stride,
-            cache_lengths,
-            kv_lookup_table,
-            max_prompt_length,
-            max_cache_length,
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
         )
         var index_kv_collection = generic_get_paged_cache(
-            index_kv_blocks,
-            index_page_stride,
-            index_cache_lengths,
-            index_kv_lookup_table,
-            index_max_prompt_length,
-            index_max_cache_length,
+            index_kv_blocks.to_tile_tensor(),
+            index_page_stride.to_tile_tensor[.int64](),
+            index_cache_lengths.to_tile_tensor[.uint32](),
+            index_kv_lookup_table.to_tile_tensor[.uint32](),
+            index_max_prompt_length.to_tile_tensor[.uint32](),
+            index_max_cache_length.to_tile_tensor[.uint32](),
         )
         return generic_fused_qkv_index_matmul_kv_cache_paged_ragged[
             target=target,
         ](
-            hidden_state.to_tile_tensor[.int64](),
-            input_row_offsets.to_tile_tensor[.int64](),
-            weight.to_tile_tensor[.int64](),
+            hidden_state.to_tile_tensor[dtype](),
+            input_row_offsets.to_tile_tensor[.uint32](),
+            weight.to_tile_tensor[dtype](),
             kv_collection,
             index_kv_collection,
             layer_idx,
             IQ_DIM,
-            output.to_tile_tensor[.int64](),
+            output.to_tile_tensor(),
             ctx,
         )
 
