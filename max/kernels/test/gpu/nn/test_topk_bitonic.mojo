@@ -3208,18 +3208,16 @@ def test_topk_cluster_nan_pad(ctx: DeviceContext) raises:
 def test_topk_cluster_stress(ctx: DeviceContext) raises:
     """Many rows, every cluster size, both dtypes, repeated launches.
 
-    The cluster protocol runs one cluster barrier in round 0, whose arrive
-    releases only shared::cta writes, then gathers round 0's own histogram
-    from every peer; the candidate path's counts travel by `st.async` on
-    each rank's mbarrier and the peers' candidate pairs by `st.async` on
-    rank 0's, with no closing cluster barrier, and peers exit as soon as
-    their columns are out. A race there shows up as a miscounted bin or a
-    missing candidate on some row of some launch, not on every one. So each
-    single-pass arm is 64 rows with varied bounds (every 16th row a trivial
-    `count <= K` row beside full ones), launched three times: twice over
-    distinct LCG scores and once over 17 coarse levels, whose plateaus put
-    the split on a heavily tied bin cut first-come. A streaming arm repeats
-    the two stimuli at CS 2 and 8 over both load paths.
+    The cluster protocol publishes round 0's histogram, gathers it from
+    every peer, then synchronizes before any rank can reuse its shared
+    memory or exit. The candidate path exchanges counts and pairs through
+    mbarriers. A race can miscount a bin or lose a candidate on some row
+    of some launch, not on every one. Each single-pass arm has 64 rows with
+    varied bounds: every 16th row has `count <= K`, beside full rows. Each
+    arm launches three times: twice over distinct LCG scores and once over 17
+    coarse levels, whose plateaus put the split on a heavily tied bin cut
+    first-come. A streaming arm repeats the two stimuli at CS 2 and 8 over
+    both load paths.
     """
     comptime K = 2048
     comptime N = 49139
