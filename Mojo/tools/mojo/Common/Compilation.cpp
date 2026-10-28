@@ -42,40 +42,11 @@ using namespace M;
 using namespace KGEN;
 using namespace LIT;
 
-ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
-    State &state, llvm::SourceMgr &sourceManager, MLIRContext &ctx,
-    const llvm::opt::OptTable &optTable, const CommonOptionIDs &optionIDs,
-    const CommonParseConfig &config, ExpandMarshalledOptionsFn expandOptions) {
+ErrorOr<CommonParseResult>
+M::parseCommonMojoArguments(State &state, const llvm::opt::InputArgList &args,
+                            llvm::SourceMgr &sourceManager, MLIRContext &ctx,
+                            ExpandMarshalledOptionsFn expandOptions) {
   CommonParseResult result;
-
-  // Parse arguments based on the configuration.
-  unsigned unused = 0;
-
-  // Handle the special case for `mojo run` where we need to find the input
-  // argument and only parse up to that point.
-  llvm::opt::InputArgList args(nullptr, nullptr);
-  if (!config.parseAllArguments) {
-    llvm::opt::InputArgList allArgs =
-        optTable.ParseArgs(state.arguments, unused, unused);
-
-    // LLVMOption treats all "positional arguments" (arguments that do not have
-    // a "-" or "--" prefix) as `INPUT`. The very first of these is our Mojo
-    // source file, and each remaining positional argument is an argument being
-    // passed to the Mojo executable produced from that source file.
-    auto inputArgs = allArgs.filtered(optionIDs.input);
-    if (inputArgs.empty()) {
-      args = std::move(allArgs);
-    } else {
-      // We now have the index of the Mojo source file argument, so we can
-      // parse the arguments up to and including that argument "normally."
-      args = optTable.ParseArgs(
-          state.arguments.slice(0, (*inputArgs.begin())->getIndex() + 1),
-          unused, unused);
-    }
-  } else {
-    // Parse all arguments normally for `mojo build`.
-    args = optTable.ParseArgs(state.arguments, unused, unused);
-  }
 
   // Read every marshalled option now, since the target queries below need the
   // target triple and the errors below need the diagnostic format. Invalid
@@ -105,23 +76,16 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
     return result;
   }
 
-  if (!errors.empty())
-    return Error(errors.front());
-
-  // Reject unknown arguments.
-  if (int exitCode = state.rejectUnknownArguments(args, optionIDs.unknown)) {
+  if (int exitCode = state.rejectInvalidArguments(args, errors)) {
     result.exitCode = exitCode;
     return result;
   }
 
-  // Validate input file arguments based on configuration.
-  if (!args.hasArg(optionIDs.input)) {
-    if (config.requireSingleInput && !targetQueryCount) {
+  std::vector<std::string> inputs = getInputValues(args);
+  if (inputs.empty()) {
+    if (!targetQueryCount)
       return Error("no input file provided");
-    }
-  } else if (config.requireSingleInput &&
-             args.hasMultipleArgs(optionIDs.input)) {
-    std::vector<std::string> inputs = args.getAllArgValues(optionIDs.input);
+  } else if (inputs.size() > 1) {
     return Error(llvm::formatv(
         "too many input files, cannot process both '{0}' and '{1}'", inputs[0],
         inputs[1]));
@@ -129,8 +93,8 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
 
   // Open the provided input file path, or exit with an error if it's not a
   // valid argument that can be opened.
-  if (args.hasArg(optionIDs.input)) {
-    auto bufferOrErr = openMojoInputFile(args.getLastArgValue(optionIDs.input));
+  if (!inputs.empty()) {
+    auto bufferOrErr = openMojoInputFile(inputs.back());
     if (failed(bufferOrErr))
       return bufferOrErr.takeError();
 
@@ -162,9 +126,6 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
   // example, in the object compiler) observes it.
   if (!driverOptions.lldPath.empty())
     KGEN::MojoConfig::setLLDPathOverride(driverOptions.lldPath);
-
-  // Store the parsed args for the caller.
-  result.args = std::move(args);
 
   // Success - no exit code, continue with compilation.
   return result;

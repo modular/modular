@@ -125,62 +125,17 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
                                     FrontendOptions &frontendOptions,
                                     MLIRContext &ctx, TargetInfoAttr &target,
                                     RunOptTable &options) {
-  // First, parse all arguments to find the input file location.
-  // For `mojo run`, we need special handling: arguments BEFORE the input file
-  // are parsed as options to mojo run, but arguments AFTER are passed to the
-  // program itself.
-  unsigned unused = 0;
-  llvm::opt::InputArgList allArgs =
-      options.ParseArgs(state.arguments, unused, unused);
-
-  // Find the input file position.
-  auto inputArgs = allArgs.filtered(options::OPT_INPUT);
-  if (inputArgs.empty()) {
-    // No input file - check if user wanted help.
-    if (allArgs.hasArg(options::OPT_help)) {
-      return state.printHelp(
+  HelpTexts helpTexts(
 #include "Run/RunOptionsHelpText.inc"
-      );
-    } else if (allArgs.hasArg(options::OPT_help_hidden)) {
-      return state.printHelp(
+      ,
 #include "Run/RunOptionsHelpHiddenText.inc"
-      );
-    }
-    // No input and no help request is an error, which will be caught below.
-  } else {
-    // We have an input file. Parse only the arguments up to and including it.
-    llvm::opt::InputArgList argsBeforeInput = options.ParseArgs(
-        state.arguments.slice(0, (*inputArgs.begin())->getIndex() + 1), unused,
-        unused);
+  );
+  if (std::optional<int> exitCode = state.parseArguments(
+          options, helpTexts, args, /*stopAtFirstInput=*/true))
+    return exitCode;
 
-    // Check if help was requested BEFORE the input file.
-    if (argsBeforeInput.hasArg(options::OPT_help)) {
-      return state.printHelp(
-#include "Run/RunOptionsHelpText.inc"
-      );
-    } else if (argsBeforeInput.hasArg(options::OPT_help_hidden)) {
-      return state.printHelp(
-#include "Run/RunOptionsHelpHiddenText.inc"
-      );
-    }
-  }
-
-  // Set up common option IDs.
-  CommonOptionIDs optionIDs{
-      .unknown = options::OPT_UNKNOWN,
-      .input = options::OPT_INPUT,
-  };
-
-  // Configure parsing for `mojo run` - only parse args up to the input file.
-  CommonParseConfig config{
-      .parseAllArguments = false,
-      .requireSingleInput = true,
-  };
-
-  // Parse common arguments.
-  ErrorOr<CommonParseResult> result =
-      parseCommonMojoArguments(state, sourceManager, ctx, options, optionIDs,
-                               config, expandMarshalledOptions);
+  ErrorOr<CommonParseResult> result = parseCommonMojoArguments(
+      state, args, sourceManager, ctx, expandMarshalledOptions);
   if (failed(result))
     return state.reportError(result.getError());
 
@@ -188,7 +143,6 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
     return *result->exitCode;
 
   // Extract results.
-  args = std::move(result->args);
   driverOptions = std::move(result->driverOptions);
   compilationOptions = std::move(result->compilationOptions);
   frontendOptions = std::move(result->frontendOptions);

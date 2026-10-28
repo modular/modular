@@ -37,20 +37,20 @@ struct ByeOptTable : public llvm::opt::OptTable {
 };
 } // namespace
 
-static int bye(const State &state) {
+static int bye(const State &subcommandState) {
+  State state = subcommandState;
   ByeOptTable options;
-  unsigned missingIndex = 0;
-  unsigned missingCount = 0;
-  llvm::opt::InputArgList args =
-      options.ParseArgs(state.arguments, missingIndex, missingCount);
-
-  if (args.hasArg(options::OPT_help)) {
-    return state.printHelp(
+  HelpTexts helpTexts(
 #include "Bye/ByeOptionsHelpText.inc"
-    );
-  }
+      ,
+#include "Bye/ByeOptionsHelpHiddenText.inc"
+  );
+  llvm::opt::InputArgList args;
+  if (std::optional<int> exitCode =
+          state.parseArguments(options, helpTexts, args))
+    return *exitCode;
 
-  if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
+  if (int result = state.rejectInvalidArguments(args))
     return result;
 
   std::vector<std::string> inputs = args.getAllArgValues(options::OPT_INPUT);

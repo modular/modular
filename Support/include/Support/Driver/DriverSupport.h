@@ -19,19 +19,24 @@
 #include "Support/LLVMForwardDecls.h"
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/StringMap.h"
 
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <string>
 #include <string_view>
+#include <vector>
 
 namespace llvm {
 class MemoryBuffer;
 
 namespace opt { // NOLINT, upstream namespace
+class Arg;
+class ArgList;
 class InputArgList;
-class OptSpecifier;
+class OptTable;
 } // namespace opt
 } // namespace llvm
 
@@ -52,6 +57,27 @@ ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> openMojoInputFile(StringRef path);
 /// end in a Mojo file extension (`.mojo`, `.mojoc`, or `.mojopkg`), even if
 /// the `path` refers to `stdin` ("-").
 ErrorOr<std::filesystem::path> resolveMojoInputFileOrPackage(StringRef path);
+
+/// Returns the values of the positional arguments in `args`, in order. Each
+/// option table gives them its own `INPUT` ID, which shared code cannot name,
+/// so they are found by their option class.
+std::vector<std::string> getInputValues(const llvm::opt::ArgList &args);
+
+/// Returns the first positional argument in `args`, or null if there is none.
+const llvm::opt::Arg *getFirstInputArg(const llvm::opt::ArgList &args);
+
+/// The `--help` and `--help-hidden` texts that driver-tblgen generates for a
+/// command.
+struct HelpTexts {
+#if __cplusplus >= 202002
+  HelpTexts(std::u8string_view help, std::u8string_view helpHidden);
+#endif
+  HelpTexts(std::string_view help, std::string_view helpHidden)
+      : help(help), helpHidden(helpHidden) {}
+
+  std::string_view help;
+  std::string_view helpHidden;
+};
 
 /// Additional driver state that is passed to each of the subcommand functions.
 struct State {
@@ -84,12 +110,25 @@ struct State {
 #endif
   int printHelp(std::string_view helpText) const;
 
-  /// If `args` has any unknown arguments (as indicated by the
-  /// `unknownOptionID`, which is defined independently in each driver command),
-  /// report an error for each of them and return an unsuccessful exit code.
-  /// Otherwise, return a successful exit code.
-  int rejectUnknownArguments(llvm::opt::InputArgList &args,
-                             llvm::opt::OptSpecifier unknownOptionID) const;
+  /// Parses `arguments` with `optTable` into `args`. With `stopAtFirstInput`,
+  /// the arguments after the first positional one are left unparsed, for the
+  /// program that the command runs.
+  ///
+  /// If `--help` or `--help-hidden` was given, prints the matching text from
+  /// `helpTexts`, through `printHelpText` when it is set, and returns its exit
+  /// code. Otherwise returns nullopt.
+  std::optional<int>
+  parseArguments(const llvm::opt::OptTable &optTable,
+                 const HelpTexts &helpTexts, llvm::opt::InputArgList &args,
+                 bool stopAtFirstInput = false,
+                 llvm::function_ref<int(std::string_view)> printHelpText = {});
+
+  /// Reports the first of the marshalling `errors`, or else the option that
+  /// `parseArguments` found without its value and each unknown argument in
+  /// `args`, and returns an unsuccessful exit code if there were any.
+  /// Otherwise returns a successful exit code.
+  int rejectInvalidArguments(const llvm::opt::InputArgList &args,
+                             llvm::ArrayRef<std::string> errors = {}) const;
 
   /// In debug modes, asserts that all `args` have been "claimed." This is a
   /// no-op in release modes.
@@ -121,6 +160,9 @@ struct State {
 
   /// Whether to treat warnings as errors.
   bool warningsAsErrors = false;
+
+  /// The option that ended the arguments without its value, or null.
+  const char *missingValueOption = nullptr;
 };
 
 /// A mapping from each subcommand to a callback function that encapsulates the

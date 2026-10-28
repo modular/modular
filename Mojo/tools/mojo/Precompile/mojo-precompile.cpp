@@ -209,20 +209,15 @@ static int precompile(const State &subcommandState) {
   // Parse command line arguments.
   State state = subcommandState;
   PrecompileOptTable options;
-  unsigned missingIndex = 0;
-  unsigned missingCount = 0;
-  llvm::opt::InputArgList args =
-      options.ParseArgs(state.arguments, missingIndex, missingCount);
-
-  if (args.hasArg(options::OPT_help)) {
-    return state.printHelp(
+  HelpTexts helpTexts(
 #include "Precompile/PrecompileOptionsHelpText.inc"
-    );
-  } else if (args.hasArg(options::OPT_help_hidden)) {
-    return state.printHelp(
+      ,
 #include "Precompile/PrecompileOptionsHelpHiddenText.inc"
-    );
-  }
+  );
+  llvm::opt::InputArgList args;
+  if (std::optional<int> exitCode =
+          state.parseArguments(options, helpTexts, args))
+    return *exitCode;
 
   PrecompileArgs precompileArgs;
   {
@@ -235,11 +230,9 @@ static int precompile(const State &subcommandState) {
   PARSE_OPTION_WITH_MARSHALLING(args, errors, __VA_ARGS__)
 #include "Precompile/PrecompileOptions.inc"
 #undef MOJO_OPTION_WITH_MARSHALLING
-    if (!errors.empty())
-      return state.reportError(errors.front());
+    if (int result = state.rejectInvalidArguments(args, errors))
+      return result;
   }
-  if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
-    return result;
 
   llvm::SourceMgr sourceMgr;
   sourceMgr.setDiagHandler(getDiagHandler(state.diagnosticFormat));

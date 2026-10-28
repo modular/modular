@@ -54,20 +54,15 @@ static int doc(const State &subcommandState) {
   // Parse command line arguments.
   State state = subcommandState;
   DocOptTable options;
-  unsigned missingIndex = 0;
-  unsigned missingCount = 0;
-  llvm::opt::InputArgList args =
-      options.ParseArgs(state.arguments, missingIndex, missingCount);
-
-  if (args.hasArg(options::OPT_help)) {
-    return state.printHelp(
+  HelpTexts helpTexts(
 #include "Doc/DocOptionsHelpText.inc"
-    );
-  } else if (args.hasArg(options::OPT_help_hidden)) {
-    return state.printHelp(
+      ,
 #include "Doc/DocOptionsHelpHiddenText.inc"
-    );
-  }
+  );
+  llvm::opt::InputArgList args;
+  if (std::optional<int> exitCode =
+          state.parseArguments(options, helpTexts, args))
+    return *exitCode;
 
   DriverOptions driverOptions;
   KGEN::FrontendOptions frontendOptions;
@@ -76,8 +71,8 @@ static int doc(const State &subcommandState) {
   PARSE_OPTION_WITH_MARSHALLING(args, errors, __VA_ARGS__)
 #include "Doc/DocOptions.inc"
 #undef MOJO_OPTION_WITH_MARSHALLING
-  if (!errors.empty())
-    return state.reportError(errors.front());
+  if (int result = state.rejectInvalidArguments(args, errors))
+    return result;
 
   // Handle deprecated --validate-doc-strings flag as an alias for -Werror.
   // Only apply if user hasn't explicitly specified -Werror or -Wno-error.
@@ -88,9 +83,6 @@ static int doc(const State &subcommandState) {
         "--validate-doc-strings is deprecated, use -Werror instead");
     state.warningsAsErrors = true;
   }
-
-  if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
-    return result;
 
   if (!args.hasArg(options::OPT_INPUT))
     return state.reportError("no input file provided");

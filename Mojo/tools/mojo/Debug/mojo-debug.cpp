@@ -92,14 +92,8 @@ static std::string resolvePath(std::string path) {
 
 /// Launches LLDB with the Mojo plugin enabled, or vanilla cuda-gdb.
 /// Exits unsuccessfully if LLDB could not be found in the SDK.
-static int debug(const State &state) {
-  // Parse command line arguments.
-  DebugOptTable options;
-  // First, parse all arguments, in order to find the index of the input
-  // argument.
-  unsigned unused = 0;
-  llvm::opt::InputArgList parsedArgs =
-      options.ParseArgs(state.arguments, unused, unused);
+static int debug(const State &subcommandState) {
+  State state = subcommandState;
 
   // Create our context.
   ErrorOr<ContextRef> ctxOr =
@@ -108,36 +102,30 @@ static int debug(const State &state) {
     return state.reportError(ctxOr.getError());
   ContextRef ctx = std::move(*ctxOr);
 
-  // LLVMOption treats all "positional arguments" (arguments that do not have a
-  // "-" or "--" prefix) as `INPUT`. The very first of these is our launch input
-  // (a Mojo source file or a binary), and each remaining positional argument is
-  // an argument being passed to the debuggee.
-  auto positionalArgs = parsedArgs.filtered(options::OPT_INPUT);
+  // Parse command line arguments. LLVMOption treats all "positional arguments"
+  // (arguments that do not have a "-" or "--" prefix) as `INPUT`. The very
+  // first of these is our launch input (a Mojo source file or a binary), and
+  // everything after it is passed to the debuggee.
+  DebugOptTable options;
+  HelpTexts helpTexts(
+#include "Debug/DebugOptionsHelpText.inc"
+      ,
+#include "Debug/DebugOptionsHelpHiddenText.inc"
+  );
+  llvm::opt::InputArgList parsedArgs;
+  if (std::optional<int> exitCode = state.parseArguments(
+          options, helpTexts, parsedArgs, /*stopAtFirstInput=*/true))
+    return *exitCode;
+
   std::optional<std::string> target;
   SmallVector<std::string> runArgs;
-  // If we have a positional argument, which is a target, everything that comes
-  // after that is a run arg. We then redefine parsedArgs as everything that
-  // comes before the target.
-  if (!positionalArgs.empty()) {
-    const llvm::opt::Arg &targetArg = **positionalArgs.begin();
-    target = targetArg.getSpelling();
+  if (const llvm::opt::Arg *targetArg = getFirstInputArg(parsedArgs)) {
+    target = targetArg->getSpelling();
     runArgs = SmallVector<std::string>(
-        state.arguments.slice(targetArg.getIndex() + 1));
-    parsedArgs = options.ParseArgs(
-        state.arguments.slice(0, targetArg.getIndex()), unused, unused);
+        state.arguments.slice(targetArg->getIndex() + 1));
   }
 
-  if (parsedArgs.hasArg(options::OPT_help)) {
-    return state.printHelp(
-#include "Debug/DebugOptionsHelpText.inc"
-    );
-  } else if (parsedArgs.hasArg(options::OPT_help_hidden)) {
-    return state.printHelp(
-#include "Debug/DebugOptionsHelpHiddenText.inc"
-    );
-  }
-
-  if (int res = state.rejectUnknownArguments(parsedArgs, options::OPT_UNKNOWN))
+  if (int res = state.rejectInvalidArguments(parsedArgs))
     return res;
 
   bool useRpc = parsedArgs.hasArg(options::OPT_rpc) ||

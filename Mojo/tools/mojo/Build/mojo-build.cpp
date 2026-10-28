@@ -114,20 +114,15 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
                                     FrontendOptions &frontendOptions,
                                     MLIRContext &ctx, TargetInfoAttr &target,
                                     BuildOptTable &options) {
-
-  // First, parse arguments to check for help flags.
-  // We need to do this separately because help text is command-specific.
-  unsigned missingIndex = 0;
-  unsigned missingCount = 0;
-  llvm::opt::InputArgList allArgs =
-      options.ParseArgs(state.arguments, missingIndex, missingCount);
-
-  // Check for help before doing any other processing. The emission-kind
-  // table is target-dependent, so it is rendered from the registered
-  // TargetTraits and spliced into the `--emit` option's help block.
-  auto printHelpWithEmissionKinds = [&](std::u8string_view helpText) {
-    std::string text(reinterpret_cast<const char *>(helpText.data()),
-                     helpText.size());
+  // The emission-kind table is target-dependent, so it is rendered from the
+  // registered TargetTraits and spliced into the `--emit` option's help block.
+  HelpTexts helpTexts(
+#include "Build/BuildOptionsHelpText.inc"
+      ,
+#include "Build/BuildOptionsHelpHiddenText.inc"
+  );
+  auto printHelpWithEmissionKinds = [&](std::string_view helpText) {
+    std::string text(helpText);
     std::string table;
     llvm::raw_string_ostream os(table);
     printSupportedEmissionKinds(os, /*indent=*/12);
@@ -141,32 +136,13 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
       text.insert(insertPos + 1, table);
     return state.printHelp(std::string_view(text));
   };
-  if (allArgs.hasArg(options::OPT_help)) {
-    return printHelpWithEmissionKinds(
-#include "Build/BuildOptionsHelpText.inc"
-    );
-  } else if (allArgs.hasArg(options::OPT_help_hidden)) {
-    return printHelpWithEmissionKinds(
-#include "Build/BuildOptionsHelpHiddenText.inc"
-    );
-  }
+  if (std::optional<int> exitCode = state.parseArguments(
+          options, helpTexts, args,
+          /*stopAtFirstInput=*/false, printHelpWithEmissionKinds))
+    return exitCode;
 
-  // Set up common option IDs.
-  CommonOptionIDs optionIDs{
-      .unknown = options::OPT_UNKNOWN,
-      .input = options::OPT_INPUT,
-  };
-
-  // Configure parsing for `mojo build` - parse all arguments normally.
-  CommonParseConfig config{
-      .parseAllArguments = true,
-      .requireSingleInput = true,
-  };
-
-  // Parse common arguments.
-  ErrorOr<CommonParseResult> result =
-      parseCommonMojoArguments(state, sourceManager, ctx, options, optionIDs,
-                               config, expandMarshalledOptions);
+  ErrorOr<CommonParseResult> result = parseCommonMojoArguments(
+      state, args, sourceManager, ctx, expandMarshalledOptions);
   if (failed(result))
     return state.reportError(result.getError());
 
@@ -174,7 +150,6 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
     return *result->exitCode;
 
   // Extract results.
-  args = std::move(result->args);
   driverOptions = std::move(result->driverOptions);
   compilationOptions = std::move(result->compilationOptions);
   frontendOptions = std::move(result->frontendOptions);

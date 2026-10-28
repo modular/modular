@@ -50,14 +50,6 @@ struct CPUDeviceOptions;
 
 class TargetInfoAttr;
 
-/// Holds the option IDs that are common between mojo build and mojo run.
-/// These are passed to parseCommonMojoArguments to avoid duplicating the
-/// option ID mappings.
-struct CommonOptionIDs {
-  llvm::opt::OptSpecifier unknown;
-  llvm::opt::OptSpecifier input;
-};
-
 /// Expands a subcommand's `MOJO_OPTION_WITH_MARSHALLING` rows from `args`
 /// into the structs their key paths name, adding invalid values to the errors.
 using ExpandMarshalledOptionsFn = llvm::function_ref<void(
@@ -66,25 +58,10 @@ using ExpandMarshalledOptionsFn = llvm::function_ref<void(
     KGEN::CompilationOptions &compilationOptions, TargetArgs &targetArgs,
     MarshallingErrors &errors)>;
 
-/// Configuration flags for common argument parsing behavior.
-struct CommonParseConfig {
-  /// If true, parse all arguments normally. If false (for `mojo run`), only
-  /// parse arguments up to and including the input file, treating remaining
-  /// arguments as program arguments to pass to the Mojo executable.
-  bool parseAllArguments = true;
-
-  /// If true, require exactly one input file. If false, allow zero or more.
-  bool requireSingleInput = true;
-};
-
 /// Result of parsing common Mojo arguments.
 struct CommonParseResult {
   /// If set, the caller should exit immediately with this code.
   std::optional<int> exitCode;
-
-  /// The parsed argument list. For `mojo run`, this includes only arguments
-  /// up to and including the input file.
-  llvm::opt::InputArgList args;
 
   /// The parsed options that the driver acts on itself.
   DriverOptions driverOptions;
@@ -99,31 +76,28 @@ struct CommonParseResult {
   TargetInfoAttr target;
 };
 
-/// Parse arguments common to both mojo build and mojo run.
+/// Interpret the `args` that `State::parseArguments` parsed for mojo build or
+/// mojo run.
 ///
-/// This function extracts the common argument parsing logic shared between
+/// This function extracts the common argument handling shared between
 /// the two commands, including:
 /// - Diagnostic format parsing
-/// - Unknown argument rejection
+/// - Invalid argument rejection
 /// - Input file validation and opening
 /// - Source manager setup
 /// - Compilation option parsing
 /// - Target option parsing
 /// - The `--print-*` target queries, which exit without needing an input file
 ///
-/// Note: Help text handling is intentionally left to the caller, as each
-/// command has different help text files that cannot be easily parameterized.
-/// Callers should check for help flags before calling this function.
-///
 /// `expandOptions` reads the subcommand's marshalled options, since only the
 /// subcommand sees its option enum.
 ///
 /// Returns a CommonParseResult containing either an exit code (if parsing
-/// failed) or the parsed arguments and options.
-ErrorOr<CommonParseResult> parseCommonMojoArguments(
-    State &state, llvm::SourceMgr &sourceManager, MLIRContext &ctx,
-    const llvm::opt::OptTable &optTable, const CommonOptionIDs &optionIDs,
-    const CommonParseConfig &config, ExpandMarshalledOptionsFn expandOptions);
+/// failed) or the parsed options.
+ErrorOr<CommonParseResult>
+parseCommonMojoArguments(State &state, const llvm::opt::InputArgList &args,
+                         llvm::SourceMgr &sourceManager, MLIRContext &ctx,
+                         ExpandMarshalledOptionsFn expandOptions);
 
 /// Set `includePaths` as the include directories of `sourceMgr`, and register
 /// the dialects compilation needs on `ctx`.
