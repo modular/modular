@@ -60,3 +60,26 @@ pkg_filegroup(
     prefix = "api/mojo",
     tags = ["manual"],
 )
+
+# `mojo doc` JSON for every published kernel library, consumed by
+# //max/docs/site/scripts:report-mojo-docstring-coverage.
+filegroup(
+    name = "published_mojodoc_json",
+    srcs = [
+        "//max/kernels/src/" + lib + ":" + lib + ".docs"
+        for lib in _KERNEL_LIBS
+        if lib not in _EXCLUDED_KERNEL_LIBS
+    ],
+    output_group = "mojodoc_json",
+    tags = ["manual"],
+)
+
+filegroup(
+    name = "mojodoc_json",
+    srcs = [
+        ":published_mojodoc_json",
+        "//max/kernels/src/graph_compiler:mojodoc_json",
+    ],
+    tags = ["manual"],
+    visibility = ["//max/docs/site/scripts:__pkg__"],
+)

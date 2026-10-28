@@ -19,6 +19,27 @@ modular_py_test(
     deps = [":report-code-coverage"],
 )
 
+_MOJODOC_JSON = [
+    "//max/kernels/src:mojodoc_json",
+    "//max/mojo/max:mojodoc_json",
+]
+
+modular_py_binary(
+    name = "report-mojo-docstring-coverage",
+    srcs = ["report-mojo-docstring-coverage.py"],
+    args = ["$(rootpaths %s)" % target for target in _MOJODOC_JSON],
+    data = _MOJODOC_JSON,
+    tags = ["manual"],
+)
+
+modular_py_test(
+    name = "test_report_mojo_docstring_coverage",
+    srcs = ["test_report_mojo_docstring_coverage.py"],
+    ignore_extra_deps = [":report-mojo-docstring-coverage"],
+    # Runfiles for importlib; not a static import (pydeps would flag unused).
+    deps = [":report-mojo-docstring-coverage"],
+)
+
 modular_py_binary(
     name = "generate-models-table",
     srcs = ["generate-models-table.py"],
