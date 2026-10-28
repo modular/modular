@@ -24,6 +24,29 @@ from std.math import align_up
 from std.builtin.device_passable import DevicePassable
 
 
+struct DenseArgs[addrs_origin: Origin, length: Int]:
+    """Storage for the per-argument address and size slots of a kernel launch.
+
+    Slot `i` of `addrs` points at the bytes of the `i`-th launch
+    argument, and slot `i` of `sizes` is that argument's size in
+    bytes. Callers fill both arrays and pass pointers to them to the enqueuer.
+
+    Parameters:
+        addrs_origin: The origin the argument address pointers borrow from.
+        length: The number of argument slots.
+    """
+
+    var addrs: Array[OpaquePointer[Self.addrs_origin], Self.length]
+    var sizes: Array[UInt64, Self.length]
+
+    def __init__(out self):
+        """Initializes the address slots uninitialized and the sizes to zero."""
+        self.addrs = Array[OpaquePointer[Self.addrs_origin], Self.length](
+            uninitialized=True
+        )
+        self.sizes = Array[UInt64, Self.length](fill=0)
+
+
 trait DeviceFunctionWrapper:
     """Selects the function that `DeviceFunction` compiles for a user kernel.
 

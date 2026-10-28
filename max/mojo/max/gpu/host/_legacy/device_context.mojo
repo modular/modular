@@ -91,7 +91,7 @@ from ._device_context_metal import (
 )
 
 from .. import _launch_args
-from .._launch_args import DeviceFunctionWrapper, _IdentityWrapper
+from .._launch_args import DeviceFunctionWrapper, _IdentityWrapper, DenseArgs
 
 from ._device_context_extras import *
 
@@ -2930,6 +2930,7 @@ def _max_dynamic_shared_bytes_for_load[
 def _enqueue_packed_checked[
     # TODO(MOCO-5073): Remove once nested autoparameterization is supported
     dense_args_origin: ImmOrigin,
+    dense_args_sizes_origin: MutOrigin,
     //,
 ](
     ctx: Some[_FunctionEnqueuer],
@@ -2938,7 +2939,7 @@ def _enqueue_packed_checked[
     device_context: DeviceContext,
     func_name: StaticString,
     dense_args_addrs: MutPointer[ImmOpaquePointer[dense_args_origin], _],
-    dense_args_sizes: Optional[Pointer[UInt64, MutUntrackedOrigin]],
+    dense_args_sizes: Optional[Pointer[UInt64, dense_args_sizes_origin]],
     num_args: Int,
     grid_dim: Dim,
     block_dim: Dim,
@@ -3428,21 +3429,15 @@ struct DeviceFunction[
         # A kernel may take no arguments; keep the buffers non-empty.
         comptime num_slots = max(num_args, 1)
 
-        var dense_args_addrs = unsafe_stack_allocation[
-            # TODO(MSTDL-1904): Remove mut cast; verify treated as immutable.
-            num_slots,
-            OpaquePointer[args.origin],
-        ]()
-        var dense_args_sizes = unsafe_stack_allocation[num_slots, UInt64]()
+        var dense_args = DenseArgs[args.origin, num_slots]()
 
         comptime for i in range(num_args):
-            # TODO(MSTDL-1904): Validate the safety of this.
-            dense_args_addrs[unsafe_offset=i] = Pointer(
-                to=args[i]
-            ).unsafe_bitcast[NoneType]()
+            dense_args.addrs.unsafe_get(i) = Pointer(to=args[i]).unsafe_bitcast[
+                NoneType
+            ]()
 
         comptime for i in range(num_args):
-            dense_args_sizes[unsafe_offset=i] = UInt64(size_of[Ts[i]]())
+            dense_args.sizes.unsafe_get(i) = UInt64(size_of[Ts[i]]())
 
         if case .Some(cluster_dim) = cluster_dim:
             attributes.append(LaunchAttribute.from_cluster_dim(cluster_dim))
@@ -3455,8 +3450,8 @@ struct DeviceFunction[
                 ctx,
                 func_handle=self._handle,
                 device_context=self._context.assert_default_target(),
-                dense_args_addrs=dense_args_addrs,
-                dense_args_sizes=dense_args_sizes,
+                dense_args_addrs=dense_args.addrs.unsafe_ptr(),
+                dense_args_sizes=dense_args.sizes.unsafe_ptr(),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
                 shared_mem_bytes=shared_mem_bytes.or_else(0),
@@ -3473,8 +3468,8 @@ struct DeviceFunction[
                 func_handle=self._handle,
                 device_context=self._context.assert_default_target(),
                 func_name=func_name,
-                dense_args_addrs=dense_args_addrs,
-                dense_args_sizes=Optional(dense_args_sizes),
+                dense_args_addrs=dense_args.addrs.unsafe_ptr(),
+                dense_args_sizes=Optional(dense_args.sizes.unsafe_ptr()),
                 num_args=num_args,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
@@ -3669,7 +3664,9 @@ struct DeviceFunction[
                 device_context=self._context.assert_default_target(),
                 func_name=func_name,
                 dense_args_addrs=dense_args_addrs.unsafe_ptr(),
-                dense_args_sizes=None,
+                dense_args_sizes=Optional[
+                    Pointer[UInt64, MutUntrackedOrigin]
+                ](),
                 num_args=num_translated_args,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
@@ -3962,12 +3959,10 @@ struct DeviceExternalFunction[
 
         comptime num_args = Ts.length
 
-        var dense_args_addrs = Array[OpaquePointer[ImmutAnyOrigin], num_args](
-            uninitialized=True
-        )
+        var dense_args = DenseArgs[ImmutAnyOrigin, num_args]()
 
         comptime for i in range(num_args):
-            dense_args_addrs[i] = (
+            dense_args.addrs.unsafe_get(i) = (
                 Pointer(to=args[i])
                 .unsafe_bitcast[NoneType]()
                 .as_unsafe_any_origin()
@@ -3987,18 +3982,16 @@ struct DeviceExternalFunction[
         comptime if Self.target.is_apple_gpu():
             # Metal takes the launch payload via `args[0]`; see
             # `MetalDeviceContext::enqueueFunctionExecDirect`.
-            var dense_args_sizes = Array[UInt64, num_args](fill=0)
-
             comptime for i in range(num_args):
-                dense_args_sizes[i] = UInt64(size_of[Ts[i]]())
+                dense_args.sizes.unsafe_get(i) = UInt64(size_of[Ts[i]]())
 
             # TODO(GEX-3761): Unchecked path — no argument is encoded as a
             # device pointer, so this launch marks no used buffers resident.
             var dense_args_is_device_ptr = Array[Bool, num_args](fill=False)
 
             var metal_args = MetalEnqueueFunctionArgs(
-                dense_args_addrs.unsafe_ptr(),
-                dense_args_sizes.unsafe_ptr(),
+                dense_args.addrs.unsafe_ptr(),
+                dense_args.sizes.unsafe_ptr(),
                 dense_args_is_device_ptr.unsafe_ptr(),
                 None,
                 Int32(0),
@@ -4035,7 +4028,7 @@ struct DeviceExternalFunction[
                 shared_mem_bytes.or_else(0),
                 attributes.unsafe_ptr(),
                 len(attributes),
-                dense_args_addrs.unsafe_ptr(),
+                dense_args.addrs.unsafe_ptr(),
                 UInt32(num_args),
                 no_arg_sizes,
             ),

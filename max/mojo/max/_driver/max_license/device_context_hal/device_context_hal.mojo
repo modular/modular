@@ -94,7 +94,11 @@ from max.gpu.host.info import (
 )
 from max.gpu.host import Attribute, FuncAttribute
 from max.gpu.host import _launch_args
-from max.gpu.host._launch_args import DeviceFunctionWrapper, _IdentityWrapper
+from max.gpu.host._launch_args import (
+    DeviceFunctionWrapper,
+    _IdentityWrapper,
+    DenseArgs,
+)
 
 
 def _check_device_context_hal_only_supported_exec_config[
@@ -2916,16 +2920,7 @@ struct DeviceFunction[
         # Allocation made at function scope to outlive the enqueue, otherwise
         # the stack bytes are free to be reused immediately. A kernel may take
         # no arguments; keep the arrays non-empty.
-        var stack_addrs = Array[_, max(num_passed_args, 1)](
-            fill=OpaquePointer[ImmutAnyOrigin].unsafe_dangling()
-        )
-        var stack_sizes = Array[UInt64, max(num_passed_args, 1)](fill=0)
-        var dense_args_addrs = stack_addrs.unsafe_ptr().unsafe_origin_cast[
-            MutUntrackedOrigin
-        ]()
-        var dense_args_sizes = stack_sizes.unsafe_ptr().unsafe_origin_cast[
-            MutUntrackedOrigin
-        ]()
+        var dense_args = DenseArgs[ImmutAnyOrigin, max(num_passed_args, 1)]()
 
         var translated_arg_idx = 0
 
@@ -2941,10 +2936,10 @@ struct DeviceFunction[
                     ]
                 ).unsafe_bitcast[NoneType]()
                 args[i]._to_device_type(device_type_encoder, first_word_addr)
-                dense_args_addrs[
-                    unsafe_offset=translated_arg_idx
-                ] = first_word_addr.as_unsafe_any_origin()
-                dense_args_sizes[unsafe_offset=translated_arg_idx] = UInt64(
+                dense_args.addrs.unsafe_get(
+                    translated_arg_idx
+                ) = first_word_addr.as_unsafe_any_origin()
+                dense_args.sizes.unsafe_get(translated_arg_idx) = UInt64(
                     size_of[
                         actual_arg_type.device_type,
                         target=device_type_encoder.target(),
@@ -2964,8 +2959,8 @@ struct DeviceFunction[
                 .as_unsafe_any_origin()
             )
 
-            dense_args_addrs[unsafe_offset=translated_arg_idx] = addr
-            dense_args_sizes[unsafe_offset=translated_arg_idx] = UInt64(size)
+            dense_args.addrs.unsafe_get(translated_arg_idx) = addr
+            dense_args.sizes.unsafe_get(translated_arg_idx) = UInt64(size)
             translated_arg_idx += 1
 
         # Kernels that use `with PDL()` emit `griddepcontrol` instructions and
@@ -2982,8 +2977,8 @@ struct DeviceFunction[
         ctx._hal_stream()[].execute(
             self._inner[]._func_handle,
             execution_config,
-            args=dense_args_addrs,
-            arg_sizes=dense_args_sizes,
+            args=dense_args.addrs.unsafe_ptr(),
+            arg_sizes=dense_args.sizes.unsafe_ptr(),
             num_args=UInt32(num_translated_args),
             attributes=attr_ptr,
             num_attributes=UInt32(len(attributes)),
@@ -2992,8 +2987,7 @@ struct DeviceFunction[
         # Keep these alive until the plugin has read them.
         _ = attributes^
         _ = translated_args^
-        _ = stack_addrs^
-        _ = stack_sizes^
+        _ = dense_args^
 
     @inline(.always)
     def _call_with_pack[
@@ -3027,26 +3021,17 @@ struct DeviceFunction[
         comptime num_args = Ts.length
         # Function scope so the storage outlives the enqueue; see
         # `_call_with_pack_checked`.
-        var stack_addrs = Array[_, max(num_args, 1)](
-            fill=OpaquePointer[ImmutAnyOrigin].unsafe_dangling()
-        )
-        var stack_sizes = Array[UInt64, max(num_args, 1)](fill=0)
-        var dense_args_addrs = stack_addrs.unsafe_ptr().unsafe_origin_cast[
-            MutUntrackedOrigin
-        ]()
-        var dense_args_sizes = stack_sizes.unsafe_ptr().unsafe_origin_cast[
-            MutUntrackedOrigin
-        ]()
+        var dense_args = DenseArgs[ImmutAnyOrigin, max(num_args, 1)]()
 
         comptime for i in range(num_args):
-            dense_args_addrs[unsafe_offset=i] = (
+            dense_args.addrs.unsafe_get(i) = (
                 Pointer(to=args[i])
                 .unsafe_bitcast[NoneType]()
                 .as_unsafe_any_origin()
             )
 
-        def _populate_arg_sizes[i: Int]() {imm}:
-            dense_args_sizes[unsafe_offset=i] = UInt64(size_of[Ts[i]]())
+        def _populate_arg_sizes[i: Int]() {mut dense_args}:
+            dense_args.sizes.unsafe_get(i) = UInt64(size_of[Ts[i]]())
 
         comptime for i in range(num_args):
             _populate_arg_sizes[i]()
@@ -3074,8 +3059,8 @@ struct DeviceFunction[
                 UInt32(block_dim.y()),
                 UInt32(block_dim.z()),
             ),
-            args=dense_args_addrs,
-            arg_sizes=dense_args_sizes,
+            args=dense_args.addrs.unsafe_ptr(),
+            arg_sizes=dense_args.sizes.unsafe_ptr(),
             num_args=UInt32(num_args),
             shared_mem_bytes=UInt32(shared_mem_bytes.or_else(0)),
             attributes=attr_ptr,
@@ -3084,8 +3069,7 @@ struct DeviceFunction[
 
         # Keep attributes alive until the plugin has read them.
         _ = attributes^
-        _ = stack_addrs^
-        _ = stack_sizes^
+        _ = dense_args^
 
     @inline(.always)
     def _call_with_pack[
@@ -3105,26 +3089,17 @@ struct DeviceFunction[
         comptime num_args = Ts.length
         # Function scope so the storage outlives the enqueue; see
         # `_call_with_pack_checked`.
-        var stack_addrs = Array[_, max(num_args, 1)](
-            fill=OpaquePointer[ImmutAnyOrigin].unsafe_dangling()
-        )
-        var stack_sizes = Array[UInt64, max(num_args, 1)](fill=0)
-        var dense_args_addrs = stack_addrs.unsafe_ptr().unsafe_origin_cast[
-            MutUntrackedOrigin
-        ]()
-        var dense_args_sizes = stack_sizes.unsafe_ptr().unsafe_origin_cast[
-            MutUntrackedOrigin
-        ]()
+        var dense_args = DenseArgs[ImmutAnyOrigin, max(num_args, 1)]()
 
         comptime for i in range(num_args):
-            dense_args_addrs[unsafe_offset=i] = (
+            dense_args.addrs.unsafe_get(i) = (
                 Pointer(to=args[i])
                 .unsafe_bitcast[NoneType]()
                 .as_unsafe_any_origin()
             )
 
-        def _populate_arg_sizes[i: Int]() {imm}:
-            dense_args_sizes[unsafe_offset=i] = UInt64(size_of[Ts[i]]())
+        def _populate_arg_sizes[i: Int]() {mut dense_args}:
+            dense_args.sizes.unsafe_get(i) = UInt64(size_of[Ts[i]]())
 
         comptime for i in range(num_args):
             _populate_arg_sizes[i]()
@@ -3132,12 +3107,11 @@ struct DeviceFunction[
         ctx._hal_stream()[].execute(
             self._inner[]._func_handle,
             execution_config,
-            args=dense_args_addrs,
-            arg_sizes=dense_args_sizes,
+            args=dense_args.addrs.unsafe_ptr(),
+            arg_sizes=dense_args.sizes.unsafe_ptr(),
             num_args=UInt32(num_args),
         )
-        _ = stack_addrs^
-        _ = stack_sizes^
+        _ = dense_args^
 
     @inline(.always)
     def occupancy_max_active_blocks_per_multiprocessor(
@@ -3259,20 +3233,17 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
             )
 
         comptime num_args = Ts.length
-        var dense_args_addrs = unsafe_stack_allocation[
-            num_args + 1, OpaquePointer[ImmutAnyOrigin]
-        ]()
-        var dense_args_sizes = unsafe_stack_allocation[num_args + 1, UInt64]()
+        var dense_args = DenseArgs[ImmutAnyOrigin, num_args + 1]()
 
         comptime for i in range(num_args):
-            dense_args_addrs[unsafe_offset=i] = (
+            dense_args.addrs.unsafe_get(i) = (
                 Pointer(to=args[i])
                 .unsafe_bitcast[NoneType]()
                 .as_unsafe_any_origin()
             )
 
-        def _populate_arg_sizes[i: Int]() {imm}:
-            dense_args_sizes[unsafe_offset=i] = UInt64(size_of[Ts[i]]())
+        def _populate_arg_sizes[i: Int]() {mut dense_args}:
+            dense_args.sizes.unsafe_get(i) = UInt64(size_of[Ts[i]]())
 
         comptime for i in range(num_args):
             _populate_arg_sizes[i]()
@@ -3300,8 +3271,8 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
                 UInt32(block_dim.y()),
                 UInt32(block_dim.z()),
             ),
-            args=dense_args_addrs,
-            arg_sizes=dense_args_sizes,
+            args=dense_args.addrs.unsafe_ptr(),
+            arg_sizes=dense_args.sizes.unsafe_ptr(),
             num_args=UInt32(num_args),
             shared_mem_bytes=UInt32(shared_mem_bytes.or_else(0)),
             attributes=attr_ptr,
@@ -3324,20 +3295,17 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
         _check_device_context_hal_only_supported_exec_config(execution_config)
 
         comptime num_args = Ts.length
-        var dense_args_addrs = unsafe_stack_allocation[
-            num_args + 1, OpaquePointer[ImmutAnyOrigin]
-        ]()
-        var dense_args_sizes = unsafe_stack_allocation[num_args + 1, UInt64]()
+        var dense_args = DenseArgs[ImmutAnyOrigin, num_args + 1]()
 
         comptime for i in range(num_args):
-            dense_args_addrs[unsafe_offset=i] = (
+            dense_args.addrs.unsafe_get(i) = (
                 Pointer(to=args[i])
                 .unsafe_bitcast[NoneType]()
                 .as_unsafe_any_origin()
             )
 
-        def _populate_arg_sizes[i: Int]() {imm}:
-            dense_args_sizes[unsafe_offset=i] = UInt64(size_of[Ts[i]]())
+        def _populate_arg_sizes[i: Int]() {mut dense_args}:
+            dense_args.sizes.unsafe_get(i) = UInt64(size_of[Ts[i]]())
 
         comptime for i in range(num_args):
             _populate_arg_sizes[i]()
@@ -3345,8 +3313,8 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
         ctx._hal_stream()[].execute(
             self._inner[]._func_handle,
             execution_config,
-            args=dense_args_addrs,
-            arg_sizes=dense_args_sizes,
+            args=dense_args.addrs.unsafe_ptr(),
+            arg_sizes=dense_args.sizes.unsafe_ptr(),
             num_args=UInt32(num_args),
         )
 
