@@ -35,24 +35,6 @@ using namespace KGEN;
 // Utils
 //===----------------------------------------------------------------------===//
 
-/// Converts the fully bound `symbol` to the equivalent `FuncSymbolGenerator`.
-/// Its values move one scope deeper, into the generator body. Returns null if
-/// `symbol` is parametric.
-static FuncSymbolGenerator fromSymbolConstant(SymbolConstantAttr symbol) {
-  FuncTypeGeneratorType type = symbol.getType();
-  if (!type.isFullyBound())
-    return {};
-  IndexDepthAdjuster adjuster(1);
-  SmallVector<TypedAttr> bodyValues =
-      llvm::map_to_vector(symbol.getParamValues(), [&](TypedAttr value) {
-        return cast<TypedAttr>(adjuster.replace(value));
-      });
-  auto funcSymbol =
-      FuncSymbolAttr::get(symbol.getSymbol(), type.getBody(), bodyValues);
-  return FuncSymbolGenerator::get(/*inputParamTypes=*/{}, funcSymbol,
-                                  type.getParamListAttrs());
-}
-
 FuncSymbolGenerator KGEN::extractFuncSymbolGenerator(TypedAttr attr) {
   if (auto literal = dyn_cast<FuncLiteralTypeGeneratorType>(attr.getType()))
     return literal.getFuncSymbolAttr();
@@ -63,11 +45,7 @@ FuncSymbolGenerator KGEN::extractFuncSymbolGenerator(TypedAttr attr) {
         cast<FuncSymbolAttr>(adjuster.replace(literal.getFuncLiteral()));
     return FuncSymbolGenerator::get(/*inputParamTypes=*/{}, funcSymbol);
   }
-  if (auto symbol = FuncSymbolGenerator::dynCast(attr))
-    return symbol;
-  if (auto symbol = dyn_cast<SymbolConstantAttr>(attr))
-    return fromSymbolConstant(symbol);
-  return {};
+  return FuncSymbolGenerator::dynCast(attr);
 }
 
 bool KGEN::hasUnresolvedParamValue(FuncSymbolGenerator symbol) {

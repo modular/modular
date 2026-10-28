@@ -34,6 +34,7 @@ class ParamDeclAttr;
 class ParamDeclArrayAttr;
 struct PartiallySpecializedInputParams;
 class FuncSymbolAttr;
+class FuncOp;
 class GeneratorAttr;
 class FuncTypeGeneratorType;
 class FuncLiteralTypeGeneratorType;
@@ -113,9 +114,20 @@ public:
                                  FuncSymbolAttr funcSymbol,
                                  Attribute metadata = {});
 
-  /// Wraps `attr` if it is a `GeneratorAttr` wrapping a `FuncSymbolAttr`,
-  /// otherwise returns null.
-  static FuncSymbolGenerator dynCast(TypedAttr attr);
+  /// Returns a fully bound generator referencing the non-parametric function
+  /// `symbol` of type `type`.
+  static FuncSymbolGenerator get(SymbolRefAttr symbol, FuncType type,
+                                 Attribute metadata = {});
+
+  /// Returns a fully bound generator referencing `func`.
+  static FuncSymbolGenerator get(FuncOp func);
+
+  /// Converts the fully bound `symbol` to the equivalent generator.
+  static FuncSymbolGenerator get(SymbolConstantAttr symbol);
+
+  /// Wraps `attr` if it is a `GeneratorAttr` wrapping a `FuncSymbolAttr` or a
+  /// `SymbolConstantAttr`.
+  static FuncSymbolGenerator dynCast(Attribute attr);
 
   /*implicit*/ operator TypedAttr() const { return storage; }
   explicit operator bool() const { return static_cast<bool>(storage); }
@@ -132,6 +144,7 @@ public:
 
   /// Returns the wrapped `FuncSymbolAttr` as seen from the scope enclosing the
   /// generator. The generator must be fully bound.
+  FuncType getInstantiatedType() const;
   FuncSymbolAttr getInstantiatedFuncSymbol() const;
   ArrayRef<TypedAttr> getParamValues() const;
 

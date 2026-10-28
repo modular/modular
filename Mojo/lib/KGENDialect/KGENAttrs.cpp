@@ -1763,31 +1763,39 @@ SymbolConstantAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
 
 LogicalResult
 FuncPtrBitcastAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                           SymbolConstantAttr callee,
-                           FuncTypeGeneratorType type) {
-  FuncTypeGeneratorType symbolType = callee.getType();
-  if (!isEqualCanon(symbolType.getWithBody(type.getBody()), type))
+                           FuncSymbolAttr callee, FuncTypeGeneratorType type) {
+  // The callee is already instantiated, so only its function type body may be
+  // re-presented.
+  if (!type.isFullyBound())
     return emitError()
            << "func_ptr_bitcast must only change the function type body";
   return success();
 }
 
-bool FuncPtrBitcastAttr::isConstant() const {
-  return getSymbolConstant().isConstant();
+SymbolRefAttr FuncPtrBitcastAttr::getSymbol() const {
+  return getCallee().getSymbol();
 }
 
-ParseResult parseFuncPtrBitcastCallee(AsmParser &p,
-                                      SymbolConstantAttr &callee) {
+ArrayRef<TypedAttr> FuncPtrBitcastAttr::getParamValues() const {
+  return getCallee().getParamValues();
+}
+
+bool FuncPtrBitcastAttr::isConstant() const {
+  return llvm::all_of(getParamValues(), ParameterAttr::isSimpleConstant) &&
+         getCallee().isConstant();
+}
+
+ParseResult parseFuncPtrBitcastCallee(AsmParser &p, FuncSymbolAttr &callee) {
   Attribute attr;
   if (p.parseAttribute(attr))
     return failure();
-  callee = dyn_cast<SymbolConstantAttr>(attr);
+  callee = dyn_cast<FuncSymbolAttr>(attr);
   if (!callee)
-    return p.emitError(p.getCurrentLocation(), "expected symbol constant");
+    return p.emitError(p.getCurrentLocation(), "expected function symbol");
   return success();
 }
 
-void printFuncPtrBitcastCallee(AsmPrinter &p, SymbolConstantAttr callee) {
+void printFuncPtrBitcastCallee(AsmPrinter &p, FuncSymbolAttr callee) {
   p.printAttribute(callee);
 }
 
@@ -1882,11 +1890,11 @@ FuncSymbolAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
   if (!declSignature)
     return failure();
 
-  // Parameter types match exactly.  We could support higher order rebinding
-  // if there is a need.
-  return verifyFuncTypesMatch("symbol use", remapper.replace(getType()), loc,
-                              symbol.getLeafReference(),
-                              declSignature.getBody(), func->getLoc());
+  auto useSignature = FuncTypeGeneratorType::get(
+      /*inputParamTypes=*/{}, remapper.replace(getType()), /*genMetadata=*/{});
+  return verifyDeclSignaturesMatch("symbol use", useSignature, loc,
+                                   symbol.getLeafReference(), declSignature,
+                                   func->getLoc());
 }
 
 //===----------------------------------------------------------------------===//

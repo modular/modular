@@ -1232,6 +1232,14 @@ ErrorOr<Value> KGEN::convertParameterToLLVM(
         b, tc.convertType(callable.getType()),
         cast<FlatSymbolRefAttr>(callable.getSymbol()));
   }
+  // TODO: we won't be needing this function after fully migration (hopefully),
+  // the call-like ops should all take FuncType-d callee, and we will see a
+  // plain FuncSymbolAttr that implements `CallableSymbolAttrInterface`.
+  if (auto generator = FuncSymbolGenerator::dynCast(attr)) {
+    return LLVM::AddressOfOp::create(
+        b, tc.convertType(generator.getType()),
+        cast<FlatSymbolRefAttr>(generator.getSymbol()));
+  }
 
   //===--------------------------------------------------------------------===//
   // POP

@@ -51,7 +51,7 @@ struct CreateRuntimeClosureOpConversion
     rewriter.replaceOpWithNewOp<LLVM::AddressOfOp>(
         op, convertType(op.getType()),
         cast<FlatSymbolRefAttr>(
-            cast<SymbolConstantAttr>(op.getCallee()).getSymbol()));
+            FuncSymbolGenerator::dynCast(op.getCallee()).getSymbol()));
     return success();
   }
 };

@@ -286,7 +286,7 @@ def FuncSymbolAttr : DialectAttribute<(attr
 )>;
 
 def FuncPtrBitcastAttr : DialectAttribute<(attr
-  ConcreteAttribute<"SymbolConstantAttr">:$callee,
+  ConcreteAttribute<"FuncSymbolAttr">:$callee,
   ConcreteType<"FuncTypeGeneratorType">:$type
 )>;
 

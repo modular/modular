@@ -169,9 +169,8 @@ private:
 
             // Exclude direct uses but not uses within expressions. e.g.
             // foo<x+step, step>
-            for (auto [param, decl] :
-                 llvm::zip(call.getCallee().getParamValues(),
-                           oldFunction.getInputParams())) {
+            for (auto [param, decl] : llvm::zip(call.getParamValues(),
+                                                oldFunction.getInputParams())) {
               auto asRef = dyn_cast<ParamDeclRefAttr>(param);
               // A direct pass through of the same parameter doesn't count.
               if (!asRef || asRef.getName() != decl.getName() ||
@@ -239,8 +238,7 @@ private:
     newParams.clear();
     newOperands.clear();
 
-    for (auto [idx, inParam] :
-         llvm::enumerate(oldCall.getCallee().getParamValues())) {
+    for (auto [idx, inParam] : llvm::enumerate(oldCall.getParamValues())) {
       if (!unusedParamsIndex[idx])
         newParams.push_back(inParam);
     }

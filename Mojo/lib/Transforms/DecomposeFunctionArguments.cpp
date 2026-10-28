@@ -603,10 +603,8 @@ LogicalResult DecomposeFunctionArgumentsPass::rewriteCalls(
     auto newFuncTy = FunctionType::get(call.getContext(), newInputs,
                                        origFuncTy.getResults());
     FuncType newSig = withSignature(origSig, newFuncTy, newConvs);
-    auto newSigGen = FuncTypeGeneratorType::get(/*inputParamTypes=*/{}, newSig,
-                                                /*genMetadata=*/{});
     call.setCalleeAttr(
-        SymbolConstantAttr::get(call.getCalleeSymbol(), newSigGen));
+        FuncSymbolGenerator::get(call.getCalleeSymbol(), newSig));
   }
   return mlir::success();
 }

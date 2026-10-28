@@ -17,6 +17,7 @@
 #include "Mojo/KGENDialect/KGENDType.h"
 #include "Mojo/KGENDialect/KGENDialect.h"
 #include "Mojo/KGENDialect/KGENInterfaces.h"
+#include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/KGENParameters.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/KGENDialect/ParameterEvaluator.h"
@@ -744,13 +745,13 @@ ErrorOr<TypedAttr> FuncType::readFrom(int64_t addr,
       // recursion but require one level of typing to preserve symbol storage in
       // the interpreter. Handle the resulting type mismatches with a bit cast.
       if (generatorType.getBody() != *this) {
-        assert(isa<SymbolConstantAttr>(*symbol) &&
-               "func slot must hold a symbol constant");
-        auto symbolCst = cast<SymbolConstantAttr>(*symbol);
+        auto generator = FuncSymbolGenerator::dynCast(*symbol);
+        assert(generator && generator.isFullyBound() &&
+               "func slot must hold a function symbol");
         auto shallowGen =
             cast<FuncTypeGeneratorType>(generatorType.getWithBody(*this));
-        symbol =
-            cast<TypedAttr>(FuncPtrBitcastAttr::get(symbolCst, shallowGen));
+        symbol = cast<TypedAttr>(FuncPtrBitcastAttr::get(
+            generator.getInstantiatedFuncSymbol(), shallowGen));
       }
     }
   }
@@ -1008,13 +1009,45 @@ FuncSymbolGenerator::FuncSymbolGenerator(TypedAttr attr) : storage(attr) {
 FuncSymbolGenerator FuncSymbolGenerator::get(ArrayRef<Type> inputParamTypes,
                                              FuncSymbolAttr funcSymbol,
                                              Attribute metadata) {
-  return FuncSymbolGenerator(cast<TypedAttr>(
-      GeneratorAttr::get(inputParamTypes, funcSymbol, metadata)));
+  return FuncSymbolGenerator(
+      GeneratorAttr::get(inputParamTypes, funcSymbol, metadata));
 }
 
-FuncSymbolGenerator FuncSymbolGenerator::dynCast(TypedAttr attr) {
-  if (attr && isFuncSymbolGenerator(attr))
-    return FuncSymbolGenerator(attr);
+FuncSymbolGenerator FuncSymbolGenerator::get(SymbolRefAttr symbol,
+                                             FuncType type,
+                                             Attribute metadata) {
+  auto funcSymbol = FuncSymbolAttr::get(symbol, type, /*paramValues=*/{});
+  return get(/*inputParamTypes=*/{}, funcSymbol, metadata);
+}
+
+FuncSymbolGenerator FuncSymbolGenerator::get(FuncOp func) {
+  FuncTypeGeneratorType type = func.getFuncTypeGenerator();
+  return get(FlatSymbolRefAttr::get(func.getSymNameAttr()), type.getBody(),
+             type.getParamListAttrs());
+}
+
+FuncSymbolGenerator FuncSymbolGenerator::get(SymbolConstantAttr symbol) {
+  FuncTypeGeneratorType type = symbol.getType();
+  if (!type.isFullyBound())
+    return {};
+  IndexDepthAdjuster adjuster(1);
+  SmallVector<TypedAttr> bodyValues =
+      llvm::map_to_vector(symbol.getParamValues(), [&](TypedAttr value) {
+        return cast<TypedAttr>(adjuster.replace(value));
+      });
+  auto funcSymbol =
+      FuncSymbolAttr::get(symbol.getSymbol(), type.getBody(), bodyValues);
+  return get(/*inputParamTypes=*/{}, funcSymbol, type.getParamListAttrs());
+}
+
+FuncSymbolGenerator FuncSymbolGenerator::dynCast(Attribute attr) {
+  auto typedAttr = dyn_cast_if_present<TypedAttr>(attr);
+  if (!typedAttr)
+    return {};
+  if (isFuncSymbolGenerator(typedAttr))
+    return FuncSymbolGenerator(typedAttr);
+  if (auto symbol = dyn_cast<SymbolConstantAttr>(attr))
+    return get(symbol);
   return {};
 }
 
@@ -1045,6 +1078,11 @@ SymbolRefAttr FuncSymbolGenerator::getSymbol() const {
 FuncSymbolAttr FuncSymbolGenerator::getInstantiatedFuncSymbol() const {
   assert(isFullyBound() && "cannot instantiate a parameterized generator");
   return sugarCast<FuncSymbolAttr>(getGenerator().getInstantiatedValue());
+}
+
+FuncType FuncSymbolGenerator::getInstantiatedType() const {
+  assert(isFullyBound() && "cannot instantiate a parameterized generator");
+  return getType().getInstantiatedBody();
 }
 
 ArrayRef<TypedAttr> FuncSymbolGenerator::getParamValues() const {

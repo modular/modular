@@ -605,7 +605,10 @@ def KGEN_CallOp : KGEN_CallOpBase<"call",
   }];
 
   let arguments = (ins
-    KGEN_SymbolConstantAttr:$callee,
+    // TODO: This should take a FuncSymbolAttr directly: it will tighten up the
+    // call-like ops such that they can only take a FuncType (which is
+    // guaranteed to be fully bound) as the callee.
+    AttrOfType<KGEN_FuncTypeGeneratorType>:$callee,
     Variadic<AnyType>:$operands,
     DefaultValuedAttr<KGEN_TailKindAttr, "{}">:$tailKind
   );
@@ -618,20 +621,29 @@ def KGEN_CallOp : KGEN_CallOpBase<"call",
   }];
 
   let builders = [
-    OpBuilder<(ins "SymbolConstantAttr":$callee, "ValueRange":$operands), [{
+    OpBuilder<(ins "FuncSymbolGenerator":$callee, "ValueRange":$operands), [{
       auto tailKind = TailKindAttr::get($_builder.getContext(), TailKind::None);
       return build($_builder, $_state,
         callee.getType().getBody().getValues().getResults(), callee,
         operands, tailKind);
+    }]>,
+    // TODO: Remove once all callers build a FuncSymbolGenerator directly.
+    OpBuilder<(ins "SymbolConstantAttr":$callee, "ValueRange":$operands), [{
+      return build($_builder, $_state, FuncSymbolGenerator::get(callee),
+        operands);
     }]>
   ];
 
   let extraClassDeclaration = [{
-    void concretizeCallee(IRRewriter &b, SymbolConstantAttr callee);
+    void concretizeCallee(IRRewriter &b, FuncSymbolGenerator callee);
+
+    FuncSymbolGenerator getCalleeGenerator() {
+      return FuncSymbolGenerator(getCallee());
+    }
 
     /// Return the symbol reference to the callee.
     FlatSymbolRefAttr getCalleeSymbol() {
-      return cast<FlatSymbolRefAttr>(getCallee().getSymbol());
+      return cast<FlatSymbolRefAttr>(getCalleeGenerator().getSymbol());
     }
 
     FuncTypeGeneratorType getCalleeType() {
@@ -640,7 +652,7 @@ def KGEN_CallOp : KGEN_CallOpBase<"call",
 
     /// Return the bound input parameter values.
     ArrayRef<TypedAttr> getParamValues() {
-      return getCallee().getParamValues();
+      return getCalleeGenerator().getParamValues();
     }
   }];
 
@@ -685,7 +697,7 @@ def KGEN_CallParamOp : KGEN_CallOpBase<"call_param",
   }];
 
   let extraClassDeclaration = [{
-    void concretizeCallee(IRRewriter &b, SymbolConstantAttr callee);
+    void concretizeCallee(IRRewriter &b, FuncSymbolGenerator callee);
     bool isAllowedInFunc() { return false; }
 
     FuncTypeGeneratorType getCalleeType() {
