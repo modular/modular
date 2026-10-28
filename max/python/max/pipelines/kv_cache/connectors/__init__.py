@@ -63,6 +63,7 @@ def create_connector(
     inherits ``rust_tiered``'s CUDA/HIP requirement.
 
     Args:
+        leaves: Leaf ids and the KV cache group each one belongs to.
         devices: Devices for the KV cache tensors (all participating devices).
         replica_kv_memory: Per-replica offload-ready KV memory units, one
             mapping per DP replica, keyed by the leaf ids ``params.leaves()``

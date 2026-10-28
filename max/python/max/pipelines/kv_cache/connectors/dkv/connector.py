@@ -1455,6 +1455,7 @@ class DKVConnector(KVConnector):
 
     @property
     def leaves(self) -> Mapping[str, KVCacheGroupId]:
+        """Returns the leaf IDs this connector services."""
         return self._leaves
 
     @staticmethod
@@ -1552,6 +1553,7 @@ class DKVConnector(KVConnector):
 
     @property
     def name(self) -> str:
+        """Reports the name ``dkv`` in logs and metrics."""
         return "dkv"
 
     def _derive_leaf_shape(self) -> None:
@@ -2436,21 +2438,23 @@ class DKVConnector(KVConnector):
                 client.poll_transfers()
 
     def shutdown(self) -> None:
-        # No-op: the Rust client releases its NIXL agent, heartbeat poller, and
-        # RPC connection when the object is dropped (at process teardown).
-        # Per-batch transfer throughput is surfaced by the scheduler from
-        # ``metrics`` below, so no background logger is needed here.
-        pass
+        """Does nothing: the Rust client frees its NIXL agent when dropped.
+
+        Dropping the object also releases the heartbeat poller and RPC
+        connection. Per-batch transfer throughput reaches the scheduler
+        through :attr:`metrics`, so no background logger runs here.
+        """
 
     def reset_prefix_cache(self) -> None:
-        # No-op: dKV manages its own external block lifecycle server-side.
-        pass
+        """Does nothing: dKV manages block lifetime on the server."""
 
     @property
     def metrics(self) -> KVCacheMetrics:
+        """Reports transfer counters without resetting them."""
         return self._aggregate_metrics(lambda client: client.metrics())
 
     def take_metrics(self) -> KVCacheMetrics:
+        """Reports transfer counters and resets the refusal counter."""
         metrics = self._aggregate_metrics(lambda client: client.take_metrics())
         self._loads_refused = 0
         return metrics

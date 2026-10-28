@@ -217,10 +217,12 @@ _GTT_SHARED_LIMIT_NOTE = (
 
 
 def _check_gtt_capacity(requested_bytes: int) -> None:
-    """Raises when a driver-allocated host staging region exceeds the node's
-    free GTT (GPU driver pinned memory) -- the limit that binds for
-    ``host_staging_alloc='driver'`` on HIP, where the allocation is NOT
-    charged to this process's memory cgroup."""
+    """Raises when driver-allocated host staging exceeds free GTT.
+
+    GTT is the GPU driver's pinned memory, and it is the limit that binds
+    for ``host_staging_alloc='driver'`` on HIP, where the allocation is NOT
+    charged to this process's memory cgroup.
+    """
     usage = _read_gtt_usage()
     if usage is None:
         logger.warning(
@@ -610,6 +612,7 @@ class TierConnector(KVConnector):
         params: KVCacheParamInterface,
         device_memory_bytes: int,
     ) -> TierConnector:
+        """Builds a tiered connector for the given leaves and replicas."""
         _validate_leaves(leaves)
         leaf0 = next(iter(leaves.keys()))
         cfg = params.kv_connector_config
@@ -823,10 +826,12 @@ class TierConnector(KVConnector):
 
     @property
     def leaves(self) -> Mapping[str, KVCacheGroupId]:
+        """Returns the leaf IDs this connector services."""
         return self._leaves
 
     @property
     def name(self) -> str:
+        """Reports the name ``TieredConnector`` in logs and metrics."""
         return "TieredConnector"
 
     def lookup(
@@ -1027,6 +1032,7 @@ class TierConnector(KVConnector):
             logger.exception("Tier touch skipped")
 
     def shutdown(self) -> None:
+        """Stops the native lanes and releases the host and disk regions."""
         if self._shutdown:
             return
         self._shutdown = True
@@ -1041,6 +1047,7 @@ class TierConnector(KVConnector):
 
     @property
     def host_byte_count(self) -> ByteCount:
+        """Reports free and total pinned host bytes."""
         return ByteCount(
             free=self._native.free_host_bytes(),
             total=self._native.host_bytes(),
@@ -1048,12 +1055,14 @@ class TierConnector(KVConnector):
 
     @property
     def disk_byte_count(self) -> ByteCount:
+        """Reports free and total offload directory bytes."""
         return ByteCount(
             free=self._native.free_disk_bytes(),
             total=self._native.disk_bytes(),
         )
 
     def reset_prefix_cache(self) -> None:
+        """Clears the native prefix cache."""
         self._native.reset_prefix_cache()
 
     def _wrap_native_metrics(
@@ -1071,9 +1080,11 @@ class TierConnector(KVConnector):
 
     @property
     def metrics(self) -> KVCacheMetrics:
+        """Reports transfer counters without resetting them."""
         return self._wrap_native_metrics(*self._native.metrics())
 
     def take_metrics(self) -> KVCacheMetrics:
+        """Reports transfer counters and resets the refusal counters."""
         metrics = self._wrap_native_metrics(*self._native.take_metrics())
         self._loads_refused = 0
         self._offload_blocks_dropped = 0

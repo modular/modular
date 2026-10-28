@@ -36,10 +36,12 @@ class NullConnector(KVConnector):
 
     @property
     def leaves(self) -> Mapping[str, KVCacheGroupId]:
+        """Returns the single ``full`` leaf this connector serves."""
         return {"full": KVCacheGroupId.full()}
 
     @property
     def name(self) -> str:
+        """Reports ``NullConnector`` as the connector name."""
         return "NullConnector"
 
     def lookup(
@@ -58,6 +60,7 @@ class NullConnector(KVConnector):
         replica_idx: int = 0,
         hint: bytes | None = None,
     ) -> KVTransfer:
+        """Returns a completed transfer without reading any block."""
         return CompletedTransfer()
 
     def offload(
@@ -66,8 +69,10 @@ class NullConnector(KVConnector):
         block_hashes: Mapping[str, Sequence[bytes]],
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
+        """Returns a completed transfer without writing any block."""
         return CompletedTransfer()
 
     @property
     def metrics(self) -> KVCacheMetrics:
+        """Reports empty transfer metrics."""
         return KVCacheMetrics()
