@@ -979,8 +979,9 @@ public:
                                 DirectRewriter &rewriter) const override {
     ImplicitLocOpBuilder b(op.getLoc(), rewriter);
     InterpreterMemoryConverter::MaterializationScope scope = imc.createScope();
-    ErrorOr<Value> value = convertParameterToLLVM(b, *getTypeConverter(), &imc,
-                                                  &scope, op.getValue());
+    TargetInfoAttr target = getTypeConverter()->getTarget();
+    ErrorOr<Value> value = convertParameterToLLVM(
+        b, *getTypeConverter(), &imc, &scope, op.getValue(), target);
     if (failed(handleConstantLoweringError(value, op, rewriter, passFailed,
                                            *getTypeConverter())))
       return failure();
@@ -1011,8 +1012,9 @@ public:
                                 DirectRewriter &rewriter) const override {
     ImplicitLocOpBuilder b(op.getLoc(), rewriter);
     InterpreterMemoryConverter::MaterializationScope scope = imc.createScope();
-    ErrorOr<Value> value = convertParameterToLLVM(b, *getTypeConverter(), &imc,
-                                                  &scope, op.getValue());
+    TargetInfoAttr target = getTypeConverter()->getTarget();
+    ErrorOr<Value> value = convertParameterToLLVM(
+        b, *getTypeConverter(), &imc, &scope, op.getValue(), target);
     if (failed(handleConstantLoweringError(value, op, rewriter, passFailed,
                                            *getTypeConverter())))
       return failure();
