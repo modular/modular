@@ -53,7 +53,7 @@ from layout import (
     row_major,
 )
 from layout.tile_layout import Layout
-from std.math import ceildiv, exp, gcd
+from std.math import ceildiv, exp, gcd, isfinite
 from std.memory import bitcast, unsafe_stack_allocation
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 from std.sys import size_of
@@ -379,7 +379,9 @@ def TopKTopPMaskedProbsClusterKernel[
     `e / kept_mass`. The output row is that masked renormalized distribution
     -- the same tensor `TopKTopPSamplingFromProbKernel` emits under
     `emit_dist`, so a verifier's target-side probabilities and a draft's
-    proposal distribution are described identically.
+    proposal distribution are described identically. A row whose total mass
+    is not finite has no distribution to report and comes out all-zero, as it
+    does for the draft side.
 
     One block per row uses only as many SMs as there are rows, which leaves
     most of the GPU idle at decode batch sizes. Here the CTAs of one cluster
@@ -503,6 +505,14 @@ def TopKTopPMaskedProbsClusterKernel[
     var total_count = Int32(totals[1])
     var p_eff = _topp_budget(p, z)
 
+    # A row whose total mass is not finite has no distribution to report:
+    # `e / NaN` is NaN wherever the predicate holds, and the verifier reads
+    # these slots as the target's probabilities. Zero the row outright and
+    # skip the search, whose bracket walk has no meaning on a NaN mass.
+    # `z` is cluster-uniform (the rank-ordered fold), so every CTA agrees and
+    # the collective below stays legal.
+    var has_dist = isfinite(z)
+
     var cut = Float32(0)
     var mass_s = z
 
@@ -513,7 +523,7 @@ def TopKTopPMaskedProbsClusterKernel[
     # of the cluster holds identically, so the extra test is cluster-uniform
     # and the branch below still takes the search on the same rows on every
     # CTA.
-    var search = total_count >= Int32(k) or z > p_eff
+    var search = has_dist and (total_count >= Int32(k) or z > p_eff)
     # `k == _d` keeps every token and `p >= 1` puts the budget at
     # `Float32.MAX` (`_topp_budget`), so nothing can fail the predicate the
     # search exists to invert: the answer is a zero cutoff over the whole
@@ -550,6 +560,8 @@ def TopKTopPMaskedProbsClusterKernel[
     for i in range(vec_begin + tx, vec_end, block_size):
         var e = smem.unsafe_load[width=vec_size]((i - vec_begin) * vec_size)
         var masked = (e.gt(cut)).select(e / mass_s, SIMD[.float32, vec_size](0))
+        if not has_dist:
+            masked = SIMD[.float32, vec_size](0)
         probs_row.store((Idx[0], i * vec_size), masked)
 
     # Terminal keep-alive. Peers read this CTA's shared memory through `mapa`,
@@ -1269,6 +1281,15 @@ def TopKTopPSamplingEmitDistClusterKernel[
     var cutoff = Float32.MAX_FINITE
     var kept_mass = Float32(1)
 
+    # So does a row with a non-finite total mass. The row max ignores a NaN
+    # logit (that is the point of `test_topk_nan_contract`), so a lone NaN
+    # leaves one weight NaN and every other one usable: the loop can still
+    # accept, and normalizing by `z` would emit NaN -- the one value callers
+    # cannot read as "no distribution" (`speculative/driver.py` reads `q == 0`
+    # as none and never divides by it). `z` is what flags such a row, and it
+    # comes out of the rank-ordered fold, so every CTA agrees on it.
+    var has_dist = isfinite(z)
+
     # Whether this row needs the search for its reported distribution. A row
     # whose constraints cannot bind emits the staged weights whole: a zero
     # cutoff keeps every positive weight and `z` -- the unmasked total this
@@ -1276,19 +1297,19 @@ def TopKTopPSamplingEmitDistClusterKernel[
     # answer the single-block kernel short-circuits to (`topk_fi.mojo:2487`),
     # and the one the search walks its bracket down to, so skipping it is a
     # pure work saving on exactly the rows the API defaults produce.
-    var search_for_dist = True
+    var search_for_dist = has_dist
     # `k == _d` keeps every token and `p >= 1` puts the budget at
     # `Float32.MAX` (`_topp_budget`); `min_p_thresh > 0` is exactly when the
     # staging pass zeroed weights, so with no threshold the staged row is the
     # whole softmax and `masked_z == z`. All three are row scalars held
     # identically by every CTA of the cluster, so the test is cluster-uniform
     # and the branch below still searches on the same rows on every CTA.
-    if k == _d and p >= 1.0 and min_p_thresh <= 0:
+    if has_dist and k == _d and p >= 1.0 and min_p_thresh <= 0:
         cutoff = 0
         kept_mass = z
         search_for_dist = False
 
-    if accepted_e >= 0:
+    if accepted_e >= 0 and has_dist:
         if search_for_dist:
             # The search reads elements other lanes staged, so order the
             # staging writes against it -- cluster-wide, since the search's
@@ -1327,6 +1348,12 @@ def TopKTopPSamplingEmitDistClusterKernel[
         var masked = (e.gt(cutoff)).select(
             e / kept_mass, SIMD[.float32, vec_size](0)
         )
+        # Neither the predicate nor the division is trustworthy for a row
+        # with no distribution: `e / NaN` is NaN wherever the predicate
+        # holds, and both `NaN > cutoff` and an unreachable `+Inf` weight
+        # depend on the compare the backend picks. Zero the row outright.
+        if not has_dist:
+            masked = SIMD[.float32, vec_size](0)
         dist_row.store((Idx[0], i * vec_size), masked.cast[dist_dtype]())
 
     if rank == 0 and tx == 0:

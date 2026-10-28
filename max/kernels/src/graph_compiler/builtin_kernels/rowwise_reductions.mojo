@@ -31,6 +31,36 @@ from .monoids import (
 )
 
 
+@inline(.always)
+def _in_range_indices[
+    width: Int
+](indices: SIMD[.int64, width]) -> SIMD[.int64, width]:
+    """Folds the `Int64.MAX` identity index to 0 in every lane.
+
+    `ArgMax`/`ArgMin` finalize through `_in_range_index` in the tiers whose
+    `rowwise.pjoin` runs the monoid's `join_parallel` (warp, block, split-K).
+    The tiled and serial tiers skip that join by design -- one thread owns
+    each output lane, and `join_parallel` would reset the per-lane
+    accumulators -- so a lane that never saw a winner (an empty reduce axis,
+    an all-NaN row, or a row of pure identity values) would emit the identity
+    as a tensor value, and a downstream `gather` on `2**63-1` is an
+    out-of-bounds device access (see `monoids._in_range_index`). Clamping at
+    the emit site covers every tier.
+
+    Parameters:
+        width: Number of lanes in the emitted index vector.
+
+    Args:
+        indices: The per-lane winning axis indices.
+
+    Returns:
+        `indices` with every identity lane replaced by 0.
+    """
+    return indices.eq(SIMD[.int64, width](Int64.MAX)).select(
+        SIMD[.int64, width](0), indices
+    )
+
+
 def reduce_product[
     dtype: DType,
     InputFn: ImplicitlyCopyable
@@ -191,7 +221,7 @@ def reduce_argmin[
         def write(oc: RowCoord[rank]) {var indices, var output_fn}:
             output_fn[params.emit_tile_width](
                 oc.coord,
-                indices.slice[params.emit_tile_width](),
+                _in_range_indices(indices.slice[params.emit_tile_width]()),
             )
 
         # `indices`/`output_fn` ride `write`'s capture list into `emit`.
@@ -274,7 +304,7 @@ def reduce_argmax[
         def write(oc: RowCoord[rank]) {var indices, var output_fn}:
             output_fn[params.emit_tile_width](
                 oc.coord,
-                indices.slice[params.emit_tile_width](),
+                _in_range_indices(indices.slice[params.emit_tile_width]()),
             )
 
         # `indices`/`output_fn` ride `write`'s capture list into `emit`.

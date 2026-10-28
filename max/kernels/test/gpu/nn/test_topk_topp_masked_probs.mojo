@@ -28,9 +28,10 @@ by the mask-disabled identity (the row is its plain softmax).
 """
 
 from std.math import exp
+from std.utils.numerics import inf, isfinite, nan, neg_inf
 from max.gpu.host import DeviceContext
 from layout import TileTensor, row_major
-from std.testing import assert_almost_equal, assert_equal
+from std.testing import assert_almost_equal, assert_equal, assert_true
 
 from nn.sampling import topk_topp_masked_probs
 
@@ -233,6 +234,108 @@ def run_probs[
     _ = top_k_dev^
 
 
+def _check_degenerate_rows_emit_zero_probs(
+    ctx: DeviceContext, d: Int, *, k: Int
+) raises:
+    """Every row without a usable distribution must come out all-zero.
+
+    Row 0 holds a lone NaN: the row max ignores it, so the finite weights keep
+    the row's predicate alive while the row's total mass goes NaN -- and
+    normalizing by that mass used to write NaN into the tensor the verifier
+    reads as target probabilities. Row 1 is all `-Inf` (every weight zero) and
+    row 2 holds a `+Inf` (every weight NaN); both reach the same contract.
+    Row 3 stays live and must still emit a distribution summing to 1.
+    """
+    comptime rows = 4
+    comptime live_row = 3
+    var logits_host = ctx.enqueue_create_host_buffer[.float32](rows * d)
+    for row in range(rows):
+        for col in range(d):
+            logits_host[row * d + col] = scrambled_logit(row, col, d).cast[
+                .float32
+            ]()
+    logits_host[d // 2] = nan[.float32]()
+    for col in range(d):
+        logits_host[1 * d + col] = neg_inf[.float32]()
+    logits_host[2 * d + 3] = inf[.float32]()
+
+    var logits_dev = ctx.enqueue_create_buffer[.float32](rows * d)
+    ctx.enqueue_copy(logits_dev, logits_host)
+    var probs_dev = ctx.enqueue_create_buffer[.float32](rows * d)
+
+    var top_k_host = ctx.enqueue_create_host_buffer[.int64](rows)
+    var top_p_host = ctx.enqueue_create_host_buffer[.float32](rows)
+    var temp_host = ctx.enqueue_create_host_buffer[.float32](rows)
+    for row in range(rows):
+        top_k_host[row] = Int64(k)
+        top_p_host[row] = 1.0
+        temp_host[row] = 1.0
+    var top_k_dev = ctx.enqueue_create_buffer[.int64](rows)
+    var top_p_dev = ctx.enqueue_create_buffer[.float32](rows)
+    var temp_dev = ctx.enqueue_create_buffer[.float32](rows)
+    ctx.enqueue_copy(top_k_dev, top_k_host)
+    ctx.enqueue_copy(top_p_dev, top_p_host)
+    ctx.enqueue_copy(temp_dev, temp_host)
+
+    topk_topp_masked_probs(
+        ctx,
+        TileTensor(logits_dev, row_major(rows, d)),
+        TileTensor(probs_dev, row_major(rows, d)).as_unsafe_any_origin(),
+        top_k_val=d,
+        top_p_val=1.0,
+        top_k_arr=TileTensor(top_k_dev, row_major(rows))
+        .as_unsafe_any_origin()
+        .as_imm(),
+        top_p_arr=TileTensor(top_p_dev, row_major(rows))
+        .as_unsafe_any_origin()
+        .as_imm(),
+        temperature=TileTensor(temp_dev, row_major(rows))
+        .as_unsafe_any_origin()
+        .as_imm(),
+    )
+
+    var probs_host = ctx.enqueue_create_host_buffer[.float32](rows * d)
+    ctx.enqueue_copy(probs_host, probs_dev)
+    ctx.synchronize()
+
+    for row in range(live_row):
+        for col in range(d):
+            assert_equal(
+                probs_host[row * d + col],
+                0.0,
+                msg=String(
+                    t"row={row} col={col} d={d} k={k}: a row with no"
+                    t" distribution must emit zeros"
+                ),
+            )
+
+    var prob_sum = 0.0
+    for col in range(d):
+        var got = Float64(probs_host[live_row * d + col])
+        assert_true(
+            isfinite(got),
+            msg=String(t"live row col={col} d={d}: non-finite probability"),
+        )
+        prob_sum += got
+    assert_almost_equal(
+        prob_sum,
+        1.0,
+        rtol=1e-3,
+        msg=String(t"live row d={d} k={k}: probs must sum to 1"),
+    )
+
+    _ = logits_dev
+    _ = probs_dev
+
+
+def test_degenerate_rows_emit_zero_probs(ctx: DeviceContext) raises:
+    """Cluster-sized rows, a constrained row, and the single-block launcher."""
+    _check_degenerate_rows_emit_zero_probs(ctx, 64, k=-1)
+    _check_degenerate_rows_emit_zero_probs(ctx, 64, k=8)
+    # Past the per-CTA staging budget: the launcher's single-block kernel.
+    _check_degenerate_rows_emit_zero_probs(ctx, 249856, k=-1)
+
+
 def test_empty_batch(ctx: DeviceContext, d: Int) raises:
     """Zero rows must be a no-op, not a zero-sized grid launch.
 
@@ -315,6 +418,11 @@ def main() raises:
             test_narrow_cluster_brackets(ctx, rows=2, d=4096, k=k)
 
         test_empty_batch(ctx, d=1024)
+        # A row with no usable distribution must emit zeros, never NaN: the
+        # verifier reads this tensor as the target's probabilities, and NaN
+        # there silently accepts the draft token (`coins * q >= NaN` is
+        # false). The draft side emits zeros for the same rows.
+        test_degenerate_rows_emit_zero_probs(ctx)
         # Vocabularies far narrower than one cluster's thread count. At these
         # widths a row does not even fill one block, so under a cluster most
         # CTAs own no elements at all and contribute only reduction
