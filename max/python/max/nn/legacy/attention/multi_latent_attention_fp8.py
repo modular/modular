@@ -640,8 +640,9 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
     def _gather_per_head_scale(
         self, start_row_offset: int, n_rows: int
     ) -> TensorValue | None:
-        """Gathers per-head B-scale chunks from the flat on-disk
-        `kv_b_proj_scale` for all heads in a single op.
+        """Gathers per-head B-scale chunks from the flat on-disk scale.
+
+        Reads `kv_b_proj_scale` for all heads in a single op.
 
         For each head `h` and chunk `k` of `g` rows, the on-disk
         scale row is `(h * per_head_row + start_row_offset + k * g) //
@@ -699,8 +700,10 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
 
     @property
     def w_uk(self) -> tuple[TensorValue, TensorValue | None]:
-        """Decode K-up projection: weight `[H, R, Dn]`, scale
-        `[H, R/block_k_kernel, ceildiv(Dn, g)]` after transpose.
+        """Decode K-up projection.
+
+        Weight `[H, R, Dn]`, scale `[H, R/block_k_kernel, ceildiv(Dn, g)]`
+        after transpose.
 
         The batched FP8 matmul reads `b_scales` as `[H, N_blk,
         K_blk]`. For `Q @ w_uk` the matmul has `N = R` and
@@ -718,8 +721,9 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
 
     @property
     def w_uv(self) -> tuple[TensorValue, TensorValue | None]:
-        """Decode V-up projection: weight `[H, Dv, R]`, scale
-        `[H, ceildiv(Dv, g), R/block_k_kernel]`.
+        """Decode V-up projection.
+
+        Weight `[H, Dv, R]`, scale `[H, ceildiv(Dv, g), R/block_k_kernel]`.
 
         For `raw_out @ w_uv`: `N_matmul = Dv`, `K_matmul = R`.
         The gather chunks `Dv` at granularity `g`, so the rows axis
@@ -735,8 +739,10 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
 
     @property
     def w_k(self) -> tuple[TensorValue, TensorValue | None]:
-        """Prefill K-up projection: weight `[H*Dn, R]`, scale
-        `[H*ceildiv(Dn, g), R/block_k_kernel]`."""
+        """Prefill K-up projection.
+
+        Weight `[H*Dn, R]`, scale `[H*ceildiv(Dn, g), R/block_k_kernel]`.
+        """
         w_k = (
             self._kv_b_proj_weight[..., : self.qk_nope_head_dim]
             .permute([1, 2, 0])
@@ -845,6 +851,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         input_row_offsets: TensorValue,
         mla_prefill_metadata: MLAPrefillMetadata | None = None,
     ) -> TensorValue:
+        """Applies FP8 latent attention and returns the output."""
         # First FP8 matmul: x @ q_a_proj.T, fused with x @ kv_a_proj_with_mqa.T
         wqkv, wqkv_scale = self.wqkv
         qkv = quantized_matmul(
@@ -891,8 +898,9 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
 
 
 class TensorParallelLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
-    """Distributed tensor parallel implementation of FP8 Latent Attention with
-    Rope.
+    """Distributed tensor parallel implementation of FP8 latent attention.
+
+    Uses RoPE.
 
     Attention heads are split across devices: ``q_b_proj`` / ``kv_b_proj`` are
     column-parallel (each device owns ``num_heads / num_devices`` heads) and
@@ -952,6 +960,7 @@ class TensorParallelLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
         input_row_offsets: Sequence[TensorValue],
         mla_prefill_metadata: list[MLAPrefillMetadata] | None = None,
     ) -> list[TensorValue]:
+        """Applies tensor-parallel FP8 latent attention."""
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
         if len(input_row_offsets) != len(self.devices):
@@ -1055,6 +1064,7 @@ class DataParallelLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
         input_row_offsets: Sequence[TensorValue],
         mla_prefill_metadata: list[MLAPrefillMetadata] | None = None,
     ) -> list[TensorValue]:
+        """Applies data-parallel FP8 latent attention and returns the output."""
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
 

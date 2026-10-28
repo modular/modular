@@ -38,6 +38,7 @@ class MissingLayer(Module):
         self.layer_id = layer_id
 
     def __call__(self, *args: Any, **kwargs: Any) -> NoReturn:
+        """Raises for any call; stands in for a missing layer."""
         raise RuntimeError(
             f"Decoder layer {self.layer_id} belongs to another pipeline stage."
         )

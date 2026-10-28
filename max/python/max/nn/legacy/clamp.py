@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Clamps a tensor's values into a range."""
+
 from __future__ import annotations
 
 from max.graph import TensorValue, ops

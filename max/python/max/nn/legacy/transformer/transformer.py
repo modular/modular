@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Sequential and sharded transformer block execution."""
+
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
@@ -298,6 +300,7 @@ class TransformerBlock(Module):
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
+        """Runs the block and returns its output."""
         residual_multiplier = ops.constant(
             self.residual_multiplier, x.dtype, device=x.device
         )
@@ -662,6 +665,7 @@ class Transformer(LogitsPostprocessMixin, Module):
         input_row_offsets: TensorValue,
         hidden_states: TensorValue | None = None,
     ) -> DecoderOutputs:
+        """Runs the transformer and returns the logits."""
         h = self.embed_tokens(tokens)
 
         if self.embedding_multiplier != 1.0:

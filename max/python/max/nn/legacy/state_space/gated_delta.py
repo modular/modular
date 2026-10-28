@@ -154,8 +154,9 @@ def gated_delta_conv1d_fwd(
     *,
     write_state: bool = True,
 ) -> TensorValue:
-    """Applies the causal conv1d pass, mutating a slot-indexed conv-state
-    pool in place.
+    """Applies the causal conv1d pass.
+
+    Mutates a slot-indexed conv-state pool in place.
 
     ``conv_state`` is a mutable pool of shape ``[max_slots, conv_dim,
     kernel_size - 1]`` and the kernel reads/writes slot
@@ -381,8 +382,9 @@ def gated_delta_recurrence_fwd(
     slot_idx: TensorValue,
     input_row_offsets: TensorValue,
 ) -> TensorValue:
-    """Applies the gated delta recurrence pass, mutating a slot-indexed
-    state pool in place.
+    """Applies the gated delta recurrence pass.
+
+    Mutates a slot-indexed state pool in place.
 
     ``recurrent_state`` is a mutable pool of shape ``[max_slots, nv, KD,
     VD]`` and the kernel reads/writes slot ``slot_idx[batch_item]``

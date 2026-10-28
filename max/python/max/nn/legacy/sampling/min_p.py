@@ -46,6 +46,7 @@ class MinPSampler(Module):
     def __call__(
         self, input: TensorValue, min_p: TensorValueLike = 0.0
     ) -> TensorValue:
+        """Samples a token using min-p filtering."""
         batch_size = input.shape[0]
         # Handle top_p parameter - can be scalar or tensor
         if isinstance(min_p, float | int):

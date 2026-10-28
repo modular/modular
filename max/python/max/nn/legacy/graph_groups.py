@@ -69,6 +69,7 @@ class GraphGroup(OrderedDict[_K, _V]):
             tree.kind(cls.kind)(cls)
 
     def __new__(cls, *args: object, **kwargs: object) -> Self:
+        """Creates the group, rejecting a subclass with no ``kind``."""
         if cls.kind is None:
             raise TypeError(
                 f"{cls.__qualname__} has no kind, so an exported graph could"
@@ -169,8 +170,10 @@ class Logits(GraphGroup[LogitsName, TensorValue]):
 
 
 class HiddenStates(GraphGroup[str, tuple[TensorValue, ...]]):
-    """Hidden states a decoder returns for a drafter, a capture, or the next
-    pipeline stage, keyed by the one mode it ran in."""
+    """Hidden states a decoder returns for one mode.
+
+    The mode is a drafter, a capture, or the next pipeline stage.
+    """
 
     kind = "hidden_states"
 
@@ -198,8 +201,11 @@ _G = TypeVar("_G", Logits, HiddenStates, ConvStates, SparseIndices)
 class DecoderOutputs(
     GraphGroup[str, Logits | HiddenStates | ConvStates | SparseIndices]
 ):
-    """A decoder graph's named outputs: its ``logits``, any
-    ``hidden_states``, and any state it writes back."""
+    """A decoder graph's named outputs.
+
+    Holds its ``logits``, any ``hidden_states``, and any state it writes
+    back.
+    """
 
     kind = "decoder_outputs"
 

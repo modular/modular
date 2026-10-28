@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""KV cache metrics and the containers that carry them."""
+
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TypeVar

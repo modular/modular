@@ -100,6 +100,10 @@ class AttentionWithRope(Module, Shardable):
             clip_qkv: If provided, clamp Q/K/V weights to [-clip_qkv, clip_qkv].
             use_qk_norm: Whether to use RMSNorm on Q/K.
             rms_norm_eps: Value to use for numerical stability in RMSNorm.
+            mask_variant: Attention mask used by the flash-attention
+                kernel. Defaults to ``MHAMaskVariant.CAUSAL_MASK``.
+            sliding_window: Local attention window in tokens; ``None``
+                disables the window.
 
             _fuse_rope_and_store: If True (default), emit a single fused
                 rope+split+store custom op. If False, emit separate rope, split,
@@ -503,6 +507,7 @@ class AttentionWithRope(Module, Shardable):
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
+        """Applies attention to the hidden states and returns the output."""
         # Get attributes from input.
         total_seq_len = x.shape[0]
 
@@ -704,12 +709,14 @@ class GGUFQAttentionWithRope(AttentionWithRope):
 
     @property
     def wqkv(self) -> TensorValue:
+        """Fused query, key, and value projection weights."""
         raise NotImplementedError(
             "wqkv is not implemented for unfused GGUFQAttentionWithRope"
         )
 
     @property
     def wqkv_bias(self) -> TensorValue | None:
+        """Bias of the fused query, key, and value projection."""
         raise NotImplementedError(
             "wqkv_bias is not implemented for unfused GGUFQAttentionWithRope"
         )
@@ -722,6 +729,7 @@ class GGUFQAttentionWithRope(AttentionWithRope):
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
+        """Applies quantized attention and returns the output."""
         # Get attributes from input.
         total_seq_len = x.shape[0]
 
@@ -921,6 +929,7 @@ class GPTQAttentionWithRope(AttentionWithRope):
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
+        """Applies quantized attention and returns the output."""
         # Get attributes from input.
         total_seq_len = x.shape[0]
 
@@ -1017,6 +1026,8 @@ class TensorParallelAttentionWithRope(
             rms_norm_eps: Value to use for numerical stability in RMSNorm.
             mask_variant: Attention mask used by the flash-attention kernel.
                 Defaults to ``MHAMaskVariant.CAUSAL_MASK``.
+            sliding_window: Local attention window in tokens; ``None`` disables
+                the window.
         """
         super().__init__(
             rope=rope,
@@ -1058,6 +1069,7 @@ class TensorParallelAttentionWithRope(
         freqs_cis: Sequence[TensorValue],
         input_row_offsets: Sequence[TensorValue],
     ) -> list[TensorValue]:
+        """Applies tensor-parallel attention and returns the partial output."""
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
         if len(input_row_offsets) != len(self.devices):
@@ -1096,6 +1108,7 @@ class TensorParallelAttentionWithRope(
         freqs_cis: Sequence[TensorValue],
         input_row_offsets: Sequence[TensorValue],
     ) -> None:
+        """Materializes the KV tensors from the hidden states."""
         n = len(self.devices)
         if not (
             len(hiddens)
@@ -1244,6 +1257,7 @@ class DataParallelAttentionWithRope(AttentionWithRope):
         freqs_cis: Sequence[TensorValue],
         input_row_offsets: Sequence[TensorValue],
     ) -> list[TensorValue]:
+        """Applies data-parallel attention and returns the output."""
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
 

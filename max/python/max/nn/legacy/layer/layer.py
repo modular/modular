@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""The layer and module base classes."""
+
 from __future__ import annotations
 
 import difflib
@@ -74,7 +76,7 @@ class Shardable(Protocol):
         """Creates a sharded view of this object for a specific device.
 
         Args:
-            device: The devices where this shard should reside.
+            devices: The devices where this shard should reside.
 
         Returns:
             A sequence of sharded instances of this object.
@@ -466,6 +468,7 @@ class Module(Layer, ABC):
 
     @property
     def sublayers(self) -> dict[str, Module]:
+        """The child modules, keyed by name."""
         return self._sublayers
 
     def replace_module(self, name: str, module: Module) -> None:
@@ -629,6 +632,7 @@ class Module(Layer, ABC):
 
     def raw_state_dict(self) -> dict[str, Weight]:
         """Returns all weights objects in the model.
+
         Unlike :meth:`state_dict`, this returns :class:`~max.graph.Weight` objects instead of
         the assigned values. Some parameters inside the :class:`~max.graph.Weight` can be
         configured before a graph is built. Do not change these attributes after

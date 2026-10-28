@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Base class for hooks that print layer information."""
+
 from __future__ import annotations
 
 import dataclasses
@@ -28,6 +30,8 @@ from max.nn.legacy.layer import Layer
 
 @dataclass
 class LayerInfo:
+    """One layer the hook knows about."""
+
     layer_name: str
     call_count: int = 0
 
@@ -71,15 +75,18 @@ class BasePrintHook(ABC):
         self._layer_filter: set[str] | None = set(filter) if filter else None
 
     def add_layer(self, layer: Any, name: str) -> None:
+        """Registers a layer under ``name``."""
         self._known_layers[layer] = LayerInfo(name)
 
     @property
     def export_path(self) -> str | None:
+        """The export path, or ``None`` when the hook does not export."""
         if self._export_path is None:
             return None
         return os.path.join(self._export_path, str(self._current_step))
 
     def step(self) -> None:
+        """Advances the hook by one step."""
         self._current_step += 1
 
         # Update export path.
@@ -178,6 +185,7 @@ class BasePrintHook(ABC):
         raise NotImplementedError
 
     def summarize(self) -> None:
+        """Prints the summary for the hook's layers."""
         action = "Printed"
         if self.export_path:
             action = "Saved"
@@ -193,6 +201,7 @@ class BasePrintHook(ABC):
             print(f"Tensors exported to {self._export_path}")
 
     def remove(self) -> None:
+        """Removes the hook."""
         # Clean up export_path if it's empty.
         if (export_path := self.export_path) and not os.listdir(export_path):
             os.rmdir(export_path)

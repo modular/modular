@@ -70,6 +70,7 @@ class RMSNorm(Module, Shardable):
         self._sharding_strategy: ShardingStrategy | None = None
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Applies RMSNorm to ``x``."""
         # Validate that weight dimension matches input's last dimension if
         # statically known.
         input_last_dim = x.shape[-1]

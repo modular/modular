@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Multi-head attention and the per-device head count."""
+
 from __future__ import annotations
 
 import math

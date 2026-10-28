@@ -117,8 +117,10 @@ class QuantStrategy(Protocol):
 def _gated_activation_ops(
     gate_up: TensorValue, activation: GatedActivation
 ) -> TensorValue:
-    """Computes ``activation.fused_activation`` on ``[gate | up]`` rows with
-    graph ops, matching the fused kernels' math."""
+    """Computes ``activation.fused_activation`` on ``[gate | up]`` rows.
+
+    Graph ops do the work, matching the fused kernels' math.
+    """
     moe_dim = int(gate_up.shape[1]) // 2
     gate = gate_up[:, :moe_dim]
     up = gate_up[:, moe_dim:]
@@ -281,6 +283,7 @@ class NvMxf4f8Strategy:
         tensor: TensorValue,
         group_size: int,
     ) -> tuple[TensorValue, TensorValue]:
+        """Quantizes the weight to NV MXFP4 with FP8 scales."""
         raise NotImplementedError(
             "To quantize to NVFP4/MXFP4/MXFP8, use grouped_quantize instead"
         )
@@ -650,8 +653,7 @@ class BlockScaledStrategy:
         out_scales_max_padded_m: int = 0,
         activation: GatedActivation | None = None,
     ) -> tuple[TensorValue, TensorValue]:
-        """Runs gemm1 with the gated activation and the MXFP8 requantize
-        folded into its epilogue.
+        """Runs gemm1 with the activation and MXFP8 requantize folded in.
 
         Returns the activation already quantized plus its E8M0 block scales,
         so the caller skips the standalone activation kernel. Output N is half
@@ -720,8 +722,10 @@ class BlockScaledStrategy:
         prefill_mega: bool = True,
         activation: GatedActivation | None = None,
     ) -> TensorValue:
-        """Runs the whole MoE FFN in one op on AMD gfx950: the one-launch
-        MegaFFN in the decode band, the prefill GEMMs above
+        """Runs the whole MoE FFN in one op on AMD gfx950.
+
+        That is the one-launch MegaFFN in the decode band, the prefill GEMMs
+        above
         ``prefill_band_m``, else the same two kernels as
         :meth:`grouped_matmul_swiglu_quant` then :meth:`grouped_matmul`.
 

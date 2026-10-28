@@ -360,6 +360,7 @@ class RejectionSampler(Module):
         target_logit_offsets: TensorValue,
         seed: TensorValue,
     ) -> tuple[TensorValue, TensorValue]:
+        """Runs the rejection sampler and returns its output."""
         broadcasted_range = ops.broadcast_to(
             ops.range(
                 0,
@@ -561,8 +562,15 @@ def synthetic_acceptance_sampler(
         base_acceptance_rate: Per-position acceptance probability.
         num_draft_steps: Number of speculative draft steps.
         seed: Per-execute seed tensor. The accept draws use its row-0 value.
-        temperature, top_k, max_k, top_p, min_top_p: Per-row sampling
-            params, all or none.
+        temperature: Per-row temperature used to scale logits before
+            sampling. Set together with the other sampling params or
+            not at all.
+        top_k: Per-row number of top tokens to keep.
+        max_k: Largest ``top_k`` in the batch, or ``-1`` when a row sets
+            no limit.
+        top_p: Per-row nucleus threshold.
+        min_top_p: Smallest ``top_p`` across the batch, as a scalar for
+            the kernel's scalar threshold.
 
     Returns ``(first_rejected_idx, recovered_tokens, bonus_tokens)``
     """
@@ -753,10 +761,16 @@ class AcceptanceSampler:
                 :func:`~max.graph.ops.random.SeedType` input and keeps its
                 shared-seed (scalar) semantics, where the rows have no
                 per-request key and are spread by batch index instead.
-            temperature, top_k, max_k, top_p, min_top_p: Per-row
-                sampling params. Required when the sampler was built
-                with ``use_stochastic=True`` and synthetic mode is off;
+            temperature: Per-row temperature used to scale logits before
+                sampling. Required when the sampler was built with
+                ``use_stochastic=True`` and synthetic mode is off;
                 optional in synthetic mode, ignored in greedy mode.
+            top_k: Per-row number of top tokens to keep.
+            max_k: Largest ``top_k`` in the batch, or ``-1`` when a row
+                sets no limit.
+            top_p: Per-row nucleus threshold.
+            min_top_p: Smallest ``top_p`` across the batch, as a scalar
+                for the kernel's scalar threshold.
             in_thinking_phase: Optional ``[batch_size]`` bool tensor
                 marking rows currently inside a ``<think>...</think>``
                 span. Required when the sampler was built with

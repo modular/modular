@@ -27,7 +27,7 @@ from ..layer import Module, Shardable
 
 
 class LayerNorm(Module, Shardable):
-    """Layer normalization over the last dimension.
+    r"""Layer normalization over the last dimension.
 
     When called, ``LayerNorm`` accepts a :class:`~max.graph.TensorValue` of shape
     ``(..., dims)`` and returns a normalized :class:`~max.graph.TensorValue` of
@@ -35,10 +35,10 @@ class LayerNorm(Module, Shardable):
     dimension by computing the mean and variance for each sample independently.
 
     The computation is:
-    :math:`\\text{output} = \\gamma \\cdot \\frac{x - \\mu}{\\sigma} + \\beta`
-    where :math:`\\mu` is the mean,
-    :math:`\\sigma = \\sqrt{\\text{var}(x) + \\epsilon}` is the standard
-    deviation, and :math:`\\gamma, \\beta` are learned affine parameters.
+    :math:`\text{output} = \gamma \cdot \frac{x - \mu}{\sigma} + \beta`
+    where :math:`\mu` is the mean,
+    :math:`\sigma = \sqrt{\text{var}(x) + \epsilon}` is the standard
+    deviation, and :math:`\gamma, \beta` are learned affine parameters.
 
     Args:
         dims: The size of the feature dimension to normalize over.
@@ -71,6 +71,7 @@ class LayerNorm(Module, Shardable):
         self._sharding_strategy: ShardingStrategy | None = None
 
     def __call__(self, input: TensorValue):
+        """Normalizes ``input`` over its last dimension."""
         # TODO: AIPIPE-95 Replace with a broadcasting rmo.layer_norm
         bias = (
             ops.cast(self.bias, DType.float32)
@@ -179,6 +180,7 @@ class ConstantLayerNorm(Module):
         self.dtype = dtype
 
     def __call__(self, input: TensorValue) -> TensorValue:
+        """Normalizes ``input`` with constant weights."""
         gamma = ops.constant(self.gamma, self.dtype, self.device)
         beta = ops.constant(self.beta, self.dtype, self.device)
         return ops.cast(

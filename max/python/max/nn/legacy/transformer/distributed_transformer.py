@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Transformer blocks sharded across devices."""
+
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
@@ -47,7 +49,11 @@ from .transformer import (
 # NOTE: This should eventually be deleted once Weight & Linear are refactored to assume
 # distributed by default.
 class ShardableCallable(Shardable, Protocol):
-    def __call__(self, x: TensorValue) -> TensorValue: ...
+    """A callable that can be sharded across devices."""
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        """Runs the callable on ``x``."""
+        ...
 
 
 def distributed_logits_postprocess(
@@ -84,6 +90,8 @@ def distributed_logits_postprocess(
             states are passed directly to lm_head without normalization.
         return_hidden_states: Which hidden states to return.
         logits_scaling: Scaling factor for logits.
+        logit_softcapping: Cap for the softcap applied to the logits as
+            ``cap * tanh(logits / cap)``; ``None`` skips it.
         capture_hidden_states: For ``SELECTED_LAYERS`` mode, the per-layer
             captured hidden states gathered during the layer loop. See
             :func:`extract_hs`.
@@ -268,6 +276,7 @@ class DistributedTransformerBlock(Module):
         freqs_cis: list[TensorValue],
         input_row_offsets: list[TensorValue],
     ) -> list[TensorValue]:
+        """Runs the block and returns its output."""
         # Apply input layer norm to each shard
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
 
@@ -344,6 +353,7 @@ class DistributedTransformer(DistributedLogitsPostprocessMixin, Module):
         return_n_logits: TensorValue,
         input_row_offsets: TensorValue,
     ) -> DecoderOutputs:
+        """Runs the transformer and returns the logits."""
         h = self.embed_tokens(tokens, signal_buffers)
 
         freqs_cis = [self.rope.freqs_cis.to(device) for device in self.devices]

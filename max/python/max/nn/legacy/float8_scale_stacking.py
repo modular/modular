@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Stacked FP8 scale helpers for the MLP paths."""
+
 from collections.abc import Mapping
 
 from max.graph.shape import Shape
@@ -34,7 +36,6 @@ def can_use_fused_mlp(
     Returns:
         Whether MLP fusion is allowed.
     """
-
     for weight_name, weight_data in state_dict.items():
         weight_prefix = _weight_scale_name(weight_name)
         if weight_prefix is None:

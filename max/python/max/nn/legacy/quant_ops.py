@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Quantized matmul ops for narrow float formats."""
+
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 

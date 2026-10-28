@@ -27,8 +27,9 @@ def gated_group_rmsnorm(
     eps: float,
     group_size: int,
 ) -> TensorValue:
-    """Fuses the gated group-RMSNorm (HF ``Zamba2RMSNormGated`` with
-    ``norm_before_gate=False``) into a single dispatch.
+    """Fuses the gated group-RMSNorm into a single dispatch.
+
+    The norm is HF's ``Zamba2RMSNormGated`` with ``norm_before_gate=False``.
 
     Collapses ``cast(y->f32) -> silu(gate)*y -> group rms_norm ->
     *norm_weight -> cast`` into one op. ``y`` and ``gate`` are

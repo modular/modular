@@ -227,11 +227,13 @@ class EPConfig:
             )
 
     def _max_recv_tokens_per_expert(self, alignment: int = 32) -> int:
-        """Returns the most tokens one local expert can receive, rounded up to
-        a multiple of ``alignment``: every rank can route all of its tokens to
-        it. The default alignment gives the per-expert A-scale slot stride of
+        """Returns the most tokens one local expert can receive.
+
+        Rounded up to a multiple of ``alignment``, so every rank can route all
+        of its tokens to it. The default alignment gives the per-expert A-scale slot stride of
         the MX grouped matmul, which the MX dispatch ops derive the same way
-        from their EP geometry."""
+        from their EP geometry.
+        """
         n_ranks = self.n_gpus_per_node * self.n_nodes
         return (
             ceildiv(self.max_tokens_per_rank * n_ranks, alignment) * alignment
@@ -444,7 +446,10 @@ that its counters fit."""
 
 
 def _ep_fused_moe_requested() -> bool:
-    """Returns whether ``MODULAR_EP_FUSED_MOE=1`` asks EP init to set up the
-    backend's one-launch fused MoE. Internal and off by default; the backend
-    decides whether it serves the configuration."""
+    """Returns whether ``MODULAR_EP_FUSED_MOE=1`` asks for the fused MoE.
+
+    The flag asks EP init to set up the backend's one-launch fused MoE.
+    Internal and off by default; the backend decides whether it serves the
+    configuration.
+    """
     return os.environ.get("MODULAR_EP_FUSED_MOE", "0") == "1"

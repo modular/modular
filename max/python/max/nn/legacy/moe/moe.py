@@ -83,8 +83,10 @@ def make_concatenated_gated_activation_fn(
 def make_interleaved_gated_activation_fn(
     activation_fn: Callable[[TensorValue], TensorValue],
 ) -> Callable[[TensorValue, int], TensorValue]:
-    """Builds a gated activation for interleaved ``[g0, u0, g1, u1, ...]``
-    projections."""
+    """Builds a gated activation for interleaved projections.
+
+    The projections are laid out ``[g0, u0, g1, u1, ...]``.
+    """
 
     def _interleaved_gated_activation_fn(
         gate_up: TensorValue, moe_dim: int
@@ -108,12 +110,16 @@ class MoEGate(Module):
         is_sharding: bool = False,
         linear_cls: Callable[..., Linear] = Linear,
     ) -> None:
-        """Args:
+        """Creates a gate that routes tokens to their top-k experts.
+
+        Args:
         devices: List of devices to use for the MoEGate.
         hidden_dim: The dimension of the hidden state.
         num_experts: The number of experts.
         num_experts_per_token: The number of experts per token.
         dtype: The data type of the MoEGate.
+        is_sharding: Disable child layer creation during sharding.
+        linear_cls: Linear class used for the gate score projection.
         """
         super().__init__()
         self.devices = devices
@@ -133,7 +139,9 @@ class MoEGate(Module):
     def __call__(
         self, hidden_state: TensorValue
     ) -> tuple[TensorValue, TensorValue]:
-        """Args:
+        """Returns the top-k expert indices and their routing scores.
+
+        Args:
             hidden_state: The hidden state of the model.
 
         Returns:
@@ -639,6 +647,7 @@ class MoE(Module, Shardable):
 
     @property
     def gate_up_proj(self) -> TensorValue:
+        """The fused gate and up projection."""
         gate_list = [expert.gate_proj.weight for expert in self.experts]
         up_list = [expert.up_proj.weight for expert in self.experts]
 
@@ -692,6 +701,7 @@ class MoE(Module, Shardable):
 
     @property
     def down_proj(self) -> TensorValue:
+        """The down projection."""
         down_list = [expert.down_proj.weight for expert in self.experts]
 
         if (
@@ -796,7 +806,9 @@ class MoE(Module, Shardable):
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
-        """Args:
+        """Runs the MoE forward pass and returns the transformed tokens.
+
+        Args:
             x: (seq_len, hidden_dim)
 
         Returns:

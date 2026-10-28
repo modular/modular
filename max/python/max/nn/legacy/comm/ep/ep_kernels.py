@@ -45,8 +45,10 @@ NVFP4_MN_GROUP_SIZE = 128
 
 
 def _reject_dyn_global_scales(config: EPConfig, caller: str) -> None:
-    """Raises if the config asks a non-fused dispatch for per-token global
-    scales, which only the fused kernels implement."""
+    """Raises if a non-fused dispatch is asked for per-token global scales.
+
+    Only the fused kernels implement per-token global scales.
+    """
     if config.nvfp4_dyn_global_scales:
         raise ValueError(
             f"{caller} does not support nvfp4_dyn_global_scales; use the fused"
@@ -79,9 +81,11 @@ def _is_legacy_float8_dispatch(config: EPConfig) -> bool:
 def uses_mx_ep_token_format(
     config: EPConfig, quant_config: QuantConfig | None = None
 ) -> bool:
-    """Whether dispatch goes through ``MXTokenFormat``, which serves both MX
-    formats: it takes its element packing from the dispatch dtype (two FP4
-    nibbles per byte, or one E4M3 byte) and the E8M0 scale path is identical.
+    """Whether dispatch goes through ``MXTokenFormat``.
+
+    That format serves both MX variants: it takes its element packing from the
+    dispatch dtype (two FP4 nibbles per byte, or one E4M3 byte) and the E8M0
+    scale path is identical.
 
     On cuda, MXFP8 uses the NVIDIA block-scaled layout instead, so that case is
     excluded here rather than left to call-site ordering.
@@ -282,8 +286,10 @@ def _ep_common_parameters(
 def _block_scaled_nv_format_parameters(
     nvfp4: bool,
 ) -> dict[str, bool | int | float | str | DType]:
-    """Returns the ``BLOCK_SCALED_NV`` dispatch format parameters: NVFP4
-    (packed E2M1, E4M3 scales) or MXFP8 (E4M3, E8M0 scales)."""
+    """Returns the ``BLOCK_SCALED_NV`` dispatch format parameters.
+
+    Either NVFP4 (packed E2M1, E4M3 scales) or MXFP8 (E4M3, E8M0 scales).
+    """
     return {
         "dispatch_dtype": DType.uint8 if nvfp4 else DType.float8_e4m3fn,
         "dispatch_fmt_str": "BLOCK_SCALED_NV",
@@ -335,9 +341,10 @@ def call_ep_init(
     atomic_counter_group_1: BufferValue,
     config: EPConfig,
 ) -> tuple[TensorValue, TensorValue]:
-    """Initialize Expert Parallelism communication infrastructure by creating
-    a custom operation that initializes SHMEM context and allocates symmetric
-    memory buffers for EP communication.
+    """Initialize Expert Parallelism communication infrastructure.
+
+    Creates a custom operation that initializes the SHMEM context and
+    allocates symmetric memory buffers for EP communication.
 
     This operation only initializes the vendor library and allocates the
     symmetric memory buffers for current GPU. To prevent deadlocks, it needs to
@@ -490,8 +497,9 @@ def call_ep_dispatch_wait(
     config: EPConfig,
     num_tokens: Dim | None = None,
 ) -> tuple[TensorValue, ...]:
-    """Wait for Expert Parallelism token dispatch and prepare for expert
-    computation.
+    """Wait for Expert Parallelism token dispatch to complete.
+
+    This prepares the received tokens for expert computation.
 
     This function launches the EP dispatch wait kernel that waits for all
     inter-device communication to complete, then organizes the received tokens
@@ -507,6 +515,8 @@ def call_ep_dispatch_wait(
             Shape: (n_gpus_per_node,) each points to a buffer of shape
             (n_local_experts, n_ranks)
         config: EP configuration.
+        num_tokens: Number of input tokens, when known at graph build time.
+            Enables the decode fast-path grid sizing.
 
     Returns:
         A tuple containing:
@@ -791,9 +801,12 @@ _FUSED_EP_REFUSAL_BYTES = 256
 
 
 def _fused_moe_answer_types() -> list[TensorType]:
-    """The fused MoE init and plan ops' answer: the workspace bytes and token
-    block (CPU ``uint64[2]``, zeros when refused), then why the backend
-    refuses (CPU ``uint8`` text, all zero when it does not)."""
+    """The fused MoE init and plan ops' answer.
+
+    The workspace bytes and token block (CPU ``uint64[2]``, zeros when
+    refused), then why the backend refuses (CPU ``uint8`` text, all zero when
+    it does not).
+    """
     return [
         TensorType(DType.uint64, [2], device=DeviceRef.CPU()),
         TensorType(
@@ -805,9 +818,11 @@ def _fused_moe_answer_types() -> list[TensorType]:
 def _fused_moe_parameters(
     config: EPConfig,
 ) -> dict[str, bool | int | float | str | DType]:
-    """Returns the parameters of the fused MoE init and plan ops: what
-    ``ep.init`` gets, the experts' FFN width, and the EP features the backend
-    checks."""
+    """Returns the parameters of the fused MoE init and plan ops.
+
+    What ``ep.init`` gets, the experts' FFN width, and the EP features the
+    backend checks.
+    """
     parameters = _ep_common_parameters(config)
     parameters.update(_ep_dispatch_format_parameters(config))
     parameters["moe_dim"] = config.moe_dim
@@ -819,10 +834,12 @@ def _fused_moe_parameters(
 def _fused_moe_bound_parameters(
     config: EPConfig, dispatch_dtype: DType
 ) -> dict[str, bool | int | float | str | DType]:
-    """Returns the plan op's parameters for an upper bound: ``config``'s EP
-    geometry and the dispatch element type alone. The backend then ignores
-    the format fields and answers for the one format it serves with that
-    element type, which bounds every variant it refuses."""
+    """Returns the plan op's parameters for an upper bound.
+
+    Only ``config``'s EP geometry and the dispatch element type are set. The
+    backend then ignores the format fields and answers for the one format it
+    serves with that element type, which bounds every variant it refuses.
+    """
     parameters = _fused_moe_parameters(config)
     parameters["dispatch_dtype"] = dispatch_dtype
     parameters["exact"] = False
@@ -832,8 +849,10 @@ def _fused_moe_bound_parameters(
 def _call_mega_ffn_ep_fused_plan(
     parameters: dict[str, bool | int | float | str | DType],
 ) -> tuple[TensorValue, TensorValue]:
-    """Asks the backend, without allocating, what the fused MoE init does for
-    ``parameters`` (:func:`_fused_moe_parameters`).
+    """Asks the backend what the fused MoE init does for ``parameters``.
+
+    Allocates nothing. ``parameters`` comes from
+    :func:`_fused_moe_parameters`.
 
     Returns:
         The workspace bytes and token block (CPU ``uint64[2]``, zeros when
@@ -1410,6 +1429,8 @@ def call_ep_combine(
         fused_shared_expert: Whether to add shared expert outputs to the
             combined result. When True, the shared expert outputs are read
             from input_tokens and added to the reduced routed expert outputs.
+        topk_ids: Top-k expert ids per token. Required when
+            ``config.use_allreduce`` is set.
 
     Returns:
         output_tokens: Final output tensor with expert results.
@@ -1469,8 +1490,7 @@ def fused_silu(
     activation: GatedActivation | None = None,
     interleaved: bool = False,
 ) -> TensorValue:
-    """Performs the fused SILU operation for all the MLPs in the EP MoE
-    module.
+    """Performs the fused SILU operation for the EP MoE module's MLPs.
 
     After the EP dispatch phase, the host does not know how many tokens
     were actually received, so this op reads the row offsets to determine

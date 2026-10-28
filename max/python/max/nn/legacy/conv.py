@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Convolution layers."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -29,8 +31,7 @@ from .layer import Module, Shardable
 
 
 class Conv2d(Module, Shardable):
-    """A 2D convolution over an input signal composed of several input
-    planes.
+    """A 2D convolution over an input signal of several input planes.
 
     When called, ``Conv2d`` accepts a :class:`~max.graph.TensorValue` of shape
     ``(batch, height, width, in_channels)`` and returns a
@@ -313,8 +314,7 @@ class Conv2d(Module, Shardable):
 
 
 class Conv1D(Module):
-    """A 1D convolution over an input signal composed of several input
-    planes.
+    """A 1D convolution over an input signal of several input planes.
 
     When called, ``Conv1D`` accepts a :class:`~max.graph.TensorValue` of shape
     ``(batch, length, in_channels)`` and returns a
@@ -519,8 +519,7 @@ class Conv1D(Module):
 
 
 class Conv3D(Module):
-    """A 3D convolution over an input signal composed of several input
-    planes.
+    """A 3D convolution over an input signal of several input planes.
 
     When called, ``Conv3D`` accepts a :class:`~max.graph.TensorValue` of shape
     ``(batch, depth, height, width, in_channels)`` and returns a

@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Graph input types for the KV cache."""
+
 from __future__ import annotations
 
 from typing import Any, Generic, TypeAlias, TypeVar
@@ -34,8 +36,9 @@ _Buffer = TypeVar("_Buffer", BufferValue, BufferType, Buffer, Tensor)
 @tree.kind("split_kv_head_dims")
 @tree.dataclass(frozen=True)
 class SplitKVHeadDims:
-    """Marks a paged cache whose rows pack a key and a value of different
-    widths (:attr:`~max.nn.legacy.kv_cache.KVCacheParams.has_split_head_dims`).
+    """Marks a paged cache that packs keys and values of different widths.
+
+    See :attr:`~max.nn.legacy.kv_cache.KVCacheParams.has_split_head_dims`.
 
     A tree node without leaves, so it rides through flatten, unflatten and an
     exported artifact's input structure without adding a graph input.
@@ -131,8 +134,9 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
         *,
         include_scales: bool = True,
     ) -> list[_Tensor | _Buffer]:
-        """Serializes fields into a flat list, minus the attention dispatch
-        metadata fields.
+        """Serializes fields into a flat list.
+
+        Leaves out the attention dispatch metadata fields.
 
         Args:
             include_scales: Whether to append the quantization scale operands.

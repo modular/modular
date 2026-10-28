@@ -588,6 +588,7 @@ class LatentAttentionWithRope(Module, Shardable):
         input_row_offsets: TensorValue,
         mla_prefill_metadata: MLAPrefillMetadata | None = None,
     ) -> TensorValue:
+        """Applies latent attention and returns the output."""
         qkv = x @ self.wqkv.T
         xq, kv = ops.split(
             qkv,
@@ -620,9 +621,10 @@ class LatentAttentionWithRope(Module, Shardable):
 
 
 class TensorParallelLatentAttentionWithRope(LatentAttentionWithRope):
-    """Distributed tensor parallel implementation of the Latent Attention with
-    Rope. Note that using tensor parallelism for MLA will cause the KV-cache to
-    be duplicated across all devices, which is not efficient.
+    """Distributed tensor parallel implementation of latent attention.
+
+    Uses RoPE. Note that tensor parallelism for MLA duplicates the KV-cache
+    across all devices, which is not efficient.
 
     When ``skip_allreduce`` is True, the final all-reduce is skipped. This is
     intended for mixed TP-attention + EP-MoE configurations, where the
@@ -675,6 +677,7 @@ class TensorParallelLatentAttentionWithRope(LatentAttentionWithRope):
         input_row_offsets: Sequence[TensorValue],
         mla_prefill_metadata: list[MLAPrefillMetadata] | None = None,
     ) -> list[TensorValue]:
+        """Applies tensor-parallel latent attention and returns the partial output."""
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
         if len(input_row_offsets) != len(self.devices):
@@ -778,6 +781,7 @@ class DataParallelLatentAttentionWithRope(LatentAttentionWithRope):
         input_row_offsets: Sequence[TensorValue],
         mla_prefill_metadata: list[MLAPrefillMetadata] | None = None,
     ) -> list[TensorValue]:
+        """Applies data-parallel latent attention and returns the output."""
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
 

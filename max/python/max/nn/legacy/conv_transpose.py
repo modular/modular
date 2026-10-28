@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Transposed convolution layers."""
+
 from dataclasses import dataclass
 
 from max.dtype import DType

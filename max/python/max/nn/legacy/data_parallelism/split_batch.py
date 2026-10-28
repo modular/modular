@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Splits a batch across data-parallel replicas."""
+
 from __future__ import annotations
 
 from max.dtype import DType
@@ -58,6 +60,8 @@ def split_batch(
     replicated inputs and ``input_row_offsets`` for each device.
 
     Args:
+        devices: Devices to split the batch across, in the order the batches
+            are assigned.
         input: Input tensor of shape [total_seq_len, ...].
         input_row_offsets: Row offsets tensor indicating batch boundaries.
         data_parallel_splits: Buffer containing batch splits for each device

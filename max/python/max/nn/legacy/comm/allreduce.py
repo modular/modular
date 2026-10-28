@@ -127,8 +127,10 @@ class Signals:
     """List of graph devices that these signals communicate between."""
 
     def __init__(self, devices: Iterable[DeviceRef]) -> None:
-        """Args:
-        num_gpus: Number of GPUs involved in the allreduce.
+        """Creates the signal buffers for these graph devices.
+
+        Args:
+            devices: Graph devices that these signals communicate between.
         """
         # Convert the iterable to a list since we iterate over it twice.
         devices = list(devices)
@@ -239,10 +241,10 @@ class Signals:
         return signal_buffers
 
     def buffers(self) -> list[Buffer]:
-        """Allocates and returns buffers used for communication in allreduce.
+        r"""Allocates and returns buffers used for communication in allreduce.
 
         Thin adapter over :meth:`allocate` that maps this instance's graph
-        ``DeviceRef``\\ s to the driver accelerators the allocator needs.
+        ``DeviceRef``\ s to the driver accelerators the allocator needs.
         """
         return Signals.allocate(
             [Accelerator(id=dev.id) for dev in self.devices]

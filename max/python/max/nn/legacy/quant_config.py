@@ -745,8 +745,7 @@ def _nvmxf4f8_scales_type(
     scales_dtype: DType,
     sf_vector_size: int,
 ) -> TensorType:
-    """Returns the TensorType of the NVFP4/MXFP4/MXFP8 scales tensor on NVIDIA
-    GPUs."""
+    """Returns the NVFP4/MXFP4/MXFP8 scales ``TensorType`` on NVIDIA GPUs."""
     # Nvidia NVFP4/MXFP4/MXFP8 format requires the scales tensor to be in a
     # 128x4 tiled layout. The follow constant needs to be in sync with those
     # defined in `max/kernels/src/linalg/fp4_utils.mojo`.

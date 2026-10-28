@@ -78,8 +78,10 @@ class LogitPenalties:
     def apply_with_bitmask(
         self, logits: TensorValue, packed: TensorValue, fill_val: float
     ) -> TensorValue:
-        """Masks ``logits`` like ``apply_packed_bitmask`` and subtracts the
-        penalties from the tokens the mask keeps, in the mask's own pass.
+        """Masks ``logits`` and subtracts penalties in the mask's own pass.
+
+        Masking matches ``apply_packed_bitmask``, and penalties are subtracted
+        from the tokens the mask keeps.
         """
         return apply_packed_bitmask_with_penalties(
             logits,

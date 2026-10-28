@@ -88,6 +88,7 @@ class PrintHook(BasePrintHook):
 
     @property
     def export_path(self) -> str | None:
+        """The export path, or ``None`` when the hook does not export."""
         if self._export_path is None:
             return None
         return os.path.join(self._export_path, str(self._current_step))
@@ -127,6 +128,7 @@ class PrintHook(BasePrintHook):
         self._v3_originals.append((module, original))
 
     def print_value(self, name: str, value: Any) -> bool:
+        """Prints ``value`` if this hook handles it, reporting whether it did."""
         if isinstance(value, TensorValue):
             value.print(name)
             return True
@@ -143,6 +145,7 @@ class PrintHook(BasePrintHook):
         return True
 
     def remove(self) -> None:
+        """Removes the hook."""
         super().remove()
         clear_hooks()  # TODO: Add individual hook remover.
         # Restore V3 modules by dropping the instance-level ``forward`` so the

@@ -23,6 +23,7 @@ from max.graph import TensorValue, ops
 def activation_function_from_name(
     name: str,
 ) -> Callable[[TensorValue], TensorValue]:
+    """Returns the activation function for the given name."""
     activations: dict[str, Callable[[TensorValue], TensorValue]] = {
         "silu": ops.silu,
         "gelu": ops.gelu,

@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Token embedding layers, including the vocabulary-parallel one."""
+
 from __future__ import annotations
 
 import math

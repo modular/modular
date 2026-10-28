@@ -40,8 +40,9 @@ def causal_conv1d_varlen_fwd(
     use_residual: bool = False,
     update_state: TensorValue | None = None,
 ) -> TensorValue:
-    """Applies a slot-indexed varlen causal depthwise conv1d for prefill
-    and decode.
+    """Applies a slot-indexed varlen causal depthwise conv1d.
+
+    Serves prefill and decode.
 
     Mutates the conv-state pool ``conv_states`` in place at slot
     ``cache_indices[batch_item]`` — the Qwen3.5 GatedDeltaNet conv

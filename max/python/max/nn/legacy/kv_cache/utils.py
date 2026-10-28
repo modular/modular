@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Types and helpers shared by the KV cache."""
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -213,8 +215,9 @@ class MSAAttnKey(AttnKeyInterface):
 
 @dataclass(frozen=True)
 class MultiAttnKey(AttnKeyInterface):
-    """A tree of resolved dispatch metadata mirroring a ``MultiKVCacheParams``
-    tree.
+    """A tree of resolved dispatch metadata.
+
+    Mirrors a ``MultiKVCacheParams`` tree.
 
     ``children`` is a tuple of ``(name, key)`` pairs (rather than a dict) so it
     stays a frozen, hashable identity for the graph-capture key map.

@@ -160,11 +160,13 @@ def get_ep_local_sync_counters_size(n_experts: int) -> int:
 def _ep_counter_words(
     n_experts: int, n_gpus_per_node: int, use_allreduce: bool, moe_dim: int
 ) -> int:
-    """Int32 words of one EP sync-counter buffer (one per device and buffer
-    group). The allreduce backend routes within each device, so its counters
-    cover the local experts only. A config that gives the experts' FFN width
+    """Int32 words of one EP sync-counter buffer.
+
+    One buffer per device and buffer group. The allreduce backend routes
+    within each device, so its counters cover the local experts only. A config that gives the experts' FFN width
     can host the fused MoE, so its buffers also end in the fused counters'
-    fixed reserve; no other config allocates it."""
+    fixed reserve; no other config allocates it.
+    """
     words = get_ep_local_sync_counters_size(
         n_experts // n_gpus_per_node if use_allreduce else n_experts
     )
@@ -174,8 +176,10 @@ def _ep_counter_words(
 def _ep_sync_counter_bytes(
     n_experts: int, n_gpus_per_node: int, use_allreduce: bool, moe_dim: int
 ) -> int:
-    """Bytes of the EP sync counters EP init allocates on one device: one
-    buffer per buffer group (see :func:`_ep_counter_words`)."""
+    """Bytes of the EP sync counters EP init allocates on one device.
+
+    One buffer per buffer group (see :func:`_ep_counter_words`).
+    """
     return (
         NUM_GROUPS
         * _ep_counter_words(n_experts, n_gpus_per_node, use_allreduce, moe_dim)
@@ -186,8 +190,10 @@ def _ep_sync_counter_bytes(
 def _fused_moe_answer(
     workspace: npt.NDArray[Any], refusal: npt.NDArray[Any]
 ) -> tuple[int, int, str]:
-    """Decodes the answer of the fused MoE init or plan op into ``(workspace
-    bytes, token block, refusal)``."""
+    """Decodes the fused MoE init or plan op's answer.
+
+    Returns ``(workspace bytes, token block, refusal)``.
+    """
     return (
         int(workspace[0]),
         int(workspace[1]),
@@ -207,8 +213,9 @@ def _run_fused_moe_plan(
 
 
 def _plan_fused_moe_workspace(config: EPConfig) -> tuple[int, int, str]:
-    """Returns exactly what EP init sets up for the fused MoE under
-    ``config``, without allocating: the workspace bytes per device and the
+    """Returns what EP init sets up for the fused MoE under ``config``.
+
+    Allocates nothing: the answer is the workspace bytes per device and the
     token block, or zeros and why the backend refuses. The backend answers
     with the decision ``mega_ffn.ep_fused_init`` uses, computed on the host.
     Cached per parameter set: each new set compiles a small host graph.
@@ -227,9 +234,10 @@ def _plan_fused_moe_workspace(config: EPConfig) -> tuple[int, int, str]:
 def _bound_fused_moe_workspace(
     config: EPConfig, dispatch_dtype: DType
 ) -> tuple[int, str]:
-    """Returns the most EP init can allocate for the fused MoE under
-    ``config``'s EP geometry when only the dispatch element type is known,
-    as when a memory plan is made before the checkpoint is parsed: the
+    """Returns the most EP init can allocate for the fused MoE.
+
+    Bounds ``config``'s EP geometry when only the dispatch element type is
+    known, as when a memory plan is made before the checkpoint is parsed: the
     workspace bytes per device, or 0 and why the backend serves no format
     with that element type. Unlike :func:`_plan_fused_moe_workspace` this is
     an upper bound, not an exact answer.
@@ -361,8 +369,10 @@ class EPBatchManager:
             self._eplb_phy2log = config.eplb_phy2log_plan
 
     def _common_grouped_matmul_metadata(self) -> TensorValue:
-        """Common grouped matmul metadata for all devices. Shape: (2,). Contains
-        the max number of tokens per expert and the number of active experts.
+        """Common grouped matmul metadata for all devices.
+
+        Shape ``(2,)``: the max number of tokens per expert, then the number of
+        active experts.
         """
         n_ranks = self.config.n_gpus_per_node * self.config.n_nodes
         max_recv_tokens_per_expert = self.config.max_tokens_per_rank * n_ranks
@@ -380,6 +390,7 @@ class EPBatchManager:
 
     @property
     def send_buf_ptrs(self) -> list[TensorValue]:
+        """The send buffers, one per device."""
         if self._send_buf_ptrs is None:
             raise RuntimeError(
                 "Call fetch_buffers() first to fetch buffer pointers."
@@ -388,6 +399,7 @@ class EPBatchManager:
 
     @property
     def recv_buf_ptrs(self) -> list[TensorValue]:
+        """The receive buffers, one per device."""
         if self._recv_buf_ptrs is None:
             raise RuntimeError(
                 "Call fetch_buffers() first to fetch buffer pointers."
@@ -396,6 +408,7 @@ class EPBatchManager:
 
     @property
     def recv_count_ptrs(self) -> list[TensorValue]:
+        """The received-token counts, one per device."""
         if self._recv_count_ptrs is None:
             raise RuntimeError(
                 "Call fetch_buffers() first to fetch buffer pointers."
@@ -404,6 +417,7 @@ class EPBatchManager:
 
     @property
     def atomic_counters(self) -> list[list[BufferValue]]:
+        """The atomic counters, per device and buffer group."""
         if self._atomic_counters is None:
             raise RuntimeError(
                 "Call fetch_buffers() first to fetch buffer pointers."
@@ -906,7 +920,7 @@ class EPBatchManager:
         positions for the current device.
 
         Args:
-            expert_weights: Router weights for the current device.
+            router_weight: Router weights for the current device.
                 A TensorValue with shape (num_local_tokens, top_k).
             device_id: Device ID for the current device.
 
@@ -1241,6 +1255,7 @@ class EPInit(Module):
         ]
 
     def __call__(self, *atomic_counters: Value[Any]) -> list[TensorValue]:
+        """Initializes the EP communication buffers and returns them."""
         n_gpus = self.config.n_gpus_per_node
         dev_ptrs_list: list[TensorValue] = []
         my_rank_list: list[TensorValue] = []

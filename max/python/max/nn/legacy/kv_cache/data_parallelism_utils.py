@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Splits KV cache work across data-parallel replicas."""
+
 from collections.abc import Sequence
 from typing import TypeVar
 

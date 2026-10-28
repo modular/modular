@@ -92,8 +92,10 @@ _R = TypeVar("_R")
 
 
 def _rejects_split_head_dims(fn: Callable[_P, _R]) -> Callable[_P, _R]:
-    """Makes ``fn`` raise when handed a cache, or cache params, whose rows
-    pack a key and a value of different widths.
+    """Makes ``fn`` raise for a cache with split key and value widths.
+
+    That is a cache, or cache params, whose rows pack a key and a value of
+    different widths.
 
     Every op ``fn`` emits finds its K and V from a one-plane cache by inferring
     MLA, so it would read such a cache wrong rather than fail. The params are
@@ -119,7 +121,7 @@ def _rejects_split_head_dims(fn: Callable[_P, _R]) -> Callable[_P, _R]:
 
 
 def _check_dtype(expected: DType, **tensors: TensorValue | BufferValue) -> None:
-    """Raises ``ValueError`` if any tensor kwarg does not have dtype ``expected``
+    """Raises ``ValueError`` if a tensor kwarg has the wrong dtype.
 
     Note: The kwarg names are used in the error message, so naming matters.
     """
@@ -131,7 +133,7 @@ def _check_dtype(expected: DType, **tensors: TensorValue | BufferValue) -> None:
 
 
 def _check_rank(expected: int, **tensors: TensorValue | BufferValue) -> None:
-    """Raises ``ValueError`` if any tensor kwarg does not have rank ``expected``
+    """Raises ``ValueError`` if a tensor kwarg has the wrong rank.
 
     Note: The kwarg names are used in the error message, so naming matters.
     """
@@ -143,7 +145,7 @@ def _check_rank(expected: int, **tensors: TensorValue | BufferValue) -> None:
 
 
 def _check_same_dtype(**tensors: TensorValue | BufferValue) -> None:
-    """Raises ``ValueError`` unless all tensor kwargs share the same dtype;
+    """Raises ``ValueError`` unless all tensor kwargs share one dtype.
 
     Note: The kwarg names are used in the error message, so naming matters.
     """
@@ -157,7 +159,7 @@ def _check_same_dtype(**tensors: TensorValue | BufferValue) -> None:
 
 
 def _check_same_device(**tensors: TensorValue | BufferValue) -> None:
-    """Raises ``ValueError`` unless all tensor kwargs share the same device;
+    """Raises ``ValueError`` unless all tensor kwargs share one device.
 
     Note: The kwarg names are used in the error message, so naming matters.
     """
@@ -999,6 +1001,8 @@ def _fused_qkv_ragged_matmul_scaled_float4(
             for blockwise scaling is 5D, for example, [2, 34, 32, 4, 4]
         tensor_sf: Buffer-wise scaling factor equal to weight_scale_2 * input_scale (pre-quantization, non-inverted).
         kv_scales: TBD, used in NVFP4 KV cache, see: https://github.com/NVIDIA/TensorRT-LLM/blob/0ffa77af51b272ba27424564ed253096d6f0f11a/tensorrt_llm/_torch/modules/linear.py#L690
+        sf_vector_size: Elements that share one block scale, passed to the op
+            as ``SF_VECTOR_SIZE``.
         _output_dim: Optional output dimension. If not provided, the output
             dimension will be [n_heads * head_dim].
 
@@ -1240,6 +1244,7 @@ def _fused_qkv_ragged_matmul_scaled_mxfp6(
         input_scale: E8M0 input block scales, rank-2 ``[M, K // 32]``. CDNA4
             reads the plain layout; this path has no SM100 variant.
         weight_scale: E8M0 weight block scales, rank-2 ``[N, K // 32]``.
+        fp6_format: The FP6 element encoding, ``"e2m3"`` or ``"e3m2"``.
         _output_dim: Optional output dimension. Defaults to
             ``n_heads * head_dim``.
 
@@ -1741,8 +1746,10 @@ def unfused_qkv_ragged_matmul_gguf_quantized(
     kv_collection: PagedCacheValues,
     layer_idx: TensorValue,
 ) -> TensorValue:
-    """Computes fused query, key, and value projections with ragged input and
-    quantized weight matrices. A ``quantization_config`` must be provided.
+    """Computes fused query, key, and value projections with ragged input.
+
+    The weight matrices are quantized, so a ``quantization_config`` must be
+    provided.
 
     ``input`` and ``input_row_offsets`` are used together to implement the ragged
     tensor.
@@ -1815,8 +1822,10 @@ def fused_qkv_ragged_matmul_quantized(
     perm_idx: TensorValue | None = None,
     bias: TensorValue | None = None,
 ) -> TensorValue:
-    """Computes fused query, key, and value projections with ragged input and
-    quantized weight matrices. A ``quantization_config`` must be provided.
+    """Computes fused query, key, and value projections with ragged input.
+
+    The weight matrices are quantized, so a ``quantization_config`` must be
+    provided.
 
     ``input`` and ``input_row_offsets`` are used together to implement the ragged
     tensor.
@@ -4425,6 +4434,7 @@ def msa_sparse_attention_ragged_mxfp6(
         group: Query heads per kv-head (``n_heads // n_kv_heads``).
         topk: Number of gathered KV blocks per token.
         scale: QK scale.
+        fp6_format: The FP6 element encoding, ``"e2m3"`` or ``"e3m2"``.
 
     Returns:
         The quantized attention output ``[total_q, n_heads, head_dim]``
@@ -5076,8 +5086,9 @@ def flash_attention_ragged_gpu(
     scale: float,
     local_window_size: int = -1,
 ) -> TensorValue:
-    """Computes flash attention for ragged inputs using a GPU-optimized
-    kernel, without a KV cache.
+    """Computes flash attention for ragged inputs without a KV cache.
+
+    Uses a GPU-optimized kernel.
 
     Args:
         q: The query tensor, of shape ``[total_seq_len, num_heads,
@@ -5410,6 +5421,8 @@ def flare_mla_decode_ragged_scaled(
         layer_idx: Layer index (uint32, on CPU).
         mask_variant: Attention mask variant.
         scale: Softmax scale (typically 1/sqrt(d_qk)).
+        scalar_args: Pre-computed dispatch scalar args (GPU buffer) for CUDA
+            graph capture.
         qk_rope_dim: Rope head dimension (default 64).
         per_token_scale_rope_aware: Use FP8+BF16 interleaved layout.
         quantization_granularity: Granularity for KV scale quantization.
@@ -5501,8 +5514,10 @@ def flare_mla_prefill_ragged(
     qk_rope_dim: int = 64,
     output_dtype: DType | None = None,
 ) -> TensorValue:
-    """Performs MLA prefill. In the MLA prefill, we need to decompress
-    the KV tensors, as we store the latent representations in the KV cache.
+    """Performs MLA prefill.
+
+    Prefill decompresses the KV tensors, since the cache stores latent
+    representations.
     We will decompress the KV tensors into a fixed size buffer to avoid
     out-of-memory errors. In case the total cache length is greater than
     the buffer size, we will process the attention calculation in chunks.
@@ -5593,8 +5608,9 @@ def flare_mla_prefill_plan(
     buffer_size: int,
     max_chunks: int = 16,
 ) -> tuple[TensorValue, TensorValue, TensorValue]:
-    """This kernel plans how to process a batch of sequences with
-    varying lengths using a fixed-size buffer.
+    """Plans how to process a batch of varying-length sequences.
+
+    Sizes each chunk against a fixed-size buffer.
 
     Each sequence in the batch has some existing cached tokens and new input
     tokens. The kernel divides the total tokens into chunks of buffer_size.
@@ -5739,8 +5755,10 @@ conversion pads each query token's remapped index row."""
 def nvfp4_mla_prefill_convert_bytes(
     max_query_tokens: int, top_k: int, row_dim: int, page_size: int
 ) -> int:
-    """Returns the most one sparse MLA prefill call over an NVFP4 cache
-    allocates, on one device, to convert its context to FP8 once.
+    """Returns the most one sparse MLA prefill call allocates.
+
+    That is the per-device peak for converting an NVFP4 cache's context to
+    FP8 once.
 
     The call allocates the FP8 copy of at most ``max_rows`` context rows, and
     of at most ``ratio`` rows per query token; each query token's ``top_k``
@@ -5878,7 +5896,8 @@ def mla_prefill_graph(
     quant_config: QuantConfig | None = None,
     scale_granularity_override: int | None = None,
 ) -> TensorValue:
-    """This is a manually fused kernel that performs the following operations:
+    """A manually fused kernel that performs the following operations.
+
     - Apply RoPE to the query and the key cache (in-place).
     - Apply RMSNorm to the non-rope portion of the key cache (in-place).
     - Copy the KV latent values from PagedKVCache to a contiguous buffer.
@@ -5898,6 +5917,8 @@ def mla_prefill_graph(
             embeddings. Shape: [max_seq_len, qk_rope_head_dim].
         kv_a_proj_layernorm: RMSNorm gamma weights for normalizing the KV cache.
             Shape: [kv_lora_rank].
+        kv_norm_gamma: RMSNorm gamma applied to the KV tensor before it is
+            cached.
         buffer_row_offsets: Indicates where each request's KV latent values
             should be stored in the contiguous buffer. This is a 1D tensor of
             shape [num_batches + 1].
@@ -5919,6 +5940,8 @@ def mla_prefill_graph(
         w_k_scale: Optional FP8 scale tensor for `w_k`.
         w_uv_scale: Optional FP8 scale tensor for `w_uv`.
         quant_config: Optional quantization config. When set, scales are required.
+        scale_granularity_override: Overrides the FP8 scale granularity from
+            ``quant_config``.
 
     Returns:
         Tensor of shape [total_seq_len, num_heads, v_head_dim].
@@ -6102,7 +6125,7 @@ def mla_decode_graph(
     index_kpool_select_tail: bool = True,
     selection_lag: int = 0,
 ) -> TensorValue:
-    """This is a manually fused kernel that performs the following operations:
+    """A manually fused kernel that performs the following operations.
 
     - Apply RoPE to the query and the key cache (in-place).
     - Apply RMSNorm to the non-rope portion of the key cache (in-place).
@@ -6126,6 +6149,8 @@ def mla_decode_graph(
             embeddings. Shape: [max_seq_len, qk_rope_head_dim].
         kv_a_proj_layernorm: RMSNorm gamma weights for normalizing the KV cache.
             Shape: [kv_lora_rank].
+        kv_norm_gamma: RMSNorm gamma applied to the KV tensor before it is
+            cached.
         w_uk: Weight matrix for projecting q_nope to kv_latent_dim. Shape:
             [num_heads, kv_latent_dim, qk_nope_head_dim].
         w_uv: Weight matrix for projecting MLA decode output to v_head_dim.
@@ -6138,9 +6163,13 @@ def mla_decode_graph(
         epsilon: Small constant for numerical stability in RMSNorm.
         v_head_dim: Dimension of the V heads.
         scalar_args: Pre-computed dispatch scalar args (GPU buffer) for CUDA graph capture.
+        num_partitions_scalar: Number of split-K partitions, passed as a
+            runtime scalar input.
         w_uk_scale: Optional FP8 scale tensor for `w_uk`.
         w_uv_scale: Optional FP8 scale tensor for `w_uv`.
         quant_config: Optional quantization config. When set, scales are required.
+        scale_granularity_override: Overrides the FP8 scale granularity from
+            ``quant_config``.
         sparse_indices: Optional ``int32`` tensor of shape
             ``[total_seq_len, max_topk]`` selecting each token's keys, ``-1``
             for an unused slot. ``physical_indices`` says which kind they are.
@@ -6154,6 +6183,8 @@ def mla_decode_graph(
             top-k physical rows followed by as many scale-pool rows, as
             :func:`mla_fp8_index_top_k_physical` returns them, so the stride is
             twice the top-k.
+        sparse_attn_sink_inert: Marks the sparse attention sink as inert, which
+            the AMD sparse arms require to accept one.
         index_share: Whether the folded MTP query positions share one top-k
             list, so the FP8 sparse decode gathers it once. The fold masks
             each position by logical key position, so it requires logical
@@ -6350,10 +6381,14 @@ def mla_prefill_decode_graph(
         epsilon: RMSNorm epsilon.
         v_head_dim: Value head dimension for output tensor shape.
         scalar_args: Pre-computed dispatch scalar args (GPU buffer) for CUDA graph capture.
+        num_partitions_scalar: Number of split-K partitions, passed as a
+            runtime scalar input.
         w_k_scale: Optional FP8 scale tensor for `w_k`.
         w_uk_scale: Optional FP8 scale tensor for `w_uk`.
         w_uv_scale: Optional FP8 scale tensor for `w_uv`.
         quant_config: Optional quantization config. When set, scales are required.
+        scale_granularity_override: Overrides the FP8 scale granularity from
+            ``quant_config``.
         sparse_indices: Optional ``int32`` tensor selecting each token's keys
             (same semantics as :func:`mla_decode_graph`).
         sparse_topk_lengths: Per-batch valid top-k counts for sparse decode.
@@ -6374,6 +6409,8 @@ def mla_prefill_decode_graph(
         selection_lag: Positions between the token each row of
             ``sparse_indices`` was computed for and the token that reads it.
             Only the decode branch reads it.
+        sparse_attn_sink_inert: Marks the sparse attention sink as inert, which
+            the AMD sparse arms require to accept one.
 
     Returns:
         Tensor of shape [total_seq_len, num_heads, v_head_dim].
@@ -6493,8 +6530,9 @@ def flare_mla_decompress_k_cache(
     layer_idx: TensorValue,
     buffer_size: int,
 ) -> TensorValue:
-    """This kernel decompresses the key cache by up-projecting latent representations
-    into the KV space using a weight matrix.
+    """Decompresses the key cache by up-projecting latent representations.
+
+    The up-projection into KV space uses a weight matrix.
 
     The process involves:
 
@@ -6644,6 +6682,7 @@ def kv_cache_ragged_radd(
     in the front of the tensor, and we're only adding to the last requests in the batch.
 
     Args:
+        kv_params: KVCacheParams object containing key-value cache parameters.
         a: The tensor to add to the KVCache.
         kv_collection: The KVCache collection to add to.
         input_row_offsets: The offsets of the input tensor.
@@ -6798,6 +6837,7 @@ def rms_norm_value_cache(
     per_head_norm: bool = True,
 ) -> None:
     """Applies RMSNorm in place to the _new_ entries in the value cache.
+
     Semantics match :func:`rms_norm_key_cache`, but updates the value tensor
     for the layer instead of the key tensor.
     """
@@ -6860,6 +6900,8 @@ def moe_create_indices(
     Args:
         topk_ids: The expert assignments for each token from the router.
         num_local_experts: The number of experts on this device.
+        needs_scales_offset: Whether to also compute each expert's offset into
+            the padded activation scales.
 
     Returns:
         A tuple of five tensors:
@@ -6959,7 +7001,6 @@ def moe_create_indices(
 
     .. skip: end
     """
-
     op_name = "mo.moe.create.indices"
     if needs_scales_offset:
         op_name += ".with.scales.offset"
@@ -7194,6 +7235,7 @@ def moe_router_group_limited(
             is currently always enabled (``norm_weights`` is treated as
             ``True``) so behavior matches the graph path that always
             divided weights by their sum per token.
+        routed_scaling_factor: Factor that the routed weights sum to.
 
     Returns:
         A tuple of two tensors:
@@ -7306,7 +7348,6 @@ def moe_router_group_limited(
 
     .. skip: end
     """
-
     if expert_bias.rank != 1:
         raise ValueError(
             f"expected expert_bias of rank 1 but got {expert_bias.rank}"
@@ -7905,7 +7946,8 @@ def moe_eplb_remap(
     hash_decorrelate: bool = False,
 ) -> TensorValue:
     """Fused EPLB logical-to-physical id remap.
-    single Mojo kernel that caches the per-layer slice of logcnt and
+
+    One Mojo kernel caches the per-layer slice of logcnt and
     log2phy in shared memory and writes physical ids in one launch.
 
     The replica picker is deterministic position-mod
@@ -8778,6 +8820,8 @@ def grouped_dynamic_block_scaled_matmul_amd(
             num_active_experts].
         out_type: Output dtype. Defaults to bfloat16.
         estimated_total_m: The estimated total number of tokens.
+        preshuffled_b: Whether ``weight`` is already in the preshuffled layout
+            the kernel reads.
         a_scales_max_padded_m: Nonzero when ``a_scales`` already sit in the
             per-expert ``scale_4d`` slot layout (the EP path): the build-time
             slot stride their producer wrote them at. Zero means row-major
@@ -9499,7 +9543,6 @@ def grouped_matmul_blocked_swiglu(
         first dim matches ``a_scales``'s first dim since the kernel re-uses
         ``a_scale_offsets`` as the per-expert SF offset for the output.
     """
-
     _check_rank(2, hidden_states=hidden_states)
     _check_rank(3, weight=weight)
     _check_rank(5, a_scales=a_scales)
@@ -9662,6 +9705,7 @@ def grouped_dynamic_scaled_fp8_matmul(
         expert_usage_stats_host: The maximum number of tokens assigned to any expert, and the number of active experts.
         input_scale_spec: The scaling granularity for the input tensor.
         weight_scale_spec: The scaling granularity for the weight tensor.
+        out_type: Output dtype.
         static_grid_z: Make grid.z the static expert count instead of the
             runtime `num_active_experts` tensor read; capture-safe on AMD.
         decode_grid_m_cap: Decode-band gate on the AMD path; 0 disables. Bounds
@@ -9975,6 +10019,9 @@ def batched_dynamic_scaled_fp8_matmul(
         b: The second tensor to multiply, must be transposed (3D tensor).
         a_scales: The scaling factors for the first tensor (3D tensor).
         b_scales: The scaling factors for the second tensor (3D tensor).
+        input_scale_spec: The scaling granularity for the input tensor.
+        weight_scale_spec: The scaling granularity for the weight tensor.
+        out_type: Output dtype.
 
     Returns:
         The result of the matmul operation.
@@ -10134,6 +10181,8 @@ def quantize_tensor_dynamic_scaled_float8(
 
     Args:
         input: The input tensor to quantize.
+        input_scale_spec: The scaling granularity for the input tensor.
+        weight_scale_spec: The scaling granularity for the weight tensor.
         scale_ub: The upper bound of the scale factor.
         group_size_or_per_token: The group size for quantization. When set to -1,
             the quantization is column-wise.
@@ -10208,6 +10257,8 @@ def quantize_dynamic_scaled_float8(
 
     Args:
         input: The input tensor to quantize.
+        input_scale_spec: The scaling granularity for the input tensor.
+        weight_scale_spec: The scaling granularity for the weight tensor.
         scale_ub: The upper bound of the scale factor.
         group_size_or_per_token: The group size for quantization. When set to -1,
             the quantization is column-wise.
@@ -10299,9 +10350,12 @@ def _dynamic_scaled_float8_quant_out_types(
     out_type: DType,
     scales_type: DType,
 ) -> tuple[int, list[TensorType]]:
-    """Validates a dynamic-scaled FP8 quantize and returns its group size and
-    ``[quantized, scales]`` output types (shared by the standalone and the
-    rms_norm-fused quantize ops so both emit the same scale layout)."""
+    """Validates a dynamic-scaled FP8 quantize.
+
+    Returns its group size and ``[quantized, scales]`` output types, shared by
+    the standalone and the rms_norm-fused quantize ops so both emit the same
+    scale layout.
+    """
     if input.rank != 2:
         raise ValueError("input must be rank 2 tensor")
 
@@ -10366,8 +10420,9 @@ def rms_norm_quantize_dynamic_scaled_float8(
     out_type: DType = DType.float8_e4m3fn,
     scales_type: DType = DType.float32,
 ) -> tuple[TensorValue, TensorValue]:
-    """RMS-normalizes ``input`` and quantizes the result to FP8 with dynamic
-    group (blockwise) scales in a single kernel.
+    """RMS-normalizes ``input`` and quantizes the result to FP8.
+
+    Uses dynamic group (blockwise) scales, in a single kernel.
 
     Equivalent to :func:`~max.graph.ops.rms_norm` followed by
     :func:`quantize_dynamic_scaled_float8` with the same arguments, including
@@ -10449,14 +10504,19 @@ def dynamic_scaled_matmul(
     weight_scale_spec: WeightScaleSpec,
     out_type: DType = DType.bfloat16,
 ) -> TensorValue:
-    """Performs a matmul of two tensors with scaling factors. Currently only
-    supports channel-wise scaling for weights and per-token scaling for inputs.
+    """Performs a matmul of two tensors with scaling factors.
+
+    Currently only channel-wise scaling for weights and per-token scaling for
+    inputs are supported.
 
     Args:
         a: The first tensor to multiply.
         b: The second tensor to multiply, must be transposed.
         a_scales: The scaling factors for the first tensor.
         b_scales: The scaling factors for the second tensor.
+        input_scale_spec: The scaling granularity for the input tensor.
+        weight_scale_spec: The scaling granularity for the weight tensor.
+        out_type: Output dtype.
 
     Returns:
         The result of the matmul operation.
@@ -11010,6 +11070,7 @@ def dynamic_block_scaled_matmul_amd(
         b: The second tensor to multiply, must be transposed.
         a_scales: The scaling factors for the first tensor.
         b_scales: The scaling factors for the second tensor.
+        out_type: Output dtype.
 
     Returns:
         The result of the matmul operation.
@@ -13202,6 +13263,8 @@ def topk_fused_sampling(
         max_k: Maximum value of k across the batch, or ``-1`` if any row's
             ``top_k`` is ``-1`` or ``0`` (no limit): the kernel resolves a
             row's ``-1`` to ``max_k``. Required when top_k is a tensor.
+        min_top_p: Smallest ``top_p`` across the batch, as a scalar for the
+            kernel's scalar threshold.
         top_p: Top-p (nucleus) sampling threshold. Can be a scalar or tensor.
         min_p: Per-row min_p probability filtering threshold of shape
             [batch_size]. Tokens with probability below
@@ -13621,8 +13684,9 @@ def sgmv_kernel(  # noqa: ANN201
     lora_end_idx: TensorValue | None = None,
     bias: TensorValue | None = None,
 ):
-    """Performs the SGMV kernel for LoRA. This is LoRA agnostic, meaning that
-    we can perform LoRA A or B from this kernel call.
+    """Performs the SGMV kernel for LoRA.
+
+    LoRA agnostic, so the call can perform LoRA A or B.
 
     Args:
         input: The input tensor.
@@ -13631,6 +13695,8 @@ def sgmv_kernel(  # noqa: ANN201
         lora_ranks: The ranks of the LoRAs in the batch.
         input_row_offsets: The sequence offsets that use LoRA
         max_lora_seq_len: The maximum sequence length of any given LoRA in the batch
+        lora_end_idx: End index of the LoRA-using region; when given, its
+            length sets the output row count.
         bias: The LoRA bias
 
     Raises:
@@ -13706,6 +13772,8 @@ def sgmv_lora_kernel(
         lora_ids: Ids of the LoRAs used for each sequence
         lora_ranks: The ranks of the LoRAs in the batch.
         grouped_row_offsets: The grouped sequence offsets that use LoRA
+        lora_end_idx: End index of the LoRA-using region of the batch, passed
+            to the kernel.
         max_lora_seq_len: The maximum sequence length of any given LoRA in the batch
         bias: The LoRA bias
 
@@ -13771,6 +13839,8 @@ def sgmv_lora_qkv_shrink(
         lora_grouped_offsets: Inclusive prefix sums of tokens per active adapter,
             shape (num_active + 1,). Defines per-adapter [start, end) ranges in
             input. Must be non-decreasing with offsets[0] == 0.
+        lora_end_idx: End index of the LoRA-using region; its length sets the
+            number of rows.
         max_lora_seq_len: Upper bound on tokens for any active adapter. Used for
             kernel tuning and memory allocation.
         max_rank: The maximum LoRA rank, determines output shape.
@@ -14288,6 +14358,7 @@ def inplace_memcpy(dst: BufferValue, src: TensorValue) -> None:
     an explicit cross-device transfer for that case.
     The compute device is inferred from the operands: if either lives
     on a GPU the op is scheduled on that GPU, otherwise on CPU.
+
     Args:
         dst: Destination buffer mutated in place.
         src: Source tensor whose contents are copied into `dst`.
@@ -14463,6 +14534,7 @@ def sleep(duration_sec: BufferValue, device_ref: DeviceRef) -> None:
 
     Args:
         duration_sec: The duration to sleep in seconds.
+        device_ref: Device the op is placed on.
     """
     # FIXME(GEX-3080): Convert duration_sec to a 0-d scalar instead of 1-d buffer.
     # We currently use 1-d buffer to prevent sleep op from being DCE'd away.
@@ -14516,6 +14588,7 @@ def tpool_patch_merger(
             ``TensorValue`` computed at runtime (such as via ``ops.max``).
         max_w: Maximum ``W`` across all videos in the batch (for grid sizing).
             May be a Python int or a ``TensorValue``.
+
     Returns:
         Output tensor of shape ``[sum(H_i * W_i), D]``.
 

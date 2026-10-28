@@ -83,8 +83,7 @@ class MoEQuantized(MoE):
 
     @property
     def _nvfp4_dyn_global_scales(self) -> bool:
-        """Whether the EP dispatch quantizes each token against its own
-        global scale."""
+        """Whether each token is quantized against its own global scale."""
         return bool(
             self._ep_batch_manager
             and self.ep_batch_manager.config.nvfp4_dyn_global_scales
@@ -245,8 +244,9 @@ class MoEQuantized(MoE):
         return False
 
     def _can_fuse_swiglu_mxfp8(self) -> bool:
-        """Whether gemm1 folds the gated activation and the MXFP8 requantize
-        into its epilogue, making the MoE FFN two kernels instead of three.
+        """Whether gemm1 folds activation and MXFP8 requantize into its epilogue.
+
+        That makes the MoE FFN two kernels instead of three.
 
         Deliberately takes no ``seq_len``. gemm1 emits the activation already
         quantized, so both regimes build the same graph and there is nothing
@@ -274,8 +274,10 @@ class MoEQuantized(MoE):
         )
 
     def _can_fuse_mega_ffn_amd(self) -> bool:
-        """Whether the gfx950 MXFP8 MoE FFN runs as one op (the one-launch
-        MegaFFN at decode, the two-kernel chain otherwise).
+        """Whether the gfx950 MXFP8 MoE FFN runs as one op.
+
+        That is the one-launch MegaFFN at decode, the two-kernel chain
+        otherwise.
 
         Runs wherever it can: for the expert shapes it is validated on
         (MiniMax M3: hidden 6144, expert width 3072), where it matches the

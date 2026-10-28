@@ -44,8 +44,9 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace(
     cache_indices: TensorValue,
     update_state: TensorValue | None = None,
 ) -> TensorValue:
-    """Performs the Mamba-2 SSD chunked-scan forward, writing final states
-    back into the SSM pool in place.
+    """Performs the Mamba-2 SSD chunked-scan forward.
+
+    Writes final states back into the SSM pool in place.
 
     Writes final states directly into ``ssm_pool[cache_indices[b], ...]``
     in place, so the graph never round-trips the whole pool.

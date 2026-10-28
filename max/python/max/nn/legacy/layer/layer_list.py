@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""A module holding an ordered list of layers."""
+
 from collections.abc import Sequence
 
 from max.graph import TensorValue
@@ -43,6 +45,7 @@ class LayerList(Module):
 
     @property
     def sublayers(self) -> dict[str, Module]:
+        """The layers, keyed by name."""
         if len(self._sublayers) != len(self.layers):
             raise ValueError(
                 "Not all layers in this Sequential object have "
@@ -63,12 +66,15 @@ class LayerList(Module):
         self.layers[i] = layer
 
     def insert(self, i: int, layer: Layer) -> None:
+        """Inserts ``layer`` at index ``i``."""
         self.layers.insert(i, layer)
 
     def append(self, layer: Layer) -> None:
+        """Appends ``layer``."""
         self.layers.append(layer)
 
     def extend(self, layer: Layer) -> None:
+        """Appends every layer in ``layer``."""
         self.layers.append(layer)
 
     def __str__(self) -> str:
@@ -78,6 +84,7 @@ class LayerList(Module):
         return iter(self.layers)
 
     def __call__(self, *args, **kwargs) -> TensorValue:
+        """Runs every layer in order and returns the result."""
         x = self.layers[0](*args, **kwargs)
         for layer in self.layers[1:]:
             x = layer(x)

@@ -36,8 +36,9 @@ def short_conv_ring(
     *,
     commit: bool,
 ) -> TensorValue:
-    """Returns ``x + conv(x)`` over a ragged batch, optionally committing the
-    chunk to ``ring``.
+    """Returns ``x + conv(x)`` over a ragged batch.
+
+    Optionally commits the chunk to ``ring``.
 
     Args:
         x: ``[total_seq_len, channels]`` input.

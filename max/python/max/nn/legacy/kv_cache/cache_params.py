@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""KV cache parameter types and layout helpers."""
+
 from __future__ import annotations
 
 import logging
@@ -142,12 +144,15 @@ class KVCacheGroupId:
                 raise ValueError("Window size must be -1 for scratch groups.")
 
     def is_sliding_window(self) -> bool:
+        """Whether this group is a sliding window."""
         return self.type == "sliding_window"
 
     def is_full(self) -> bool:
+        """Whether this group is the full cache."""
         return self.type == "full"
 
     def blocks_in_window(self, page_size: int) -> int:
+        """Returns how many blocks fit in the window."""
         if self.is_scratch():
             raise ValueError(
                 "a scratch group has no window: it holds one block per request,"
@@ -233,21 +238,26 @@ class KVCacheGroupId:
         return self.prefix_hit_shape(page_size).longest_hit(resident)
 
     def is_recurrent(self) -> bool:
+        """Whether this group holds recurrent state."""
         return self.type == "recurrent"
 
     def is_scratch(self) -> bool:
+        """Whether this group is scratch."""
         return self.type == "scratch"
 
     @classmethod
     def full(cls) -> KVCacheGroupId:
+        """Returns the full-cache group id."""
         return cls(type="full")
 
     @classmethod
     def recurrent(cls) -> KVCacheGroupId:
+        """Returns the recurrent-state group id."""
         return cls(type="recurrent")
 
     @classmethod
     def scratch(cls) -> KVCacheGroupId:
+        """Returns the scratch group id."""
         return cls(type="scratch")
 
     def __repr__(self) -> str:
@@ -508,8 +518,9 @@ def page_view(
 
 
 def _padded_page_view(slab: Buffer, padded_page_bytes: int) -> Buffer:
-    """Views ``slab`` as contiguous ``[num_pages, padded_page_bytes]`` bytes,
-    the whole padded pages that byte movers copy.
+    """Views ``slab`` as contiguous ``[num_pages, padded_page_bytes]`` bytes.
+
+    These are the whole padded pages that byte movers copy.
 
     Args:
         slab: The backing allocation, typically the raw ``uint8`` arena.
@@ -1108,8 +1119,11 @@ class RecurrentStateRegion:
 
 @dataclass(frozen=True)
 class _ScratchPagedKVLeafRegion(PagedKVLeafRegion):
-    """A paged leaf a request holds one block of for its whole life and never
-    publishes; the kernel addresses the block's slots as a ring."""
+    """A paged leaf a request holds one block of and never publishes.
+
+    The request holds the block for its whole life; the kernel addresses the
+    block's slots as a ring.
+    """
 
     def blocks_to_reserve(
         self, num_blocks: int, *, enable_prefix_caching: bool
@@ -1225,19 +1239,29 @@ class CacheLeafParamInterface(Protocol):
     num_draft_tokens: int
 
     @property
-    def enable_prefix_caching(self) -> bool: ...
+    def enable_prefix_caching(self) -> bool:
+        """Whether prefix caching is on for this leaf."""
+        ...
 
     @property
-    def enable_dp_cross_replica_prefix_copy(self) -> bool: ...
+    def enable_dp_cross_replica_prefix_copy(self) -> bool:
+        """Whether a cross-replica prefix hit may be copied over."""
+        ...
 
     @property
-    def kv_hash_algo(self) -> KVHashAlgo: ...
+    def kv_hash_algo(self) -> KVHashAlgo:
+        """The hash algorithm used for block keys."""
+        ...
 
     @property
-    def kv_hash_seed(self) -> bytes | None: ...
+    def kv_hash_seed(self) -> bytes | None:
+        """The 32-byte cluster seed for ``sha256``, or ``None`` for ``ahash64``."""
+        ...
 
     @property
-    def replicates_kv_across_tp(self) -> bool: ...
+    def replicates_kv_across_tp(self) -> bool:
+        """Whether the KV cache is replicated across TP devices."""
+        ...
 
     @property
     def leaf_kind(self) -> CacheLeafKind:
@@ -1284,7 +1308,8 @@ class CacheLeafParamInterface(Protocol):
         ``assignments`` and ``buffers`` are indexed by data-parallel replica.
         Returns the :class:`KVCacheInputs` pytree (a tuple of per-device
         leaves, or a dict of named subtrees for multi-cache models) whose
-        leaves each hold one ``(replica, TP shard)`` device's inputs."""
+        leaves each hold one ``(replica, TP shard)`` device's inputs.
+        """
         ...
 
     def staged_dispatch_metadata(
@@ -1367,8 +1392,10 @@ class KVCacheParamInterface(CacheLeafParamInterface, Protocol):
 
     @property
     def enable_dp_cross_replica_prefix_copy(self) -> bool:
-        """Whether a prefix-cache hit resident on another data-parallel
-        replica's device may be served by a device-to-device copy."""
+        """Whether a remote prefix-cache hit may be served by a D2D copy.
+
+        The hit is resident on another data-parallel replica's device.
+        """
         ...
 
     @property
@@ -1398,7 +1425,9 @@ class KVCacheParamInterface(CacheLeafParamInterface, Protocol):
     @property
     def kv_hash_seed(self) -> bytes | None:
         """Resolved 32-byte cluster seed for ``sha256``.
-        ``None`` for ``ahash64``."""
+
+        ``None`` for ``ahash64``.
+        """
         ...
 
     @property
@@ -1717,8 +1746,10 @@ class KVCacheParams(KVCacheParamInterface):
 
     @property
     def is_nvfp4_kv_cache(self) -> bool:
-        """Whether the cache stores packed NVFP4: ``uint8`` values holding two
-        E2M1 elements each, with E4M3 scales."""
+        """Whether the cache stores packed NVFP4.
+
+        Each ``uint8`` value holds two E2M1 elements, with E4M3 scales.
+        """
         return (
             self.dtype == DType.uint8
             and self.kvcache_quant_config is not None
@@ -1727,8 +1758,10 @@ class KVCacheParams(KVCacheParamInterface):
 
     @property
     def has_split_head_dims(self) -> bool:
-        """Whether the key and value heads have different dims, so one packed
-        row holds both (see :attr:`v_head_dim`)."""
+        """Whether the key and value heads have different dims.
+
+        When they differ, one packed row holds both (see :attr:`v_head_dim`).
+        """
         return self.v_head_dim is not None and self.v_head_dim != self.head_dim
 
     @property
@@ -1870,7 +1903,7 @@ class KVCacheParams(KVCacheParamInterface):
 
     @property
     def shape_per_scale_block(self) -> list[int]:
-        """Returns the shape of each scale block used for KVCache quantization
+        """Returns the shape of each quantization scale block.
 
         Returns:
             The shape of the KVCache quantization scales block.
@@ -2176,9 +2209,11 @@ class KVCacheParams(KVCacheParamInterface):
 
     @property
     def group_id(self) -> KVCacheGroupId:
-        """Returns the group id this cache pools under: ``scratch`` for a
-        scratch cache, ``sliding_window`` with the window size when one is
-        set, else ``full``."""
+        """Returns the group id this cache pools under.
+
+        That is ``scratch`` for a scratch cache, ``sliding_window`` with the
+        window size when one is set, else ``full``.
+        """
         if self.scratch:
             return KVCacheGroupId.scratch()
         if self.window_size is not None:
@@ -2335,14 +2370,20 @@ class MHAKVCacheParams(KVCacheParams):
 
     @property
     def kv_dim(self) -> int:
-        """Returns two, a key and a value tensor per slot, or one when each
-        head's row holds both (:attr:`has_split_head_dims`)."""
+        """Returns two, a key and a value tensor per slot, or one.
+
+        One is returned when each head's row holds both
+        (:attr:`has_split_head_dims`).
+        """
         return 1 if self.has_split_head_dims else 2
 
     @property
     def n_kv_heads_per_device(self) -> int:
-        """Returns the KV heads on one device, or ``1`` per device group when
-        heads are replicated (``allow_kv_head_replication``)."""
+        """Returns the KV heads on one device.
+
+        That is ``1`` per device group when heads are replicated
+        (``allow_kv_head_replication``).
+        """
         tp_degree = self.tensor_parallel_degree
         if self.n_kv_heads % tp_degree == 0:
             return max(self.n_kv_heads // tp_degree, 1)
@@ -2860,10 +2901,12 @@ class RecurrentStateParams(CacheLeafParamInterface):
 
     @property
     def n_devices(self) -> int:
+        """The number of devices the state is spread over."""
         return len(self.devices)
 
     @property
     def tensor_parallel_degree(self) -> int:
+        """The tensor-parallel degree."""
         return self.n_devices // self.data_parallel_degree
 
     @property
@@ -2873,6 +2916,7 @@ class RecurrentStateParams(CacheLeafParamInterface):
 
     @cached_property
     def devices_per_replica(self) -> Sequence[Sequence[DeviceRef]]:
+        """The devices each replica holds, grouped by replica."""
         return split_into_groups(self.devices, self.data_parallel_degree)
 
     @property
@@ -2933,8 +2977,10 @@ class RecurrentStateParams(CacheLeafParamInterface):
 
     @property
     def bytes_per_block(self) -> int:
-        """Returns zero because a state's page is a per-request cost, not a
-        cost per token."""
+        """Returns zero: a state's page is a per-request cost.
+
+        It is not a cost per token.
+        """
         return 0
 
     def allocate_buffers(
@@ -3011,6 +3057,7 @@ class RecurrentStateParams(CacheLeafParamInterface):
     def unflatten_kv_inputs(
         self, it: Iterator[Any]
     ) -> tuple[RecurrentStateInputsPerDevice[TensorValue, BufferValue], ...]:
+        """Rebuilds the per-leaf KV inputs from the flattened list."""
         return tuple(
             tree.leaves(
                 tree.unflatten(self._kv_symbolic_treedef, it, exact=False),
@@ -3652,6 +3699,7 @@ def compute_num_device_blocks(
     have the same number of blocks.
 
     Args:
+        params: The KV cache parameters to allocate blocks for.
         available_cache_memory: The amount of cache memory available across all devices.
         max_batch_size: The maximum batch size, or None.
         max_seq_len: The maximum sequence length, or None.
@@ -3806,6 +3854,7 @@ def estimated_memory_size(
     """Computes the estimated memory size of the KV cache used by all replicas.
 
     Args:
+        params: The KV cache parameters to size.
         available_cache_memory: The amount of cache memory available across all devices.
         max_batch_size: The maximum batch size.
         max_seq_len: The maximum sequence length.
@@ -3836,6 +3885,7 @@ def compute_max_seq_len_fitting_in_cache(
     """Computes the maximum sequence length that can fit in the available memory.
 
     Args:
+        params: The KV cache parameters to size for.
         available_cache_memory: The amount of cache memory available across
             all devices.
         include_null_block: Whether to include room for the null block.

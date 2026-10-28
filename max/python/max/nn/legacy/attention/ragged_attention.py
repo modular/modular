@@ -61,6 +61,7 @@ class RaggedAttention(Module):
 
         Args:
             rope: The rope layer to borrow the freqs_cis value from.
+            mask_variant: Attention mask used by the flash-attention kernel.
             num_attention_heads: The number of attention heads.
             num_key_value_heads: Number of key/value heads.
             hidden_size: The dimension of the hidden states.
@@ -125,6 +126,7 @@ class RaggedAttention(Module):
         kv_collection: PagedCacheValues,
         **kwargs,
     ) -> TensorValue:
+        """Applies attention to ragged inputs and returns the output."""
         # Get attributes from input.
         total_seq_len = x.shape[0]
 

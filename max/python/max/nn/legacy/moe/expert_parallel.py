@@ -125,7 +125,6 @@ def _ep_forward(
     Returns:
         outputs: One output tensor per shard.
     """
-
     all_topk_ids: list[TensorValue] = []
     all_router_weights: list[TensorValue] = []
     all_input_scales: list[TensorValue | None] = []
@@ -534,6 +533,9 @@ def forward_moe_sharded_layers(
     Args:
         shards: Per-device shard callables (MoE, MLP and so on).
         xs: Input tensors, one per shard.
+        eplb_counter_buffers: Per-device buffers that accumulate how often each
+            logical expert is routed, for EPLB profiling.
+        layer_idx_per_device: Layer index per device, indexed by device id.
 
     Returns:
         outputs: Output tensors, one per shard.

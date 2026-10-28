@@ -933,6 +933,8 @@ class MLP(Module, Shardable):
                 - ``sigmoid``
 
             quant_config: :class:`~max.nn.legacy.quant_config.QuantConfig` for scaled quantization.
+            swiglu_limit: Upper bound on the SwiGLU gate branch, also applied
+                to both ends of the up branch. ``0`` disables the clamp.
             is_sharding: Disable child layer creation during sharding.
         """
         super().__init__()
