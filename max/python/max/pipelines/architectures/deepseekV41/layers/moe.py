@@ -628,6 +628,14 @@ class DeepseekV41Mxfp4RoutedExperts(DeepseekV4RoutedExperts):
         )
         self.expert_offset = 0
         self.n_global_experts = n_experts
+        self.gate_up_interleaved = False
+        """Whether ``gate_up_proj`` rows alternate gate, up.
+
+        Set for the trunk behind expert-parallel dispatch
+        (:func:`~..model_config.gate_up_rows_interleaved`), where
+        :meth:`dispatched` runs the fused SwiGLU GEMM that the graph compiler
+        fuses with the down GEMM into the W4A8 MegaFFN.
+        """
 
     def _grouped(
         self,
@@ -706,11 +714,13 @@ class DeepseekV41Mxfp4RoutedExperts(DeepseekV4RoutedExperts):
     ) -> TensorValue:
         """Runs this device's experts over rows delivered by expert dispatch.
 
-        The rows arrive MXFP8-quantized with E8M0 block scales per 32. The
-        gate/up GEMM, the clamped SwiGLU, the activation's MXFP8 quantize
-        and the down GEMM run as separate ops, which share the dispatch's
-        routing tensors and touch only the rows received, not the whole
-        receive buffer.
+        The rows arrive MXFP8-quantized with E8M0 block scales per 32. With
+        :attr:`gate_up_interleaved`, the gate/up GEMM runs with the clamped
+        SwiGLU and the activation's MXFP8 quantize in its epilogue, and the
+        graph compiler fuses it with the down GEMM into one MegaFFN launch.
+        Otherwise the four run as separate ops. Either way they share the
+        dispatch's routing tensors and touch only the rows received, not the
+        whole receive buffer.
 
         Args:
             received: The dispatch's ``(rows, block scales, expert_start,
@@ -727,6 +737,30 @@ class DeepseekV41Mxfp4RoutedExperts(DeepseekV4RoutedExperts):
         tokens, a_scales, expert_start, scale_offsets, expert_ids, usage = (
             TensorValue(v) for v in received
         )
+        if self.gate_up_interleaved:
+            device = tokens.device
+            activated, activated_scales = grouped_matmul_blocked_swiglu(
+                tokens,
+                self.gate_up_proj.weight.to(device),
+                a_scales,
+                self.gate_up_proj(device),
+                expert_start,
+                scale_offsets,
+                expert_ids,
+                usage,
+                estimated_total_m=estimated_total_m,
+                activation=_clamped_swiglu(self.swiglu_limit),
+            )
+            return self._w4a8_matmul(
+                self.down_proj,
+                activated,
+                activated_scales,
+                expert_start,
+                scale_offsets,
+                expert_ids,
+                usage,
+                estimated_total_m,
+            )
         gate_up = self._w4a8_matmul(
             self.gate_up_proj,
             tokens,
@@ -1024,8 +1058,9 @@ def _routed_experts(
     config: DeepseekV41Config, device: DeviceRef
 ) -> DeepseekV41NvFp4RoutedExperts | DeepseekV41Mxfp4RoutedExperts:
     """The trunk's routed experts in ``config.routed_expert_format``."""
+    experts: DeepseekV41NvFp4RoutedExperts | DeepseekV41Mxfp4RoutedExperts
     if config.routed_expert_format is RoutedExpertFormat.MXFP4:
-        return DeepseekV41Mxfp4RoutedExperts(
+        experts = DeepseekV41Mxfp4RoutedExperts(
             n_experts=config.n_routed_experts,
             hidden_size=config.hidden_size,
             moe_intermediate_size=config.moe_intermediate_size,
@@ -1034,21 +1069,20 @@ def _routed_experts(
             device=device,
             host_interleaved_scales=True,
         )
-    experts = DeepseekV41NvFp4RoutedExperts(
-        n_experts=config.n_routed_experts,
-        hidden_size=config.hidden_size,
-        moe_intermediate_size=config.moe_intermediate_size,
-        num_experts_per_tok=config.num_experts_per_tok,
-        swiglu_limit=config.swiglu_limit,
-        device=device,
-    )
+    else:
+        experts = DeepseekV41NvFp4RoutedExperts(
+            n_experts=config.n_routed_experts,
+            hidden_size=config.hidden_size,
+            moe_intermediate_size=config.moe_intermediate_size,
+            num_experts_per_tok=config.num_experts_per_tok,
+            swiglu_limit=config.swiglu_limit,
+            device=device,
+        )
     # Only expert-parallel dispatch runs the interleaved layout's kernel.
     experts.gate_up_interleaved = (
         config.ep_config is not None
         and gate_up_rows_interleaved(
-            config.n_routed_experts,
-            config.data_parallel_degree,
-            config.routed_expert_format,
+            config.n_routed_experts, config.data_parallel_degree
         )
     )
     return experts

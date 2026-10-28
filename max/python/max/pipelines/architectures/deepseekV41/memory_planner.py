@@ -51,6 +51,7 @@ from .layers.indexer import (
 )
 from .layers.moe import router_reads_bf16_gate
 from .model_config import (
+    MEGAFFN_MAX_LOCAL_EXPERTS,
     DeepseekV41Config,
     RoutedExpertFormat,
     compressor_bf16_enabled,
@@ -212,11 +213,12 @@ def ep_receive_pool_bytes(
 
     The dispatched rows, their block scales and source info stay live while
     the experts write the bf16 down projection, all sized for the most rows a
-    device can receive, whatever the batch. Without a fused expert kernel
-    (:attr:`~.model_config.RoutedExpertFormat.fuses_dispatched_ffn`), the
-    bf16 gate/up projection, its bf16 SwiGLU and the down projection's MXFP8
-    input and scales are sized the same way. This is the largest single
-    transient of a forward, and every forward and captured graph holds one.
+    device can receive, whatever the batch. MXFP4 experts also allocate
+    their E4M3 intermediate and scales the same way, and, on devices with more
+    experts than the fused kernel holds
+    (:data:`~.model_config.MEGAFFN_MAX_LOCAL_EXPERTS`), the unfused chain's
+    bf16 gate/up projection and SwiGLU. This is the largest single transient
+    of a forward, and every forward and captured graph holds one.
 
     Args:
         ep_config: The expert-parallel :class:`EPConfig`.
@@ -243,11 +245,11 @@ def ep_receive_pool_bytes(
     src_info = rows * 2 * 4
     down = rows * hidden * 2
     total = tokens + scale_bytes(hidden) + src_info + down
-    if not expert_format.fuses_dispatched_ffn:
+    if expert_format is RoutedExpertFormat.MXFP4:
         inter = moe_intermediate_size
-        gate_up = rows * 2 * inter * 2
-        activated = rows * inter * 2
-        total += gate_up + activated + rows * inter + scale_bytes(inter)
+        total += rows * inter + scale_bytes(inter)
+        if n_local_experts > MEGAFFN_MAX_LOCAL_EXPERTS:
+            total += rows * 2 * inter * 2 + rows * inter * 2
     return _mm_pages(total)
 
 

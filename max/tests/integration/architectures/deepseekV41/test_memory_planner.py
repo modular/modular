@@ -575,9 +575,37 @@ def test_mxfp4_expert_scales_load_compact() -> None:
     assert in_graph - mxfp4 == _MXFP4_EXPERT_SCALE_BYTES // 4
 
 
-def test_dp4_mxfp4_dispatches_mxfp8_and_reserves_the_unfused_chain() -> None:
+def test_dp2_mxfp4_keeps_the_unfused_chain_past_the_fused_kernels_limit() -> (
+    None
+):
+    """At DP2 a device holds 192 experts, more than the fused kernel takes:
+    MXFP4 runs its unfused chain and reserves its buffers, NVFP4 is refused."""
+    hf_config = _mxfp4_huggingface_config()
+    text_config = DeepseekV41Config.get_text_config(hf_config)
+    config = _pipeline_config(
+        max_length=40000, max_num_input_tokens=8192, num_devices=2
+    )
+    config.model.data_parallel_degree = 2
+    for i, spec in enumerate(config.model.device_specs):
+        spec.id = i
+    config.speculative = None
+    ep = data_parallel_ep_config(config, text_config, RoutedExpertFormat.MXFP4)
+    assert ep is not None
+    rows = 2 * 8192 * 6
+    pool = ep_receive_pool_bytes(ep, RoutedExpertFormat.MXFP4, _INTER)
+    # Also the unfused chain's bf16 gate/up and SwiGLU.
+    assert pool >= rows * (
+        5120 + 5120 * 2 + 8 + 2 * _INTER * 2 + _INTER * 2 + _INTER
+    )
+    with pytest.raises(ValueError, match="fused kernel"):
+        data_parallel_ep_config(config, text_config, RoutedExpertFormat.NVFP4)
+
+
+def test_dp4_mxfp4_dispatches_mxfp8_and_reserves_the_fused_intermediate() -> (
+    None
+):
     """MXFP4 experts dispatch MXFP8 rows, and each DP4 device reserves the
-    receive tensors of the unfused gate/up, SwiGLU and down chain."""
+    receive tensors and the W4A8 MegaFFN's E4M3 intermediate."""
     hf_config = _mxfp4_huggingface_config()
     extra = (
         _planner().estimate_activation_memory(_dp4_config(4), hf_config)
@@ -594,11 +622,9 @@ def test_dp4_mxfp4_dispatches_mxfp8_and_reserves_the_unfused_chain() -> None:
     assert ep.dispatch_quant_config.is_mxfp8
     rows = 4 * 8192 * 6
     pool = ep_receive_pool_bytes(ep, RoutedExpertFormat.MXFP4, _INTER)
-    # E4M3 rows, bf16 down projection, source info, bf16 gate/up and
-    # SwiGLU, and the down projection's E4M3 input; block scales on top.
-    assert pool >= rows * (
-        5120 + 5120 * 2 + 8 + 2 * _INTER * 2 + _INTER * 2 + _INTER
-    )
+    # E4M3 rows, bf16 down projection, source info and the fused kernel's
+    # E4M3 intermediate; block scales on top.
+    assert pool >= rows * (5120 + 5120 * 2 + 8 + _INTER)
     nvfp4 = data_parallel_ep_config(
         _dp4_config(4),
         DeepseekV41Config.get_text_config(hf_config),

@@ -626,15 +626,18 @@ def stack_experts(
     *,
     defer: bool = False,
     sf_interleave: bool = False,
+    interleave_gate_up: bool = False,
 ) -> dict[str, WeightData]:
     """Per-expert packed fp4 tensors -> the two stacked routed-expert weights.
 
     The MXFP4 W4A8 format: ``experts[e]`` holds ``w1``, ``w2``, ``w3``
     (uint8 ``[N, K/2]``) and ``w{1,2,3}.scale`` (uint8 e8m0 ``[N, K/32]``).
-    ``gate_up_proj`` stacks ``w1`` rows then ``w3`` rows. With ``defer``,
-    each tensor is returned as a :class:`DeferredExpertStack`. With
-    ``sf_interleave``, each expert's scales whose shape tiles the
-    scale-factor tile are stored in the grouped matmul's interleaved layout
+    ``gate_up_proj`` stacks ``w1`` rows then ``w3`` rows, or with
+    ``interleave_gate_up`` alternates them (and their scale rows) for the
+    fused SwiGLU kernels. With ``defer``, each tensor is returned as a
+    :class:`DeferredExpertStack`. With ``sf_interleave``, each expert's
+    scales whose shape tiles the scale-factor tile are stored in the grouped
+    matmul's interleaved layout
     (:func:`~.model_config.nvfp4_sf_preinterleaved`).
 
     Raises:
@@ -656,6 +659,7 @@ def stack_experts(
             sf_interleave=sf_interleave
             and dtype == DType.float8_e8m0fnu
             and nvfp4_sf_preinterleaved(rows, int(parts[0][0].shape[1])),
+            interleave_rows=interleave_gate_up and len(keys) == 2,
         )
         if defer:
             return deferred
@@ -1023,7 +1027,7 @@ def convert_weight_data(
     compressor_bf16 = compressor_bf16_enabled()
     new_state_dict: dict[str, WeightData] = {}
     interleave_trunk = gate_up_rows_interleaved(
-        num_routed_experts, data_parallel_degree, routed_expert_format
+        num_routed_experts, data_parallel_degree
     )
 
     def is_dspark(prefix: str) -> bool:
@@ -1043,7 +1047,11 @@ def convert_weight_data(
             return stack_experts(experts, prefix)
         if routed_expert_format is RoutedExpertFormat.MXFP4:
             return stack_experts(
-                experts, prefix, defer=defer_routed_experts, sf_interleave=True
+                experts,
+                prefix,
+                defer=defer_routed_experts,
+                sf_interleave=True,
+                interleave_gate_up=interleave_trunk,
             )
         return stack_nvfp4_experts(
             experts,

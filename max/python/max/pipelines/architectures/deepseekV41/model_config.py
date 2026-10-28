@@ -280,16 +280,6 @@ class RoutedExpertFormat(Enum):
             return DType.uint8
         return DType.float8_e4m3fn
 
-    @property
-    def fuses_dispatched_ffn(self) -> bool:
-        """Whether one kernel runs a device's whole dispatched FFN.
-
-        That covers the gate/up, SwiGLU and down projections.
-
-        Only NVFP4 has that kernel; MXFP4 runs them as separate ops.
-        """
-        return self is RoutedExpertFormat.NVFP4
-
 
 def routed_expert_format(huggingface_config: Any) -> RoutedExpertFormat:
     """Returns the routed-expert format of a top-level Hugging Face config."""
@@ -335,8 +325,10 @@ def data_parallel_ep_config(
             f"needs devices 0 to {len(device_ids) - 1}, got {device_ids}"
         )
     local_experts = int(text_config.n_routed_experts) // dp
+    # NVFP4 experts run behind dispatch only as the fused kernel; MXFP4
+    # experts past its limit keep their unfused chain.
     if (
-        expert_format.fuses_dispatched_ffn
+        expert_format is RoutedExpertFormat.NVFP4
         and local_experts > MEGAFFN_MAX_LOCAL_EXPERTS
     ):
         raise ValueError(
@@ -391,22 +383,19 @@ MEGAFFN_MAX_LOCAL_EXPERTS = 128
 
 
 def gate_up_rows_interleaved(
-    n_routed_experts: int,
-    data_parallel_degree: int,
-    expert_format: RoutedExpertFormat,
+    n_routed_experts: int, data_parallel_degree: int
 ) -> bool:
     """Whether the trunk's routed ``gate_up_proj`` rows alternate gate, up.
 
     Under data parallelism the routed experts run behind expert-parallel
     dispatch, whose statically sized receive buffers let each device's
-    gate/up GEMM, SwiGLU and down GEMM fuse into one kernel when the format
-    has one (:attr:`RoutedExpertFormat.fuses_dispatched_ffn`) and the device
-    holds at most :data:`MEGAFFN_MAX_LOCAL_EXPERTS` experts. That kernel
-    reads each gate row next to its up row.
+    gate/up GEMM, SwiGLU and down GEMM fuse into one kernel (MegaFFN, at
+    NVFP4 or W4A8) when the device holds at most
+    :data:`MEGAFFN_MAX_LOCAL_EXPERTS` experts. That kernel and the fused
+    SwiGLU GEMM it falls back to read each gate row next to its up row.
     """
     return (
-        expert_format.fuses_dispatched_ffn
-        and ep_dispatch_active(data_parallel_degree)
+        ep_dispatch_active(data_parallel_degree)
         and n_routed_experts // data_parallel_degree
         <= MEGAFFN_MAX_LOCAL_EXPERTS
     )

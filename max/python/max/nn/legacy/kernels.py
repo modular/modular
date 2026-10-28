@@ -9508,7 +9508,9 @@ def grouped_matmul_blocked_swiglu(
             NVFP4 or ``float8_e4m3fn`` for MXFP8.
         weight: The sigma-permuted expert weights with shape
             ``[num_experts, 2D, K]`` using the same storage dtype and packed K
-            convention as ``hidden_states``.
+            convention as ``hidden_states``, or for W4A8 (``float8_e4m3fn``
+            activations) packed ``uint8`` E2M1 with shape
+            ``[num_experts, 2D, K / 2]``.
         a_scales: Scaling factors for inputs with shape
             ``[num_scale_rows, K_groups, 32, 4, 4]``. Dtype must be
             ``float8_e4m3fn`` for NVFP4 or ``float8_e8m0fnu`` for MXFP8.
@@ -9554,7 +9556,12 @@ def grouped_matmul_blocked_swiglu(
     _check_dtype(DType.int32, expert_ids=expert_ids)
     _check_dtype(DType.uint32, expert_start_indices=expert_start_indices)
 
-    _check_same_dtype(hidden_states=hidden_states, weight=weight)
+    is_w4a8 = (
+        hidden_states.dtype == DType.float8_e4m3fn
+        and weight.dtype == DType.uint8
+    )
+    if not is_w4a8:
+        _check_same_dtype(hidden_states=hidden_states, weight=weight)
     _check_same_dtype(a_scales=a_scales, b_scales=b_scales)
 
     dummy_scale = ops.broadcast_to(
@@ -9592,7 +9599,7 @@ def grouped_matmul_blocked_swiglu(
             f"float8_e8m0fnu (MXFP4/MXFP8), but got {a_scales.dtype}"
         )
 
-    weight_k = weight.shape[2]
+    weight_k = weight.shape[2] * 2 if is_w4a8 else weight.shape[2]
     hidden_k = hidden_states.shape[1]
     if weight_k != hidden_k or weight.shape[0] != expert_ids.shape[0]:
         raise ValueError(

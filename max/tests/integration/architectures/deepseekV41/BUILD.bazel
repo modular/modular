@@ -369,18 +369,19 @@ modular_py_test(
 )
 
 # The trunk's MXFP4 routed experts, routed and expert-parallel, against the
-# reference's W4A8 math. Guards nn/kernels grouped_matmul_block_scaled (W4A8)
-# and grouped_quantize_dynamic_block_scaled (MXFP8).
+# reference's W4A8 math. Guards nn/kernels grouped_matmul_block_scaled (W4A8),
+# the W4A8 fused SwiGLU grouped matmul, grouped_quantize_dynamic_block_scaled
+# (MXFP8) and the W4A8 MegaFFN.
 modular_py_test(
     name = "test_mxfp4_experts_gpu",
     srcs = ["test_mxfp4_experts_gpu.py"],
     exec_properties = {
-        "test.resources:gpu-memory": "2",
+        "test.resources:gpu-memory": "4",
     },
     gpu_constraints = ["//:b200_gpu"],
     precompile_mefs = True,
     # Each test compiles its own graphs; shards compile them in parallel.
-    shard_count = 2,
+    shard_count = 4,
     tags = ["gpu"],
     deps = [
         "//max/python/max/driver",

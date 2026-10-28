@@ -24,7 +24,11 @@ adapter: the routed path (``_routed`` over the ``_grouped`` GEMMs) and the
 expert-parallel path (``dispatched`` over rows already sorted by expert,
 padded like a receive buffer). The routed path must also match DSpark's
 experts, which read the same weights with in-graph interleaved scales, bit
-for bit. A planted fault (the weights' nibble order swapped in the
+for bit. The expert-parallel path also runs with gate/up rows interleaved,
+as the trunk loads them under data parallelism: at small shapes that runs
+the fused SwiGLU grouped matmul and the grouped matmul, and at the
+DeepSeek-V4.1 Flash expert shapes the graph compiler fuses the two into the
+W4A8 MegaFFN. A planted fault (the weights' nibble order swapped in the
 reference) must fail the comparison.
 """
 
@@ -63,6 +67,15 @@ SWIGLU_LIMIT = 2.0
 ROWS_PER_EXPERT = [5, 0, 37, 1, 130, 9, 64, 3]
 PAD_ROWS = 50
 
+# The DeepSeek-V4.1 Flash expert shapes the fused W4A8 kernel is built for.
+FLASH_HIDDEN = 5120
+FLASH_INTER = 2304
+FLASH_EXPERTS = 4
+FLASH_ROWS_PER_EXPERT = [5, 0, 37, 13]
+# The fusion sizes the kernel's counters from the receive buffer's rows; a
+# buffer this large holds every counter the fused launch needs.
+FLASH_RECEIVE_ROWS = 32_768
+
 # Both paths match the reference bit for bit at these sizes. The tolerance
 # admits another GEMM accumulation order, which can move a bf16 rounding and
 # so an E4M3 code of the down projection's input by one step.
@@ -74,14 +87,21 @@ _E2M1 = np.array(
 )
 
 
-def _checkpoint(prefix: str, rng: np.random.Generator) -> dict[str, WeightData]:
+def _checkpoint(
+    prefix: str,
+    rng: np.random.Generator,
+    *,
+    experts: int = EXPERTS,
+    hidden: int = HIDDEN,
+    inter: int = INTER,
+) -> dict[str, WeightData]:
     """Per-expert MXFP4 tensors as stored: int8 E2M1 pairs, E8M0 per 32."""
     sd: dict[str, WeightData] = {}
-    for e in range(EXPERTS):
+    for e in range(experts):
         for proj, n, k in (
-            ("w1", INTER, HIDDEN),
-            ("w3", INTER, HIDDEN),
-            ("w2", HIDDEN, INTER),
+            ("w1", inter, hidden),
+            ("w3", inter, hidden),
+            ("w2", hidden, inter),
         ):
             base = f"{prefix}.{e}.{proj}"
             weight = rng.integers(0, 256, (n, k // 2), dtype=np.uint8)
@@ -97,7 +117,10 @@ def _checkpoint(prefix: str, rng: np.random.Generator) -> dict[str, WeightData]:
 
 
 def _dequantized(
-    sd: dict[str, WeightData], prefix: str, swap_nibbles: bool = False
+    sd: dict[str, WeightData],
+    prefix: str,
+    swap_nibbles: bool = False,
+    experts: int = EXPERTS,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Each expert's ``[w1; w3]`` and ``w2`` as float64 values."""
 
@@ -118,10 +141,10 @@ def _dequantized(
             np.concatenate(
                 [values(f"{prefix}.{e}.w1"), values(f"{prefix}.{e}.w3")]
             )
-            for e in range(EXPERTS)
+            for e in range(experts)
         ]
     )
-    down = np.stack([values(f"{prefix}.{e}.w2") for e in range(EXPERTS)])
+    down = np.stack([values(f"{prefix}.{e}.w2") for e in range(experts)])
     return gate_up, down
 
 
@@ -153,7 +176,7 @@ def _expert(
     With ``exact_down``, the down projection reads its input unquantized
     and returns float64.
     """
-    gate, up = _fp4_gemm(x, gate_up).float().split(INTER, dim=-1)
+    gate, up = _fp4_gemm(x, gate_up).float().split(down.shape[1], dim=-1)
     up = up.clamp(-SWIGLU_LIMIT, SWIGLU_LIMIT)
     gate = gate.clamp(max=SWIGLU_LIMIT)
     h = torch.nn.functional.silu(gate) * up
@@ -192,24 +215,34 @@ def _experts(
     device_ref: DeviceRef,
     *,
     host_interleaved_scales: bool,
+    interleave_gate_up: bool = False,
+    n_experts: int = EXPERTS,
+    hidden: int = HIDDEN,
+    inter: int = INTER,
 ) -> DeepseekV41Mxfp4RoutedExperts:
-    """Experts loaded strictly with the weight adapter's output."""
+    """Experts loaded strictly with the weight adapter's output.
+
+    With ``interleave_gate_up``, converted as under data parallelism, which
+    interleaves the trunk's gate/up rows for the fused kernels.
+    """
     is_dspark = prefix.startswith("mtp.")
     converted = convert_weight_data(
         sd,
-        num_routed_experts=EXPERTS,
-        num_dspark_experts=EXPERTS,
+        num_routed_experts=n_experts,
+        num_dspark_experts=n_experts,
         routed_expert_format=RoutedExpertFormat.MXFP4,
+        data_parallel_degree=2 if interleave_gate_up else 1,
     )
     experts = DeepseekV41Mxfp4RoutedExperts(
-        EXPERTS,
-        HIDDEN,
-        INTER,
+        n_experts,
+        hidden,
+        inter,
         TOPK,
         SWIGLU_LIMIT,
         device_ref,
         host_interleaved_scales=host_interleaved_scales,
     )
+    experts.gate_up_interleaved = interleave_gate_up
     assert host_interleaved_scales != is_dspark
     experts.load_state_dict(
         {
@@ -245,15 +278,17 @@ def _dispatched_model(
     experts: DeepseekV41Mxfp4RoutedExperts,
     device_ref: DeviceRef,
     rows: int,
+    estimated_rows: int | None = None,
 ) -> Model:
     """``dispatched`` over bf16 rows quantized as expert dispatch would."""
+    n_experts = experts.n_experts
     with Graph(
         "mxfp4_dispatched",
         input_types=[
-            TensorType(DType.bfloat16, (rows, HIDDEN), device_ref),
-            TensorType(DType.uint32, (EXPERTS + 1,), device_ref),
-            TensorType(DType.uint32, (EXPERTS,), device_ref),
-            TensorType(DType.int32, (EXPERTS,), device_ref),
+            TensorType(DType.bfloat16, (rows, experts.hidden), device_ref),
+            TensorType(DType.uint32, (n_experts + 1,), device_ref),
+            TensorType(DType.uint32, (n_experts,), device_ref),
+            TensorType(DType.int32, (n_experts,), device_ref),
             TensorType(DType.uint32, (2,), DeviceRef.CPU()),
         ],
     ) as graph:
@@ -263,7 +298,11 @@ def _dispatched_model(
         quantized, scales = mxfp8_grouped_quantize(
             x, starts, scale_offsets, expert_ids
         )
-        estimated = ops.constant(np.uint32(rows), DType.uint32, DeviceRef.CPU())
+        estimated = ops.constant(
+            np.uint32(rows if estimated_rows is None else estimated_rows),
+            DType.uint32,
+            DeviceRef.CPU(),
+        )
         received: Sequence[TensorValue] = (
             quantized,
             scales,
@@ -348,35 +387,62 @@ def test_routed_mxfp4_experts_match_the_reference() -> None:
     assert _rel_err(got, fault) > 10 * REL_TOL
 
 
-def test_dispatched_mxfp4_experts_match_the_reference() -> None:
-    """The expert-parallel path matches the reference over the received rows
-    and ignores the receive buffer's padding."""
+def _run_dispatched(
+    rng: np.random.Generator,
+    rows_per_expert: Sequence[int],
+    rows: int,
+    *,
+    interleave_gate_up: bool,
+    hidden: int = HIDDEN,
+    inter: int = INTER,
+    estimated_rows: int | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, np.ndarray, np.ndarray, np.ndarray]:
+    """Runs ``dispatched`` on random experts and checks it against the
+    reference over the received rows; padding past them holds junk.
+
+    Returns:
+        The received rows' output and input, their per-expert row starts,
+        and the dequantized gate/up and down weights.
+    """
+    n_experts = len(rows_per_expert)
     device = Accelerator()
     device_ref = DeviceRef(device.label, device.id)
     session = InferenceSession(devices=[device])
-    rng = np.random.default_rng(1)
-    sd = _checkpoint("layers.0.ffn.experts", rng)
-    received = sum(ROWS_PER_EXPERT)
-    rows = received + PAD_ROWS
+    sd = _checkpoint(
+        "layers.0.ffn.experts",
+        rng,
+        experts=n_experts,
+        hidden=hidden,
+        inter=inter,
+    )
+    received = sum(rows_per_expert)
     model = _dispatched_model(
         session,
         _experts(
-            sd, "layers.0.ffn.experts", device_ref, host_interleaved_scales=True
+            sd,
+            "layers.0.ffn.experts",
+            device_ref,
+            host_interleaved_scales=True,
+            interleave_gate_up=interleave_gate_up,
+            n_experts=n_experts,
+            hidden=hidden,
+            inter=inter,
         ),
         device_ref,
         rows,
+        estimated_rows,
     )
 
-    starts = np.zeros(EXPERTS + 1, np.uint32)
-    starts[1:] = np.cumsum(ROWS_PER_EXPERT)
+    starts = np.zeros(n_experts + 1, np.uint32)
+    starts[1:] = np.cumsum(rows_per_expert)
     # Each group's scales start on a 128-row tile of its own.
-    tiles = np.zeros(EXPERTS, np.int64)
-    tiles[1:] = np.cumsum([-(-n // 128) for n in ROWS_PER_EXPERT])[:-1]
+    tiles = np.zeros(n_experts, np.int64)
+    tiles[1:] = np.cumsum([-(-n // 128) for n in rows_per_expert])[:-1]
     scale_offsets = (tiles - starts[:-1] // 128).astype(np.uint32)
-    expert_ids = np.arange(EXPERTS, dtype=np.int32)
-    usage = np.array([max(ROWS_PER_EXPERT), EXPERTS], np.uint32)
+    expert_ids = np.arange(n_experts, dtype=np.int32)
+    usage = np.array([max(rows_per_expert), n_experts], np.uint32)
 
-    x = torch.from_numpy(rng.standard_normal((rows, HIDDEN))).to(torch.bfloat16)
+    x = torch.from_numpy(rng.standard_normal((rows, hidden))).to(torch.bfloat16)
     # Padding past the received rows holds whatever the buffer held.
     x[received:] = 1e4
     (got_buf,) = model.execute(
@@ -388,20 +454,35 @@ def test_dispatched_mxfp4_experts_match_the_reference() -> None:
     )
     got = torch.from_dlpack(got_buf).cpu()[:received]
 
-    gate_up, down = _dequantized(sd, "layers.0.ffn.experts")
+    gate_up, down = _dequantized(sd, "layers.0.ffn.experts", experts=n_experts)
     want = torch.cat(
         [
             _expert(x[starts[e] : starts[e + 1]], gate_up[e], down[e], None)
-            for e in range(EXPERTS)
-            if ROWS_PER_EXPERT[e]
+            for e in range(n_experts)
+            if rows_per_expert[e]
         ]
     )
     err = _rel_err(got, want)
     print(
-        f"dispatched MXFP4 experts: relative error {err:.2e} vs the reference"
+        f"dispatched MXFP4 experts ({hidden}x{inter}, interleaved="
+        f"{interleave_gate_up}): relative error {err:.2e} vs the reference"
     )
     assert err < REL_TOL
     assert torch.isfinite(got.float()).all()
+    return got, x[:received], starts, gate_up, down
+
+
+def test_dispatched_mxfp4_experts_match_the_reference() -> None:
+    """The expert-parallel path matches the reference over the received rows
+    and ignores the receive buffer's padding."""
+    rng = np.random.default_rng(1)
+    received = sum(ROWS_PER_EXPERT)
+    got, x, starts, gate_up, down = _run_dispatched(
+        rng,
+        ROWS_PER_EXPERT,
+        received + PAD_ROWS,
+        interleave_gate_up=False,
+    )
 
     # The combine weights the rows after the down projection; the
     # reference weights the down projection's input before its quantize. The
@@ -435,3 +516,29 @@ def test_dispatched_mxfp4_experts_match_the_reference() -> None:
         f"{combine_err:.2e} weighted after (combine)"
     )
     assert combine_err < 1.25 * reference_err
+
+
+def test_interleaved_dispatched_mxfp4_experts_match_the_reference() -> None:
+    """With gate/up rows interleaved, as under data parallelism, the fused
+    SwiGLU grouped matmul and the grouped matmul match the reference."""
+    _run_dispatched(
+        np.random.default_rng(2),
+        ROWS_PER_EXPERT,
+        sum(ROWS_PER_EXPERT) + PAD_ROWS,
+        interleave_gate_up=True,
+    )
+
+
+def test_fused_mxfp4_experts_match_the_reference() -> None:
+    """At DeepSeek-V4.1 Flash's expert shapes, a decode-sized batch in a
+    full-sized receive buffer runs the fused W4A8 MegaFFN, which must match
+    the reference too."""
+    _run_dispatched(
+        np.random.default_rng(3),
+        FLASH_ROWS_PER_EXPERT,
+        FLASH_RECEIVE_ROWS,
+        interleave_gate_up=True,
+        hidden=FLASH_HIDDEN,
+        inter=FLASH_INTER,
+        estimated_rows=sum(FLASH_ROWS_PER_EXPERT),
+    )

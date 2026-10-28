@@ -108,7 +108,6 @@ def test_mxfp4_activations_dispatch_as_mxfp8() -> None:
     fmt = RoutedExpertFormat.MXFP4
     assert fmt.dispatch_dtype == DType.float8_e4m3fn
     assert fmt.activation_quant_config.is_mxfp8
-    assert not fmt.fuses_dispatched_ffn
     assert RoutedExpertFormat.NVFP4.activation_quant_config.is_nvfp4
 
 
