@@ -1465,20 +1465,18 @@ struct Struct_chunked_qkv_rope_store_ragged_paged[
     @inline(.always)
     @staticmethod
     def execute[
-        cache_dtype: DType,
-        //,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=.bfloat16, rank=3, ...],
-        qkv: InputTensor[dtype=.bfloat16, rank=3, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        freqs_cis: InputTensor[dtype=.bfloat16, rank=2, ...],
-        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        output: Some[Output & Tensor],
+        qkv: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        freqs_cis: Some[Input & Tensor],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
         layer_idx: UInt32,
         value_scale: Float32,
         ctx: DeviceContext,
@@ -1486,30 +1484,50 @@ struct Struct_chunked_qkv_rope_store_ragged_paged[
         comptime assert is_gpu[
             target
         ](), "chunked QKV preparation requires a GPU"
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(qkv), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(freqs_cis), TileTensorable)
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime assert type_of(output).rank == 3
+        comptime assert type_of(qkv).rank == 3
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(freqs_cis).rank == 2
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
         comptime assert (
-            cache_dtype == DType.bfloat16
+            type_of(kv_blocks).dtype == DType.bfloat16
         ), "kv_blocks must be a rank-6 BF16 cache"
         var kv_collection = generic_get_paged_cache[
             v_head_size=Self.v_head_dim if Self.split_cache else -1
         ](
-            kv_blocks,
-            page_stride,
-            cache_lengths,
-            kv_lookup_table,
-            max_prompt_length,
-            max_cache_length,
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
         )
         return chunked_qkv_rope_store_paged_ragged[
             qk_head_dim=Self.qk_head_dim,
             v_head_dim=Self.v_head_dim,
             chunk_padding=Self.chunk_padding,
         ](
-            qkv.to_tile_tensor[.int64](),
-            input_row_offsets.to_tile_tensor[.int64](),
-            freqs_cis.to_tile_tensor[.int64](),
+            qkv.to_tile_tensor[.bfloat16](),
+            input_row_offsets.to_tile_tensor[.uint32](),
+            freqs_cis.to_tile_tensor[.bfloat16](),
             kv_collection,
             layer_idx,
-            output.to_tile_tensor[.int64](),
+            output.to_tile_tensor[.bfloat16](),
             value_scale,
             ctx,
         )
