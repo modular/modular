@@ -45,9 +45,9 @@ def test_matmul_sm90[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    cluster_shape: Coord[Int, Int, Int],
-    block_tile_shape: Coord[Int, Int, Int],
-    wgmma_shape: Coord[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
+    block_tile_shape: Tuple[Int, Int, Int],
+    wgmma_shape: Tuple[Int, Int, Int],
     num_consumer: Int = 1,
     num_pipeline_stages: Int = 4,
     transpose_b: Bool = True,
@@ -235,7 +235,7 @@ def test_matmul_sm90[
 
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
         block_tile_shape=block_tile_shape,
-        mma_shape=(wgmma_shape[0], wgmma_shape[1], wgmma_shape[2]),
+        mma_shape=wgmma_shape,
         cluster_shape=cluster_shape,
         num_pipeline_stages=num_pipeline_stages,
         num_consumer=num_consumer,

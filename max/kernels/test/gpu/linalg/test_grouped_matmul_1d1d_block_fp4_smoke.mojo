@@ -22,7 +22,6 @@ from max.gpu.host import DeviceContext
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.random import rand
 from layout import Idx, TileTensor, row_major
-from std.utils.coord import Coord
 from std.utils.index import Index, IndexList
 
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
@@ -47,7 +46,7 @@ def _test_grouped_1d1d_block_fp4_impl[
     num_experts: Int,
     N: Int,
     K: Int,
-    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
+    cluster_shape: Tuple[Int, Int, Int] = (1, 1, 1),
     cta_group: Int = 1,
     mma_n: Int = 128 * cta_group,
     AB_swapped: Bool = (cta_group == 2),
@@ -255,7 +254,7 @@ def _test_grouped_1d1d_mixed_experts[
     num_experts: Int,
     N: Int,
     K: Int,
-    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
+    cluster_shape: Tuple[Int, Int, Int] = (1, 1, 1),
     cta_group: Int = 1,
     mma_n: Int = 128 * cta_group,
     AB_swapped: Bool = (cta_group == 2),
@@ -474,7 +473,7 @@ def run_grouped_1d1d_block_fp4_smoke_suite[
         num_experts: Int,
         N: Int,
         K: Int,
-        cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
+        cluster_shape: Tuple[Int, Int, Int] = (1, 1, 1),
         cta_group: Int = 1,
         mma_n: Int = 128 * cta_group,
         AB_swapped: Bool = (cta_group == 2),

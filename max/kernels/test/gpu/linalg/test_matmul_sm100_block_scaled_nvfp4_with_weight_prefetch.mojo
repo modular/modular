@@ -36,9 +36,7 @@ from linalg.matmul.gpu.sm100_structured.block_scaled.block_scaled_matmul import 
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
-from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
-from std.utils.static_tuple import StaticTuple
 from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
     NVFP4_SF_VECTOR_SIZE,
@@ -60,9 +58,9 @@ def test_block_scaled_prefetch[
     b_type: DType,
     c_type: DType,
     scales_dtype: DType,
-    block_tile_shape: Coord[Int, Int, Int],
-    mma_shape: DynamicCoord[.int, 3],
-    cluster_shape: Coord[Int, Int, Int],
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
     cta_group: Int,
     transpose_b: Bool = True,
     block_swizzle_size: Int = 0,

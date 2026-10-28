@@ -31,7 +31,6 @@ from layout import (
     row_major,
 )
 
-from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 
 from linalg.fp4_utils import (
@@ -175,8 +174,8 @@ def test_existing_kernel_single_group[
     scales_dtype: DType,
     transpose_b: Bool,
     cta_group: Int,
-    mma_shape: DynamicCoord[.int, 3],
-    cluster_shape: Coord[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     """Test existing block-scaled kernel with a single problem.
 
@@ -389,8 +388,8 @@ def test_grouped_kernel_single_group[
     scales_dtype: DType,
     transpose_b: Bool,
     cta_group: Int,
-    mma_shape: DynamicCoord[.int, 3],
-    cluster_shape: Coord[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     """Test grouped kernel with a single group (should behave like non-grouped).
 
@@ -705,8 +704,8 @@ def test_grouped_kernel_multi_group_same_ptr[
     num_groups: Int,
     transpose_b: Bool,
     cta_group: Int,
-    mma_shape: DynamicCoord[.int, 3],
-    cluster_shape: Coord[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     """Test grouped kernel with multiple groups using same pointers.
 
@@ -1005,8 +1004,8 @@ def test_grouped_kernel_two_groups_different_ptrs[
     scales_dtype: DType,
     transpose_b: Bool,
     cta_group: Int,
-    mma_shape: DynamicCoord[.int, 3],
-    cluster_shape: Coord[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     """Test grouped kernel with 2 groups using different pointers per group.
 

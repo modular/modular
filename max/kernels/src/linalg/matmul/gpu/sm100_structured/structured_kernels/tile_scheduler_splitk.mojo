@@ -1180,8 +1180,8 @@ def splitk_k_tiles_per_split(
 @inline(.always)
 def get_num_tiles(
     problem_shape: IndexList[3],
-    block_tile_shape: Coord[Int, Int, Int],
-    cluster_shape: Coord[Int, Int],
+    block_tile_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int],
 ) -> IndexList[2]:
     """Computes the number of output tiles aligned up to the cluster shape.
 
@@ -1207,8 +1207,8 @@ def get_required_locks_buffer_size_bytes[
     accum_type: DType
 ](
     problem_shape: IndexList[3],
-    block_tile_shape: Coord[Int, Int, Int],
-    cluster_shape: Coord[Int, Int],
+    block_tile_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int],
 ) -> Int:
     """Computes the byte size of the lock buffer needed for split-K reduction.
 

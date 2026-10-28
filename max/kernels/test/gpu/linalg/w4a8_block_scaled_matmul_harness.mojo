@@ -214,7 +214,7 @@ def run_w4a8_block_scaled_matmul[
         a_type, b_type, C_DTYPE, SF_DTYPE, SF_DTYPE, True
     ](
         scaling_kind=UMMAKind.KIND_MXF8F6F4,
-        cluster_shape=cluster_shape,
+        cluster_shape=(cluster_shape[0], cluster_shape[1], cluster_shape[2]),
         mma_shape=(Int(cta_group * 128), Int(mma_n), Int(MMA_K)),
         block_swizzle_size=block_swizzle_size,
         cta_group=cta_group,

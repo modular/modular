@@ -833,7 +833,7 @@ def _grouped_matmul_sm100_blockwise_scaled_fp8_impl[
         type_of(b_tma_op).tile_shape,
         type_of(b_tma_op).desc_shape,
         config.block_tile_shape,
-        (config.mma_shape[0], config.mma_shape[1], config.mma_shape[2]),
+        config.mma_shape,
         transpose_b=config.transpose_b,
         a_swizzle=config.a_swizzle,
         b_swizzle=config.b_swizzle,
@@ -2279,7 +2279,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
         a_type,
         b_type,
         config.block_tile_shape,
-        (config.mma_shape[0], config.mma_shape[1], config.mma_shape[2]),
+        config.mma_shape,
         accum_type=accum_type,
         cta_group=config.cta_group,
         cluster_shape=config.cluster_shape,
@@ -2307,11 +2307,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
             config.cluster_shape[2],
         ),
         cta_group=config.cta_group,
-        tile_shape=(
-            config.block_tile_shape[0],
-            config.block_tile_shape[1],
-            config.block_tile_shape[2],
-        ),
+        tile_shape=config.block_tile_shape,
         swapAB=False,
     ](_num_active_experts, a_offsets)
 
@@ -2406,11 +2402,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
                     b_smem_layout=b_smem_layout,
                     a_scales_smem_layout=a_scales_smem_layout,
                     block_tile_shape=config.block_tile_shape,
-                    mma_shape=(
-                        config.mma_shape[0],
-                        config.mma_shape[1],
-                        config.mma_shape[2],
-                    ),
+                    mma_shape=config.mma_shape,
                     cta_group=config.cta_group,
                 ](
                     a_tma_op,
@@ -2469,11 +2461,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
 
                     consumer_main_loop[
                         block_tile_shape=config.block_tile_shape,
-                        mma_shape=(
-                            config.mma_shape[0],
-                            config.mma_shape[1],
-                            config.mma_shape[2],
-                        ),
+                        mma_shape=config.mma_shape,
                         cta_group=config.cta_group,
                         cluster_shape=config.cluster_shape,
                     ](
@@ -2533,11 +2521,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
             comptime reg_info = _get_accumulator_size[
                 c_smem_layout=c_smem_layout,
                 block_tile_shape=config.block_tile_shape,
-                mma_shape=(
-                    config.mma_shape[0],
-                    config.mma_shape[1],
-                    config.mma_shape[2],
-                ),
+                mma_shape=config.mma_shape,
                 cta_group=config.cta_group,
             ]()
 
@@ -2562,11 +2546,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
                 promote_accumulators[
                     a_scales_smem_layout=a_scales_smem_layout,
                     block_tile_shape=config.block_tile_shape,
-                    mma_shape=(
-                        config.mma_shape[0],
-                        config.mma_shape[1],
-                        config.mma_shape[2],
-                    ),
+                    mma_shape=config.mma_shape,
                     cta_group=config.cta_group,
                     CLUSTER_SIZE=Int32(CLUSTER_SIZE),
                     is_lower_frag_required=is_lower_frag_required,
@@ -2600,11 +2580,7 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
                 c_smem_layout=c_smem_layout,
                 c_static_N=expert_n,
                 block_tile_shape=config.block_tile_shape,
-                mma_shape=(
-                    config.mma_shape[0],
-                    config.mma_shape[1],
-                    config.mma_shape[2],
-                ),
+                mma_shape=config.mma_shape,
                 is_lower_frag_required=is_lower_frag_required,
                 cta_group=config.cta_group,
                 num_output_warps=num_output_warps,

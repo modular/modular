@@ -30,8 +30,7 @@ from linalg.matmul.gpu.sm90.matmul import warp_specialize_gemm_with_multicasting
 from linalg.matmul.gpu.tile_scheduler import RasterOrder
 from linalg.utils_gpu import MatmulConfig
 
-from std.utils.coord import Coord
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 
 
 def test_warp_specialize_gemm_with_multicasting[
@@ -39,11 +38,11 @@ def test_warp_specialize_gemm_with_multicasting[
     NType: CoordLike,
     KType: CoordLike,
     //,
-    block_tile_shape: Coord[Int, Int, Int],
+    block_tile_shape: Tuple[Int, Int, Int],
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    cluster_shape: Coord[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
     num_pipeline_stages: Int = 4,
     transpose_b: Bool = True,
     partitioned_multicast: Bool = False,

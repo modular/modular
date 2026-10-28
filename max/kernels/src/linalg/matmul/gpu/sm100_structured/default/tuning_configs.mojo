@@ -21,11 +21,9 @@ the curated tuning lists used by the SM100 structured dispatch tables.
 from ...tile_scheduler import RasterOrder
 from linalg.gemv import GEMVAlgorithm
 from internal_utils import TuningConfig
-from std.utils.coord import Coord, DynamicCoord
-from std.utils.index import Index
 
 
-struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
+struct TuningConfigSM100(RegisterPassable, TuningConfig):
     """Holds SM100 matmul kernel launch parameters for a range of MxNxK shapes.
 
     Stores the MMA shape, block tile shape, cluster shape, swizzle and
@@ -41,9 +39,9 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
     var K: Int
 
     # Kernel parameters
-    var mma_shape: Coord[Int, Int, Int]
-    var block_tile_shape: Coord[Int, Int, Int]
-    var cluster_shape: Coord[Int, Int, Int]
+    var mma_shape: Tuple[Int, Int, Int]
+    var block_tile_shape: Tuple[Int, Int, Int]
+    var cluster_shape: Tuple[Int, Int, Int]
     var block_swizzle_size: Int
     var rasterize_order: RasterOrder
     var cta_group: Int
@@ -62,9 +60,9 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
         M: Int,
         N: Int,
         K: Int,
-        mma_shape: Coord[Int, Int, Int],
-        block_tile_shape: Coord[Int, Int, Int],
-        cluster_shape: Coord[Int, Int, Int],
+        mma_shape: Tuple[Int, Int, Int],
+        block_tile_shape: Tuple[Int, Int, Int],
+        cluster_shape: Tuple[Int, Int, Int],
         block_swizzle_size: Int,
         rasterize_order: RasterOrder,
         cta_group: Int = 2,
@@ -120,9 +118,9 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
         M_end: Int,
         N: Int,
         K: Int,
-        mma_shape: Coord[Int, Int, Int],
+        mma_shape: Tuple[Int, Int, Int],
         cta_group: Int,
-        cluster_shape: Coord[Int, Int, Int],
+        cluster_shape: Tuple[Int, Int, Int],
         block_swizzle_size: Int,
         rasterize_order: RasterOrder,
         swapAB: Bool = False,

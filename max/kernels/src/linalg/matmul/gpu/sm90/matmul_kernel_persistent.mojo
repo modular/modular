@@ -47,7 +47,11 @@ __extension HopperMatmulSM90Kernel:
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
             Int32(num_threads)
         ),
-        `nvvm.cluster_dim`=cluster_shape,
+        `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+            Int32(cluster_shape[0]),
+            Int32(cluster_shape[1]),
+            Int32(cluster_shape[2]),
+        ),
     )
     @__name(
         t"sm90_matmul_persistent_{Self.a_type}_{Self.b_type}_{Self.c_type}{'_cf' if has_compute_fn else ''}{'_ep' if has_epilogue_fn else ''}",
@@ -193,7 +197,11 @@ __extension HopperMatmulSM90Kernel:
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
             Int32(num_threads)
         ),
-        `nvvm.cluster_dim`=cluster_shape,
+        `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+            Int32(cluster_shape[0]),
+            Int32(cluster_shape[1]),
+            Int32(cluster_shape[2]),
+        ),
     )
     @__name(
         t"sm90_matmul_unaligned_{Self.a_type}_{Self.b_type}_{Self.c_type}{'_cf' if has_compute_fn else ''}{'_ep' if has_epilogue_fn else ''}",

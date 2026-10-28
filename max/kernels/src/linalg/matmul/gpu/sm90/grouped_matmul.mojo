@@ -48,7 +48,7 @@ def default_config_sm90[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool,
-    wgmma_shape: Coord[Int, Int, Int],
+    wgmma_shape: Tuple[Int, Int, Int],
 ]() -> MatmulConfig[a_type, b_type, c_type, transpose_b]:
     """Returns the default SM90 matmul config for the given WGMMA shape.
 
@@ -71,7 +71,7 @@ def default_config_sm90[
     comptime BK = 128 // size_of[a_type]()
     return MatmulConfig[a_type, b_type, c_type, transpose_b](
         block_tile_shape=(128, BN, BK),
-        mma_shape=(wgmma_shape[0], wgmma_shape[1], wgmma_shape[2]),
+        mma_shape=wgmma_shape,
         cluster_shape=(1, 1, 1),
         num_pipeline_stages=4,
         num_consumer=2,
@@ -88,7 +88,7 @@ def grouped_matmul_sm90[
     //,
     *,
     transpose_b: Bool = True,
-    wgmma_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](64, 256, 16),
+    wgmma_shape: Tuple[Int, Int, Int] = (64, 256, 16),
     config: MatmulConfig[
         a_type, b_type, c_type, transpose_b
     ] = default_config_sm90[a_type, b_type, c_type, transpose_b, wgmma_shape](),
@@ -208,7 +208,7 @@ def grouped_matmul_sm90[
         type_of(c).LayoutType,
         c_smem_layout,
         config.block_tile_shape,
-        (wgmma_shape[0], wgmma_shape[1], wgmma_shape[2]),
+        wgmma_shape,
         cluster_shape,
         config.num_pipeline_stages,
         num_threads,

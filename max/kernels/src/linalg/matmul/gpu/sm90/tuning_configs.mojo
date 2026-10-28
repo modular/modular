@@ -19,8 +19,6 @@ pre-tuned BF16 lookup table of kernel hyperparameters for specific
 
 from ..tile_scheduler import MatmulSchedule, RasterOrder
 from internal_utils import TuningConfig
-from std.utils.coord import Coord, DynamicCoord
-from std.utils.index import Index, IndexList
 from std.collections import OptionalReg
 from max.gpu.host.info import H100
 
@@ -60,7 +58,7 @@ struct TuningGroup(EnumLike, Equatable, TrivialRegisterPassable, Writable):
         comptime assert False, "TuningGroup has no payload"
 
 
-struct TuningConfigSM90(TrivialRegisterPassable, TuningConfig):
+struct TuningConfigSM90(RegisterPassable, TuningConfig):
     """Tuning record for a single (M, N, K) SM90 matmul configuration.
 
     Stores the full set of kernel hyperparameters: MMA shape, block tile
@@ -73,13 +71,13 @@ struct TuningConfigSM90(TrivialRegisterPassable, TuningConfig):
     var N: Int
     var K: Int
 
-    var mma_shape: Coord[Int, Int, Int]
-    var block_tile_shape: Coord[Int, Int, Int]
+    var mma_shape: Tuple[Int, Int, Int]
+    var block_tile_shape: Tuple[Int, Int, Int]
     var num_pipeline_stages: Int
-    var cluster_shape: Coord[Int, Int, Int]
+    var cluster_shape: Tuple[Int, Int, Int]
     var num_consumer: Int
     var partitioned_multicast: Bool
-    var grid_shape: OptionalReg[IndexList[2]]  # = None
+    var grid_shape: Optional[Tuple[Int, Int]]
     var schedule: MatmulSchedule  # =  MatmulSchedule.NONE
     var splits: OptionalReg[Int]
     var raster_order: OptionalReg[RasterOrder]
@@ -90,13 +88,13 @@ struct TuningConfigSM90(TrivialRegisterPassable, TuningConfig):
         M: Int,
         N: Int,
         K: Int,
-        mma_shape: Coord[Int, Int, Int],
-        block_tile_shape: Coord[Int, Int, Int],
+        mma_shape: Tuple[Int, Int, Int],
+        block_tile_shape: Tuple[Int, Int, Int],
         num_pipeline_stages: Int,
-        cluster_shape: Coord[Int, Int, Int],
+        cluster_shape: Tuple[Int, Int, Int],
         num_consumer: Int,
         partitioned_multicast: Bool,
-        grid_shape: OptionalReg[IndexList[2]] = None,
+        grid_shape: Optional[Tuple[Int, Int]] = None,
         schedule: MatmulSchedule = MatmulSchedule.NONE,
         splits: OptionalReg[Int] = None,
         raster_order: OptionalReg[RasterOrder] = None,
@@ -154,7 +152,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=8,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -173,7 +171,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=8,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -192,7 +190,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=8,
             num_consumer=1,
             partitioned_multicast=True,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -211,7 +209,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=7,
             num_consumer=1,
             partitioned_multicast=True,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -230,7 +228,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=8,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -249,7 +247,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=8,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -268,7 +266,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=8,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -287,7 +285,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=8,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -306,7 +304,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=9,
             num_consumer=1,
             partitioned_multicast=True,
-            grid_shape=Index(4, H100.sm_count // 4),
+            grid_shape=(4, H100.sm_count // 4),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -325,7 +323,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=12,
             num_consumer=1,
             partitioned_multicast=True,
-            grid_shape=Index(4, H100.sm_count // 4),
+            grid_shape=(4, H100.sm_count // 4),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -344,7 +342,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=8,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(4, H100.sm_count // 4),
+            grid_shape=(4, H100.sm_count // 4),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -363,7 +361,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=8,
             num_consumer=2,
             partitioned_multicast=True,
-            grid_shape=Index(8, H100.sm_count // 8),
+            grid_shape=(8, H100.sm_count // 8),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -382,7 +380,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=7,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(16, H100.sm_count // 16),
+            grid_shape=(16, H100.sm_count // 16),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -401,7 +399,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=8,
             num_consumer=2,
             partitioned_multicast=True,
-            grid_shape=Index(4, H100.sm_count // 4),
+            grid_shape=(4, H100.sm_count // 4),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -420,7 +418,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=6,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if True else None,
             raster_order=OptionalReg[RasterOrder](
@@ -439,7 +437,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=6,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if True else None,
             raster_order=OptionalReg[RasterOrder](
@@ -458,7 +456,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=6,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if True else None,
             raster_order=OptionalReg[RasterOrder](
@@ -477,7 +475,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=6,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if True else None,
             raster_order=OptionalReg[RasterOrder](
@@ -496,7 +494,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=6,
             num_consumer=1,
             partitioned_multicast=True,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if True else None,
             raster_order=OptionalReg[RasterOrder](
@@ -515,7 +513,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=6,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if True else None,
             raster_order=OptionalReg[RasterOrder](
@@ -534,7 +532,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=9,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -553,7 +551,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=12,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -572,7 +570,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=9,
             num_consumer=1,
             partitioned_multicast=True,
-            grid_shape=Index(8, H100.sm_count // 8),
+            grid_shape=(8, H100.sm_count // 8),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -591,7 +589,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=9,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(1, H100.sm_count // 1),
+            grid_shape=(1, H100.sm_count // 1),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -610,7 +608,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=11,
             num_consumer=1,
             partitioned_multicast=True,
-            grid_shape=Index(16, H100.sm_count // 16),
+            grid_shape=(16, H100.sm_count // 16),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -629,7 +627,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=11,
             num_consumer=1,
             partitioned_multicast=True,
-            grid_shape=Index(8, H100.sm_count // 8),
+            grid_shape=(8, H100.sm_count // 8),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -648,7 +646,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=8,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(2, H100.sm_count // 2),
+            grid_shape=(2, H100.sm_count // 2),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -667,7 +665,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=8,
             num_consumer=2,
             partitioned_multicast=True,
-            grid_shape=Index(16, H100.sm_count // 16),
+            grid_shape=(16, H100.sm_count // 16),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -686,7 +684,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -705,7 +703,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -724,7 +722,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -743,7 +741,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -762,7 +760,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=6,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -781,7 +779,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=6,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -800,7 +798,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=6,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -819,7 +817,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=6,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -838,7 +836,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=6,
             num_consumer=1,
             partitioned_multicast=True,
-            grid_shape=Index(16, H100.sm_count // 16),
+            grid_shape=(16, H100.sm_count // 16),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -857,7 +855,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=5,
             num_consumer=1,
             partitioned_multicast=True,
-            grid_shape=Index(1, H100.sm_count // 1),
+            grid_shape=(1, H100.sm_count // 1),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -876,7 +874,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=6,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(6, H100.sm_count // 6),
+            grid_shape=(6, H100.sm_count // 6),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -895,7 +893,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=6,
             num_consumer=1,
             partitioned_multicast=True,
-            grid_shape=Index(1, H100.sm_count // 1),
+            grid_shape=(1, H100.sm_count // 1),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -914,7 +912,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=5,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(16, H100.sm_count // 16),
+            grid_shape=(16, H100.sm_count // 16),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -933,7 +931,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=5,
             num_consumer=2,
             partitioned_multicast=True,
-            grid_shape=Index(2, H100.sm_count // 2),
+            grid_shape=(2, H100.sm_count // 2),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -952,7 +950,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=6,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -971,7 +969,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=6,
             num_consumer=1,
             partitioned_multicast=True,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -990,7 +988,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=1,
             partitioned_multicast=True,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -1009,7 +1007,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -1028,7 +1026,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -1047,7 +1045,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -1066,7 +1064,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -1085,7 +1083,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -1104,7 +1102,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=6,
             num_consumer=1,
             partitioned_multicast=True,
-            grid_shape=Index(6, H100.sm_count // 6),
+            grid_shape=(6, H100.sm_count // 6),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -1123,7 +1121,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(2, H100.sm_count // 2),
+            grid_shape=(2, H100.sm_count // 2),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -1142,7 +1140,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=True,
-            grid_shape=Index(16, H100.sm_count // 16),
+            grid_shape=(16, H100.sm_count // 16),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -1161,7 +1159,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=True,
-            grid_shape=Index(4, H100.sm_count // 4),
+            grid_shape=(4, H100.sm_count // 4),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -1180,7 +1178,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=True,
-            grid_shape=Index(1, H100.sm_count // 1),
+            grid_shape=(1, H100.sm_count // 1),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -1199,7 +1197,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=5,
             num_consumer=2,
             partitioned_multicast=True,
-            grid_shape=Index(2, H100.sm_count // 2),
+            grid_shape=(2, H100.sm_count // 2),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -1218,7 +1216,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=8,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -1238,7 +1236,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=8,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(132, H100.sm_count // 132),
+            grid_shape=(132, H100.sm_count // 132),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -1378,7 +1376,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=8,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(128, H100.sm_count // 128),
+            grid_shape=(128, H100.sm_count // 128),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -1810,7 +1808,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=9,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(128, H100.sm_count // 128),
+            grid_shape=(128, H100.sm_count // 128),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -1954,7 +1952,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=10,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(128, H100.sm_count // 128),
+            grid_shape=(128, H100.sm_count // 128),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2074,7 +2072,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(128, H100.sm_count // 128),
+            grid_shape=(128, H100.sm_count // 128),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2098,7 +2096,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=5,
             num_consumer=2,
             partitioned_multicast=True,
-            grid_shape=Index(128, H100.sm_count // 128),
+            grid_shape=(128, H100.sm_count // 128),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2122,7 +2120,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=True,
-            grid_shape=Index(128, H100.sm_count // 128),
+            grid_shape=(128, H100.sm_count // 128),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2242,7 +2240,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(10, H100.sm_count // 10),
+            grid_shape=(10, H100.sm_count // 10),
             schedule=MatmulSchedule(2),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2262,7 +2260,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=7,
             num_consumer=1,
             partitioned_multicast=True,
-            grid_shape=Index(1, H100.sm_count // 1),
+            grid_shape=(1, H100.sm_count // 1),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if True else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2282,7 +2280,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=12,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(1, H100.sm_count // 1),
+            grid_shape=(1, H100.sm_count // 1),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if True else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2302,7 +2300,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(1, H100.sm_count // 1),
+            grid_shape=(1, H100.sm_count // 1),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if True else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2322,7 +2320,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=6,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(1, H100.sm_count // 1),
+            grid_shape=(1, H100.sm_count // 1),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if True else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2342,7 +2340,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=7,
             num_consumer=1,
             partitioned_multicast=True,
-            grid_shape=Index(1, H100.sm_count // 1),
+            grid_shape=(1, H100.sm_count // 1),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if True else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2362,7 +2360,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=12,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(1, H100.sm_count // 1),
+            grid_shape=(1, H100.sm_count // 1),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if True else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2382,7 +2380,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(1, H100.sm_count // 1),
+            grid_shape=(1, H100.sm_count // 1),
             schedule=MatmulSchedule(3),
             splits=OptionalReg[Int](2) if True else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2402,7 +2400,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=6,
             num_consumer=1,
             partitioned_multicast=False,
-            grid_shape=Index(1, H100.sm_count // 1),
+            grid_shape=(1, H100.sm_count // 1),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if True else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2422,7 +2420,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=7,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(2, H100.sm_count // 2),
+            grid_shape=(2, H100.sm_count // 2),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2442,7 +2440,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=6,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(2, H100.sm_count // 2),
+            grid_shape=(2, H100.sm_count // 2),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2462,7 +2460,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=5,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(2, H100.sm_count // 2),
+            grid_shape=(2, H100.sm_count // 2),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2482,7 +2480,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=7,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(8, H100.sm_count // 8),
+            grid_shape=(8, H100.sm_count // 8),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2502,7 +2500,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=6,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(2, H100.sm_count // 2),
+            grid_shape=(2, H100.sm_count // 2),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2522,7 +2520,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=5,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(16, H100.sm_count // 16),
+            grid_shape=(16, H100.sm_count // 16),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2542,7 +2540,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=7,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(8, H100.sm_count // 8),
+            grid_shape=(8, H100.sm_count // 8),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2562,7 +2560,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=5,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(1, H100.sm_count // 1),
+            grid_shape=(1, H100.sm_count // 1),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2582,7 +2580,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(4, H100.sm_count // 4),
+            grid_shape=(4, H100.sm_count // 4),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2602,7 +2600,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=5,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(2, H100.sm_count // 2),
+            grid_shape=(2, H100.sm_count // 2),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2622,7 +2620,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(1, H100.sm_count // 1),
+            grid_shape=(1, H100.sm_count // 1),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2642,7 +2640,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(1, H100.sm_count // 1),
+            grid_shape=(1, H100.sm_count // 1),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2662,7 +2660,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(16, H100.sm_count // 16),
+            grid_shape=(16, H100.sm_count // 16),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2682,7 +2680,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=5,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(2, H100.sm_count // 2),
+            grid_shape=(2, H100.sm_count // 2),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2702,7 +2700,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=6,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(2, H100.sm_count // 2),
+            grid_shape=(2, H100.sm_count // 2),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2722,7 +2720,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(16, H100.sm_count // 16),
+            grid_shape=(16, H100.sm_count // 16),
             schedule=MatmulSchedule(2),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2742,7 +2740,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(16, H100.sm_count // 16),
+            grid_shape=(16, H100.sm_count // 16),
             schedule=MatmulSchedule(2),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2762,7 +2760,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(16, H100.sm_count // 16),
+            grid_shape=(16, H100.sm_count // 16),
             schedule=MatmulSchedule(2),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2782,7 +2780,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(8, H100.sm_count // 8),
+            grid_shape=(8, H100.sm_count // 8),
             schedule=MatmulSchedule(2),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2802,7 +2800,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(8, H100.sm_count // 8),
+            grid_shape=(8, H100.sm_count // 8),
             schedule=MatmulSchedule(2),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2822,7 +2820,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(8, H100.sm_count // 8),
+            grid_shape=(8, H100.sm_count // 8),
             schedule=MatmulSchedule(2),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2842,7 +2840,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(4, H100.sm_count // 4),
+            grid_shape=(4, H100.sm_count // 4),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2862,7 +2860,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(6, H100.sm_count // 6),
+            grid_shape=(6, H100.sm_count // 6),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2882,7 +2880,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(8, H100.sm_count // 8),
+            grid_shape=(8, H100.sm_count // 8),
             schedule=MatmulSchedule(2),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2902,7 +2900,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(8, H100.sm_count // 8),
+            grid_shape=(8, H100.sm_count // 8),
             schedule=MatmulSchedule(2),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2922,7 +2920,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(1, H100.sm_count // 1),
+            grid_shape=(1, H100.sm_count // 1),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2942,7 +2940,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(1, H100.sm_count // 1),
+            grid_shape=(1, H100.sm_count // 1),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2962,7 +2960,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(16, H100.sm_count // 16),
+            grid_shape=(16, H100.sm_count // 16),
             schedule=MatmulSchedule(2),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -2982,7 +2980,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(16, H100.sm_count // 16),
+            grid_shape=(16, H100.sm_count // 16),
             schedule=MatmulSchedule(2),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -3002,7 +3000,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(1, H100.sm_count // 1),
+            grid_shape=(1, H100.sm_count // 1),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -3022,7 +3020,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(4, H100.sm_count // 4),
+            grid_shape=(4, H100.sm_count // 4),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -3042,7 +3040,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(1, H100.sm_count // 1),
+            grid_shape=(1, H100.sm_count // 1),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -3062,7 +3060,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(6, H100.sm_count // 6),
+            grid_shape=(6, H100.sm_count // 6),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -3082,7 +3080,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(1, H100.sm_count // 1),
+            grid_shape=(1, H100.sm_count // 1),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -3102,7 +3100,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(8, H100.sm_count // 8),
+            grid_shape=(8, H100.sm_count // 8),
             schedule=MatmulSchedule(2),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -3122,7 +3120,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(8, H100.sm_count // 8),
+            grid_shape=(8, H100.sm_count // 8),
             schedule=MatmulSchedule(2),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -3142,7 +3140,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(8, H100.sm_count // 8),
+            grid_shape=(8, H100.sm_count // 8),
             schedule=MatmulSchedule(2),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -3162,7 +3160,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(8, H100.sm_count // 8),
+            grid_shape=(8, H100.sm_count // 8),
             schedule=MatmulSchedule(2),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -3182,7 +3180,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(1, H100.sm_count // 1),
+            grid_shape=(1, H100.sm_count // 1),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -3202,7 +3200,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(16, H100.sm_count // 16),
+            grid_shape=(16, H100.sm_count // 16),
             schedule=MatmulSchedule(2),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -3222,7 +3220,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(1, H100.sm_count // 1),
+            grid_shape=(1, H100.sm_count // 1),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -3242,7 +3240,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(8, H100.sm_count // 8),
+            grid_shape=(8, H100.sm_count // 8),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -3262,7 +3260,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(6, H100.sm_count // 6),
+            grid_shape=(6, H100.sm_count // 6),
             schedule=MatmulSchedule(2),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -3282,7 +3280,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(8, H100.sm_count // 8),
+            grid_shape=(8, H100.sm_count // 8),
             schedule=MatmulSchedule(2),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -3302,7 +3300,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(8, H100.sm_count // 8),
+            grid_shape=(8, H100.sm_count // 8),
             schedule=MatmulSchedule(2),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -3322,7 +3320,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(6, H100.sm_count // 6),
+            grid_shape=(6, H100.sm_count // 6),
             schedule=MatmulSchedule(2),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -3342,7 +3340,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(8, H100.sm_count // 8),
+            grid_shape=(8, H100.sm_count // 8),
             schedule=MatmulSchedule(2),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -3362,7 +3360,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(4, H100.sm_count // 4),
+            grid_shape=(4, H100.sm_count // 4),
             schedule=MatmulSchedule(0),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -3382,7 +3380,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(16, H100.sm_count // 16),
+            grid_shape=(16, H100.sm_count // 16),
             schedule=MatmulSchedule(2),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](
@@ -3402,7 +3400,7 @@ def _get_tuning_list_bf16[
             num_pipeline_stages=4,
             num_consumer=2,
             partitioned_multicast=False,
-            grid_shape=Index(8, H100.sm_count // 8),
+            grid_shape=(8, H100.sm_count // 8),
             schedule=MatmulSchedule(2),
             splits=OptionalReg[Int](2) if False else None,
             raster_order=OptionalReg[RasterOrder](

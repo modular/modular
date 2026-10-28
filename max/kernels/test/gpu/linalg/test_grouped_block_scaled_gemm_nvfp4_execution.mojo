@@ -35,7 +35,6 @@ from layout import (
     row_major,
 )
 
-from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 
 from linalg.fp4_utils import (
@@ -176,8 +175,8 @@ def test_grouped_kernel_nvfp4_single_group[
     scales_dtype: DType,
     transpose_b: Bool,
     cta_group: Int,
-    mma_shape: DynamicCoord[.int, 3],
-    cluster_shape: Coord[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     """Test grouped kernel with NVFP4 (4-bit packed) data format.
 
@@ -492,8 +491,8 @@ def test_grouped_kernel_nvfp4_multi_group[
     scales_dtype: DType,
     transpose_b: Bool,
     cta_group: Int,
-    mma_shape: DynamicCoord[.int, 3],
-    cluster_shape: Coord[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     """Test grouped kernel with NVFP4 and 2 groups using different pointers."""
     print("\n--- Testing grouped kernel NVFP4 (2 groups, different ptrs) ---")

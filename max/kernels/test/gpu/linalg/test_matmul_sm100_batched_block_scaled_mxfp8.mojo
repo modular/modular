@@ -23,9 +23,7 @@ from linalg.matmul.gpu.sm100.block_scaled_matmul import (
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig, GEMMKind
 from std.math import ceildiv, align_up
-from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
-from std.utils.static_tuple import StaticTuple
 from linalg.fp4_utils import (
     MXFP8_SF_DTYPE,
     SF_MN_GROUP_SIZE,
@@ -63,9 +61,9 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     b_type: DType,
     c_type: DType,
     scales_dtype: DType,
-    block_tile_shape: Coord[Int, Int, Int],
-    mma_shape: DynamicCoord[.int, 3],
-    cluster_shape: Coord[Int, Int, Int],
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
     cta_group: Int,
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,

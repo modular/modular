@@ -37,9 +37,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
 )
 from nn.normalization import rms_norm_gpu
 
-from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
-from std.utils.static_tuple import StaticTuple
 
 
 def test_blackwell_matmul_with_weight_prefetch[
@@ -50,9 +48,9 @@ def test_blackwell_matmul_with_weight_prefetch[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    block_tile_shape: Coord[Int, Int, Int],
-    mma_shape: DynamicCoord[.int, 3],
-    cluster_shape: Coord[Int, Int, Int],
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
     cta_group: Int,
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -179,9 +177,9 @@ def test_rmsnorm_then_matmul[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    block_tile_shape: Coord[Int, Int, Int],
-    mma_shape: DynamicCoord[.int, 3],
-    cluster_shape: Coord[Int, Int, Int],
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
     cta_group: Int,
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,

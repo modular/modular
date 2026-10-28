@@ -39,9 +39,7 @@ from linalg.matmul.gpu.sm100.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
 from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
-from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
-from std.utils.static_tuple import StaticTuple
 from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
     NVFP4_SF_VECTOR_SIZE,
@@ -70,9 +68,9 @@ def _test_impl[
     b_type: DType,
     c_type: DType,
     scales_dtype: DType,
-    block_tile_shape: Coord[Int, Int, Int],
-    mma_shape: DynamicCoord[.int, 3],
-    cluster_shape: Coord[Int, Int, Int],
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
     cta_group: Int,
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -321,9 +319,9 @@ def run_matmul_sm100_block_scaled_fp4_small_bn_prefetch_suite[
             b_type: DType,
             c_type: DType,
             _scales_dtype: DType,
-            block_tile_shape: Coord[Int, Int, Int],
-            mma_shape: DynamicCoord[.int, 3],
-            cluster_shape: Coord[Int, Int, Int],
+            block_tile_shape: Tuple[Int, Int, Int],
+            mma_shape: Tuple[Int, Int, Int],
+            cluster_shape: Tuple[Int, Int, Int],
             cta_group: Int,
             transpose_b: Bool = True,
             a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,

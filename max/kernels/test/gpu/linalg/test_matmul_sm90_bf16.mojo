@@ -16,15 +16,15 @@ from linalg.matmul.gpu.sm90.testbed import test_matmul_sm90
 from linalg.matmul.gpu.tile_scheduler import MatmulSchedule
 from layout import Idx
 
-from std.utils.index import Index
-
 # Helper to calculate block_tile_shape based on num_consumer and wgmma_n
-comptime block_tile_shape[num_consumer: Int, wgmma_n: Int] = Index(
-    64 * num_consumer, wgmma_n, 64
+comptime block_tile_shape[num_consumer: Int, wgmma_n: Int] = (
+    64 * num_consumer,
+    wgmma_n,
+    64,
 )
 
 # Helper to calculate wgmma_shape - fixed for bfloat16
-comptime wgmma_shape[wgmma_n: Int] = Index(64, wgmma_n, 16)
+comptime wgmma_shape[wgmma_n: Int] = (64, wgmma_n, 16)
 
 
 def main() raises:

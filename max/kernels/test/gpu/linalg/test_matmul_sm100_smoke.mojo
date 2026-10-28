@@ -38,6 +38,7 @@ from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils import assert_almost_equal
 from std.random import rand
+from std.testing import assert_equal
 from layout import (
     TileTensor,
     CoordLike,
@@ -51,10 +52,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
 
-from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
-from std.utils.static_tuple import StaticTuple
-from std.utils.coord import Coord
 
 
 def test_blackwell_matmul[
@@ -65,9 +63,9 @@ def test_blackwell_matmul[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    block_tile_shape: Coord[Int, Int, Int],
-    mma_shape: DynamicCoord[.int, 3],
-    cluster_shape: Coord[Int, Int, Int],
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
     cta_group: Int,
     transpose_b: Bool = True,
     block_swizzle_size: Int = 0,
@@ -204,7 +202,30 @@ def test_blackwell_matmul[
     _ = b_device^
 
 
+def test_output_tile_override() raises:
+    var derived = MatmulConfig[.bfloat16, .bfloat16, .bfloat16](
+        cta_group=1,
+        mma_shape=(128, 32, 16),
+        cluster_shape=(1, 1, 1),
+        num_pipeline_stages=1,
+    )
+    var overridden = MatmulConfig[.bfloat16, .bfloat16, .bfloat16](
+        cta_group=1,
+        mma_shape=(128, 32, 16),
+        cluster_shape=(1, 1, 1),
+        num_pipeline_stages=1,
+        output_tile_shape=Optional((128, 64)),
+        c_swizzle=TensorMapSwizzle.SWIZZLE_NONE,
+    )
+    assert_equal(derived.block_tile_shape, (128, 32, 64))
+    assert_equal(derived.output_tile_shape, (128, 32))
+    assert_equal(overridden.block_tile_shape, (128, 32, 64))
+    assert_equal(overridden.output_tile_shape, (128, 64))
+    assert_equal(overridden.c_swizzle, TensorMapSwizzle.SWIZZLE_NONE)
+
+
 def main() raises:
+    test_output_tile_override()
     print("=" * 60)
     print("SM100 MATMUL SMOKE TEST")
     print("=" * 60)

@@ -403,8 +403,8 @@ struct Conv2dFpropKernel[
     comptime TileWriterType = TileWriter[
         a_type=Self.act_type,
         accum_type=Self.accum_type,
-        block_tile_shape=Self.config.block_tile_shape,
-        mma_shape=Self.config.mma_shape,
+        block_tile_shape=(Self.BM, Self.BN, Self.BK),
+        mma_shape=(Self.MMA_M, Self.MMA_N, Self.MMA_K),
         opc=Self.opc,
         c_swizzle=Self.config.c_swizzle,
         transpose_c=False,

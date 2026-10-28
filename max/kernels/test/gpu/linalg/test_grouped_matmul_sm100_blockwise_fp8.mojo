@@ -28,7 +28,6 @@ from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
 )
 from linalg.matmul.gpu.sm100.config import MatmulConfig
-from std.utils.coord import DynamicCoord
 from std.testing import assert_almost_equal, assert_equal
 
 from std.utils.index import Index, IndexList
@@ -39,7 +38,7 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     out_type: DType,
     num_experts: Int,
     expert_shape: IndexList[2],
-    umma_shape: DynamicCoord[.int, 3] = (64, 64, 32),
+    umma_shape: Tuple[Int, Int, Int] = (64, 64, 32),
     use_epilogue: Bool = False,
     scales_type: DType = .float32,
     persistent: Bool = True,

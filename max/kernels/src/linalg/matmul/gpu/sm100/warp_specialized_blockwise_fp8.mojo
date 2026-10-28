@@ -83,8 +83,8 @@ from structured_kernels.tile_types import (
 def _get_accumulator_size[
     *,
     c_smem_layout: Layout,
-    block_tile_shape: Coord[Int, Int, Int],
-    mma_shape: Coord[Int, Int, Int],
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
     cta_group: Int,
 ]() -> Coord[Int, Int]:
     comptime BM = block_tile_shape[0]
@@ -139,8 +139,8 @@ def load_AB[
     num_pipeline_stages: Int,
     /,
     *,
-    block_tile_shape: Coord[Int, Int, Int],
-    mma_shape: Coord[Int, Int, Int],
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
     cta_group: Int = 1,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
@@ -312,8 +312,8 @@ def multi_stage_reg_epilogue[
     /,
     *,
     c_type: DType,
-    block_tile_shape: Coord[Int, Int, Int],
-    mma_shape: Coord[Int, Int, Int],
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
     is_lower_frag_required: Bool,
     cta_group: Int,
     num_output_warps: Int,
@@ -514,8 +514,8 @@ def promote_accumulators[
     b_scales_layout: TensorLayout,
     /,
     *,
-    block_tile_shape: Coord[Int, Int, Int],
-    mma_shape: Coord[Int, Int, Int],
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
     cta_group: Int,
     CLUSTER_SIZE: Int32,
     is_lower_frag_required: Bool,

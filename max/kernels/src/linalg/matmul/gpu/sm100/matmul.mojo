@@ -132,10 +132,10 @@ def consumer_main_loop[
     pipeline_stages: Int,
     /,
     *,
-    block_tile_shape: Coord[Int, Int, Int],
-    mma_shape: Coord[Int, Int, Int],
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
     cta_group: Int = 1,
-    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
+    cluster_shape: Tuple[Int, Int, Int] = (1, 1, 1),
     k_group_size: Int = 1,
 ](
     tmem_addr: UInt32,

@@ -3125,9 +3125,7 @@ def block_scaled_matmul[
         comptime CLUSTER_DIM_X = get_defined_int["TUNE_CLUSTER_DIM_X", 2]()
         comptime CLUSTER_DIM_Y = get_defined_int["TUNE_CLUSTER_DIM_Y", 1]()
         comptime CLUSTER_DIM_Z = get_defined_int["TUNE_CLUSTER_DIM_Z", 1]()
-        comptime CLUSTER_DIM = Coord[Int, Int, Int](
-            CLUSTER_DIM_X, CLUSTER_DIM_Y, CLUSTER_DIM_Z
-        )
+        comptime CLUSTER_DIM = (CLUSTER_DIM_X, CLUSTER_DIM_Y, CLUSTER_DIM_Z)
         comptime BLOCK_SWIZZLE_SIZE = get_defined_int[
             "TUNE_BLOCK_SWIZZLE_SIZE", 0
         ]()
@@ -3149,11 +3147,7 @@ def block_scaled_matmul[
             scaling_kind=get_scaling_kind[
                 a_type, scales_dtype, SF_VECTOR_SIZE, b_type
             ](),
-            mma_shape=(
-                Int(umma_shape[0]),
-                Int(umma_shape[1]),
-                Int(umma_shape[2]),
-            ),
+            mma_shape=umma_shape,
             cluster_shape=CLUSTER_DIM,
             block_swizzle_size=BLOCK_SWIZZLE_SIZE,
             raster_order=RasterOrder(Int32(RASTERIZE_ORDER)),

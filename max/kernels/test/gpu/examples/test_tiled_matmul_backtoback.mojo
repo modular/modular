@@ -53,7 +53,6 @@ from std.testing import assert_almost_equal
 
 from std.utils import StaticTuple
 from std.utils.coord import DynamicCoord
-from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 
 
@@ -62,17 +61,17 @@ struct BackToBackMatmulConfig[
     src_type: DType,
     transpose_b: Bool = False,
     transpose_c: Bool = False,
-](TrivialRegisterPassable):
+](ImplicitlyCopyable, RegisterPassable):
     # A is MxK
     # B is KxL
     # C is LxN
     # D is MxN
     # We block over M and L, yielding BM and BL.
     # BM x BN x BK
-    var block_tile_shape: IndexList[3, element_type=.uint64]
+    var block_tile_shape: Tuple[Int, Int, Int]
 
     # WM x WN x WK
-    var warp_tile_shape: IndexList[3, element_type=.uint64]
+    var warp_tile_shape: Tuple[Int, Int, Int]
 
     var num_pipeline_stages: Int
 
@@ -103,8 +102,8 @@ struct BackToBackMatmulConfig[
 
     def __init__(
         out self,
-        block_tile_shape: IndexList[3, element_type=.uint64],
-        warp_tile_shape: IndexList[3, element_type=.uint64],
+        block_tile_shape: Tuple[Int, Int, Int],
+        warp_tile_shape: Tuple[Int, Int, Int],
         num_pipeline_stages: Int = 2,
     ):
         self.block_tile_shape = block_tile_shape
@@ -619,8 +618,8 @@ def test_b2b_matmul(ctx: DeviceContext) raises:
     matmul_naive(host_d_ref, host_ab_downcast.as_imm(), mat_c_tensor.as_imm())
 
     comptime config = BackToBackMatmulConfig[dst_type, src_type](
-        IndexList[3, element_type=.uint64](32, 64, 64),
-        IndexList[3, element_type=.uint64](16, 64, 16),
+        (32, 64, 64),
+        (16, 64, 16),
         num_pipeline_stages=2,
     )
     mat_a.to_device()

@@ -21,8 +21,6 @@ from std.math import ceildiv
 from std.sys import size_of
 from max.gpu.primitives.grid_controls import PDLLevel
 from max.gpu.host.info import H100
-from std.utils.coord import Coord, DynamicCoord
-from std.utils.index import Index
 from ....utils_gpu import MatmulConfig as BaseMatmulConfig
 from std.collections import Optional
 
@@ -32,7 +30,7 @@ struct MatmulConfig[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = True,
-](Copyable, Equatable, Hashable, TrivialRegisterPassable, Writable):
+](Equatable, Hashable, ImplicitlyCopyable, RegisterPassable, Writable):
     """Static configuration for SM90 (Hopper) GPU warp-specialized matmul.
 
     Encapsulates all compile-time parameters that define a matmul kernel
@@ -49,9 +47,9 @@ struct MatmulConfig[
     """
 
     # Mandatory parameters
-    var block_tile_shape: Coord[Int, Int, Int]
-    var mma_shape: Coord[Int, Int, Int]
-    var cluster_shape: Coord[Int, Int, Int]
+    var block_tile_shape: Tuple[Int, Int, Int]
+    var mma_shape: Tuple[Int, Int, Int]
+    var cluster_shape: Tuple[Int, Int, Int]
     var num_pipeline_stages: Int
     var num_k_partitions: Int
     var num_consumer: Int
@@ -61,9 +59,9 @@ struct MatmulConfig[
 
     def __init__(
         out self,
-        block_tile_shape: Coord[Int, Int, Int],
-        mma_shape: Coord[Int, Int, Int],
-        cluster_shape: Coord[Int, Int, Int],
+        block_tile_shape: Tuple[Int, Int, Int],
+        mma_shape: Tuple[Int, Int, Int],
+        cluster_shape: Tuple[Int, Int, Int],
         num_pipeline_stages: Int,
         num_k_partitions: Int,
         num_consumer: Int,
@@ -263,11 +261,7 @@ struct MatmulConfig[
             Self.a_type, Self.b_type, Self.c_type, Self.transpose_b
         ](
             block_tile_shape=self.block_tile_shape,
-            mma_shape=(
-                self.mma_shape[0],
-                self.mma_shape[1],
-                self.mma_shape[2],
-            ),
+            mma_shape=self.mma_shape,
             cluster_shape=self.cluster_shape,
             num_pipeline_stages=self.num_pipeline_stages,
             num_k_partitions=self.num_k_partitions,
@@ -447,7 +441,7 @@ def swapAB_smallM[
     m: Int,
     n: Int,
     k: Int,
-    cluster_shape: Coord[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
     num_k_partitions: Int,
     num_consumer: Int,
     partitioned_multicast: Bool,

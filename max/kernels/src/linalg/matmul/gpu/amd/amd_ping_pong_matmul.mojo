@@ -32,10 +32,9 @@ from max.gpu.sync import schedule_barrier, s_waitcnt
 from std.sys import llvm_intrinsic
 from max.gpu.intrinsics import readfirstlane
 
-from std.utils import Index, StaticTuple
+from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type
 
-from std.utils.coord import Coord, coord_to_index_list
 from layout import Coord, TensorLayout, TensorEngine, TileTensor
 from layout.swizzle import Swizzle
 from layout.tile_layout import row_major, col_major
@@ -67,16 +66,16 @@ from structured_kernels.amd_tile_io import RegTileWriter, TileLoaderLDS
 struct KernelConfig(ImplicitlyCopyable, Movable, Writable):
     """Block/warp/MMA shape configuration for ping-pong kernels."""
 
-    var block_shape: Coord[Int, Int, Int]
-    var warp_shape: Coord[Int, Int, Int]
-    var mma_shape: Coord[Int, Int, Int]
+    var block_shape: Tuple[Int, Int, Int]
+    var warp_shape: Tuple[Int, Int, Int]
+    var mma_shape: Tuple[Int, Int, Int]
 
     def __init__(
         out self,
         *,
-        block_shape: Coord[Int, Int, Int],
-        warp_shape: Coord[Int, Int, Int],
-        mma_shape: Coord[Int, Int, Int],
+        block_shape: Tuple[Int, Int, Int],
+        warp_shape: Tuple[Int, Int, Int],
+        mma_shape: Tuple[Int, Int, Int],
     ):
         self.block_shape = block_shape
         self.warp_shape = warp_shape
@@ -84,7 +83,7 @@ struct KernelConfig(ImplicitlyCopyable, Movable, Writable):
 
     @staticmethod
     def _write_index_list(
-        mut writer: Some[Writer], list: Coord[Int, Int, Int], sep: StaticString
+        mut writer: Some[Writer], list: Tuple[Int, Int, Int], sep: StaticString
     ):
         comptime for i in range(3):
             if i != 0:

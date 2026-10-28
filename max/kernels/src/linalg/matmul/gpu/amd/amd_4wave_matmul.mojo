@@ -36,7 +36,7 @@ through a single body: MMA shape and BK select on dtype.
 from std.bit import log2_floor
 from std.math import ceildiv
 from std.sys import align_of, size_of, llvm_intrinsic
-from std.utils import Index, StaticTuple
+from std.utils import StaticTuple
 from std.collections import Array
 from std.utils.numerics import get_accum_type
 
@@ -52,7 +52,6 @@ from max.gpu.host.info import MI355X
 from max.gpu.intrinsics import AMDBufferResource, readfirstlane
 from max.gpu.sync import schedule_barrier, s_waitcnt
 
-from std.utils.coord import Coord, coord_to_index_list
 from layout import Coord, TensorLayout, TensorEngine, TileTensor
 from layout.swizzle import Swizzle
 from layout.tile_layout import row_major
@@ -152,19 +151,19 @@ struct MatmulKernelConfig(ImplicitlyCopyable, Movable, Writable):
     warp / MMA tile shapes.
     """
 
-    var block_shape: Coord[Int, Int, Int]
+    var block_shape: Tuple[Int, Int, Int]
     """Workgroup tile shape `(BM, BN, BK)`."""
-    var warp_shape: Coord[Int, Int, Int]
+    var warp_shape: Tuple[Int, Int, Int]
     """Per-warp tile shape `(WM, WN, WK)`."""
-    var mma_shape: Coord[Int, Int, Int]
+    var mma_shape: Tuple[Int, Int, Int]
     """Single-MMA instruction shape `(MMA_M, MMA_N, MMA_K)`."""
 
     def __init__(
         out self,
         *,
-        block_shape: Coord[Int, Int, Int],
-        warp_shape: Coord[Int, Int, Int],
-        mma_shape: Coord[Int, Int, Int],
+        block_shape: Tuple[Int, Int, Int],
+        warp_shape: Tuple[Int, Int, Int],
+        mma_shape: Tuple[Int, Int, Int],
     ):
         """Constructs a `MatmulKernelConfig` from the three tile shapes.
 
@@ -179,7 +178,7 @@ struct MatmulKernelConfig(ImplicitlyCopyable, Movable, Writable):
 
     @staticmethod
     def _write_index_list(
-        mut writer: Some[Writer], list: Coord[Int, Int, Int], sep: StaticString
+        mut writer: Some[Writer], list: Tuple[Int, Int, Int], sep: StaticString
     ):
         comptime for i in range(3):
             if i != 0:

@@ -664,8 +664,16 @@ def _matmul_cpu_impl[
                         row_major(mh, kh),
                     ),
                     b,
-                    GemmShape(sub_matmul_config.shape),
-                    GemmShape(sub_matmul_config.offset),
+                    GemmShape(
+                        sub_matmul_config.shape[0],
+                        sub_matmul_config.shape[1],
+                        sub_matmul_config.shape[2],
+                    ),
+                    GemmShape(
+                        sub_matmul_config.offset[0],
+                        sub_matmul_config.offset[1],
+                        sub_matmul_config.offset[2],
+                    ),
                     epilogue_fn,
                     compute_fn,
                 )
@@ -682,8 +690,16 @@ def _matmul_cpu_impl[
                     c,
                     a.as_unsafe_any_origin(),
                     b,
-                    GemmShape(sub_matmul_config.shape),
-                    GemmShape(sub_matmul_config.offset),
+                    GemmShape(
+                        sub_matmul_config.shape[0],
+                        sub_matmul_config.shape[1],
+                        sub_matmul_config.shape[2],
+                    ),
+                    GemmShape(
+                        sub_matmul_config.offset[0],
+                        sub_matmul_config.offset[1],
+                        sub_matmul_config.offset[2],
+                    ),
                     epilogue_fn,
                     compute_fn,
                 )
