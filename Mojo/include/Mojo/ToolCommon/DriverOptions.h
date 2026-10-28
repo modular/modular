@@ -22,7 +22,16 @@
 #include <string>
 #include <vector>
 
+namespace llvm {
+class SourceMgr;
+} // namespace llvm
+
 namespace M {
+struct State;
+
+namespace KGEN {
+struct FrontendOptions;
+} // namespace KGEN
 
 /// The options that a Mojo tool acts on itself, which its marshalled options
 /// fill in. A tool leaves the options that its option table lacks at their
@@ -54,6 +63,16 @@ struct DriverOptions {
   bool timingJSON = false;
   std::string timingFile;
 };
+
+/// Sets the include paths of `driverOptions` as the include directories of
+/// `sourceMgr`, which reports its diagnostics in the format that `state`
+/// parsed.
+void configureSourceMgr(const State &state, const DriverOptions &driverOptions,
+                        llvm::SourceMgr &sourceMgr);
+
+/// Copies the warning policy that `state` parsed into `frontendOptions`.
+void setWarningPolicy(const State &state,
+                      KGEN::FrontendOptions &frontendOptions);
 
 } // namespace M
 

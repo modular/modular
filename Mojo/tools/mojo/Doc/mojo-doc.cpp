@@ -12,15 +12,16 @@
 //===----------------------------------------------------------------------===//
 
 #include "mojo-doc.h"
-#include "../Common/Compilation.h"
 
 #include "AsyncRT/Runtime/Allocator.h"
 #include "AsyncRT/Runtime/CPUDevice.h"
 #include "AsyncRT/Runtime/WorkQueue.h"
 #include "Init/Init.h"
 #include "Mojo/MojoTooling/DocGen.h"
+#include "Mojo/ToolCommon/DriverOptions.h"
 #include "Mojo/ToolCommon/FrontendOptions.h"
 #include "Mojo/ToolCommon/InitAllDialects.h"
+#include "Mojo/ToolCommon/OptionNormalizers.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/Driver/OptionMarshalling.h"
 

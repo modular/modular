@@ -181,8 +181,8 @@ static ErrorOrSuccess parsePrecompileArgs(const State &state,
 
   // Set up the compilation options now, so we can use them as a single source
   // of truth.
-  initializeCompilation(pkgArgs.driverOptions.includePaths, sourceMgr,
-                        pkgArgs.ctx);
+  configureSourceMgr(state, pkgArgs.driverOptions, sourceMgr);
+  initializeCompilation(pkgArgs.ctx);
   setWarningPolicy(state, pkgArgs.frontendOptions);
 
   // Precompiled files are built with the intention of being agnostic, so use
@@ -235,7 +235,6 @@ static int precompile(const State &subcommandState) {
   }
 
   llvm::SourceMgr sourceMgr;
-  sourceMgr.setDiagHandler(getDiagHandler(state.diagnosticFormat));
   if (auto err = parsePrecompileArgs(state, args, sourceMgr, precompileArgs))
     return state.reportError(err.getError());
 

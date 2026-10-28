@@ -99,14 +99,8 @@ parseCommonMojoArguments(State &state, const llvm::opt::InputArgList &args,
                          llvm::SourceMgr &sourceManager, MLIRContext &ctx,
                          ExpandMarshalledOptionsFn expandOptions);
 
-/// Set `includePaths` as the include directories of `sourceMgr`, and register
-/// the dialects compilation needs on `ctx`.
-void initializeCompilation(llvm::ArrayRef<std::string> includePaths,
-                           llvm::SourceMgr &sourceMgr, MLIRContext &ctx);
-
-/// Set the warning policy that `state` parsed with the diagnostic format on
-/// `options`.
-void setWarningPolicy(const State &state, KGEN::FrontendOptions &options);
+/// Register the dialects compilation needs on `ctx`.
+void initializeCompilation(MLIRContext &ctx);
 
 /// Warn users when doing debug builds with a compiler in debug mode.
 void warnBuildingForDebugWithDebugBuiltCompiler(

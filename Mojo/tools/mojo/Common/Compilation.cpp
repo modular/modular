@@ -97,14 +97,11 @@ M::parseCommonMojoArguments(State &state, const llvm::opt::InputArgList &args,
     auto bufferOrErr = openMojoInputFile(inputs.back());
     if (failed(bufferOrErr))
       return bufferOrErr.takeError();
-
-    // Initialize the source manager with the input file buffer, as well as the
-    // appropriate diagnostic handler.
-    sourceManager.setDiagHandler(getDiagHandler(state.diagnosticFormat));
     sourceManager.AddNewSourceBuffer(std::move(*bufferOrErr), llvm::SMLoc());
   }
 
-  initializeCompilation(driverOptions.includePaths, sourceManager, ctx);
+  configureSourceMgr(state, driverOptions, sourceManager);
+  initializeCompilation(ctx);
 
   setWarningPolicy(state, result.frontendOptions);
   if (ErrorOrSuccess err =
@@ -131,23 +128,12 @@ M::parseCommonMojoArguments(State &state, const llvm::opt::InputArgList &args,
   return result;
 }
 
-void M::initializeCompilation(ArrayRef<std::string> includePaths,
-                              llvm::SourceMgr &sourceMgr, MLIRContext &ctx) {
-  sourceMgr.setIncludeDirs(includePaths);
-
-  // Initialize the MLIR context.
+void M::initializeCompilation(MLIRContext &ctx) {
   DialectRegistry registry;
   registerAllKGENDialects(registry);
   registerKGENToLLVMTranslation(registry);
   ctx.appendDialectRegistry(registry);
   ctx.loadDialect<MDialect>();
-}
-
-void M::setWarningPolicy(const State &state, FrontendOptions &options) {
-  // The warning options marshal into `state`, because State::reportWarning()
-  // also reads them, and are copied from there so both places agree.
-  options.disableWarnings = state.areWarningsDisabled();
-  options.warningsAsErrors = state.areWarningsAsErrors();
 }
 
 void M::warnBuildingForDebugWithDebugBuiltCompiler(
