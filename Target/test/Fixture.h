@@ -118,13 +118,18 @@ struct DriverPluginTest : ::testing::Test {
       GTEST_SKIP() << "MODULAR_DRIVER_PLUGINS environment variable is not set";
       return;
     }
+    // Accept the `name@path` form the HAL `DeviceContext` reads, so one value
+    // serves both this suite and the runtime.
     llvm::StringRef soPath(pluginSpec);
+    if (soPath.contains('@'))
+      soPath = soPath.split('@').second;
     if (soPath.empty()) {
       GTEST_SKIP() << "MODULAR_DRIVER_PLUGINS environment variable is not set";
       return;
     }
-    soHandle = dlopen(pluginSpec, RTLD_NOW);
-    ASSERT_TRUE(soHandle != nullptr);
+    soHandle = dlopen(soPath.str().c_str(), RTLD_NOW);
+    ASSERT_TRUE(soHandle != nullptr)
+        << "Failed to load " << soPath.str() << ": " << dlerror();
 
 #define M_DRIVER_HAL_SYMBOL(name)                                              \
   name = (M_driver_##name##_func_ptr_t)dlsym(                                  \
