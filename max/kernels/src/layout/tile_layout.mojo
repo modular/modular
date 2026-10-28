@@ -2327,17 +2327,18 @@ def coalesce[
     LayoutType: TensorLayout,
     //,
 ](layout: LayoutType) -> CoalesceLayout[LayoutType]:
-    """Simplifies a layout by merging contiguous dimensions.
+    """Simplifies a layout by merging modes that are contiguous in memory.
 
-    Iterates over the flattened (shape, stride) pairs and:
+    Iterates over the flattened modes (shape, stride pairs) and:
 
-    1. Skips shape-1 dimensions.
-    2. Merges a dimension into the previous one when
+    1. Skips shape-1 modes.
+    2. Merges a mode into the previous one when
        ``prev_shape * prev_stride == current_stride`` (contiguous).
-    3. Otherwise starts a new dimension.
+    3. Otherwise starts a new mode.
 
     The result is the simplest layout that maps coordinates to the same
-    linear offsets as the original.
+    linear offsets as the original. A generalized column-major layout
+    (where strides increase left to right) coalesces to 1 dimension.
 
     Parameters:
         LayoutType: The type of the input layout.
@@ -2351,10 +2352,10 @@ def coalesce[
     Example:
 
     ```mojo
-    from layout.tile_layout import Layout, coalesce, row_major, Idx
+    from layout.tile_layout import Layout, coalesce, col_major, Idx
 
-    # A row-major 2x4 layout has contiguous strides -> coalesces to 1D
-    var layout = row_major[2, 4]()
+    # A column-major 2x4 layout has contiguous strides -> coalesces to 1D
+    var layout = col_major[2, 4]()  # shape (2, 4), stride (1, 2)
     var coalesced = coalesce(layout)  # shape (8,), stride (1,)
     ```
     """
