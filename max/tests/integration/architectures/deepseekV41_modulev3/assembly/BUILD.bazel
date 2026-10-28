@@ -44,6 +44,7 @@ modular_eager_py_test(
     name = "test_runtime",
     srcs = ["test_runtime.py"],
     cpu_only = True,
+    # Needs mo.csa.window_kv_store, registered only by the closed-source kernels.
     env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
     # tokenizers is a transitive dependency of transformers but doesn't have
     # an unversioned bazel alias, so we need to ignore its unresolved imports
@@ -51,6 +52,7 @@ modular_eager_py_test(
         "tokenizers.Tokenizer",
         "tokenizers.models.WordLevel",
     ],
+    tags = ["skip-external-ci"],
     deps = [
         ":runtime_config",
         requirement("transformers"),
