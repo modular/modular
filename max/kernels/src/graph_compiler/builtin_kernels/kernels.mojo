@@ -2079,48 +2079,69 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
 
 @inline(.always)
 def _unmarshal_mha_decode_dispatch_metadata(
-    mha_decode_dispatch_metadata: InputTensor[dtype=.int64, rank=1, ...],
+    mha_decode_dispatch_metadata: TileTensor[
+        DType.int64, address_space=.GENERIC, ...
+    ],
 ) -> MHADecodeDispatchMetadata:
+    comptime assert mha_decode_dispatch_metadata.rank == 1
+    # The metadata is read through its flat pointer; a non-pointer storage
+    # policy aborts here at run time.
+    var metadata_ptr = mha_decode_dispatch_metadata.ptr
     return MHADecodeDispatchMetadata(
-        Int(mha_decode_dispatch_metadata.unsafe_ptr()[0]),
-        Int(mha_decode_dispatch_metadata.unsafe_ptr()[1]),
-        Int(mha_decode_dispatch_metadata.unsafe_ptr()[2]),
-        Int(mha_decode_dispatch_metadata.unsafe_ptr()[3]),
+        Int(metadata_ptr[0]),
+        Int(metadata_ptr[1]),
+        Int(metadata_ptr[2]),
+        Int(metadata_ptr[3]),
     )
 
 
 @inline(.always)
 def _execute_mha_ragged_paged_scalar_args[
     q_dtype: DType,
+    output_dtype: DType,
     //,
     target: StaticString,
     mask_str: StaticString,
     sink: Bool = False,
     local_window_size: Int = -1,
-    output_dtype: DType = q_dtype,
-    cache_dtype: DType = q_dtype,
     SinkLayoutType: TensorLayout = RowMajorLayout[*Coord[Int64].element_types],
     # `sink_weights` is optional, so its engine cannot be inferred.
     SinkEngine: TensorEngine = DefaultEngine[element_width=1],
     v_head_dim: Int = -1,
 ](
-    output: OutputTensor[dtype=output_dtype, rank=3, ...],
-    q: InputTensor[dtype=q_dtype, rank=3, ...],
-    input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-    kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-    page_stride: InputTensor[dtype=.int64, rank=1, ...],
-    cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-    kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-    max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-    max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+    output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
+    q: TileTensor[q_dtype, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    kv_blocks: TileTensor[mut=True, address_space=.GENERIC, ...],
+    page_stride: TileTensor[
+        mut=False, DType.int64, address_space=.GENERIC, ...
+    ],
+    cache_lengths: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    kv_lookup_table: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    max_prompt_length: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    max_cache_length: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
     layer_idx: UInt32,
     scale: Float32,
-    mha_decode_dispatch_metadata: InputTensor[dtype=.int64, rank=1, ...],
+    mha_decode_dispatch_metadata: TileTensor[
+        DType.int64, address_space=.GENERIC, ...
+    ],
     context: DeviceContext,
     sink_weights: OptionalReg[
         TileTensor[q_dtype, SinkLayoutType, ImmutAnyOrigin, Engine=SinkEngine]
     ] = None,
 ) raises:
+    comptime assert output.rank == 3
+    comptime assert q.rank == 3
+    comptime assert input_row_offsets.rank == 1
+    comptime assert kv_blocks.rank == 6
     var decode_dispatch_metadata = _unmarshal_mha_decode_dispatch_metadata(
         mha_decode_dispatch_metadata
     )
@@ -2139,12 +2160,12 @@ def _execute_mha_ragged_paged_scalar_args[
             local_window_size=local_window_size,
             output_dtype=output_dtype,
         ](
-            q.to_tile_tensor(),
-            input_row_offsets.to_tile_tensor(),
+            q,
+            input_row_offsets,
             kv_collection,
             layer_idx,
             scale,
-            output.to_tile_tensor(),
+            output,
             context,
             sink_weights.value(),
             decode_dispatch_metadata,
@@ -2156,12 +2177,12 @@ def _execute_mha_ragged_paged_scalar_args[
             local_window_size=local_window_size,
             output_dtype=output_dtype,
         ](
-            q.to_tile_tensor(),
-            input_row_offsets.to_tile_tensor(),
+            q,
+            input_row_offsets,
             kv_collection,
             layer_idx,
             scale,
-            output.to_tile_tensor(),
+            output,
             context,
             decode_dispatch_metadata,
         )
@@ -2170,27 +2191,45 @@ def _execute_mha_ragged_paged_scalar_args[
 @inline(.always)
 def _execute_mha_ragged_paged_rel_logits[
     q_dtype: DType,
+    output_dtype: DType,
     //,
     target: StaticString,
     local_window_size: Int = -1,
-    output_dtype: DType = q_dtype,
-    cache_dtype: DType = q_dtype,
 ](
-    output: OutputTensor[dtype=output_dtype, rank=3, ...],
-    q: InputTensor[dtype=q_dtype, rank=3, ...],
-    input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-    kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-    page_stride: InputTensor[dtype=.int64, rank=1, ...],
-    cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-    kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-    max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-    max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+    output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
+    q: TileTensor[q_dtype, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    kv_blocks: TileTensor[mut=True, address_space=.GENERIC, ...],
+    page_stride: TileTensor[
+        mut=False, DType.int64, address_space=.GENERIC, ...
+    ],
+    cache_lengths: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    kv_lookup_table: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    max_prompt_length: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    max_cache_length: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
     layer_idx: UInt32,
     scale: Float32,
-    bias: InputTensor[dtype=q_dtype, rank=3, ...],
-    mha_decode_dispatch_metadata: InputTensor[dtype=.int64, rank=1, ...],
+    bias: TileTensor[mut=False, q_dtype, address_space=.GENERIC, ...],
+    mha_decode_dispatch_metadata: TileTensor[
+        DType.int64, address_space=.GENERIC, ...
+    ],
     context: DeviceContext,
 ) raises:
+    comptime assert output.rank == 3
+    comptime assert q.rank == 3
+    comptime assert input_row_offsets.rank == 1
+    comptime assert kv_blocks.rank == 6
+    comptime assert bias.rank == 3
     var decode_dispatch_metadata = _unmarshal_mha_decode_dispatch_metadata(
         mha_decode_dispatch_metadata
     )
@@ -2202,19 +2241,31 @@ def _execute_mha_ragged_paged_rel_logits[
         max_prompt_length,
         max_cache_length,
     )
+    # The helper takes pointer-backed tiles for the row offsets, bias and
+    # cache lengths, so rebuild them over the tiles' data; a non-pointer
+    # storage policy aborts here at run time.
     generic_flash_attention_kv_cache_ragged_rel_logits[
         target=target,
         local_window_size=local_window_size,
         output_dtype=output_dtype,
     ](
-        q.to_tile_tensor(),
-        input_row_offsets.to_tile_tensor().as_imm(),
+        q.as_imm(),
+        TileTensor[.uint32, input_row_offsets.LayoutType, ImmutAnyOrigin](
+            ptr=input_row_offsets.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+            layout=input_row_offsets.layout,
+        ),
         kv_collection,
         layer_idx,
         scale,
-        bias.to_tile_tensor().as_imm(),
-        cache_lengths.to_tile_tensor().as_imm(),
-        output.to_tile_tensor(),
+        TileTensor[q_dtype, bias.LayoutType, ImmutAnyOrigin](
+            ptr=bias.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+            layout=bias.layout,
+        ),
+        TileTensor[.uint32, cache_lengths.LayoutType, ImmutAnyOrigin](
+            ptr=cache_lengths.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+            layout=cache_lengths.layout,
+        ),
+        output,
         context,
         decode_dispatch_metadata,
     )
