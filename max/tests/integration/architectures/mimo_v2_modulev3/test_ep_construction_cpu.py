@@ -32,6 +32,13 @@ from typing import Any, cast
 
 import numpy as np
 import pytest
+from expert_stacks import (
+    PROJECTIONS,
+    check_staged_expert_stacks,
+    gate_up,
+    load_random_experts,
+    realize,
+)
 from max import functional as F
 from max.driver import (
     CPU,
@@ -312,12 +319,12 @@ def test_dp_inputs_occupy_the_runtime_slots() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def _cpu_mesh() -> DeviceMesh:
+def _cpu_mesh(n_devices: int = N_DEVICES) -> DeviceMesh:
     """A CPU mesh standing in for the expert-parallel devices."""
-    return DeviceMesh((CPU(),) * N_DEVICES, (N_DEVICES,), ("tp",))
+    return DeviceMesh((CPU(),) * n_devices, (n_devices,), ("tp",))
 
 
-def _ep_moe() -> MiMoV2ExpertParallelMoE:
+def _ep_moe(n_devices: int = N_DEVICES) -> MiMoV2ExpertParallelMoE:
     """The EP MoE on the tiny fixture's shapes; build it under ``F.lazy``.
 
     The experts' E8M0 scale tensors compile eagerly on a host backend that
@@ -330,7 +337,7 @@ def _ep_moe() -> MiMoV2ExpertParallelMoE:
         moe_dim=MOE_DIM,
         norm_topk_prob=True,
         quant_config=_mxfp4_experts_config(),
-        ep_batch_manager=EPBatchManager(_ep_config(N_DEVICES)),
+        ep_batch_manager=EPBatchManager(_ep_config(n_devices)),
     )
 
 
@@ -353,28 +360,36 @@ def test_ep_moe_keeps_global_expert_indices() -> None:
     }
 
 
+@pytest.mark.parametrize("n_devices", [2, 4])
 def test_ep_moe_holds_whole_experts_per_device(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, n_devices: int
 ) -> None:
-    """Each device's stack covers its contiguous experts at full width.
+    """Device ``d`` holds its contiguous block of whole experts, byte for
+    byte.
 
     Contrast the tensor-parallel stacks, whose axis-1 shard splits every
     expert's channels; the EP stacks keep the whole ``moe_dim`` and cut the
     expert axis instead.
     """
-    # The interleave picks its scale layout from the host's architecture.
-    monkeypatch.setattr(kernels, "_is_sm10x_gpu", lambda: True)
     with F.lazy(), default_dtype(DType.bfloat16):
-        layer = _ep_moe()
-        stacked = layer._stacked_weights(_cpu_mesh())
-    local = EXPERTS // N_DEVICES
-    assert len(stacked) == N_DEVICES
-    for gate_up, gate_up_scales, down, down_scales in stacked:
-        assert list(gate_up.shape) == [local, 2 * MOE_DIM, HIDDEN // 2]
-        assert list(down.shape) == [local, HIDDEN, MOE_DIM // 2]
-        # The interleaved weight scales keep the same leading dims.
-        assert gate_up_scales.shape[0] == local
-        assert down_scales.shape[0] == local
+        layer = _ep_moe(n_devices)
+    ref = load_random_experts(layer, monkeypatch)
+    got = realize(layer, _cpu_mesh(n_devices))
+    local = EXPERTS // n_devices
+    assert len(got) == n_devices
+    for d, (gate_up_w, gate_up_scales, down, down_scales) in enumerate(got):
+        block = np.s_[d * local : (d + 1) * local]
+        (gate, gate_s), (up, up_s), (down_ref, down_s) = (
+            ref[name] for name in PROJECTIONS
+        )
+        np.testing.assert_array_equal(
+            gate_up_w, gate_up(gate[block], up[block])
+        )
+        np.testing.assert_array_equal(
+            gate_up_scales, gate_up(gate_s[block], up_s[block])
+        )
+        np.testing.assert_array_equal(down, down_ref[block])
+        np.testing.assert_array_equal(down_scales, down_s[block])
 
 
 def test_ep_moe_refuses_the_p2p_backend() -> None:
@@ -512,6 +527,7 @@ def test_mimo_v2_ep2_stages_with_the_ep_tail(
     assert text.count("ep.combine") >= N_DEVICES
     graphs = set(re.findall(r"mo\.graph @([A-Za-z0-9_]+)", text))
     assert graphs - {"MiMoV2"} == {"mimo_v2_moe"}, graphs
+    check_staged_expert_stacks(text, N_DEVICES, expert_parallel=True)
 
 
 def test_mimo_v2_dp2_stages_with_the_batch_split(

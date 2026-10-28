@@ -266,41 +266,50 @@ class MiMoV2MoE(Module[..., Tensor]):
         """
         e, md, hidden = self.num_experts, self.moe_dim, self.hidden_dim
         n = mesh.num_devices
-        gate = F.stack([x.gate_proj.weight for x in self.experts], axis=0)
-        up = F.stack([x.up_proj.weight for x in self.experts], axis=0)
-        down = F.stack([x.down_proj.weight for x in self.experts], axis=0)
-        gate_scale = F.stack(
-            [x.gate_proj.weight_scale for x in self.experts], axis=0
-        )
-        up_scale = F.stack(
-            [x.up_proj.weight_scale for x in self.experts], axis=0
+        # Each device's share of every expert's channels: rows of the gate
+        # and up projections, columns of the down projection. Each weight
+        # stack is built whole on the host, whose parallel concat reads the
+        # checkpoint in order, and each device then receives only its final
+        # share: a device temporary freed between the persistent weight
+        # stacks strands allocator granules the KV cache cannot use. The
+        # scale interleave's device temporaries are small enough to ignore.
+        # TODO(DISTINF-813): F.stack(device=...) would place the shares
+        # directly, but its mo.shard_and_stack copies each device's slice
+        # out of the checkpoint mapping serially (TP4 init 118 s -> 264 s
+        # from a cold page cache). Return to it once DISTINF-813 is fixed.
+        # Alternating gate and up makes a device's [2e, md/n, k] share
+        # reshape to each expert's gate rows followed by its up rows.
+        rows = NamedMapping(mesh, (None, TP, None))
+        cols = NamedMapping(mesh, (None, None, TP))
+        gate_up_stack = F.stack(
+            [
+                w
+                for x in self.experts
+                for w in (x.gate_proj.weight, x.up_proj.weight)
+            ],
+            axis=0,
+        ).to(rows)
+        gate_up_scale_stack = F.stack(
+            [
+                w
+                for x in self.experts
+                for w in (x.gate_proj.weight_scale, x.up_proj.weight_scale)
+            ],
+            axis=0,
+        ).to(rows)
+        down = F.stack([x.down_proj.weight for x in self.experts], axis=0).to(
+            cols
         )
         down_scale = F.stack(
             [x.down_proj.weight_scale for x in self.experts], axis=0
-        )
-        # Each device's share of every expert's channels: rows of the gate
-        # and up projections, columns of the down projection.
-        gate = gate.to(NamedMapping(mesh, (None, TP, None)))
-        up = up.to(NamedMapping(mesh, (None, TP, None)))
-        gate_scale = gate_scale.to(NamedMapping(mesh, (None, TP, None)))
-        up_scale = up_scale.to(NamedMapping(mesh, (None, TP, None)))
-        down = down.to(NamedMapping(mesh, (None, None, TP)))
-        down_scale = down_scale.to(NamedMapping(mesh, (None, None, TP)))
+        ).to(cols)
         per_device: list[tuple[TensorValue, ...]] = []
         for d in range(n):
-            gate_up = ops.stack(
-                [
-                    TensorValue(gate.local_shards[d]),
-                    TensorValue(up.local_shards[d]),
-                ],
-                axis=1,
-            ).reshape([e, 2 * md // n, hidden // 2])
-            gate_up_scales = ops.stack(
-                [
-                    TensorValue(gate_scale.local_shards[d]),
-                    TensorValue(up_scale.local_shards[d]),
-                ],
-                axis=1,
+            gate_up = TensorValue(gate_up_stack.local_shards[d]).reshape(
+                [e, 2 * md // n, hidden // 2]
+            )
+            gate_up_scales = TensorValue(
+                gate_up_scale_stack.local_shards[d]
             ).reshape([e, 2 * md // n, hidden // 32])
             down_w = TensorValue(down.local_shards[d])
             gate_up_interleaved, down_interleaved = (
@@ -490,23 +499,31 @@ class MiMoV2ExpertParallelMoE(MiMoV2MoE):
         for d in range(n):
             experts = block[d * local : (d + 1) * local]
             device = mesh.devices[d]
-            gate = F.stack([x.gate_proj.weight for x in experts], axis=0).to(
-                device
-            )
-            up = F.stack([x.up_proj.weight for x in experts], axis=0).to(device)
-            gate_scale = F.stack(
-                [x.gate_proj.weight_scale for x in experts], axis=0
-            ).to(device)
-            up_scale = F.stack(
-                [x.up_proj.weight_scale for x in experts], axis=0
-            ).to(device)
             # One [gate; up] block per expert, the layout fused_silu's
-            # split mode reads.
-            gate_up = ops.stack(
-                [TensorValue(gate), TensorValue(up)], axis=1
+            # split mode reads, stacked on the host so that only the final
+            # stack reaches the device (see the tensor-parallel stacks).
+            gate_up = TensorValue(
+                F.stack(
+                    [
+                        w
+                        for x in experts
+                        for w in (x.gate_proj.weight, x.up_proj.weight)
+                    ],
+                    axis=0,
+                ).to(device)
             ).reshape([local, 2 * md, hidden // 2])
-            gate_up_scales = ops.stack(
-                [TensorValue(gate_scale), TensorValue(up_scale)], axis=1
+            gate_up_scales = TensorValue(
+                F.stack(
+                    [
+                        w
+                        for x in experts
+                        for w in (
+                            x.gate_proj.weight_scale,
+                            x.up_proj.weight_scale,
+                        )
+                    ],
+                    axis=0,
+                ).to(device)
             ).reshape([local, 2 * md, hidden // 32])
             down_w = TensorValue(
                 F.stack([x.down_proj.weight for x in experts], axis=0).to(
