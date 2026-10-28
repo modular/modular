@@ -29,6 +29,11 @@ from sphinx_ext.signatures import OVERLOAD_MARKER
 
 
 def setup(app: Sphinx) -> None:
+    """Installs the row patch that escapes pipes in rendered table cells.
+
+    The Markdown builder emits GFM tables without escaping a literal pipe,
+    so a cell breaks whenever a summary or a signature contains one.
+    """
     # GFM tables use "|" as the column separator, so a literal "|" inside
     # a cell must be escaped. sphinx_markdown_builder does not escape
     # them, which breaks a table whenever a summary or signature contains

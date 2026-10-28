@@ -214,8 +214,10 @@ def _derive_public_names(
 
 
 def _parse_top_level(source: str) -> set[str]:
-    """Top-level non-underscore def/class/assign names. Imports excluded
-    (``_parse_reexports`` tracks them).
+    """Collects the top-level public names that a module defines.
+
+    The names come from ``def``, ``class``, and assignment statements.
+    Imported names are excluded because ``_parse_reexports`` tracks them.
     """
     try:
         tree = ast.parse(source)
@@ -585,12 +587,15 @@ def documented_symbols_at(
 
 @dataclass
 class CoverageReport:
+    """Groups the coverage findings that a snapshot diff produces."""
+
     missing: list[tuple[str, str]] = field(default_factory=list)
     stale: list[tuple[str, str]] = field(default_factory=list)
     new_modules: list[str] = field(default_factory=list)
     ambiguous: list[tuple[str, str]] = field(default_factory=list)
 
     def is_empty(self) -> bool:
+        """Returns ``True`` when the diff found nothing to report."""
         return not (
             self.missing or self.stale or self.new_modules or self.ambiguous
         )
@@ -624,6 +629,22 @@ def diff_snapshots(
     documented_head: set[str],
     documented_modules_head: set[str],
 ) -> CoverageReport:
+    """Compares two API snapshots and reports the gaps in the docs.
+
+    A name added at the head ref is missing when no page documents it. A name
+    removed at the head ref is stale when a page still documents it. An
+    ambiguous name the head ref newly introduced is reported with the module
+    file that defines it.
+
+    Args:
+        base: Snapshot taken at the base ref.
+        head: Snapshot taken at the head ref.
+        documented_head: Canonical names that a page documents at the head ref.
+        documented_modules_head: Modules with a page at the head ref.
+
+    Returns:
+        The findings grouped by missing, stale, new-module, and ambiguous.
+    """
     report = CoverageReport()
 
     base_pairs: set[tuple[str, str]] = {
@@ -695,6 +716,11 @@ DOCS_TEAM = "@modularml/docs"
 
 
 def render_markdown(report: CoverageReport) -> str:
+    """Renders the report as a Markdown comment.
+
+    Returns:
+        The comment body, or an empty string when the report has no findings.
+    """
     if report.is_empty():
         return ""
     lines: list[str] = [
@@ -759,6 +785,18 @@ def render_markdown(report: CoverageReport) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Runs the coverage check and writes the report.
+
+    The report goes to the ``--output`` path when one is given, and to stdout
+    otherwise. This reports coverage; it does not enforce it, so the exit
+    status is 0 whether or not the report lists findings.
+
+    Args:
+        argv: Command-line arguments; defaults to ``sys.argv[1:]``.
+
+    Returns:
+        The exit status, which is always 0.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--base-ref",

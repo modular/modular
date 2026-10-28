@@ -207,8 +207,12 @@ def process_signature(
     signature: str | None,
     return_annotation: str | None,
 ) -> tuple[str | None, str | None]:
-    """This is a callback from Sphinx that lets us preprocess function signatures.
-    We use this to replace "max._core" references with "max"."""
+    """Rewrites a signature before Sphinx renders it.
+
+    The callback replaces ``max._core`` references with ``max`` in the
+    signature and in the return annotation, and drops the receiver that
+    nanobind method signatures carry.
+    """
     if signature is not None:
         signature = signature.replace("max._core", "max")
 
@@ -248,6 +252,7 @@ def _wrap_find_signature(
 
 
 def setup(app: Sphinx) -> None:
+    """Connects the callbacks that clean up signatures and overload docs."""
     app.connect("autodoc-process-docstring", strip_signature_lines, priority=1)
     app.connect(
         "autodoc-process-docstring", restructure_overload_docstrings, priority=2

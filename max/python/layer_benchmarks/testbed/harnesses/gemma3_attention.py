@@ -65,6 +65,8 @@ from testbed.registry import register_harness
 
 @dataclass
 class Gemma3AttentionStaticParams(AttentionStaticParams):
+    """Static parameters for the Gemma3 attention harness."""
+
     rope_theta: float = 1000000.0
     qk_norm_eps: float = 1e-6
     sliding_window_pattern: int = 6
@@ -85,10 +87,17 @@ class Gemma3AttentionHarness(
 
     @staticmethod
     def static_params_type() -> type:
+        """Returns the static parameters type for the Gemma3 harness."""
         return Gemma3AttentionStaticParams
 
     @property
     def name(self) -> str:
+        """Returns the harness name, suffixed with the attention scope.
+
+        Layers whose one-based index is a multiple of the sliding-window
+        pattern use global attention; the layers between them use local
+        attention.
+        """
         p = self.static_params
         layer_idx = p.layer_idx
         sliding_window_pattern = p.sliding_window_pattern
@@ -97,6 +106,7 @@ class Gemma3AttentionHarness(
         return f"gemma3_attention_{suffix}"
 
     def build_graph(self) -> tuple[Graph, dict[str, DLPackArray]]:
+        """Builds the Gemma3 attention graph with its paged KV cache inputs."""
         p = self.static_params
         hidden_size = p.hidden_size
         n_heads = p.n_heads
@@ -220,6 +230,7 @@ class Gemma3AttentionHarness(
     def torch_reference_layer(
         self, device: str = "cuda"
     ) -> tuple[HFGemma3Attention, dict[str, Any]]:
+        """Returns the Hugging Face Gemma3 attention layer and its weights."""
         p = self.static_params
         layer_idx = p.layer_idx
         sliding_window_pattern = p.sliding_window_pattern
@@ -279,6 +290,7 @@ class Gemma3AttentionHarness(
         dynamic_params: AttentionDynamicParams,
         device: str = "cuda",
     ) -> list[Any]:
+        """Converts MAX execute args into torch inputs for the reference."""
         p = self.static_params
         seq_len = dynamic_params.seq_len
         ctx_len = dynamic_params.ctx_len

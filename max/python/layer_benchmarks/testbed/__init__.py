@@ -11,8 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Model test bed: abstract harness + runner for layer benchmarking, profiling,
-IR dumping, and correctness testing."""
+"""Model test bed for layer benchmarking, profiling, and correctness testing.
+
+The package holds the harness interface, the harness registry, and the runner
+that drives the benchmark, profile, IR-dump, and correctness modes.
+"""
 
 from testbed.harness import CompiledLayerBundle, LayerTestHarness
 from testbed.registry import HARNESS_REGISTRY, register_harness

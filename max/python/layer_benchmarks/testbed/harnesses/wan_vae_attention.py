@@ -139,10 +139,12 @@ class WanVaeAttentionHarness(
 
     @staticmethod
     def static_params_type() -> type:
+        """Returns the static parameters type for the Wan VAE harness."""
         return WanVaeAttentionStaticParams
 
     @staticmethod
     def dynamic_params_type() -> type:
+        """Returns the per-shape parameters type for the Wan VAE."""
         return WanVaeAttentionDynamicParams
 
     def __init__(
@@ -182,6 +184,7 @@ class WanVaeAttentionHarness(
 
     @property
     def name(self) -> str:
+        """Returns the registered harness name, ``wan_vae_attention``."""
         return "wan_vae_attention"
 
     def _max_state_dict(self) -> dict[str, Any]:
@@ -207,6 +210,7 @@ class WanVaeAttentionHarness(
         }
 
     def build_graph(self) -> tuple[Graph, dict[str, DLPackArray]]:
+        """Builds the Wan VAE attention graph and its weight registry."""
         p = self.static_params
         max_dtype, _ = DTYPE_MAP[p.dtype]
         device_ref = DeviceRef.GPU()
@@ -227,6 +231,7 @@ class WanVaeAttentionHarness(
         return graph, layer.state_dict()
 
     def build_and_compile(self) -> CompiledLayerBundle:
+        """Compiles the attention graph through the runner's session."""
         graph, weights_registry = self.build_graph()
         compiled = self.session.load(graph, weights_registry=weights_registry)
         return CompiledLayerBundle(
@@ -240,6 +245,7 @@ class WanVaeAttentionHarness(
         bundle: CompiledLayerBundle,
         dynamic_params: WanVaeAttentionDynamicParams,
     ) -> tuple[list[Buffer], None]:
+        """Builds one seeded random input volume for the given shape."""
         p = self.static_params
         _, torch_dtype = DTYPE_MAP[p.dtype]
         dp = dynamic_params
@@ -263,11 +269,12 @@ class WanVaeAttentionHarness(
     def cleanup_inputs(
         self, bundle: CompiledLayerBundle, context: None
     ) -> None:
-        pass
+        """Releases nothing; the block allocates no per-shape resources."""
 
     def cuda_graph_eligible(
         self, dynamic_params: WanVaeAttentionDynamicParams
     ) -> bool:
+        """Returns ``True``, so every shape may use CUDA graph capture."""
         return True
 
     # -------------------------------------------------------------- #
@@ -275,6 +282,7 @@ class WanVaeAttentionHarness(
     # -------------------------------------------------------------- #
 
     def torch_reference_layer(self, device: str = "cuda") -> torch.nn.Module:
+        """Returns the torch attention block loaded with the harness weights."""
         p = self.static_params
         _, torch_dtype = DTYPE_MAP[p.dtype]
 
@@ -304,4 +312,5 @@ class WanVaeAttentionHarness(
         dynamic_params: WanVaeAttentionDynamicParams,
         device: str = "cuda",
     ) -> list[torch.Tensor]:
+        """Wraps the MAX input volume as a torch tensor on the target device."""
         return [torch.from_dlpack(execute_args[0]).to(device=device)]

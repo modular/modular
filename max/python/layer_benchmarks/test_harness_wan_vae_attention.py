@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Harness tests for the Wan VAE AttentionBlock (correctness + benchmark).
+r"""Harness tests for the Wan VAE AttentionBlock (correctness + benchmark).
 
 Runs a correctness comparison between the MAX ``AttentionBlock`` and a
 hand-rolled torch reference that mirrors diffusers' single-head
@@ -31,12 +31,12 @@ Environment variables:
 
 Example — 720p mid-block shape on the remote B200 runner::
 
-    bt-b200 //max/python/layer_benchmarks:harness_wan_vae_attention \\
-      --test_output=streamed --curses=no --noshow_progress \\
-      --test_timeout=600 \\
-      --test_env=WAN_VAE_DIM=384 \\
-      --test_env=WAN_VAE_FRAMES=4 \\
-      --test_env=WAN_VAE_H=90 \\
+    bt-b200 //max/python/layer_benchmarks:harness_wan_vae_attention \
+      --test_output=streamed --curses=no --noshow_progress \
+      --test_timeout=600 \
+      --test_env=WAN_VAE_DIM=384 \
+      --test_env=WAN_VAE_FRAMES=4 \
+      --test_env=WAN_VAE_H=90 \
       --test_env=WAN_VAE_W=160
 """
 
@@ -88,6 +88,7 @@ _RUN_BENCHMARK = os.environ.get("WAN_VAE_RUN_BENCHMARK", "0") == "1"
 def runner() -> LayerTestRunner[
     WanVaeAttentionStaticParams, WanVaeAttentionDynamicParams, None
 ]:
+    """Creates the runner for Wan VAE AttentionBlock."""
     params = _make_static_params()
     print(f"\nWanVaeAttention config: {params}")
     return create_runner(WAN_VAE_ATTENTION, params)
@@ -102,6 +103,7 @@ def test_correctness(
         WanVaeAttentionStaticParams, WanVaeAttentionDynamicParams, None
     ],
 ) -> None:
+    """Checks the runner's results against the reference."""
     shapes = _make_shapes()
     # bf16 attention output has real per-element drift (softmax +
     # QKV matmul + scale) that grows with seq_len; an allclose
@@ -124,6 +126,7 @@ def test_benchmark(
         WanVaeAttentionStaticParams, WanVaeAttentionDynamicParams, None
     ],
 ) -> None:
+    """Benchmarks Wan VAE AttentionBlock across its shapes."""
     shapes = _make_shapes()
     iterations = _env_int("WAN_VAE_ITERATIONS", 50)
     warmup = _env_int("WAN_VAE_WARMUP", 10)

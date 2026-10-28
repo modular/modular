@@ -130,6 +130,8 @@ def _make_fp4_weights(name: str, out_dim: int, in_dim: int) -> dict[str, Any]:
 
 @dataclass
 class AttentionWithRopeStaticParams(AttentionStaticParams):
+    """Static parameters for the RoPE attention harness."""
+
     dtype: str = "bf16"
     _fuse_rope_and_store: bool = True
 
@@ -162,13 +164,16 @@ class AttentionWithRopeHarness(
 
     @staticmethod
     def static_params_type() -> type:
+        """Returns the static parameters type for the RoPE attention harness."""
         return AttentionWithRopeStaticParams
 
     @property
     def name(self) -> str:
+        """Returns the harness name, suffixed with the configured dtype."""
         return f"attention_with_rope_{self.static_params.dtype}"
 
     def build_graph(self) -> tuple[Graph, dict[str, DLPackArray]]:
+        """Builds the RoPE attention graph with its paged KV cache inputs."""
         p = self.static_params
         dtype = p.dtype
         if dtype not in _VARIANTS:
@@ -326,6 +331,7 @@ class AttentionWithRopeHarness(
     def torch_reference_layer(
         self, device: str = "cuda"
     ) -> tuple[LlamaAttention, dict[str, Any]]:
+        """Returns the torch attention layer and the weights mapped for it."""
         p = self.static_params
         if p.dtype != "bf16":
             raise NotImplementedError(
@@ -363,6 +369,7 @@ class AttentionWithRopeHarness(
         dynamic_params: AttentionDynamicParams,
         device: str = "cuda",
     ) -> list[Any]:
+        """Converts MAX execute args into torch inputs for the reference."""
         p = self.static_params
         seq_len = dynamic_params.seq_len
         ctx_len = dynamic_params.ctx_len

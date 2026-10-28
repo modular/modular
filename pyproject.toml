@@ -137,7 +137,7 @@ convention = "google"
 "__init__.py" = ["F401"] # Ignore unused imports being re-exported
 # Enforce pydocstyle only for MAX API:
 # NOTE: Ruff skips all "missing docstring" (D10X) rules for *.pyi files
-"!max/python/max/**/{*.py,*.pyi}" = ["D"]
+"!max/python/**/{*.py,*.pyi}" = ["D"]
 # With exceptions for these packages:
 "max/python/max/config/**/*" = ["D"]
 "max/python/max/mlir/**/*" = ["D"]
