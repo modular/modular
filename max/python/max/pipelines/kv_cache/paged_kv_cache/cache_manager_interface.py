@@ -121,6 +121,16 @@ class PagedKVCacheManagerInterface(ABC):
         """
         return False
 
+    def active_length_after_alloc(self, ctx: TextContext) -> int:
+        """Returns how many tokens the request's next deferred ``alloc`` leaves.
+
+        Takes nothing for the request, so a caller can check it against a
+        budget before ``alloc`` changes it. A manager that never defers a
+        lookup or rolls back a failed onload reads the request's active
+        length, which its reuse only shrinks.
+        """
+        return ctx.tokens.active_length
+
     def hand_back_lookup(self, ctx: TextContext) -> bool:
         """Hands back the request's lookup without loading from it.
 

@@ -112,6 +112,7 @@ class FakeLookup:
         self.answered = False
         self.error: Exception | None = None
         self.polls = 0
+        self.mask_reads = 0
 
     def is_complete(self) -> bool:
         self.polls += 1
@@ -120,6 +121,7 @@ class FakeLookup:
         return self.answered
 
     def masks(self) -> Mapping[str, Sequence[bool]]:
+        self.mask_reads += 1
         if not self.answered:
             raise RuntimeError("the lookup has not answered yet")
         return self._masks
@@ -1563,6 +1565,143 @@ def test_a_deferred_answer_is_read_from_where_the_device_hit_ends() -> None:
     assert ctx.tokens.processed_length == len(asked)
     assert ctx.cached_prefix_length == len(asked)
     assert ctx.cached_prefix_external_length == len(asked) - 4
+
+
+def test_the_active_length_after_alloc_reads_what_an_answered_hit_leaves() -> (
+    None
+):
+    """What an answered lookup leaves is read before the alloc that loads it.
+
+    Unanswered, the request reads its whole prompt. Answered, it reads the
+    1 token the 3-block device hit and the 4-block answer leave, which is
+    what the alloc then leaves, and reading it takes and loads nothing.
+    """
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    _hold_in_connector_with_a_device_hit(manager, connector, tokens, 3)
+    assert manager.active_length_after_alloc(make_ctx(tokens)) == 8
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+    assert manager.active_length_after_alloc(ctx) == 8
+
+    (lookup,) = connector.started
+    lookup.answer()
+    loads = len(connector.loads)
+    predicted = manager.active_length_after_alloc(ctx)
+
+    assert predicted == 1
+    assert manager.num_req_blocks(ctx) == 0
+    assert len(connector.loads) == loads
+    manager.alloc(ctx, defer_lookup=True)
+    assert connector.loaded_from == [lookup]
+    assert ctx.tokens.active_length == predicted
+    assert lookup.mask_reads == 1, "the handle is read once"
+
+
+def test_the_active_length_after_alloc_reads_a_miss_from_the_device_hit() -> (
+    None
+):
+    """An answered miss leaves the request what its device hit does not cover."""
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    _hold_in_connector_with_a_device_hit(manager, connector, tokens, 3)
+    for held in connector.held.values():
+        held.clear()
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+    (lookup,) = connector.started
+    lookup.answer()
+    predicted = manager.active_length_after_alloc(ctx)
+
+    assert predicted == 5
+    manager.alloc(ctx, defer_lookup=True)
+    assert ctx.tokens.active_length == predicted
+
+
+def test_the_active_length_after_alloc_reads_a_lookup_given_up_as_a_miss() -> (
+    None
+):
+    """A lookup whose handle broke reads as a miss, without reading the handle.
+
+    The manager gives up on a handle whose poll raises and serves the request
+    from its device hit, so nothing may ask that handle for an answer.
+    """
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    _hold_in_connector_with_a_device_hit(manager, connector, tokens, 3)
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+    (lookup,) = connector.started
+    lookup.error = RuntimeError("the extension lost the handle")
+    predicted = manager.active_length_after_alloc(ctx)
+
+    assert predicted == 5
+    assert lookup.mask_reads == 0
+    manager.alloc(ctx, defer_lookup=True)
+    assert ctx.tokens.active_length == predicted
+
+
+def test_the_active_length_after_alloc_loads_nothing_past_a_shrunk_device_hit() -> (
+    None
+):
+    """A device hit that shrank under the lookup, with no re-asks left, loads none.
+
+    The answer starts where the 3-block device hit ended when it was asked,
+    so once that hit is evicted it covers none of the gap, and the alloc
+    computes the whole prompt.
+    """
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    _hold_in_connector_with_a_device_hit(manager, connector, tokens, 3)
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+    (lookup,) = connector.started
+    lookup.answer()
+    manager.reset_prefix_cache()
+    manager._requests[
+        ctx.request_id
+    ].connector_lookup_reasks = jenga_block_manager._MAX_CONNECTOR_LOOKUP_REASKS
+    predicted = manager.active_length_after_alloc(ctx)
+
+    assert predicted == 8
+    manager.alloc(ctx, defer_lookup=True)
+    assert ctx.tokens.active_length == predicted
+
+
+def test_the_active_length_after_alloc_reads_a_failed_onload_whole() -> None:
+    """A copy that failed reads as the whole prompt its rollback gives back.
+
+    The read settles the failure itself, as an alloc would, so a failure no
+    drain has seen yet still counts. The alloc then takes the device hit
+    again, which only leaves the request less than was read.
+    """
+    connector = FakeConnector([FULL])
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    _hold_in_connector_with_a_device_hit(manager, connector, tokens, 3)
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    transfer = manager.alloc(ctx)
+    assert ctx.tokens.active_length == 1
+    assert isinstance(transfer, FakeTransfer)
+    transfer.fails = True
+
+    assert manager.active_length_after_alloc(ctx) == 8
+    manager.alloc(ctx)
+    assert ctx.tokens.active_length == 5
 
 
 def test_a_deferred_answer_is_handed_back_when_the_device_hit_covers_it() -> (

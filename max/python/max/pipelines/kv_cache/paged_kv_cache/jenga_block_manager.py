@@ -197,6 +197,18 @@ class _PendingLookup:
         self._started_at = started_at
         self._answered = False
         self._returned = False
+        self._masks: Mapping[str, Sequence[bool]] | None = None
+
+    def masks(self) -> Mapping[str, Sequence[bool]]:
+        """Returns the connector's answer, reading the handle only once.
+
+        A handle is read once by contract, but the answer is read both by
+        :meth:`JengaBlockManager.active_length_after_alloc` and by the
+        ``alloc`` that loads from it.
+        """
+        if self._masks is None:
+            self._masks = self.handle.masks()
+        return self._masks
 
     def is_answered(self) -> bool:
         """Returns whether the lookup can be consumed.
@@ -359,6 +371,18 @@ class _PendingLookupTransfer:
     def synchronize(self) -> None:
         """Returns at once, since no copy is in flight to wait for."""
         return
+
+
+def _answer_past(
+    pending: _PendingLookup, num_device_blocks: int
+) -> dict[str, Sequence[bool]]:
+    """Returns the part of an answer past a device hit of that many blocks.
+
+    The lookup was asked from its ``first_block``, so a device hit that grew
+    while it was out has already served the start of the answer.
+    """
+    offset = num_device_blocks - pending.first_block
+    return {leaf_id: mask[offset:] for leaf_id, mask in pending.masks().items()}
 
 
 @dataclass(frozen=True)
@@ -1037,6 +1061,57 @@ class JengaBlockManager:
         """
         return self._state_of(ctx).pending_lookup is not None
 
+    def active_length_after_alloc(self, ctx: TextContext) -> int:
+        """Returns how many tokens the request's next deferred ``alloc`` leaves.
+
+        Settles landed transfers first and polls the request's lookup, as
+        ``alloc`` does, but takes no pages for the request, so a caller can
+        check it against a budget before ``alloc`` changes it. A failed
+        onload reads as rolled back to its whole prompt, crediting none of
+        the device hit ``alloc`` then takes again. An answered lookup reads
+        as loading the longest run its answer serves past the device hit.
+        A load the connector refuses or fails, or one the pool has no room
+        for, leaves the request more. Anything else reads the active length
+        the request has now, which reuse only shrinks, and so does a request
+        never claimed.
+        """
+        self.poll_transfers()
+        state = self._requests.get(ctx.request_id)
+        if state is None:
+            return ctx.tokens.active_length
+        if state.failed_onload is not None:
+            return ctx.tokens.processed_length + ctx.tokens.active_length
+
+        pending = state.pending_lookup
+        if (
+            pending is None
+            or not self._enable_prefix_caching
+            or ctx.tokens.processed_length != 0
+            or not pending.is_answered()
+            or state.lookup_is_stale()
+        ):
+            return ctx.tokens.active_length
+
+        self._compute_hashes_for_request(ctx)
+        desired_hashes = state.hashes[state.committed_idx // self._block_size :]
+        num_device_blocks = self._count_device_prefix_blocks(
+            desired_hashes, self._replica_of(ctx)
+        )
+        num_loaded = 0
+        if (
+            not pending.missed
+            and not state.skips_connector
+            and num_device_blocks >= pending.first_block
+        ):
+            num_loaded = self._longest_connector_hit(
+                _answer_past(pending, num_device_blocks)
+            )
+        reused = (
+            state.committed_idx
+            + (num_device_blocks + num_loaded) * self._block_size
+        )
+        return ctx.tokens.active_length - reused
+
     def hand_back_lookup(self, ctx: TextContext) -> bool:
         """Hands back the request's lookup without loading from it.
 
@@ -1623,12 +1698,8 @@ class JengaBlockManager:
                 desired, replica_idx=replica_idx, hint=hint
             )
         else:
-            offset = num_device_blocks - pending.first_block
             lookup = pending.handle
-            resident = {
-                leaf_id: mask[offset:]
-                for leaf_id, mask in lookup.masks().items()
-            }
+            resident = _answer_past(pending, num_device_blocks)
         aligned = self._longest_connector_hit(resident)
 
         pool = self.pools[replica_idx]
