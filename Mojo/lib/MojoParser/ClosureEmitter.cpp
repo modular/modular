@@ -1280,40 +1280,6 @@ static bool checkOriginAndOutline(
   return true;
 }
 
-template <typename AttrOrType>
-static void checkOriginAndOutlineImpl(
-    MLIRContext *ctx, DenseMap<StringAttr, bool> &originMutability,
-    llvm::MapVector<TypedAttr, ParamDeclRefAttr> &interiorOrigins,
-    AttrOrType attrOrType) {
-  if (!attrOrType)
-    return;
-  if constexpr (std::is_convertible_v<AttrOrType, Attribute>) {
-    if (!checkOriginAndOutline(ctx, originMutability, interiorOrigins,
-                               attrOrType))
-      return;
-  }
-  attrOrType.walkImmediateSubElements(
-      [&](Attribute attribute) {
-        checkOriginAndOutlineImpl(ctx, originMutability, interiorOrigins,
-                                  attribute);
-      },
-      [&](Type type) {
-        checkOriginAndOutlineImpl(ctx, originMutability, interiorOrigins, type);
-      });
-}
-
-template <typename AttrOrType>
-static void checkOriginAndOutline(
-    MLIRContext *ctx, DenseMap<StringAttr, bool> &originMutability,
-    llvm::MapVector<TypedAttr, ParamDeclRefAttr> &interiorOrigins,
-    AttrOrType attrOrType) {
-  if constexpr (std::is_convertible_v<AttrOrType, Attribute>)
-    attrOrType = cast<AttrOrType>(getCanonicalAttr(attrOrType));
-  else
-    attrOrType = cast<AttrOrType>(getCanonicalType(attrOrType));
-  checkOriginAndOutlineImpl(ctx, originMutability, interiorOrigins, attrOrType);
-}
-
 static SmallPtrSet<StringAttr, 8>
 collectPromotedOrigins(MLIRContext *ctx,
                        const DenseMap<StringAttr, bool> &originMutability,
@@ -1369,14 +1335,22 @@ static LogicalResult outlineAndPromoteOrigins(
   DenseMap<StringAttr, bool> originMutability;
   llvm::MapVector<TypedAttr, ParamDeclRefAttr> interiorOrigins;
 
+  // One walker for all roots, so each shared sub-tree is visited once.
+  mlir::AttrTypeWalker walker;
+  walker.addWalk([&](Attribute attr) {
+    return checkOriginAndOutline(ctx, originMutability, interiorOrigins, attr)
+               ? WalkResult::advance()
+               : WalkResult::skip();
+  });
+  auto walk = [&](auto root) {
+    if (root)
+      walker.walk<mlir::WalkOrder::PreOrder>(root);
+  };
   for (StructDefFieldAttr fieldDecl : fieldDecls)
-    checkOriginAndOutline(ctx, originMutability, interiorOrigins,
-                          fieldDecl.getTypeValue());
+    walk(getCanonicalAttr(fieldDecl.getTypeValue()));
   for (ParamDeclAttr param : allStructParams)
-    checkOriginAndOutline(ctx, originMutability, interiorOrigins,
-                          param.getType());
-  checkOriginAndOutline(ctx, originMutability, interiorOrigins,
-                        nestedFn.getFuncTypeGenerator());
+    walk(getCanonicalType(param.getType()));
+  walk(getCanonicalType(nestedFn.getFuncTypeGenerator()));
 
   // Append fresh parameter declarations and their parent-scope bindings.
   for (auto &[interiorAttr, paramRef] : interiorOrigins) {
