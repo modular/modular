@@ -278,15 +278,13 @@ static void normalizeRangeForIdiom(LoopOp loop, LIT::TryOp tryOp) {
       !initAttr.getValues().front().getData().isZero())
     return;
 
-  // The except break carries the loop's exit values.
-  BreakOp breakOp;
-  tryOp.getExceptRegion().walk([&](BreakOp b) {
-    if (!breakOp)
-      breakOp = b;
-  });
-  if (!breakOp)
+  Block &exceptBlock = tryOp.getExceptRegion().front();
+  // TODO: Support raising loops with additional operations in the except block.
+  if (!llvm::hasSingleElement(exceptBlock) ||
+      !isa<BreakOp>(exceptBlock.getTerminator()))
     return;
-  SmallVector<Value> breakOperands(breakOp.getOperands());
+
+  SmallVector<Value> breakOperands(exceptBlock.getTerminator()->getOperands());
   // The break is rebuilt outside the `lit.try`, which is then erased, so an
   // operand defined inside it (the except block's exception payload) would be
   // left dangling. Bail rather than build a use of a value about to die.
@@ -347,14 +345,12 @@ static void normalizeRangeForIdiom(LoopOp loop, LIT::TryOp tryOp) {
         continue;
       Operation *defScope = operand.getParentBlock()->getParentOp();
       if (loop->isAncestor(defScope)) {
-        InFlightDiagnostic diag = mlir::emitWarning(leadingOp.getLoc())
-                                  << "raise-for-loops: loop-exit op depends on "
-                                     "a loop-internal value; cannot hoist it "
-                                     "out of the loop";
-        bool dropDiag = true;
-        LLVM_DEBUG(dropDiag = false;);
-        if (dropDiag)
-          diag.abandon();
+        LLVM_DEBUG({
+          mlir::emitWarning(leadingOp.getLoc())
+              << "raise-for-loops: loop-exit op depends on "
+                 "a loop-internal value; cannot hoist it "
+                 "out of the loop";
+        });
         return;
       }
     }
