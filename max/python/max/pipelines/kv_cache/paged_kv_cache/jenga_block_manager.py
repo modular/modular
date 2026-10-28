@@ -1291,12 +1291,16 @@ class JengaBlockManager:
         """Offloads the recently committed blocks and the pending checkpoints.
 
         A checkpoint offloads what each leaf needs to resume at it, except
-        the leaves streamed as they commit. Each leaf's run stops at the
-        first block the leaf has evicted since it was queued, since a reload
-        needs everything before it. A request holds its committed blocks
-        until it is released, which offloads first, and keeps what a
+        the leaves streamed as they commit. A leaf with a full prefix
+        dependency stops at its first missing block, since a reload needs
+        everything before it. A windowed leaf skips a missing block instead:
+        each block it published is a whole page of valid KV, and a window
+        reload needs only its own window, so the blocks past a gap (a page
+        never fully written, or one evicted since it was queued) still serve
+        the windows that do not contain it. A request holds its committed
+        blocks until it is released, which offloads first, and keeps what a
         checkpoint reads until after the next offload, so only a streamed
-        leaf that frees blocks as it slides can stop short.
+        leaf that frees blocks as it slides can have evicted one.
         """
         connector = self._connector
         if connector is None:
@@ -1322,10 +1326,15 @@ class JengaBlockManager:
             }
             for leaf_id, hashes in hashes_by_leaf.items():
                 prefix_cache = pool.prefix_caches[leaf_id]
+                stops_at_gap = self._cacheable_groups[
+                    leaf_id
+                ].has_full_prefix_dependency
                 for block_hash in hashes:
                     block = prefix_cache.get(block_hash)
                     if block is None:
-                        break
+                        if stops_at_gap:
+                            break
+                        continue
                     src[leaf_id].append(block)
                     block_hashes[leaf_id].append(block_hash)
             if not any(block_hashes.values()):

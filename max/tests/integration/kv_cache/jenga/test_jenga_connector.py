@@ -3326,3 +3326,72 @@ def test_a_checkpoint_waiting_on_another_replica_is_sent_whole() -> None:
 
     _, checkpoint = connector.offloads[-1]
     assert checkpoint[STATE] == streamed[FULL][1:]
+
+
+def _partially_written_sliding_manager() -> tuple[
+    JengaBlockManager, FakeConnector, TextContext
+]:
+    """A request whose sliding pages 6 and 7 were never fully written.
+
+    The first forward writes pages 0-5 and the second only pages 8-11, as a
+    bounded replay that computes just a chunk's tail rows does, so pages 6
+    and 7 can never be published.
+    """
+    groups = {
+        FULL: KVCacheGroupId.full(),
+        SLIDING: KVCacheGroupId("sliding_window", 4),
+    }
+    connector = FakeConnector(groups, asynchronous=False)
+    manager = make_manager(
+        connector,
+        num_huge_blocks=64,
+        leaf_infos={
+            FULL: KVLeafInfo(1, groups[FULL]),
+            SLIDING: KVLeafInfo(1, groups[SLIDING]),
+        },
+    )
+    manager.with_checkpointer(Checkpointer.factory().disabled().build())
+    ctx = make_ctx(list(range(1, 13)))
+    manager.claim(ctx)
+    ctx.tokens.chunk(6)
+    manager.alloc(ctx)
+    ctx.update(9)
+    ctx.kv_cache_write_ranges[SLIDING] = (0, 6)
+    manager.step(ctx)
+    manager.alloc(ctx)
+    ctx.update(9)
+    ctx.kv_cache_write_ranges[SLIDING] = (8, 12)
+    manager.step(ctx)
+    manager.offload(0)
+    return manager, connector, ctx
+
+
+def test_an_unwritten_sliding_page_does_not_stop_the_offload_past_it() -> None:
+    manager, connector, ctx = _partially_written_sliding_manager()
+    hashes = manager._compute_hashes_for_request(ctx)
+    published = [*hashes[:6], *hashes[8:12]]
+    assert set(manager.pools[0].prefix_caches[SLIDING]) == set(published)
+    connector.offloads.clear()
+
+    # A checkpoint window reaching back over the gap queues unpublished pages.
+    manager._pending_offloads[0].append({SLIDING: hashes[:12]})
+    manager.offload(0)
+
+    ((_, sent),) = connector.offloads
+    assert sent[SLIDING] == published
+    assert not set(sent[SLIDING]) & {hashes[6], hashes[7]}
+
+
+def test_a_missing_block_stops_a_full_leaf_but_not_a_windowed_one() -> None:
+    manager, connector, ctx = _partially_written_sliding_manager()
+    hashes = manager._compute_hashes_for_request(ctx)
+    gone = b"evicted"
+    connector.offloads.clear()
+
+    run = [hashes[0], gone, hashes[2]]
+    manager._pending_offloads[0].append({FULL: run, SLIDING: run})
+    manager.offload(0)
+
+    ((_, sent),) = connector.offloads
+    assert sent[FULL] == [hashes[0]]
+    assert sent[SLIDING] == [hashes[0], hashes[2]]
