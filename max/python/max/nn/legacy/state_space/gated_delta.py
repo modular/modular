@@ -90,8 +90,7 @@ class GatedDeltaReplayInputs(NamedTuple):
     to land the pools on the accepted prefix instead. Every op feeding these
     tensors is causal or pointwise, so re-running the two kernels over the
     accepted rows from the pre-verify state reproduces the state the verify
-    pass held at that length. Captured only when the caller asks for it; see
-    ``mach/docs/qwen38_27b/mtp-serving.md``.
+    pass held at that length. Captured only when the caller asks for it.
     """
 
     qkv: TensorValue

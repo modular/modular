@@ -385,11 +385,7 @@ class SupportedArchitecture:
     spec_decode_graph_names: Mapping[str, str] = field(default_factory=dict)
     """The names an engine looks the fused graph up by, under the draft's
     architecture name or the speculative method. A pairing not listed is named
-    ``unified_{method}``.
-
-    Kept for Mach, whose engine finds a fused graph in the compiled MEF by
-    these names; renaming one needs the matching change in Mach.
-    """
+    ``unified_{method}``."""
 
     supports_overlap_scheduler: bool = True
     """Whether this architecture supports auto-enabling the overlap scheduler.

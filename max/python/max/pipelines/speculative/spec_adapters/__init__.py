@@ -192,7 +192,7 @@ def export_contract(
 
     Only a target whose engine keeps such a record has one.
 
-    Mach's ``gen_mef`` writes it to the export's sidecar.
+    An exporter writes it to the graph's sidecar.
     """
     return _adapter(target_arch).export_contract(
         speculative,

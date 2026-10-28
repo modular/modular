@@ -228,7 +228,7 @@ class KVCacheGroupId:
 
         The rule itself is
         :meth:`max._kv_core.LeafShape.longest_hit`, applied to
-        :meth:`prefix_hit_shape`, so MAX and Mach share one copy.
+        :meth:`prefix_hit_shape`.
 
         Args:
             page_size: Tokens per block, which turns ``window_size`` into a

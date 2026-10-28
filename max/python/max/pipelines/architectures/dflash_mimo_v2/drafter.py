@@ -166,8 +166,8 @@ def drafter_config(
 class DrafterExport:
     """What an export built into the graph from the drafter.
 
-    ``gen_mef`` records it in the sidecar with the hashes of the files in
-    ``directory``, which Mach re-hashes at boot.
+    An exporter records it in the graph's sidecar, with the hashes of the
+    files in ``directory`` for the serving engine to check at load time.
     """
 
     directory: Path

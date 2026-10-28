@@ -487,11 +487,9 @@ def check(speculative: SpeculativeConfig, structured_output: bool) -> None:
             "Speculative Qwen3.5 needs the constrained-decoding bitmask input:"
             " this checkpoint's lm_head has live padding rows past"
             " sampleable_vocab_size and the in-graph acceptance sampler"
-            " excludes them only through that mask. Exporting a MEF with"
-            " mach/tools/gen-mef turns it on by default and"
-            " --no-sampler-grammar turns it off; elsewhere it follows"
+            " excludes them only through that mask. Turn it on with"
             " --enable-structured-output (or a tool parser that implies"
-            " it)."
+            " it), or leave it on when exporting the graph."
         )
 
 

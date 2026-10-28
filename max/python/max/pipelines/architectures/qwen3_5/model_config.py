@@ -157,14 +157,13 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
     """Storage dtype override for the linear-attention state pools.
 
     ``None`` (the default) stores both pools at :attr:`compute_dtype`
-    (bfloat16), the configuration every exported artifact and the Mach
-    registry declare. ``float32`` makes a speculated generation follow the
-    exact state trajectory of an unspeculated one — the recurrence rounds to
-    the pool dtype only at a call boundary, so a lossy pool makes the
-    trajectory depend on speculation's chunking — at roughly double the
-    per-request state memory (74.8 to 149.6 MiB for Qwen3.8-27B). Set via the
-    ``state_pool_dtype`` KV-cache config knob; read through
-    :attr:`state_dtype`."""
+    (bfloat16), the configuration every exported artifact declares.
+    ``float32`` makes a speculated generation follow the exact state
+    trajectory of an unspeculated one — the recurrence rounds to the pool
+    dtype only at a call boundary, so a lossy pool makes the trajectory depend
+    on speculation's chunking — at roughly double the per-request state memory
+    (74.8 to 149.6 MiB for Qwen3.8-27B). Set via the ``state_pool_dtype``
+    KV-cache config knob; read through :attr:`state_dtype`."""
 
     # Vision encoder (optional - text-only models leave these None)
     vision_config: VisionConfig | None = None

@@ -436,9 +436,9 @@ class SpeculativeConfig(ConfigFileModel):
         description=(
             "Declares presence/frequency penalty inputs on the fused "
             "speculative graph and applies them to the verified logits "
-            "before acceptance. For engines that feed those inputs (Mach); "
-            "MAX Serve's speculative pipeline does not, and a block draft "
-            "refuses them."
+            "before acceptance. It takes effect only in an engine that feeds "
+            "those inputs. MAX Serve's speculative pipeline doesn't, and a "
+            "block draft refuses them."
         ),
     )
 
