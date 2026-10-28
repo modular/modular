@@ -24,3 +24,11 @@ model:
   trust_remote_code: true
   kv_cache:
     kv_cache_format: float8_e4m3fn
+
+runtime:
+  # On gfx950, warmup's device-graph-capture fails every time with
+  # hipErrorStreamCaptureUnsupported inside a grouped-matmul primitive.
+  # Serving with capture disabled works. Same class of issue GLM-5.3 and
+  # MiniMax-M3 hit on MI355; see their recipes for precedent.
+  # TODO(SERVOPT-1669): remove once the kernel is capture-safe on CDNA4.
+  device_graph_capture: false
