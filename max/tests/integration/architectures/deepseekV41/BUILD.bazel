@@ -64,8 +64,12 @@ modular_py_test(
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/python/max/pipelines/speculative",
+        requirement("numpy"),
         requirement("transformers"),
     ],
 )
@@ -684,5 +688,57 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/deepseekV41",
         requirement("numpy"),
         requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "test_replay_plan",
+    srcs = ["test_replay_plan.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_replay_trunk",
+    srcs = ["test_replay_trunk.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_replay_dspark",
+    srcs = ["test_replay_dspark.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_replay_writes",
+    srcs = ["test_replay_writes.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/context",
+        requirement("numpy"),
     ],
 )

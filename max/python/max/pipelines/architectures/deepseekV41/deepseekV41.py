@@ -68,7 +68,10 @@ from .layers import final_collapse, fused_hc_step
 from .layers.attention import (
     CSA2Attention,
     CSA2Cache,
+    PendingCSA2Attention,
+    gather_pending_attention,
     make_csa2_attn_factory,
+    tail_cache_view,
 )
 from .layers.dspark_moe import DeepseekV41DSparkMoE
 from .layers.engram import Engram
@@ -85,7 +88,7 @@ from .layers.moe import (
     DeepseekV41MoE,
     moe_ffn_factory,
 )
-from .layers.ragged import ReplicaTokens
+from .layers.ragged import ReplayRows, ReplicaTokens
 from .layers.ragged import V41RaggedRows as RaggedRows
 from .model_config import (
     DeepseekV41Config,
@@ -432,13 +435,85 @@ def _attn_reads_mxfp8(attn: Module) -> bool:
     )
 
 
+def _gather_streams(stream: HCStreams, indices: TensorValue) -> HCStreams:
+    """Gathers the row axis of every tensor of ``stream``."""
+
+    def gather(value: TensorValue | None) -> TensorValue | None:
+        return None if value is None else ops.gather(value, indices, axis=1)
+
+    return HCStreams(
+        ops.gather(stream.residual, indices, axis=1),
+        pre=gather(stream.pre),
+        out=gather(stream.out),
+        post=gather(stream.post),
+        comb=gather(stream.comb),
+    )
+
+
+def _check_replay(
+    config: DeepseekV41Config,
+    layer_infos: Sequence[LayerInfo],
+    tap_layer_ids: Sequence[int],
+) -> None:
+    """Checks the trunk can replay at its cut layer.
+
+    The cut layer writes every row's KV in ``begin``; later layers see only
+    the retained rows. An Engram operand is built for every row, so an Engram
+    layer after the cut would disagree with the retained row count.
+    """
+    cut = max(config.kv_source_layer_ids)
+    if cut not in {info.layer_id for info in layer_infos}:
+        raise ValueError(f"Replay cut layer {cut} is not a trunk layer")
+    if any(tap < cut for tap in tap_layer_ids):
+        raise ValueError("Replay taps must be at or after the cut layer")
+    late = [
+        info.layer_id
+        for info in layer_infos
+        if info.has_engram and info.layer_id > cut
+    ]
+    if late:
+        raise ValueError(
+            f"Replay requires every Engram layer at or before the cut layer "
+            f"{cut}; Engram layers {late} come after it"
+        )
+
+
+def _csa2_end(
+    attn: CSA2Attention,
+    state: PendingCSA2Attention,
+    rows: RaggedRows,
+    cache: object | None,
+    replay: ReplayRows | None,
+    swa_valid_from: TensorValue | None,
+) -> TensorValue:
+    if replay is not None:
+        assert isinstance(cache, CSA2Cache)
+        state = gather_pending_attention(
+            state,
+            replay.indices,
+            replay.rows,
+            tail_cache_view(cache, replay.rows, replay.longest),
+            attn.layer_info,
+        )
+        rows = replay.rows
+    return attn.end(state, rows, swa_valid_from=swa_valid_from)
+
+
 def _attend(
     attn: Module,
     h: TensorValue,
     rows: RaggedRows,
     cache: object | None,
     h_mxfp8: Mxfp8Rows | None,
+    *,
+    replay: ReplayRows | None = None,
+    swa_valid_from: TensorValue | None = None,
 ) -> TensorValue:
+    if replay is not None or swa_valid_from is not None:
+        if not isinstance(attn, CSA2Attention):
+            raise TypeError("Replay requires CSA2Attention")
+        state = attn.begin(h, rows, cache, h_mxfp8=h_mxfp8)
+        return _csa2_end(attn, state, rows, cache, replay, swa_valid_from)
     if h_mxfp8 is None:
         return attn(h, rows, cache)
     return attn(h, rows, cache, h_mxfp8=h_mxfp8)
@@ -570,6 +645,8 @@ class DeepseekV41Block(Module):
         caches: Sequence[object],
         signal_buffers: Sequence[BufferValue],
         *,
+        replay: Sequence[ReplayRows] | None = None,
+        swa_valid_from: Sequence[TensorValue] | None = None,
         engram_operands: Sequence[EngramOperand] | None = None,
         engram_token_masks: Sequence[TensorValue | None] | None = None,
     ) -> tuple[list[HCStreams], list[TensorValue]]:
@@ -621,6 +698,8 @@ class DeepseekV41Block(Module):
 
         attn_entered = DeepseekV41Block._attn_enter(blocks, streams)
         if not isinstance(blocks[0].attn, CSA2Attention):
+            if replay is not None or swa_valid_from is not None:
+                raise TypeError("Replay requires CSA2Attention")
             partials = [
                 block.attn(h, row, cache)
                 for block, (h, _, _), row, cache in zip(
@@ -634,7 +713,18 @@ class DeepseekV41Block(Module):
                 [q for _, q, _ in attn_entered],
                 rows,
                 caches,
+                replay=replay,
+                swa_valid_from=swa_valid_from,
             )
+        if replay is not None:
+            attn_entered = [
+                (h, q, _gather_streams(read, rp.indices))
+                for (h, q, read), rp in zip(attn_entered, replay, strict=True)
+            ]
+            token_ids = [
+                ops.gather(tok, rp.indices, axis=1)
+                for tok, rp in zip(token_ids, replay, strict=True)
+            ]
         attended = ops.allreduce.sum(partials, signal_buffers)
         streams = [
             _with_out(read, h)
@@ -658,6 +748,8 @@ class DeepseekV41Block(Module):
         signal_buffers: Sequence[BufferValue],
         replica_tokens: ReplicaTokens,
         *,
+        replay: Sequence[ReplayRows] | None = None,
+        swa_valid_from: Sequence[TensorValue] | None = None,
         engram_operands: Sequence[EngramOperand] | None = None,
         engram_token_masks: Sequence[TensorValue | None] | None = None,
     ) -> tuple[list[HCStreams], list[TensorValue]]:
@@ -710,11 +802,40 @@ class DeepseekV41Block(Module):
             ]
 
         attn_entered = DeepseekV41Block._attn_enter(blocks, streams)
-        streams = [
-            _with_out(read, _attend(block.attn, h, row, cache, q))
-            for block, (h, q, read), row, cache in zip(
-                blocks, attn_entered, rows, caches, strict=True
+        replay_rows: Sequence[ReplayRows | None] = replay or [None] * len(
+            blocks
+        )
+        floors: Sequence[TensorValue | None] = swa_valid_from or [None] * len(
+            blocks
+        )
+        attended = [
+            _attend(
+                block.attn,
+                h,
+                row,
+                cache,
+                q,
+                replay=rp,
+                swa_valid_from=floor,
             )
+            for block, (h, q, _), row, cache, rp, floor in zip(
+                blocks,
+                attn_entered,
+                rows,
+                caches,
+                replay_rows,
+                floors,
+                strict=True,
+            )
+        ]
+        if replay is not None:
+            attn_entered = [
+                (h, q, _gather_streams(read, rp.indices))
+                for (h, q, read), rp in zip(attn_entered, replay, strict=True)
+            ]
+        streams = [
+            _with_out(read, out)
+            for (_, _, read), out in zip(attn_entered, attended, strict=True)
         ]
         return DeepseekV41Block._ffn_parallel(
             blocks,
@@ -736,8 +857,15 @@ class DeepseekV41Block(Module):
         normed_mxfp8: Sequence[Mxfp8Rows | None],
         rows: Sequence[RaggedRows],
         caches: Sequence[object],
+        *,
+        replay: Sequence[ReplayRows] | None = None,
+        swa_valid_from: Sequence[TensorValue] | None = None,
     ) -> list[TensorValue]:
-        """Returns each device's CSA2 output-projection partial sum."""
+        """Returns each device's CSA2 output-projection partial sum.
+
+        With ``replay``, every device's rows are gathered between ``begin``
+        and ``end``, so its partial sum covers only the retained rows.
+        """
         attns: list[CSA2Attention] = []
         for block in blocks:
             assert isinstance(block.attn, CSA2Attention)
@@ -748,9 +876,17 @@ class DeepseekV41Block(Module):
                 attns, normed, normed_mxfp8, rows, caches, strict=True
             )
         ]
+        replay_rows: Sequence[ReplayRows | None] = replay or [None] * len(
+            blocks
+        )
+        floors: Sequence[TensorValue | None] = swa_valid_from or [None] * len(
+            blocks
+        )
         return [
-            attn.end(state, row)
-            for attn, state, row in zip(attns, states, rows, strict=True)
+            _csa2_end(attn, state, row, cache, rp, floor)
+            for attn, state, row, cache, rp, floor in zip(
+                attns, states, rows, caches, replay_rows, floors, strict=True
+            )
         ]
 
     @staticmethod
@@ -802,6 +938,8 @@ class DeepseekV41Block(Module):
         token_ids: TensorValue,
         cache: object | None = None,
         *,
+        replay: ReplayRows | None = None,
+        swa_valid_from: TensorValue | None = None,
         engram_operand: EngramOperand | None = None,
         engram_token_mask: TensorValue | None = None,
     ) -> tuple[HCStreams, TensorValue]:
@@ -813,6 +951,12 @@ class DeepseekV41Block(Module):
             rows: Ragged-batch bookkeeping, forwarded to ``attn``.
             token_ids: Forwarded to ``ffn``.
             cache: Forwarded to ``attn``; opaque to this block.
+            replay: Gathers the attention's query rows to these rows between
+                ``begin`` and ``end``; the FFN and the returned copies then
+                cover only them. The caller must pass ``rows`` and ``cache``
+                of the retained rows to later layers.
+            swa_valid_from: Forwarded to ``attn.end``; see
+                :meth:`CSA2Attention.end`.
             engram_operand: This layer's Engram table rows, gathered for
                 these tokens. Required iff ``self.engram_fn is not None``.
             engram_token_mask: ``[s]`` bool; ``False`` turns Engram off at
@@ -849,9 +993,19 @@ class DeepseekV41Block(Module):
             self.attn_norm,
             mxfp8=_attn_reads_mxfp8(self.attn),
         )
-        streams = _with_out(
-            attn_read, _attend(self.attn, h, rows, cache, h_mxfp8)
+        out = _attend(
+            self.attn,
+            h,
+            rows,
+            cache,
+            h_mxfp8,
+            replay=replay,
+            swa_valid_from=swa_valid_from,
         )
+        if replay is not None:
+            attn_read = _gather_streams(attn_read, replay.indices)
+            token_ids = ops.gather(token_ids, replay.indices, axis=1)
+        streams = _with_out(attn_read, out)
 
         h, h_mxfp8, ffn_read = _hc_enter_quantized(
             streams,
@@ -963,6 +1117,7 @@ class DeepseekV41Trunk(Module):
         cache: object | None = None,
         *,
         tap_layer_ids: Sequence[int],
+        replay: ReplayRows | None = None,
         engram_operands: Mapping[int, EngramOperand] | None = None,
         vision: VisionMerge | None = None,
     ) -> tuple[TensorValue, TensorValue | None]:
@@ -971,6 +1126,11 @@ class DeepseekV41Trunk(Module):
         A tap is the ``[1, s, hc, d]`` stream entering a layer in
         ``tap_layer_ids``, averaged over its copies. ``tap_layer_ids=()``
         adds nothing to the graph. Engram is off at image span positions.
+
+        With ``replay``, the layers after the cut layer (the last KV-source
+        layer, which writes every row) run only the retained rows, so the
+        stream and the taps cover only those; every tap must be at or after
+        the cut layer, and every Engram layer at or before it.
 
         Returns:
             The pre-norm ``[1, s, d]`` stream, and the taps concatenated in
@@ -982,6 +1142,9 @@ class DeepseekV41Trunk(Module):
                 Engram layer (its tap would have to follow the Engram step,
                 which happens inside the block).
         """
+        cut = max(self.config.kv_source_layer_ids)
+        if replay is not None:
+            _check_replay(self.config, self.layer_infos, tap_layer_ids)
         tap_ids = set(tap_layer_ids)
         if len(tap_ids) != len(tap_layer_ids):
             raise ValueError(f"repeated tap layer ids: {list(tap_layer_ids)}")
@@ -1020,9 +1183,18 @@ class DeepseekV41Trunk(Module):
                 rows,
                 tokens,
                 cache,
+                replay=replay if layer_info.layer_id == cut else None,
+                swa_valid_from=replay.swa_valid_from
+                if replay is not None and layer_info.layer_id > cut
+                else None,
                 engram_operand=operand,
                 engram_token_mask=engram_token_mask,
             )
+            if replay is not None and layer_info.layer_id == cut:
+                tokens = ops.gather(tokens, replay.indices, axis=1)
+                rows = replay.rows
+                assert isinstance(cache, CSA2Cache)
+                cache = tail_cache_view(cache, rows, replay.longest)
             if tapped:
                 taps.append(_hc_mean(entry))
         return streams.collapse(), (ops.concat(taps, axis=-1) if taps else None)
@@ -1066,6 +1238,7 @@ class DeepseekV41Trunk(Module):
         signal_buffers: Sequence[BufferValue],
         *,
         tap_layer_ids: Sequence[int],
+        replay: Sequence[ReplayRows] | None = None,
         engram_operands: Sequence[Mapping[int, EngramOperand]],
         visions: Sequence[VisionMerge] | None = None,
     ) -> tuple[TensorValue, list[TensorValue] | None]:
@@ -1074,8 +1247,13 @@ class DeepseekV41Trunk(Module):
         Returns:
             Device 0's ``[1, s, d]`` stream and, per device, the identical
             ``[1, s, d * len(tap_layer_ids)]`` taps (``None`` for no taps).
+            With ``replay`` they cover only the retained rows; see
+            :meth:`forward_with_taps`.
         """
         lead = trunks[0]
+        cut = max(lead.config.kv_source_layer_ids)
+        if replay is not None:
+            _check_replay(lead.config, lead.layer_infos, tap_layer_ids)
         tap_ids = set(tap_layer_ids)
         if len(tap_ids) != len(tap_layer_ids):
             raise ValueError(f"repeated tap layer ids: {list(tap_layer_ids)}")
@@ -1116,6 +1294,10 @@ class DeepseekV41Trunk(Module):
                 tokens,
                 caches,
                 signal_buffers,
+                replay=replay if layer_info.layer_id == cut else None,
+                swa_valid_from=[rp.swa_valid_from for rp in replay]
+                if replay is not None and layer_info.layer_id > cut
+                else None,
                 engram_operands=(
                     [
                         operands[layer_info.layer_id]
@@ -1126,6 +1308,16 @@ class DeepseekV41Trunk(Module):
                 ),
                 engram_token_masks=engram_token_masks,
             )
+            if replay is not None and layer_info.layer_id == cut:
+                tokens = [
+                    ops.gather(tok, rp.indices, axis=1)
+                    for tok, rp in zip(tokens, replay, strict=True)
+                ]
+                rows = [rp.rows for rp in replay]
+                caches = [
+                    tail_cache_view(cache, rp.rows, rp.longest)
+                    for cache, rp in zip(caches, replay, strict=True)
+                ]
             if tapped:
                 for per_dev, entry in zip(taps, entries, strict=True):
                     per_dev.append(_hc_mean(entry))
@@ -1146,6 +1338,9 @@ class DeepseekV41Trunk(Module):
         replica_tokens: ReplicaTokens,
         *,
         tap_layer_ids: Sequence[int],
+        batch_kept_indices: Sequence[TensorValue] | None = None,
+        kept_replica_tokens: ReplicaTokens | None = None,
+        replay: Sequence[ReplayRows] | None = None,
         engram_operands: Sequence[Mapping[int, EngramOperand]]
         | Sequence[EngramPending],
         visions: Sequence[VisionMerge] | None = None,
@@ -1159,11 +1354,32 @@ class DeepseekV41Trunk(Module):
         (:meth:`DeepseekV41._engram_operands_data_parallel`) are joined on
         the stream entering the first Engram layer.
 
+        With ``replay``, the layers after the cut layer run only the retained
+        rows (see :meth:`forward_with_taps`). ``batch_kept_indices`` are the
+        retained rows' indices in the whole batch, per device, and
+        ``kept_replica_tokens`` is where each device's retained rows sit in
+        the retained batch; the MoE gate reads ``batch_tokens`` gathered the
+        same way.
+
         Returns:
             Per device, its own ``[1, t_i, d]`` stream and its
             ``[1, t_i, d * len(tap_layer_ids)]`` taps (``None`` for no taps).
         """
         lead = trunks[0]
+        cut = max(lead.config.kv_source_layer_ids)
+        kept_batch_tokens: Sequence[TensorValue] = batch_tokens
+        if replay is not None:
+            _check_replay(lead.config, lead.layer_infos, tap_layer_ids)
+            if batch_kept_indices is None or kept_replica_tokens is None:
+                raise ValueError(
+                    "Replay requires batch_kept_indices and kept_replica_tokens"
+                )
+            kept_batch_tokens = [
+                ops.gather(tok, ind, axis=1)
+                for tok, ind in zip(
+                    batch_tokens, batch_kept_indices, strict=True
+                )
+            ]
         tap_ids = set(tap_layer_ids)
         if len(tap_ids) != len(tap_layer_ids):
             raise ValueError(f"repeated tap layer ids: {list(tap_layer_ids)}")
@@ -1213,14 +1429,23 @@ class DeepseekV41Trunk(Module):
                 block = trunk.layers[i]
                 assert isinstance(block, DeepseekV41Block)
                 blocks.append(block)
+            at_cut = replay is not None and layer_info.layer_id == cut
+            current_replica_tokens = replica_tokens
+            if at_cut:
+                assert kept_replica_tokens is not None
+                current_replica_tokens = kept_replica_tokens
             streams, entries = DeepseekV41Block.data_parallel(
                 blocks,
                 streams,
                 rows,
-                batch_tokens,
+                kept_batch_tokens if at_cut else batch_tokens,
                 caches,
                 signal_buffers,
-                replica_tokens,
+                current_replica_tokens,
+                replay=replay if at_cut else None,
+                swa_valid_from=[rp.swa_valid_from for rp in replay]
+                if replay is not None and layer_info.layer_id > cut
+                else None,
                 engram_operands=(
                     [operands[layer_info.layer_id] for operands in joined]
                     if layer_info.has_engram
@@ -1228,6 +1453,18 @@ class DeepseekV41Trunk(Module):
                 ),
                 engram_token_masks=engram_token_masks,
             )
+            if replay is not None and layer_info.layer_id == cut:
+                tokens = [
+                    ops.gather(tok, rp.indices, axis=1)
+                    for tok, rp in zip(tokens, replay, strict=True)
+                ]
+                rows = [rp.rows for rp in replay]
+                caches = [
+                    tail_cache_view(cache, rp.rows, rp.longest)
+                    for cache, rp in zip(caches, replay, strict=True)
+                ]
+                batch_tokens = kept_batch_tokens
+                replica_tokens = current_replica_tokens
             if tapped:
                 for per_dev, entry in zip(taps, entries, strict=True):
                     per_dev.append(_hc_mean(entry))

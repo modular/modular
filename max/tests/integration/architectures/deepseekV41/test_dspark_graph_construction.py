@@ -27,6 +27,7 @@ import numpy as np
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType
+from max.graph import Module as GraphModule
 from max.nn.legacy.comm.ep import EPConfig
 from max.nn.legacy.kv_cache import MultiKVCacheParams
 from max.nn.legacy.transformer import ReturnHiddenStates
@@ -46,11 +47,16 @@ from max.pipelines.architectures.deepseekV41.model_config import (
     DeepseekV41Config,
     RoutedExpertFormat,
 )
+from max.pipelines.architectures.deepseekV41.spec_adapters import (
+    replay_input_types,
+)
 from max.pipelines.architectures.dspark_deepseekV41 import (
     DSparkDeepseekV41DraftConfig,
 )
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
+    SpecGraph,
+    _forget_traced_weights,
     build_spec_graph,
 )
 from max.pipelines.speculative.config import SpeculativeConfig
@@ -258,6 +264,68 @@ def test_unified_dspark_graph_traces(
         assert [d.device for d in dists if isinstance(d, TensorType)] == devices
     else:
         assert len(dists) == 1
+
+
+@pytest.mark.parametrize("num_devices", [1, 4])
+def test_replay_graph_traces_after_the_full_graph_in_one_module(
+    num_devices: int,
+) -> None:
+    """The full and the replay graph trace over the same target and draft.
+
+    Each graph names and binds every weight itself, so the second trace must
+    not reuse the values the first graph defined. The replay graph takes the
+    full graph's inputs and then the replay inputs.
+    """
+    config = AutoConfig.from_pretrained(str(TESTDATA / "config.json"))
+    devices = [DeviceRef.GPU(i) for i in range(num_devices)]
+    model_config = _model_config(config, devices, 1)
+    kv_params = model_config.kv_params
+    assert isinstance(kv_params, MultiKVCacheParams)
+    n = max(model_config.vocab_size, model_config.engram_vocab_size)
+    token_map = (
+        np.arange(n, dtype=np.int32) % model_config.engram_compressed_vocab_size
+    )
+    model_config.engram_input_types = _engram_table_types(
+        model_config, devices, token_map, sharded=True
+    )
+    target = DeepseekV41(
+        model_config, engram_host_tables={}, engram_token_map=token_map
+    )
+    draft = DeepseekV41DSparkDrafter(model_config, devices[0])
+    module = GraphModule()
+
+    def build(replay: bool) -> SpecGraph:
+        return build_spec_graph(
+            _pipeline_config(config, 1, _speculative()),
+            MultiKVCacheParams.from_params({"target": kv_params}),
+            devices,
+            include_signal_buffers=num_devices > 1,
+            target=target,
+            target_config=model_config,
+            draft=draft,
+            draft_config=DSparkDeepseekV41DraftConfig(model_config),
+            hidden_states=ReturnHiddenStates.SELECTED_LAYERS,
+            draft_weights=None,
+            replay=replay,
+            module=module,
+        )
+
+    full = build(False)
+    _forget_traced_weights(target, draft)
+    replay = build(True)
+
+    assert full.graph.name == "unified_dspark_deepseekV41"
+    assert replay.graph.name == "unified_dspark_deepseekV41_replay"
+    declared = replay_input_types(model_config)
+    shared = len(full.input_types)
+    assert len(replay.input_types) == shared + len(declared)
+    assert [str(t) for t in replay.input_types[:shared]] == [
+        str(t) for t in full.input_types
+    ]
+    assert [str(t) for t in replay.input_types[shared:]] == [
+        str(t) for t in declared
+    ]
+    assert len(replay.graph.output_types) == len(full.graph.output_types)
 
 
 def _engram_table_types(

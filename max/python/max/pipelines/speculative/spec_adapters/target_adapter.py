@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from max.driver import Buffer, Device
 from max.graph import BufferType, TensorType, Value
@@ -115,6 +115,26 @@ def _default_extra(
     return {}
 
 
+def _default_replay_enabled(pipeline_config: Any, target_config: Any) -> bool:
+    """Compiles no replay graph."""
+    del pipeline_config, target_config
+    return False
+
+
+def _default_replay_input_types(
+    target_config: Any,
+) -> Sequence[TensorType | BufferType]:
+    """Returns no inputs only a replay graph takes."""
+    del target_config
+    return []
+
+
+def _default_batch_replay_buffers(target_inputs: object) -> list[Buffer]:
+    """Returns no replay inputs from the target's own batch processor."""
+    del target_inputs
+    return []
+
+
 def _default_takes_vision_outputs(target_config: Any) -> bool:
     del target_config
     return False
@@ -153,6 +173,50 @@ def verify_lengths(contexts: Sequence[TextContext]) -> list[int]:
         + len(ctx.spec_decoding_state.draft_tokens_to_verify)
         for ctx in contexts
     ]
+
+
+@runtime_checkable
+class ReplayBatching(Protocol):
+    """The hooks of a target's batch processor once replay is enabled.
+
+    These hooks keep per-batch state (the planned rows and the KV writes a
+    submission covers), which an adapter's stateless fields cannot, so the
+    pipeline calls them on the target's own batch processor.
+    """
+
+    def bind_kv_params(self, kv_params: Any) -> None:
+        """Binds the KV tree the pipeline serves.
+
+        Its leaf ids carry the pairing's child names, which are the keys the
+        block manager registers write ranges under.
+        """
+        ...
+
+    def settle_replay(self, inputs: Any, draft_width: int | None) -> bool:
+        """Returns whether the replay graph runs a batch about to execute.
+
+        A batch it declines runs the full graph and carries no replay inputs
+        afterwards.
+        """
+        ...
+
+    def record_submission(self, inputs: Any) -> None:
+        """Records the KV writes of the graph that just returned normally."""
+        ...
+
+    def begin_captured_submission(self, inputs: Any) -> None:
+        """Resets before a captured submission refreshes its buffers."""
+        ...
+
+    def on_captured_submission_success(
+        self, inputs: Any, draft_width: int | None
+    ) -> None:
+        """Records the KV writes of a captured submission that returned."""
+        ...
+
+    def finalize_kv_cache_writes(self, contexts: Sequence[TextContext]) -> None:
+        """Publishes the recorded KV writes before the pipeline's cache step."""
+        ...
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -230,6 +294,32 @@ class TargetAdapter:
         _default_extra
     )
     """Returns what the target's call reads of the trailing graph inputs."""
+
+    replay_enabled: Callable[[Any, Any], bool] = _default_replay_enabled
+    """Returns whether the pairing compiles a second, replay graph beside the
+    full one, given the pipeline config and the target's config.
+
+    The replay graph takes :attr:`replay_input_types` after every input of the
+    full graph, and runs the batches whose target batch processor prepared
+    those inputs. The target's batch processor must then implement
+    :class:`ReplayBatching`."""
+
+    replay_input_types: Callable[[Any], Sequence[TensorType | BufferType]] = (
+        _default_replay_input_types
+    )
+    """Returns the inputs only the replay graph takes, last of all."""
+
+    batch_replay_buffers: Callable[[object], list[Buffer]] = (
+        _default_batch_replay_buffers
+    )
+    """Returns the values of :attr:`replay_input_types` the target's batch
+    processor prepared; empty for a batch that runs the full graph."""
+
+    replay_extra: Callable[[Any, Sequence[Value[Any]]], dict[str, Any]] = (
+        _default_extra
+    )
+    """Returns what the target's call reads of the replay graph's inputs,
+    added to a driver batch's ``extra``."""
 
     takes_vision_outputs: Callable[[Any], bool] = _default_takes_vision_outputs
     """Returns whether the graph takes a vision encoder's output that MAX

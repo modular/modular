@@ -24,6 +24,7 @@ which each step records for the next once its drafts are accepted.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
@@ -67,8 +68,8 @@ from .deepseekV41 import (
 )
 from .dspark_drafter import DeepseekV41DSparkDrafter
 from .kv_leaves import V41KVLeafSpec
-from .layers.attention import CSA2Cache
-from .layers.ragged import ReplicaTokens
+from .layers.attention import CSA2Attention, CSA2Cache
+from .layers.ragged import ReplayRows, ReplicaTokens
 from .layers.ragged import V41RaggedRows as RaggedRows
 from .model import (
     DeepseekV41Inputs,
@@ -78,11 +79,15 @@ from .model import (
     make_routed_experts_device_resident,
 )
 from .model_config import DeepseekV41Config
+from .replay import replay_min_tokens, requested_min_tokens
 
 if TYPE_CHECKING:
+    from max.pipelines.lib import PipelineConfig
     from max.pipelines.speculative.block_driver import BlockProposer
     from max.pipelines.speculative.config import SpeculativeConfig
     from max.pipelines.speculative.spec_adapters import VerifyFn
+
+logger = logging.getLogger("max.pipelines")
 
 __all__ = [
     "ADAPTER",
@@ -110,6 +115,15 @@ step's windows in; absent without Engram layers."""
 
 _ENGRAM_TABLES = "engram_tables"
 """Key in :attr:`BlockBatch.extra` for each device's Engram tables."""
+
+_REPLAY_INDICES = "kept_indices"
+_REPLAY_OFFSETS = "kept_offsets"
+_REPLAY_SKIP = "kept_skip"
+_REPLAY_LONGEST = "kept_longest"
+"""Host ``[replicas]`` longest retained rows; never broadcast to devices."""
+_REPLAY_HOST_OFFSETS = "host_kept_offsets"
+"""Host copy of the kept offsets; only under data parallelism."""
+_REPLAY_DEVICE_INPUTS = (_REPLAY_INDICES, _REPLAY_OFFSETS, _REPLAY_SKIP)
 
 TrunkTaps = tuple[list[TensorValue], list[RaggedRows]]
 """Per device: captured trunk hidden states and their row layout.
@@ -314,6 +328,70 @@ def extra(target_config: Any, trailing: Sequence[Value[Any]]) -> dict[str, Any]:
     return out
 
 
+def replay_enabled(pipeline_config: PipelineConfig, target_config: Any) -> bool:
+    """Returns whether the pairing compiles a replay graph beside the full one.
+
+    The same gate the batch processor plans with, so a replay graph exists
+    exactly when a batch can ask for it.
+    """
+    assert isinstance(target_config, DeepseekV41Config)
+    if requested_min_tokens() == 0:
+        return False
+    threshold, disabled = replay_min_tokens(
+        target_config, pipeline_config.runtime.device_graph_capture
+    )
+    if disabled is not None:
+        logger.warning(
+            "DSV41 decoder replay requested but disabled: %s", disabled
+        )
+    return threshold > 0
+
+
+def replay_input_types(
+    target_config: Any,
+) -> Sequence[TensorType | BufferType]:
+    """Returns the inputs only the replay graph takes, last of all."""
+    assert isinstance(target_config, DeepseekV41Config)
+    device0 = target_config.devices[0]
+    types: list[TensorType | BufferType] = [
+        TensorType(DType.int64, ["replay_rows"], device=device0),
+        TensorType(DType.uint32, ["input_row_offsets_len"], device=device0),
+        TensorType(DType.int32, ["batch_size"], device=device0),
+        TensorType(DType.uint32, ["replay_replicas"], device=DeviceRef.CPU()),
+    ]
+    if target_config.data_parallel_degree > 1:
+        types.append(
+            TensorType(
+                DType.uint32, ["input_row_offsets_len"], device=DeviceRef.CPU()
+            )
+        )
+    return types
+
+
+def batch_replay_buffers(target_inputs: object) -> list[Buffer]:
+    """Returns the batch processor's values of :func:`replay_input_types`.
+
+    Empty for a batch that runs the full graph.
+    """
+    assert isinstance(target_inputs, DeepseekV41Inputs)
+    return list(target_inputs.replay_buffers)
+
+
+def replay_extra(
+    target_config: Any, replay: Sequence[Value[Any]]
+) -> dict[str, Any]:
+    """Returns the replay graph's inputs, named for the verify."""
+    assert isinstance(target_config, DeepseekV41Config)
+    names = (
+        *_REPLAY_DEVICE_INPUTS,
+        _REPLAY_LONGEST,
+        _REPLAY_HOST_OFFSETS,
+    )[: len(replay_input_types(target_config))]
+    return {
+        name: value.tensor for name, value in zip(names, replay, strict=True)
+    }
+
+
 def ep_input_types(target: Any) -> Sequence[TensorType | BufferType]:
     """Returns the routed experts' expert-parallel inputs, if any."""
     ep_config = target.config.ep_config
@@ -348,6 +426,67 @@ def leaf_caches(
         for spec in specs
     ]
     return [csa2_cache(specs, groups, i) for i in range(len(window))]
+
+
+def local_replay_rows(
+    indices: Sequence[TensorValue],
+    skip: Sequence[TensorValue],
+    kept_offsets: TensorValue,
+    splits: TensorValue,
+    kept_tokens: ReplicaTokens,
+    original_tokens: ReplicaTokens,
+    cache_lengths: Sequence[TensorValue],
+    window: int,
+    longest: TensorValue,
+) -> list[ReplayRows]:
+    """Maps batch-global replay rows to each DP replica, including empty ones.
+
+    ``cache_lengths`` are per device and cover only that replica's requests,
+    so each replica's start and floor are rebased after the request slice.
+    """
+    local = []
+    for i, (device_indices, device_skip) in enumerate(
+        zip(indices, skip, strict=True)
+    ):
+        first, last = kept_tokens.ranges[i]
+        request_first, request_last = splits[i], splits[i + 1]
+        local_indices = device_indices[
+            ((slice(first, last), f"replay_indices_{i}"),)
+        ]
+        original_first = original_tokens.ranges[i][0].to(local_indices.device)
+        offsets = kept_offsets.to(local_indices.device)[
+            ((slice(request_first, request_last + 1), f"replay_offsets_{i}"),)
+        ]
+        offsets = offsets - ops.cast(
+            first.to(local_indices.device), DType.uint32
+        )
+        local_skip = device_skip[
+            ((slice(request_first, request_last), f"replay_skip_{i}"),)
+        ]
+        local.append(
+            ReplayRows.from_inputs(
+                local_indices - original_first,
+                offsets,
+                local_skip,
+                cache_lengths[i],
+                window,
+                longest[i : i + 1],
+            )
+        )
+    return local
+
+
+def _reset_selections(replicas: Sequence[DeepseekV41]) -> None:
+    """Clears the selection the previous trace left in each attention's box.
+
+    A trace that does not start at layer 0 would read it; the first layer
+    overwrites it today, so this guards against the structure changing.
+    """
+    for replica in replicas:
+        for block in replica.trunk.layers:
+            attn = getattr(block, "attn", None)
+            if isinstance(attn, CSA2Attention):
+                attn.selection_box.current = None
 
 
 def verify(
@@ -437,14 +576,18 @@ class _Verify:
             streaming = self.target.expert_streaming
             if streaming is not None:
                 assert isinstance(streaming, ExpertStreaming)
+                # The replay graph traces the verify again, and its upload of
+                # a name is the full graph's.
+                known = {upload.name for upload in streaming.uploads}
+                uploads = make_routed_experts_device_resident(
+                    self.target,
+                    replicas,
+                    streaming.deferred,
+                    [ref.to_device() for ref in batch.devices],
+                    batch.devices,
+                )
                 streaming.uploads.extend(
-                    make_routed_experts_device_resident(
-                        self.target,
-                        replicas,
-                        streaming.deferred,
-                        [ref.to_device() for ref in batch.devices],
-                        batch.devices,
-                    )
+                    upload for upload in uploads if upload.name not in known
                 )
             self._replicas = replicas
         return self._replicas
@@ -479,6 +622,8 @@ class _Verify:
             )
         ]
         replicas = self.replicas(batch)
+        if _REPLAY_INDICES in batch.extra:
+            _reset_selections(replicas)
         if batch.data_parallel_degree > 1:
             logits, hidden = self._data_parallel(
                 batch, replicas, caches, visions
@@ -525,6 +670,12 @@ class _Verify:
                 batch.merged_tokens, batch.signal_buffers, batch.n_devs
             )
         ]
+        replay = self._replay_per_device(batch, caches)
+        rows_out, output_offsets = rows, batch.merged_offsets
+        if replay is not None:
+            rows_out = [item.rows for item in replay]
+            t = batch.extra[_REPLAY_INDICES].shape[0]
+            output_offsets = batch.extra[_REPLAY_OFFSETS]
         lookback = batch.extra.get(_ENGRAM_LOOKBACK)
         lead = replicas[0]
         tap_layer_ids = self.config.dspark_target_layer_ids
@@ -538,6 +689,7 @@ class _Verify:
                     tokens[0], rows[0], lookback
                 ),
                 vision=visions[0],
+                replay=replay[0] if replay is not None else None,
             )
             assert taps is not None
             taps_per_dev = [taps]
@@ -564,19 +716,52 @@ class _Verify:
                         batch.signal_buffers,
                     ),
                     visions=visions,
+                    replay=replay,
                 )
             )
             assert tensor_parallel_taps is not None
             taps_per_dev = tensor_parallel_taps
         outputs = logits_postprocess(
             ops.reshape(x, [t, self.config.hidden_size]),
-            batch.merged_offsets,
+            output_offsets,
             batch.return_n_logits,
             norm=lead.norm,
             lm_head=lead._lm_head,
             return_logits=ReturnLogits.VARIABLE,
         )
-        return outputs.logits["logits"], (taps_per_dev, rows)
+        return outputs.logits["logits"], (taps_per_dev, rows_out)
+
+    def _replay_operands(self, batch: BlockBatch) -> list[list[TensorValue]]:
+        return [
+            broadcast_per_device(
+                batch.extra[name], batch.signal_buffers, batch.n_devs
+            )
+            for name in _REPLAY_DEVICE_INPUTS
+        ]
+
+    def _replay_per_device(
+        self, batch: BlockBatch, caches: Sequence[CSA2Cache]
+    ) -> list[ReplayRows] | None:
+        """The retained rows per device, or ``None`` for the full graph."""
+        if _REPLAY_INDICES not in batch.extra:
+            return None
+        # One replica holds the whole batch, so its longest is the first.
+        longest = batch.extra[_REPLAY_LONGEST][0:1]
+        return [
+            ReplayRows.from_inputs(
+                indices,
+                offsets,
+                skip,
+                cache.swa_collection.cache_lengths,
+                self.config.sliding_window,
+                longest,
+            )
+            for (indices, offsets, skip), cache in zip(
+                zip(*self._replay_operands(batch), strict=True),
+                caches,
+                strict=True,
+            )
+        ]
 
     def _data_parallel(
         self,
@@ -619,6 +804,34 @@ class _Verify:
             ),
             prefix="verify",
         )
+        replay: list[ReplayRows] | None = None
+        batch_kept_indices = None
+        kept_replica_tokens = None
+        rows_out = split.rows
+        output_offsets = batch.merged_offsets
+        offsets_per_dev = batch.merged_offsets_per_dev
+        total = batch.merged_tokens.shape[0]
+        if _REPLAY_INDICES in batch.extra:
+            replay_operands = self._replay_operands(batch)
+            total = batch.extra[_REPLAY_INDICES].shape[0]
+            output_offsets = batch.extra[_REPLAY_OFFSETS]
+            kept_replica_tokens = ReplicaTokens.from_splits(
+                batch.extra[_REPLAY_HOST_OFFSETS], splits, total, batch.n_devs
+            )
+            batch_kept_indices = replay_operands[0]
+            offsets_per_dev = replay_operands[1]
+            replay = local_replay_rows(
+                replay_operands[0],
+                replay_operands[2],
+                output_offsets,
+                splits,
+                kept_replica_tokens,
+                split.replica_tokens,
+                [cache.swa_collection.cache_lengths for cache in caches],
+                self.config.sliding_window,
+                batch.extra[_REPLAY_LONGEST],
+            )
+            rows_out = [item.rows for item in replay]
         xs, taps = DeepseekV41Trunk.data_parallel_with_taps(
             [replica.trunk for replica in replicas],
             split.tokens,
@@ -628,6 +841,9 @@ class _Verify:
             batch.signal_buffers,
             split.replica_tokens,
             tap_layer_ids=self.config.dspark_target_layer_ids,
+            batch_kept_indices=batch_kept_indices,
+            kept_replica_tokens=kept_replica_tokens,
+            replay=replay,
             engram_operands=DeepseekV41._engram_operands_data_parallel(
                 replicas, split
             ),
@@ -643,20 +859,20 @@ class _Verify:
             return replica_verify_logits(
                 replicas,
                 xs,
-                batch.merged_offsets_per_dev,
+                offsets_per_dev,
                 splits,
                 batch.return_n_logits,
-            ), (taps, split.rows)
+            ), (taps, rows_out)
         lead = replicas[0]
         outputs = logits_postprocess(
-            gather_rows(xs, batch.merged_tokens.shape[0], batch.signal_buffers),
-            batch.merged_offsets,
+            gather_rows(xs, total, batch.signal_buffers),
+            output_offsets,
             batch.return_n_logits,
             norm=lead.norm,
             lm_head=lead._lm_head,
             return_logits=ReturnLogits.VARIABLE,
         )
-        return outputs.logits["logits"], (taps, split.rows)
+        return outputs.logits["logits"], (taps, rows_out)
 
     def _record_lookback(self, batch: BlockBatch) -> None:
         """Records each row's lookback window for the next step to read.
@@ -943,4 +1159,8 @@ ADAPTER = TargetAdapter(
     trailing_input_types=trailing_input_types,
     batch_trailing_buffers=batch_trailing_buffers,
     extra=extra,
+    replay_enabled=replay_enabled,
+    replay_input_types=replay_input_types,
+    batch_replay_buffers=batch_replay_buffers,
+    replay_extra=replay_extra,
 )

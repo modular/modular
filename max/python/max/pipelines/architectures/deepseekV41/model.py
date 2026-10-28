@@ -65,7 +65,11 @@ from max.nn.legacy.kv_cache import (
     PagedCacheValues,
 )
 from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import DecoderOutputs, ReturnLogits
+from max.nn.legacy.transformer import (
+    DecoderOutputs,
+    ReturnHiddenStates,
+    ReturnLogits,
+)
 from max.pipelines.context import (
     ImageMetadata,
     TextAndVisionContext,
@@ -121,6 +125,15 @@ from .model_config import (
     forward_row_bound,
     max_images_per_request,
 )
+from .replay import (
+    ReplayPlan,
+    build_replay_plan_with_reason,
+    log_replay_not_built,
+    replay_min_tokens,
+    requested_min_tokens,
+    sliding_window_leaf_id,
+)
+from .replay_writes import DSparkWriteBatch, DSparkWriteWitness
 from .vision import (
     DeepseekV41VisionConfig,
     DeepseekV41VisionModel,
@@ -984,6 +997,21 @@ class DeepseekV41Inputs(ModelInputs):
     Only under speculative decoding with data parallelism.
     """
 
+    replay_plan: ReplayPlan | None = None
+    """The rows the replay graph keeps; ``None`` runs the full graph.
+
+    Only under speculative decoding with replay enabled.
+    """
+
+    replay_buffers: tuple[Buffer, ...] = ()
+    """The replay graph's extra inputs, which the full graph does not take:
+    kept indices, offsets and skips, the longest kept row per replica and,
+    under data parallelism, the host kept offsets."""
+
+    replay_write_batch: DSparkWriteBatch | None = None
+    """The KV writes this batch's graph will cover, published once it is
+    submitted. Only under speculative decoding with replay enabled."""
+
     @property
     def buffers(self) -> tuple[Buffer, ...]:
         """The graph inputs; the vision ones are empty for a text-only model."""
@@ -1037,6 +1065,9 @@ class DeepseekV41BatchProcessor(
     _ep_buffers: tuple[Buffer, ...] = ()
     _vision_model: Model | None = None
     _empty_vision_embeddings: list[Buffer] | None = None
+    _served_kv_params: KVCacheParamInterface | None = None
+    _submitted_replay_writes: DSparkWriteBatch | None = None
+    _previous_replay_writes: tuple[DSparkWriteWitness, ...] = ()
 
     def __init__(
         self, config: DeepseekV41Config, runtime: BatchProcessorRuntime
@@ -1044,6 +1075,36 @@ class DeepseekV41BatchProcessor(
         super().__init__(config, runtime)
         self._prev_rows: dict[Hashable, int] = {}
         self._engram_history: Buffer | None = None
+
+    @functools.cached_property
+    def replay_min_tokens(self) -> int:
+        """The replay threshold under speculative decoding; 0 when off."""
+        if requested_min_tokens() == 0:
+            return 0
+        threshold, disabled = replay_min_tokens(
+            self.config,
+            self.runtime.pipeline_config.runtime.device_graph_capture,
+        )
+        if disabled is not None:
+            logger.warning(
+                "DSV41 decoder replay requested but disabled: %s", disabled
+            )
+        return threshold
+
+    def bind_kv_params(self, kv_params: KVCacheParamInterface) -> None:
+        """Binds the served KV tree, whose leaf ids the block manager keys on.
+
+        The target's own params name the window leaf ``swa.*``, but a
+        speculative pairing registers it under its child, ``target.swa.*``.
+        """
+        self._served_kv_params = kv_params
+
+    @functools.cached_property
+    def _replay_leaf_id(self) -> str:
+        served = self._served_kv_params
+        return sliding_window_leaf_id(
+            self.config.kv_params if served is None else served
+        )
 
     def bind_ep_buffers(self, buffers: Sequence[Buffer]) -> None:
         """Binds the expert-parallel buffers created at model load."""
@@ -1163,6 +1224,7 @@ class DeepseekV41BatchProcessor(
         kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> DeepseekV41Inputs:
+        self._submitted_replay_writes = None
         dp = self.config.data_parallel_degree
         if dp > 1:
             if len(replica_batches) != dp:
@@ -1240,6 +1302,7 @@ class DeepseekV41BatchProcessor(
                 )
                 for batch in replica_batches
             ]
+        self._prepare_replay(inputs, replica_batches, contexts, return_n_logits)
         depth = self._engram_lookback_depth
         if not depth:
             return
@@ -1270,6 +1333,159 @@ class DeepseekV41BatchProcessor(
         self._prev_rows = {ctx.request_id: i for i, ctx in enumerate(contexts)}
         inputs.engram_lookback_source = source.to(device0)
         inputs.engram_lookback_history = self._engram_history
+
+    def _prepare_replay(
+        self,
+        inputs: DeepseekV41Inputs,
+        replica_batches: Sequence[Sequence[TextContext]],
+        contexts: Sequence[TextContext],
+        return_n_logits: int,
+    ) -> None:
+        """Plans the batch's replay rows and snapshots its KV writes.
+
+        The plan's merged rows are each request's prompt rows followed by
+        its ``return_n_logits - 1`` verify draft rows. The write snapshot is
+        taken whenever replay is enabled, trimmed or not, so the pipeline can
+        publish what this batch's graph writes.
+        """
+        min_tokens = self.replay_min_tokens
+        if not min_tokens:
+            self._previous_replay_writes = ()
+            return
+        verify_width = max(0, return_n_logits - 1)
+        plan, skip_reason = build_replay_plan_with_reason(
+            contexts,
+            window_size=self.config.sliding_window,
+            min_tokens=min_tokens,
+            verify_width=verify_width,
+            return_hidden_states=self.runtime.return_hidden_states
+            != ReturnHiddenStates.NONE,
+            enable_echo=self.runtime.pipeline_config.model.enable_echo,
+        )
+        if skip_reason is not None:
+            log_replay_not_built(logger, skip_reason, contexts)
+        inputs.replay_plan = plan
+        inputs.replay_write_batch = DSparkWriteBatch.capture(
+            contexts,
+            plan,
+            leaf_id=self._replay_leaf_id,
+            verified_width=verify_width,
+            previous=self._previous_replay_writes,
+        )
+        if plan is None:
+            return
+        device0 = self.runtime.devices[0]
+        dp = len(replica_batches) > 1
+        boundaries = (
+            compute_data_parallel_splits(replica_batches)
+            if dp
+            else [0, len(contexts)]
+        )
+        inputs.replay_buffers = (
+            *(
+                Buffer.from_numpy(array).to(device0)
+                for array in (
+                    plan.kept_indices,
+                    plan.kept_offsets,
+                    plan.kept_skip,
+                )
+            ),
+            Buffer.from_numpy(plan.kept_longest(boundaries)),
+            *((Buffer.from_numpy(plan.kept_offsets),) if dp else ()),
+        )
+        logger.debug(
+            "DSV41 decoder replay plan: kept_indices=%s kept_offsets=%s "
+            "kept_skip=%s boundaries=%s",
+            plan.kept_indices,
+            plan.kept_offsets,
+            plan.kept_skip,
+            boundaries,
+        )
+
+    def settle_replay(
+        self, inputs: DeepseekV41Inputs, draft_width: int | None
+    ) -> bool:
+        """Decides at execution whether the replay graph runs this batch.
+
+        Write coverage is claimed only when the draft width is the one the
+        snapshot was taken for. A plan that cannot claim coverage is dropped
+        and the full graph runs. A plan built for another width than the
+        batch's drafts is a hard error: its kept rows address a different
+        merged row space.
+
+        Returns:
+            Whether to run the replay graph.
+        """
+        self._submitted_replay_writes = None
+        write_batch = inputs.replay_write_batch
+        if (
+            write_batch is not None
+            and write_batch.verified_width != draft_width
+        ):
+            inputs.replay_write_batch = None
+        plan = inputs.replay_plan
+        if plan is None:
+            return False
+        if inputs.replay_write_batch is None:
+            logger.debug(
+                "DSV41 decoder replay plan dropped: draft_width=%s "
+                "plan_verify_width=%d",
+                draft_width,
+                plan.verify_width,
+            )
+            inputs.replay_plan = None
+            inputs.replay_buffers = ()
+            return False
+        if plan.verify_width != draft_width:
+            raise RuntimeError(
+                f"Replay plan verify width {plan.verify_width} differs "
+                f"from the batch's draft width {draft_width}"
+            )
+        logger.debug(
+            "DSV41 decoder replay engaged: kept_rows=%d total_rows=%d "
+            "requests=%d",
+            len(plan.kept_indices),
+            inputs.tokens.shape[0],
+            len(plan.kept_skip),
+        )
+        return True
+
+    def record_submission(self, inputs: DeepseekV41Inputs) -> None:
+        """Records the writes of the graph that just returned normally."""
+        self._submitted_replay_writes = inputs.replay_write_batch
+
+    def begin_captured_submission(self, inputs: DeepseekV41Inputs) -> None:
+        """Clears the submitted writes before a captured replay refreshes."""
+        self._submitted_replay_writes = None
+        if inputs.replay_plan is not None or inputs.replay_buffers:
+            raise RuntimeError(
+                "Captured DSpark submissions require FULL inputs"
+            )
+
+    def on_captured_submission_success(
+        self, inputs: DeepseekV41Inputs, draft_width: int | None
+    ) -> None:
+        """Records the writes a captured submission covers."""
+        if inputs.replay_plan is not None or inputs.replay_buffers:
+            raise RuntimeError(
+                "Captured DSpark submissions require FULL inputs"
+            )
+        write_batch = inputs.replay_write_batch
+        if write_batch is None:
+            return
+        if write_batch.verified_width != draft_width:
+            raise RuntimeError(
+                "Captured DSpark verify width differs from its snapshot"
+            )
+        self._submitted_replay_writes = write_batch
+
+    def finalize_kv_cache_writes(self, contexts: Sequence[TextContext]) -> None:
+        """Publishes the submitted writes ahead of the pipeline's cache step."""
+        submitted = self._submitted_replay_writes
+        self._submitted_replay_writes = None
+        self._previous_replay_writes = (
+            submitted.publish(contexts) if submitted is not None else ()
+        )
 
 
 class _GraphBody(Module):

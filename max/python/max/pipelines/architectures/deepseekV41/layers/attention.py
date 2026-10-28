@@ -25,7 +25,7 @@ attention names each record by its absolute slot in its cache leaf.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from max.driver import accelerator_architecture_name
 from max.dtype import DType
@@ -199,6 +199,41 @@ class CSA2Cache:
     forward starting at an odd position can pool against row ``start - 1``.
     Required by every ratio-2 KV-source layer.
     """
+
+
+def tail_cache_view(
+    cache: CSA2Cache, rows: RaggedRows, longest: TensorValue
+) -> CSA2Cache:
+    """Rebases query positions to the retained tail rows.
+
+    ``cache_lengths`` becomes each request's retained start. ``longest`` must
+    be the exact per-device longest retained row count: the prefill bound is
+    not monotone in ``max_prompt_length``, so a conservative value is
+    unsound. ``max_cache_length`` is the max context end, which trimming
+    does not change. No cache allocation or lookup table is changed.
+    """
+
+    def leaf_view(leaf: PagedCacheValues) -> PagedCacheValues:
+        assert rows.starts is not None
+        return replace(
+            leaf,
+            cache_lengths=ops.cast(rows.starts, leaf.cache_lengths.dtype),
+            max_prompt_length=longest,
+        )
+
+    return replace(
+        cache,
+        swa_collection=leaf_view(cache.swa_collection),
+        main_kv_by_layer={
+            k: leaf_view(v) for k, v in cache.main_kv_by_layer.items()
+        },
+        index_k_by_layer={
+            k: leaf_view(v) for k, v in cache.index_k_by_layer.items()
+        },
+        state_by_layer={
+            k: leaf_view(v) for k, v in cache.state_by_layer.items()
+        },
+    )
 
 
 @dataclass
@@ -468,6 +503,37 @@ class PendingCSA2Attention:
     """MXFP4 index queries, scale words and weights ("Full"/"Reindex")."""
     index_leaf: PagedCacheValues | None = None
     """The index-key leaf the selection reads ("Full"/"Reindex")."""
+
+
+def gather_pending_attention(
+    state: PendingCSA2Attention,
+    indices: TensorValue,
+    rows: RaggedRows,
+    cache: CSA2Cache,
+    layer: LayerInfo,
+) -> PendingCSA2Attention:
+    """Gathers query work after all cut-layer cache stores have run."""
+    binding = bind_cache_sources(
+        layer, cache.main_kv_by_layer, cache.index_k_by_layer
+    )
+    return replace(
+        state,
+        q=ops.gather(state.q, indices, axis=0),
+        out_shape=[state.out_shape[0], indices.shape[0], state.out_shape[2]],
+        freqs_cis=ops.gather(state.freqs_cis, indices, axis=0),
+        index_q=(
+            (
+                ops.gather(state.index_q[0], indices, axis=0),
+                ops.gather(state.index_q[1], indices, axis=0),
+                ops.gather(state.index_q[2], indices, axis=0),
+            )
+            if state.index_q is not None
+            else None
+        ),
+        swa_collection=cache.swa_collection,
+        comp_collection=None if binding is None else binding.main_kv_leaf,
+        index_leaf=None if binding is None else binding.index_k_leaf,
+    )
 
 
 @dataclass(frozen=True)

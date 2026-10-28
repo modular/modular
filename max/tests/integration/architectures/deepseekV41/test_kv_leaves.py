@@ -14,8 +14,11 @@
 
 from collections.abc import Sequence
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 from unittest.mock import Mock
 
+import numpy as np
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -29,10 +32,31 @@ from max.pipelines.architectures.deepseekV41.layers.csa2 import (
     WINDOW_RECORD_BYTES,
     cache_page_bytes,
 )
+from max.pipelines.architectures.deepseekV41.model import (
+    DeepseekV41BatchProcessor,
+)
 from max.pipelines.architectures.deepseekV41.model_config import (
     DeepseekV41Config,
 )
+from max.pipelines.architectures.deepseekV41.replay import (
+    build_replay_plan,
+    sliding_window_leaf_id,
+)
+from max.pipelines.architectures.deepseekV41.replay_writes import (
+    DSparkWriteBatch,
+)
+from max.pipelines.context import TextContext, TokenBuffer
+from max.pipelines.kv_cache.paged_kv_cache.jenga_block_manager import (
+    JengaBlockManager,
+    KVLeafInfo,
+    create_groups,
+    create_pools,
+)
+from max.pipelines.kv_cache.paged_kv_cache.kv_group_coordinator import (
+    SlidingWindowKVGroupCoordinator,
+)
 from max.pipelines.lib import KVCacheConfig
+from max.pipelines.modeling.types import RequestID
 from max.pipelines.speculative.config import SpeculativeConfig
 from transformers import AutoConfig
 
@@ -270,3 +294,161 @@ def test_only_csa2_leaves_stay_packed() -> None:
             assert leaf.stride_alignment is None, key
         else:
             assert leaf.stride_alignment == 16, key
+
+
+def _jenga_manager(params: MultiKVCacheParams) -> JengaBlockManager:
+    """A real block manager over the real leaves; only the ratios are unit."""
+    leaves = params.leaves()
+    infos = {
+        leaf_id: KVLeafInfo(ratio=1, group_id=leaf.group_id)
+        for leaf_id, leaf in leaves.items()
+    }
+    pools = create_pools(infos, 256)
+    return JengaBlockManager(
+        pools=pools,
+        block_size=params.page_size,
+        enable_prefix_caching=params.enable_prefix_caching,
+        groups=create_groups(
+            infos,
+            pools,
+            params.page_size,
+            enable_prefix_caching=params.enable_prefix_caching,
+        ),
+        leaves=leaves,
+    )
+
+
+def test_window_leaf_id_is_the_registered_sliding_window_leaf() -> None:
+    params = _build_params()
+    leaf_id = sliding_window_leaf_id(params)
+    assert leaf_id.startswith("swa.")
+    assert leaf_id in params.leaves()
+
+
+@pytest.mark.parametrize("trimmed", [True, False])
+def test_replay_write_range_lands_on_the_registered_leaf(
+    trimmed: bool,
+) -> None:
+    """The published key must be one the block manager registered."""
+    window = _real_text_config().sliding_window
+    params = _build_params()
+    manager = _jenga_manager(params)
+    leaf_id = sliding_window_leaf_id(params)
+    ctx = TextContext(
+        request_id=RequestID(),
+        max_length=100000,
+        tokens=TokenBuffer(np.arange(4096, dtype=np.int64)),
+    )
+    manager.claim(ctx)
+    manager.alloc(ctx)
+    plan = (
+        build_replay_plan([ctx], window_size=window, min_tokens=256)
+        if trimmed
+        else None
+    )
+    assert (plan is not None) is trimmed
+    batch = DSparkWriteBatch.capture(
+        [ctx], plan, leaf_id=leaf_id, verified_width=0, previous=()
+    )
+    ctx.update(42)
+    batch.publish([ctx])
+    start = int(plan.kept_skip[0]) if plan is not None else 0
+    assert ctx.kv_cache_write_ranges == {leaf_id: (start, 4096)}
+    assert set(ctx.kv_cache_write_ranges) <= set(params.leaves())
+    manager.step(ctx)
+    group = manager.groups[leaf_id]
+    assert isinstance(group, SlidingWindowKVGroupCoordinator)
+    assert group._write_ranges[ctx.request_id] == (start, 4096)
+
+
+def test_mixed_step_decode_row_extends_its_window_coverage_without_a_gap() -> (
+    None
+):
+    window = _real_text_config().sliding_window
+    params = _build_params()
+    manager = _jenga_manager(params)
+    leaf_id = sliding_window_leaf_id(params)
+    group = manager.groups[leaf_id]
+    assert isinstance(group, SlidingWindowKVGroupCoordinator)
+
+    def new_context(length: int, offset: int = 0) -> TextContext:
+        ctx = TextContext(
+            request_id=RequestID(),
+            max_length=100000,
+            tokens=TokenBuffer(
+                np.arange(offset, offset + length, dtype=np.int64)
+            ),
+        )
+        manager.claim(ctx)
+        manager.alloc(ctx)
+        return ctx
+
+    row = new_context(512)
+    first = DSparkWriteBatch.capture(
+        [row], None, leaf_id=leaf_id, verified_width=0, previous=()
+    )
+    row.update(42)
+    witnesses = first.publish([row])
+    manager.step(row)
+    assert group._write_ranges[row.request_id] == (0, 512)
+    commit_from = group._commit_from[row.request_id]
+
+    # Distinct tokens keep the prompt from hitting the row's cached prefix.
+    prompt = new_context(4096, offset=100000)
+    manager.alloc(row)
+    plan = build_replay_plan([prompt, row], window_size=window, min_tokens=256)
+    assert plan is not None
+    mixed = DSparkWriteBatch.capture(
+        [prompt, row],
+        plan,
+        leaf_id=leaf_id,
+        verified_width=0,
+        previous=witnesses,
+    )
+    prompt.update(43)
+    row.update(44)
+    mixed.publish([prompt, row])
+    assert prompt.kv_cache_write_ranges == {leaf_id: (4096 - window, 4096)}
+    assert row.kv_cache_write_ranges == {leaf_id: (512, 513)}
+    manager.step(prompt)
+    manager.step(row)
+    assert group._write_ranges[prompt.request_id] == (4096 - window, 4096)
+    assert group._write_ranges[row.request_id] == (0, 513)
+    assert group._commit_from[row.request_id] == commit_from
+
+
+def test_speculative_write_range_lands_on_the_served_tree_leaf() -> None:
+    """A pairing serves the target's leaves under its ``target`` child.
+
+    The block manager registers ``target.swa.*``, so ranges keyed by the
+    target's own ``swa.*`` crash the first write-tracked step.
+    """
+    own = _build_params()
+    served = MultiKVCacheParams.from_params({"target": own})
+    processor = object.__new__(DeepseekV41BatchProcessor)
+    processor.config = cast(DeepseekV41Config, SimpleNamespace(kv_params=own))
+    processor._served_kv_params = None
+    assert processor._replay_leaf_id not in served.leaves()
+    del processor.__dict__["_replay_leaf_id"]
+    processor.bind_kv_params(served)
+    leaf_id = processor._replay_leaf_id
+    assert leaf_id.startswith("target.swa.")
+    assert leaf_id in served.leaves()
+
+    manager = _jenga_manager(served)
+    ctx = TextContext(
+        request_id=RequestID(),
+        max_length=100000,
+        tokens=TokenBuffer(np.arange(512, dtype=np.int64)),
+    )
+    manager.claim(ctx)
+    manager.alloc(ctx)
+    batch = DSparkWriteBatch.capture(
+        [ctx], None, leaf_id=leaf_id, verified_width=0, previous=()
+    )
+    ctx.update(42)
+    batch.publish([ctx])
+    manager.step(ctx)
+    group = manager.groups[leaf_id]
+    assert isinstance(group, SlidingWindowKVGroupCoordinator)
+    assert group._write_ranges[ctx.request_id] == (0, 512)

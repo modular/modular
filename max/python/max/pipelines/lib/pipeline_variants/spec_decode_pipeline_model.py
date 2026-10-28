@@ -40,7 +40,7 @@ import numpy as np
 from max import tree
 from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
-from max.engine import InferenceSession, Model
+from max.engine import CompiledModel, InferenceSession, Model
 from max.graph import (
     BufferType,
     BufferValue,
@@ -49,6 +49,7 @@ from max.graph import (
     TensorType,
     TensorValue,
 )
+from max.graph import Module as GraphModule
 from max.graph.weights import (
     Weights,
     WeightsAdapter,
@@ -88,6 +89,9 @@ from max.pipelines.speculative.config import (
 )
 from max.pipelines.speculative.driver import SequentialDriver
 from max.pipelines.speculative.spec_adapters import STAGE_BOUNDARY
+from max.pipelines.speculative.spec_adapters.target_adapter import (
+    ReplayBatching,
+)
 from max.pipelines.speculative.spec_input_types import SpecDecodeInputTypeSpec
 from max.profiler import traced
 from max.tensor import Tensor
@@ -848,6 +852,12 @@ class _Inputs(UnifiedSpecDecodeInputs):
     """Expert parallelism's buffers, under a distributed signature."""
     trailing: list[Buffer] = field(default_factory=list)
     """Host inputs the target's call takes past the canonical tail."""
+    replay_trailing: list[Buffer] = field(default_factory=list)
+    """The inputs only the replay graph takes, last of all. A batch that
+    carries none runs the full graph."""
+    target_inputs: Any = None
+    """The target's own prepared inputs, kept only where its batching takes
+    part in replay; ``None`` otherwise."""
     spec: SpecDecodeInputTypeSpec | None = None
 
     @property
@@ -902,6 +912,7 @@ class _Inputs(UnifiedSpecDecodeInputs):
                 include_in_thinking_phase=spec.include_in_thinking_phase,
             ),
             *self.trailing,
+            *self.replay_trailing,
         )
         if not traced:
             return buffers
@@ -947,7 +958,10 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
         assert config.input_spec is not None, "the graph has not been built"
         if not (config.input_spec.distributed or self._prepares_batches):
             return None
-        return _batching(self._pairing.target)(config.target, self.runtime)
+        batching = _batching(self._pairing.target)(config.target, self.runtime)
+        if isinstance(batching, ReplayBatching):
+            batching.bind_kv_params(config.kv_params)
+        return batching
 
     def bind_ep_comm_initializer(
         self, initializer: EPCommInitializer | None
@@ -1092,6 +1106,12 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
                 self._method,
                 target,
             ),
+            replay_trailing=spec_adapters.batch_replay_buffers(
+                self._pairing.adapter_arch,
+                self._method,
+                target,
+            ),
+            target_inputs=target if self._replay_hooks is not None else None,
         )
 
     def _distributed_inputs(
@@ -1149,7 +1169,64 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
                 self._method,
                 target,
             ),
+            replay_trailing=spec_adapters.batch_replay_buffers(
+                self._pairing.adapter_arch,
+                self._method,
+                target,
+            ),
+            target_inputs=target if self._replay_hooks is not None else None,
         )
+
+    @cached_property
+    def _replay_hooks(self) -> ReplayBatching | None:
+        """The target's batching, if it takes part in replay."""
+        target = self._target_batching
+        return target if isinstance(target, ReplayBatching) else None
+
+    def settle_replay(self, inputs: _Inputs) -> bool:
+        """Returns whether the replay graph runs ``inputs``.
+
+        The target's batching decides, since the replay inputs and the KV
+        write coverage they come with are its own. A batch it declines runs
+        the full graph, which takes none of the replay inputs.
+        """
+        hooks = self._replay_hooks
+        replay = False
+        if hooks is not None and inputs.target_inputs is not None:
+            draft = inputs.draft_tokens
+            replay = hooks.settle_replay(
+                inputs.target_inputs, None if draft is None else draft.shape[1]
+            )
+        if not replay:
+            inputs.replay_trailing = []
+        return replay
+
+    def record_submission(self, inputs: _Inputs) -> None:
+        """Records the KV writes of the graph that just returned."""
+        hooks = self._replay_hooks
+        if hooks is not None and inputs.target_inputs is not None:
+            hooks.record_submission(inputs.target_inputs)
+
+    def begin_captured_submission(self, inputs: _Inputs) -> None:
+        """Resets the target's write record before a captured submission."""
+        hooks = self._replay_hooks
+        if hooks is not None and inputs.target_inputs is not None:
+            hooks.begin_captured_submission(inputs.target_inputs)
+
+    def on_captured_submission_success(self, inputs: _Inputs) -> None:
+        """Records the KV writes of a captured submission that returned."""
+        hooks = self._replay_hooks
+        if hooks is not None and inputs.target_inputs is not None:
+            draft = inputs.draft_tokens
+            hooks.on_captured_submission_success(
+                inputs.target_inputs, None if draft is None else draft.shape[1]
+            )
+
+    def finalize_kv_cache_writes(self, contexts: Sequence[TextContext]) -> None:
+        """Publishes the KV writes the target's batching saw submitted."""
+        hooks = self._replay_hooks
+        if hooks is not None:
+            hooks.finalize_kv_cache_writes(contexts)
 
     def release(self, request_id: RequestID) -> None:
         """Frees what the target's batching holds for a finished request."""
@@ -1211,6 +1288,9 @@ class SpecDecodePipelineModel(
     export_contract: Mapping[str, object] | None = None
     """What the target's engine checks the export's inputs against, if it
     keeps a record of its own."""
+    replay_model: Model | None = None
+    """The replay graph, compiled beside :attr:`model` and sharing its
+    weights, when the target's adapter enables one."""
     _weight_loads: list[WeightLoad]
     """The weight loads the modules deferred to the compile."""
 
@@ -1281,9 +1361,35 @@ class SpecDecodePipelineModel(
         return max(0, len(self.model.output_metadata) - 3)
 
     def execute(self, model_inputs: ModelInputs) -> UnifiedEagleOutputs:
-        """Runs the fused graph and names its outputs."""
-        model_outputs = self.model.execute(*model_inputs.buffers)
-        return UnifiedEagleOutputs.from_buffers(model_outputs)
+        """Runs the fused graph and names its outputs.
+
+        A batch the target's batching sends to the replay graph runs it
+        instead of the full one.
+        """
+        model = self.model
+        if (
+            self.replay_model is None
+            and isinstance(model_inputs, _Inputs)
+            and model_inputs.replay_trailing
+        ):
+            raise RuntimeError(
+                "The batch carries replay inputs but no replay graph was "
+                "compiled: the target's batching and its adapter disagree on "
+                "whether replay is enabled"
+            )
+        replay = (
+            self.replay_model is not None
+            and isinstance(model_inputs, _Inputs)
+            and self._batching.settle_replay(model_inputs)
+        )
+        if replay:
+            assert self.replay_model is not None
+            model = self.replay_model
+        model_outputs = model.execute(*model_inputs.buffers)
+        outputs = UnifiedEagleOutputs.from_buffers(model_outputs)
+        if self.replay_model is not None and isinstance(model_inputs, _Inputs):
+            self._batching.record_submission(model_inputs)
+        return outputs
 
     @property
     def routed_expert_row_bound(self) -> int | None:
@@ -1301,6 +1407,20 @@ class SpecDecodePipelineModel(
     def release_warmup_state(self, request_ids: list[RequestID]) -> None:
         """Frees what the target's batching claimed for a capture probe."""
         self._batching.release_warmup_state(request_ids)
+
+    def begin_captured_submission(self, model_inputs: ModelInputs) -> None:
+        """Lets the target's batching reset before a captured submission."""
+        if isinstance(model_inputs, _Inputs):
+            self._batching.begin_captured_submission(model_inputs)
+
+    def on_captured_submission_success(self, model_inputs: ModelInputs) -> None:
+        """Lets the target's batching record a captured submission."""
+        if isinstance(model_inputs, _Inputs):
+            self._batching.on_captured_submission_success(model_inputs)
+
+    def finalize_kv_cache_writes(self, contexts: Sequence[TextContext]) -> None:
+        """Lets the target's batching publish its submitted KV writes."""
+        self._batching.finalize_kv_cache_writes(contexts)
 
     @property
     def _batching(self) -> _BatchProcessor:
@@ -1351,28 +1471,57 @@ class SpecDecodePipelineModel(
             if hasattr(target, slot):
                 setattr(draft, slot, getattr(target, slot))
 
+        # Only a pairing whose target asks for it traces a second graph, and
+        # then both compile as one module so they share one set of weights.
+        speculative = self.pipeline_config.speculative
+        assert speculative is not None
+        assert speculative.speculative_method is not None
+        replay = spec_adapters.replay_enabled(
+            self.pairing.adapter_arch,
+            speculative.speculative_method,
+            self.pipeline_config,
+            modules.target_config,
+        )
+        build = partial(
+            build_spec_graph,
+            self.pipeline_config,
+            config.kv_params,
+            self.device_refs,
+            include_signal_buffers=bool(self.signal_buffers),
+            target=target,
+            target_config=modules.target_config,
+            draft=draft,
+            draft_config=modules.draft_config,
+            hidden_states=modules.hidden_states,
+            draft_weights=draft_weights,
+            module=GraphModule() if replay else None,
+        )
         with CompilationTimer("model") as timer:
-            spec = build_spec_graph(
-                self.pipeline_config,
-                config.kv_params,
-                self.device_refs,
-                include_signal_buffers=bool(self.signal_buffers),
-                target=target,
-                target_config=modules.target_config,
-                draft=draft,
-                draft_config=modules.draft_config,
-                hidden_states=modules.hidden_states,
-                draft_weights=draft_weights,
-            )
+            spec = build()
+            replay_spec = None
+            if replay:
+                logger.info("Tracing the replay graph beside the full graph")
+                _forget_traced_weights(target, draft)
+                replay_spec = build(replay=True)
             timer.mark_build_complete()
-            model = self._compile_and_init(
-                session, spec.graph, spec.weights_registry
-            )
+            if replay_spec is None:
+                model = self._compile_and_init(
+                    session, spec.graph, spec.weights_registry
+                )
+            else:
+                model, self.replay_model = self._compile_with_replay(
+                    session,
+                    spec.graph,
+                    replay_spec.graph,
+                    spec.weights_registry,
+                )
         config.input_spec = spec.input_spec
         self.export_input_types = spec.input_types
         self.export_contract = spec.export_contract
 
-        self._maybe_release_host_weights(model)
+        self._maybe_release_host_weights(
+            *(m for m in (model, self.replay_model) if m is not None)
+        )
         self._wire_batch_processor(model, config)
         return model
 
@@ -1402,6 +1551,48 @@ class SpecDecodePipelineModel(
             for future, _ in running:
                 future.result()
         return session.init(compiled, weights_registry=weights_registry)
+
+    def _compile_with_replay(
+        self,
+        session: InferenceSession,
+        graph: Graph,
+        replay_graph: Graph,
+        weights_registry: dict[str, Any],
+    ) -> tuple[Model, Model]:
+        """Compiles the full and the replay graph as one module.
+
+        Like :meth:`_compile_and_init`, the compile overlaps the deferred
+        weight loads; both graphs then initialize from the same weights.
+        """
+        loads, self._weight_loads = self._weight_loads, []
+        compiled = self._compile_with_loads(
+            session, graph.module, loads, weights_registry
+        )
+        models = session.init_all(compiled, weights_registry=weights_registry)
+        return models[graph.name], models[replay_graph.name]
+
+    def _compile_with_loads(
+        self,
+        session: InferenceSession,
+        graph: Graph | GraphModule,
+        loads: Sequence[WeightLoad],
+        weights_registry: dict[str, Any],
+    ) -> CompiledModel:
+        """Compiles ``graph`` while ``loads`` fill the weights registry."""
+        if not loads:
+            return session.compile(graph)
+        with ThreadPoolExecutor(len(loads)) as pool:
+            running = [
+                (pool.submit(load.load, weights_registry), load)
+                for load in loads
+            ]
+            for future, load in running:
+                if not load.overlaps_compile:
+                    future.result()
+            compiled = session.compile(graph)
+            for future, _ in running:
+                future.result()
+        return compiled
 
     def _build_modules(self, session: InferenceSession) -> _Modules:
         """Builds the draft, then the target, each as its own architecture."""
@@ -1495,6 +1686,17 @@ class _Modules:
     Empty for graph modules, which hold their weights."""
 
 
+def _forget_traced_weights(*modules: Any) -> None:
+    """Drops each weight's value in the graph that was just traced.
+
+    A weight caches its graph value, so a second trace over the same modules
+    would use values defined in the first graph, which the verifier rejects.
+    """
+    for module in modules:
+        for weight in module.raw_state_dict().values():
+            weight.__dict__.pop("_mlir_value", None)
+
+
 @dataclass(frozen=True)
 class SpecGraph:
     """A fused spec-decode graph and what its export records."""
@@ -1523,6 +1725,8 @@ def build_spec_graph(
     draft_config: Any,
     hidden_states: ReturnHiddenStates,
     draft_weights: Mapping[str, Any] | None,
+    replay: bool = False,
+    module: GraphModule | None = None,
 ) -> SpecGraph:
     """Fuses the target, the draft and a driver into one graph.
 
@@ -1539,6 +1743,10 @@ def build_spec_graph(
         draft_weights: The draft's weights, which load beside the target's.
             ``None`` names every weight without loading any, for a graph
             whose weights stay unbound.
+        replay: Builds the replay graph, which takes the target's replay
+            inputs after every input of the full graph.
+        module: The graph module to add the graph to, for a replay graph that
+            compiles with the full one and shares its weights.
     """
     pairing = _Pairing.from_pipeline_config(pipeline_config)
     speculative = pipeline_config.speculative
@@ -1554,6 +1762,7 @@ def build_spec_graph(
         draft=draft,
         draft_config=draft_config,
         hidden_states=hidden_states,
+        replay=replay,
     )
     nn_model = call.driver
 
@@ -1579,9 +1788,11 @@ def build_spec_graph(
             weight.name = f"target.{name}"
         weights_registry = {**target_registry, **draft_registry}
 
+    name = _graph_name(pairing, speculative.speculative_method)
     with Graph(
-        _graph_name(pairing, speculative.speculative_method),
+        f"{name}_replay" if replay else name,
         input_types=call.input_types,
+        module=module,
     ) as graph:
         graph.output(
             *call(nn_model.decode_inputs(graph.inputs, call.kv_params))
@@ -1615,6 +1826,9 @@ class _DriverCall:
     """How many of the trailing inputs are a later pipeline stage's
     boundary, which end the graph's inputs."""
     export_contract: Mapping[str, object] | None
+    replay_count: int = 0
+    """How many of the trailing inputs are the replay graph's own, which come
+    after everything else."""
 
     def __call__(
         self,
@@ -1627,11 +1841,19 @@ class _DriverCall:
         trace appends its own.
         """
         trailing = list(graph_inputs.trailing)
+        split = len(trailing) - self.replay_count
+        replay, trailing = trailing[split:], trailing[:split]
         split = len(trailing) - self.boundary_count
         boundary, trailing = trailing[split:], trailing[:split]
         extra = spec_adapters.extra(
             self.target_arch, self.method, self.target_config, trailing
         )
+        if replay:
+            extra.update(
+                spec_adapters.replay_extra(
+                    self.target_arch, self.method, self.target_config, replay
+                )
+            )
         if boundary:
             extra[STAGE_BOUNDARY] = [value.tensor for value in boundary]
         kv_tree = graph_inputs.kv_tree
@@ -1710,13 +1932,15 @@ def _driver_call(
     hidden_states: ReturnHiddenStates,
     trace_owns_signal_buffers: bool = False,
     signal_buffer_index: int | None = None,
+    replay: bool = False,
 ) -> _DriverCall:
     """Builds the driver over the target and the draft, and its call.
 
     The arguments are :func:`build_spec_graph`'s. With
     ``trace_owns_signal_buffers`` the graph declares no signal buffers, for
     a module whose trace inserts its own, at ``signal_buffer_index`` or
-    after every input.
+    after every input. With ``replay`` the graph also takes the target's
+    replay inputs, last of all.
     """
     pairing = _Pairing.from_pipeline_config(pipeline_config)
     target_arch = pairing.adapter_arch
@@ -1809,6 +2033,11 @@ def _driver_call(
             "Logit penalties apply only to the verify of a draft that"
             f" proposes one token a step, and {method} drafts a block."
         )
+    replay_types = (
+        spec_adapters.replay_input_types(target_arch, method, target_config)
+        if replay
+        else []
+    )
     driver_kwargs: dict[str, Any] = dict(
         target_model=target,
         draft_model=draft,
@@ -1827,6 +2056,7 @@ def _driver_call(
             ),
             *penalties,
             *boundary_types,
+            *replay_types,
         ],
     )
     nn_model: SequentialDriver[Any] | BlockDriver[Any, Any]
@@ -1866,6 +2096,7 @@ def _driver_call(
             input_types,
             structured_output,
         ),
+        replay_count=len(replay_types),
     )
 
 

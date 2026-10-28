@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
+import copy
+from contextlib import nullcontext
 from types import SimpleNamespace
 from typing import cast
 from unittest.mock import MagicMock, call, patch
@@ -33,6 +35,8 @@ from max.pipelines.lib import (
     OverlapTextGenerationPipeline,
     TextGenerationPipeline,
 )
+from max.pipelines.lib import graph_capture as capture_module
+from max.pipelines.lib.graph_capture import ServeGraphCaptureRunner
 from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
     _MAX_GRAPH_CAPTURE_BATCH_SIZE,
     _OOB_IDX,
@@ -173,6 +177,7 @@ def test_forward_launched_before_sampling_processor_build() -> None:
     pipeline._prev_batch = None
     pipeline._disable_overlap = False
     pipeline._kv_manager = MagicMock()
+    pipeline._pipeline_model = MagicMock()
     pipeline._request_validator = EagerUsageValidator(enabled=False)
 
     call_order: list[str] = []
@@ -224,6 +229,9 @@ def test_forward_launched_before_sampling_processor_build() -> None:
     pipeline._create_sampling_processor.assert_called_once_with(
         inputs.flat_batch
     )
+    pipeline._pipeline_model.finalize_kv_cache_writes.assert_called_once_with(
+        inputs.flat_batch
+    )
     # Reorder must not clear the deferred (overlapped) current batch.
     assert pipeline._prev_batch is mock_curr_batch
 
@@ -273,6 +281,8 @@ def test_warmup_graph_capture_batch_size(
         pipeline.warmup_graph_capture()
 
         assert pipeline.graph_capture_ready
+        mock_model.begin_captured_submission.assert_not_called()
+        mock_model.on_captured_submission_success.assert_not_called()
 
         call_kwargs = MockRunner.call_args.kwargs
         assert call_kwargs["model"] is mock_model.model
@@ -2795,6 +2805,204 @@ class TestHostMirrorRealizedDrafts:
         assert np.array_equal(
             out, np.array([[80, 81, 82], [4, 5, 6], [70, 71, 72]])
         )
+
+
+def _captured_dispatch_fixture(
+    monkeypatch: pytest.MonkeyPatch, *, host: bool = False, pinned: bool = False
+) -> SimpleNamespace:
+    pipeline = object.__new__(OverlapTextGenerationPipeline)
+    pipeline._request_validator = EagerUsageValidator(enabled=False)
+    pipeline._spec_decode_state = None
+    pipeline._prev_batch = None
+    pipeline._disable_overlap = False
+    pipeline._synthesis_aligner = None
+    pipeline._encoder_cache = None
+    pipeline._realize_future_token_processor = None
+    pipeline._max_graph_capture_batch_size = 1
+    pipeline._pipeline_config = MagicMock(debug_verify_replay=True)
+    pipeline._structured_output = StructuredOutputHelper(enabled=False)
+    pipeline._kv_manager = MagicMock()
+    pipeline._kv_manager.params.num_draft_tokens = 0
+    monkeypatch.setattr(
+        pipeline,
+        "_create_sampling_processor",
+        MagicMock(return_value=(MagicMock(), None)),
+    )
+    monkeypatch.setattr(
+        pipeline, "_sample_logits", MagicMock(return_value=None)
+    )
+    ctx = TextContext(max_length=100, tokens=TokenBuffer(np.array([1, 2])))
+    ctx.update(new_token=3)
+    batch = TextGenerationInputs(batches=[[ctx]])
+    live, captured = MagicMock(), MagicMock()
+    live.device = captured.device
+    captured.device.is_host = host
+    captured.pinned = pinned
+    live.dtype = captured.dtype = "int64"
+    live.shape = captured.shape = (1,)
+    captured.to_numpy.return_value = np.array([1])
+    live.to_numpy.return_value = np.array([2])
+    inputs = MagicMock(
+        tokens=live, input_row_offsets=MagicMock(), buffers=(live,)
+    )
+    warmup_inputs = MagicMock(buffers=(captured,))
+    order: list[str] = []
+    submitted: list[object] = []
+    model = MagicMock()
+    model.prepare_initial_token_inputs.return_value = inputs
+    pipeline._pipeline_model = model
+
+    def begin(original: object) -> None:
+        assert any(original is item for item in submitted_inputs)
+        submitted.clear()
+        order.append("begin")
+
+    def success(original: object) -> None:
+        assert not submitted
+        assert any(original is item for item in submitted_inputs)
+        submitted.append(original)
+        order.append("success")
+
+    submitted_inputs: list[object] = [inputs]
+    model.begin_captured_submission.side_effect = begin
+    model.on_captured_submission_success.side_effect = success
+    model.finalize_kv_cache_writes.side_effect = lambda _: order.append(
+        "finalize"
+    )
+    pipeline._kv_manager.step.side_effect = lambda _: order.append("step")
+    runner = object.__new__(ServeGraphCaptureRunner)
+    runner._max_batch_size = 1
+    runner._verify_widths = [0]
+    runner._widths_by_batch_size = [[], [0]]
+    runner._max_cache_length_upper_bound = 128
+    runner._kv_params = MagicMock()
+    runner._kv_params.graph_capture_probe_cache_lengths.return_value = [128]
+    runner._is_spec_decode = False
+    runner._signal_buffers = []
+    runner._records = {}
+    runner.graph_entries = {}
+    runner._host_input_guard_mode = "abort" if host or pinned else None
+    runner._host_inputs_reported = set()
+    engine = MagicMock()
+    engine.input_metadata = [SimpleNamespace(name="host_lengths")]
+    engine.capture.return_value = [MagicMock()]
+    runner._engine_model = engine
+    monkeypatch.setattr(
+        runner,
+        "_warmup_model_inputs",
+        lambda *_: nullcontext(warmup_inputs),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        runner, "_resolve_graph_key", lambda *_: MagicMock(name="capture_key")
+    )
+
+    def refresh(*_: object) -> None:
+        assert not submitted
+        order.append("refresh")
+
+    monkeypatch.setattr(capture_module, "batch_inplace_copy", refresh)
+
+    def debug(*_: object) -> None:
+        assert not submitted
+        order.append("debug")
+
+    def selected(*_: object) -> None:
+        assert not submitted
+        order.append("selected")
+
+    engine.debug_verify_replay.side_effect = debug
+    engine.replay.side_effect = selected
+    runner.warmup_pre_ready()
+    engine.capture.assert_called_once()
+    model.begin_captured_submission.assert_not_called()
+    model.on_captured_submission_success.assert_not_called()
+    assert not submitted
+    submitted.append(object())
+    pipeline._graph_capture_runner = runner
+    return SimpleNamespace(
+        pipeline=pipeline,
+        model=model,
+        runner=runner,
+        engine=engine,
+        inputs=inputs,
+        batch=batch,
+        order=order,
+        submitted=submitted,
+        submitted_inputs=submitted_inputs,
+    )
+
+
+def test_captured_selected_dispatch_uses_live_inputs_not_reused_buffers_or_debug_copy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _captured_dispatch_fixture(monkeypatch)
+    second = copy.copy(fixture.inputs)
+    fixture.submitted_inputs.append(second)
+    fixture.model.prepare_initial_token_inputs.side_effect = [
+        fixture.inputs,
+        second,
+    ]
+    captured = next(iter(fixture.runner.graph_entries.values()))[0]
+    for original in (fixture.inputs, second):
+        fixture.order.clear()
+        fixture.pipeline.execute(fixture.batch)
+        assert fixture.order == [
+            "begin",
+            "refresh",
+            "debug",
+            "selected",
+            "success",
+            "finalize",
+            "step",
+        ]
+        assert fixture.submitted == [original]
+        assert fixture.model.begin_captured_submission.call_args.args == (
+            original,
+        )
+        assert fixture.model.on_captured_submission_success.call_args.args == (
+            original,
+        )
+        assert original is not captured
+    fixture.model.execute.assert_not_called()
+    assert fixture.engine.debug_verify_replay.call_count == 2
+    assert fixture.engine.replay.call_count == 2
+
+
+def test_debug_success_then_failed_selected_replay_has_no_witness_or_cache_step(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = _captured_dispatch_fixture(monkeypatch)
+
+    def fail(*_: object) -> None:
+        fixture.order.append("selected")
+        raise RuntimeError("selected replay failed")
+
+    fixture.engine.replay.side_effect = fail
+    with pytest.raises(RuntimeError, match="selected replay failed"):
+        fixture.pipeline.execute(fixture.batch)
+    assert fixture.order == ["begin", "refresh", "debug", "selected"]
+    assert fixture.submitted == []
+    fixture.model.on_captured_submission_success.assert_not_called()
+    fixture.model.finalize_kv_cache_writes.assert_not_called()
+    fixture.pipeline._kv_manager.step.assert_not_called()
+    fixture.engine.debug_verify_replay.assert_called_once()
+
+
+@pytest.mark.parametrize("host,pinned", [(True, False), (False, True)])
+def test_existing_host_and_pinned_guard_fails_before_submission_association(
+    monkeypatch: pytest.MonkeyPatch, host: bool, pinned: bool
+) -> None:
+    fixture = _captured_dispatch_fixture(monkeypatch, host=host, pinned=pinned)
+    with pytest.raises(RuntimeError, match="Captured host input"):
+        fixture.pipeline.execute(fixture.batch)
+    assert fixture.order == ["begin"]
+    assert fixture.submitted == []
+    fixture.engine.debug_verify_replay.assert_not_called()
+    fixture.engine.replay.assert_not_called()
+    fixture.model.on_captured_submission_success.assert_not_called()
+    fixture.model.finalize_kv_cache_writes.assert_not_called()
+    fixture.pipeline._kv_manager.step.assert_not_called()
 
 
 def test_intermediate_chunk_in_mixed_verify_step_counts_no_drafts() -> None:

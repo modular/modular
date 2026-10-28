@@ -954,6 +954,30 @@ class PipelineModel(
         to define their specific execution logic.
         """
 
+    def begin_captured_submission(self, model_inputs: ModelInputs) -> None:
+        """Prepares association for the selected captured submission.
+
+        Called with the original live inputs before captured buffers refresh.
+        Warmup and debug verification do not invoke this hook.
+        """
+
+    def on_captured_submission_success(self, model_inputs: ModelInputs) -> None:
+        """Associates a normally returned selected captured submission.
+
+        Receives the original live inputs, not reused captured buffers. This
+        is a host submission witness and does not imply device completion.
+        """
+
+    def finalize_kv_cache_writes(
+        self, contexts: Sequence[BaseContextType]
+    ) -> None:
+        """Publishes model-specific submitted write coverage before cache step.
+
+        The pipeline invokes this on its normal submission path before the
+        next batch is prepared. It retains existing stream-order guarantees
+        and does not imply device synchronization.
+        """
+
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[BaseContextType]],

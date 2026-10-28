@@ -687,6 +687,7 @@ class TextGenerationPipeline(
 
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.
+        self._pipeline_model.finalize_kv_cache_writes(inputs.flat_batch)
         for ctx in inputs.flat_batch:
             self._kv_manager.step(ctx)
 

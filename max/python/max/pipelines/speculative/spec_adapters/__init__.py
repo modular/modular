@@ -53,6 +53,7 @@ __all__ = [
     "STAGE_BOUNDARY",
     "VerifyFn",
     "batch_distributed_buffers",
+    "batch_replay_buffers",
     "batch_trailing_buffers",
     "block_proposer",
     "check",
@@ -62,6 +63,9 @@ __all__ = [
     "prepares_every_batch",
     "primary_kv",
     "relaxed_thinking_acceptance",
+    "replay_enabled",
+    "replay_extra",
+    "replay_input_types",
     "sequential_proposer",
     "signal_buffer_index",
     "speculates_on_last_stage",
@@ -292,6 +296,40 @@ def extra(
     ``extra``.
     """
     return _adapter(target_arch, method).extra(target_config, trailing)
+
+
+def replay_enabled(
+    target_arch: str, method: str, pipeline_config: Any, target_config: Any
+) -> bool:
+    """Returns whether the pairing compiles a replay graph beside the full one."""
+    return _adapter(target_arch, method).replay_enabled(
+        pipeline_config, target_config
+    )
+
+
+def replay_input_types(
+    target_arch: str, method: str, target_config: Any
+) -> Sequence[TensorType | BufferType]:
+    """Returns the inputs only the replay graph takes, last of all."""
+    return _adapter(target_arch, method).replay_input_types(target_config)
+
+
+def batch_replay_buffers(
+    target_arch: str, method: str, target_inputs: object
+) -> list[Buffer]:
+    """Returns the batch's values of :func:`replay_input_types`, which the
+    target's own batch processor prepared; empty for the full graph."""
+    return _adapter(target_arch, method).batch_replay_buffers(target_inputs)
+
+
+def replay_extra(
+    target_arch: str,
+    method: str,
+    target_config: Any,
+    replay: Sequence[Value[Any]],
+) -> dict[str, Any]:
+    """Returns what the target's call reads of the replay graph's inputs."""
+    return _adapter(target_arch, method).replay_extra(target_config, replay)
 
 
 def takes_vision_outputs(

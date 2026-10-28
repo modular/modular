@@ -3313,12 +3313,17 @@ class OverlapTextGenerationPipeline(
                 if use_graph_capture_replay:
                     assert runner is not None
                     assert aligned_characteristics is not None
-                    return runner.replay(
+                    self._pipeline_model.begin_captured_submission(model_inputs)
+                    outputs = runner.replay(
                         model_inputs=model_inputs,
                         batch_characteristics=aligned_characteristics,
                         debug_verify_replay=debug_verify_replay_enabled,
                         debug_verify_model_inputs=debug_verify_model_inputs,
                     )
+                    self._pipeline_model.on_captured_submission_success(
+                        model_inputs
+                    )
+                    return outputs
 
                 return self._pipeline_model.execute(model_inputs=model_inputs)
         except Exception:
@@ -4540,6 +4545,7 @@ class OverlapTextGenerationPipeline(
 
         # Commit the new KV blocks into the prefix cache, ignoring the trailing
         # placeholder future token.
+        self._pipeline_model.finalize_kv_cache_writes(inputs.flat_batch)
         for ctx in inputs.flat_batch:
             self._kv_manager.step(ctx)
 
