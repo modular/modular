@@ -40,7 +40,17 @@ def HIP(ctx: DeviceContext) raises -> hipDevice_t:
 
 @inline(.always)
 def HIP(stream: DeviceStream) raises -> hipStream_t:
-    """Returns the `hipStream_t` backing a HAL stream."""
+    """Returns the `hipStream_t` backing a HAL stream.
+
+    Args:
+        stream: The stream to read the handle from.
+
+    Returns:
+        The underlying `hipStream_t`.
+
+    Raises:
+        If the stream has no native handle.
+    """
     return unsafe_cast[Type=_ihipStream_t, origin=UntrackedOrigin[mut=True]](
         stream._native_stream()
     )
