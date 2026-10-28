@@ -65,6 +65,7 @@ family.
    pipelines.architectures.mistral3
    pipelines.architectures.mpnet
    pipelines.architectures.mtp_deepseekV3
+   pipelines.architectures.mtp_glm5_next
    pipelines.architectures.mtp_inkling
    pipelines.architectures.mtp_qwen3_5
    pipelines.architectures.muse_glimmer
@@ -134,6 +135,7 @@ Text generation
    ~max.pipelines.architectures.mistral
    ~max.pipelines.architectures.mistral3
    ~max.pipelines.architectures.mtp_deepseekV3
+   ~max.pipelines.architectures.mtp_glm5_next
    ~max.pipelines.architectures.mtp_inkling
    ~max.pipelines.architectures.mtp_qwen3_5
    ~max.pipelines.architectures.muse_glimmer

@@ -769,6 +769,13 @@ def test_replay_capture_records_the_pre_activation_gate(
     tokens = replay.qkv.shape[0]
     assert replay.raw_gate.shape[0] == tokens
     assert replay.beta_logits.shape[0] == tokens
+    # Only a verify's conv kernel writes a copy of its input.
+    assert replay.qkv_window is None
     # The recurrence op consumes these in float32 regardless of `dtype`.
-    for tensor in replay:
+    for tensor in (
+        replay.qkv,
+        replay.conv_weight,
+        replay.raw_gate,
+        replay.beta_logits,
+    ):
         assert tensor.dtype == DType.float32

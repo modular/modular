@@ -29,11 +29,16 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
 from max.nn.legacy.layer import Module
-from max.nn.legacy.state_space import kimi_delta
+from max.nn.legacy.state_space import (
+    kda_ring_record_elements,
+    kimi_delta,
+    verify_width_operand,
+)
 from max.nn.legacy.state_space.kimi_delta import KdaGateMode
 from max.pipelines.architectures.glm5_next.layers import (
     kimi_delta_attention,
 )
+from max.pipelines.architectures.glm5_next.layers.kda import KdaRing
 from max.pipelines.architectures.glm5_next.layers.kimi_delta_attention import (
     KimiDeltaAttention,
     kda_chunk_predicate,
@@ -83,7 +88,7 @@ def _qualify_weight_names(layer: Module, prefix: str = "kda") -> None:
 def _layer_mlir(
     lower_bound: float | None = -5.0,
     pool_dtype: DType = DType.float32,
-    replay: bool = False,
+    verify: bool = False,
 ) -> str:
     layer = KimiDeltaAttention(
         hidden_size=HIDDEN,
@@ -106,9 +111,19 @@ def _layer_mlir(
             TensorType(DType.int32, ["batch"], device=GPU),
             BufferType(pool_dtype, [SLOTS, HEADS, HEAD_DIM, HEAD_DIM], GPU),
             TensorType(DType.uint32, ["batch_plus_one"], device=GPU),
+            BufferType(
+                DType.float32,
+                [
+                    SLOTS,
+                    HEADS,
+                    4,
+                    kda_ring_record_elements(HEAD_DIM, HEAD_DIM),
+                ],
+                GPU,
+            ),
         ],
     ) as graph:
-        x, conv_pool, row, rec_pool, offsets = graph.inputs
+        x, conv_pool, row, rec_pool, offsets, ring = graph.inputs
         graph.output(
             layer(
                 x.tensor,
@@ -117,7 +132,9 @@ def _layer_mlir(
                 rec_pool.buffer,
                 row.tensor,
                 offsets.tensor,
-                replay_capture=[] if replay else None,
+                replay_capture=[] if verify else None,
+                ring=KdaRing(ring.buffer, row.tensor) if verify else None,
+                verify_width=(verify_width_operand(3) if verify else None),
             )
         )
     return str(graph)
@@ -288,12 +305,19 @@ def test_gfx950_bf16_pool_stays_sequential(
 @pytest.mark.parametrize(
     ("api", "architecture"), [("hip", "gfx950"), ("cuda", "sm_100a")]
 )
-def test_replay_capture_stays_sequential(
+def test_verify_keeps_drafts_on_the_ring(
     monkeypatch: pytest.MonkeyPatch, api: str, architecture: str
 ) -> None:
-    """A speculative replay must reproduce the forward's arithmetic."""
+    """A batch with drafts records into the ring the rollback folds.
+
+    Only a draft-free prefill, which has nothing to roll back, takes
+    ``kda_chunk``, behind the same conditional as the forward's.
+    """
     _patch_accelerator(monkeypatch, api, architecture)
-    _assert_sequential(_layer_mlir(replay=True))
+    mlir = _layer_mlir(verify=True)
+    assert "kda_verify_ring" in mlir
+    assert "mo.if" in mlir
+    assert "kda_decode" not in mlir
 
 
 def _takes_chunk(

@@ -41,10 +41,14 @@ from max.graph.weights import WeightData, Weights
 from max.graph.weights.weights import Shape
 from transformers import AutoConfig
 
-__all__ = ["VISION_WEIGHT_PREFIX", "convert_glm5_next_state_dict"]
+__all__ = [
+    "VISION_CHECKPOINT_PREFIX",
+    "VISION_WEIGHT_PREFIX",
+    "convert_glm5_next_state_dict",
+]
 
 # Checkpoint prefix for the vision tower, and the MAX module it loads into.
-_VISION_CHECKPOINT_PREFIX = "model.visual."
+VISION_CHECKPOINT_PREFIX = "model.visual."
 VISION_WEIGHT_PREFIX = "vision_encoder."
 
 # Language-model prefix map, longest match first: the multimodal prefix has to
@@ -184,6 +188,8 @@ def _rename(name: str) -> str:
 def convert_glm5_next_state_dict(
     state_dict: dict[str, Weights],
     huggingface_config: AutoConfig,
+    *,
+    keep_mtp_layer: bool = False,
     **unused_kwargs: object,
 ) -> dict[str, WeightData]:
     """Converts a GLM-5.3-Flash checkpoint to MAX weight names.
@@ -192,6 +198,9 @@ def convert_glm5_next_state_dict(
         state_dict: The raw checkpoint weights.
         huggingface_config: The checkpoint's HuggingFace config, read for the
             layer count that identifies the MTP draft layer.
+        keep_mtp_layer: Whether to keep the MTP draft layer's weights, at
+            ``layers.{num_hidden_layers}.``. Only the speculative architecture
+            builds that layer, so the base graph's strict load drops them.
 
     Returns:
         The transformed weights.
@@ -208,10 +217,10 @@ def convert_glm5_next_state_dict(
     for checkpoint_name, value in state_dict.items():
         weight = value.data()
 
-        if checkpoint_name.startswith(_VISION_CHECKPOINT_PREFIX):
+        if checkpoint_name.startswith(VISION_CHECKPOINT_PREFIX):
             max_name = (
                 VISION_WEIGHT_PREFIX
-                + checkpoint_name[len(_VISION_CHECKPOINT_PREFIX) :]
+                + checkpoint_name[len(VISION_CHECKPOINT_PREFIX) :]
             )
             # The tower's stacked QKV loads into a StackedLinear.
             max_name = max_name.replace("attn.qkv.", "attn.qkv_proj.")
@@ -252,14 +261,9 @@ def convert_glm5_next_state_dict(
             [parts[name] for name in _CONV_PARTS], f"{prefix}.conv1d.weight"
         )
 
-    # TODO(GLM53-MTP): the MTP draft layer's weights are dropped here, matching
-    # DeepSeek-V3.2 and GLM-5.2, whose MTP lives in a separate registered
-    # architecture (`unified_mtp_glm5_2`) that consumes them. The GLM-5.3-Flash
-    # equivalent needs the KDA state rollback from
-    # `speculative/gated_delta_rollback.py`, so until that lands these weights
-    # have no consumer and a strict load would reject them.
-    mtp_prefix = f"layers.{text_config.num_hidden_layers}."
-    for key in [k for k in new_state_dict if k.startswith(mtp_prefix)]:
-        del new_state_dict[key]
+    if not keep_mtp_layer:
+        mtp_prefix = f"layers.{text_config.num_hidden_layers}."
+        for key in [k for k in new_state_dict if k.startswith(mtp_prefix)]:
+            del new_state_dict[key]
 
     return new_state_dict

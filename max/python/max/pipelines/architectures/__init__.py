@@ -316,6 +316,11 @@ def register_all_models() -> None:
         ),
         _LazyArch("MTPHYV4DraftModel", ".mtp_hy_v4", "mtp_hy_v4_draft_arch"),
         _LazyArch(
+            "MTPGlm5NextDraftModel",
+            ".mtp_glm5_next",
+            "mtp_glm5_next_draft_arch",
+        ),
+        _LazyArch(
             "MTPInklingDraftModel", ".mtp_inkling", "mtp_inkling_draft_arch"
         ),
         _LazyArch(

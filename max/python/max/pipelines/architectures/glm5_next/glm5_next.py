@@ -185,6 +185,9 @@ class Glm5Next(Module):
                 self.embed_tokens.weight if config.tie_word_embeddings else None
             ),
         )
+        # A speculative verify reads only the variable logits, so it skips
+        # the last-token projection, a vocab-wide matmul per step.
+        self.emit_last_token_logits = True
 
     # ------------------------------------------------------------- schedule
 
@@ -215,14 +218,15 @@ class Glm5Next(Module):
         """
         return self.config.mhc and layer_idx < self.config.num_hidden_layers
 
-    def uses_moe(self, layer_idx: int) -> bool:
+    @staticmethod
+    def uses_moe(config: Glm5NextConfig, layer_idx: int) -> bool:
         """Whether ``layer_idx`` has an MoE block rather than a dense MLP.
 
         Layers 0-2 are dense at width ``intermediate_size`` (12288); 3 onward,
         the MTP layer included, are MoE at ``moe_intermediate_size`` (2048)
         with one shared expert and eight of 288 routed.
         """
-        return layer_idx >= self.config.first_k_dense_replace
+        return layer_idx >= config.first_k_dense_replace
 
     def subgraph_layer_groups(self) -> list[list[int]]:
         """Groups the decoder layers that can share one compiled subgraph.
@@ -253,7 +257,10 @@ class Glm5Next(Module):
             return []
         groups: dict[tuple[str, bool], list[int]] = {}
         for layer_idx in range(self.config.num_hidden_layers):
-            key = (self.layer_type(layer_idx), self.uses_moe(layer_idx))
+            key = (
+                self.layer_type(layer_idx),
+                self.uses_moe(self.config, layer_idx),
+            )
             groups.setdefault(key, []).append(layer_idx)
         return [group for group in groups.values() if len(group) > 1]
 
@@ -298,24 +305,36 @@ class Glm5Next(Module):
                     config,
                     layer_idx,
                     self_attn=self_attn,
-                    mlp=self.build_mlp(layer_idx),
+                    mlp=self.build_mlp(config, layer_idx, self.ep_manager),
                 )
             )
         return LayerList(layers)
 
-    def build_mlp(self, layer_idx: int) -> Module:
+    @staticmethod
+    def build_mlp(
+        config: Glm5NextConfig,
+        layer_idx: int,
+        ep_manager: EPBatchManager | None,
+    ) -> Module:
         """Returns the feed-forward sublayer for ``layer_idx``.
 
         Dense at ``intermediate_size`` below ``first_k_dense_replace``, MoE at
         ``moe_intermediate_size`` at and above it. Both clamp before the
         activation; see :mod:`.layers.mlp` for why none of MAX's three existing
         clamped-SwiGLU paths can be reused.
-        """
-        config = self.config
-        mlp = self._mlp_module(layer_idx)
-        return Glm5NextMlpSublayer(mlp, config.devices, config, self.ep_manager)
 
-    def _mlp_module(self, layer_idx: int) -> Glm5NextMLP | Glm5NextMoE:
+        Static so that the MTP draft layer, which is built before its target,
+        can build its MoE the same way.
+        """
+        mlp = Glm5Next._mlp_module(config, layer_idx, ep_manager)
+        return Glm5NextMlpSublayer(mlp, config.devices, config, ep_manager)
+
+    @staticmethod
+    def _mlp_module(
+        config: Glm5NextConfig,
+        layer_idx: int,
+        ep_manager: EPBatchManager | None,
+    ) -> Glm5NextMLP | Glm5NextMoE:
         """Returns the unwrapped dense MLP or MoE block for ``layer_idx``.
 
         Mirrors DeepSeek-V3.2's construction, because GLM-5.3-Flash's MoE *is*
@@ -329,7 +348,6 @@ class Glm5Next(Module):
         dtype. Declaring the dense MLPs at the compute dtype instead is the
         first thing weight loading rejects.
         """
-        config = self.config
         quant_cfg = config.quant_config
         quantized = (
             quant_cfg is not None
@@ -338,7 +356,7 @@ class Glm5Next(Module):
         mlp_dtype = config.dtype if quantized else config.compute_dtype
         layer_quant_config = quant_cfg if quantized else None
 
-        if not self.uses_moe(layer_idx):
+        if not Glm5Next.uses_moe(config, layer_idx):
             dense_mlp = Glm5NextMLP(
                 dtype=mlp_dtype,
                 quantization_encoding=None,
@@ -397,7 +415,7 @@ class Glm5Next(Module):
             * config.moe_intermediate_size,
             dtype=mlp_dtype,
             ep_size=ep_size,
-            ep_batch_manager=self.ep_manager,
+            ep_batch_manager=ep_manager,
             quant_config=layer_quant_config,
             shared_experts_dtype=(
                 quant_cfg.shared_experts_dtype(mlp_dtype)
@@ -745,4 +763,5 @@ class Glm5Next(Module):
             is_data_parallel_attention=config.data_parallel_degree > 1,
             return_logits=config.return_logits,
             return_hidden_states=config.return_hidden_states,
+            emit_last_token_logits=self.emit_last_token_logits,
         )

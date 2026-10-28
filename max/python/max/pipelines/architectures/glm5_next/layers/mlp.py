@@ -194,6 +194,14 @@ class Glm5NextMlpSublayer(Module):
     both.
     """
 
+    token_shard_name: str = "moe_token_shard"
+    """Prefix of the token-shard dim this sublayer names.
+
+    Every decoder layer splits the same row count, so they share one name. An
+    MTP draft step splits a different count, and reusing the name would bind
+    two runtime sizes to one symbol.
+    """
+
     def __init__(
         self,
         mlp: Glm5NextMLP | Glm5NextMoE,
@@ -258,7 +266,7 @@ class Glm5NextMlpSublayer(Module):
         # which is where `slice_tensor` wants its bounds.
         total = inputs.host_input_row_offsets[-1].cast(DType.int64)
         shards = [
-            token_shard(x, i, self.token_shards, total)
+            token_shard(x, i, self.token_shards, total, self.token_shard_name)
             for i, x in enumerate(xs)
         ]
         outs = forward_moe_sharded_layers(list(self.shards), shards)

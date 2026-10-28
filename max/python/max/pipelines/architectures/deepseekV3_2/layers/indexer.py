@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Iterable, Sequence
+from typing import NamedTuple
 
 from max.dtype import DType
 from max.graph import (
@@ -65,6 +66,27 @@ def indexer_selection_width(
     if not always_select_tail or index_kpool == 1:
         return index_topk
     return index_topk + index_kpool - 1
+
+
+class KpoolTailReplayInputs(NamedTuple):
+    """One pooled indexer call's inputs to the tail-ring seed.
+
+    A speculative verify keeps the ring at its pre-verify members and re-runs
+    :func:`~max.nn.legacy.kernels.mla_kpool_seed_tail` over the accepted rows once
+    acceptance is known. The ring is slot-indexed modulo ``kpool``, so a seed
+    of a rejected draft can overwrite a pending member the next step closes
+    its pool with, and no length pointer undoes that.
+    """
+
+    k: TensorValue
+    """``[total_tokens, index_head_dim]`` layer-normed keys."""
+    gate: TensorValue
+    """``[total_tokens, index_head_dim]`` compression-gate scores."""
+    tail: BufferValue
+    slot_idx: TensorValue
+    cache_lengths: TensorValue
+    """``[batch]`` cached-prefix length the call ran at."""
+    kpool: int
 
 
 def exclusive_prefix_sum(x: TensorValue) -> TensorValue:
@@ -446,6 +468,8 @@ class Indexer(Module, Shardable):
         mask_variant: MHAMaskVariant,
         tail: BufferValue,
         slot_idx: TensorValue,
+        seed_row_offsets: TensorValue | None = None,
+        tail_capture: list[KpoolTailReplayInputs] | None = None,
     ) -> TensorValue:
         """Compresses, caches and scores k-pools, then expands the selection.
 
@@ -498,6 +522,10 @@ class Indexer(Module, Shardable):
             tail: This layer's ``[max_slots, 2, index_kpool, index_head_dim]``
                 in-progress-pool ring, mutated in place.
             slot_idx: ``[batch]`` ring slot per request.
+            seed_row_offsets: Row offsets the tail seed reads in place of
+                ``input_row_offsets``. All zeros seeds nothing.
+            tail_capture: When given, this call's
+                :class:`KpoolTailReplayInputs` are appended to it.
 
         Returns:
             ``[total_tokens, index_topk + index_kpool - 1]`` token positions.
@@ -592,8 +620,25 @@ class Indexer(Module, Shardable):
         # `mla_kpool_ring_close` just closed and every whole pool `compress`
         # just built are both already accounted for.
         mla_kpool_seed_tail(
-            tail, k, gate, input_row_offsets, cache_lengths, slot_idx, kpool
+            tail,
+            k,
+            gate,
+            input_row_offsets if seed_row_offsets is None else seed_row_offsets,
+            cache_lengths,
+            slot_idx,
+            kpool,
         )
+        if tail_capture is not None:
+            tail_capture.append(
+                KpoolTailReplayInputs(
+                    k=k,
+                    gate=gate,
+                    tail=tail,
+                    slot_idx=slot_idx,
+                    cache_lengths=cache_lengths,
+                    kpool=kpool,
+                )
+            )
 
         # `compress`'s output is dense per request (no scatter needed, unlike
         # `mla_kpool_ring_close`'s sparse one), so it stores directly at each
@@ -663,6 +708,8 @@ class Indexer(Module, Shardable):
         slot_idx: TensorValue | None = None,
         mla_collection: PagedCacheValues | None = None,
         write_logical: bool,
+        seed_row_offsets: TensorValue | None = None,
+        tail_capture: list[KpoolTailReplayInputs] | None = None,
     ) -> tuple[TensorValue | None, TensorValue | None]:
         """
         Args:
@@ -687,6 +734,10 @@ class Indexer(Module, Shardable):
                 read them only under the shared-index fold. ``False`` returns
                 only the physical rows, which the top-k then writes alone; it
                 requires ``mla_collection`` and ``index_kpool == 1``.
+            seed_row_offsets: Row offsets the k-pool tail seed reads in place
+                of ``input_row_offsets``; all zeros leaves the ring as it was.
+            tail_capture: When given, the pooled call's
+                :class:`KpoolTailReplayInputs` are appended to it.
         Returns:
             topk_indices, tTensor of shape (total_seq_len, index_topk) indices
                 of the top k Keys selected by the Indexer for MLA to attend to
@@ -770,6 +821,8 @@ class Indexer(Module, Shardable):
                 mask_variant,
                 tail,
                 slot_idx,
+                seed_row_offsets=seed_row_offsets,
+                tail_capture=tail_capture,
             )
             return pooled_indices, None
 

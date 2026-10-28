@@ -541,6 +541,7 @@
                 "api/python/pipelines.architectures.mistral3",
                 "api/python/pipelines.architectures.mpnet",
                 "api/python/pipelines.architectures.mtp_deepseekV3",
+                "api/python/pipelines.architectures.mtp_glm5_next",
                 "api/python/pipelines.architectures.mtp_inkling",
                 "api/python/pipelines.architectures.mtp_qwen3_5",
                 "api/python/pipelines.architectures.muse_glimmer",

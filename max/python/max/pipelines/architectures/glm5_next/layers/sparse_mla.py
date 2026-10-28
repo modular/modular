@@ -67,6 +67,7 @@ from max.nn.legacy.quant_ops import quantized_matmul
 from max.nn.legacy.rotary_embedding import RotaryEmbedding
 from max.pipelines.architectures.deepseekV3_2.layers.indexer import (
     Indexer,
+    KpoolTailReplayInputs,
 )
 from max.pipelines.architectures.deepseekV3_2.layers.sparse_mla import (
     SparseLatentAttentionWithRopeFp8,
@@ -138,10 +139,10 @@ class SparseMLASublayerInputs:
     layer set -- the indexer cache's -- so a model index would bind one
     layer's ring to another and pass every shape check."""
 
-    prev_selection: TensorValue | None = None
-    """``[total_tokens, 2051]`` int32 selection to reuse instead of running the
-    indexer, for ``index_share_for_mtp_iteration``. The shared value is the
-    *expanded token* selection, not the 512 pool ids."""
+    prev_selection: list[TensorValue] = field(default_factory=list)
+    """Per-device ``[total_tokens, 2051]`` int32 selection to reuse instead of
+    running the indexer, for ``index_share_for_mtp_iteration``, or empty. The
+    shared value is the *expanded token* selection, not the 512 pool ids."""
 
     selection: list[TensorValue] = field(default_factory=list)
     """Per-device sink for this layer's selection. Appended to the model's
@@ -224,6 +225,26 @@ class Glm5NextSparseMLASublayer(Module):
         rope: The padding rotary table from :func:`nope_pad_rotary`, shared
             across every sparse layer.
     """
+
+    tail_seed_offsets: list[TensorValue] | None = None
+    """Per-device row offsets the indexer's tail seed reads, or ``None``.
+
+    Set by the speculative graph around a verify: all zeros at a nonzero
+    verify width, so the ring keeps its pre-verify members until the rollback
+    seeds the accepted rows. ``None`` in the base graph, which seeds every
+    call's own rows.
+    """
+
+    tail_capture: list[list[KpoolTailReplayInputs]] | None = None
+    """Per-device sink for this layer's tail-seed inputs, or ``None``.
+
+    Set alongside :attr:`tail_seed_offsets`.
+    """
+
+    selection_lag: int = 0
+    """Positions between the token a reused selection was computed for and
+    the token reading it. Nonzero only on an MTP draft step that reuses an
+    earlier step's selection, which never runs inside a subgraph."""
 
     def __init__(
         self,
@@ -405,8 +426,8 @@ class Glm5NextSparseMLASublayer(Module):
         otherwise runs the pooled indexer: compress, cache, score pools, expand
         back to token positions.
         """
-        if inputs.prev_selection is not None:
-            return inputs.prev_selection.to(x.device)
+        if inputs.prev_selection:
+            return inputs.prev_selection[device_idx]
         selection, _ = self.indexer_shards[device_idx](
             x,
             q_a_normed,
@@ -423,6 +444,16 @@ class Glm5NextSparseMLASublayer(Module):
             tail=inputs.tail_pools[device_idx],
             slot_idx=inputs.tail_row_ids[device_idx],
             write_logical=True,
+            seed_row_offsets=(
+                None
+                if self.tail_seed_offsets is None
+                else self.tail_seed_offsets[device_idx]
+            ),
+            tail_capture=(
+                None
+                if self.tail_capture is None
+                else self.tail_capture[device_idx]
+            ),
         )
         assert selection is not None
         return selection
@@ -524,10 +555,7 @@ class Glm5NextSparseMLASublayer(Module):
             index_kpool=self.indexer.index_kpool,
             index_pool_topk=self.indexer.pools_selected,
             index_kpool_select_tail=self.indexer.always_select_tail,
-            # TODO(GLM53-MTP): a draft step that reuses an earlier token's
-            # selection must pass its lag here. It cannot ride in
-            # `SparseMLASublayerInputs`: every field there becomes a subgraph
-            # input, which a Python int is not.
+            selection_lag=self.selection_lag,
         ).reshape((-1, shard.n_heads * shard.v_head_dim))
         return shard.o_proj(attn_out)
 

@@ -25,6 +25,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
 from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.layer import Module
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
@@ -101,7 +102,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
     @classmethod
     def build_module(
         cls, context: ModelLoadContext
-    ) -> tuple[DeepseekV3, DeepseekV3Config]:
+    ) -> tuple[Module, DeepseekV3Config]:
         """Builds the DeepseekV3 module over the config's devices.
 
         A caller that sized the cache passes its KV params, and one that

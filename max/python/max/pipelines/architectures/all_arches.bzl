@@ -78,6 +78,7 @@ ALL_ARCHITECTURES = [
     "//max/python/max/pipelines/architectures/mpnet",
     "//max/python/max/pipelines/architectures/mpnet_modulev3",
     "//max/python/max/pipelines/architectures/mtp_deepseekV3",
+    "//max/python/max/pipelines/architectures/mtp_glm5_next",
     "//max/python/max/pipelines/architectures/mtp_hy_v4",
     "//max/python/max/pipelines/architectures/mtp_inkling",
     "//max/python/max/pipelines/architectures/mtp_qwen3_5",

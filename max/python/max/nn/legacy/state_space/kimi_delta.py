@@ -37,6 +37,9 @@ __all__ = [
     "KdaStateLayout",
     "kda_chunk",
     "kda_decode",
+    "kda_ring_record_elements",
+    "kda_state_fold",
+    "kda_verify_ring",
 ]
 
 KdaGateMode = Literal["original", "safe"]
@@ -565,4 +568,200 @@ def kda_chunk(
         beta_mode=beta_mode,
         state_layout=state_layout,
         use_computebound=use_computebound,
+    )
+
+
+def kda_ring_record_elements(key_head_dim: int, value_head_dim: int) -> int:
+    """Returns the float32 elements one ring record holds, before padding.
+
+    A record is one token's update to one head's state, laid out as the
+    per-channel decay ``exp(g)``, then the raw (not L2-normalized) key, then
+    the update factor ``beta * (v - S^T k_raw * inv_norm) * inv_norm``.
+    Folding it is ``S = diag(decay) S + key update_factor^T``, the
+    recurrence's own update with its operands and rounding, so a fold over the
+    first ``j`` records lands bit-for-bit the state :func:`kda_decode` holds
+    after ``j`` tokens. The key is stored raw because ``k_hat * delta`` and
+    ``k_raw * (delta * inv_norm)`` round differently.
+
+    Args:
+        key_head_dim: The key head width.
+        value_head_dim: The value head width.
+    """
+    return 2 * key_head_dim + value_head_dim
+
+
+def kda_verify_ring(
+    q: TensorValue,
+    k: TensorValue,
+    v: TensorValue,
+    raw_gate: TensorValue,
+    beta_logits: TensorValue,
+    a_log: TensorValue,
+    dt_bias: TensorValue,
+    cu_seqlens: TensorValue,
+    state_pool: BufferValue,
+    state_indices: TensorValue,
+    ring: BufferValue,
+    ring_indices: TensorValue,
+    verify_width: TensorValue,
+    *,
+    output_dtype: DType,
+    gate_mode: KdaGateMode = "original",
+    beta_mode: KdaBetaMode = "logits",
+    state_layout: KdaStateLayout = "K_FIRST",
+) -> TensorValue:
+    """Runs the KDA recurrence over a speculative verify window into a ring.
+
+    Produces the same readout as :func:`kda_decode` without writing
+    ``state_pool``. Token ``t`` of a request writes its record (see
+    :func:`kda_ring_record_elements`) to slot ``t`` of its ``ring`` row,
+    which :func:`kda_state_fold` applies once acceptance is known.
+
+    At a verify width of zero this is :func:`kda_decode` on ``state_pool``,
+    and no ring is written. A request longer than the ring's ``RING_LEN``
+    records nothing and commits ``state_pool`` itself, the same contract as
+    :func:`~max.nn.legacy.state_space.gated_delta_recurrence_verify_ring_fwd`.
+
+    Args:
+        q: ``[total_tokens, num_key_heads, key_head_dim]``.
+        k: ``[total_tokens, num_key_heads, key_head_dim]``.
+        v: ``[total_tokens, num_value_heads, value_head_dim]``.
+        raw_gate: ``[total_tokens, num_value_heads, key_head_dim]``
+            forget-gate pre-activation, before ``dt_bias`` is added.
+        beta_logits: ``[total_tokens, num_value_heads]``.
+        a_log: ``[num_value_heads]``.
+        dt_bias: ``[num_value_heads, key_head_dim]``.
+        cu_seqlens: ``[batch_size + 1]`` int32 exclusive prefix offsets.
+        state_pool: ``[max_slots, num_value_heads, key_head_dim,
+            value_head_dim]`` live pool, written only at a verify width of
+            zero or for a request longer than the ring.
+        state_indices: ``[batch_size]`` int32 pool slot per sequence.
+        ring: ``[ring_rows, num_value_heads, RING_LEN, record_stride]``
+            float32 ring pool. ``record_stride`` is at least
+            :func:`kda_ring_record_elements`.
+        ring_indices: ``[batch_size]`` int32 ring row per sequence.
+        verify_width: The operand
+            :func:`~max.nn.legacy.state_space.verify_width_operand` returns.
+        output_dtype: Dtype of the returned tensor.
+        gate_mode: Forget-gate form, as for :func:`kda_decode`.
+        beta_mode: Whether the kernel applies the sigmoid to ``beta_logits``.
+        state_layout: Pool axis order; must match how the pool was allocated.
+
+    Returns:
+        ``[total_tokens, num_value_heads, value_head_dim]``.
+    """
+    _check_dtypes(
+        q,
+        k,
+        v,
+        raw_gate,
+        beta_logits,
+        a_log,
+        dt_bias,
+        cu_seqlens,
+        state_indices,
+    )
+    _check_shapes(
+        "kda_verify_ring",
+        q,
+        k,
+        v,
+        raw_gate,
+        beta_logits,
+        a_log,
+        dt_bias,
+        cu_seqlens,
+        state_pool,
+        state_indices,
+        state_layout,
+    )
+    _check_dtype(DType.float32, ring=ring)
+    _check_rank(4, ring=ring)
+    total_tokens, num_value_heads, value_head_dim = v.shape
+    results = ops.inplace_custom(
+        "kda_verify_ring",
+        v.device,
+        [
+            ops.unsqueeze(q, 0),
+            ops.unsqueeze(k, 0),
+            ops.unsqueeze(v, 0),
+            ops.unsqueeze(raw_gate, 0),
+            ops.unsqueeze(beta_logits, 0),
+            a_log,
+            dt_bias,
+            cu_seqlens,
+            state_pool,
+            state_indices,
+            ring,
+            ring_indices.cast(DType.int32),
+            verify_width,
+        ],
+        [
+            TensorType(
+                output_dtype,
+                [1, total_tokens, num_value_heads, value_head_dim],
+                v.device,
+            )
+        ],
+        parameters={
+            "gate_mode": gate_mode,
+            "beta_mode": beta_mode,
+            "state_layout": state_layout,
+        },
+    )
+    return ops.squeeze(results[0].tensor, 0)
+
+
+def kda_state_fold(
+    state_pool: BufferValue,
+    ring: BufferValue,
+    state_row_ids: TensorValue,
+    ring_row_ids: TensorValue,
+    num_accepted: TensorValue,
+    row_offsets: TensorValue,
+    verify_width: TensorValue,
+    *,
+    state_layout: KdaStateLayout = "K_FIRST",
+) -> None:
+    """Applies a verify's accepted ring records to the state pool.
+
+    Advances ``state_pool`` over the first ``num_accepted[b]`` records
+    :func:`kda_verify_ring` wrote, for every layer in one launch. A row with
+    ``num_accepted[b] == 0`` is left unchanged, and a row longer than
+    ``RING_LEN`` was committed by the verify itself and is skipped. Nothing
+    runs at a verify width of zero.
+
+    ``num_accepted[b]`` must not exceed the row's length in ``row_offsets``:
+    past it the ring holds no record of this verify. The kernel clamps a
+    larger count to the length, so a zero-length padding row never folds.
+
+    Args:
+        state_pool: ``[max_slots, num_value_heads, key_head_dim,
+            value_head_dim]`` live pool, folded in place.
+        ring: ``[ring_rows, num_value_heads, RING_LEN, record_stride]`` ring
+            pool.
+        state_row_ids: ``[num_layers, batch_size]`` live pool rows.
+        ring_row_ids: ``[num_layers, batch_size]`` ring rows.
+        num_accepted: ``[batch_size]`` records to fold.
+        row_offsets: ``[batch_size + 1]`` offsets of the verify's rows, the
+            ``cu_seqlens`` :func:`kda_verify_ring` ran over.
+        verify_width: The operand
+            :func:`~max.nn.legacy.state_space.verify_width_operand` returns.
+        state_layout: Pool axis order; must match how the pool was allocated.
+    """
+    _check_dtype(DType.float32, ring=ring)
+    _check_rank(4, ring=ring)
+    ops.inplace_custom(
+        "kda_state_fold",
+        state_pool.device,
+        [
+            state_pool,
+            ring,
+            state_row_ids.cast(DType.uint32),
+            ring_row_ids.cast(DType.uint32),
+            num_accepted.cast(DType.uint32),
+            row_offsets.cast(DType.uint32),
+            verify_width,
+        ],
+        parameters={"state_layout": state_layout},
     )

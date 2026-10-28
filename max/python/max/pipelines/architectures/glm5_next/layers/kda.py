@@ -20,16 +20,24 @@ KDA layer per step; only the row ids differ between layers.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import field
 from typing import NamedTuple
 
 from max import tree
 from max.graph import BufferValue, TensorValue
 from max.nn.legacy.kv_cache import RecurrentStateInputsPerDevice
 
-from ..state_cache import CONV_LEAF_ID, RECURRENT_LEAF_ID, leaf_inputs
+from ..state_cache import (
+    CONV_LEAF_ID,
+    RECURRENT_LEAF_ID,
+    VERIFY_RING_LEAF_ID,
+    has_verify_ring,
+    leaf_inputs,
+)
 
 __all__ = [
     "KdaReplayInputs",
+    "KdaRing",
     "KdaSublayerInputs",
     "kda_sublayer_inputs",
 ]
@@ -69,6 +77,20 @@ class KdaSublayerInputs:
     and a block of one names nothing in the other.
     """
 
+    ring_pools: list[BufferValue] = field(default_factory=list)
+    """The speculative verify ring's pool, every layer's rows, or empty when
+    the cache declares no ring."""
+
+    ring_row_ids: list[TensorValue] = field(default_factory=list)
+    """``[batch_size]`` ring row this layer records each sequence into."""
+
+
+class KdaRing(NamedTuple):
+    """One KDA layer's speculative verify ring, on one device."""
+
+    pool: BufferValue
+    row_id: TensorValue
+
 
 class KdaReplayInputs(NamedTuple):
     """One KDA layer's per-token inputs to the two state kernels.
@@ -101,6 +123,11 @@ class KdaReplayInputs(NamedTuple):
 
     beta_logits: TensorValue
     """``[total_tokens, num_heads]`` input-gate logits, pre-sigmoid."""
+
+    qkv_window: TensorValue | None = None
+    """``[batch_size * (1 + K), conv_dim]`` copy of ``qkv`` that a verify's
+    conv kernel writes when there are drafts, or ``None`` outside a verify.
+    The conv replay reads this instead of ``qkv``."""
 
 
 def kda_sublayer_inputs(
@@ -146,6 +173,11 @@ def kda_sublayer_inputs(
             )
     conv = [leaf_inputs(device, CONV_LEAF_ID) for device in state]
     recurrent = [leaf_inputs(device, RECURRENT_LEAF_ID) for device in state]
+    ring = [
+        leaf_inputs(device, VERIFY_RING_LEAF_ID)
+        for device in state
+        if has_verify_ring(device)
+    ]
     return {
         layer_idx: KdaSublayerInputs(
             signal_buffers=signal_buffers,
@@ -156,6 +188,8 @@ def kda_sublayer_inputs(
             recurrent_row_ids=[
                 leaf.live_row_id(position) for leaf in recurrent
             ],
+            ring_pools=[leaf.pool for leaf in ring],
+            ring_row_ids=[leaf.live_row_id(position) for leaf in ring],
         )
         for position, layer_idx in enumerate(kda_layers)
     }

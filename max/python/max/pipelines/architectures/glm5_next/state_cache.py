@@ -43,10 +43,19 @@ count has a page that divides the indexer's own, however that count factors.
 
 from __future__ import annotations
 
+import math
+from collections.abc import Sequence
 from typing import Any
 
 from max.dtype import DType
 from max.nn.legacy.kv_cache import RecurrentStateRegion
+from max.nn.legacy.state_space import kda_ring_record_elements
+
+from ..qwen3_5.state_cache import (
+    COMPILED_RING_LENS,
+    RING_DTYPE,
+    ring_record_stride,
+)
 
 MLA_CACHE_KEY = "mla"
 INDEXER_CACHE_KEY = "indexer"
@@ -72,9 +81,25 @@ regions cannot silently point a leaf at another leaf's pool.
 """
 
 
+VERIFY_RING_LEAF_ID = "linear_attn/ring"
+"""The scratch leaf a speculative verify records the KDA recurrence into.
+
+Declared only by a speculative architecture, after the live leaves. Each
+request draws one block when it is admitted and holds it until release, and
+it is never published.
+"""
+
+
 def leaf_inputs(device: Any, leaf_id: str) -> Any:
     """Returns one device's inputs for ``leaf_id``."""
-    return device.leaves[STATE_LEAF_ORDER.index(leaf_id)]
+    return device.leaves[
+        (*STATE_LEAF_ORDER, VERIFY_RING_LEAF_ID).index(leaf_id)
+    ]
+
+
+def has_verify_ring(device: Any) -> bool:
+    """Whether one device's state inputs carry the verify ring."""
+    return len(device.leaves) > len(STATE_LEAF_ORDER)
 
 
 TAIL_RING_DTYPE = DType.bfloat16
@@ -170,3 +195,46 @@ def state_regions(
         "STATE_LEAF_ORDER must mirror the declared region order"
     )
     return regions
+
+
+def with_verify_ring(
+    regions: Sequence[RecurrentStateRegion], ring_len: int
+) -> tuple[RecurrentStateRegion, ...]:
+    """Appends the speculative verify's ring to the live state leaves.
+
+    A ring row holds one record per value head and window position, laid out
+    as :func:`~max.nn.legacy.state_space.kda_ring_record_elements` counts it. The
+    record stride is padded so the ring's page divides the live leaves' least
+    common multiple, which is the pool's block, so declaring the ring never
+    widens it.
+
+    Args:
+        regions: The live leaves :func:`state_regions` declares, per device.
+        ring_len: Records one request's ring holds, one of
+            :data:`~..qwen3_5.state_cache.COMPILED_RING_LENS`.
+
+    Raises:
+        ValueError: If ``ring_len`` is not a compiled ring length.
+    """
+    if ring_len not in COMPILED_RING_LENS:
+        raise ValueError(
+            f"ring_len must be one of {COMPILED_RING_LENS}, got {ring_len}"
+        )
+    (recurrent,) = (r for r in regions if r.leaf_id == RECURRENT_LEAF_ID)
+    heads, key_head_dim, value_head_dim = recurrent.row_shape
+    record_stride = ring_record_stride(
+        record_elements=kda_ring_record_elements(key_head_dim, value_head_dim),
+        bytes_per_element=recurrent.num_layers
+        * heads
+        * ring_len
+        * RING_DTYPE.size_in_bytes,
+        page_multiple_of=math.lcm(*(r.bytes_per_page for r in regions)),
+    )
+    ring = RecurrentStateRegion(
+        leaf_id=VERIFY_RING_LEAF_ID,
+        num_layers=recurrent.num_layers,
+        row_shape=(heads, ring_len, record_stride),
+        dtype=RING_DTYPE,
+        scratch=True,
+    )
+    return (*regions, ring)

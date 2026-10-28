@@ -244,7 +244,7 @@ def linear_state_regions(
 
     num_key_heads_per_device = num_key_heads // num_devices
     ring_row_records = num_key_heads_per_device * ring_len
-    record_stride = _ring_record_stride(
+    record_stride = ring_record_stride(
         record_elements=key_head_dim
         + (num_value_heads // num_key_heads) * (value_head_dim + 1),
         bytes_per_element=num_linear_layers
@@ -264,7 +264,7 @@ def linear_state_regions(
     return (*regions, ring)
 
 
-def _ring_record_stride(
+def ring_record_stride(
     *, record_elements: int, bytes_per_element: int, page_multiple_of: int
 ) -> int:
     """Returns the padded stride of one ring record.

@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_test")
+load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -14,5 +14,17 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/glm5_next",
+    ],
+)
+
+modular_py_test(
+    name = "test_vision_spec",
+    srcs = ["test_vision_spec.py"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/glm5_next",
+        requirement("numpy"),
     ],
 )

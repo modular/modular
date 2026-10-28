@@ -61,7 +61,11 @@ def token_bound(
 
 
 def token_shard(
-    x: TensorValue, rank: int, degree: int, total_tokens: TensorValue
+    x: TensorValue,
+    rank: int,
+    degree: int,
+    total_tokens: TensorValue,
+    name: str = "moe_token_shard",
 ) -> TensorValue:
     """Returns this rank\'s contiguous slice of ``x``\'s token axis.
 
@@ -77,15 +81,15 @@ def token_shard(
         rank: This device\'s index within the tensor-parallel group.
         degree: Size of that group.
         total_tokens: The row count as an int64 scalar, on CPU.
+        name: Prefix of the shard's dim name. Every call site that splits a
+            different row count needs its own.
 
     Returns:
         ``[shard_tokens, ...]``.
     """
     start = token_bound(total_tokens, rank, degree)
     stop = token_bound(total_tokens, rank + 1, degree)
-    return ops.slice_tensor(
-        x, [(slice(start, stop), f"moe_token_shard_{rank}"), ...]
-    )
+    return ops.slice_tensor(x, [(slice(start, stop), f"{name}_{rank}"), ...])
 
 
 def gather_token_shards(

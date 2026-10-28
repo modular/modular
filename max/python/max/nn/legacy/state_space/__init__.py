@@ -34,6 +34,9 @@ from .kimi_delta import (
     kda_chunk_is_registered,
     kda_chunk_supports_head_dims,
     kda_decode,
+    kda_ring_record_elements,
+    kda_state_fold,
+    kda_verify_ring,
 )
 from .mamba2_replay_fold import mamba2_replay_fold
 from .mamba2_ssd_scan import mamba2_ssd_chunk_scan_varlen_fwd_inplace
@@ -53,6 +56,9 @@ __all__ = [
     "kda_chunk_is_registered",
     "kda_chunk_supports_head_dims",
     "kda_decode",
+    "kda_ring_record_elements",
+    "kda_state_fold",
+    "kda_verify_ring",
     "mamba2_replay_fold",
     "mamba2_ssd_chunk_scan_varlen_fwd_inplace",
     "short_conv_ring",

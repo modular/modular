@@ -90,6 +90,7 @@ _TARGET_ADAPTERS: Mapping[str, str] = {
     "Gemma4UnifiedForConditionalGeneration_ModuleV3": (
         ".gemma4_modulev3.spec_adapters"
     ),
+    "Glm5NextForConditionalGeneration": ".glm5_next.spec_adapters",
     "GraniteForCausalLM": ".llama3.spec_adapters",
     "HYV4ForCausalLM": ".hy_v4.spec_adapters",
     "InklingForConditionalGeneration": ".inkling.spec_adapters",
