@@ -356,6 +356,7 @@ class KVConnector(Protocol):
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> Mapping[str, Sequence[bool]]:
         """Reports which of ``block_hashes`` each leaf holds. Presence only.
 
@@ -382,6 +383,11 @@ class KVConnector(Protocol):
             hint: As :meth:`load`, and it must be the SAME hint, or a lookup
                 would ask the co-located store about a peer-held prefix and
                 report it absent.
+            chain_start: The chain index of ``block_hashes[0]`` counted from
+                the root, so a connector can tell a hint that cannot serve
+                this lookup from one that describes another chain. ``None``
+                when unknown, which leaves the connector unable to tell the
+                two apart.
 
         Returns:
             One mask per leaf, keyed as :attr:`leaves` keys them, each exactly
@@ -447,6 +453,7 @@ class KVConnector(Protocol):
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> KVLookup:
         """Starts a :meth:`lookup` and returns at once.
 
@@ -460,7 +467,12 @@ class KVConnector(Protocol):
         which is right for a connector that answers from local memory.
         """
         return CompletedLookup(
-            self.lookup(block_hashes, replica_idx=replica_idx, hint=hint)
+            self.lookup(
+                block_hashes,
+                replica_idx=replica_idx,
+                hint=hint,
+                chain_start=chain_start,
+            )
         )
 
     def defers_lookup(self, replica_idx: int = 0) -> bool:

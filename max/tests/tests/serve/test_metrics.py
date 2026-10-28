@@ -305,6 +305,33 @@ def test_dkv_orphan_metrics_record_on_their_own_instruments(
     )
 
 
+def test_dkv_unused_hints_record_on_their_own_instruments() -> None:
+    """Unused hints land on their own total and per-reason instruments."""
+    client = mock.Mock()
+    recorder = metrics._AsyncMetrics()
+    recorder.configure(client, {"model": "m"})
+
+    recorder.dkv_hints_unused(5)
+    recorder.dkv_hints_unused_by_reason(3, reason="past_end")
+
+    total, by_reason = (
+        c.args[0] for c in client.send_measurement.call_args_list
+    )
+    assert (total.instrument_name, total.value, total.attributes) == (
+        "max.dkv.hints_unused",
+        5,
+        {"model": "m"},
+    )
+    assert (by_reason.instrument_name, by_reason.value) == (
+        "max.dkv.hints_unused_by_reason",
+        3,
+    )
+    assert by_reason.attributes == {"model": "m", "reason": "past_end"}
+    assert {total.instrument_name, by_reason.instrument_name} <= set(
+        metrics.SERVE_METRICS
+    )
+
+
 def _is_histogram(inst: object) -> bool:
     """True if a SERVE_METRICS instrument is a Histogram.
 

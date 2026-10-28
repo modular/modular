@@ -135,6 +135,7 @@ class ScriptedConnector:
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> Mapping[str, Sequence[bool]]:
         self._calls.append(("lookup", list(block_hashes), replica_idx, hint))
         return {
@@ -149,6 +150,7 @@ class ScriptedConnector:
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> KVLookup:
         return CompletedLookup(
             self.lookup(block_hashes, replica_idx=replica_idx, hint=hint)

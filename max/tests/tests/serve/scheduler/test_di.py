@@ -292,6 +292,7 @@ class HintRecordingConnector(NullConnector):
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> Mapping[str, Sequence[bool]]:
         self.lookup_hints.append(hint)
         held = [i == 0 for i in range(len(block_hashes))]

@@ -106,6 +106,7 @@ class _Connector(NullConnector):
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> KVLookup:
         lookup: KVLookup = (
             _AnsweredLookup(len(block_hashes))

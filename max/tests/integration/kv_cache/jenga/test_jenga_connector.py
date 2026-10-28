@@ -214,6 +214,7 @@ class FakeConnector:
         # real connectors do, and so reports only the blocks it took.
         self.skips_held = skips_held
         self.lookups: list[tuple[list[bytes], int, bytes | None]] = []
+        self.chain_starts: list[int | None] = []
         # Only the calls to the blocking `lookup`, which a deferred alloc
         # must never make because it runs on the scheduler thread.
         self.blocking_lookups = 0
@@ -232,6 +233,7 @@ class FakeConnector:
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> Mapping[str, Sequence[bool]]:
         """States residency and nothing else.
 
@@ -240,6 +242,7 @@ class FakeConnector:
         """
         self.blocking_lookups += 1
         self.lookups.append((list(block_hashes), replica_idx, hint))
+        self.chain_starts.append(chain_start)
         return self._resident(block_hashes)
 
     def _resident(
@@ -255,8 +258,10 @@ class FakeConnector:
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> KVLookup:
         self.lookups.append((list(block_hashes), replica_idx, hint))
+        self.chain_starts.append(chain_start)
         masks = self._resident(block_hashes)
         if not self.deferred_lookups:
             return CompletedLookup(masks)
@@ -454,6 +459,7 @@ def make_manager(
     leaves: Sequence[str] = (FULL,),
     num_huge_blocks: int = 16,
     leaf_infos: Mapping[str, KVLeafInfo] | None = None,
+    block_size: int = 1,
 ) -> JengaBlockManager:
     leaf_infos = leaf_infos or {
         leaf: KVLeafInfo(1, KVCacheGroupId.full()) for leaf in leaves
@@ -461,18 +467,20 @@ def make_manager(
     pools = create_pools(leaf_infos, num_huge_blocks)
     manager = JengaBlockManager(
         pools=pools,
-        groups=create_groups(leaf_infos, pools, 1, enable_prefix_caching=True),
+        groups=create_groups(
+            leaf_infos, pools, block_size, enable_prefix_caching=True
+        ),
         leaves={
             leaf_id: PagedKVLeafRegion(
                 leaf_id=leaf_id,
                 group_id=info.group_id,
                 bytes_per_page=1,
-                page_size=1,
+                page_size=block_size,
             )
             for leaf_id, info in leaf_infos.items()
             if not info.group_id.is_recurrent()
         },
-        block_size=1,
+        block_size=block_size,
         enable_prefix_caching=True,
         max_num_input_tokens=None,
         num_draft_tokens=0,
@@ -1139,7 +1147,7 @@ def _hold_in_connector_with_a_device_hit(
         leaf_id: set(hashes) for leaf_id, hashes in connector.held.items()
     }
     connector.reset_prefix_cache()
-    device = make_ctx(tokens[:num_device_blocks])
+    device = make_ctx(tokens[: num_device_blocks * manager._block_size])
     manager.claim(device)
     manager.alloc(device)
     device.update(9)
@@ -1888,6 +1896,96 @@ def test_a_deferred_answer_is_asked_again_when_the_device_hit_shrinks() -> None:
     assert ctx.cached_prefix_external_length == len(held) - 1
 
 
+def test_a_deferred_lookup_starts_its_chain_past_the_device_hit() -> None:
+    """The lookup names the chain index of the first hash it asks about.
+
+    The connector reads it to tell a hint that cannot serve the request from
+    one describing another chain, so it counts the device hit skipped.
+    """
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    held = _hold_in_connector_with_a_device_hit(manager, connector, tokens, 3)
+    connector.chain_starts.clear()
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+
+    assert connector.lookups[-1][0] == held[3:-1]
+    assert connector.chain_starts == [3]
+
+
+def test_a_synchronous_lookup_starts_its_chain_past_the_device_hit() -> None:
+    connector = FakeConnector([FULL], asynchronous=False)
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    held = _hold_in_connector_with_a_device_hit(manager, connector, tokens, 3)
+    connector.chain_starts.clear()
+    blocking_before = connector.blocking_lookups
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    manager.alloc(ctx)
+
+    assert connector.blocking_lookups > blocking_before
+    assert connector.lookups[-1][0] == held[3:-1]
+    assert connector.chain_starts == [3]
+
+
+@pytest.mark.parametrize("defer_lookup", [False, True])
+def test_a_lookup_counts_its_chain_start_in_blocks(defer_lookup: bool) -> None:
+    """A page of several tokens still moves the chain start by one."""
+    connector = FakeConnector(
+        [FULL], asynchronous=False, deferred_lookups=defer_lookup
+    )
+    manager = make_manager(connector, num_huge_blocks=32, block_size=PAGE)
+    tokens = list(range(1, 8 * PAGE + 1))
+    held = _hold_in_connector_with_a_device_hit(manager, connector, tokens, 3)
+    connector.chain_starts.clear()
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=defer_lookup)
+
+    assert connector.lookups[-1][0] == held[3:-1]
+    assert connector.chain_starts == [3]
+
+
+def test_a_lookup_asked_again_starts_its_chain_past_the_shorter_hit() -> None:
+    connector = FakeConnector([FULL], asynchronous=False, deferred_lookups=True)
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    held = _hold_in_connector_with_a_device_hit(manager, connector, tokens, 3)
+    connector.chain_starts.clear()
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    manager.alloc(ctx, defer_lookup=True)
+    # Another request holds the first block, so the reset leaves a hit of one.
+    keeper = make_ctx(tokens[:2])
+    manager.claim(keeper)
+    manager.alloc(keeper)
+    manager.pools[0].reset_prefix_cache()
+    (first,) = connector.started
+    first.answer()
+    manager.alloc(ctx, defer_lookup=True)
+
+    assert connector.abandoned == [first]
+    assert connector.lookups[-1][0] == held[1:-1]
+    assert connector.chain_starts == [3, 1]
+
+
+def test_a_lookup_that_prices_a_replica_starts_its_chain_past_its_hit() -> None:
+    connector = FakeConnector([FULL], asynchronous=False)
+    manager, ctx, _ = _price_setup(connector)
+    connector.chain_starts.clear()
+
+    manager.get_prefix_cache_hit_counts(ctx)
+
+    assert connector.chain_starts == [0, 2]
+
+
 def test_a_lookup_asked_again_is_served_as_a_miss_at_its_deadline(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2321,9 +2419,15 @@ def test_a_lookups_age_counts_the_time_its_start_took(
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> KVLookup:
         clock.now += 4.0
-        return start_lookup(block_hashes, replica_idx=replica_idx, hint=hint)
+        return start_lookup(
+            block_hashes,
+            replica_idx=replica_idx,
+            hint=hint,
+            chain_start=chain_start,
+        )
 
     monkeypatch.setattr(connector, "start_lookup", slow_start_lookup)
     ctx = make_ctx(tokens)

@@ -839,12 +839,13 @@ class TierConnector(KVConnector):
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> Mapping[str, Sequence[bool]]:
         """Which of ``block_hashes`` the host and disk tiers hold, per leaf.
 
-        ``hint`` is ignored for the same reason :meth:`load` ignores it. The
-        Rust side knows leaves only by index, so the answer comes back in
-        ``leaves()`` order and is keyed here.
+        ``hint`` is ignored for the same reason :meth:`load` ignores it, and
+        ``chain_start`` with it. The Rust side knows leaves only by index, so
+        the answer comes back in ``leaves()`` order and is keyed here.
 
         Takes no pin, and the disk index is not this thread's alone: an
         offload's write-through LRU-evicts from it on the disk-write lane. A

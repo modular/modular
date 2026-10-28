@@ -544,9 +544,10 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     # Cross-node pull. Counters, not gauges: take_metrics clears these every
     # batch, so each publish carries that window's delta. Mach exports the same
     # set under dkv.connector.peer_attach_count, peer_drop_count,
-    # peer_load_count, peer_transfer_failure_count, peer_metadata_refresh_count
-    # and hint_rejected_count, splitting success from failure by an outcome tag
-    # rather than by metric name.
+    # peer_load_count, peer_transfer_failure_count, peer_metadata_refresh_count,
+    # hint_rejected_count and hint_unused_count, splitting success from failure
+    # by an outcome tag rather than by metric name. Mach tags its two hint
+    # counters by `reason`, as the _by_reason pair below splits them.
     "max.dkv.peer_attaches": _meter.create_counter(
         "max.dkv.peer_attaches",
         unit="attaches",
@@ -590,7 +591,12 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "max.dkv.hints_rejected": _meter.create_counter(
         "max.dkv.hints_rejected",
         unit="hints",
-        description="Cache hints that arrived but were unusable: bytes that did not parse, an unknown version, a chain that does not describe the request, no entry for the requested group, or a source instance record that failed validation. Counted per entry on the two-phase load path and per call on the fused one.",
+        description="Cache hints that arrived but were unusable: bytes that did not parse, an unknown version, a chain that disagrees with the request on a block both name, no entry for the requested group, or a source instance record that failed validation. Counted per entry on the two-phase load path and per call on the fused one.",
+    ),  # type: ignore
+    "max.dkv.hints_unused": _meter.create_counter(
+        "max.dkv.hints_unused",
+        unit="hints",
+        description="Cache hints that agree with the request but cannot serve it, such as one whose chain ends before the lookup starts. Normal traffic, counted like max.dkv.hints_rejected and never in it.",
     ),  # type: ignore
     # Fail-opens: loads the connector answered as misses without a transfer,
     # and the lookups hinted peers still served through the same outage.
@@ -644,8 +650,12 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     # histograms above record one per-batch mean each.
     "max.dkv.hints_rejected_by_reason": _meter.create_counter(
         "max.dkv.hints_rejected_by_reason",
-        description="max.dkv.hints_rejected split by `reason`: unparseable bytes, no entry for the group, a chain that does not contain the request, or an instance record that failed validation.",
+        description="max.dkv.hints_rejected split by `reason`: unparseable bytes, no entry for the group, a chain that disagrees with the request on a block both name, or an instance record that failed validation.",
     ),  # type: ignore
+    "max.dkv.hints_unused_by_reason": _create_counter(
+        "max.dkv.hints_unused_by_reason",
+        description="max.dkv.hints_unused split by `reason`: a lookup that starts past the hinted chain's end, skips a hinted block, starts before a sliding window's hinted window, or shares no block with it.",
+    ),
     "max.dkv.rpc_calls": _meter.create_counter(
         "max.dkv.rpc_calls",
         description="dKV RPCs the connector clients issued, split by `op`, including calls to peer dKV instances, transfer settles and touches.",
@@ -2278,6 +2288,24 @@ class _AsyncMetrics:
         self.client.send_measurement(
             MaxMeasurement(
                 "max.dkv.hints_rejected_by_reason",
+                value,
+                {**self.extra_attributes, "reason": reason},
+            ),
+        )
+
+    def dkv_hints_unused(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.hints_unused",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_hints_unused_by_reason(self, value: int, reason: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.hints_unused_by_reason",
                 value,
                 {**self.extra_attributes, "reason": reason},
             ),

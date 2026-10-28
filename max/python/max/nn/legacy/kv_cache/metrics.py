@@ -224,9 +224,16 @@ class KVCacheMetrics:
     the life of the process.
     """
     dkv_hints_rejected: int = 0
-    """Cache hints that were present but the connector could not use."""
+    """Cache hints the connector rejected, never one counted in
+    ``dkv_hints_unused``."""
     dkv_hints_rejected_by_reason: dict[str, int] = field(default_factory=dict)
-    """``dkv_hints_rejected`` split by why each hint went unused."""
+    """``dkv_hints_rejected`` split by why each hint was rejected."""
+    dkv_hints_unused: int = 0
+    """Cache hints that agree with the request but cannot serve it, such as
+    one whose chain ends before the lookup starts. Normal traffic, and never
+    counted in ``dkv_hints_rejected``."""
+    dkv_hints_unused_by_reason: dict[str, int] = field(default_factory=dict)
+    """``dkv_hints_unused`` split by why each hint could not serve."""
     dkv_touches_deduplicated: int = 0
     """Recency touches the client dropped because a touch it sent within the
     last second already covered their keys, each an RPC the store was spared."""
@@ -463,6 +470,11 @@ class KVCacheMetrics:
             dkv_hints_rejected_by_reason=_add_by_key(
                 self.dkv_hints_rejected_by_reason,
                 other.dkv_hints_rejected_by_reason,
+            ),
+            dkv_hints_unused=self.dkv_hints_unused + other.dkv_hints_unused,
+            dkv_hints_unused_by_reason=_add_by_key(
+                self.dkv_hints_unused_by_reason,
+                other.dkv_hints_unused_by_reason,
             ),
             dkv_touches_deduplicated=self.dkv_touches_deduplicated
             + other.dkv_touches_deduplicated,

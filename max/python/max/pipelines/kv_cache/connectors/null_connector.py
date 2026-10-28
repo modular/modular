@@ -49,6 +49,7 @@ class NullConnector(KVConnector):
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> Mapping[str, Sequence[bool]]:
         """Holds nothing, so every block is absent."""
         return {leaf_id: [False] * len(block_hashes) for leaf_id in self.leaves}

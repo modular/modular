@@ -1339,7 +1339,10 @@ class JengaBlockManager:
             else:
                 num_external_blocks = (
                     self._find_longest_connector_prefix_cache_hit(
-                        remaining, replica_idx, ctx.dkv_cache_hint
+                        remaining,
+                        replica_idx,
+                        ctx.dkv_cache_hint,
+                        chain_start=num_hit_blocks,
                     )
                 )
             hit_counts.append(
@@ -1494,16 +1497,24 @@ class JengaBlockManager:
         return bool(self._pending_transfers[replica_idx])
 
     def _find_longest_connector_prefix_cache_hit(
-        self, desired: Sequence[bytes], replica_idx: int, hint: bytes | None
+        self,
+        desired: Sequence[bytes],
+        replica_idx: int,
+        hint: bytes | None,
+        chain_start: int,
     ) -> int:
         """Returns how many of ``desired`` the connector can serve at once.
 
         One lookup over the whole tree, reconciled by the same rules the
-        device tier runs over its own block pools.
+        device tier runs over its own block pools. ``desired`` begins
+        ``chain_start`` blocks from the root.
         """
         assert self._connector is not None
         resident = self._connector.lookup(
-            desired, replica_idx=replica_idx, hint=hint
+            desired,
+            replica_idx=replica_idx,
+            hint=hint,
+            chain_start=chain_start,
         )
         return self._longest_connector_hit(resident)
 
@@ -1695,7 +1706,11 @@ class JengaBlockManager:
             if defer_lookup and connector.defers_lookup(replica_idx):
                 return miss
             resident = connector.lookup(
-                desired, replica_idx=replica_idx, hint=hint
+                desired,
+                replica_idx=replica_idx,
+                hint=hint,
+                chain_start=state.committed_idx // self._block_size
+                + num_device_blocks,
             )
         else:
             lookup = pending.handle
@@ -2509,12 +2524,16 @@ class JengaBlockManager:
         and the lookup becomes the request's ``pending_lookup``.
         """
         assert self._connector is not None
+        committed_blocks = self._state_of(ctx).committed_idx // self._block_size
         # Taken before the store is asked, so the age never trails the lease.
         started_at = time.monotonic()
         pending = _PendingLookup(
             self._connector,
             self._connector.start_lookup(
-                remaining, replica_idx=replica_idx, hint=ctx.dkv_cache_hint
+                remaining,
+                replica_idx=replica_idx,
+                hint=ctx.dkv_cache_hint,
+                chain_start=committed_blocks + first_block,
             ),
             first_block=first_block,
             started_at=started_at,

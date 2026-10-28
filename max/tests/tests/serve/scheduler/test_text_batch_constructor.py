@@ -3801,6 +3801,7 @@ class _DeferringConnector(NullConnector):
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> KVLookup:
         lookup = _DeferredLookup(
             len(block_hashes), self.answers_on, hit=self.hits
@@ -3861,6 +3862,7 @@ class _ProbingConnector(_DeferringConnector):
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> Mapping[str, Sequence[bool]]:
         raise AssertionError("a blocking lookup ran on the scheduler thread")
 
@@ -3904,6 +3906,7 @@ class _OnloadingConnector(NullConnector):
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> Mapping[str, Sequence[bool]]:
         return {"full": [True] * len(block_hashes)}
 
@@ -3912,6 +3915,7 @@ class _OnloadingConnector(NullConnector):
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> KVLookup:
         return _AnsweredLookup(len(block_hashes))
 
@@ -4370,6 +4374,7 @@ class _ClockedConnector(NullConnector):
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> KVLookup:
         answer_after = self._answers_after[len(self.started)]
         lookup = _ClockedLookup(
@@ -5912,6 +5917,7 @@ class _ScheduledConnector(_DeferringConnector):
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> KVLookup:
         lookup = _DeferredLookup(
             len(block_hashes),

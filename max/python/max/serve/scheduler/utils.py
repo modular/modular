@@ -351,6 +351,8 @@ class BatchMetrics:
     dkv_peer_metadata_refresh_failures: int = 0
     dkv_hints_rejected: int = 0
     dkv_hints_rejected_by_reason: dict[str, int] = field(default_factory=dict)
+    dkv_hints_unused: int = 0
+    dkv_hints_unused_by_reason: dict[str, int] = field(default_factory=dict)
     # Recency touches the dKV client dropped because a recent one covered
     # them. A per-window delta, 0 against an extension that predates it.
     dkv_touches_deduplicated: int = 0
@@ -546,6 +548,8 @@ class BatchMetrics:
         dkv_peer_metadata_refresh_failures = 0
         dkv_hints_rejected = 0
         dkv_hints_rejected_by_reason: dict[str, int] = {}
+        dkv_hints_unused = 0
+        dkv_hints_unused_by_reason: dict[str, int] = {}
         dkv_touches_deduplicated = 0
         dkv_prepare_load_degraded = 0
         dkv_load_with_plan_degraded = 0
@@ -691,6 +695,8 @@ class BatchMetrics:
             dkv_hints_rejected_by_reason = (
                 metrics_agg.dkv_hints_rejected_by_reason
             )
+            dkv_hints_unused = metrics_agg.dkv_hints_unused
+            dkv_hints_unused_by_reason = metrics_agg.dkv_hints_unused_by_reason
             dkv_touches_deduplicated = metrics_agg.dkv_touches_deduplicated
             dkv_prepare_load_degraded = metrics_agg.dkv_prepare_load_degraded
             dkv_load_with_plan_degraded = (
@@ -856,6 +862,8 @@ class BatchMetrics:
             dkv_peer_metadata_refresh_failures=dkv_peer_metadata_refresh_failures,
             dkv_hints_rejected=dkv_hints_rejected,
             dkv_hints_rejected_by_reason=dkv_hints_rejected_by_reason,
+            dkv_hints_unused=dkv_hints_unused,
+            dkv_hints_unused_by_reason=dkv_hints_unused_by_reason,
             dkv_touches_deduplicated=dkv_touches_deduplicated,
             dkv_prepare_load_degraded=dkv_prepare_load_degraded,
             dkv_load_with_plan_degraded=dkv_load_with_plan_degraded,
@@ -1340,6 +1348,7 @@ class BatchMetrics:
                 self.dkv_peer_metadata_refresh_failures
             )
             extra["dkv_hints_rejected"] = self.dkv_hints_rejected
+            extra["dkv_hints_unused"] = self.dkv_hints_unused
             extra["dkv_touches_deduplicated"] = self.dkv_touches_deduplicated
             extra["dkv_prepare_load_degraded"] = self.dkv_prepare_load_degraded
             extra["dkv_load_with_plan_degraded"] = (
@@ -1370,6 +1379,7 @@ class BatchMetrics:
             # One scalar key per label that moved, as publish_metrics sends.
             labeled: tuple[tuple[str, Mapping[str, float]], ...] = (
                 ("dkv_hints_rejected", self.dkv_hints_rejected_by_reason),
+                ("dkv_hints_unused", self.dkv_hints_unused_by_reason),
                 ("dkv_rpc_calls", self.dkv_rpc_calls),
                 ("dkv_rpc_time_ms", self.dkv_rpc_time_ms),
                 ("dkv_rpc_socket_wait_ms", self.dkv_rpc_socket_wait_ms),
@@ -1566,6 +1576,7 @@ class BatchMetrics:
                 self.dkv_peer_metadata_refresh_failures
             )
             METRICS.dkv_hints_rejected(self.dkv_hints_rejected)
+            METRICS.dkv_hints_unused(self.dkv_hints_unused)
             METRICS.dkv_touches_deduplicated(self.dkv_touches_deduplicated)
             METRICS.dkv_prepare_load_degraded(self.dkv_prepare_load_degraded)
             METRICS.dkv_load_with_plan_degraded(
@@ -1595,6 +1606,8 @@ class BatchMetrics:
             # cost a trip through the telemetry queue and change nothing.
             for reason, count in _moved(self.dkv_hints_rejected_by_reason):
                 METRICS.dkv_hints_rejected_by_reason(count, reason=reason)
+            for reason, count in _moved(self.dkv_hints_unused_by_reason):
+                METRICS.dkv_hints_unused_by_reason(count, reason=reason)
             for op, calls in _moved(self.dkv_rpc_calls):
                 METRICS.dkv_rpc_calls(calls, op=op)
             for op, ms in _moved(self.dkv_rpc_time_ms):

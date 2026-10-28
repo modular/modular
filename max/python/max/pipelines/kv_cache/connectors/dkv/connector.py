@@ -23,6 +23,7 @@ reconnection, and metrics; this shim only adapts the MAX-side types (device
 from __future__ import annotations
 
 import hashlib
+import inspect
 import logging
 import math
 import os
@@ -66,6 +67,9 @@ _logger = logging.getLogger("max.pipelines")
 # calls it has rather than failing on the first request.
 _ASYNC_LOOKUP_ENTRIES = ("start_prepare_load", "load_lookup", "abandon_lookup")
 _PRESENCE_ENTRIES = ("presence", "presence_supported", "start_presence")
+# Lookup entries that gained ``chain_start`` later. pyo3 rejects an unknown
+# keyword, so each entry is passed it only where its signature names it.
+_CHAIN_START_ENTRIES = ("prepare_load", "start_prepare_load")
 
 
 class _DkvLookup(Protocol):
@@ -110,6 +114,7 @@ class _DkvClient(Protocol):
         group_id: int,
         block_hashes: Sequence[int],
         hint: bytes | None = ...,
+        chain_start: int | None = ...,
     ) -> Sequence[bool]: ...
 
     def load_prepared(
@@ -129,6 +134,7 @@ class _DkvClient(Protocol):
         group_id: int,
         block_hashes: Sequence[int],
         hint: bytes | None = ...,
+        chain_start: int | None = ...,
     ) -> _DkvLookup: ...
 
     def load_lookup(
@@ -258,6 +264,21 @@ def _group_recency(group_id: KVCacheGroupId) -> int:
     if group_id.is_sliding_window():
         return _DKV_RECENCY_SLIDING_WINDOW
     return _DKV_RECENCY_FULL_SEQUENCE
+
+
+def _takes_chain_start(client: object, entry: str) -> bool:
+    """Returns whether ``client``'s ``entry`` accepts ``chain_start``.
+
+    An entry the client lacks, or one whose signature cannot be read, does
+    not.
+    """
+    method = getattr(client, entry, None)
+    if method is None:
+        return False
+    try:
+        return "chain_start" in inspect.signature(method).parameters
+    except (TypeError, ValueError):
+        return False
 
 
 def _to_dkv_u64(h: bytes) -> int:
@@ -1637,7 +1658,8 @@ class DKVConnector(KVConnector):
         """Records which newer entries each client's extension carries.
 
         An extension without the handle carried lookup and presence entries
-        is driven through the blocking calls instead.
+        is driven through the blocking calls instead, and one whose lookups
+        predate ``chain_start`` is called without it.
         """
         self._async_lookup_replicas = [
             all(
@@ -1662,12 +1684,36 @@ class DKVConnector(KVConnector):
             )
             for clients in self._clients
         ]
+        self._chain_start_entries = [
+            {
+                leaf_id: frozenset(
+                    entry
+                    for entry in _CHAIN_START_ENTRIES
+                    if _takes_chain_start(client, entry)
+                )
+                for leaf_id, client in clients.items()
+            }
+            for clients in self._clients
+        ]
+
+    def _chain_start_kwargs(
+        self,
+        replica_idx: int,
+        leaf_id: str,
+        entry: str,
+        chain_start: int | None,
+    ) -> dict[str, int | None]:
+        """Returns ``chain_start`` as a keyword if ``entry`` takes it."""
+        if entry in self._chain_start_entries[replica_idx][leaf_id]:
+            return {"chain_start": chain_start}
+        return {}
 
     def lookup(
         self,
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> Mapping[str, Sequence[bool]]:
         """Reports which of ``block_hashes`` dkv holds, per leaf, under a lease.
 
@@ -1682,6 +1728,9 @@ class DKVConnector(KVConnector):
 
         ``hint`` routes the read to the peer that may hold the blocks;
         :meth:`load` inherits it from the lease. See :meth:`_usable_hint`.
+        ``chain_start`` goes with it to an extension that takes it, so the
+        client can tell a hint that cannot serve this read from one that
+        describes another chain.
         """
         # `prepare_load` may well supersede its own plan, but that is the Rust
         # client's business and not written down on this side of the FFI.
@@ -1696,6 +1745,9 @@ class DKVConnector(KVConnector):
                 group_id=self._wire_ids[leaf_id],
                 block_hashes=dkv_hashes,
                 hint=self._usable_hint(hint),
+                **self._chain_start_kwargs(
+                    replica_idx, leaf_id, "prepare_load", chain_start
+                ),
             )
             for leaf_id in leaf_ids
         }
@@ -2071,6 +2123,7 @@ class DKVConnector(KVConnector):
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> KVLookup:
         """Starts one leased read per leaf and returns before any answers.
 
@@ -2078,8 +2131,8 @@ class DKVConnector(KVConnector):
         the handle rather than a client slot carries their leases, so one
         request's lookup never cancels another's. :meth:`load_lookup` reads
         out of the handle and :meth:`abandon_lookup` hands it back, and a
-        handle the manager drops does the same on its own. ``hint`` routes
-        the reads as in :meth:`lookup`.
+        handle the manager drops does the same on its own. ``hint`` and
+        ``chain_start`` go to the reads as in :meth:`lookup`.
 
         An extension without the async entries answers through the blocking
         :meth:`lookup` here instead. That lease lives in the prepared slot,
@@ -2094,7 +2147,10 @@ class DKVConnector(KVConnector):
             return CompletedLookup({leaf_id: [] for leaf_id in self._leaves})
         if not self._async_lookup_replicas[replica_idx]:
             masks = self.lookup(
-                block_hashes, replica_idx=replica_idx, hint=hint
+                block_hashes,
+                replica_idx=replica_idx,
+                hint=hint,
+                chain_start=chain_start,
             )
             return _DkvSyncLookup(
                 masks, replica_idx, self._leased_depths.get(replica_idx)
@@ -2109,6 +2165,9 @@ class DKVConnector(KVConnector):
                     group_id=self._wire_ids[leaf_id],
                     block_hashes=dkv_hashes,
                     hint=usable_hint,
+                    **self._chain_start_kwargs(
+                        replica_idx, leaf_id, "start_prepare_load", chain_start
+                    ),
                 )
         except Exception:
             _logger.exception(
@@ -2603,6 +2662,12 @@ class DKVConnector(KVConnector):
                     dkv_hints_rejected=m["hints_rejected"],
                     dkv_hints_rejected_by_reason=dict(
                         m["hints_rejected_by_reason"]
+                    ),
+                    # An extension predating these reports none, which folds
+                    # as no unused hint rather than as a missing key.
+                    dkv_hints_unused=m.get("hints_unused", 0),
+                    dkv_hints_unused_by_reason=dict(
+                        m.get("hints_unused_by_reason", {})
                     ),
                     # A per-window delta like its neighbours. An extension
                     # predating it reports none, which folds as nothing
