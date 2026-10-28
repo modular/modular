@@ -30,9 +30,9 @@ _EXCLUDED_KERNEL_LIBS = (
 # Static landing page for `/api/mojo/`. Each kernel sub-package is its own
 # Bazel package (used throughout the codebase as `//max:linalg`, `//max:nn`,
 # etc.), so per-sub-package `.docs` are stitched into the published tree by the
-# `docs` `pkg_filegroup` below. The post-process-docs.py script injects a
-# `## Packages` listing into this page from the assembled sub-package index
-# files.
+# `docs` `pkg_filegroup` below. max/docs/site/scripts/post-process-docs.py
+# injects a `## Packages` listing into this page from the assembled
+# sub-package index files.
 pkg_files(
     name = "index.docs",
     srcs = ["index.md"],

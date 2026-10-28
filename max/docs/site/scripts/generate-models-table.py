@@ -16,7 +16,7 @@ Parses each architecture's arch.py to extract SupportedArchitecture metadata,
 then generates a Markdown table and writes it into models.mdx.
 
 Usage:
-    python generate-models-table.py
+    python3 max/docs/site/scripts/generate-models-table.py
 """
 
 import argparse
@@ -33,7 +33,10 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 # real workspace.  BUILD_WORKSPACE_DIRECTORY is set by Bazel and points to the
 # actual repo root, so prefer it when available.
 REPO_ROOT = Path(
-    os.environ.get("BUILD_WORKSPACE_DIRECTORY", SCRIPT_DIR.parent.parent.parent)
+    os.environ.get(
+        "BUILD_WORKSPACE_DIRECTORY",
+        SCRIPT_DIR.parent.parent.parent.parent,
+    )
 )
 
 ARCH_BASE = REPO_ROOT / "max" / "python" / "max" / "pipelines" / "architectures"
@@ -751,7 +754,8 @@ def main() -> None:
         else:
             print(
                 "❌ models.mdx is out-of-date.\n"
-                "Run `./bazelw run //max/docs/site:generate-models-table` "
+                "Run `./bazelw run "
+                "//max/docs/site/scripts:generate-models-table` "
                 "to regenerate, then commit the updated models.mdx file.",
                 file=sys.stderr,
             )

@@ -123,7 +123,7 @@ Read these when you need to understand or modify the doc build:
 - `conf.py.in` -- Sphinx config: warning suppression (`SuppressionFilter`),
   autodoc hooks (`skip_imported_for_modules`), monkey-patch for `__all__`
   filtering in autosummary.
-- `max/docs/site/post-process-docs.py` -- Runs after Sphinx generates
+- `max/docs/site/scripts/post-process-docs.py` -- Runs after Sphinx generates
   markdown. Demotes headings, removes empty sections, populates
   `__AUTOGEN:prefix__` stubs in `sidebars.json` with generated page paths.
 - `max/docs/site/sidebars.json` -- Docusaurus sidebar definition. Each

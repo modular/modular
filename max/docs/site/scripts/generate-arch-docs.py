@@ -20,8 +20,11 @@ arch.py, and generates:
   - Sidebar items under max.pipelines.architectures in sidebars.json
 
 Usage:
-    ./bazelw run //max/docs/site:generate-arch-docs          # regenerate
-    ./bazelw run //max/docs/site:generate-arch-docs -- --check  # CI validation
+    # Regenerate the architecture pages.
+    ./bazelw run //max/docs/site/scripts:generate-arch-docs
+
+    # Check that the pages match the registry.
+    ./bazelw run //max/docs/site/scripts:generate-arch-docs -- --check
 """
 
 import argparse
@@ -33,7 +36,10 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = Path(
-    os.environ.get("BUILD_WORKSPACE_DIRECTORY", SCRIPT_DIR.parent.parent.parent)
+    os.environ.get(
+        "BUILD_WORKSPACE_DIRECTORY",
+        SCRIPT_DIR.parent.parent.parent.parent,
+    )
 )
 ARCH_BASE = REPO_ROOT / "max" / "python" / "max" / "pipelines" / "architectures"
 DOCS_DIR = REPO_ROOT / "max" / "python" / "docs"
@@ -407,7 +413,8 @@ def main() -> None:
             "❌ Architecture docs are out-of-date.\n"
             "Stale files:\n"
             + "\n".join(f"  - {f}" for f in stale)
-            + "\n\nRun `./bazelw run //max/docs/site:generate-arch-docs`"
+            + "\n\nRun `./bazelw run "
+            "//max/docs/site/scripts:generate-arch-docs`"
             " to regenerate.",
             file=sys.stderr,
         )

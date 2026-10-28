@@ -349,7 +349,10 @@ def populate_sidebar_items(docs_path: str, sidebar_file: str) -> None:
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Usage: python3 post-process-docs.py <directory>")
+        print(
+            "Usage: python3 max/docs/site/scripts/post-process-docs.py "
+            "<directory>"
+        )
         sys.exit(1)
 
     replace_relative_paths(sys.argv[1], "/api")

@@ -40,7 +40,16 @@ from pathlib import Path
 
 from max.serve.telemetry._metrics_catalog import build_catalog
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+SCRIPT_DIR = Path(__file__).resolve().parent
+# Under `bazel run`, __file__ resolves into the runfiles tree instead of the
+# real workspace. BUILD_WORKSPACE_DIRECTORY is set by Bazel and points to the
+# actual repo root, so prefer it when available.
+REPO_ROOT = Path(
+    os.environ.get(
+        "BUILD_WORKSPACE_DIRECTORY",
+        SCRIPT_DIR.parent.parent.parent.parent,
+    )
+)
 OUTPUT_FILE = REPO_ROOT / "max/docs/site/serve/metrics.mdx"
 
 TABLE_RE = re.compile(

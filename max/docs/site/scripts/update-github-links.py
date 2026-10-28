@@ -15,9 +15,9 @@
 
 Example:
 cd max/docs/site
-python3 update-github-links.py releases/v26.7.md max/v26.7.0
-python3 update-github-links.py . max/v26.7.0
-python3 update-github-links.py ../../../Mojo/docs/site mojo/v1.2.0
+python3 scripts/update-github-links.py releases/v26.7.md max/v26.7.0
+python3 scripts/update-github-links.py . max/v26.7.0
+python3 scripts/update-github-links.py ../../../Mojo/docs/site mojo/v1.2.0
 """
 
 import sys
@@ -56,7 +56,8 @@ def replace_branch_refs(docs_path: str, branch_name: str) -> None:
 if __name__ == "__main__":
     if len(sys.argv) != 3:
         print(
-            "Usage: python3 update-github-links.py <file_or_directory> <branch_name>"
+            "Usage: python3 max/docs/site/scripts/update-github-links.py "
+            "<file_or_directory> <branch_name>"
         )
         sys.exit(1)
 
