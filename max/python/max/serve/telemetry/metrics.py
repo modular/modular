@@ -66,6 +66,8 @@ ConversationTurn = Literal["first", "later"]
 # The ``phase`` label on ``max.request.client_disconnect_cancellations``:
 # whether the status code was still unsent when the client hung up.
 _DisconnectPhase = Literal["before_response", "during_response"]
+# The ``kind`` label on ``max.structured_output.requests``.
+_StructuredOutputKind = Literal["json_object", "json_schema"]
 # The ``reason`` label on ``max.cache.connector_lookup_admission_stops``.
 LookupAdmissionStop = Literal["budget", "max_pending", "held"]
 
@@ -1028,7 +1030,8 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "json_schema); a 'text' format is the unconstrained default and "
             "is not counted. Counted before the schema is compiled, so a "
             "request later rejected by "
-            "'max.structured_output.grammar_rejections' still counts."
+            "'max.structured_output.grammar_rejections' still counts. "
+            "Both kinds are exported at zero from startup."
         ),
     ),  # type: ignore
     "max.tokenizer.chat_encoder_requests": _meter.create_counter(
@@ -2639,6 +2642,17 @@ class _AsyncMetrics:
                 {**self.extra_attributes, "choice": choice},
             ),
         )
+
+    def export_zero_structured_output_requests(self) -> None:
+        """Exports every kind at zero, so a quiet window reads as zero."""
+        for kind in get_args(_StructuredOutputKind):
+            self.client.send_measurement(
+                MaxMeasurement(
+                    "max.structured_output.requests",
+                    0,
+                    {**self.extra_attributes, "kind": kind},
+                ),
+            )
 
     def structured_output_requests(self, kind: str) -> None:
         self.client.send_measurement(

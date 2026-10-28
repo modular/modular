@@ -161,6 +161,7 @@ async def lifespan(
         )
         METRICS.configure(client=metric_client)
         METRICS.export_zero_client_disconnect_cancellations()
+        METRICS.export_zero_structured_output_requests()
 
         # start model worker
 

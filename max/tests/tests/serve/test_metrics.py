@@ -705,6 +705,26 @@ def test_disconnect_phases_are_exported_at_zero() -> None:
     ]
 
 
+def test_structured_output_kinds_are_exported_at_zero() -> None:
+    client = mock.Mock()
+    recorder = metrics._AsyncMetrics()
+    recorder.configure(client, {"model": "m"})
+    recorder.export_zero_structured_output_requests()
+    sent = [call.args[0] for call in client.send_measurement.call_args_list]
+    assert [(m.instrument_name, m.value, m.attributes) for m in sent] == [
+        (
+            "max.structured_output.requests",
+            0,
+            {"model": "m", "kind": "json_object"},
+        ),
+        (
+            "max.structured_output.requests",
+            0,
+            {"model": "m", "kind": "json_schema"},
+        ),
+    ]
+
+
 def test_tool_call_requests_counter() -> None:
     """The tool-call usage counter records with a bounded 'choice' tag."""
     common.configure_metrics(Settings())
