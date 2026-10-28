@@ -54,20 +54,19 @@ generated pages to catch rendering or coverage problems:
 
 ## Which APIs are covered
 
-We don't enforce docstring coverage for every Python API in the repository.
+The checks apply to every Python file under `max/python`, including
+implementation modules whose file names begin with `_`.
 
-- The checks apply to selected `.py` and `.pyi` files under
-  `max/python/max/`.
-- Private implementation modules whose file names begin with `_` are excluded.
+- `max._core.max_license` is exempt by design.
 - For `.pyi` stub files, only existing docstrings are checked for style.
   Missing docstrings aren't reported.
-- Several packages are currently excluded, including `benchmark`, `config`,
-  `mlir`, `nn/legacy`, `pipelines/architectures`, `serve`, and `support`.
+- `D200`, `D212`, and `D418` are relaxed for the nanobind stubs under
+  `*/_mlir/*.pyi` and `*/_core/*.pyi`.
 
 The source of truth for this scope is the
 `[tool.ruff.lint.per-file-ignores]` section of
 [`oss/modular/pyproject.toml`](../../../oss/modular/pyproject.toml). Removing an
-exclusion expands enforcement to that package; adding an exclusion reduces it.
+exclusion expands enforcement to that path; adding an exclusion reduces it.
 
 ## Additional docstring checks
 
@@ -122,37 +121,17 @@ python3 max/python/docs/check_api_coverage.py \
 
 ## Work still to do
 
-As of October 2026, we can't guarantee that every public Python API has a
-docstring and appears in the generated reference. The current checks reduce
-new gaps, but they don't prove full coverage.
+As of October 2026, the lint enforces docstrings for the Python source under
+`max/python`, but it does not prove that every public API has one or that
+every API appears in the generated reference.
 
 Here's how we can close the gaps:
 
-- **Expand missing-docstring enforcement.** The
-  [`per-file-ignores` configuration](../../../oss/modular/pyproject.toml)
-  excludes several packages and `_*.py` implementation modules from
-  pydocstyle. The following modules are in the docs build, but excluded from
-  pydocstyle lint:
-
-  - `max.nn.legacy`
-    - `max.nn.legacy.attention`
-    - `max.nn.legacy.comm`
-    - `max.nn.legacy.graph_groups`
-    - `max.nn.legacy.kernels`
-    - `max.nn.legacy.kv_cache`
-    - `max.nn.legacy.moe`
-    - `max.nn.legacy.sampling`
-    - `max.nn.legacy.state_space`
-    - `max.nn.legacy.state_space.kimi_delta`
-  - `max.pipelines.architectures`
-  - `max.serve.media`
-  - `max.support`
-    - `max.support.image`
-
-  Missing docstrings in `.pyi` files are also ignored. We need to remove or
-  narrow these exclusions to cover public APIs in those paths, including APIs
-  implemented in private modules but re-exported publicly and nanobind APIs
-  whose source docstrings live in C++.
+- **Cover stub and C++ API docstrings.** Missing docstrings in `.pyi` files
+  aren't reported, and `D200`, `D212`, and `D418` are relaxed for the stubs
+  under `*/_mlir/*.pyi` and `*/_core/*.pyi`. Public APIs implemented in C++
+  keep their docstrings in the C++ source, which the Python lint doesn't
+  read.
 - **Define one public API inventory.** The docstring linter, API coverage
   script, and Sphinx configuration don't use exactly the same scope. We need a
   shared definition that includes every supported public API, including
