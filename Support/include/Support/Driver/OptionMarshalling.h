@@ -23,6 +23,7 @@
 #define SUPPORT_DRIVER_OPTIONMARSHALLING_H
 
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Option/ArgList.h"
 
@@ -81,6 +82,17 @@ normalizeStringVector(llvm::opt::OptSpecifier opt, int,
   if (!args.hasArg(opt))
     return std::nullopt;
   return args.getAllArgValues(opt);
+}
+
+/// Joins the values of every occurrence with commas, for a repeatable option
+/// whose values may themselves be comma-separated lists.
+inline std::optional<std::string>
+normalizeCommaJoinedList(llvm::opt::OptSpecifier opt, int,
+                         const llvm::opt::ArgList &args, MarshallingErrors &) {
+  std::vector<std::string> values = args.getAllArgValues(opt);
+  if (values.empty())
+    return std::nullopt;
+  return llvm::join(values, ",");
 }
 
 inline std::optional<llvm::SmallVector<std::string>>

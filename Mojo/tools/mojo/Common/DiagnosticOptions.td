@@ -58,9 +58,13 @@ def disable_builtins : Flag<["--", "-"],
 def mojo_search_paths : JoinedOrSeparate<["-"], "mojo-search-paths">,
     Group<DiagnosticOptionGroup>, Index<6>,
     MetaVarName<"PATH">,
-    HelpText<"Specify additional search paths for Mojo modules.">,
+    HelpText<"Specify additional search paths for Mojo modules, as a "
+             "comma-separated list. May be given more than once.">,
     Flags<[HelpHidden]>,
-    MarshallingInfoString<FrontendOpts<"searchPaths">>;
+    MarshallingInfoCustom<FrontendOpts<"searchPaths">,
+                          "normalizeCommaJoinedList">;
+def : Joined<["-"], "mojo-search-paths=">, Group<DiagnosticOptionGroup>,
+  Index<0>, Alias<mojo_search_paths>, Flags<[HelpHidden]>;
 
 def disable_warnings : Flag<["--", "-"],
   "disable-warnings">, Group<DiagnosticOptionGroup>, Index<7>,
