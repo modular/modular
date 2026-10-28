@@ -3039,6 +3039,31 @@ struct KernelWithDefaultParameter:
         x.store((0,), Int32(0))
 
 
+# A struct parameter plus trait arguments: the trait arguments add implicit
+# origin declarations to the fn-level params that the merged struct + fn param
+# list does not carry, so finding the fn-level defaults must skip them.
+@extensibility.register("trait_kernel_with_struct_param_default")
+struct TraitKernelWithStructParamDefault[negate: Bool]:
+    @staticmethod
+    def execute[
+        required: Int,
+        defaulted: Int = -1,
+    ](z: Some[Output & TileTensorable], x: Some[Input & TileTensorable]):
+        print("negate =", Self.negate)
+        print("required =", required)
+        print("defaulted =", defaulted)
+        var zt = z.to_tile_tensor()
+        var xt = x.to_tile_tensor[type_of(z).dtype]()
+        var n = Int(x.shape().product())
+        var zf = zt.reshape(row_major(n))
+        var xf = xt.reshape(row_major(n))
+        for i in range(n):
+            var v = xf.load((i,))
+            comptime if Self.negate:
+                v = -v
+            zf.store((i,), v)
+
+
 @extensibility.register("unique-parameters")
 struct UniqueParameters:
     @inline(.always)

@@ -393,11 +393,11 @@ computeDefaultParamsDict(KernelDeclFunctionAdaptor *fnAdaptor) {
       fnAdaptor->attr.getSignature().getNumImplicitOriginDecls();
   size_t totalPogs = pogs.getPogs().size();
   // Fn-level params are at the end of the merged pog list (struct-level
-  // params come first).
-  size_t fnStart =
-      totalPogs >= fnParams.size() ? totalPogs - fnParams.size() : 0;
+  // params come first). The implicit origin decls trail `fnParams` and have no
+  // pog, so only the explicit fn-level params map onto the list.
   size_t fnEnd =
       fnParams.size() > numImplicit ? fnParams.size() - numImplicit : 0;
+  size_t fnStart = totalPogs >= fnEnd ? totalPogs - fnEnd : 0;
 
   mlir::Builder builder(fnAdaptor->attr.getSignature().getContext());
   mlir::NamedAttrList defaultNames;
