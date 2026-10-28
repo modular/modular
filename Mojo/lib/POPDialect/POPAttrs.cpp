@@ -280,7 +280,8 @@ TypedAttr IntLiteralConvertAttr::get(MLIRContext *ctx, Type type,
 
 bool IntLiteralConvertAttr::isConstant() const { return false; }
 
-ErrorOrSuccess IntLiteralConvertAttr::validateForElaborator() const {
+ErrorOrSuccess IntLiteralConvertAttr::validateForElaborator(
+    TargetInfoAttr target) const {
   auto result = foldIntLiteralConvert(getInput(), getType());
   assert(result.isError() && "Should be folded if present");
   return result.takeError();
@@ -706,7 +707,8 @@ TypedAttr FloatLiteralConvertAttr::get(MLIRContext *ctx, Type type,
 
 bool FloatLiteralConvertAttr::isConstant() const { return false; }
 
-ErrorOrSuccess FloatLiteralConvertAttr::validateForElaborator() const {
+ErrorOrSuccess FloatLiteralConvertAttr::validateForElaborator(
+    TargetInfoAttr target) const {
   auto result = foldFloatLiteralConvert(getInput(), getType());
   assert(result.isError() && "Should be folded if present");
   return result.takeError();

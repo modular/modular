@@ -4692,7 +4692,8 @@ bool ParamOperatorAttr::isLessThan(Attribute rhs) const {
   return false;
 }
 
-ErrorOrSuccess ParamOperatorAttr::validateForElaborator() const {
+ErrorOrSuccess ParamOperatorAttr::validateForElaborator(
+    TargetInfoAttr target) const {
   // If this is a shift by a constant amount that does not fit in the operand's
   // bit width, produce a clear user-facing diagnostic instead of the generic
   // "could not simplify" note.
@@ -4705,7 +4706,7 @@ ErrorOrSuccess ParamOperatorAttr::validateForElaborator() const {
       if (lhsType && rhs) {
         std::optional<KGENDType> dtype = lhsType.getResolvedDType();
         if (dtype) {
-          int64_t width = dtype->getWidthInBits(nullptr);
+          int64_t width = dtype->getWidthInBits(target);
           if (width > 0) {
             for (const DTypeValue &lane : rhs.getValues()) {
               const APSInt &amount = lane.getData();
@@ -4951,7 +4952,8 @@ ParamIdenticalAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 
 bool ParamIdenticalAttr::isConstant() const { return false; }
 
-ErrorOrSuccess ParamIdenticalAttr::validateForElaborator() const {
+ErrorOrSuccess ParamIdenticalAttr::validateForElaborator(
+    TargetInfoAttr target) const {
   ArrayRef<TypedAttr> operands = getOperands();
   std::string operandList;
   llvm::raw_string_ostream os(operandList);
