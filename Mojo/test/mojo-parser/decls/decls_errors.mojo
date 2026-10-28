@@ -436,6 +436,27 @@ def test_param_constraints():
   # expected-error @below {{invalid call to 'unprovable_param_constraints': violated constraint}}
   unprovable_param_constraints[0]()
 
+# Printing the violated constraint remaps the reducer's bound argument, whose
+# type depends on the argument pack's origin, inside the reducer's scope. This
+# used to crash with "Failed to specialize generator".
+trait HasOriginElement:
+  comptime Element[origin: Origin]: AnyType
+
+struct BoolElement(HasOriginElement):
+  comptime Element[origin: Origin] = Bool
+
+comptime _element_is_int[T0: AnyType, Prev: Bool, T: HasOriginElement] = T0 == Int
+
+# expected-note @below {{function declared here}}
+def origin_dependent_reduce_constraint[*Ts: HasOriginElement](*xs: *Ts)
+  # expected-note @below {{constraint declared here evaluated to False, expected '#kgen.param_list.reduce(values, base=True, reducer=[PrevV: Bool, VA: KGENParamList[HasOriginElement], idx: __mlir_type.index] Bool(identical(values[0].Element[origin], Int)))'}}
+  where Ts.reduce[True, _element_is_int[Ts[0].Element[xs.origin], _, _]]:
+  pass
+
+def test_origin_dependent_reduce_constraint(b: BoolElement):
+  # expected-error @below {{invalid call to 'origin_dependent_reduce_constraint': violated constraint}}
+  origin_dependent_reduce_constraint(b)
+
 # expected-error @below {{'where' clauses inside parameter lists are no longer supported}}
 # expected-note @below {{use a trailing 'where' clause after the signature instead}}
 def inline_where_is_error[x: Int where x > 0]():
