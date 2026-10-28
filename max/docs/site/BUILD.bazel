@@ -138,6 +138,7 @@ pkg_files(
             "*.py",
             "code/**",
             "releases/**",
+            "scripts/**",
         ],
     ),
     strip_prefix = strip_prefix.from_pkg(""),
