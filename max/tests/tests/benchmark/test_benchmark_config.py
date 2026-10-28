@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import json
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -159,18 +158,6 @@ class TestServingConfigFileLoading:
         config = ServingBenchmarkConfig(config_file=str(cfg_path))
         assert config.port == 9000
         assert config.backend == "vllm"
-
-    def test_flat_yaml_with_tempfile(self) -> None:
-        """config_file works with a real NamedTemporaryFile."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
-            yaml.dump({"model": "tmp/model", "port": 8080}, f)
-            tmp_name = f.name
-
-        config = ServingBenchmarkConfig(config_file=tmp_name)
-        assert config.model == "tmp/model"
-        assert config.port == 8080
 
     # ------------------------------------------------------------------
     # Sectioned YAML (benchmark_config section, explicit section_name)
