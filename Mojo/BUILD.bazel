@@ -955,6 +955,7 @@ modular_cc_library(
         ":KGENPassesIncGen",
         "//AsyncRT:Runtime",
         "//Support:CommonCLOptions",
+        "//Support:Driver",
     ],
 )
 
@@ -1537,6 +1538,7 @@ modular_cc_library(
         "//Support:CommonCLOptions",
         "//Support:DebugInfoDialect",
         "//Support:DebugInfoToLLVM",
+        "//Support:Driver",
         "@llvm-project//llvm:OrcJIT",
         "@llvm-project//mlir:BuiltinToLLVMIRTranslation",
         "@llvm-project//mlir:BytecodeWriter",

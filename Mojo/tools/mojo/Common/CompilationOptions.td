@@ -34,7 +34,9 @@ defm optimization_level : CommandOption<["--", "-"], "optimization-level",
   HelpText<
     "Sets the level of optimization to use at compilation. The value must be "
     "a number between 0 and 3. The default is 3."
-  >>;
+  >>,
+  MarshallingInfoCustom<CompilationOpts<"optimizationLevel">,
+                        "normalizeOptimizationLevel">;
 def : JoinedOrSeparate<["-"], "O">, Group<CompilationOptionGroup>,
   Index<1>, Alias<optimization_level>;
 def : Flag<["--", "-"], "no-optimization">, Group<CompilationOptionGroup>,
@@ -49,7 +51,8 @@ defm fp_mode : CommandOption<["--", "-"], "fp-mode",
     "Clang's `-ffp-contract=fast`: it fuses `a + b*c` into an FMA across "
     "statements and breaking strict IEEE compliance. "
     "`contract=off` disables contraction."
-  >>;
+  >>,
+  MarshallingInfoCustom<CompilationOpts<"fpMode">, "normalizeFpMode">;
 
 def D : JoinedOrSeparate<["-"], "D">, Group<CompilationOptionGroup>, Index<4>,
   MetaVarName<"KEY=VALUE">,
@@ -66,7 +69,8 @@ defm debug_level : CommandOption<["--", "-"], "debug-level",
     "using `mojo debug foo.mojo`, which defaults to `full`. Please note that "
     "there are issues when generating debug info for some Mojo programs that "
     "have yet to be addressed."
-  >>;
+  >>,
+  MarshallingInfoCustom<CompilationOpts<"debugLevel">, "normalizeDebugLevel">;
 
 def : Flag<["-"], "g">, Group<CompilationOptionGroup>, Index<6>,
   Alias<debug_level>, AliasArgs<["full"]>;
@@ -85,7 +89,8 @@ defm num_threads : CommandOption<["--", "-"], "num-threads",
   HelpText<
     "Sets the maximum number of threads to use for compilation. "
     "The default is 0 (use all available threads)."
-  >>;
+  >>,
+  MarshallingInfoCustom<CompilationOpts<"numThreads">, "normalizeNumThreads">;
 
 def : JoinedOrSeparate<["-"], "j">, Group<CompilationOptionGroup>,
   Index<11>, Alias<num_threads>;
@@ -94,7 +99,9 @@ defm loop_unrolling_warn_threshold: CommandOptionHidden<["--", "-"],
   "loop-unrolling-warn-threshold",
   CompilationOptionGroup, Index<12>, MetaVarName<"LUWT">,
   HelpText<"Sets loop unrolling factor warning threshold, "
-           "default is 1024, set to 0 to disable the warning.">>;
+           "default is 1024, set to 0 to disable the warning.">>,
+  MarshallingInfoCustom<CompilationOpts<"loopUnrollingWarnThreshold">,
+                        "normalizeLoopUnrollingWarnThreshold">;
 
 defm elaboration_error_limit: CommandOptionHidden<["--", "-"],
   "elaboration-error-limit",
@@ -102,14 +109,17 @@ defm elaboration_error_limit: CommandOptionHidden<["--", "-"],
   HelpText<
     "Sets limit to number of produced errors during elaboration "
     "before stop emitting diagnostics. The default is 20, and "
-    "the limit can be disabled with -elaboration-error-limit=0.">>;
+    "the limit can be disabled with -elaboration-error-limit=0.">>,
+  MarshallingInfoCustom<CompilationOpts<"elaborationErrorLimit">,
+                        "normalizeElaborationErrorLimit">;
 
 def elaboration_error_include_prelude: Flag<["--", "-"],
   "elaboration-error-include-prelude">,
   Group<CompilationOptionGroup>, Index<14>,
   HelpText<
     "Show elaboration error with locations in mojo startup modules "
-    "(prelude).">;
+    "(prelude).">,
+  MarshallingInfoFlag<CompilationOpts<"elaborationErrorIncludePrelude">>;
 
 defm elaboration_error_verbose: CommandOptionHidden<["--", "-"],
   "elaboration-error-verbose",
@@ -122,7 +132,9 @@ defm elaboration_error_verbose: CommandOptionHidden<["--", "-"],
     "simple types, including numeric types and "
     "strings, in a user-friendly format; "
     "`no-params` means don't display any concrete parameter values; "
-    "`all-params` means show all concrete parameter values.">>;
+    "`all-params` means show all concrete parameter values.">>,
+  MarshallingInfoCustom<CompilationOpts<"elaborationErrorVerbose">,
+                        "normalizeElaborationErrorVerbose">;
 
 defm elaboration_max_depth: CommandOptionHidden<["--", "-"],
   "elaboration-max-depth",
@@ -130,7 +142,9 @@ defm elaboration_max_depth: CommandOptionHidden<["--", "-"],
   HelpText<
       "The maximum elaborator instantiation depth. Default is "
       "std::numeric_limits<unsigned>::max(). Elaborator errors out if "
-      "the depth of compile time recursion exceeds this value.">>;
+      "the depth of compile time recursion exceeds this value.">>,
+  MarshallingInfoCustom<CompilationOpts<"elaborationMaxDepth">,
+                        "normalizeElaborationMaxDepth">;
 
 def mlir_timing: Flag<["--", "-"], "mlir-timing">,
   Group<CompilationOptionGroup>, Index<18>, Flags<[HelpHidden]>,
@@ -220,14 +234,16 @@ defm sanitize : CommandOption<["--", "-"], "sanitize",
   HelpText<
     "Turns on runtime checks. The following values are supported: `address` "
     "(detects memory issues), and `thread` (detects multi-threading issues)."
-  >>;
+  >>,
+  MarshallingInfoCustom<CompilationOpts<"sanitizers">, "normalizeSanitizer">;
 
 def shared_libasan : Flag<["--", "-"], "shared-libasan">,
   Group<ExperimentalCompilationOptionGroup>, Index<2>,
   HelpText<
     "Dynamically link the address sanitizer runtime. Requires address "
     "sanitization turned on with `--sanitize` option."
-  >;
+  >,
+  MarshallingInfoFlag<CompilationOpts<"sharedLibasan">>;
 
 defm external_libasan : CommandOptionHidden<["--", "-"], "external-libasan",
   ExperimentalCompilationOptionGroup, Index<3>, MetaVarName<"FILE">,
@@ -235,13 +251,16 @@ defm external_libasan : CommandOptionHidden<["--", "-"], "external-libasan",
     "Uses the provided file as libasan instead of the default provided by "
     "the system. This file must provide a compatible interface as libasan, "
     "and must be present at both compile time and run time of the program."
-  >>;
+  >>,
+  MarshallingInfoString<CompilationOpts<"externalLibasan">>;
 
 defm bitcode_libs : CommandOptionHidden<["--", "-"], "bitcode-libs",
   ExperimentalCompilationOptionGroup, Index<4>, MetaVarName<"LIBS">,
   HelpText<
     "External bitcode libraries to link into the generated LLVM IR."
-  >>;
+  >>,
+  MarshallingInfoCustom<CompilationOpts<"bitcodeLibs">,
+                        "normalizeStringSmallVector">;
 
 defm debug_info_language : CommandOption<["--", "-"], "debug-info-language",
   ExperimentalCompilationOptionGroup, Index<5>, MetaVarName<"LANGUAGE">,
@@ -250,6 +269,8 @@ defm debug_info_language : CommandOption<["--", "-"], "debug-info-language",
     "languages are: `Mojo`, and `C`. `Mojo` is the default. `C` is useful to "
     "enable rudimentary debugging and binary introspection in tools "
     "that don't understand Mojo, but is not required for `mojo debug`."
-  >>;
+  >>,
+  MarshallingInfoCustom<CompilationOpts<"debugInfoLanguage">,
+                        "normalizeDebugInfoLanguage">;
 
 #endif // KGEN_TOOLS_MOJO_COMMON_COMPILATIONOPTIONS_TD

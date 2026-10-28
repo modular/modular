@@ -13,7 +13,9 @@
 //
 // This file defines the key paths that marshalled options store into. Each key
 // path names a field of a local variable that the subcommand declares before
-// expanding the matching `<PREFIX>OPTION_WITH_MARSHALLING` rows.
+// expanding its `MOJO_OPTION_WITH_MARSHALLING` rows. The fields' C++
+// initializers are the options' defaults, so the default values given to the
+// `MarshallingInfo` classes are not read.
 //
 //===----------------------------------------------------------------------===//
 
@@ -22,9 +24,17 @@
 
 include "llvm/Option/OptParser.td"
 
-// A field of the `KGEN::FrontendOptions frontendOptions` being built, expanded
-// through `FRONTEND_OPTION_WITH_MARSHALLING`.
+// A field of the `KGEN::FrontendOptions frontendOptions` being built.
 class FrontendOpts<string member>
-    : KeyPathAndMacro<"frontendOptions.", member, "FRONTEND_">;
+    : KeyPathAndMacro<"frontendOptions.", member, "MOJO_">;
+
+// A field of the `KGEN::CompilationOptions compilationOptions` being built.
+class CompilationOpts<string member>
+    : KeyPathAndMacro<"compilationOptions.", member, "MOJO_">;
+
+// An option that a Mojo-specific normalizer parses, for values that need
+// validation or conversion to a C++ type.
+class MarshallingInfoCustom<KeyPathAndMacro kpm, code normalizer>
+    : MarshallingInfo<kpm, "{}">, Normalizer<normalizer>;
 
 #endif // KGEN_TOOLS_MOJO_COMMON_MARSHALLING_TD

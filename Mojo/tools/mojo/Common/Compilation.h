@@ -21,8 +21,10 @@
 #include "Mojo/ExecutionEngine/ExecutionEngine.h"
 #include "Mojo/ToolCommon/CompilationOptions.h"
 #include "Mojo/ToolCommon/FrontendOptions.h"
+#include "Mojo/ToolCommon/OptionNormalizers.h"
 #include "Mojo/ToolCommon/PassManagerConfigOptions.h"
 #include "Support/Driver/DriverSupport.h"
+#include "Support/Driver/OptionMarshalling.h"
 #include "Support/ErrorOr.h"
 #include "mlir/Support/Timing.h"
 #include "llvm/Option/ArgList.h"
@@ -61,20 +63,6 @@ struct CommonOptionIDs {
 
   // Compilation options
   llvm::opt::OptSpecifier includeDirs;
-  llvm::opt::OptSpecifier optimizationLevel;
-  llvm::opt::OptSpecifier fpMode;
-  llvm::opt::OptSpecifier debugLevel;
-  llvm::opt::OptSpecifier sanitize;
-  llvm::opt::OptSpecifier sharedLibasan;
-  llvm::opt::OptSpecifier externalLibasan;
-  llvm::opt::OptSpecifier bitcodeLibs;
-  llvm::opt::OptSpecifier debugInfoLanguage;
-  llvm::opt::OptSpecifier numThreads;
-  llvm::opt::OptSpecifier loopUnrollingWarnThreshold;
-  llvm::opt::OptSpecifier elaborationErrorLimit;
-  llvm::opt::OptSpecifier elaborationErrorIncludePrelude;
-  llvm::opt::OptSpecifier elaborationErrorVerbose;
-  llvm::opt::OptSpecifier elaborationMaxDepth;
 
   // Target options
   llvm::opt::OptSpecifier targetTriple;
@@ -155,31 +143,15 @@ parseCommonMojoArguments(State &state, llvm::SourceMgr &sourceManager,
                          const CommonOptionIDs &optionIDs,
                          const CommonParseConfig &config);
 
-/// Parse the common configuration options for Mojo related to compilation,
-/// populating the provided `compilationOptions` argument. An error is returned
-/// if any of the provided option values are invalid.
-ErrorOrSuccess parseCompilationOptions(
-    const State &state, const llvm::opt::InputArgList &args,
-    KGEN::CompilationOptions &compilationOptions, llvm::SourceMgr &sourceMgr,
-    MLIRContext &ctx, llvm::opt::OptSpecifier includeDirsId,
-    llvm::opt::OptSpecifier optimizationLevelId = {},
-    llvm::opt::OptSpecifier debugLevelId = {},
-    llvm::opt::OptSpecifier sanitizeId = {},
-    llvm::opt::OptSpecifier sharedLibasan = {},
-    llvm::opt::OptSpecifier externalLibasan = {},
-    llvm::opt::OptSpecifier bitcodeLibs = {},
-    llvm::opt::OptSpecifier debugInfoLanguageId = {},
-    llvm::opt::OptSpecifier numThreadsId = {},
-    llvm::opt::OptSpecifier loopUnrollingWarnThresholdId = {},
-    llvm::opt::OptSpecifier elaborationErrorLimitId = {},
-    llvm::opt::OptSpecifier elaborationErrorIncludePreludeId = {},
-    llvm::opt::OptSpecifier elaborationErrorVerbose = {},
-    llvm::opt::OptSpecifier elaborationMaxDepth = {},
-    llvm::opt::OptSpecifier fpModeId = {});
+/// Set the include directories from `args` on `sourceMgr`, and register the
+/// dialects compilation needs on `ctx`.
+void initializeCompilation(const llvm::opt::InputArgList &args,
+                           llvm::SourceMgr &sourceMgr, MLIRContext &ctx,
+                           llvm::opt::OptSpecifier includeDirsId);
 
 /// Return parser settings that hold the warning policy `state` parsed with the
 /// diagnostic format. The subcommand then expands its
-/// `FRONTEND_OPTION_WITH_MARSHALLING` rows into the result.
+/// `MOJO_OPTION_WITH_MARSHALLING` rows into the result.
 KGEN::FrontendOptions makeFrontendOptions(const State &state);
 
 /// Warn users when doing debug builds with a compiler in debug mode.

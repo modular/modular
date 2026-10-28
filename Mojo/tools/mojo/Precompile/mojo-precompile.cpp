@@ -179,16 +179,16 @@ static ErrorOrSuccess parsePrecompileArgs(const State &state,
 
   // Set up the compilation options now, so we can use them as a single source
   // of truth.
-  if (auto err =
-          parseCompilationOptions(state, args, pkgArgs.compileOptions,
-                                  sourceMgr, pkgArgs.ctx, options::OPT_I))
-    return err.takeError();
+  initializeCompilation(args, sourceMgr, pkgArgs.ctx, options::OPT_I);
   KGEN::FrontendOptions &frontendOptions = pkgArgs.frontendOptions;
   frontendOptions = makeFrontendOptions(state);
-#define FRONTEND_OPTION_WITH_MARSHALLING(...)                                  \
-  PARSE_OPTION_WITH_MARSHALLING(args, __VA_ARGS__)
+  MarshallingErrors errors;
+#define MOJO_OPTION_WITH_MARSHALLING(...)                                      \
+  PARSE_OPTION_WITH_MARSHALLING(args, errors, __VA_ARGS__)
 #include "Precompile/PrecompileOptions.inc"
-#undef FRONTEND_OPTION_WITH_MARSHALLING
+#undef MOJO_OPTION_WITH_MARSHALLING
+  if (!errors.empty())
+    return Error(errors.front());
 
   // Precompiled files are built with the intention of being agnostic, so use
   // conservative compilation settings as a default.

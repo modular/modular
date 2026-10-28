@@ -123,10 +123,13 @@ static int doc(const State &subcommandState) {
     return state.reportError(outputError);
 
   KGEN::FrontendOptions frontendOptions = makeFrontendOptions(state);
-#define FRONTEND_OPTION_WITH_MARSHALLING(...)                                  \
-  PARSE_OPTION_WITH_MARSHALLING(args, __VA_ARGS__)
+  MarshallingErrors errors;
+#define MOJO_OPTION_WITH_MARSHALLING(...)                                      \
+  PARSE_OPTION_WITH_MARSHALLING(args, errors, __VA_ARGS__)
 #include "Doc/DocOptions.inc"
-#undef FRONTEND_OPTION_WITH_MARSHALLING
+#undef MOJO_OPTION_WITH_MARSHALLING
+  if (!errors.empty())
+    return state.reportError(errors.front());
 
   // Note: timing scope removed during DocGen extraction — it was never
   // surfaced to users.

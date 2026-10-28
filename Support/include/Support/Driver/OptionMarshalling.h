@@ -22,6 +22,7 @@
 #ifndef SUPPORT_DRIVER_OPTIONMARSHALLING_H
 #define SUPPORT_DRIVER_OPTIONMARSHALLING_H
 
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Option/ArgList.h"
 
@@ -31,8 +32,12 @@
 
 namespace M {
 
+/// The errors that normalizers report for invalid option values.
+using MarshallingErrors = std::vector<std::string>;
+
 inline std::optional<bool> normalizeSimpleFlag(llvm::opt::OptSpecifier opt, int,
-                                               const llvm::opt::ArgList &args) {
+                                               const llvm::opt::ArgList &args,
+                                               MarshallingErrors &) {
   if (args.hasArg(opt))
     return true;
   return std::nullopt;
@@ -40,7 +45,8 @@ inline std::optional<bool> normalizeSimpleFlag(llvm::opt::OptSpecifier opt, int,
 
 inline std::optional<bool>
 normalizeSimpleNegativeFlag(llvm::opt::OptSpecifier opt, int,
-                            const llvm::opt::ArgList &args) {
+                            const llvm::opt::ArgList &args,
+                            MarshallingErrors &) {
   if (args.hasArg(opt))
     return false;
   return std::nullopt;
@@ -48,7 +54,7 @@ normalizeSimpleNegativeFlag(llvm::opt::OptSpecifier opt, int,
 
 inline std::optional<std::string>
 normalizeString(llvm::opt::OptSpecifier opt, int,
-                const llvm::opt::ArgList &args) {
+                const llvm::opt::ArgList &args, MarshallingErrors &) {
   if (const llvm::opt::Arg *arg = args.getLastArg(opt))
     return std::string(arg->getValue());
   return std::nullopt;
@@ -58,7 +64,8 @@ normalizeString(llvm::opt::OptSpecifier opt, int,
 /// default.
 template <typename IntTy>
 std::optional<IntTy> normalizeStringIntegral(llvm::opt::OptSpecifier opt, int,
-                                             const llvm::opt::ArgList &args) {
+                                             const llvm::opt::ArgList &args,
+                                             MarshallingErrors &) {
   const llvm::opt::Arg *arg = args.getLastArg(opt);
   if (!arg)
     return std::nullopt;
@@ -70,30 +77,37 @@ std::optional<IntTy> normalizeStringIntegral(llvm::opt::OptSpecifier opt, int,
 
 inline std::optional<std::vector<std::string>>
 normalizeStringVector(llvm::opt::OptSpecifier opt, int,
-                      const llvm::opt::ArgList &args) {
+                      const llvm::opt::ArgList &args, MarshallingErrors &) {
   if (!args.hasArg(opt))
     return std::nullopt;
   return args.getAllArgValues(opt);
 }
 
+inline std::optional<llvm::SmallVector<std::string>>
+normalizeStringSmallVector(llvm::opt::OptSpecifier opt, int,
+                           const llvm::opt::ArgList &args,
+                           MarshallingErrors &) {
+  if (!args.hasArg(opt))
+    return std::nullopt;
+  return llvm::to_vector_of<std::string>(args.getAllArgValues(opt));
+}
+
 } // namespace M
 
-/// Parses one marshalled option from ARGS into its key path. Expand this where
-/// the subcommand's `options::OPT_*` enum is visible. Aliases share the key
-/// path of the option they alias, so their rows are skipped; otherwise the
-/// alias row would reset the field to its default.
+/// Parses one marshalled option from ARGS into its key path, adding any error
+/// to ERRORS. Expand this where the subcommand's `options::OPT_*` enum and the
+/// key paths' variables are visible. A field keeps its C++ initializer unless
+/// the option is present, so the structs, not the `.td` records, hold the
+/// defaults. Aliases share the key path of the option they alias, so their
+/// rows are skipped.
 #define PARSE_OPTION_WITH_MARSHALLING(                                         \
-    ARGS, PREFIX_TYPE, SPELLING_OFFSET, ID, KIND, GROUP, ALIAS, ALIASARGS,     \
-    FLAGS, VISIBILITY, PARAM, HELPTEXT, HELPTEXTSFORVARIANTS, METAVAR, VALUES, \
-    SUBCOMMANDIDS_OFFSET, SHOULD_PARSE, ALWAYS_EMIT, KEYPATH, DEFAULT_VALUE,   \
-    IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER, DENORMALIZER, TABLE_INDEX)       \
-  if (options::OPT_##ALIAS == options::OPT_INVALID) {                          \
-    KEYPATH = static_cast<decltype(KEYPATH)>(DEFAULT_VALUE);                   \
-    if (IMPLIED_CHECK)                                                         \
-      KEYPATH = static_cast<decltype(KEYPATH)>(IMPLIED_VALUE);                 \
-    if (SHOULD_PARSE)                                                          \
-      if (auto value = NORMALIZER(options::OPT_##ID, TABLE_INDEX, ARGS))       \
-        KEYPATH = static_cast<decltype(KEYPATH)>(*value);                      \
-  }
+    ARGS, ERRORS, PREFIX_TYPE, SPELLING_OFFSET, ID, KIND, GROUP, ALIAS,        \
+    ALIASARGS, FLAGS, VISIBILITY, PARAM, HELPTEXT, HELPTEXTSFORVARIANTS,       \
+    METAVAR, VALUES, SUBCOMMANDIDS_OFFSET, SHOULD_PARSE, ALWAYS_EMIT, KEYPATH, \
+    DEFAULT_VALUE, IMPLIED_CHECK, IMPLIED_VALUE, NORMALIZER, DENORMALIZER,     \
+    TABLE_INDEX)                                                               \
+  if (options::OPT_##ALIAS == options::OPT_INVALID && (SHOULD_PARSE))          \
+    if (auto value = NORMALIZER(options::OPT_##ID, TABLE_INDEX, ARGS, ERRORS)) \
+      KEYPATH = static_cast<decltype(KEYPATH)>(*value);
 
 #endif // SUPPORT_DRIVER_OPTIONMARSHALLING_H

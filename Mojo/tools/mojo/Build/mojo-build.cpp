@@ -149,21 +149,6 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
       .unknown = options::OPT_UNKNOWN,
       .input = options::OPT_INPUT,
       .includeDirs = options::OPT_I,
-      .optimizationLevel = options::OPT_optimization_level,
-      .fpMode = options::OPT_fp_mode,
-      .debugLevel = options::OPT_debug_level,
-      .sanitize = options::OPT_sanitize,
-      .sharedLibasan = options::OPT_shared_libasan,
-      .externalLibasan = options::OPT_external_libasan,
-      .bitcodeLibs = options::OPT_bitcode_libs,
-      .debugInfoLanguage = options::OPT_debug_info_language,
-      .numThreads = options::OPT_num_threads,
-      .loopUnrollingWarnThreshold = options::OPT_loop_unrolling_warn_threshold,
-      .elaborationErrorLimit = options::OPT_elaboration_error_limit,
-      .elaborationErrorIncludePrelude =
-          options::OPT_elaboration_error_include_prelude,
-      .elaborationErrorVerbose = options::OPT_elaboration_error_verbose,
-      .elaborationMaxDepth = options::OPT_elaboration_max_depth,
       .targetTriple = options::OPT_target_triple,
       .targetCpu = options::OPT_target_cpu,
       .targetFeatures = options::OPT_target_features,
@@ -206,10 +191,15 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
   target = std::move(result->target);
 
   frontendOptions = makeFrontendOptions(state);
-#define FRONTEND_OPTION_WITH_MARSHALLING(...)                                  \
-  PARSE_OPTION_WITH_MARSHALLING(args, __VA_ARGS__)
+  MarshallingErrors errors;
+#define MOJO_OPTION_WITH_MARSHALLING(...)                                      \
+  PARSE_OPTION_WITH_MARSHALLING(args, errors, __VA_ARGS__)
 #include "Build/BuildOptions.inc"
-#undef FRONTEND_OPTION_WITH_MARSHALLING
+#undef MOJO_OPTION_WITH_MARSHALLING
+  if (!errors.empty())
+    return state.reportError(errors.front());
+  if (ErrorOrSuccess err = validateCompilationOptions(compilationOptions))
+    return state.reportError(err.getError());
   return {};
 }
 
