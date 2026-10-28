@@ -53,6 +53,18 @@ normalizeSimpleNegativeFlag(llvm::opt::OptSpecifier opt, int,
   return std::nullopt;
 }
 
+/// Returns a normalizer for a flag and its negative form, where the last of
+/// the two on the command line decides the value.
+inline auto makeFlagPairNormalizer(llvm::opt::OptSpecifier negative) {
+  return [negative](llvm::opt::OptSpecifier positive, int,
+                    const llvm::opt::ArgList &args,
+                    MarshallingErrors &) -> std::optional<bool> {
+    if (const llvm::opt::Arg *arg = args.getLastArg(positive, negative))
+      return arg->getOption().matches(positive);
+    return std::nullopt;
+  };
+}
+
 inline std::optional<std::string>
 normalizeString(llvm::opt::OptSpecifier opt, int,
                 const llvm::opt::ArgList &args, MarshallingErrors &) {

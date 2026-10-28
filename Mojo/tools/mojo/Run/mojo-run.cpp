@@ -88,6 +88,7 @@ struct RunOptTable : public llvm::opt::OptTable {
 } // namespace
 
 static void expandMarshalledOptions(const llvm::opt::InputArgList &args,
+                                    State &state,
                                     FrontendOptions &frontendOptions,
                                     CompilationOptions &compilationOptions,
                                     TargetArgs &targetArgs,
@@ -165,12 +166,6 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
 
   // Set up common option IDs.
   CommonOptionIDs optionIDs{
-      .help = options::OPT_help,
-      .helpHidden = options::OPT_help_hidden,
-      .diagnosticFormat = options::OPT_diagnostic_format,
-      .disableWarnings = options::OPT_disable_warnings,
-      .warningsAsErrors = options::OPT_werror,
-      .noWarningsAsErrors = options::OPT_wno_error,
       .unknown = options::OPT_UNKNOWN,
       .input = options::OPT_INPUT,
       .includeDirs = options::OPT_I,

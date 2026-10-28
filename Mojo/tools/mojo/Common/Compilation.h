@@ -53,12 +53,6 @@ class TargetInfoAttr;
 /// These are passed to parseCommonMojoArguments to avoid duplicating the
 /// option ID mappings.
 struct CommonOptionIDs {
-  llvm::opt::OptSpecifier help;
-  llvm::opt::OptSpecifier helpHidden;
-  llvm::opt::OptSpecifier diagnosticFormat;
-  llvm::opt::OptSpecifier disableWarnings;
-  llvm::opt::OptSpecifier warningsAsErrors;
-  llvm::opt::OptSpecifier noWarningsAsErrors;
   llvm::opt::OptSpecifier unknown;
   llvm::opt::OptSpecifier input;
 
@@ -82,10 +76,11 @@ struct CommonOptionIDs {
 
 /// Expands a subcommand's `MOJO_OPTION_WITH_MARSHALLING` rows from `args`
 /// into the structs their key paths name, adding invalid values to the errors.
-using ExpandMarshalledOptionsFn = llvm::function_ref<void(
-    const llvm::opt::InputArgList &args, KGEN::FrontendOptions &frontendOptions,
-    KGEN::CompilationOptions &compilationOptions, TargetArgs &targetArgs,
-    MarshallingErrors &errors)>;
+using ExpandMarshalledOptionsFn =
+    llvm::function_ref<void(const llvm::opt::InputArgList &args, State &state,
+                            KGEN::FrontendOptions &frontendOptions,
+                            KGEN::CompilationOptions &compilationOptions,
+                            TargetArgs &targetArgs, MarshallingErrors &errors)>;
 
 /// Configuration flags for common argument parsing behavior.
 struct CommonParseConfig {

@@ -137,43 +137,6 @@ void State::reportWarning(const Twine &message) const {
   }
 }
 
-int State::parseDiagnosticFormatArguments(
-    llvm::opt::InputArgList &args,
-    llvm::opt::OptSpecifier diagnosticFormatOptionID,
-    llvm::opt::OptSpecifier disableWarningsOptionID,
-    llvm::opt::OptSpecifier warningsAsErrorsOptionID,
-    llvm::opt::OptSpecifier noWarningsAsErrorsOptionID) {
-  StringLiteral kDiagnosticFormatText = "text";
-  StringLiteral kDiagnosticFormatJSON = "json";
-  StringRef format =
-      args.getLastArgValue(diagnosticFormatOptionID, kDiagnosticFormatText);
-  if (!llvm::is_contained({kDiagnosticFormatText, kDiagnosticFormatJSON},
-                          format)) {
-    return reportError(
-        llvm::formatv("invalid diagnostic format '{0}', expected one of: `{1}` "
-                      "(the default), or `{2}`",
-                      format, kDiagnosticFormatText, kDiagnosticFormatJSON));
-  }
-
-  diagnosticFormat = llvm::StringSwitch<DiagnosticFormat>(format)
-                         .Case(kDiagnosticFormatText, DiagnosticFormat::Text)
-                         .Case(kDiagnosticFormatJSON, DiagnosticFormat::JSON);
-
-  if (disableWarningsOptionID.isValid())
-    disableWarnings = args.hasArg(disableWarningsOptionID);
-
-  // Use hasFlag for -Werror/-Wno-error with "last one wins" semantics.
-  if (warningsAsErrorsOptionID.isValid()) {
-    if (noWarningsAsErrorsOptionID.isValid())
-      warningsAsErrors = args.hasFlag(warningsAsErrorsOptionID,
-                                      noWarningsAsErrorsOptionID, false);
-    else
-      warningsAsErrors = args.hasArg(warningsAsErrorsOptionID);
-  }
-
-  return EXIT_SUCCESS;
-}
-
 #if __cplusplus >= 202002
 int State::printHelp(std::u8string_view helpText) const {
   return printHelp(std::string_view(

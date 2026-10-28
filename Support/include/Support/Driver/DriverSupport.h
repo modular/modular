@@ -78,21 +78,6 @@ struct State {
   bool areWarningsDisabled() const { return disableWarnings; }
   bool areWarningsAsErrors() const { return warningsAsErrors; }
 
-  /// If `args` contains a diagnostic format option (as specified by the given
-  /// option ID), this parses that option and sets this object's
-  /// `diagnosticFormat` member based on its value.
-  ///
-  /// When both `warningsAsErrorsOptionID` and `noWarningsAsErrorsOptionID` are
-  /// valid, uses "last one wins" semantics to determine `warningsAsErrors`,
-  /// defaulting to false when neither flag is present. When only
-  /// `warningsAsErrorsOptionID` is valid, simple presence checking is used.
-  int parseDiagnosticFormatArguments(
-      llvm::opt::InputArgList &args,
-      llvm::opt::OptSpecifier diagnosticFormatOptionID,
-      llvm::opt::OptSpecifier disableWarningsOptionID,
-      llvm::opt::OptSpecifier warningsAsErrorsOptionID,
-      llvm::opt::OptSpecifier noWarningsAsErrorsOptionID);
-
   /// Print the given `helpText` to stdout and return a successful exit code.
 #if __cplusplus >= 202002
   int printHelp(std::u8string_view helpText) const;

@@ -19,11 +19,14 @@
 #ifndef KGEN_TOOLS_MOJO_COMMON_DIAGNOSTICFORMATOPTIONS_TD
 #define KGEN_TOOLS_MOJO_COMMON_DIAGNOSTICFORMATOPTIONS_TD
 
+include "Common/Marshalling.td"
 include "Support/Driver/CommonOptions.td"
 
 defm diagnostic_format : CommandOption<["--", "-"], "diagnostic-format",
   CommonOptionGroup, Index<0>, MetaVarName<"FORMAT">,
   HelpText<"The format in which diagnostics and error messages are printed. "
-           "Must be one of \"text\" or \"json\" (\"text\" is the default).">>;
+           "Must be one of \"text\" or \"json\" (\"text\" is the default).">>,
+  MarshallingInfoCustom<DriverState<"diagnosticFormat">,
+                        "normalizeDiagnosticFormat">;
 
 #endif // KGEN_TOOLS_MOJO_COMMON_DIAGNOSTICFORMATOPTIONS_TD

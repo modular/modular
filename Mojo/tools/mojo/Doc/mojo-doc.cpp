@@ -69,10 +69,14 @@ static int doc(const State &subcommandState) {
     );
   }
 
-  if (int result = state.parseDiagnosticFormatArguments(
-          args, options::OPT_diagnostic_format, options::OPT_disable_warnings,
-          options::OPT_werror, options::OPT_wno_error))
-    return result;
+  KGEN::FrontendOptions frontendOptions;
+  MarshallingErrors errors;
+#define MOJO_OPTION_WITH_MARSHALLING(...)                                      \
+  PARSE_OPTION_WITH_MARSHALLING(args, errors, __VA_ARGS__)
+#include "Doc/DocOptions.inc"
+#undef MOJO_OPTION_WITH_MARSHALLING
+  if (!errors.empty())
+    return state.reportError(errors.front());
 
   // Handle deprecated --validate-doc-strings flag as an alias for -Werror.
   // Only apply if user hasn't explicitly specified -Werror or -Wno-error.
@@ -122,15 +126,7 @@ static int doc(const State &subcommandState) {
   if (!out)
     return state.reportError(outputError);
 
-  KGEN::FrontendOptions frontendOptions;
   setWarningPolicy(state, frontendOptions);
-  MarshallingErrors errors;
-#define MOJO_OPTION_WITH_MARSHALLING(...)                                      \
-  PARSE_OPTION_WITH_MARSHALLING(args, errors, __VA_ARGS__)
-#include "Doc/DocOptions.inc"
-#undef MOJO_OPTION_WITH_MARSHALLING
-  if (!errors.empty())
-    return state.reportError(errors.front());
 
   // Note: timing scope removed during DocGen extraction — it was never
   // surfaced to users.

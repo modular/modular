@@ -87,11 +87,11 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
   }
 
   // Read every marshalled option now, since the target queries below need the
-  // target triple. Invalid values are reported after the queries that exit
-  // early.
+  // target triple and the errors below need the diagnostic format. Invalid
+  // values are reported after the queries that exit early.
   TargetArgs targetArgs;
   MarshallingErrors errors;
-  expandOptions(args, result.frontendOptions, result.compilationOptions,
+  expandOptions(args, state, result.frontendOptions, result.compilationOptions,
                 targetArgs, errors);
 
   int targetQueryCount = countTargetQueries(args);
@@ -110,13 +110,8 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
     return result;
   }
 
-  // Parse diagnostic format arguments.
-  if (int exitCode = state.parseDiagnosticFormatArguments(
-          args, optionIDs.diagnosticFormat, optionIDs.disableWarnings,
-          optionIDs.warningsAsErrors, optionIDs.noWarningsAsErrors)) {
-    result.exitCode = exitCode;
-    return result;
-  }
+  if (!errors.empty())
+    return Error(errors.front());
 
   // Reject unknown arguments.
   if (int exitCode = state.rejectUnknownArguments(args, optionIDs.unknown)) {
@@ -152,8 +147,6 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
 
   initializeCompilation(args, sourceManager, ctx, optionIDs.includeDirs);
 
-  if (!errors.empty())
-    return Error(errors.front());
   setWarningPolicy(state, result.frontendOptions);
   if (ErrorOrSuccess err =
           validateCompilationOptions(result.compilationOptions))
@@ -199,10 +192,8 @@ void M::initializeCompilation(const llvm::opt::InputArgList &args,
 }
 
 void M::setWarningPolicy(const State &state, FrontendOptions &options) {
-  // Unlike other command line options, disableWarnings is parsed
-  // in State::parseDiagnosticFormatArguments(), because there is another
-  // warning emission mechanism in State::reportWarning(), and the option
-  // is single-sourced to affect both places.
+  // The warning options marshal into `state`, because State::reportWarning()
+  // also reads them, and are copied from there so both places agree.
   options.disableWarnings = state.areWarningsDisabled();
   options.warningsAsErrors = state.areWarningsAsErrors();
 }

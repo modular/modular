@@ -39,6 +39,27 @@ M::validateCompilationOptions(const CompilationOptions &options) {
   return success();
 }
 
+std::optional<DiagnosticFormat>
+M::normalizeDiagnosticFormat(llvm::opt::OptSpecifier opt, int,
+                             const llvm::opt::ArgList &args,
+                             MarshallingErrors &errors) {
+  const llvm::opt::Arg *arg = args.getLastArg(opt);
+  if (!arg)
+    return std::nullopt;
+  StringLiteral kDiagnosticFormatText = "text";
+  StringLiteral kDiagnosticFormatJSON = "json";
+  StringRef format = arg->getValue();
+  if (format == kDiagnosticFormatText)
+    return DiagnosticFormat::Text;
+  if (format == kDiagnosticFormatJSON)
+    return DiagnosticFormat::JSON;
+  errors.push_back(
+      llvm::formatv("invalid diagnostic format '{0}', expected one of: `{1}` "
+                    "(the default), or `{2}`",
+                    format, kDiagnosticFormatText, kDiagnosticFormatJSON));
+  return std::nullopt;
+}
+
 /// Returns the last value of `opt`, or nothing if `opt` is absent or empty.
 static std::optional<StringRef>
 getLastNonEmptyValue(llvm::opt::OptSpecifier opt,

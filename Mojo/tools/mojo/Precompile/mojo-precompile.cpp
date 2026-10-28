@@ -180,16 +180,7 @@ static ErrorOrSuccess parsePrecompileArgs(const State &state,
   // Set up the compilation options now, so we can use them as a single source
   // of truth.
   initializeCompilation(args, sourceMgr, pkgArgs.ctx, options::OPT_I);
-  KGEN::FrontendOptions &frontendOptions = pkgArgs.frontendOptions;
-  KGEN::CompilationOptions &compilationOptions = pkgArgs.compileOptions;
-  setWarningPolicy(state, frontendOptions);
-  MarshallingErrors errors;
-#define MOJO_OPTION_WITH_MARSHALLING(...)                                      \
-  PARSE_OPTION_WITH_MARSHALLING(args, errors, __VA_ARGS__)
-#include "Precompile/PrecompileOptions.inc"
-#undef MOJO_OPTION_WITH_MARSHALLING
-  if (!errors.empty())
-    return Error(errors.front());
+  setWarningPolicy(state, pkgArgs.frontendOptions);
 
   // Precompiled files are built with the intention of being agnostic, so use
   // conservative compilation settings as a default.
@@ -230,16 +221,24 @@ static int precompile(const State &subcommandState) {
     );
   }
 
-  if (int result = state.parseDiagnosticFormatArguments(
-          args, options::OPT_diagnostic_format, options::OPT_disable_warnings,
-          options::OPT_werror, options::OPT_wno_error))
-    return result;
+  PrecompileArgs precompileArgs;
+  {
+    KGEN::FrontendOptions &frontendOptions = precompileArgs.frontendOptions;
+    KGEN::CompilationOptions &compilationOptions =
+        precompileArgs.compileOptions;
+    MarshallingErrors errors;
+#define MOJO_OPTION_WITH_MARSHALLING(...)                                      \
+  PARSE_OPTION_WITH_MARSHALLING(args, errors, __VA_ARGS__)
+#include "Precompile/PrecompileOptions.inc"
+#undef MOJO_OPTION_WITH_MARSHALLING
+    if (!errors.empty())
+      return state.reportError(errors.front());
+  }
   if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
     return result;
 
   llvm::SourceMgr sourceMgr;
   sourceMgr.setDiagHandler(getDiagHandler(state.diagnosticFormat));
-  PrecompileArgs precompileArgs;
   if (auto err = parsePrecompileArgs(state, args, sourceMgr, precompileArgs))
     return state.reportError(err.getError());
 

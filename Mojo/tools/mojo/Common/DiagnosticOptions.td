@@ -68,11 +68,15 @@ def : Joined<["-"], "mojo-search-paths=">, Group<DiagnosticOptionGroup>,
 
 def disable_warnings : Flag<["--", "-"],
   "disable-warnings">, Group<DiagnosticOptionGroup>, Index<7>,
-  HelpText<"Do not print warning messages.">;
+  HelpText<"Do not print warning messages.">,
+  MarshallingInfoFlag<DriverState<"disableWarnings">>;
 
+// The last of -Werror and -Wno-error decides.
 def werror : Flag<["--", "-"], "Werror">,
   Group<DiagnosticOptionGroup>, Index<10>,
-  HelpText<"Treat warnings as errors.">;
+  HelpText<"Treat warnings as errors.">,
+  MarshallingInfoCustom<DriverState<"warningsAsErrors">,
+                        "makeFlagPairNormalizer(options::OPT_wno_error)">;
 
 def wno_error : Flag<["--", "-"], "Wno-error">,
   Group<DiagnosticOptionGroup>, Index<11>,

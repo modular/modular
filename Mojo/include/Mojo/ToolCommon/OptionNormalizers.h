@@ -20,6 +20,7 @@
 #define KGEN_TOOLCOMMON_OPTIONNORMALIZERS_H
 
 #include "Mojo/ToolCommon/CompilationOptions.h"
+#include "Support/Driver/DiagnosticFormat.h"
 #include "Support/Driver/OptionMarshalling.h"
 #include "Support/ErrorOr.h"
 #include "llvm/Option/ArgList.h"
@@ -33,8 +34,12 @@ namespace M {
 ErrorOrSuccess
 validateCompilationOptions(const KGEN::CompilationOptions &options);
 
-// Normalizers for the compilation options' marshalling rows. Each reports an
+// Normalizers for the shared options' marshalling rows. Each reports an
 // invalid value to `errors` and leaves the option at its default.
+std::optional<DiagnosticFormat>
+normalizeDiagnosticFormat(llvm::opt::OptSpecifier opt, int,
+                          const llvm::opt::ArgList &args,
+                          MarshallingErrors &errors);
 std::optional<unsigned>
 normalizeOptimizationLevel(llvm::opt::OptSpecifier opt, int,
                            const llvm::opt::ArgList &args,
