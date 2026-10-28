@@ -129,6 +129,17 @@ def test_single_turn_mix_counts_each_request_once() -> None:
     assert stats.tools_per_request.mean == 2.0
 
 
+def test_text_response_format_does_not_constrain_the_output() -> None:
+    samples = RequestSamples(
+        requests=[
+            _request(response_format={"type": "text"}),
+            _request(response_format=_JSON_OBJECT),
+        ]
+    )
+    stats = compute_workload_stats(samples)
+    assert stats.constrained_request_fraction == 0.5
+
+
 def test_empty_tools_list_is_not_a_tool_request() -> None:
     """The runner only sends ``tools`` when the list is non-empty."""
     stats = compute_workload_stats(
@@ -333,6 +344,29 @@ def test_input_distribution_reports_long_context_shares() -> None:
     assert stats.output_len.fraction_above is None
 
 
+def test_output_distribution_splits_by_turn() -> None:
+    samples = ChatSamples(
+        chat_sessions=[
+            _session((_user(100), 40), (_user(20), 10), (_user(20), 20))
+        ]
+    )
+    stats = compute_workload_stats(samples)
+    assert stats.output_len_first_turn is not None
+    assert stats.output_len_first_turn.count == 1
+    assert stats.output_len_first_turn.max == 40
+    assert stats.output_len_later_turn is not None
+    assert stats.output_len_later_turn.count == 2
+    assert stats.output_len_later_turn.mean == 15
+
+
+def test_single_turn_workload_has_no_later_turn_outputs() -> None:
+    stats = compute_workload_stats(
+        RequestSamples(requests=[_request(), _request()])
+    )
+    assert stats.output_len_first_turn is not None
+    assert stats.output_len_later_turn is None
+
+
 def test_distribution_of_nothing_is_none() -> None:
     assert Distribution.of([]) is None
 
@@ -369,6 +403,18 @@ def test_print_workload_stats_prints_requests_sent(
     assert "Turns dropped at the limit:" in out
     assert "Tool-offering requests:" in out
     assert "100.00%" in out
+
+
+def test_print_workload_stats_prints_output_by_turn(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    samples = ChatSamples(
+        chat_sessions=[_session((_user(100), 10), (_user(20), 10))]
+    )
+    print_workload_stats(samples, compute_workload_stats(samples))
+    out = capsys.readouterr().out
+    assert "Output length (first turn)" in out
+    assert "Output length (later turns)" in out
 
 
 def test_print_workload_stats_sections_share_columns(
