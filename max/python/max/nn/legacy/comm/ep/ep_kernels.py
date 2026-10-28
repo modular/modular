@@ -1133,11 +1133,6 @@ def call_ep_dispatch(
                     "input_scales must be provided when using NVFP4 dispatch"
                 )
             op_name += ".block.scaled.nv"
-            parameters["dispatch_scale_dtype"] = (
-                DType.float8_e4m3fn
-                if quant_config.is_nvfp4
-                else DType.float8_e8m0fnu
-            )
             if config.nvfp4_dyn_global_scales:
                 # The kernel derives each token's scale itself, so the op
                 # takes no input scale.
