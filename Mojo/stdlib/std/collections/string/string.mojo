@@ -762,8 +762,8 @@ struct String(
         if self._capacity_or_data & Self.FLAG_IS_REF_COUNTED:
             var ptr = self._ptr_or_data.unsafe_offset(-Self.REF_COUNT_SIZE)
             var refcount = ptr.unsafe_bitcast[Atomic[Int]]()
-            if refcount[].fetch_sub(1) == 1:
-                fence[Ordering.ACQUIRE]()
+            if refcount[].fetch_sub[ordering=.RELEASE](1) == 1:
+                fence[ordering=.ACQUIRE]()
                 dealloc(
                     ThinAllocation(unsafe_owned_ptr=ptr).unsafe_with_layout(
                         Layout[Byte](
