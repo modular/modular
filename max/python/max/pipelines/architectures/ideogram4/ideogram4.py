@@ -56,6 +56,7 @@ class Ideogram4MLP(Module[[Tensor], Tensor]):
         self.w3 = Ideogram4FP8Linear(dim, hidden_dim)
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the feed-forward over ``x``."""
         # Fuse the gate (w1) and up (w3) projections into one FP8 GEMM: both
         # read the same input and share the (dim -> hidden_dim) shape, so the
         # activation is quantized once and the row-stacked FP8 weight (with its
@@ -108,6 +109,7 @@ class Ideogram4TransformerBlock(Module[..., Tensor]):
         sin: Tensor,
         adaln_input: Tensor,
     ) -> Tensor:
+        """Runs the block over ``x``."""
         mod = self.adaln_modulation(adaln_input)  # (B, 1, 4*hidden)
         scale_msa, gate_msa, scale_mlp, gate_mlp = F.chunk(mod, 4, axis=-1)
         gate_msa = F.tanh(gate_msa)
@@ -137,6 +139,7 @@ class Ideogram4FinalLayer(Module[..., Tensor]):
         self.adaln_modulation = Linear(adaln_dim, hidden_size, bias=True)
 
     def forward(self, x: Tensor, c: Tensor) -> Tensor:
+        """Projects ``x`` to the output channels, modulated by ``c``."""
         scale = 1.0 + self.adaln_modulation(F.silu(c))
         return self.linear(self.norm_final(x) * scale)
 
@@ -187,6 +190,7 @@ class Ideogram4Transformer2DModel(Module[..., Sequence[Tensor]]):
         )
 
     def input_types(self) -> tuple[TensorType, ...]:
+        """The graph's input types."""
         return (
             TensorType(
                 self.max_dtype,
@@ -208,6 +212,7 @@ class Ideogram4Transformer2DModel(Module[..., Sequence[Tensor]]):
         )
 
     def forward(self, *args: Tensor) -> tuple[Tensor, ...]:
+        """Runs the transformer over the graph inputs."""
         x, llm_features, t, position_ids, indicator = args[:5]
 
         dtype = self.max_dtype

@@ -153,6 +153,7 @@ class Vae(Module[..., Tensor]):
         return self._num_channels
 
     def forward(self, *args: Any, **kwargs: Any) -> Tensor:
+        """Refuse standalone compilation; callers use ``encode`` or ``decode``."""
         # This Module is invoked through :meth:`encode` and
         # :meth:`decode` from a parent Module's ``forward``; both
         # methods land in the parent's traced graph.  Compiling this

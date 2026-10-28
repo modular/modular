@@ -97,6 +97,7 @@ class EngramTokens:
     """``[R, max_ngram_size - 1]`` bool, true where a lookback token is dead."""
 
     def values(self) -> list[TensorValue]:
+        """The token values the n-gram slots hold."""
         return [
             self.ids,
             self.positions,
@@ -218,9 +219,11 @@ class EngramLookup:
 
     @property
     def lookback_depth(self) -> int:
+        """How many earlier tokens a slot's n-gram reaches."""
         return self.layout.max_ngram_size - 1
 
     def heads_per_rank(self, n_ranks: int) -> int:
+        """How many heads each rank owns."""
         if n_ranks < 1 or self.n_hash_cols % n_ranks:
             raise ValueError(
                 f"{self.n_hash_cols} Engram hash columns do not split over "

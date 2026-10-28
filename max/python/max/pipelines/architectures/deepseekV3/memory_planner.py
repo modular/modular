@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Memory planner for the DeepseekV3 architecture."""
 
 from __future__ import annotations
@@ -134,9 +133,11 @@ def fused_ep_moe_memory(
     dispatch_dtype: DType,
     max_tokens_per_rank: int,
 ) -> int:
-    """Bytes the one-launch fused EP MoE can allocate on all of this node's
-    devices: nothing unless ``MODULAR_EP_FUSED_MOE=1`` asks EP init for it,
-    then the backend's bound for the EP geometry and dispatch element type.
+    """Bytes the one-launch fused EP MoE can allocate on this node's devices.
+
+    Nothing is allocated unless ``MODULAR_EP_FUSED_MOE=1`` asks EP init for
+    it, then the backend's bound for the EP geometry and dispatch element
+    type.
 
     The plan is made before the checkpoint is parsed, so the dispatch format,
     its global scales and the shared-expert rows are not known yet. The
@@ -190,8 +191,7 @@ def fused_ep_moe_memory(
 def nvfp4_mla_prefill_convert_memory(
     pipeline_config: PipelineConfig, huggingface_config: AutoConfig
 ) -> int:
-    """Bytes the NVFP4 sparse MLA prefill's FP8 conversion can allocate on all
-    of this node's devices.
+    """Bytes the NVFP4 MLA prefill's FP8 conversion can allocate on this node.
 
     Over an NVFP4 cache, a prefill step may convert its context to FP8 once
     and allocate the copy inside the attention op, outside the graph's

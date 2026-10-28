@@ -45,6 +45,7 @@ class Qwen3BatchProcessor(Llama3EpBatchProcessor):
         kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Llama3Inputs | Qwen3Inputs:
+        """Builds the first step's inputs from the replica batches."""
         from .model import Qwen3Inputs
 
         dp = self.runtime.pipeline_config.model.data_parallel_degree

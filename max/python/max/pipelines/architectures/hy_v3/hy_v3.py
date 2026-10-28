@@ -228,6 +228,7 @@ class HYV3TransformerBlock(Module):
         input_row_offsets: list[TensorValue],
         ep_inputs: list[TensorValue | BufferValue] | None = None,
     ) -> list[TensorValue]:
+        """Runs the block over its sharded hidden states."""
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
         attn_outs = [
             shard(
@@ -369,6 +370,7 @@ class HYV3(DistributedLogitsPostprocessMixin, Module):
         data_parallel_splits: TensorValue | None = None,
         host_input_row_offsets: TensorValue | None = None,
     ) -> DecoderOutputs:
+        """Runs the model over the graph inputs."""
         h = self.embed_tokens(tokens, signal_buffers)
 
         freqs_cis_list = [
@@ -445,6 +447,7 @@ class HYV3(DistributedLogitsPostprocessMixin, Module):
     def input_types(
         self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
+        """The graph's input types, in :meth:`__call__`'s order."""
         device_ref = self.devices[0]
 
         tokens_type = TensorType(

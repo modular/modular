@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Ragged-batch bookkeeping, computed in-graph from the row offsets.
 
 A serving batch is ``T`` tokens of ``b`` requests laid end to end, described
@@ -120,6 +119,7 @@ def segment_ids(
         offsets: ``[b + 1]`` int32 segment boundaries; row ``r`` belongs to
             segment ``i`` when ``offsets[i] <= r < offsets[i + 1]``.
         total: The row count ``offsets[b]`` as a graph dim.
+        device: The device the row-number arange is built on.
     """
     b = offsets.shape[0] - 1
     # A row's segment is the number of segment ends at or before it. Ends at
@@ -190,6 +190,7 @@ class RaggedRows:
 
     @property
     def offsets_i32(self) -> TensorValue:
+        """The row offsets as int32."""
         return ops.cast(self.offsets, DType.int32)
 
     @property
@@ -305,6 +306,7 @@ class WindowRows:
 
     @property
     def coff(self) -> int:
+        """The window's closing offset for this ratio."""
         return window_coff(self.ratio)
 
     def __tree_flatten__(self) -> tuple[dict[str, TensorValue], int]:
@@ -341,9 +343,11 @@ class WindowRows:
         ratio: int,
         count: DimLike | None = None,
     ) -> WindowRows:
-        """``ratio``'s windows over ``rows``; ``lengths`` is each request's
-        ``[b]`` int32 chunk length and ``count``, given for the cache-less
-        path's :class:`WindowTables`, is ``W``."""
+        """Builds ``ratio``'s windows over ``rows``.
+
+        ``lengths`` is each request's ``[b]`` int32 chunk length; ``count``,
+        given for the cache-less path's :class:`WindowTables`, is ``W``.
+        """
         device = rows.device
         base = rows.starts // ratio
         n_new = (lengths + scalar(ratio - 1, device)) // ratio

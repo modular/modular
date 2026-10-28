@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Local-expert NVFP4 operations, preserving each projection's scalars."""
 
 from max import functional as F

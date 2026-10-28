@@ -107,6 +107,7 @@ class Gemma4MoEGate(MoEGate):
     def __call__(
         self, hidden_state: TensorValue
     ) -> tuple[TensorValue, TensorValue]:
+        """Scores each token's experts and returns the routing weights."""
         hidden_state = self.norm(hidden_state)
         hidden_state = hidden_state * self.scale * self.scalar_root_size
 
@@ -159,10 +160,12 @@ class Gemma4MoE(MoE):
 
     @property
     def gate_up_proj(self) -> TensorValue:
+        """The gate and up projections, stacked for the grouped matmul."""
         return self.gate_up_weight
 
     @property
     def down_proj(self) -> TensorValue:
+        """The down projection."""
         return self.down_weight
 
     def _set_sharding_strategy(self, strategy: ShardingStrategy) -> None:

@@ -162,6 +162,7 @@ class GptOssTextModel(
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
     ) -> ModuleV3Outputs:
+        """Runs the text model over the tokens."""
         h = self.embed_tokens(tokens)
         kv_by_type = {
             "sliding_attention": sliding_kv,
@@ -211,6 +212,7 @@ class GptOss(Module[..., ModuleV3Outputs]):
         input_row_offsets: Tensor,
         *variadic_args: Tensor,
     ) -> ModuleV3Outputs:
+        """Runs the language model over the tokens."""
         kv_inputs = iter(x._graph_value for x in variadic_args)
         assert isinstance(self.kv_params, MultiKVCacheParams)
         sliding_inputs, global_inputs = self.kv_params.unflatten_basic_kv_tree(

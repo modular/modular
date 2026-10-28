@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Build an Olmo2 model that uses continuous or paged kv-caching"""
+"""Build an Olmo2 model that uses continuous or paged kv-caching."""
 
 import functools
 from collections.abc import Callable, Iterable
@@ -44,6 +44,8 @@ from .layers.transformer import Olmo2TransformerBlock
 
 
 class Olmo2(Transformer):
+    """Olmo2 graph model built from single-device attention and MLP blocks."""
+
     def __init__(self, config: Llama3Config) -> None:
         assert len(config.devices) == 1
         self.config = config
@@ -184,6 +186,7 @@ class Olmo2(Transformer):
     def input_types(
         self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
+        """Builds the symbolic graph inputs for one device's KV cache."""
         # TODO: Move input symbol computation from the manager classes.
         # It should be possible to compute the input symbols from the model
         # config.

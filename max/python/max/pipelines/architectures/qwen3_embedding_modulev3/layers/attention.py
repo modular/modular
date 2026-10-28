@@ -87,6 +87,7 @@ class Qwen3AttentionNoCache(
         x: Tensor,
         input_row_offsets: Tensor,
     ) -> Tensor:
+        """Runs the attention over ``x``, reading no cache."""
         total_seq_len = x.shape[0]
 
         # Project Q, K, V separately

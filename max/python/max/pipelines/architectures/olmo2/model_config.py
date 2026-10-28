@@ -38,6 +38,7 @@ from ..llama3.model_config import Llama3Config
 @dataclass(kw_only=True)
 class Olmo2Config(Llama3Config):
     """Implementation of MAXModelConfig for Olmo2 models.
+
     Olmo2 models use a different approach for head_dim calculation compared to Llama3.
     Llama3 calculates head_dim as hidden_size // num_attention_heads,
     Olmo2 models have an explicit head_dim field in their configuration.
@@ -79,9 +80,12 @@ class Olmo2Config(Llama3Config):
     @staticmethod
     def calculate_attention_multiplier(huggingface_config: AutoConfig) -> float:
         """The attention multiplier for Olmo2 models.
+
         Uses the explicit head_dim from the config instead of calculating it.
+
         Args:
             huggingface_config: The HuggingFace configuration object.
+
         Returns:
             The attention multiplier value.
         """
@@ -137,6 +141,7 @@ class Olmo2Config(Llama3Config):
             pipeline_config: The MAX Engine pipeline configuration.
             huggingface_config: The HuggingFace model configuration object.
             model_config: The MAX Engine model configuration.
+            max_seq_len: The maximum sequence length to size the KV cache for.
 
         Returns:
             An initialized Olmo2Config instance.

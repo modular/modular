@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The MPNet encoder as a ModuleV3 graph."""
+
 from __future__ import annotations
 
 import math
@@ -49,6 +51,7 @@ class MPNetEmbeddings(Module[[Tensor], Tensor]):
         )
 
     def forward(self, input_ids: Tensor) -> Tensor:
+        """Embeds ``input_ids`` and adds their positions."""
         position_ids = _create_position_ids_from_input_ids(
             input_ids, self.pad_token_id
         )
@@ -100,6 +103,7 @@ class MPNetSelfAttention(Module[[Tensor, Tensor, Tensor], Tensor]):
         )
 
     def transpose_for_scores(self, x: Tensor) -> Tensor:
+        """Splits the last dim into attention heads."""
         new_x_shape = x.shape[:-1] + [
             self.num_attention_heads,
             self.attention_head_size,
@@ -113,6 +117,7 @@ class MPNetSelfAttention(Module[[Tensor, Tensor, Tensor], Tensor]):
         attention_mask: Tensor,
         position_bias: Tensor,
     ) -> Tensor:
+        """Runs the scaled dot-product attention."""
         q = self.q(hidden_states)
         k = self.k(hidden_states)
         v = self.v(hidden_states)
@@ -163,6 +168,7 @@ class MPNetAttention(Module[[Tensor, Tensor, Tensor], Tensor]):
         attention_mask: Tensor,
         position_bias: Tensor,
     ) -> Tensor:
+        """Runs the attention block and its output projection."""
         attn_output = self.attn(hidden_states, attention_mask, position_bias)
         return self.layer_norm(attn_output + hidden_states)
 
@@ -183,6 +189,7 @@ class MPNetIntermediate(Module[[Tensor], Tensor]):
         )
 
     def forward(self, hidden_states: Tensor) -> Tensor:
+        """Runs the feed-forward's dense layer and activation."""
         hidden_states = self.dense(hidden_states)
         hidden_states = self.intermediate_act_fn(hidden_states)
         return hidden_states
@@ -206,6 +213,7 @@ class MPNetOutput(Module[[Tensor, Tensor], Tensor]):
         )
 
     def forward(self, hidden_states: Tensor, input_tensor: Tensor) -> Tensor:
+        """Runs the feed-forward's output layer, adding its input."""
         hidden_states = self.dense(hidden_states)
         hidden_states = self.layer_norm(hidden_states + input_tensor)
         return hidden_states
@@ -226,6 +234,7 @@ class MPNetLayer(Module[[Tensor, Tensor, Tensor], Tensor]):
         attention_mask: Tensor,
         position_bias: Tensor,
     ) -> Tensor:
+        """Runs the attention block, then the feed-forward."""
         attention_output = self.attention(
             hidden_states, attention_mask, position_bias
         )
@@ -252,12 +261,14 @@ class MPNetEncoder(Module[[Tensor, Tensor], Tensor]):
         self.num_attention_heads = hf_config.num_attention_heads
 
     def forward(self, hidden_states: Tensor, attention_mask: Tensor) -> Tensor:
+        """Runs the encoder's layers over ``hidden_states``."""
         position_bias = self.compute_position_bias(hidden_states)
         for layer in self.layer:
             hidden_states = layer(hidden_states, attention_mask, position_bias)
         return hidden_states
 
     def compute_position_bias(self, hidden_states: Tensor) -> Tensor:
+        """Builds the relative-position attention bias."""
         shape = hidden_states.shape
         bsz, qlen, klen = shape[0], shape[1], shape[1]
         context_position = F.unsqueeze(
@@ -287,6 +298,7 @@ class MPNetEncoder(Module[[Tensor, Tensor], Tensor]):
         num_buckets: int = 32,
         max_distance: int = 128,
     ) -> Tensor:
+        """Maps relative positions onto their bias buckets."""
         n = -relative_position
 
         num_buckets //= 2
@@ -317,7 +329,8 @@ class MPNetEncoder(Module[[Tensor, Tensor], Tensor]):
 class MPNetModel(Module[[Tensor, Tensor], tuple[Tensor, ...]]):
     """The MPNet encoder model.
 
-    Based on the MPNetModel transformers implementation."""
+    Based on the MPNetModel transformers implementation.
+    """
 
     def __init__(self, config: MPNetConfig) -> None:
         super().__init__()
@@ -328,6 +341,7 @@ class MPNetModel(Module[[Tensor, Tensor], tuple[Tensor, ...]]):
     def forward(
         self, input_ids: Tensor, attention_mask: Tensor
     ) -> tuple[Tensor, ...]:
+        """Runs the encoder over ``input_ids`` and the mask."""
         embedding_output = self.embeddings(input_ids)
         extended_attention_mask = F.reshape(
             attention_mask, ("batch_size", 1, 1, "seq_len")

@@ -84,8 +84,11 @@ class GptOssAttention(Module, Shardable):
             scale: Value used to scale the results of the attention output.
             has_bias: Whether to use an attention bias. Defaults to False.
             qk_norm_eps: Value to use for numerical stability. Defaults to 1e-6.
+            layer_type: Whether this layer is a sliding-window or a full
+                attention layer.
+            local_window_size: The number of tokens a sliding layer attends
+                over.
         """
-
         super().__init__()
         self.rope = rope
         self.n_heads = num_attention_heads
@@ -142,6 +145,7 @@ class GptOssAttention(Module, Shardable):
         kv_collection: PagedCacheValues,
         **kwargs,
     ) -> TensorValue:
+        """Runs the attention over ``x``, reading and updating the KV cache."""
         # Get attributes from input.
         total_seq_len = x.shape[0]
 
@@ -192,6 +196,7 @@ class GptOssAttention(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the attention weights are split across devices."""
         return self._sharding_strategy
 
     @sharding_strategy.setter

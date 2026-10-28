@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Pixtral pipeline model."""
 
 from __future__ import annotations
 
@@ -132,6 +133,7 @@ class PixtralModel(
         self,
         model_inputs: ModelInputs,
     ) -> ModelOutputs:
+        """Runs the graphs over the prepared inputs."""
         assert isinstance(model_inputs, PixtralInputs)
         assert model_inputs.kv_cache_inputs is not None, (
             "Pixtral has KV cache inputs, but none were provided"

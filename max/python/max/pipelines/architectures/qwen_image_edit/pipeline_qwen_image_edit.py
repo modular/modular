@@ -545,7 +545,7 @@ class QwenImageEditPipeline(DiffusionPipeline):
         return QwenImageEditModelInputs.from_context(context)
 
     def _patchify_and_pack(self, latents: TensorValue) -> TensorValue:
-        """(B,C,H//2,2,W//2,2) → (B, H//2*W//2, C*4)"""
+        """(B,C,H//2,2,W//2,2) → (B, H//2*W//2, C*4)."""
         latents = ops.cast(latents, self.transformer.config.dtype)
         batch = latents.shape[0]
         c = latents.shape[1]
@@ -641,6 +641,7 @@ class QwenImageEditPipeline(DiffusionPipeline):
         latent_image_ids: TensorValue,
         image_latent_ids: TensorValue,
     ) -> tuple[TensorValue, TensorValue]:
+        """Joins the image latents to the noise latents."""
         return (
             ops.concat([latents, image_latents], axis=1),
             ops.concat([latent_image_ids, image_latent_ids], axis=1),
@@ -712,6 +713,7 @@ class QwenImageEditPipeline(DiffusionPipeline):
         tokens: TokenBuffer,
         num_images_per_prompt: int = 1,
     ) -> Buffer:
+        """Encodes the prompts through the text encoder."""
         device = self.text_encoder.devices[0]
         text_input_ids_np = np.asarray(tokens.array).flatten()
         token_key = tuple(int(token) for token in text_input_ids_np.tolist())
@@ -841,6 +843,7 @@ class QwenImageEditPipeline(DiffusionPipeline):
         latents: npt.NDArray[np.float32],
         latent_image_ids: npt.NDArray[np.float32],
     ) -> tuple[Buffer, Buffer]:
+        """Scales and packs the latents for the transformer."""
         latents_np = np.asarray(latents)
         b, c, h, w = latents_np.shape
         latents_6d = latents_np.reshape(b, c, h // 2, 2, w // 2, 2)
@@ -904,6 +907,7 @@ class QwenImageEditPipeline(DiffusionPipeline):
     def prepare_image_latents(
         self, images: list[Buffer], batch_size: int, device: Device
     ) -> tuple[Buffer, Buffer]:
+        """Encodes each image into its packed latents."""
         all_latents: list[Buffer] = []
         all_ids: list[Buffer] = []
         for idx, img in enumerate(images):

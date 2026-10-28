@@ -40,6 +40,7 @@ def convert_safetensor_state_dict(
 
     Args:
         state_dict: Every tensor in the checkpoint shards, by checkpoint name.
+        **unused_kwargs: Accepted so every adapter shares one signature.
 
     Returns:
         The weights keyed by MAX name: the checkpoint name without

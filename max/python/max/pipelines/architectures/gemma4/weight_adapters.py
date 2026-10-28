@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Maps Gemma 4 checkpoint names onto the MAX tree."""
 
 from __future__ import annotations
 

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Qwen2 configuration."""
 
 from dataclasses import dataclass
 from typing import ClassVar, Literal
@@ -40,6 +41,7 @@ class Qwen2Config(Llama3Config):
         norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm",
         attention_bias: bool = False,
     ) -> None:
+        """Delegates to the parent's finalize."""
         super().finalize(
             huggingface_config=huggingface_config,
             state_dict=state_dict,

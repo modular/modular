@@ -10,8 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Batching for Kimi K3 (ModuleV3): the generic Llama3 processor, plus the
-EP exchange's real buffers, bound once after the model loads."""
+"""Batching for Kimi K3, on top of the generic Llama3 processor.
+
+The EP exchange's real buffers are bound once, after the model loads.
+"""
 
 from __future__ import annotations
 

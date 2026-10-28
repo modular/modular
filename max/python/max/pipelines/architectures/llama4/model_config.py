@@ -107,8 +107,10 @@ def _build_llama4_fp8_quant_config(
     huggingface_config: AutoConfig,
     dtype: DType,
 ) -> QuantConfig | None:
-    """Builds the :class:`QuantConfig` for a compressed-tensors float-quantized
-    (FP8 e4m3) Llama4 checkpoint.
+    """Builds the :class:`QuantConfig` of an FP8 Llama4 checkpoint.
+
+    The checkpoint is a compressed-tensors float-quantized (FP8 e4m3) Llama4
+    checkpoint.
 
     The released ``RedHatAI/Llama-4-Scout-...-FP8-dynamic`` checkpoint quantizes
     only the feed-forward linears (routed experts + shared expert) to FP8 e4m3
@@ -327,6 +329,7 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         *,
         max_seq_len: int,
     ) -> Self:
+        """Builds the config from the pipeline and HF configs."""
         model_config = model_config or pipeline_config.model
         text_config = get_text_config(huggingface_config)
         kv_cache_config = model_config.kv_cache

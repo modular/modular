@@ -140,6 +140,7 @@ class Olmo2TextModel(
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
     ) -> ModuleV3Outputs:
+        """Runs the text model over the graph inputs."""
         h = self.embed_tokens(tokens)
 
         if self.embedding_multiplier != 1.0:
@@ -212,6 +213,7 @@ class Olmo2(Module[..., ModuleV3Outputs]):
         input_row_offsets: Tensor,
         *variadic_args,
     ) -> ModuleV3Outputs:
+        """Unflattens the KV inputs, then runs the text model."""
         symbolic_inputs = self.kv_params.unflatten_kv_inputs(
             iter(variadic_args)
         )

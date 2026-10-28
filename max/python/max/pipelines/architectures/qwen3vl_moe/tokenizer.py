@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Qwen3-VL-MoE tokenizer."""
 
 from __future__ import annotations
 
@@ -159,7 +160,6 @@ def qwen3vl_image_preprocessing(
         - pixel_values: Flattened patch values as numpy array
         - image_grid_thw: Grid dimensions (temporal, height, width)
     """
-
     width, height = image.size
 
     resized_height, resized_width = smart_resize(

@@ -197,6 +197,7 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the attention weights are split across devices."""
         return self._sharding_strategy
 
     @sharding_strategy.setter
@@ -236,6 +237,7 @@ class Qwen3VLMoEDecoderAttentionWithRope(Module, Shardable):
         self,
         devices: Iterable[DeviceRef],
     ) -> list[Qwen3VLMoEDecoderAttentionWithRope]:
+        """Splits the attention weights across ``devices``."""
         if not self.sharding_strategy:
             raise ValueError(
                 "Qwen3VLMoEDecoderAttentionWithRope layer cannot be sharded "

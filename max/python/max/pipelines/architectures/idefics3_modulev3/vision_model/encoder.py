@@ -45,6 +45,7 @@ class Idefics3VisionMLP(Module[[Tensor], Tensor]):
         )
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the encoder's feed-forward over ``x``."""
         x = self.fc1(x)
         x = F.gelu(x, approximate="tanh")
         x = self.fc2(x)
@@ -82,6 +83,7 @@ class Idefics3VisionEncoderLayer(Module[[Tensor], Tensor]):
         )
 
     def forward(self, hidden_states: Tensor) -> Tensor:
+        """Runs the encoder layer's attention, then its feed-forward."""
         residual = hidden_states
         hidden_states = self.layer_norm1(hidden_states)
         hidden_states = self.self_attn(hidden_states)
@@ -111,6 +113,7 @@ class Idefics3VisionEncoder(Module[[Tensor], Tensor]):
         )
 
     def forward(self, hidden_states: Tensor) -> Tensor:
+        """Runs every encoder layer over ``hidden_states``."""
         for layer in self.layers:
             hidden_states = layer(hidden_states)
         return hidden_states

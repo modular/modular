@@ -111,6 +111,7 @@ class V41KVLeafSpec:
 
     @property
     def num_layers(self) -> int:
+        """How many layers the spec covers."""
         return len(self.owning_layer_ids)
 
     def slots_per_page(self, page_size: int) -> int:

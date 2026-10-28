@@ -146,6 +146,7 @@ class Qwen3DSparkDraftArchConfig:
         *,
         max_seq_len: int,
     ) -> Qwen3DSparkDraftArchConfig:
+        """Builds the config from the checkpoint's position bound."""
         del pipeline_config, max_seq_len
         assert model_config is not None
         hf = model_config.huggingface_config
@@ -153,6 +154,7 @@ class Qwen3DSparkDraftArchConfig:
         return cls(max_position_embeddings=int(hf.max_position_embeddings))
 
     def get_max_seq_len(self) -> int:
+        """The maximum sequence length the config allows."""
         return self.max_position_embeddings
 
     @classmethod
@@ -161,6 +163,7 @@ class Qwen3DSparkDraftArchConfig:
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """Returns the checkpoint's ``max_position_embeddings``."""
         del model_config
         return int(huggingface_config.max_position_embeddings)
 

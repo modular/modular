@@ -46,5 +46,6 @@ class Gemma4MultimodalEmbedder(Module[[Tensor], Tensor]):
         )
 
     def forward(self, inputs_embeds: Tensor) -> Tensor:
+        """Normalizes the token embeddings and projects them."""
         normed = self.embedding_pre_projection_norm(inputs_embeds)
         return self.embedding_projection(normed.cast(self.dtype))

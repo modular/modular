@@ -199,9 +199,12 @@ def _admits(
     root: Mapping[str, Any],
     seen: frozenset[str] = frozenset(),
 ) -> bool:
-    """Whether ``arg_schema`` admits ``value``, checking its type and its
-    ``enum``/``const`` literals, through ``$ref`` and each ``anyOf``/``oneOf``
-    branch, in the order :func:`_schema_types` reads them."""
+    """Whether ``arg_schema`` admits ``value``.
+
+    The check covers ``value``'s type and its ``enum``/``const`` literals, and
+    follows ``$ref`` and each ``anyOf``/``oneOf`` branch, in the order
+    :func:`_schema_types` reads them.
+    """
     if not isinstance(arg_schema, Mapping):
         return arg_schema
     ref = arg_schema.get("$ref")
@@ -267,8 +270,7 @@ def _parse_value(
 
 
 def _property(root: Mapping[str, Any], key: str) -> _Schema:
-    """The schema of argument ``key``: its property, else
-    ``additionalProperties``."""
+    """The schema of argument ``key``: its property, else ``additionalProperties``."""
     properties = root.get("properties", {})
     if key in properties:
         return properties[key]
@@ -390,9 +392,11 @@ def _structural_tag(
     reject_unsupported: bool = False,
     **kwargs: object,
 ) -> StructuralTag:
-    """Frames calls and names, and types a strict tool's arguments by its
-    schema.
+    """Frames calls and names, typing a strict tool's arguments by its schema.
 
+    It is adapted from vLLM's ``get_hy_v4_structural_tag``, which ignores
+    ``strict``, leaves values free text and lets a tool without keys run its
+    name on.
     Adapted from vLLM's ``get_hy_v4_structural_tag``, which ignores ``strict``,
     leaves values free text and lets a tool without keys run its name on.
     """
@@ -450,6 +454,7 @@ class HYV4ToolParser(StructuralTagToolParser):
         self._schemas = schemas
 
     def reset(self) -> None:
+        """Clears the parser's pending call state."""
         super().reset()
         self._active_schema = None
 

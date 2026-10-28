@@ -282,7 +282,7 @@ def _nvfp4_config(
     compute_dtype: DType,
     state_dict: Mapping[str, WeightData],
 ) -> QuantConfig:
-    """modelopt NVFP4: E4M3 block scales over 16 elements, fp32 global scales.
+    """Modelopt NVFP4: E4M3 block scales over 16 elements, fp32 global scales.
 
     The activation scale is static because the checkpoint calibrated it -- the
     per-block activation scales are still computed at runtime, but against

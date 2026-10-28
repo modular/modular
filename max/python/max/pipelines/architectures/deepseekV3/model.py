@@ -74,6 +74,7 @@ class DeepseekV3Inputs(DeepseekV2Inputs):
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
+        """The buffers the model takes as graph inputs."""
         return (
             self.tokens,
             self.input_row_offsets,
@@ -379,6 +380,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         self,
         model_inputs: ModelInputs,
     ) -> ModelOutputs:
+        """Runs the model on one batch of inputs."""
         assert isinstance(model_inputs, DeepseekV3Inputs)
 
         model_outputs = self.model.execute(*model_inputs.buffers)

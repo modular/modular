@@ -98,6 +98,7 @@ def exclusive_prefix_sum(x: TensorValue) -> TensorValue:
 def act_quant(
     x: TensorValue, quant_config: QuantConfig, block_size: int = 128
 ) -> tuple[TensorValue, TensorValue]:
+    """Quantizes the activation's last axis and returns its scales."""
     *x_dims, head_dim = x.shape
     x = x.reshape((-1, head_dim))
     assert int(head_dim) % block_size == 0
@@ -151,6 +152,8 @@ def _indexer_act_quant_config(quant_config: QuantConfig) -> QuantConfig:
 
 
 class Indexer(Module, Shardable):
+    """Indexer that scores the candidate blocks sparse attention reads."""
+
     def __init__(
         self,
         dim: int,
@@ -711,7 +714,8 @@ class Indexer(Module, Shardable):
         seed_row_offsets: TensorValue | None = None,
         tail_capture: list[KpoolTailReplayInputs] | None = None,
     ) -> tuple[TensorValue | None, TensorValue | None]:
-        """
+        """Runs the indexer over the activations and the normed queries.
+
         Args:
             x: Tensor of shape (total_seq_len, dim) Input activations.
             qr: Tensor of shape (total_seq_len, q_lora_rank) Pre-normed queries.
@@ -738,6 +742,7 @@ class Indexer(Module, Shardable):
                 of ``input_row_offsets``; all zeros leaves the ring as it was.
             tail_capture: When given, the pooled call's
                 :class:`KpoolTailReplayInputs` are appended to it.
+
         Returns:
             topk_indices, tTensor of shape (total_seq_len, index_topk) indices
                 of the top k Keys selected by the Indexer for MLA to attend to
@@ -885,8 +890,11 @@ class Indexer(Module, Shardable):
 
     @property
     def selection_width(self) -> int:
-        """Output width: ``index_topk + index_kpool - 1`` = 2051 with the
-        tail, ``index_topk`` without."""
+        """Width of the selection the indexer emits.
+
+        ``index_topk + index_kpool - 1`` = 2051 with the tail, ``index_topk``
+        without.
+        """
         return indexer_selection_width(
             self.index_topk, self.index_kpool, self.always_select_tail
         )

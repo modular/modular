@@ -88,6 +88,7 @@ class PixtralConfig(
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """The language model's hidden layer count."""
         return huggingface_config.text_config.num_hidden_layers
 
     @override
@@ -106,6 +107,9 @@ class PixtralConfig(
 
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
+            model_config: The MAX model configuration to read the HuggingFace
+                config from. Defaults to ``pipeline_config.model``.
+            max_seq_len: The maximum sequence length the config allows.
 
         Returns:
             An initialized PixtralConfig instance.

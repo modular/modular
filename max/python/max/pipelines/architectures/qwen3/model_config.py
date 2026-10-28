@@ -31,6 +31,8 @@ from ..llama3.model_config import Llama3Config
 
 @dataclass(kw_only=True)
 class Qwen3Config(Llama3Config):
+    """Qwen3 configuration."""
+
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
     SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
         "bfloat16",
@@ -91,6 +93,9 @@ class Qwen3Config(Llama3Config):
 
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
+            model_config: The MAX model configuration, or none to read it
+                from ``pipeline_config.model``.
+            max_seq_len: The maximum sequence length the config allows.
 
         Returns:
             An initialized Qwen3Config instance.
@@ -125,6 +130,9 @@ class Qwen3Config(Llama3Config):
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
             huggingface_config: The HuggingFace model configuration.
+            model_config: The MAX model configuration, or none to read it
+                from ``pipeline_config.model``.
+            max_seq_len: The maximum sequence length the config allows.
             model_config: The MAX Engine model configuration.
 
         Returns:

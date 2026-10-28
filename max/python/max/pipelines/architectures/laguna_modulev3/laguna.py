@@ -282,6 +282,7 @@ class Laguna(Module[..., ModuleV3Outputs]):
         input_row_offsets: Tensor,
         *variadic_args: Tensor,
     ) -> ModuleV3Outputs:
+        """Runs the model over the graph inputs."""
         kv_inputs = iter(x._graph_value for x in variadic_args)
         kv_by_type: dict[str, PagedCacheValues] = {}
         if isinstance(self.kv_params, MultiKVCacheParams):

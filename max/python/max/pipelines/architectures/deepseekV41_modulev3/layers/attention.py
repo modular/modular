@@ -15,7 +15,8 @@
 The stacked q/KV projection feeds the query and cache paths. Attention
 uses the canonical MXFP8 window and NVFP4 compressed records, then inverse
 RoPE, the FP8 grouped wo_a projection (one block-diagonal MXFP8 launch),
-and the FP8 row-parallel wo_b."""
+and the FP8 row-parallel wo_b.
+"""
 
 from __future__ import annotations
 
@@ -198,6 +199,7 @@ class RaggedRows:
 
     @property
     def batch(self) -> int | Dim:
+        """The number of sequences the rows cover."""
         return self.offsets.shape[0] - 1
 
 

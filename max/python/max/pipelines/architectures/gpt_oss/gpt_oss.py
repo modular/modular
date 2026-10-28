@@ -194,6 +194,7 @@ class GptOssTextModel(DistributedLogitsPostprocessMixin, Module):
         input_row_offsets: Sequence[TensorValue],
         **kwargs,
     ) -> DecoderOutputs:
+        """Runs the text model over the tokens."""
         h_embed = self.embed_tokens(tokens)
         if self.embedding_output_dtype is not None:
             h_embed = ops.cast(h_embed, self.embedding_output_dtype)
@@ -319,6 +320,7 @@ class GptOss(Module):
         return_n_logits: TensorValue,
         input_row_offsets: Sequence[TensorValue],
     ) -> DecoderOutputs:
+        """Runs the language model over the tokens."""
         return self.language_model(
             tokens,
             signal_buffers,

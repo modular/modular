@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Pixtral language model."""
 
 from __future__ import annotations
 
@@ -188,6 +189,7 @@ class PixtralLanguage(Module[..., tuple[Tensor, ...]]):
         image_token_indices: Tensor,
         *variadic_args: Tensor,
     ) -> tuple[Tensor, ...]:
+        """Runs the language model over the tokens and image embeddings."""
         assert self.kv_params is not None
         kv_inputs = iter(x._graph_value for x in variadic_args)
         symbolic_inputs = self.kv_params.unflatten_kv_inputs(kv_inputs)

@@ -200,6 +200,15 @@ def linear_state_regions(
     Sharded here: a device holds only its own slice of the heads.
 
     Args:
+        num_linear_layers: How many linear-attention layers the model has.
+        key_head_dim: Head width of the linear layers' key projection.
+        num_key_heads: How many key heads the linear layers have.
+        value_head_dim: Head width of the linear layers' value projection.
+        num_value_heads: How many value heads the linear layers have.
+        conv_kernel_dim: Width of the convolution kernel the linear layers
+            run.
+        dtype: Element type of the state buffers.
+        num_devices: How many devices the state is sharded over.
         ring_len: Record capacity of the speculative verify ring, or zero to
             declare no ring. One of :data:`COMPILED_RING_LENS`.
 

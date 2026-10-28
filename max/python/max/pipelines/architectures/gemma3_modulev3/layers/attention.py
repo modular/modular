@@ -128,6 +128,7 @@ class Gemma3Attention(Module[..., Tensor]):
         kv_collection: PagedCacheValues,
         **kwargs,
     ) -> Tensor:
+        """Runs the attention over ``x``."""
         layer_idx = F.constant(self.layer_idx, DType.uint32, device=CPU())
 
         n_devices = kv_collection.n_devices

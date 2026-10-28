@@ -65,6 +65,9 @@ class BertModelConfig(ArchConfigWithBoundedMaxSeqLen, ArchConfig):
 
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
+            model_config: The model config entry this config is built from,
+                or ``None`` with the entry taken from ``pipeline_config``.
+            max_seq_len: The sequence length the graph is traced for.
 
         Returns:
             An initialized BertModelConfig instance.

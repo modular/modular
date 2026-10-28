@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Projects Gemma 3's vision output into the text width."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -38,7 +40,7 @@ class Gemma3MultiModalProjector(Module, Shardable):
         config: Gemma3ForConditionalGenerationConfig,
         device: DeviceRef | None = None,
     ):
-        """Prepare the normalisation and projection weights based on config"""
+        """Prepare the normalisation and projection weights based on config."""
         super().__init__()
 
         self.config = config
@@ -70,8 +72,10 @@ class Gemma3MultiModalProjector(Module, Shardable):
         self.kernel_size = self.patches_per_image // self.tokens_per_side
 
     def __call__(self, vision_outputs: TensorValue) -> TensorValue:
-        """Process vision outputs through pooling, normalisation, and a
-        projection weight"""
+        """Pools the vision output and projects it into the text width.
+
+        The config's ``mm_pooling_kernel_size`` sets the pooling window.
+        """
         batch_size, _, seq_length = vision_outputs.shape
 
         transposed_vision_outputs = vision_outputs.transpose(1, 2)
@@ -114,6 +118,7 @@ class Gemma3MultiModalProjector(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the projection weight is split across devices."""
         return self.mm_input_projection_weight.sharding_strategy
 
     @sharding_strategy.setter
@@ -124,6 +129,7 @@ class Gemma3MultiModalProjector(Module, Shardable):
     def shard(
         self, devices: Iterable[DeviceRef]
     ) -> list[Gemma3MultiModalProjector]:
+        """Splits the projection weight across ``devices``."""
         assert self.sharding_strategy
 
         projection_weight_shards = self.mm_input_projection_weight.shard(
@@ -181,8 +187,11 @@ class Gemma3VisionMLP(Module):
         )
 
     def __call__(self, x: TensorValue):
-        """Expands hidden states to intermediate size, applies GELU activation,
-        then projects back to hidden size."""
+        """Runs the vision MLP.
+
+        The hidden states expand to the intermediate width, pass through a GELU,
+        and come back to the hidden width.
+        """
         x = self.fc1(x)
         x = ops.gelu(x, self.config.vision_config.hidden_act)
         x = self.fc2(x)
@@ -190,6 +199,7 @@ class Gemma3VisionMLP(Module):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the MLP's weights are split across devices."""
         return self.fc1.sharding_strategy
 
     @sharding_strategy.setter
@@ -198,6 +208,7 @@ class Gemma3VisionMLP(Module):
         self.fc2.sharding_strategy = strategy
 
     def shard(self, devices: Iterable[DeviceRef]) -> list[Gemma3VisionMLP]:
+        """Splits the MLP's weights across ``devices``."""
         assert self.sharding_strategy
 
         fc1_shards = self.fc1.shard(devices)

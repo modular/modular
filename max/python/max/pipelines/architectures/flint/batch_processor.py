@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Ragged batching for Flint."""
 
 from __future__ import annotations
@@ -28,6 +27,8 @@ from .inputs import FlintInputs
 class FlintBatchProcessor(
     ModuleV3SingleReplicaBatchProcessor[TextContext, FlintInputs]
 ):
+    """Flint's input packing for the ModuleV3 batch processor."""
+
     def _make_inputs(
         self,
         *,

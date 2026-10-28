@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """The Engram n-gram module: hash+gather through main's op, signed-sqrt gate.
 
 The V4.1 Engram mechanism, as one shared ``engram`` subgraph that runs before

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The MiniMax-M2 pipeline model."""
 
 from __future__ import annotations
 
@@ -45,6 +46,7 @@ class MiniMaxM2Inputs(Llama3Inputs):
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
+        """The step's buffers, in the graph's input order."""
         # Must match MiniMaxM2.input_types / the graph-input unpacking:
         #   tokens, input_row_offsets, return_n_logits,
         #   [data_parallel_splits, host_input_row_offsets]  (DP attention only),

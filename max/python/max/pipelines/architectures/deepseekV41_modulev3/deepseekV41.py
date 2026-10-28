@@ -614,6 +614,7 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
         input_row_offsets: Tensor,
         *rest: Tensor,
     ) -> ModuleV3Outputs:
+        """Runs the model over its graph inputs."""
         data_parallel_splits: Tensor | None = None
         input_row_offsets_i64: Tensor | None = None
         if self.dp > 1:

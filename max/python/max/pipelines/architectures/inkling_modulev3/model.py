@@ -87,6 +87,11 @@ class InklingModel(
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
         max_batch_size: int = 1,
     ) -> None:
+        """Loads both towers and binds the vision callable.
+
+        The vision tower is compiled separately from the language model, so
+        the batch processor receives it to encode image patches.
+        """
         super().__init__(
             pipeline_config,
             session,
@@ -107,8 +112,11 @@ class InklingModel(
 
     @override
     def _load_state_dict(self) -> dict[str, Any]:
-        """Splits the checkpoint between the two modules the towers compile
-        from."""
+        """Splits the checkpoint between the two towers' weight dicts.
+
+        Names under the vision prefix keep their suffix; the language entries
+        drop the prefix and take the expert scale renaming.
+        """
         state_dict = super()._load_state_dict()
         self._vision_weights_dict = {
             name.removeprefix(VISION_PREFIX): data
@@ -179,6 +187,7 @@ class InklingModel(
         )
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
+        """Runs the compiled model and returns its logits and offsets."""
         assert isinstance(model_inputs, InklingInputs)
         outputs = self.model(*model_inputs.buffers)
         logits = outputs.logits

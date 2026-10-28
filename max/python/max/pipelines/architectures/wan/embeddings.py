@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Timestep embeddings for the Wan transformer."""
 
 from __future__ import annotations
 
@@ -33,6 +34,7 @@ def get_timestep_embedding(
     scale: float = 1,
     max_period: int = 10000,
 ) -> TensorValue:
+    """Builds the sinusoidal embedding of each timestep."""
     half_dim = embedding_dim // 2
     exponent = -math.log(max_period) * ops.range(
         0, half_dim, dtype=DType.float32, device=timesteps.device
@@ -104,6 +106,8 @@ def apply_rotary_emb_fused(
 
 
 class Timesteps(Module):
+    """Turns a timestep scalar into sinusoidal embeddings."""
+
     def __init__(
         self,
         num_channels: int,
@@ -118,6 +122,7 @@ class Timesteps(Module):
         self.scale = scale
 
     def __call__(self, timesteps: TensorValue) -> TensorValue:
+        """Embeds ``timesteps`` at the configured frequencies."""
         return get_timestep_embedding(
             timesteps,
             self.num_channels,
@@ -128,6 +133,8 @@ class Timesteps(Module):
 
 
 class TimestepEmbedding(Module):
+    """Projects timestep embeddings through an MLP."""
+
     def __init__(
         self,
         in_channels: int,
@@ -185,6 +192,7 @@ class TimestepEmbedding(Module):
             self.post_act = None
 
     def __call__(self, sample: TensorValue) -> TensorValue:
+        """Runs ``sample`` through the projection, with the conditioning added."""
         if self.cond_proj is not None:
             sample = sample + self.cond_proj(sample)
         sample = self.linear_1(sample)

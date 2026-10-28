@@ -65,6 +65,8 @@ from .text_rotary import Qwen3VLTextRotaryEmbedding
 
 
 class Qwen3VLMoeTextDecoderLayer(Module):
+    """One Qwen3-VL-MoE decoder layer."""
+
     def __init__(
         self,
         rope: Qwen3VLTextRotaryEmbedding,
@@ -195,8 +197,10 @@ class Qwen3VLMoeTextDecoderLayer(Module):
         layer_idx: int,
         quant_config: QuantConfig | None,
     ) -> MLP | Qwen3VLMoE:
-        """Helper function to return a mixture of experts layer or traditional multi-layer perceptron layer
-        for the TransformerBlock's mlp depending on the layer idx.
+        """Returns the MLP the layer at ``layer_idx`` uses.
+
+        A Mixture of Experts layer replaces the plain MLP wherever ``config``
+        marks that layer as sparse.
 
         Args:
             config: Configuration object containing model parameters
@@ -418,8 +422,7 @@ class Qwen3VLMoEDecoder(DistributedLogitsPostprocessMixin, Module):
         custom_extensions: Iterable[Path] = (),
         is_device_graph: bool = False,
     ) -> Graph:
-        """Traces the language graph, whose inputs are :meth:`input_tree`'s
-        leaves.
+        """Traces the language graph, whose inputs are :meth:`input_tree`'s leaves.
 
         Args:
             *input_types: The graph's input types, the leaves of

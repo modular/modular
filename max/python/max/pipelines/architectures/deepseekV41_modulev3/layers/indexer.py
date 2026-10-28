@@ -96,9 +96,10 @@ _store_compressed_op = F.functional(store_compressed_kv)
 
 
 class _Weight(Module[..., None]):
-    """A bare ``.weight`` leaf: the checkpoint path
-    ``...indexer.{wk,weights_proj}.weight`` maps attribute -> sub-module
-    -> ``weight``, so each parameter is a one-attribute module.
+    """A bare ``.weight`` leaf wrapping one parameter.
+
+    The checkpoint path ``...indexer.{wk,weights_proj}.weight`` maps attribute
+    -> sub-module -> ``weight``, so each parameter is a one-attribute module.
     """
 
     def __init__(self, shape: list[int], dtype: DType) -> None:

@@ -90,6 +90,7 @@ class UnifiedMTPGlm5_2(Module[..., tuple[Tensor, ...]]):
         return self.driver().input_types(self.kv_params)
 
     def forward(self, *inputs: Tensor) -> tuple[Tensor, ...]:
+        """Runs the graph through its block driver."""
         driver = self.driver()
         named = driver.decode_inputs(inputs, self.kv_params)
         return driver(

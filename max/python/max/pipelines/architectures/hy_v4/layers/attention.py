@@ -57,8 +57,11 @@ _EPS = 1e-6
 
 
 def _neox_to_interleaved(x: Tensor, rope_dim: int) -> Tensor:
-    """Reorders the trailing ``rope_dim`` columns ``[a.., b..]`` to
-    ``[a0, b0, a1, b1, ..]``, so an interleaved rotation applies NeoX's."""
+    """Reorders the trailing ``rope_dim`` columns to interleaved order.
+
+    ``[a.., b..]`` becomes ``[a0, b0, a1, b1, ..]``, so an interleaved rotation
+    applies NeoX's layout.
+    """
     nope, rope = F.split(x, [int(x.shape[-1]) - rope_dim, rope_dim], axis=-1)
     lead = list(rope.shape[:-1])
     rope = rope.reshape([*lead, 2, rope_dim // 2]).transpose(-1, -2)
@@ -162,7 +165,6 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
         the indexer stay replicated, since every device needs the full
         latent, its own cache copy and the shared top-k.
         """
-
         mesh = self.kv_b_proj.mesh
         rows = NamedMapping(mesh, (TP, None))
         self.q_b_proj = self.q_b_proj.to(rows)

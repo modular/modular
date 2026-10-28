@@ -67,6 +67,7 @@ class Gemma3TransformerBlock(Module[..., Tensor]):
         input_row_offsets: Tensor,
         **kwargs: Any,
     ) -> Tensor:
+        """Runs the block's attention, then its MLP."""
         residual = x
         attn_out = self.self_attn(
             self.input_layernorm(x),

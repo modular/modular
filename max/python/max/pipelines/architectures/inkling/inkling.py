@@ -78,8 +78,7 @@ from .state_cache import ConvSite, InklingConvStateLayout
 
 
 class InklingDecoderLayer(Module):
-    """One decoder layer: attention and feed-forward, each with an output
-    conv."""
+    """One decoder layer: attention and feed-forward, each with an output conv."""
 
     def __init__(
         self,

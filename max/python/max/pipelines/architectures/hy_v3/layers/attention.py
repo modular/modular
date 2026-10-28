@@ -10,9 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Hy3 GQA attention: per-head_dim Q/K RMSNorm, split-half RoPE, causal
-flash attention. ``q_norm`` / ``k_norm`` gammas are ``[head_dim]`` and
-broadcast over the heads dim.
+"""Hy3 GQA attention with Q/K RMSNorm and split-half RoPE.
+
+The causal flash attention norms each head's Q and K over ``head_dim`` and
+rotates them with split-half RoPE. ``q_norm`` / ``k_norm`` gammas are
+``[head_dim]`` and broadcast over the heads dim.
 
 Sharding is tensor-parallel (TP), modeled on MAX's native
 ``AttentionWithRope`` / ``TensorParallelAttentionWithRope`` and the Qwen3
@@ -148,6 +150,7 @@ class HYV3Attention(Module, Shardable):
 
     @property
     def wqkv(self) -> TensorValue:
+        """The concatenated q, k, and v projection weights."""
         wq: TensorValue = self.q_proj.weight
         wk: TensorValue = self.k_proj.weight
         wv: TensorValue = self.v_proj.weight
@@ -155,6 +158,7 @@ class HYV3Attention(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """The attention's sharding strategy, or ``None``."""
         return self._sharding_strategy
 
     @sharding_strategy.setter
@@ -229,6 +233,7 @@ class HYV3Attention(Module, Shardable):
         self._sharding_strategy = strategy
 
     def shard(self, devices: Iterable[DeviceRef]) -> list[HYV3Attention]:
+        """Returns one replica per device, sharded as the strategy says."""
         if not self._sharding_strategy:
             raise ValueError(
                 "HYV3Attention layer cannot be sharded: no sharding "
@@ -299,6 +304,7 @@ class HYV3Attention(Module, Shardable):
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
+        """Runs the attention over ``x``."""
         total_seq_len = x.shape[0]
         head_dim = self.kv_params.head_dim
 

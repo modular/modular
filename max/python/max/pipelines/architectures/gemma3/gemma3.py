@@ -207,6 +207,7 @@ class Gemma3TextModel(DistributedLogitsPostprocessMixin, Module):
         input_row_offsets: Sequence[TensorValue],
         **kwargs,
     ) -> DecoderOutputs:
+        """Run the decoder layers and return their logits."""
         h = self.embed_tokens(tokens, signal_buffers)
 
         kv_collections_by_type = {
@@ -328,6 +329,7 @@ class Gemma3(Module):
         return_n_logits: TensorValue,
         input_row_offsets: Sequence[TensorValue],
     ) -> DecoderOutputs:
+        """Run the language model on the tokens and return its logits."""
         return self.language_model(
             tokens,
             signal_buffers,

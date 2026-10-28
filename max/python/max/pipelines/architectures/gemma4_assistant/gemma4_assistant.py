@@ -120,6 +120,7 @@ class Gemma4AssistantAttention(Module, Shardable):
         kv_collection: PagedCacheValues,
         **kwargs: object,
     ) -> TensorValue:
+        """Runs the assistant's attention over ``x``."""
         total_seq_len = x.shape[0]
 
         layer_idx = ops.constant(
@@ -191,6 +192,7 @@ class Gemma4AssistantAttention(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """The attention's sharding strategy, or ``None``."""
         return self._sharding_strategy
 
     @sharding_strategy.setter
@@ -222,6 +224,7 @@ class Gemma4AssistantAttention(Module, Shardable):
     def shard(
         self, devices: Iterable[DeviceRef]
     ) -> list[Gemma4AssistantAttention]:
+        """Returns one replica per device, sharded as the strategy says."""
         if not self.sharding_strategy:
             raise ValueError(
                 "Gemma4AssistantAttention layer cannot be sharded because "
@@ -349,6 +352,7 @@ class Gemma4AssistantDecoderLayer(Module):
         q_max_seq_len: TensorValue,
         **kwargs: object,
     ) -> list[TensorValue]:
+        """Runs the layer over its sharded hidden states."""
         residual = xs
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
         rope_cache_lengths_list = kwargs.get("rope_cache_lengths")
@@ -598,6 +602,7 @@ class Gemma4Assistant(Module):
         q_max_seq_len: TensorValue,
         rope_cache_lengths: Sequence[TensorValue] | None = None,
     ) -> DecoderOutputs:
+        """Runs the assistant over the target's hidden states."""
         n_devs = len(self.devices)
 
         kv_by_type: list[Sequence[PagedCacheValues]] = [

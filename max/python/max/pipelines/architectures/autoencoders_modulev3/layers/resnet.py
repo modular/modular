@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Resnet block for the ModuleV3 autoencoder."""
 
 from max import functional as F
 from max.driver import accelerator_api

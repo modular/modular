@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Graph API VAE encoder components for Flux2.
 
 Ports the ModuleV2-based encoder from autoencoders_modulev3/ to the Graph API
@@ -137,6 +136,7 @@ class ResnetBlock2D(Module):
     def __call__(
         self, x: TensorValue, temb: TensorValue | None = None
     ) -> TensorValue:
+        """Runs the residual block with its time embedding."""
         shortcut = (
             self.conv_shortcut(x) if self.conv_shortcut is not None else x
         )
@@ -250,6 +250,7 @@ class Downsample2D(Module):
             )
 
     def __call__(self, hidden_states: TensorValue) -> TensorValue:
+        """Downsamples the spatial axes of ``x``."""
         if self.use_conv and self.padding == 0:
             paddings = [0, 0, 0, 0, 0, 1, 0, 1]
             hidden_states = ops.pad(
@@ -337,6 +338,7 @@ class VAEAttention(Module):
         self.scale = 1.0 / math.sqrt(dim_head)
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Applies spatial self-attention with a residual."""
         residual = x
 
         x = self.group_norm(x)
@@ -435,6 +437,7 @@ class DownEncoderBlock2D(Module):
             self.downsamplers = LayerList([downsampler])
 
     def __call__(self, hidden_states: TensorValue) -> TensorValue:
+        """Runs the block's resnets and downsampler over ``x``."""
         for resnet in self.resnets:
             hidden_states = resnet(hidden_states, None)
 
@@ -538,6 +541,7 @@ class MidBlock2D(Module):
     def __call__(
         self, hidden_states: TensorValue, temb: TensorValue | None = None
     ) -> TensorValue:
+        """Runs the mid block's resnets and attention."""
         hidden_states = self.resnets[0](hidden_states, temb)
 
         attention_idx = 0
@@ -682,6 +686,7 @@ class Encoder(Module):
             )
 
     def __call__(self, sample: TensorValue) -> TensorValue:
+        """Runs the image through the encoder stack."""
         sample = self.conv_in(sample)
 
         for down_block in self.down_blocks:
@@ -699,6 +704,7 @@ class Encoder(Module):
         return sample
 
     def input_types(self) -> tuple[TensorType, ...]:
+        """The encoder's input types."""
         if self.dtype is None:
             raise ValueError("dtype must be set for input_types")
         if self.device is None:
@@ -793,6 +799,7 @@ class Upsample2D(Module):
             )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Upsamples the spatial axes of ``x``."""
         if self._interpolate:
             x = interpolate_2d_nearest(x, scale_factor=2)
         if self.use_conv and self.conv is not None:
@@ -858,6 +865,7 @@ class UpDecoderBlock2D(Module):
     def __call__(
         self, hidden_states: TensorValue, temb: TensorValue | None = None
     ) -> TensorValue:
+        """Runs the block's resnets and upsampler over ``x``."""
         for resnet in self.resnets:
             hidden_states = resnet(hidden_states, temb)
         if self.upsamplers is not None:
@@ -999,6 +1007,7 @@ class Decoder(Module):
     def __call__(
         self, z: TensorValue, temb: TensorValue | None = None
     ) -> TensorValue:
+        """Runs the latent through the decoder stack."""
         if self.post_quant_conv is not None:
             z = self.post_quant_conv(z)
         sample = self.conv_in(z)
@@ -1013,6 +1022,7 @@ class Decoder(Module):
         return sample
 
     def input_types(self) -> tuple[TensorType, ...]:
+        """The decoder's input types."""
         if self.dtype is None:
             raise ValueError("dtype must be set for input_types")
         if self.device is None:

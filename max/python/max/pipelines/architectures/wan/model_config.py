@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Wan configuration."""
 
 from typing import Any
 
@@ -60,6 +61,8 @@ def build_wan_fp8_quant_config() -> QuantConfig:
 
 
 class WanConfigBase(MAXModelConfigBase):
+    """The transformer's shapes, shared by every Wan checkpoint."""
+
     # Defaults mirror diffusers WanTransformer3DModel constructor defaults.
     patch_size: tuple[int, int, int] = (1, 2, 2)
     num_attention_heads: int = 40
@@ -85,12 +88,15 @@ class WanConfigBase(MAXModelConfigBase):
 
 
 class WanConfig(WanConfigBase):
+    """Wan configuration, read from the checkpoint."""
+
     @staticmethod
     def generate(
         config_dict: dict[str, Any],
         encoding: SupportedEncoding,
         devices: list[Device],
     ) -> "WanConfig":
+        """Builds the config from the model index's transformer section."""
         init_dict = {
             key: value
             for key, value in config_dict.items()

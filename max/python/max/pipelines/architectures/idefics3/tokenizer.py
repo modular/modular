@@ -180,7 +180,6 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         self, request: TextGenerationRequest
     ) -> TextAndVisionContext:
         """Create a new TextAndVisionContext object, leveraging necessary information from TextGenerationRequest."""
-
         prompt: str | Sequence[int]
         add_special_tokens = True
         if request.prompt is not None:

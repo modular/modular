@@ -59,6 +59,8 @@ class DeepseekV3NextNInputs(DeepseekV3Inputs):
 
 
 class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
+    """The DeepSeek-V3 speculative model and its draft head."""
+
     model_config_cls: ClassVar[type[Any]] = DeepseekV3NextNConfig
     batch_processor_cls: ClassVar[type[DeepseekV3NextNBatchProcessor]] = (
         DeepseekV3NextNBatchProcessor
@@ -279,6 +281,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
         self,
         model_inputs: ModelInputs,
     ) -> ModelOutputs:
+        """Runs the model on one batch of inputs."""
         assert isinstance(model_inputs, DeepseekV3NextNInputs)
 
         if model_inputs.hidden_states is None:

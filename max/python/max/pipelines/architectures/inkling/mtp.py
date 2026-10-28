@@ -224,6 +224,7 @@ class InklingMultiTokenPredictor(Module):
         return hs
 
     def log_scaling(self, positions: TensorValue) -> TensorValue:
+        """The log-scaling factor the draft applies at ``positions``."""
         text_config = self.config.text_config
         return log_scaling_tau(
             positions,
@@ -236,8 +237,11 @@ class InklingMultiTokenPredictor(Module):
     ) -> tuple[
         list[list[BufferValue]], list[list[TensorValue]], list[TensorValue]
     ]:
-        """Returns one depth's conv pools, slot tables and layer rows: a
-        single zeroed slot that every row reads.
+        """Returns one depth's conv pools, slot tables and layer rows.
+
+        They are a single zeroed slot that every row reads. The depths never
+        commit their conv state, so their taps before a chunk read zero, which a
+        pool the graph creates zeroed holds.
 
         The depths never commit their conv state, so their taps before a
         chunk read zero, which a pool the graph creates zeroed holds.
@@ -311,6 +315,7 @@ class InklingMultiTokenPredictor(Module):
         return hs
 
     def __call__(self, *args: object, **kwargs: object) -> list[TensorValue]:
+        """Raises, because each draft depth runs through ``forward_depth``."""
         raise TypeError(
             "InklingMultiTokenPredictor is invoked per depth via forward_depth"
         )

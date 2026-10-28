@@ -150,6 +150,7 @@ class Step3p5Attention(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the attention weights are split across devices."""
         return self._sharding_strategy
 
     @sharding_strategy.setter
@@ -199,6 +200,7 @@ class Step3p5Attention(Module, Shardable):
         self._sharding_strategy = strategy
 
     def shard(self, devices: Iterable[DeviceRef]) -> list[Step3p5Attention]:
+        """Splits the attention weights across ``devices``."""
         if not self._sharding_strategy:
             raise ValueError(
                 "Step3p5Attention layer cannot be sharded because no sharding "

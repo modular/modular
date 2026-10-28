@@ -63,6 +63,7 @@ class MuseSparkRouter(MoEGate):
         self.routed_scaling_factor = routed_scaling_factor
 
     def forward(self, hidden_state: Tensor) -> tuple[Tensor, Tensor]:
+        """Returns each token's top-k experts and their weights."""
         logits = self.gate_score(hidden_state.cast(DType.float32))
         scores = F.sigmoid(logits * self.output_multiplier)
         _, topk_idx = F.top_k(
@@ -162,6 +163,7 @@ class MuseSparkMoE(QuantizedMoE):
         )
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the routed experts over the pre-expert projection of ``x``."""
         router_idx, router_weight = self.gate(x)
         h = self.pre_expert_norm(self.pre_expert_proj(x))
         out = F.call_on_mesh(

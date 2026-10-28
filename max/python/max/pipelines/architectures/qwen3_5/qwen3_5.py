@@ -194,6 +194,7 @@ class Qwen3_5FullAttentionBlock(Module):
         input_row_offsets: list[TensorValue],
         freq_row_ids: list[TensorValue] | None = None,
     ) -> list[TensorValue]:
+        """Runs the block over its sharded hidden states."""
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
         # `o_proj` is row-parallel, so each device holds a partial sum.
         attn_outs = self.allreduce(
@@ -306,6 +307,7 @@ class Qwen3_5LinearAttentionBlock(Module):
         state: list[GatedDeltaStateAccess],
         input_row_offsets: list[TensorValue],
     ) -> list[TensorValue]:
+        """Runs the linear-attention block and advances its recurrent state."""
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
         # Each device owns a slice of the value heads, so `out_proj` emits a
         # partial sum over the full hidden dim. The state rows arrive already
@@ -344,8 +346,11 @@ class Qwen3_5LinearAttentionBlock(Module):
 def rotary_embedding(
     config: Qwen3_5Config, *, mrope: bool
 ) -> Llama3RotaryEmbedding:
-    """Returns the full-attention layers' rotary embedding, which rotates
-    only the partial rotary dims, over 3-axis positions under ``mrope``."""
+    """Returns the rotary embedding for the full-attention layers.
+
+    It rotates only the partial rotary dims, over 3-axis positions when
+    ``mrope`` is set.
+    """
     rotary_dim = int(
         config.attn_kv_params.head_dim * config.partial_rotary_factor
     )
@@ -373,8 +378,9 @@ def rotary_embedding(
 
 
 def norm_factory(config: Qwen3_5Config) -> Callable[..., RMSNorm]:
-    """Returns the factory of Qwen3.5's RMSNorms, which scale by
-    ``1 + weight``.
+    """Returns the factory for Qwen3.5's RMSNorms.
+
+    Every norm it builds scales by ``1 + weight``.
 
     Raises:
         ValueError: If the config doesn't name RMSNorm and its epsilon.
@@ -762,8 +768,9 @@ class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
         custom_extensions: Iterable[Path] = (),
         is_device_graph: bool = False,
     ) -> Graph:
-        """Traces the language graph, whose inputs are the leaves of
-        :meth:`input_tree` for :attr:`kv_params`.
+        """Traces the language graph for :attr:`kv_params`.
+
+        The graph's inputs are the leaves of :meth:`input_tree`.
 
         Adapts the flat graph inputs to :meth:`__call__`: splits the cache
         into its attention collections and recurrent state, and passes the

@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The MPNet encoder as a MAX graph."""
+
 from __future__ import annotations
 
 import math
@@ -28,8 +30,7 @@ from .model_config import MPNetConfig
 
 
 class MPNetEmbeddings(Module):
-    """An embeddings layer that combines the tokens embeddings and positions
-    embeddings."""
+    """An embeddings layer combining token and position embeddings."""
 
     def __init__(self, config: MPNetConfig) -> None:
         hf_config = self.config = config.huggingface_config
@@ -56,6 +57,7 @@ class MPNetEmbeddings(Module):
         )
 
     def __call__(self, input_ids: TensorValue) -> TensorValue:
+        """Embeds ``input_ids`` and adds their positions."""
         position_ids = _create_position_ids_from_input_ids(
             input_ids, self.config.pad_token_id
         )
@@ -116,6 +118,7 @@ class MPNetSelfAttention(Module):
         )
 
     def transpose_for_scores(self, x: TensorValue) -> TensorValue:
+        """Splits the last dim into attention heads."""
         new_x_shape = x.shape[:-1] + [
             self.num_attention_heads,
             self.attention_head_size,
@@ -129,6 +132,7 @@ class MPNetSelfAttention(Module):
         attention_mask: TensorValue,
         position_bias: TensorValue,
     ) -> TensorValue:
+        """Runs the scaled dot-product attention."""
         q = self.q(hidden_states)
         k = self.k(hidden_states)
         v = self.v(hidden_states)
@@ -181,6 +185,7 @@ class MPNetAttention(Module):
         attention_mask: TensorValue,
         position_bias: TensorValue,
     ) -> TensorValue:
+        """Runs the attention block and its output projection."""
         attn_output = self.attn(hidden_states, attention_mask, position_bias)
         return self.layer_norm(attn_output + hidden_states)
 
@@ -204,6 +209,7 @@ class MPNetIntermediate(Module):
         )
 
     def __call__(self, hidden_states: TensorValue) -> TensorValue:
+        """Runs the feed-forward's dense layer and activation."""
         hidden_states = self.dense(hidden_states)
         hidden_states = self.intermediate_act_fn(hidden_states)
         return hidden_states
@@ -233,6 +239,7 @@ class MPNetOutput(Module):
     def __call__(
         self, hidden_states: TensorValue, input_tensor: TensorValue
     ) -> TensorValue:
+        """Runs the feed-forward's output layer, adding its input."""
         hidden_states = self.dense(hidden_states)
         hidden_states = self.layer_norm(hidden_states + input_tensor)
         return hidden_states
@@ -252,6 +259,7 @@ class MPNetLayer(Module):
         attention_mask: TensorValue,
         position_bias: TensorValue,
     ) -> TensorValue:
+        """Runs the attention block, then the feed-forward."""
         attention_output = self.attention(
             hidden_states, attention_mask, position_bias=position_bias
         )
@@ -283,12 +291,14 @@ class MPNetEncoder(Module):
     def __call__(
         self, hidden_states: TensorValue, attention_mask: TensorValue
     ) -> TensorValue:
+        """Runs the encoder's layers over ``hidden_states``."""
         position_bias = self.compute_position_bias(hidden_states)
         for layer in self.layer.layers:
             hidden_states = layer(hidden_states, attention_mask, position_bias)
         return hidden_states
 
     def compute_position_bias(self, hidden_states: TensorValue) -> TensorValue:
+        """Builds the relative-position attention bias."""
         shape = hidden_states.shape
         bsz, qlen, klen = shape[0], shape[1], shape[1]
         context_position = ops.range(
@@ -315,6 +325,7 @@ class MPNetEncoder(Module):
         num_buckets: int = 32,
         max_distance: int = 128,
     ) -> TensorValue:
+        """Maps relative positions onto their bias buckets."""
         n = -relative_position
 
         num_buckets //= 2
@@ -345,7 +356,8 @@ class MPNetEncoder(Module):
 class MPNetModel(Module):
     """The MPNet encoder model.
 
-    Based on the MPNetModel transformers implementation."""
+    Based on the MPNetModel transformers implementation.
+    """
 
     def __init__(self, config: MPNetConfig) -> None:
         self.embeddings = MPNetEmbeddings(config)
@@ -369,6 +381,7 @@ class MPNetModel(Module):
     def __call__(
         self, input_ids: TensorValue, attention_mask: TensorValue
     ) -> TensorValue:
+        """Runs the encoder over ``input_ids`` and the mask."""
         embedding_output = self.embeddings(input_ids=input_ids)
         extended_attention_mask = ops.reshape(
             attention_mask, ("batch_size", 1, 1, "seq_len")

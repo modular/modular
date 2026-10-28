@@ -58,6 +58,7 @@ class UnifiedMTPGlm5_2ModuleV3Model(UnifiedMTPGlm5_2Model):
 
     @cached_property
     def signal_buffers(self) -> list[Buffer]:
+        """The collectives' buffers, empty on a single device."""
         # A compiled graph declares signal buffers only when it spans more
         # than one device.
         if len(self.devices) <= 1:

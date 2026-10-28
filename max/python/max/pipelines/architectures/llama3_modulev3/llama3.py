@@ -178,6 +178,7 @@ class Llama3TextModel(
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
     ) -> ModuleV3Outputs:
+        """Runs the text model over the graph inputs."""
         h = self.embed_tokens(tokens)
 
         if self.embedding_multiplier != 1.0:
@@ -269,6 +270,7 @@ class Llama3(Module[..., ModuleV3Outputs]):
         input_row_offsets: Tensor,
         *variadic_args: Tensor,
     ) -> ModuleV3Outputs:
+        """Unflattens the KV inputs, then runs the text model."""
         kv_inputs = iter(x._graph_value for x in variadic_args)
         symbolic_inputs = self.kv_params.unflatten_kv_inputs(kv_inputs)
         kv_collections = tree.leaves(

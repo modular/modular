@@ -164,6 +164,7 @@ class LFM2FullAttention(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """The attention's sharding strategy, or ``None``."""
         return self._sharding_strategy
 
     @sharding_strategy.setter

@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Register the Gemma 3 ``ModuleV3`` architecture."""
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext

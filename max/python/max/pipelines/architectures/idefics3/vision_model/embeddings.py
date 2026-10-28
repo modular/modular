@@ -96,7 +96,6 @@ class Idefics3VisionEmbeddings(Module):
         Returns:
             Embeddings of shape [batch_size, num_patches, hidden_size].
         """
-
         batch_size = pixel_values.shape[0]
         max_im_h = pixel_values.shape[2]
         max_im_w = pixel_values.shape[3]

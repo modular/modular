@@ -85,6 +85,7 @@ class TransformerBlock(Module[..., Tensor]):
         kv_collection: PagedCacheValues,
         input_row_offsets: Tensor,
     ) -> Tensor:
+        """Runs the block's attention, then its MLP."""
         attended = self.self_attn(
             self.input_layernorm(x),
             kv_collection,

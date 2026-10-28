@@ -51,8 +51,7 @@ class MTPHYV4DraftArchConfig(HYV4Config):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> MultiKVCacheParams:
-        """Returns the target's MLA and indexer leaves, each holding the one
-        layer."""
+        """Returns the target's MLA and indexer leaves, each holding the one layer."""
         target = HYV4Config.construct_kv_params(
             huggingface_config,
             pipeline_config,
@@ -70,8 +69,11 @@ class MTPHYV4DraftArchConfig(HYV4Config):
     def build_module(
         cls, context: ModelLoadContext
     ) -> tuple[HYV4MultiTokenPredictor, HYV4Config]:
-        """Builds the MTP layer from the target's checkpoint, which
-        ``context`` names.
+        """Builds the MTP layer from the target's checkpoint.
+
+        ``context`` names it. It holds no weights: it compiles with those
+        :meth:`checkpoint_weights` returns. It embeds and projects through its
+        target's embedding and head, which its proposer reads.
 
         It holds no weights: it compiles with those
         :meth:`checkpoint_weights` returns. It embeds and projects through

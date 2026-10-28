@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Safetensor weight adapter for Flint checkpoints."""
 
 from __future__ import annotations
 
@@ -34,6 +35,7 @@ def convert_safetensor_state_dict(
     state_dict: dict[str, Weights],
     **unused_kwargs: object,
 ) -> dict[str, WeightData]:
+    """Maps the checkpoint's tensor names onto the module tree's."""
     converted: dict[str, WeightData] = {}
     for weight_name, value in state_dict.items():
         max_name = weight_name

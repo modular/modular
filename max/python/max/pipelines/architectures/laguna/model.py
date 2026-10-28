@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Laguna pipeline model."""
 
 from __future__ import annotations
 
@@ -84,6 +85,7 @@ class LagunaModel(AlwaysSignalBuffersMixin, LlamaModelBase):
     def estimate_activation_memory(
         cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
+        """Estimates the activation memory one forward pass needs."""
         encoding = _select_quantization_encoding(
             pipeline_config.model, LagunaConfig.DEFAULT_ENCODING
         )

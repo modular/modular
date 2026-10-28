@@ -38,6 +38,7 @@ from max.nn.legacy.stacked_linear import StackedLinear
 
 class Olmo2Attention(Module):
     """Implementation of the attention layer for the OLMo2 text model.
+
     Key differences of Olmo2 vs. Llama3:
     - Keys and queries are normalized after the QKV projection
     - RMSNorm is applied on full projection dimension (num_heads * head_dim)
@@ -61,6 +62,7 @@ class Olmo2Attention(Module):
         rms_norm_eps: float = 1e-6,
     ) -> None:
         """Initializes the attention layer.
+
         Args:
             rope: The rope layer to borrow the freq_cis value from.
             num_attention_heads: The number of attention heads.
@@ -75,7 +77,6 @@ class Olmo2Attention(Module):
             has_bias: Whether to use an attention bias.
             rms_norm_eps: Value to use for numerical stability in RMSNorm.
         """
-
         super().__init__()
         self.rope = rope
         self.n_heads = num_attention_heads
@@ -136,6 +137,12 @@ class Olmo2Attention(Module):
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
+        """Computes OLMo2 attention for the current tokens.
+
+        Keys and queries are RMS-normalized across the full projection
+        dimension before rope is applied, then attention runs against the
+        paged KV cache.
+        """
         total_seq_len = x.shape[0]
 
         # QKV matmul.

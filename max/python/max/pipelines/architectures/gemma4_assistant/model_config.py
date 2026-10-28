@@ -45,6 +45,8 @@ try:
 except ImportError:
 
     class Gemma4AssistantHFConfig(PretrainedConfig):  # type: ignore[no-redef]
+        """Fallback config for when ``transformers`` ships none."""
+
         model_type = "gemma4_assistant"
 
     try:
@@ -152,6 +154,7 @@ class Gemma4AssistantConfig:
         *,
         max_seq_len: int,
     ) -> Self:
+        """Builds the config from the pipeline configuration."""
         model_config = model_config or pipeline_config.model
         huggingface_config = model_config.huggingface_config
         if huggingface_config is None:
@@ -245,6 +248,7 @@ class Gemma4AssistantConfig:
         del kv_cache_config, cache_dtype
 
     def get_max_seq_len(self) -> int:
+        """The maximum sequence length the config allows."""
         return self.max_position_embeddings
 
     @classmethod
@@ -253,6 +257,7 @@ class Gemma4AssistantConfig:
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """Returns the checkpoint's ``max_position_embeddings``."""
         del model_config
         text_config = getattr(
             huggingface_config, "text_config", huggingface_config

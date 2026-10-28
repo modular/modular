@@ -75,8 +75,7 @@ unsplit prefill tile, which is far slower on a long cache."""
 def check_split_verify_rows(
     num_attention_heads: int, kv_params: CacheLeafParamInterface
 ) -> None:
-    """Refuses a speculative width whose verify step leaves a split group's
-    split-K decode route.
+    """Refuses a speculative width that overflows a group's verify step.
 
     A block draft (DFlash) verifies its block per request, and an
     autoregressive draft its drafts and the bonus token. ``num_draft_tokens``

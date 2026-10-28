@@ -99,10 +99,12 @@ def _relu2(x: TensorValue) -> TensorValue:
 def _weight_dtype(
     model_dtype: DType, quant_config: QuantConfig | None
 ) -> DType:
-    """Linear weight storage dtype. FP8 (per-tensor static) stores the weight
-    as ``float8_e4m3fn``; the ``quantized_matmul`` kernel quantizes the bf16
-    activation with ``input_scale`` and dequantizes. Otherwise the weight is the
-    model dtype."""
+    """Linear weight storage dtype.
+
+    FP8 (per-tensor static) stores the weight as ``float8_e4m3fn``; the
+    ``quantized_matmul`` kernel quantizes the bf16 activation with
+    ``input_scale`` and dequantizes. Otherwise the weight is the model dtype.
+    """
     if quant_config is not None:
         return DType.float8_e4m3fn
     return model_dtype
@@ -156,6 +158,7 @@ class NemotronHMLP(Module):
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Runs the MLP over ``x``."""
         return self.down_proj(_relu2(self.up_proj(x)))
 
 
@@ -220,6 +223,7 @@ class NemotronHExpertMLP(MLP):
         )
 
     def __call__(self, x: TensorValueLike) -> TensorValue:
+        """Runs one expert's MLP over ``x``."""
         x = TensorValue(x)
         return self.down_proj(_relu2(self.up_proj(x)))
 
@@ -339,6 +343,7 @@ class NemotronHMoEGate(MoEGate):
     def __call__(
         self, hidden_states: TensorValue
     ) -> tuple[TensorValue, TensorValue]:
+        """Scores each token's experts and returns the routing weights."""
         # Routing math in fp32 (matches the HF reference); the weights are cast
         # back to the activation dtype for the downstream combine matmul in
         # ``MoE.__call__``.
@@ -386,6 +391,7 @@ class NemotronHMoE(MoE):
 
     @property
     def gate_up_proj(self) -> TensorValue:
+        """The gate and up projections, stacked for the grouped matmul."""
         # Non-gated experts: the base property interleaves gate+up and would
         # AttributeError on our gate-less experts. Stack the up projections
         # only -> [num_experts, moe_intermediate_size, hidden]. FP8 experts
@@ -411,6 +417,7 @@ class NemotronHMoE(MoE):
         return ops.stack(scales, axis=0)
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Runs the routed and shared experts over ``x``."""
         # bf16 MoE (no quant_config): the base grouped-matmul path is exact.
         if self.quant_config is None:
             return super().__call__(x)
@@ -585,6 +592,7 @@ class NemotronHAttention(Module):
         kv_collection: PagedCacheValues,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
+        """Runs the attention over ``x``, reading and updating the KV cache."""
         total_seq_len = x.shape[0]
         if self.qkv_proj is None:
             q, k, v = self.q_proj(x), self.k_proj(x), self.v_proj(x)
@@ -734,6 +742,7 @@ class NemotronHMamba2Mixer(Module):
 
     @property
     def mamba_in_proj_out(self) -> int:
+        """The width the mixer's input projection produces."""
         return self.intermediate + self.conv_dim + self.nheads
 
     def _gated_group_rmsnorm(
@@ -935,6 +944,7 @@ class NemotronHBlock(Module):
             self.mixer = NemotronHMLP(config, quant_config=quant_config)
 
     def __call__(self, *args, **kwargs):
+        """Raises, because :class:`NemotronH` dispatches by layer kind instead."""
         raise RuntimeError(
             "NemotronHBlock dispatches per-kind in NemotronH.__call__; do not "
             "call the block directly."

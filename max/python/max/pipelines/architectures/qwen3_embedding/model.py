@@ -122,8 +122,10 @@ class Qwen3EmbeddingModel(
             devices: List of devices
             kv_cache_config: KV cache configuration
             weights: Model weights
+            memory_plan: The memory plan the model was sized against.
             adapter: Optional weight adapter
             return_logits: Return logits mode
+            max_batch_size: The largest batch the graph handles.
         """
         super().__init__(
             pipeline_config,

@@ -161,6 +161,7 @@ class HYV3Config(Llama3Config):
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """The checkpoint's hidden layer count."""
         # HF reports 80; the trailing MTP layer at index 80 is dropped
         # in the weight adapter (matches HF reference).
         return int(huggingface_config.num_hidden_layers)

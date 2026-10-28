@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Attention for Flint.
 
 Full attention layers run the sliding kernel with an identity rotation, so
@@ -114,6 +113,7 @@ class FlintAttention(Module[..., Tensor]):
 
     @property
     def wqkv_bias(self) -> Tensor | None:
+        """The concatenated q, k, and v projection biases, or ``None``."""
         if not self.has_bias:
             return None
         if (
@@ -134,6 +134,7 @@ class FlintAttention(Module[..., Tensor]):
         kv_collection: PagedCacheValues,
         **kwargs,
     ) -> Tensor:
+        """Runs the attention over ``x``."""
         total_seq_len = x.shape[0]
         layer_idx = F.constant(self.layer_idx, DType.uint32, device=CPU())
 

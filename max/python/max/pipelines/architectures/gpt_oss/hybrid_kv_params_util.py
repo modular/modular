@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Constructor for hybrid sliding + full KV trees"""
+"""Constructor for hybrid sliding + full KV trees."""
 
 from __future__ import annotations
 
@@ -41,6 +41,7 @@ def hybrid_swa_full_kv_params(
     sliding_v_head_dim: int | None = None,
     full_v_head_dim: int | None = None,
 ) -> MultiKVCacheParams:
+    """Builds the KV cache params for a mix of sliding and full layers."""
     sliding_layers = 0
     full_layers = 0
     for attention_type in layer_types:

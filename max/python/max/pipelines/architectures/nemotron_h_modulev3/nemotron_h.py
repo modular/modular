@@ -105,6 +105,7 @@ class NemotronHBlock(Module[..., Tensor]):
         self.capture_replay = capture_replay
 
     def forward(self, h: Tensor, *mixer_args: object) -> Any:
+        """Runs the block's mixer over ``h``."""
         # Row-parallel mixers leave partial sums; reduce before the residual add.
         if self.capture_replay:
             # A Mamba block that hands back the inputs of its state updates,
@@ -313,6 +314,7 @@ class NemotronH(Module[..., ModuleV3Outputs]):
         input_row_offsets: Tensor,
         *kv_inputs: Tensor,
     ) -> ModuleV3Outputs:
+        """Runs the decoder stack over the tokens."""
         if self.return_logits == ReturnLogits.VARIABLE:
             # Only `verify` builds the variable-logits range, from a host
             # count. This graph's count would land on the device, which

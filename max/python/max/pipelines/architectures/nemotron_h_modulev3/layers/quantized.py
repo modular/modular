@@ -223,9 +223,11 @@ def _place(weight: Tensor, parallelism: Parallelism) -> Tensor:
 def nvfp4_block_scale_shape(
     out_dim: int, in_dim: int, parallelism: Parallelism, num_devices: int
 ) -> list[int]:
-    """Returns the shape of an NVFP4 linear's interleaved block scales on
-    the devices.
+    """Returns the shape of an NVFP4 linear's interleaved block scales.
 
+    The shape covers the devices. Each device's share is interleaved on its own,
+    since the interleaved layout pads the output rows to whole 128-row granules.
+    The first axis holds the shares.
     Each device's share is interleaved on its own, since the interleaved
     layout pads the output rows to whole 128-row granules. The first axis
     holds the shares.
@@ -299,8 +301,7 @@ class NVFP4Linear(Module[[Tensor], Tensor]):
         self.weight_scale_2 = Tensor.zeros([], dtype=DType.float32)
 
     def placed(self, mesh: DeviceMesh) -> tuple[Tensor, Tensor]:
-        """Returns the weight and its block scales, each device holding its
-        share."""
+        """Returns the weight and its block scales, each device holding its share."""
         if not self.row_segments:
             return self.weight, self.weight_scale
         return (
@@ -311,8 +312,10 @@ class NVFP4Linear(Module[[Tensor], Tensor]):
     def device_params(
         self, mesh: DeviceMesh
     ) -> list[tuple[TensorValue, TensorValue, TensorValue]]:
-        """Returns each device's weight, interleaved block scales and global
-        scale, as the matmul reads them."""
+        """Returns each device's weight, block scales and global scale.
+
+        They come back interleaved and device-local, as the matmul reads them.
+        """
         weight, scales = self.placed(mesh)
         with ensure_context():
             return [
@@ -338,6 +341,7 @@ class NVFP4Linear(Module[[Tensor], Tensor]):
         return nvfp4_matmul(x, *params)
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the quantized linear over ``x``."""
         with ensure_context():
             shards = [
                 nvfp4_matmul(TensorValue(shard), *params)
@@ -358,9 +362,11 @@ class NVFP4Linear(Module[[Tensor], Tensor]):
 
 
 class RowGroupedLinear(Linear):
-    """A column-parallel linear whose weight rows stack parts, each split
-    across devices.
+    """A column-parallel linear whose weight rows stack parts.
 
+    Each part is split across devices. A plain split of the rows would give a
+    device whole parts, so the weight stays whole on the host as stored, and the
+    graph gives each device its share of every part.
     A plain split of the rows would give a device whole parts. The weight
     stays whole on the host as stored, and the graph gives each device its
     share of every part.
@@ -384,6 +390,7 @@ class RowGroupedLinear(Linear):
         return shard_segments(self.weight, self.row_segments, mesh)
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the grouped linear over ``x``."""
         weight = self.placed_weight(x.mesh)
         if self.quant_config is None:
             return x @ weight.T

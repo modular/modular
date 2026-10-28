@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Graph 1: Mistral3 text encoder component for Flux2Executor."""
 
 from __future__ import annotations

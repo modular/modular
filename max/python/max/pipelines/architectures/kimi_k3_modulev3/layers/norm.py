@@ -91,4 +91,5 @@ class KimiRMSNormGated(Module[[Tensor, Tensor], Tensor]):
         self.eps = eps
 
     def forward(self, x: Tensor, gate: Tensor) -> Tensor:
+        """Normalizes ``x`` and scales it by the gate."""
         return kimi_rms_norm_gated(x, self.weight, gate, self.eps)

@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """DeepSeek-V4 MoE, with hash routing on the first ``num_hash_layers`` layers.
 
 Reference: ``inference/model.py`` classes ``Gate``, ``Expert`` and ``MoE``.
@@ -146,6 +145,7 @@ class DeepseekV4Expert(Module):
     def __call__(
         self, x: TensorValue, weights: TensorValue | None = None
     ) -> TensorValue:
+        """Runs one expert's feed-forward over ``x``."""
         h = _swiglu(self.w1(x), self.w3(x), weights, self.swiglu_limit, x.dtype)
         return self.w2(h)
 
@@ -168,6 +168,7 @@ class DeepseekV4SharedExpert(Module):
         self.w2 = linear_for(config, self.intermediate, hidden, device)
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Runs the shared expert's feed-forward over ``x``."""
         gate_up = self.w13(x)
         width = int(gate_up.shape[-1])
         gate = gate_up[..., : self.intermediate]
@@ -684,8 +685,10 @@ class DeepseekV4MoE(Module):
             self.experts.keep_local_experts(num_devices, rank)
 
     def routed(self, x: TensorValue, token_ids: TensorValue) -> TensorValue:
-        """``[b, s, hidden]`` -> float32 ``[b, s, hidden]``, the reference's
-        ``y`` before its all-reduce: this module's experts' share only.
+        """Returns this module's experts' share of the routed output.
+
+        Takes ``[b, s, hidden]`` and returns float32 ``[b, s, hidden]``: the
+        reference's ``y`` before its all-reduce.
         """
         weights, indices = self.gate(x, token_ids)
         hidden = int(x.shape[-1])

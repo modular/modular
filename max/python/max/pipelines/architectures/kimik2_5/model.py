@@ -296,6 +296,7 @@ class KimiK2_5Model(
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
+        """The KV cache parameters, sized for the checkpoint's encoding."""
         encoding = _select_quantization_encoding(
             pipeline_config.model, KimiK2_5Config.DEFAULT_ENCODING
         )
@@ -356,8 +357,10 @@ class KimiK2_5Model(
     def build_vision_graph(
         cls, context: ModelLoadContext
     ) -> tuple[Graph, dict[str, Any]]:
-        """Builds the vision encoder's graph and the weights it loads, for a
-        caller that runs the language model itself."""
+        """Builds the vision encoder's graph and the weights it loads.
+
+        The caller runs the language model itself.
+        """
         state_dict = _state_dict_under(context, _VISION_PREFIXES)
         config = KimiK2_5Config.initialize(
             context.pipeline_config, max_seq_len=context.max_seq_len
@@ -403,8 +406,10 @@ class KimiK2_5Model(
         return_logits: ReturnLogits,
         return_hidden_states: ReturnHiddenStates,
     ) -> KimiK2_5TextConfig:
-        """Builds the language model's config, finalized against
-        ``state_dict``, which it may preshuffle in place."""
+        """Builds the language model's config, finalized against ``state_dict``.
+
+        The finalize may preshuffle ``state_dict`` in place.
+        """
         huggingface_config = pipeline_config.model.huggingface_config
         config = huggingface_config.text_config
         num_devices = len(pipeline_config.model.device_specs)
@@ -599,9 +604,11 @@ class KimiK2_5Model(
         }
 
     def load_model(self, session: InferenceSession) -> tuple[Model, Model]:
-        """Loads the vision and language graphs; implemented only by the
-        speculative-decoding subclasses that don't build through
-        :meth:`graph_specs` yet."""
+        """Loads the vision and language graphs.
+
+        Only the speculative-decoding subclasses implement it, the ones that do
+        not build through :meth:`graph_specs` yet.
+        """
         raise NotImplementedError
 
     @override
@@ -666,8 +673,10 @@ class KimiK2_5Model(
         self._eplb_stats_accumulator = self._eplb.accumulator
 
     def _vision_spec(self) -> GraphSpec:
-        """Returns the vision encoder of the modules
-        :meth:`_init_distributed_runtime` built."""
+        """Returns the vision encoder that was built.
+
+        It is the one :meth:`_init_distributed_runtime` produced.
+        """
         assert isinstance(self.nn_model, KimiK2_5)
         vision_encoder = self.nn_model.vision_encoder
         return GraphSpec(
@@ -684,8 +693,10 @@ class KimiK2_5Model(
         state_dict: dict[str, WeightData],
         module: GraphModule,
     ) -> tuple[Graph, dict[str, Any]]:
-        """Traces the vision encoder into ``module``, for the subclasses that
-        still load through ``load_model``."""
+        """Traces the vision encoder into ``module``.
+
+        The subclasses that still load through ``load_model`` build it this way.
+        """
         del config, state_dict
         spec = self._vision_spec()
         return spec.trace(module), dict(spec.weights_registry())
@@ -745,6 +756,7 @@ class KimiK2_5Model(
         self,
         model_inputs: ModelInputs,
     ) -> ModelOutputs:
+        """Runs the graphs over the prepared inputs."""
         assert isinstance(model_inputs, KimiK2_5ModelInputs)
         assert model_inputs.kv_cache_inputs is not None, (
             "KimiK2_5 requires KV cache inputs"
@@ -814,8 +826,7 @@ class KimiK2_5Model(
 def _state_dict_under(
     context: ModelLoadContext, prefixes: tuple[str, ...]
 ) -> dict[str, WeightData]:
-    """Adapts only the checkpoint's weights whose names start with
-    ``prefixes``."""
+    """Adapts only the checkpoint's weights whose names start with ``prefixes``."""
     assert context.adapter is not None
     return context.adapter(
         {

@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Implements the Flint model on the ModuleV3 API."""
 
 from __future__ import annotations
@@ -188,6 +187,7 @@ class FlintTextModel(
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
     ) -> ModuleV3Outputs:
+        """Runs the text model over the graph inputs."""
         kv_by_type = {SLIDING: sliding_kv, FULL: full_kv}
         h = self.embed_tokens(tokens)
 
@@ -264,6 +264,7 @@ class Flint(Module[..., ModuleV3Outputs]):
         input_row_offsets: Tensor,
         *variadic_args: Tensor,
     ) -> ModuleV3Outputs:
+        """Unflattens the hybrid KV leaves, then runs the text model."""
         # The variadic KV arguments are the tree's leaves, sliding child
         # first.
         sliding_kv, full_kv = unflatten_hybrid_kv(

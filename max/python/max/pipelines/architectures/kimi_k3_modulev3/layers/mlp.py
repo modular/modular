@@ -71,11 +71,13 @@ class KimiK3DenseMLP(Module[[Tensor], Tensor]):
         beta: float,
         linear_beta: float | None,
     ) -> None:
-        """Args:
-        hidden_size: Model width.
-        intermediate_size: FFN width.
-        beta: ``config.activation_situ_beta``.
-        linear_beta: ``config.activation_situ_linear_beta``.
+        """Builds the dense MLP.
+
+        Args:
+            hidden_size: Model width.
+            intermediate_size: FFN width.
+            beta: ``config.activation_situ_beta``.
+            linear_beta: ``config.activation_situ_linear_beta``.
         """
         super().__init__()
         self.beta = beta
@@ -92,6 +94,7 @@ class KimiK3DenseMLP(Module[[Tensor], Tensor]):
         )
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the dense MLP over ``x``."""
         activated = kimi_situ_and_mul(
             self.gate_up_proj(x),
             self.beta,

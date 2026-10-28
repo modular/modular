@@ -74,8 +74,11 @@ class DFlashKimiK25DraftArchConfig(ArchConfigWithBoundedMaxSeqLen):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        """Returns the draft's cache, in bfloat16 whatever the target caches
-        in, and as wide as the block it writes."""
+        """Returns the draft's cache.
+
+        It is bfloat16 whatever the target caches in, and as wide as the block
+        it writes.
+        """
         del cache_dtype
         speculative = pipeline_config.speculative
         assert speculative is not None
@@ -152,8 +155,10 @@ class DFlashKimiK25DraftArchConfig(ArchConfigWithBoundedMaxSeqLen):
 
 
 def _block_size(draft_hf: Any, pipeline_config: PipelineConfig) -> int:
-    """The block the draft was trained on, or one past the configured width
-    for a checkpoint that declares none."""
+    """The block the draft was trained on.
+
+    A checkpoint that declares none gets one past the configured width.
+    """
     speculative = pipeline_config.speculative
     assert speculative is not None
     return (

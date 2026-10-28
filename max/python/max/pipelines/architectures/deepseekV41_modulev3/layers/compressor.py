@@ -134,9 +134,10 @@ def _ring_save_slots(
     lengths: TensorValue,
     slots: TensorValue,
 ) -> TensorValue:
-    """``slots`` with ``-1`` on rows outside their request's live
-    ``ring_rows`` rows, so the ring save copies only the rows that
-    survive a wrap.
+    """Masks ``slots`` to the rows that survive a ring wrap.
+
+    Rows outside their request's live ``ring_rows`` rows become ``-1``, so the
+    ring save copies only the rows that survive a wrap.
 
     The live upper bound matters as much as the wrap bound: a captured
     decode pads its row axis past ``row_offsets[-1]``, and a padded
@@ -219,9 +220,10 @@ compress_pool_op = F.functional(_compress_pool)
 
 
 class _Weight(Module[..., None]):
-    """A bare ``.weight`` leaf: the checkpoint path
-    ``...compressor.{wkv,norm,wgate}.weight`` maps attribute -> sub-module
-    -> ``weight``, so each parameter is a one-attribute module.
+    """A bare ``.weight`` leaf wrapping one parameter.
+
+    The checkpoint path ``...compressor.{wkv,norm,wgate}.weight`` maps attribute
+    -> sub-module -> ``weight``, so each parameter is a one-attribute module.
     """
 
     def __init__(self, shape: Sequence[int], dtype: DType) -> None:

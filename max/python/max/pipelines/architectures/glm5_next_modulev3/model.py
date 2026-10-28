@@ -102,6 +102,7 @@ class Glm5NextModel(DeepseekV3_2Model):
         kv_cache_config: Any,
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
+        """The KV cache layout this architecture runs with."""
         return Glm5NextConfig.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,

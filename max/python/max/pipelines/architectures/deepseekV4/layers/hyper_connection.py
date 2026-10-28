@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """mHC -- manifold / hyper-connections, V4's replacement for the residual.
 
 Reference: ``inference/model.py`` ``Block.hc_pre`` / ``hc_post`` / ``hc_head``

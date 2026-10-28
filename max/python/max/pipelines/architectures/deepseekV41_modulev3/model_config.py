@@ -150,9 +150,11 @@ class DeepseekV41Config(ArchConfigWithKVCache):
     compress_rope_theta: float = 160000.0
 
     def get_kv_params(self) -> KVCacheParamInterface:
+        """The KV cache parameters for this config."""
         return self.kv_params
 
     def get_max_seq_len(self) -> int:
+        """The maximum sequence length the config allows."""
         return self.max_seq_len
 
     @staticmethod
@@ -229,6 +231,7 @@ class DeepseekV41Config(ArchConfigWithKVCache):
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """The longest sequence that fits the KV cache."""
         text_config = cls.get_text_config(huggingface_config)
         return upper_bounded_default(
             upper_bound=text_config.max_position_embeddings,

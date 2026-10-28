@@ -1183,6 +1183,7 @@ class DeepseekV41BatchProcessor(
         kv_params: KVCacheParamInterface,
         device_refs: list[DeviceRef],
     ) -> list[Any]:
+        """The symbolic inputs the batch processor builds."""
         # Signal buffers only with more than one device.
         inputs: list[Any] = ragged_kv_symbolic_inputs(
             kv_params=kv_params,
@@ -1224,6 +1225,7 @@ class DeepseekV41BatchProcessor(
         kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> DeepseekV41Inputs:
+        """Builds the first token inputs from the request batch."""
         self._submitted_replay_writes = None
         dp = self.config.data_parallel_degree
         if dp > 1:
@@ -1598,8 +1600,9 @@ class DeepseekV41Model(
     def build_module(
         cls, context: ModelLoadContext
     ) -> tuple[DeepseekV41, DeepseekV41Config]:
-        """Builds the trunk for a speculative pairing, without the DSpark
-        stages its adapter drops.
+        """Builds the trunk for a speculative pairing.
+
+        The DSpark stages the adapter drops are left out.
 
         A caller that sized the cache passes its KV params. The trunk is built
         without the Engram tables it reads, which the pairing's graph takes as
@@ -1747,8 +1750,7 @@ class DeepseekV41Model(
         return self._batching.vision_execute(selection, devices, packed)
 
     def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
-        """Returns the batch processor's embeddings for a batch with no new
-        images."""
+        """Returns the batch processor's embeddings for a batch with no new images."""
         return self._batching.empty_vision_embeddings(devices)
 
     def _create_model_config(
@@ -2101,6 +2103,7 @@ class DeepseekV41Model(
         return inputs
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
+        """Runs the model on one batch of inputs."""
         assert isinstance(model_inputs, DeepseekV41Inputs)
         # Inputs built directly by the batch processor carry no tables.
         model_inputs.engram_host_buffers = self._engram_host_buffers

@@ -55,6 +55,8 @@ PAD_VALUE = 1
 
 
 class MPNetPipelineModel(PipelineModel[TextContext, MPNetConfig]):
+    """The MPNet pipeline model."""
+
     model_config_cls: ClassVar[type[MPNetConfig]] = MPNetConfig
     batch_processor_cls: ClassVar[type[MPNetModuleV3BatchProcessor]] = (
         MPNetModuleV3BatchProcessor
@@ -95,6 +97,7 @@ class MPNetPipelineModel(PipelineModel[TextContext, MPNetConfig]):
         self.model = self.compiled_modules[GraphRole.ENCODER]
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
+        """Runs the encoder and returns its outputs."""
         assert isinstance(model_inputs, MPNetInputs)
         model_outputs = self.model(
             model_inputs.next_tokens_batch, model_inputs.attention_mask

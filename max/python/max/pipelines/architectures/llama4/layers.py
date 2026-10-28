@@ -53,6 +53,7 @@ class Llama4TextMoEGate(MoEGate):
     def __call__(
         self, hidden_state: TensorValue
     ) -> tuple[TensorValue, TensorValue]:
+        """Returns each token's top-k experts and their weights."""
         scores = self.gate_score(hidden_state)
         topk_scores, topk_indices = ops.top_k(
             scores, k=self.num_experts_per_token, axis=-1
@@ -189,6 +190,7 @@ class Llama4TextAttention(Module):
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
+        """Runs the attention over ``x``."""
         total_seq_len = x.shape[0]
         qkv = self.qkv_proj(x)
 

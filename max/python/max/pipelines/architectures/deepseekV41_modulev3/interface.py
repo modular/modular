@@ -541,10 +541,11 @@ class _BlockGroupConfig(Protocol):
 
 
 def block_group(config: _BlockGroupConfig, layer: int) -> str:
-    """The shared-subgraph body a layer runs: a window-only layer, a
-    KV-source owner (the candidate source among them), a reindex layer
-    that rescores the candidate source's keys, or a reuse layer that
-    inherits a source's selection.
+    """The shared-subgraph body a layer runs.
+
+    It is a window-only layer, a KV-source owner (the candidate source among
+    them), a reindex layer that rescores the candidate source's keys, or a reuse
+    layer that inherits a source's selection.
     """
     ratio = config.compress_ratios[layer]
     if ratio == 0:
@@ -629,6 +630,7 @@ class KVLeafSpec:
 
     @property
     def slots_per_page(self) -> int:
+        """The slots a cached page holds for this leaf."""
         if self.ring_rows is not None:
             return self.ring_rows
         return PAGE_SIZE // self.ratio if self.ratio else PAGE_SIZE
@@ -642,6 +644,7 @@ class KVLeafSpec:
 
     @property
     def dtype(self) -> DType:
+        """The dtype the leaf's cache is stored in."""
         if self.packed_format is not None:
             return DType.uint8
         return DType.float32 if self.float32 else DType.bfloat16
@@ -653,8 +656,7 @@ class KVLeafSpec:
 
 
 def kv_leaf_specs(config: V41Config) -> list[KVLeafSpec]:
-    """Returns the V4.1 KV leaves in params-tree order, dropping unused
-    ratios.
+    """Returns the V4.1 KV leaves in params-tree order, dropping unused ratios.
 
     Every layer owns the sliding-window leaf. Each compression ratio a KV
     source layer runs adds a compressed-record leaf, an index-key leaf
@@ -745,8 +747,7 @@ def build_kv_params(
     devices: Sequence[DeviceRef],
     data_parallel_degree: int = 1,
 ) -> MultiKVCacheParams:
-    """Builds one ``MultiKVCacheParams`` with a leaf per :func:`kv_leaf_specs`
-    entry.
+    """Builds one ``MultiKVCacheParams`` with a leaf per :func:`kv_leaf_specs` entry.
 
     Every leaf shares the token page size, so one block table serves all
     of them; per-page slots come from each spec: one per token on the

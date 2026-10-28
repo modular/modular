@@ -188,8 +188,7 @@ class DeepseekV2(Transformer):
         self.devices = config.devices
 
     def input_types(self) -> tuple[TensorType | BufferType, ...]:
-        """Returns the graph's input types; see
-        :func:`deepseekV2_input_types`."""
+        """Returns the graph's input types; see :func:`deepseekV2_input_types`."""
         return deepseekV2_input_types(self.devices, self.kv_params)
 
     def trace(
@@ -243,8 +242,7 @@ class DeepseekV2(Transformer):
         )
 
     def _get_mlp(self, config: DeepseekV2Config, i: int) -> Module:
-        """Helper function to return a mixture of experts layer or traditional multi-layer perceptron layer
-        for the TransformerBlock's mlp depending on the layer idx.
+        """Returns the MLP or MoE layer the TransformerBlock uses for a layer.
 
         Args:
             config: Configuration object containing model parameters

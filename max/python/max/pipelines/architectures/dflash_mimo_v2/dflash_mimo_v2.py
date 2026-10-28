@@ -116,6 +116,7 @@ class DFlashMiMoV2Attention(DFlashContextAttention):
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
+        """Runs the layer's windowed attention over ``x``."""
         config = self.config
         head_dim = config.head_dim
         q = self.q_norm(self.q_proj(x).reshape((-1, head_dim))).reshape(
@@ -177,6 +178,8 @@ class DFlashMiMoV2DecoderLayer(DFlashContextLayer):
         input_row_offsets: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue] | None,
     ) -> list[TensorValue]:
+        """Runs the block, all-reducing the sharded attention and MLP."""
+
         def reduce(xs: list[TensorValue]) -> list[TensorValue]:
             if len(xs) == 1:
                 return xs

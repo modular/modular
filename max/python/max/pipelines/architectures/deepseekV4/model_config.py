@@ -349,9 +349,11 @@ class DeepseekV4Config(ArchConfigWithKVCache):
             )
 
     def get_kv_params(self) -> KVCacheParamInterface:
+        """The KV cache parameters for this config."""
         return self.kv_params
 
     def get_max_seq_len(self) -> int:
+        """The maximum sequence length the config allows."""
         return self.max_seq_len
 
     @property
@@ -360,6 +362,7 @@ class DeepseekV4Config(ArchConfigWithKVCache):
         return self.head_dim - self.qk_rope_head_dim
 
     def layer_compress_ratio(self, layer_idx: int) -> int:
+        """The compression ratio the given layer runs with."""
         return self.compress_ratios[layer_idx]
 
     @property
@@ -368,9 +371,11 @@ class DeepseekV4Config(ArchConfigWithKVCache):
         return sorted(set(self.compress_ratios[: self.num_hidden_layers]) - {0})
 
     def layer_has_indexer(self, layer_idx: int) -> bool:
+        """Whether the given layer runs an indexer."""
         return self.compress_ratios[layer_idx] == 4
 
     def layer_is_hash_routed(self, layer_idx: int) -> bool:
+        """Whether the given layer routes by hash."""
         return layer_idx < self.num_hash_layers
 
     @property
@@ -391,6 +396,7 @@ class DeepseekV4Config(ArchConfigWithKVCache):
         )
 
     def kv_leaf_specs(self) -> list[KVLeafSpec]:
+        """The KV leaf specifications in params-tree order."""
         return kv_leaf_specs(
             compress_ratios=self.compress_ratios,
             num_hidden_layers=self.num_hidden_layers,
@@ -406,6 +412,7 @@ class DeepseekV4Config(ArchConfigWithKVCache):
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """The longest sequence that fits the KV cache."""
         return upper_bounded_default(
             upper_bound=huggingface_config.max_position_embeddings,
             default=model_config.max_length,
@@ -413,6 +420,7 @@ class DeepseekV4Config(ArchConfigWithKVCache):
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """The number of hidden layers in the checkpoint."""
         return huggingface_config.num_hidden_layers
 
     @staticmethod

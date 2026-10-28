@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""InternVL pipeline model: inputs, weight loading, and graph specs."""
+
 from __future__ import annotations
 
 import logging
@@ -90,6 +92,11 @@ class InternVLInputs(ModelInputs):
 def assert_image_embeddings_invariant(
     image_embeddings: Sequence[Buffer], image_token_indices: Sequence[Buffer]
 ) -> None:
+    """Asserts each device's embedding count matches its index count.
+
+    A mismatch makes the scatter run out of bounds, so the counts are logged
+    before the assertion.
+    """
     # Check for shape mismatch that causes scatter_nd OOB access.
     for i, (embed, indices) in enumerate(
         zip(image_embeddings, image_token_indices, strict=True)
@@ -135,6 +142,12 @@ class InternVLModel(
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
     ) -> None:
+        """Builds the pipeline model and compiles its two graphs.
+
+        ``load_graphs`` fills ``_models`` with the vision encoder and the
+        decoder, which :attr:`vision_model` and :attr:`language_model` read
+        back.
+        """
         super().__init__(
             pipeline_config,
             session,

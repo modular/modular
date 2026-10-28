@@ -80,8 +80,13 @@ class DSparkDeepseekV41DraftArchConfig(ArchConfigWithBoundedMaxSeqLen):
     def build_module(
         cls, context: ModelLoadContext
     ) -> tuple[DeepseekV41DSparkDrafter, DSparkDeepseekV41DraftConfig]:
-        """Builds the stages from the trunk's checkpoint, which ``context``
-        names.
+        """Builds the stages from the trunk's checkpoint ``context`` names.
+
+        The stages read the trunk's embedding and head, which their caller
+        passes in, so the checkpoint's ``mtp.*`` weights are all they load.
+        Their position tables cover the slack of the trunk's KV params, which
+        ``context`` carries.
+
 
         The stages read the trunk's embedding and head, which their caller
         passes in, so the checkpoint's ``mtp.*`` weights are all they load.

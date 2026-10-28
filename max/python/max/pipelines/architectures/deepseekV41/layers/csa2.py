@@ -636,8 +636,9 @@ def csa2_attention_mxfp8(
     window_entries: int = WINDOW_ENTRIES,
     rope_q: bool = False,
 ) -> tuple[TensorValue, TensorValue]:
-    """Returns :func:`csa2_attention`'s output as the MXFP8 input of the
-    grouped output projection.
+    """Returns :func:`csa2_attention`'s output as MXFP8 projection input.
+
+    The output feeds the grouped output projection.
 
     Each head's last 64 channels rotate back by the conjugate of ``freqs``,
     then every 32 channels quantize to E4M3 under an E8M0 scale, byte for
@@ -720,9 +721,11 @@ def _csa2_op(
     window_entries: int,
     rope_q: bool = False,
 ) -> list[TensorValue]:
-    """Builds a CSA2 attention op; with ``mxfp8_freqs``, its MXFP8 form,
-    whose outputs lead with the data and scales, and with ``rope_q`` too,
-    the form that rotates Q."""
+    """Builds a CSA2 attention op.
+
+    With ``mxfp8_freqs`` it is the op's MXFP8 form, whose outputs lead with the
+    data and scales; with ``rope_q`` too, the form that rotates Q.
+    """
     if (
         window_entries <= 0
         or window_entries % 64

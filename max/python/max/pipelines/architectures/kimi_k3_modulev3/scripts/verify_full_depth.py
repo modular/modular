@@ -10,27 +10,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Builds the real full-depth Kimi K3 (ModuleV3) model, loads the real
-0.4B bring-up fixture's checkpoint, and runs it with real weights as far as
-this hardware's kernels allow.
+r"""Runs the full-depth Kimi K3 model on the bring-up fixture's weights.
 
+It builds the real model, loads the real 0.4B fixture checkpoint, and runs it as
+far as this hardware's kernels allow.
 Not a bazel test and not tied to the registry -- it needs a real checkpoint on
 disk, which a hermetic bazel test cannot depend on. Run it through the
 library's own venv, which gives plain filesystem access this script needs:
 
     ./bazelw run //max/tests/integration/architectures/kimi_k3_modulev3:kda_attention_tests_gpu.venv
     source .max+tests+integration+architectures+kimi_k3_modulev3+kda_attention_tests_gpu.venv/bin/activate
-    python3 max/python/max/pipelines/architectures/kimi_k3_modulev3/scripts/verify_full_depth.py \\
-        --config /tmp/k3_04b_fixture/config.json \\
+    python3 max/python/max/pipelines/architectures/kimi_k3_modulev3/scripts/verify_full_depth.py \
+        --config /tmp/k3_04b_fixture/config.json \
         --checkpoint /tmp/k3_04b_fixture/model.safetensors
 
 The fixture is ``inference-optimization/Kimi-K3-0.40B`` -- the bring-up
 fixture named in ``max_private/kimi_k3/arch.py``'s ``example_repo_ids`` and in
 the Mach model registry's comment on this architecture. Fetch it with:
 
-    curl -sL "https://huggingface.co/inference-optimization/Kimi-K3-0.40B/resolve/main/config.json" \\
+    curl -sL "https://huggingface.co/inference-optimization/Kimi-K3-0.40B/resolve/main/config.json" \
         -o /tmp/k3_04b_fixture/config.json
-    curl -sL "https://huggingface.co/inference-optimization/Kimi-K3-0.40B/resolve/main/model.safetensors" \\
+    curl -sL "https://huggingface.co/inference-optimization/Kimi-K3-0.40B/resolve/main/model.safetensors" \
         -o /tmp/k3_04b_fixture/model.safetensors
 
 KNOWN BLOCKER, not a bug in this port: the real fixture's ``num_experts=8``
@@ -98,6 +98,7 @@ def _check_finite(name: str, array: np.ndarray) -> bool:
 
 
 def main() -> int:
+    """Runs the script's checks and reports what passed."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True)
     parser.add_argument("--checkpoint", required=True)

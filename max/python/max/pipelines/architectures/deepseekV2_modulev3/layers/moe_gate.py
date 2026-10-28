@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """DeepSeek-V2 Mixture of Experts gate (ModuleV3)."""
 
 from __future__ import annotations
@@ -44,17 +43,18 @@ class DeepSeekV2MoEGate(MoEGate):
         topk_group: int,
         routed_scaling_factor: float,
     ) -> None:
-        """
+        """Stores the router dimensions and routing parameters.
+
         Args:
-            hidden_dim: The dimension of the hidden state.
-            num_experts: The number of experts.
-            num_experts_per_token: The number of experts per token.
-            topk_method: The method to select the top-k experts. Supported
-                methods: "greedy", "group_limited_greedy"
-            n_group: The number of groups (with group_limited_greedy).
-            topk_group: The number of top k groups (with group_limited_greedy).
-            routed_scaling_factor: Scaling factor for the routed experts
-                when using group_limited_greedy top-k.
+        hidden_dim: The dimension of the hidden state.
+        num_experts: The number of experts.
+        num_experts_per_token: The number of experts per token.
+        topk_method: The method to select the top-k experts. Supported
+            methods: "greedy", "group_limited_greedy"
+        n_group: The number of groups (with group_limited_greedy).
+        topk_group: The number of top k groups (with group_limited_greedy).
+        routed_scaling_factor: Scaling factor for the routed experts
+            when using group_limited_greedy top-k.
         """
         super().__init__(
             hidden_dim=hidden_dim,

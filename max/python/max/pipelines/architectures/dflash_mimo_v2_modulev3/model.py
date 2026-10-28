@@ -70,8 +70,10 @@ class DFlashMiMoV2ModuleV3DraftArchConfig(DFlashMiMoV2DraftArchConfigBase):
     def checkpoint_weights(
         cls, context: ModelLoadContext, config: DFlashMiMoV2DraftConfig
     ) -> dict[str, Any]:
-        """Returns the weights the built drafter compiles with, checked
-        against its config."""
+        """Returns the weights the built drafter compiles with.
+
+        They are checked against its config.
+        """
         draft_model = context.pipeline_config.draft_model
         assert draft_model is not None
         state, _, _ = load_drafter(

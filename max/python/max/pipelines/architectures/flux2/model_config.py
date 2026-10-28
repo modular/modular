@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Flux2 quantization config and model config."""
 
 from __future__ import annotations
 
@@ -263,6 +264,8 @@ def _int8_w8a8_enabled(
 
 
 class Flux2Config(MAXModelConfigBase):
+    """Flux 2 configuration."""
+
     patch_size: int = 1
     in_channels: int = 128
     out_channels: int | None = None
@@ -305,6 +308,7 @@ class Flux2Config(MAXModelConfigBase):
         encoding: SupportedEncoding,
         devices: list[Device],
     ) -> Self:
+        """Builds the config from the checkpoint's ``config.json``."""
         init_dict = {
             key: value
             for key, value in config_dict.items()

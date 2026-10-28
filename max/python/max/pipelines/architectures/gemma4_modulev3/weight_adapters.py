@@ -24,9 +24,9 @@ from max.pipelines.architectures.gemma4.weight_adapters import (
 def convert_safetensor_state_dict(
     state_dict: dict[str, Weights], **unused_kwargs
 ) -> dict[str, WeightData]:
-    """Full-checkpoint adapter used by the registry: language + vision keys,
-    each re-prefixed to match the eager module trees.
+    """Maps the full checkpoint onto the eager module trees.
 
+    Both the language and vision keys go through, each re-prefixed to match.
     The two slices never collide: the language converter only accepts
     ``(model.)language_model.*`` keys and the vision converter only accepts
     ``model.vision_tower.*`` / ``model.embed_vision.*``.

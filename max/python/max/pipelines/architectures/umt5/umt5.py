@@ -531,6 +531,7 @@ class UMT5EncoderModel(Module):
         input_ids: TensorValue,
         attention_mask: TensorValue | None = None,
     ) -> TensorValue:
+        """Runs the encoder over the tokens and mask."""
         return self.encoder(input_ids, attention_mask)
 
 

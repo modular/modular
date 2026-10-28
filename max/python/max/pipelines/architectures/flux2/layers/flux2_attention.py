@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Attention and feed-forward layers for Flux2."""
 
 from __future__ import annotations
 
@@ -89,6 +90,8 @@ def _apply_flux2_qk_rope(
 
 
 class Flux2SwiGLU(Module):
+    """Gates half of the last axis by the SiLU of the other half."""
+
     def __call__(self, x: TensorValue) -> TensorValue:
         """Apply SwiGLU activation.
 
@@ -103,6 +106,8 @@ class Flux2SwiGLU(Module):
 
 
 class Flux2FeedForward(Module, Shardable):
+    """The transformer's feed-forward, built around a SwiGLU activation."""
+
     def __init__(
         self,
         dim: int,
@@ -175,6 +180,7 @@ class Flux2FeedForward(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the feed-forward's weights are split across devices."""
         return self._sharding_strategy
 
     @sharding_strategy.setter
@@ -204,6 +210,7 @@ class Flux2FeedForward(Module, Shardable):
         self._sharding_strategy = strategy
 
     def shard(self, devices: Iterable[DeviceRef]) -> list[Flux2FeedForward]:
+        """Splits the feed-forward across ``devices``."""
         if self._sharding_strategy is None:
             raise ValueError(
                 "Flux2FeedForward cannot be sharded without a sharding "
@@ -233,6 +240,8 @@ class Flux2FeedForward(Module, Shardable):
 
 
 class Flux2PosEmbed(Module):
+    """Rotary position embeddings over one axis per entry of ``axes_dim``."""
+
     def __init__(self, theta: int, axes_dim: tuple[int, ...]) -> None:
         """Initialize Flux2PosEmbed.
 
@@ -283,6 +292,8 @@ class Flux2PosEmbed(Module):
 
 
 class Flux2Attention(Module, Shardable):
+    """Attention with separate projections for the image and text streams."""
+
     def __init__(
         self,
         query_dim: int,
@@ -426,6 +437,7 @@ class Flux2Attention(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the attention weights are split across devices."""
         return self._sharding_strategy
 
     @sharding_strategy.setter
@@ -533,6 +545,7 @@ class Flux2Attention(Module, Shardable):
         return shard
 
     def shard(self, devices: Iterable[DeviceRef]) -> list[Flux2Attention]:
+        """Splits the attention across ``devices``."""
         if self._sharding_strategy is None:
             raise ValueError(
                 "Flux2Attention cannot be sharded without a sharding strategy."
@@ -737,6 +750,8 @@ class Flux2Attention(Module, Shardable):
 
 
 class Flux2ParallelSelfAttention(Module, Shardable):
+    """Runs the attention and the MLP as one parallel branch."""
+
     def __init__(
         self,
         query_dim: int,
@@ -772,6 +787,8 @@ class Flux2ParallelSelfAttention(Module, Shardable):
             devices: Devices for placement and tensor parallelism. The
                 un-sharded base lives on ``devices[0]``; ``shard()`` produces
                 one shard per device.
+            quant_config: The quantization to apply to the linear layers, or
+                none to keep them unquantized.
         """
         if mlp_mult_factor != 2:
             raise ValueError(
@@ -821,6 +838,7 @@ class Flux2ParallelSelfAttention(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the parallel attention weights are split across devices."""
         return self._sharding_strategy
 
     @sharding_strategy.setter
@@ -899,6 +917,7 @@ class Flux2ParallelSelfAttention(Module, Shardable):
     def shard(
         self, devices: Iterable[DeviceRef]
     ) -> list[Flux2ParallelSelfAttention]:
+        """Splits the parallel attention across ``devices``."""
         if self._sharding_strategy is None:
             raise ValueError(
                 "Flux2ParallelSelfAttention cannot be sharded without a "

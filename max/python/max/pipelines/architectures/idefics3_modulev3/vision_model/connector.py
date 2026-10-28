@@ -36,6 +36,7 @@ class Idefics3SimpleMLP(Module[[Tensor], Tensor]):
         self.proj = Linear(in_dim=input_size, out_dim=output_size, bias=False)
 
     def forward(self, x: Tensor) -> Tensor:
+        """Projects ``x`` to the connector's hidden size."""
         return self.proj(x)
 
 
@@ -82,6 +83,7 @@ class Idefics3Connector(Module[[Tensor], Tensor]):
         return x
 
     def forward(self, image_hidden_states: Tensor) -> Tensor:
+        """Pixel-shuffles the vision features and projects them."""
         image_hidden_states = self.pixel_shuffle(
             image_hidden_states, self.scale_factor
         )

@@ -76,6 +76,7 @@ class Gemma4VisionModel(Module[..., Tensor]):
         pool_gather_index: Tensor,
         max_seq_len: Tensor,
     ) -> Tensor:
+        """Runs the vision tower over the patches and pools each image."""
         hidden = self.patch_embedder(patches_flat, pixel_position_ids)
 
         freqs_cis = compute_vision_freqs_cis(

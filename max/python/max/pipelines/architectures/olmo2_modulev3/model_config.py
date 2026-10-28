@@ -151,10 +151,12 @@ class Olmo2Config(
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """The checkpoint's hidden layer count."""
         return huggingface_config.num_hidden_layers
 
     @staticmethod
     def calculate_attention_multiplier(huggingface_config: AutoConfig) -> float:
+        """The attention scale, from the checkpoint or the head width."""
         return getattr(
             huggingface_config,
             "attention_multiplier",

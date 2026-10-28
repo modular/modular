@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 # ruff: noqa: RUF002
 
-"""DeepSeek-V4 tool-call parser for the checkpoint's DSML format.
+r"""DeepSeek-V4 tool-call parser for the checkpoint's DSML format.
 
 DeepSeek-V4 writes tool calls after its content as::
 
-    \\n\\n<｜DSML｜tool_calls>
+    \n\n<｜DSML｜tool_calls>
     <｜DSML｜invoke name="get_weather">
     <｜DSML｜parameter name="location" string="true">Beijing</｜DSML｜parameter>
     <｜DSML｜parameter name="days" string="false">3</｜DSML｜parameter>
@@ -57,7 +57,7 @@ def _tool_name(name: str, call: Mapping[str, object]) -> str:
 
 @register("deepseekv4")
 class DeepseekV4ToolParser(StructuralTagToolParser):
-    """Parses DeepSeek-V4 ``<｜DSML｜tool_calls>`` blocks into tool calls.
+    r"""Parses DeepSeek-V4 ``<｜DSML｜tool_calls>`` blocks into tool calls.
 
     The router hands this parser content only: the ``deepseekv4`` reasoning
     parser has already moved everything up to ``</think>`` into reasoning.
@@ -66,7 +66,7 @@ class DeepseekV4ToolParser(StructuralTagToolParser):
     the reasoning.
 
     ``SECTION_BEGIN`` starts at the tag, because grammar enforcement matches
-    it by token id and the ``\\n\\n`` the reference decoder requires before
+    it by token id and the ``\n\n`` the reference decoder requires before
     it merges into the preceding token. Content still ends before that blank
     line, as it parses. Arguments stream one complete parameter at a time;
     ``string="true|false"`` carries each value's type, so no schema is needed.
@@ -172,7 +172,7 @@ class DeepseekV4ToolParser(StructuralTagToolParser):
     def _split_tool_call_body(
         self, body: str, is_complete: bool
     ) -> tuple[str | None, str | None]:
-        """Splits `` name="..."`` plus ``">\\n`` from the parameter lines."""
+        r"""Splits `` name="..."`` plus ``">\n`` from the parameter lines."""
         end = body.find(_HEADER_END)
         if end == -1:
             return None, None

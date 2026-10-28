@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Gemma 3's vision encoder."""
 
 from __future__ import annotations
 
@@ -52,6 +53,7 @@ class Gemma3VisionEncoderLayer(Module[[Tensor], Tensor]):
         )
 
     def forward(self, hidden_states: Tensor) -> Tensor:
+        """Runs the layer's attention, then its MLP."""
         residual = hidden_states
         hidden_states = self.layer_norm1(hidden_states)
         hidden_states = self.self_attn(hidden_states)
@@ -79,6 +81,7 @@ class Gemma3VisionEncoder(Module[[Tensor], Tensor]):
         )
 
     def forward(self, hidden_states: Tensor) -> Tensor:
+        """Runs the encoder stack over the patch embeddings."""
         for layer in self.layers:
             hidden_states = layer(hidden_states)
         return hidden_states

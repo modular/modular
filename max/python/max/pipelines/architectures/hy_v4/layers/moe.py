@@ -10,8 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Hy4 mixture of experts: noaux_tc router, clamped MXFP8 routed experts and
-an unclamped shared expert."""
+"""Hy4 mixture of experts.
+
+It pairs a noaux_tc router with clamped MXFP8 routed experts and an unclamped
+shared expert.
+"""
 
 from __future__ import annotations
 
@@ -65,6 +68,7 @@ class HYV4TopKRouter(DeepseekV3TopKRouter):
     """
 
     def forward(self, hidden_states: Tensor) -> tuple[Tensor, Tensor]:
+        """Scores each token's experts and returns the routing weights."""
         weight = self.gate_score.weight.cast(DType.float32)
         logits = F.matmul(
             hidden_states.cast(DType.float32), F.transpose(weight, 0, 1)
@@ -118,6 +122,7 @@ class HYV4Experts(Module[..., Tensor]):
         expert_ids: Tensor,
         scales_offset: Tensor,
     ) -> Tensor:
+        """Runs the routed experts over the rows the router sent each token to."""
         # The block-scaled kernels pick their tile regime from the row count.
         rows = F.shape_to_tensor(x.shape)[0].cast(DType.uint32)
 
@@ -261,4 +266,5 @@ class HYV4MoE(Module[[Tensor], Tensor]):
         return moe_finalize(down, restore, topk_weight, x.dtype)
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the routed and shared experts over ``x``."""
         return self.routed(x) + self.shared_experts(x)

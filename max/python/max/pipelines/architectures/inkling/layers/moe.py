@@ -10,8 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Inkling's sink-expert MoE, verified against the reference
-``_inkling_gate_select_kernel`` (``nvidia/moe.py`` at vLLM v0.26.0)."""
+"""Inkling's sink-expert MoE.
+
+Verified against the reference ``_inkling_gate_select_kernel``
+(``nvidia/moe.py`` at vLLM v0.26.0).
+"""
 
 from __future__ import annotations
 
@@ -244,18 +247,22 @@ class InklingMoE(MoEQuantized):
 
     @property
     def gate_up_proj(self) -> TensorValue:
+        """The gate and up projections, stacked for the grouped matmul."""
         return self.w13_weight
 
     @property
     def down_proj(self) -> TensorValue:
+        """The down projection."""
         return self.w2_weight
 
     @property
     def gate_up_proj_scales(self) -> TensorValue:
+        """The gate and up projections' block scales."""
         return self.w13_weight_scale
 
     @property
     def down_proj_scales(self) -> TensorValue:
+        """The down projection's block scales."""
         return self.w2_weight_scale
 
     def _collect_scale_2(self, proj_name: str) -> TensorValue:
@@ -292,8 +299,11 @@ class InklingMoE(MoEQuantized):
         return axes
 
     def _set_sharding_strategy(self, strategy: ShardingStrategy) -> None:
-        """Splits the expert intermediate: an equal split of ``w13``'s
-        interleaved output axis keeps each rank's gate/up rows paired."""
+        """Splits the expert intermediate across devices.
+
+        An equal split of ``w13``'s interleaved output axis keeps each rank's
+        gate and up rows paired.
+        """
         if not strategy.is_tensor_parallel:
             raise ValueError(
                 "Only tensor parallel sharding is supported for InklingMoE."
@@ -323,6 +333,7 @@ class InklingMoE(MoEQuantized):
         return shards
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Runs the routed experts over ``x``."""
         assert isinstance(self.gate, InklingGate)
         routing = self.gate.route(x)
         routed = self._routed_experts(x, routing)
@@ -348,8 +359,10 @@ class InklingMoE(MoEQuantized):
     def _sink_experts(
         self, x: TensorValue, sink_weights: TensorValue
     ) -> TensorValue:
-        """Runs every sink expert on every token, weighted by its gate value,
-        applied to the intermediate as the reference fuses it."""
+        """Runs every sink expert on every token, weighted by its gate value.
+
+        The weight is applied to the intermediate, as the reference fuses it.
+        """
         mlp = self.shared_experts
         ffl = mlp.gate_proj.weight.shape[0]
         gate_up = ops.concat((mlp.gate_proj.weight, mlp.up_proj.weight))

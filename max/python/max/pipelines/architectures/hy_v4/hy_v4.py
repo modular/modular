@@ -68,10 +68,12 @@ class HYV4TextModel(Module[..., Tensor]):
         self.lm_head = Linear(config.hidden_size, config.vocab_size, bias=False)
 
     def shard(self) -> None:
-        """Splits attention by heads and the routed experts by expert over the
-        one-axis mesh the model was built on; everything else, the iHC
-        weights, indexers, routers, norms, embedding and ``lm_head`` included,
-        stays replicated."""
+        """Splits attention by heads and the routed experts by expert.
+
+        Both split over the one-axis mesh the model was built on. Everything
+        else stays replicated, the iHC weights, indexers, routers, norms,
+        embedding and ``lm_head`` included.
+        """
         for layer in self.layers:
             layer.shard()
 
@@ -159,6 +161,7 @@ class HYV4(Module[..., ModuleV3Outputs]):
         batch_context_length: Tensor,
         *kv_inputs: Tensor,
     ) -> ModuleV3Outputs:
+        """Runs the decoder stack over the tokens."""
         del return_n_logits
         mesh = self.language_model.embed_tokens.weight.mesh
         if mesh.num_devices > 1:

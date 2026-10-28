@@ -202,8 +202,9 @@ class DeepseekV41DSparkDrafter(Module):
     def replicas(
         self, devices: Sequence[DeviceRef], *, split_heads: bool
     ) -> list[Self]:
-        """Builds one copy of the stages per device, splitting them as
-        :meth:`shard` does.
+        """Builds one copy of the stages per device.
+
+        Each copy splits as :meth:`shard` splits.
 
         Each copy's weights are shards of these stages', which stay the
         source the weights are loaded into. Call it once, after

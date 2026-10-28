@@ -101,12 +101,14 @@ class DSparkSpeculatorsMarkovHead(Module):
         )
 
     def compute_step_bias(self, prev_tokens: TensorValue) -> TensorValue:
-        """Returns the ``[batch, draft_vocab]`` bias for ``[batch]``
-        TARGET-vocab prev tokens."""
+        """Returns each row's ``[draft_vocab]`` bias.
+
+        The bias is computed from the ``[batch]`` previous TARGET-vocab tokens.
+        """
         return self.markov_w2(self.markov_w1(prev_tokens))
 
     def __call__(self, prev_tokens: TensorValue) -> TensorValue:
-        # Alias for compute_step_bias to satisfy the Module ABC.
+        """Alias for :meth:`compute_step_bias`."""
         return self.compute_step_bias(prev_tokens)
 
 
@@ -284,8 +286,10 @@ class DSparkSpeculatorsDraft(Module):
     def project_target_hidden(
         self, target_hs_concat: TensorValue
     ) -> TensorValue:
-        """Projects concatenated target taps to the context-KV input,
-        ``hidden_norm(fc(concat(taps)))``."""
+        """Projects concatenated target taps to the context-KV input.
+
+        The projection is ``hidden_norm(fc(concat(taps)))``.
+        """
         return self.hidden_norm(self.fc(target_hs_concat))
 
     def materialize_kv(
@@ -294,8 +298,9 @@ class DSparkSpeculatorsDraft(Module):
         input_row_offsets: TensorValue,
         kv_collection: PagedCacheValues,
     ) -> None:
-        """Projects context hidden states to per-layer K/V and writes the
-        paged KV cache.
+        """Projects context hidden states to per-layer K/V.
+
+        The result lands in the paged KV cache.
 
         K gets ``k_norm`` + RoPE at the context positions; V is the plain
         ``v_proj`` output (un-normed, un-roped), matching the reference
@@ -322,7 +327,7 @@ class DSparkSpeculatorsDraft(Module):
         kv_collection: PagedCacheValues,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
-        # Alias for forward_block to satisfy the Module ABC.
+        """Alias for :meth:`forward_block`."""
         return self.forward_block(
             input_embeds, kv_collection, input_row_offsets
         )

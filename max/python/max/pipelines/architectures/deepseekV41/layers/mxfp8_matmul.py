@@ -118,8 +118,7 @@ def mxfp8_block_diagonal(
     weight_scales: TensorValue,
     groups: int,
 ) -> TensorValue:
-    """Applies a block-diagonal MXFP8 matmul through the cluster split-K
-    matmul.
+    """Applies a block-diagonal MXFP8 matmul through the cluster split-K matmul.
 
     Group ``g`` multiplies ``x``'s columns ``[g * k, (g + 1) * k)`` by
     ``weight``'s rows ``[g * n, (g + 1) * n)`` into the output's columns

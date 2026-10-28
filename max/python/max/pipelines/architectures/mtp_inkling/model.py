@@ -62,15 +62,19 @@ def inkling_mtp_draft_width(
     target_huggingface_config: AutoConfig,
     draft_huggingface_config: AutoConfig | None,
 ) -> int:
-    """Returns how many depths the draft builds: the requested width, capped
-    at the depths the checkpoint ships."""
+    """Returns how many depths the draft builds.
+
+    The count is the requested width, capped at the depths the checkpoint ships.
+    """
     del draft_huggingface_config
     return _mtp_config(target_huggingface_config).num_depths_for(speculative)
 
 
 class MTPInklingDraftArchConfig(InklingConfig):
-    """The depths' config: their target's, with a KV leaf per attention
-    flavor the depths use."""
+    """The depths' config: their target's, with a KV leaf per flavor.
+
+    Each attention flavor the depths use gets its own leaf.
+    """
 
     @property
     def hidden_size(self) -> int:
@@ -85,8 +89,11 @@ class MTPInklingDraftArchConfig(InklingConfig):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> MultiKVCacheParams:
-        """Returns the target's attention leaves, each sized for the depths
-        of its flavor; one depth writes one layer."""
+        """Returns the target's attention leaves.
+
+        Each leaf is sized for the depths of its flavor; one depth writes one
+        layer.
+        """
         target = InklingConfig.construct_kv_params(
             huggingface_config,
             pipeline_config,
@@ -116,8 +123,11 @@ class MTPInklingDraftArchConfig(InklingConfig):
     def build_module(
         cls, context: ModelLoadContext
     ) -> tuple[InklingMultiTokenPredictor, MTPInklingDraftArchConfig]:
-        """Builds the depths the speculative width needs from the target's
-        checkpoint, which ``context`` names.
+        """Builds the depths the speculative width needs.
+
+        They come from the target's checkpoint, which ``context`` names. They
+        embed and project through the target's embedding and head, which their
+        proposer shares onto them.
 
         They embed and project through the target's embedding and head,
         which their proposer shares onto them.

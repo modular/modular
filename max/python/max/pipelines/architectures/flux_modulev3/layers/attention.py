@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Spatial self-attention layer for the FLUX VAE decoder."""
+
 import math
 
 from max import functional as F

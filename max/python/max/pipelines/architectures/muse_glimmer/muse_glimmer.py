@@ -72,6 +72,7 @@ class MuseTextModelBase(Module[..., tuple[Tensor, ...]]):
         return F.tanh(outputs / cap) * cap
 
     def prepare_freq_cis(self, mesh: DeviceMesh) -> None:
+        """Casts both towers' RoPE tables to the model dtype on ``mesh``."""
         for rope in (self.rope_sliding, self.rope_full):
             rope.freqs_cis = rope.freqs_cis.cast(self.dtype).to(mesh)
 
@@ -84,6 +85,7 @@ class MuseTextModelBase(Module[..., tuple[Tensor, ...]]):
         image_embeddings: Tensor,
         image_token_indices: Tensor,
     ) -> tuple[Tensor, ...]:
+        """Runs the text model over the graph inputs."""
         tokens = tokens.to(self.mesh)
         input_row_offsets = input_row_offsets.to(self.mesh)
         image_embeddings = image_embeddings.to(self.mesh)
@@ -248,6 +250,7 @@ class MuseModelBase(Module[..., tuple[Tensor, ...]]):
         image_token_indices: Tensor,
         *variadic_args: Tensor,
     ) -> tuple[Tensor, ...]:
+        """Unflattens the hybrid KV leaves, then runs the text model."""
         kv_inputs = iter(x._graph_value for x in variadic_args)
         # Each device owns a whole KV cache, so the shards are replicated
         # over the TP mesh rather than sharded over it.

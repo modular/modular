@@ -76,6 +76,7 @@ class MuseSparkTransformerBlock(Module[..., Tensor]):
         kv_collection: PagedCacheValues,
         input_row_offsets: Tensor,
     ) -> Tensor:
+        """Runs the block's attention, then its MLP."""
         attn_out = self.self_attn(
             self.input_layernorm(x),
             kv_collection,

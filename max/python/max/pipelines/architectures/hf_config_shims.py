@@ -29,6 +29,8 @@ try:
 except ImportError:
 
     class Gemma4HFConfig(PretrainedConfig):  # type: ignore[no-redef]
+        """Gemma 4 config for transformers releases that ship none."""
+
         model_type = "gemma4"
 
         def __init__(
@@ -558,8 +560,12 @@ except ImportError:
 
 
 class _InklingMMHFConfig(PretrainedConfig):
-    """Shim for the top-level ``inkling_mm_model`` model type; unmapped blocks
-    (``audio_config``, ``mtp_config``) stay as plain attributes."""
+    """Shim for the top-level ``inkling_mm_model`` model type.
+
+    ``text_config`` and ``vision_config`` become nested
+    ``PretrainedConfig`` objects. Everything else, ``audio_config`` and
+    ``mtp_config`` included, stays a plain attribute.
+    """
 
     model_type = "inkling_mm_model"
 
@@ -908,8 +914,11 @@ AutoConfig.register("flint", FlintHFConfig, exist_ok=True)
 # TODO: drop these shims once transformers >= 5.20, which ships native
 # muse_spark configs.
 class _MuseSparkTextHFConfig(_MuseGlimmerSubHFConfig):
-    """Defaults and derivations follow transformers 5.20.0's
-    ``MuseSparkTextConfig``."""
+    """Shim for the ``muse_spark_text`` model type.
+
+    Defaults and derivations follow transformers 5.20.0's
+    ``MuseSparkTextConfig``.
+    """
 
     model_type = "muse_spark_text"
     _defaults: ClassVar[dict[str, Any]] = {

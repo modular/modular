@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Graph-API building blocks for the autoencoder KL VAEs."""
 
 from __future__ import annotations
 
@@ -66,6 +67,7 @@ class RMSNorm(Module):
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Normalizes ``x`` over the channel or last axis."""
         axis = 1 if self.channel_first else x.rank - 1
         rms = ops.mean(x * x, axis=axis)
         inv = ops.rsqrt(rms + 1e-12)
@@ -121,6 +123,7 @@ class CausalConv3d(Module):
             self.bias = Weight("bias", dt, [out_channels], dev_ref)
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Runs the causal 3D convolution over ``x``."""
         # NCDHW -> NDHWC
         x_ndhwc = ops.permute(x, [0, 2, 3, 4, 1])
         out = ops.conv3d(
@@ -210,12 +213,14 @@ class CausalConv3dCached(Module):
         return out
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Runs the cached causal convolution over ``x``."""
         x = self._apply_temporal_pad(x, self._temporal_pad_left)
         return self._forward_conv(x)
 
     def forward_cached(
         self, x: TensorValue, cache_in: TensorValue
     ) -> tuple[TensorValue, TensorValue]:
+        """Runs the convolution with the given cache inputs."""
         # Rebind cache spatial dims to match x so concat sees matching dims.
         cache_in = ops.rebind(
             cache_in,
@@ -273,6 +278,7 @@ class Conv2dPermuted(Module):
             self.bias = Weight("bias", dt, [out_channels], dev_ref)
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Runs the 2D convolution on an NCHW input."""
         # NCHW -> NHWC
         x_nhwc = ops.permute(x, [0, 2, 3, 1])
         out = ops.conv2d(
@@ -333,6 +339,7 @@ class Conv2d(Module):
             self.bias = Weight("bias", dt, [out_channels], dev_ref)
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Runs the 2D convolution over ``x``."""
         out = ops.conv2d(
             x,
             self.filter,
@@ -404,6 +411,7 @@ class AttentionBlock(Module):
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Applies spatial self-attention with a residual."""
         identity = x
         b = x.shape[0]
         t = x.shape[2]
@@ -474,6 +482,7 @@ class Upsample2d(Module):
         super().__init__()
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Upsamples ``x`` spatially by the configured factor."""
         n, c, h, w = x.shape
         # Nearest-neighbor 2x upsample: [N,C,H,W] → [N,C,H*2,W*2]
         return ops.resize_nearest(
@@ -535,6 +544,7 @@ class Resample(Module):
             raise ValueError(f"Unsupported Resample mode: {mode}")
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Resamples ``x`` up or down by the configured factor."""
         b = x.shape[0]
         t = x.shape[2]
         h = x.shape[3]
@@ -623,6 +633,7 @@ class ResidualBlockCached(Module):
         cache1_in: TensorValue | None = None,
         cache2_in: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue, TensorValue]:
+        """Runs the residual block, threading cache inputs through."""
         residual = (
             self.conv_shortcut(x) if self.conv_shortcut is not None else x
         )
@@ -662,6 +673,7 @@ class MidBlockCached(Module):
     def __call__(
         self, x: TensorValue, *cache_inputs: TensorValue
     ) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue, TensorValue]:
+        """Runs the mid block, threading cache inputs through."""
         if len(cache_inputs) not in (0, 4):
             raise ValueError(
                 f"MidBlockCached expected 0 or 4 cache tensors, got {len(cache_inputs)}"
@@ -732,6 +744,7 @@ class ResampleCached(Module):
         cache_in: TensorValue | None = None,
         first_chunk: bool = False,
     ) -> tuple[TensorValue, TensorValue]:
+        """Resamples ``x``, threading cache inputs through."""
         b = x.shape[0]
         t = x.shape[2]
         h = x.shape[3]
@@ -823,6 +836,7 @@ class UpBlockCached(Module):
         *cache_inputs: TensorValue,
         first_chunk: bool = False,
     ) -> tuple[TensorValue, ...]:
+        """Runs the up block, threading cache inputs through."""
         if len(cache_inputs) not in (0, self.cache_slots):
             raise ValueError(
                 f"UpBlockCached expected 0 or {self.cache_slots} cache tensors, got {len(cache_inputs)}"
@@ -941,6 +955,7 @@ class Decoder3dCached(Module):
         *cache_inputs: TensorValue,
         first_chunk: bool = False,
     ) -> tuple[TensorValue, ...]:
+        """Decodes the latent chunk by chunk, reusing cached state."""
         if len(cache_inputs) not in (0, WAN_DECODER_CACHE_SLOTS):
             raise ValueError(
                 "Decoder3dCached expected 0 or "
@@ -1006,6 +1021,7 @@ class Decoder3dCached(Module):
         latent_height: int,
         latent_width: int,
     ) -> list[list[int]]:
+        """The shapes of the cache slots the decoder needs."""
         h = latent_height
         w = latent_width
         shapes: list[list[int]] = [
@@ -1068,6 +1084,7 @@ class VAEPostQuantConv(Module):
         )
 
     def __call__(self, z: TensorValue) -> TensorValue:
+        """Applies the post-quantization convolution to ``z``."""
         return self.post_quant_conv(z)
 
 
@@ -1089,6 +1106,7 @@ class VAEDecoderFirstFrameCached(Module):
         )
 
     def __call__(self, z: TensorValue) -> tuple[TensorValue, ...]:
+        """Decodes the first frame and returns the cache state."""
         outputs = self.decoder(z, first_chunk=True)
         x = outputs[0]
         x = ops.max(x, -1.0)
@@ -1116,6 +1134,7 @@ class VAEDecoderRestFrameCached(Module):
     def __call__(
         self, z: TensorValue, *cache_inputs: TensorValue
     ) -> tuple[TensorValue, ...]:
+        """Decodes a later frame from the cache state."""
         outputs = self.decoder(z, *cache_inputs, first_chunk=False)
         x = outputs[0]
         x = ops.max(x, -1.0)
@@ -1187,6 +1206,7 @@ class DownResampleCached(Module):
         cache_in: TensorValue | None = None,
         first_chunk: bool = False,
     ) -> tuple[TensorValue, ...]:
+        """Downsamples ``x``, threading cache inputs through."""
         b = x.shape[0]
         t = x.shape[2]
         h = x.shape[3]
@@ -1320,6 +1340,7 @@ class Encoder3dCached(Module):
 
     @property
     def total_cache_slots(self) -> int:
+        """How many cache slots the encoder carries."""
         return 1 + sum(self._block_cache_slots) + 4 + 1
 
     def cache_shapes(
@@ -1372,6 +1393,7 @@ class Encoder3dCached(Module):
         *cache_inputs: TensorValue,
         first_chunk: bool = False,
     ) -> tuple[TensorValue, ...]:
+        """Encodes the chunk, with or without cache inputs."""
         use_cache = len(cache_inputs) == self.total_cache_slots
         if len(cache_inputs) not in (0, self.total_cache_slots):
             raise ValueError(
@@ -1455,6 +1477,7 @@ class VAEEncoderFirstChunk(Module):
         )
 
     def __call__(self, x: TensorValue) -> tuple[TensorValue, ...]:
+        """Encodes the first chunk and returns the cache state."""
         outputs = self.encoder(x, first_chunk=True)
         moments = self.quant_conv(outputs[0])
         # Extract mean in-graph to avoid GPU->CPU transfer of full moments
@@ -1492,6 +1515,7 @@ class VAEEncoderRestChunk(Module):
     def __call__(
         self, x: TensorValue, *cache_inputs: TensorValue
     ) -> tuple[TensorValue, ...]:
+        """Encodes a later chunk from the cache state."""
         outputs = self.encoder(x, *cache_inputs, first_chunk=False)
         moments = self.quant_conv(outputs[0])
         mean = moments[:, : self._z_dim, :, :, :]

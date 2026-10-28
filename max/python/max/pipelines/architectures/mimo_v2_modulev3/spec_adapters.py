@@ -10,10 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Block spec-decode adapters for a ModuleV3 MiMo-V2 target and its DFlash
-drafter.
+"""Block spec-decode adapters for a ModuleV3 MiMo-V2 target.
 
-The target verifies through :class:`~.mimo_v2.MiMoV2SpecTarget`'s own pass.
+It also holds the DFlash drafter's proposer. The target verifies through :class:`~.mimo_v2.MiMoV2SpecTarget`'s own pass.
 The drafter embeds and projects through the target's embedding and head, so
 its proposer lives here, beside the target it reads. Both run on ``Tensor``
 values.
@@ -105,6 +104,7 @@ class MiMoV2BlockTarget:
     def __call__(
         self, batch: SequentialBatch | BlockBatch
     ) -> Verified[list[TensorValue]]:
+        """Verifies the batch's blocks against the target."""
         assert isinstance(batch, BlockBatch)
         # The driver runs on graph values, the target on Tensors.
         verified: Verified[list[TensorValue]] = as_graph_values(
@@ -199,6 +199,7 @@ class DFlashMiMoV2Proposer(TensorAdapter):
         target_hidden: list[Tensor],
         ctx_kv: _Caches,
     ) -> None:
+        """Writes the context KV the drafter reads."""
         self.drafter.write_context(
             self._taps(target_hidden, batch),
             self._ctx_offsets(batch),
@@ -206,6 +207,7 @@ class DFlashMiMoV2Proposer(TensorAdapter):
         )
 
     def embed_block(self, batch: _Batch, block_ids: Tensor) -> list[Tensor]:
+        """Embeds each block's anchor and returns the block embeddings."""
         # The mask slots take the drafter's trained embedding; only the
         # anchor is a token.
         anchors = block_ids.reshape((-1, self.block_size))[:, 0]
@@ -224,6 +226,7 @@ class DFlashMiMoV2Proposer(TensorAdapter):
         offsets: list[Tensor],
         block_kv: _Caches,
     ) -> list[Tensor]:
+        """Runs the drafter over one block and returns its hidden states."""
         if batch.data_parallel_degree > 1:
             # The driver already hands each replica's block rows and their
             # rebased offsets; the drafter runs them as one sharded batch.
@@ -252,6 +255,7 @@ class DFlashMiMoV2Proposer(TensorAdapter):
         accepted: Accepted,
         sampler: DraftSampler,
     ) -> Tensor:
+        """Samples each block's drafts from the drafter's hidden states."""
         del accepted
         block, drafts = self.block_size, self.num_speculative_tokens
         hidden_size = self.drafter.config.hidden_size
@@ -427,8 +431,10 @@ def block_proposer(
     draft_config: Any,
     speculative: SpeculativeConfig,
 ) -> BlockProposer[Any, Any, Any, Any, Any]:
-    """Returns the DFlash proposer, which reads the verified target's
-    embedding and head."""
+    """Returns the DFlash proposer.
+
+    It reads the verified target's embedding and head.
+    """
     assert isinstance(verify, MiMoV2BlockTarget)
     assert isinstance(draft, DFlashMiMoV2)
     return DFlashMiMoV2Proposer(

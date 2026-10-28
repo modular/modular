@@ -147,9 +147,11 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             raise ValueError("tie_word_embeddings is not supported yet")
 
     def get_kv_params(self) -> KVCacheParams:
+        """The KV cache parameters for this config."""
         return self.kv_params
 
     def get_max_seq_len(self) -> int:
+        """The maximum sequence length the config allows."""
         return self.max_seq_len
 
     @classmethod
@@ -158,6 +160,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """The longest sequence that fits the KV cache."""
         return upper_bounded_default(
             upper_bound=huggingface_config.max_position_embeddings,
             default=model_config.max_length,
@@ -171,6 +174,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
+        """Builds the KV cache parameters from the cache config."""
         return kv_cache_config.to_params(
             dtype=cache_dtype,
             # n_kv_heads should always be 1 because we only cache a single latent vector
@@ -204,6 +208,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """The number of hidden layers in the checkpoint."""
         return huggingface_config.num_hidden_layers
 
     @override

@@ -100,6 +100,10 @@ class EncoderAttention(Module):
         Args:
             x: Input tensor with shape [total_seq_len, hidden_dim]
             rope: RotaryEmbedding module
+            attention_bias: The additive mask the encoder applies, ``0``
+                where a position is admitted and a large negative value
+                elsewhere.
+
         Returns:
             Output tensor with shape [total_seq_len, hidden_dim]
         """

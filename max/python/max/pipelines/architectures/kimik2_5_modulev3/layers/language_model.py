@@ -79,6 +79,7 @@ class KimiK2_5MoEDecoder(Module[..., tuple[Tensor, ...]]):
         image_token_indices: Tensor,
         *variadic_args: Tensor,
     ) -> tuple[Tensor, ...]:
+        """Runs the language graph over tokens and the KV inputs."""
         mesh = self.config.mesh
         if mesh is None:
             raise ValueError("Mesh must be defined")

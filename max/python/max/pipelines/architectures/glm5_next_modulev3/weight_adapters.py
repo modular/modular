@@ -105,6 +105,7 @@ def convert_glm5_next_state_dict(
         state_dict: The raw checkpoint weights.
         huggingface_config: The checkpoint's config, read for the layer count
             that identifies the MTP draft layer.
+        **unused_kwargs: Accepted so every adapter shares one signature.
 
     Returns:
         The renamed weights. The vision tower and the MTP draft layer are

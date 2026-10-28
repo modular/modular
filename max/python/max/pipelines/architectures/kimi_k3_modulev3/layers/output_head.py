@@ -90,7 +90,6 @@ def kimi_k3_output_head(
         ``(last_logits,)``, or ``(last_logits, logits, offsets)`` when
         ``return_logits`` is ``VARIABLE`` or ``ALL``.
     """
-
     mesh = lm_head_weight.mesh
     tp_sharded = TP in mesh.axis_names and mesh.axis_size(TP) > 1
 

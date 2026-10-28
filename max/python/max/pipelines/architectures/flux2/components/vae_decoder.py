@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Graph 4: VAE decoder component for Flux2Executor."""
 
 from __future__ import annotations
@@ -101,6 +100,7 @@ class PostprocessAndDecode(Module):
         h_carrier: TensorValue,
         w_carrier: TensorValue,
     ) -> TensorValue:
+        """Decodes the latents and unpacks them into an image."""
         # Reconcile the incoming latents dtype with the VAE compute dtype.
         # No-op when they already match (uniform-precision pipeline); widens
         # bfloat16 -> float32 for a mixed-precision assembly (NVFP4 transformer
@@ -162,6 +162,7 @@ class PostprocessAndDecode(Module):
         return ops.transfer_to(ops.cast(decoded, DType.uint8), DeviceRef.CPU())
 
     def input_types(self) -> tuple[TensorType, ...]:
+        """The graph's input types."""
         return (
             TensorType(
                 self._latents_in_dtype,

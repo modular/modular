@@ -59,6 +59,7 @@ class Glm5NextMLP(QuantizedMLP):
         self.swiglu_limit = swiglu_limit
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the gated feed-forward over ``x``."""
         gate_up_weight = quant_ops.concat_weights(
             self.gate_proj.weight, self.up_proj.weight, axis=0
         )

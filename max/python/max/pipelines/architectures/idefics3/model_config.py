@@ -91,7 +91,6 @@ class Idefics3VisionConfig:
         text_config_hidden_size: int,
     ) -> Idefics3VisionConfig:
         """Initialize Idefics3VisionConfig from HuggingFace config."""
-
         quantization_encoding = _select_quantization_encoding(
             pipeline_config.model, Idefics3Config.DEFAULT_ENCODING
         )
@@ -186,6 +185,9 @@ class Idefics3Config(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
 
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
+            model_config: The MAX model configuration, or none to read it
+                from ``pipeline_config.model``.
+            max_seq_len: The maximum sequence length the config allows.
 
         Returns:
             An Idefics3Config instance with fields initialized from config.

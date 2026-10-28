@@ -85,6 +85,18 @@ class DeepseekV41Indexer(Module):
         """Initializes the indexer.
 
         Args:
+            hidden_size: Width of the hidden states ``weights_proj`` reads.
+            q_lora_rank: Width of the compressed query latent ``wq_b``
+                projects.
+            main_head_dim: Width of the pre-RoPE KV latent ``wk`` projects
+                from.
+            index_n_heads: Number of index heads.
+            index_head_dim: Width of each index head; must be 128.
+            rope_head_dim: RoPE width per head; must be 64.
+            rms_norm_eps: RMSNorm epsilon for ``k_norm``.
+            dtype: The model dtype of ``weights_proj``, ``wk`` and the
+                unquantized ``wq_b``.
+            device: The device the weights live on.
             owns_k: Whether this layer produces its own index keys (creates
                 ``wk``/``k_norm``).
             wq_b_quant_config: An MXFP8 config makes ``wq_b``
@@ -398,7 +410,14 @@ def select_index_keys_block_topk(
     unspecified.
 
     Args:
+        leaf: The index-key leaf.
+        q: :func:`quantize_queries`'s output.
+        offsets: ``[B + 1]`` uint32 ragged row offsets.
         positions: ``[T]`` query positions.
+        layer_idx: Host uint32 layer index within the leaf.
+        top_k: Keys selected per row.
+        ratio: Tokens per key.
+        block_size: Keys per block.
         topk_blocks: Blocks kept per row.
 
     Returns:
@@ -449,8 +468,15 @@ def select_index_keys_masked(
     """:func:`select_index_keys` among the keys of each row's kept blocks.
 
     Args:
+        leaf: The index-key leaf.
+        q: :func:`quantize_queries`'s output.
+        offsets: ``[B + 1]`` uint32 ragged row offsets.
         kept: ``[T, kept]`` int32 kept block ids, ``-1`` for none; block
             ``b`` holds keys ``[b * block_size, (b + 1) * block_size)``.
+        layer_idx: Host uint32 layer index within the leaf.
+        top_k: Keys selected per row.
+        ratio: Tokens per key.
+        block_size: Keys per block.
     """
     packed, scales, weights = q
     t, n_heads = packed.shape[0], int(packed.shape[1])

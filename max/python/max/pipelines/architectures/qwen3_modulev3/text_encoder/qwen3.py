@@ -46,6 +46,7 @@ class Qwen3MLP(Module[[Tensor], Tensor]):
         self.down_proj = Linear(intermediate_size, hidden_size, bias=False)
 
     def forward(self, hidden_states: Tensor) -> Tensor:
+        """Runs the gated MLP over ``hidden_states``."""
         gate = F.silu(self.gate_proj(hidden_states))
         up = self.up_proj(hidden_states)
         return self.down_proj(gate * up)
@@ -88,6 +89,8 @@ class EncoderTransformerBlock(Module[..., Tensor]):
         Args:
             x: Input hidden states [seq_len, hidden_dim]
             rope: RoPE embedding module
+            attention_bias: The additive causal mask.
+
         Returns:
             Output hidden states [seq_len, hidden_dim]
         """

@@ -54,6 +54,7 @@ class Ideogram4Attention(Module[..., Tensor]):
         cos: Tensor,
         sin: Tensor,
     ) -> Tensor:
+        """Runs the attention over ``x``."""
         batch_size = x.shape[0]
         seq_len = x.shape[1]
 

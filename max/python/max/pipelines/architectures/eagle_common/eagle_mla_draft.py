@@ -269,6 +269,15 @@ class Eagle3MLADraft(Module):
                 per device). The caller must produce per-device values already
                 sharded to each device's local DP batch; ``fc`` runs
                 per-device on the captures.
+            signal_buffers: The buffers ``embed_tokens``' collective uses.
+            kv_collections: Per device, the draft's paged K/V cache.
+            return_n_logits: How many trailing logits the graph returns.
+            input_row_offsets: Per device, the ragged row offsets.
+            host_input_row_offsets: CPU mirror of ``input_row_offsets``, which
+                data-parallel attention splits the batch by.
+            data_parallel_splits: Per-replica batch boundaries, on CPU.
+            batch_context_lengths: Per device, the cache length its MLA
+                prefill metadata carries.
             split_prefix: Prefix for symbolic dim names. Must be unique per
                 graph invocation to avoid dim conflicts between prefill
                 (step 0) and decode (step 1+).
@@ -508,6 +517,7 @@ class Eagle3MLADraft(Module):
     def input_types(
         self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
+        """The graph's input types, in :meth:`__call__`'s argument order."""
         devices = self.config.devices
         device_ref = devices[0]
 

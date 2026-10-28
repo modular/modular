@@ -179,6 +179,7 @@ class Gemma3TextModel(
         return F.cast(self.lm_head(h), DType.float32)
 
     def prepare_freq_cis(self, mesh: DeviceMesh) -> None:
+        """Casts both towers' RoPE tables to the model dtype on ``mesh``."""
         self.rope_global.freqs_cis = self.rope_global.freqs_cis.cast(
             self.dtype
         ).to(mesh)
@@ -194,6 +195,7 @@ class Gemma3TextModel(
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
     ) -> ModuleV3Outputs:
+        """Runs the text model over the graph inputs."""
         tokens = tokens.to(self.mesh)
         input_row_offsets = input_row_offsets.to(self.mesh)
         h = self.embed_tokens(tokens)
@@ -275,6 +277,7 @@ class Gemma3(Module[..., ModuleV3Outputs]):
         input_row_offsets: Tensor,
         *variadic_args,
     ) -> ModuleV3Outputs:
+        """Unflattens the hybrid KV leaves, then runs the text model."""
         kv_inputs = iter(x._graph_value for x in variadic_args)
         kv_cache_local, kv_cache_global = (
             self.kv_params.unflatten_basic_kv_tree(kv_inputs)

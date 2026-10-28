@@ -251,24 +251,28 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
         quant_config: QuantConfig | None = None,
         ep_config: EPConfig | None = None,
     ) -> None:
-        """Args:
-        kv_params: This model's full cache tree -- an ``MLAKVCacheParams``
+        """Builds the model's layers and weights.
+
+        Args:
+            config: The checkpoint-derived model config every shape comes
+            from.
+            kv_params: This model's full cache tree -- an ``MLAKVCacheParams``
             leaf when there are no KDA layers, otherwise a
             ``MultiKVCacheParams`` of that leaf and the KDA recurrent state
             (see ``model_config.py``'s ``construct_kv_params``). ``None``
             runs every MLA layer padded and takes no KDA state.
-        return_logits: Not a shape of ``config`` -- a per-request serving
+            return_logits: Not a shape of ``config`` -- a per-request serving
             choice the registry hands ``PipelineModel`` directly (see
             ``KimiK3PipelineModel._instantiate_module``) -- so it is its own
             argument rather than a field on the checkpoint-derived
             ``KimiK3ModelConfig``.
-        mla_buffer_size: One-shot MLA prefill buffer size. Same reasoning as
+            mla_buffer_size: One-shot MLA prefill buffer size. Same reasoning as
             ``return_logits``: a serving-time quantity
             (``KimiK3Config.max_batch_context_length``), not a checkpoint
             shape, so it is its own argument.
-        quant_config: MXFP4 config for the routed experts. Mutually
+            quant_config: MXFP4 config for the routed experts. Mutually
             exclusive with ``ep_config``.
-        ep_config: The routed experts' expert-parallel exchange setup, or
+            ep_config: The routed experts' expert-parallel exchange setup, or
             ``None`` to run them replicated or TP-sharded. Only the config
             lives here: the exchange's real buffers aren't a checkpoint
             weight, so ``forward`` reads them off the tail of ``kv_inputs``
@@ -392,12 +396,14 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
         input_row_offsets: Tensor,
         *kv_inputs: Tensor,
     ) -> ModuleV3Outputs:
-        """Args:
-        tokens: ``[total_seq_len]`` token ids, ragged (batch size 1 at this
+        """Runs the decoder stack over the tokens.
+
+        Args:
+            tokens: ``[total_seq_len]`` token ids, ragged (batch size 1 at this
             scope, so ``total_seq_len == seq_len``).
-        return_n_logits: ``[1]``, see ``kimi_k3_output_head``.
-        input_row_offsets: ``[batch_size + 1]`` exclusive prefix sums.
-        kv_inputs: This model's ``kv_params`` cache tree, flattened. Empty
+            return_n_logits: ``[1]``, see ``kimi_k3_output_head``.
+            input_row_offsets: ``[batch_size + 1]`` exclusive prefix sums.
+            kv_inputs: This model's ``kv_params`` cache tree, flattened. Empty
             runs every MLA layer padded; a KDA layer always needs its state
             here, since it has no padded form.
         """
@@ -579,8 +585,11 @@ def _fuse_gate_up(gate: np.ndarray, up: np.ndarray) -> np.ndarray:
 def _fuse_qkv_conv_weight(
     q: np.ndarray, k: np.ndarray, v: np.ndarray
 ) -> np.ndarray:
-    """Packs three ``[C, 1, K]`` depthwise convs into one ``[3C, K]``; mirrors
-    ``kimi_k3/layers/short_conv.py::fuse_qkv_conv_weight``."""
+    """Packs three ``[C, 1, K]`` depthwise convs into one ``[3C, K]`` weight.
+
+    ``KimiK3KDAAttention.conv_weight`` takes the packed weight. Mirrors
+    ``kimi_k3/layers/short_conv.py::fuse_qkv_conv_weight``.
+    """
     return np.ascontiguousarray(
         np.concatenate([w.reshape(w.shape[0], -1) for w in (q, k, v)], axis=0)
     )
@@ -702,9 +711,12 @@ def _stack_expert_weights(
 def _canonical_a_log(
     values: np.ndarray, num_heads: int, head_dim: int
 ) -> np.ndarray:
-    """Broadcasts per-head gate coefficients, dropping exact-zero storage
-    padding; mirrors ``kimi_k3/weight_adapters.py::_canonical_a_log`` (without
-    its bf16-as-uint16 handling: this fixture's checkpoint stores A_log fp32)."""
+    """Broadcasts per-head gate coefficients.
+
+    Exact-zero storage padding is dropped, mirroring
+    ``kimi_k3/weight_adapters.py::_canonical_a_log``. That version handles a
+    bf16-as-uint16 checkpoint; this fixture stores A_log as fp32.
+    """
     if values.ndim != 1 or values.size < num_heads:
         raise ValueError(
             f"Kimi K3: A_log has shape {values.shape}; expected a per-head"

@@ -202,6 +202,7 @@ class DeepseekV3_2TextModel(
         input_row_offsets_i64: Tensor | None = None,
         comm_buffers: EPCommBuffers | None = None,
     ) -> tuple[Tensor, ...]:
+        """Runs the embedding and decoder stack over the tokens."""
         if self.mesh is not None:
             if self.mesh.num_devices > 1:
                 tokens = F.distributed_broadcast(tokens, self.mesh)
@@ -430,6 +431,7 @@ class DeepseekV3_2(Module[..., ModuleV3Outputs]):
         input_row_offsets: Tensor,
         *variadic_args: Tensor,
     ) -> ModuleV3Outputs:
+        """Runs the model over its graph inputs."""
         mesh = self.config.mesh
         assert mesh is not None
 

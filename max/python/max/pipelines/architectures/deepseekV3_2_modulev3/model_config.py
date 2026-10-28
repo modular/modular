@@ -178,6 +178,7 @@ class DeepseekV3_2Config(DeepseekV3Config):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
+        """Builds the KV cache parameters from the cache config."""
         mla_kv_params = DeepseekV3Config.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,

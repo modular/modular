@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """An identity rope variant for layers with no positional encoding.
 
 Keeping the rope interface lets a NoPE layer share the fused store path.

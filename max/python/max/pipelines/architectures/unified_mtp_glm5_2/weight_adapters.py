@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Maps the MTP draft's checkpoint names onto the MAX tree."""
 
 from max.graph.weights import WeightData, Weights
 from transformers.configuration_utils import PretrainedConfig

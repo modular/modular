@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Transformer block for the OLMo2 text model."""
+
 from __future__ import annotations
 
 from max.graph import TensorValue
@@ -49,6 +51,7 @@ class Olmo2TransformerBlock(Module):
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
+        """Runs the attention and MLP sublayers over a batch of tokens."""
         h = self.self_attn(
             layer_idx,
             x,

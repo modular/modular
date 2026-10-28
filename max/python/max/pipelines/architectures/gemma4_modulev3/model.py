@@ -140,6 +140,7 @@ class Gemma4Model(
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
+        """The language model's hidden layer count."""
         return huggingface_config.text_config.num_hidden_layers
 
     def _hf_config_for_weights(self) -> AutoConfig | None:
@@ -291,12 +292,11 @@ class Gemma4Model(
         state_dict: dict[str, Any],
         device: Device,
     ) -> GraphSpec | None:
-        """Builds the vision tower on ``device``, or returns ``None`` when
-        text-only.
+        """Builds the vision tower on ``device``, or ``None`` when text-only.
 
-        The multi-graph base does not open the ``F.lazy()`` / ``default_dtype``
-        build context that the single-graph base does, so each spec hook
-        owns it.
+        The multi-graph base does not open the ``F.lazy()`` /
+        ``default_dtype`` build context that the single-graph base does, so
+        each spec hook owns it.
         """
         if model_config.vision_config is None:
             return None
@@ -391,8 +391,7 @@ class Gemma4Model(
         return self._batching.vision_execute(selection, devices, packed)
 
     def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
-        """Returns the batch processor's embeddings for a batch with no new
-        images."""
+        """Returns the batch processor's embeddings for a batch with no new images."""
         return self._batching.empty_vision_embeddings(devices)
 
     # --- execute ---

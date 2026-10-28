@@ -110,9 +110,11 @@ def _first_device(t: Tensor) -> TensorValue:
 
 
 def _batch_context_length(batch: SequentialBatch) -> Tensor:
-    """The host prefill buffer length the attention blocks take instead of
-    reading the plan's back. It counts no draft rows; the sparse MLA kernels,
-    the only ones Hy4 builds, never read it."""
+    """The host prefill buffer length the attention blocks take.
+
+    It stands in for reading the plan's back. It counts no draft rows; the
+    sparse MLA kernels, the only ones Hy4 builds, never read it.
+    """
     return Tensor.from_graph_value(batch.extra[BATCH_CONTEXT_LENGTH])
 
 
@@ -128,6 +130,7 @@ class HYV4Target:
         self.target = target
 
     def verify(self, batch: SequentialBatch) -> Verified[list[TensorValue]]:
+        """Runs the target over the batch to score the drafts."""
         mesh = self.target.embed_tokens.weight.mesh
         tokens = _on_mesh(batch.merged_tokens, mesh)
         offsets = _replicated(batch.merged_offsets_per_dev, mesh)
@@ -151,6 +154,7 @@ class HYV4Target:
     def __call__(
         self, batch: SequentialBatch | BlockBatch
     ) -> Verified[list[TensorValue]]:
+        """Runs the target over the batch."""
         assert isinstance(batch, SequentialBatch)
         return self.verify(batch)
 
@@ -225,6 +229,7 @@ class HYV4MTPProposer:
         tokens: TensorValue,
         target_hidden: list[TensorValue],
     ) -> Proposed:
+        """Runs the draft over the prompt's target hidden states."""
         out, topk, offsets = self._predict(batch, tokens, target_hidden, None)
         n = Tensor.from_graph_value(batch.return_n_logits)
         rows, _ = gather_variable_rows(out, offsets, n, out.mesh)
@@ -238,6 +243,7 @@ class HYV4MTPProposer:
     def step(
         self, batch: SequentialBatch, draft_input: DraftStepInput, index: int
     ) -> Proposed:
+        """Runs one draft step from the previous step's tokens."""
         del index
         out, _, _ = self._predict(
             batch, draft_input.tokens, draft_input.hidden, draft_input.reuse
@@ -284,8 +290,10 @@ def trailing_buffers(
     contexts: Sequence[TextContext],
     devices: Sequence[Device],
 ) -> list[Buffer]:
-    """Returns the batch's prefill buffer length, as ``HYV4BatchProcessor``
-    writes it."""
+    """Returns the batch's prefill buffer length.
+
+    It is the value ``HYV4BatchProcessor`` writes.
+    """
     del devices
     length = prefill_buffer_length(
         list(contexts), target_config.kv_params.page_size

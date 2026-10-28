@@ -147,8 +147,7 @@ class DistributedDeepseekV2(DistributedTransformer):
         )
 
     def input_types(self) -> tuple[TensorType | BufferType, ...]:
-        """Returns the graph's input types; see
-        :func:`~max.pipelines.architectures.deepseekV2.deepseekV2.deepseekV2_input_types`."""
+        """The graph's input types for this device set and KV params."""
         return deepseekV2_input_types(self.devices, self.kv_params)
 
     def trace(
@@ -205,12 +204,11 @@ class DistributedDeepseekV2(DistributedTransformer):
         )
 
     def _get_mlp(self, config: DeepseekV2Config, idx: int) -> MLP | MoE:
-        """Helper function to return a mixture of experts layer or traditional multi-layer perceptron layer
-        for the TransformerBlock's mlp depending on the layer idx.
+        """Returns the MLP or MoE layer the TransformerBlock uses for a layer.
 
         Args:
             config: Configuration object containing model parameters
-            i: Layer index
+            idx: Layer index
 
         Returns:
             List of MLP shards or MoE modules depending on the layer index and config

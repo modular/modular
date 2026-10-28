@@ -94,6 +94,8 @@ class EncoderAttention(Module[..., Tensor]):
         Args:
             x: Input tensor with shape [total_seq_len, hidden_dim]
             rope: RotaryEmbedding module
+            attention_bias: The additive causal mask.
+
         Returns:
             Output tensor with shape [total_seq_len, hidden_dim]
         """

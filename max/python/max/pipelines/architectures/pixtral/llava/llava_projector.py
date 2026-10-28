@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
+"""LLaVA's projection into the text width."""
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
@@ -19,10 +19,9 @@ from max.nn.legacy.linear import Linear
 
 
 class LlavaMultiModalConnector(Module):
-    """
-    Simple multi-layer cross-modal connector to connect image features into the
-    text token embedding space.
-    Uses Gelu activation function.
+    """Connects image features into the text token embedding space.
+
+    Two linear layers with a GELU between them.
     """
 
     dtype: DType
@@ -57,4 +56,5 @@ class LlavaMultiModalConnector(Module):
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Projects the image features into the text width."""
         return self.linear_2(ops.gelu(self.linear_1(x)))

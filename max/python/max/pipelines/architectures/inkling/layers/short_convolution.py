@@ -36,8 +36,11 @@ from max.nn.legacy.state_space import short_conv_ring
 
 
 class ShortConvolution(Module, Shardable):
-    """Depthwise causal conv1d with a residual; history lives in a
-    caller-owned ring of past inputs indexed by position."""
+    """A depthwise causal conv1d over a caller-owned history.
+
+    History is a ring of past inputs indexed by position, and the layer adds a
+    residual.
+    """
 
     def __init__(
         self,
@@ -66,6 +69,7 @@ class ShortConvolution(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the convolution's weights are split across devices."""
         return self._sharding_strategy
 
     @sharding_strategy.setter

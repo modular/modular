@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Supported architecture entry for the Eagle3 DeepSeek-V3 drafter."""
 
 from dataclasses import replace
 

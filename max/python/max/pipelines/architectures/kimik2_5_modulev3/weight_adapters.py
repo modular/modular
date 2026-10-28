@@ -172,6 +172,7 @@ def convert_kimik2_5_safetensor_state_dict(
     Args:
         state_dict: Raw checkpoint as dict from weight name to :class:`Weights`.
         huggingface_config: HuggingFace config (required for MTP pruning).
+        **unused_kwargs: Accepted so every adapter shares one signature.
 
     Returns:
         State dict with ``vision_encoder.*`` and ``language_model.*`` keys
@@ -202,6 +203,7 @@ def convert_kimivl_safetensor_state_dict(
     Args:
         state_dict: Raw checkpoint as dict from weight name to :class:`Weights`.
         huggingface_config: HuggingFace config (required for MTP pruning).
+        **unused_kwargs: Accepted so every adapter shares one signature.
 
     Returns:
         State dict with ``vision_encoder.*`` and ``language_model.*`` keys
@@ -248,6 +250,7 @@ def convert_eagle3_draft_state_dict(
 
     Args:
         state_dict: Raw Eagle3 checkpoint.
+        **unused_kwargs: Accepted so every adapter shares one signature.
 
     Returns:
         State dict with keys matching ``Eagle3KimiK25`` module hierarchy.

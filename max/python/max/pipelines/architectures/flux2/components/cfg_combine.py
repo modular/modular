@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Classifier-free guidance combine as a standalone compiled graph.
 
 Computes ``neg + guidance_scale * (pos - neg)`` in float32 and casts the
@@ -45,6 +44,7 @@ class CfgCombineModule(Module):
         neg_noise: TensorValue,
         guidance_scale: TensorValue,
     ) -> TensorValue:
+        """Blends the guided and unguided noise by ``guidance_scale``."""
         input_dtype = pos_noise.dtype
         pos_f32 = ops.cast(pos_noise, DType.float32)
         neg_f32 = ops.cast(neg_noise, DType.float32)
@@ -52,6 +52,7 @@ class CfgCombineModule(Module):
         return ops.cast(combined, input_dtype)
 
     def input_types(self) -> tuple[TensorType, ...]:
+        """The graph's input types."""
         return (
             TensorType(
                 self._dtype,

@@ -208,6 +208,7 @@ def convert_kimik2_5_safetensor_state_dict(
     nvidia/Kimi-K2.5-NVFP4 checkpoints, and drops FP8 kv-scale weights.
 
     Args:
+        **unused_kwargs: Accepted so every adapter shares one signature.
         state_dict: Raw checkpoint as dict from weight name to :class:`Weights`.
         huggingface_config: HuggingFace config (required for MTP pruning).
 
@@ -238,6 +239,7 @@ def convert_kimivl_safetensor_state_dict(
     by moonshotai/Kimi-VL-A3B checkpoints.
 
     Args:
+        **unused_kwargs: Accepted so every adapter shares one signature.
         state_dict: Raw checkpoint as dict from weight name to :class:`Weights`.
         huggingface_config: HuggingFace config (required for MTP pruning).
 
@@ -287,6 +289,7 @@ def convert_eagle3_draft_state_dict(
     before its 2026-06-11 revision).
 
     Args:
+        **unused_kwargs: Accepted so every adapter shares one signature.
         state_dict: Raw Eagle3 checkpoint.
 
     Returns:

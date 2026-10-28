@@ -124,16 +124,19 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
     @staticmethod
     def get_head_dim_from_config(config: Llama3Config) -> int:
+        """The head width the config's KV parameters carry."""
         return config.kv_params.head_dim
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """The checkpoint's hidden layer count."""
         return huggingface_config.num_hidden_layers
 
     @staticmethod
     def calculate_attention_multiplier(
         huggingface_config: AutoConfig,
     ) -> float:
+        """The attention scale, from the checkpoint or the head width."""
         return getattr(
             huggingface_config,
             "attention_multiplier",

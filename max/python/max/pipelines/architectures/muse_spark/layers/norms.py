@@ -43,6 +43,7 @@ class WeightlessRMSNorm(Module[[Tensor], Tensor]):
         self.eps = eps
 
     def forward(self, x: Tensor) -> Tensor:
+        """Normalizes ``x`` by its root mean square."""
         return weightless_rms_norm(x, self.eps)
 
 
@@ -55,6 +56,7 @@ class CenteredRMSNorm(Module[[Tensor], Tensor]):
         self.eps = eps
 
     def forward(self, x: Tensor) -> Tensor:
+        """Normalizes ``x`` by its centred root mean square."""
         # The reference rounds 1 + weight to the weight's dtype before the
         # fp32 multiply; weight_offset=1 would add it in fp32 instead.
         return rms_norm(
@@ -71,4 +73,5 @@ class InputScaledRMSNorm(Module[[Tensor], Tensor]):
         self.eps = eps
 
     def forward(self, x: Tensor) -> Tensor:
+        """Normalizes ``x`` with the input-scaled RMS norm kernel."""
         return input_scaled_rms_norm(x, self.weight, self.eps)

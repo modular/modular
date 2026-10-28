@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Z-Image transformer blocks."""
 
 from __future__ import annotations
 
@@ -34,16 +35,21 @@ ADALN_EMBED_DIM = 256
 
 
 class FeedForward(Module[[Tensor], Tensor]):
+    """The block's SwiGLU feed-forward."""
+
     def __init__(self, dim: int, hidden_dim: int):
         self.w1 = Linear(dim, hidden_dim, bias=False)
         self.w2 = Linear(hidden_dim, dim, bias=False)
         self.w3 = Linear(dim, hidden_dim, bias=False)
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the feed-forward over ``x``."""
         return self.w2(F.silu(self.w1(x)) * self.w3(x))
 
 
 class ZImageTransformerBlock(Module[..., Tensor]):
+    """One Z-Image transformer block."""
+
     def __init__(
         self,
         layer_id: int,
@@ -85,6 +91,7 @@ class ZImageTransformerBlock(Module[..., Tensor]):
         freqs_cis: tuple[Tensor, Tensor],
         adaln_input: Tensor | None = None,
     ) -> Tensor:
+        """Runs the block over ``x``."""
         if self.modulation:
             if adaln_input is None:
                 raise ValueError("adaln_input is required when modulation=True")
@@ -119,6 +126,8 @@ class ZImageTransformerBlock(Module[..., Tensor]):
 
 
 class FinalLayer(Module[..., Tensor]):
+    """Modulates the last block's output and projects it to the output channels."""
+
     def __init__(self, hidden_size: int, out_channels: int):
         self.norm_final = LayerNorm(
             hidden_size,
@@ -134,12 +143,15 @@ class FinalLayer(Module[..., Tensor]):
         )
 
     def forward(self, x: Tensor, c: Tensor) -> Tensor:
+        """Projects ``x`` to the output channels, scaled by ``c``."""
         scale = 1.0 + self.adaLN_modulation(F.silu(c))
         x = self.norm_final(x) * F.unsqueeze(scale, 1)
         return self.linear(x)
 
 
 class ZImageTransformer2DModel(Module[..., Sequence[Tensor]]):
+    """The Z-Image denoising transformer."""
+
     def __init__(
         self,
         config: ZImageConfig,
@@ -321,6 +333,7 @@ class ZImageTransformer2DModel(Module[..., Sequence[Tensor]]):
         )
 
     def input_types(self) -> tuple[TensorType, ...]:
+        """The graph's input types."""
         return self._input_types_impl()
 
     def _forward_preamble(
@@ -455,4 +468,5 @@ class ZImageTransformer2DModel(Module[..., Sequence[Tensor]]):
         )
 
     def forward(self, *args: Tensor) -> tuple[Tensor, ...]:
+        """Runs the transformer over the graph inputs."""
         return self._forward_impl(*args)

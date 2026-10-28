@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Gemma3 pipeline model on ModuleV3."""
 
 from __future__ import annotations
 
@@ -53,6 +54,7 @@ class Gemma3Model(
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
+        """The checkpoint's hidden layer count."""
         return Gemma3Config.get_num_layers(huggingface_config)
 
     @property

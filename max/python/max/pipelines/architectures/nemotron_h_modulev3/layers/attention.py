@@ -110,6 +110,7 @@ class NemotronHAttention(Module[[Tensor, PagedCacheValues, Tensor], Tensor]):
         kv_collection: PagedCacheValues,
         input_row_offsets: Tensor,
     ) -> Tensor:
+        """Runs the attention over ``x``, reading and updating the KV cache."""
         layer_idx = F.constant(self.layer_idx, DType.uint32, device=CPU())
         n_devices = kv_collection.n_devices
         q = F.functional(fused_qkv_ragged_matmul)(

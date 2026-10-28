@@ -22,9 +22,10 @@ from max.nn.legacy.embedding import VocabParallelEmbedding
 
 
 class ScaledWordEmbedding(VocabParallelEmbedding):
-    """
-    This layer is a wrapper around nn.Embedding that multiplies the embeddings
-    with a scale factor.
+    """Vocab-parallel embedding that scales each looked-up vector.
+
+    Every looked-up embedding is multiplied by ``embed_scale`` before it
+    leaves the layer.
     """
 
     def __init__(
@@ -44,9 +45,7 @@ class ScaledWordEmbedding(VocabParallelEmbedding):
                 Indices must be in the range ``[0, vocab_size)``.
             hidden_dim: The dimensionality of each embedding vector.
             dtype: The data type of the embedding weights.
-            device: The device where embedding lookups are executed.
-                Model init transfers the initially CPU-resident weights to this
-                device.
+            devices: The devices that hold the embedding shards.
             quantization_encoding: The quantization encoding to use for the
                 embedding weights.
             name: The name identifier for the embedding weight matrix.
@@ -65,17 +64,17 @@ class ScaledWordEmbedding(VocabParallelEmbedding):
     def __call__(
         self, indices: TensorValueLike, signal_buffers: Iterable[BufferValue]
     ) -> list[TensorValue]:
-        """Embeds the input indices by looking up corresponding vectors, then
-        multiplies the embeddings with the scale factor.
+        """Embed the indices, then multiply each vector by the scale factor.
 
         Args:
             indices: A tensor of integer indices to look up.
                 Each index must be in the range ``[0, vocab_size)``.
+            signal_buffers: Buffers the vocabulary-parallel lookup uses to
+                exchange results between devices.
 
         Returns:
-            A tensor containing the embeddings corresponding to the input
-            indices, multiplied by the scale factor.
-            The result resides on the device specified in :obj:`device`.
+            One embedding tensor per device, each multiplied by the scale
+            factor.
         """
         result = super().__call__(indices, signal_buffers)
         return [

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Registers Qwen3Embedding on ModuleV3 with the registry."""
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.architectures.llama3_modulev3 import weight_adapters

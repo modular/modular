@@ -46,6 +46,7 @@ class HYV3Inputs(Llama3Inputs):
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
+        """The step's buffers, in the graph's input order."""
         data_parallel_splits = self.data_parallel_splits
         host_input_row_offsets = self.host_input_row_offsets
         dp_buffers: tuple[Buffer, ...] = ()

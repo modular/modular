@@ -30,6 +30,7 @@ class Qwen3VL(Module):
         self.language_model = self.build_language_model()
 
     def build_vision_encoder(self) -> VisionTransformer:
+        """Builds the vision tower from the vision config."""
         return VisionTransformer(
             config=self.config.vision_config,
         )

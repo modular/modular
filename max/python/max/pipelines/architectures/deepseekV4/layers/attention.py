@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """DeepSeek-V4 attention: shared-latent MQA over a sliding window plus CSA.
 
 Reference: ``inference/model.py`` class ``Attention``. The reference has two

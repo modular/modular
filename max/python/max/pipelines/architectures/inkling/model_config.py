@@ -157,10 +157,12 @@ class InklingTextConfig:
 
     @property
     def num_local_layers(self) -> int:
+        """How many layers use sliding-window attention."""
         return len(self.local_layer_ids)
 
     @property
     def num_global_layers(self) -> int:
+        """How many layers attend over the whole sequence."""
         return self.num_hidden_layers - self.num_local_layers
 
     def is_local_attention(self, layer_idx: int) -> bool:
@@ -168,9 +170,11 @@ class InklingTextConfig:
         return layer_idx in self.local_layer_ids
 
     def is_moe_layer(self, layer_idx: int) -> bool:
+        """Whether ``layer_idx`` routes through the MoE."""
         return layer_idx >= self.dense_mlp_idx
 
     def num_heads(self, is_local: bool) -> int:
+        """The attention head count, for the local or global layers."""
         return (
             self.swa_num_attention_heads
             if is_local
@@ -178,6 +182,7 @@ class InklingTextConfig:
         )
 
     def num_kv_heads(self, is_local: bool) -> int:
+        """The key/value head count, for the local or global layers."""
         return (
             self.swa_num_key_value_heads
             if is_local
@@ -185,9 +190,11 @@ class InklingTextConfig:
         )
 
     def head_dim_for(self, is_local: bool) -> int:
+        """The head width, for the local or global layers."""
         return self.swa_head_dim if is_local else self.head_dim
 
     def rel_extent_for(self, is_local: bool) -> int:
+        """The relative-attention extent, for the local or global layers."""
         return self.sliding_window_size if is_local else self.rel_extent
 
     def attention_window(self, is_local: bool) -> int | None:
@@ -211,6 +218,7 @@ class InklingTextConfig:
         )
 
     def kv_conv_dim(self, is_local: bool) -> int:
+        """The width the KV short convolution reads, for the local or global layers."""
         return self.num_kv_heads(is_local) * self.head_dim_for(is_local)
 
     @classmethod
@@ -260,6 +268,7 @@ class InklingVisionConfig:
 
     @classmethod
     def from_hf(cls, vision_config: PretrainedConfig) -> InklingVisionConfig:
+        """Builds the vision config from its HuggingFace section."""
         return cls(
             vision_encoder_type=vision_config.vision_encoder_type,
             decoder_dmodel=vision_config.decoder_dmodel,
@@ -371,9 +380,11 @@ class InklingConfig(ArchConfigWithKVCache):
             )
 
     def get_kv_params(self) -> MultiKVCacheParams:
+        """The KV cache parameters the text config declares."""
         return self.kv_params
 
     def get_max_seq_len(self) -> int:
+        """The maximum sequence length the config allows."""
         return self.max_seq_len
 
     @staticmethod
@@ -381,6 +392,7 @@ class InklingConfig(ArchConfigWithKVCache):
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """The checkpoint's context length, bounded by the config's."""
         # Relative-bias attention has no position-embedding table, so the
         # checkpoint bounds its context with `model_max_length` where most
         # architectures use `max_position_embeddings`.
@@ -481,6 +493,7 @@ class InklingConfig(ArchConfigWithKVCache):
         *,
         max_seq_len: int,
     ) -> Self:
+        """Builds the config from the pipeline configuration."""
         model_config = model_config or pipeline_config.model
         huggingface_config = model_config.huggingface_config
         if huggingface_config is None:
@@ -530,8 +543,10 @@ class InklingConfig(ArchConfigWithKVCache):
         huggingface_config: AutoConfig,
         state_dict: Mapping[str, WeightData],
     ) -> None:
-        """Sets :attr:`quant_config` from which routed tensors ship block
-        scales; the released NVFP4 checkpoint leaves one MoE layer bfloat16."""
+        """Sets :attr:`quant_config` from the shipped block scales.
+
+        The released NVFP4 checkpoint leaves one MoE layer bfloat16.
+        """
         quantized_layers = {
             int(match.group(1))
             for name in state_dict

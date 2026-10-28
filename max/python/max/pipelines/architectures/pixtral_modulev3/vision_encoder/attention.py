@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
+"""Pixtral's vision attention."""
 
 import math
 
@@ -23,6 +23,8 @@ from .attention_utils import rotate_half
 
 
 class Attention(Module[..., Tensor]):
+    """Pixtral's vision self attention."""
+
     n_heads: int
     dim: int
     head_dim: int  # hidden_size // self.n_heads
@@ -73,6 +75,7 @@ class Attention(Module[..., Tensor]):
         xv: TensorValue,
         attn_mask: TensorValueLike,
     ) -> TensorValue:
+        """Runs the attention over the query, key and value."""
         xv = xv.transpose(1, 2)
 
         scale = math.sqrt(1.0 / self.head_dim)
@@ -104,7 +107,6 @@ class Attention(Module[..., Tensor]):
 
         Returns the result of multi-headed self attention on the input.
         """
-
         batch_size, n_patches = x.shape[0], x.shape[1]
         # matmul weights
         xq = self.q_proj(x)

@@ -82,6 +82,7 @@ class Qwen3_5BatchProcessor(Llama3BatchProcessor):
         kv_params: KVCacheParamInterface,
         device_refs: list[DeviceRef],
     ) -> list[TensorType | BufferType]:
+        """The graph's symbolic inputs, in the order the tree declares them."""
         assert self.input_tree is not None, "the model binds its inputs first"
         return tree.leaves(self.input_tree)
 
@@ -98,6 +99,7 @@ class Qwen3_5BatchProcessor(Llama3BatchProcessor):
         kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Qwen3_5Inputs:
+        """Builds the first step's inputs from the replica batches."""
         from .model import Qwen3_5Inputs
 
         all_contexts = [ctx for batch in replica_batches for ctx in batch]

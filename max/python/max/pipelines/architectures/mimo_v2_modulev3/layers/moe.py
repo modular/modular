@@ -95,8 +95,7 @@ class _Fp8Weights(Module[[], None]):
 
 
 class MiMoV2MLP(Module[[Tensor], Tensor]):
-    """The dense FP8 SwiGLU MLP of the one non-MoE layer: ``down(silu(gate)
-    * up)``."""
+    """The dense FP8 SwiGLU MLP of the one non-MoE layer: ``down(silu(gate) * up)``."""
 
     def __init__(
         self,
@@ -111,6 +110,7 @@ class MiMoV2MLP(Module[[Tensor], Tensor]):
         self.down_proj = _Fp8Weights(hidden_dim, intermediate_dim)
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the feed-forward over ``x``."""
         shard = not self.data_parallel
         gate = self.gate_proj.matmul(x, axis=0, shard=shard)
         up = self.up_proj.matmul(x, axis=0, shard=shard)
@@ -143,6 +143,7 @@ class MiMoV2Router(Module[[Tensor], tuple[Tensor, Tensor]]):
         )
 
     def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
+        """Routes ``x`` and returns the expert picks with their weights."""
         mesh = x.mesh
         if isinstance(x.placements[0], Sharded):
             # Data parallelism: each replica routes only its own rows, which
@@ -402,6 +403,7 @@ class MiMoV2MoE(Module[..., Tensor]):
         return moe_finalize(down_out, restore_order, router_weight, x.dtype)
 
     def forward(self, x: Tensor) -> Tensor:
+        """Routes ``x`` through its experts and combines their outputs."""
         experts, weights = self.gate(x)
         mesh = x.mesh
         n = mesh.num_devices
@@ -606,8 +608,10 @@ class MiMoV2ExpertParallelMoE(MiMoV2MoE):
         )
 
     def forward(self, x: Tensor, comm: EPCommBuffers | None = None) -> Tensor:
-        """Expert-parallel forward: gate -> dispatch -> local experts ->
-        combine.
+        """Runs the expert-parallel forward pass.
+
+        It gates, dispatches to the local experts, then combines their
+        outputs.
 
         Args:
             x: The residual stream, ``[tokens, hidden]`` -- replicated

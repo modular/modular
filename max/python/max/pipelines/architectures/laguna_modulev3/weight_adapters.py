@@ -131,6 +131,7 @@ def convert_safetensor_state_dict(
         state_dict: The checkpoint tensors, by HuggingFace name.
         huggingface_config: The HuggingFace model configuration.
         pipeline_config: The MAX pipeline configuration.
+        **unused_kwargs: Accepted so every adapter shares one signature.
 
     Returns:
         The weights under their ModuleV3 attribute paths.

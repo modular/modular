@@ -364,6 +364,7 @@ class Flux2KleinExecutor(
     def prepare_inputs(
         self, contexts: list[PixelContext]
     ) -> Flux2KleinExecutorInputs:
+        """Builds the executor's inputs from the request contexts."""
         if len(contexts) != 1:
             raise ValueError(
                 "Flux2KleinExecutor currently supports batch_size=1. "
@@ -504,6 +505,7 @@ class Flux2KleinExecutor(
 
     @traced(message="Flux2KleinExecutor.execute")
     def execute(self, inputs: Flux2KleinExecutorInputs) -> Flux2ExecutorOutputs:
+        """Runs the graphs over the prepared inputs."""
         inputs = inputs.to(
             transformer_device=self._model_device,
             text_encoder_device=self._text_encoder_device,

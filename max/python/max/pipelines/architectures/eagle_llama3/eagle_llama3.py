@@ -59,6 +59,7 @@ class EagleLlama3(Llama3):
         input_row_offsets: TensorValue,
         hidden_states: TensorValue | None = None,
     ) -> DecoderOutputs:
+        """Runs one draft step for the target's hidden states."""
         assert isinstance(hidden_states, TensorValue)
         h = self.embed_tokens(tokens)
 

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Whisper pipeline model."""
 
 from __future__ import annotations
 
@@ -59,6 +60,8 @@ class WhisperInputs(ModelInputs):
 
 # TODO: Need specific Context type, not just this base type.
 class Whisper(PipelineModel[Any, None, Model]):
+    """The Whisper model graph."""
+
     state_dict: dict[str, Any]
     """The weights, kept for :meth:`graph_specs`."""
 

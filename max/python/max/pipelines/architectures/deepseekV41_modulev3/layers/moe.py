@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """V4.1 local routed experts and the tensor-parallel shared expert."""
 
 from max import functional as F
@@ -394,8 +393,11 @@ class SharedExpert(Module[[Tensor], Tensor]):
         self.w2 = w2
 
     def forward(self, x: Tensor) -> Tensor:
-        """Returns the unscaled float32 shared output, reduced across TP
-        shards (whole on each rank under data parallelism)."""
+        """Returns the unscaled float32 shared output.
+
+        The result is reduced across TP shards, whole on each rank under data
+        parallelism.
+        """
         if self.data_parallel:
             return self.partial(x)
         return F.allreduce_sum(self.partial(x))

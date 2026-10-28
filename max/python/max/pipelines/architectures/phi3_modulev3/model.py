@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Phi3 pipeline model on ModuleV3."""
 
 from __future__ import annotations
 

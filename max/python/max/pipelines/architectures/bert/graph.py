@@ -38,6 +38,8 @@ from .model_config import BertModelConfig
 
 
 class BertEmbeddings(Module):
+    """Token, position, and token-type embeddings."""
+
     def __init__(self, config: BertModelConfig) -> None:
         hf_config = config.huggingface_config
         dtype = config.dtype
@@ -73,6 +75,7 @@ class BertEmbeddings(Module):
         input_ids: TensorValue,
         token_type_ids: TensorValue | None = None,
     ) -> TensorValue:
+        """Builds the embedding sequence for the input ids."""
         seq_length = input_ids.shape[1]
 
         position_ids = ops.range(
@@ -96,6 +99,8 @@ class BertEmbeddings(Module):
 
 
 class BertSelfAttention(Module):
+    """Multi-head self-attention with a transposed head layout."""
+
     def __init__(self, config: BertModelConfig) -> None:
         hf_config = config.huggingface_config
         dtype = config.dtype
@@ -129,6 +134,7 @@ class BertSelfAttention(Module):
         )
 
     def transpose_for_scores(self, x: TensorValue) -> TensorValue:
+        """Splits the last axis into attention heads."""
         new_x_shape = x.shape[:-1] + [
             self.num_attention_heads,
             self.attention_head_size,
@@ -139,6 +145,7 @@ class BertSelfAttention(Module):
     def __call__(
         self, hidden_states: TensorValue, attention_mask: TensorValue
     ) -> TensorValue:
+        """Runs self-attention over the hidden states."""
         query_layer = self.transpose_for_scores(self.query(hidden_states))
         key_layer = self.transpose_for_scores(self.key(hidden_states))
         value_layer = self.transpose_for_scores(self.value(hidden_states))
@@ -162,6 +169,8 @@ class BertSelfAttention(Module):
 
 
 class BertSelfOutput(Module):
+    """Dense projection and norm after self-attention."""
+
     def __init__(self, config: BertModelConfig) -> None:
         hf_config = config.huggingface_config
         dtype = config.dtype
@@ -184,12 +193,15 @@ class BertSelfOutput(Module):
     def __call__(
         self, hidden_states: TensorValue, input_tensor: TensorValue
     ) -> TensorValue:
+        """Projects the attention output and adds the residual."""
         hidden_states = self.dense(hidden_states)
         hidden_states = self.layer_norm(hidden_states + input_tensor)
         return hidden_states
 
 
 class BertAttention(Module):
+    """Self-attention block with its output projection."""
+
     def __init__(self, config: BertModelConfig) -> None:
         self.self = BertSelfAttention(config)
         self.output = BertSelfOutput(config)
@@ -197,12 +209,15 @@ class BertAttention(Module):
     def __call__(
         self, hidden_states: TensorValue, attention_mask: TensorValue
     ) -> TensorValue:
+        """Runs the attention block over the hidden states."""
         self_output = self.self(hidden_states, attention_mask)
         attention_output = self.output(self_output, hidden_states)
         return attention_output
 
 
 class BertIntermediate(Module):
+    """The feed-forward expansion layer."""
+
     def __init__(self, config: BertModelConfig) -> None:
         hf_config = config.huggingface_config
         dtype = config.dtype
@@ -219,12 +234,15 @@ class BertIntermediate(Module):
         )
 
     def __call__(self, hidden_states: TensorValue) -> TensorValue:
+        """Runs the intermediate dense layer and its activation."""
         hidden_states = self.dense(hidden_states)
         hidden_states = self.intermediate_act_fn(hidden_states)
         return hidden_states
 
 
 class BertOutput(Module):
+    """The feed-forward output projection."""
+
     def __init__(self, config: BertModelConfig) -> None:
         hf_config = config.huggingface_config
         dtype = config.dtype
@@ -247,12 +265,15 @@ class BertOutput(Module):
     def __call__(
         self, hidden_states: TensorValue, input_tensor: TensorValue
     ) -> TensorValue:
+        """Projects the feed-forward output and adds the residual."""
         hidden_states = self.dense(hidden_states)
         hidden_states = self.layer_norm(hidden_states + input_tensor)
         return hidden_states
 
 
 class BertLayer(Module):
+    """One BERT encoder layer."""
+
     def __init__(
         self,
         config: BertModelConfig,
@@ -266,6 +287,7 @@ class BertLayer(Module):
         hidden_states: TensorValue,
         attention_mask: TensorValue,
     ) -> TensorValue:
+        """Runs attention and feed-forward for one layer."""
         attention_output = self.attention(hidden_states, attention_mask)
         intermediate_output = self.intermediate(attention_output)
         layer_output = self.output(intermediate_output, attention_output)
@@ -273,6 +295,8 @@ class BertLayer(Module):
 
 
 class BertEncoder(Module):
+    """The stack of BERT layers."""
+
     def __init__(
         self,
         config: BertModelConfig,
@@ -286,12 +310,15 @@ class BertEncoder(Module):
     def __call__(
         self, hidden_states: TensorValue, attention_mask: TensorValue
     ) -> TensorValue:
+        """Runs every layer over the hidden states."""
         for layer in self.layer.layers:
             hidden_states = layer(hidden_states, attention_mask)
         return hidden_states
 
 
 class BertModel(Module):
+    """The BERT encoder with its embeddings."""
+
     def __init__(
         self,
         config: BertModelConfig,
@@ -320,6 +347,7 @@ class BertModel(Module):
         attention_mask: TensorValue,
         token_type_ids: TensorValue | None = None,
     ) -> TensorValue:
+        """Runs the model over the input ids."""
         embedding_output = self.embeddings(
             input_ids=input_ids, token_type_ids=token_type_ids
         )

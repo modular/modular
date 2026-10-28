@@ -140,6 +140,7 @@ class Gemma4AssistantAttention(Module[..., Tensor]):
         q_max_seq_len: Tensor,
         rope_cache_lengths: Tensor | None = None,
     ) -> Tensor:
+        """Runs the assistant's attention over ``x``."""
         total_seq_len = x.shape[0]
         layer_idx = F.constant(
             self.target_layer_idx_in_cache, DType.uint32, device=CPU()
@@ -235,6 +236,7 @@ class Gemma4AssistantDecoderLayer(Module[..., Tensor]):
         q_max_seq_len: Tensor,
         rope_cache_lengths: Tensor | None = None,
     ) -> Tensor:
+        """Runs the layer over the hidden states."""
         residual = x
         attn_out = self.self_attn(
             self.input_layernorm(x),

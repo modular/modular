@@ -51,6 +51,7 @@ class Glm5NextInputs(DeepseekV3Inputs):
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
+        """The step's buffers, in the graph's input order."""
         return (
             self.tokens,
             *self.vision_embeddings,

@@ -37,8 +37,12 @@ class Gemma4AssistantModuleV3DraftArchConfig(Gemma4AssistantConfig):
     def build_module(
         cls, context: ModelLoadContext
     ) -> tuple[Gemma4AssistantModuleV3, Gemma4AssistantDraftConfig]:
-        """Builds the assistant over the target's KV params, which
-        ``context`` names.
+        """Builds the assistant over the target's KV params.
+
+        ``context`` names them. The module holds no weights: it compiles with
+        those :meth:`checkpoint_weights` returns. It embeds through the target's
+        embedding, so spec decoding shares that onto it.
+
 
         The module holds no weights: it compiles with those
         :meth:`checkpoint_weights` returns. It embeds through the target's

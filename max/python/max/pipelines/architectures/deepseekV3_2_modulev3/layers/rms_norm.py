@@ -29,4 +29,5 @@ class MultiplyBeforeCastRMSNorm(RMSNorm):
     """
 
     def forward(self, x: Tensor) -> Tensor:
+        """Normalizes ``x`` with the weight applied before the cast."""
         return rms_norm(x, self.weight, self.eps, multiply_before_cast=True)

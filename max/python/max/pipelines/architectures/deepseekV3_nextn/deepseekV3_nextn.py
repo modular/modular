@@ -53,6 +53,8 @@ from .model_config import DeepseekV3NextNConfig
 
 
 class DeepseekV3NextN(Module):
+    """DeepSeek-V3 speculative model that drafts extra tokens."""
+
     def __init__(self, config: DeepseekV3NextNConfig) -> None:
         super().__init__()
         self.config = config
@@ -175,6 +177,7 @@ class DeepseekV3NextN(Module):
         ep_inputs: list[Value[Any]] | None = None,
         split_prefix: str = "draft",
     ) -> DecoderOutputs:
+        """Runs the speculative model over the graph inputs."""
         if not host_input_row_offsets.device == DeviceRef.CPU():
             raise ValueError("host_input_row_offsets must be located on CPU")
         if not data_parallel_splits.device == DeviceRef.CPU():
@@ -301,6 +304,7 @@ class DeepseekV3NextN(Module):
     def input_types(
         self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
+        """The graph's input types for the config's devices."""
         devices = self.config.devices
         device_ref = devices[0]
 

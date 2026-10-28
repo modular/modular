@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Implements the Olmo nn.model."""
+
 from __future__ import annotations
 
 from typing import Literal

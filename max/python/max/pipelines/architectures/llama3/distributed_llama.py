@@ -52,6 +52,8 @@ from .model_config import Llama3Config, create_rope_embedding
 
 
 class DistributedLlama3(DistributedTransformer):
+    """The Llama3 decoder distributed across tensor-parallel devices."""
+
     def __init__(self, config: Llama3Config) -> None:
         assert len(config.devices) > 1
         self.config = config
@@ -223,6 +225,7 @@ class DistributedLlama3(DistributedTransformer):
     def input_types(
         self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
+        """The graph's input types, in the decoder's order."""
         return tuple(tree.leaves(self.input_tree(kv_params)))
 
     def trace(

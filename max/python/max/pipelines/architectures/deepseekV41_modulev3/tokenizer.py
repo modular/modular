@@ -46,6 +46,7 @@ class DeepseekV41Tokenizer(ReasoningDelimitersMixin, TextTokenizer):
         tools: list[TextGenerationRequestTool] | None = None,
         **chat_template_options: Any,
     ) -> str:
+        """Renders the messages with the model's chat template."""
         for message in messages:
             if not isinstance(message.content, str) and any(
                 not isinstance(part, TextContentPart)
@@ -69,6 +70,7 @@ class DeepseekV41Tokenizer(ReasoningDelimitersMixin, TextTokenizer):
         )
 
     async def new_context(self, request: TextGenerationRequest) -> TextContext:
+        """Rejects media inputs, then defers to the base tokenizer."""
         if request.videos or request.images_for_processing():
             raise InputError("DeepSeek-V4.1 ModuleV3 accepts text inputs only.")
         return await super().new_context(request)

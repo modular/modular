@@ -10,9 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""DSpark: V4's speculative head.
 
-"""DSpark: V4's speculative head. Reference: ``inference/model.py``
-``DSparkAttention``, ``DSparkMarkovHead``.
+Reference: ``inference/model.py`` ``DSparkAttention``, ``DSparkMarkovHead``.
 
 Three MTP stages drafting ``dspark_block_size`` tokens at a time. What makes
 them stages rather than three copies is that only the ends are special --

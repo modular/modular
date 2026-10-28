@@ -14,7 +14,8 @@
 
 Each layer receives the previous FFN output before writeback and returns
 its own output in the same deferred form. The trunk materializes the
-pending writeback before Engram injection and after the final layer."""
+pending writeback before Engram injection and after the final layer.
+"""
 
 from __future__ import annotations
 

@@ -118,13 +118,15 @@ class KimiK3KDAAttention(
         conv_kernel_size: int,
         gate_lower_bound: float | None,
     ) -> None:
-        """Args:
-        hidden_size: ``config.hidden_size``.
-        num_heads: ``config.kda_num_heads``.
-        head_dim: ``config.kda_head_dim``.
-        conv_kernel_size: ``config.kda_conv_kernel_size``; the conv pool's
+        """Builds the KDA attention.
+
+        Args:
+            hidden_size: ``config.hidden_size``.
+            num_heads: ``config.kda_num_heads``.
+            head_dim: ``config.kda_head_dim``.
+            conv_kernel_size: ``config.kda_conv_kernel_size``; the conv pool's
             history depth is ``conv_kernel_size - 1``.
-        gate_lower_bound: ``config.kda_gate_lower_bound``. Published K3 sets
+            gate_lower_bound: ``config.kda_gate_lower_bound``. Published K3 sets
             -5.0; ``None`` selects the kernel's own per-head gate instead.
             Any OTHER value raises -- see the module docstring.
         """
@@ -168,7 +170,9 @@ class KimiK3KDAAttention(
         recurrent_row_id: Tensor,
         input_row_offsets: Tensor,
     ) -> Tensor:
-        """Args:
+        """Runs the KDA attention over ``x``.
+
+        Args:
             x: ``[total_seq_len, hidden_size]``, all sequences packed.
             conv_pool: ``[conv_rows, 3 * inner, conv_kernel_size - 1]``,
                 mutated in place at ``conv_row_id``.
@@ -180,7 +184,7 @@ class KimiK3KDAAttention(
                 sequence.
             input_row_offsets: ``[batch_size + 1]`` exclusive prefix sums.
 
-        Under TP, both pools are sharded on axis 1 like the heads they hold.
+            Under TP, both pools are sharded on axis 1 like the heads they hold.
 
         Returns:
             ``[total_seq_len, hidden_size]``.

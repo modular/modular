@@ -187,9 +187,11 @@ class DeepseekV3Config(ArchConfigWithKVCache):
             )
 
     def get_kv_params(self) -> KVCacheParamInterface:
+        """The KV cache parameters for this config."""
         return self.kv_params
 
     def get_max_seq_len(self) -> int:
+        """The maximum sequence length the config allows."""
         return self.max_seq_len
 
     @classmethod
@@ -198,6 +200,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """The longest sequence that fits the KV cache."""
         return upper_bounded_default(
             upper_bound=huggingface_config.max_position_embeddings,
             default=model_config.max_length,
@@ -211,6 +214,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
+        """Builds the KV cache parameters from the cache config."""
         data_parallel_degree = pipeline_config.model.data_parallel_degree
         kvcache_quant_config = mla_kv_cache_quant_config(
             cache_dtype, huggingface_config.qk_rope_head_dim
@@ -241,6 +245,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """The number of hidden layers in the checkpoint."""
         return huggingface_config.num_hidden_layers
 
     @override
@@ -261,6 +266,9 @@ class DeepseekV3Config(ArchConfigWithKVCache):
 
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
+            model_config: The model config entry this config is built from,
+                or ``None`` with the entry taken from ``pipeline_config``.
+            max_seq_len: The sequence length the graph is traced for.
 
         Returns:
             An initialized DeepseekV3Config instance.

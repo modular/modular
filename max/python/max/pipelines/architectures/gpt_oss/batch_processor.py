@@ -44,6 +44,7 @@ class GptOssBatchProcessor(
         kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> GptOssInputs:
+        """Builds the first step's inputs from the replica batches."""
         from .model import GptOssInputs
 
         context_batch = single_replica_context_batch(

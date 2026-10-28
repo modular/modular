@@ -91,6 +91,7 @@ class GptOssTransformerBlock(Module):
         input_row_offsets: list[TensorValue],
         **kwargs,
     ) -> list[TensorValue]:
+        """Runs the block's attention, then its MLP."""
         residual = xs
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
         attn_out = [

@@ -68,16 +68,16 @@ _merge_multimodal_embeddings = F.functional(merge_multimodal_embeddings)
 
 
 class _ConvSites:
-    """One layer's conv pools, slot tables and rows, in :class:`ConvSite`
-    order.
+    """One layer's conv pools, slot tables and rows.
 
-    The kernels index the whole ``[num_layers, batch]`` slot table, so no
-    per-layer slice is materialized.
+    The tensors follow :class:`ConvSite` order. The kernels index the whole
+    ``[num_layers, batch]`` slot table, so no per-layer slice is materialized.
     """
 
     def __init__(
         self, pools: list[Tensor], rows: list[Tensor], layer_rows: list[Tensor]
     ) -> None:
+        """Carries the three per-site tensor lists."""
         self.pools = pools
         self.rows = rows
         self.layer_rows = layer_rows
@@ -97,8 +97,7 @@ class _ConvSites:
 
 
 class InklingDecoderLayer(Module[..., tuple[Tensor, Tensor]]):
-    """One decoder layer: attention and feed-forward, each with an output
-    conv."""
+    """One decoder layer: attention, feed-forward, and their output convs."""
 
     def __init__(
         self,
@@ -109,6 +108,12 @@ class InklingDecoderLayer(Module[..., tuple[Tensor, Tensor]]):
         num_devices: int,
         quant_config: QuantConfig | None = None,
     ) -> None:
+        """Builds one layer's norms, attention, convs, and feed-forward.
+
+        A routed-expert layer takes ``quant_config`` for its experts when
+        ``layer_idx`` appears in its quantized layers; the sinks and the gate
+        stay at dtype.
+        """
         hidden = text_config.hidden_size
         self.attn_norm = InklingRMSNorm(hidden, eps=text_config.rms_norm_eps)
         self.attn = InklingAttention(
@@ -243,6 +248,13 @@ class Inkling(Module[..., ModuleV3Outputs]):
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
     ) -> None:
+        """Builds the embedding, decoder layers, and LM head.
+
+        Collects the attention leaves of ``config.kv_params`` into local and
+        global cache parameters, records each layer's cache key and index, and
+        masks the padded vocabulary tail with ``-inf`` when the unpadded size
+        is the smaller one.
+        """
         if return_hidden_states != ReturnHiddenStates.NONE:
             raise NotImplementedError(
                 "Inkling ModuleV3 does not return hidden states"

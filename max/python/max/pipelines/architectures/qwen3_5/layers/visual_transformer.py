@@ -100,8 +100,7 @@ class Qwen3_5VisionTransformer(VisionTransformer):
         )
 
     def input_types(self) -> tuple[Type[Any], ...]:
-        """Returns the vision graph's input types: the leaves of
-        :meth:`input_tree`."""
+        """Returns the vision graph's input types: the leaves of :meth:`input_tree`."""
         return tuple(tree.leaves(self.input_tree()))
 
     def trace(

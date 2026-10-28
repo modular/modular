@@ -250,6 +250,7 @@ class KimiDeltaAttention(Module[[Tensor, KdaStateAccess, Tensor], Tensor]):
     def forward(
         self, x: Tensor, state: KdaStateAccess, input_row_offsets: Tensor
     ) -> Tensor:
+        """Runs the delta attention over ``x`` and advances ``state``."""
         head_split = NamedMapping(x.mesh, (None, TP))
         normed = _kda_core(
             self.q_proj(x),

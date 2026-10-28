@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Mixture of Experts Gate Layer for DeepSeek V3.2."""
 
 from __future__ import annotations
@@ -28,12 +27,15 @@ class FloatCastingLinear(Linear):
     """Linear layer that casts to Dtype for intermediate operations."""
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Runs the linear layer and casts the result."""
         x = x.cast(DType.float32)
         weight = self.weight.to(x.device).cast(DType.float32)
         return x @ weight.T
 
 
 class DeepseekV3_2TopKRouter(DeepseekV3TopKRouter):
+    """Router that selects the top-k experts for each token."""
+
     def __init__(self, *args, **kwargs):
         kwargs["linear_cls"] = FloatCastingLinear
         super().__init__(*args, **kwargs)
@@ -42,7 +44,9 @@ class DeepseekV3_2TopKRouter(DeepseekV3TopKRouter):
         self, hidden_states: TensorValue
     ) -> tuple[TensorValue, TensorValue]:
         """Compute expert routing weights and indices for input hidden states.
-        Differs from V3_2 router in that it performs intermediate operations in float32.
+
+        Differs from V3_2 router in that it performs intermediate operations in
+        float32.
 
         Args:
             hidden_states: Input tensor of shape (seq_len, hidden_dim)

@@ -10,8 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Inkling's processor: raw images to hMLP patch blocks, and the prompt
-surgery that sizes each image's placeholder run.
+"""Inkling's processor: raw images to hMLP patch blocks.
+
+It also does the prompt surgery that sizes each image's placeholder run. It is
+hand-rolled after the vLLM reference
+(``vllm/transformers_utils/processors/inkling.py`` at v0.26.0), which diverges
+from what ``processor_config.json`` appears to say; only ``image_mean``,
+``image_std`` and ``image_token`` are read from that file.
 
 Hand-rolled after the vLLM reference (``vllm/transformers_utils/processors/
 inkling.py`` at v0.26.0), which diverges from what ``processor_config.json``
@@ -89,10 +94,12 @@ class InklingImageProcessor:
 
 
 class InklingProcessor:
-    """Stands in for the ``AutoProcessor`` the checkpoint names but does not
-    ship, in the shape :class:`~max.pipelines.lib.TextAndVisionTokenizer`
-    expects: a chat template, and a call that returns token ids alongside one
-    patch block per image."""
+    """Stands in for the ``AutoProcessor`` the checkpoint names.
+
+    The checkpoint does not ship one. The processor takes the shape
+    :class:`~max.pipelines.lib.TextAndVisionTokenizer` expects: a chat template,
+    and a call that returns token ids alongside one patch block per image.
+    """
 
     def __init__(
         self,
@@ -112,6 +119,7 @@ class InklingProcessor:
         self.image_token_id = int(vocab[image_token])
 
     def apply_chat_template(self, messages: Any, **options: Any) -> str:
+        """Renders the messages through the delegate's chat template."""
         templated = self.delegate.apply_chat_template(messages, **options)
         assert isinstance(templated, str)
         return templated
@@ -124,6 +132,7 @@ class InklingProcessor:
         add_special_tokens: bool = True,
         **unused_kwargs: Any,
     ) -> dict[str, Any]:
+        """Tokenizes the prompt and splits the images into patch blocks."""
         del unused_kwargs
         token_ids = (
             self.delegate.encode(text, add_special_tokens=add_special_tokens)

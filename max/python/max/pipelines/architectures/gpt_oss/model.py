@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The GPT-OSS pipeline model."""
 
 from __future__ import annotations
 
@@ -100,19 +101,23 @@ class GptOssModel(
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
     ) -> None:
-        """
+        """Initializes the model.
+
         Args:
-            pipeline_config: The configuration settings for the entire pipeline.
+            pipeline_config: The configuration settings for the entire
+                pipeline.
             session: The MAX Engine inference session managing the runtime.
-            devices: A list of MAX Engine devices (:obj:`max.driver.Device`) to
-                run the model on.
+            devices: A list of MAX Engine devices (:obj:`max.driver.Device`)
+                to run the model on.
             kv_cache_config: Configuration settings for the Key-Value cache
                 (:obj:`max.pipelines.max_config.KVCacheConfig`).
             weights: The model weights (:obj:`max.graph.weights.Weights`).
+            memory_plan: What the memory planner sized for this run.
             adapter: An optional adapter to modify weights before loading
                 (:obj:`max.graph.weights.WeightsAdapter`).
             return_logits: The number of top logits to return from the model
                 execution.
+            max_batch_size: The largest batch the graphs are compiled for.
         """
         super().__init__(
             pipeline_config,

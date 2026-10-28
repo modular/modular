@@ -107,6 +107,7 @@ class Gemma3TransformerBlock(Module):
         input_row_offsets: list[TensorValue],
         **kwargs,
     ) -> list[TensorValue]:
+        """Run attention and the feedforward network over the sharded inputs."""
         residual = xs
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
         attn_out = [

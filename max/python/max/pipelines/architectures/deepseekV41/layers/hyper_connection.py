@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Hyper-connection steps around the decoder sublayers.
 
 Between two sublayers, one fused step writes the earlier sublayer's output

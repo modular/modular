@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Repeated 2D rotary embedding for the vision tower."""
 
 from __future__ import annotations
 
@@ -55,6 +56,7 @@ class Rope2DPosEmbRepeated(Module[[Tensor], Tensor]):
         self.mapping = _replicated_mapping(self.device)
 
     def to(self, target: Device | DeviceMesh | DeviceMapping) -> Self:
+        """Moves the embedding's tables onto ``target``."""
         self.mapping = _replicated_mapping(target)
         return super().to(target)
 

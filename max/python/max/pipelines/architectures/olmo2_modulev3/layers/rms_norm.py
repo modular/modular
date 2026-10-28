@@ -24,6 +24,7 @@ class Olmo2RMSNorm(RMSNorm):
     """
 
     def forward(self, x: Tensor) -> Tensor:
+        """Normalizes ``x`` by its root mean square."""
         return rms_norm(
             x,
             self.weight,

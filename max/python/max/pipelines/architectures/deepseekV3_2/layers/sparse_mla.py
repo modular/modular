@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Sparse latent attention for DeepSeek-V3.2."""
+
 from __future__ import annotations
 
 import logging
@@ -411,6 +413,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
         selection_lag: int = 0,
         indexer_layer_idx: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue]:
+        """Runs sparse MLA attention with FP8 weights."""
         wqkv, wqkv_scale = self.wqkv
         qkv = quantized_matmul(
             x=x,
@@ -635,6 +638,7 @@ class DataParallelSparseLatentAttentionWithRopeFp8(
         selection_lag: int = 0,
         indexer_layer_idx: TensorValue | None = None,
     ) -> tuple[list[TensorValue], list[TensorValue]]:
+        """Runs the attention layer across the data-parallel devices."""
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
 
@@ -755,6 +759,7 @@ class TensorParallelSparseLatentAttentionWithRopeFp8(
         selection_lag: int = 0,
         indexer_layer_idx: TensorValue | None = None,
     ) -> tuple[list[TensorValue], list[TensorValue]]:
+        """Runs the attention layer across the tensor-parallel devices."""
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
 
@@ -1046,6 +1051,7 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
         selection_lag: int = 0,
         indexer_layer_idx: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue]:
+        """Runs sparse MLA attention over the hidden states."""
         q_lora_rank = self.q_lora_rank
         if q_lora_rank is None:
             raise ValueError(
@@ -1217,6 +1223,7 @@ class DataParallelSparseLatentAttentionWithRope(SparseLatentAttentionWithRope):
         input_row_offsets_: list[TensorValue],
         kv_collections: list[PagedCacheValues],
     ) -> list[MLAPrefillMetadata]:
+        """Splits the prefill metadata across the data-parallel devices."""
         multi_mla_prefill_metadata: list[MLAPrefillMetadata] = []
 
         for input_row_offsets, kv_collection in zip(
@@ -1245,6 +1252,7 @@ class DataParallelSparseLatentAttentionWithRope(SparseLatentAttentionWithRope):
         selection_lag: int = 0,
         indexer_layer_idx: TensorValue | None = None,
     ) -> tuple[list[TensorValue], list[TensorValue]]:
+        """Runs the attention layer across the data-parallel devices."""
         del signal_buffers
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
@@ -1336,6 +1344,7 @@ class TensorParallelSparseLatentAttentionWithRope(
         input_row_offsets_: list[TensorValue],
         kv_collections: list[PagedCacheValues],
     ) -> list[MLAPrefillMetadata]:
+        """Splits the prefill metadata across the tensor-parallel devices."""
         multi_mla_prefill_metadata: list[MLAPrefillMetadata] = []
 
         for input_row_offsets, kv_collection in zip(
@@ -1364,6 +1373,7 @@ class TensorParallelSparseLatentAttentionWithRope(
         selection_lag: int = 0,
         indexer_layer_idx: TensorValue | None = None,
     ) -> tuple[list[TensorValue], list[TensorValue]]:
+        """Runs the attention layer across the tensor-parallel devices."""
         if not self.devices:
             raise ValueError("devices cannot be None or empty")
 

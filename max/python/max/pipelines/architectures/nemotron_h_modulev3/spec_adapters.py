@@ -120,9 +120,11 @@ class _Verified:
 
 
 class NemotronHBlockTarget:
-    """Nemotron-H verifies on read-only live state, then replays the accepted
-    prefix.
+    """Verifies on read-only live state, then replays the accepted prefix.
 
+    The state leaves ride in the batch's ``passthrough_kv``: per device, the
+    live conv and SSM pools, in the order
+    ``NemotronHConfig.construct_kv_params`` declares them.
     The state leaves ride in the batch's ``passthrough_kv``: per device, the
     live conv and SSM pools, in the order ``NemotronHConfig.construct_kv_params``
     declares them.
@@ -143,6 +145,7 @@ class NemotronHBlockTarget:
     def __call__(
         self, batch: SequentialBatch | BlockBatch
     ) -> Verified[list[TensorValue]]:
+        """Runs the target over the block batch."""
         assert isinstance(batch, BlockBatch)
         state: list[RecurrentStateInputsPerDevice[TensorValue, Any]] = []
         for leaves in batch.passthrough_kv[STATE_CACHE_KEY]:
@@ -258,6 +261,7 @@ class NemotronHBlockTarget:
         return captures
 
     def ep_input_types(self) -> Sequence[TensorType | BufferType]:
+        """No expert-parallel inputs: this target shards nothing that way."""
         return ()
 
 
@@ -296,6 +300,7 @@ class DSparkNemotronHProposer:
         target_hidden: list[TensorValue],
         ctx_kv: list[Any],
     ) -> None:
+        """Loads the draft's weights and binds it to the target."""
         # The first phase after the accepted count settles, and the last
         # before anything reads the live state pools.
         self.target.roll_forward(batch)
@@ -315,6 +320,7 @@ class DSparkNemotronHProposer:
     def embed_block(
         self, batch: BlockBatch, block_ids: TensorValue
     ) -> list[TensorValue]:
+        """Embeds a block of draft tokens."""
         ids = _replicate(Tensor.from_graph_value(block_ids), self.mesh)
         embedded = self.target.target.backbone.embeddings(ids)
         # The anchor embeds as the target embeds it; the draft's own trained
@@ -334,6 +340,7 @@ class DSparkNemotronHProposer:
         offsets: list[TensorValue],
         block_kv: list[Any],
     ) -> list[TensorValue]:
+        """Runs the draft over one block."""
         hidden = self.draft.forward_block(
             _from_shards(embeds, self.mesh),
             PagedCacheValues.from_upstream(
@@ -351,6 +358,7 @@ class DSparkNemotronHProposer:
         accepted: Accepted,
         sampler: DraftSampler,
     ) -> TensorValue:
+        """Samples each block position and keeps the accepted prefix."""
         k = self.block_size
         drafts = k - 1
         hidden = _from_shards(block_hs, self.mesh)

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Merges neighbouring vision patches before projection."""
 
 from __future__ import annotations
 
@@ -57,6 +58,7 @@ class PatchMergerMLP(Module[[Tensor], Tensor]):
         )
 
     def forward(self, x: Tensor) -> Tensor:
+        """Normalizes and projects the merged patches."""
         # x: (total_patches, N_k, mm_hidden_size)
         x = self.pre_norm(x)
         # Use self.input_dim explicitly instead of -1: the symbolic shape engine

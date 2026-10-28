@@ -203,6 +203,7 @@ class LagunaAttention(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """The attention's sharding strategy, or ``None``."""
         return self._sharding_strategy
 
     @sharding_strategy.setter
@@ -224,6 +225,7 @@ class LagunaAttention(Module, Shardable):
         self._sharding_strategy = strategy
 
     def shard(self, devices: Iterable[DeviceRef]) -> list[LagunaAttention]:
+        """Returns one replica per device, sharded as the strategy says."""
         if not self._sharding_strategy:
             raise ValueError(
                 "LagunaAttention layer cannot be sharded because no "

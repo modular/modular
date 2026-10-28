@@ -101,22 +101,24 @@ class KimiK3MLAAttention(Module[..., Tensor]):
         kv_params: KVCacheParams | None = None,
         layer_idx: int = 0,
     ) -> None:
-        """Args:
-        hidden_size: ``config.hidden_size``.
-        num_heads: ``config.num_attention_heads``.
-        qk_nope_head_dim: ``config.qk_nope_head_dim`` -- the un-encoded
+        """Builds the MLA attention.
+
+        Args:
+            hidden_size: ``config.hidden_size``.
+            num_heads: ``config.num_attention_heads``.
+            qk_nope_head_dim: ``config.qk_nope_head_dim`` -- the un-encoded
             query/key width per head.
-        qk_rope_head_dim: ``config.qk_rope_head_dim`` -- the width of the
+            qk_rope_head_dim: ``config.qk_rope_head_dim`` -- the width of the
             MQA-shared slice a RoPE-shaped port would rotate; this model
             never does.
-        v_head_dim: ``config.v_head_dim``.
-        q_lora_rank: ``config.q_lora_rank``.
-        kv_lora_rank: ``config.kv_lora_rank`` -- latent width of the
+            v_head_dim: ``config.v_head_dim``.
+            q_lora_rank: ``config.q_lora_rank``.
+            kv_lora_rank: ``config.kv_lora_rank`` -- latent width of the
             compressed key/value.
-        kv_params: Required for :meth:`forward_ragged` and
+            kv_params: Required for :meth:`forward_ragged` and
             :meth:`forward_latent_ragged`; this layer's leaf of the model's
             cache tree.
-        layer_idx: This layer's position among the model's full-attention
+            layer_idx: This layer's position among the model's full-attention
             layers, for :meth:`forward_ragged` and
             :meth:`forward_latent_ragged`.
         """
@@ -160,7 +162,9 @@ class KimiK3MLAAttention(Module[..., Tensor]):
         )
 
     def forward(self, x: Tensor) -> Tensor:
-        """Args:
+        """Runs the MLA attention over ``x``.
+
+        Args:
             x: ``[batch, seq_len, hidden]`` layer input -- also the source
                 of the output gate, so it is read twice.
 

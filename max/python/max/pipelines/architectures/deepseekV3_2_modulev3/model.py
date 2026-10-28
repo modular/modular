@@ -49,6 +49,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
         kv_cache_config: Any,
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
+        """The KV cache parameters this model was traced with."""
         return DeepseekV3_2Config.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,

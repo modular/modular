@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """RoPE for DeepSeek-V4.
 
 Two things differ from what ``YarnRotaryEmbedding`` gives out of the box.

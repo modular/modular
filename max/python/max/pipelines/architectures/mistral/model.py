@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Mistral pipeline model."""
 
 from __future__ import annotations
 
@@ -61,6 +62,8 @@ class MistralInputs(ModelInputs):
 
 
 class MistralModel(PipelineModelWithKVCache[TextContext, MistralConfig, Model]):
+    """The Mistral pipeline model."""
+
     model_config_cls: ClassVar[type[Any]] = MistralConfig
     batch_processor_cls: ClassVar[type[MistralBatchProcessor]] = (
         MistralBatchProcessor

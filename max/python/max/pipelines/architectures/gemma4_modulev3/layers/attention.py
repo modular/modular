@@ -184,6 +184,7 @@ class Gemma4Attention(Module[..., Tensor]):
         *,
         input_row_offsets: Tensor,
     ) -> Tensor:
+        """Runs the attention over ``x``, reading and updating the KV cache."""
         layer_idx = F.constant(
             self.layer_idx_in_cache, DType.uint32, device=CPU()
         )

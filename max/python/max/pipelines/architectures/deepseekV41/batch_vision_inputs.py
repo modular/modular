@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Packs a batch's uncached images into DeepSeek-V4.1 vision model inputs."""
 
 from __future__ import annotations

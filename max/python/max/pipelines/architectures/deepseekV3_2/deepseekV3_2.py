@@ -312,8 +312,7 @@ class DeepseekV3_2DecoderLayer(Module):
     def _get_mlp(
         self, config: DeepseekV3_2Config, layer_idx: int
     ) -> DeepseekV3_2MLP | DeepseekV3_2MoE | MoE:
-        """Helper function to return a mixture of experts layer or traditional multi-layer perceptron layer
-        for the TransformerBlock's mlp depending on the layer idx.
+        """Returns the MLP or MoE layer the TransformerBlock uses for a layer.
 
         Args:
             config: Configuration object containing model parameters
@@ -429,6 +428,7 @@ class DeepseekV3_2DecoderLayer(Module):
         # and this step's token.
         selection_lag: int = 0,
     ) -> list[TensorValue]:
+        """Runs one decoder layer over the hidden states."""
         # Dual-carry Pre-LN: attention uses ``xs_norm``; residuals use ``xs_raw``.
         apply_next = bool(next_input_gamma)
 
@@ -746,6 +746,7 @@ class DeepseekV3_2(Module):
         batch_context_lengths: list[TensorValue],
         ep_inputs: list[Value[Any]] | None = None,
     ) -> DecoderOutputs:
+        """Runs the model over the graph inputs."""
         if not host_input_row_offsets.device == DeviceRef.CPU():
             raise ValueError("input_row_offsets must be located on CPU")
         if not data_parallel_splits.device == DeviceRef.CPU():
@@ -926,6 +927,7 @@ class DeepseekV3_2(Module):
     def input_types(
         self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
+        """The graph's input types, taken from the input tree."""
         return tuple(tree.leaves(self.input_tree(kv_params)))
 
     def trace(
@@ -936,8 +938,9 @@ class DeepseekV3_2(Module):
         custom_extensions: Iterable[Path] = (),
         is_device_graph: bool = False,
     ) -> Graph:
-        """Traces the graph, whose inputs are the leaves of
-        :meth:`input_tree` for the config's KV cache parameters.
+        """Traces the graph over the leaves of :meth:`input_tree`.
+
+        The leaves carry the config's KV cache parameters.
 
         Adapts the flat graph inputs to :meth:`__call__`: splits off the
         signal buffers and splits the KV cache into its MLA and indexer

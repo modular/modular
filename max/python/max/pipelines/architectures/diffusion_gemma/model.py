@@ -81,6 +81,7 @@ class DiffusionGemmaForBlockDiffusionModel(Gemma3_MultiModalModel):
     compute_log_probabilities = PipelineModel.compute_log_probabilities
 
     def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
+        """Builds the vision, encoder and decoder graphs."""
         assert self.max_batch_size, "Expected max_batch_size to be set"
 
         weights_dict = dict(self.weights.items())

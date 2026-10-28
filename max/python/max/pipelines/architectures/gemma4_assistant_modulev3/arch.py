@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Registers Gemma4Assistant on ModuleV3."""
 
 from dataclasses import replace
 

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Qwen2.5-VL tokenizer."""
 
 from __future__ import annotations
 
@@ -709,6 +710,7 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
         self,
         request: TextGenerationRequest,
     ) -> Qwen2_5VLTextAndVisionContext:
+        """Opens a request context, waiting for the images to arrive."""
         eos_tracker = self._build_eos_tracker(request)
         # Exit early, if no images are provided.
         if not request.images:

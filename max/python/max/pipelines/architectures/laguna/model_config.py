@@ -518,6 +518,9 @@ class LagunaConfig(Llama3Config):
 
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
+            model_config: The MAX Engine model configuration; defaults to
+                ``pipeline_config.model``.
+            max_seq_len: The sequence length the cache was sized for.
 
         Returns:
             An initialized LagunaConfig instance.
@@ -550,6 +553,7 @@ class LagunaConfig(Llama3Config):
             pipeline_config: The MAX Engine pipeline configuration.
             huggingface_config: The HuggingFace model configuration.
             model_config: The MAX Engine model configuration.
+            max_seq_len: The sequence length the cache was sized for.
 
         Returns:
             An initialized LagunaConfig instance.

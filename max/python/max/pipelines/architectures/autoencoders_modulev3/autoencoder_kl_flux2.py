@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""ModuleV3 Flux2 autoencoder KL with its decode postprocessing."""
 
 from collections.abc import Callable
 from types import SimpleNamespace
@@ -123,6 +124,7 @@ class PostprocessAndDecode(Module[..., Tensor]):
         h_carrier: Tensor,
         w_carrier: Tensor,
     ) -> Tensor:
+        """Unpatches the latents and decodes them to an image."""
         batch = latents_bsc.shape[0]
         c = latents_bsc.shape[2]
         # Extract spatial dims from carrier shapes (symbolic Dims, not runtime values)
@@ -167,6 +169,7 @@ class PostprocessAndDecode(Module[..., Tensor]):
         return F.transfer_to(F.cast(decoded, DType.uint8), DeviceRef.CPU())
 
     def input_types(self) -> tuple[TensorType, ...]:
+        """The module's input types."""
         return (
             TensorType(
                 self._dtype,

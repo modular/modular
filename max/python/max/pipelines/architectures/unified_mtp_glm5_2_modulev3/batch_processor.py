@@ -31,6 +31,7 @@ class UnifiedMTPGlm5_2ModuleV3Inputs(UnifiedMTPGlm5_2Inputs):
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
+        """The step's buffers, in the graph's input order."""
         return (
             self.tokens,
             self.input_row_offsets,

@@ -38,8 +38,11 @@ apply_multidimensional_rope = F.functional(_apply_multidimensional_rope)
 
 
 class Gemma4VisionAttention(Module[..., Tensor]):
-    """Ragged bidirectional attention: per-head q/k norms, weightless v norm,
-    2-D RoPE, scale=1.0. Port of the graph arch's Gemma4VisionAttention.
+    """Ragged bidirectional attention over each image's patches.
+
+    It applies per-head query and key norms, a weightless value norm and 2D
+    RoPE, at scale 1.0. This is the ModuleV3 port of the graph
+    architecture's ``Gemma4VisionAttention``.
     """
 
     def __init__(
@@ -87,6 +90,7 @@ class Gemma4VisionAttention(Module[..., Tensor]):
         cu_seqlens: Tensor,
         max_seq_len: Tensor,
     ) -> Tensor:
+        """Runs the attention over the patches in each image."""
         xq = self.q_norm(
             self.q_proj(hidden_states).reshape(
                 (-1, self.num_attention_heads, self.head_dim)

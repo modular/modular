@@ -254,6 +254,7 @@ class Glm5Next(Module[..., ModuleV3Outputs]):
         input_row_offsets: Tensor,
         *variadic_args: Tensor,
     ) -> ModuleV3Outputs:
+        """Runs the language graph over tokens."""
         del return_n_logits
         mesh = self.config.mesh
         assert mesh is not None

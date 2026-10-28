@@ -284,6 +284,11 @@ class Glm5NextMTPProposer:
         tokens: TensorValue,
         target_hidden: _TargetHidden,
     ) -> Proposed:
+        """Runs the draft over the prompt and proposes the first token.
+
+        The attention selection captured during the pass is returned for the
+        steps that follow.
+        """
         assert batch.num_accepted is not None
         selection: list[TensorValue] = []
         self.draft.mlp.token_shard_name = _PREFILL_TOKEN_SHARD
@@ -323,6 +328,11 @@ class Glm5NextMTPProposer:
     def step(
         self, batch: SequentialBatch, draft_input: DraftStepInput, index: int
     ) -> Proposed:
+        """Runs one draft step at ``index`` and returns the step's logits.
+
+        The step reuses the selection the previous step captured, and it sets
+        the attention lag to ``index`` for the draft call.
+        """
         # Step 0's selection was made for the token one position before step
         # 1's, and every later step reuses it.
         token_shard_name = self.draft.mlp.token_shard_name

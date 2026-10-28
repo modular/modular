@@ -103,6 +103,7 @@ class MiMoV2DecoderLayer(Module):
         freqs_cis: Sequence[TensorValue],
         input_row_offsets: Sequence[TensorValue],
     ) -> list[TensorValue]:
+        """Runs the layer over its sharded hidden states."""
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
         attn_out = [
             shard(
@@ -339,6 +340,7 @@ class MiMoV2(DistributedLogitsPostprocessMixin, Module):
         return_n_logits: TensorValue,
         input_row_offsets: Sequence[TensorValue],
     ) -> DecoderOutputs:
+        """Runs the model over the graph inputs."""
         h_embed = self.embed_tokens(tokens)
         # A broadcast over the signal buffers, not a GPU-to-GPU transfer: the
         # transfer makes one device's stream wait on another's, which device

@@ -151,6 +151,7 @@ class QwenImageTransformer2DModel(Module):
         self.num_noise_tokens: int | None = None
 
     def input_types(self) -> tuple[TensorType, ...]:
+        """The graph's input types."""
         hidden_states_type = TensorType(
             self.max_dtype,
             shape=["batch_size", "image_seq_len", self.in_channels],

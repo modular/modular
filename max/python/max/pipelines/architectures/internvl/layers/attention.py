@@ -51,6 +51,7 @@ class InternVLMultiheadAttention(Module, Shardable):
         stacked_qkv: bool = True,
     ) -> None:
         """Initialize InternVL attention layer.
+
         Args:
             num_attention_heads: The number of attention heads.
             hidden_size: The dimension of the hidden states (embed_dim).

@@ -38,6 +38,7 @@ class Gemma4VisionPooler(Module[..., Tensor]):
     def forward(
         self, hidden_states: Tensor, pool_gather_index: Tensor
     ) -> Tensor:
+        """Pools each image's patch features into one vector."""
         original_dtype = hidden_states.dtype
         h = hidden_states.cast(DType.float32)
 

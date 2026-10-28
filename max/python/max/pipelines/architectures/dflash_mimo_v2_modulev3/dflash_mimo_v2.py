@@ -10,8 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The MiMo-V2 DFlash drafter on ModuleV3: a non-causal block over windowed
-target context.
+"""The MiMo-V2 DFlash drafter on ModuleV3.
+
+A non-causal block over windowed target context.
 
 The block is ``[anchor, mask x (block_size - 1)]``. Each block query attends
 to the context keys its window reaches and to every block key, with a learned
@@ -67,8 +68,10 @@ __all__ = [
 
 
 class DFlashMiMoV2Attention(Module[..., Tensor]):
-    """A drafter layer's attention: its K/V projection, shared by context and
-    block rows, plus the block's queries.
+    """A drafter layer's attention.
+
+    It holds a K/V projection shared by context and block rows, plus the block's
+    queries.
 
     The K/V a block query attends to must be computed the same way whether it
     came from a target tap or from the block itself, so both paths go through

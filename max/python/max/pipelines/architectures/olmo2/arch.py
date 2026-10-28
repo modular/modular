@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Registers the Olmo2 (``Olmo2ForCausalLM``) architecture."""
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext

@@ -42,6 +42,7 @@ from max.tensor import Tensor
 def act_quant(
     x: Tensor, quant_config: QuantConfig, block_size: int = 128
 ) -> tuple[Tensor, Tensor]:
+    """Quantizes the activation's last axis and returns its scales."""
     *x_dims, head_dim = x.shape
     x = x.reshape((-1, head_dim))
     assert int(head_dim) % block_size == 0
@@ -183,7 +184,8 @@ class Indexer(
         mla_collection: PagedCacheValues,
         mask_variant: MHAMaskVariant = MHAMaskVariant.NULL_MASK,
     ) -> Tensor:
-        """
+        """Runs the indexer over the activations and the normed queries.
+
         Args:
             x: Tensor of shape (total_seq_len, dim) Input activations.
             qr: Tensor of shape (total_seq_len, q_lora_rank) Pre-normed queries.

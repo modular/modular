@@ -386,6 +386,7 @@ class FLUXModule(Module[..., tuple[Tensor, Tensor, Tensor]]):
     def prepare_inputs(
         self, contexts: list[PixelContext]
     ) -> Flux2ModuleV3Inputs:
+        """Build the device buffers the graph consumes from one pixel context."""
         if len(contexts) != 1:
             raise ValueError(
                 "FLUXModule currently supports batch_size=1. "

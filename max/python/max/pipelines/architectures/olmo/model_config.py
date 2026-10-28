@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Config for Olmo models."""
+
 from dataclasses import dataclass
 from typing import ClassVar, Literal
 
@@ -40,6 +42,7 @@ class OlmoConfig(Llama3Config):
         norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm",
         attention_bias: bool = False,
     ) -> None:
+        """Resolves the Llama3 fields for Olmo and pins its layer norm."""
         super().finalize(
             huggingface_config=huggingface_config,
             state_dict=state_dict,

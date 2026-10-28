@@ -172,6 +172,7 @@ class KimiK2_5Model(
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
+        """The KV cache layout this architecture runs with."""
         return KimiK2_5TextConfig.construct_kv_params(
             huggingface_config=huggingface_config.text_config,
             pipeline_config=pipeline_config,
@@ -182,6 +183,7 @@ class KimiK2_5Model(
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
+        """How many layers the text tower has."""
         return KimiK2_5Config.get_num_layers(huggingface_config)
 
     def _load_state_dict(self) -> dict[str, Any]:
@@ -527,6 +529,7 @@ class KimiK2_5Model(
         return self._cached_empty_vision_embeddings
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
+        """Runs one decoding step and returns its logits."""
         assert isinstance(model_inputs, KimiK2_5ModelInputs)
         assert model_inputs.kv_cache_inputs is not None, (
             "KimiK2_5 requires KV cache inputs"

@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """DeepSeek-V3 Transformer block (ModuleV3)."""
 
 from __future__ import annotations
@@ -196,6 +195,7 @@ class DeepseekV3TransformerBlock(Module[..., Tensor]):
         mla_prefill_metadata: MLAPrefillMetadata | None = None,
         comm_buffers: EPCommBuffers | None = None,
     ) -> Tensor:
+        """Runs one decoder block over ``x``."""
         residual = x
         norm_x = self.input_layernorm(x)
         attn_out = self.self_attn(

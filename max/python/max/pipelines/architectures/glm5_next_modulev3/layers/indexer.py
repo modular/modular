@@ -149,8 +149,11 @@ def _store_closed_pools(
     layer_idx: TensorValue,
     p: _Pooling,
 ) -> None:
-    """Compacts the rows that closed a pool and writes them behind the
-    cache length, at the closed pool's own boundary."""
+    """Compacts the rows that closed a pool.
+
+    It writes them behind the cache length, at the closed pool's own
+    boundary.
+    """
     device = pooled.device
     closed = (closed_pool >= 0).cast(DType.int32)
     closed_before = exclusive_prefix_sum(closed)
@@ -335,6 +338,7 @@ class PooledIndexer(Module[..., Tensor]):
         layer_idx: Tensor,
         tail: KPoolTail,
     ) -> Tensor:
+        """Indexes ``x`` and returns the top-k pool picks per token."""
         q = self.wq_b(qr).reshape((-1, self.n_heads, self.head_dim))
         k = self.k_norm(self.wk(x))
         q_fp8, q_scale = act_quant(q, self.quant_config)

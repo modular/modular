@@ -122,8 +122,7 @@ class MiMoV2Inputs(ModelInputs):
 class MiMoV2ModuleV3BatchProcessor(
     ModuleV3SingleReplicaBatchProcessor[TextContext, MiMoV2Inputs]
 ):
-    """Ragged batching for MiMo-V2 ModuleV3 models (single replica, no
-    signals)."""
+    """Ragged batching for MiMo-V2 ModuleV3 models (single replica, no signals)."""
 
     def __init__(
         self, config: ArchConfig, runtime: BatchProcessorRuntime
@@ -149,10 +148,10 @@ class MiMoV2ModuleV3BatchProcessor(
         kv_params: KVCacheParamInterface,
         device_refs: list[DeviceRef],
     ) -> list[TensorType | BufferType]:
-        """Declares the DP batch-split tensors between the batch and KV
-        leaves, where MiniMax-M2 places them.
+        """Declares the DP batch-split tensors.
 
-        Both DP tensors are host-resident: the forward reads the splits
+        They sit between the batch and KV leaves, where MiniMax-M2 places
+        them. Both DP tensors are host-resident: the forward reads the splits
         and the row offsets while it slices each replica's batch, and
         `prepare_initial_token_inputs` produces them at runtime.
         """
@@ -181,8 +180,7 @@ class MiMoV2ModuleV3BatchProcessor(
         kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> MiMoV2Inputs:
-        """Packs the ragged batch, with the DP split tensors the forward
-        reads.
+        """Packs the ragged batch and the DP split tensors its forward reads.
 
         Under data parallelism every replica's requests concatenate into one
         device-0 batch, beside the CPU split boundaries and host row offsets

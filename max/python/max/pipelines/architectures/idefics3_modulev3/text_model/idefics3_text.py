@@ -190,6 +190,7 @@ class Idefics3TextModel(
         image_embeddings: Tensor,
         image_token_indices: Tensor,
     ) -> tuple[Tensor, ...]:
+        """Runs the decoder over ``tokens``, merging the image embeddings."""
         # Get text embeddings and merge in image embeddings.
         h = self.embed_tokens(tokens)
         h = merge_multimodal_embeddings(
@@ -285,6 +286,7 @@ class Idefics3Language(Module[..., tuple[Tensor, ...]]):
         image_token_indices: Tensor,
         *variadic_args,
     ) -> tuple[Tensor, ...]:
+        """Runs the language model over the tokens and the KV inputs."""
         symbolic_inputs = self.kv_params.unflatten_kv_inputs(
             iter(variadic_args)
         )

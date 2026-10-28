@@ -87,9 +87,10 @@ class MTPGlm5NextDraftArchConfig(ArchConfigWithBoundedMaxSeqLen):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> None:
-        """Returns ``None``: the layer writes the last slot of the target's
-        latent, indexer and tail ring caches, which the target's config
-        declares when speculating.
+        """Returns ``None``, because the layer writes into the target's caches.
+
+        It writes the last slot of the target's latent, indexer and tail ring
+        caches, which the target's config declares when it speculates.
 
         Raises:
             ValueError: If the accelerator is not an NVIDIA GPU. The pairing
@@ -108,8 +109,7 @@ class MTPGlm5NextDraftArchConfig(ArchConfigWithBoundedMaxSeqLen):
     def build_module(
         cls, context: ModelLoadContext
     ) -> tuple[Glm5NextMTP, Glm5NextConfig]:
-        """Builds the MTP layer from the target's checkpoint, which
-        ``context`` names.
+        """Builds the MTP layer from the checkpoint that ``context`` names.
 
         Its config is the target's, with the precision map read off the
         whole checkpoint, MTP layer included, so its FP8 projections load as

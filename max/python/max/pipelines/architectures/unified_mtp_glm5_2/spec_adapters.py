@@ -59,6 +59,7 @@ class Glm5_2Target:
         self.target = target
 
     def verify(self, batch: SequentialBatch) -> Verified[list[TensorValue]]:
+        """Runs the target over the batch to score the drafts."""
         outputs = self.target(
             batch.merged_tokens,
             batch.signal_buffers,
@@ -81,6 +82,7 @@ class Glm5_2Target:
         )
 
     def ep_input_types(self) -> Sequence[TensorType | BufferType]:
+        """The expert-parallel input types, or none without a manager."""
         if self.target.ep_manager is None:
             return ()
         return self.target.ep_manager.input_types()
@@ -119,6 +121,7 @@ class Glm5_2MTPProposer:
         tokens: TensorValue,
         target_hidden: list[TensorValue],
     ) -> Proposed:
+        """Runs the draft over the prompt's target hidden states."""
         # Step 0 needs ALL hidden states and VARIABLE logits; ``last_logits``
         # goes unread, so suppress its vocab-sized projection.
         self.draft.return_hidden_states = ReturnHiddenStates.ALL
@@ -154,6 +157,7 @@ class Glm5_2MTPProposer:
     def step(
         self, batch: SequentialBatch, draft_input: DraftStepInput, index: int
     ) -> Proposed:
+        """Runs one draft step from the previous step's tokens."""
         # ``hnorm`` expects the post-final-norm hidden state, which the target
         # hands over at step 0. ``shared_head_norm`` is row-wise, so
         # normalizing the one carried row here is equivalent and far cheaper.

@@ -537,6 +537,7 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """How many layers the text tower has."""
         text_config = Qwen3_5Config._get_text_config(huggingface_config)
         return text_config.num_hidden_layers
 

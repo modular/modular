@@ -78,8 +78,10 @@ class MTPDeepseekV3DraftArchConfig(ArchConfigWithBoundedMaxSeqLen):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        """Returns a one-layer view of the target's cache, for the one
-        decoder layer the head has."""
+        """Returns a one-layer view of the target's cache.
+
+        The head has one decoder layer.
+        """
         target = DeepseekV3Config.construct_kv_params(
             huggingface_config,
             pipeline_config,
@@ -94,8 +96,10 @@ class MTPDeepseekV3DraftArchConfig(ArchConfigWithBoundedMaxSeqLen):
     def build_module(
         cls, context: ModelLoadContext
     ) -> tuple[DeepseekV3NextN, DeepseekV3NextNConfig]:
-        """Builds the NextN head from the target's checkpoint, which
-        ``context`` names.
+        """Builds the NextN head from the target's checkpoint.
+
+        ``context`` names it. It embeds and projects through the target's
+        embedding and head, so spec decoding shares those onto it.
 
         It embeds and projects through the target's embedding and head, so
         spec decoding shares those onto it.

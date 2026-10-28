@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Mistral3 pipeline model."""
 
 from __future__ import annotations
 
@@ -69,6 +70,7 @@ class Mistral3Model(MistralModel):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
+        """Delegates to the parent with the text tower's config."""
         return super().get_kv_params(
             huggingface_config.text_config,
             pipeline_config,

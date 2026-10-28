@@ -169,6 +169,7 @@ class DeepseekV2TextModel(
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
     ) -> ModuleV3Outputs:
+        """Runs the embedding and decoder stack over the tokens."""
         h = self.embed_tokens(tokens)
 
         freqs_cis = F.cast(self.rope.freqs_cis, h.dtype).to(h.device)
@@ -212,6 +213,7 @@ class DeepseekV2(Module[..., ModuleV3Outputs]):
         input_row_offsets: Tensor,
         *variadic_args: Tensor,
     ) -> ModuleV3Outputs:
+        """Runs the model over its variadic graph inputs."""
         kv_inputs = iter(x._graph_value for x in variadic_args)
         symbolic_inputs = self.kv_params.unflatten_kv_inputs(kv_inputs)
         kv_collections = tree.leaves(

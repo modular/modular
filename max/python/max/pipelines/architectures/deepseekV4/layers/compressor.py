@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """The DeepSeek-V4 CSA compressor.
 
 Pools every ``compress_ratio`` consecutive tokens into one compressed KV entry

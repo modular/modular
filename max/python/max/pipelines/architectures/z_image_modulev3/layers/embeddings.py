@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Z-Image's timestep and rotary embeddings."""
 
 import math
 
@@ -172,6 +173,8 @@ def get_1d_rotary_pos_embed(
 
 
 class TimestepEmbedder(Module[[Tensor], Tensor]):
+    """Embeds the timestep into the block's conditioning vector."""
+
     def __init__(
         self,
         out_size: int,
@@ -191,6 +194,7 @@ class TimestepEmbedder(Module[[Tensor], Tensor]):
         dim: int,
         max_period: float = 10000.0,
     ) -> Tensor:
+        """Builds the sinusoidal embedding of ``t``."""
         half = dim // 2
         freqs = F.arange(0, half, dtype=DType.float32, device=t.device)
         freqs = F.exp((-math.log(max_period) * freqs) / float(half))
@@ -211,6 +215,7 @@ class TimestepEmbedder(Module[[Tensor], Tensor]):
         return embedding
 
     def forward(self, t: Tensor) -> Tensor:
+        """Embeds ``t`` and projects it."""
         t_freq = self.timestep_embedding(t, self.frequency_embedding_size)
         t_freq = F.cast(t_freq, self.linear_1.weight.dtype)
         t_emb = self.linear_2(F.silu(self.linear_1(t_freq)))
@@ -218,6 +223,8 @@ class TimestepEmbedder(Module[[Tensor], Tensor]):
 
 
 class RopeEmbedder(Module[[Tensor], tuple[Tensor, Tensor]]):
+    """Builds the rotary embedding tables from the position ids."""
+
     def __init__(
         self,
         theta: float = 256.0,
@@ -227,6 +234,7 @@ class RopeEmbedder(Module[[Tensor], tuple[Tensor, Tensor]]):
         self.axes_dims = axes_dims
 
     def forward(self, ids: Tensor) -> tuple[Tensor, Tensor]:
+        """Returns the rotary tables for ``ids``."""
         if ids.rank != 2:
             raise ValueError(f"Expected 2D ids tensor, got rank={ids.rank}")
 

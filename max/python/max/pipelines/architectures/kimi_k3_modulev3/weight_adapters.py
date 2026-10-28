@@ -10,9 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Maps a Kimi K3 safetensors checkpoint onto the ModuleV3 registry's module
-tree for the TEXT tower (:class:`~.model.KimiK3Model`).
+"""Maps a Kimi K3 safetensors checkpoint onto the module tree.
 
+The tree is the ModuleV3 registry's layout for the text tower
+(:class:`~.model.KimiK3Model`).
 Builds the ``dict[str, Weights] -> dict[str, WeightData]`` the registry
 loads from, applying the same shape transforms (fused qkv conv, fused
 gate/up, stacked experts, de-padded ``A_log``) that ``model.py``'s
@@ -141,8 +142,10 @@ def _rewrap(array: np.ndarray, like: WeightData, name: str) -> WeightData:
 
 
 def _fuse_gate_up(gate: WeightData, up: WeightData, name: str) -> WeightData:
-    """Row-concatenates gate and up, gate first; mirrors ``mlp.py``'s
-    ``KimiK3DenseMLP.gate_up_proj`` layout."""
+    """Row-concatenates gate and up, gate first.
+
+    Mirrors ``mlp.py``'s ``KimiK3DenseMLP.gate_up_proj`` layout.
+    """
     fused = np.concatenate([_elements(gate), _elements(up)], axis=0)
     return _rewrap(fused, gate, name)
 
@@ -150,8 +153,10 @@ def _fuse_gate_up(gate: WeightData, up: WeightData, name: str) -> WeightData:
 def _fuse_qkv_conv_weight(
     q: WeightData, k: WeightData, v: WeightData, name: str
 ) -> WeightData:
-    """Packs three ``[C, 1, K]`` depthwise convs into the one ``[3C, K]``
-    weight ``KimiK3KDAAttention.conv_weight`` takes."""
+    """Packs three ``[C, 1, K]`` depthwise convs into one ``[3C, K]`` weight.
+
+    ``KimiK3KDAAttention.conv_weight`` takes the packed weight.
+    """
     arrays = [_elements(w) for w in (q, k, v)]
     fused = np.concatenate([a.reshape(a.shape[0], -1) for a in arrays], axis=0)
     return _rewrap(fused, q, name)
@@ -160,9 +165,10 @@ def _fuse_qkv_conv_weight(
 def _canonical_a_log(
     a_log: WeightData, num_heads: int, head_dim: int, name: str
 ) -> WeightData:
-    """Broadcasts per-head gate coefficients, removing exact-zero storage
-    padding; mirrors ``model.py``'s ``_canonical_a_log``.
+    """Broadcasts per-head gate coefficients.
 
+    Exact-zero storage padding is dropped, mirroring ``model.py``'s
+    ``_canonical_a_log``.
     The published checkpoint stores ``num_heads`` active coefficients in a
     longer vector with a zero tail (e.g. 96 of 128). The official
     initializer and independent runtime loaders index its active prefix by
@@ -289,9 +295,13 @@ def _stack_gate_up_arrays(
 def _stack_expert_weights(
     w1: list[WeightData], w2: list[WeightData], w3: list[WeightData], name: str
 ) -> tuple[WeightData, WeightData]:
-    """Stacks per-expert checkpoint tensors into the two grouped tensors
-    ``KimiK3LatentMoE.experts_gate_up_proj``/``experts_down_proj`` take.
+    """Stacks per-expert checkpoint tensors into the two grouped tensors.
 
+    ``KimiK3LatentMoE.experts_gate_up_proj`` and ``experts_down_proj`` take
+    them. ``w1`` is gate, ``w3`` is up and ``w2`` is down: the checkpoint's own
+    numbering does not follow the data flow. The MXFP4 case's ``weight_scale``
+    tensors go through the same stacking, since whether the values are packed or
+    dense makes no difference to it.
     ``w1`` is gate, ``w3`` is up, ``w2`` is down -- the checkpoint's own
     numbering does not follow the data flow. Also reused for the MXFP4
     case's ``weight_scale`` tensors, since the stacking itself is the same
@@ -336,10 +346,12 @@ def convert_kimi_k3_state_dict(
     huggingface_config: AutoConfig,
     **unused_kwargs: Any,
 ) -> dict[str, WeightData]:
-    """Converts a Kimi K3 checkpoint's text tower into
-    :class:`~.model.KimiK3Model`'s bare module-tree names.
+    """Converts a Kimi K3 checkpoint's text tower onto the module tree.
+
+    The names it produces are :class:`~.model.KimiK3Model`'s own.
 
     Args:
+        **unused_kwargs: Accepted so every adapter shares one signature.
         state_dict: Raw checkpoint tensors keyed by their original
             ``language_model.model``-prefixed checkpoint names.
         huggingface_config: Either the top-level multimodal ``config.json``

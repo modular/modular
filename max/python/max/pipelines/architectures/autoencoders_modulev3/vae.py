@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Encoder, decoder, and resnet blocks for the ModuleV3 autoencoder."""
 
 from typing import Optional
 

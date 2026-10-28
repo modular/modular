@@ -104,11 +104,13 @@ class Glm5NextSparseMLA(QuantizedLatentAttention):
 
     @property
     def w_uk(self) -> tuple[Tensor, Tensor | None]:
+        """The key half of the absorbed KV projection weight."""
         w = self._kv_b_proj_weight[..., : self.qk_nope_head_dim]
         return w.transpose(0, 1), None
 
     @property
     def w_uv(self) -> tuple[Tensor, Tensor | None]:
+        """The value half of the absorbed KV projection weight."""
         w = self._kv_b_proj_weight[..., self.qk_nope_head_dim :]
         return w.permute([1, 2, 0]), None
 
@@ -122,6 +124,7 @@ class Glm5NextSparseMLA(QuantizedLatentAttention):
         freqs_cis: Tensor,
         tail: KPoolTail,
     ) -> Tensor:
+        """Runs the absorbed attention over ``x``."""
         if kv_collection.kv_scales is not None:
             raise ValueError(
                 "An FP8 latent cache with a BF16 kv_b_proj is not reachable: "

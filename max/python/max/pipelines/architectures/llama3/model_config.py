@@ -162,6 +162,7 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         huggingface_config: AutoConfig,
     ) -> float:
         """The attention multiplier is a scalar that scales the attention scores.
+
         It is used to control the variance of the attention scores.
 
         This function is used to get the attention multiplier from the
@@ -217,6 +218,7 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """The checkpoint's hidden layer count."""
         return huggingface_config.num_hidden_layers
 
     @override
@@ -252,6 +254,7 @@ class Llama3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         *,
         max_seq_len: int,
     ) -> Self:
+        """Builds the config from the pipeline and HF configs."""
         model_config = model_config or pipeline_config.model
         kv_cache_config = model_config.kv_cache
         quantization_encoding = _select_quantization_encoding(

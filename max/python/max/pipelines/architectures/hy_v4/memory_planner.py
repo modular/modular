@@ -44,8 +44,11 @@ class HYV4MemoryPlanner(DeepseekV3MemoryPlanner):
     """
 
     def kv_bytes_per_token(self) -> int:
-        """The MLA latent cache over all layers plus the FP8 indexer K cache
-        over the full layers, and the MTP draft's when the config has it."""
+        """The KV bytes one token occupies, across every cache the model holds.
+
+        That is the MLA latent cache over all layers, the FP8 indexer K cache
+        over the full layers, and the MTP draft's when the config has one.
+        """
         assert isinstance(self._config, HYV4Config)
         kv_params = self._config.get_kv_params()
         assert isinstance(kv_params, MultiKVCacheParams)
@@ -53,9 +56,13 @@ class HYV4MemoryPlanner(DeepseekV3MemoryPlanner):
 
     @override
     def estimate_weights_size(self, pipeline_config: PipelineConfig) -> int:
-        """Counts the head- and expert-split weights once and every other
-        weight once per device.
+        """Counts the head- and expert-split weights once per device.
 
+        Every other weight is counted once. The split weights are the
+        attention's ``q_b_proj``, ``kv_b_proj``, ``o_proj`` and ``linear_gate``
+        and the routed experts, of the decoder and MTP layers alike.
+        ``kv_b_proj`` gains a byte per element, as the adapter dequantizes it to
+        BF16.
         The split weights are the attention's ``q_b_proj``, ``kv_b_proj``,
         ``o_proj`` and ``linear_gate`` and the routed experts, of the decoder
         and MTP layers alike. ``kv_b_proj`` gains a byte per element, as the

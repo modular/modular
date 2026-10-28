@@ -107,6 +107,7 @@ class Ideogram4Pipeline(DiffusionPipeline):
 
     @traced(message="Ideogram4Pipeline.init_remaining_components")
     def init_remaining_components(self) -> None:
+        """Builds the scheduler and VAE the transformer runs beside."""
         self.vae_scale_factor = (
             2 ** (len(self.vae.config.block_out_channels) - 1)
             if getattr(self, "vae", None)
@@ -168,6 +169,7 @@ class Ideogram4Pipeline(DiffusionPipeline):
         self,
         context: PixelContext,
     ) -> Ideogram4ModelInputs:
+        """Builds the pipeline's inputs from the request context."""
         device = self.transformer.devices[0]
         dtype = self.transformer.config.dtype
 
@@ -312,6 +314,7 @@ class Ideogram4Pipeline(DiffusionPipeline):
     def execute(
         self, model_inputs: Ideogram4ModelInputs, **kwargs: object
     ) -> DiffusionPipelineOutput:
+        """Runs the denoising loop and returns the image."""
         mi = model_inputs
         device = self.devices[0]
 

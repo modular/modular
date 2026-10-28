@@ -88,6 +88,7 @@ class Gemma4MultimodalEmbedder(Module):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the projection weights are split across devices."""
         return self.embedding_projection.sharding_strategy
 
     @sharding_strategy.setter
@@ -98,6 +99,7 @@ class Gemma4MultimodalEmbedder(Module):
     def shard(
         self, devices: Iterable[DeviceRef]
     ) -> list[Gemma4MultimodalEmbedder]:
+        """Splits the projection weights across ``devices``."""
         assert self.sharding_strategy
 
         embedding_projection_shards = self.embedding_projection.weight.shard(

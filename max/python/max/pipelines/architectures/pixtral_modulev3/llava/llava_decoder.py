@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The LLaVA decoder stack."""
+
 from __future__ import annotations
 
 from max import functional as F
@@ -33,6 +35,8 @@ from ...llama3_modulev3.layers.transformer_block import LlamaTransformerBlock
 class Transformer(
     Module[[Tensor, PagedCacheValues, Tensor, Tensor], tuple[Tensor, ...]]
 ):
+    """The LLaVA decoder stack."""
+
     def __init__(
         self,
         dim: int,

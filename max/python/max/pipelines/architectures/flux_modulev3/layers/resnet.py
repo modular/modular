@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Residual blocks for the FLUX VAE decoder."""
+
 from max import functional as F
 from max.driver import accelerator_api
 from max.dtype import DType

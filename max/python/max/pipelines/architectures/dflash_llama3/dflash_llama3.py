@@ -232,7 +232,7 @@ class DFlashLlama3(Module):
         input_row_offsets: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
     ) -> list[TensorValue]:
-        # Alias for forward_block to satisfy the Module ABC.
+        """Alias for :meth:`forward_block`."""
         return self.forward_block(
             input_embeds, kv_collections, input_row_offsets, signal_buffers
         )

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""OLMo configuration on ModuleV3."""
 
 from dataclasses import dataclass
 from typing import ClassVar, Literal
@@ -45,6 +46,7 @@ class OlmoConfig(Llama3Config):
         norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm",
         attention_bias: bool = False,
     ) -> None:
+        """Delegates to the parent with layer norm, which OLMo uses."""
         super().finalize(
             huggingface_config=huggingface_config,
             state_dict=state_dict,

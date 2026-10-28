@@ -16,7 +16,8 @@ Every dense FP8 pair retains its compact E8M0 scales, wo_a included: the
 adapter never converts a byte, so the model loads the checkpoint's own
 codes and Mach hands the compiled graph the checkpoint's own tensors.
 Routed NVFP4 projections keep their separate per-expert input and weight
-scales."""
+scales.
+"""
 
 from __future__ import annotations
 
@@ -265,8 +266,7 @@ def _stack_sharded(
 def stack_projections(
     state_dict: dict[str, WeightData], n_devices: int = 1
 ) -> None:
-    """Replaces each :data:`STACKED_PROJECTIONS` pair with its stack, in
-    place.
+    """Replaces each :data:`STACKED_PROJECTIONS` pair with its stack, in place.
 
     ``weight`` always, ``scale`` with it: every dense FP8 projection's N is
     a multiple of the 32-row scale block, so scale block ``i`` of the second
@@ -554,6 +554,7 @@ class AdapterResult(dict[str, WeightData]):
 
     @property
     def state_dict(self) -> dict[str, WeightData]:
+        """The state dict the result carries."""
         return self
 
 
@@ -576,8 +577,11 @@ class EngramTable:
     scale_codes: np.ndarray
 
     def table_names(self, ordinal: int) -> tuple[str, str]:
-        """The ABI graph-input names this table feeds (:func:`.interface.extra_inputs`
-        declares ``engram_table_{ordinal}_{weight,scale}``)."""
+        """The ABI graph-input names this table feeds.
+
+        :func:`.interface.extra_inputs` declares
+        ``engram_table_{ordinal}_{weight,scale}``.
+        """
         return (
             f"engram_table_{ordinal}_weight",
             f"engram_table_{ordinal}_scale",
@@ -689,10 +693,11 @@ def convert_weight_data(
 def _rename_checkpoint(
     state_dict: Mapping[str, WeightData], *, has_vision: bool
 ) -> dict[str, WeightData]:
-    """Renames, relabels and drops each checkpoint tensor onto its tree
-    leaf -- the stage Mach's Rust adapter mirrors (``WeightLoader::adapt``)
-    and the weight-contract record covers, before any derived or stacked
-    leaf materializes.
+    """Maps each checkpoint tensor onto its tree leaf.
+
+    Each tensor is renamed, relabeled or dropped onto its leaf, before any
+    derived or stacked leaf materializes. The stage Mach's Rust adapter mirrors
+    this (``WeightLoader::adapt``) and the weight-contract record covers it.
     """
     out: dict[str, WeightData] = {}
     for name in sorted(state_dict):

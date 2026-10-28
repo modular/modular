@@ -177,6 +177,7 @@ class Glm5NextConfig(DeepseekV3_2Config):
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """How many layers the text tower has."""
         return _GraphGlm5NextConfig.get_num_layers(huggingface_config)
 
     @staticmethod
@@ -218,8 +219,10 @@ class Glm5NextConfig(DeepseekV3_2Config):
         return self.quant_scheme.config if self.quant_scheme else None
 
     def per_request_state_bytes(self) -> int:
-        """Returns GPU bytes one request's recurrent state occupies, summed
-        over every device."""
+        """Returns the GPU bytes one request's recurrent state occupies.
+
+        The count is summed over every device.
+        """
         return recurrent_state_bytes(self.kv_params, len(self.devices))
 
     def activation_bytes_per_token(self) -> int:
@@ -235,8 +238,11 @@ class Glm5NextConfig(DeepseekV3_2Config):
         weights_size: int,
         device_memory_utilization: float,
     ) -> int:
-        """Returns a memory-safe default ``max_batch_size``; see
-        :func:`~max.pipelines.architectures.glm5_next.model_config.state_bounded_batch_size`."""
+        """Returns a memory-safe default ``max_batch_size``.
+
+        See
+        :func:`~max.pipelines.architectures.glm5_next.model_config.state_bounded_batch_size`.
+        """
         return state_bounded_batch_size(
             self.per_request_state_bytes(),
             devices,

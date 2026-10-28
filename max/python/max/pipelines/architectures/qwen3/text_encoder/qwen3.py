@@ -69,6 +69,7 @@ class Qwen3MLP(Module):
         )
 
     def __call__(self, hidden_states: TensorValue) -> TensorValue:
+        """Runs the SwiGLU feed-forward over ``hidden_states``."""
         gate = ops.silu(self.gate_proj(hidden_states))
         up = self.up_proj(hidden_states)
         return self.down_proj(gate * up)

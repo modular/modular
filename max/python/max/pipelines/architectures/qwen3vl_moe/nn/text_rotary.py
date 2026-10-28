@@ -30,8 +30,7 @@ from max.nn.legacy.rotary_embedding import (
 
 
 class Qwen3VLTextRotaryEmbedding(Llama3RotaryEmbedding):
-    """
-    RotaryEmbedding for Qwen3VL text model with interleaved MRoPE support.
+    """RotaryEmbedding for Qwen3VL text model with interleaved MRoPE support.
 
     This implementation handles 3D position IDs (T, H, W dimensions) and applies
     interleaved multi-axis rotary position embedding (MRoPE) to reorganize frequency
@@ -70,6 +69,7 @@ class Qwen3VLTextRotaryEmbedding(Llama3RotaryEmbedding):
 
     @cached_property
     def inv_freqs(self) -> TensorValue:
+        """The inverse frequencies, computed once and cached."""
         if self._inv_freqs is None:
             # Match HuggingFace: compute in float32, round to bfloat16 (like parameter storage), then back to float32
             self._inv_freqs = (
@@ -80,11 +80,11 @@ class Qwen3VLTextRotaryEmbedding(Llama3RotaryEmbedding):
     def freqs_cis_base_position_ids(
         self, position_ids: TensorValue
     ) -> TensorValue:
-        """
-        Computes the frequency tensor for complex exponentials (cis)
-        for a given seq_len. Tensor is scaled with theta parameter.
-        Required to apply Rotary Position Embedding (RoPE) to tensor.
-        See 'Roformer: Enhanced Transformer with Rotary Embedding'
+        """Builds the frequency tensor for the given positions.
+
+        The tensor is scaled by theta and cast to complex exponentials,
+        which is what applies rotary position embedding to a tensor. See
+        'Roformer: Enhanced Transformer with Rotary Embedding'
         (arxiv.org/pdf/2104.09864).
 
         Args:
@@ -118,9 +118,11 @@ class Qwen3VLTextRotaryEmbedding(Llama3RotaryEmbedding):
         position_ids: TensorValue,
     ) -> TensorValue:
         """Apply interleaved MRoPE to 3D rotary embeddings.
+
         Reorganizes frequency layout from chunked [TTT...HHH...WWW] to
         interleaved [THTHWHTHW...TT], preserving frequency continuity.
-        args:
+
+        Args:
             position_ids: (3, total_seq_len, 1)
             freqs: (3, total_seq_len, head_dim // 2)
             mrope_section: (3,)
@@ -194,6 +196,7 @@ class Qwen3VLTextRotaryEmbedding(Llama3RotaryEmbedding):
         return freqs_t
 
     def freqs_cis_position_ids(self, position_ids: TensorValue) -> TensorValue:
+        """The rotary frequencies for each position, interleaved per axis."""
         freqs = self.freqs_cis_base_position_ids(position_ids)
         d1, d2, d3 = freqs.shape  # (total_seq_len, head_dim // 2, 2)
         new_f_shape = [d1, d2 * d3]  # (total_seq_len, head_dim)

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Supported architecture entry for DeepSeek-V4.1."""
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.architectures.deepseekV4.reasoning import (  # noqa: F401

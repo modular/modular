@@ -45,6 +45,7 @@ class LFM2BatchProcessor(Llama3BatchProcessor):
         kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> LFM2Inputs:
+        """Packs the first step's inputs for each replica."""
         from .model import LFM2Inputs
 
         assert self._conv_cache is not None, (

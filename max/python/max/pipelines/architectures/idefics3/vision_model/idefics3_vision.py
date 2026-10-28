@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Idefics3 vision tower."""
 
 from __future__ import annotations
 
@@ -70,7 +71,6 @@ class Idefics3VisionModel(Module):
         Returns:
             Image embeddings tensor, flattened for language model.
         """
-
         hidden_states = self.embeddings(
             pixel_values=pixel_values, patch_attention_mask=None
         )

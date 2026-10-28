@@ -652,4 +652,5 @@ class DSparkQwen3(Module[..., Tensor]):
         kv_collection: PagedCacheValues,
         input_row_offsets: Tensor,
     ) -> Tensor:
+        """Alias for :meth:`forward_block`."""
         return self.forward_block(embeds, kv_collection, input_row_offsets)

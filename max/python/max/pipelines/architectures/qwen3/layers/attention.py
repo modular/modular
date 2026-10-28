@@ -83,7 +83,6 @@ class Qwen3Attention(Module, Shardable):
                 non-FP8 type (such as bfloat16) for FP8 models where norms are not quantized.
             quant_config: Optional quantization config for dynamic quantized QKV matmul.
         """
-
         super().__init__()
         self.rope = rope
         self.n_heads = num_attention_heads

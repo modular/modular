@@ -78,7 +78,6 @@ class Olmo3Attention(Module[[Tensor, PagedCacheValues, Tensor], Tensor]):
             use_qk_norm: Whether to use Q and K normalization.
             qk_norm_eps: Epsilon value for Q and K normalization.
         """
-
         super().__init__()
         self.rope = rope
         self.n_heads = num_attention_heads
@@ -164,6 +163,7 @@ class Olmo3Attention(Module[[Tensor, PagedCacheValues, Tensor], Tensor]):
         kv_collection: PagedCacheValues,
         input_row_offsets: Tensor,
     ) -> Tensor:
+        """Runs the attention over ``x``."""
         total_seq_len = x.shape[0]
         layer_idx = F.constant(self.layer_idx, DType.uint32, device=CPU())
 

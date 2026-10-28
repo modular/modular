@@ -111,6 +111,7 @@ class MiMoV2RMSNorm(RMSNorm):
     """
 
     def forward(self, x: Tensor) -> Tensor:
+        """Normalizes ``x`` by its RMS, scaling by the weight."""
         return rms_norm(x, self.weight, self.eps, multiply_before_cast=True)
 
 
@@ -496,6 +497,7 @@ class MiMoV2(Module[..., ModuleV3Outputs]):
         input_row_offsets: Tensor,
         *kv_inputs: Tensor,
     ) -> ModuleV3Outputs:
+        """Runs the language graph over tokens and its KV inputs."""
         if self.return_logits == ReturnLogits.VARIABLE:
             # Only `verify` builds the variable-logits range, from a host
             # count. This graph's count would land on the device, which

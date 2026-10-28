@@ -81,6 +81,7 @@ class MiMoV2ModuleV3MemoryPlanner(PagedMemoryPlanner):
     def estimate_activation_memory(
         self, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
+        """Estimates the activation memory one step needs."""
         ep_size = pipeline_config.runtime.ep_size
         if ep_size <= 1:
             # The tensor-parallel build owns no EP buffers; the inherited

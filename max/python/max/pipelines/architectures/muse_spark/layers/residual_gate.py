@@ -37,6 +37,7 @@ class MuseSparkResidualGate(Module[[Tensor, Tensor], Tensor]):
         self.eps = eps
 
     def forward(self, residual: Tensor, h: Tensor) -> Tensor:
+        """Returns the residual scaled by the learned gate."""
         # The reference keeps the gate and the mix in fp32.
         w = self.gate.cast(DType.float32) / self.temperature
         beta = F.sigmoid(w)

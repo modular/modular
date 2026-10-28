@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""GPT-OSS configuration."""
 
 from __future__ import annotations
 
@@ -226,6 +227,9 @@ class GptOssConfig(
 
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
+            model_config: The MAX model configuration to read the HuggingFace
+                config from. Defaults to ``pipeline_config.model``.
+            max_seq_len: The maximum sequence length the config allows.
 
         Returns:
             An initialized GptOssConfig instance.

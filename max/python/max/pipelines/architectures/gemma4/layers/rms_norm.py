@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Gemma 4's RMSNorm."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
@@ -53,6 +55,7 @@ class Gemma4RMSNorm(Module, Shardable):
             self.weight = Weight("weight", dtype, [dim], device=DeviceRef.CPU())
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Normalizes ``x``, scaling by the weight when there is one."""
         if self.with_weight:
             w = self.weight.cast(x.dtype).to(x.device)
         else:
@@ -75,6 +78,7 @@ class Gemma4RMSNorm(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the weight is split across devices."""
         return self._sharding_strategy
 
     @sharding_strategy.setter

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Gemma 3 multimodal pipeline model."""
 
 from __future__ import annotations
 
@@ -101,6 +102,7 @@ class Gemma3MultiModalModelV3(
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
+        """The language model's hidden layer count."""
         return Gemma3ForConditionalGenerationConfig.get_num_layers(
             huggingface_config
         )
@@ -196,6 +198,7 @@ class Gemma3MultiModalModelV3(
         )
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
+        """Runs the graphs over the prepared inputs."""
         model_inputs = cast(Gemma3MultiModalModelInputs, model_inputs)
 
         image_embeddings: Buffer

@@ -484,6 +484,7 @@ class Flux2Executor(
     def prepare_inputs(
         self, contexts: list[PixelContext]
     ) -> Flux2ExecutorInputs:
+        """Builds the executor's inputs from the request contexts."""
         if len(contexts) != 1:
             raise ValueError(
                 "Flux2Executor currently supports batch_size=1. "
@@ -564,6 +565,7 @@ class Flux2Executor(
 
     @traced(message="execute")
     def execute(self, inputs: Flux2ExecutorInputs) -> Flux2ExecutorOutputs:
+        """Runs the graphs over the prepared inputs."""
         # Bulk device transfer -- CPU-only metadata fields are skipped by
         # Flux2ExecutorInputs.to().  Buffers already on the target device
         # are no-ops.

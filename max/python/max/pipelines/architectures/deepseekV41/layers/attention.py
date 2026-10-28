@@ -828,6 +828,7 @@ class CSA2Attention(Module):
         swa_valid_from: TensorValue | None = None,
         h_mxfp8: Mxfp8Rows | None = None,
     ) -> TensorValue:
+        """Runs the attention over ``h``: :meth:`begin` then :meth:`end`."""
         return self.end(
             self.begin(h, rows, cache, h_mxfp8=h_mxfp8),
             rows,
@@ -845,8 +846,11 @@ class CSA2Attention(Module):
         return self.query_proj.can_fuse_norm_quant() and indexer_mxfp8
 
     def _attention_ropes_q(self) -> bool:
-        """Whether the attention rotates Q, so ``wq_b`` runs as a plain
-        MXFP8 matmul rather than one with a RoPE epilogue."""
+        """Whether the attention rotates Q inside ``wq_b``.
+
+        When it does, ``wq_b`` runs as a plain MXFP8 matmul; otherwise the
+        matmul appends a RoPE epilogue.
+        """
         return self.csa2_mxfp8 and self.num_heads == ROPE_Q_HEADS
 
     def begin(
@@ -1112,8 +1116,9 @@ class CSA2Attention(Module):
         rows: RaggedRows,
         idx: TensorValue,
     ) -> TensorValue:
-        """Runs the CSA2 attention over ``idx``'s slots and projects it to
-        ``[t, hidden_size]``.
+        """Runs the CSA2 attention over ``idx``'s slots.
+
+        The result is projected to ``[t, hidden_size]``.
 
         A forward where some request brings more than
         ``_DECODE_MAX_QUERY_TOKENS`` query tokens runs the prefill attention

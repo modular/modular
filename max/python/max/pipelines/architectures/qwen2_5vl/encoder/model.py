@@ -79,6 +79,7 @@ class Qwen25VLEncoderModel(ComponentModel):
         self.load_model()
 
     def load_model(self) -> Callable[..., Any]:
+        """Loads the encoder's weights, one shard per device."""
         embed_state: dict[str, Any] = {}
         transform_state: dict[str, Any] = {}
 

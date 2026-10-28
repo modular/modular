@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Pixtral pipeline model."""
 
 from __future__ import annotations
 
@@ -68,6 +69,7 @@ class PixtralInputs(ModelInputs):
 
     @property
     def has_vision_inputs(self) -> bool:
+        """Whether this batch carries patches the vision tower should encode."""
         return self.pixel_patches is not None
 
 
@@ -134,6 +136,7 @@ class PixtralModel(
         return self._models[GraphRole.DECODER]
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
+        """Runs the graphs over the prepared inputs."""
         assert isinstance(model_inputs, PixtralInputs)
         assert model_inputs.kv_cache_inputs is not None, (
             "Pixtral requires KV cache inputs"

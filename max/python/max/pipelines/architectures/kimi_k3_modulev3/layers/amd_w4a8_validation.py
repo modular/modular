@@ -88,6 +88,11 @@ def validate_amd_tp_w4a8(
     Unsupported requested combinations fail rather than changing dispatch.
 
     Args:
+        mxfp4: Whether the routed experts ship MXFP4, which is what W4A8
+            dequantizes.
+        expert_parallel: Whether the layer runs under expert parallelism,
+            which needs its own dispatch transport.
+        dtype: The weight dtype the graph runs at.
         requested: ``None`` reads the opt-in env var and requires a CDNA 4
             host. An explicit value skips both, so a graph builds anywhere,
             but still rejects layouts the dispatch cannot consume.

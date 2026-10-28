@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Per-token table describing a ragged batch for DeepSeek-V4.1-Flash."""
 
 from __future__ import annotations

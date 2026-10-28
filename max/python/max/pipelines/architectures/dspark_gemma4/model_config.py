@@ -97,6 +97,7 @@ class Gemma4DSparkDraftArchConfig:
         *,
         max_seq_len: int,
     ) -> Gemma4DSparkDraftArchConfig:
+        """Builds the config from the checkpoint's position bound."""
         del pipeline_config
         assert model_config is not None
         huggingface_config = model_config.huggingface_config
@@ -108,6 +109,7 @@ class Gemma4DSparkDraftArchConfig:
         )
 
     def get_max_seq_len(self) -> int:
+        """The maximum sequence length the config allows."""
         return self.max_position_embeddings
 
     @classmethod
@@ -116,6 +118,7 @@ class Gemma4DSparkDraftArchConfig:
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """Returns the checkpoint's ``max_position_embeddings``."""
         del model_config
         max_pos = getattr(huggingface_config, "max_position_embeddings", None)
         if isinstance(huggingface_config, dict):

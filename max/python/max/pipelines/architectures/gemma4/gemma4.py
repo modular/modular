@@ -507,13 +507,12 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
         custom_extensions: Iterable[Path] = (),
         is_device_graph: bool = False,
     ) -> Graph:
-        """Traces the language graph, whose inputs are :meth:`input_tree`'s
-        leaves, then on a pipeline stage after the first the hidden states
-        per device the previous stage returned.
+        """Traces the language graph, whose inputs are :meth:`input_tree`'s.
 
-        Adapts the flat graph inputs to :meth:`__call__`: stages the row
-        offsets on every device and splits the KV cache into its sliding and
-        global collections.
+        On the first pipeline stage the leaves are the graph inputs. Later
+        stages take the hidden states per device the previous stage
+        returned. The trace stages the row offsets on every device and
+        splits the KV cache into its sliding and global collections.
 
         Args:
             *input_types: The graph's input types, the leaves of

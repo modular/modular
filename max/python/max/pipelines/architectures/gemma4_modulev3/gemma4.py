@@ -213,6 +213,7 @@ class Gemma4TextModel(Module[..., tuple[Tensor, ...]]):
         return outputs
 
     def prepare_freq_cis(self, mesh: DeviceMesh) -> None:
+        """Computes the rotary frequencies for the global and local rope."""
         self.rope_global.freqs_cis = self.rope_global.freqs_cis.cast(
             self.dtype
         ).to(mesh)
@@ -230,6 +231,7 @@ class Gemma4TextModel(Module[..., tuple[Tensor, ...]]):
         image_embeddings: Tensor,
         image_token_indices: Tensor,
     ) -> tuple[Tensor, ...]:
+        """Runs the text model over the tokens and image embeddings."""
         # Stage on every device with one collective each. A plain transfer
         # per device lowers to mgp.buffer.device_to_device wrapped in
         # mgp.device_wait on both sides (a host-enqueued cross-device stream
@@ -353,6 +355,7 @@ class Gemma4(Module[..., tuple[Tensor, ...]]):
         image_token_indices: Tensor,
         *variadic_args,
     ) -> tuple[Tensor, ...]:
+        """Runs the decoder and the vision tower together."""
         assert isinstance(self.kv_params, MultiKVCacheParams)
         kv_inputs = iter(x._graph_value for x in variadic_args)
         sliding_inputs, global_inputs = self.kv_params.unflatten_basic_kv_tree(

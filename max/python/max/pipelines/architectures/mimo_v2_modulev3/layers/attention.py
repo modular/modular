@@ -10,10 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""MiMo-V2 attention on ModuleV3: fused chunk-order QKV, partial RoPE,
-SWA, sinks.
+"""MiMo-V2 attention on ModuleV3.
 
-The paged-cache kernels run through the experimental functional wrappers,
+It fuses chunk-order QKV and applies partial RoPE, sliding-window
+attention and attention sinks. The paged-cache kernels run through the experimental functional wrappers,
 which own the ``Tensor``-to-``TensorValue`` conversion at the call boundary;
 the per-device loop stays because each device's chunks carry their own
 layout math.
@@ -131,8 +131,7 @@ def _split_heads(x: Tensor, head_dim: int) -> Tensor:
 
 
 def _merge_heads(x: Tensor) -> Tensor:
-    """Returns ``[tokens, chunks, heads, dim]`` as ``[tokens, chunks * heads,
-    dim]``."""
+    """Returns ``[tokens, chunks, heads, dim]`` as ``[tokens, chunks * heads, dim]``."""
     tokens, chunks, heads, dim = x.shape
     return x.reshape([tokens, int(chunks) * int(heads), dim])
 

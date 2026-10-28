@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Registers Z-Image with the pipeline registry."""
 
 from __future__ import annotations
 
@@ -33,6 +34,8 @@ from .tokenizer import ZImageTokenizer
 
 @dataclass(kw_only=True)
 class ZImageArchConfig(ArchConfig):
+    """Z-Image's architecture registration."""
+
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"
     SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {"bfloat16"}
 
@@ -40,6 +43,7 @@ class ZImageArchConfig(ArchConfig):
     quantization_encoding: SupportedEncoding | None = None
 
     def get_max_seq_len(self) -> int:
+        """Zero: an image pipeline serves no token sequence."""
         return 0
 
     @classmethod
@@ -48,6 +52,7 @@ class ZImageArchConfig(ArchConfig):
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """Zero: a checkpoint sets no token sequence length."""
         del huggingface_config, model_config
         return 0
 
@@ -59,6 +64,7 @@ class ZImageArchConfig(ArchConfig):
         *,
         max_seq_len: int,
     ) -> Self:
+        """Builds the config from the pipeline configuration."""
         model_config = model_config or pipeline_config.model
         if len(model_config.device_specs) != 1:
             raise ValueError("Z-Image is only supported on a single device")

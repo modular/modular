@@ -114,6 +114,7 @@ class MuseSparkModel(
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
+        """The text config's hidden layer count."""
         return huggingface_config.text_config.num_hidden_layers
 
     def _load_state_dict(self) -> dict[str, Any]:

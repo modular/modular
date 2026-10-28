@@ -51,8 +51,10 @@ def draft_config(
 def _zero_first_positions(
     embeds: Tensor, input_row_offsets: Tensor, cache_lengths: Tensor
 ) -> Tensor:
-    """Zeroes the rows at sequence position 0: a request's first token on an
-    empty cache."""
+    """Zeroes the rows at sequence position 0.
+
+    That position is a request's first token on an empty cache.
+    """
     starts = F.cast(input_row_offsets[:-1], DType.int64)
     keep = F.rebind(F.cast(cache_lengths != 0, embeds.dtype), starts.shape)
     keep = keep.unsqueeze(-1)
@@ -61,9 +63,13 @@ def _zero_first_positions(
 
 
 class HYV4MultiTokenPredictor(HYV4DecoderLayer):
-    """``enorm``/``hnorm``, ``eh_proj``, one Hy4 block without iHC, and
-    ``final_layernorm``. ``embed_tokens`` and ``lm_head`` are the target's.
+    """The MTP draft block.
 
+    It holds ``enorm``/``hnorm``, ``eh_proj``, one Hy4 block without iHC, and
+    ``final_layernorm``; ``embed_tokens`` and ``lm_head`` are the target's. The
+    block's own sublayers sit at the top level, where the checkpoint's
+    ``model.mtp_layers.0.*`` names put them. :meth:`predict` is the draft's
+    entry point and the inherited ``forward`` is the bare block.
     The block's own sublayers sit at the top level, where the checkpoint's
     ``model.mtp_layers.0.*`` names put them; :meth:`predict` is the draft's
     entry point and the inherited ``forward`` is the bare block.

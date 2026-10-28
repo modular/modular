@@ -112,8 +112,7 @@ class DFlash2GroupedConv(Module):
     def finish(
         self, hidden_states: TensorValue, coefficients: TensorValue
     ) -> TensorValue:
-        """Applies the post-sublayer convolution with :meth:`prepare`'s
-        coefficients."""
+        """Applies the post-sublayer convolution with :meth:`prepare`'s coefficients."""
         return self._convolve(hidden_states, coefficients, side=1)
 
     def _convolve(
@@ -148,7 +147,7 @@ class DFlash2GroupedConv(Module):
     def __call__(
         self, hidden_states: TensorValue
     ) -> tuple[TensorValue, TensorValue]:
-        # Alias for prepare to satisfy the Module ABC.
+        """Alias for :meth:`prepare`."""
         return self.prepare(hidden_states)
 
 
@@ -278,7 +277,7 @@ class DFlash2CandidateSelector(Module):
         hidden_states: TensorValue,
         anchor_token_ids: TensorValue,
     ) -> TensorValue:
-        # Alias for score_edges to satisfy the Module ABC.
+        """Alias for :meth:`score_edges`."""
         return self.score_edges(
             candidate_ids, unary_logits, hidden_states, anchor_token_ids
         )

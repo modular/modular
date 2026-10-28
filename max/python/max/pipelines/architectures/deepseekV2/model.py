@@ -71,6 +71,8 @@ class DeepseekV2Model(
     LogProbabilitiesMixin,
     GraphPipelineModelWithKVCache[TextContext],
 ):
+    """DeepSeek-V2 model: embeddings, decoder layers, and the output head."""
+
     model_config_cls: ClassVar[type[Any]] = DeepseekV2Config
     batch_processor_cls: ClassVar[type[BatchProcessor[Any, Any]]] = (
         DeepseekV2BatchProcessor
@@ -120,6 +122,7 @@ class DeepseekV2Model(
         self,
         model_inputs: ModelInputs,
     ) -> ModelOutputs:
+        """Runs the model on one batch of inputs."""
         assert isinstance(model_inputs, DeepseekV2Inputs)
 
         curr_kv_cache_inputs = model_inputs.kv_cache_inputs
@@ -169,8 +172,7 @@ class DeepseekV2Model(
 
     @override
     def graph_specs(self, model_config: Any) -> dict[str, GraphSpec]:
-        """Returns the decoder graph, tensor parallel across several
-        devices."""
+        """Returns the decoder graph, tensor parallel across several devices."""
         assert isinstance(model_config, DeepseekV2Config)
         nn_model: DeepseekV2 | DistributedDeepseekV2
         if len(self.devices) > 1:

@@ -100,6 +100,7 @@ class Glm5NextDecoderLayer(Module[..., Tensor]):
         attn_args: tuple[object, ...],
         comm_buffers: EPCommBuffers | None,
     ) -> Tensor:
+        """Runs the layer's attention, then its MLP."""
         replicated = DeviceMapping.replicated(streams.mesh)
         post, comb, h = self.hc_attn(streams, self.input_layernorm)
         # The attention output is a sum of per-device partials.

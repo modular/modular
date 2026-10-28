@@ -75,8 +75,10 @@ class GptOssAttention(Module[..., Tensor]):
             scale: Value used to scale the results of the attention output.
             has_bias: Whether to use an attention bias. Defaults to False.
             qk_norm_eps: Value to use for numerical stability. Defaults to 1e-6.
+            local_window_size: The number of tokens a sliding layer attends
+                over.
+            mask_variant: Which attention mask this layer applies.
         """
-
         super().__init__()
         self.rope = rope
         self.n_heads = num_attention_heads
@@ -153,6 +155,7 @@ class GptOssAttention(Module[..., Tensor]):
         kv_collection: PagedCacheValues,
         **kwargs,
     ) -> Tensor:
+        """Runs the attention over ``x``, reading and updating the KV cache."""
         # Get attributes from input.
         total_seq_len = x.shape[0]
 

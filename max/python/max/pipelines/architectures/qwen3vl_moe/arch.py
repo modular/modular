@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Registers Qwen3-VL-MoE with the pipeline registry."""
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner

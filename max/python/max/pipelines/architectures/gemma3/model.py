@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""The Gemma 3 text-generation pipeline model and its inputs."""
+
 from __future__ import annotations
 
 import logging
@@ -98,7 +100,8 @@ class Gemma3Model(
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         max_batch_size: int = 1,
     ) -> None:
-        """
+        """Set up the Gemma 3 model and compile its graph.
+
         Args:
             pipeline_config: The configuration settings for the entire pipeline.
             session: The MAX Engine inference session managing the runtime.
@@ -111,6 +114,9 @@ class Gemma3Model(
                 (:obj:`max.graph.weights.WeightsAdapter`).
             return_logits: The number of top logits to return from the model
                 execution.
+            memory_plan: Memory plan from the registry, holding the resolved
+                batch size and other memory parameters.
+            max_batch_size: The most requests the model handles in one batch.
         """
         super().__init__(
             pipeline_config,

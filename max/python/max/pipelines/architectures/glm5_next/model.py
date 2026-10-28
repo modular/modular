@@ -161,8 +161,7 @@ class Glm5NextModel(DeepseekV3_2Model):
 
     @property
     def vision_model(self) -> Model | None:
-        """The compiled vision tower, or ``None`` for a checkpoint without
-        one."""
+        """The compiled vision tower, or ``None`` for a checkpoint without one."""
         return self._models.get(GraphRole.VISION)
 
     # Without allreduce, the decoder splits tokens across the TP ranks before
@@ -254,8 +253,9 @@ class Glm5NextModel(DeepseekV3_2Model):
     def build_module(
         cls, context: ModelLoadContext
     ) -> tuple[Glm5Next, Glm5NextConfig]:
-        """Builds the decoder from the checkpoint ``context`` names, without
-        the vision tower, which :meth:`build_vision_graph` builds.
+        """Builds the decoder from the checkpoint that ``context`` names.
+
+        The vision tower is left out; :meth:`build_vision_graph` builds it.
 
         A caller that sized the cache passes its KV params. It starts expert
         parallelism's runtime through ``context`` before it shards the
@@ -289,8 +289,9 @@ class Glm5NextModel(DeepseekV3_2Model):
     def build_vision_graph(
         cls, context: ModelLoadContext
     ) -> tuple[Graph, dict[str, Any]]:
-        """Builds the vision tower's graph and the weights it loads, for a
-        caller that runs the module :meth:`build_module` builds.
+        """Builds the vision tower's graph and the weights it loads.
+
+        It serves a caller that runs the module :meth:`build_module` builds.
 
         Raises:
             ValueError: If the checkpoint has no vision tower.
@@ -330,8 +331,10 @@ class Glm5NextModel(DeepseekV3_2Model):
     _glm_config: Glm5NextConfig | None = None
 
     def _load_state_dict(self) -> dict[str, Any]:
-        """Loads the weights and sets the vision tower's aside, without their
-        prefix, so the decoder's strict load sees only its own."""
+        """Loads the weights, setting the vision tower's aside.
+
+        They lose their prefix, so the decoder's strict load sees only its own.
+        """
         state_dict = super()._load_state_dict()
         self._vision_weights_dict = {
             name.removeprefix(VISION_WEIGHT_PREFIX): state_dict.pop(name)
@@ -342,8 +345,12 @@ class Glm5NextModel(DeepseekV3_2Model):
         return state_dict
 
     def graph_specs(self, model_config: Any) -> dict[str, GraphSpec]:
-        """Returns the GLM-5.3-Flash language graph and, for a checkpoint with
-        a vision tower, the tower's graph, compiled together.
+        """Returns the language graph, with the tower's when there is one.
+
+        The two are compiled together. The language graph's inputs are in the
+        order :meth:`Glm5Next.input_types` declares them, which is the one place
+        that order is written down. It stays :attr:`model`, the graph
+        device-graph capture records; vision runs only on prefill steps.
 
         The language graph's inputs are in the order
         :meth:`Glm5Next.input_types` declares them, which is the one place that
@@ -375,8 +382,7 @@ class Glm5NextModel(DeepseekV3_2Model):
     def _vision_spec(
         cls, config: Glm5NextConfig, state_dict: dict[str, WeightData]
     ) -> GraphSpec:
-        """Returns the vision graph: its towers, built from shared host
-        weights."""
+        """Returns the vision graph: its towers, built from shared host weights."""
         vision_config = config.vision_config
         assert vision_config is not None
         towers = _VisionTowers(config, replicate=cls.replicate_vision_tower)
@@ -448,6 +454,5 @@ class Glm5NextModel(DeepseekV3_2Model):
         return self._batching.vision_execute(selection, devices, packed)
 
     def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
-        """Returns the batch processor's rows for a step that encodes
-        nothing."""
+        """Returns the batch processor's rows for a step with no encoding."""
         return self._batching.empty_vision_embeddings(devices)

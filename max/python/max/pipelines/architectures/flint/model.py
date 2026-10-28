@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Flint pipeline model for the ModuleV3 API."""
 
 from __future__ import annotations

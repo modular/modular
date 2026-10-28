@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Qwen3-VL-MoE vision tower."""
 
 from __future__ import annotations
 
@@ -126,6 +127,7 @@ class VisionPatchEmbed(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the patch embedding is split across devices."""
         return self._sharding_strategy
 
     @sharding_strategy.setter
@@ -139,6 +141,7 @@ class VisionPatchEmbed(Module, Shardable):
         self._sharding_strategy = strategy
 
     def shard(self, devices: Iterable[DeviceRef]) -> list[VisionPatchEmbed]:
+        """Splits the patch embedding across ``devices``."""
         if not self.sharding_strategy:
             raise ValueError(
                 "VisionPatchEmbed layer cannot be sharded because no sharding strategy was provided."
@@ -204,7 +207,8 @@ class BilinearInterpolationPositionEmbedding(Module):
         grid_thw: TensorValue,
         out_rows: DimLike,
     ) -> TensorValue:
-        """
+        """Gathers each patch's position embedding from the interpolated grid.
+
         Args:
             idxs: tensor of shape (4, sum(h * w))
             weights: tensor of shape (4, sum(h * w), 1)
@@ -342,6 +346,7 @@ class VisionRotaryEmbedding(Module):
         self,
         x: TensorValue,
     ) -> TensorValue:
+        """The rotary embeddings are built by the caller, so nothing to run."""
         raise NotImplementedError
 
 
@@ -382,6 +387,7 @@ class VisionMLP(Module, Shardable):
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Runs the SwiGLU feed-forward over ``x``."""
         x = self.linear_fc1(x)
         # This matches the "gelu_pytorch_tanh" activation in the torch.
         x = ops.gelu(x, approximate="tanh")
@@ -390,6 +396,7 @@ class VisionMLP(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the MLP's weights are split across devices."""
         return self.linear_fc1.sharding_strategy
 
     @sharding_strategy.setter
@@ -412,6 +419,7 @@ class VisionMLP(Module, Shardable):
             )
 
     def shard(self, devices: Iterable[DeviceRef]) -> list[VisionMLP]:
+        """Splits the MLP's weights across ``devices``."""
         # Shard underlying weights
         linear1_shards = self.linear_fc1.shard(devices)
         linear2_shards = self.linear_fc2.shard(devices)
@@ -515,6 +523,7 @@ class VisionBlock(Module):
         max_seqlen: Sequence[TensorValue],
         signal_buffers: list[BufferValue],
     ) -> list[TensorValue]:
+        """Runs the block's attention, then its MLP."""
         # Norm 1
         norm1_outs = [
             norm(x) for norm, x in zip(self.norm1_shards, xs, strict=True)
@@ -562,12 +571,12 @@ class VisionBlock(Module):
 
 
 class VisionPatchMerger(Module, Shardable):
-    """Group spatially adjacent sets of four patch features then concatenate and
-    pass through a two-layer multi-layer perceptron (MLP) to project them into a
-    dimension that aligns with the text embeddings used in the LLM.
+    """Projects groups of spatially adjacent patches into the text width.
 
-    Compared to Qwen2.vVL, this layer uses LayerNorm rather than RMSNorm and
-    uses a post-shuffle normalization layer.
+    The features of each group are concatenated and run through a two-layer
+    MLP, so the tower's output lines up with the decoder's embeddings. This
+    layer normalizes with LayerNorm, and adds a normalization after the
+    shuffle.
     """
 
     def __init__(
@@ -616,6 +625,7 @@ class VisionPatchMerger(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the merger's weights are split across devices."""
         return self.linear_fc1.sharding_strategy
 
     @sharding_strategy.setter
@@ -648,6 +658,7 @@ class VisionPatchMerger(Module, Shardable):
             )
 
     def shard(self, devices: Iterable[DeviceRef]) -> list[VisionPatchMerger]:
+        """Splits the merger's weights across ``devices``."""
         # Shard underlying weights
         norm_shards = self.norm.shard(devices)
         linear_fc1_shards = self.linear_fc1.shard(devices)
@@ -672,8 +683,10 @@ class VisionPatchMerger(Module, Shardable):
 
     def __call__(self, x: TensorValue) -> TensorValue:
         """Applies a vision patch merger to the input tensor.
+
         Args:
             x: TensorValue of shape (n_patches, hidden_size)
+
         Returns:
             TensorValue of shape (n_patches // (spatial_merge_size^2), out_hidden_size)
         """
@@ -698,16 +711,16 @@ class VisionPatchMerger(Module, Shardable):
 
 
 class VisionTransformer(Module):
-    """The bare Qwen3VL Vision Transformer (a redesigned Vision Transformer (ViT))
-    outputting raw hidden-states without any specific head on top.
+    """The Qwen3-VL-MoE vision tower, before any head.
 
-    This is difference between this module and the Qwen2.5VL Vision Transformer:
-    - Deep stack features
-    - pytorch GELU tanh activation
-    - LayerNorm for normalization
-    - VisionPatchMerger layer which also uses post-shuffle normalization
-    - BilinearInterpolationPositionEmbedding for position encoding
-    - No window attention
+    The tower activates with the tanh approximation of GELU, normalizes with
+    LayerNorm, and encodes position with
+    ``BilinearInterpolationPositionEmbedding``. Every block attends over the
+    whole sequence, with no windowing.
+
+    It also returns the features of the layers
+    ``config.deepstack_visual_indexes`` names, which the decoder adds to its
+    own embeddings.
     """
 
     def __init__(
@@ -815,8 +828,7 @@ class VisionTransformer(Module):
         self.merger_allreduce = Allreduce(num_accelerators=len(self.devices))
 
     def input_tree(self) -> OrderedDict[str, object]:
-        """Names the vision graph's inputs, keyed by :meth:`__call__`'s
-        arguments.
+        """Names the vision graph's inputs, keyed by :meth:`__call__`'s arguments.
 
         Each argument takes one input per device. ``vision_seq_len`` is the
         number of patches in the batch.
@@ -863,8 +875,7 @@ class VisionTransformer(Module):
         custom_extensions: Iterable[Path] = (),
         is_device_graph: bool = False,
     ) -> Graph:
-        """Traces the vision graph, whose inputs are :meth:`input_tree`'s
-        leaves.
+        """Traces the vision graph, whose inputs are :meth:`input_tree`'s leaves.
 
         The graph outputs the image embeddings, one per device, then the
         deepstack embeddings, per device within each deepstack layer.
@@ -923,24 +934,35 @@ class VisionTransformer(Module):
         max_seqlen: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
     ) -> tuple[list[TensorValue], list[list[TensorValue]]]:
-        """Outputs raw hidden states of the transformer model on input `x`.
+        """Runs the vision tower over the patches.
 
         1. Patch Embedding: Converts raw input into patches and embeds them.
-        2. Rotary Positional Embeddings: Computes rotary positional encodings to the patches.
-        3. Windowing: Divides the sequence into windows to perform attention within those windows using the window_index.
-        4. Transformer Processing: Processes the sequence through multiple transformer blocks, with attention to cumulative window sequence lengths and positional encodings.
-        5. Merging and Sorting: transformer results are merged and sorted to restore the original sequence order before windowing.
+        2. Position Encoding: Interpolates the position grid and gathers each patch's position embedding.
+        3. Rotary Positional Embeddings: Computes rotary positional encodings for the patches.
+        4. Transformer Processing: Processes the sequence through multiple transformer blocks, with full attention to cumulative sequence lengths and positional encodings.
+        5. Merging: Merges groups of adjacent patches into the decoder's width and collects the layers' deep-stack features.
         6. The processed hidden_states are returned as the model's output.
 
         Args:
-            pixel_values: Buffer of images of shape (seq_len=n_patches, in_channels * temporal_patch_size * patch_size * patch_size)
-                seq_len depends on the spatial dims of the image or video and second dim of x for Qwen2.5VL is 1176.
-                Qwen2.5VL processor that handles multiple images of different shapes by flattening all dims and returning
-                a 2D tensor of all patches in all images + a grid_thw representing the temporal and spatial coords of patches.
-            grid_thw: Buffer of shape (n_images, 3) representing the temporal and spatial dimensions of each image/video.
-            rotary_pos_ids: Buffer of shape (seq_len, 2) generated by data_processing.mrope_pos_ids_3d(grid_thw, spatial_merge_size).
-            max_grid_size: max value in spatial dimensions in the grid of image and video patches.
-                It represents the max no. of patches in an image or a frame. Used as the max positional embedding needed.
+            pixel_values: Buffer of images of shape
+                (seq_len=n_patches, in_channels * temporal_patch_size *
+                patch_size * patch_size). The processor flattens every image
+                of every shape into one 2D tensor of patches and returns the
+                ``grid_thw`` that records each image's temporal and spatial
+                coordinates.
+            idxs: Buffer of shape (4, sum(h * w)) holding the bilinear
+                neighbours of each patch position.
+            weights: Buffer of shape (4, sum(h * w), 1) holding those
+                neighbours' interpolation weights.
+            grid_thw: Buffer of shape (n_images, 3) representing the temporal
+                and spatial dimensions of each image or video.
+            rot_pos_ids: Buffer of shape (seq_len, 2) generated by
+                data_processing.mrope_pos_ids_3d(grid_thw,
+                spatial_merge_size).
+            max_grid_size: max value in spatial dimensions in the grid of
+                image and video patches. It represents the max no. of patches
+                in an image or a frame. Used as the max positional embedding
+                needed.
             cu_seqlens: Cumulative sequence lengths for full attention blocks.
             max_seqlen: Maximum sequence length for full attention blocks.
             signal_buffers: Communication buffers for distributed execution.

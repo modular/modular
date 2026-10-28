@@ -10,9 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Per-request slot pool for Inkling's short-convolution state: one pool per
-conv site per layer per device. The K and V sites are channel-sharded with
-the qkvr projection; the two residual sites are full width on every rank.
+"""Per-request slot pool for Inkling's short-convolution state.
+
+There is one pool per conv site per layer per device. The K and V sites are
+channel-sharded with the qkvr projection; the two residual sites are full width
+on every rank. A slot is a ring of conv inputs indexed by position; see
+:mod:`max.nn.legacy.state_space.short_conv_ring`. It holds ``kernel_size - 1 +
+num_draft_tokens`` entries, enough history for a chunk that starts after rolling
+back every draft token. Slots are never cleared. Taps before position zero read
+as zero, so a fresh request never sees the previous tenant's inputs.
 
 A slot is a ring of conv inputs indexed by position; see
 :mod:`max.nn.legacy.state_space.short_conv_ring`. It holds
@@ -20,7 +26,8 @@ A slot is a ring of conv inputs indexed by position; see
 that starts after rolling back every draft token.
 
 Slots are never cleared. Taps before position zero read as zero, so a fresh
-request never sees the previous tenant's inputs."""
+request never sees the previous tenant's inputs.
+"""
 
 from __future__ import annotations
 
@@ -74,8 +81,10 @@ def conv_state_regions(
 
 @dataclass(frozen=True)
 class InklingConvStateLayout:
-    """Per-device channel widths of each layer's four sites, in
-    :class:`ConvSite` order."""
+    """Per-device channel widths of each layer's four sites.
+
+    The sites come in :class:`ConvSite` order.
+    """
 
     ring_len: int
     """Entries per slot: ``kernel_size - 1`` plus the speculative width."""
@@ -98,6 +107,7 @@ class InklingConvStateLayout:
 
     @property
     def num_layers(self) -> int:
+        """How many layers have conv state."""
         return len(self.layers)
 
     def kinds(self) -> tuple[bool, ...]:

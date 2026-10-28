@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
+"""Pixtral's vision attention."""
 
 import math
 
@@ -23,6 +23,8 @@ from .attention_utils import rotate_half
 
 
 class Attention(Module):
+    """Pixtral's vision self attention."""
+
     n_heads: int
     dim: int
     head_dim: int  # hidden_size // self.n_heads
@@ -80,6 +82,7 @@ class Attention(Module):
                 k have the shape [batch_size, heads, seq_len, head_dim], then setting unsqueeze_dim=1 makes
                 cos and sin broadcastable to the shapes of q and k. Similarly, if q and k have
                 the shape [batch_size, seq_len, heads, head_dim], then set unsqueeze_dim=2.
+
         Returns:
             `tuple(TensorValueLike)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
         """
@@ -99,6 +102,7 @@ class Attention(Module):
         xv: TensorValue,
         attn_mask: TensorValueLike,
     ) -> TensorValue:
+        """Runs the attention over the query, key and value."""
         xv = xv.transpose(1, 2)
 
         scale = math.sqrt(1.0 / self.head_dim)
@@ -136,11 +140,12 @@ class Attention(Module):
             x: Activations with shape (batch, seq_len, dim).
             attention_mask: a mask to ensure different blocks of patches (images)
             can only attend to patches within their respective block (image).
-            position_embeddings:
+            position_embeddings: The rotary embedding's cosine and sine
+                tables, applied to the query and key.
 
-        Returns the result of multi-headed self attention on the input.
+        Returns:
+            The result of multi-headed self attention on the input.
         """
-
         batch_size, n_patches = x.shape[0], x.shape[1]
         # matmul weights
         xq = self.q_proj(x)

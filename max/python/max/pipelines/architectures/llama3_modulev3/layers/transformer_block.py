@@ -51,6 +51,7 @@ class LlamaTransformerBlock(Module[..., Tensor]):
         input_row_offsets: Tensor,
         **kwargs,
     ) -> Tensor:
+        """Runs the block's attention, then its MLP."""
         attn_out = self.self_attn(
             self.input_layernorm(x),
             kv_collection,

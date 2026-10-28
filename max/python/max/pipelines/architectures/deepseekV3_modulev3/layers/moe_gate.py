@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """DeepSeek-V3 Mixture of Experts gate (ModuleV3)."""
 
 from __future__ import annotations
@@ -44,19 +43,20 @@ class DeepseekV3TopKRouter(MoEGate):
         norm_topk_prob: bool,
         correction_bias_dtype: DType | None,
     ) -> None:
-        """
+        """Stores the router dimensions and routing parameters.
+
         Args:
-            hidden_dim: Dimension of the hidden state.
-            num_experts: Number of routed experts.
-            num_experts_per_token: Top-k experts to select per token.
-            routed_scaling_factor: Scaling factor applied to expert weights.
-            scoring_func: Score function for the router. Only "sigmoid" is
-                supported.
-            topk_method: Top-k routing method. Only "noaux_tc" is supported.
-            n_group: Number of expert groups.
-            topk_group: Number of expert groups selected per token.
-            norm_topk_prob: Whether to normalize the top-k probabilities.
-            correction_bias_dtype: Data type of the correction bias.
+        hidden_dim: Dimension of the hidden state.
+        num_experts: Number of routed experts.
+        num_experts_per_token: Top-k experts to select per token.
+        routed_scaling_factor: Scaling factor applied to expert weights.
+        scoring_func: Score function for the router. Only "sigmoid" is
+            supported.
+        topk_method: Top-k routing method. Only "noaux_tc" is supported.
+        n_group: Number of expert groups.
+        topk_group: Number of expert groups selected per token.
+        norm_topk_prob: Whether to normalize the top-k probabilities.
+        correction_bias_dtype: Data type of the correction bias.
         """
         super().__init__(
             hidden_dim=hidden_dim,

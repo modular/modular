@@ -34,6 +34,7 @@ class InklingModuleV3BatchProcessor(InklingBatchProcessor):
     def __init__(
         self, config: InklingConfig, runtime: BatchProcessorRuntime
     ) -> None:
+        """Builds the V2 batching with no signal buffers bound."""
         super().__init__(config, runtime)
         self._signal_buffers = []
         self._vision_callable: Callable[..., Any] | None = None

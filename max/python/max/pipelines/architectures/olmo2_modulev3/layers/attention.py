@@ -137,6 +137,7 @@ class Olmo2Attention(Module[[Tensor, PagedCacheValues, Tensor], Tensor]):
         kv_collection: PagedCacheValues,
         input_row_offsets: Tensor,
     ) -> Tensor:
+        """Runs the attention over ``x``."""
         total_seq_len = x.shape[0]
         layer_idx = F.constant(self.layer_idx, DType.uint32, device=CPU())
 

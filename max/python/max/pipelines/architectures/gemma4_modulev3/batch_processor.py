@@ -107,8 +107,7 @@ class Gemma4ModuleV3BatchProcessor(
         devices: list[Device],
         packed: VisionRawInputs | None,
     ) -> VisionEncodeResult:
-        """Runs the vision encoder on the pixels packed by
-        :meth:`pack_vision_inputs`."""
+        """Runs the vision encoder on the packed pixels."""
         if packed is None:
             return VisionEncodeResult(
                 embeddings=self.empty_vision_embeddings(devices)

@@ -86,6 +86,7 @@ class DSparkGemma4DraftConfig:
 
     @property
     def num_context_features(self) -> int:
+        """The number of target layers the draft reads taps from."""
         return len(self.target_layer_ids)
 
     @classmethod
@@ -335,6 +336,7 @@ class DSparkGemma4DecoderLayer(Module):
         kv_collection: PagedCacheValues,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
+        """Runs the block: attention, MLP, and the layer scalar."""
         residual = x
         h = self.input_layernorm(x)
         h = self.self_attn(
@@ -458,6 +460,7 @@ class DSparkGemma4(Module):
     def project_target_hidden(
         self, target_hs_concat: TensorValue
     ) -> TensorValue:
+        """Projects concatenated target taps to the context-KV input."""
         return self.hidden_norm(self.fc(target_hs_concat))
 
     def materialize_kv(
@@ -466,6 +469,7 @@ class DSparkGemma4(Module):
         input_row_offsets: TensorValue,
         kv_collection: PagedCacheValues,
     ) -> None:
+        """Writes the context's K/V through every layer."""
         for layer in self.layers:
             assert isinstance(layer, DSparkGemma4DecoderLayer)
             layer.self_attn.materialize_kv_from_hidden(
@@ -480,7 +484,7 @@ class DSparkGemma4(Module):
         kv_collection: PagedCacheValues,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
-        # Alias for forward_block to satisfy the Module ABC.
+        """Alias for :meth:`forward_block`."""
         return self.forward_block(
             input_embeds, kv_collection, input_row_offsets
         )
@@ -491,6 +495,7 @@ class DSparkGemma4(Module):
         kv_collection: PagedCacheValues,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
+        """Runs the block, whose K and V land at the cache's lengths."""
         h = input_embeds
         for layer in self.layers:
             h = layer(h, kv_collection, input_row_offsets)

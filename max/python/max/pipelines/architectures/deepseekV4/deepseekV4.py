@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Implements the DeepSeek-V4-Flash model.
 
 Module and weight names mirror the checkpoint's own layout (which follows the
@@ -792,8 +791,7 @@ class DeepseekV4(Module):
         custom_extensions: Iterable[Path] = (),
         is_device_graph: bool = False,
     ) -> Graph:
-        """Traces the serving graph, whose inputs are :meth:`input_tree`'s
-        leaves.
+        """Traces the serving graph, whose inputs are :meth:`input_tree`'s leaves.
 
         The graph runs :meth:`serve` on a single device and
         :meth:`serve_tensor_parallel` over :meth:`tensor_parallel_replicas`
@@ -1264,9 +1262,11 @@ class DeepseekV4DSpark(Module):
         head: Linear,
         sampler: Callable[[TensorValue, int], TensorValue] | None = None,
     ) -> tuple[TensorValue, TensorValue]:
-        """``[b, K]`` draft ids and ``[b, K, vocab]`` logits off
-        :meth:`block`'s output (:meth:`DSparkBlock.forward_head`), through
-        the trunk's ``head``."""
+        """Returns draft ids and logits through the trunk's ``head``.
+
+        The ``[b, K]`` ids and ``[b, K, vocab]`` logits come off :meth:`block`'s
+        output (:meth:`DSparkBlock.forward_head`).
+        """
         last = self.mtp[-1]
         assert isinstance(last, DSparkBlock)
         return last.forward_head(x, anchor_ids, head, sampler)
@@ -1278,5 +1278,6 @@ class DeepseekV4DSpark(Module):
         head: Linear,
         sampler: Callable[[TensorValue, int], TensorValue] | None = None,
     ) -> tuple[TensorValue, TensorValue]:
+        """Runs the draft head over ``x`` and returns its logits."""
         # Alias for head to satisfy the Module ABC.
         return self.head(x, anchor_ids, head, sampler)

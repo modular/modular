@@ -40,8 +40,11 @@ from max.tensor.sharding import (
 
 @tree.dataclass(kw_only=True)
 class Grouped:
-    """Tokens grouped by expert, as the grouped matmuls read them: each
-    expert's first row and the expert of each group."""
+    """Tokens grouped by expert, as the grouped matmuls read them.
+
+    ``expert_offsets`` gives each expert's first row, and ``expert_ids`` gives
+    the expert of each group.
+    """
 
     tokens: Tensor
     start: Tensor
@@ -50,8 +53,7 @@ class Grouped:
 
 @tree.dataclass
 class Tables:
-    """One direction's host tables of every device's send, receive and
-    count buffers."""
+    """One direction's host tables of every device's send, receive and count buffers."""
 
     send: Tensor
     recv: Tensor
@@ -60,8 +62,11 @@ class Tables:
 
 @tree.dataclass
 class EPBuffers:
-    """The exchange's graph inputs: each device's atomic counters, which
-    both directions share, and each direction's tables."""
+    """The exchange's graph inputs.
+
+    Each device's atomic counters serve both directions, and each direction
+    carries its own tables.
+    """
 
     counters: Tensor
     dispatch: Tables
@@ -77,8 +82,10 @@ call_combine_wait = F.functional(kernels.call_ep_combine_wait)
 
 
 def grouped_matmul_bounds(config: EPConfig) -> Tensor:
-    """The grouped matmul's host bounds for the received tokens: the most
-    rows a device can receive and its number of experts."""
+    """The grouped matmul's host bounds for the received tokens.
+
+    The bounds are the most rows a device can receive and its number of experts.
+    """
     ranks = config.n_gpus_per_node * config.n_nodes
     return F.constant(
         [config.max_tokens_per_rank * ranks, config.n_experts // ranks],
@@ -88,9 +95,11 @@ def grouped_matmul_bounds(config: EPConfig) -> Tensor:
 
 
 def _received(mesh: DeviceMesh) -> list[DeviceMapping]:
-    """Each dispatch result's mapping, in order: the tokens, split by
-    device; the expert offsets and ids and ``src_info``, each device's
-    own."""
+    """Each dispatch result's mapping, in order.
+
+    The tokens, split by device; then the expert offsets and ids and
+    ``src_info``, each device's own.
+    """
     by_device = DeviceMapping(mesh, (Sharded(0),) * mesh.ndim)
     own = DeviceMapping(mesh, (Unknown(),) * mesh.ndim)
     return [by_device, own, own, own]
@@ -99,8 +108,7 @@ def _received(mesh: DeviceMesh) -> list[DeviceMapping]:
 def dispatch(
     config: EPConfig, buffers: EPBuffers, tokens: Tensor, ids: Tensor
 ) -> tuple[Grouped, Tensor]:
-    """Sends each token to its experts' devices in one launch over every
-    device.
+    """Sends each token to its experts' devices in one launch over every device.
 
     Returns each device's received tokens and the ``src_info``
     :func:`combine` routes them back with.
@@ -136,8 +144,11 @@ def combine(
     tokens: Tensor,
     weights: Tensor,
 ) -> Tensor:
-    """Returns the experts' outputs to their tokens, weighted, in one launch
-    over every device; every token comes back to the device it left."""
+    """Returns the experts' outputs to their tokens, weighted.
+
+    One launch covers every device, and every token comes back to the device it
+    left.
+    """
 
     def on_every_device(
         outputs: list[Tensor],

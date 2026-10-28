@@ -52,6 +52,7 @@ class Qwen3EmbeddingTransformerBlock(
         x: Tensor,
         input_row_offsets: Tensor,
     ) -> Tensor:
+        """Runs the block's attention, then its MLP."""
         # Attention with pre-normalization
         attn_out = self.self_attn(
             self.input_layernorm(x),
@@ -103,6 +104,7 @@ class Qwen3EmbeddingTransformer(
         input_row_offsets: Tensor,
         return_n_logits: Tensor,
     ) -> tuple[Tensor, ...]:
+        """Runs the encoder stack over the tokens."""
         h = self.embed_tokens(tokens)
 
         if self.embedding_multiplier != 1.0:
@@ -142,4 +144,5 @@ class Qwen3Embedding(
         input_row_offsets: Tensor,
         return_n_logits: Tensor,
     ) -> tuple[Tensor, ...]:
+        """Runs the language model over the tokens."""
         return self.language_model(tokens, input_row_offsets, return_n_logits)

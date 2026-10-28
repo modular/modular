@@ -28,6 +28,7 @@ class DeepseekV3_2MLP(QuantizedMLP):
     """
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the feed-forward layer over ``x``."""
         # V2 runs gate and up as two matmuls; fusing them is one FP8 matmul
         # fewer and was measured bit-identical here (the 2048-row split lands
         # on the 128-row weight-scale block boundary, so the concatenated

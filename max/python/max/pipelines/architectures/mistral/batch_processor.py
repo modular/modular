@@ -41,6 +41,7 @@ class MistralBatchProcessor(
         kv_params: KVCacheParamInterface,
         device_refs: list[DeviceRef],
     ) -> list[TensorType | BufferType]:
+        """The symbolic inputs one ragged step declares."""
         return ragged_kv_symbolic_inputs(
             kv_params=kv_params,
             device_refs=device_refs,

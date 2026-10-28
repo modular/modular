@@ -374,7 +374,8 @@ class Glm5NextVisionTransformer(Module):
         llm_dtype: DType | None = None,
         use_subgraphs: bool = True,
     ) -> None:
-        """
+        """Initializes the vision tower.
+
         Args:
             config: The tower's shapes and dtypes.
             device: Device every weight and activation lives on.

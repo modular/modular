@@ -40,6 +40,7 @@ class Gemma4RMSNorm(Module[[Tensor], Tensor]):
             self.weight = Tensor.ones([dim])
 
     def forward(self, x: Tensor) -> Tensor:
+        """Normalizes ``x``, scaling by the weight when there is one."""
         if self.with_weight:
             w = self.weight
         else:

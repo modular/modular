@@ -100,6 +100,7 @@ class DiffusionGemmaMoEGate(Gemma4MoEGate):
     def __call__(
         self, hidden_state: TensorValue
     ) -> tuple[TensorValue, TensorValue]:
+        """Returns each token's top-k expert indices and weights."""
         hidden_state = self.norm(hidden_state)
         hidden_state = hidden_state * self.scale * self.scalar_root_size
 
@@ -138,6 +139,7 @@ class DiffusionGemmaDecoderAttention(Gemma4Attention):
         kv_collection: PagedCacheValues,
         **kwargs,
     ) -> TensorValue:
+        """Runs the decoder's noncausal attention over ``x``."""
         total_seq_len = x.shape[0]
         layer_idx = ops.constant(
             self.layer_idx_in_cache, DType.uint32, device=DeviceRef.CPU()
@@ -251,6 +253,7 @@ class DiffusionGemmaSelfConditioning(Module):
     def __call__(
         self, inputs_embeds: TensorValue, sc_signal: TensorValue
     ) -> TensorValue:
+        """Adds the self-conditioned signal to ``inputs_embeds``."""
         normed = self.pre_norm(sc_signal)
         gated = ops.gelu(self.gate_proj(normed), approximate="tanh")
         sc = self.down_proj(gated * self.up_proj(normed))
@@ -534,6 +537,7 @@ class DiffusionGemmaEncoderTextModel(_DiffusionGemmaTextModelBase):
         image_token_indices: Sequence[TensorValue],
         **kwargs: object,
     ) -> DecoderOutputs:
+        """Runs the encoder over the graph inputs."""
         h = self.embed_tokens(tokens, signal_buffers)
         h = [
             merge_multimodal_embeddings(
@@ -604,6 +608,7 @@ class DiffusionGemmaDecoderTextModel(_DiffusionGemmaTextModelBase):
         temperature: TensorValue,
         **kwargs: object,
     ) -> tuple[TensorValue, ...]:
+        """Runs the decoder over the canvas tokens."""
         h = self.embed_tokens(canvas_tokens, signal_buffers)
 
         # Soft embeddings: softmax(prev processed logits, fp32) @ embed_table

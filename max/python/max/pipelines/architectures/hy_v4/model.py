@@ -56,8 +56,7 @@ def check_parallelism(pipeline_config: PipelineConfig, n_devices: int) -> None:
 class HYV4Model(
     LogProbabilitiesMixin, ModuleV3PipelineModelWithKVCache[TextContext]
 ):
-    """Hy4 on one GPU, or on several with tensor-parallel attention and
-    expert-parallel MoE."""
+    """Hy4 on one GPU, or on several with a sharded attention and MoE."""
 
     model_config_cls: ClassVar[type[Any]] = HYV4Config
     batch_processor_cls: ClassVar[type[HYV4BatchProcessor]] = HYV4BatchProcessor
@@ -103,8 +102,10 @@ class HYV4Model(
     def checkpoint_weights(
         cls, context: ModelLoadContext, config: HYV4Config
     ) -> dict[str, Any]:
-        """Returns the weights the built module compiles with, which
-        ``Module.compile`` shards inside the graph."""
+        """Returns the weights the built module compiles with.
+
+        ``Module.compile`` shards them inside the graph.
+        """
         del config
         return parse_state_dict_from_weights(
             context.pipeline_config, context.weights, context.adapter

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Eagle Llama3 architecture config and its module builder."""
 
 from __future__ import annotations
 

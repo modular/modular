@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Configuration for Flint."""
 
 from __future__ import annotations
@@ -265,6 +264,7 @@ class FlintConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
     @staticmethod
     def get_head_dim(huggingface_config: AutoConfig) -> int:
+        """The checkpoint's ``head_dim``, or the hidden size per head."""
         return getattr(
             huggingface_config,
             "head_dim",
@@ -274,4 +274,5 @@ class FlintConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """The checkpoint's hidden layer count."""
         return huggingface_config.num_hidden_layers

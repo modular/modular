@@ -192,6 +192,7 @@ class KimiK3PipelineModel(ModuleV3PipelineModelWithKVCache[TextContext]):
         self._ep_leaf_buffers = tuple(extra_buffers)
 
     def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
+        """Compiles the graphs, then binds the EP exchange's buffers."""
         # `ModuleV3PipelineModelWithKVCache` never calls `_wire_batch_processor`
         # (that hook only fires for `GraphPipelineModelWithKVCache`), so bind
         # the EP buffers here instead, right after compile.

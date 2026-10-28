@@ -88,6 +88,7 @@ class Glm5_2ModuleV3Target:
         language_model.emit_last_token_logits = False
 
     def verify(self, batch: _Batch) -> Verified[list[Tensor], Tensor]:
+        """Runs the target over the batch to score the drafts."""
         language_model = self.target.language_model
         mesh = language_model.mesh
         assert mesh is not None
@@ -117,6 +118,7 @@ class Glm5_2ModuleV3Target:
         return Verified(logits=logits, hidden=list(hidden.local_shards))
 
     def ep_input_types(self) -> Sequence[TensorType | BufferType]:
+        """The expert-parallel input types, or none without a manager."""
         if self.target.ep_batch_manager is None:
             return ()
         return self.target.ep_batch_manager.input_types()
@@ -159,6 +161,7 @@ class Glm5_2ModuleV3MTPProposer(TensorAdapter):
     def prefill(
         self, batch: _Batch, tokens: Tensor, target_hidden: list[Tensor]
     ) -> Proposed[Tensor]:
+        """Runs the draft over the prompt's target hidden states."""
         h, topk, offsets = self._decode(batch, tokens, target_hidden, None)
         # Every row's hidden state and the logits of each request's last
         # ``return_n_logits`` rows, which the driver gathers at the accepted
@@ -175,6 +178,7 @@ class Glm5_2ModuleV3MTPProposer(TensorAdapter):
     def step(
         self, batch: _Batch, draft_input: DraftStepInput[Tensor], index: int
     ) -> Proposed[Tensor]:
+        """Runs one draft step from the previous step's tokens."""
         # ``hnorm`` expects the post-final-norm hidden state, which the target
         # hands over at step 0. ``shared_head_norm`` is row-wise, so
         # normalizing the one carried row here is equivalent and far cheaper.

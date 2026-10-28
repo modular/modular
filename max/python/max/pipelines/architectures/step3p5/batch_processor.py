@@ -54,6 +54,7 @@ class Step3p5BatchProcessor(Llama3EpBatchProcessor):
         kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> Llama3Inputs | Step3p5Inputs:
+        """Builds the first step's inputs from the replica batches."""
         from .model import Step3p5Inputs
 
         assert self._mode is not None, (

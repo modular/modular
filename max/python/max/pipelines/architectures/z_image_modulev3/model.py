@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Z-Image transformer model."""
 
 from __future__ import annotations
 
@@ -62,6 +63,7 @@ class ZImageTransformerModel(ComponentModel):
 
     @traced(message="ZImageTransformerModel.load_model")
     def load_model(self) -> None:
+        """Loads the transformer's weights at the configured dtype."""
         target_dtype = self.config.dtype
         state_dict = {}
         for key, value in self.weights.items():
@@ -99,6 +101,7 @@ class ZImageTransformerModel(ComponentModel):
         siglip_feats: Tensor | None = None,
         image_noise_mask: Tensor | None = None,
     ) -> Any:
+        """Runs the transformer over one denoising step."""
         if controlnet_block_samples is not None:
             raise NotImplementedError(
                 "controlnet_block_samples is not supported in z-image phase 1"

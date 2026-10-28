@@ -77,6 +77,7 @@ class DFlash2TransformerBlock(Module):
         freqs_cis: TensorValue,
         input_row_offsets: TensorValue,
     ) -> TensorValue:
+        """Runs the block's grouped attention, then its grouped MLP."""
         h, coefficients = self.attention_conv.prepare(self.input_layernorm(x))
         h = self.self_attn(
             layer_idx,
@@ -388,7 +389,7 @@ class DFlash2Qwen3_5(Module):
         input_row_offsets: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
     ) -> list[TensorValue]:
-        # Alias for forward_block to satisfy the Module ABC.
+        """Alias for :meth:`forward_block`."""
         return self.forward_block(
             input_embeds, kv_collections, input_row_offsets, signal_buffers
         )

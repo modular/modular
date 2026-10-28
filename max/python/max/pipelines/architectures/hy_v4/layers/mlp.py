@@ -48,4 +48,5 @@ class HYV4MLP(Module[[Tensor], Tensor]):
         self.down_proj = linear(feed_forward_length, hidden_dim)
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the SwiGLU feed-forward over ``x``."""
         return self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))

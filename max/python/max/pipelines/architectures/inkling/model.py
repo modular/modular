@@ -167,8 +167,10 @@ class InklingModel(
     def build_vision_graph(
         cls, context: ModelLoadContext
     ) -> tuple[Graph, dict[str, Any]]:
-        """Builds the vision tower's graph and the weights it loads, for a
-        caller that runs the text model itself."""
+        """Builds the vision tower's graph and the weights it loads.
+
+        The caller runs the text model itself.
+        """
         config = InklingConfig.initialize(
             context.pipeline_config, max_seq_len=context.max_seq_len
         )
@@ -190,8 +192,9 @@ class InklingModel(
     @override
     @traced
     def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
-        """Compiles and initializes the graphs :meth:`graph_specs` returns,
-        then hands the vision tower to the batch processor.
+        """Compiles and initializes the graphs :meth:`graph_specs` returns.
+
+        The vision tower then goes to the batch processor.
 
         Args:
             session: The session that compiles and initializes the graphs.
@@ -253,6 +256,7 @@ class InklingModel(
         )
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
+        """Runs the graphs over the prepared inputs."""
         assert isinstance(model_inputs, InklingInputs)
         model_outputs = list(self.model.execute(*model_inputs.buffers))
 
@@ -261,8 +265,7 @@ class InklingModel(
 
 
 def _adapted(context: ModelLoadContext, prefix: str) -> dict[str, WeightData]:
-    """Adapts only the checkpoint's weights whose names start with
-    ``prefix``."""
+    """Adapts only the checkpoint's weights whose names start with ``prefix``."""
     assert context.adapter is not None
     return context.adapter(
         {

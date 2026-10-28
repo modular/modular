@@ -63,6 +63,7 @@ class InklingInputs(ModelInputs):
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
+        """The step's buffers, in the graph's input order."""
         assert self.kv_cache_inputs is not None
         return (
             self.tokens,
@@ -114,8 +115,7 @@ class InklingBatchProcessor(
     def bind_vision_encoder(
         self, *, vision_model: Model, session: InferenceSession | None = None
     ) -> None:
-        """Wires the compiled vision tower, which encodes each batch's new
-        images."""
+        """Wires the compiled vision tower, which encodes each batch's new images."""
         del session
         self._vision_model = vision_model
 
@@ -125,6 +125,7 @@ class InklingBatchProcessor(
         kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> InklingInputs:
+        """Builds the first step's inputs from the replica batches."""
         context_batch = single_replica_context_batch(
             replica_batches, processor_name=type(self).__qualname__
         )

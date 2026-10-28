@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """KV cache parameters for architectures that mix sliding and full attention.
 
 Each attention type owns a cache child, so a layer's index inside its child

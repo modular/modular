@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Configuration for the Gemma 3 text model."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -238,6 +240,7 @@ class Gemma3Config(
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
             huggingface_config: The HuggingFace model configuration object.
+            max_seq_len: The most tokens the model accepts in one sequence.
 
         Returns:
             An initialized :obj:`Gemma3Config` instance.

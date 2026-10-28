@@ -191,6 +191,7 @@ class Llama4(Transformer):
     def input_types(
         self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
+        """The graph's input types, in :meth:`forward`'s order."""
         device_ref = self.config.devices[0]
         return (
             TensorType(DType.int64, shape=["total_seq_len"], device=device_ref),

@@ -67,18 +67,18 @@ def token_shard(
     total_tokens: TensorValue,
     name: str = "moe_token_shard",
 ) -> TensorValue:
-    """Returns this rank\'s contiguous slice of ``x``\'s token axis.
+    """Returns this rank's contiguous slice of ``x``'s token axis.
 
     A local slice rather than a collective: every rank already holds the whole
-    tensor, so there is nothing to communicate. The result\'s row count is a
-    freshly *named* dimension rather than an expression over the input\'s, the
+    tensor, so there is nothing to communicate. The result's row count is a
+    freshly *named* dimension rather than an expression over the input's, the
     same way :func:`~max.nn.legacy.data_parallelism.split_batch` names its splits --
     a named dimension is legal in the subgraph signature this crosses, and an
     expression is not.
 
     Args:
         x: ``[total_tokens, ...]``, identical on every rank.
-        rank: This device\'s index within the tensor-parallel group.
+        rank: This device's index within the tensor-parallel group.
         degree: Size of that group.
         total_tokens: The row count as an int64 scalar, on CPU.
         name: Prefix of the shard's dim name. Every call site that splits a
@@ -102,7 +102,7 @@ def gather_token_shards(
     Args:
         shards: ``[shard_tokens, ...]`` per device, in device order.
         like: The tensors :func:`token_shard` was given, used to restore the
-            token dimension\'s original symbol.
+            token dimension's original symbol.
         signal_buffers: Collective synchronization buffers, one per device.
 
     Returns:

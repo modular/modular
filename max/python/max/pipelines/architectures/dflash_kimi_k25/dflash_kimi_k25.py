@@ -368,6 +368,7 @@ class DFlashKimiK25(Module):
         kv_collections: Sequence[PagedCacheValues],
         signal_buffers: Sequence[BufferValue],
     ) -> None:
+        """Writes the context's K/V, sharded across the draft's devices."""
         del signal_buffers
         num_devices = len(self.config.devices)
         if len(target_hidden) != num_devices:
@@ -417,6 +418,7 @@ class DFlashKimiK25(Module):
         input_row_offsets: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
     ) -> list[TensorValue]:
+        """Runs the block, sharded across the draft's devices."""
         num_devices = len(self.config.devices)
         if not all(
             len(seq) == num_devices
@@ -457,6 +459,7 @@ class DFlashKimiK25(Module):
         ctx_input_row_offsets: Sequence[TensorValue],
         block_input_row_offsets: Sequence[TensorValue],
     ) -> list[TensorValue]:
+        """Writes the context K/V, then runs the block."""
         self.materialize(
             target_hidden,
             ctx_input_row_offsets,

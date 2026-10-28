@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Z-Image's attention."""
 
 import math
 
@@ -27,6 +28,8 @@ flash_attention_gpu = F.functional(_flash_attention_gpu)
 
 
 class ZImageAttention(Module[..., Tensor]):
+    """Z-Image's self attention over the image and text tokens."""
+
     def __init__(
         self,
         dim: int,
@@ -53,6 +56,7 @@ class ZImageAttention(Module[..., Tensor]):
         hidden_states: Tensor,
         freqs_cis: tuple[Tensor, Tensor],
     ) -> Tensor:
+        """Runs the attention over ``hidden_states``."""
         batch_size = hidden_states.shape[0]
         seq_len = hidden_states.shape[1]
 

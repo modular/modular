@@ -77,6 +77,7 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
         )
 
     def freqs_cis_base(self) -> Tensor:
+        """The base rotary frequencies before YaRN scaling."""
         if self._freqs_cis is None:
             if self.scaling_params is None:
                 raise ValueError("scaling_params must be provided")

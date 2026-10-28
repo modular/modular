@@ -201,6 +201,7 @@ def convert_glm5_next_state_dict(
         keep_mtp_layer: Whether to keep the MTP draft layer's weights, at
             ``layers.{num_hidden_layers}.``. Only the speculative architecture
             builds that layer, so the base graph's strict load drops them.
+        **unused_kwargs: Accepted so every adapter shares one signature.
 
     Returns:
         The transformed weights.

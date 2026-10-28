@@ -10,8 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Inkling safetensors adapter: prefix strip, skip the audio tower, few
-reshapes."""
+"""Inkling safetensors adapter: prefix strip, skip the audio tower, few reshapes."""
 
 from __future__ import annotations
 

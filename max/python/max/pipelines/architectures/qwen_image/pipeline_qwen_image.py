@@ -591,6 +591,7 @@ class QwenImagePipeline(DiffusionPipeline):
         latents: npt.NDArray[np.float32],
         latent_image_ids: npt.NDArray[np.float32],
     ) -> tuple[Buffer, Buffer]:
+        """Packs the latents and their position ids into the graph's input."""
         latents_np = np.asarray(latents)
         batch = latents_np.shape[0]
         c = latents_np.shape[1]

@@ -60,6 +60,7 @@ class Gemma4VisionEncoderLayer(Module[..., Tensor]):
         cu_seqlens: Tensor,
         max_seq_len: Tensor,
     ) -> Tensor:
+        """Runs the layer's attention, then its MLP."""
         residual = hidden_states
         h = self.input_layernorm(hidden_states)
         h = self.self_attn(h, freqs_cis, cu_seqlens, max_seq_len)
@@ -91,6 +92,7 @@ class Gemma4VisionEncoder(Module[..., Tensor]):
         cu_seqlens: Tensor,
         max_seq_len: Tensor,
     ) -> Tensor:
+        """Runs the encoder stack over the patch embeddings."""
         for layer in self.layers:
             hidden_state = layer(
                 hidden_state, freqs_cis, cu_seqlens, max_seq_len

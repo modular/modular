@@ -60,6 +60,7 @@ class Attention(Module[[Tensor], Tensor]):
         self.to_out = Linear(dim, dim, bias=False)
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the decoder block's self-attention."""
         batch, seq = int(x.shape[0]), int(x.shape[1])
         shape = [batch, seq, self.heads, self.head_dim]
 
@@ -105,6 +106,7 @@ class DecoderBlock(Module[[Tensor], Tensor]):
         self.down_proj = Linear(intermediate_size, dim, bias=False)
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the block's attention, then its feed-forward."""
         x = x + self.attn(self.input_layernorm(x))
         normed = self.post_attention_layernorm(x)
         gated = F.silu(self.gate_proj(normed)) * self.up_proj(normed)

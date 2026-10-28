@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Gemma 3's vision attention."""
 
 from __future__ import annotations
 
@@ -60,6 +61,7 @@ class Gemma3VisionAttention(Module[[Tensor], Tensor]):
         )
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the attention over ``x``."""
         batch_size, n_patches = x.shape[0], x.shape[1]
 
         xq = self.q_proj(x)

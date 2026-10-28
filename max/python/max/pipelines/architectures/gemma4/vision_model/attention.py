@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Gemma 4's vision attention."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -123,6 +125,7 @@ class Gemma4VisionAttention(Module):
 
     @property
     def wqkv(self) -> TensorValue:
+        """The query, key and value projections, stacked for one matmul."""
         return ops.concat(
             (self.q_proj.weight, self.k_proj.weight, self.v_proj.weight)
         )
@@ -211,6 +214,7 @@ class Gemma4VisionAttention(Module):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the attention weights are split across devices."""
         return self.q_proj.sharding_strategy
 
     @sharding_strategy.setter
@@ -229,6 +233,7 @@ class Gemma4VisionAttention(Module):
     def shard(
         self, devices: Iterable[DeviceRef]
     ) -> list[Gemma4VisionAttention]:
+        """Splits the attention weights across ``devices``."""
         assert self.sharding_strategy
 
         q_proj_shards = self.q_proj.shard(devices)

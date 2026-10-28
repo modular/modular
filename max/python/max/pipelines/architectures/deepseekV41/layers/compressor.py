@@ -44,9 +44,11 @@ def workspace_bytes(compress_ratio: int, head_dim: int = 512) -> int:
 
 
 def ring_slots(state: PagedCacheValues, rows: RaggedRows) -> TensorValue:
-    """Returns each row's ``[T]`` int32 slot in its request's state ring,
-    ``block * ring_rows + position % ring_rows``, where the block is column
-    zero of the ring leaf's lookup table."""
+    """Returns each row's ``[T]`` int32 slot in its request's state ring.
+
+    The slot is ``block * ring_rows + position % ring_rows``, where the block is
+    column zero of the ring leaf's lookup table.
+    """
     ring_rows = int(state.kv_blocks.shape[3])
     bid = ops.cast(rows.bid, DType.int32)
     first_col = ops.constant(0, DType.int32, bid.device).broadcast_to(bid.shape)
@@ -61,9 +63,11 @@ def ring_slots(state: PagedCacheValues, rows: RaggedRows) -> TensorValue:
 def ring_save_slots(
     state: PagedCacheValues, rows: RaggedRows, slots: TensorValue
 ) -> TensorValue:
-    """Returns ``slots`` with ``-1`` on rows outside their request's last
-    ``ring_rows`` rows, so the ring save copies only the rows that survive a
-    wrap."""
+    """Masks ``slots`` to the rows that survive a ring wrap.
+
+    Rows outside their request's last ``ring_rows`` rows become ``-1``, so the
+    ring save copies only the rows that survive a wrap.
+    """
     ring_rows = int(state.kv_blocks.shape[3])
     assert rows.lengths is not None
     length = ops.gather(rows.lengths, rows.bid, axis=0)

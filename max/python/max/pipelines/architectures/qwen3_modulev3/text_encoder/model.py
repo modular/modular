@@ -158,6 +158,7 @@ class Qwen3TextEncoderModel(ComponentModel):
         *,
         expected_seq_len: int | None = None,
     ) -> np.ndarray:
+        """Builds the additive attention bias from the mask array."""
         additive_mask = causal_attention_mask_with_token_mask(
             [0],
             attention_mask,
@@ -185,6 +186,7 @@ class Qwen3TextEncoderModel(ComponentModel):
         *,
         hidden_state_index: int | None = None,
     ):
+        """Runs the encoder over the tokens and mask."""
         if tokens.rank == 2:
             if int(tokens.shape[0]) != 1:
                 raise ValueError(

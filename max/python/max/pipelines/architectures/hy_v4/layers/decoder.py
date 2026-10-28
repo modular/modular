@@ -71,8 +71,11 @@ class HYV4DecoderLayer(Module[..., tuple[Tensor, Tensor]]):
             self.hc_mlp = HYV4HyperConnection(config)
 
     def shard(self) -> None:
-        """Splits attention by heads and the routed experts by expert over the
-        mesh the layer was built on; the rest stays replicated."""
+        """Splits attention by heads and the routed experts by expert.
+
+        Both split over the mesh the layer was built on; the rest stays
+        replicated.
+        """
         self.self_attn.shard_heads()
         if isinstance(self.mlp, HYV4MoE):
             self.mlp.shard_experts()

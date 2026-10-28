@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Projects Gemma 3's vision output into the text width."""
 
 from __future__ import annotations
 
@@ -53,6 +54,7 @@ class Gemma3MultiModalProjector(Module[[Tensor], Tensor]):
         self.kernel_size = self.patches_per_image // self.tokens_per_side
 
     def forward(self, vision_outputs: Tensor) -> Tensor:
+        """Pools the vision output and projects it into the text width."""
         batch_size, _, seq_length = vision_outputs.shape
 
         transposed_vision_outputs = vision_outputs.transpose(1, 2)
@@ -115,6 +117,7 @@ class Gemma3VisionMLP(Module[[Tensor], Tensor]):
         )
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the vision MLP over ``x``."""
         x = self.fc1(x)
         x = F.gelu(x, self.hidden_act)
         x = self.fc2(x)

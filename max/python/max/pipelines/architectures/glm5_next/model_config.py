@@ -160,6 +160,7 @@ class Glm5NextVisionConfig:
 
     @property
     def head_dim(self) -> int:
+        """The width of one vision attention head."""
         return self.hidden_size // self.num_heads
 
     @classmethod
@@ -223,8 +224,11 @@ def layer_indices(layer_types: Sequence[str], kind: str) -> tuple[int, ...]:
 def recurrent_state_bytes(
     kv_params: KVCacheParamInterface, num_devices: int
 ) -> int:
-    """Returns GPU bytes one request's recurrent state occupies, summed over
-    ``num_devices``, read off the leaf the cache declares."""
+    """Returns the bytes one request's recurrent state occupies.
+
+    The total is summed over ``num_devices``, read off the leaf the cache
+    declares.
+    """
     state = recurrent_leaf(kv_params)
     if state is None:
         return 0
@@ -581,6 +585,7 @@ class Glm5NextConfig(DeepseekV3_2Config, ArchConfigWithVisionCache):
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """The text config's hidden layer count."""
         text_config = Glm5NextConfig._get_text_config(huggingface_config)
         return text_config.num_hidden_layers
 
@@ -791,8 +796,10 @@ class Glm5NextConfig(DeepseekV3_2Config, ArchConfigWithVisionCache):
         weights_size: int,
         device_memory_utilization: float,
     ) -> int:
-        """Returns a memory-safe default ``max_batch_size``; see
-        :func:`state_bounded_batch_size`."""
+        """Returns a memory-safe default ``max_batch_size``.
+
+        See :func:`state_bounded_batch_size`.
+        """
         return state_bounded_batch_size(
             self.per_request_state_bytes(),
             devices,

@@ -46,11 +46,15 @@ logger = logging.getLogger("max.pipelines")
 
 @dataclass
 class BertInputs(ModelInputs):
+    """Inputs the BERT pipeline feeds its model."""
+
     next_tokens_batch: Buffer
     attention_mask: Buffer
 
 
 class BertPipelineModel(PipelineModel[TextContext, BertModelConfig, Model]):
+    """BERT pipeline wrapper around the compiled model."""
+
     batch_processor_cls: ClassVar[type[BertBatchProcessor]] = BertBatchProcessor
     model_config_cls: ClassVar[type[BertModelConfig]] = BertModelConfig
 
@@ -89,6 +93,7 @@ class BertPipelineModel(PipelineModel[TextContext, BertModelConfig, Model]):
         return self._models[GraphRole.ENCODER]
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
+        """Runs the model on one batch of inputs."""
         assert isinstance(model_inputs, BertInputs)
         model_outputs = self.model.execute(
             model_inputs.next_tokens_batch, model_inputs.attention_mask

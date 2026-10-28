@@ -131,9 +131,11 @@ class KimiK3Config(ArchConfigWithKVCache):
     only the arithmetic still rounds a BF16 pool on each call."""
 
     def get_kv_params(self) -> KVCacheParamInterface:
+        """The KV cache parameters the config declares."""
         return self.kv_params
 
     def get_max_seq_len(self) -> int:
+        """The maximum sequence length the config allows."""
         return self.max_seq_len
 
     @property
@@ -183,6 +185,7 @@ class KimiK3Config(ArchConfigWithKVCache):
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """The text config's ``max_position_embeddings``."""
         text_config = cls._get_text_config(huggingface_config)
         return upper_bounded_default(
             upper_bound=text_config.max_position_embeddings,
@@ -191,6 +194,7 @@ class KimiK3Config(ArchConfigWithKVCache):
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """The text config's hidden layer count."""
         return KimiK3Config._get_text_config(
             huggingface_config
         ).num_hidden_layers

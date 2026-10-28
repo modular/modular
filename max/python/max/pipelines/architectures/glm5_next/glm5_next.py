@@ -545,8 +545,13 @@ class Glm5Next(Module):
         custom_extensions: Iterable[Path] = (),
         is_device_graph: bool = False,
     ) -> Graph:
-        """Traces the graph, whose inputs are :meth:`input_types` for the KV
-        cache parameters this module was built with.
+        """Traces the graph, whose inputs are :meth:`input_types`.
+
+        The type list is the one for the KV cache parameters this module was
+        built with. The trace adapts the flat graph inputs to :meth:`__call__`:
+        it splits off the per-device vision rows and scatter indices and the
+        signal buffers, unflattens the MLA, indexer and recurrent state caches,
+        and skips ``batch_context_lengths``, which the graph does not read yet.
 
         Adapts the flat graph inputs to :meth:`__call__`: splits off the
         per-device vision rows and scatter indices and the signal buffers,

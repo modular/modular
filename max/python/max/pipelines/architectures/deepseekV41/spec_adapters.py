@@ -1139,8 +1139,10 @@ class _DSparkProposer:
         ).rebind([accepted.next_tokens.shape[0], self.block_size])
 
     def _anchors(self, rows: list[str]) -> list[TensorValue]:
-        """Each device's blocks' first tokens, ``accepted.next_tokens``'
-        rows of its replica, read from the block ids it already holds."""
+        """Each device's blocks' first tokens, read from its block ids.
+
+        They are the rows of ``accepted.next_tokens`` in that device's replica.
+        """
         return [
             ops.slice_tensor(ids, [(slice(None, None, self.block_size), n)])
             for ids, n in zip(self._block_ids, rows, strict=True)

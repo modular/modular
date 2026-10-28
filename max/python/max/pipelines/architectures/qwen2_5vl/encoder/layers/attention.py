@@ -92,6 +92,7 @@ class Qwen25VLEncoderAttention(Module):
         x: TensorValue,
         rope: RotaryEmbedding,
     ) -> TensorValue:
+        """Runs the attention over ``x`` with rotary embeddings applied."""
         total_seq_len = x.shape[0]
 
         q = self.q_proj(x)

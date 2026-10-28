@@ -30,9 +30,9 @@ from max.pipelines.modeling.types import (
 
 @register("qwen3_5")
 class Qwen3_5ReasoningParser(ReasoningParser):
-    """Qwen 3.5 / 3.6 reasoning parser for ``<think>...</think>`` sections.
+    r"""Qwen 3.5 / 3.6 reasoning parser for ``<think>...</think>`` sections.
 
-    Qwen 3.5/3.6's chat template prepends ``<think>\\n`` to every assistant
+    Qwen 3.5/3.6's chat template prepends ``<think>\n`` to every assistant
     turn when ``enable_thinking`` is true (the default), so reasoning
     begins implicitly without an explicit ``<think>`` token in the model
     output stream. Reasoning ends explicitly at ``</think>``, or

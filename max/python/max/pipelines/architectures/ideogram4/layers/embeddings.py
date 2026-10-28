@@ -70,6 +70,7 @@ class Ideogram4MRoPE(Module[[Tensor], "tuple[Tensor, Tensor]"]):
         self._masks = _mrope_axis_masks(self._half, mrope_section)
 
     def forward(self, position_ids: Tensor) -> tuple[Tensor, Tensor]:
+        """Builds the rotary embeddings for ``position_ids``."""
         exponent = (
             F.arange(
                 0, self.head_dim, 2, dtype=DType.float32, device=self.device
@@ -162,6 +163,7 @@ class Ideogram4EmbedScalar(Module[[Tensor], Tensor]):
         return emb
 
     def forward(self, x: Tensor) -> Tensor:
+        """Embeds a scalar into the model's width."""
         x = F.cast(x, DType.float32)
         scaled = 1e4 * (x - self.range_min) / (self.range_max - self.range_min)
         emb = self._sinusoidal(scaled)

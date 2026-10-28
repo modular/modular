@@ -46,6 +46,8 @@ from ...deepseekV3.deepseekV3 import (
 
 
 class KimiK2_5MoEDecoder(DeepseekV3):
+    """The Kimi K2.5 MoE language model graph."""
+
     subgraph_layer_prefix: str = "language_model.layers"
 
     graph_kv_params: KVCacheParamInterface | None = None
@@ -70,6 +72,7 @@ class KimiK2_5MoEDecoder(DeepseekV3):
         ep_inputs: list[Value[Any]] | None = None,
         eplb_counter_buffers_per_layer: list[list[BufferValue]] | None = None,
     ) -> DecoderOutputs:
+        """Runs the decoder stack over the tokens."""
         h = self.embed_tokens(tokens, signal_buffers)
 
         # Merge image embeddings into text embeddings
@@ -107,6 +110,7 @@ class KimiK2_5MoEDecoder(DeepseekV3):
         self,
         kv_params: KVCacheParamInterface,
     ) -> tuple[TensorType | BufferType, ...]:
+        """The graph's input types, for these KV cache params."""
         all_input_types: tuple[TensorType | BufferType, ...] = (
             super().input_types(kv_params)
         )
@@ -149,9 +153,12 @@ class KimiK2_5MoEDecoder(DeepseekV3):
         custom_extensions: Iterable[Path] = (),
         is_device_graph: bool = False,
     ) -> Graph:
-        """Traces the graph, whose inputs are :meth:`input_types` for
-        :attr:`graph_kv_params`.
+        """Traces the graph, whose inputs are :meth:`input_types`.
 
+        The types are the ones for :attr:`graph_kv_params`. The trace splits off
+        the per-device vision-merge inputs and signal buffers, and unflattens
+        the KV cache. The EP inputs, then the per-layer EPLB counters when
+        profiling, are the trailing inputs.
         Adapts the flat graph inputs to :meth:`__call__`: splits off the
         per-device vision-merge inputs and signal buffers, and unflattens the
         KV cache. The EP inputs, then the per-layer EPLB counters when

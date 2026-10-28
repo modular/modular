@@ -24,9 +24,13 @@ from max.nn.legacy import MLP
 
 
 class DeepseekV3_2MLP(MLP):
+    """The DeepSeek-V3.2 feed-forward layer."""
+
     def __call__(self, x: TensorValueLike) -> TensorValue:
         """Applies the MLP transformation to the input.
-        Differs from standard MLP in that it uses float32 for intermediate operations.
+
+        Differs from standard MLP in that it uses float32 for intermediate
+        operations.
 
         Args:
             x: Input tensor of shape ``(..., hidden_dim)``.

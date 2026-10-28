@@ -216,6 +216,7 @@ class Gemma4TextDecoderLayer(Module):
         per_layer_inputs: list[TensorValue] | None = None,
         **kwargs: object,
     ) -> list[TensorValue]:
+        """Runs the layer's attention, then its feed-forward."""
         residual = xs
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
         attn_out = [

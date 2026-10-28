@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Gemma 3's vision patch embedding."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -24,6 +26,8 @@ from ..model_config import Gemma3ForConditionalGenerationConfig
 
 
 class Gemma3VisionEmbeddings(Module):
+    """Gemma 3's vision patch embedding, with its position embeddings."""
+
     def __init__(
         self,
         config: Gemma3ForConditionalGenerationConfig,
@@ -105,6 +109,7 @@ class Gemma3VisionEmbeddings(Module):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the patch embedding is split across devices."""
         return self.patch_embedding.sharding_strategy
 
     @sharding_strategy.setter
@@ -115,6 +120,7 @@ class Gemma3VisionEmbeddings(Module):
     def shard(
         self, devices: Iterable[DeviceRef]
     ) -> list[Gemma3VisionEmbeddings]:
+        """Splits the patch embedding across ``devices``."""
         assert self.sharding_strategy
 
         patch_embedding_shards = self.patch_embedding.shard(devices)

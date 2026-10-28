@@ -27,8 +27,10 @@ __all__ = ["Llama3RotaryEmbedding"]
 
 
 class Llama3RotaryEmbedding(RotaryEmbedding):
-    """
-    RotaryEmbedding for Llama3 that takes rope scaling into account.
+    """Rotary embedding for Llama 3 that applies rope scaling.
+
+    ``_compute_inv_freqs`` rescales the inverse frequencies by the
+    ``Llama3RopeScalingParams`` low- and high-frequency wavelengths.
     """
 
     scaling_params: Llama3RopeScalingParams | None = None

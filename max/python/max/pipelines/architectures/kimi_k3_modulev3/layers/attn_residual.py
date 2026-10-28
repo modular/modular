@@ -10,9 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Kimi K3's attention-residual mixture (ModuleV3): this model's ONLY residual
-stream.
+"""Kimi K3's attention-residual mixture.
 
+It is the model's only residual stream.
 Direct V3 port of ``kimi_k3/layers/attn_residual.py``. There is no
 ``x = x + f(x)`` anywhere in this decoder. A running ``prefix_sum`` and a
 ``block_residual`` stack of earlier per-block prefixes feed a learned SOFTMAX
@@ -86,6 +86,7 @@ def kimi_k3_attn_res_mix(
             rounding -- softmax over a single candidate).
         proj_weight: ``*_res_proj.weight``, ``[1, hidden]``.
         norm_weight: ``*_res_norm.weight``, ``[hidden]``.
+        eps: Epsilon the RMS norm uses. Defaults to the model's own.
     """
     out_dtype = prefix_sum.dtype
     candidates = F.cast(

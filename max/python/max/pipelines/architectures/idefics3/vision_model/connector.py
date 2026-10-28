@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Projects Idefics3 vision features into the text hidden size."""
 
 from __future__ import annotations
 

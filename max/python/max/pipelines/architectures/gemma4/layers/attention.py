@@ -93,9 +93,15 @@ class Gemma4Attention(Module, Shardable):
                 layers.
             num_attention_heads: The number of attention heads.
             num_key_value_heads: The number of key/value heads.
+            num_global_key_value_heads: The number of key/value heads a global
+                layer uses, which is twice the sliding layers' count when
+                ``attention_k_eq_v`` is set.
+            attention_k_eq_v: Whether global layers share one projection for
+                keys and values.
             hidden_size: The dimension of the hidden states.
             kv_params: KV Cache Params, including the number of kv heads, the
                 head dim, and data type.
+            global_head_dim: The head dimension a global layer uses.
             layer_idx: The layer number associated with this Attention block.
             layer_idx_in_cache: The 0-based index of this layer within its
                 sub-cache (sliding or global).
@@ -108,13 +114,14 @@ class Gemma4Attention(Module, Shardable):
             linear_cls: Linear class to use for the outputs dense layer.
             has_bias: Whether to use an attention bias. Defaults to False.
             qk_norm_eps: Value to use for numerical stability. Defaults to 1e-6.
+            local_window_size: The number of tokens a sliding layer attends
+                over. Defaults to 1024.
             quant_config: Scaled quantization configuration. Defaults to None.
             kv_share_source_layer_idx_in_cache: The index, within this layer
                 type's KV cache, of the layer whose keys and values this
                 layer reuses. Defaults to None, meaning the layer projects
                 and caches its own.
         """
-
         super().__init__()
         self.rope_global = rope_global
         self.rope_local = rope_local
@@ -205,6 +212,7 @@ class Gemma4Attention(Module, Shardable):
         kv_collection: PagedCacheValues,
         **kwargs,
     ) -> TensorValue:
+        """Runs the attention over ``x``, reading and updating the KV cache."""
         # Get attributes from input.
         total_seq_len = x.shape[0]
 
@@ -296,6 +304,7 @@ class Gemma4Attention(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the attention weights are split across devices."""
         return self._sharding_strategy
 
     @sharding_strategy.setter

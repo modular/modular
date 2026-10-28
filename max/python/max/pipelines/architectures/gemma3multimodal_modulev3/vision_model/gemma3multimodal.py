@@ -58,6 +58,7 @@ class Gemma3LanguageModel(Module[..., tuple[Tensor, ...]]):
         image_token_indices: Tensor,
         *variadic_args: Tensor,
     ) -> tuple[Tensor, ...]:
+        """Runs the language model over the tokens and image embeddings."""
         tokens = tokens.to(self.language_model.mesh)
         return_n_logits = return_n_logits.to(self.language_model.mesh)
         input_row_offsets = input_row_offsets.to(self.language_model.mesh)
@@ -171,6 +172,7 @@ class Gemma3VisionModel(Module[[Tensor], tuple[Tensor, ...]]):
         self.projector = Gemma3MultiModalProjector(config)
 
     def forward(self, pixel_values: Tensor) -> tuple[Tensor, ...]:
+        """Runs the vision tower and projects the patches into the text width."""
         hidden_states = self.embeddings(pixel_values)
         hidden_states = self.encoder(hidden_states)
         hidden_states = self.post_layernorm(hidden_states)

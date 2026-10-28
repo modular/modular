@@ -67,9 +67,11 @@ from .norm import KIMI_RMS_NORM_EPS, kimi_rms_norm
 
 
 def _tp_active(mesh: DeviceMesh) -> bool:
-    """Whether ``mesh`` actually shards along ``tp``, as opposed to merely
-    spanning several devices for some other reason (expert parallelism, a
-    pure-EP mesh has no ``tp`` axis at all)."""
+    """Whether ``mesh`` actually shards along ``tp``.
+
+    A mesh can span several devices for another reason, such as expert
+    parallelism, and a pure-EP mesh has no ``tp`` axis at all.
+    """
     return TP in mesh.axis_names and mesh.axis_size(TP) > 1
 
 
@@ -120,24 +122,32 @@ class KimiK3DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
         mla_prefill_plan: MLAPrefillMetadata | None = None,
         mla_freqs_cis: Tensor | None = None,
     ) -> tuple[Tensor, list[Tensor]]:
-        """Args:
-        hidden_states: ``[total_seq_len, hidden]`` ragged (batch size 1
+        """Runs the layer over the batch's tokens.
+
+        Args:
+            hidden_states: ``[total_seq_len, hidden]`` ragged (batch size 1
             at this scope, so ``total_seq_len == seq_len``).
-        block_residual: The candidate stack entering this layer.
-        conv_pool, conv_row_id, state_pool, recurrent_row_id,
-            input_row_offsets: KDA's mutable pools, the rows this layer runs
-            in, and ragged metadata; required when ``is_kda``. An MLA layer
-            reads only ``input_row_offsets``, and only when serving over
-            ``kv_collection``.
-        ep_config, ep_buffers: The FFN's expert-parallel exchange setup;
-            only meaningful when the FFN is an expert-parallel
+            block_residual: The candidate stack entering this layer.
+            conv_pool: KDA's conv-history pool, mutated in place at
+            ``conv_row_id``; required when ``is_kda``.
+            conv_row_id: The conv-pool row of each sequence.
+            state_pool: KDA's recurrent-state pool, mutated in place at
+            ``recurrent_row_id``; required when ``is_kda``.
+            recurrent_row_id: The recurrent-state row of each sequence.
+            input_row_offsets: The batch's ragged metadata. An MLA layer
+            reads only this, and only when serving over ``kv_collection``.
+            ep_config: The FFN's expert-parallel exchange setup; only
+            meaningful when the FFN is an expert-parallel
             ``KimiK3LatentMoE``, unused otherwise.
-        kv_collection: An MLA layer's paged cache handle for this batch.
+            ep_buffers: The exchange's graph buffers, passed whenever
+            ``ep_config`` is.
+            kv_collection: An MLA layer's paged cache handle for this batch.
             ``None`` runs the padded/parity form instead -- unused for KDA.
-        mla_prefill_plan, mla_freqs_cis: Required together with
-            ``kv_collection`` when ``self.attention.kv_params`` is an
-            ``MLAKVCacheParams`` (a compressed latent cache); unused
-            otherwise.
+            mla_prefill_plan: The compressed latent cache's prefill plan,
+            required with ``kv_collection`` when
+            ``self.attention.kv_params`` is an ``MLAKVCacheParams``.
+            mla_freqs_cis: The rotary frequencies that go with
+            ``mla_prefill_plan``.
         """
         x, prefix_sum, stack = kimi_k3_attn_res_pre_attention(
             hidden_states,

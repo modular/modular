@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """DeepSeek-V2 Transformer block (ModuleV3)."""
 
 from __future__ import annotations
@@ -49,6 +48,7 @@ class DeepseekV2TransformerBlock(Module[..., Tensor]):
         input_row_offsets: Tensor,
         freqs_cis: Tensor,
     ) -> Tensor:
+        """Runs one decoder block over ``x``."""
         residual = x
         norm_x = self.input_layernorm(x)
         attn_out = self.self_attn(

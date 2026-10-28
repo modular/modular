@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Supported architecture entry for the ModuleV3 DFlash MiMo V2 drafter."""
 
 from dataclasses import replace
 

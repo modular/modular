@@ -125,6 +125,7 @@ class MuseGlimmerModel(
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
+        """The text config's hidden layer count."""
         return huggingface_config.text_config.num_hidden_layers
 
     def _load_state_dict(self) -> dict[str, Any]:
@@ -226,8 +227,7 @@ class MuseGlimmerModel(
         devices: list[Device],
         packed: list[Buffer] | None,
     ) -> VisionEncodeResult:
-        """Runs the vision tower on the images :meth:`pack_vision_inputs`
-        packed."""
+        """Runs the vision tower on the images :meth:`pack_vision_inputs` packed."""
         if packed is None:
             return VisionEncodeResult(
                 embeddings=self.empty_vision_embeddings(devices)

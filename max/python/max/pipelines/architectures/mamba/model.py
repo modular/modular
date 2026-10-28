@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Mamba pipeline model."""
 
 from __future__ import annotations
 
@@ -143,6 +144,7 @@ class MambaModel(PipelineModelWithKVCache[TextContext]):
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
+        """The checkpoint's hidden layer count."""
         return MambaConfig.get_num_layers(huggingface_config)
 
     @classmethod
@@ -281,6 +283,7 @@ class MambaModel(PipelineModelWithKVCache[TextContext]):
         return prefill_model, step_model
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
+        """Runs the model and returns its outputs."""
         assert isinstance(model_inputs, MambaModelInputs)
 
         if model_inputs.is_prefill:
@@ -320,6 +323,7 @@ class MambaModel(PipelineModelWithKVCache[TextContext]):
         batch_top_n: list[int],
         batch_echo: list[bool],
     ) -> list[LogProbabilities | None]:
+        """Scores the sampled tokens' log probabilities."""
         logits = model_outputs.logits
         assert model_outputs.next_token_logits is not None
         next_token_logits = model_outputs.next_token_logits

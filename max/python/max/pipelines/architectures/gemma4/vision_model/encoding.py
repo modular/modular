@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Gemma 4's vision encoder."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -138,6 +140,7 @@ class Gemma4VisionEncoderLayer(Module):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the layer's weights are split across devices."""
         return self.self_attn.sharding_strategy
 
     @sharding_strategy.setter
@@ -152,6 +155,7 @@ class Gemma4VisionEncoderLayer(Module):
     def shard(
         self, devices: Iterable[DeviceRef]
     ) -> list[Gemma4VisionEncoderLayer]:
+        """Splits the layer's weights across ``devices``."""
         assert self.sharding_strategy
 
         self_attn_shards = self.self_attn.shard(devices)
@@ -228,16 +232,16 @@ class Gemma4VisionEncoder(Module):
         """Process hidden states through all encoder layers.
 
         Args:
-            hidden_states: Packed patch embeddings, shape
+            hidden_state: Packed patch embeddings, shape
                 ``[total_patches, hidden_size]``.
             freqs_cis: Pre-computed vision RoPE frequencies, shape
                 ``[total_patches, head_dim // 2, 2]``.
-            cu_seqlens: Cumulative sequence lengths, shape
+            cu_seqlen: Cumulative sequence lengths, shape
                 ``[num_images + 1]``, dtype uint32.
             max_seq_len: Maximum patches per image (scalar uint32, on CPU).
 
         Returns:
-            Encoded patch embeddings with the same shape as ``hidden_states``.
+            Encoded patch embeddings with the same shape as ``hidden_state``.
         """
         for layer in self.layers:
             hidden_state = layer(
@@ -247,6 +251,7 @@ class Gemma4VisionEncoder(Module):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the encoder's weights are split across devices."""
         return self._sharding_strategy
 
     @sharding_strategy.setter
@@ -257,6 +262,7 @@ class Gemma4VisionEncoder(Module):
         self._sharding_strategy = strategy
 
     def shard(self, devices: Iterable[DeviceRef]) -> list[Gemma4VisionEncoder]:
+        """Splits the encoder's weights across ``devices``."""
         assert self.sharding_strategy
 
         layer_shards = [layer.shard(devices) for layer in self.layers]

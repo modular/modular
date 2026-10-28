@@ -83,6 +83,7 @@ class UnifiedMTPGlm5_2Inputs(UnifiedSpecDecodeInputs, DeepseekV3Inputs):
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
+        """The step's buffers, plus the speculative decode tail's."""
         return super().buffers + self._spec_decode_tail_buffers(
             include_in_thinking_phase=True,
         )

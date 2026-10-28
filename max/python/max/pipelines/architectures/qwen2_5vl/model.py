@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Qwen2.5-VL pipeline model."""
 
 from __future__ import annotations
 
@@ -60,7 +61,8 @@ class Qwen2_5VLInputs(ModelInputs):
 
     This class encapsulates the input tensors required for the Qwen2.5VL model execution,
     including both text and vision inputs. Vision inputs are optional and can be None
-    for text-only processing."""
+    for text-only processing.
+    """
 
     tokens: Buffer
     """Tensor containing the input token IDs."""

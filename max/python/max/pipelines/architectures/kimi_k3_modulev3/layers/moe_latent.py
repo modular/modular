@@ -10,9 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Kimi K3's LATENT sparse MoE block (ModuleV3): BF16, or AMD CDNA4 MXFP4
-W4A8 under tensor parallelism; BF16 only under expert parallelism.
+"""Kimi K3's latent sparse MoE block.
 
+It runs BF16, or AMD CDNA4 MXFP4 W4A8 under tensor parallelism; expert
+parallelism runs BF16 only.
 Mirrors ``kimi_k3/layers/moe_latent.py``'s ``KimiK3LatentMoE``.
 :func:`expert_parallel_latent_moe` rejects an MXFP4 layer: expert
 parallelism's quantized dispatch needs its own transport kernels, a
@@ -118,9 +119,9 @@ _DEFAULT_MAX_TOKENS_PER_EXPERT = 8192
 def _amd_moe_usage_stats(
     expert_ids: Tensor, latent: Tensor, max_tokens_per_expert: int
 ) -> TensorValue:
-    """The host ``[max_tokens_per_expert, num_active_experts]`` pair the AMD
-    grouped GEMM reads.
+    """The host ``[max_tokens_per_expert, num_active_experts]`` pair.
 
+    The AMD grouped GEMM reads it.
     Direct port of V2's ``_host_usage_stats``: ``moe_create_indices`` leaves
     its own usage stats on device, while the AMD kernel reads element 0 and 1
     of a HOST ``uint32`` pair, so the bound is computed host-side here. A
@@ -235,34 +236,36 @@ class KimiK3LatentMoE(Module[..., Tensor]):
         amd_w4a8: bool | None = None,
         max_tokens_per_expert: int = _DEFAULT_MAX_TOKENS_PER_EXPERT,
     ) -> None:
-        """Args:
-        hidden_size: ``config.hidden_size`` -- the block's in/out width and
+        """Builds the latent MoE block.
+
+        Args:
+            hidden_size: ``config.hidden_size`` -- the block's in/out width and
             the width the shared experts and the gate run at.
-        latent_size: ``config.routed_expert_hidden_size``; the routed
+            latent_size: ``config.routed_expert_hidden_size``; the routed
             experts' width.
-        moe_intermediate_size: ``config.moe_intermediate_size``; a routed
+            moe_intermediate_size: ``config.moe_intermediate_size``; a routed
             expert's FFN width.
-        shared_intermediate_size: ``config.moe_intermediate_size *
+            shared_intermediate_size: ``config.moe_intermediate_size *
             config.num_shared_experts``.
-        num_experts: ``config.num_experts``.
-        num_experts_per_token: ``config.num_experts_per_token``.
-        beta: ``config.activation_situ_beta``.
-        linear_beta: ``config.activation_situ_linear_beta``.
-        rms_norm_eps: ``config.rms_norm_eps`` for ``routed_expert_norm``.
-        routed_scaling_factor: ``config.routed_scaling_factor``.
-        num_expert_group: ``config.num_expert_group``.
-        topk_group: ``config.topk_group``.
-        moe_renormalize: ``config.moe_renormalize``.
-        dtype: Dense (non-expert) weight and activation dtype; the packed
+            num_experts: ``config.num_experts``.
+            num_experts_per_token: ``config.num_experts_per_token``.
+            beta: ``config.activation_situ_beta``.
+            linear_beta: ``config.activation_situ_linear_beta``.
+            rms_norm_eps: ``config.rms_norm_eps`` for ``routed_expert_norm``.
+            routed_scaling_factor: ``config.routed_scaling_factor``.
+            num_expert_group: ``config.num_expert_group``.
+            topk_group: ``config.topk_group``.
+            moe_renormalize: ``config.moe_renormalize``.
+            dtype: Dense (non-expert) weight and activation dtype; the packed
             routed experts only reach this width once dequantized.
-        quant_config: When MXFP4, the routed experts are packed uint8 with
+            quant_config: When MXFP4, the routed experts are packed uint8 with
             E8M0 block scales; see the module docstring for the compute
             arm this selects.
-        amd_w4a8: Whether to run the AMD CDNA4 W4A8 path. ``None`` derives
+            amd_w4a8: Whether to run the AMD CDNA4 W4A8 path. ``None`` derives
             it from the host accelerator via :func:`validate_amd_tp_w4a8`;
             pass a value to build the graph on a host without one (e.g. a
             shape-only CPU test).
-        max_tokens_per_expert: Rows the W4A8 grouped GEMM sizes its M grid
+            max_tokens_per_expert: Rows the W4A8 grouped GEMM sizes its M grid
             for, per expert -- pass ``KimiK3Config.routed_expert_row_bound``.
             Too small silently drops an expert's tail.
         """
@@ -357,11 +360,15 @@ class KimiK3LatentMoE(Module[..., Tensor]):
         ep_config: EPConfig | None = None,
         ep_buffers: ep.EPBuffers | None = None,
     ) -> Tensor:
-        """Args:
+        """Runs the block over ``hidden_states``.
+
+        Args:
             hidden_states: ``[T, hidden_size]``.
-            ep_config, ep_buffers: This block's expert-parallel exchange
-                setup; both given routes to :meth:`expert_parallel_forward`
-                instead of running this method's own body.
+            ep_config: This block's expert-parallel exchange setup. Given
+                with ``ep_buffers``, it routes to
+                :meth:`expert_parallel_forward` instead of running this
+                method's own body.
+            ep_buffers: The exchange's graph buffers.
 
         Returns:
             ``[T, hidden_size]``.

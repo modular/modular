@@ -761,11 +761,23 @@ class DeepseekV41Block(Module):
         (:meth:`DeepseekV41MoE.data_parallel`).
 
         Args:
+            blocks: One block per device.
+            streams: Per device, its hyper-connection streams.
+            rows: Per device, the rows it owns.
             batch_token_ids: Per device, the whole batch's ``[1, T]`` token
                 ids, for the MoE gate.
+            caches: Per device, its attention caches.
+            signal_buffers: Per device, the buffers the MoE's all-reduce
+                writes.
             replica_tokens: Where each device's rows sit in the batch.
-
-        Every other per-device argument covers only that device's rows.
+            replay: Per device, the rows it replays into attention, or
+                ``None``.
+            swa_valid_from: Per device, its ``[batch]`` SWA validity
+                boundary, or ``None``.
+            engram_operands: Per device, the operand its Engram layer
+                reads; required on an Engram layer.
+            engram_token_masks: Per device, the token mask its Engram gate
+                applies, or ``None`` for every token.
 
         Returns:
             Each device's output copies and the copies its attention read.

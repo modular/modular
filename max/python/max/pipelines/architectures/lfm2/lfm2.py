@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The LFM2 layers and model graph."""
 
 from __future__ import annotations
 
@@ -52,6 +53,8 @@ from .model_config import LFM2Config
 
 
 class LFM2MLP(Module):
+    """The gated feed-forward block."""
+
     def __init__(
         self, config: LFM2Config, linear_cls: functools.partial[Linear]
     ):
@@ -79,10 +82,13 @@ class LFM2MLP(Module):
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Runs the gated feed-forward over ``x``."""
         return self.w2(ops.silu(self.w1(x)) * self.w3(x))
 
 
 class LFM2ShortConv(Module):
+    """The short-convolution mixer."""
+
     def __init__(
         self, config: LFM2Config, linear_cls: functools.partial[Linear]
     ):
@@ -124,6 +130,7 @@ class LFM2ShortConv(Module):
         conv_state: TensorValue,
         input_row_offsets: TensorValue,
     ) -> tuple[TensorValue, TensorValue]:
+        """Runs the short convolution over ``x``, advancing its state."""
         bcx = self.in_proj(x)
         b, c, xv = ops.split(
             bcx,
@@ -225,6 +232,8 @@ class LFM2ShortConv(Module):
 
 
 class LFM2DecoderLayer(Module):
+    """One decoder layer: a mixer, then the feed-forward."""
+
     def __init__(
         self,
         config: LFM2Config,
@@ -275,6 +284,7 @@ class LFM2DecoderLayer(Module):
         input_row_offsets: TensorValue,
         conv_state: TensorValue | None,
     ) -> tuple[TensorValue, TensorValue | None]:
+        """Runs the layer's attention or short convolution, then its MLP."""
         residual = x
         normed = self.operator_norm(x)
         new_conv_state = conv_state
@@ -305,6 +315,8 @@ class LFM2DecoderLayer(Module):
 
 
 class LFM2(Module):
+    """The LFM2 model."""
+
     def __init__(self, config: LFM2Config):
         super().__init__()
         assert len(config.devices) == 1
@@ -358,6 +370,7 @@ class LFM2(Module):
     def input_types(
         self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
+        """The graph's input types, in :meth:`__call__`'s order."""
         device_ref = self.config.devices[0]
         tokens_type = TensorType(
             DType.int64, shape=["total_seq_len"], device=device_ref
@@ -454,6 +467,7 @@ class LFM2(Module):
         input_row_offsets: TensorValue,
         conv_states: list[TensorValue],
     ) -> DecoderOutputs:
+        """Runs the model over the graph inputs."""
         h = self.embed_tokens(tokens)
         freqs_cis = self.rope.freqs_cis.to(h.device)
         conv_idx = 0

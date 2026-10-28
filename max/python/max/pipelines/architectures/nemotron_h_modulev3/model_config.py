@@ -250,8 +250,10 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
     @property
     def router_gate_dtype(self) -> DType:
-        """The dtype of the MoE router's gate weight, both in the module and
-        in the state dict it loads."""
+        """The dtype of the MoE router's gate weight.
+
+        Both the module and the state dict it loads use it.
+        """
         return DType.bfloat16 if self.bf16_router_gate else DType.float32
 
     def w4a4_mixers(self) -> frozenset[str]:
@@ -264,9 +266,13 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         )
 
     def shared_expert_slices(self, mixer: str) -> int:
-        """Returns how many routed experts' worth of channels the shared
-        expert runs as, inside the routed W4A4 grouped matmul.
+        """Returns the shared expert's width in routed experts.
 
+        The shared expert runs inside the routed W4A4 grouped matmul. ``relu2``
+        acts on each channel alone, so the shared expert's channels split into
+        slices as wide as a routed expert's, and the shared output is the sum of
+        the slices' outputs. Each slice runs as one more expert that every token
+        picks at weight 1.
         relu2 acts on each channel alone, so the shared expert's channels
         split into slices as wide as a routed expert's, and the shared output
         is the sum of the slices' outputs. Each slice runs as one more expert
@@ -353,17 +359,16 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
     @property
     def moe_intermediate_size_per_device(self) -> int:
-        """Returns the routed expert channels each device holds, padding
-        included."""
+        """Returns the routed expert channels each device holds, padding included."""
         return moe_channels_per_device(
             self.moe_intermediate_size, len(self.devices)
         )
 
     @property
     def nvfp4_experts_split_by_block(self) -> bool:
-        """Returns whether each device's share of the routed expert channels
-        is a whole number of NVFP4 blocks.
+        """Whether each device's share of the routed channels is whole blocks.
 
+        The down projection's block scales can only be split between blocks.
         The down projection's block scales can only be split between blocks.
         """
         share = self.moe_intermediate_size // len(self.devices)
@@ -371,10 +376,12 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
     @property
     def mamba_intermediate_size(self) -> int:
+        """The mixer's width, from the head count and the head width."""
         return self.mamba_num_heads * self.mamba_head_dim
 
     @property
     def conv_dim(self) -> int:
+        """The width the causal convolution runs at."""
         return (
             self.mamba_intermediate_size
             + 2 * self.n_groups * self.ssm_state_size
@@ -466,6 +473,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         *,
         max_seq_len: int,
     ) -> Self:
+        """Builds the config from the pipeline configuration."""
         model_config = model_config or pipeline_config.model
         hf = model_config.huggingface_config
         if hf is None:

@@ -238,8 +238,9 @@ class MiniMaxMusic3Executor(
 
     @traced(message="MiniMaxMusic3Executor.execute")
     def execute(self, inputs: MiniMaxMusic3Inputs) -> AudioExecutorOutputs:
-        """Runs the language model, diffusion, and vocoder stages, returning
-        the finished stereo waveform.
+        """Runs the language model, diffusion and vocoder stages.
+
+        The result is the finished stereo waveform.
         """
         seed = _read(inputs.seed)
         conditioning = self._generate(inputs, seed)
@@ -389,8 +390,11 @@ class MiniMaxMusic3Executor(
         return self._diffusion
 
     def _vocoder_stage(self) -> ChunkedVocoder:
-        """The waveform decoder, which stays float32 -- it is small, and it is
-        the one component whose rounding would be audible rather than diffuse."""
+        """The waveform decoder, which stays float32.
+
+        It is small, and it is the one component whose rounding would be audible
+        rather than diffuse.
+        """
         if self._vocoder is None:
             self._evict(keep="vocoder")
             self._vocoder = ChunkedVocoder(

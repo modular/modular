@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Adapters that rename InternVL checkpoint weights for the MAX modules."""
+
 from __future__ import annotations
 
 from max.driver import Buffer
@@ -68,6 +70,7 @@ def convert_internvl_language_model_state_dict(
         state_dict: The raw InternVL checkpoint weights.
         huggingface_config: The InternVL HuggingFace configuration.
         pipeline_config: The pipeline configuration.
+        **unused_kwargs: Extra keyword arguments, which this adapter discards.
 
     Returns:
         The filtered and mapped weights for InternVLLanguageModel.
@@ -108,6 +111,7 @@ def convert_internvl_vision_model_state_dict(
         state_dict: The raw InternVL checkpoint weights.
         huggingface_config: The InternVL HuggingFace configuration.
         pipeline_config: The pipeline configuration.
+        **unused_kwargs: Extra keyword arguments, which this adapter discards.
 
     Returns:
         The filtered and mapped weights for InternVLVisionModel.

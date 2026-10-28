@@ -263,7 +263,15 @@ def indexer_select_block_topk_rows(
     unspecified.
 
     Args:
+        leaf: The index-key leaf.
+        q: :func:`quantize_queries`'s output.
+        offsets: ``[B + 1]`` uint32 ragged row offsets.
         positions: ``[T]`` token positions.
+        layer_idx: Host uint32 layer index within the leaf.
+        top_k: Entries selected per row.
+        ratio: Entries per block group.
+        block_size: Entries per block.
+        topk_blocks: Blocks kept per row.
 
     Returns:
         ``(ids [T, top_k], kept [T, topk_blocks] int32)``; kept block ids
@@ -304,8 +312,15 @@ def indexer_select_masked_rows(
     kept blocks restrict only longer rows.
 
     Args:
+        leaf: The index-key leaf.
+        q: :func:`quantize_queries`'s output.
+        offsets: ``[B + 1]`` uint32 ragged row offsets.
         kept: ``[T, kept]`` int32 kept block ids, ``-1`` for none; block
             ``b`` holds entries ``[b * block_size, (b + 1) * block_size)``.
+        layer_idx: Host uint32 layer index within the leaf.
+        top_k: Entries selected per row.
+        ratio: Entries per block group.
+        block_size: Entries per block.
     """
     return _select(
         "mo.csa.indexer.mxfp4.masked",

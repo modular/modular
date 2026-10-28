@@ -130,8 +130,9 @@ MXFP8_SPLITK_ENV = "MAX_DSV41_MXFP8_SPLITK"
 
 
 def mxfp8_splitk_enabled() -> bool:
-    """Whether ``attn.wo_a``, ``attn.wo_b`` and the shared expert run on
-    the cluster split-K MXFP8 matmul.
+    """Whether the MXFP8 weights run on the cluster split-K matmul.
+
+    The switch covers ``attn.wo_a``, ``attn.wo_b`` and the shared expert.
 
     On (default): each weight shape and M takes cluster split-K or a
     pair-CTA GEMM (decode or prefill) where measured faster, and the
@@ -146,8 +147,7 @@ MHC_MXFP8_ENV = "MAX_DSV41_MHC_MXFP8"
 
 
 def mhc_mxfp8_enabled() -> bool:
-    """Whether each hyper-connection step also writes its sublayer's input
-    in MXFP8.
+    """Whether each hyper-connection step also writes its sublayer's input in MXFP8.
 
     On (default): on SM100 the shared expert and the attention's fused
     ``wq_a``/``wkv`` projection read that copy instead of quantizing their
@@ -282,8 +282,9 @@ class RoutedExpertFormat(Enum):
 
     @property
     def fuses_dispatched_ffn(self) -> bool:
-        """Whether one kernel runs a device's dispatched gate/up, SwiGLU and
-        down projections.
+        """Whether one kernel runs a device's whole dispatched FFN.
+
+        That covers the gate/up, SwiGLU and down projections.
 
         Only NVFP4 has that kernel; MXFP4 runs them as separate ops.
         """
@@ -650,9 +651,11 @@ class DeepseekV41Config(ArchConfigWithKVCache):
             )
 
     def get_kv_params(self) -> KVCacheParamInterface:
+        """The KV cache parameters for this config."""
         return self.kv_params
 
     def get_max_seq_len(self) -> int:
+        """The maximum sequence length the config allows."""
         return self.max_seq_len
 
     @staticmethod
@@ -709,6 +712,7 @@ class DeepseekV41Config(ArchConfigWithKVCache):
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """The longest sequence that fits the KV cache."""
         text_config = cls.get_text_config(huggingface_config)
         return upper_bounded_default(
             upper_bound=text_config.max_position_embeddings,

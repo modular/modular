@@ -102,7 +102,6 @@ class VisionConfig:
         Note: dtype fields will be set to defaults and should be updated
         via finalize() once state_dict is available.
         """
-
         return cls(
             devices=[
                 DeviceRef(spec.device_type, spec.id)
@@ -196,6 +195,7 @@ class Qwen2_5VLConfig(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """The language model's hidden layer count."""
         # Delegate to Llama3Config for language model parameters.
         llm_config = getattr(
             huggingface_config, "text_config", huggingface_config
@@ -215,6 +215,9 @@ class Qwen2_5VLConfig(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
 
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
+            model_config: The MAX model configuration to read the HuggingFace
+                config from. Defaults to ``pipeline_config.model``.
+            max_seq_len: The maximum sequence length the config allows.
 
         Returns:
             A Qwen2_5VLConfig instance with fields initialized from config.
@@ -239,15 +242,14 @@ class Qwen2_5VLConfig(ArchVLConfigWithTextSubconfig, ArchConfigWithKVCache):
         *,
         max_seq_len: int,
     ) -> Self:
-        """Initializes a Qwen2_5VLConfig from pipeline and HuggingFace configs.
+        """Builds the config from the pipeline and HuggingFace configs.
 
-        This method creates a config instance with all fields that can be
-        determined from the pipeline and HuggingFace configurations, without
-        needing the state_dict. Fields that depend on the state_dict should
-        be set via the `finalize()` method.
+        Every field that the two configs determine is set here. Fields that
+        depend on the state_dict are set by ``finalize()``.
 
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
+            max_seq_len: The maximum sequence length the config allows.
             huggingface_config: HuggingFace model configuration.
 
         Returns:
