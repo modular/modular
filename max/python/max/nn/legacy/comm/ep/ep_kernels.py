@@ -556,11 +556,6 @@ def call_ep_dispatch_wait(
 
         if _uses_block_scaled_nv_ep_layout(config):
             op_name += ".block.scaled.nv"
-            parameters["dispatch_scale_dtype"] = (
-                DType.float8_e4m3fn
-                if quant_config.is_nvfp4
-                else DType.float8_e8m0fnu
-            )
             if config.fused_shared_expert and quant_config.is_nvfp4:
                 raise ValueError(
                     "NVFP4 dispatch with fused shared expert is not supported"
