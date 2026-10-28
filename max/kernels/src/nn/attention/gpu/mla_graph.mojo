@@ -2231,6 +2231,7 @@ def mla_decode_branch_fp8[
                     ),
                 ),
             )
+            _ = valid_lengths_buf^
     else:
         generic_flare_mla_decode_kv_cache_ragged[
             target=target,
@@ -2542,6 +2543,8 @@ def mla_prefill_branch_sparse_fp8[
             ctx,
             scalar_args_buf,
         )
+        _ = valid_lengths_buf^
+        _ = zero_row_buf^
     else:
         # SM100 runs the native-FP8 sparse prefill kernel when heads fit its
         # tiles (128, or a multiple of 8 in (0,64]); Q is cast to FP8.
