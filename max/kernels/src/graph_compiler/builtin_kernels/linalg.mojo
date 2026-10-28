@@ -1410,19 +1410,15 @@ struct Struct_grouped_matmul_block_scaled_amd[
     @inline(.always)
     @staticmethod
     def execute[
-        c_type: DType,
-        a_type: DType,
-        b_type: DType,
-        //,
         target: StaticString,
     ](
-        c: OutputTensor[dtype=c_type, rank=2, ...],
-        a: InputTensor[dtype=a_type, rank=2, ...],
-        b: InputTensor[dtype=b_type, rank=3, ...],
-        a_scales: InputTensor[dtype=.float8_e8m0fnu, rank=2, ...],
-        b_scales: InputTensor[dtype=.float8_e8m0fnu, rank=3, ...],
-        expert_start_indices: InputTensor[dtype=.uint32, rank=1, ...],
-        expert_ids: InputTensor[dtype=.int32, rank=1, ...],
+        c: Some[Output & Tensor],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
+        a_scales: Some[Input & Tensor],
+        b_scales: Some[Input & Tensor],
+        expert_start_indices: Some[Input & Tensor],
+        expert_ids: Some[Input & Tensor],
         max_num_tokens_per_expert: UInt32,
         num_active_experts: UInt32,
         estimated_total_m: UInt32,
@@ -1436,7 +1432,6 @@ struct Struct_grouped_matmul_block_scaled_amd[
         block-scaled (e.g. MXFP4: 4-bit floating point packed as uint8).
 
         Parameters:
-            c_type: The output tensor data type.
             target: The target GPU device.
 
         Args:
@@ -1463,6 +1458,24 @@ struct Struct_grouped_matmul_block_scaled_amd[
                 decode bands. Ignored unless `preshuffled_b`.
             context: The device context pointer.
         """
+        comptime assert conforms_to(type_of(c), TileTensorable)
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime assert conforms_to(type_of(a_scales), TileTensorable)
+        comptime assert conforms_to(type_of(b_scales), TileTensorable)
+        comptime assert conforms_to(
+            type_of(expert_start_indices), TileTensorable
+        )
+        comptime assert conforms_to(type_of(expert_ids), TileTensorable)
+        comptime a_type = type_of(a).dtype
+        comptime b_type = type_of(b).dtype
+        comptime assert type_of(c).rank == 2
+        comptime assert type_of(a).rank == 2
+        comptime assert type_of(b).rank == 3
+        comptime assert type_of(a_scales).rank == 2
+        comptime assert type_of(b_scales).rank == 3
+        comptime assert type_of(expert_start_indices).rank == 1
+        comptime assert type_of(expert_ids).rank == 1
         comptime assert is_gpu[
             target
         ](), "grouped block-scaled matmul only supports GPUs"
@@ -1489,13 +1502,13 @@ struct Struct_grouped_matmul_block_scaled_amd[
             # time (e.g. kimik2_5/weight_adapters.py). Correctness
             # requires EP-MoE sharding (axis-0); TP-MoE is unsupported.
             block_scaled_grouped_matmul_amd_preb[lane_bytes=Self.lane_bytes](
-                c.to_tile_tensor[.int64](),
-                a.to_tile_tensor[.int64]().bitcast[.uint8](),
-                b.to_tile_tensor[.int64]().bitcast[.uint8](),
-                a_scales.to_tile_tensor[.int64](),
-                b_scales.to_tile_tensor[.int64](),
-                expert_start_indices.to_tile_tensor[.int64](),
-                expert_ids.to_tile_tensor[.int64](),
+                c.to_tile_tensor(),
+                a.to_tile_tensor().bitcast[.uint8](),
+                b.to_tile_tensor().bitcast[.uint8](),
+                a_scales.to_tile_tensor[.float8_e8m0fnu](),
+                b_scales.to_tile_tensor[.float8_e8m0fnu](),
+                expert_start_indices.to_tile_tensor[.uint32](),
+                expert_ids.to_tile_tensor[.int32](),
                 Int(max_num_tokens_per_expert),
                 Int(num_active_experts),
                 context,
@@ -1518,13 +1531,13 @@ struct Struct_grouped_matmul_block_scaled_amd[
                 matrix_format=a_format,
                 b_matrix_format=CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
             ](
-                c.to_tile_tensor[.int64](),
-                a.to_tile_tensor[.int64]().bitcast[.uint8](),
-                b.to_tile_tensor[.int64]().bitcast[.uint8](),
-                a_scales.to_tile_tensor[.int64](),
-                b_scales.to_tile_tensor[.int64](),
-                expert_start_indices.to_tile_tensor[.int64](),
-                expert_ids.to_tile_tensor[.int64](),
+                c.to_tile_tensor(),
+                a.to_tile_tensor().bitcast[.uint8](),
+                b.to_tile_tensor().bitcast[.uint8](),
+                a_scales.to_tile_tensor[.float8_e8m0fnu](),
+                b_scales.to_tile_tensor[.float8_e8m0fnu](),
+                expert_start_indices.to_tile_tensor[.uint32](),
+                expert_ids.to_tile_tensor[.int32](),
                 Int(max_num_tokens_per_expert),
                 Int(num_active_experts),
                 context,
@@ -1552,22 +1565,19 @@ struct Struct_grouped_matmul_block_scaled_amd_swiglu_quant[
     @inline(.always)
     @staticmethod
     def execute[
-        a_type: DType,
-        b_type: DType,
-        //,
         target: StaticString,
         activation: StaticString = "silu",
         swiglu_alpha: Float32 = 0.0,
         swiglu_limit: Float32 = 0.0,
     ](
-        c: OutputTensor[dtype=.float8_e4m3fn, rank=2, ...],
-        c_scales: OutputTensor[dtype=.float8_e8m0fnu, rank=2, ...],
-        a: InputTensor[dtype=a_type, rank=2, ...],
-        b: InputTensor[dtype=b_type, rank=3, ...],
-        a_scales: InputTensor[dtype=.float8_e8m0fnu, rank=2, ...],
-        b_scales: InputTensor[dtype=.float8_e8m0fnu, rank=3, ...],
-        expert_start_indices: InputTensor[dtype=.uint32, rank=1, ...],
-        expert_ids: InputTensor[dtype=.int32, rank=1, ...],
+        c: Some[Output & Tensor],
+        c_scales: Some[Output & Tensor],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
+        a_scales: Some[Input & Tensor],
+        b_scales: Some[Input & Tensor],
+        expert_start_indices: Some[Input & Tensor],
+        expert_ids: Some[Input & Tensor],
         max_num_tokens_per_expert: UInt32,
         num_active_experts: UInt32,
         estimated_total_m: UInt32,
@@ -1578,8 +1588,6 @@ struct Struct_grouped_matmul_block_scaled_amd_swiglu_quant[
         """Executes gemm1 with the SwiGLU and MXFP8 requantize fused in.
 
         Parameters:
-            a_type: The activation dtype (one byte wide).
-            b_type: The weight dtype (one byte wide).
             target: The target GPU device.
             activation: The gated activation the epilogue applies, built at
                 compile time with `swiglu_alpha` and `swiglu_limit`.
@@ -1603,6 +1611,26 @@ struct Struct_grouped_matmul_block_scaled_amd_swiglu_quant[
             decode_grid_m_rows: Rows grid.y must cover per expert at decode.
             context: The device context pointer.
         """
+        comptime assert conforms_to(type_of(c), TileTensorable)
+        comptime assert conforms_to(type_of(c_scales), TileTensorable)
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime assert conforms_to(type_of(a_scales), TileTensorable)
+        comptime assert conforms_to(type_of(b_scales), TileTensorable)
+        comptime assert conforms_to(
+            type_of(expert_start_indices), TileTensorable
+        )
+        comptime assert conforms_to(type_of(expert_ids), TileTensorable)
+        comptime a_type = type_of(a).dtype
+        comptime b_type = type_of(b).dtype
+        comptime assert type_of(c).rank == 2
+        comptime assert type_of(c_scales).rank == 2
+        comptime assert type_of(a).rank == 2
+        comptime assert type_of(b).rank == 3
+        comptime assert type_of(a_scales).rank == 2
+        comptime assert type_of(b_scales).rank == 3
+        comptime assert type_of(expert_start_indices).rank == 1
+        comptime assert type_of(expert_ids).rank == 1
         comptime assert is_gpu[
             target
         ](), "grouped block-scaled matmul only supports GPUs"
@@ -1625,20 +1653,20 @@ struct Struct_grouped_matmul_block_scaled_amd_swiglu_quant[
             fuse_swiglu_mxfp8=True,
             activation=act,
         ](
-            c.to_tile_tensor[.int64](),
-            a.to_tile_tensor[.int64]().bitcast[.uint8](),
-            b.to_tile_tensor[.int64]().bitcast[.uint8](),
-            a_scales.to_tile_tensor[.int64](),
-            b_scales.to_tile_tensor[.int64](),
-            expert_start_indices.to_tile_tensor[.int64](),
-            expert_ids.to_tile_tensor[.int64](),
+            c.to_tile_tensor[.float8_e4m3fn](),
+            a.to_tile_tensor().bitcast[.uint8](),
+            b.to_tile_tensor().bitcast[.uint8](),
+            a_scales.to_tile_tensor[.float8_e8m0fnu](),
+            b_scales.to_tile_tensor[.float8_e8m0fnu](),
+            expert_start_indices.to_tile_tensor[.uint32](),
+            expert_ids.to_tile_tensor[.int32](),
             Int(max_num_tokens_per_expert),
             Int(num_active_experts),
             context,
             Int(estimated_total_m),
             -1 if decode_grid_m_cap == 0 else Int(decode_grid_m_cap),
             Int(decode_grid_m_rows),
-            c_scales.to_tile_tensor[.int64]()
+            c_scales.to_tile_tensor[.float8_e8m0fnu]()
             .ptr.unsafe_bitcast[UInt8]()
             .unsafe_origin_cast[MutAnyOrigin](),
             Self.scales_max_padded_m,
@@ -1912,19 +1940,27 @@ struct Struct_matmul_dynamic_block_scaled_mxfp6[
     @inline(.always)
     @staticmethod
     def execute[
-        c_type: DType,
-        a_type: DType,
-        b_type: DType,
-        //,
         target: StaticString,
     ](
-        c: OutputTensor[dtype=c_type, rank=2, ...],
-        a: InputTensor[dtype=a_type, rank=2, ...],
-        b: InputTensor[dtype=b_type, rank=2, ...],
-        a_scales: InputTensor[dtype=.float8_e8m0fnu, rank=2, ...],
-        b_scales: InputTensor[dtype=.float8_e8m0fnu, rank=2, ...],
+        c: Some[Output & Tensor],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
+        a_scales: Some[Input & Tensor],
+        b_scales: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(c), TileTensorable)
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime assert conforms_to(type_of(a_scales), TileTensorable)
+        comptime assert conforms_to(type_of(b_scales), TileTensorable)
+        comptime a_type = type_of(a).dtype
+        comptime b_type = type_of(b).dtype
+        comptime assert type_of(c).rank == 2
+        comptime assert type_of(a).rank == 2
+        comptime assert type_of(b).rank == 2
+        comptime assert type_of(a_scales).rank == 2
+        comptime assert type_of(b_scales).rank == 2
         comptime assert is_gpu[target](), (
             "MXFP6 block-scaled matmul requires a GPU with native block-scaled"
             " support"
@@ -1942,11 +1978,11 @@ struct Struct_matmul_dynamic_block_scaled_mxfp6[
         )
 
         mxfp6_block_scaled_matmul_amd[fmt, preshuffled_b=Self.preshuffled_b](
-            c.to_tile_tensor[.int64](),
-            a.to_tile_tensor[.int64]().bitcast[.uint8](),
-            b.to_tile_tensor[.int64]().bitcast[.uint8](),
-            a_scales.to_tile_tensor[.int64](),
-            b_scales.to_tile_tensor[.int64](),
+            c.to_tile_tensor(),
+            a.to_tile_tensor().bitcast[.uint8](),
+            b.to_tile_tensor().bitcast[.uint8](),
+            a_scales.to_tile_tensor[.float8_e8m0fnu](),
+            b_scales.to_tile_tensor[.float8_e8m0fnu](),
             context,
         )
 
