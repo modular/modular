@@ -262,6 +262,9 @@ This version is still a work in progress.
 
 ## Kernels and GPU programming
 
+- Enabled automatic fusion of eligible bfloat16 matrix multiplications and
+  SwiGLU activations on NVIDIA B200 GPUs.
+
 - The deprecated `LayoutTensor` and `LayoutTensorIter` types have been removed
   from the `layout` package, along with the `to_layout_tensor()` and
   `lt_to_tt()` conversions. Use `TileTensor` and `TileTensorIter` instead.

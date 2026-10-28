@@ -87,6 +87,9 @@ from linalg.swiglu_activation import get_swiglu_activation
 from linalg.matmul.gpu.sm100_structured.default.dispatch_fused_bias_residual import (
     fused_bias_residual_matmul_dispatch_sm100,
 )
+from linalg.matmul.gpu.sm100_structured.fused_swiglu import (
+    matmul_swiglu_dispatch_sm100_bf16,
+)
 from linalg.bmm import batched_matmul_dynamic_scaled_fp8
 from linalg.grouped_matmul import (
     grouped_matmul,
@@ -2607,6 +2610,121 @@ struct Struct_lora_sgmv_qkv_shrink_ragged:
             Int(lora_ids.shape()[0].value()),
             context,
         )
+
+
+@extensibility.register("mo.matmul_swiglu", type="gpu")
+struct MatmulSwiGLU:
+    """Fused GEMM+SwiGLU on SM100 for BF16 inputs.
+
+    Computes ``output[m, h] = silu(x @ W_gate[h, :]) * (x @ W_up[h, :])``
+    in a single SM100 kernel. The weight ``b`` must be pre-permuted on its N
+    axis so that gate/up column pairs are adjacent (sigma permutation:
+    ``sigma(2i)=i, sigma(2i+1)=H+i`` where ``H=N/2``).
+
+    Output shape is ``[M, H]`` where ``H = N/2``, saving the slice+silu+mul
+    elementwise kernel entirely.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: Some[Output & Tensor],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(a).rank == 2
+        comptime assert type_of(b).rank == 2
+        comptime assert type_of(output).dtype == DType.bfloat16
+        comptime assert type_of(a).dtype == DType.bfloat16
+        comptime assert type_of(b).dtype == DType.bfloat16
+        matmul_swiglu_dispatch_sm100_bf16(
+            output.to_tile_tensor(),
+            a.to_tile_tensor(),
+            b.to_tile_tensor(),
+            ctx,
+        )
+
+
+@extensibility.register("mo.matmul_swiglu_bias", type="gpu")
+struct MatmulSwiGLUBias:
+    """Fused GEMM+SwiGLU+bias on SM100 for BF16 inputs.
+
+    Like ``mo.matmul_swiglu`` but adds a 1D bias vector before the activation.
+    The bias must be sigma-permuted to match the weight layout: even element
+    ``bias[2h]`` is added to the gate column and odd element ``bias[2h+1]`` to
+    the up column before ``silu(gate) * up`` is computed.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: Some[Output & Tensor],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
+        bias: Some[Input & Tensor],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(a), TileTensorable)
+        comptime assert conforms_to(type_of(b), TileTensorable)
+        comptime assert conforms_to(type_of(bias), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(a).rank == 2
+        comptime assert type_of(b).rank == 2
+        comptime assert type_of(bias).rank == 1
+        comptime assert type_of(output).dtype == DType.bfloat16
+        comptime assert type_of(a).dtype == DType.bfloat16
+        comptime assert type_of(b).dtype == DType.bfloat16
+        comptime assert type_of(bias).dtype == DType.bfloat16
+        matmul_swiglu_dispatch_sm100_bf16[has_bias=True](
+            output.to_tile_tensor(),
+            a.to_tile_tensor(),
+            b.to_tile_tensor(),
+            ctx,
+            OptionalReg(
+                ImmPointer[BFloat16, ImmutAnyOrigin](
+                    unsafe_from_address=Int(bias.to_tile_tensor().unsafe_ptr())
+                )
+            ),
+        )
+
+
+@extensibility.register("mo.composite.matmul_swiglu", type="gpu")
+struct CompositeMatmulSwiGLU:
+    @staticmethod
+    def execute[
+        target: StaticString
+    ](
+        output: Some[Output & Tensor],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
+        ctx: DeviceContext,
+    ) raises:
+        MatmulSwiGLU.execute[target](output, a, b, ctx)
+
+
+@extensibility.register("mo.composite.matmul_swiglu_bias", type="gpu")
+struct CompositeMatmulSwiGLUBias:
+    @staticmethod
+    def execute[
+        target: StaticString
+    ](
+        output: Some[Output & Tensor],
+        a: Some[Input & Tensor],
+        b: Some[Input & Tensor],
+        bias: Some[Input & Tensor],
+        ctx: DeviceContext,
+    ) raises:
+        MatmulSwiGLUBias.execute[target](output, a, b, bias, ctx)
 
 
 @extensibility.register("mo.lora_sgmv.qkv_expand.ragged")

@@ -46,6 +46,7 @@ _SEPARATE_TARGET_TESTS = [
     "test_graph_telemetry.py",
     "test_load_weights_no_deps.py",
     "test_logits_processor_gpu.py",
+    "test_matmul_swiglu_fusion_gpu.py",
     "test_mega_ffn_nvfp4_fusion_gpu.py",
     "test_mega_ffn_nvfp4_fusion_ir.py",
     "test_rowwise_reductions.py",
@@ -658,6 +659,22 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_matmul_swiglu_fusion_gpu",
+    size = "large",
+    srcs = ["test_matmul_swiglu_fusion_gpu.py"],
+    gpu_constraints = ["//:b200_gpu"],
+    mojo_deps = ["//max:builtin_kernels"],
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("torch"),
     ],
 )
 

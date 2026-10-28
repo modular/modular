@@ -324,6 +324,57 @@ def MOComposite_FusedMatmulAddOp : MO_DotBase<"composite.matmul_add", [MO_Compos
 }
 
 //===----------------------------------------------------------------------===//
+// MatmulSwiGLUOp and MatmulSwiGLUBiasOp
+//===----------------------------------------------------------------------===//
+
+def MOComposite_Rank1BF16Tensor : MO_ConfinedTensor<
+  [MO_HasAnyRankOfPred<[1]>,
+   CPred<"cast<::M::MO::TensorType>($_self).getElementType().isBF16()">],
+  "rank-1 tensor with bf16 elements">;
+def MOComposite_Rank2BF16Tensor : MO_ConfinedTensor<
+  [MO_HasAnyRankOfPred<[2]>,
+   CPred<"cast<::M::MO::TensorType>($_self).getElementType().isBF16()">],
+  "rank-2 tensor with bf16 elements">;
+
+def MOComposite_MatmulSwiGLUOp : MO_CompositeOp<"matmul_swiglu", [
+  Pure,
+  MO_SingleDevice,
+]> {
+  let summary = "Fused matrix multiplication and SwiGLU";
+  let description = [{
+    Multiplies `a` of shape [M, K] by the transpose of `permuted_b` of
+    shape [2H, K], then applies SwiGLU to produce a tensor of shape [M, H].
+    The rows of `permuted_b` are interleaved for the fused kernel.
+  }];
+  let arguments = (ins MOComposite_Rank2BF16Tensor:$a,
+                       MOComposite_Rank2BF16Tensor:$permuted_b);
+  let results = (outs MOComposite_Rank2BF16Tensor:$output);
+  let assemblyFormat = [{
+    `(` operands `)` attr-dict `:` functional-type(operands, results)
+  }];
+}
+
+def MOComposite_MatmulSwiGLUBiasOp : MO_CompositeOp<"matmul_swiglu_bias", [
+  Pure,
+  MO_SingleDevice,
+]> {
+  let summary = "Fused matrix multiplication, bias, and SwiGLU";
+  let description = [{
+    Multiplies `a` of shape [M, K] by the transpose of `permuted_b` of
+    shape [2H, K], adds `permuted_bias` of shape [2H], then applies SwiGLU
+    to produce a tensor of shape [M, H]. The weight rows and bias elements
+    are interleaved for the fused kernel.
+  }];
+  let arguments = (ins MOComposite_Rank2BF16Tensor:$a,
+                       MOComposite_Rank2BF16Tensor:$permuted_b,
+                       MOComposite_Rank1BF16Tensor:$permuted_bias);
+  let results = (outs MOComposite_Rank2BF16Tensor:$output);
+  let assemblyFormat = [{
+    `(` operands `)` attr-dict `:` functional-type(operands, results)
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // AllReduceAddRMSNormQuantFP8Op
 //===----------------------------------------------------------------------===//
 
