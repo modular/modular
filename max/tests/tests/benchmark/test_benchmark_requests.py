@@ -560,6 +560,7 @@ class TestRequestDriver:
         assert result.generated_text == "Hello world!"
         assert result.prompt_len == 10
 
+    @pytest.mark.asyncio
     async def test_openai_chat_completions_choices_but_no_text_is_failure(
         self,
         mock_aiohttp_session: Any,
