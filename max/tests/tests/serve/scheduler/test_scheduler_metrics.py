@@ -2289,6 +2289,75 @@ def test_dkv_fail_open_counters_are_silent_without_a_tier() -> None:
     assert "dkv_prepare_load_degraded" not in metrics.to_log_extra()
 
 
+_DKV_ORPHAN_FIELDS = {
+    "dkv_orphan_cleanups_reissued": 1,
+    "dkv_orphan_cleanups_abandoned": 2,
+    "dkv_orphan_cleanups_dropped": 3,
+    "dkv_orphan_cleanups_refused": 4,
+    "dkv_orphan_cleanups_expired": 5,
+    "dkv_orphan_queue_depth": 6,
+}
+
+
+def test_create_carries_dkv_orphan_metrics_through() -> None:
+    """The orphan queue's outcome counts and depth reach the batch."""
+    kv_cache = MagicMock()
+    kv_cache.block_count.return_value = BlockCount(free=60, total=100)
+    kv_cache.pressure_pct.return_value = 40.0
+    kv_cache.host_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.disk_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.take_metrics_aggregated.return_value = KVCacheMetrics(
+        dkv_total_clients=1,
+        dkv_orphan_cleanups_reissued=1,
+        dkv_orphan_cleanups_abandoned=2,
+        dkv_orphan_cleanups_dropped=3,
+        dkv_orphan_cleanups_refused=4,
+        dkv_orphan_cleanups_expired=5,
+        dkv_orphan_queue_depth=6,
+    )
+
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(),
+        inputs=_mock_inputs(batch_size=1, batch_type=BatchType.TG),
+        kv_cache=kv_cache,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+    )
+
+    for name, value in _DKV_ORPHAN_FIELDS.items():
+        assert getattr(metrics, name) == value, name
+
+
+def test_dkv_orphan_metrics_reach_the_log_and_the_meters() -> None:
+    """Published while a tier is attached, as the fail-open counters are."""
+    metrics = _make_metrics(
+        dkv_connected_clients=0, dkv_total_clients=1, **_DKV_ORPHAN_FIELDS
+    )
+
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    extra = metrics.to_log_extra()
+    for name, value in _DKV_ORPHAN_FIELDS.items():
+        getattr(mock_metrics, name).assert_called_once_with(value)
+        assert extra[name] == value, name
+
+
+def test_dkv_orphan_metrics_are_silent_without_a_tier() -> None:
+    metrics = _make_metrics()
+
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    extra = metrics.to_log_extra()
+    for name in _DKV_ORPHAN_FIELDS:
+        getattr(mock_metrics, name).assert_not_called()
+        assert name not in extra, name
+
+
 def test_connector_loads_refused_publish_for_a_dkv_tier() -> None:
     """dKV reports no host tier, so its refusals publish on the tier's guard."""
     metrics = _make_metrics(

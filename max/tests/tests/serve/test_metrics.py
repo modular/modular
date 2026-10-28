@@ -253,6 +253,58 @@ def test_dkv_settle_metrics_record_on_their_own_instruments(
     )
 
 
+@pytest.mark.parametrize(
+    ("method", "instrument", "is_gauge"),
+    [
+        (
+            "dkv_orphan_cleanups_reissued",
+            "max.dkv.orphan_cleanups_reissued",
+            False,
+        ),
+        (
+            "dkv_orphan_cleanups_abandoned",
+            "max.dkv.orphan_cleanups_abandoned",
+            False,
+        ),
+        (
+            "dkv_orphan_cleanups_dropped",
+            "max.dkv.orphan_cleanups_dropped",
+            False,
+        ),
+        (
+            "dkv_orphan_cleanups_refused",
+            "max.dkv.orphan_cleanups_refused",
+            False,
+        ),
+        (
+            "dkv_orphan_cleanups_expired",
+            "max.dkv.orphan_cleanups_expired",
+            False,
+        ),
+        ("dkv_orphan_queue_depth", "max.dkv.orphan_queue_depth", True),
+    ],
+)
+def test_dkv_orphan_metrics_record_on_their_own_instruments(
+    method: str, instrument: str, is_gauge: bool
+) -> None:
+    """Each orphan queue metric lands on its own instrument.
+
+    The outcome counts are per-window deltas, so they are counters, and the
+    depth is a level, so it is a gauge.
+    """
+    client = mock.Mock()
+    recorder = metrics._AsyncMetrics()
+    recorder.configure(client, {"model": "m"})
+
+    getattr(recorder, method)(7)
+
+    measurement = client.send_measurement.call_args.args[0]
+    assert (measurement.instrument_name, measurement.value) == (instrument, 7)
+    assert (
+        isinstance(metrics.SERVE_METRICS[instrument], _ProxyGauge) == is_gauge
+    )
+
+
 def _is_histogram(inst: object) -> bool:
     """True if a SERVE_METRICS instrument is a Histogram.
 

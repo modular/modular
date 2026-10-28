@@ -360,6 +360,15 @@ class BatchMetrics:
     dkv_prepare_load_degraded: int = 0
     dkv_load_with_plan_degraded: int = 0
     dkv_load_with_plan_expired: int = 0
+    # The dKV orphan queue: per-window outcome counts that publish as counters
+    # and a depth level that publishes as a gauge, on the same guard. See
+    # KVCacheMetrics for what each counts.
+    dkv_orphan_cleanups_reissued: int = 0
+    dkv_orphan_cleanups_abandoned: int = 0
+    dkv_orphan_cleanups_dropped: int = 0
+    dkv_orphan_cleanups_refused: int = 0
+    dkv_orphan_cleanups_expired: int = 0
+    dkv_orphan_queue_depth: int = 0
 
     # Per-call dKV client counters this batch, keyed by RPC or by connector
     # entry point. Published as labeled counters, so a dashboard derives the
@@ -538,6 +547,12 @@ class BatchMetrics:
         dkv_prepare_load_degraded = 0
         dkv_load_with_plan_degraded = 0
         dkv_load_with_plan_expired = 0
+        dkv_orphan_cleanups_reissued = 0
+        dkv_orphan_cleanups_abandoned = 0
+        dkv_orphan_cleanups_dropped = 0
+        dkv_orphan_cleanups_refused = 0
+        dkv_orphan_cleanups_expired = 0
+        dkv_orphan_queue_depth = 0
         dkv_rpc_calls: dict[str, int] = {}
         dkv_rpc_time_ms: dict[str, float] = {}
         dkv_rpc_socket_wait_ms: dict[str, float] = {}
@@ -678,6 +693,22 @@ class BatchMetrics:
                 metrics_agg.dkv_load_with_plan_degraded
             )
             dkv_load_with_plan_expired = metrics_agg.dkv_load_with_plan_expired
+            dkv_orphan_cleanups_reissued = (
+                metrics_agg.dkv_orphan_cleanups_reissued
+            )
+            dkv_orphan_cleanups_abandoned = (
+                metrics_agg.dkv_orphan_cleanups_abandoned
+            )
+            dkv_orphan_cleanups_dropped = (
+                metrics_agg.dkv_orphan_cleanups_dropped
+            )
+            dkv_orphan_cleanups_refused = (
+                metrics_agg.dkv_orphan_cleanups_refused
+            )
+            dkv_orphan_cleanups_expired = (
+                metrics_agg.dkv_orphan_cleanups_expired
+            )
+            dkv_orphan_queue_depth = metrics_agg.dkv_orphan_queue_depth
             dkv_rpc_calls = metrics_agg.dkv_rpc_calls
             dkv_rpc_time_ms = metrics_agg.dkv_rpc_time_ms
             dkv_rpc_socket_wait_ms = metrics_agg.dkv_rpc_socket_wait_ms
@@ -822,6 +853,12 @@ class BatchMetrics:
             dkv_prepare_load_degraded=dkv_prepare_load_degraded,
             dkv_load_with_plan_degraded=dkv_load_with_plan_degraded,
             dkv_load_with_plan_expired=dkv_load_with_plan_expired,
+            dkv_orphan_cleanups_reissued=dkv_orphan_cleanups_reissued,
+            dkv_orphan_cleanups_abandoned=dkv_orphan_cleanups_abandoned,
+            dkv_orphan_cleanups_dropped=dkv_orphan_cleanups_dropped,
+            dkv_orphan_cleanups_refused=dkv_orphan_cleanups_refused,
+            dkv_orphan_cleanups_expired=dkv_orphan_cleanups_expired,
+            dkv_orphan_queue_depth=dkv_orphan_queue_depth,
             dkv_rpc_calls=dkv_rpc_calls,
             dkv_rpc_time_ms=dkv_rpc_time_ms,
             dkv_rpc_socket_wait_ms=dkv_rpc_socket_wait_ms,
@@ -1303,6 +1340,22 @@ class BatchMetrics:
             extra["dkv_load_with_plan_expired"] = (
                 self.dkv_load_with_plan_expired
             )
+            extra["dkv_orphan_cleanups_reissued"] = (
+                self.dkv_orphan_cleanups_reissued
+            )
+            extra["dkv_orphan_cleanups_abandoned"] = (
+                self.dkv_orphan_cleanups_abandoned
+            )
+            extra["dkv_orphan_cleanups_dropped"] = (
+                self.dkv_orphan_cleanups_dropped
+            )
+            extra["dkv_orphan_cleanups_refused"] = (
+                self.dkv_orphan_cleanups_refused
+            )
+            extra["dkv_orphan_cleanups_expired"] = (
+                self.dkv_orphan_cleanups_expired
+            )
+            extra["dkv_orphan_queue_depth"] = self.dkv_orphan_queue_depth
             # One scalar key per label that moved, as publish_metrics sends.
             labeled: tuple[tuple[str, Mapping[str, float]], ...] = (
                 ("dkv_hints_rejected", self.dkv_hints_rejected_by_reason),
@@ -1508,6 +1561,22 @@ class BatchMetrics:
                 self.dkv_load_with_plan_degraded
             )
             METRICS.dkv_load_with_plan_expired(self.dkv_load_with_plan_expired)
+            METRICS.dkv_orphan_cleanups_reissued(
+                self.dkv_orphan_cleanups_reissued
+            )
+            METRICS.dkv_orphan_cleanups_abandoned(
+                self.dkv_orphan_cleanups_abandoned
+            )
+            METRICS.dkv_orphan_cleanups_dropped(
+                self.dkv_orphan_cleanups_dropped
+            )
+            METRICS.dkv_orphan_cleanups_refused(
+                self.dkv_orphan_cleanups_refused
+            )
+            METRICS.dkv_orphan_cleanups_expired(
+                self.dkv_orphan_cleanups_expired
+            )
+            METRICS.dkv_orphan_queue_depth(self.dkv_orphan_queue_depth)
             # Labeled counters only move by their increment, so a zero would
             # cost a trip through the telemetry queue and change nothing.
             for reason, count in _moved(self.dkv_hints_rejected_by_reason):

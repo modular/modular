@@ -2548,6 +2548,25 @@ class DKVConnector(KVConnector):
                     dkv_prepare_load_degraded=m["prepare_load_degraded"],
                     dkv_load_with_plan_degraded=m["load_with_plan_degraded"],
                     dkv_load_with_plan_expired=m["load_with_plan_expired"],
+                    # The orphan queue, folded per leaf client like the settle
+                    # worker below: per-window outcome counts and a depth
+                    # level. An extension predating them reports none.
+                    dkv_orphan_cleanups_reissued=m.get(
+                        "orphan_cleanups_reissued", 0
+                    ),
+                    dkv_orphan_cleanups_abandoned=m.get(
+                        "orphan_cleanups_abandoned", 0
+                    ),
+                    dkv_orphan_cleanups_dropped=m.get(
+                        "orphan_cleanups_dropped", 0
+                    ),
+                    dkv_orphan_cleanups_refused=m.get(
+                        "orphan_cleanups_refused", 0
+                    ),
+                    dkv_orphan_cleanups_expired=m.get(
+                        "orphan_cleanups_expired", 0
+                    ),
+                    dkv_orphan_queue_depth=m.get("orphan_queue_depth", 0),
                     # The settle worker, which every leaf client runs for
                     # itself, so these fold per leaf client and KVCacheMetrics
                     # sums the depth and the finished count and maxes the age

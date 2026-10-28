@@ -606,6 +606,34 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         "max.dkv.load_with_plan_expired",
         description="dKV read leases that aged past their deadline before the load posted them, released as a miss rather than read. Counted per lease, so one load spanning several dKV instances can count more than one.",
     ),
+    # The dKV orphan queue, where failed reader-pin releases and Filling aborts
+    # wait to be sent again. Counters for the outcomes, since take_metrics
+    # clears them every batch, and a gauge for the depth, a level.
+    "max.dkv.orphan_cleanups_reissued": _create_counter(
+        "max.dkv.orphan_cleanups_reissued",
+        description="Deferred dKV releases and aborts that a drain sent again and dKV took.",
+    ),
+    "max.dkv.orphan_cleanups_abandoned": _create_counter(
+        "max.dkv.orphan_cleanups_abandoned",
+        description="Deferred dKV releases and aborts left to dKV's own sweep because the instance that held them was gone.",
+    ),
+    "max.dkv.orphan_cleanups_dropped": _create_counter(
+        "max.dkv.orphan_cleanups_dropped",
+        description="Deferred dKV releases and aborts dropped to keep the queue under its cap. Should be zero.",
+    ),
+    "max.dkv.orphan_cleanups_refused": _create_counter(
+        "max.dkv.orphan_cleanups_refused",
+        description="Deferred dKV releases and aborts that dKV refused, dropped rather than sent again.",
+    ),
+    "max.dkv.orphan_cleanups_expired": _create_counter(
+        "max.dkv.orphan_cleanups_expired",
+        description="Deferred dKV releases and aborts dropped once dKV's own sweep had freed what they named.",
+    ),
+    "max.dkv.orphan_queue_depth": _meter.create_gauge(
+        "max.dkv.orphan_queue_depth",
+        unit="cleanups",
+        description="Deferred dKV releases and aborts queued or being reissued now, summed over every connector client. A level.",
+    ),  # type: ignore
     # Per-call dKV client counters. Counters, not histograms, so a dashboard
     # derives the per-call mean as time over calls; the rpc_*_latency
     # histograms above record one per-batch mean each.
@@ -2326,6 +2354,60 @@ class _AsyncMetrics:
         self.client.send_measurement(
             MaxMeasurement(
                 "max.dkv.load_with_plan_expired",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_orphan_cleanups_reissued(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.orphan_cleanups_reissued",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_orphan_cleanups_abandoned(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.orphan_cleanups_abandoned",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_orphan_cleanups_dropped(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.orphan_cleanups_dropped",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_orphan_cleanups_refused(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.orphan_cleanups_refused",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_orphan_cleanups_expired(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.orphan_cleanups_expired",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_orphan_queue_depth(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.orphan_queue_depth",
                 value,
                 self.extra_attributes,
             ),

@@ -241,6 +241,25 @@ class KVCacheMetrics:
     dkv_load_with_plan_expired: int = 0
     """Leases that aged past their deadline before the load posted them."""
 
+    # The dKV orphan queue, where a failed reader-pin release or Filling abort
+    # waits to be sent again. The outcome counts are per-window deltas like the
+    # fail-opens above. The depth is a level the client reads fresh on every
+    # snapshot, so take_metrics leaves it, and it sums over every leaf client
+    # like dkv_settle_queue_depth.
+    dkv_orphan_cleanups_reissued: int = 0
+    """Deferred cleanups a drain sent again and dKV took."""
+    dkv_orphan_cleanups_abandoned: int = 0
+    """Deferred cleanups left to dKV's sweep because their instance was gone."""
+    dkv_orphan_cleanups_dropped: int = 0
+    """Deferred cleanups dropped to keep the queue under its cap."""
+    dkv_orphan_cleanups_refused: int = 0
+    """Deferred cleanups dKV refused, dropped rather than sent again."""
+    dkv_orphan_cleanups_expired: int = 0
+    """Deferred cleanups dropped once dKV's sweep had freed what they named."""
+    dkv_orphan_queue_depth: int = 0
+    """Deferred cleanups queued or being reissued now, summed over every leaf
+    client."""
+
     # Per-call dKV client counters, per-window deltas keyed by RPC (or, for the
     # lock waits, by connector entry point). Time over calls is the per-call
     # mean, which the per-batch latency means above cannot give.
@@ -446,6 +465,18 @@ class KVCacheMetrics:
             + other.dkv_load_with_plan_degraded,
             dkv_load_with_plan_expired=self.dkv_load_with_plan_expired
             + other.dkv_load_with_plan_expired,
+            dkv_orphan_cleanups_reissued=self.dkv_orphan_cleanups_reissued
+            + other.dkv_orphan_cleanups_reissued,
+            dkv_orphan_cleanups_abandoned=self.dkv_orphan_cleanups_abandoned
+            + other.dkv_orphan_cleanups_abandoned,
+            dkv_orphan_cleanups_dropped=self.dkv_orphan_cleanups_dropped
+            + other.dkv_orphan_cleanups_dropped,
+            dkv_orphan_cleanups_refused=self.dkv_orphan_cleanups_refused
+            + other.dkv_orphan_cleanups_refused,
+            dkv_orphan_cleanups_expired=self.dkv_orphan_cleanups_expired
+            + other.dkv_orphan_cleanups_expired,
+            dkv_orphan_queue_depth=self.dkv_orphan_queue_depth
+            + other.dkv_orphan_queue_depth,
             dkv_rpc_calls=_add_by_key(self.dkv_rpc_calls, other.dkv_rpc_calls),
             dkv_rpc_time_ms=_add_by_key(
                 self.dkv_rpc_time_ms, other.dkv_rpc_time_ms
