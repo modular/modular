@@ -100,6 +100,7 @@ MODELS: Mapping[str, set[str]] = {
     "mistralai/Mistral-Small-3.1-24B-Instruct-2503": _1xB200 | _1xMI355,
     "modularai/Llama-3.1-405B-Instruct-autofp8": _4xMI355 | _8xB200,
     "modularai/MiniMax-M3-MXFP6": NIGHTLY | _4xMI355 | _8xMI355,
+    "moonshotai/Kimi-K3": NIGHTLY | _8xMI355,
     "nvidia/DeepSeek-V3.1-NVFP4": _8xB200,
     "nvidia/DeepSeek-V3.1-NVFP4__fp8kv": VARIANT | _8xB200,
     "nvidia/DeepSeek-V3.1-NVFP4__mtp": VARIANT | _8xB200,

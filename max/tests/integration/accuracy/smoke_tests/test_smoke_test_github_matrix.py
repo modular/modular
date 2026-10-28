@@ -133,20 +133,24 @@ def test_8xmi355_stays_opt_in() -> None:
         "max-ci": {
             "MiniMaxAI/MiniMax-M3-MXFP8",
             "modularai/MiniMax-M3-MXFP6",
+            "moonshotai/Kimi-K3",
             "zai-org/GLM-5.3__fp8_tpep_mi355",
         },
         "max": {
             "MiniMaxAI/MiniMax-M3-MXFP8",
             "modularai/MiniMax-M3-MXFP6",
+            "moonshotai/Kimi-K3",
             "zai-org/GLM-5.3__fp8_tpep_mi355",
         },
         "vllm": {
             "MiniMaxAI/MiniMax-M3-MXFP8",
             "modularai/MiniMax-M3-MXFP6",
+            "moonshotai/Kimi-K3",
         },
         "sglang": {
             "MiniMaxAI/MiniMax-M3-MXFP8",
             "modularai/MiniMax-M3-MXFP6",
+            "moonshotai/Kimi-K3",
         },
     }
     for framework, models in expected.items():
