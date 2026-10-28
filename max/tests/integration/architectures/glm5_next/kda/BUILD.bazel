@@ -52,6 +52,7 @@ modular_py_test(
     },
     # SM100 and gfx950 cases; each skips on any other GPU.
     gpu_constraints = ["//:has_gpu"],
+    precompile_mefs = True,
     tags = ["gpu"],
     # Needs kda_chunk, registered only by the closed-source kernels.
     target_compatible_with = select({

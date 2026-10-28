@@ -279,6 +279,7 @@ modular_py_test(
     ],
     gpu_constraints = ["//:nvidia_gpu"],
     imports = ["."],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],

@@ -18,6 +18,7 @@ modular_py_test(
         "test.resources:gpu-memory": "8",
     },
     gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
     tags = [
         "gpu",
     ],

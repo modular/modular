@@ -303,6 +303,7 @@ modular_py_test(
         "test.resources:gpu-memory": "8",
     },
     gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
     tags = ["gpu"],
     # Needs mo.matmul.mxfp8.cluster_splitk, registered only by the
     # closed-source kernels.
@@ -377,6 +378,7 @@ modular_py_test(
         "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
     # Each test compiles its own graphs; shards compile them in parallel.
     shard_count = 2,
     tags = ["gpu"],
@@ -564,6 +566,7 @@ modular_py_test(
         "test.resources:gpu-memory": "8",
     },
     gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
     tags = ["gpu"],
     target_compatible_with = REQUIRES_INTERNAL_KERNELS,
     deps = [
@@ -586,6 +589,7 @@ modular_py_test(
         "test.resources:gpu-memory": "8",
     },
     gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
     tags = ["gpu"],
     target_compatible_with = REQUIRES_INTERNAL_KERNELS,
     deps = [
@@ -629,6 +633,7 @@ modular_py_test(
         "test.resources:gpu-memory": "16",
     },
     gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
     tags = ["gpu"],
     target_compatible_with = REQUIRES_INTERNAL_KERNELS,
     deps = [
