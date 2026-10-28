@@ -181,6 +181,7 @@ static ErrorOrSuccess parsePrecompileArgs(const State &state,
   // of truth.
   initializeCompilation(args, sourceMgr, pkgArgs.ctx, options::OPT_I);
   KGEN::FrontendOptions &frontendOptions = pkgArgs.frontendOptions;
+  KGEN::CompilationOptions &compilationOptions = pkgArgs.compileOptions;
   setWarningPolicy(state, frontendOptions);
   MarshallingErrors errors;
 #define MOJO_OPTION_WITH_MARSHALLING(...)                                      \
@@ -268,10 +269,6 @@ static int precompile(const State &subcommandState) {
   LIT::PackageOp packageOp;
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr,
                                                     &precompileArgs.ctx);
-  if (args.hasArg(options::OPT_bitcode_libs)) {
-    precompileArgs.compileOptions.bitcodeLibs = llvm::to_vector_of<std::string>(
-        args.getAllArgValues(options::OPT_bitcode_libs));
-  }
 
   ScopedMLIRWarningHandler warningHandler(
       &precompileArgs.ctx, precompileArgs.frontendOptions.disableWarnings,

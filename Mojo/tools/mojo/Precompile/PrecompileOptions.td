@@ -13,21 +13,13 @@
 
 include "Precompile/PrecompileDescription.td"
 
+include "Common/BitcodeOptions.td"
 include "Common/DiagnosticFormatOptions.td"
 include "Common/DiagnosticOptions.td"
 include "Common/FixItOptions.td"
 include "Common/IncludeOptions.td"
+include "Common/IncrParsingOptions.td"
 include "Support/Driver/CommonOptions.td"
-
-//===----------------------------------------------------------------------===//
-// Compilation Options
-//===----------------------------------------------------------------------===//
-
-defm bitcode_libs : CommandOptionHidden<["--", "-"], "bitcode-libs",
-  CompilationOptionGroup, Index<4>, MetaVarName<"LIBS">,
-  HelpText<
-    "External bitcode libraries to package into the generated package."
-  >>;
 
 //===----------------------------------------------------------------------===//
 // Output Options
@@ -44,13 +36,3 @@ defm o : CommandOption<["-"], "o", OutputOptionGroup, Index<0>,
     "generated in the current working directory, with a name based on the name "
     "of the input directory."
   >>;
-
-defm incr_parsing_cache_file : CommandOptionHidden<["--", "-"],
-  "experimental-incr-parsing",
-  OutputOptionGroup, Index<1>, MetaVarName<"PATH">,
-  HelpText<"Experimental incremental parsing backed by a module cache at "
-           "the given path. The main source file is always parsed; imported "
-           "modules whose sources are unchanged are served from the cache "
-           "instead of being re-parsed. The cache file is created if missing "
-           "and rewritten whenever any cached module changed.">>,
-  MarshallingInfoString<FrontendOpts<"incrParsingCacheFile">>;
