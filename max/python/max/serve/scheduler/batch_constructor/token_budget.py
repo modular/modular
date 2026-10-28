@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Token budget accounting for the batch constructors."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -515,7 +517,6 @@ class TotalContextTokenBudget(TokenBudget):
             * :data:`BudgetStatus.BUDGET_EXHAUSTED` - context cannot be
               accommodated within the remaining capacity.
         """
-
         if request_type not in self.applicable_types:
             return BudgetStatus.BUDGET_AVAILABLE
 

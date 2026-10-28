@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Scheduler for text generation requests."""
+
 from __future__ import annotations
 
 import logging
@@ -96,8 +99,9 @@ def _parent_trace_context(context: TextContext) -> OtelContext | None:
 
 
 def _sampled_link(parent: OtelContext) -> otel_trace.Link | None:
-    """Returns a link to the span in ``parent``, or None when it has none or
-    it is not sampled, since an unsampled span is never exported.
+    """Returns a link to the sampled span in ``parent``, or None if unsampled.
+
+    An unsampled span is never exported.
 
     Args:
         parent: A request's context, as extracted from its trace carrier.
@@ -109,8 +113,9 @@ def _sampled_link(parent: OtelContext) -> otel_trace.Link | None:
 
 
 class _BatchLinks:
-    """The links from the scheduler's ``max.batch`` spans to their members'
-    sampled request spans, kept from admission until each request leaves.
+    """Links from a ``max.batch`` span to its members' sampled request spans.
+
+    Kept from admission until each request leaves.
 
     Args:
         link_every_member: Whether every member is linked, as at global level
@@ -143,8 +148,9 @@ class _BatchLinks:
         batch: Sequence[TextContext],
         is_traced: Callable[[RequestID], bool] | None,
     ) -> list[otel_trace.Link]:
-        """Returns a pass's links, and over the cap keeps traced members'
-        first, so the requests that asked for the pass's capture can find it.
+        """Returns a pass's links, keeping traced members' first over the cap.
+
+        Those requests asked for the pass's capture, so they can still find it.
 
         Args:
             batch: The pass's requests.
@@ -159,8 +165,10 @@ class _BatchLinks:
         return [self._links[r] for r in members[: self._max_links]]
 
     def drop_untraced(self, request_ids: Iterable[RequestID]) -> None:
-        """Drops the links of running requests that are no longer traced,
-        which only traced requests have below global level ``batch``."""
+        """Drops the links of running requests that are no longer traced.
+
+        Only traced requests have links below global level ``batch``.
+        """
         if not self._link_every_member:
             for request_id in request_ids:
                 self._links.pop(request_id, None)
@@ -171,6 +179,8 @@ class _BatchLinks:
 
 
 class TokenGenerationScheduler(Scheduler):
+    """Schedules text generation requests in one process."""
+
     def __init__(
         self,
         scheduler_config: TokenGenerationSchedulerConfig,
@@ -257,8 +267,7 @@ class TokenGenerationScheduler(Scheduler):
 
     @traced
     def _retrieve_pending_requests(self) -> None:
-        """
-        Retrieves pending requests from the request queue.
+        """Retrieves pending requests from the request queue.
 
         This method drains the request queue synchronously and processes
         any contexts that are available.
@@ -305,8 +314,10 @@ class TokenGenerationScheduler(Scheduler):
                     self._batch_links.admit(context.request_id, parent, traced)
 
     def _end_request_telemetry(self, request_id: RequestID) -> None:
-        """Ends a departing request's phase spans and drops its batch link
-        and kernel trace."""
+        """Ends a departing request's phase spans.
+
+        Also drops its batch link and kernel trace.
+        """
         if (span := self._prefill_spans.pop(request_id, None)) is not None:
             span.end()
         if (span := self._decode_spans.pop(request_id, None)) is not None:
@@ -317,7 +328,7 @@ class TokenGenerationScheduler(Scheduler):
 
     @traced
     def run_iteration(self) -> SchedulerProgress:
-        """The Scheduler routine that creates batches and schedules them on GPU
+        """The Scheduler routine that creates batches and schedules them on GPU.
 
         Returns:
             SchedulerProgress: Indicates whether work was performed in this iteration.
@@ -602,6 +613,7 @@ def load_text_generation_scheduler(
     max_pending_requests: int | None = None,
     kernel_capture: KernelCapture | None = None,
 ) -> TokenGenerationScheduler:
+    """Builds a text generation scheduler from the pipeline and memory plan."""
     # Create Scheduler Config.
     scheduler_config = TokenGenerationSchedulerConfig.from_pipeline_config(
         pipeline_config, pipeline.max_batch_size, memory_plan

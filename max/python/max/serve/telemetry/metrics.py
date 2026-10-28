@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Metric instruments and the clients that record them."""
+
 from __future__ import annotations
 
 import abc
@@ -1042,7 +1044,7 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
 
 
 class UnknownMetric(Exception):
-    pass
+    """Raised for a metric name that has no instrument."""
 
 
 # Suffix identifying the exponential-histogram shadow of a histogram metric.
@@ -1136,7 +1138,7 @@ def _commit_measurement(
 
 @dataclass
 class MaxMeasurement:
-    """Shim around the recording of a metric observation
+    """Shim around the recording of a metric observation.
 
     Simplifies decoupling the observation of a metric from its recording.
     """
@@ -1147,6 +1149,7 @@ class MaxMeasurement:
     time_unix_nano: int = field(default_factory=time.time_ns)
 
     def commit(self) -> None:
+        """Commits the measurement to OTLP."""
         _commit_measurement(
             self.instrument_name,
             self.value,
@@ -1169,8 +1172,12 @@ TelemetryFn = Callable[[MaxMeasurement], None]
 
 
 class MetricClient(abc.ABC):
+    """Base class for the clients that commit measurements."""
+
     @abc.abstractmethod
-    def send_measurement(self, metric: MaxMeasurement) -> None: ...
+    def send_measurement(self, metric: MaxMeasurement) -> None:
+        """Commits the measurement."""
+        ...
 
     @contextmanager
     def transaction(self) -> Iterator[None]:
@@ -1213,31 +1220,38 @@ async def _trivially_picklable_xprocess_factory(
 
 
 class NoopClient(MetricClient):
+    """Metric client that drops measurements."""
+
     def send_measurement(self, m: MaxMeasurement) -> None:
-        pass
+        """Drops the measurement."""
 
     def cross_process_factory(
         self,
         settings: Settings,
     ) -> Callable[[], AbstractAsyncContextManager[MetricClient]]:
+        """Returns the factory that rebuilds this client in another process."""
         return functools.partial(_trivially_picklable_xprocess_factory, self)
 
 
 class SyncClient(MetricClient):
+    """Metric client that commits each measurement inline."""
+
     def send_measurement(self, m: MaxMeasurement) -> None:
+        """Commits the measurement inline."""
         m.commit()
 
     def cross_process_factory(
         self,
         settings: Settings,
     ) -> Callable[[], AbstractAsyncContextManager[MetricClient]]:
+        """Returns the factory that rebuilds this client in another process."""
         return functools.partial(_trivially_picklable_xprocess_factory, self)
 
 
 class _AsyncMetrics:
-    """Centralizes metrics to encapsulate the OTEL dependency and avoid breaking schema changes
+    """Centralizes metrics to hide the OTEL dependency and its schema changes.
 
-    Produce metric measurements to be consumed elsewhere
+    Produces metric measurements to be consumed elsewhere.
     """
 
     def __init__(self) -> None:
@@ -1602,16 +1616,20 @@ class _AsyncMetrics:
         )
 
     def di_early_sync_time(self, ms: float) -> None:
-        """Duration of the early-sync guard's blocking commit of the
-        previous batch's structured-output FSM state, when it fired (see
-        ``_should_early_sync_prev_batch``)."""
+        """Duration of the early-sync guard's blocking commit, when it fired.
+
+        Covers the commit of the previous batch's structured-output FSM state (see
+        ``_should_early_sync_prev_batch``).
+        """
         self.client.send_measurement(
             MaxMeasurement("max.di.early_sync_time", ms, self.extra_attributes),
         )
 
     def di_ce_preempted_tg_iteration_count(self) -> None:
-        """Counter: how often a CE batch admits work while TG requests are
-        pending, giving those TG requests zero progress that iteration."""
+        """Counter: CE batches admitting work while TG requests are pending.
+
+        Those TG requests get zero progress that iteration.
+        """
         self.client.send_measurement(
             MaxMeasurement(
                 "max.di.ce_preempted_tg_iteration_count",
@@ -1621,9 +1639,10 @@ class _AsyncMetrics:
         )
 
     def di_ce_preempted_tg_pending_count(self, count: int) -> None:
-        """Histogram: how large each such preemption was -- the number of TG
-        requests pending at the moment (paired with
-        ``di_ce_preempted_tg_iteration_count``, which counts how often)."""
+        """Histogram: how many TG requests each such preemption left pending.
+
+        Paired with ``di_ce_preempted_tg_iteration_count``, which counts how often.
+        """
         self.client.send_measurement(
             MaxMeasurement(
                 "max.di.ce_preempted_tg_pending_count",
@@ -1633,12 +1652,15 @@ class _AsyncMetrics:
         )
 
     def di_handoff_to_first_token_time(self, ms: float) -> None:
-        """Wall-clock time from a prefill-to-decode handoff landing (its
-        token discarded, re-queued as a one-token chunked-CE continuation)
-        to decode's own re-forward actually sending token 1 to the API
-        process. A TTFT contribution specific to the handoff path; the
-        ordinary path's token already arrives with the ``PrefillResponse``,
-        so it has no equivalent wait."""
+        """Wall-clock time from a prefill-to-decode handoff to token 1 at the API.
+
+        Starts when the handoff lands: its token is discarded, and the request is
+        re-queued as a one-token chunked-CE continuation. Ends when decode's own
+        re-forward sends token 1 to the API process.
+
+        A TTFT contribution specific to the handoff path; the ordinary path's token
+        already arrives with the ``PrefillResponse``, so it has no equivalent wait.
+        """
         self.client.send_measurement(
             MaxMeasurement(
                 "max.di.handoff_to_first_token_time",

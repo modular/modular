@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Telemetry settings shared by the API and worker processes."""
+
 from __future__ import annotations
 
 import json
@@ -297,6 +299,7 @@ HISTOGRAM_BUCKETS_BY_METRIC: dict[str, tuple[float, ...]] = {
 
 
 def get_log_level(settings: Settings) -> int | str | None:
+    """Returns the log level exported over OTLP."""
     otlp_level: int | str | None = (
         logging.getLevelName(settings.logs_otlp_level)
         if settings.logs_otlp_level
@@ -325,6 +328,7 @@ class PrefixFormatter(logging.Formatter):
         self.base_formatter = base_formatter
 
     def format(self, record: logging.LogRecord) -> str:
+        """Formats the record with the prefix in front of it."""
         # Format the message using the base formatter
         formatted_message = self.base_formatter.format(record)
         # Add the prefix to the message
@@ -381,6 +385,7 @@ def configure_logging(
     *,
     sets_request_ids: bool = True,
 ) -> None:
+    """Configures logging for the API and worker processes."""
     # Structured logs carry request_id; only traced requests capture the
     # trace context, so without tracing there is no dd.trace_id field.
     correlate = _log_context.tracing_enabled()
@@ -632,6 +637,7 @@ def _metric_exporter() -> OTLPMetricExporter:
 
 
 def configure_metrics(settings: Settings) -> None:
+    """Configures the metric exporters from the settings."""
     egress_enabled = not _telemetry_disabled(settings)
     configure_histogram_shadow_emission(bool(settings.otlp_metrics_endpoint))
 
@@ -679,6 +685,7 @@ def _string_attrs(pairs: Mapping[str, object]) -> list[dict[str, object]]:
 # Send a simple one-time structured log, avoiding the buggy OTEL SDK
 # (see MAXSERV-904)
 def send_telemetry_log(model_name: str) -> None:
+    """Sends a startup telemetry log for a model."""
     attrs = logs_resource.attributes
     body = {
         "resourceLogs": [

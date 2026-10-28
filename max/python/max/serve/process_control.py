@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Process spawning, signalling, and shutdown helpers."""
+
 from __future__ import annotations
 
 import asyncio
@@ -58,13 +60,17 @@ class Liveness:
         self._beats = ctx.RawValue(ctypes.c_uint64)
 
     def set_ready(self) -> None:
+        """Marks the process as ready to serve."""
         self._ready.set()
 
     def beat(self) -> None:
+        """Records a heartbeat."""
         self._beats.value += 1
 
 
 class SubprocessExit(Exception):
+    """A worker subprocess exited; the message carries its exit status."""
+
     def __init__(self, info: str | int | None):
         if isinstance(info, int):
             try:
@@ -75,7 +81,7 @@ class SubprocessExit(Exception):
 
 
 async def _read_ready(fd: int) -> None:
-    """async helper to wait for fd to enter readable state"""
+    """Async helper to wait for fd to enter readable state."""
     loop = asyncio.get_running_loop()
     ready = loop.create_future()
     loop.add_reader(fd, lambda: ready.set_result(True))
@@ -101,7 +107,7 @@ async def run_subprocess(
     *args: _P.args,
     **kwargs: _P.kwargs,
 ) -> None:
-    """async coroutine to run func(*args,**kwargs) in a subprocess.
+    """Async coroutine to run func(*args,**kwargs) in a subprocess.
 
     ``daemon`` controls the child's ``daemon`` flag. Passing ``True`` matches
     multiprocessing's safety behaviour of auto-terminating the child with the
@@ -130,7 +136,6 @@ async def run_subprocess(
     seconds in the worst case, but we're shutting down -- nothing else
     needs the loop.
     """
-
     proc = _DebugSpawnProcess(
         target=func,
         args=args,
@@ -287,6 +292,7 @@ class ProcessManager:
         return self.heartbeat
 
     def cancel(self) -> None:
+        """Cancels the manager's heartbeat task."""
         if self.heartbeat and not self.heartbeat.done():
             self.heartbeat.cancel()
         if self.task and not self.task.done():

@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Prefill-side request scheduling."""
+
 from __future__ import annotations
 
 import logging
@@ -104,6 +107,8 @@ def _pages_to_transfer(
 
 @dataclass
 class TransferDest:
+    """Where one request's KV pages are transferred."""
+
     engine_name: str
     dst_block_ids: dict[str, list[int]]
     dst_replica_idx: int
@@ -119,6 +124,8 @@ class ActiveTransfer:
 
 
 class PrefillScheduler(Scheduler):
+    """Schedules the prefill side of text generation."""
+
     def __init__(
         self,
         pipeline: Pipeline[
@@ -255,9 +262,11 @@ class PrefillScheduler(Scheduler):
             del self.active_transfers[id]
 
     def _inflight_kv_transfer_count(self, replica_idx: int) -> int:
-        """Count of active_transfers + _pending_first_token entries holding
-        blocks on this replica -- a transfer on a different replica's
-        device pool can't free blocks on this one."""
+        """Count of transfers holding blocks on this replica.
+
+        Sums ``active_transfers`` and ``_pending_first_token`` entries; a transfer on a
+        different replica's device pool can't free blocks on this one.
+        """
         return sum(
             1
             for active in self.active_transfers.values()
@@ -457,7 +466,6 @@ class PrefillScheduler(Scheduler):
         Returns:
             SchedulerProgress: Indicates whether work was performed in this iteration.
         """
-
         while True:
             try:
                 request, identity = self.dispatcher.recv_request_nowait()
@@ -564,6 +572,7 @@ def load_prefill_scheduler(
     settings: Settings,
     memory_plan: MemoryPlan | None,
 ) -> PrefillScheduler:
+    """Builds a prefill scheduler from the pipeline and memory plan."""
     spec_config = pipeline_config.speculative
     if spec_config is not None:
         logger.info(

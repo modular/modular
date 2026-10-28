@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
+"""Request counting and the middleware that feeds it."""
+
 import logging
 import re
 import uuid
@@ -92,6 +94,7 @@ class _MidResponseDisconnectCounter:
 
 
 def register_request(app: FastAPI, *, structured_logging: bool = False) -> None:
+    """Registers the request-counting middleware and routes on the app."""
     # Read once: the server configures tracing before it builds the app.
     # Structured logs read the request ID. Only spans, directly or through
     # the worker's trace carrier, and dd.trace_id read the trace context.

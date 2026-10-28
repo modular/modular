@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""OpenAI-compatible chat, completion, and embeddings routes."""
+
 from __future__ import annotations
 
 import asyncio
@@ -369,6 +371,7 @@ def _merge_tool_call_deltas(
 
 
 def record_request_start() -> None:
+    """Records the start of an in-flight request."""
     METRICS.reqs_running(1)
 
 
@@ -398,6 +401,7 @@ def record_request_end(
     turn: ConversationTurn | None = None,
     cached_tokens: int | None = None,
 ) -> None:
+    """Records a finished request's latency, tokens, and prefix coverage."""
     # The HTTP status code is labeled onto ``max.request_count`` by the
     # ``register_request`` middleware, which knows the code actually returned to
     # the client (see ``max/python/max/serve/request.py``).
@@ -457,6 +461,7 @@ def get_finish_reason_from_status(
     *,
     has_tool_calls: bool = False,
 ) -> Literal["stop", "length", "tool_calls"] | None:
+    """Maps a generation status to an OpenAI finish reason."""
     if status == GenerationStatus.END_OF_SEQUENCE:
         return "tool_calls" if has_tool_calls else "stop"
     elif status == GenerationStatus.MAXIMUM_LENGTH:
@@ -471,6 +476,8 @@ def get_finish_reason_from_status(
 
 
 class OpenAIResponseGenerator(ABC, Generic[_T]):
+    """Base class for the generators that turn pipeline output into responses."""
+
     def __init__(self, pipeline: TokenGeneratorPipeline) -> None:
         self.logger = logging.getLogger(
             "max.serve.router.OpenAIResponseGenerator"
@@ -493,10 +500,11 @@ class OpenAIResponseGenerator(ABC, Generic[_T]):
 
     @abstractmethod
     async def complete(self, requests: list[TextGenerationRequest]) -> _T:
-        pass
+        """Produces the response for a finished generation."""
 
 
 def get_pipeline(request: Request, model_name: str) -> TokenGeneratorPipeline:
+    """Returns the pipeline serving the named model."""
     app_state: State = request.app.state
     pipeline: TokenGeneratorPipeline = app_state.pipeline
 
@@ -579,6 +587,8 @@ def _content_before_tool_call_marker(parser: ToolParser, response: str) -> str:
 class OpenAIChatResponseGenerator(
     OpenAIResponseGenerator[CreateChatCompletionResponse]
 ):
+    """Turns chat pipeline output into chat completion responses."""
+
     def __init__(
         self,
         pipeline: TokenGeneratorPipeline,
@@ -676,7 +686,8 @@ class OpenAIChatResponseGenerator(
 
         Observability-only: never mutates the response and never raises into
         the request path. Only the failing validator keywords and JSON paths
-        are logged, never content values."""
+        are logged, never content values.
+        """
         assert self._response_format_json_schema is not None
         result = check_response_format_conformance(
             content, self._response_format_json_schema
@@ -700,7 +711,7 @@ class OpenAIChatResponseGenerator(
     def _fold_reasoning_delta(
         self, reasoning_text: str | None, content_text: str | None
     ) -> str | None:
-        """Folds a streaming delta's reasoning + content into one content string.
+        r"""Folds a streaming delta's reasoning + content into one content string.
 
         Injects ``<think>\\n`` before the first reasoning text and
         ``\\n</think>\\n\\n`` before the first content text, so the full stream
@@ -732,6 +743,7 @@ class OpenAIChatResponseGenerator(
     async def stream(
         self, request: TextGenerationRequest
     ) -> AsyncGenerator[str | JSONResponse, None]:
+        """Streams chat completions for the requests."""
         request_span = _tracer.start_span(
             "max.request",
             context=request_trace_ctx.get(),
@@ -1214,6 +1226,7 @@ class OpenAIChatResponseGenerator(
     async def complete(
         self, requests: list[TextGenerationRequest]
     ) -> CreateChatCompletionResponse:
+        """Returns a chat completion for the requests."""
         if len(requests) != 1:
             raise NotImplementedError(
                 "chat completions does not support multiple prompts"
@@ -1469,7 +1482,6 @@ class OpenAIChatResponseGenerator(
 
     def _parse_resp_to_json(self, text: str) -> list[Any] | None:
         """Parse the response message to valid tool call JSON objects."""
-
         json_objects = parse_json_from_text(text)
 
         if not json_objects:
@@ -1555,12 +1567,15 @@ class OpenAIChatResponseGenerator(
 
 
 class OpenAIEmbeddingsResponseGenerator:
+    """Turns embeddings pipeline output into an embeddings response."""
+
     def __init__(self, pipeline: TokenGeneratorPipeline) -> None:
         self.pipeline = pipeline
 
     async def encode(
         self, requests: list[TextGenerationRequest]
     ) -> CreateEmbeddingResponse:
+        """Encodes the requests and returns their embeddings."""
         if len(requests) == 0:
             raise ValueError("No requests provided.")
 
@@ -1799,10 +1814,10 @@ async def openai_parse_chat_completion_request(
     preprocessed_image_mask: PreprocessedImageMask | None = None,
 ) -> _ParsedChatRequest:
     """Parse the OpenAI ChatCompletionRequest to build TextGenerationRequestMessages.
-    These will be used as inputs to the chat template to build the prompt.
-    Also extract the list of image/video references while we are here so they
-    can be downloaded and bundled alongside the request for preprocessing by
-    pipelines.
+
+    These will be used as inputs to the chat template to build the prompt. Also extract
+    the list of image/video references while we are here so they can be downloaded and
+    bundled alongside the request for preprocessing by pipelines.
 
     ``max_images_per_request``/``max_videos_per_request`` are model-specific
     per-request count limits supplied by the caller (read off the tokenizer);
@@ -2306,6 +2321,7 @@ def _resolve_grammar_constraints(
 async def openai_create_chat_completion(
     request: Request,
 ) -> CreateChatCompletionResponse | EventSourceResponse | Response:
+    """Serves a chat completion request."""
     request_id = request.state.request_id
     try:
         completion_request = await _parse_openai_request_body(
@@ -2815,6 +2831,7 @@ def _create_response_format(
 async def openai_create_embeddings(
     request: Request,
 ) -> CreateEmbeddingResponse | Response:
+    """Serves an embeddings request."""
     request_id = request.state.request_id
 
     # First try-catch: request parsing (client fault → 400)
@@ -3086,6 +3103,8 @@ async def openai_create_speech(request: Request) -> Response:
 
 
 class CompletionResponseStreamChoice(TokenIdsMixin):
+    """One choice in a streamed completion response."""
+
     index: int
     text: str
     logprobs: CompletionLogprobs | None = None
@@ -3093,6 +3112,8 @@ class CompletionResponseStreamChoice(TokenIdsMixin):
 
 
 class CompletionStreamResponse(BaseModel):
+    """A streamed completion chunk."""
+
     id: str
     created: int
     model: str
@@ -3181,6 +3202,7 @@ def _process_chat_log_probabilities(
 
 
 def get_app_pipeline_config(app: FastAPI) -> PipelineConfig:
+    """Returns the pipeline config the app was built with."""
     pipeline_config = app.state.pipeline_config
     assert isinstance(pipeline_config, PipelineConfig)
     return pipeline_config
@@ -3244,6 +3266,8 @@ def get_tool_parser(app: FastAPI) -> ToolParser | None:
 class OpenAICompletionResponseGenerator(
     OpenAIResponseGenerator[CreateCompletionResponse]
 ):
+    """Turns completion pipeline output into completion responses."""
+
     def __init__(
         self,
         pipeline: TokenGeneratorPipeline,
@@ -3259,6 +3283,7 @@ class OpenAICompletionResponseGenerator(
     async def stream(
         self, request: TextGenerationRequest
     ) -> AsyncGenerator[str | JSONResponse, None]:
+        """Streams completions for the requests."""
         request_span = _tracer.start_span(
             "max.request",
             context=request_trace_ctx.get(),
@@ -3490,6 +3515,7 @@ class OpenAICompletionResponseGenerator(
     async def complete(
         self, requests: list[TextGenerationRequest]
     ) -> CreateCompletionResponse:
+        """Returns a completion for the requests."""
         # we assume that all entries in `requests` came from the same http
         # request and timestamp, request id, path should all be the same.
         record_request_start()
@@ -3632,7 +3658,7 @@ def _is_seq_of_seq_of_int(
 def get_prompts_from_openai_request(
     prompt: str | list[str] | list[int] | list[list[int]],
 ) -> Sequence[StringPrompt] | Sequence[IntPrompt]:
-    """Extract the prompts from a CreateCompletionRequest
+    """Extract the prompts from a CreateCompletionRequest.
 
     Prompts can encoded as str or list-of-int. Within a given requests, there
     can be only one encoding.
@@ -3654,9 +3680,10 @@ def get_prompts_from_openai_request(
 async def openai_create_completion(
     request: Request,
 ) -> CreateCompletionResponse | EventSourceResponse | Response:
-    """
-    Legacy OpenAI /completion endpoint.
+    """Legacy OpenAI /completion endpoint.
+
     https://platform.openai.com/docs/api-reference/completions
+
     Public benchmarking such as vLLM use this endpoint.
     """
     http_req_id = request.state.request_id
@@ -3878,6 +3905,7 @@ def _resolve_max_model_len(request: Request) -> int | None:
 
 @router.get("/models", response_model=None)
 async def openai_get_models(request: Request) -> ListModelsResponse:
+    """Lists the models this server serves."""
     pipeline: TokenGeneratorPipeline = request.app.state.pipeline
     created = int(datetime.now().timestamp())
     max_model_len = _resolve_max_model_len(request)
@@ -3908,6 +3936,7 @@ async def openai_get_models(request: Request) -> ListModelsResponse:
 
 @router.get("/models/{model_id}", response_model=None)
 async def openai_get_model(model_id: str, request: Request) -> Model:
+    """Describes one served model."""
     pipeline: TokenGeneratorPipeline = request.app.state.pipeline
     pipeline_model = MaxModel(
         id=pipeline.model_name,

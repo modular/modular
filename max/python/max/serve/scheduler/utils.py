@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Helpers shared by the schedulers."""
+
 from __future__ import annotations
 
 import logging
@@ -244,6 +246,8 @@ class _ScheduledBatch(NamedTuple):
 
 @dataclass
 class BatchMetrics:
+    """Measurements published for a completed batch."""
+
     batch_type: BatchType
     batch_size: int
     max_batch_size: int
@@ -467,6 +471,7 @@ class BatchMetrics:
         completed_batch_stats: CompletedBatchStats | None = None,
         num_output_tokens: int | None = None,
     ) -> BatchMetrics:
+        """Builds the measurements for a batch."""
         num_input_tokens = inputs.input_tokens
         batch_size = inputs.batch_size
         prompt_throughput = (
@@ -862,6 +867,7 @@ class BatchMetrics:
         )
 
     def pretty_format(self) -> str:
+        """Renders the measurements as a log line."""
         context_tokens_str = ""
         if self.max_batch_total_tokens != 0:
             context_tokens_str = f"Context Tokens: {self.num_context_tokens}/{self.max_batch_total_tokens} toks | "
@@ -1553,13 +1559,12 @@ class BatchMetrics:
 def publish_completed_batch_metrics(
     stats: CompletedBatchStats, terminated_reqs: int
 ) -> None:
-    """Publishes execution-time, throughput and termination telemetry for a
-    completed batch.
+    """Publishes telemetry for a batch whose outputs were synchronized.
 
     Used with the overlap pipeline, where a batch's completion is observed one
-    scheduler iteration after it was enqueued: these metrics must be labeled
-    with the completed batch's type and computed from that same batch's token
-    counts, not the current iteration's.
+    scheduler iteration after it was enqueued: these metrics must be labeled with
+    the completed batch's type and computed from that same batch's token counts,
+    not the current iteration's.
 
     Args:
         stats: Stats for the batch whose outputs were synchronized this
@@ -1595,7 +1600,6 @@ class SchedulerLogger:
             leaf_dump_interval_s: How frequently to log every Jenga leaf's
                 occupancy, busy or idle, in seconds.
         """
-
         if log_interval_s is None:
             log_interval_s = float(
                 os.getenv("MAX_SERVE_SCHEDULER_STATS_LOG_INTERVAL_S", "3")
@@ -1674,6 +1678,8 @@ class SchedulerLogger:
             batch_creation_time_s: The time it took to create the batch.
             batch_execution_time_s: The time it took to execute the batch.
             num_pending_reqs: The number of pending requests.
+            num_terminated_reqs: Requests terminated in this iteration,
+                published with ``completed_batch_stats``.
             total_preemption_count: The total number of preemptions.
             batch_spec_decode_metrics: Per-batch speculative decoding metrics
                 for the most recent batch.

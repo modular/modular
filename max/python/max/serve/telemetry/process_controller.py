@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Telemetry controller that records measurements in a separate process."""
+
 from __future__ import annotations
 
 import functools
@@ -75,6 +77,7 @@ class ProcessMetricClient(MetricClient):
         self.transaction_depth = 0
 
     def send_measurement(self, m: MaxMeasurement) -> None:
+        """Enqueues the measurement, or buffers it inside a transaction."""
         if self.transaction_depth > 0:
             self.transaction_buffer.append(m)
             return
@@ -82,6 +85,7 @@ class ProcessMetricClient(MetricClient):
 
     @contextmanager
     def transaction(self) -> Iterator[None]:
+        """Buffers the measurements committed in the block."""
         self.transaction_depth += 1
         try:
             yield
@@ -109,6 +113,7 @@ class ProcessMetricClient(MetricClient):
         self,
         settings: Settings,
     ) -> Callable[[], AbstractAsyncContextManager[MetricClient]]:
+        """Returns the factory that rebuilds this client on the consumer's queue."""
         return functools.partial(_reconstruct_client, self.queue)
 
     def __del__(self) -> None:
@@ -133,12 +138,16 @@ async def _reconstruct_client(
 
 @dataclass
 class ProcessTelemetryController:
+    """Telemetry controller whose consumer runs in a separate process."""
+
     queue: Queue[list[MaxMeasurement]]
 
     def Client(self) -> MetricClient:
+        """Returns a client that sends to this controller's queue."""
         return ProcessMetricClient(self.queue)
 
     def close(self) -> None:
+        """Closes the queue without waiting for it to drain."""
         # Metrics are lossy. Do not let multiprocessing wait at interpreter
         # shutdown for a QueueFeederThread to flush to a worker that may already
         # be gone after a crash.
@@ -150,6 +159,7 @@ class ProcessTelemetryController:
 async def start_process_consumer(
     settings: Settings, handle_fn: TelemetryFn | None = None
 ) -> AsyncGenerator[ProcessTelemetryController, None]:
+    """Starts the consumer process that commits measurements."""
     if handle_fn is None:
         handle_fn = _sync_commit
 
@@ -227,7 +237,7 @@ def process_telemetry(
     liveness: Liveness,
     commit_fn: TelemetryFn,
 ) -> None:
-    """Long running function to read from a queue & process each element"""
+    """Long running function to read from a queue & process each element."""
     should_exit = False
 
     def signal_handler(*_args: Any) -> None:

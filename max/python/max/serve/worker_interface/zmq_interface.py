@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""ZMQ transport between the API process and the model worker."""
+
 from __future__ import annotations
 
 import asyncio
@@ -53,6 +55,8 @@ class ZmqModelWorkerProxy(
     Generic[BaseContextType, PipelineOutputType],
     ModelWorkerProxy[BaseContextType, PipelineOutputType],
 ):
+    """API-side handle that sends requests to the model worker."""
+
     def __init__(
         self,
         request_queue: MAXAsyncPushQueue[BaseContextType],
@@ -234,8 +238,7 @@ class ZmqModelWorkerProxy(
             del self.pending_out_queues[req_id]
 
     def cancel(self, req_id: RequestID) -> None:
-        """
-        Cancel a specific request by its ID (non-blocking).
+        """Cancel a specific request by its ID (non-blocking).
 
         This method sends a cancellation message to the worker for the given request ID.
 
@@ -295,6 +298,8 @@ class ZmqModelWorkerInterface(
     Generic[BaseContextType, PipelineOutputType],
     ModelWorkerInterface[BaseContextType, PipelineOutputType],
 ):
+    """Worker-side loop that receives requests and replies."""
+
     def __init__(
         self,
         pipeline_task: PipelineTask,
@@ -321,6 +326,7 @@ class ZmqModelWorkerInterface(
     async def model_worker_queues(
         self,
     ) -> AsyncGenerator[WorkerQueues[BaseContextType, PipelineOutputType]]:
+        """Yields the worker's request and response queues."""
         yield WorkerQueues[BaseContextType, PipelineOutputType](
             request_queue=self.request_queue_config.pull(),
             response_queue=self.response_queue_config.push(),
@@ -333,6 +339,7 @@ class ZmqModelWorkerInterface(
     ) -> AsyncGenerator[
         ZmqModelWorkerProxy[BaseContextType, PipelineOutputType]
     ]:
+        """Yields a proxy that the API side sends requests through."""
         proxy = ZmqModelWorkerProxy(
             self.request_queue_config.async_push(),
             self.response_queue_config.async_pull(),

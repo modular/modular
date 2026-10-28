@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Assembles text requests into prefill and decode batches."""
+
 from __future__ import annotations
 
 import itertools
@@ -287,15 +289,19 @@ class ReplicaBatch:
         return len(self.batch)
 
     def is_empty(self) -> bool:
+        """Whether the replica holds no batch."""
         return len(self.batch) == 0
 
 
 class PreemptionReason(str, Enum):
+    """Why a request was preempted."""
+
     KV_CACHE_MEMORY = "kv_cache_memory"
     MAX_NUM_LORAS = "max_num_loras"
 
     @property
     def error_message(self) -> str:
+        """The message reported for this preemption reason."""
         match self:
             case PreemptionReason.MAX_NUM_LORAS:
                 return "Preempted a request due to max-num-loras limit exceeded. This can affect the end-to-end performance. Consider increasing max-num-loras."
@@ -745,14 +751,15 @@ class TextBatchConstructor:
 
     @property
     def structured_output_enabled(self) -> bool:
-        """Whether constrained decoding can fire at all for this process:
-        ``--enable-structured-output`` (user-supplied JSON schemas) or a
-        ``--tool-call-policy`` other than ``force_unconstrained`` with a
+        """Whether constrained decoding can fire at all for this process.
+
+        It can fire from ``--enable-structured-output`` (user-supplied JSON schemas)
+        or from a ``--tool-call-policy`` other than ``force_unconstrained`` with a
         grammar-capable tool parser (server-generated tool-call grammars).
 
-        Mirrors ``PipelineConfig.needs_bitmask_constraints`` -- the same
-        signal that gates whether the bitmask-aware sampler graph and
-        pinned D2H buffer were even compiled/allocated for this process.
+        Mirrors ``PipelineConfig.needs_bitmask_constraints`` -- the same signal that
+        gates whether the bitmask-aware sampler graph and pinned D2H buffer were even
+        compiled/allocated for this process.
         """
         pipeline_config = getattr(self.pipeline, "pipeline_config", None)
         return (
@@ -1153,8 +1160,7 @@ class TextBatchConstructor:
         return failed
 
     def release_request(self, request_id: RequestID) -> None:
-        """
-        Releases a request from the batch constructor for all replicas.
+        """Releases a request from the batch constructor for all replicas.
 
         This method searches for the given request_id in both context encoding (CE)
         and text generation (TG) request queues for each replica. If found, it removes
@@ -1313,7 +1319,6 @@ class TextBatchConstructor:
                 whatever is queued there, turning the FIFO retry into a
                 rotation.
         """
-
         # Release from paged cache if it was claimed (scheduler manages primary KV cache lifecycle)
         if self.kv_cache.contains(context):
             self.kv_cache.release(context)
@@ -1390,8 +1395,7 @@ class TextBatchConstructor:
     def _preempt_request(
         self, context: TextContext, replica_idx: int, reason: PreemptionReason
     ) -> None:
-        """Preempts the most recently received request from active batch"""
-
+        """Preempts the most recently received request from active batch."""
         # Return to the Request Queue
         self._return_to_request_queue(context, replica_idx, unbind=True)
 
@@ -1455,14 +1459,13 @@ class TextBatchConstructor:
         return RequestType.CE
 
     def _is_anything_inflight(self, replica_idx: int) -> bool:
-        """Whether anything that could still resolve into runnable work is
-        in flight on this replica -- existence, not magnitude, since the
-        fatal-vs-defer decision only needs to know whether anything at all
-        is happening, not how much. Checked across cordoned onloads (H2D
-        landing), any device-side pending transfer (e.g. a D2H offload),
-        and any external (DI prefill/decode) signal. Scoped to
-        replica_idx: a transfer on a different replica's device pool
-        can't free blocks on this one.
+        """Whether anything that could still resolve into runnable work is in flight.
+
+        Existence, not magnitude, since the fatal-vs-defer decision only needs to know
+        whether anything at all is happening, not how much. Checked across cordoned
+        onloads (H2D landing), any device-side pending transfer (e.g. a D2H offload),
+        and any external (DI prefill/decode) signal. Scoped to replica_idx: a transfer
+        on a different replica's device pool can't free blocks on this one.
         """
         if any(
             onloading.replica_idx == replica_idx
@@ -1498,11 +1501,12 @@ class TextBatchConstructor:
     def _is_insufficient_blocks_fatal(
         self, replica_idx: int, no_other_work: bool
     ) -> bool:
-        """Fatal only when there's no other runnable work and nothing at
-        all is in flight -- presence, not magnitude, since a deficit
-        sized against what's in flight now can't see a transfer that
-        starts next iteration. A wrong "fatal" verdict kills the worker;
-        a wrong "defer" verdict just costs a retry, so this errs toward
+        """Whether a block deficit is fatal rather than worth a retry.
+
+        Fatal only when there's no other runnable work and nothing at all is in flight
+        -- presence, not magnitude, since a deficit sized against what's in flight now
+        can't see a transfer that starts next iteration. A wrong "fatal" verdict kills
+        the worker; a wrong "defer" verdict just costs a retry, so this errs toward
         retrying whenever anything at all is in flight.
         """
         return no_other_work and not self._is_anything_inflight(replica_idx)
@@ -2011,7 +2015,6 @@ class TextBatchConstructor:
                 identified by _identify_priority. If None, priority is determined
                 automatically based on queue state and scheduler configuration.
         """
-
         # Initialize batch. When the DP CE balancer set a step quota for this
         # replica, it becomes the CE budget capacity, sizing this step's
         # chunks to the balance level instead of the full chunk target.
