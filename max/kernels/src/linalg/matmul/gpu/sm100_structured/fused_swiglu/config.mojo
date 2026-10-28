@@ -30,7 +30,6 @@ from std.hash.hasher import Hasher
 from std.sys import size_of
 from std.math import align_down, align_up, ceildiv
 from std.itertools.itertools import product
-from std.utils.coord import Coord, DynamicCoord, coord_to_index_list
 from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 from max.gpu.host.info import B200
@@ -51,7 +50,9 @@ from .tuning_configs import TuningConfigSwiGLU, _get_tuning_list_swiglu_bf16
 
 def swiglu_extra_fixed_smem[
     c_type: DType,
-](mma_shape: Coord, cta_group: Int, AB_swapped: Bool = False) -> Int:
+](
+    mma_shape: Tuple[Int, Int, Int], cta_group: Int, AB_swapped: Bool = False
+) -> Int:
     """Compute extra fixed SMEM bytes for the SwiGLU SMEM-path half tiles.
 
     Returns the bytes needed for double-buffered half-output SMEM tiles.
@@ -83,7 +84,7 @@ struct FusedSwiGLUMatmulConfig[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = True,
-](Copyable, Equatable, Hashable, TrivialRegisterPassable, Writable):
+](Equatable, Hashable, ImplicitlyCopyable, RegisterPassable, Writable):
     """Compile-time configuration for the SM100 fused GEMM+SwiGLU kernel.
 
     Encodes all parameters needed by the fused epilogue, including the path
@@ -106,8 +107,8 @@ struct FusedSwiGLUMatmulConfig[
 
     # Primary parameters
     var cta_group: Int
-    var mma_shape: Coord[Int, Int, Int]
-    var cluster_shape: Coord[Int, Int, Int]
+    var mma_shape: Tuple[Int, Int, Int]
+    var cluster_shape: Tuple[Int, Int, Int]
     var AB_swapped: Bool
     var block_swizzle_size: Int
     var raster_order: RasterOrder
@@ -119,8 +120,8 @@ struct FusedSwiGLUMatmulConfig[
     var use_bias: Bool
 
     # Derived parameters (computed in __init__)
-    var block_tile_shape: Coord[Int, Int, Int]
-    var output_tile_shape: Coord[Int, Int]
+    var block_tile_shape: Tuple[Int, Int, Int]
+    var output_tile_shape: Tuple[Int, Int]
     var a_swizzle: TensorMapSwizzle
     var b_swizzle: TensorMapSwizzle
 
@@ -129,9 +130,9 @@ struct FusedSwiGLUMatmulConfig[
     def __init__(
         out self,
         *,
-        mma_shape: Coord,
+        mma_shape: Tuple[Int, Int, Int],
         cta_group: Int = 2,
-        cluster_shape: Coord = (2, 1, 1),
+        cluster_shape: Tuple[Int, Int, Int] = (2, 1, 1),
         AB_swapped: Bool = False,
         block_swizzle_size: Int = 0,
         raster_order: RasterOrder = RasterOrder.AlongM,
@@ -143,16 +144,8 @@ struct FusedSwiGLUMatmulConfig[
         register_swiglu: Bool = False,
     ):
         self.cta_group = cta_group
-        self.mma_shape = (
-            Int(mma_shape[0]),
-            Int(mma_shape[1]),
-            Int(mma_shape[2]),
-        )
-        self.cluster_shape = (
-            Int(cluster_shape[0]),
-            Int(cluster_shape[1]),
-            Int(cluster_shape[2]),
-        )
+        self.mma_shape = mma_shape
+        self.cluster_shape = cluster_shape
         self.AB_swapped = AB_swapped
         self.block_swizzle_size = block_swizzle_size
         self.raster_order = raster_order
@@ -281,10 +274,8 @@ struct FusedSwiGLUMatmulConfig[
         """
         return (
             self.cta_group == other.cta_group
-            and coord_to_index_list(self.mma_shape)
-            == coord_to_index_list(other.mma_shape)
-            and coord_to_index_list(self.cluster_shape)
-            == coord_to_index_list(other.cluster_shape)
+            and self.mma_shape == other.mma_shape
+            and self.cluster_shape == other.cluster_shape
             and self.AB_swapped == other.AB_swapped
             and self.block_swizzle_size == other.block_swizzle_size
             and self.raster_order == other.raster_order
@@ -295,10 +286,8 @@ struct FusedSwiGLUMatmulConfig[
             and self.num_accum_pipeline_stages
             == other.num_accum_pipeline_stages
             and self.use_bias == other.use_bias
-            and coord_to_index_list(self.block_tile_shape)
-            == coord_to_index_list(other.block_tile_shape)
-            and coord_to_index_list(self.output_tile_shape)
-            == coord_to_index_list(other.output_tile_shape)
+            and self.block_tile_shape == other.block_tile_shape
+            and self.output_tile_shape == other.output_tile_shape
             and self.a_swizzle == other.a_swizzle
             and self.b_swizzle == other.b_swizzle
         )
@@ -324,8 +313,8 @@ struct FusedSwiGLUMatmulConfig[
             hasher: The hasher instance.
         """
         self.cta_group.__hash__(hasher)
-        coord_to_index_list(self.mma_shape).__hash__(hasher)
-        coord_to_index_list(self.cluster_shape).__hash__(hasher)
+        self.mma_shape.__hash__(hasher)
+        self.cluster_shape.__hash__(hasher)
         self.AB_swapped.__hash__(hasher)
         self.block_swizzle_size.__hash__(hasher)
         self.raster_order.__hash__(hasher)
@@ -335,8 +324,8 @@ struct FusedSwiGLUMatmulConfig[
         self.num_clc_pipeline_stages.__hash__(hasher)
         self.num_accum_pipeline_stages.__hash__(hasher)
         self.use_bias.__hash__(hasher)
-        coord_to_index_list(self.block_tile_shape).__hash__(hasher)
-        coord_to_index_list(self.output_tile_shape).__hash__(hasher)
+        self.block_tile_shape.__hash__(hasher)
+        self.output_tile_shape.__hash__(hasher)
         self.a_swizzle.__hash__(hasher)
         self.b_swizzle.__hash__(hasher)
 
@@ -348,9 +337,9 @@ def swiglu_matmul_config[
     transpose_b: Bool = True,
 ](
     *,
-    mma_shape: Coord,
+    mma_shape: Tuple[Int, Int, Int],
     cta_group: Int = 2,
-    cluster_shape: Coord = (2, 1, 1),
+    cluster_shape: Tuple[Int, Int, Int] = (2, 1, 1),
     AB_swapped: Bool = False,
     block_swizzle_size: Int = 0,
     raster_order: RasterOrder = RasterOrder.AlongM,
