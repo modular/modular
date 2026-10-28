@@ -296,6 +296,12 @@ def test_build_messages_omits_root_preamble_when_empty() -> None:
     )
 
 
+def test_build_messages_omits_system_prompt_when_empty() -> None:
+    msgs = aime_eval.build_messages("Compute 2+2.", "", "")
+    assert [m["role"] for m in msgs] == ["user"]
+    assert "Compute 2+2." in msgs[0]["content"]
+
+
 def test_build_messages_includes_root_preamble_when_set() -> None:
     msgs = aime_eval.build_messages(
         "Compute 2+2.", "I am MiniMax-M3.", "You are helpful."
