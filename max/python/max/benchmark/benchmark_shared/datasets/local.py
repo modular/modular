@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Base class for benchmark datasets loaded from local files."""
+
 from __future__ import annotations
 
 import os
@@ -29,6 +31,7 @@ class LocalBenchmarkDataset(BenchmarkDataset):
     dataset_mode: DatasetMode = "local"
 
     def fetch(self) -> None:
+        """Checks that the configured local dataset path exists."""
         # For local mode, dataset_path should already be set and validated
         if self.dataset_path is None:
             raise ValueError("For LOCAL mode, dataset_path must be provided")

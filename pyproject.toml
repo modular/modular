@@ -139,7 +139,6 @@ convention = "google"
 # NOTE: Ruff skips all "missing docstring" (D10X) rules for *.pyi files
 "!max/python/max/**/{*.py,*.pyi}" = ["D"]
 # With exceptions for these packages:
-"max/python/max/benchmark/**/*" = ["D"]
 "max/python/max/config/**/*" = ["D"]
 "max/python/max/pipelines/kv_cache/connectors/**/*" = ["D"]
 "max/python/max/mlir/**/*" = ["D"]

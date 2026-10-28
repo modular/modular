@@ -834,6 +834,7 @@ async def benchmark(
 def validate_task_and_endpoint(
     benchmark_task: BenchmarkTask, endpoint: Endpoint
 ) -> None:
+    """Raises when ``endpoint`` cannot serve ``benchmark_task``."""
     if benchmark_task == "text-generation":
         if endpoint in (
             "/v1/responses",

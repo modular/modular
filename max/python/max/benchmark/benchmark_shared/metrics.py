@@ -133,8 +133,7 @@ class HistogramMetric(str, Enum):
 
 @dataclass(init=False)
 class ThroughputMetrics(PercentileMetrics):
-    """
-    Container for throughput-based metrics with automatic percentile calculations.
+    """Container for throughput-based metrics with automatic percentile calculations.
 
     For throughput metrics, percentiles are reversed because smaller values
     are worse for throughput (for example, p99 represents the 1st percentile).
@@ -153,8 +152,7 @@ class ThroughputMetrics(PercentileMetrics):
         scale_factor: float = 1.0,
         unit: str | None = None,
     ) -> None:
-        """
-        Initialize throughput metrics with automatic percentile calculations.
+        """Initialize throughput metrics with automatic percentile calculations.
 
         Args:
             data: List of throughput values to calculate percentiles from.
@@ -190,8 +188,7 @@ class ThroughputMetrics(PercentileMetrics):
 
 @dataclass(init=False)
 class StandardPercentileMetrics(PercentileMetrics):
-    """
-    Container for standard percentile-based metrics with automatic calculations.
+    """Container for standard percentile-based metrics with automatic calculations.
 
     For standard metrics, higher percentiles represent worse performance
     (for example, p99 represents the 99th percentile).
@@ -207,8 +204,7 @@ class StandardPercentileMetrics(PercentileMetrics):
         scale_factor: float = 1.0,
         unit: str | None = None,
     ) -> None:
-        """
-        Initialize standard percentile metrics with automatic calculations.
+        """Initialize standard percentile metrics with automatic calculations.
 
         Args:
             data: List of values to calculate percentiles from.

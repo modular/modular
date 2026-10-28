@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""InstructCoder dataset: loading the pairs and sampling requests."""
+
 from __future__ import annotations
 
 import json
@@ -125,6 +127,7 @@ class InstructCoderBenchmarkDataset(HuggingFaceBenchmarkDataset):
     """
 
     def fetch(self) -> None:
+        """Resolves the dataset path, downloading it when unset."""
         self.dataset_path = fetch_instruct_coder_dataset_path(self.dataset_path)
 
     def _load_pairs(self) -> list[tuple[str, str]]:
@@ -151,6 +154,7 @@ class InstructCoderBenchmarkDataset(HuggingFaceBenchmarkDataset):
                 ``None``, the actual tokenized length of the ``output`` field
                 is used.
             shuffle: Whether to shuffle the dataset before sampling.
+            **kwargs: Accepted for interface compatibility; unused.
         """
         pairs = self._load_pairs()
 
@@ -233,6 +237,8 @@ class InstructCoderBenchmarkDataset(HuggingFaceBenchmarkDataset):
             delay_between_chat_turns: Delay in ms after each assistant message
                 when ``fit_length_distributions`` is False (constant per turn).
             shuffle: Whether to shuffle entries before grouping.
+            pool: Tokenizer pool the fitted session encoding runs under.
+                Required when ``fit_length_distributions`` is True.
             fit_length_distributions: If True, use ``num_turns``, ``input_len``,
                 ``output_len``, and ``delay_between_turns_dist`` like the random
                 multiturn dataset (including ``';'``-separated first vs remaining
@@ -245,6 +251,8 @@ class InstructCoderBenchmarkDataset(HuggingFaceBenchmarkDataset):
                 token budget used for a synthetic system prefix.
             max_num_unique_sys_prompt: Number of system-prefix variants to cycle.
             min_input_len: Floor for sampled input lengths.
+            tools: Tool definitions the fitted sessions' tool calls may use.
+            agentic_rounds_per_turn: Agent-loop rounds per turn when fitting.
             min_output_len: Floor for sampled output lengths.
             max_output_len: Optional ceiling that fitted output lengths are
                 clamped to.

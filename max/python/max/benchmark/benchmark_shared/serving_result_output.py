@@ -378,7 +378,6 @@ def print_workload_stats(
 
 def print_lora_benchmark_results(metrics: LoRAMetrics) -> None:
     """Print LoRA benchmark statistics if available."""
-
     print_section(title=" LoRA Adapter Benchmark Results ", char="=")
     print("{:<40} {:<10}".format("Total LoRA loads:", metrics.total_loads))
     print("{:<40} {:<10}".format("Total LoRA unloads:", metrics.total_unloads))
