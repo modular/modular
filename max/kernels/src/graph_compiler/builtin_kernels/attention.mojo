@@ -5494,52 +5494,95 @@ struct Struct_latent_sparse_attention_ragged_paged:
     @inline(.always)
     @staticmethod
     def execute[
-        q_type: DType,
-        swa_type: DType,
-        comp_type: DType,
-        //,
         window: Int,
         target: StaticString,
         split_k: Bool = True,
         portable_p_bf16: Bool = False,
     ](
-        output: OutputTensor[dtype=q_type, rank=3, ...],
-        q: InputTensor[dtype=q_type, rank=3, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        comp_indices: InputTensor[dtype=.int32, rank=2, ...],
-        attn_sink: InputTensor[dtype=.float32, rank=1, ...],
-        swa_kv_blocks: MutableInputTensor[dtype=swa_type, rank=6, ...],
-        swa_page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        swa_cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        swa_kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        swa_max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        swa_max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
-        comp_kv_blocks: MutableInputTensor[dtype=comp_type, rank=6, ...],
-        comp_page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        comp_cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        comp_kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        comp_max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        comp_max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        output: Some[Output & Tensor],
+        q: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        comp_indices: Some[Input & Tensor],
+        attn_sink: Some[Input & Tensor],
+        swa_kv_blocks: Some[MutableInput & Tensor],
+        swa_page_stride: Some[Input & Tensor],
+        swa_cache_lengths: Some[Input & Tensor],
+        swa_kv_lookup_table: Some[Input & Tensor],
+        swa_max_prompt_length: Some[Input & Tensor],
+        swa_max_cache_length: Some[Input & Tensor],
+        comp_kv_blocks: Some[MutableInput & Tensor],
+        comp_page_stride: Some[Input & Tensor],
+        comp_cache_lengths: Some[Input & Tensor],
+        comp_kv_lookup_table: Some[Input & Tensor],
+        comp_max_prompt_length: Some[Input & Tensor],
+        comp_max_cache_length: Some[Input & Tensor],
         layer_swa: UInt32,
         layer_comp: UInt32,
         scale: Float32,
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(q), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(comp_indices), TileTensorable)
+        comptime assert conforms_to(type_of(attn_sink), TileTensorable)
+        comptime assert conforms_to(type_of(swa_kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(swa_page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(swa_cache_lengths), TileTensorable)
+        comptime assert conforms_to(
+            type_of(swa_kv_lookup_table), TileTensorable
+        )
+        comptime assert conforms_to(
+            type_of(swa_max_prompt_length), TileTensorable
+        )
+        comptime assert conforms_to(
+            type_of(swa_max_cache_length), TileTensorable
+        )
+        comptime assert conforms_to(type_of(comp_kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(comp_page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(comp_cache_lengths), TileTensorable)
+        comptime assert conforms_to(
+            type_of(comp_kv_lookup_table), TileTensorable
+        )
+        comptime assert conforms_to(
+            type_of(comp_max_prompt_length), TileTensorable
+        )
+        comptime assert conforms_to(
+            type_of(comp_max_cache_length), TileTensorable
+        )
+        comptime q_type = type_of(output).dtype
+        comptime assert type_of(output).rank == 3
+        comptime assert type_of(q).rank == 3
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(comp_indices).rank == 2
+        comptime assert type_of(attn_sink).rank == 1
+        comptime assert type_of(swa_kv_blocks).rank == 6
+        comptime assert type_of(swa_page_stride).rank == 1
+        comptime assert type_of(swa_cache_lengths).rank == 1
+        comptime assert type_of(swa_kv_lookup_table).rank == 2
+        comptime assert type_of(swa_max_prompt_length).rank == 1
+        comptime assert type_of(swa_max_cache_length).rank == 1
+        comptime assert type_of(comp_kv_blocks).rank == 6
+        comptime assert type_of(comp_page_stride).rank == 1
+        comptime assert type_of(comp_cache_lengths).rank == 1
+        comptime assert type_of(comp_kv_lookup_table).rank == 2
+        comptime assert type_of(comp_max_prompt_length).rank == 1
+        comptime assert type_of(comp_max_cache_length).rank == 1
         var swa_collection = generic_get_paged_cache(
-            swa_kv_blocks,
-            swa_page_stride,
-            swa_cache_lengths,
-            swa_kv_lookup_table,
-            swa_max_prompt_length,
-            swa_max_cache_length,
+            swa_kv_blocks.to_tile_tensor(),
+            swa_page_stride.to_tile_tensor[.int64](),
+            swa_cache_lengths.to_tile_tensor[.uint32](),
+            swa_kv_lookup_table.to_tile_tensor[.uint32](),
+            swa_max_prompt_length.to_tile_tensor[.uint32](),
+            swa_max_cache_length.to_tile_tensor[.uint32](),
         )
         var comp_collection = generic_get_paged_cache(
-            comp_kv_blocks,
-            comp_page_stride,
-            comp_cache_lengths,
-            comp_kv_lookup_table,
-            comp_max_prompt_length,
-            comp_max_cache_length,
+            comp_kv_blocks.to_tile_tensor(),
+            comp_page_stride.to_tile_tensor[.int64](),
+            comp_cache_lengths.to_tile_tensor[.uint32](),
+            comp_kv_lookup_table.to_tile_tensor[.uint32](),
+            comp_max_prompt_length.to_tile_tensor[.uint32](),
+            comp_max_cache_length.to_tile_tensor[.uint32](),
         )
         latent_sparse_attention_ragged_paged[
             target=target,
@@ -5548,10 +5591,10 @@ struct Struct_latent_sparse_attention_ragged_paged:
             portable_p_bf16=portable_p_bf16,
         ](
             output.to_tile_tensor(),
-            q.to_tile_tensor(),
-            input_row_offsets.to_tile_tensor(),
-            comp_indices.to_tile_tensor(),
-            attn_sink.to_tile_tensor(),
+            q.to_tile_tensor[q_type](),
+            input_row_offsets.to_tile_tensor[.uint32](),
+            comp_indices.to_tile_tensor[.int32](),
+            attn_sink.to_tile_tensor[.float32](),
             swa_collection.get_key_cache(Int(layer_swa)),
             comp_collection.get_key_cache(Int(layer_comp)),
             scale,
