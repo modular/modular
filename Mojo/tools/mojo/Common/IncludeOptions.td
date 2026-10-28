@@ -19,6 +19,7 @@
 #ifndef KGEN_TOOLS_MOJO_COMMON_INCLUDEOPTIONS_TD
 #define KGEN_TOOLS_MOJO_COMMON_INCLUDEOPTIONS_TD
 
+include "Common/Marshalling.td"
 include "Support/Driver/DriverCommand.td"
 
 def CompilationOptionGroup : OptionGroup<"Compilation options">, Index<5>;
@@ -26,6 +27,7 @@ def CompilationOptionGroup : OptionGroup<"Compilation options">, Index<5>;
 def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<3>,
   MetaVarName<"PATH">,
   HelpText<"Appends the given path to the list of directories to search for "
-           "imported Mojo files.">;
+           "imported Mojo files.">,
+  MarshallingInfoStringVector<DriverOpts<"includePaths">>;
 
 #endif // KGEN_TOOLS_MOJO_COMMON_INCLUDEOPTIONS_TD

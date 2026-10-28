@@ -35,7 +35,8 @@ def mlir_timing: Flag<["--", "-"], "mlir-timing">,
     "compilation finishes, which for `mojo run` is before the program starts. "
     "Passes that the compilation cache serves from an earlier build never "
     "run, so a warm cache reports the parse and nothing else; point "
-    "`MODULAR_CACHE_DIR` at an empty directory to time a whole pipeline.">;
+    "`MODULAR_CACHE_DIR` at an empty directory to time a whole pipeline.">,
+  MarshallingInfoFlag<DriverOpts<"mlirTiming">>;
 
 def llvm_timing: Flag<["--", "-"], "llvm-timing">,
   Group<CompilationOptionGroup>, Index<20>, Flags<[HelpHidden]>,
@@ -50,7 +51,8 @@ def llvm_timing: Flag<["--", "-"], "llvm-timing">,
     "build. Therefore the report is empty if the cache has the object code. "
     "Set `MODULAR_CACHE_DIR` to an empty directory to measure a full "
     "pipeline. The report holds the passes of the host and the passes of "
-    "each `compile_offload` target together.">;
+    "each `compile_offload` target together.">,
+  MarshallingInfoFlag<DriverOpts<"llvmTiming">>;
 
 defm mlir_timing_display: CommandOptionHidden<["--", "-"],
   "mlir-timing-display",
@@ -59,7 +61,8 @@ defm mlir_timing_display: CommandOptionHidden<["--", "-"],
     "How `--mlir-timing` groups its report. `tree` (the default) nests "
     "timings by pipeline structure; `list` aggregates per pass name, sorted "
     "by total time. The `list` mode merges the passes of all pipelines, so it "
-    "cannot show the time of one offload target on its own.">>;
+    "cannot show the time of one offload target on its own.">>,
+  MarshallingInfoString<DriverOpts<"mlirTimingDisplay">>;
 
 def timing_json: Flag<["--", "-"], "timing-json">,
   Group<CompilationOptionGroup>, Index<21>, Flags<[HelpHidden]>,
@@ -70,13 +73,15 @@ def timing_json: Flag<["--", "-"], "timing-json">,
     "is empty if the command asks for no timing. The `mlir` member keeps the "
     "tree or the list that `--mlir-timing-display` selects. The `llvm` member "
     "holds one entry for each pipeline, with the name of the pipeline and the "
-    "times of its passes.">;
+    "times of its passes.">,
+  MarshallingInfoFlag<DriverOpts<"timingJSON">>;
 
 defm timing_file: CommandOptionHidden<["--", "-"], "timing-file",
   CompilationOptionGroup, Index<22>, MetaVarName<"FILE">,
   HelpText<
     "Writes the timing reports to FILE rather than to stderr. The reports are "
-    "text, or JSON with `--timing-json`.">>;
+    "text, or JSON with `--timing-json`.">>,
+  MarshallingInfoString<DriverOpts<"timingFile">>;
 
 //===----------------------------------------------------------------------===//
 // Linker Options
@@ -92,6 +97,7 @@ defm lld_path : CommandOption<["--", "-"], "lld-path",
   LinkOptionGroup, Index<2>, MetaVarName<"PATH">,
   HelpText<"Overrides the path to the `lld` linker used when linking. Takes "
            "precedence over the `MODULAR_MOJO_MAX_LLD_PATH` environment "
-           "variable and the `mojo-max.lld_path` configuration value.">>;
+           "variable and the `mojo-max.lld_path` configuration value.">>,
+  MarshallingInfoString<DriverOpts<"lldPath">>;
 
 #endif // KGEN_TOOLS_MOJO_COMMON_BACKENDOPTIONS_TD

@@ -88,7 +88,7 @@ struct RunOptTable : public llvm::opt::OptTable {
 } // namespace
 
 static void expandMarshalledOptions(const llvm::opt::InputArgList &args,
-                                    State &state,
+                                    State &state, DriverOptions &driverOptions,
                                     FrontendOptions &frontendOptions,
                                     CompilationOptions &compilationOptions,
                                     TargetArgs &targetArgs,
@@ -120,6 +120,7 @@ static void expandMarshalledOptions(const llvm::opt::InputArgList &args,
 ///    argument ("Foo.mojo" from the example above).
 static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
                                     llvm::SourceMgr &sourceManager,
+                                    DriverOptions &driverOptions,
                                     CompilationOptions &compilationOptions,
                                     FrontendOptions &frontendOptions,
                                     MLIRContext &ctx, TargetInfoAttr &target,
@@ -168,15 +169,6 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
   CommonOptionIDs optionIDs{
       .unknown = options::OPT_UNKNOWN,
       .input = options::OPT_INPUT,
-      .includeDirs = options::OPT_I,
-      .printEffectiveTarget = options::OPT_print_effective_target,
-      .printSupportedTargets = options::OPT_print_supported_targets,
-      .printSupportedCpus = options::OPT_print_supported_cpus,
-      .printSupportedAccelerators = options::OPT_print_supported_accelerators,
-      .defines = options::OPT_D,
-      .fixit = options::OPT_fixit,
-      .exportFixit = options::OPT_export_fixit,
-      .lldPath = options::OPT_lld_path,
   };
 
   // Configure parsing for `mojo run` - only parse args up to the input file.
@@ -197,6 +189,7 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
 
   // Extract results.
   args = std::move(result->args);
+  driverOptions = std::move(result->driverOptions);
   compilationOptions = std::move(result->compilationOptions);
   frontendOptions = std::move(result->frontendOptions);
   target = std::move(result->target);
@@ -334,13 +327,14 @@ static int run(const State &subcommandState) {
   RunOptTable optionsTable;
   llvm::opt::InputArgList args;
   llvm::SourceMgr sourceManager;
+  DriverOptions driverOptions;
   CompilationOptions options;
   FrontendOptions frontendOptions;
   MLIRContext mlirCtx{MLIRContext::Threading::DISABLED};
   TargetInfoAttr target;
   if (std::optional<int> exitCode =
-          parseArgs(state, args, sourceManager, options, frontendOptions,
-                    mlirCtx, target, optionsTable))
+          parseArgs(state, args, sourceManager, driverOptions, options,
+                    frontendOptions, mlirCtx, target, optionsTable))
     return *exitCode;
 
 #ifdef KGEN_ENABLE_PASS_OPTIONS
@@ -355,14 +349,13 @@ static int run(const State &subcommandState) {
   // Declared first so it outlives both timing objects, which write their
   // reports into it from their destructors.
   TimingReportSink timingReport;
-  if (ErrorOrSuccess err = timingReport.configure(
-          args, options::OPT_timing_json, options::OPT_timing_file))
+  if (ErrorOrSuccess err = timingReport.configure(driverOptions))
     return state.reportError(err.getError());
 
   // Before the CPU device, because the option pins the thread count to one;
   // before the MLIR timing, so the MLIR report comes out first.
   LLVMPassTiming llvmTiming;
-  llvmTiming.configure(args, options::OPT_llvm_timing, options, timingReport);
+  llvmTiming.configure(driverOptions, options, timingReport);
 
   AsyncRT::CPUDeviceOptions cpuDeviceOptions;
   configureCPUDeviceOptions(cpuDeviceOptions, options);
@@ -384,15 +377,12 @@ static int run(const State &subcommandState) {
 
   // The timing shows the parse, the passes, and the code generation.
   MLIRPassTiming timing;
-  if (ErrorOrSuccess err =
-          timing.configure(args, options::OPT_mlir_timing,
-                           options::OPT_mlir_timing_display, timingReport))
+  if (ErrorOrSuccess err = timing.configure(driverOptions, timingReport))
     return state.reportError(err.getError());
 
   ErrorOr<OwningOpRef<ModuleOp>> moduleOp = invokeMojoParser(
-      state, args, options, frontendOptions, &mlirCtx, cpuDevice,
-      options::OPT_D, options::OPT_fixit, options::OPT_export_fixit,
-      &timing.rootScope(),
+      state, driverOptions, /*tagEnvironment=*/true, options, frontendOptions,
+      &mlirCtx, cpuDevice, &timing.rootScope(),
       [&](const FrontendOptions &parserOptions, mlir::TimingScope &ts) {
         return LIT::importMojoFile(ctx, sourceManager, &mlirCtx, options,
                                    parserOptions, ts);
@@ -404,7 +394,7 @@ static int run(const State &subcommandState) {
     // Only --experimental-fixit returns a null module (after applying fixes).
     // --experimental-export-fixit continues normal execution after writing
     // YAML.
-    assert(args.hasArg(options::OPT_fixit));
+    assert(driverOptions.applyFixIts);
     return EXIT_SUCCESS;
   }
 

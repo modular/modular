@@ -89,6 +89,8 @@ struct PrecompileArgs {
   std::string inputPath;
   /// The path to which to output a `.mojoc` file.
   std::string outputPath;
+  /// The options that the driver acts on itself.
+  DriverOptions driverOptions;
   /// Compilation options common to all Mojo builds.
   CompilationOptions compileOptions;
   /// Parser options common to all Mojo builds.
@@ -179,7 +181,8 @@ static ErrorOrSuccess parsePrecompileArgs(const State &state,
 
   // Set up the compilation options now, so we can use them as a single source
   // of truth.
-  initializeCompilation(args, sourceMgr, pkgArgs.ctx, options::OPT_I);
+  initializeCompilation(pkgArgs.driverOptions.includePaths, sourceMgr,
+                        pkgArgs.ctx);
   setWarningPolicy(state, pkgArgs.frontendOptions);
 
   // Precompiled files are built with the intention of being agnostic, so use
@@ -223,6 +226,7 @@ static int precompile(const State &subcommandState) {
 
   PrecompileArgs precompileArgs;
   {
+    DriverOptions &driverOptions = precompileArgs.driverOptions;
     KGEN::FrontendOptions &frontendOptions = precompileArgs.frontendOptions;
     KGEN::CompilationOptions &compilationOptions =
         precompileArgs.compileOptions;
@@ -274,11 +278,9 @@ static int precompile(const State &subcommandState) {
       precompileArgs.frontendOptions.warningsAsErrors);
 
   ErrorOr<OwningOpRef<ModuleOp>> module = invokeMojoParser(
-      state, args, precompileArgs.compileOptions,
-      precompileArgs.frontendOptions, &precompileArgs.ctx, cpuDevice,
-      /*definesId=*/llvm::opt::OptSpecifier(), options::OPT_fixit,
-      options::OPT_export_fixit,
-      /*timingScope=*/nullptr,
+      state, precompileArgs.driverOptions, /*tagEnvironment=*/false,
+      precompileArgs.compileOptions, precompileArgs.frontendOptions,
+      &precompileArgs.ctx, cpuDevice, /*timingScope=*/nullptr,
       [&](const FrontendOptions &parserOptions, mlir::TimingScope &ts) {
         OwningOpRef<ModuleOp> moduleOp;
         std::tie(moduleOp, packageOp) = LIT::importMojoPackage(
@@ -294,7 +296,7 @@ static int precompile(const State &subcommandState) {
     // Only --experimental-fixit returns a null module (after applying fixes).
     // --experimental-export-fixit continues normal execution after writing
     // YAML.
-    assert(args.hasArg(options::OPT_fixit));
+    assert(precompileArgs.driverOptions.applyFixIts);
     return EXIT_SUCCESS;
   }
 

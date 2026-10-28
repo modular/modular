@@ -20,6 +20,7 @@
 
 #include "Mojo/ExecutionEngine/ExecutionEngine.h"
 #include "Mojo/ToolCommon/CompilationOptions.h"
+#include "Mojo/ToolCommon/DriverOptions.h"
 #include "Mojo/ToolCommon/FrontendOptions.h"
 #include "Mojo/ToolCommon/OptionNormalizers.h"
 #include "Mojo/ToolCommon/PassManagerConfigOptions.h"
@@ -55,32 +56,15 @@ class TargetInfoAttr;
 struct CommonOptionIDs {
   llvm::opt::OptSpecifier unknown;
   llvm::opt::OptSpecifier input;
-
-  // Compilation options
-  llvm::opt::OptSpecifier includeDirs;
-
-  // Target queries
-  llvm::opt::OptSpecifier printEffectiveTarget;
-  llvm::opt::OptSpecifier printSupportedTargets;
-  llvm::opt::OptSpecifier printSupportedCpus;
-  llvm::opt::OptSpecifier printSupportedAccelerators;
-
-  // Parser options
-  llvm::opt::OptSpecifier defines;
-  llvm::opt::OptSpecifier fixit;
-  llvm::opt::OptSpecifier exportFixit;
-
-  // Linker options
-  llvm::opt::OptSpecifier lldPath;
 };
 
 /// Expands a subcommand's `MOJO_OPTION_WITH_MARSHALLING` rows from `args`
 /// into the structs their key paths name, adding invalid values to the errors.
-using ExpandMarshalledOptionsFn =
-    llvm::function_ref<void(const llvm::opt::InputArgList &args, State &state,
-                            KGEN::FrontendOptions &frontendOptions,
-                            KGEN::CompilationOptions &compilationOptions,
-                            TargetArgs &targetArgs, MarshallingErrors &errors)>;
+using ExpandMarshalledOptionsFn = llvm::function_ref<void(
+    const llvm::opt::InputArgList &args, State &state,
+    DriverOptions &driverOptions, KGEN::FrontendOptions &frontendOptions,
+    KGEN::CompilationOptions &compilationOptions, TargetArgs &targetArgs,
+    MarshallingErrors &errors)>;
 
 /// Configuration flags for common argument parsing behavior.
 struct CommonParseConfig {
@@ -101,6 +85,9 @@ struct CommonParseResult {
   /// The parsed argument list. For `mojo run`, this includes only arguments
   /// up to and including the input file.
   llvm::opt::InputArgList args;
+
+  /// The parsed options that the driver acts on itself.
+  DriverOptions driverOptions;
 
   /// The parsed compilation options.
   KGEN::CompilationOptions compilationOptions;
@@ -138,11 +125,10 @@ ErrorOr<CommonParseResult> parseCommonMojoArguments(
     const llvm::opt::OptTable &optTable, const CommonOptionIDs &optionIDs,
     const CommonParseConfig &config, ExpandMarshalledOptionsFn expandOptions);
 
-/// Set the include directories from `args` on `sourceMgr`, and register the
-/// dialects compilation needs on `ctx`.
-void initializeCompilation(const llvm::opt::InputArgList &args,
-                           llvm::SourceMgr &sourceMgr, MLIRContext &ctx,
-                           llvm::opt::OptSpecifier includeDirsId);
+/// Set `includePaths` as the include directories of `sourceMgr`, and register
+/// the dialects compilation needs on `ctx`.
+void initializeCompilation(llvm::ArrayRef<std::string> includePaths,
+                           llvm::SourceMgr &sourceMgr, MLIRContext &ctx);
 
 /// Set the warning policy that `state` parsed with the diagnostic format on
 /// `options`.
@@ -173,11 +159,9 @@ public:
   TimingReportSink(TimingReportSink &&) = delete;
   TimingReportSink &operator=(TimingReportSink &&) = delete;
 
-  /// Reads `--timing-json` and opens the file named by `--timing-file`, if the
+  /// Takes `--timing-json` and opens the file named by `--timing-file`, if the
   /// command gave one.
-  ErrorOrSuccess configure(const llvm::opt::InputArgList &args,
-                           llvm::opt::OptSpecifier jsonId,
-                           llvm::opt::OptSpecifier fileId);
+  ErrorOrSuccess configure(const DriverOptions &driverOptions);
 
   bool isJSON() const { return json; }
 
@@ -222,9 +206,7 @@ public:
   /// the display mode from the `--mlir-timing-display` option. Gives an error
   /// if the display mode is not correct.
   /// `sink` takes the report and must outlive this object.
-  ErrorOrSuccess configure(const llvm::opt::InputArgList &args,
-                           llvm::opt::OptSpecifier timingId,
-                           llvm::opt::OptSpecifier displayModeId,
+  ErrorOrSuccess configure(const DriverOptions &driverOptions,
                            TimingReportSink &sink);
 
   /// The root scope for the steps of the compilation. The scope is empty if
@@ -274,8 +256,7 @@ public:
   /// global to the process and are not safe for more than one thread. Call
   /// this before the program makes the CPU device from `options`.
   /// `sink` takes the report and must outlive this object.
-  void configure(const llvm::opt::InputArgList &args,
-                 llvm::opt::OptSpecifier timingId,
+  void configure(const DriverOptions &driverOptions,
                  KGEN::CompilationOptions &options, TimingReportSink &sink);
 
   /// Prints the report to stderr and clears the timers. Does nothing if the
@@ -292,16 +273,15 @@ private:
 
 /// Wrap a parser invocation to Mojo, populating the necessary parsing context,
 /// and attaching post parse metadata. On success, returns the parsed module
-/// operation. If the `autoFixIt` flag is set and the parser collects any
-/// fix-its, they will be applied, and the returned module will be null.
-/// If `exportFixit` is set, fix-its will be exported to a YAML file instead.
+/// operation. If `driverOptions` asks to apply fix-its and the parser collects
+/// any, they will be applied, and the returned module will be null. If it asks
+/// to export them, they will be exported to a YAML file instead. A command that
+/// takes `-D` sets `tagEnvironment`, which tags the module with the defines.
 ErrorOr<OwningOpRef<ModuleOp>> invokeMojoParser(
-    const State &state, const llvm::opt::InputArgList &args,
+    const State &state, const DriverOptions &driverOptions, bool tagEnvironment,
     KGEN::CompilationOptions &compilationOptions,
     KGEN::FrontendOptions frontendOptions, MLIRContext *ctx,
-    AsyncRT::CPUDevice &cpuDevice, llvm::opt::OptSpecifier definesId,
-    llvm::opt::OptSpecifier autoFixIt, llvm::opt::OptSpecifier exportFixit,
-    mlir::TimingScope *timingScope,
+    AsyncRT::CPUDevice &cpuDevice, mlir::TimingScope *timingScope,
     function_ref<OwningOpRef<ModuleOp>(const KGEN::FrontendOptions &,
                                        mlir::TimingScope &)>
         parseFn);

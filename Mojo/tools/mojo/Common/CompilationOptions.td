@@ -60,7 +60,8 @@ def D : JoinedOrSeparate<["-"], "D">, Group<CompilationOptionGroup>, Index<4>,
   HelpText<"Defines a named value that can be used from within the Mojo source "
            "file being executed. For example, `-Dfoo=42` defines a name `foo` "
            "that, when queried with the `std.defines` module from within the "
-           "Mojo program, would yield the compile-time value `42`.">;
+           "Mojo program, would yield the compile-time value `42`.">,
+  MarshallingInfoStringVector<DriverOpts<"defines">>;
 
 defm debug_level : CommandOption<["--", "-"], "debug-level",
   CompilationOptionGroup, Index<5>, MetaVarName<"LEVEL">,

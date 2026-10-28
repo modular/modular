@@ -36,6 +36,10 @@ class CompilationOpts<string member>
 class TargetArg<string member>
     : KeyPathAndMacro<"targetArgs.", member, "MOJO_">;
 
+// A field of the `DriverOptions driverOptions` being built.
+class DriverOpts<string member>
+    : KeyPathAndMacro<"driverOptions.", member, "MOJO_">;
+
 // A field of the driver's `State state`, which reports the driver's own
 // errors and warnings.
 class DriverState<string member>

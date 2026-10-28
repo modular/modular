@@ -69,6 +69,7 @@ static int doc(const State &subcommandState) {
     );
   }
 
+  DriverOptions driverOptions;
   KGEN::FrontendOptions frontendOptions;
   MarshallingErrors errors;
 #define MOJO_OPTION_WITH_MARSHALLING(...)                                      \
@@ -131,8 +132,8 @@ static int doc(const State &subcommandState) {
   // Note: timing scope removed during DocGen extraction — it was never
   // surfaced to users.
   if (!generateMojoDocJSON(*pathOrErr, context, frontendOptions,
-                           args.getAllArgValues(options::OPT_I),
-                           state.diagnosticFormat, out->os()))
+                           driverOptions.includePaths, state.diagnosticFormat,
+                           out->os()))
     return state.reportError("could not generate documentation");
 
   out->keep();

@@ -51,13 +51,6 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
   // Parse arguments based on the configuration.
   unsigned unused = 0;
 
-  auto countTargetQueries = [&](const llvm::opt::InputArgList &args) {
-    return args.hasArg(optionIDs.printEffectiveTarget) +
-           args.hasArg(optionIDs.printSupportedTargets) +
-           args.hasArg(optionIDs.printSupportedCpus) +
-           args.hasArg(optionIDs.printSupportedAccelerators);
-  };
-
   // Handle the special case for `mojo run` where we need to find the input
   // argument and only parse up to that point.
   llvm::opt::InputArgList args(nullptr, nullptr);
@@ -71,8 +64,6 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
     // passed to the Mojo executable produced from that source file.
     auto inputArgs = allArgs.filtered(optionIDs.input);
     if (inputArgs.empty()) {
-      if (!countTargetQueries(allArgs))
-        return Error("no input file provided");
       args = std::move(allArgs);
     } else {
       // We now have the index of the Mojo source file argument, so we can
@@ -91,21 +82,25 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
   // values are reported after the queries that exit early.
   TargetArgs targetArgs;
   MarshallingErrors errors;
-  expandOptions(args, state, result.frontendOptions, result.compilationOptions,
-                targetArgs, errors);
+  DriverOptions &driverOptions = result.driverOptions;
+  expandOptions(args, state, driverOptions, result.frontendOptions,
+                result.compilationOptions, targetArgs, errors);
 
-  int targetQueryCount = countTargetQueries(args);
+  int targetQueryCount = driverOptions.printEffectiveTarget +
+                         driverOptions.printSupportedTargets +
+                         driverOptions.printSupportedCpus +
+                         driverOptions.printSupportedAccelerators;
   if (targetQueryCount > 1)
     return Error("only one --print-* option can be specified at a time");
-  if (args.hasArg(optionIDs.printSupportedTargets)) {
+  if (driverOptions.printSupportedTargets) {
     result.exitCode = printSupportedTargets();
     return result;
   }
-  if (args.hasArg(optionIDs.printSupportedAccelerators)) {
+  if (driverOptions.printSupportedAccelerators) {
     result.exitCode = printSupportedAccelerators();
     return result;
   }
-  if (args.hasArg(optionIDs.printSupportedCpus)) {
+  if (driverOptions.printSupportedCpus) {
     result.exitCode = printSupportedCpus(targetArgs.triple);
     return result;
   }
@@ -145,7 +140,7 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
     sourceManager.AddNewSourceBuffer(std::move(*bufferOrErr), llvm::SMLoc());
   }
 
-  initializeCompilation(args, sourceManager, ctx, optionIDs.includeDirs);
+  initializeCompilation(driverOptions.includePaths, sourceManager, ctx);
 
   setWarningPolicy(state, result.frontendOptions);
   if (ErrorOrSuccess err =
@@ -157,7 +152,7 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
           targetArgs, result.compilationOptions, ctx, result.target))
     return err.takeError();
 
-  if (args.hasArg(optionIDs.printEffectiveTarget)) {
+  if (driverOptions.printEffectiveTarget) {
     result.exitCode = printEffectiveTarget(result.target);
     return result;
   }
@@ -165,11 +160,8 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
   // Apply the lld path override (equivalent to MODULAR_MOJO_MAX_LLD_PATH). This
   // installs a process-wide override so every later `MojoConfig::open()` (for
   // example, in the object compiler) observes it.
-  if (optionIDs.lldPath.isValid()) {
-    StringRef lldPath = args.getLastArgValue(optionIDs.lldPath);
-    if (!lldPath.empty())
-      KGEN::MojoConfig::setLLDPathOverride(lldPath);
-  }
+  if (!driverOptions.lldPath.empty())
+    KGEN::MojoConfig::setLLDPathOverride(driverOptions.lldPath);
 
   // Store the parsed args for the caller.
   result.args = std::move(args);
@@ -178,10 +170,9 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
   return result;
 }
 
-void M::initializeCompilation(const llvm::opt::InputArgList &args,
-                              llvm::SourceMgr &sourceMgr, MLIRContext &ctx,
-                              llvm::opt::OptSpecifier includeDirsId) {
-  sourceMgr.setIncludeDirs(args.getAllArgValues(includeDirsId));
+void M::initializeCompilation(ArrayRef<std::string> includePaths,
+                              llvm::SourceMgr &sourceMgr, MLIRContext &ctx) {
+  sourceMgr.setIncludeDirs(includePaths);
 
   // Initialize the MLIR context.
   DialectRegistry registry;
@@ -213,12 +204,10 @@ void M::warnBuildingForDebugWithDebugBuiltCompiler(
 }
 
 ErrorOrSuccess
-M::TimingReportSink::configure(const llvm::opt::InputArgList &args,
-                               llvm::opt::OptSpecifier jsonId,
-                               llvm::opt::OptSpecifier fileId) {
-  json = args.hasArg(jsonId);
+M::TimingReportSink::configure(const DriverOptions &driverOptions) {
+  json = driverOptions.timingJSON;
 
-  StringRef path = args.getLastArgValue(fileId);
+  StringRef path = driverOptions.timingFile;
   if (path.empty())
     return success();
 
@@ -258,15 +247,15 @@ void M::TimingReportSink::finish() {
   file.reset();
 }
 
-ErrorOrSuccess M::MLIRPassTiming::configure(
-    const llvm::opt::InputArgList &args, llvm::opt::OptSpecifier timingId,
-    llvm::opt::OptSpecifier displayModeId, TimingReportSink &reportSink) {
+ErrorOrSuccess M::MLIRPassTiming::configure(const DriverOptions &driverOptions,
+                                            TimingReportSink &reportSink) {
   StringLiteral kTree = "tree";
   StringLiteral kList = "list";
-  // The code reads the display mode also when the timing is off. An argument
-  // that stays unclaimed makes `State::assertNoUnusedArguments` fail. An
-  // incorrect mode is also an error when the compiler does not use the mode.
-  StringRef displayMode = args.getLastArgValue(displayModeId, kTree);
+  // An incorrect mode is also an error when the compiler does not use the
+  // mode.
+  StringRef displayMode = driverOptions.mlirTimingDisplay.empty()
+                              ? StringRef(kTree)
+                              : StringRef(driverOptions.mlirTimingDisplay);
   if (!llvm::is_contained({kTree, kList}, displayMode)) {
     return Error(llvm::formatv(
         "invalid mlir-timing-display '{0}', expected one of: `{1}` (the "
@@ -274,7 +263,7 @@ ErrorOrSuccess M::MLIRPassTiming::configure(
         displayMode, kTree, kList));
   }
 
-  if (!args.hasArg(timingId))
+  if (!driverOptions.mlirTiming)
     return success();
 
   sink = &reportSink;
@@ -340,11 +329,10 @@ void M::MLIRPassTiming::finish() {
   manager.setEnabled(false);
 }
 
-void M::LLVMPassTiming::configure(const llvm::opt::InputArgList &args,
-                                  llvm::opt::OptSpecifier timingId,
+void M::LLVMPassTiming::configure(const DriverOptions &driverOptions,
                                   KGEN::CompilationOptions &options,
                                   TimingReportSink &reportSink) {
-  if (!args.hasArg(timingId))
+  if (!driverOptions.llvmTiming)
     return;
 
   enabled = true;
@@ -403,17 +391,16 @@ void M::LLVMPassTiming::finish() {
 }
 
 ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
-    const State &state, const llvm::opt::InputArgList &args,
+    const State &state, const DriverOptions &driverOptions, bool tagEnvironment,
     KGEN::CompilationOptions &compilationOptions,
     KGEN::FrontendOptions frontendOptions, MLIRContext *ctx,
-    AsyncRT::CPUDevice &cpuDevice, llvm::opt::OptSpecifier definesId,
-    llvm::opt::OptSpecifier autoFixIt, llvm::opt::OptSpecifier exportFixit,
-    mlir::TimingScope *timingScope,
+    AsyncRT::CPUDevice &cpuDevice, mlir::TimingScope *timingScope,
     function_ref<OwningOpRef<ModuleOp>(const FrontendOptions &,
                                        mlir::TimingScope &)>
         parseFn) {
+  StringRef exportPath = driverOptions.exportFixItsPath;
   // Mutual exclusion check for fixit flags.
-  if (args.hasArg(autoFixIt) && args.hasArg(exportFixit)) {
+  if (driverOptions.applyFixIts && !exportPath.empty()) {
     return Error("cannot use both --experimental-fixit and "
                  "--experimental-export-fixit simultaneously");
   }
@@ -430,11 +417,10 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
 
   // Parse the input Mojo file into an MLIR module.
   std::unique_ptr<AutoFixItHandler> fixItHandler;
-  if (args.hasArg(autoFixIt)) {
+  if (driverOptions.applyFixIts) {
     fixItHandler = std::make_unique<AutoFixItHandler>();
     frontendOptions.autoFixItHandler = fixItHandler.get();
-  } else if (args.hasArg(exportFixit)) {
-    StringRef exportPath = args.getLastArgValue(exportFixit);
+  } else if (!exportPath.empty()) {
     fixItHandler = std::make_unique<AutoFixItHandler>(exportPath);
     frontendOptions.autoFixItHandler = fixItHandler.get();
   }
@@ -460,10 +446,9 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
     // Unliek clang-tidy, we create the file even if there are no fix-its.
     if (auto err = fixItHandler->exportFixIts())
       return err.takeError();
-    StringRef yamlPath = args.getLastArgValue(exportFixit);
-    llvm::outs() << "Fix-its exported to: " << yamlPath << "\n";
+    llvm::outs() << "Fix-its exported to: " << exportPath << "\n";
     llvm::outs() << "Apply with: 'clang-apply-replacements "
-                 << llvm::sys::path::parent_path(yamlPath) << "'\n";
+                 << llvm::sys::path::parent_path(exportPath) << "'\n";
   }
 
   if (!module)
@@ -504,9 +489,9 @@ ErrorOr<OwningOpRef<ModuleOp>> M::invokeMojoParser(
   // Tag the module with the environment, which includes any definitions the
   // user may have specified on the command line.
   ctx->loadDialect<KGENDialect>();
-  if (definesId.isValid()) {
-    ErrorOr<EnvAttr> envOrErr = compilationOptions.parseDefinesWithDefaults(
-        ctx, args.getAllArgValues(definesId));
+  if (tagEnvironment) {
+    ErrorOr<EnvAttr> envOrErr =
+        compilationOptions.parseDefinesWithDefaults(ctx, driverOptions.defines);
     if (failed(envOrErr)) {
       return Error(
           llvm::formatv("an internal error occurred when initializing the Mojo "
