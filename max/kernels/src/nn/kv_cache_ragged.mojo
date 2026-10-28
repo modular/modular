@@ -4652,7 +4652,7 @@ def generic_flare_mla_prefill_kv_cache_ragged[
     buffer_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
-    cache_offsets: TileTensor[mut=True, .uint32, address_space=.GENERIC, ...],
+    cache_offsets: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
@@ -4683,7 +4683,7 @@ def generic_flare_mla_prefill_kv_cache_ragged[
         v: Value tile tensor with shape (total_seq_len, num_heads, kv_head_size).
         buffer_row_offsets: Tile tensor denoting the start and end position of
             each K entry in the ragged K/V tensor.
-        cache_offsets: Mutable tile tensor denoting the start position of each
+        cache_offsets: Tile tensor denoting the start position of each
             K entry in the PagedKVCacheCollection.
         input_row_offsets: Tile tensor denoting the start and end position of
             each Q entry in the batch.
@@ -4786,7 +4786,7 @@ def _flare_mla_prefill_kv_cache_ragged[
     buffer_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
-    cache_offsets: TileTensor[mut=True, .uint32, address_space=.GENERIC, ...],
+    cache_offsets: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
