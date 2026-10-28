@@ -32,6 +32,10 @@ class FrontendOpts<string member>
 class CompilationOpts<string member>
     : KeyPathAndMacro<"compilationOptions.", member, "MOJO_">;
 
+// A field of the `TargetArgs targetArgs` being built.
+class TargetArg<string member>
+    : KeyPathAndMacro<"targetArgs.", member, "MOJO_">;
+
 // An option that a Mojo-specific normalizer parses, for values that need
 // validation or conversion to a C++ type.
 class MarshallingInfoCustom<KeyPathAndMacro kpm, code normalizer>

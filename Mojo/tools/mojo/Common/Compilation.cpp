@@ -45,7 +45,7 @@ using namespace LIT;
 ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
     State &state, llvm::SourceMgr &sourceManager, MLIRContext &ctx,
     const llvm::opt::OptTable &optTable, const CommonOptionIDs &optionIDs,
-    const CommonParseConfig &config) {
+    const CommonParseConfig &config, ExpandMarshalledOptionsFn expandOptions) {
   CommonParseResult result;
 
   // Parse arguments based on the configuration.
@@ -86,6 +86,14 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
     args = optTable.ParseArgs(state.arguments, unused, unused);
   }
 
+  // Read every marshalled option now, since the target queries below need the
+  // target triple. Invalid values are reported after the queries that exit
+  // early.
+  TargetArgs targetArgs;
+  MarshallingErrors errors;
+  expandOptions(args, result.frontendOptions, result.compilationOptions,
+                targetArgs, errors);
+
   int targetQueryCount = countTargetQueries(args);
   if (targetQueryCount > 1)
     return Error("only one --print-* option can be specified at a time");
@@ -98,8 +106,7 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
     return result;
   }
   if (args.hasArg(optionIDs.printSupportedCpus)) {
-    result.exitCode =
-        printSupportedCpus(args.getLastArgValue(optionIDs.targetTriple, ""));
+    result.exitCode = printSupportedCpus(targetArgs.triple);
     return result;
   }
 
@@ -145,14 +152,16 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
 
   initializeCompilation(args, sourceManager, ctx, optionIDs.includeDirs);
 
-  // Parse target options.
+  if (!errors.empty())
+    return Error(errors.front());
+  setWarningPolicy(state, result.frontendOptions);
+  if (ErrorOrSuccess err =
+          validateCompilationOptions(result.compilationOptions))
+    return err.takeError();
+
+  // Resolve the target from the target options.
   if (ErrorOrSuccess err = parseTargetOptions(
-          state, args, result.compilationOptions, sourceManager, ctx,
-          result.target, optionIDs.targetTriple, optionIDs.targetCpu,
-          optionIDs.targetFeatures, optionIDs.march, optionIDs.mcpu,
-          optionIDs.mtune, optionIDs.targetAccelerator, optionIDs.mcmodel,
-          optionIDs.largeDataThreshold, optionIDs.relocationModel,
-          optionIDs.targetAbi))
+          targetArgs, result.compilationOptions, ctx, result.target))
     return err.takeError();
 
   if (args.hasArg(optionIDs.printEffectiveTarget)) {
@@ -189,16 +198,13 @@ void M::initializeCompilation(const llvm::opt::InputArgList &args,
   ctx.loadDialect<MDialect>();
 }
 
-FrontendOptions M::makeFrontendOptions(const State &state) {
-  FrontendOptions options;
-
+void M::setWarningPolicy(const State &state, FrontendOptions &options) {
   // Unlike other command line options, disableWarnings is parsed
   // in State::parseDiagnosticFormatArguments(), because there is another
   // warning emission mechanism in State::reportWarning(), and the option
   // is single-sourced to affect both places.
   options.disableWarnings = state.areWarningsDisabled();
   options.warningsAsErrors = state.areWarningsAsErrors();
-  return options;
 }
 
 void M::warnBuildingForDebugWithDebugBuiltCompiler(
@@ -213,204 +219,6 @@ void M::warnBuildingForDebugWithDebugBuiltCompiler(
         "You can safely use a release build of the compiler for this, which "
         "will result in faster build times.\n");
 #endif
-}
-
-ErrorOrSuccess M::parseTargetOptions(
-    const State &state, const llvm::opt::InputArgList &args,
-    CompilationOptions &compilationOptions, llvm::SourceMgr &sourceMgr,
-    MLIRContext &ctx, TargetInfoAttr &target, llvm::opt::OptSpecifier tripleId,
-    llvm::opt::OptSpecifier cpuId, llvm::opt::OptSpecifier featuresId,
-    llvm::opt::OptSpecifier marchId, llvm::opt::OptSpecifier mcpuId,
-    llvm::opt::OptSpecifier mtuneId,
-    llvm::opt::OptSpecifier targetAcceleratorId,
-    llvm::opt::OptSpecifier mcmodelId,
-    llvm::opt::OptSpecifier largeDataThresholdId,
-    llvm::opt::OptSpecifier relocationModelId, llvm::opt::OptSpecifier abiId) {
-  StringRef targetTriple = args.getLastArgValue(tripleId);
-  if (args.hasMultipleArgs(tripleId))
-    return Error("too many specified target triples, expected exactly one");
-
-  StringRef targetCpu = args.getLastArgValue(cpuId);
-  if (args.hasMultipleArgs(cpuId))
-    return Error("too many specified target CPUs, expected exactly one");
-
-  StringRef targetFeatures = args.getLastArgValue(featuresId);
-  if (args.hasMultipleArgs(featuresId))
-    return Error("too many specified target features, expected exactly one");
-
-  StringRef targetAbi = args.getLastArgValue(abiId);
-  if (args.hasMultipleArgs(abiId))
-    return Error("too many specified target ABIs, expected exactly one");
-
-  StringRef mArch = args.getLastArgValue(marchId);
-  if (args.hasMultipleArgs(marchId))
-    return Error(
-        "too many specified target architectures, expected exactly one");
-
-  StringRef mCpu = args.getLastArgValue(mcpuId);
-  if (args.hasMultipleArgs(mcpuId))
-    return Error("too many specified target cpus, expected exactly one");
-
-  StringRef mTune = args.getLastArgValue(mtuneId);
-  if (args.hasMultipleArgs(mtuneId))
-    return Error("too many specified tune cpus, expected exactly one");
-
-  // Validate that LLVM-style options (--target-cpu, --target-features) are not
-  // mixed with GCC/Clang-style options (--march, --mcpu, --mtune).
-  // These are two separate option families that should not be mixed.
-  bool hasGccStyleOptions = !mArch.empty() || !mCpu.empty();
-  if (hasGccStyleOptions) {
-    if (!targetCpu.empty()) {
-      return Error("--target-cpu cannot be used with --march or --mcpu; "
-                   "use either --target-cpu/--target-features or "
-                   "--march/--mcpu/--mtune");
-    }
-    if (!targetFeatures.empty()) {
-      return Error(
-          "--target-features cannot be used with --march or --mcpu; "
-          "use --target-cpu with --target-features, or use --march/--mcpu with "
-          "extension syntax (e.g., --march=skylake-avx512)");
-    }
-  }
-
-  StringRef targetAccelerator = args.getLastArgValue(targetAcceleratorId);
-  if (args.hasMultipleArgs(targetAcceleratorId))
-    return Error(
-        "too many specified target accelerators, expected exactly one");
-
-  StringRef mcmodel = args.getLastArgValue(mcmodelId);
-  if (args.hasMultipleArgs(mcmodelId))
-    return Error("too many specified CodeModel, expected exactly one");
-
-  StringRef largeDataThreshold = args.getLastArgValue(largeDataThresholdId);
-  if (args.hasMultipleArgs(largeDataThresholdId))
-    return Error(
-        "too many specified large data threshold, expected exactly one");
-
-  // If the user specified the triple, the target CPU, or the target feature
-  // set, use those to override the defaults.
-  if (!targetTriple.empty())
-    compilationOptions.targetTriple = targetTriple.str();
-  if (!targetCpu.empty())
-    compilationOptions.targetCpu = targetCpu.str();
-  else if (!mCpu.empty()) {
-    // Use -mcpu to set targetCpu when --target-cpu is not specified.
-    // Strip any extensions (e.g., "haswell+avx512f" -> "haswell").
-    compilationOptions.targetCpu = mCpu.split('+').first.str();
-  } else
-    compilationOptions.setDefaultCPU();
-
-  if (!targetAbi.empty())
-    compilationOptions.targetAbi = targetAbi.str();
-
-  if (!targetFeatures.empty())
-    compilationOptions.targetFeatures = targetFeatures.str();
-  else if (mArch.empty() && mCpu.empty()) {
-    // Only compute features here if not using -march/-mcpu, since those will
-    // be handled later by getMArchFeatures() which computes the correct
-    // features for the specified architecture/CPU.
-    //
-    // TODO: Reconsider whether `mojo build` with no target CPU/arch should
-    // default to the host CPU at all. Clang defaults to the architecture
-    // baseline (e.g. x86-64 with SSE2 only), which is conservative and
-    // portable, and relies on -march=native to opt into host-specific
-    // features. Mojo currently defaults to the host CPU, which is aggressive
-    // and matches the common case of compiling and running on the same machine,
-    // but diverges from Clang's convention.
-    //
-    // Short-term fix: when the default CPU is the host CPU, route through
-    // getHostTargetInfo() so the runtime CPUID cross-check is applied. Without
-    // this, Clang's CPU model database would enable features (e.g. AVX-512 on
-    // znver4) that the OS may not have made available.
-    if (compilationOptions.targetCpu == llvm::sys::getHostCPUName()) {
-      ErrorOr<TargetInfo> hostInfoOr = M::getHostTargetInfo();
-      if (hostInfoOr)
-        return hostInfoOr.takeError();
-      compilationOptions.targetFeatures = encodeFeatures(*hostInfoOr);
-    } else {
-      ErrorOr<std::vector<std::string>> featuresOr = M::getFeatures(
-          compilationOptions.targetTriple, compilationOptions.targetCpu);
-      if (featuresOr)
-        return featuresOr.takeError();
-      compilationOptions.targetFeatures =
-          encodeFeatures(TargetInfo({}, {}, std::move(*featuresOr)));
-    }
-  }
-  if (!targetAccelerator.empty()) {
-    compilationOptions.targetAccelerator = targetAccelerator.str();
-    compilationOptions.isCrossCompilation = true;
-  }
-#if MLRT_ACCELERATOR_SUPPORT
-  else {
-    compilationOptions.targetAccelerator =
-        M::Driver::Device::getAcceleratorArchOrEmpty();
-  }
-#endif
-
-  if (!mcmodel.empty()) {
-    if (!llvm::is_contained({"small", "medium", "large"}, mcmodel)) {
-      return Error("invalid mcmodel'" + mcmodel +
-                   "', expected one of: `small`, `medium` or `large`");
-    }
-    if (mcmodel == "small")
-      compilationOptions.mcmodel = llvm::CodeModel::Small;
-    else if (mcmodel == "medium")
-      compilationOptions.mcmodel = llvm::CodeModel::Medium;
-    else if (mcmodel == "large")
-      compilationOptions.mcmodel = llvm::CodeModel::Large;
-  }
-
-  if (!largeDataThreshold.empty()) {
-    uint64_t value;
-    if (!llvm::to_integer(largeDataThreshold, value)) {
-      return Error("invalid large-data-threshold'" + largeDataThreshold +
-                   "', expected a positive integer number");
-    }
-    compilationOptions.largeDataThreshold = value;
-  }
-
-  StringRef relocationModel = args.getLastArgValue(relocationModelId);
-  if (args.hasMultipleArgs(relocationModelId))
-    return Error("too many specified relocation models, expected exactly one");
-
-  if (!relocationModel.empty()) {
-    ErrorOr<llvm::Reloc::Model> model =
-        M::symbolizeRelocationModel(relocationModel);
-    if (model.isError())
-      return model.takeError();
-
-    compilationOptions.relocModel = *model;
-  }
-
-  // Initialize targets first - we rely on this for getTargetInfo as well as for
-  // the ExecutionEngine.
-  llvm::InitializeAllTargets();
-  llvm::InitializeAllTargetMCs();
-  llvm::InitializeAllAsmParsers();
-  llvm::InitializeAllAsmPrinters();
-
-  // Construct a target specification using the command line options.
-  ErrorOr<TargetInfoAttr> targetOr = nullptr;
-  if (!mArch.empty() || !mCpu.empty()) {
-    // Use `-march` to determine the feature set.
-    targetOr = getMArchFeatures(
-        &ctx, compilationOptions.targetTriple, mArch, mCpu, mTune,
-        compilationOptions.targetAccelerator, compilationOptions.relocModel,
-        compilationOptions.targetAbi);
-  } else {
-    // Use the full triple, specific CPU, and manually specified features to
-    // get the target info.
-    targetOr = getTargetInfoFor(
-        &ctx, compilationOptions.targetTriple, compilationOptions.targetCpu,
-        compilationOptions.targetFeatures, /*tuneCpu=*/"",
-        /*acceleratorArch=*/compilationOptions.targetAccelerator,
-        compilationOptions.relocModel, compilationOptions.targetAbi);
-  }
-  if (targetOr.isError())
-    return targetOr.takeError();
-  target = targetOr.takeValue();
-
-  return success();
 }
 
 ErrorOrSuccess

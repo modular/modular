@@ -181,7 +181,7 @@ static ErrorOrSuccess parsePrecompileArgs(const State &state,
   // of truth.
   initializeCompilation(args, sourceMgr, pkgArgs.ctx, options::OPT_I);
   KGEN::FrontendOptions &frontendOptions = pkgArgs.frontendOptions;
-  frontendOptions = makeFrontendOptions(state);
+  setWarningPolicy(state, frontendOptions);
   MarshallingErrors errors;
 #define MOJO_OPTION_WITH_MARSHALLING(...)                                      \
   PARSE_OPTION_WITH_MARSHALLING(args, errors, __VA_ARGS__)

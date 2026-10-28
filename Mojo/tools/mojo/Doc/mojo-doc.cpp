@@ -122,7 +122,8 @@ static int doc(const State &subcommandState) {
   if (!out)
     return state.reportError(outputError);
 
-  KGEN::FrontendOptions frontendOptions = makeFrontendOptions(state);
+  KGEN::FrontendOptions frontendOptions;
+  setWarningPolicy(state, frontendOptions);
   MarshallingErrors errors;
 #define MOJO_OPTION_WITH_MARSHALLING(...)                                      \
   PARSE_OPTION_WITH_MARSHALLING(args, errors, __VA_ARGS__)

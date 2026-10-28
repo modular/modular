@@ -23,6 +23,7 @@
 #include "Mojo/ToolCommon/FrontendOptions.h"
 #include "Mojo/ToolCommon/OptionNormalizers.h"
 #include "Mojo/ToolCommon/PassManagerConfigOptions.h"
+#include "Mojo/ToolCommon/TargetOptions.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/Driver/OptionMarshalling.h"
 #include "Support/ErrorOr.h"
@@ -64,19 +65,6 @@ struct CommonOptionIDs {
   // Compilation options
   llvm::opt::OptSpecifier includeDirs;
 
-  // Target options
-  llvm::opt::OptSpecifier targetTriple;
-  llvm::opt::OptSpecifier targetCpu;
-  llvm::opt::OptSpecifier targetFeatures;
-  llvm::opt::OptSpecifier targetAbi;
-  llvm::opt::OptSpecifier march;
-  llvm::opt::OptSpecifier mcpu;
-  llvm::opt::OptSpecifier mtune;
-  llvm::opt::OptSpecifier targetAccelerator;
-  llvm::opt::OptSpecifier mcmodel;
-  llvm::opt::OptSpecifier largeDataThreshold;
-  llvm::opt::OptSpecifier relocationModel;
-
   // Target queries
   llvm::opt::OptSpecifier printEffectiveTarget;
   llvm::opt::OptSpecifier printSupportedTargets;
@@ -91,6 +79,13 @@ struct CommonOptionIDs {
   // Linker options
   llvm::opt::OptSpecifier lldPath;
 };
+
+/// Expands a subcommand's `MOJO_OPTION_WITH_MARSHALLING` rows from `args`
+/// into the structs their key paths name, adding invalid values to the errors.
+using ExpandMarshalledOptionsFn = llvm::function_ref<void(
+    const llvm::opt::InputArgList &args, KGEN::FrontendOptions &frontendOptions,
+    KGEN::CompilationOptions &compilationOptions, TargetArgs &targetArgs,
+    MarshallingErrors &errors)>;
 
 /// Configuration flags for common argument parsing behavior.
 struct CommonParseConfig {
@@ -115,6 +110,9 @@ struct CommonParseResult {
   /// The parsed compilation options.
   KGEN::CompilationOptions compilationOptions;
 
+  /// The parsed frontend options.
+  KGEN::FrontendOptions frontendOptions;
+
   /// The parsed target information.
   TargetInfoAttr target;
 };
@@ -135,13 +133,15 @@ struct CommonParseResult {
 /// command has different help text files that cannot be easily parameterized.
 /// Callers should check for help flags before calling this function.
 ///
+/// `expandOptions` reads the subcommand's marshalled options, since only the
+/// subcommand sees its option enum.
+///
 /// Returns a CommonParseResult containing either an exit code (if parsing
 /// failed) or the parsed arguments and options.
-ErrorOr<CommonParseResult>
-parseCommonMojoArguments(State &state, llvm::SourceMgr &sourceManager,
-                         MLIRContext &ctx, const llvm::opt::OptTable &optTable,
-                         const CommonOptionIDs &optionIDs,
-                         const CommonParseConfig &config);
+ErrorOr<CommonParseResult> parseCommonMojoArguments(
+    State &state, llvm::SourceMgr &sourceManager, MLIRContext &ctx,
+    const llvm::opt::OptTable &optTable, const CommonOptionIDs &optionIDs,
+    const CommonParseConfig &config, ExpandMarshalledOptionsFn expandOptions);
 
 /// Set the include directories from `args` on `sourceMgr`, and register the
 /// dialects compilation needs on `ctx`.
@@ -149,31 +149,14 @@ void initializeCompilation(const llvm::opt::InputArgList &args,
                            llvm::SourceMgr &sourceMgr, MLIRContext &ctx,
                            llvm::opt::OptSpecifier includeDirsId);
 
-/// Return parser settings that hold the warning policy `state` parsed with the
-/// diagnostic format. The subcommand then expands its
-/// `MOJO_OPTION_WITH_MARSHALLING` rows into the result.
-KGEN::FrontendOptions makeFrontendOptions(const State &state);
+/// Set the warning policy that `state` parsed with the diagnostic format on
+/// `options`.
+void setWarningPolicy(const State &state, KGEN::FrontendOptions &options);
 
 /// Warn users when doing debug builds with a compiler in debug mode.
 void warnBuildingForDebugWithDebugBuiltCompiler(
     const State &state,
     KGEN::CompilationOptions::DebugInfoLevel debugInfoLevel);
-
-/// Parse the common configuration options for Mojo related to target info,
-/// populating the provided `compilationOptions` argument. On success, `target`
-/// is populated with the selected compilation target.
-ErrorOrSuccess parseTargetOptions(
-    const State &state, const llvm::opt::InputArgList &args,
-    KGEN::CompilationOptions &compilationOptions, llvm::SourceMgr &sourceMgr,
-    MLIRContext &ctx, TargetInfoAttr &target, llvm::opt::OptSpecifier tripleId,
-    llvm::opt::OptSpecifier cpuId, llvm::opt::OptSpecifier featuresId,
-    llvm::opt::OptSpecifier marchId, llvm::opt::OptSpecifier mcpuId,
-    llvm::opt::OptSpecifier mtuneId,
-    llvm::opt::OptSpecifier targetAcceleratorId,
-    llvm::opt::OptSpecifier mcmodelId,
-    llvm::opt::OptSpecifier largeDataThresholdId,
-    llvm::opt::OptSpecifier relocationModelId = {},
-    llvm::opt::OptSpecifier abiId = {});
 
 /// Where the timing reports of one compiler command go, and in which format.
 /// `--timing-json` asks for JSON rather than text, and `--timing-file` names a

@@ -94,6 +94,17 @@ struct BuildOptTable : public llvm::opt::OptTable {
 };
 } // namespace
 
+static void expandMarshalledOptions(const llvm::opt::InputArgList &args,
+                                    FrontendOptions &frontendOptions,
+                                    CompilationOptions &compilationOptions,
+                                    TargetArgs &targetArgs,
+                                    MarshallingErrors &errors) {
+#define MOJO_OPTION_WITH_MARSHALLING(...)                                      \
+  PARSE_OPTION_WITH_MARSHALLING(args, errors, __VA_ARGS__)
+#include "Build/BuildOptions.inc"
+#undef MOJO_OPTION_WITH_MARSHALLING
+}
+
 /// Parses the command line arguments from the given `state` object.
 static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
                                     llvm::SourceMgr &sourceManager,
@@ -149,17 +160,6 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
       .unknown = options::OPT_UNKNOWN,
       .input = options::OPT_INPUT,
       .includeDirs = options::OPT_I,
-      .targetTriple = options::OPT_target_triple,
-      .targetCpu = options::OPT_target_cpu,
-      .targetFeatures = options::OPT_target_features,
-      .targetAbi = options::OPT_target_abi,
-      .march = options::OPT_march,
-      .mcpu = options::OPT_mcpu,
-      .mtune = options::OPT_mtune,
-      .targetAccelerator = options::OPT_target_accelerator,
-      .mcmodel = options::OPT_mcmodel,
-      .largeDataThreshold = options::OPT_large_data_threshold,
-      .relocationModel = options::OPT_relocation_model,
       .printEffectiveTarget = options::OPT_print_effective_target,
       .printSupportedTargets = options::OPT_print_supported_targets,
       .printSupportedCpus = options::OPT_print_supported_cpus,
@@ -177,8 +177,9 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
   };
 
   // Parse common arguments.
-  ErrorOr<CommonParseResult> result = parseCommonMojoArguments(
-      state, sourceManager, ctx, options, optionIDs, config);
+  ErrorOr<CommonParseResult> result =
+      parseCommonMojoArguments(state, sourceManager, ctx, options, optionIDs,
+                               config, expandMarshalledOptions);
   if (failed(result))
     return state.reportError(result.getError());
 
@@ -188,18 +189,8 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
   // Extract results.
   args = std::move(result->args);
   compilationOptions = std::move(result->compilationOptions);
+  frontendOptions = std::move(result->frontendOptions);
   target = std::move(result->target);
-
-  frontendOptions = makeFrontendOptions(state);
-  MarshallingErrors errors;
-#define MOJO_OPTION_WITH_MARSHALLING(...)                                      \
-  PARSE_OPTION_WITH_MARSHALLING(args, errors, __VA_ARGS__)
-#include "Build/BuildOptions.inc"
-#undef MOJO_OPTION_WITH_MARSHALLING
-  if (!errors.empty())
-    return state.reportError(errors.front());
-  if (ErrorOrSuccess err = validateCompilationOptions(compilationOptions))
-    return state.reportError(err.getError());
   return {};
 }
 
