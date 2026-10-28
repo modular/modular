@@ -22,6 +22,7 @@ from .device import Device
 from .buffer import Buffer, BufferView
 from .context import Context, RuntimeBundle
 from .event import Event
+from .host import Host
 from .memory import copy, fill, set_memory
 from .queue import Queue
 from .stream import Stream

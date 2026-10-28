@@ -26,6 +26,7 @@ from .max_license.hal import (
     Event,
     FunctionHandle,
     HALError,
+    Host,
     Queue,
     RawDriver,
     RuntimeBundle,
