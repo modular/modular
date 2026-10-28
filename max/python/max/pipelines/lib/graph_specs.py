@@ -279,7 +279,7 @@ def compile_and_init_graphs(
                     staged, compiled, model, registry
                 )
             else:
-                callables[role] = _callable(
+                callables[role] = graph_callable(
                     compiled, model, spec.input_types, output_trees[role]
                 )
                 _check_inputs(role, callables[role].in_tree)
@@ -386,12 +386,29 @@ def _input_signature(
     return tree.flatten((tree.map(as_layout, args), {}), leaf=TensorLayout)
 
 
-def _callable(
+def graph_callable(
     compiled: CompiledModel,
     model: Model,
     input_types: Sequence[Type[Any]] | Mapping[str, object],
     output_types: tree.Tree[Type[Any]],
 ) -> CompiledCallable[..., Any]:
+    """Wraps a graph compiled and initialized elsewhere as a callable.
+
+    A sequence of input types is called positionally, and a named input tree
+    is the callable's one argument. The callable returns the outputs in the
+    tree ``output_types`` holds them in.
+
+    Args:
+        compiled: The compiled graph, which the callable exports.
+        model: The model initialized from ``compiled``.
+        input_types: The graph's input types, in order, or its named input
+            tree.
+        output_types: The graph's output types, as its
+            :attr:`~max.graph.Graph.output_tree` nests them.
+
+    Returns:
+        The callable that runs ``model``.
+    """
     in_layouts, in_tree = _input_signature(input_types)
     out_layouts, out_tree = tree.flatten(
         tree.map(as_layout, output_types), leaf=TensorLayout

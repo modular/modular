@@ -139,5 +139,7 @@ def test_a_speculative_pairing_overlaps_its_compile_with_the_pinning() -> None:
         return decoder
 
     session = Mock(compile=compile, init=init)
-    assert pipeline_model._compile_and_init(session, graph, {}) is decoder
+    model, compiled_graph = pipeline_model._compile_and_init(session, graph, {})
+    assert model is decoder
+    assert compiled_graph is compiled
     assert events == ["upload", "compiled", "pin", "init"]

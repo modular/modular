@@ -23,6 +23,8 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Module, TensorType
+from max.pipelines.lib import GraphRole
+from max.pipelines.lib.pipeline_variants import spec_decode_pipeline_model
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     SpecDecodePipelineModel,
     _BatchProcessor,
@@ -107,3 +109,53 @@ def test_replay_graph_compiles_with_the_full_graph_and_shares_weights() -> None:
     x = Buffer.from_numpy(np.array([10, 20], dtype=np.float32))
     np.testing.assert_array_equal(full.execute(x)[0].to_numpy(), [11, 21])
     np.testing.assert_array_equal(replay.execute(x)[0].to_numpy(), [12, 22])
+
+
+@pytest.mark.parametrize("replay", [False, True])
+def test_load_registers_the_fused_graph_unless_it_replays(
+    monkeypatch: pytest.MonkeyPatch, replay: bool
+) -> None:
+    model = object.__new__(SpecDecodePipelineModel)
+    pipeline_config = Mock()
+    pipeline_config.model.pipeline_stage = None
+    model.pipeline_config = pipeline_config
+    model.pairing = Mock()
+    model.device_refs = []
+    model.signal_buffers = []
+    model.replay_model = None
+    modules = Mock()
+    for module in (modules.target, modules.draft):
+        module.state_dict.return_value = {}
+        module.raw_state_dict.return_value = {}
+    spec, decoder, compiled, wrapped = Mock(), Mock(), Mock(), Mock()
+    graph_callable = Mock(return_value=wrapped)
+    monkeypatch.setattr(
+        "max.pipelines.speculative.spec_adapters.replay_enabled",
+        lambda *args: replay,
+    )
+    monkeypatch.setattr(
+        spec_decode_pipeline_model,
+        "build_spec_graph",
+        lambda *args, **kwargs: spec,
+    )
+    monkeypatch.setattr(
+        spec_decode_pipeline_model, "_graph_callable", graph_callable
+    )
+    monkeypatch.setattr(model, "arch_config_as", lambda cls: Mock())
+    monkeypatch.setattr(model, "_build_modules", lambda session: modules)
+    monkeypatch.setattr(
+        model, "_compile_and_init", lambda *args: (decoder, compiled)
+    )
+    monkeypatch.setattr(
+        model, "_compile_with_replay", lambda *args: (decoder, Mock())
+    )
+    monkeypatch.setattr(model, "_maybe_release_host_weights", lambda *m: None)
+    monkeypatch.setattr(model, "_wire_batch_processor", lambda *args: None)
+
+    assert model.load_model(Mock()) is decoder
+    if replay:
+        # Its MEF holds the full and the replay graph, which no role takes.
+        assert not model.compiled_modules
+    else:
+        assert model.compiled_modules == {GraphRole.SPEC_DECODER: wrapped}
+        graph_callable.assert_called_once_with(spec.graph, compiled, decoder)

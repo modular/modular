@@ -95,10 +95,12 @@ from max.pipelines.speculative.spec_adapters.target_adapter import (
 from max.pipelines.speculative.spec_input_types import SpecDecodeInputTypeSpec
 from max.profiler import traced
 from max.tensor import Tensor
+from max.tensor.compilation import CompiledCallable
 from max.tensor.realization_context import current_realization_context
 from transformers import AutoConfig
 
 from ..arch_lookup import ARCH_LOOKUP, SupportedArchitecture
+from ..graph_specs import GraphRole, graph_callable
 from ..interfaces.arch_config import ArchConfigWithVisionCache
 from ..interfaces.batch_processor import (
     BatchProcessorRuntime,
@@ -1504,8 +1506,9 @@ class SpecDecodePipelineModel(
                 _forget_traced_weights(target, draft)
                 replay_spec = build(replay=True)
             timer.mark_build_complete()
+            compiled = None
             if replay_spec is None:
-                model = self._compile_and_init(
+                model, compiled = self._compile_and_init(
                     session, spec.graph, spec.weights_registry
                 )
             else:
@@ -1515,6 +1518,13 @@ class SpecDecodePipelineModel(
                     replay_spec.graph,
                     spec.weights_registry,
                 )
+        # A replay pairing's MEF holds two graphs, which no artifact role takes.
+        if compiled is not None:
+            self.compiled_modules = {
+                GraphRole.SPEC_DECODER: _graph_callable(
+                    spec.graph, compiled, model
+                )
+            }
         config.input_spec = spec.input_spec
         self.export_input_types = spec.input_types
         self.export_contract = spec.export_contract
@@ -1530,27 +1540,21 @@ class SpecDecodePipelineModel(
         session: InferenceSession,
         graph: Graph,
         weights_registry: dict[str, Any],
-    ) -> Model:
+    ) -> tuple[Model, CompiledModel]:
         """Compiles the graph while the modules' deferred weight loads run.
 
         The compile waits for the loads that can't overlap it, and the graph
-        initializes once every load has filled the registry.
+        initializes once every load has filled the registry. Returns the model
+        and the compiled graph it was initialized from.
         """
         loads, self._weight_loads = self._weight_loads, []
-        if not loads:
-            return session.load(graph, weights_registry=weights_registry)
-        with ThreadPoolExecutor(len(loads)) as pool:
-            running = [
-                (pool.submit(load.load, weights_registry), load)
-                for load in loads
-            ]
-            for future, load in running:
-                if not load.overlaps_compile:
-                    future.result()
-            compiled = session.compile(graph)
-            for future, _ in running:
-                future.result()
-        return session.init(compiled, weights_registry=weights_registry)
+        compiled = (
+            self._compile_with_loads(session, graph, loads, weights_registry)
+            if loads
+            else session.compile_reusing_mefs(graph)
+        )
+        model = session.init(compiled, weights_registry=weights_registry)
+        return model, compiled
 
     def _compile_with_replay(
         self,
@@ -1695,6 +1699,14 @@ def _forget_traced_weights(*modules: Any) -> None:
     for module in modules:
         for weight in module.raw_state_dict().values():
             weight.__dict__.pop("_mlir_value", None)
+
+
+def _graph_callable(
+    graph: Graph, compiled: CompiledModel, model: Model
+) -> CompiledCallable[..., Any]:
+    """Wraps the compiled ``graph`` as the callable an artifact exports."""
+    input_types = [value.type for value in graph.inputs]
+    return graph_callable(compiled, model, input_types, graph.output_tree)
 
 
 @dataclass(frozen=True)
@@ -2126,9 +2138,16 @@ class _SpecDecodeVisionPipelineModel(SpecDecodePipelineModel):
                 self.pairing.target
             ).build_vision_graph(ModelLoadContext.from_pipeline_model(self))
             timer.mark_build_complete()
-            self.vision_model = session.load(
-                graph, weights_registry=weights_registry
+            compiled = session.compile_reusing_mefs(graph)
+            self.vision_model = session.init(
+                compiled, weights_registry=weights_registry
             )
+        self.compiled_modules = {
+            **self.compiled_modules,
+            GraphRole.VISION: _graph_callable(
+                graph, compiled, self.vision_model
+            ),
+        }
         self._batching.bind_vision_encoder(self.vision_model, session)
         return model
 
