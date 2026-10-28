@@ -52,9 +52,13 @@ def test_export_writes_the_graphs_by_role(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert f"Exported pipeline artifact to {dest}" in result.output
 
-    section = json.loads((dest / "artifact.json").read_text())["model"]
+    sections = json.loads((dest / "artifact.json").read_text())
+    section = sections["model"]
     assert set(section) == {"decoder", "sampler"}
     assert section["decoder"]["mef"] == {"$file": "decoder/model.mef"}
+    engine_config = sections["engine_config"]
+    assert engine_config["max_batch_size"] == 1
+    assert engine_config["max_length"] == 128
     loaded = deserialize(dest).model
     assert loaded is not None
     assert set(loaded.roles) == {"decoder", "sampler"}

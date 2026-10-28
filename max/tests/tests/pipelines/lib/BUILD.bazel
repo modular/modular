@@ -83,6 +83,7 @@ modular_py_test(
         "//max/python/max:_core",
         "//max/python/max/_artifact",
         "//max/python/max/_artifact:model_artifact",
+        "//max/python/max/driver",
         requirement("huggingface-hub"),
         requirement("typing-extensions"),
     ],
@@ -119,6 +120,8 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/sampling",
+        "//max/python/max/pipelines/speculative",
     ],
 )
 

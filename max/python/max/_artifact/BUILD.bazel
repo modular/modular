@@ -18,12 +18,13 @@ modular_py_library(
     ],
 )
 
-# The writer and reader, and the model component, which holds
-# max.experimental CompiledCallables.
+# The writer and reader, the model component, which holds
+# max.experimental CompiledCallables, and the engine_config component.
 modular_py_library(
     name = "model_artifact",
     srcs = [
         "batch_processor.py",
+        "engine_config.py",
         "model_artifact.py",
         "pipeline_modules.py",
         "serialization.py",
@@ -32,6 +33,7 @@ modular_py_library(
         ":_artifact",
         "//max/python/max:_core",
         "//max/python/max:tensor",
+        "//max/python/max/driver",
         requirement("huggingface-hub"),
         requirement("typing-extensions"),
     ],

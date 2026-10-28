@@ -24,6 +24,7 @@ from max.graph import SymbolicDim
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.lib.graph_specs import GraphRole, compile_roles_separately
 from max.pipelines.lib.interfaces import PipelineModelWithKVCache
+from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.pipeline_variants.text_generation import (
     TextGenerationPipelineInterface,
 )
@@ -32,6 +33,11 @@ from max.tensor.compilation import CompiledCallable
 from max.tensor.sharding import BufferLayout, TensorLayout
 
 from .batch_processor import BatchProcessorDims
+from .engine_config import (
+    EngineConfig,
+    EngineSamplingConfig,
+    EngineSpeculativeConfig,
+)
 from .model_artifact import ModelArtifact
 from .pipeline_modules import PipelineModules
 from .serialization import serialize
@@ -129,13 +135,66 @@ def per_step_dims(layouts: Sequence[TensorLayout]) -> list[str]:
     )
 
 
+def pipeline_engine_config(
+    pipeline_config: PipelineConfig, memory_plan: MemoryPlan
+) -> EngineConfig:
+    """Returns the settings a pipeline is built with, for its artifact.
+
+    The batch size, maximum length, batch token cap and devices come from the
+    memory plan the pipeline is built with: the configuration holds only what
+    was asked for, which planning resolves or lowers.
+
+    Args:
+        pipeline_config: The pipeline's configuration.
+        memory_plan: The memory plan the pipeline is built with.
+
+    Returns:
+        The artifact's ``engine_config`` component.
+
+    Raises:
+        ArtifactError: If the plan has no maximum length, as for a pipeline
+            with no language model.
+    """
+    max_length = memory_plan.planned_max_length
+    if max_length is None:
+        raise ArtifactError("the memory plan sets no maximum length")
+    runtime = pipeline_config.runtime
+    sampling = pipeline_config.sampling
+    speculative = pipeline_config.speculative
+    spec_config: EngineSpeculativeConfig | None = None
+    if speculative is not None:
+        # The config keeps a speculative section only when a method is set.
+        assert speculative.speculative_method is not None
+        spec_config = EngineSpeculativeConfig(
+            speculative_method=speculative.speculative_method,
+            num_speculative_tokens=speculative.draft_width,
+            draft_proposal=speculative.draft_proposal,
+            reasoning_parser=runtime.reasoning_parser,
+        )
+    return EngineConfig(
+        max_batch_size=memory_plan.planned_max_batch_size,
+        max_length=max_length,
+        max_batch_input_tokens=runtime.max_batch_input_tokens,
+        max_batch_total_tokens=memory_plan.planned_max_batch_total_tokens,
+        devices=memory_plan.require_device_specs(),
+        data_parallel_degree=pipeline_config.model.data_parallel_degree,
+        ep_size=runtime.ep_size,
+        sampling=EngineSamplingConfig(
+            needs_bitmask_constraints=pipeline_config.needs_bitmask_constraints,
+            enable_variable_logits=sampling.enable_variable_logits,
+            enable_penalties=sampling.enable_penalties,
+        ),
+        speculative=spec_config,
+    )
+
+
 def export_pipeline(
     pipeline_config: PipelineConfig, path: str | os.PathLike[str]
 ) -> Path:
     """Builds the pipeline for a config and writes it as a ``.m`` artifact.
 
     Builds the pipeline the same way serving does, so the artifact holds the
-    graphs a served pipeline compiles.
+    graphs a served pipeline compiles and the settings it is built with.
 
     Args:
         pipeline_config: The pipeline's configuration.
@@ -157,7 +216,10 @@ def export_pipeline(
     architecture = pipeline_config.models.main_architecture_name
     task = PIPELINE_REGISTRY.retrieve_pipeline_task(architecture)
     with compile_roles_separately():
-        _, pipeline = PIPELINE_REGISTRY.retrieve(pipeline_config, task=task)
+        retrieved = PIPELINE_REGISTRY.retrieve_factory(
+            pipeline_config, task=task
+        )
+        pipeline = retrieved.factory()
     if not isinstance(pipeline, SupportsCompiledModules):
         raise ArtifactError(
             f"{architecture} builds a {type(pipeline).__name__}, which does"
@@ -170,6 +232,14 @@ def export_pipeline(
         and "decoder" in model.roles
         else None
     )
-    written = serialize(ModelArtifact(model=model, batch_processor=dims), dest)
+    engine_config = pipeline_engine_config(
+        pipeline_config, retrieved.memory_plan
+    )
+    written = serialize(
+        ModelArtifact(
+            model=model, engine_config=engine_config, batch_processor=dims
+        ),
+        dest,
+    )
     logger.info("Exported graphs %s to %s", sorted(model.roles), written)
     return written

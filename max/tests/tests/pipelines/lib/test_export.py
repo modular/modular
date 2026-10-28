@@ -26,15 +26,21 @@ from typing import Any
 import pytest
 from max._artifact import ArtifactError
 from max._artifact.batch_processor import BatchProcessorDims
+from max._artifact.engine_config import (
+    EngineConfig,
+    EngineSamplingConfig,
+    EngineSpeculativeConfig,
+)
 from max._artifact.export import (
     SupportsCompiledModules,
     batch_processor_dims,
+    pipeline_engine_config,
     pipeline_modules,
 )
 from max._artifact.model_artifact import ModelArtifact
 from max._artifact.pipeline_modules import PipelineModules
 from max._artifact.serialization import deserialize, serialize
-from max.driver import CPU
+from max.driver import CPU, DeviceSpec
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, TensorType, TensorValue
@@ -44,13 +50,21 @@ from max.nn.legacy.transformer import DecoderOutputs, ReturnLogits
 from max.pipelines.lib import (
     GraphRole,
     GraphSpec,
+    KVCacheConfig,
+    MAXModelConfig,
+    MemoryPlan,
     ModelInputs,
     ModelOutputs,
+    PipelineConfig,
     PipelineModelWithKVCache,
+    PipelineRuntimeConfig,
     compile_and_init_graphs,
 )
 from max.pipelines.lib.graph_specs import compile_roles_separately
 from max.pipelines.lib.interfaces import BatchProcessorRuntime
+from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.sampling import SamplingConfig
+from max.pipelines.speculative import SpeculativeConfig
 from max.tensor.compilation import CompiledCallable
 from max.tensor.sharding.types import as_layout
 
@@ -229,3 +243,80 @@ def test_batch_processor_dims_bound_a_bound_decoders_per_step_dims() -> None:
     assert batch_processor_dims(model, decoder) is None
     model.batch_processor = None
     assert batch_processor_dims(model, decoder) is None
+
+
+_DEVICES = (DeviceSpec.accelerator(0), DeviceSpec.accelerator(1))
+_PLAN = MemoryPlan(
+    planned_max_batch_size=8,
+    footprint=0,
+    planned_max_length=4096,
+    device_specs=_DEVICES,
+    planned_max_batch_total_tokens=4096,
+)
+
+
+def _pipeline_config(
+    *,
+    sampling: SamplingConfig,
+    speculative: SpeculativeConfig | None = None,
+    reasoning_parser: str | None = None,
+) -> PipelineConfig:
+    model = MAXModelConfig.model_construct(
+        model_path="org/model",
+        device_specs=list(_DEVICES),
+        data_parallel_degree=2,
+        kv_cache=KVCacheConfig(),
+    )
+    return PipelineConfig.model_construct(
+        runtime=PipelineRuntimeConfig.model_construct(
+            # The configuration's, which the plan's values replace.
+            max_batch_size=None,
+            max_batch_input_tokens=2048,
+            ep_size=2,
+            reasoning_parser=reasoning_parser,
+        ),
+        models=ModelManifest({"main": model}),
+        sampling=sampling,
+        speculative=speculative,
+    )
+
+
+def test_engine_config_copies_the_planned_settings() -> None:
+    config = _pipeline_config(
+        sampling=SamplingConfig.model_construct(
+            enable_structured_output=True, enable_penalties=True
+        )
+    )
+    assert pipeline_engine_config(config, _PLAN) == EngineConfig(
+        max_batch_size=8,
+        max_length=4096,
+        max_batch_input_tokens=2048,
+        max_batch_total_tokens=4096,
+        devices=_DEVICES,
+        data_parallel_degree=2,
+        ep_size=2,
+        sampling=EngineSamplingConfig(
+            needs_bitmask_constraints=True,
+            enable_variable_logits=False,
+            enable_penalties=True,
+        ),
+        speculative=None,
+    )
+
+
+def test_engine_config_copies_the_speculative_settings() -> None:
+    config = _pipeline_config(
+        sampling=SamplingConfig.model_construct(),
+        speculative=SpeculativeConfig.model_construct(
+            speculative_method="mtp", num_speculative_tokens=3
+        ),
+        reasoning_parser="gemma4",
+    )
+    assert pipeline_engine_config(config, _PLAN).speculative == (
+        EngineSpeculativeConfig(
+            speculative_method="mtp",
+            num_speculative_tokens=3,
+            draft_proposal="argmax",
+            reasoning_parser="gemma4",
+        )
+    )
