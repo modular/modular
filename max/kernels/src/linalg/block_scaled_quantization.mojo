@@ -606,6 +606,14 @@ def block_scales_interleave_fp4[
         MXFP4_SF_DTYPE,
     ), "scales dtype should be float8_e4m3fn (NVFP4) or float8_e8m0fnu (MXFP4)"
 
+    # An empty tile (a DP replica with no rows this step) has nothing to
+    # interleave; the enqueue below refuses a zero grid.
+    if (
+        Int(input_scales_tile.dim[0]()) == 0
+        or Int(input_scales_tile.dim[1]()) == 0
+    ):
+        return
+
     comptime num_SMs = B200.sm_count
 
     var num_rows = Int(input_scales_tile.dim[0]())
