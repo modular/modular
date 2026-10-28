@@ -145,15 +145,12 @@ convention = "google"
 "max/python/max/mlir/**/*" = ["D"]
 "max/python/max/nn/legacy/**/*" = ["D"]
 "max/python/max/pipelines/architectures/**/*" = ["D"]
-"max/python/max/pipelines/pipelines.py" = ["D"]
 "max/python/max/serve/**/*" = ["D"]
 "max/python/max/support/**/*" = ["D"]
 # Exclude private packages and modules (NOTE: this allows max/_core/*.pyi files):
 "max/python/max/_core_types/**/*" = ["D"]
 "max/python/max/_entrypoints/**/*" = ["D"]
 "max/python/max/_interpreter_ops/**/*" = ["D"]
-"max/python/max/_mlir/**/*" = ["D"]
-"max/python/max/_core/dialects/**/*" = ["D"]
 "max/python/max/_core/max_license/**/*" = ["D"]
 "max/python/max/**/_*.py" = ["D"]
 # Disable most annotations for third-party stubfiles
