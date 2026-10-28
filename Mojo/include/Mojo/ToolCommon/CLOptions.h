@@ -126,7 +126,7 @@ public:
 
   bool warnOnUnstableAPIs{false};
 
-  SmallVector<std::string> ignoredDeprecations;
+  std::vector<std::string> ignoredDeprecations;
 
   bool disableWarnings{false};
 
@@ -509,7 +509,7 @@ private:
       llvm::cl::location(options.warnOnUnstableAPIs),
       llvm::cl::cat(KGENOptionsCategory)};
 
-  M::cl::MListOpt<std::string, SmallVector<std::string>> ignoredDeprecations{
+  M::cl::MListOpt<std::string, std::vector<std::string>> ignoredDeprecations{
       "ignore-deprecated",
       cl::desc("Suppress the deprecation warning for the given declaration "
                "(e.g. `Foo.bar`, or `some_fn` for a top-level "

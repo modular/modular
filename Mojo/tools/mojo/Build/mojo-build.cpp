@@ -34,6 +34,7 @@
 #include "Support/DebugInfoDialect/IR/DebugInfoDialect.h"
 #include "Support/Driver/DiagnosticFormat.h"
 #include "Support/Driver/DriverSupport.h"
+#include "Support/Driver/OptionMarshalling.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
@@ -182,20 +183,6 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
       .fixit = options::OPT_fixit,
       .exportFixit = options::OPT_export_fixit,
       .lldPath = options::OPT_lld_path,
-      .frontend =
-          {
-              .mojoSearchPaths = options::OPT_mojo_search_paths,
-              .ignoreIncompatiblePrecompiledFileErrors =
-                  options::OPT_ignore_incompatible_precompiled_file_errors,
-              .ignoreDeprecated = options::OPT_ignore_deprecated,
-              .incrParsingCacheFile = options::OPT_incr_parsing_cache_file,
-              .warnOnUnstableAPIs = options::OPT_warn_on_unstable_apis,
-              .diagnoseMissingDocStrings =
-                  options::OPT_diagnose_missing_doc_strings,
-              .maxNotes = options::OPT_max_notes,
-              .stripFilePrefix = options::OPT_strip_file_prefix,
-              .disableBuiltins = options::OPT_disable_builtins,
-          },
   };
 
   // Configure parsing for `mojo build` - parse all arguments normally.
@@ -216,8 +203,13 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
   // Extract results.
   args = std::move(result->args);
   compilationOptions = std::move(result->compilationOptions);
-  frontendOptions = std::move(result->frontendOptions);
   target = std::move(result->target);
+
+  frontendOptions = makeFrontendOptions(state);
+#define FRONTEND_OPTION_WITH_MARSHALLING(...)                                  \
+  PARSE_OPTION_WITH_MARSHALLING(args, __VA_ARGS__)
+#include "Build/BuildOptions.inc"
+#undef FRONTEND_OPTION_WITH_MARSHALLING
   return {};
 }
 

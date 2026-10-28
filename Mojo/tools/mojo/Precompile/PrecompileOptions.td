@@ -52,4 +52,5 @@ defm incr_parsing_cache_file : CommandOptionHidden<["--", "-"],
            "the given path. The main source file is always parsed; imported "
            "modules whose sources are unchanged are served from the cache "
            "instead of being re-parsed. The cache file is created if missing "
-           "and rewritten whenever any cached module changed.">>;
+           "and rewritten whenever any cached module changed.">>,
+  MarshallingInfoString<FrontendOpts<"incrParsingCacheFile">>;

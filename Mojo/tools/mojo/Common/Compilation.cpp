@@ -155,8 +155,6 @@ ErrorOr<CommonParseResult> M::parseCommonMojoArguments(
           optionIDs.elaborationErrorVerbose, optionIDs.elaborationMaxDepth,
           optionIDs.fpMode))
     return err.takeError();
-  result.frontendOptions =
-      buildFrontendOptions(state, args, optionIDs.frontend);
 
   // Parse target options.
   if (ErrorOrSuccess err = parseTargetOptions(
@@ -436,9 +434,7 @@ ErrorOrSuccess M::parseCompilationOptions(
   return success();
 }
 
-FrontendOptions M::buildFrontendOptions(const State &state,
-                                        const llvm::opt::InputArgList &args,
-                                        const FrontendOptionIDs &ids) {
+FrontendOptions M::makeFrontendOptions(const State &state) {
   FrontendOptions options;
 
   // Unlike other command line options, disableWarnings is parsed
@@ -447,35 +443,6 @@ FrontendOptions M::buildFrontendOptions(const State &state,
   // is single-sourced to affect both places.
   options.disableWarnings = state.areWarningsDisabled();
   options.warningsAsErrors = state.areWarningsAsErrors();
-
-  // Enable overwriting of the auto-imported paths, which is where the compiler
-  // first looks for builtins.
-  if (ids.mojoSearchPaths.isValid())
-    options.searchPaths = args.getLastArgValue(ids.mojoSearchPaths);
-  if (ids.ignoreIncompatiblePrecompiledFileErrors.isValid())
-    options.ignoreIncompatiblePrecompiledFileErrors =
-        args.hasArg(ids.ignoreIncompatiblePrecompiledFileErrors);
-  if (ids.ignoreDeprecated.isValid())
-    options.ignoredDeprecations = llvm::to_vector_of<std::string>(
-        args.getAllArgValues(ids.ignoreDeprecated));
-  if (ids.incrParsingCacheFile.isValid())
-    options.incrParsingCacheFile =
-        args.getLastArgValue(ids.incrParsingCacheFile).str();
-  if (ids.warnOnUnstableAPIs.isValid())
-    options.warnOnUnstableAPIs = args.hasArg(ids.warnOnUnstableAPIs);
-  if (ids.diagnoseMissingDocStrings.isValid())
-    options.diagnoseMissingDocStrings =
-        args.hasArg(ids.diagnoseMissingDocStrings);
-  int maxNotes = 0;
-  if (ids.maxNotes.isValid() &&
-      !args.getLastArgValue(ids.maxNotes).getAsInteger(10, maxNotes))
-    options.maxNotesPerDiagnostic = maxNotes;
-  if (ids.stripFilePrefix.isValid())
-    options.stripFilePrefix = args.getLastArgValue(ids.stripFilePrefix);
-  if (ids.disableBuiltins.isValid())
-    options.useBuiltinModule = !args.hasArg(ids.disableBuiltins);
-  if (ids.docsBasePath.isValid())
-    options.docsBasePath = args.getLastArgValue(ids.docsBasePath);
   return options;
 }
 

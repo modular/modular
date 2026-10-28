@@ -46,21 +46,6 @@ struct CPUDeviceOptions;
 
 class TargetInfoAttr;
 
-/// Holds the option IDs that buildFrontendOptions reads. A subcommand leaves
-/// an ID unset when it does not accept the option.
-struct FrontendOptionIDs {
-  llvm::opt::OptSpecifier mojoSearchPaths = {};
-  llvm::opt::OptSpecifier ignoreIncompatiblePrecompiledFileErrors = {};
-  llvm::opt::OptSpecifier ignoreDeprecated = {};
-  llvm::opt::OptSpecifier incrParsingCacheFile = {};
-  llvm::opt::OptSpecifier warnOnUnstableAPIs = {};
-  llvm::opt::OptSpecifier diagnoseMissingDocStrings = {};
-  llvm::opt::OptSpecifier maxNotes = {};
-  llvm::opt::OptSpecifier stripFilePrefix = {};
-  llvm::opt::OptSpecifier disableBuiltins = {};
-  llvm::opt::OptSpecifier docsBasePath = {};
-};
-
 /// Holds the option IDs that are common between mojo build and mojo run.
 /// These are passed to parseCommonMojoArguments to avoid duplicating the
 /// option ID mappings.
@@ -117,9 +102,6 @@ struct CommonOptionIDs {
 
   // Linker options
   llvm::opt::OptSpecifier lldPath;
-
-  // Frontend options
-  FrontendOptionIDs frontend;
 };
 
 /// Configuration flags for common argument parsing behavior.
@@ -144,9 +126,6 @@ struct CommonParseResult {
 
   /// The parsed compilation options.
   KGEN::CompilationOptions compilationOptions;
-
-  /// The parsed frontend options.
-  KGEN::FrontendOptions frontendOptions;
 
   /// The parsed target information.
   TargetInfoAttr target;
@@ -198,11 +177,10 @@ ErrorOrSuccess parseCompilationOptions(
     llvm::opt::OptSpecifier elaborationMaxDepth = {},
     llvm::opt::OptSpecifier fpModeId = {});
 
-/// Build the parser settings from `args`. The warning policy comes from
-/// `state`, which parsed it with the diagnostic format.
-KGEN::FrontendOptions buildFrontendOptions(const State &state,
-                                           const llvm::opt::InputArgList &args,
-                                           const FrontendOptionIDs &ids);
+/// Return parser settings that hold the warning policy `state` parsed with the
+/// diagnostic format. The subcommand then expands its
+/// `FRONTEND_OPTION_WITH_MARSHALLING` rows into the result.
+KGEN::FrontendOptions makeFrontendOptions(const State &state);
 
 /// Warn users when doing debug builds with a compiler in debug mode.
 void warnBuildingForDebugWithDebugBuiltCompiler(

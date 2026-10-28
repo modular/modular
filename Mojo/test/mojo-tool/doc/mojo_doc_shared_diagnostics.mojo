@@ -15,6 +15,8 @@
 
 # RUN: mojo doc %s -o /dev/null 2>&1 | FileCheck %s --check-prefix=WARNINGS
 # RUN: mojo doc --disable-warnings %s -o /dev/null 2>&1 | FileCheck %s --allow-empty --check-prefix=NO-WARNINGS
+# RUN: mojo doc --ignore-deprecated=deprecatedFn %s -o /dev/null 2>&1 | FileCheck %s --allow-empty --check-prefix=NO-WARNINGS
+# RUN: mojo doc --ignore-deprecated deprecatedFn %s -o /dev/null 2>&1 | FileCheck %s --allow-empty --check-prefix=NO-WARNINGS
 # WARNINGS: warning: deprecatedFn is deprecated
 # NO-WARNINGS-NOT: warning:
 

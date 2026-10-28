@@ -31,7 +31,8 @@ defm o : CommandOption<["-"], "o", OutputOptionGroup, Index<0>,
 
 defm docs_base_path : CommandOption<["--", "-"], "docs-base-path",
   OutputOptionGroup, Index<1>, MetaVarName<"PATH">,
-  HelpText<"Sets the path prefix for generated documentation links.">>;
+  HelpText<"Sets the path prefix for generated documentation links.">>,
+  MarshallingInfoString<FrontendOpts<"docsBasePath">>;
 
 //===----------------------------------------------------------------------===//
 // Diagnostic Options

@@ -16,6 +16,7 @@
 
 #include "llvm/ADT/SmallVector.h"
 #include <string>
+#include <vector>
 
 namespace M {
 class AutoFixItHandler;
@@ -79,7 +80,7 @@ struct FrontendOptions {
   /// Qualified names (e.g. `Foo.bar`, or just `some_fn` for a top-level
   /// declaration) of `@deprecated` declarations whose deprecation warning
   /// should be suppressed, set via `--ignore-deprecated`.
-  llvm::SmallVector<std::string> ignoredDeprecations;
+  std::vector<std::string> ignoredDeprecations;
 
   /// Experimental incremental parsing cache file backing
   /// `--experimental-incr-parsing`; empty when the option is off.

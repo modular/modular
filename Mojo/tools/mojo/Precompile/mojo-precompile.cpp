@@ -30,6 +30,7 @@
 #include "Support/Config.h"
 #include "Support/Driver/DiagnosticFormat.h"
 #include "Support/Driver/DriverSupport.h"
+#include "Support/Driver/OptionMarshalling.h"
 
 #include "Support/Filesystem/Paths.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
@@ -182,21 +183,12 @@ static ErrorOrSuccess parsePrecompileArgs(const State &state,
           parseCompilationOptions(state, args, pkgArgs.compileOptions,
                                   sourceMgr, pkgArgs.ctx, options::OPT_I))
     return err.takeError();
-  pkgArgs.frontendOptions = buildFrontendOptions(
-      state, args,
-      {
-          .mojoSearchPaths = options::OPT_mojo_search_paths,
-          .ignoreIncompatiblePrecompiledFileErrors =
-              options::OPT_ignore_incompatible_precompiled_file_errors,
-          .ignoreDeprecated = options::OPT_ignore_deprecated,
-          .incrParsingCacheFile = options::OPT_incr_parsing_cache_file,
-          .warnOnUnstableAPIs = options::OPT_warn_on_unstable_apis,
-          .diagnoseMissingDocStrings =
-              options::OPT_diagnose_missing_doc_strings,
-          .maxNotes = options::OPT_max_notes,
-          .stripFilePrefix = options::OPT_strip_file_prefix,
-          .disableBuiltins = options::OPT_disable_builtins,
-      });
+  KGEN::FrontendOptions &frontendOptions = pkgArgs.frontendOptions;
+  frontendOptions = makeFrontendOptions(state);
+#define FRONTEND_OPTION_WITH_MARSHALLING(...)                                  \
+  PARSE_OPTION_WITH_MARSHALLING(args, __VA_ARGS__)
+#include "Precompile/PrecompileOptions.inc"
+#undef FRONTEND_OPTION_WITH_MARSHALLING
 
   // Precompiled files are built with the intention of being agnostic, so use
   // conservative compilation settings as a default.

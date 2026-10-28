@@ -22,6 +22,7 @@
 #include "Mojo/ToolCommon/FrontendOptions.h"
 #include "Mojo/ToolCommon/InitAllDialects.h"
 #include "Support/Driver/DriverSupport.h"
+#include "Support/Driver/OptionMarshalling.h"
 
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/MLIRContext.h"
@@ -121,21 +122,11 @@ static int doc(const State &subcommandState) {
   if (!out)
     return state.reportError(outputError);
 
-  KGEN::FrontendOptions frontendOptions = buildFrontendOptions(
-      state, args,
-      {
-          .mojoSearchPaths = options::OPT_mojo_search_paths,
-          .ignoreIncompatiblePrecompiledFileErrors =
-              options::OPT_ignore_incompatible_precompiled_file_errors,
-          .ignoreDeprecated = options::OPT_ignore_deprecated,
-          .warnOnUnstableAPIs = options::OPT_warn_on_unstable_apis,
-          .diagnoseMissingDocStrings =
-              options::OPT_diagnose_missing_doc_strings,
-          .maxNotes = options::OPT_max_notes,
-          .stripFilePrefix = options::OPT_strip_file_prefix,
-          .disableBuiltins = options::OPT_disable_builtins,
-          .docsBasePath = options::OPT_docs_base_path,
-      });
+  KGEN::FrontendOptions frontendOptions = makeFrontendOptions(state);
+#define FRONTEND_OPTION_WITH_MARSHALLING(...)                                  \
+  PARSE_OPTION_WITH_MARSHALLING(args, __VA_ARGS__)
+#include "Doc/DocOptions.inc"
+#undef FRONTEND_OPTION_WITH_MARSHALLING
 
   // Note: timing scope removed during DocGen extraction — it was never
   // surfaced to users.
