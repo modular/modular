@@ -1072,20 +1072,27 @@ struct Scatter:
         target: StaticString,
         axis: Int,
     ](
-        output: OutputTensor,
-        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        updates: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        indices: InputTensor[rank=output.rank, ...],
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        updates: Some[Input & Tensor],
+        indices: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        check_axis_in_range[output.rank](axis)
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(updates), TileTensorable)
+        comptime assert conforms_to(type_of(indices), TileTensorable)
+        comptime assert type_of(input).rank == type_of(output).rank
+        comptime assert type_of(updates).rank == type_of(output).rank
+        comptime assert type_of(indices).rank == type_of(output).rank
+        check_axis_in_range[type_of(output).rank](axis)
 
         scatter_elements[target=target](
-            input,
-            indices,
-            updates,
-            normalize_neg_index(axis, output.rank),
-            output,
+            input.to_tile_tensor[type_of(output).dtype](),
+            indices.to_tile_tensor(),
+            updates.to_tile_tensor[type_of(output).dtype](),
+            normalize_neg_index(axis, type_of(output).rank),
+            output.to_tile_tensor(),
             ctx,
         )
 
@@ -1127,21 +1134,28 @@ struct ScatterAdd:
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor,
-        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        updates: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        indices: InputTensor[rank=output.rank, ...],
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        updates: Some[Input & Tensor],
+        indices: Some[Input & Tensor],
         axis: Scalar,
         ctx: DeviceContext,
     ) raises:
-        check_axis_in_range[output.rank](Int(axis))
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(updates), TileTensorable)
+        comptime assert conforms_to(type_of(indices), TileTensorable)
+        comptime assert type_of(input).rank == type_of(output).rank
+        comptime assert type_of(updates).rank == type_of(output).rank
+        comptime assert type_of(indices).rank == type_of(output).rank
+        check_axis_in_range[type_of(output).rank](Int(axis))
 
         scatter_elements[target=target, atomic_update_fn=_atomic_add](
-            input,
-            indices,
-            updates,
-            normalize_neg_index(Int(axis), output.rank),
-            output,
+            input.to_tile_tensor[type_of(output).dtype](),
+            indices.to_tile_tensor(),
+            updates.to_tile_tensor[type_of(output).dtype](),
+            normalize_neg_index(Int(axis), type_of(output).rank),
+            output.to_tile_tensor(),
             ctx,
         )
 
@@ -1182,14 +1196,21 @@ struct ScatterMax:
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor,
-        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        updates: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        indices: InputTensor[rank=output.rank, ...],
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        updates: Some[Input & Tensor],
+        indices: Some[Input & Tensor],
         axis: Scalar,
         ctx: DeviceContext,
     ) raises:
-        check_axis_in_range[output.rank](Int(axis))
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(updates), TileTensorable)
+        comptime assert conforms_to(type_of(indices), TileTensorable)
+        comptime assert type_of(input).rank == type_of(output).rank
+        comptime assert type_of(updates).rank == type_of(output).rank
+        comptime assert type_of(indices).rank == type_of(output).rank
+        check_axis_in_range[type_of(output).rank](Int(axis))
 
         @inline(.always)
         def reduce_func[
@@ -1202,11 +1223,11 @@ struct ScatterMax:
         scatter_elements[
             target=target, atomic_update_fn=_atomic_reduce[reduce_func]
         ](
-            input,
-            indices,
-            updates,
-            normalize_neg_index(Int(axis), output.rank),
-            output,
+            input.to_tile_tensor[type_of(output).dtype](),
+            indices.to_tile_tensor(),
+            updates.to_tile_tensor[type_of(output).dtype](),
+            normalize_neg_index(Int(axis), type_of(output).rank),
+            output.to_tile_tensor(),
             ctx,
         )
 
@@ -1247,14 +1268,21 @@ struct ScatterMin:
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor,
-        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        updates: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        indices: InputTensor[rank=output.rank, ...],
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        updates: Some[Input & Tensor],
+        indices: Some[Input & Tensor],
         axis: Scalar,
         ctx: DeviceContext,
     ) raises:
-        check_axis_in_range[output.rank](Int(axis))
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(updates), TileTensorable)
+        comptime assert conforms_to(type_of(indices), TileTensorable)
+        comptime assert type_of(input).rank == type_of(output).rank
+        comptime assert type_of(updates).rank == type_of(output).rank
+        comptime assert type_of(indices).rank == type_of(output).rank
+        check_axis_in_range[type_of(output).rank](Int(axis))
 
         @inline(.always)
         def reduce_func[
@@ -1267,11 +1295,11 @@ struct ScatterMin:
         scatter_elements[
             target=target, atomic_update_fn=_atomic_reduce[reduce_func]
         ](
-            input,
-            indices,
-            updates,
-            normalize_neg_index(Int(axis), output.rank),
-            output,
+            input.to_tile_tensor[type_of(output).dtype](),
+            indices.to_tile_tensor(),
+            updates.to_tile_tensor[type_of(output).dtype](),
+            normalize_neg_index(Int(axis), type_of(output).rank),
+            output.to_tile_tensor(),
             ctx,
         )
 
@@ -1312,14 +1340,21 @@ struct ScatterMul:
     def execute[
         target: StaticString,
     ](
-        output: OutputTensor,
-        input: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        updates: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        indices: InputTensor[rank=output.rank, ...],
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        updates: Some[Input & Tensor],
+        indices: Some[Input & Tensor],
         axis: Scalar,
         ctx: DeviceContext,
     ) raises:
-        check_axis_in_range[output.rank](Int(axis))
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(updates), TileTensorable)
+        comptime assert conforms_to(type_of(indices), TileTensorable)
+        comptime assert type_of(input).rank == type_of(output).rank
+        comptime assert type_of(updates).rank == type_of(output).rank
+        comptime assert type_of(indices).rank == type_of(output).rank
+        check_axis_in_range[type_of(output).rank](Int(axis))
 
         @inline(.always)
         def reduce_func[
@@ -1332,11 +1367,11 @@ struct ScatterMul:
         scatter_elements[
             target=target, atomic_update_fn=_atomic_reduce[reduce_func]
         ](
-            input,
-            indices,
-            updates,
-            normalize_neg_index(Int(axis), output.rank),
-            output,
+            input.to_tile_tensor[type_of(output).dtype](),
+            indices.to_tile_tensor(),
+            updates.to_tile_tensor[type_of(output).dtype](),
+            normalize_neg_index(Int(axis), type_of(output).rank),
+            output.to_tile_tensor(),
             ctx,
         )
 

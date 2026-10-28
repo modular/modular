@@ -42,7 +42,6 @@ from layout.coord import CoordLike, DynamicCoord
 from std.memory import unsafe_memcpy
 from max.runtime.asyncrt import parallelism_level
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
-from extensibility import ManagedTensorSlice
 
 from std.utils import StaticTuple
 from std.collections import OptionalReg
@@ -1707,25 +1706,24 @@ def gather_shape[
 
 @inline(.always)
 def scatter_elements[
-    rank: Int,
     input_type: DType,
     indices_type: DType,
+    //,
     *,
     target: StaticString = "cpu",
     atomic_update_fn: OptionalReg[_AtomicUpdateFn] = None,
 ](
-    input: ManagedTensorSlice[dtype=input_type, rank=rank, ...],
-    indices: ManagedTensorSlice[dtype=indices_type, rank=rank, ...],
-    updates: ManagedTensorSlice[dtype=input_type, rank=rank, ...],
+    input: TileTensor[input_type, address_space=.GENERIC, ...],
+    indices: TileTensor[indices_type, ...],
+    updates: TileTensor[input_type, ...],
     _axis: Int,
-    output: ManagedTensorSlice[dtype=input_type, rank=rank, ...],
+    output: TileTensor[mut=True, input_type, address_space=.GENERIC, ...],
     ctx: DeviceContext,
 ) raises:
     """
     Implements ONNX ScatterElements op which is equivalent to Pytorch scatter.
 
     Parameters:
-        rank: Rank of the `input`, `indices`, `updates`, and `output` tensors.
         input_type: Element type of `input`, `updates`, and `output`.
         indices_type: Element type of `indices` (must be `int32` or `int64`).
         target: Target backend to execute on, such as "cpu" or "gpu".
@@ -1749,13 +1747,17 @@ def scatter_elements[
     comptime assert (
         indices_type == .int32 or indices_type == .int64
     ), "indices in scatter_elements must be int32 or int64"
+    comptime rank = input.rank
+    comptime assert indices.rank == rank
+    comptime assert updates.rank == rank
+    comptime assert output.rank == rank
 
-    if input.shape() != output.shape():
+    if input.layout.shape_coord() != output.layout.shape_coord():
         raise Error(
             "input and output shape in scatter_elements must be the same"
         )
 
-    if indices.shape() != updates.shape():
+    if indices.layout.shape_coord() != updates.layout.shape_coord():
         raise Error(
             "indices and updates shape in scatter_elements must be the same"
         )
@@ -1768,23 +1770,23 @@ def scatter_elements[
     var axis = _axis if _axis >= 0 else _axis + rank
 
     comptime if is_gpu[target]():
-        ctx.enqueue_copy(output.unsafe_ptr(), input.unsafe_ptr(), output.size())
+        ctx.enqueue_copy(output.ptr, input.as_imm().ptr, output.num_elements())
     else:
         unsafe_parallel_memcpy(
-            dest=output.unsafe_ptr(),
-            src=input.unsafe_ptr(),
-            count=output.size(),
+            dest=output.ptr,
+            src=input.as_imm().ptr,
+            count=output.num_elements(),
         )
 
-    if indices.size() == 0:
+    if indices.num_elements() == 0:
         return
 
-    var input_ax_dim = input.dim_size(axis)
+    var input_ax_dim = Int(input.dim(axis))
 
     def update_func[
         simd_width: Int, alignment: Int = 1
     ](indices_coords: Coord) {var}:
-        var idx_on_axis = indices.to_tile_tensor()[indices_coords]
+        var idx_on_axis = indices.load[width=1](indices_coords)
         var output_coords = DynamicCoord[.int64, rank]()
         comptime for i in range(rank):
             output_coords.replace_dynamic[i](
@@ -1796,27 +1798,24 @@ def scatter_elements[
         comptime for i in range(rank):
             if i == axis:
                 output_coords.replace_dynamic[i](Int64(normalized))
-        var update_val = updates.to_tile_tensor()[indices_coords]
+        var update_val = updates.load[width=1](indices_coords)
 
         comptime if case .Some(atomic_update) = atomic_update_fn:
-            var output_tt = output.to_tile_tensor()
             var output_offset = 0
             for i in range(rank):
-                output_offset += Int(output_tt.dynamic_stride(i)) * _coord_get(
+                output_offset += Int(output.dynamic_stride(i)) * _coord_get(
                     output_coords, i
                 )
-            atomic_update(
-                output.unsafe_ptr().unsafe_offset(output_offset), update_val
-            )
+            atomic_update(output.ptr.unsafe_offset(output_offset), update_val)
         else:
-            output.to_tile_tensor()[output_coords] = update_val
+            output.store[width=1](output_coords, update_val)
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
     elementwise[
         simd_width=1,
         target=target,
         _trace_description="scatter_elements",
-    ](update_func, indices.shape_coord(), ctx)
+    ](update_func, indices.layout.shape_coord(), ctx)
 
 
 @inline(.always)
