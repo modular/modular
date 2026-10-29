@@ -54,9 +54,9 @@ _SORT_MIN_TOKENS = 1024
 _SF_ROWS = 128
 
 
-# The device stream an overlapped lookup runs on. Models get one side stream
-# by default (the `device-context.stream-count` config key is 2), and no other
-# op of the DeepSeek-V4.1 graph uses it.
+# The device stream an overlapped lookup runs on. Models get two side streams
+# by default (the `device-context.stream-count` config key is 3), and no other
+# op of the DeepSeek-V4.1 graph uses this one.
 _ENGRAM_STREAM_ID = 1
 
 

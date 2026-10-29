@@ -209,10 +209,11 @@ Model::setup(CPUDevice &cpuDevice, const WeightsRegistry *weightsRegistry,
   initArgs.append(std::make_move_iterator(deviceContextsOr->begin()),
                   std::make_move_iterator(deviceContextsOr->end()));
 
-  // Pre-create side streams before any capture begins. Defaults to 2 (base +
-  // one side); see the device-context.stream-count config key.
+  // Pre-create side streams before any capture begins. Defaults to 3 (base +
+  // two side streams, so a host-gated side stream need not share one with
+  // compute); see the device-context.stream-count config key.
   const int64_t streamCount =
-      Driver::DeviceContext::configAsInt("stream-count", 2);
+      Driver::DeviceContext::configAsInt("stream-count", 3);
   ErrorOrSuccess streamError = ensureStreamCountForDevices(
       llvm::ArrayRef(initArgs).take_back(getDevices().size()), streamCount);
   if (streamError.isError())

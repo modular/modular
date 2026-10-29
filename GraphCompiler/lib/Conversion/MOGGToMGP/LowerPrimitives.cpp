@@ -62,9 +62,11 @@ static inline bool canFuseOp(Operation *op) {
 
   // A fused task starts once all of its inputs are ready, and a side-stream
   // join waits for the inputs of its consumer. Fused with the side-stream body,
-  // it would hold back the body's launches until then.
+  // it would hold back the body's launches until then. A fused fork becomes a
+  // deferred task on the device's worker, behind main-stream launches the side
+  // stream does not need to wait for.
   if (auto wait = dyn_cast<MGP::DeviceWaitOp>(op);
-      wait && wait.getIsSideStreamJoin())
+      wait && (wait.getIsSideStreamJoin() || wait.getIsSideStreamFork()))
     return false;
 
   // Fusing buffer.constant.external would create a huge region.

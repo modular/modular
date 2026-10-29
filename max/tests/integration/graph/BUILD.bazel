@@ -54,6 +54,7 @@ _SEPARATE_TARGET_TESTS = [
     "test_runtime_source_notes.py",
     "test_nms.py",
     "test_scatter.py",
+    "test_side_stream_host_wait_capture.py",
     "test_tile_based_fusion.py",
     "test_typical_llm_snifftest.py",
 ]
@@ -611,6 +612,34 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
+        requirement("hypothesis"),
+        requirement("numpy"),
+    ],
+)
+
+# Its own process: the test points the capture's DOT dump at a temporary
+# directory before any device stream exists.
+modular_py_test(
+    name = "test_side_stream_host_wait_capture",
+    srcs = [
+        "conftest.py",
+        "test_side_stream_host_wait_capture.py",
+    ],
+    # The capture keeps each matmul's output, past the default budget.
+    env = {
+        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE": "2147483648",
+    },
+    # The host wait is recorded into a captured graph on CUDA only.
+    gpu_constraints = ["//:nvidia_gpu"],
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
         requirement("hypothesis"),
         requirement("numpy"),
     ],
