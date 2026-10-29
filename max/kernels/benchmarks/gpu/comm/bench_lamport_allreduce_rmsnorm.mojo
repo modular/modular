@@ -510,13 +510,7 @@ def main() raises:
 
     var num_devices = DeviceContext.number_of_devices()
     if num_devices < num_gpus:
-        print(
-            "Need",
-            num_gpus,
-            "GPUs but only found",
-            num_devices,
-            "- skipping.",
-        )
+        print(t"Need {num_gpus} GPUs but only found {num_devices} - skipping.")
         return
 
     _ = enable_p2p()
@@ -530,21 +524,15 @@ def main() raises:
     comptime atomic_width = 16 // size_of[dtype]()
     comptime if num_cols % atomic_width != 0:
         print(
-            "num_cols=",
-            num_cols,
-            " not a multiple of atomic_width=",
-            atomic_width,
-            " (bf16 needs cols % 8 == 0); skipping.",
+            t"num_cols= {num_cols}  not a multiple of atomic_width="
+            t" {atomic_width}  (bf16 needs cols % 8 == 0); skipping."
         )
         return
     comptime BLOCK_SIZE_MAX = 1024
     comptime if num_cols // atomic_width > BLOCK_SIZE_MAX:
         print(
-            "num_cols=",
-            num_cols,
-            " exceeds BLOCK_SIZE*atomic_width=",
-            BLOCK_SIZE_MAX * atomic_width,
-            " (kernel cap); skipping.",
+            t"num_cols= {num_cols}  exceeds BLOCK_SIZE*atomic_width="
+            t" {BLOCK_SIZE_MAX * atomic_width}  (kernel cap); skipping."
         )
         return
 
@@ -553,14 +541,8 @@ def main() raises:
         list_of_ctx.append(DeviceContext(device_id=i))
 
     print(
-        "Benchmarking fused vs unfused Lamport allreduce + RMSNorm:",
-        num_gpus,
-        "GPUs,",
-        dtype,
-        ",",
-        num_rows,
-        "x",
-        num_cols,
+        t"Benchmarking fused vs unfused Lamport allreduce + RMSNorm:"
+        t" {num_gpus} GPUs, {dtype} , {num_rows} x {num_cols}"
     )
 
     var m = Bench(BenchConfig(num_repetitions=1))

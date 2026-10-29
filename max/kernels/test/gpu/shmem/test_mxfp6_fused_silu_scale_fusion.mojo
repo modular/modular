@@ -116,18 +116,9 @@ def _run_check[
     var slot_bytes = num_active * max_padded_M * scale_K
 
     print(
-        "  ",
-        name,
-        " active=",
-        num_active,
-        " total_tokens=",
-        total_tokens,
-        " hidden=",
-        hidden_size,
-        " scale_K=",
-        scale_K,
-        " max_padded_M=",
-        max_padded_M,
+        t"   {name}  active= {num_active}  total_tokens= {total_tokens} "
+        t" hidden= {hidden_size}  scale_K= {scale_K}  max_padded_M="
+        t" {max_padded_M}"
     )
 
     comptime hw = ctx.default_device_info

@@ -53,13 +53,8 @@ def _test_pull[
 
     if DeviceContext.number_of_devices() < ngpus:
         print(
-            "Skipping scatter ngpus=",
-            ngpus,
-            " DP=",
-            dp_size,
-            ": need",
-            ngpus,
-            "GPUs",
+            t"Skipping scatter ngpus= {ngpus}  DP= {dp_size} : need"
+            t" {ngpus} GPUs"
         )
         return
 
@@ -157,12 +152,8 @@ def _test_pull[
                     expected[replica][j],
                 )
     print(
-        "PASS: scatter ngpus=",
-        ngpus,
-        ", DP=",
-        dp_size,
-        ", max_elems=",
-        max_chunk_size,
+        t"PASS: scatter ngpus= {ngpus} , DP= {dp_size} , max_elems="
+        t" {max_chunk_size}"
     )
 
     _ = signal_bufs^

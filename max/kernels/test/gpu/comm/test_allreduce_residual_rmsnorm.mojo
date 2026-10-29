@@ -90,12 +90,8 @@ def _assert_fp8_close[
             var fused_val = fused_host[i].cast[.float32]()
             if ref_val != fused_val:
                 print(
-                    "  FP8 mismatch at",
-                    i,
-                    ": ref=",
-                    ref_val,
-                    ", fused=",
-                    fused_val,
+                    t"  FP8 mismatch at {i} : ref= {ref_val} , fused="
+                    t" {fused_val}"
                 )
                 printed += 1
         raise Error(
@@ -128,14 +124,8 @@ def _assert_scales_close[
             scale_errors += 1
             if scale_errors <= 5:
                 print(
-                    "  Scale mismatch at row",
-                    i,
-                    ": ref=",
-                    ref_s,
-                    ", fused=",
-                    fused_s,
-                    ", rel_diff=",
-                    rel_diff,
+                    t"  Scale mismatch at row {i} : ref= {ref_s} , fused="
+                    t" {fused_s} , rel_diff= {rel_diff}"
                 )
 
     if scale_errors > 0:
@@ -172,12 +162,8 @@ def _assert_bf16_close[
                 num_ulp_errors += 1
                 if num_ulp_errors <= 5:
                     print(
-                        "  bf16 mismatch at",
-                        i,
-                        ": ref=",
-                        ref_val,
-                        ", fused=",
-                        fused_val,
+                        t"  bf16 mismatch at {i} : ref= {ref_val} , fused="
+                        t" {fused_val}"
                     )
 
     if num_ulp_errors > 0:
@@ -248,19 +234,8 @@ def test_fused_allreduce_rmsnorm_fp8[
     comptime length = rows * cols
 
     print(
-        "  test_fused_allreduce_rmsnorm_fp8[",
-        ngpus,
-        ",",
-        in_dtype,
-        "->",
-        out_dtype,
-        ",",
-        rows,
-        "x",
-        cols,
-        ", scales=",
-        scales_dtype,
-        "]",
+        t"  test_fused_allreduce_rmsnorm_fp8[ {ngpus} , {in_dtype} ->"
+        t" {out_dtype} , {rows} x {cols} , scales= {scales_dtype} ]"
     )
 
     # --- Setup: per-GPU input buffers ---
@@ -457,15 +432,8 @@ def test_fused_allreduce_rmsnorm_noquant[
     comptime length = rows * cols
 
     print(
-        "  test_fused_allreduce_rmsnorm_noquant[",
-        ngpus,
-        ",",
-        dtype,
-        ",",
-        rows,
-        "x",
-        cols,
-        "]",
+        t"  test_fused_allreduce_rmsnorm_noquant[ {ngpus} , {dtype} , {rows} x"
+        t" {cols} ]"
     )
 
     # --- Setup: per-GPU input buffers ---
@@ -620,19 +588,8 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     comptime length = rows * cols
 
     print(
-        "  test_fused_allreduce_residual_rmsnorm_fp8[",
-        ngpus,
-        ",",
-        in_dtype,
-        "->",
-        out_dtype,
-        ",",
-        rows,
-        "x",
-        cols,
-        ", no_scratch=",
-        no_scratch,
-        "]",
+        t"  test_fused_allreduce_residual_rmsnorm_fp8[ {ngpus} , {in_dtype} ->"
+        t" {out_dtype} , {rows} x {cols} , no_scratch= {no_scratch} ]"
     )
 
     # --- Setup: per-GPU input buffers ---
@@ -829,12 +786,8 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
             res_errors += 1
             if res_errors <= 5:
                 print(
-                    "  Residual mismatch at",
-                    i,
-                    ": ref=",
-                    ref_val,
-                    ", fused=",
-                    fused_val,
+                    t"  Residual mismatch at {i} : ref= {ref_val} , fused="
+                    t" {fused_val}"
                 )
 
     if res_errors > 0:
@@ -898,17 +851,8 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
     comptime length = rows * cols
 
     print(
-        "  test_fused_allreduce_residual_rmsnorm_noquant[",
-        ngpus,
-        ",",
-        dtype,
-        ",",
-        rows,
-        "x",
-        cols,
-        ", multiply_before_cast=",
-        multiply_before_cast,
-        "]",
+        t"  test_fused_allreduce_residual_rmsnorm_noquant[ {ngpus} , {dtype} ,"
+        t" {rows} x {cols} , multiply_before_cast= {multiply_before_cast} ]"
     )
 
     # --- Setup: per-GPU input buffers ---
@@ -1066,12 +1010,8 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
             res_errors += 1
             if res_errors <= 5:
                 print(
-                    "  Residual mismatch at",
-                    i,
-                    ": ref=",
-                    ref_val,
-                    ", fused=",
-                    fused_val,
+                    t"  Residual mismatch at {i} : ref= {ref_val} , fused="
+                    t" {fused_val}"
                 )
     if res_errors > 0:
         raise Error(t"Residual output mismatches: {res_errors} / {length}")
@@ -1289,13 +1229,8 @@ def test_lamport_residual_rmsnorm_sequence[
     forced launch; their dispatch call still runs, on the barrier kernels.
     """
     print(
-        "  test_lamport_residual_rmsnorm_sequence[",
-        ngpus,
-        ", cols=",
-        cols,
-        ", multiply_before_cast=",
-        multiply_before_cast,
-        "]",
+        t"  test_lamport_residual_rmsnorm_sequence[ {ngpus} , cols= {cols} ,"
+        t" multiply_before_cast= {multiply_before_cast} ]"
     )
     var row_counts: List[Int] = [1, 64, 7, 32, 1, 17, 64, 3]
     # Shapes the Lamport kernel cannot take run the 2-stage kernel, which
@@ -1369,11 +1304,8 @@ def test_residual_rmsnorm_rank_not_ordinal[
     index past the group's buffers. The row counts cover the Lamport kernel
     and the barrier kernels."""
     print(
-        "  test_residual_rmsnorm_rank_not_ordinal[",
-        ngpus,
-        ", first ordinal=",
-        list_of_ctx[0].device().id,
-        "]",
+        t"  test_residual_rmsnorm_rank_not_ordinal[ {ngpus} , first ordinal="
+        t" {list_of_ctx[0].device().id} ]"
     )
     comptime cols = 4096
     var row_counts: List[Int] = [1, 64, 2048]
@@ -1449,7 +1381,7 @@ def test_fused_allreduce_rmsnorm_zero_rows[
     allocations are real. The views are zero-row, and the output must keep
     its sentinel since nothing may be written.
     """
-    print("  test_fused_allreduce_rmsnorm_zero_rows[", ngpus, ",", cols, "]")
+    print(t"  test_fused_allreduce_rmsnorm_zero_rows[ {ngpus} , {cols} ]")
 
     var in_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
     var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)

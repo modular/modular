@@ -413,22 +413,10 @@ def _run_case[
     var frac_gt1 = Float32(gt1_ulp) / Float32(total_elems)
     comptime mode_tag = "[dispatch straddle] " if use_dispatch else ""
     print(
-        String(
-            "  ",
-            mode_tag,
-            "M=",
-            num_rows,
-            ": NORM(vs host ref) frac>1ULP=",
-            frac_gt1 * 100.0,
-            "% max_ulp=",
-            max_ulp,
-            " | residual mismatches=",
-            sum_mismatch,
-            " max_ulp=",
-            sum_max_ulp,
-            " | replication mismatches=",
-            repl_mismatch,
-        )
+        t"  {mode_tag}M={num_rows}: NORM(vs host ref)"
+        t" frac>1ULP={frac_gt1 * 100.0}% max_ulp={max_ulp} | residual"
+        t" mismatches={sum_mismatch} max_ulp={sum_max_ulp} | replication"
+        t" mismatches={repl_mismatch}"
     )
 
     if frac_gt1 > 0.01 or max_ulp > 4:
@@ -835,27 +823,14 @@ def _run_prod_oracle_case[
 
     var rate = Float32(normed_mismatch) / Float32(compared_elems) * 100.0
     comptime mode_tag = "dispatched-op-vs" if use_dispatch else "fused-vs"
+    var result_tag = (
+        "  <-- BIT-IDENTICAL" if normed_mismatch == 0 else "  <-- diverges"
+    )
     print(
-        String(
-            "  M=",
-            num_rows,
-            ": ",
-            mode_tag,
-            "-PRODUCTION mismatch=",
-            normed_mismatch,
-            "/",
-            compared_elems,
-            " (",
-            rate,
-            "%) max_ulp=",
-            normed_max_ulp,
-            " | sum_out mismatch=",
-            sum_mismatch,
-            (
-                "  <-- BIT-IDENTICAL" if normed_mismatch
-                == 0 else "  <-- diverges"
-            ),
-        )
+        t"  M={num_rows}: {mode_tag}-PRODUCTION"
+        t" mismatch={normed_mismatch}/{compared_elems} ({rate}%)"
+        t" max_ulp={normed_max_ulp} | sum_out"
+        t" mismatch={sum_mismatch}{result_tag}"
     )
 
     # sum_out must be bit-identical to a standalone all-gather at every M.
@@ -1113,22 +1088,10 @@ def _run_interleaved_barrier_case[
         _ = w_got^
 
     print(
-        String(
-            "  interleaved barrier (",
-            ngpus,
-            " GPUs, ",
-            ngpus // group_size,
-            "x TP",
-            group_size,
-            ", ",
-            rounds,
-            " rounds, rows/dev=",
-            rows_per_dev,
-            "): completed; grouped-gather errors=",
-            grp_bad,
-            " full-world-gather errors=",
-            world_bad,
-        )
+        t"  interleaved barrier ({ngpus} GPUs, {ngpus // group_size}x"
+        t" TP{group_size}, {rounds} rounds, rows/dev={rows_per_dev}):"
+        t" completed; grouped-gather errors={grp_bad} full-world-gather"
+        t" errors={world_bad}"
     )
 
     if grp_bad != 0 or world_bad != 0:
@@ -1614,15 +1577,8 @@ def _run_grouped_suite[
         list_of_ctx.append(DeviceContext(device_id=i))
 
     print(
-        "\n=== grouped: ",
-        ngpus,
-        " GPUs as ",
-        ngpus // group_size,
-        "x TP",
-        group_size,
-        " (H=",
-        num_cols,
-        ") ===",
+        t"\n=== grouped:  {ngpus}  GPUs as  {ngpus // group_size} x TP"
+        t" {group_size}  (H= {num_cols} ) ==="
     )
 
     # Every case routes through the dispatch, so bit-identity vs the grouped
@@ -1668,7 +1624,7 @@ def _run_grouped_suite[
         list_of_ctx
     )
 
-    print("grouped ", ngpus // group_size, "x TP", group_size, " passed.")
+    print(t"grouped  {ngpus // group_size} x TP {group_size}  passed.")
     _ = list_of_ctx^
 
 
@@ -1693,11 +1649,8 @@ def _run_suite[
     # wo=1.0/mbc=True): locates the crossover M* that calibrates the fuse
     # threshold. ---
     print(
-        "\nfused-vs-production bit-identity sweep (wo=1.0, mbc=True, TP",
-        ngpus,
-        "H=",
-        num_cols,
-        "):",
+        t"\nfused-vs-production bit-identity sweep (wo=1.0, mbc=True, TP"
+        t" {ngpus} H= {num_cols} ):"
     )
     var largest_bit_identical_m = 0
     var smallest_diverging_m = 0
@@ -1782,24 +1735,17 @@ def main() raises:
         _run_grouped_suite[in_dtype, 4, 2, num_cols]()
     else:
         print(
-            "\nSKIPPED grouped-TP coverage (needs >= 4 GPUs, found",
-            num_devices,
-            (
-                "): local-rank remap, group-local slicing, per-group gather and"
-                " the barrier-domain deadlock gate are NOT exercised in this"
-                " run."
-            ),
+            t"\nSKIPPED grouped-TP coverage (needs >= 4 GPUs, found"
+            t" {num_devices} ): local-rank remap, group-local slicing,"
+            t" per-group gather and the barrier-domain deadlock gate are NOT"
+            t" exercised in this run."
         )
     if num_devices >= 8:
         _run_grouped_suite[in_dtype, 8, 4, num_cols]()
     else:
         print(
-            (
-                "\nSKIPPED grouped 2xTP4 (M3's production TP4xDP2 topology,"
-                " needs 8 GPUs, found"
-            ),
-            num_devices,
-            ").",
+            t"\nSKIPPED grouped 2xTP4 (M3's production TP4xDP2 topology, needs"
+            t" 8 GPUs, found {num_devices} )."
         )
 
     print("All fused all-gather + RMSNorm tests passed!")

@@ -83,20 +83,10 @@ def test_skip_a2a[
     var my_rank = Int(ctx.device().id)
 
     print(
-        "Running skip_a2a test: hidden_size:",
-        hidden_size,
-        "top_k:",
-        top_k,
-        "n_local_experts:",
-        n_local_experts,
-        "n_total_experts:",
-        n_total_experts,
-        "n_tokens:",
-        n_tokens,
-        "fused_shared_expert:",
-        fused_shared_expert,
-        "my_rank:",
-        my_rank,
+        t"Running skip_a2a test: hidden_size: {hidden_size} top_k:"
+        t" {top_k} n_local_experts: {n_local_experts} n_total_experts:"
+        t" {n_total_experts} n_tokens: {n_tokens} fused_shared_expert:"
+        t" {fused_shared_expert} my_rank: {my_rank}"
     )
 
     # fmt: off

@@ -101,7 +101,7 @@ def test_shmem_put[use_nbi: Bool](ctx: SHMEMContext) raises:
             String(t"unexpected value on PE: {mype} at idx: {i}"),
         )
 
-    print("[", mype, "of", npes, "] run complete. use_nbi=", use_nbi)
+    print(t"[ {mype} of {npes} ] run complete. use_nbi= {use_nbi}")
 
 
 def main() raises:

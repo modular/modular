@@ -111,12 +111,8 @@ def _check_outputs(
                     assert_equal(host_out[j], expected)
                 except e:
                     print(
-                        "Verification failed: device",
-                        d,
-                        "global source",
-                        group_start + l,
-                        "index",
-                        j,
+                        t"Verification failed: device {d} global source"
+                        t" {group_start + l} index {j}"
                     )
                     print("Value:", host_out[j], "Expected:", expected)
                     raise e^

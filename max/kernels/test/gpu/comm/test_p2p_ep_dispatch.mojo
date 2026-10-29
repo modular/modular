@@ -1056,18 +1056,10 @@ def test_dispatch_common[
     var dispatch_test = DispatchTestType(list_of_ctx)
 
     print(
-        "Running ep_dispatch test:",
-        token_fmt_type.get_type_name(),
-        "hidden_size:",
-        hidden_size,
-        "top_k:",
-        top_k,
-        "n_experts:",
-        n_experts,
-        "n_ranks:",
-        n_ranks,
-        "n_tokens_per_rank:",
-        n_tokens_per_rank,
+        t"Running ep_dispatch test:"
+        t" {token_fmt_type.get_type_name()} hidden_size: {hidden_size} top_k:"
+        t" {top_k} n_experts: {n_experts} n_ranks: {n_ranks} n_tokens_per_rank:"
+        t" {n_tokens_per_rank}"
     )
 
     # fmt: off

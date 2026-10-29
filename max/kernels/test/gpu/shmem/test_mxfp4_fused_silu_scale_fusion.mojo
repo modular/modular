@@ -114,18 +114,9 @@ def _run_fusion_check[
     var slot_bytes = num_active * max_padded_M * scale_K
 
     print(
-        "  ",
-        name,
-        " active=",
-        num_active,
-        " total_tokens=",
-        total_tokens,
-        " hidden=",
-        hidden_size,
-        " scale_K=",
-        scale_K,
-        " max_padded_M=",
-        max_padded_M,
+        t"   {name}  active= {num_active}  total_tokens= {total_tokens} "
+        t" hidden= {hidden_size}  scale_K= {scale_K}  max_padded_M="
+        t" {max_padded_M}"
     )
 
     comptime hw = ctx.default_device_info
@@ -308,22 +299,9 @@ def _run_activation_probe[
     var slot_bytes = NUM_ACTIVE * max_padded_M * scale_K
 
     print(
-        "  ",
-        name,
-        " active=",
-        NUM_ACTIVE,
-        " total_tokens=",
-        total_tokens,
-        " hidden=",
-        hidden_size,
-        " scale_K=",
-        scale_K,
-        " max_padded_M=",
-        max_padded_M,
-        " alpha=",
-        alpha,
-        " limit=",
-        limit,
+        t"   {name}  active= {NUM_ACTIVE}  total_tokens= {total_tokens} "
+        t" hidden= {hidden_size}  scale_K= {scale_K}  max_padded_M="
+        t" {max_padded_M}  alpha= {alpha}  limit= {limit}"
     )
 
     comptime hw = ctx.default_device_info
@@ -461,12 +439,8 @@ def _run_activation_probe[
                 max_ratio = err / s
 
     print(
-        "    max_abs_err=",
-        max_abs_err,
-        " worst err/S=",
-        max_ratio,
-        " violations=",
-        violations,
+        t"    max_abs_err= {max_abs_err}  worst err/S= {max_ratio}  violations="
+        t" {violations}"
     )
     assert_equal(violations, 0)
     print(

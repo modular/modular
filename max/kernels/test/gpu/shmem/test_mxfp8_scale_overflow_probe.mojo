@@ -202,21 +202,9 @@ def test_cast_behavior(ctx: DeviceContext) raises:
         var sb = bitcast[.uint8](e8m0_h[i])
         var qb = bitcast[.uint8](e4m3_h[i])
         print(
-            "    ",
-            names[i],
-            " x=",
-            vals_h[i],
-            " | e8m0=",
-            Int(sb),
-            " (",
-            back_h[i],
-            ") | recip=",
-            recip_h[i],
-            " | e4m3=",
-            Int(qb),
-            " (",
-            e4m3_h[i].cast[.float32](),
-            ")",
+            t"     {names[i]}  x= {vals_h[i]}  | e8m0= {Int(sb)}  ("
+            t" {back_h[i]} ) | recip= {recip_h[i]}  | e4m3= {Int(qb)}  ("
+            t" {e4m3_h[i].cast[.float32]()} )"
         )
 
     # The bound `|value * recip(scale)| <= 448` holds only if the E8M0 cast
@@ -351,22 +339,10 @@ def test_quantize_bf16_exhaustive[
                 nan_outputs += 1
                 if nan_outputs <= 4:
                     print(
-                        "      NaN E4M3 at bf16-block ",
-                        g,
-                        " lane ",
-                        j,
-                        ": input=",
-                        orig,
-                        " block_max=",
-                        group_max,
-                        " e8m0=",
-                        Int(scale_bits),
-                        " (scale=",
-                        scale,
-                        ") out_scale=",
-                        out_scale,
-                        " out_byte=",
-                        Int(ob),
+                        t"      NaN E4M3 at bf16-block  {g}  lane  {j} : input="
+                        t" {orig}  block_max= {group_max}  e8m0="
+                        t" {Int(scale_bits)}  (scale= {scale} ) out_scale="
+                        t" {out_scale}  out_byte= {Int(ob)}"
                     )
                 continue
             var dequant = out_h[idx].cast[.float32]() * scale
@@ -392,28 +368,14 @@ def test_quantize_bf16_exhaustive[
                     max_rel_err_group = g
 
     print(
-        "    blocks=",
-        NUM_BF16_MAGS,
-        " ragged=",
-        ragged,
-        "\n     worst |value * out_scale| = ",
-        worst_product,
-        " (vs E4M3 maxabs 448) at bf16 bit pattern ",
-        worst_product_group,
-        "\n     NaN scales=",
-        nan_scales,
-        " NaN outputs=",
-        nan_outputs,
-        "\n     fp32-reconstruction overflows=",
-        dequant_overflow,
-        " (smallest input magnitude involved: ",
-        min_overflow_orig,
-        ")\n     E8M0-floor-clamped blocks=",
-        underflow_clamped,
-        " max rel err at block max=",
-        max_rel_err,
-        " at bf16 bit pattern ",
-        max_rel_err_group,
+        t"    blocks= {NUM_BF16_MAGS}  ragged= {ragged} \n     worst |value *"
+        t" out_scale| =  {worst_product}  (vs E4M3 maxabs 448) at bf16 bit"
+        t" pattern  {worst_product_group} \n     NaN scales= {nan_scales}  NaN"
+        t" outputs= {nan_outputs} \n     fp32-reconstruction overflows="
+        t" {dequant_overflow}  (smallest input magnitude involved: "
+        t" {min_overflow_orig} )\n     E8M0-floor-clamped blocks="
+        t" {underflow_clamped}  max rel err at block max= {max_rel_err}  at"
+        t" bf16 bit pattern  {max_rel_err_group}"
     )
 
     assert_true(nan_scales == 0, "quantize_mx_amd emitted a NaN E8M0 scale")
@@ -678,50 +640,26 @@ def test_fused_silu_adversarial[
                     var ob2 = bitcast[.uint8](out_h[t * output_dim + k])
                     if ob2 != E4M3_NAN_LO and ob2 != E4M3_NAN_HI:
                         continue
+                    var gate = input_h[t * input_dim + k].cast[.float32]()
+                    var up = input_h[t * input_dim + SILU_HIDDEN + k].cast[
+                        .float32
+                    ]()
                     print(
-                        "        nan lane ",
-                        j,
-                        " gate=",
-                        input_h[t * input_dim + k].cast[.float32](),
-                        " up=",
-                        input_h[t * input_dim + SILU_HIDDEN + k].cast[
-                            .float32
-                        ](),
-                        " out_byte=",
-                        Int(ob2),
+                        t"        nan lane  {j}  gate= {gate}  up= {up} "
+                        t" out_byte= {Int(ob2)}"
                     )
                 print(
-                    "      VIOLATION token=",
-                    t,
-                    " block=",
-                    g,
-                    " pattern='",
-                    _pattern_name(p),
-                    "' e8m0=",
-                    Int(scale_bits),
-                    " nan_lanes=",
-                    bad_out,
-                    " fp32_recon_overflow_lanes=",
-                    recon_overflow,
-                    " host_ref_nonfinite=",
-                    ref_nonfinite,
-                    " host_ref_max=",
-                    ref_max,
+                    t"      VIOLATION token= {t}  block= {g}  pattern='"
+                    t" {_pattern_name(p)} ' e8m0= {Int(scale_bits)}  nan_lanes="
+                    t" {bad_out}  fp32_recon_overflow_lanes= {recon_overflow} "
+                    t" host_ref_nonfinite= {ref_nonfinite}  host_ref_max="
+                    t" {ref_max}"
                 )
             elif t == 0:
                 print(
-                    "      ok block=",
-                    g,
-                    " pattern='",
-                    _pattern_name(p),
-                    "' e8m0=",
-                    Int(scale_bits),
-                    " ref_max=",
-                    ref_max,
-                    " ref_nonfinite=",
-                    ref_nonfinite,
-                    " max|dequant|=",
-                    worst_dequant,
+                    t"      ok block= {g}  pattern=' {_pattern_name(p)} ' e8m0="
+                    t" {Int(scale_bits)}  ref_max= {ref_max}  ref_nonfinite="
+                    t" {ref_nonfinite}  max|dequant|= {worst_dequant}"
                 )
     return violations
 

@@ -285,14 +285,7 @@ def bench_reducescatter_2d[
                             rtol=rtol,
                         )
                     except e:
-                        print(
-                            "Verification failed at GPU",
-                            i,
-                            "row",
-                            r,
-                            "col",
-                            c,
-                        )
+                        print(t"Verification failed at GPU {i} row {r} col {c}")
                         print("Value:", host_buffers[i][r * D + c])
                         print("Expected:", expected_sum)
                         raise e^
@@ -318,14 +311,7 @@ def bench_reducescatter_2d[
                             rtol=rtol,
                         )
                     except e:
-                        print(
-                            "Verification failed at GPU",
-                            i,
-                            "row",
-                            r,
-                            "col",
-                            c,
-                        )
+                        print(t"Verification failed at GPU {i} row {r} col {c}")
                         print("Value:", host_buffers[i][r * my_cols + c])
                         print("Expected:", expected_sum)
                         raise e^

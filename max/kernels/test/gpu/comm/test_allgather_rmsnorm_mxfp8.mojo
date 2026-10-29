@@ -421,18 +421,10 @@ def _run_case[
                 distinct_scales.append(b)
 
     print(
-        "  M=",
-        num_rows,
-        " quant_mismatch=",
-        total_quant_mismatch,
-        " scale_mismatch=",
-        total_scale_mismatch,
-        " normed_mismatch=",
-        total_normed_mismatch,
-        " nonzero=",
-        nonzero_quant,
-        " distinct_scales=",
-        len(distinct_scales),
+        t"  M= {num_rows}  quant_mismatch= {total_quant_mismatch} "
+        t" scale_mismatch= {total_scale_mismatch}  normed_mismatch="
+        t" {total_normed_mismatch}  nonzero= {nonzero_quant}  distinct_scales="
+        t" {len(distinct_scales)}"
     )
 
     assert_equal(

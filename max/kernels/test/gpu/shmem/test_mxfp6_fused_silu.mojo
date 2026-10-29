@@ -207,14 +207,8 @@ def _run_case[
                 worst = max(worst, err)
 
     print(
-        "  hidden=",
-        hidden_size,
-        " clamp=",
-        clamp_activation,
-        " tokens=",
-        total_tokens,
-        " worst scaled err=",
-        worst,
+        t"  hidden= {hidden_size}  clamp= {clamp_activation}  tokens="
+        t" {total_tokens}  worst scaled err= {worst}"
     )
     # One E2M3 quantum at the top of a block is 0.5 (max finite 7.5 with three
     # mantissa bits), so half a quantum plus bf16 input rounding sits well

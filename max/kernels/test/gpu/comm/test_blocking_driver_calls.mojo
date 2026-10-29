@@ -98,13 +98,7 @@ struct _Clock(ImplicitlyCopyable, Movable):
 
     def mark(self, label: StaticString):
         """Prints `label` stamped with the time since the run began."""
-        print(
-            "[",
-            Float64(monotonic() - self._start_ns) / 1.0e6,
-            "ms ] ",
-            label,
-            sep="",
-        )
+        print(t"[{Float64(monotonic() - self._start_ns) / 1.0e6}ms ] {label}")
 
     def elapsed_sec(self) -> Float64:
         """Seconds since the run began."""

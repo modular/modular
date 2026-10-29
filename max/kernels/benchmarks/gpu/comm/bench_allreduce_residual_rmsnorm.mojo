@@ -219,14 +219,7 @@ def _verify_results[
         if fv != ffv:
             num_errors += 1
             if num_errors <= 5:
-                print(
-                    "  Mismatch at",
-                    i,
-                    ": fused=",
-                    fv,
-                    ", fully_fused=",
-                    ffv,
-                )
+                print(t"  Mismatch at {i} : fused= {fv} , fully_fused= {ffv}")
 
     var error_rate = Float32(num_errors) / Float32(length)
     if error_rate > 0.03:
@@ -259,14 +252,8 @@ def _verify_results[
             scale_errors += 1
             if scale_errors <= 5:
                 print(
-                    "  Scale mismatch at row",
-                    i,
-                    ": fused=",
-                    fused_s,
-                    ", fully_fused=",
-                    ff_s,
-                    ", rel_diff=",
-                    rel_diff,
+                    t"  Scale mismatch at row {i} : fused= {fused_s} ,"
+                    t" fully_fused= {ff_s} , rel_diff= {rel_diff}"
                 )
 
     if scale_errors > 0:
@@ -488,12 +475,8 @@ def _verify_add_results[
             num_errors += 1
             if num_errors <= 5:
                 print(
-                    "  Add-path mismatch at",
-                    i,
-                    ": epilogue=",
-                    ev,
-                    ", fully_fused=",
-                    ffv,
+                    t"  Add-path mismatch at {i} : epilogue= {ev} ,"
+                    t" fully_fused= {ffv}"
                 )
 
     var error_rate = Float32(num_errors) / Float32(length)
@@ -527,14 +510,8 @@ def _verify_add_results[
             scale_errors += 1
             if scale_errors <= 5:
                 print(
-                    "  Add-path scale mismatch at row",
-                    i,
-                    ": epilogue=",
-                    ep_s,
-                    ", fully_fused=",
-                    ff_s,
-                    ", rel_diff=",
-                    rel_diff,
+                    t"  Add-path scale mismatch at row {i} : epilogue= {ep_s} ,"
+                    t" fully_fused= {ff_s} , rel_diff= {rel_diff}"
                 )
 
     if scale_errors > 0:
@@ -1154,13 +1131,7 @@ def main() raises:
 
     var num_devices = DeviceContext.number_of_devices()
     if num_devices < num_gpus:
-        print(
-            "Need",
-            num_gpus,
-            "GPUs but only found",
-            num_devices,
-            "- skipping.",
-        )
+        print(t"Need {num_gpus} GPUs but only found {num_devices} - skipping.")
         return
 
     # Enable P2P access between all GPU pairs before the read-only status
@@ -1175,18 +1146,12 @@ def main() raises:
     for i in range(num_gpus):
         list_of_ctx.append(DeviceContext(device_id=i))
 
+    var benchmark_name = "Benchmarking allreduce + RMSNorm" + (
+        " + FP8:" if quantize else " (no quant):"
+    )
     print(
-        "Benchmarking allreduce + RMSNorm"
-        + (" + FP8:" if quantize else " (no quant):"),
-        num_gpus,
-        "GPUs,",
-        in_dtype,
-        "->",
-        out_dtype,
-        ",",
-        num_rows,
-        "x",
-        num_cols,
+        t"{benchmark_name} {num_gpus} GPUs, {in_dtype} -> {out_dtype} ,"
+        t" {num_rows} x {num_cols}"
     )
 
     var m = Bench(BenchConfig(num_repetitions=1))

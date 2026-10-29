@@ -140,14 +140,8 @@ def rmsnorm_test[
     not launch, so the generation rotation stays in step and every real call
     still matches the reference."""
     print(
-        "==== fused Lamport AR+RMSNorm  ngpus=",
-        ngpus,
-        " M=",
-        M,
-        " K=",
-        K,
-        " iters=",
-        iters,
+        t"==== fused Lamport AR+RMSNorm  ngpus= {ngpus}  M= {M}  K= {K}  iters="
+        t" {iters}"
     )
 
     var act_size = M * K

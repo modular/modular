@@ -446,16 +446,8 @@ def bench_rms_norm_fused_fp8[
             num_errors += 1
             if num_errors <= 10:  # Print first 10 errors
                 print(
-                    "Mismatch at index",
-                    i,
-                    ": separate =",
-                    fp8_val,
-                    ", fused =",
-                    fused_val,
-                    ", diff =",
-                    diff,
-                    ", rel =",
-                    rel_diff,
+                    t"Mismatch at index {i} : separate = {fp8_val} , fused ="
+                    t" {fused_val} , diff = {diff} , rel = {rel_diff}"
                 )
 
     var mean_abs_diff = sum_abs_diff / Float64(rows * cols)
@@ -463,7 +455,7 @@ def bench_rms_norm_fused_fp8[
 
     print("\nVerification Statistics:")
     print("  Total elements:", rows * cols)
-    print("  Exact matches:", num_exact, "(", percent_exact, "%)")
+    print(t"  Exact matches: {num_exact} ( {percent_exact} %)")
     print("  Max absolute diff:", max_diff)
     print("  Max relative diff:", max_rel_diff)
     print("  Mean absolute diff:", mean_abs_diff)
@@ -474,25 +466,17 @@ def bench_rms_norm_fused_fp8[
     if num_errors > 0:
         if error_rate > 0.05:  # More than 5% errors is concerning
             print(
-                "\nVerification FAILED:",
-                num_errors,
-                "mismatches (",
-                error_rate * 100.0,
-                "%) exceed threshold (rtol=",
-                rtol,
-                ", atol=",
-                atol,
-                ")",
+                t"\nVerification FAILED: {num_errors} mismatches ("
+                t" {error_rate * 100.0} %) exceed threshold (rtol= {rtol} ,"
+                t" atol= {atol} )"
             )
             raise Error("Output verification failed - too many mismatches")
         else:
             # Small number of mismatches might be due to FP8 scaling differences
             print(
-                "\nVerification PASSED with warnings:",
-                num_errors,
-                "minor mismatches (",
-                error_rate * 100.0,
-                "%) likely due to FP8 scaling differences",
+                t"\nVerification PASSED with warnings: {num_errors} minor"
+                t" mismatches ( {error_rate * 100.0} %) likely due to FP8"
+                t" scaling differences"
             )
     else:
         print(

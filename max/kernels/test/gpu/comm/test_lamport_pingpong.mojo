@@ -304,12 +304,8 @@ def run_variant[
         )
     else:
         print(
-            (
-                "  VISIBILITY OK: every reader slot observed the peer's stores"
-                " and advanced (min generation seen ="
-            ),
-            min_seen,
-            ")",
+            t"  VISIBILITY OK: every reader slot observed the peer's stores and"
+            t" advanced (min generation seen = {min_seen} )"
         )
 
     if total_torn == 0:

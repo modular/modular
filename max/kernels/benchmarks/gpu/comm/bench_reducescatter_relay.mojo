@@ -436,20 +436,9 @@ def main() raises:
 
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     print(
-        "# relay reduce-scatter:",
-        WORLD,
-        "GPUs,",
-        WORLD // GROUP,
-        "groups of",
-        GROUP,
-        "| dtype",
-        dtype,
-        "| simd_width",
-        simd_width,
-        "| iters",
-        iters,
-        "| residual",
-        HAS_RESIDUAL,
+        t"# relay reduce-scatter: {WORLD} GPUs, {WORLD // GROUP} groups of"
+        t" {GROUP} | dtype {dtype} | simd_width {simd_width} | iters {iters} |"
+        t" residual {HAS_RESIDUAL}"
     )
 
     var part_kb = List[Int](capacity=8)
@@ -473,12 +462,8 @@ def main() raises:
             var part = part_kb[si] * 1024 // size_of[dtype]()
             var base_ms = run_baseline(part, None, "baseline")
             print(
-                "CSV,",
-                part_kb[si],
-                ",baseline,-,-,",
-                base_ms,
-                ",",
-                gbps(part, base_ms),
+                t"CSV, {part_kb[si]} ,baseline,-,-, {base_ms} ,"
+                t" {gbps(part, base_ms)}"
             )
             for di in range(len(direct_blocks)):
                 for ri in range(len(relay_blocks)):
@@ -492,18 +477,9 @@ def main() raises:
                         )
                         var ms = run_relay(part, Optional(cfg), "relay")
                         print(
-                            "CSV,",
-                            part_kb[si],
-                            ",",
-                            direct_blocks[di],
-                            ",",
-                            relay_blocks[ri],
-                            ",",
-                            percents[pi],
-                            ",",
-                            ms,
-                            ",",
-                            gbps(part, ms),
+                            t"CSV, {part_kb[si]} , {direct_blocks[di]} ,"
+                            t" {relay_blocks[ri]} , {percents[pi]} , {ms} ,"
+                            t" {gbps(part, ms)}"
                         )
         return
 
@@ -516,31 +492,17 @@ def main() raises:
 
         if table_recipe(part).relay_percent == 0:
             print(
-                "|",
-                human_readable_size(part * size_of[dtype]()),
-                "|",
-                base_ms,
-                "|",
-                gbps(part, base_ms),
-                "| relay declined by the tuning table |",
+                t"| {human_readable_size(part * size_of[dtype]())} |"
+                t" {base_ms} | {gbps(part, base_ms)} | relay declined by the"
+                t" tuning table |"
             )
             continue
 
         var relay_ms = run_relay(part, None, "relay")
         print(
-            "|",
-            human_readable_size(part * size_of[dtype]()),
-            "|",
-            base_ms,
-            "|",
-            gbps(part, base_ms),
-            "|",
-            relay_ms,
-            "|",
-            gbps(part, relay_ms),
-            "|",
-            base_ms / relay_ms,
-            "|",
+            t"| {human_readable_size(part * size_of[dtype]())} | {base_ms} |"
+            t" {gbps(part, base_ms)} | {relay_ms} | {gbps(part, relay_ms)} |"
+            t" {base_ms / relay_ms} |"
         )
 
     _ = host_buffer^

@@ -257,15 +257,12 @@ def report_routing[
     for g in range(n_ranks):
         max_gpu = max(max_gpu, per_gpu[g])
 
+    var routing_mode = "skewed" if skew_enabled() else "uniform"
     print(
-        "ROUTING mode:",
-        "skewed" if skew_enabled() else "uniform",
-        "expert_imbalance:",
-        Float64(max_expert) * Float64(n_experts) / Float64(total),
-        "busiest_gpu_share:",
-        Float64(max_gpu) / Float64(total),
-        "even_share:",
-        1.0 / Float64(n_ranks),
+        t"ROUTING mode: {routing_mode} expert_imbalance:"
+        t" {Float64(max_expert) * Float64(n_experts) / Float64(total)} busiest_gpu_share:"
+        t" {Float64(max_gpu) / Float64(total)} even_share:"
+        t" {1.0 / Float64(n_ranks)}"
     )
 
 
@@ -606,22 +603,11 @@ def bench_dispatch_common[
     var dispatch_test = DispatchTestType(list_of_ctx)
 
     print(
-        "Running ep_dispatch bench:",
-        token_fmt_type.get_type_name(),
-        "hidden_size:",
-        hidden_size,
-        "top_k:",
-        top_k,
-        "n_experts:",
-        n_experts,
-        "n_ranks:",
-        n_ranks,
-        "n_tokens_per_rank:",
-        n_tokens_per_rank,
-        "msg_bytes:",
-        msg_bytes,
-        "send_bytes_per_rank:",
-        num_bytes,
+        t"Running ep_dispatch bench:"
+        t" {token_fmt_type.get_type_name()} hidden_size: {hidden_size} top_k:"
+        t" {top_k} n_experts: {n_experts} n_ranks: {n_ranks} n_tokens_per_rank:"
+        t" {n_tokens_per_rank} msg_bytes: {msg_bytes} send_bytes_per_rank:"
+        t" {num_bytes}"
     )
 
     # fmt: off
@@ -1132,17 +1118,9 @@ def bench_all_formats[
 ](list_of_ctx: List[DeviceContext]) raises:
     """Runs every token format this vendor dispatches with, at one shape."""
     print(
-        "\n===== dispatch shape: tokens_per_rank=",
-        n_tokens_per_rank,
-        " slots=",
-        n_slots,
-        " hidden=",
-        HIDDEN,
-        " top_k=",
-        TOP_K,
-        " n_experts=",
-        N_EXPERTS,
-        " =====",
+        t"\n===== dispatch shape: tokens_per_rank= {n_tokens_per_rank}  slots="
+        t" {n_slots}  hidden= {HIDDEN}  top_k= {TOP_K}  n_experts= {N_EXPERTS} "
+        t" ====="
     )
 
     bench_dispatch_bf16[

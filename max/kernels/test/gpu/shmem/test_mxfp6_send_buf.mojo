@@ -126,12 +126,8 @@ def main() raises:
     print("  packed bytes:", QUANT_BYTES, " mismatched:", quant_mismatch)
     if first_bad >= 0:
         print(
-            "  first mismatch at byte ",
-            first_bad,
-            ": got ",
-            buf_h[first_bad],
-            " want ",
-            ref_out_h[first_bad],
+            t"  first mismatch at byte  {first_bad} : got  {buf_h[first_bad]} "
+            t" want  {ref_out_h[first_bad]}"
         )
 
     var scale_off = TokenFmt.scales_offset()

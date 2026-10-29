@@ -63,7 +63,7 @@ def rows_slice_test[
     """
     var total = rows * cols
     var slice_elems = (rows // ngpus) * cols
-    print("  rows", rows, "cols", cols, "-> per-device block", slice_elems)
+    print(t"  rows {rows} cols {cols} -> per-device block {slice_elems}")
 
     var in_bufs = List[DeviceBuffer[dtype]](capacity=ngpus)
     var host_in = List[HostBuffer[dtype]](capacity=ngpus)
@@ -184,14 +184,8 @@ def rows_slice_test[
                     mismatches += 1
             if mismatches != 0:
                 print(
-                    "  MISMATCH device",
-                    d,
-                    "source",
-                    j,
-                    "elements:",
-                    mismatches,
-                    "of",
-                    slice_elems,
+                    t"  MISMATCH device {d} source {j} elements:"
+                    t" {mismatches} of {slice_elems}"
                 )
             assert_equal(mismatches, 0)
 
@@ -228,14 +222,9 @@ def rows_slice_test[
             Float64(perf_counter_ns() - t0) / 1000.0 / Float64(iterations)
         )
         print(
-            "  timing (mean over",
-            iterations,
-            "launches): allgather",
-            ref_us,
-            "us, allgather_rows_slice",
-            new_us,
-            "us, ratio",
-            ref_us / new_us,
+            t"  timing (mean over {iterations} launches): allgather"
+            t" {ref_us} us, allgather_rows_slice {new_us} us, ratio"
+            t" {ref_us / new_us}"
         )
 
 

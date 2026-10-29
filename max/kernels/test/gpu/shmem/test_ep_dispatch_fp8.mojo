@@ -122,20 +122,10 @@ def test_dispatch[
 
     if my_rank == 0:
         print(
-            "Running ep_dispatch test: fp8_dtype:",
-            fp8_dtype,
-            "scales_dtype:",
-            scales_dtype,
-            "hidden_size:",
-            hidden_size,
-            "top_k:",
-            top_k,
-            "n_experts:",
-            n_experts,
-            "n_ranks:",
-            n_ranks,
-            "n_tokens_per_rank:",
-            n_tokens_per_rank,
+            t"Running ep_dispatch test: fp8_dtype: {fp8_dtype} scales_dtype:"
+            t" {scales_dtype} hidden_size: {hidden_size} top_k:"
+            t" {top_k} n_experts: {n_experts} n_ranks:"
+            t" {n_ranks} n_tokens_per_rank: {n_tokens_per_rank}"
         )
 
     var send_buf = shmem_malloc[.uint8](n_tokens_per_rank * msg_bytes)

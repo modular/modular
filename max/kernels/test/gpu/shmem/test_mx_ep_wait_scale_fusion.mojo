@@ -208,20 +208,9 @@ def _run_fusion_check[
     var slot_bytes = num_active * max_padded_M * scale_K
 
     print(
-        "  ",
-        fmt_name,
-        " ",
-        name,
-        " active=",
-        num_active,
-        " total_tokens=",
-        total_tokens,
-        " hidden=",
-        hidden_size,
-        " scale_K=",
-        scale_K,
-        " max_padded_M=",
-        max_padded_M,
+        t"   {fmt_name}   {name}  active= {num_active}  total_tokens="
+        t" {total_tokens}  hidden= {hidden_size}  scale_K= {scale_K} "
+        t" max_padded_M= {max_padded_M}"
     )
 
     comptime hw = ctx.default_device_info
@@ -389,11 +378,8 @@ def _run_fusion_check[
     assert_equal(quant_mismatches, 0, "copied quant bytes do not decode")
 
     print(
-        "    OK: ",
-        slot_bytes,
-        " slot bytes match; ",
-        tok_bytes,
-        " quant bytes decode",
+        t"    OK:  {slot_bytes}  slot bytes match;  {tok_bytes}  quant bytes"
+        t" decode"
     )
 
 

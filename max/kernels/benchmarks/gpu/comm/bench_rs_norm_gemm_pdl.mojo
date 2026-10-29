@@ -196,12 +196,9 @@ def bench_rs_norm_gemm_pdl[
 
         if i == 0:
             print(
-                "cache-busting windows: inputs=",
-                cb_inputs[i].buffer_size // cb_inputs[i].stride,
-                " weights=",
-                cb_weights[i].buffer_size // cb_weights[i].stride,
-                " (1 means the buster COLLAPSED -- raise budget_bytes)",
-                sep="",
+                t"cache-busting windows:"
+                t" inputs={cb_inputs[i].buffer_size // cb_inputs[i].stride} weights={cb_weights[i].buffer_size // cb_weights[i].stride} (1"
+                t" means the buster COLLAPSED -- raise budget_bytes)"
             )
 
         var alloc_i = config.rank_num_elements(i)
@@ -523,17 +520,8 @@ def main() raises:
         list_of_ctx.append(DeviceContext(device_id=i))
 
     print(
-        "Paired fused reduce-scatter+RMSNorm -> GEMM, PDL: ",
-        num_gpus,
-        " GPUs, ",
-        in_dtype,
-        ", M=",
-        num_rows,
-        " H=",
-        num_cols,
-        " N=",
-        gemm_n,
-        sep="",
+        t"Paired fused reduce-scatter+RMSNorm -> GEMM, PDL: {num_gpus} GPUs,"
+        t" {in_dtype}, M={num_rows} H={num_cols} N={gemm_n}"
     )
 
     var m = Bench(BenchConfig(num_repetitions=num_reps))

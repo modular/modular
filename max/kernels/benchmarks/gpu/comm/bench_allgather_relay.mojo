@@ -403,18 +403,8 @@ def main() raises:
 
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     print(
-        "# relay allgather:",
-        WORLD,
-        "GPUs,",
-        WORLD // GROUP,
-        "groups of",
-        GROUP,
-        "| dtype",
-        dtype,
-        "| simd_width",
-        simd_width,
-        "| iters",
-        iters,
+        t"# relay allgather: {WORLD} GPUs, {WORLD // GROUP} groups of {GROUP} |"
+        t" dtype {dtype} | simd_width {simd_width} | iters {iters}"
     )
 
     var shard_kb = List[Int](capacity=8)
@@ -443,20 +433,12 @@ def main() raises:
             var base_ms = run_baseline(length, None, "baseline")
             var default_ms = run_relay(length, None, "relay-default")
             print(
-                "CSV,",
-                shard_kb[si],
-                ",baseline,-,-,",
-                base_ms,
-                ",",
-                gbps(length, base_ms),
+                t"CSV, {shard_kb[si]} ,baseline,-,-, {base_ms} ,"
+                t" {gbps(length, base_ms)}"
             )
             print(
-                "CSV,",
-                shard_kb[si],
-                ",default,-,-,",
-                default_ms,
-                ",",
-                gbps(length, default_ms),
+                t"CSV, {shard_kb[si]} ,default,-,-, {default_ms} ,"
+                t" {gbps(length, default_ms)}"
             )
             for di in range(len(direct_blocks)):
                 for ri in range(len(relay_blocks)):
@@ -478,18 +460,9 @@ def main() raises:
                         )
                         var ms = run_relay(length, Optional(cfg), label)
                         print(
-                            "CSV,",
-                            shard_kb[si],
-                            ",",
-                            direct_blocks[di],
-                            ",",
-                            relay_blocks[ri],
-                            ",",
-                            percents[pi],
-                            ",",
-                            ms,
-                            ",",
-                            gbps(length, ms),
+                            t"CSV, {shard_kb[si]} , {direct_blocks[di]} ,"
+                            t" {relay_blocks[ri]} , {percents[pi]} , {ms} ,"
+                            t" {gbps(length, ms)}"
                         )
         return
 
@@ -508,31 +481,17 @@ def main() raises:
         # time a recipe no caller ever gets.
         if table_recipe(length).relay_percent == 0:
             print(
-                "|",
-                human_readable_size(length * size_of[dtype]()),
-                "|",
-                base_ms,
-                "|",
-                gbps(length, base_ms),
-                "| relay declined by the tuning table |",
+                t"| {human_readable_size(length * size_of[dtype]())} |"
+                t" {base_ms} | {gbps(length, base_ms)} | relay declined by the"
+                t" tuning table |"
             )
             continue
 
         var relay_ms = run_relay(length, None, "allgather_relay")
         print(
-            "|",
-            human_readable_size(length * size_of[dtype]()),
-            "|",
-            base_ms,
-            "|",
-            gbps(length, base_ms),
-            "|",
-            relay_ms,
-            "|",
-            gbps(length, relay_ms),
-            "|",
-            base_ms / relay_ms,
-            "|",
+            t"| {human_readable_size(length * size_of[dtype]())} | {base_ms} |"
+            t" {gbps(length, base_ms)} | {relay_ms} |"
+            t" {gbps(length, relay_ms)} | {base_ms / relay_ms} |"
         )
 
     _ = host_buffer^

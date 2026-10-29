@@ -81,34 +81,11 @@ def reducescatter_test[
     var epilogue_tag = "-custom_epilogue" if use_custom_epilogue else ""
     comptime if rank == 1:
         print(
-            String(
-                "====reducescatter-flat-",
-                dtype,
-                "-",
-                ngpus,
-                "gpus-",
-                num_elements,
-                multimem_tag,
-                epilogue_tag,
-            )
+            t"====reducescatter-flat-{dtype}-{ngpus}gpus-{num_elements}{multimem_tag}{epilogue_tag}"
         )
     else:
         print(
-            String(
-                "====reducescatter-axis",
-                axis,
-                "-",
-                dtype,
-                "-",
-                ngpus,
-                "gpus-(",
-                shape[0].value(),
-                "x",
-                shape[1].value(),
-                ")",
-                multimem_tag,
-                epilogue_tag,
-            )
+            t"====reducescatter-axis{axis}-{dtype}-{ngpus}gpus-({shape[0].value()}x{shape[1].value()}){multimem_tag}{epilogue_tag}"
         )
 
     # Compute partitioning config.
@@ -443,17 +420,7 @@ def grouped_reducescatter_test[
     comptime rank = 2
 
     print(
-        "====grouped-reducescatter-axis",
-        axis,
-        "-float32-",
-        ngpus,
-        "gpus-group",
-        group_size,
-        "-rows",
-        rows_first,
-        "/",
-        rows_second,
-        sep="",
+        t"====grouped-reducescatter-axis{axis}-float32-{ngpus}gpus-group{group_size}-rows{rows_first}/{rows_second}"
     )
 
     var in_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)

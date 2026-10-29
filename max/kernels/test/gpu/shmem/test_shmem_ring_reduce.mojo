@@ -212,12 +212,8 @@ def bench_ring_reduce(ctx: SHMEMContext) raises:
 
         if mype == 0:
             print(
-                "Test passed on size:",
-                size / 1024 / 1024,
-                "MB",
-                "\telapsed:",
-                elapsed_ms,
-                "ms",
+                t"Test passed on size: {size / 1024 / 1024} MB \telapsed:"
+                t" {elapsed_ms} ms"
             )
 
         size *= step_factor

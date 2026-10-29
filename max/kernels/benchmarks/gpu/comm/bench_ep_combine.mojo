@@ -230,18 +230,9 @@ def bench_combine[
     comptime num_bytes = combine_msg_bytes * top_k * n_tokens_per_rank
 
     print(
-        "Running ep_combine bench: input_type:",
-        input_type,
-        "hidden_size:",
-        hidden_size,
-        "top_k:",
-        top_k,
-        "n_experts:",
-        n_experts,
-        "n_ranks:",
-        n_ranks,
-        "n_tokens_per_rank:",
-        n_tokens_per_rank,
+        t"Running ep_combine bench: input_type: {input_type} hidden_size:"
+        t" {hidden_size} top_k: {top_k} n_experts: {n_experts} n_ranks:"
+        t" {n_ranks} n_tokens_per_rank: {n_tokens_per_rank}"
     )
 
     # fmt: off
@@ -358,17 +349,13 @@ def bench_combine[
     for i in range(n_ranks):
         if Int(rank_counts[i]) > max_rank:
             max_rank = Int(rank_counts[i])
+    var routing_mode = "skewed" if skew_enabled() else "uniform"
     print(
-        "ROUTING mode:",
-        "skewed" if skew_enabled() else "uniform",
-        ",max_pair:",
-        max_pair,
-        ",mean_pair:",
-        mean_pair,
-        ",pair_imbalance:",
-        Float64(max_pair) / mean_pair,
-        ",busiest_gpu_share:",
-        Float64(max_rank) / Float64(total),
+        t"ROUTING mode:"
+        t" {routing_mode} ,max_pair:"
+        t" {max_pair} ,mean_pair: {mean_pair} ,pair_imbalance:"
+        t" {Float64(max_pair) / mean_pair} ,busiest_gpu_share:"
+        t" {Float64(max_rank) / Float64(total)}"
     )
     pair_counts.unsafe_free()
     rank_counts.unsafe_free()
@@ -1067,17 +1054,9 @@ def bench_all_dtypes[
     the way a dispatch token format is. BF16 is what MoE experts emit.
     """
     print(
-        "\n===== combine shape: tokens_per_rank=",
-        n_tokens_per_rank,
-        " slots=",
-        n_slots,
-        " hidden=",
-        HIDDEN,
-        " top_k=",
-        TOP_K,
-        " n_experts=",
-        N_EXPERTS,
-        " =====",
+        t"\n===== combine shape: tokens_per_rank= {n_tokens_per_rank}  slots="
+        t" {n_slots}  hidden= {HIDDEN}  top_k= {TOP_K}  n_experts= {N_EXPERTS} "
+        t" ====="
     )
 
     bench_combine[

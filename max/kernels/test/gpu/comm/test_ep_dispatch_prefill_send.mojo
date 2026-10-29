@@ -636,7 +636,7 @@ def run_variant[
 def check_tokens[
     n_ranks: Int, max_tokens: Int
 ](dc: DispatchCase[n_ranks, max_tokens], n_tokens: List[Int]) raises:
-    print("== ranks", n_ranks, "tokens", end="")
+    print(t"== ranks {n_ranks} tokens", end="")
     for r in range(n_ranks):
         print(" ", n_tokens[r], end="")
     print()
@@ -740,15 +740,8 @@ def time_arms[
     var med = rotated_medians(dc, List[Int](length=n_ranks, fill=n), arms)
     for arm in range(len(arms)):
         print(
-            label,
-            "summary",
-            names[arm],
-            "median over rounds us",
-            med[arm][1],
-            "rounds",
-            med[arm][0],
-            med[arm][1],
-            med[arm][2],
+            t"{label} summary {names[arm]} median over rounds us"
+            t" {med[arm][1]} rounds {med[arm][0]} {med[arm][1]} {med[arm][2]}"
         )
 
 
@@ -776,22 +769,10 @@ def sweep[
         var n = min(c, max_tokens)
         var med = rotated_medians(dc, List[Int](length=n_ranks, fill=n), arms)
         print(
-            "SWEEP tokens",
-            n,
-            "stock us",
-            med[0][1],
-            "per-CTA send+histogram us",
-            med[1][1],
-            "warp send+histogram us",
-            med[2][1],
-            "per-CTA control us",
-            med[3][1],
-            "warp rounds",
-            med[2][0],
-            med[2][2],
-            "per-CTA rounds",
-            med[1][0],
-            med[1][2],
+            t"SWEEP tokens {n} stock us {med[0][1]} per-CTA send+histogram us"
+            t" {med[1][1]} warp send+histogram us {med[2][1]} per-CTA control"
+            t" us {med[3][1]} warp rounds {med[2][0]} {med[2][2]} per-CTA"
+            t" rounds {med[1][0]} {med[1][2]}"
         )
 
 
