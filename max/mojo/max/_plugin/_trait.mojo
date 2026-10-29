@@ -25,7 +25,7 @@ from std._gpu.host.info import (
     TargetAcceleratorType,
 )
 from std._plugin.selector import Plugin
-from std.sys.info import CompilationTarget, _accelerator_arch
+from std.sys.info import CompilationTarget, _accelerator_arch, _TargetType
 
 from max.gpu import PDLLevel
 from max.gpu.globals import WARP_SIZE
@@ -68,6 +68,14 @@ trait MaxPlugin(Plugin):
 
 trait MaxPluginHooks:
     """Defines compile-time hooks for target-specific MAX behavior."""
+
+    comptime _raw_mlir_target: _TargetType
+    """The target these hooks are for, as its raw MLIR value."""
+
+    comptime hooks_target = CompilationTarget[
+        _mlir_value=Self._raw_mlir_target
+    ]()
+    """The target these hooks are for."""
 
     @staticmethod
     def elementwise_fn[
@@ -366,7 +374,7 @@ trait MaxPluginHooks:
     def enqueue_function_fn[
         *Ts: DevicePassable
     ](
-        ctx: _LegacyDeviceContext.Generic,
+        ctx: _LegacyDeviceContext.Generic[Self.hooks_target],
         f: DeviceFunction,
         *args: *Ts,
         grid_dim: Dim,
@@ -421,6 +429,7 @@ struct DefaultMaxPlugin(MaxPlugin):
 
 
 struct DefaultMaxPluginHooks[target: CompilationTarget](MaxPluginHooks):
+    comptime _raw_mlir_target = Self.target._mlir_value
     comptime warp_size = _accelerator_warp_size()
 
 

@@ -111,6 +111,7 @@ struct MetalMaxPlugin(MaxPlugin):
 
 
 struct MetalMaxPluginHooks[target: CompilationTarget](MaxPluginHooks):
+    comptime _raw_mlir_target = Self.target._mlir_value
     comptime warp_size = 32
     comptime barrier_fn: OptionalReg[_BarrierPluginHookFnType] = _barrier
     comptime syncwarp_fn: OptionalReg[_SyncwarpPluginHookFnType] = _syncwarp

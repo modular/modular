@@ -62,6 +62,7 @@ struct HipMaxPlugin(MaxPlugin):
 
 
 struct HipMaxPluginHooks[target: CompilationTarget](MaxPluginHooks):
+    comptime _raw_mlir_target = Self.target._mlir_value
     # gfx9 (GCN and CDNA 2 through 4) runs wave64; gfx10 and later, RDNA and
     # CDNA 5, run wave32.
     comptime warp_size = 64 if Self.target._arch().startswith("gfx9") else 32
