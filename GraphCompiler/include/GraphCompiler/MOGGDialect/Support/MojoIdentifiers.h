@@ -349,6 +349,8 @@ constexpr llvm::StringLiteral kFnUnpackTensor =
     "builtin_primitives.primitives.unpack_tensor";
 constexpr llvm::StringLiteral kFnAllZeros =
     "builtin_primitives.primitives.all_zeros";
+constexpr llvm::StringLiteral kFnMoggLaunchDeclarative =
+    "builtin_primitives.primitives.mogg_launch_declarative";
 constexpr llvm::StringLiteral kFnMoggAsyncPackValue =
     "builtin_primitives.primitives.mogg_async_pack_value";
 constexpr llvm::StringLiteral kFnMoggAsyncPackOwnedTensorValue =

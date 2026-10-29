@@ -21,6 +21,7 @@ from max.gpu.host.info import is_cpu
 from std.sys.info import simd_width_of
 from max.algorithm.functional import elementwise
 import extensibility
+from extensibility import GridBlockLaunchConfig
 from layout import TensorLayout
 from layout import TileTensor, CoordLike, Coord, DefaultEngine, row_major
 from layout.coord import DynamicCoord
@@ -3615,10 +3616,9 @@ struct MapLowerNoContext:
         pass
 
 
-# What a declarative kernel's `execute_configuration` returns: the graph
-# compiler calls only `get_grid_dim()` and `get_block_dim()`.
+# Return value for a kernel's `execute_configuration`.
 @fieldwise_init
-struct DeclarativeLaunchConfig(Copyable):
+struct DeclarativeLaunchConfig(Copyable, GridBlockLaunchConfig):
     var grid_dim: Dim
     var block_dim: Dim
 

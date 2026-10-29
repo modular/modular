@@ -162,11 +162,6 @@ struct EmitMojo : public impl::EmitMojoBase<EmitMojo> {
       else
         state.builder.importAs(package, as);
     }
-    // A plain `import` brings in no `__extension`s; importing a name does. A
-    // declarative launch calls device context methods that a target can add
-    // as extensions.
-    state.builder.importFrom("max.gpu.host._legacy.device_context",
-                             "DeviceContext as _DeviceContextExtensions");
 
     // Import mojo packages for the custom kernel libraries.
     for (const auto &kernelLibraryPath : kernelLibraryPaths) {

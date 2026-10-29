@@ -22,6 +22,7 @@ decorator instead.
 """
 
 from .decorators import *
+from .launch_config import *
 from .managed_tensor_slice import *
 from .operation_traits import *
 from .stable_addr_engine import *

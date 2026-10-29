@@ -1944,18 +1944,6 @@ static FailureOr<DeclarativeCall> prepareDeclarativeCall(
   return call;
 }
 
-// Emits the call to `execute_configuration` on the host:
-//
-//   var config = Kernel[...].execute_configuration[...](operand0, operand1)
-//
-// `execute_configuration` may return any value with `get_grid_dim()` and
-// `get_block_dim()`, as NeoDriver's `GridBlockExecutionConfig` has.
-static MojoValue emitExecuteConfiguration(MojoBuilder &builder,
-                                          const DeclarativeCall &call) {
-  return builder.var(call.executeConfiguration(call.operands),
-                     /*cache=*/false);
-}
-
 // Emits a wrapper for `execute_device` (named `execute_device_N` below). We
 // wrap instead of launching directly because the launch cannot pass the
 // operands the host built: it passes kernel arguments, not closure captures,
@@ -1977,35 +1965,17 @@ emitDeviceKernel(MojoBuilder &builder, const DeviceKernelArgs &args,
                         /*captureConvention=*/"", std::move(body));
 }
 
-// Emits the compile and launch of `kernel` on `ctx`:
-//
-//   var func = ctx.compile_function[execute_device_N]()
-//   ctx.enqueue_function(func, operand0.to_tile_tensor(), operand1,
-//                        grid_dim = config.get_grid_dim(),
-//                        block_dim = config.get_block_dim())
-static void emitEnqueue(EmitMojoState &state, const MojoValue &ctx,
-                        const MojoValue &kernel, const DeviceKernelArgs &args,
-                        const MojoValue &gridDim, const MojoValue &blockDim) {
-  MojoBuilder &builder = state.builder;
-  SmallVector<MojoValue> launchArgs{
-      builder.var(ctx.get("compile_function")[kernel](), /*cache=*/false)};
-  llvm::append_range(launchArgs, args.launchArgs);
-  launchArgs.push_back(MojoValue("grid_dim").equal(gridDim));
-  launchArgs.push_back(MojoValue("block_dim").equal(blockDim));
-  builder.call(ctx.get("enqueue_function"), /*parameters=*/{}, launchArgs);
-  state.genAllKeepAliveStatements();
-}
-
-// Emits the launch of a declarative kernel:
+// Emits the launch of a declarative kernel. `execute_configuration` returns a
+// `GridBlockLaunchConfig`, and `mogg_launch_declarative` compiles
+// `execute_device_N` and enqueues it with that config's grid and block dims:
 //
 //   var config = Kernel[...].execute_configuration[...](operands...)
 //   comptime T0 = type_of(operand0)  # one per operand
 //   def execute_device_N(a0: T0.TileTensorType, a1: T1, ...):
 //       Kernel[...].execute_device[...](T0(a0), a1, ...)
-//   var func = ctx.compile_function[execute_device_N]()
-//   ctx.enqueue_function(func, operand0.to_tile_tensor(), operand1, ...,
-//                        grid_dim = config.get_grid_dim(),
-//                        block_dim = config.get_block_dim())
+//   mogg_launch_declarative[execute_device_N](ctx, config,
+//                                             operand0.to_tile_tensor(),
+//                                             operand1, ...)
 static LogicalResult emitDeclarativeLaunch(
     CallOpaqueOp op, EmitMojoState &state, KernelDeclAdaptor &adaptor,
     ArrayRef<MojoValue> operands,
@@ -2017,15 +1987,18 @@ static LogicalResult emitDeclarativeLaunch(
 
   MojoBuilder &builder = state.builder;
   MojoValue ctx = state.getMojoValueFor(op.getDeviceContexts().front());
-  MojoValue config = emitExecuteConfiguration(builder, *call);
+  MojoValue config =
+      builder.var(call->executeConfiguration(call->operands), /*cache=*/false);
   DeviceKernelArgs args;
   SmallVector<unsigned> indices = args.add(builder, *call);
   MojoValue kernel =
       emitDeviceKernel(builder, args, [&](const FunctionBody &body) {
         builder.verbatim(call->executeDevice(args.rebuild(body, indices)));
       });
-  emitEnqueue(state, ctx, kernel, args, config.get("get_grid_dim")(),
-              config.get("get_block_dim")());
+  SmallVector<MojoValue> launchArgs{ctx, config};
+  llvm::append_range(launchArgs, args.launchArgs);
+  builder.call(MojoValue(kFnMoggLaunchDeclarative), {kernel}, launchArgs);
+  state.genAllKeepAliveStatements();
   return success();
 }
 

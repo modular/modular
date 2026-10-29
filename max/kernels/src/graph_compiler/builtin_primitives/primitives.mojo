@@ -21,7 +21,7 @@ from algorithm.reduce_op import ReduceOp
 from algorithm.rowwise import launch, pick_simd_width
 from algorithm.rowwise_types import RowBody
 
-from extensibility import StaticTensorSpec
+from extensibility import GridBlockLaunchConfig, StaticTensorSpec
 from extensibility import (
     ComputeOutputFusion,
     ComputeOutputFusionTile,
@@ -43,8 +43,19 @@ from max.gpu.host import (
     StableAddr,
 )
 from max.gpu.host import _DeviceContextPtr
+
+# A target can add `DeviceContext` methods as `__extension`s, which only an
+# import of a name brings in, and `mogg_launch_declarative` calls them.
+# TODO(DRIV-491): These are the legacy context's extensions, which don't apply
+# when `DeviceContext` is the HAL context. Once targets launch through the HAL
+# context, import their extensions through `max.gpu.host`, or drop this import
+# if HAL launches need none.
+from max.gpu.host._legacy.device_context import (
+    DeviceContext as _DeviceContextExtensions,
+)
 from max.gpu.host.info import is_accelerator, is_cpu, is_gpu
 from std.memory import OwnedPointer, MaybeUninit, alloc
+from std.builtin.device_passable import DevicePassable
 from std.os import abort
 from layout import (
     Coord,
@@ -1486,6 +1497,38 @@ struct StateContext(ImplicitlyCopyable, RegisterPassable):
 # ===-----------------------------------------------------------------------===#
 # MOGG primitives
 # ===-----------------------------------------------------------------------===#
+
+
+@always_inline
+def mogg_launch_declarative[
+    declared_arg_types: TypeList[Trait=AnyType, ...],
+    //,
+    func: def(*args: *declared_arg_types) thin -> None,
+    *Ts: DevicePassable,
+](ctx: DeviceContext, config: Some[GridBlockLaunchConfig], *args: *Ts) raises:
+    """Compiles a declarative kernel's device function and launches it with
+    the grid and block dims of `config`.
+
+    Parameters:
+        declared_arg_types: The argument types the device function declares.
+        func: The device function.
+        Ts: The types of the arguments the launch passes.
+
+    Args:
+        ctx: The device context to launch on.
+        config: The kernel's launch configuration.
+        args: The arguments the launch passes to the device function.
+
+    Raises:
+        If compiling or enqueuing the device function fails.
+    """
+    var compiled = ctx.compile_function[func]()
+    ctx.enqueue_function(
+        compiled,
+        *args,
+        grid_dim=config.get_grid_dim(),
+        block_dim=config.get_block_dim(),
+    )
 
 
 @register_internal("mogg.as_scalar")
