@@ -300,6 +300,12 @@ ensure_checkout() {
     "$uv" venv --python "$HARNESS_PYTHON" "$VENV" >/dev/null
     (cd "$CHECKOUT" && "$uv" pip install --python "$VENV/bin/python" -q -e .)
   fi
+  # Recent litellm imports mcp on the plain completion path but declares it
+  # only under its proxy/mcp extras, so a tool-calling agent request dies with
+  # ModuleNotFoundError. Checked on every run because cached venvs predate it.
+  if ! "$VENV/bin/python" -c "import mcp.types" 2>/dev/null; then
+    "$uv" pip install --python "$VENV/bin/python" -q "mcp>=2.2,<3"
+  fi
   patch_empty_agent_turn
 }
 
