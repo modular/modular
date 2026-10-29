@@ -316,19 +316,9 @@ def test_mla_vs_fp32_ref[
     comptime NUM_KEYS = seq_len
 
     print(
-        "--- MlaPrefillV2 vs FP32 ref (qkv=",
-        qkv_type,
-        " out=",
-        output_type,
-        " mask=",
-        mask_name,
-        " kv_block=",
-        kv_block,
-        " heads=",
-        NUM_HEADS,
-        " seq=",
-        SEQ_LEN,
-        ") ---",
+        t"--- MlaPrefillV2 vs FP32 ref (qkv= {qkv_type}  out= {output_type} "
+        t" mask= {mask_name}  kv_block= {kv_block}  heads= {NUM_HEADS}  seq="
+        t" {SEQ_LEN} ) ---"
     )
 
     var scale = rsqrt(Float32(D_QK))
@@ -566,23 +556,13 @@ def test_mla_vs_fp32_ref[
     var passed = min_cos >= 0.99 and num_nonfinite == 0
     if passed:
         print(
-            "  PASSED (",
-            mask_name,
-            ") — min cos_sim=",
-            Float32(min_cos),
-            " max_diff=",
-            max_diff,
+            t"  PASSED ( {mask_name} ) — min cos_sim= {Float32(min_cos)} "
+            t" max_diff= {max_diff}"
         )
     else:
         print(
-            "  FAILED (",
-            mask_name,
-            ") — min cos_sim=",
-            Float32(min_cos),
-            " (gate 0.99) max_diff=",
-            max_diff,
-            " nonfinite=",
-            num_nonfinite,
+            t"  FAILED ( {mask_name} ) — min cos_sim= {Float32(min_cos)}  (gate"
+            t" 0.99) max_diff= {max_diff}  nonfinite= {num_nonfinite}"
         )
 
     host_out_ref_fp32.unsafe_free()
@@ -618,15 +598,8 @@ def main() raises:
         comptime _M0_CAUSAL = get_defined_bool["m0_causal", True]()
         with DeviceContext() as ctx:
             print(
-                "\n=== M0 bench-shape cos_sim: heads=",
-                _M0_HEADS,
-                " seq=",
-                _M0_SEQ,
-                " batch=",
-                BATCH,
-                " causal=",
-                _M0_CAUSAL,
-                " ===",
+                t"\n=== M0 bench-shape cos_sim: heads= {_M0_HEADS}  seq="
+                t" {_M0_SEQ}  batch= {BATCH}  causal= {_M0_CAUSAL}  ==="
             )
             comptime if _M0_CAUSAL:
                 var p = test_mla_vs_fp32_ref[

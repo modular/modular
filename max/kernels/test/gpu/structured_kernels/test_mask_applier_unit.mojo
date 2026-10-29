@@ -465,9 +465,9 @@ def main() raises:
             u0,
             "  masked=N/A    exp2=N/A",
         )
-        print("Causal  j=0:  unmasked=", u1, " masked=", m1, " exp2->0=", e1)
-        print("Causal  j=2:  unmasked=", u2, " masked=", m2, " exp2->0=", e2)
-        print("Causal  j=8:  unmasked=", u3, " masked=", m3, " exp2->0=", e3)
+        print(t"Causal  j=0:  unmasked= {u1}  masked= {m1}  exp2->0= {e1}")
+        print(t"Causal  j=2:  unmasked= {u2}  masked= {m2}  exp2->0= {e2}")
+        print(t"Causal  j=8:  unmasked= {u3}  masked= {m3}  exp2->0= {e3}")
         print("Chunked j=2:  unmasked=N/A masked=", m4, " exp2->0=", e4)
         print("Sliding j=2:  unmasked=N/A masked=", m5, " exp2->0=", e5)
         print("FullFill   :  unmasked=N/A masked=", m6, " exp2->0=", e6)

@@ -180,14 +180,8 @@ def test_v2_rescale[depth: Int](ctx: DeviceContext) raises:
                     mismatches += 1
                     if mismatches <= 5:
                         print(
-                            "MISMATCH q=",
-                            q,
-                            " d=",
-                            d,
-                            " got=",
-                            got,
-                            " expected=",
-                            expected,
+                            t"MISMATCH q= {q}  d= {d}  got= {got}  expected="
+                            t" {expected}"
                         )
 
     print("  mismatches=", mismatches, " max_diff=", max_diff)

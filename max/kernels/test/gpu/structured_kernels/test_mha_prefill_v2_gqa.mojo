@@ -78,19 +78,8 @@ def test_gqa[
     )
 
     print(
-        "--- MhaPrefillV2 GQA (H=",
-        num_heads,
-        " Hkv=",
-        num_kv_heads,
-        " G=",
-        GROUP,
-        " D=",
-        depth,
-        " seq=",
-        SEQ_LEN,
-        " keys=",
-        NUM_KEYS,
-        ") ---",
+        t"--- MhaPrefillV2 GQA (H= {num_heads}  Hkv= {num_kv_heads}  G="
+        t" {GROUP}  D= {depth}  seq= {SEQ_LEN}  keys= {NUM_KEYS} ) ---"
     )
 
     var dev_q = ctx.enqueue_create_buffer[.bfloat16](SIZE_Q)
@@ -171,33 +160,16 @@ def test_gqa[
                             head_mismatch = True
                             if mismatches <= 5:
                                 print(
-                                    "MISMATCH b=",
-                                    b,
-                                    " q=",
-                                    q,
-                                    " h=",
-                                    h,
-                                    " kv=",
-                                    h // GROUP,
-                                    " d=",
-                                    d,
-                                    " got=",
-                                    got,
-                                    " expected=",
-                                    expected,
+                                    t"MISMATCH b= {b}  q= {q}  h= {h}  kv="
+                                    t" {h // GROUP}  d= {d}  got= {got} "
+                                    t" expected= {expected}"
                                 )
             if head_mismatch:
                 heads_with_any_mismatch += 1
 
     print(
-        "  mismatches=",
-        mismatches,
-        " max_diff=",
-        max_diff,
-        " heads_with_mismatch=",
-        heads_with_any_mismatch,
-        "/",
-        num_heads,
+        t"  mismatches= {mismatches}  max_diff= {max_diff} "
+        t" heads_with_mismatch= {heads_with_any_mismatch} / {num_heads}"
     )
     assert_almost_equal(Float32(mismatches), Float32(0))
     print("  PASSED")

@@ -422,22 +422,10 @@ def test_load_K_fp8[
                         if got_f32 != exp_f32:
                             if mismatches < 5:
                                 print(
-                                    "  MISMATCH lid=",
-                                    lid,
-                                    " rr=",
-                                    rr,
-                                    " rc=",
-                                    rc,
-                                    " f=",
-                                    f,
-                                    " key=",
-                                    key_global,
-                                    " depth=",
-                                    depth_global,
-                                    " got=",
-                                    got_f32,
-                                    " expected=",
-                                    exp_f32,
+                                    t"  MISMATCH lid= {lid}  rr= {rr}  rc="
+                                    t" {rc}  f= {f}  key= {key_global}  depth="
+                                    t" {depth_global}  got= {got_f32} "
+                                    t" expected= {exp_f32}"
                                 )
                             mismatches += 1
 
@@ -697,24 +685,10 @@ def test_load_V_fp8[
                             if got_f32 != exp_f32:
                                 if mismatches < 5:
                                     print(
-                                        "  MISMATCH lid=",
-                                        lid,
-                                        " rr=",
-                                        rr,
-                                        " rc=",
-                                        rc,
-                                        " k=",
-                                        k,
-                                        " f=",
-                                        f,
-                                        " key=",
-                                        key_global,
-                                        " depth=",
-                                        depth_global,
-                                        " got=",
-                                        got_f32,
-                                        " expected=",
-                                        exp_f32,
+                                        t"  MISMATCH lid= {lid}  rr= {rr}  rc="
+                                        t" {rc}  k= {k}  f= {f}  key="
+                                        t" {key_global}  depth= {depth_global} "
+                                        t" got= {got_f32}  expected= {exp_f32}"
                                     )
                                 mismatches += 1
 

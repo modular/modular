@@ -423,24 +423,10 @@ def test_pv_chain[T: DType](ctx: DeviceContext) raises -> Bool:
                         if diff > _tol:
                             if mismatches < 8:
                                 print(
-                                    "  MISMATCH lid=",
-                                    lid,
-                                    " n_out=",
-                                    n_out,
-                                    " m_out=",
-                                    m_out,
-                                    " k_local=",
-                                    k_local,
-                                    " depth=",
-                                    depth,
-                                    " q=",
-                                    q,
-                                    " got=",
-                                    got,
-                                    " expected=",
-                                    expected,
-                                    " diff=",
-                                    diff,
+                                    t"  MISMATCH lid= {lid}  n_out= {n_out} "
+                                    t" m_out= {m_out}  k_local= {k_local} "
+                                    t" depth= {depth}  q= {q}  got= {got} "
+                                    t" expected= {expected}  diff= {diff}"
                                 )
                             mismatches += 1
 
@@ -450,17 +436,8 @@ def test_pv_chain[T: DType](ctx: DeviceContext) raises -> Bool:
         cos_sim = dot_got_ref / denom
 
     print(
-        "  mismatches=",
-        mismatches,
-        " max_diff=",
-        max_diff,
-        " cos_sim=",
-        cos_sim,
-        " worst@(depth=",
-        worst_depth,
-        " q=",
-        worst_q,
-        ")",
+        t"  mismatches= {mismatches}  max_diff= {max_diff}  cos_sim= {cos_sim} "
+        t" worst@(depth= {worst_depth}  q= {worst_q} )"
     )
 
     _ = dev_v_subtile^
@@ -481,13 +458,8 @@ def test_pv_chain[T: DType](ctx: DeviceContext) raises -> Bool:
         return True
     else:
         print(
-            "  FAILED (mismatches=",
-            mismatches,
-            " cos_sim=",
-            cos_sim,
-            " tol=",
-            _tol,
-            ")",
+            t"  FAILED (mismatches= {mismatches}  cos_sim= {cos_sim}  tol="
+            t" {_tol} )"
         )
         return False
 
@@ -508,8 +480,8 @@ def main() raises:
 
         print("=" * 60)
         print("Summary:")
-        print("  BF16 = ", "PASS" if ok_bf16 else "FAIL")
-        print("  FP8  = ", "PASS" if ok_fp8 else "FAIL")
+        print(t"  BF16 =  {"PASS" if ok_bf16 else "FAIL"}")
+        print(t"  FP8  =  {"PASS" if ok_fp8 else "FAIL"}")
         print("=" * 60)
 
         assert_true(ok_bf16, "BF16 PV chain test failed")

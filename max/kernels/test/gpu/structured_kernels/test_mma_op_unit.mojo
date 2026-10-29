@@ -324,36 +324,16 @@ def test_mma_QK[T: DType](ctx: DeviceContext) raises -> Bool:
                                 neg_count += 1
                             if mismatches < 5:
                                 print(
-                                    "  MISMATCH lid=",
-                                    lid,
-                                    " n=",
-                                    n_out,
-                                    " m=",
-                                    m_out,
-                                    " k_local=",
-                                    k_local,
-                                    " gr_K=",
-                                    gr_K,
-                                    " gr_Q=",
-                                    gr_Q,
-                                    " got=",
-                                    got,
-                                    " expected=",
-                                    expected,
-                                    " diff=",
-                                    diff,
+                                    t"  MISMATCH lid= {lid}  n= {n_out}  m="
+                                    t" {m_out}  k_local= {k_local}  gr_K="
+                                    t" {gr_K}  gr_Q= {gr_Q}  got= {got} "
+                                    t" expected= {expected}  diff= {diff}"
                                 )
                             mismatches += 1
 
     print(
-        "  mismatches=",
-        mismatches,
-        " max_diff=",
-        max_diff,
-        " pos=",
-        pos_count,
-        " neg=",
-        neg_count,
+        t"  mismatches= {mismatches}  max_diff= {max_diff}  pos= {pos_count} "
+        t" neg= {neg_count}"
     )
     _ = dev_dump^
     if mismatches == 0:
@@ -554,36 +534,17 @@ def test_mma_PV[T: DType](ctx: DeviceContext) raises -> Bool:
                                 neg_count += 1
                             if mismatches < 5:
                                 print(
-                                    "  MISMATCH lid=",
-                                    lid,
-                                    " n_depth=",
-                                    n_depth,
-                                    " m_q=",
-                                    m_q,
-                                    " k_local=",
-                                    k_local,
-                                    " depth=",
-                                    depth_idx,
-                                    " q=",
-                                    q_idx,
-                                    " got=",
-                                    got,
-                                    " expected=",
-                                    expected,
-                                    " diff=",
-                                    diff,
+                                    t"  MISMATCH lid= {lid}  n_depth="
+                                    t" {n_depth}  m_q= {m_q}  k_local="
+                                    t" {k_local}  depth= {depth_idx}  q="
+                                    t" {q_idx}  got= {got}  expected="
+                                    t" {expected}  diff= {diff}"
                                 )
                             mismatches += 1
 
     print(
-        "  mismatches=",
-        mismatches,
-        " max_diff=",
-        max_diff,
-        " pos=",
-        pos_count,
-        " neg=",
-        neg_count,
+        t"  mismatches= {mismatches}  max_diff= {max_diff}  pos= {pos_count} "
+        t" neg= {neg_count}"
     )
     _ = dev_dump^
     if mismatches == 0:
@@ -607,22 +568,10 @@ def main() raises:
 
         print("=" * 60)
         print("Summary:")
-        print(
-            "  mma_QK[BF16] =",
-            "PASS" if ok_qk_bf16 else "FAIL",
-        )
-        print(
-            "  mma_QK[FP8 ] =",
-            "PASS" if ok_qk_fp8 else "FAIL",
-        )
-        print(
-            "  mma_PV[BF16] =",
-            "PASS" if ok_pv_bf16 else "FAIL",
-        )
-        print(
-            "  mma_PV[FP8 ] =",
-            "PASS" if ok_pv_fp8 else "FAIL",
-        )
+        print(t"  mma_QK[BF16] = {"PASS" if ok_qk_bf16 else "FAIL"}")
+        print(t"  mma_QK[FP8 ] = {"PASS" if ok_qk_fp8 else "FAIL"}")
+        print(t"  mma_PV[BF16] = {"PASS" if ok_pv_bf16 else "FAIL"}")
+        print(t"  mma_PV[FP8 ] = {"PASS" if ok_pv_fp8 else "FAIL"}")
         print("=" * 60)
 
         assert_true(

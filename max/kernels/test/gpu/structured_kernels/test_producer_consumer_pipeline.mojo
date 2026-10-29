@@ -121,7 +121,7 @@ def pingpong_kernel[
 
 
 def _run_config[num_stages: Int](ctx: DeviceContext, n_items: Int) raises:
-    print("  num_stages=", num_stages, ", n_items=", n_items, sep="")
+    print(t"  num_stages={num_stages}, n_items={n_items}")
 
     var result = ctx.enqueue_create_buffer[.int32](n_items)
     ctx.enqueue_memset[.int32](result, 0)

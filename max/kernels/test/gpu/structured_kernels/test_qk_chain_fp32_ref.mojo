@@ -391,24 +391,10 @@ def test_qk_chain[T: DType](ctx: DeviceContext) raises -> Bool:
                         if diff > _tol:
                             if mismatches < 8:
                                 print(
-                                    "  MISMATCH lid=",
-                                    lid,
-                                    " n_out=",
-                                    n_out,
-                                    " m_out=",
-                                    m_out,
-                                    " k_local=",
-                                    k_local,
-                                    " m_kv=",
-                                    m_kv,
-                                    " n_q=",
-                                    n_q,
-                                    " got=",
-                                    got,
-                                    " expected=",
-                                    expected,
-                                    " diff=",
-                                    diff,
+                                    t"  MISMATCH lid= {lid}  n_out= {n_out} "
+                                    t" m_out= {m_out}  k_local= {k_local} "
+                                    t" m_kv= {m_kv}  n_q= {n_q}  got= {got} "
+                                    t" expected= {expected}  diff= {diff}"
                                 )
                             mismatches += 1
 
@@ -418,17 +404,8 @@ def test_qk_chain[T: DType](ctx: DeviceContext) raises -> Bool:
         cos_sim = dot_got_ref / denom
 
     print(
-        "  mismatches=",
-        mismatches,
-        " max_diff=",
-        max_diff,
-        " cos_sim=",
-        cos_sim,
-        " worst@(m=",
-        worst_m,
-        " n=",
-        worst_n,
-        ")",
+        t"  mismatches= {mismatches}  max_diff= {max_diff}  cos_sim= {cos_sim} "
+        t" worst@(m= {worst_m}  n= {worst_n} )"
     )
 
     _ = dev_k_swz^
@@ -442,7 +419,7 @@ def test_qk_chain[T: DType](ctx: DeviceContext) raises -> Bool:
         print("  PASSED")
         return True
     else:
-        print("  FAILED (", mismatches, " elements exceeded tol=", _tol, ")")
+        print(t"  FAILED ( {mismatches}  elements exceeded tol= {_tol} )")
         return False
 
 
@@ -462,8 +439,8 @@ def main() raises:
 
         print("=" * 60)
         print("Summary:")
-        print("  BF16 = ", "PASS" if ok_bf16 else "FAIL")
-        print("  FP8  = ", "PASS" if ok_fp8 else "FAIL")
+        print(t"  BF16 =  {"PASS" if ok_bf16 else "FAIL"}")
+        print(t"  FP8  =  {"PASS" if ok_fp8 else "FAIL"}")
         print("=" * 60)
 
         assert_true(ok_bf16, "BF16 QK chain test failed")

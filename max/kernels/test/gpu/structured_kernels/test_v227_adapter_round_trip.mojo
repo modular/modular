@@ -259,16 +259,8 @@ def test_v227_round_trip(ctx: DeviceContext) raises:
                         var lid, rem = divmod(idx, _PER_LANE)
                         var frag, f = divmod(rem, _FRAG_ELTS)
                         print(
-                            "  MISMATCH lid=",
-                            lid,
-                            " frag=",
-                            frag,
-                            " f=",
-                            f,
-                            " v227=",
-                            v227_f32,
-                            " ref=",
-                            ref_f32,
+                            t"  MISMATCH lid= {lid}  frag= {frag}  f= {f} "
+                            t" v227= {v227_f32}  ref= {ref_f32}"
                         )
                     mismatches += 1
 

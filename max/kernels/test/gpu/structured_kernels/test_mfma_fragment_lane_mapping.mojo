@@ -430,26 +430,13 @@ def test_bf16_32x32x16(ctx: DeviceContext) raises:
                 mismatches += 1
                 if mismatches <= 5:
                     print(
-                        "  BF16 32x32x16: MISMATCH lane=",
-                        lane,
-                        " p=",
-                        p,
-                        " (row=",
-                        _c_row_for(lane, p),
-                        " col=",
-                        _c_col_for(lane),
-                        ") got=",
-                        got,
-                        " expected=",
-                        expected,
+                        t"  BF16 32x32x16: MISMATCH lane= {lane}  p= {p}  (row="
+                        t" {_c_row_for(lane, p)}  col= {_c_col_for(lane)} )"
+                        t" got= {got}  expected= {expected}"
                     )
     print(
-        "  BF16 32x32x16: mismatches=",
-        mismatches,
-        " max_diff=",
-        max_diff,
-        " expected=",
-        expected,
+        t"  BF16 32x32x16: mismatches= {mismatches}  max_diff= {max_diff} "
+        t" expected= {expected}"
     )
     assert_equal(mismatches, 0)
     _ = dev_dump^
@@ -487,18 +474,9 @@ def test_bf16_32x32x16_col(ctx: DeviceContext) raises:
                 mismatches += 1
                 if mismatches <= 5:
                     print(
-                        "  BF16 col: MISMATCH lane=",
-                        lane,
-                        " p=",
-                        p,
-                        " (row=",
-                        _c_row_for(lane, p),
-                        " col=",
-                        _c_col_for(lane),
-                        ") got=",
-                        got,
-                        " expected=",
-                        expected,
+                        t"  BF16 col: MISMATCH lane= {lane}  p= {p}  (row="
+                        t" {_c_row_for(lane, p)}  col= {_c_col_for(lane)} )"
+                        t" got= {got}  expected= {expected}"
                     )
     print(
         "  BF16 32x32x16 col: mismatches=",
@@ -542,18 +520,9 @@ def test_bf16_32x32x16_row(ctx: DeviceContext) raises:
                 mismatches += 1
                 if mismatches <= 5:
                     print(
-                        "  BF16 row: MISMATCH lane=",
-                        lane,
-                        " p=",
-                        p,
-                        " (row=",
-                        _c_row_for(lane, p),
-                        " col=",
-                        _c_col_for(lane),
-                        ") got=",
-                        got,
-                        " expected=",
-                        expected,
+                        t"  BF16 row: MISMATCH lane= {lane}  p= {p}  (row="
+                        t" {_c_row_for(lane, p)}  col= {_c_col_for(lane)} )"
+                        t" got= {got}  expected= {expected}"
                     )
     print(
         "  BF16 32x32x16 row: mismatches=",
@@ -611,18 +580,9 @@ def test_fp8_32x32x64_col(ctx: DeviceContext) raises:
                 mismatches += 1
                 if mismatches <= 5:
                     print(
-                        "  FP8 col: MISMATCH lane=",
-                        lane,
-                        " p=",
-                        p,
-                        " (row=",
-                        _c_row_for(lane, p),
-                        " col=",
-                        _c_col_for(lane),
-                        ") got=",
-                        got,
-                        " expected=",
-                        expected,
+                        t"  FP8 col: MISMATCH lane= {lane}  p= {p}  (row="
+                        t" {_c_row_for(lane, p)}  col= {_c_col_for(lane)} )"
+                        t" got= {got}  expected= {expected}"
                     )
     print(
         "  FP8 32x32x64 col: mismatches=",
@@ -668,18 +628,9 @@ def test_fp8_32x32x64_row(ctx: DeviceContext) raises:
                 mismatches += 1
                 if mismatches <= 5:
                     print(
-                        "  FP8 row: MISMATCH lane=",
-                        lane,
-                        " p=",
-                        p,
-                        " (row=",
-                        _c_row_for(lane, p),
-                        " col=",
-                        _c_col_for(lane),
-                        ") got=",
-                        got,
-                        " expected=",
-                        expected,
+                        t"  FP8 row: MISMATCH lane= {lane}  p= {p}  (row="
+                        t" {_c_row_for(lane, p)}  col= {_c_col_for(lane)} )"
+                        t" got= {got}  expected= {expected}"
                     )
     print(
         "  FP8 32x32x64 row: mismatches=",
@@ -723,22 +674,12 @@ def test_bf16_32x32x16_swap(ctx: DeviceContext) raises:
                 mismatches += 1
                 if mismatches <= 5:
                     print(
-                        "  BF16 swap: MISMATCH lane=",
-                        lane,
-                        " p=",
-                        p,
-                        " got=",
-                        got,
-                        " expected=",
-                        expected,
+                        t"  BF16 swap: MISMATCH lane= {lane}  p= {p}  got="
+                        t" {got}  expected= {expected}"
                     )
     print(
-        "  BF16 32x32x16 swap: mismatches=",
-        mismatches,
-        " max_diff=",
-        max_diff,
-        " expected=",
-        expected,
+        t"  BF16 32x32x16 swap: mismatches= {mismatches}  max_diff= {max_diff} "
+        t" expected= {expected}"
     )
     assert_equal(mismatches, 0)
     _ = dev_dump^
@@ -777,26 +718,13 @@ def test_fp8_32x32x64(ctx: DeviceContext) raises:
                 mismatches += 1
                 if mismatches <= 5:
                     print(
-                        "  FP8 32x32x64: MISMATCH lane=",
-                        lane,
-                        " p=",
-                        p,
-                        " (row=",
-                        _c_row_for(lane, p),
-                        " col=",
-                        _c_col_for(lane),
-                        ") got=",
-                        got,
-                        " expected=",
-                        expected,
+                        t"  FP8 32x32x64: MISMATCH lane= {lane}  p= {p}  (row="
+                        t" {_c_row_for(lane, p)}  col= {_c_col_for(lane)} )"
+                        t" got= {got}  expected= {expected}"
                     )
     print(
-        "  FP8 32x32x64: mismatches=",
-        mismatches,
-        " max_diff=",
-        max_diff,
-        " expected=",
-        expected,
+        t"  FP8 32x32x64: mismatches= {mismatches}  max_diff= {max_diff} "
+        t" expected= {expected}"
     )
     assert_equal(mismatches, 0)
     _ = dev_dump^
@@ -833,22 +761,12 @@ def test_fp8_32x32x64_swap(ctx: DeviceContext) raises:
                 mismatches += 1
                 if mismatches <= 5:
                     print(
-                        "  FP8 swap: MISMATCH lane=",
-                        lane,
-                        " p=",
-                        p,
-                        " got=",
-                        got,
-                        " expected=",
-                        expected,
+                        t"  FP8 swap: MISMATCH lane= {lane}  p= {p}  got="
+                        t" {got}  expected= {expected}"
                     )
     print(
-        "  FP8 32x32x64 swap: mismatches=",
-        mismatches,
-        " max_diff=",
-        max_diff,
-        " expected=",
-        expected,
+        t"  FP8 32x32x64 swap: mismatches= {mismatches}  max_diff= {max_diff} "
+        t" expected= {expected}"
     )
     assert_equal(mismatches, 0)
     _ = dev_dump^

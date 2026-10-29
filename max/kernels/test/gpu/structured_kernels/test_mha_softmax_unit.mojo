@@ -478,16 +478,8 @@ def test_case1_uniform(ctx: DeviceContext) raises:
         for lane in range(NUM_LANES):
             total_nans += Int(host_out[lane * DIAG_PER_LANE + 4])
         print(
-            "  lane 0: o_avg=",
-            host_out[0],
-            " max=",
-            host_out[1],
-            " norm=",
-            host_out[2],
-            " scale=",
-            host_out[3],
-            " total_nans=",
-            total_nans,
+            t"  lane 0: o_avg= {host_out[0]}  max= {host_out[1]}  norm="
+            t" {host_out[2]}  scale= {host_out[3]}  total_nans= {total_nans}"
         )
         assert_equal(total_nans, 0)
         # Uniform inputs: every tile contributes ATT_PER_LANE elements of
@@ -513,26 +505,14 @@ def test_case2_one_hot(ctx: DeviceContext) raises:
         for lane in range(NUM_LANES):
             total_nans += Int(host_out[lane * DIAG_PER_LANE + 4])
         print(
-            "  hot lane 5: o_avg=",
-            host_out[5 * DIAG_PER_LANE + 0],
-            " max=",
-            host_out[5 * DIAG_PER_LANE + 1],
-            " norm=",
-            host_out[5 * DIAG_PER_LANE + 2],
-            " scale=",
-            host_out[5 * DIAG_PER_LANE + 3],
+            t"  hot lane 5: o_avg= {host_out[5 * DIAG_PER_LANE + 0]}  max="
+            t" {host_out[5 * DIAG_PER_LANE + 1]}  norm="
+            t" {host_out[5 * DIAG_PER_LANE + 2]}  scale="
+            t" {host_out[5 * DIAG_PER_LANE + 3]}"
         )
         print(
-            "  cold lane 0: o_avg=",
-            host_out[0],
-            " max=",
-            host_out[1],
-            " norm=",
-            host_out[2],
-            " scale=",
-            host_out[3],
-            " total_nans=",
-            total_nans,
+            t"  cold lane 0: o_avg= {host_out[0]}  max= {host_out[1]}  norm="
+            t" {host_out[2]}  scale= {host_out[3]}  total_nans= {total_nans}"
         )
         assert_equal(total_nans, 0)
         # Cold lanes: 2 tiles of all-zero -> uniform o = 1.0 (same logic
@@ -563,16 +543,8 @@ def test_case3_negative(ctx: DeviceContext) raises:
         for lane in range(NUM_LANES):
             total_nans += Int(host_out[lane * DIAG_PER_LANE + 4])
         print(
-            "  lane 0: o_avg=",
-            host_out[0],
-            " max=",
-            host_out[1],
-            " norm=",
-            host_out[2],
-            " scale=",
-            host_out[3],
-            " total_nans=",
-            total_nans,
+            t"  lane 0: o_avg= {host_out[0]}  max= {host_out[1]}  norm="
+            t" {host_out[2]}  scale= {host_out[3]}  total_nans= {total_nans}"
         )
         assert_equal(total_nans, 0)
         # Mean-shifted -10: subtract-max -> all zeros -> identical to case 1.
@@ -596,14 +568,8 @@ def test_case4_subnormal(ctx: DeviceContext) raises:
         for lane in range(NUM_LANES):
             total_nans += Int(host_out[lane * DIAG_PER_LANE + 4])
         print(
-            "  hot lane 0: o_avg=",
-            host_out[0],
-            " max=",
-            host_out[1],
-            " norm=",
-            host_out[2],
-            " scale=",
-            host_out[3],
+            t"  hot lane 0: o_avg= {host_out[0]}  max= {host_out[1]}  norm="
+            t" {host_out[2]}  scale= {host_out[3]}"
         )
         print("  cold lane 1: o_avg=", host_out[DIAG_PER_LANE + 0])
         print("  total_nans=", total_nans)
@@ -646,24 +612,12 @@ def test_case5_lazy_vs_eager(ctx: DeviceContext) raises:
             if d > max_diff:
                 max_diff = d
         print(
-            "  eager lane 0: o_avg=",
-            host_e[0],
-            " max=",
-            host_e[1],
-            " norm=",
-            host_e[2],
-            " scale=",
-            host_e[3],
+            t"  eager lane 0: o_avg= {host_e[0]}  max= {host_e[1]}  norm="
+            t" {host_e[2]}  scale= {host_e[3]}"
         )
         print(
-            "  lazy  lane 0: o_avg=",
-            host_l[0],
-            " max=",
-            host_l[1],
-            " norm=",
-            host_l[2],
-            " scale=",
-            host_l[3],
+            t"  lazy  lane 0: o_avg= {host_l[0]}  max= {host_l[1]}  norm="
+            t" {host_l[2]}  scale= {host_l[3]}"
         )
         print("  max o_avg divergence across lanes:", max_diff)
         print("  eager nans=", nans_e, " lazy nans=", nans_l)
