@@ -28,7 +28,9 @@ step.
 
 from __future__ import annotations
 
+import hashlib
 import re
+from collections import Counter
 from collections.abc import Iterator
 from contextlib import contextmanager
 from types import SimpleNamespace
@@ -94,7 +96,7 @@ def _virtual_devices(n_devices: int) -> Iterator[None]:
         set_virtual_device_count(0)
 
 
-def _dp_text_config() -> SimpleNamespace:
+def _dp_text_config(replay: bool = False) -> SimpleNamespace:
     """The synthetic text config, plus its two Engram layers.
 
     The Engram layers make the DP graph cover the request-sliced lookback
@@ -115,8 +117,15 @@ def _dp_text_config() -> SimpleNamespace:
     candidate block must fit one warp's key span (mla_index_fp8.mojo
     again). Everything with no kernel constraint -- layer count,
     vocabulary, expert count, table rows -- stays tiny.
+
+    ``replay`` exports the decoder's host-planned kept rows, which needs
+    layers past the last KV source: two SWA-only layers are appended.
     """
     text = text_config()
+    if replay:
+        text.num_hidden_layers = 4
+        text.compress_ratios = [0, 1, 0, 0]
+        text.decoder_replay = True
     text.index_n_heads = 32
     text.num_attention_heads = 64
     text.hidden_size = 5120
@@ -215,11 +224,11 @@ def _dp_ep_compile_inputs(
     return inputs
 
 
-def _build_dp4_ep4() -> tuple[
-    DeepseekV41, V41Config, list[TensorType | BufferType]
-]:
+def _build_dp4_ep4(
+    replay: bool = False,
+) -> tuple[DeepseekV41, V41Config, list[TensorType | BufferType]]:
     """The DP4+EP4 module, its interface config and its compile inputs."""
-    text = _dp_text_config()
+    text = _dp_text_config(replay)
     interface = V41Config.from_hf({"text_config": vars(text)})
     device_refs = [DeviceRef.GPU(i) for i in range(_DP)]
     kv = build_kv_params(
@@ -255,10 +264,10 @@ def _build_dp4_ep4() -> tuple[
     return module, interface, inputs
 
 
-def _stage_dp4_ep4() -> str:
+def _stage_dp4_ep4(replay: bool = False) -> str:
     """Traces the DP4+EP4 graph and returns its staged text."""
     with _virtual_devices(_DP):
-        module, _, inputs = _build_dp4_ep4()
+        module, _, inputs = _build_dp4_ep4(replay)
         return str(module.trace(*inputs))
 
 
@@ -319,6 +328,35 @@ def test_dp4_ep4_step_collectives_are_only_the_designed_ones(
         "mo.distributed.ep.combine",
         "mo.distributed.ep.dispatch.block.scaled.nv",
     }, sorted(ops)
+
+
+def test_dp4_ep4_off_graph_takes_no_replay_input(staged_dp4_ep4: str) -> None:
+    """The default export is the graph the replay change found.
+
+    The digest and op census are the evidence that it is byte-for-byte that
+    graph: run this test on the commit before the change and on this one and
+    the two ``graph digest`` lines must match.
+    """
+    census = Counter(re.findall(r"\b(?:mo|mogg|mgp)\.[\w.]+", staged_dp4_ep4))
+    print(
+        "graph digest:",
+        hashlib.sha256(staged_dp4_ep4.encode()).hexdigest(),
+        f"ops={sum(census.values())}",
+        f"kinds={len(census)}",
+    )
+    assert "replay.kept_offsets" not in staged_dp4_ep4
+
+
+def test_dp4_ep4_replay_graph_stages_with_the_designed_collectives() -> None:
+    """The kept-row graph adds its split and no collective of its own."""
+    text = _stage_dp4_ep4(replay=True)
+    # The kept rows are a ragged batch of their own: each rank cuts its
+    # requests' share with the token split, under its own dim labels.
+    assert "replay_rows" in text
+    assert text.count("mo.distributed.allreduce.sum") == 1
+    assert set(re.findall(r"\bmo\.distributed\.[\w.]+", text)) == set(
+        re.findall(r"\bmo\.distributed\.[\w.]+", _stage_dp4_ep4())
+    )
 
 
 def test_dp4_ep4_graph_compiles() -> None:

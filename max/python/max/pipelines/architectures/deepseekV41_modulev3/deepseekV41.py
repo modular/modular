@@ -14,8 +14,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -265,6 +265,88 @@ def _host_total_rows(
 _host_total_rows_op = F.functional(_host_total_rows)
 
 
+def _replay_decoder_start(config: DeepseekV41Config) -> int:
+    """Returns the first layer that runs on the kept rows, after checking it.
+
+    The last KV source projects the decoder's global KV for every row, so the
+    layers after it are the ones that can run on kept rows only.
+
+    Raises:
+        ValueError: If there is no layer after the last KV source, an Engram
+            layer or a DSpark tap sits in the decoder (before it, every row
+            is still live), or the graph returns per-row outputs, which
+            would silently cover the kept rows only.
+    """
+    if not config.kv_source_layer_ids:
+        raise ValueError("decoder replay needs at least one KV source layer")
+    decoder_start = max(config.kv_source_layer_ids) + 1
+    if decoder_start >= config.num_hidden_layers:
+        raise ValueError(
+            f"decoder replay needs a layer after the last KV source "
+            f"({decoder_start - 1}); the trunk has {config.num_hidden_layers}"
+        )
+    if any(layer >= decoder_start for layer in config.engram_layer_ids):
+        raise ValueError(
+            "decoder replay needs every Engram layer before layer "
+            f"{decoder_start}, the first decoder layer"
+        )
+    if any(layer < decoder_start for layer in config.dspark_target_layer_ids):
+        raise ValueError(
+            "decoder replay needs every DSpark tap in the decoder (layer "
+            f">= {decoder_start}); got {config.dspark_target_layer_ids}"
+        )
+    if (
+        config.return_logits == ReturnLogits.ALL
+        or config.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED
+    ):
+        raise ValueError(
+            "decoder replay returns the kept rows only; all-row logits and "
+            "hidden states need every row"
+        )
+    return decoder_start
+
+
+def _host_plan_rows(
+    splits: TensorValue, host_kept: TensorValue, *, last: int
+) -> TensorValue:
+    """The kept rows' global count as a host int64 scalar.
+
+    ``host_kept`` is the plan's cumulative kept bounds and ``splits[last]`` the
+    global request count, so the entry there is the total, read the way
+    :func:`_host_total_rows` reads the full batch's.
+    """
+    return host_kept[splits[last]]
+
+
+_host_plan_rows_op = F.functional(_host_plan_rows)
+
+
+@dataclass(frozen=True)
+class ReplayRows:
+    """The rows the decoder keeps past the last KV source, host-planned.
+
+    Each request keeps a suffix of its merged rows, so the kept rows stay
+    contiguous per request. Positions and cache slots stay absolute: a
+    skipped row is never recomputed, and the kept rows' leaves read through
+    :attr:`starts`. Under data parallelism every field is per rank, in that
+    rank's own row frame.
+    """
+
+    rows: RaggedRows
+    """The kept rows' ragged bookkeeping, at the full batch's positions."""
+    indices: Tensor
+    """``[kept]`` int32 source row of each kept row in the full batch."""
+    starts: Tensor
+    """``[batch]`` int32 absolute position of each request's first kept row."""
+    swa_begin: Tensor
+    """``[batch]`` int32 window bound, raised to each trimmed request's start."""
+    longest: Tensor
+    """``[1]`` uint32 host: the exact longest kept row count on this device."""
+    host_offsets: Tensor | None = None
+    """Under data parallelism, the CPU int64 kept bounds the MoE row count
+    reads."""
+
+
 @dataclass
 class Batch:
     """One forward's staged inputs, shared by every layer.
@@ -277,10 +359,12 @@ class Batch:
     vocab-parallel embedding reads before the split.
 
     ``draft_width`` is the step's draft rows appended per request, ``None``
-    without a spec decoder. Nothing on the current trunk reads it: its
-    reader is the decoder-narrowing keep cap, which the bounded-replay
-    change adds so a verify step's placeholder rows cannot crowd real
-    rows out of the stored window.
+    without a spec decoder. Nothing on the trunk reads it: it rides along for
+    the spec adapter's merged-window arithmetic.
+
+    ``replay`` holds the decoder's kept rows when the export plans them;
+    ``rows`` always describes the full batch the layers up to the last KV
+    source run on.
     """
 
     tokens: Tensor
@@ -298,16 +382,26 @@ class Batch:
     data_parallel_splits: Tensor | None = None
     input_row_offsets_i64: Tensor | None = None
     draft_width: Tensor | None = None
+    replay: ReplayRows | None = None
 
     @property
     def row_offsets(self) -> Tensor:
-        """The staged rows' ragged offsets, ``[batch + 1]``."""
-        return self.rows.offsets
+        """The ragged offsets of the rows the trunk's outputs hold.
+
+        With replay that is the kept rows: the hidden states, taps and logits
+        come out indexed by them, so an output gather must not read ``rows``.
+        """
+        return self.output_rows.offsets
 
     @property
     def positions(self) -> Tensor:
-        """Each staged row's absolute position, ``[rows]``."""
-        return self.rows.positions
+        """Each output row's absolute position, ``[rows]``."""
+        return self.output_rows.positions
+
+    @property
+    def output_rows(self) -> RaggedRows:
+        """The rows the decoder, and so every trunk output, runs on."""
+        return self.rows if self.replay is None else self.replay.rows
 
 
 class DeepseekV41(Module[..., ModuleV3Outputs]):
@@ -367,6 +461,10 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
             )
         self.interface_config = V41Config.from_hf(
             {"text_config": vars(text_config)}
+        )
+        self.decoder_replay = self.interface_config.decoder_replay
+        self.decoder_start = (
+            _replay_decoder_start(config) if self.decoder_replay else None
         )
         rope = RopeParams.from_text_config(text_config)
         with default_device(mesh), default_dtype(DType.bfloat16):
@@ -531,6 +629,17 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
                 positions,
                 F.cast(offsets[1:] - offsets[:-1], DType.int32),
             )
+        replay = (
+            self._replay_rows(
+                rows,
+                swa_begin,
+                kv["swa"].cache_lengths,
+                extras,
+                data_parallel_splits,
+            )
+            if self.decoder_replay
+            else None
+        )
         return Batch(
             tokens=tokens,
             rows=rows,
@@ -547,6 +656,173 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
             data_parallel_splits=data_parallel_splits,
             input_row_offsets_i64=input_row_offsets_i64,
             draft_width=draft_width,
+            replay=replay,
+        )
+
+    def _rebased(
+        self, skip: Tensor, cache_lengths: Tensor
+    ) -> tuple[Tensor, Tensor]:
+        """Each request's first kept position and its window floor.
+
+        Both derive from the ``cache_lengths`` the full graph positions its
+        rows with, so a kept row sits where the full graph puts it even when
+        the host cannot know that position (a row in flight, whose device
+        position runs ahead of the host's by its accepted drafts). A trimmed
+        request's floor is its own start, since no window KV below it was
+        written this step; an untrimmed request's is its ordinary window
+        visibility.
+        """
+        lengths = F.rebind(
+            F.cast(cache_lengths, DType.int32),
+            [skip.shape[0]],
+            "replay: one cache length per request",
+        )
+        start = lengths + skip
+        floor = F.where(
+            skip > 0,
+            start,
+            F.elementwise_max(lengths - self.config.sliding_window, 0),
+        )
+        return start, floor
+
+    def _replay_rows(
+        self,
+        rows: RaggedRows,
+        swa_begin: Tensor,
+        cache_lengths: Tensor,
+        extras: Mapping[str, Tensor],
+        data_parallel_splits: Tensor | None,
+    ) -> ReplayRows:
+        """Stages the host-planned kept rows onto the mesh.
+
+        The host stages the kept row indices, their cumulative bounds and
+        each request's front skip. Under data parallelism the kept rows are
+        a ragged batch of their own, so each rank cuts its requests' share
+        with the same split the token rows ride; the per-rank selection is
+        host arithmetic and never compiles into the graph.
+        """
+        mesh = self.mesh
+        kept_offsets = F.distributed_broadcast(
+            extras["replay.kept_offsets"], mesh
+        )
+        skip = F.distributed_broadcast(extras["replay.kept_skip"], mesh)
+        indices = F.distributed_broadcast(extras["replay.row_indices"], mesh)
+        longest = extras["replay.rank_longest"]
+        if self.dp == 1:
+            start, floor = self._rebased(skip, cache_lengths)
+            kept_off = F.rebind(
+                kept_offsets,
+                [rows.offsets.shape[0]],
+                "replay: one kept bound per request",
+            )
+            bid, local = row_ids(kept_off, indices.shape[0])
+            return ReplayRows(
+                rows=RaggedRows(
+                    offsets=kept_off,
+                    bid=bid,
+                    local=local,
+                    positions=F.gather(rows.positions, indices, axis=0),
+                    lengths=F.cast(kept_off[1:] - kept_off[:-1], DType.int32),
+                ),
+                indices=indices,
+                starts=start,
+                swa_begin=F.elementwise_max(swa_begin, floor),
+                longest=longest,
+            )
+        assert data_parallel_splits is not None
+        mapping = DeviceMapping(mesh, (Sharded(0),))
+        skip = _slice_requests(
+            skip, data_parallel_splits, mapping, "replay_skip"
+        )
+        # One split label per extent: the kept rows are fewer than the token
+        # rows, so sharing the token split's labels would bind one symbol to
+        # two different extents.
+        row_shards, kept_off_shards = split_batch_replicated(
+            [DeviceRef.from_device(d) for d in mesh.devices],
+            [TensorValue(shard) for shard in indices.local_shards],
+            [TensorValue(shard) for shard in kept_offsets.local_shards],
+            TensorValue(extras["replay.host_kept_offsets"]),
+            TensorValue(data_parallel_splits),
+            "replay_rows",
+        )
+        bases = F.distributed_broadcast(extras["replay.rank_bases"], mesh)
+        kept: list[RaggedRows] = []
+        sources: list[Tensor] = []
+        starts: list[Tensor] = []
+        begins: list[Tensor] = []
+        for r, (
+            off,
+            begin,
+            lengths,
+            skip_shard,
+            rows_shard,
+            kept_shard,
+        ) in enumerate(
+            zip(
+                rows.offsets.local_shards,
+                swa_begin.local_shards,
+                cache_lengths.local_shards,
+                skip.local_shards,
+                row_shards,
+                kept_off_shards,
+                strict=True,
+            )
+        ):
+            start, floor = self._rebased(skip_shard, lengths)
+            # Two labels for one request window (the plan's split and the
+            # token split's): tie them so the runtime checks the equality.
+            floor = F.rebind(
+                floor, [begin.shape[0]], "replay: one floor per request"
+            )
+            kept_off = F.rebind(
+                Tensor.from_graph_value(kept_shard),
+                [off.shape[0]],
+                "replay: one kept bound per request",
+            )
+            # The staged indices address the merged rows; this rank's sit
+            # at its own base there.
+            source = Tensor.from_graph_value(rows_shard) - F.reshape(
+                bases.local_shards[r][r], [1]
+            )
+            bid, local = row_ids(kept_off, source.shape[0])
+            kept.append(
+                RaggedRows(
+                    offsets=kept_off,
+                    bid=bid,
+                    local=local,
+                    positions=F.gather(
+                        rows.positions.local_shards[r], source, axis=0
+                    ),
+                    lengths=F.cast(kept_off[1:] - kept_off[:-1], DType.int32),
+                )
+            )
+            sources.append(source)
+            starts.append(start)
+            begins.append(F.elementwise_max(begin, floor))
+
+        def join(parts: Sequence[Tensor], like: Tensor) -> Tensor:
+            return Tensor.from_shard_values(parts, like.mapping)
+
+        def join_rows(attr: str) -> Tensor:
+            return join([getattr(k, attr) for k in kept], rows.offsets)
+
+        return ReplayRows(
+            rows=RaggedRows(
+                offsets=join_rows("offsets"),
+                bid=join_rows("bid"),
+                local=join_rows("local"),
+                positions=join_rows("positions"),
+                lengths=join_rows("lengths"),
+            ),
+            indices=join(sources, rows.positions),
+            starts=join(starts, rows.positions),
+            swa_begin=join(begins, swa_begin),
+            # Each rank's own element, with a constant bound: a host scalar,
+            # so the kv-store host function reads a CPU address under capture.
+            longest=join(
+                [longest[r : r + 1] for r in range(self.dp)], rows.positions
+            ),
+            host_offsets=extras["replay.host_kept_offsets"],
         )
 
     def embed_stream(self, b: Batch) -> tuple[Tensor, Tensor]:
@@ -604,6 +880,9 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
     ) -> tuple[Tensor, Tensor, dict[int, Tensor] | None]:
         """Every layer over the staged batch, optionally capturing taps.
 
+        With replay the layers from :attr:`decoder_start` on run on the kept
+        rows only, so the returned stream holds those rows.
+
         Returns:
             ``(stream, pre, taps)``: the written-back stream with its
             carried ``pre``, and the captured taps keyed by layer id,
@@ -626,7 +905,32 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
         taps: dict[int, Tensor] | None = {} if tap_set else None
         hc = self.config.hc_mult
         selection: dict[str, Tensor] = {}
-        for layer in self.layers:
+        for index, layer in enumerate(self.layers):
+            if b.replay is not None and index == self.decoder_start:
+                src = b.replay.indices
+                if total_rows is not None:
+                    assert (
+                        b.data_parallel_splits is not None
+                        and b.replay.host_offsets is not None
+                    )
+                    total_rows = _host_plan_rows_op(
+                        b.data_parallel_splits,
+                        TensorValue(b.replay.host_offsets),
+                        last=self.dp,
+                    )
+                b = self._cut_to_replay(b)
+                rows, offsets, positions = (
+                    b.rows,
+                    b.rows.offsets,
+                    b.rows.positions,
+                )
+                stream, pre, y, post, comb = (
+                    self._gather_rows(t, src)
+                    for t in (stream, pre, y, post, comb)
+                )
+                selection = {
+                    k: self._gather_rows(t, src) for k, t in selection.items()
+                }
             if layer.layer_id in self.config.engram_layer_ids:
                 stream = mhc_post(
                     y, stream, post, comb.reshape([stream.shape[0], hc, hc]), hc
@@ -700,6 +1004,57 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
             y, stream, post, comb.reshape([stream.shape[0], hc, hc]), hc
         )
         return stream, pre, taps
+
+    def _cut_to_replay(self, b: Batch) -> Batch:
+        """The batch the decoder runs: the kept rows at their absolute slots.
+
+        The full-batch writes ahead of the cut are untouched. Past it every
+        leaf views its tail: ``cache_lengths`` becomes each request's first
+        kept position, so the kept rows still write and read the same
+        absolute slots the full graph would. ``max_prompt_length`` must be
+        the exact longest kept count, as a host value: the select ops bound
+        their score rows off it, and under device-graph capture only a staged
+        host input reads through a CPU address.
+        """
+        replay = b.replay
+        assert replay is not None
+        return replace(
+            b,
+            rows=replay.rows,
+            swa_begin=replay.swa_begin,
+            image_token_mask=self._gather_rows(
+                b.image_token_mask, replay.indices
+            ),
+            kv={
+                name: replace(
+                    leaf,
+                    cache_lengths=F.cast(
+                        replay.starts, leaf.cache_lengths.dtype
+                    ),
+                    max_prompt_length=replay.longest,
+                )
+                for name, leaf in b.kv.items()
+            },
+            replay=None,
+        )
+
+    def _gather_rows(self, t: Tensor, src: Tensor) -> Tensor:
+        """``t``'s rows at ``src``, per rank under data parallelism.
+
+        Each rank's ``src`` addresses its own rows and their extents differ,
+        so the gather runs per shard and keeps ``t``'s mapping.
+        """
+        if self.dp == 1 or not t.is_distributed:
+            return F.gather(t, src, axis=0)
+        return Tensor.from_shard_values(
+            [
+                F.gather(shard, rows, axis=0)
+                for shard, rows in zip(
+                    t.local_shards, src.local_shards, strict=True
+                )
+            ],
+            t.mapping,
+        )
 
     def run_trunk_with_taps(
         self, b: Batch, stream: Tensor, pre: Tensor
@@ -778,7 +1133,7 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
             )
             for name in self.kv_params.children
         }
-        names = extra_input_names(self.interface_config)
+        names = extra_input_names(self.interface_config, self.dp)
         consumed = n_kv + len(names)
         extras = dict(zip(names, rest[n_kv:consumed], strict=True))
         comm_buffers: EPCommBuffers | None = None
@@ -804,7 +1159,7 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
         stream, pre = self.embed_stream(b)
         stream, pre, _ = self._run_trunk(b, stream, pre, ())
         hidden = mhc_final_collapse(stream, pre)
-        return self._outputs(hidden, b.rows.offsets, return_n_logits)
+        return self._outputs(hidden, b.row_offsets, return_n_logits)
 
     def _outputs(
         self, hidden: Tensor, offsets: Tensor, return_n_logits: Tensor

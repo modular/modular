@@ -69,6 +69,41 @@ modular_py_test(
     ],
 )
 
+# The decoder's host-planned kept rows: the kept rows keep their absolute
+# positions, outputs gather at the kept offsets (a chunk longer than the
+# window plus the draft width would catch a stale-offset gather), a plan
+# that drops nothing leaves the full batch, and the export switch declares
+# the replay inputs only when it is on. Eager ops on a CPU mesh.
+modular_py_test(
+    name = "test_decoder_replay",
+    size = "large",
+    srcs = ["test_decoder_replay.py"],
+    data = ["//max/tests/integration/architectures/deepseekV41_modulev3/testdata"],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/deepseekV41_modulev3/testdata",
+        "MAX_EAGER_EXECUTOR": "fallback-internal",
+    },
+    ignore_extra_deps = [
+        "//max/python/max/_interpreter_ops",
+    ],
+    imports = ["."],
+    deps = [
+        ":abi_contract",
+        "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
 # The real module's declared parameters against the checkpoint census,
 # leaf for leaf in dtype and byte extent -- the property Mach's weight
 # registry checks at boot, so a host transform that writes new bytes

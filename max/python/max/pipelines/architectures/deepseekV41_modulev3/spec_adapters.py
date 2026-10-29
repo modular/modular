@@ -116,19 +116,21 @@ def _to_lead(t: Tensor) -> Tensor:
     return t.local_shards[0] if t.is_distributed else t
 
 
-def _extras(batch: BlockBatch, config: V41Config) -> dict[str, Tensor]:
-    """The trunk's ten extras, out of the driver's ``extra`` carry-all.
+def _extras(
+    batch: BlockBatch, config: V41Config, data_parallel_degree: int
+) -> dict[str, Tensor]:
+    """The trunk's extras, out of the driver's ``extra`` carry-all.
 
     The names come off the trunk's own config view -- the one view the
-    trunk's forward was built from -- so the adapter can never stage an
-    extras set the trunk disagrees with.
+    trunk's forward was built from, at its data-parallel degree -- so the
+    adapter can never stage an extras set the trunk disagrees with.
 
     Raises:
         ValueError: If any extra is missing. A silent default here would
             feed the trunk garbage masks and Engram windows, so the miss is
             loud.
     """
-    names = extra_input_names(config)
+    names = extra_input_names(config, data_parallel_degree)
     missing = [name for name in names if name not in batch.extra]
     if missing:
         raise ValueError(
@@ -385,7 +387,7 @@ class DeepseekV41BlockTarget:
             as_tensors(batch.merged_tokens),
             as_tensors(batch.merged_offsets),
             _leaf_kv(batch, self.kv_params, target.mesh, dp),
-            _extras(batch, target.interface_config),
+            _extras(batch, target.interface_config, dp),
             data_parallel_splits=(
                 as_tensors(batch.data_parallel_splits)
                 if batch.data_parallel_splits is not None

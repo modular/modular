@@ -586,6 +586,7 @@ def _processor(monkeypatch: pytest.MonkeyPatch) -> DeepseekV41BatchProcessor:
     processor._v41 = V41Config.from_hf({"text_config": vars(text_config())})
     processor._engram_static = {}
     processor._verifies = False
+    processor._dp_degree = 1
     monkeypatch.setattr(
         processor, "runtime", SimpleNamespace(devices=[CPU()]), raising=False
     )

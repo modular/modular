@@ -27,6 +27,7 @@ from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.architectures.deepseekV41.layers.engram_hash import (
     engram_lookback_token_ids,
 )
+from max.pipelines.architectures.deepseekV41.replay import ReplayPlan
 from max.pipelines.context import TextContext
 from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.batch_processor import (
@@ -50,6 +51,26 @@ _NUM_LOOKBACK = 3
 def decoder_row_count(row_offsets: np.ndarray, window: int) -> int:
     """Rows the decoder layers run: each request's last ``window`` rows."""
     return int(np.minimum(np.diff(row_offsets.astype(np.int64)), window).sum())
+
+
+def keep_all_plan(
+    context_batch: Sequence[TextContext], verify_width: int
+) -> ReplayPlan:
+    """The replay plan that drops nothing, over the merged row space.
+
+    Bo's planner (:func:`deepseekV41.replay.build_replay_plan`) trims on the
+    MAX Serve spec pipeline; this batch processor stages every step's rows
+    whole, so a graph that takes a plan runs exactly as one without.
+    """
+    offsets = np.cumsum(
+        [0, *(ctx.tokens.active_length + verify_width for ctx in context_batch)]
+    )
+    return ReplayPlan(
+        kept_indices=np.arange(offsets[-1], dtype=np.int64),
+        kept_offsets=offsets.astype(np.uint32),
+        kept_skip=np.zeros(len(context_batch), np.int32),
+        verify_width=verify_width,
+    )
 
 
 class DeepseekV41BatchProcessor(
@@ -140,6 +161,7 @@ class DeepseekV41BatchProcessor(
         context_batch: Sequence[TextContext],
         row_offsets: np.ndarray,
         return_n_logits: int = 1,
+        data_parallel_splits: np.ndarray | None = None,
     ) -> tuple[Buffer, ...]:
         device0 = self.runtime.devices[0]
         batch = len(context_batch)
@@ -174,11 +196,25 @@ class DeepseekV41BatchProcessor(
             name: Buffer.from_numpy(array).to(device0)
             for name, array in per_request.items()
         }
-        names = extra_input_names(self._v41)
+        cpu_buffers: dict[str, Buffer] = {}
+        if self._v41.decoder_replay:
+            self._stage_replay(
+                buffers,
+                cpu_buffers,
+                context_batch,
+                row_offsets,
+                verify_width=max(return_n_logits - 1, 0)
+                if self._verifies
+                else 0,
+                splits=data_parallel_splits,
+            )
+        names = extra_input_names(self._v41, self._dp_degree)
         missing = [
             n
             for n in names
-            if n not in buffers and n not in self._engram_static
+            if n not in buffers
+            and n not in cpu_buffers
+            and n not in self._engram_static
         ]
         if missing:
             raise RuntimeError(
@@ -186,9 +222,50 @@ class DeepseekV41BatchProcessor(
                 "tables and token map must be bound before the first batch."
             )
         return tuple(
-            buffers[name] if name in buffers else self._engram_static[name]
+            buffers[name]
+            if name in buffers
+            else cpu_buffers[name]
+            if name in cpu_buffers
+            else self._engram_static[name]
             for name in names
         )
+
+    def _stage_replay(
+        self,
+        buffers: dict[str, Buffer],
+        cpu_buffers: dict[str, Buffer],
+        context_batch: Sequence[TextContext],
+        row_offsets: np.ndarray,
+        *,
+        verify_width: int,
+        splits: np.ndarray | None,
+    ) -> None:
+        """Stages the keep-everything plan the graph's replay inputs read."""
+        device0 = self.runtime.devices[0]
+        plan = keep_all_plan(context_batch, verify_width)
+        boundaries = [0, len(context_batch)] if splits is None else list(splits)
+        buffers["replay.kept_offsets"] = Buffer.from_numpy(
+            plan.kept_offsets
+        ).to(device0)
+        buffers["replay.kept_skip"] = Buffer.from_numpy(plan.kept_skip).to(
+            device0
+        )
+        buffers["replay.row_indices"] = Buffer.from_numpy(
+            plan.kept_indices.astype(np.int32)
+        ).to(device0)
+        cpu_buffers["replay.rank_longest"] = Buffer.from_numpy(
+            plan.kept_longest(boundaries)
+        )
+        if self._dp_degree > 1:
+            cpu_buffers["replay.host_kept_offsets"] = Buffer.from_numpy(
+                plan.kept_offsets.astype(np.int64)
+            )
+            # Each rank's first merged row: the staged indices address the
+            # whole batch, and the graph rebases every rank's share by this.
+            bases = plan.kept_offsets[np.asarray(boundaries[:-1], np.int64)]
+            buffers["replay.rank_bases"] = Buffer.from_numpy(
+                bases.astype(np.int32)
+            ).to(device0)
 
     def prepare_initial_token_inputs(
         self,
@@ -222,10 +299,10 @@ class DeepseekV41BatchProcessor(
         device0 = self.runtime.devices[0]
         data_parallel_splits = None
         input_row_offsets_i64 = None
+        splits_np = None
         if self._dp_degree > 1:
-            data_parallel_splits = Buffer.from_numpy(
-                compute_data_parallel_splits(replica_batches)
-            )
+            splits_np = compute_data_parallel_splits(replica_batches)
+            data_parallel_splits = Buffer.from_numpy(splits_np)
             input_row_offsets_i64 = Buffer.from_numpy(
                 offsets_np.astype(np.int64)
             )
@@ -236,7 +313,9 @@ class DeepseekV41BatchProcessor(
                 np.array([return_n_logits], dtype=np.int64)
             ),
             kv_cache_inputs=kv_cache_inputs,
-            extras=self._extras(context_batch, offsets_np, return_n_logits),
+            extras=self._extras(
+                context_batch, offsets_np, return_n_logits, splits_np
+            ),
             ep_inputs=self._ep_inputs(),
             data_parallel_splits=data_parallel_splits,
             input_row_offsets_i64=input_row_offsets_i64,

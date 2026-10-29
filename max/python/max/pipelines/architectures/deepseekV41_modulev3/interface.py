@@ -77,6 +77,10 @@ _E8M0 = DType.float8_e8m0fnu
 # resolve the same window-leaf geometry.
 _DEFAULT_DSPARK_STAGES = 3
 
+DECODER_REPLAY_DEFAULT = False
+"""Whether an export takes the decoder's host-planned kept rows when its text
+config says nothing, which is MAX's default for the same replay."""
+
 
 @dataclass(frozen=True)
 class V41Config:
@@ -107,6 +111,10 @@ class V41Config:
     hc_mult: int
     engram_layer_ids: tuple[int, ...]
     has_vision: bool
+    decoder_replay: bool = DECODER_REPLAY_DEFAULT
+    """Whether the graph takes the host-planned kept rows of the decoder
+    (the layers past the last KV source). Read off the export's text config
+    so the interface, the trunk and the engine's contract cannot disagree."""
 
     @classmethod
     def from_hf(cls, config: Mapping[str, Any]) -> V41Config:
@@ -147,6 +155,9 @@ class V41Config:
             hc_mult=text["hc_mult"],
             engram_layer_ids=tuple(text["engram_layer_ids"]),
             has_vision="vision_config" in config,
+            decoder_replay=bool(
+                text.get("decoder_replay", DECODER_REPLAY_DEFAULT)
+            ),
         )
 
     def ratio(self, layer: int) -> int:
@@ -917,19 +928,68 @@ def extra_inputs(
     )
     # Only the extent matters: the graph reads the decoder's row count off it.
     extras.append(("decoder_rows", TensorType(u8, ["decoder_rows"], gpu0)))
+    if config.decoder_replay:
+        extras.extend(_replay_extras(gpu0, data_parallel_degree, batch_rows))
     return extras
 
 
-def extra_input_names(config: V41Config) -> list[str]:
+def _replay_extras(
+    gpu0: DeviceRef, data_parallel_degree: int, batch_rows: str
+) -> list[tuple[str, TensorType]]:
+    """The host-planned kept rows of the decoder, one plan per step.
+
+    Every step stages a plan (an unplanned step keeps every row), so one ABI
+    serves eager and captured steps alike. ``rank_longest`` is the exact
+    longest kept count per replica: a host scalar, so the kv-store host
+    function bounds its select rows off a CPU address under capture. Under
+    data parallelism the plan's cumulative bounds also cross as a host
+    mirror, and each rank's first merged row as ``rank_bases``.
+    """
+    u32, i32, i64 = DType.uint32, DType.int32, DType.int64
+    extras = [
+        ("replay.kept_offsets", TensorType(u32, ["kept_batch_plus_one"], gpu0)),
+        ("replay.kept_skip", TensorType(i32, [batch_rows], gpu0)),
+        ("replay.row_indices", TensorType(i32, ["replay_kept_rows"], gpu0)),
+        (
+            "replay.rank_longest",
+            TensorType(u32, [data_parallel_degree], DeviceRef.CPU()),
+        ),
+    ]
+    if data_parallel_degree > 1:
+        extras.extend(
+            [
+                (
+                    "replay.host_kept_offsets",
+                    TensorType(i64, ["kept_batch_plus_one"], DeviceRef.CPU()),
+                ),
+                (
+                    "replay.rank_bases",
+                    TensorType(i32, [data_parallel_degree], gpu0),
+                ),
+            ]
+        )
+    return extras
+
+
+def extra_input_names(
+    config: V41Config, data_parallel_degree: int = 1
+) -> list[str]:
     """Returns the names of :func:`extra_inputs`, in order.
 
     Args:
         config: The interface config the input extents derive from.
+        data_parallel_degree: The degree the graph was built at: the replay
+            plan's data-parallel inputs exist only above 1.
 
     Returns:
         The extra input names, in graph order.
     """
-    return [name for name, _ in extra_inputs(config, [DeviceRef.GPU(0)])]
+    return [
+        name
+        for name, _ in extra_inputs(
+            config, [DeviceRef.GPU(0)], data_parallel_degree
+        )
+    ]
 
 
 def kv_input_names(kv_params: MultiKVCacheParams) -> list[str]:
