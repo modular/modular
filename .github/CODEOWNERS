@@ -61,6 +61,7 @@
 /bazel/public-patches/tracy-port-logging.patch @modular/max-sdk
 /bazel/public-patches/tracy-rocm-no-default-counters.patch @modular/max-sdk
 /bazel/public-patches/tracy-tls-fix.patch @modular/max-sdk
+/bazel/public-patches/transformers-local-source-symlinks.patch @modular/max-serve
 /bazel/public-patches/xgrammar.patch @modular/max-serve
 /bazel/public-patches/llvm-mlir-timing-recycled-key.patch @modular/mojo-compiler
 /AsyncRT/ @modular/runtime

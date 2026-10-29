@@ -17827,6 +17827,7 @@ def targets():
         deps = _transformers_5_12_1_deps,
         wheel = ":_wheel_transformers@5.12.1",
         testonly = "transformers" in _TESTONLY_DEPS,
+        post_install_patches = ["@@//bazel/public-patches:transformers-local-source-symlinks.patch"],
     )
 
     native.alias(

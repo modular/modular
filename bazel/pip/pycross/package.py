@@ -188,6 +188,11 @@ class Package:
             # Backport https://github.com/pytorch/pytorch/pull/167046
             patches_line = """
         post_install_patches = ["@@//bazel/public-patches:torch-cuda-deps.patch"],"""
+        elif self.library_name == "transformers@5.12.1":
+            # Backport https://github.com/huggingface/transformers/pull/46618
+            # TODO: Remove this patch when upgrading to >=5.13.0.
+            patches_line = """
+        post_install_patches = ["@@//bazel/public-patches:transformers-local-source-symlinks.patch"],"""
 
         package += f"""\
     native.alias(
