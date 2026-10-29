@@ -223,10 +223,6 @@ comptime F_GETFL: c_int = 3
 """Get the file status flags."""
 comptime F_SETFL: c_int = 4
 """Set the file status flags."""
-comptime F_DUPFD_CLOEXEC: c_int = constant[
-    "F_DUPFD_CLOEXEC", linux=1030, macos=67
-]()
-"""Duplicate a descriptor with close-on-exec set on the copy."""
 
 # ===----------------------------------------------------------------------=== #
 # Socket option values

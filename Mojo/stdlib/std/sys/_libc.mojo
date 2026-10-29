@@ -26,6 +26,7 @@ from std.ffi import (
     CStringSpan,
 )
 from std.sys import CompilationTarget
+from std.sys.info import platform_map
 
 # ===-----------------------------------------------------------------------===#
 # stdlib.h — core C standard library operations
@@ -305,6 +306,9 @@ def waitpid(
 struct FcntlCommands:
     comptime F_GETFD: c_int = 1
     comptime F_SETFD: c_int = 2
+    comptime F_DUPFD_CLOEXEC: c_int = platform_map[
+        T=c_int, "F_DUPFD_CLOEXEC", linux=c_int(1030), macos=c_int(67)
+    ]()
 
 
 struct FcntlFDFlags:

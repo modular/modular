@@ -12,16 +12,22 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import Optional
-from std.ffi import c_int, get_errno
-from std.io import BorrowedFileDescriptor, FileDescriptor, RawFileDescriptor
+from std.ffi import ErrNo, c_int, get_errno
+from std.io import (
+    BorrowedFileDescriptor,
+    FileDescriptor,
+    IOError,
+    RawFileDescriptor,
+)
 from std.sys import size_of
 from std.sys._io import stdin, stdout, stderr
-from std.sys._libc import FcntlCommands, fcntl, pipe
+from std.sys._libc import FcntlCommands, FcntlFDFlags, fcntl, pipe
 
 from std.testing import (
     TestSuite,
     assert_equal,
     assert_false,
+    assert_not_equal,
     assert_raises,
     assert_true,
 )
@@ -143,7 +149,7 @@ def test_from_borrowed_duplicates_fd() raises:
         duplicate = FileDescriptor(copy_borrowed=BorrowedFileDescriptor(owner))
     except e:
         owner^.close()
-        raise e^
+        raise e
     var distinct = duplicate._value._value != write_fd
 
     # Both descriptors write to the same pipe, and each closes independently.
@@ -174,20 +180,45 @@ def test_from_borrowed_duplicates_fd() raises:
     assert_equal(text, "ab")
 
 
+def test_from_borrowed_sets_close_on_exec() raises:
+    var read_fd, write_fd = _make_pipe()
+    var owner = FileDescriptor(unsafe_raw_fd=RawFileDescriptor(write_fd))
+    # The copy takes the lowest free descriptor from 3 up.
+    var copy_fd: c_int = 3
+    while _is_open(copy_fd):
+        copy_fd += 1
+    var duplicate: FileDescriptor
+    try:
+        duplicate = FileDescriptor(copy_borrowed=BorrowedFileDescriptor(owner))
+    except e:
+        owner^.close()
+        raise e
+    var flags = fcntl(copy_fd, FcntlCommands.F_GETFD)
+    try:
+        duplicate^.close()
+    finally:
+        owner^.close()
+    RawFileDescriptor(read_fd).close()
+    assert_not_equal(flags, -1)
+    assert_true(flags & FcntlFDFlags.FD_CLOEXEC != 0)
+
+
 def test_from_borrowed_raises_on_invalid_fd() raises:
     var owner = FileDescriptor(unsafe_raw_fd=RawFileDescriptor(9999))
-    var dup_raised = False
+    var dup_error = String()
     try:
         var duplicate = FileDescriptor(
             copy_borrowed=BorrowedFileDescriptor(owner)
         )
         duplicate^.close()
     except e:
-        dup_raised = "dup failed" in String(e)
+        dup_error = String(e)
     # Nothing owns descriptor 9999, so closing it fails too.
     with assert_raises():
         owner^.close()
-    assert_true(dup_raised)
+    assert_equal(
+        dup_error, String(IOError(errno=ErrNo.EBADF, operation="fcntl"))
+    )
 
 
 def main() raises:

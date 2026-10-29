@@ -136,6 +136,14 @@ This version is still a work in progress.
   `fd^.close()`, which raises if the close fails. It is movable but not
   copyable, and `Optional[FileDescriptor]` is the size of a single
   descriptor. `RawFileDescriptor` gains a raising `close()` method.
+  `FileDescriptor(copy_borrowed=)` duplicates a descriptor with
+  close-on-exec set, so child processes don't inherit the copy.
+
+- `RawFileDescriptor.read_bytes()`, `RawFileDescriptor.fchdir()`,
+  `RawFileDescriptor.close()`, `FileDescriptor.close()`, and
+  `FileDescriptor(copy_borrowed=)` now raise `IOError`, so callers can
+  match on the error's `kind()`. Code in a plain `raises` function still
+  compiles unchanged.
 
 - Added `BorrowedFileDescriptor` to `std.io`, a copyable, non-owning view
   of a `FileDescriptor` that carries the owner's origin, so it can be
