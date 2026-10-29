@@ -5119,7 +5119,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         comptime plugin = MaxPluginForTarget[type_of(f).target]
         comptime if plugin._handles_enqueue_function:
             plugin.enqueue_function_fn(
-                self.assert_default_target(),
+                self,
                 f,
                 *args,
                 grid_dim=grid_dim,
@@ -5293,7 +5293,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
                 HostArgs.length == 0
             ), "host_args is not supported on this target"
             plugin.enqueue_function_fn(
-                self.assert_default_target(),
+                self,
                 gpu_kernel,
                 *encoded_args,
                 grid_dim=grid_dim,

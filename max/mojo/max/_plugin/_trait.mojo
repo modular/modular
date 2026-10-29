@@ -366,7 +366,7 @@ trait MaxPluginHooks:
     def enqueue_function_fn[
         *Ts: DevicePassable
     ](
-        ctx: _LegacyDeviceContext,
+        ctx: _LegacyDeviceContext.Generic,
         f: DeviceFunction,
         *args: *Ts,
         grid_dim: Dim,
