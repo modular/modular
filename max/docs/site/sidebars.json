@@ -2,7 +2,8 @@
   "installSidebar": [
     "install",
     "packages",
-    "system-requirements"
+    "system-requirements",
+    "coding-assistants"
   ],
   "servingDevSidebar": [
     {
@@ -63,8 +64,7 @@
         "serve/lora-adapters",
         "serve/speculative-decoding",
         "serve/parallelism",
-        "serve/recipes",
-        "serve/metrics"
+        "serve/recipes"
       ]
     },
     {
@@ -80,7 +80,7 @@
       ]
     },
     {
-      "label": "Tools",
+      "label": "Reference",
       "className": "sidebar-heading",
       "type": "category",
       "collapsed": false,
@@ -97,13 +97,7 @@
           ]
         },
         "environment-variables",
-        "coding-assistants",
-        {
-          "label": "kbench",
-          "type": "link",
-          "href": "https://modul.ar/kbench",
-          "className": "external-link"
-        }
+        "serve/metrics"
       ]
     }
   ],
@@ -1114,6 +1108,12 @@
               "dirName": "layout"
             }
           ]
+        },
+        {
+          "label": "kbench",
+          "type": "link",
+          "href": "https://modul.ar/kbench",
+          "className": "external-link"
         }
       ]
     },
