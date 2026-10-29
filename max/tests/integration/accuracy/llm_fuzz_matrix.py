@@ -88,6 +88,19 @@ PIPELINES: Final[list[PipelineEntry]] = [
         instance_type="bm.gpu.b200.8",
         timeout=90,
     ),
+    # Laguna S-2.1 on one B200: the gated lane, carrying the mixed NVFP4/bf16
+    # expert split. Joins the nightly schedule with both arms currently red:
+    # MAX Serve against a known-failure list derived from narrower Mach-vs-
+    # legacy control runs, Mach on seven ids MAX Serve passes. Accepted while
+    # Mach serving lands first.
+    PipelineEntry(
+        pipeline="poolside/Laguna-S-2.1-NVFP4",
+        model_path="poolside/Laguna-S-2.1-NVFP4",
+        runner="modrunner-b200",
+        gpu_flag="--devices gpu:0",
+        instance_type="bm.gpu.b200.1",
+        timeout=120,
+    ),
     PipelineEntry(
         pipeline="amd/MiniMax-M3-MXFP4-ep-tp",
         model_path="amd/MiniMax-M3-MXFP4",

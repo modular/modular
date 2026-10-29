@@ -85,11 +85,19 @@ class RunConfig:
 class FuzzClient:
     """Thin async wrapper around http.client for adversarial requests."""
 
+    # Floor on the send pool, which max_concurrency does not set: that is how
+    # many requests a scenario stating no number of its own may have in
+    # flight, while this is how many blocking sends the client can carry at
+    # once. A pressure scenario passes its own max_concurrent (up to 40
+    # today) and must get it even where the run's default is lowered to match
+    # a small server batch, so the pool is never what caps it.
+    _MIN_POOL_WORKERS = 200
+
     def __init__(self, config: RunConfig):
         self.config = config
         self._parsed = urllib.parse.urlparse(config.base_url)
         self._pool = concurrent.futures.ThreadPoolExecutor(
-            max_workers=config.max_concurrency
+            max_workers=max(config.max_concurrency, self._MIN_POOL_WORKERS)
         )
         self._held_sockets: list[socket.socket] = []
 

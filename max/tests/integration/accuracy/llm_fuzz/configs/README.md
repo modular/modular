@@ -22,6 +22,15 @@ llm-fuzz knobs (defaults; the workflow can override per dispatch):
 - `scenarios` — empty runs the tool's full default suite
 - `k2vv_mode` — only meaningful when `scenarios` selects the
   kimi-k2vv suite
+- `extra_fuzz_args` — space-separated llm-fuzz flags this deployment
+  needs, such as a `--max-concurrency` matching its batch size.
+  `--extra-fuzz-args` on the command line appends to these rather
+  than replacing them.
+- `exclude` — comma-separated `scenario:test` ids to skip, or
+  `exclude_files` — paths whose entries the driver reads into the
+  same list, one id per line with `#` comments allowed. A `.txt`
+  list is what a Mammoth overlay can point EXCLUDE_FILE at, so
+  prefer it over spelling the ids here.
 
 The model path is **not** set in this file. It comes from the matrix
 entry (`max/tests/integration/accuracy/llm_fuzz_matrix.py`), which
