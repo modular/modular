@@ -431,6 +431,17 @@ class SpeculativeConfig(ConfigFileModel):
         ),
     )
 
+    bitmask_side_stream: bool = Field(
+        default=False,
+        description=(
+            "Copies the constrained-decoding bitmask to the device on its own "
+            "stream, issued before the target forward, so the copy overlaps "
+            "the forward instead of following it. The copy still waits for "
+            "the host to publish the masks, and the graph's inputs do not "
+            "change. Applies to a block draft; verified on CUDA only."
+        ),
+    )
+
     logit_penalties: bool = Field(
         default=False,
         description=(

@@ -710,6 +710,7 @@ class BlockDriver(
         # normally advance together.
         self._ctx_at_draft_cache_length = ctx_at_draft_cache_length
         self.enable_structured_output = enable_structured_output
+        self._bitmask_side_stream = speculative_config.bitmask_side_stream
         self.block_size = proposer.block_size
         # The block always runs at its trained width; a step may verify fewer
         # of its proposals than it holds.
@@ -1063,16 +1064,26 @@ class BlockDriver(
 
         pre_cache_lengths = self._pre_cache_lengths(batch)
 
+        def copy_bitmasks(side_stream: bool) -> TensorValue | None:
+            return apply_overlap_bitmask(
+                pinned_bitmask,
+                wait_payload,
+                device_bitmask_scratch,
+                num_steps=batch.num_draft_tokens,
+                device=batch.device0,
+                side_stream=side_stream,
+            )
+
+        # On its own stream the copy is issued first and overlaps the target
+        # forward; inline, it follows the forward on device 0's stream.
+        side_stream = self._bitmask_side_stream
+        effective_bitmasks = copy_bitmasks(True) if side_stream else None
+
         verified = self._verify(batch)
         target_logits, target_hidden = verified.logits, verified.hidden
 
-        effective_bitmasks = apply_overlap_bitmask(
-            pinned_bitmask,
-            wait_payload,
-            device_bitmask_scratch,
-            num_steps=batch.num_draft_tokens,
-            device=batch.device0,
-        )
+        if not side_stream:
+            effective_bitmasks = copy_bitmasks(False)
 
         accepted = self._accept(
             batch,
