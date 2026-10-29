@@ -16,7 +16,8 @@ from std.sys import simd_width_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from max.algorithm.functional import elementwise
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.primitives.grid_controls import PDLLevel
 from layout import Coord, Idx, DefaultEngine, TileTensor, row_major
 from layout.tile_layout import Layout
 from linalg.bmm import (
@@ -25,7 +26,7 @@ from linalg.bmm import (
 )
 
 from std.random import rand
-from std.testing import assert_almost_equal
+from std.testing import assert_almost_equal, assert_equal, assert_true
 
 comptime epilogue_func_type = def[
     dtype: DType, width: SIMDLength, *, alignment: Int = 1
@@ -48,6 +49,7 @@ def run_bmm_and_check_result[
     transpose_b: Bool,
     lambda_fn: Optional[epilogue_func_type] = None,
     check_against_naive_kernel: Bool = False,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     a_host: TileTensor[
         mut=True,
@@ -129,11 +131,11 @@ def run_bmm_and_check_result[
         return func(val)
 
     comptime if lambda_fn:
-        _batched_matmul_gpu[transpose_b=transpose_b](
+        _batched_matmul_gpu[transpose_b=transpose_b, pdl_level=pdl_level](
             c_device, a_device, b_device, compute_fn, ctx
         )
     else:
-        _batched_matmul_gpu[transpose_b=transpose_b](
+        _batched_matmul_gpu[transpose_b=transpose_b, pdl_level=pdl_level](
             c_device, a_device, b_device, ctx
         )
 
@@ -230,6 +232,7 @@ def test_dynamic_shapes[
     *,
     transpose_b: Bool,
     lambda_fn: Optional[epilogue_func_type] = None,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     ctx: DeviceContext,
     b: Int,
@@ -261,9 +264,9 @@ def test_dynamic_shapes[
     var b_host = TileTensor(
         b_host_ptr, row_major(b, n, k)
     ) if transpose_b else TileTensor(b_host_ptr, row_major(b, k, n))
-    run_bmm_and_check_result[transpose_b=transpose_b, lambda_fn=lambda_fn](
-        a_host, b_host, c_host, c_host_ref, ctx, rtol
-    )
+    run_bmm_and_check_result[
+        transpose_b=transpose_b, lambda_fn=lambda_fn, pdl_level=pdl_level
+    ](a_host, b_host, c_host, c_host_ref, ctx, rtol)
 
 
 def test_static_NK[
@@ -274,6 +277,7 @@ def test_static_NK[
     K: Int,
     transpose_b: Bool,
     lambda_fn: Optional[epilogue_func_type] = None,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     ctx: DeviceContext,
     b: Int,
@@ -300,15 +304,15 @@ def test_static_NK[
 
     comptime if transpose_b:
         var b_host = TileTensor(b_host_ptr, row_major(b, Idx[N], Idx[K]))
-        run_bmm_and_check_result[transpose_b=transpose_b, lambda_fn=lambda_fn](
-            a_host, b_host, c_host, c_host_ref, ctx, rtol
-        )
+        run_bmm_and_check_result[
+            transpose_b=transpose_b, lambda_fn=lambda_fn, pdl_level=pdl_level
+        ](a_host, b_host, c_host, c_host_ref, ctx, rtol)
 
     else:
         var b_host = TileTensor(b_host_ptr, row_major(b, Idx[K], Idx[N]))
-        run_bmm_and_check_result[transpose_b=transpose_b, lambda_fn=lambda_fn](
-            a_host, b_host, c_host, c_host_ref, ctx, rtol
-        )
+        run_bmm_and_check_result[
+            transpose_b=transpose_b, lambda_fn=lambda_fn, pdl_level=pdl_level
+        ](a_host, b_host, c_host, c_host_ref, ctx, rtol)
 
 
 def test_static_NK_rank4[
@@ -406,6 +410,144 @@ def test_non_row_major_layout[
     run_bmm_and_check_result[
         transpose_b=True, lambda_fn=lambda_fn, check_against_naive_kernel=True
     ](a_host, b_host, c_host, c_host_ref, ctx, rtol)
+
+
+def _mut_ptr(
+    buf: DeviceBuffer[DType.bfloat16],
+) -> MutPointer[Scalar[DType.bfloat16], MutAnyOrigin]:
+    # The intermediates live in a `List`, so indexing them yields an
+    # immutable view; the launch needs a mutable output tensor.
+    return (
+        buf.unsafe_ptr()
+        .unsafe_mut_cast[True]()
+        .unsafe_origin_cast[MutAnyOrigin]()
+    )
+
+
+def _launch_pdl_chain[
+    pdl_level: PDLLevel, *, N: Int, K: Int
+](
+    ctx: DeviceContext,
+    q: DeviceBuffer[DType.bfloat16],
+    w1: DeviceBuffer[DType.bfloat16],
+    w2: DeviceBuffer[DType.bfloat16],
+    xs: List[DeviceBuffer[DType.bfloat16]],
+    ys: List[DeviceBuffer[DType.bfloat16]],
+    b: Int,
+    m: Int,
+) raises:
+    for i in range(len(xs)):
+        # (m, K) -> (m, N), then (m, N) -> (m, K): the second launch reads
+        # what the first writes, so a wait placed too late shows up as a
+        # mismatch against the PDL-off run.
+        _batched_matmul_gpu[transpose_b=True, pdl_level=pdl_level](
+            TileTensor(_mut_ptr(xs[i]), row_major(b, m, Idx[N])),
+            TileTensor(q, row_major(b, m, Idx[K])),
+            TileTensor(w1, row_major(b, Idx[N], Idx[K])),
+            ctx,
+        )
+        _batched_matmul_gpu[transpose_b=True, pdl_level=pdl_level](
+            TileTensor(_mut_ptr(ys[i]), row_major(b, m, Idx[K])),
+            TileTensor(xs[i], row_major(b, m, Idx[N])),
+            TileTensor(w2, row_major(b, Idx[K], Idx[N])),
+            ctx,
+        )
+
+
+def test_pdl_chain[
+    pdl_level: PDLLevel, *, N: Int, K: Int
+](ctx: DeviceContext, b: Int, m: Int) raises:
+    """Checks that dependent batched matmuls launched back to back with PDL
+    produce bit-identical results to the same chain with PDL off."""
+    comptime dtype = DType.bfloat16
+    comptime reps = 6
+    print("test_pdl_chain", b, "x", m, "x", N, "x", K)
+
+    var q_size = b * m * K
+    var w1_size = b * N * K
+    var x_size = b * m * N
+    var y_size = b * m * K
+
+    var q_host = ctx.enqueue_create_host_buffer[dtype](q_size)
+    var w1_host = ctx.enqueue_create_host_buffer[dtype](w1_size)
+    var w2_host = ctx.enqueue_create_host_buffer[dtype](w1_size)
+    rand(q_host.unsafe_ptr(), q_size)
+    rand(w1_host.unsafe_ptr(), w1_size)
+    rand(w2_host.unsafe_ptr(), w1_size)
+
+    var q = ctx.enqueue_create_buffer[dtype](q_size)
+    var w1 = ctx.enqueue_create_buffer[dtype](w1_size)
+    var w2 = ctx.enqueue_create_buffer[dtype](w1_size)
+    ctx.enqueue_copy(q, q_host)
+    ctx.enqueue_copy(w1, w1_host)
+    ctx.enqueue_copy(w2, w2_host)
+
+    # Fresh zeroed intermediates per repetition, so a consumer that runs
+    # ahead of its producer reads zeros instead of a stale copy of the
+    # right answer.
+    var xs_ref = List[DeviceBuffer[dtype]]()
+    var ys_ref = List[DeviceBuffer[dtype]]()
+    var xs = List[DeviceBuffer[dtype]]()
+    var ys = List[DeviceBuffer[dtype]]()
+    for _ in range(reps):
+        xs_ref.append(ctx.enqueue_create_buffer[dtype](x_size))
+        ys_ref.append(ctx.enqueue_create_buffer[dtype](y_size))
+        xs.append(ctx.enqueue_create_buffer[dtype](x_size))
+        ys.append(ctx.enqueue_create_buffer[dtype](y_size))
+        xs_ref[len(xs_ref) - 1].enqueue_fill(0)
+        ys_ref[len(ys_ref) - 1].enqueue_fill(0)
+        xs[len(xs) - 1].enqueue_fill(0)
+        ys[len(ys) - 1].enqueue_fill(0)
+
+    _launch_pdl_chain[PDLLevel(), N=N, K=K](
+        ctx, q, w1, w2, xs_ref, ys_ref, b, m
+    )
+    _launch_pdl_chain[pdl_level, N=N, K=K](ctx, q, w1, w2, xs, ys, b, m)
+
+    var y_ref_host = ctx.enqueue_create_host_buffer[dtype](y_size)
+    var y_host = ctx.enqueue_create_host_buffer[dtype](y_size)
+    for i in range(reps):
+        ctx.enqueue_copy(y_ref_host, ys_ref[i])
+        ctx.enqueue_copy(y_host, ys[i])
+        ctx.synchronize()
+        var nonzero = 0
+        for j in range(y_size):
+            if y_ref_host[j] != 0:
+                nonzero += 1
+            assert_equal(Float32(y_host[j]), Float32(y_ref_host[j]))
+        assert_true(nonzero > y_size // 2, "reference chain output is empty")
+
+
+def test_pdl_cases[pdl_level: PDLLevel](ctx: DeviceContext) raises:
+    test_static_NK[
+        .bfloat16,
+        transpose_b=True,
+        pdl_level=pdl_level,
+        N=Int(512),
+        K=Int(128),
+    ](ctx, 16, 61)
+
+    test_static_NK[
+        .bfloat16,
+        transpose_b=True,
+        lambda_fn=elementwise_epilogue_fn,
+        pdl_level=pdl_level,
+        N=Int(128),
+        K=Int(512),
+    ](ctx, 3, 129)
+
+    # batch_size == 1 reroutes through the plain matmul dispatch.
+    test_static_NK[
+        .bfloat16,
+        transpose_b=True,
+        pdl_level=pdl_level,
+        N=Int(512),
+        K=Int(128),
+    ](ctx, 1, 13)
+
+    test_pdl_chain[pdl_level, N=Int(512), K=Int(128)](ctx, 16, 61)
+    test_pdl_chain[pdl_level, N=Int(512), K=Int(128)](ctx, 16, 1)
+    test_pdl_chain[pdl_level, N=Int(512), K=Int(128)](ctx, 3, 2049)
 
 
 def main() raises:
@@ -535,3 +677,8 @@ def main() raises:
                 N=Int(512),
                 K=Int(128),
             ](ctx, 22)
+
+        # PDL on the SM100 batched path (MLA absorbed projections), ragged
+        # and prime M. Other targets ignore the level.
+        test_pdl_cases[PDLLevel.ON](ctx)
+        test_pdl_cases[PDLLevel.OVERLAP_AT_BEGINNING](ctx)

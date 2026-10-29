@@ -40,6 +40,7 @@ from max.gpu import (
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import A100, is_cpu, is_valid_target
+from max.gpu.primitives.grid_controls import PDLLevel
 from layout import (
     coord,
     ComptimeInt,
@@ -882,6 +883,7 @@ def _batched_matmul_gpu[
     //,
     *,
     transpose_b: Bool = False,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     c_buf: TileTensor[mut=True, c_type, ...],
     a_buf: TileTensor[mut=False, a_type, ...],
@@ -889,7 +891,10 @@ def _batched_matmul_gpu[
     ctx: DeviceContext,
 ) raises:
     _batched_matmul_gpu_impl[
-        transpose_b=transpose_b, has_epilogue_fn=False, has_compute_fn=False
+        transpose_b=transpose_b,
+        has_epilogue_fn=False,
+        has_compute_fn=False,
+        pdl_level=pdl_level,
     ](c_buf, a_buf, b_buf, no_epilogue_fn, no_compute_fn, ctx)
 
 
@@ -902,6 +907,7 @@ def _batched_matmul_gpu[
     //,
     *,
     transpose_b: Bool = False,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     c_buf: TileTensor[mut=True, c_type, ...],
     a_buf: TileTensor[mut=False, a_type, ...],
@@ -910,7 +916,10 @@ def _batched_matmul_gpu[
     ctx: DeviceContext,
 ) raises:
     _batched_matmul_gpu_impl[
-        transpose_b=transpose_b, has_epilogue_fn=True, has_compute_fn=False
+        transpose_b=transpose_b,
+        has_epilogue_fn=True,
+        has_compute_fn=False,
+        pdl_level=pdl_level,
     ](c_buf, a_buf, b_buf, epilogue_fn, no_compute_fn, ctx)
 
 
@@ -923,6 +932,7 @@ def _batched_matmul_gpu[
     //,
     *,
     transpose_b: Bool = False,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     c_buf: TileTensor[mut=True, c_type, ...],
     a_buf: TileTensor[mut=False, a_type, ...],
@@ -931,7 +941,10 @@ def _batched_matmul_gpu[
     ctx: DeviceContext,
 ) raises:
     _batched_matmul_gpu_impl[
-        transpose_b=transpose_b, has_epilogue_fn=False, has_compute_fn=True
+        transpose_b=transpose_b,
+        has_epilogue_fn=False,
+        has_compute_fn=True,
+        pdl_level=pdl_level,
     ](c_buf, a_buf, b_buf, no_epilogue_fn, compute_fn, ctx)
 
 
@@ -947,6 +960,7 @@ def _batched_matmul_gpu_impl[
     transpose_b: Bool,
     has_epilogue_fn: Bool,
     has_compute_fn: Bool,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     c_buf: TileTensor[mut=True, c_type, ...],
     a_buf: TileTensor[mut=False, a_type, ...],
@@ -1075,7 +1089,9 @@ def _batched_matmul_gpu_impl[
             and a_k * size_of[a_type]() % 16 == 0
             and transpose_b
         ):
-            dispatch_sm100_batched_matmul[c_type, a_type, b_type, transpose_b](
+            dispatch_sm100_batched_matmul[
+                c_type, a_type, b_type, transpose_b, pdl_level=pdl_level
+            ](
                 c_tensor_reshaped,
                 a_tensor_reshaped,
                 b_tensor_reshaped,
@@ -1275,6 +1291,7 @@ def batched_matmul[
     transpose_b: Bool = False,
     saturated_vnni: Bool = False,
     target: StaticString = "cpu",
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     c_buf: TileTensor[mut=True, address_space=.GENERIC, ...],
     a_buf: TileTensor[mut=False, address_space=.GENERIC, ...],
@@ -1292,6 +1309,9 @@ def batched_matmul[
         saturated_vnni: Whether to use saturated VNNI accumulation on CPU
             (defaults to `False`; not applicable on GPU).
         target: Target hardware for the operation (defaults to `"cpu"`).
+        pdl_level: Programmatic dependent launch level for the SM100 GPU
+            kernels; other targets ignore it (defaults to `PDLLevel()`,
+            which disables PDL).
 
     Args:
         c_buf: Output tensor of shape `(..., m, n)`; rank must be at least
@@ -1309,6 +1329,7 @@ def batched_matmul[
         has_compute_fn=False,
         saturated_vnni=saturated_vnni,
         target=target,
+        pdl_level=pdl_level,
     ](c_buf, a_buf, b_buf, no_epilogue_fn, no_compute_fn, context)
 
 
@@ -1321,6 +1342,7 @@ def batched_matmul[
     transpose_b: Bool = False,
     saturated_vnni: Bool = False,
     target: StaticString = "cpu",
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     c_buf: TileTensor[mut=True, address_space=.GENERIC, ...],
     a_buf: TileTensor[mut=False, address_space=.GENERIC, ...],
@@ -1340,6 +1362,9 @@ def batched_matmul[
         saturated_vnni: Whether to use saturated VNNI accumulation on CPU
             (defaults to `False`; not applicable on GPU).
         target: Target hardware for the operation (defaults to `"cpu"`).
+        pdl_level: Programmatic dependent launch level for the SM100 GPU
+            kernels; other targets ignore it (defaults to `PDLLevel()`,
+            which disables PDL).
 
     Args:
         c_buf: Tensor of shape `(..., m, n)` giving the output shape; rank
@@ -1361,6 +1386,7 @@ def batched_matmul[
         has_compute_fn=False,
         saturated_vnni=saturated_vnni,
         target=target,
+        pdl_level=pdl_level,
     ](c_buf, a_buf, b_buf, epilogue_fn, no_compute_fn, context)
 
 
@@ -1373,6 +1399,7 @@ def batched_matmul[
     transpose_b: Bool = False,
     saturated_vnni: Bool = False,
     target: StaticString = "cpu",
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     c_buf: TileTensor[mut=True, address_space=.GENERIC, ...],
     a_buf: TileTensor[mut=False, address_space=.GENERIC, ...],
@@ -1393,6 +1420,9 @@ def batched_matmul[
         saturated_vnni: Whether to use saturated VNNI accumulation on CPU
             (defaults to `False`; not applicable on GPU).
         target: Target hardware for the operation (defaults to `"cpu"`).
+        pdl_level: Programmatic dependent launch level for the SM100 GPU
+            kernels; other targets ignore it (defaults to `PDLLevel()`,
+            which disables PDL).
 
     Args:
         c_buf: Output tensor of shape `(..., m, n)`; rank must be at least
@@ -1413,6 +1443,7 @@ def batched_matmul[
         has_compute_fn=True,
         saturated_vnni=saturated_vnni,
         target=target,
+        pdl_level=pdl_level,
     ](c_buf, a_buf, b_buf, no_epilogue_fn, compute_fn, context)
 
 
@@ -1428,6 +1459,7 @@ def _batched_matmul[
     has_compute_fn: Bool,
     saturated_vnni: Bool,
     target: StaticString,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     c_buf: TileTensor[mut=True, address_space=.GENERIC, ...],
     a_buf: TileTensor[mut=False, address_space=.GENERIC, ...],
@@ -1503,6 +1535,7 @@ def _batched_matmul[
                 transpose_b=transpose_b,
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
+                pdl_level=pdl_level,
             ](c_buf, a_buf, b_buf, epilogue_fn, compute_fn, context.value())
 
 

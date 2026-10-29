@@ -3640,9 +3640,9 @@ def mla_decode_branch_bf16[
         )
     )
 
-    _batched_matmul_gpu[transpose_b=True](
-        mla_decode_input_nope, q_nope_t, w_uk, ctx
-    )
+    _batched_matmul_gpu[
+        transpose_b=True, pdl_level=PDLLevel.OVERLAP_AT_BEGINNING
+    ](mla_decode_input_nope, q_nope_t, w_uk, ctx)
 
     # Perform MLA decode
     var raw_output_buf = ctx.enqueue_create_buffer[.bfloat16](
@@ -3743,7 +3743,9 @@ def mla_decode_branch_bf16[
         )
     )
 
-    _batched_matmul_gpu[transpose_b=True](output_t, raw_output_t, w_uv, ctx)
+    _batched_matmul_gpu[
+        transpose_b=True, pdl_level=PDLLevel.OVERLAP_AT_BEGINNING
+    ](output_t, raw_output_t, w_uv, ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -3854,9 +3856,9 @@ def mla_prefill_branch_sparse_bf16[
             (Idx[k_cache_dim], Idx[num_heads * k_cache_dim], Idx[1]),
         )
     )
-    _batched_matmul_gpu[transpose_b=True](
-        mla_decode_input_nope, q_nope_t, w_uk, ctx
-    )
+    _batched_matmul_gpu[
+        transpose_b=True, pdl_level=PDLLevel.OVERLAP_AT_BEGINNING
+    ](mla_decode_input_nope, q_nope_t, w_uk, ctx)
 
     var q_rope = q[:, :, qk_nope_head_dim:].reshape(
         TileLayout(
@@ -4044,7 +4046,9 @@ def mla_prefill_branch_sparse_bf16[
             (Idx[v_head_dim], Idx[num_heads * v_head_dim], Idx[1]),
         )
     )
-    _batched_matmul_gpu[transpose_b=True](output_t, raw_output_t, w_uv, ctx)
+    _batched_matmul_gpu[
+        transpose_b=True, pdl_level=PDLLevel.OVERLAP_AT_BEGINNING
+    ](output_t, raw_output_t, w_uv, ctx)
 
 
 # ===-----------------------------------------------------------------------===#

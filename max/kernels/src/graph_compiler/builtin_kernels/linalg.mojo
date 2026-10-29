@@ -599,7 +599,10 @@ struct BatchMatmulGPU:
 
         comptime if has_epilogue_fusion:
             batched_matmul[
-                transpose_a=False, transpose_b=transpose_b, target=target
+                transpose_a=False,
+                transpose_b=transpose_b,
+                target=target,
+                pdl_level=PDLLevel.OVERLAP_AT_BEGINNING,
             ](
                 c.to_tile_tensor[.int64](),
                 a.to_tile_tensor[.int64](),
@@ -609,7 +612,10 @@ struct BatchMatmulGPU:
             )
         else:
             batched_matmul[
-                transpose_a=False, transpose_b=transpose_b, target=target
+                transpose_a=False,
+                transpose_b=transpose_b,
+                target=target,
+                pdl_level=PDLLevel.OVERLAP_AT_BEGINNING,
             ](
                 c.to_tile_tensor[.int64](),
                 a.to_tile_tensor[.int64](),
