@@ -31,6 +31,12 @@ from max.gpu.primitives.cluster import (
 from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import B200
+from max.gpu.primitives.grid_controls import (
+    PDLLevel,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+    wait_on_dependent_grids,
+)
 from max.gpu import (
     block_id_in_cluster,
     thread_idx,
@@ -1459,6 +1465,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
     K_actual: Int = 0,
     a_gmem_layout: TensorLayout = type_of(row_major[1, 1]()),
     b_gmem_layout: TensorLayout = type_of(row_major[1, 1]()),
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     expert_usage_stats: ImmPointer[UInt32, ImmutAnyOrigin],
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
@@ -1538,6 +1545,10 @@ def blackwell_tma_umma_warp_specialized_kernel[
             CUDA-core fallback (defaults to `type_of(row_major[1, 1]())`).
         b_gmem_layout: Layout of the B global-memory tensor, used only by the
             CUDA-core fallback (defaults to `type_of(row_major[1, 1]())`).
+        pdl_level: Programmatic dependent launch level; above `PDLLevel.OFF`
+            the kernel waits for the predecessor grid immediately before
+            reading `expert_usage_stats` and releases dependent grids at the
+            end of the body (defaults to `PDLLevel()`, which is off).
 
     Args:
         expert_usage_stats: Pointer to per-expert usage stats; index 1 holds
@@ -1740,6 +1751,15 @@ def blackwell_tma_umma_warp_specialized_kernel[
         b_swizzle=b_swizzle,
         transpose_b=transpose_b,
     ]()
+
+    # Everything above this point builds descriptors, shared-memory views and
+    # mbarriers, and touches only this CTA's own state, so it runs while the
+    # predecessor grid is still finishing. `expert_usage_stats` is written by
+    # the MoE index kernel that precedes us, so the wait goes immediately
+    # before its first read -- after the TMA descriptor prefetch and the
+    # mbarrier/cluster setup, and before any global load.
+    comptime if pdl_level > PDLLevel.OFF:
+        wait_on_dependent_grids()
 
     # num_active_experts is a TileScheduler loop bound, and the persistent grid
     # is fixed at one CTA per SM, so it can be read from the device tensor
@@ -2036,6 +2056,12 @@ def blackwell_tma_umma_warp_specialized_kernel[
 
         _ = tmem_dealloc_mbar[].arrive()
 
+    # Release the grids that depend on this one: every store has been issued by
+    # the epilogue role above, and a dependent's own `wait_on_dependent_grids`
+    # still blocks until this grid has completed and its stores are visible.
+    comptime if pdl_level > PDLLevel.OFF:
+        launch_dependent_grids()
+
 
 def grouped_matmul_sm100_persistent[
     EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
@@ -2054,6 +2080,7 @@ def grouped_matmul_sm100_persistent[
     has_epilogue_fn: Bool = False,
     has_compute_fn: Bool = False,
     a_plane_splits: IndexList[2] = Index(0, 0),
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
@@ -2100,6 +2127,9 @@ def grouped_matmul_sm100_persistent[
             the TMA store (defaults to False).
         a_plane_splits: Per-plane split sizes for fused LoRA QKV A-plane
             row offsetting; `(0, 0)` disables it (defaults to `(0, 0)`).
+        pdl_level: Programmatic dependent launch level, forwarded to the
+            warp-specialized kernel and to its launch attributes (defaults
+            to `PDLLevel()`, which disables PDL).
 
     Args:
         c: Output C tile tensor in generic address space.
@@ -2143,6 +2173,7 @@ def grouped_matmul_sm100_persistent[
         # Plane-split boundaries (output-column element offsets) for the optional
         # activation plane select, forwarded unchanged across the swapAB boundary.
         a_plane_splits=a_plane_splits,
+        pdl_level=pdl_level,
     ](
         c.ptr.as_unsafe_any_origin(),
         b.ptr.as_unsafe_any_origin(),  # weights (a after swapAB)
@@ -2181,6 +2212,7 @@ def _grouped_matmul_sm100_persistent[
     ComputeFnType: ElementwiseComputeFn = type_of(identity_compute_fn),
     has_compute_fn: Bool = False,
     a_plane_splits: IndexList[2] = Index(0, 0),
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     c_ptr: MutPointer[Scalar[c_type], MutAnyOrigin],
     a_ptr: ImmPointer[Scalar[a_type], ImmutAnyOrigin],
@@ -2411,6 +2443,7 @@ def _grouped_matmul_sm100_persistent[
         ComputeFnType=ComputeFnType,
         has_compute_fn=has_compute_fn,
         a_plane_splits=a_plane_splits,
+        pdl_level=pdl_level,
     ]
 
     comptime assert cluster_shape[1] == 1, String(
@@ -2444,6 +2477,7 @@ def _grouped_matmul_sm100_persistent[
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(smem_size)
         ),
+        attributes=pdl_launch_attributes(pdl_level),
     )
 
     # Keep the C-descriptor scratch buffer alive until the kernel launch above

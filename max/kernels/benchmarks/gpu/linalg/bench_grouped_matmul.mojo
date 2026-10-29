@@ -850,7 +850,10 @@ def bench_grouped_matmul[
                     pass
 
                 else:
-                    grouped_matmul[has_epilogue_fn=has_epilogue](
+                    grouped_matmul[
+                        has_epilogue_fn=has_epilogue,
+                        pdl_level=PDLLevel(pdl_level),
+                    ](
                         c_dev,
                         a_dev,
                         b_dev,

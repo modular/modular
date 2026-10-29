@@ -684,6 +684,7 @@ def grouped_matmul[
     has_epilogue_fn: Bool = False,
     has_compute_fn: Bool = False,
     a_plane_splits: IndexList[2] = Index(0, 0),
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     c: TileTensor[mut=True, address_space=.GENERIC, ...],
     a: TileTensor[address_space=.GENERIC, ...],
@@ -924,6 +925,7 @@ def grouped_matmul[
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
                 a_plane_splits=a_plane_splits,
+                pdl_level=pdl_level,
             ](
                 c,
                 a,
@@ -1082,6 +1084,7 @@ def grouped_matmul[
     has_epilogue_fn: Bool = False,
     has_compute_fn: Bool = False,
     a_plane_splits: IndexList[2] = Index(0, 0),
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     c: TileTensor[mut=True, address_space=.GENERIC, ...],
     a: TileTensor[address_space=.GENERIC, ...],
@@ -1113,6 +1116,7 @@ def grouped_matmul[
         has_epilogue_fn=has_epilogue_fn,
         has_compute_fn=has_compute_fn,
         a_plane_splits=a_plane_splits,
+        pdl_level=pdl_level,
     ](
         c,
         a,
