@@ -1272,6 +1272,18 @@ class DKVConnector(KVConnector):
             "yes",
             "y",
         )
+        # Opt-in (CLIN-2163): a hinted lookup asks its first peer while the
+        # co-located dKV is still answering. Read once here like the touch
+        # kill-switch above, with the same truthy set, because MAX takes
+        # connector settings from engine-pod env rather than CLI flags.
+        overlap_peer_lookups = os.getenv(
+            "MODULAR_DKV_OVERLAP_PEER_LOOKUPS", "0"
+        ).lower() in (
+            "1",
+            "true",
+            "yes",
+            "y",
+        )
 
         num_replicas = len(replica_kv_memory)
         # one shard's per-unit page strides in canonical order, from replica 0
@@ -1402,6 +1414,7 @@ class DKVConnector(KVConnector):
                     tenant_gpu_count=tenant_gpu_count,
                     tenant_gpu_device_ids=tenant_gpu_device_ids,
                     heartbeat_overrides=heartbeat_overrides,
+                    overlap_peer_lookups=overlap_peer_lookups,
                     admission_timeout_s=admission_timeout_s,
                 )
             self._clients.append(clients_for_replica)
@@ -1499,6 +1512,7 @@ class DKVConnector(KVConnector):
         tenant_gpu_count: int,
         tenant_gpu_device_ids: Sequence[int],
         heartbeat_overrides: Mapping[str, int],
+        overlap_peer_lookups: bool,
         admission_timeout_s: float,
     ) -> _DkvClient:
         # Group the per-leaf units into one (device_id, units) entry
@@ -1570,6 +1584,7 @@ class DKVConnector(KVConnector):
             replica_id=replica_id,
             tenant_gpu_count=tenant_gpu_count,
             tenant_gpu_device_ids=list(tenant_gpu_device_ids),
+            overlap_peer_lookups=overlap_peer_lookups,
             admission_timeout_s=admission_timeout_s,
             **heartbeat_overrides,
         )
@@ -2683,6 +2698,20 @@ class DKVConnector(KVConnector):
                     # extension predating it reports none, read as no round.
                     dkv_peer_rounds_while_degraded=m.get(
                         "peer_rounds_while_degraded", 0
+                    ),
+                    # The overlapped hinted lookup (CLIN-2163), per-window
+                    # deltas like the peer counters. An extension predating
+                    # them reports none, read as no hinted lookup.
+                    dkv_own_runs_short_of_hint=m.get(
+                        "own_runs_short_of_hint", 0
+                    ),
+                    dkv_split_loads=m.get("split_loads", 0),
+                    dkv_overlapped_peer_lookups=m.get(
+                        "overlapped_peer_lookups", 0
+                    ),
+                    dkv_hinted_lookups=m.get("hinted_lookups", 0),
+                    dkv_hinted_lookup_ms_total=m.get(
+                        "hinted_lookup_ms_total", 0.0
                     ),
                     # The orphan queue, folded per leaf client like the settle
                     # worker below: per-window outcome counts and a depth

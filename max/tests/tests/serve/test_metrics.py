@@ -731,6 +731,31 @@ def test_dkv_peer_rounds_while_degraded_is_a_counter() -> None:
     metrics.MaxMeasurement(name, 7).commit()  # Should not raise
 
 
+def test_dkv_overlapped_lookup_counters_are_counters() -> None:
+    """Per-batch deltas like the peer counters, so counters."""
+    common.configure_metrics(Settings())
+    for name in (
+        "max.dkv.own_runs_short_of_hint",
+        "max.dkv.split_loads",
+        "max.dkv.overlapped_peer_lookups",
+        "max.dkv.hinted_lookups",
+    ):
+        assert isinstance(metrics.SERVE_METRICS[name], _ProxyCounter), name
+        metrics.MaxMeasurement(name, 7).commit()  # Should not raise
+
+
+def test_dkv_hinted_lookup_latency_is_a_latency_histogram() -> None:
+    """A window's mean hinted lookup, bucketed like the rpc latencies."""
+    common.configure_metrics(Settings())
+    name = "max.dkv.hinted_lookup_latency"
+    assert isinstance(metrics.SERVE_METRICS[name], _ProxyHistogram)
+    assert (
+        common.HISTOGRAM_BUCKETS_BY_METRIC[name]
+        == common.HISTOGRAM_BUCKETS_BY_METRIC["max.dkv.rpc_read_latency"]
+    )
+    metrics.MaxMeasurement(name, 2.5).commit()  # Should not raise
+
+
 def test_tool_call_conformance_error_counter() -> None:
     """The tool-call conformance counter records with a bounded 'outcome' tag."""
     common.configure_metrics(Settings())

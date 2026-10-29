@@ -255,6 +255,26 @@ class KVCacheMetrics:
     run from a hinted peer, so they served hits the fail-opens above would
     have missed."""
 
+    # The overlapped hinted lookup (CLIN-2163). Per-window deltas like the
+    # fail-opens above. The hinted lookup pair sums across replicas the way
+    # the rpc latency pairs do, so the average stays correct.
+    dkv_own_runs_short_of_hint: int = 0
+    """Hinted entries whose co-located run ended before the run the hint
+    credited the co-located dKV with, so their peer was asked from where that
+    run ends. A rising rate means hints overstate what the co-located dKV
+    holds."""
+    dkv_split_loads: int = 0
+    """Entries whose tail loaded from a hinted peer behind a head loaded from
+    the co-located dKV."""
+    dkv_overlapped_peer_lookups: int = 0
+    """Peer lookups begun alongside the co-located lookup rather than after
+    it, under ``MODULAR_DKV_OVERLAP_PEER_LOOKUPS``."""
+    dkv_hinted_lookups: int = 0
+    """Lookup rounds in which some entry routed to an attached peer."""
+    dkv_hinted_lookup_ms_total: float = 0.0
+    """Cumulative wall time of the rounds ``dkv_hinted_lookups`` counts, in
+    milliseconds."""
+
     # The dKV orphan queue, where a failed reader-pin release or Filling abort
     # waits to be sent again. The outcome counts are per-window deltas like the
     # fail-opens above. The depth is a level the client reads fresh on every
@@ -344,6 +364,13 @@ class KVCacheMetrics:
         if self.rpc_read_latency_count == 0:
             return 0.0
         return self.rpc_read_latency_total_ms / self.rpc_read_latency_count
+
+    @property
+    def dkv_hinted_lookup_avg_ms(self) -> float:
+        """Average hinted dKV lookup round in milliseconds."""
+        if self.dkv_hinted_lookups == 0:
+            return 0.0
+        return self.dkv_hinted_lookup_ms_total / self.dkv_hinted_lookups
 
     @property
     def nixl_read_gib_per_s(self) -> float:
@@ -486,6 +513,15 @@ class KVCacheMetrics:
             + other.dkv_load_with_plan_expired,
             dkv_peer_rounds_while_degraded=self.dkv_peer_rounds_while_degraded
             + other.dkv_peer_rounds_while_degraded,
+            dkv_own_runs_short_of_hint=self.dkv_own_runs_short_of_hint
+            + other.dkv_own_runs_short_of_hint,
+            dkv_split_loads=self.dkv_split_loads + other.dkv_split_loads,
+            dkv_overlapped_peer_lookups=self.dkv_overlapped_peer_lookups
+            + other.dkv_overlapped_peer_lookups,
+            dkv_hinted_lookups=self.dkv_hinted_lookups
+            + other.dkv_hinted_lookups,
+            dkv_hinted_lookup_ms_total=self.dkv_hinted_lookup_ms_total
+            + other.dkv_hinted_lookup_ms_total,
             dkv_orphan_cleanups_reissued=self.dkv_orphan_cleanups_reissued
             + other.dkv_orphan_cleanups_reissued,
             dkv_orphan_cleanups_abandoned=self.dkv_orphan_cleanups_abandoned

@@ -2304,6 +2304,11 @@ def test_dkv_fail_open_counters_are_silent_without_a_tier() -> None:
     mock_metrics.dkv_load_with_plan_degraded.assert_not_called()
     mock_metrics.dkv_load_with_plan_expired.assert_not_called()
     mock_metrics.dkv_peer_rounds_while_degraded.assert_not_called()
+    mock_metrics.dkv_own_runs_short_of_hint.assert_not_called()
+    mock_metrics.dkv_split_loads.assert_not_called()
+    mock_metrics.dkv_overlapped_peer_lookups.assert_not_called()
+    mock_metrics.dkv_hinted_lookups.assert_not_called()
+    mock_metrics.dkv_hinted_lookup_latency.assert_not_called()
     assert "dkv_prepare_load_degraded" not in metrics.to_log_extra()
 
 
@@ -2338,6 +2343,51 @@ def test_dkv_peer_rounds_while_degraded_reach_the_log_and_the_counters() -> (
     assert metrics.dkv_peer_rounds_while_degraded == 7
     mock_metrics.dkv_peer_rounds_while_degraded.assert_called_once_with(7)
     assert metrics.to_log_extra()["dkv_peer_rounds_while_degraded"] == 7
+
+
+def test_dkv_overlapped_lookup_counters_reach_the_log_and_the_counters() -> (
+    None
+):
+    """The overlapped hinted lookup's counts publish beside the peer
+    counters, and its rounds' summed time and count become one mean."""
+    kv_cache = MagicMock()
+    kv_cache.block_count.return_value = BlockCount(free=60, total=100)
+    kv_cache.pressure_pct.return_value = 40.0
+    kv_cache.host_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.disk_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.take_metrics_aggregated.return_value = KVCacheMetrics(
+        dkv_total_clients=1,
+        dkv_own_runs_short_of_hint=2,
+        dkv_split_loads=3,
+        dkv_overlapped_peer_lookups=4,
+        dkv_hinted_lookups=5,
+        dkv_hinted_lookup_ms_total=12.5,
+    )
+
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(),
+        inputs=_mock_inputs(batch_size=1, batch_type=BatchType.TG),
+        kv_cache=kv_cache,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+    )
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.dkv_own_runs_short_of_hint.assert_called_once_with(2)
+    mock_metrics.dkv_split_loads.assert_called_once_with(3)
+    mock_metrics.dkv_overlapped_peer_lookups.assert_called_once_with(4)
+    mock_metrics.dkv_hinted_lookups.assert_called_once_with(5)
+    mock_metrics.dkv_hinted_lookup_latency.assert_called_once_with(2.5)
+    extra = metrics.to_log_extra()
+    assert extra["dkv_own_runs_short_of_hint"] == 2
+    assert extra["dkv_split_loads"] == 3
+    assert extra["dkv_overlapped_peer_lookups"] == 4
+    assert extra["dkv_hinted_lookups"] == 5
+    assert extra["dkv_hinted_lookup_avg_ms"] == 2.5
 
 
 _DKV_ORPHAN_FIELDS = {

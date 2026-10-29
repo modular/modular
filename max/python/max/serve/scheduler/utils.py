@@ -365,6 +365,14 @@ class BatchMetrics:
     # Lookups a hinted peer served while the co-located dKV was down, which
     # read against the fail-opens show how much of an outage peers covered.
     dkv_peer_rounds_while_degraded: int = 0
+    # The overlapped hinted lookup (CLIN-2163): per-window counts published
+    # as counters on the same guard, and the window's mean hinted lookup,
+    # published as a histogram the way the rpc latencies are.
+    dkv_own_runs_short_of_hint: int = 0
+    dkv_split_loads: int = 0
+    dkv_overlapped_peer_lookups: int = 0
+    dkv_hinted_lookups: int = 0
+    dkv_hinted_lookup_avg_ms: float = 0.0
     # The dKV orphan queue: per-window outcome counts that publish as counters
     # and a depth level that publishes as a gauge, on the same guard. See
     # KVCacheMetrics for what each counts.
@@ -555,6 +563,11 @@ class BatchMetrics:
         dkv_load_with_plan_degraded = 0
         dkv_load_with_plan_expired = 0
         dkv_peer_rounds_while_degraded = 0
+        dkv_own_runs_short_of_hint = 0
+        dkv_split_loads = 0
+        dkv_overlapped_peer_lookups = 0
+        dkv_hinted_lookups = 0
+        dkv_hinted_lookup_avg_ms = 0.0
         dkv_orphan_cleanups_reissued = 0
         dkv_orphan_cleanups_abandoned = 0
         dkv_orphan_cleanups_dropped = 0
@@ -706,6 +719,14 @@ class BatchMetrics:
             dkv_peer_rounds_while_degraded = (
                 metrics_agg.dkv_peer_rounds_while_degraded
             )
+            dkv_own_runs_short_of_hint = metrics_agg.dkv_own_runs_short_of_hint
+            dkv_split_loads = metrics_agg.dkv_split_loads
+            dkv_overlapped_peer_lookups = (
+                metrics_agg.dkv_overlapped_peer_lookups
+            )
+            dkv_hinted_lookups = metrics_agg.dkv_hinted_lookups
+            # Summed across replicas then averaged, like the rpc latencies.
+            dkv_hinted_lookup_avg_ms = metrics_agg.dkv_hinted_lookup_avg_ms
             dkv_orphan_cleanups_reissued = (
                 metrics_agg.dkv_orphan_cleanups_reissued
             )
@@ -869,6 +890,11 @@ class BatchMetrics:
             dkv_load_with_plan_degraded=dkv_load_with_plan_degraded,
             dkv_load_with_plan_expired=dkv_load_with_plan_expired,
             dkv_peer_rounds_while_degraded=dkv_peer_rounds_while_degraded,
+            dkv_own_runs_short_of_hint=dkv_own_runs_short_of_hint,
+            dkv_split_loads=dkv_split_loads,
+            dkv_overlapped_peer_lookups=dkv_overlapped_peer_lookups,
+            dkv_hinted_lookups=dkv_hinted_lookups,
+            dkv_hinted_lookup_avg_ms=dkv_hinted_lookup_avg_ms,
             dkv_orphan_cleanups_reissued=dkv_orphan_cleanups_reissued,
             dkv_orphan_cleanups_abandoned=dkv_orphan_cleanups_abandoned,
             dkv_orphan_cleanups_dropped=dkv_orphan_cleanups_dropped,
@@ -1360,6 +1386,15 @@ class BatchMetrics:
             extra["dkv_peer_rounds_while_degraded"] = (
                 self.dkv_peer_rounds_while_degraded
             )
+            extra["dkv_own_runs_short_of_hint"] = (
+                self.dkv_own_runs_short_of_hint
+            )
+            extra["dkv_split_loads"] = self.dkv_split_loads
+            extra["dkv_overlapped_peer_lookups"] = (
+                self.dkv_overlapped_peer_lookups
+            )
+            extra["dkv_hinted_lookups"] = self.dkv_hinted_lookups
+            extra["dkv_hinted_lookup_avg_ms"] = self.dkv_hinted_lookup_avg_ms
             extra["dkv_orphan_cleanups_reissued"] = (
                 self.dkv_orphan_cleanups_reissued
             )
@@ -1538,6 +1573,8 @@ class BatchMetrics:
             METRICS.dkv_rpc_acquire_latency(self.rpc_acquire_latency_avg_ms)
         if self.rpc_read_latency_avg_ms > 0:
             METRICS.dkv_rpc_read_latency(self.rpc_read_latency_avg_ms)
+        if self.dkv_hinted_lookup_avg_ms > 0:
+            METRICS.dkv_hinted_lookup_latency(self.dkv_hinted_lookup_avg_ms)
         # Its own guard, not the cache-hit clause: this is a per-window delta
         # that ``take_metrics_aggregated`` clears after every batch, so a window
         # published under a different batch type would lose its count for good.
@@ -1586,6 +1623,12 @@ class BatchMetrics:
             METRICS.dkv_peer_rounds_while_degraded(
                 self.dkv_peer_rounds_while_degraded
             )
+            METRICS.dkv_own_runs_short_of_hint(self.dkv_own_runs_short_of_hint)
+            METRICS.dkv_split_loads(self.dkv_split_loads)
+            METRICS.dkv_overlapped_peer_lookups(
+                self.dkv_overlapped_peer_lookups
+            )
+            METRICS.dkv_hinted_lookups(self.dkv_hinted_lookups)
             METRICS.dkv_orphan_cleanups_reissued(
                 self.dkv_orphan_cleanups_reissued
             )

@@ -501,6 +501,11 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="ms",
         description="dKV read_blocks RPC latency.",
     ),  # type: ignore
+    "max.dkv.hinted_lookup_latency": _meter.create_histogram(
+        "max.dkv.hinted_lookup_latency",
+        unit="ms",
+        description="Mean wall time of a hinted dKV lookup round in a batch's window, from routing to the assembled plan, for rounds in which some entry routed to an attached peer. What MODULAR_DKV_OVERLAP_PEER_LOOKUPS shortens.",
+    ),  # type: ignore
     "max.dkv.read_blocks": _meter.create_counter(
         "max.dkv.read_blocks",
         unit="blocks",
@@ -616,6 +621,24 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "max.dkv.peer_rounds_while_degraded": _create_counter(
         "max.dkv.peer_rounds_while_degraded",
         description="dKV lookups that found the co-located dKV down and still leased a loadable run from a peer the request's cache hint named. Read with max.dkv.prepare_load_degraded, which counts the lookups that left blocks to the co-located dKV, to see how much of a dKV restart the peers covered.",
+    ),
+    # The overlapped hinted lookup (CLIN-2163). Counters, since take_metrics
+    # clears them every batch like the fail-opens above.
+    "max.dkv.own_runs_short_of_hint": _create_counter(
+        "max.dkv.own_runs_short_of_hint",
+        description="Hinted dKV entries whose co-located run ended before the run the cache hint credited the co-located dKV with, counted only while the connector is healthy. Each asks its peer from where the co-located run ends, so a rising rate means hints overstate what the co-located dKV holds, usually through eviction since the hint was built.",
+    ),
+    "max.dkv.split_loads": _create_counter(
+        "max.dkv.split_loads",
+        description="dKV entries whose tail posted from a hinted peer behind a head posted from the co-located dKV, counted once the tail's transfer is posted.",
+    ),
+    "max.dkv.overlapped_peer_lookups": _create_counter(
+        "max.dkv.overlapped_peer_lookups",
+        description="dKV peer lookups begun alongside the co-located lookup rather than after it, at most one per round, under MODULAR_DKV_OVERLAP_PEER_LOOKUPS. Zero with the option off; read against max.dkv.hinted_lookups for how often it fires.",
+    ),
+    "max.dkv.hinted_lookups": _create_counter(
+        "max.dkv.hinted_lookups",
+        description="dKV lookup rounds in which some entry routed to an attached peer. The rounds max.dkv.hinted_lookup_latency times.",
     ),
     # The dKV orphan queue, where failed reader-pin releases and Filling aborts
     # wait to be sent again. Counters for the outcomes, since take_metrics
@@ -2140,6 +2163,15 @@ class _AsyncMetrics:
             ),
         )
 
+    def dkv_hinted_lookup_latency(self, latency_ms: float) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.hinted_lookup_latency",
+                latency_ms,
+                self.extra_attributes,
+            ),
+        )
+
     def dkv_connected_clients(self, value: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
@@ -2396,6 +2428,42 @@ class _AsyncMetrics:
         self.client.send_measurement(
             MaxMeasurement(
                 "max.dkv.peer_rounds_while_degraded",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_own_runs_short_of_hint(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.own_runs_short_of_hint",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_split_loads(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.split_loads",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_overlapped_peer_lookups(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.overlapped_peer_lookups",
+                value,
+                self.extra_attributes,
+            ),
+        )
+
+    def dkv_hinted_lookups(self, value: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "max.dkv.hinted_lookups",
                 value,
                 self.extra_attributes,
             ),
