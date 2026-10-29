@@ -171,6 +171,7 @@ modular_py_test(
     imports = ["."],
     per_test_shard_count = {
         "test_conv_gpu.py": 2,
+        "test_mx_dequant_gpu.py": 4,
     },
     precompile_mefs = True,
     tags = [
