@@ -1780,7 +1780,11 @@ def blackwell_swiglu_warp_specialized_kernel[
             wait_on_dependent_grids()
 
         for current in scheduler.work_iterator():
-            scheduler.throttle_signal(is_first_cta_in_cluster)
+            # With no CLC stages the scheduler warp exits before consuming
+            # throttle signals, and the zero-length throttle array aliases
+            # the next barrier in shared memory (`tmem_dealloc_mbar`).
+            comptime if num_clc_pipeline_stages > 0:
+                scheduler.throttle_signal(is_first_cta_in_cluster)
             for i in range(0, Int(num_iters), k_group_size):
                 load_AB[
                     block_tile_shape=config.block_tile_shape,
