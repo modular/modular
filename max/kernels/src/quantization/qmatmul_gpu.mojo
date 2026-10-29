@@ -633,6 +633,8 @@ def multistage_qgemm_kernel[
     comptime assert (
         is_nvidia_gpu()
     ), "Quantized gemm only supports NVIDIA hardwares for now."
+    comptime assert a_type == .bfloat16, "activations (A) must be bfloat16"
+    comptime assert c_type == .bfloat16, "output (C) must be bfloat16"
     comptime simd_size = simd_width_of[c_type]()
 
     comptime repack_tile = (64, 16)
@@ -1619,7 +1621,7 @@ def matmul_gpu_qint4[
     a_tt: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
     b_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
     ctx: Optional[DeviceContext] = None,
-) raises:
+) raises where (a_type == .bfloat16 and c_type == .bfloat16):
     """Launches a GPU int4 quantized matrix multiplication for the given tile tensors.
 
     Parameters:
@@ -1664,7 +1666,7 @@ def matmul_gpu_qint4[
     b_tt: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
     epilogue_fn: EpilogueFnType,
     ctx: Optional[DeviceContext] = None,
-) raises:
+) raises where (a_type == .bfloat16 and c_type == .bfloat16):
     """Same as the plain overload, storing the output through `epilogue_fn`.
 
     Parameters:
