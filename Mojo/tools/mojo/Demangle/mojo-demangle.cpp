@@ -33,13 +33,8 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 #define DRIVER_OPTIONS_PATH "Demangle/DemangleOptions.inc"
+#include "Demangle/DemangleOptionsHelpTexts.inc"
 #include "Support/Driver/OptTable.inc"
-
-namespace {
-struct DemangleOptTable : public llvm::opt::OptTable {
-  DemangleOptTable() : llvm::opt::OptTable(optionTables()) {}
-};
-} // namespace
 
 /// Given a user-provided string that could be a mangled symbol name, prints the
 /// demangled name to stdout. Returns an integer representing a successful exit
@@ -47,15 +42,10 @@ struct DemangleOptTable : public llvm::opt::OptTable {
 static int demangle(const State &subcommandState) {
   // Parse command line arguments.
   State state = subcommandState;
-  DemangleOptTable options;
-  HelpTexts helpTexts(
-#include "Demangle/DemangleOptionsHelpText.inc"
-      ,
-#include "Demangle/DemangleOptionsHelpHiddenText.inc"
-  );
+  options::Table optTable;
   llvm::opt::InputArgList args;
   if (std::optional<int> exitCode =
-          state.parseArguments(options, helpTexts, args))
+          state.parseArguments(optTable, options::helpTexts(), args))
     return *exitCode;
 
   if (int result = state.rejectInvalidArguments(args))

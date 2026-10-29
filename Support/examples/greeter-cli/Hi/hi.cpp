@@ -24,16 +24,11 @@
 
 using namespace M;
 
-// As with the top-level `greeter-cli.cpp`, we must generate the C++ boilerplate
-// that LLVMOption requires for option parsing.
+// As with the top-level `greeter-cli.cpp`, we include the C++ that LLVMOption
+// requires for option parsing, and the generated help text.
 #define DRIVER_OPTIONS_PATH "Hi/HiOptions.inc"
+#include "Hi/HiOptionsHelpTexts.inc"
 #include "Support/Driver/OptTable.inc"
-
-namespace {
-struct HiOptTable : public llvm::opt::OptTable {
-  HiOptTable() : llvm::opt::OptTable(optionTables()) {}
-};
-} // namespace
 
 static int hi(const State &subcommandState) {
   // The top-level main function only parses the first argument, to determine
@@ -44,15 +39,10 @@ static int hi(const State &subcommandState) {
   // anywhere in their CLI invocation and get help, even if other arguments are
   // invalid.
   State state = subcommandState;
-  HiOptTable options;
-  HelpTexts helpTexts(
-#include "Hi/HiOptionsHelpText.inc"
-      ,
-#include "Hi/HiOptionsHelpHiddenText.inc"
-  );
+  options::Table optTable;
   llvm::opt::InputArgList args;
   if (std::optional<int> exitCode =
-          state.parseArguments(options, helpTexts, args))
+          state.parseArguments(optTable, options::helpTexts(), args))
     return *exitCode;
 
   // Exit unsuccessfully if we have unrecognized options, or an option without

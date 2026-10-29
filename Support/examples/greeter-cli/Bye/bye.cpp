@@ -29,25 +29,15 @@
 using namespace M;
 
 #define DRIVER_OPTIONS_PATH "Bye/ByeOptions.inc"
+#include "Bye/ByeOptionsHelpTexts.inc"
 #include "Support/Driver/OptTable.inc"
-
-namespace {
-struct ByeOptTable : public llvm::opt::OptTable {
-  ByeOptTable() : llvm::opt::OptTable(optionTables()) {}
-};
-} // namespace
 
 static int bye(const State &subcommandState) {
   State state = subcommandState;
-  ByeOptTable options;
-  HelpTexts helpTexts(
-#include "Bye/ByeOptionsHelpText.inc"
-      ,
-#include "Bye/ByeOptionsHelpHiddenText.inc"
-  );
+  options::Table optTable;
   llvm::opt::InputArgList args;
   if (std::optional<int> exitCode =
-          state.parseArguments(options, helpTexts, args))
+          state.parseArguments(optTable, options::helpTexts(), args))
     return *exitCode;
 
   if (int result = state.rejectInvalidArguments(args))

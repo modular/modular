@@ -38,13 +38,8 @@
 using namespace M;
 
 #define DRIVER_OPTIONS_PATH "Doc/DocOptions.inc"
+#include "Doc/DocOptionsHelpTexts.inc"
 #include "Support/Driver/OptTable.inc"
-
-namespace {
-struct DocOptTable : public llvm::opt::OptTable {
-  DocOptTable() : llvm::opt::OptTable(optionTables()) {}
-};
-} // namespace
 
 /// Given the path to a Mojo source file, opens and parses that file's doc
 /// strings in order to generate structured output (currently JSON). Returns an
@@ -53,15 +48,10 @@ struct DocOptTable : public llvm::opt::OptTable {
 static int doc(const State &subcommandState) {
   // Parse command line arguments.
   State state = subcommandState;
-  DocOptTable options;
-  HelpTexts helpTexts(
-#include "Doc/DocOptionsHelpText.inc"
-      ,
-#include "Doc/DocOptionsHelpHiddenText.inc"
-  );
+  options::Table optTable;
   llvm::opt::InputArgList args;
   if (std::optional<int> exitCode =
-          state.parseArguments(options, helpTexts, args))
+          state.parseArguments(optTable, options::helpTexts(), args))
     return *exitCode;
 
   DriverOptions driverOptions;

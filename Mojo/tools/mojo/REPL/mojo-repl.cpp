@@ -19,13 +19,8 @@
 using namespace M;
 
 #define DRIVER_OPTIONS_PATH "REPL/REPLOptions.inc"
+#include "REPL/REPLOptionsHelpTexts.inc"
 #include "Support/Driver/OptTable.inc"
-
-namespace {
-struct REPLOptTable : public llvm::opt::OptTable {
-  REPLOptTable() : llvm::opt::OptTable(optionTables()) {}
-};
-} // namespace
 
 /// Launches the Mojo REPL, which is in fact an invocation of
 /// `lldb --repl-language mojo`. Exits unsuccessfully if LLDB could not be found
@@ -42,15 +37,10 @@ static int repl(const State &subcommandState) {
 
   // Parse command line arguments. We forward most arguments to the underlying
   // invocation of lldb, and so don't check for invalid options.
-  REPLOptTable options;
-  HelpTexts helpTexts(
-#include "REPL/REPLOptionsHelpText.inc"
-      ,
-#include "REPL/REPLOptionsHelpHiddenText.inc"
-  );
+  options::Table optTable;
   llvm::opt::InputArgList args;
   if (std::optional<int> exitCode =
-          state.parseArguments(options, helpTexts, args))
+          state.parseArguments(optTable, options::helpTexts(), args))
     return *exitCode;
 
   SmallVector<std::string> lldbArgs = {"--one-line-before-file",

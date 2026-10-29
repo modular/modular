@@ -86,13 +86,8 @@ using namespace mlir;
 //===----------------------------------------------------------------------===//
 
 #define DRIVER_OPTIONS_PATH "Build/BuildOptions.inc"
+#include "Build/BuildOptionsHelpTexts.inc"
 #include "Support/Driver/OptTable.inc"
-
-namespace {
-struct BuildOptTable : public llvm::opt::OptTable {
-  BuildOptTable() : llvm::opt::OptTable(optionTables()) {}
-};
-} // namespace
 
 static void expandMarshalledOptions(const llvm::opt::InputArgList &args,
                                     State &state, DriverOptions &driverOptions,
@@ -113,14 +108,9 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
                                     CompilationOptions &compilationOptions,
                                     FrontendOptions &frontendOptions,
                                     MLIRContext &ctx, TargetInfoAttr &target,
-                                    BuildOptTable &options) {
+                                    const options::Table &optTable) {
   // The emission-kind table is target-dependent, so it is rendered from the
   // registered TargetTraits and spliced into the `--emit` option's help block.
-  HelpTexts helpTexts(
-#include "Build/BuildOptionsHelpText.inc"
-      ,
-#include "Build/BuildOptionsHelpHiddenText.inc"
-  );
   auto printHelpWithEmissionKinds = [&](std::string_view helpText) {
     std::string text(helpText);
     std::string table;
@@ -137,7 +127,7 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
     return state.printHelp(std::string_view(text));
   };
   if (std::optional<int> exitCode = state.parseArguments(
-          options, helpTexts, args,
+          optTable, options::helpTexts(), args,
           /*stopAtFirstInput=*/false, printHelpWithEmissionKinds))
     return exitCode;
 
@@ -589,7 +579,7 @@ static int build(const State &subcommandState) {
   DriverOptions driverOptions;
   CompilationOptions options;
   FrontendOptions frontendOptions;
-  BuildOptTable optTable;
+  options::Table optTable;
 
   // Parse arguments.
   State state = subcommandState;

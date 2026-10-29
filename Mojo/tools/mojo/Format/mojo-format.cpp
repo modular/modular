@@ -27,13 +27,8 @@
 using namespace M;
 
 #define DRIVER_OPTIONS_PATH "Format/FormatOptions.inc"
+#include "Format/FormatOptionsHelpTexts.inc"
 #include "Support/Driver/OptTable.inc"
-
-namespace {
-struct FormatOptTable : public llvm::opt::OptTable {
-  FormatOptTable() : llvm::opt::OptTable(optionTables()) {}
-};
-} // namespace
 
 /// Resolve the path to the mblack formatter binary via modular.cfg.
 /// On success, writes the path to \p outPath and returns 0.
@@ -59,15 +54,10 @@ static int resolveMBlackPath(const State &state, std::string &outPath) {
 static int format(const State &subcommandState) {
   // Parse command line arguments.
   State state = subcommandState;
-  FormatOptTable options;
-  HelpTexts helpTexts(
-#include "Format/FormatOptionsHelpText.inc"
-      ,
-#include "Format/FormatOptionsHelpHiddenText.inc"
-  );
+  options::Table optTable;
   llvm::opt::InputArgList args;
   if (std::optional<int> exitCode =
-          state.parseArguments(options, helpTexts, args))
+          state.parseArguments(optTable, options::helpTexts(), args))
     return *exitCode;
 
   if (int result = state.rejectInvalidArguments(args))

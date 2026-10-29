@@ -62,13 +62,8 @@ using namespace M::KGEN;
 //===----------------------------------------------------------------------===//
 
 #define DRIVER_OPTIONS_PATH "Precompile/PrecompileOptions.inc"
+#include "Precompile/PrecompileOptionsHelpTexts.inc"
 #include "Support/Driver/OptTable.inc"
-
-namespace {
-struct PrecompileOptTable : public llvm::opt::OptTable {
-  PrecompileOptTable() : llvm::opt::OptTable(optionTables()) {}
-};
-} // namespace
 
 //===----------------------------------------------------------------------===//
 // parsePrecompileArgs
@@ -208,15 +203,10 @@ static int precompile(const State &subcommandState) {
 
   // Parse command line arguments.
   State state = subcommandState;
-  PrecompileOptTable options;
-  HelpTexts helpTexts(
-#include "Precompile/PrecompileOptionsHelpText.inc"
-      ,
-#include "Precompile/PrecompileOptionsHelpHiddenText.inc"
-  );
+  options::Table optTable;
   llvm::opt::InputArgList args;
   if (std::optional<int> exitCode =
-          state.parseArguments(options, helpTexts, args))
+          state.parseArguments(optTable, options::helpTexts(), args))
     return *exitCode;
 
   PrecompileArgs precompileArgs;

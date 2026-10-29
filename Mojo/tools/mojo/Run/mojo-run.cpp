@@ -78,14 +78,8 @@ using namespace mlir;
 //===----------------------------------------------------------------------===//
 
 #define DRIVER_OPTIONS_PATH "Run/RunOptions.inc"
+#include "Run/RunOptionsHelpTexts.inc"
 #include "Support/Driver/OptTable.inc"
-
-namespace {
-struct RunOptTable : public llvm::opt::OptTable {
-  RunOptTable() : llvm::opt::OptTable(optionTables()) {}
-};
-
-} // namespace
 
 static void expandMarshalledOptions(const llvm::opt::InputArgList &args,
                                     State &state, DriverOptions &driverOptions,
@@ -124,14 +118,9 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
                                     CompilationOptions &compilationOptions,
                                     FrontendOptions &frontendOptions,
                                     MLIRContext &ctx, TargetInfoAttr &target,
-                                    RunOptTable &options) {
-  HelpTexts helpTexts(
-#include "Run/RunOptionsHelpText.inc"
-      ,
-#include "Run/RunOptionsHelpHiddenText.inc"
-  );
+                                    const options::Table &optTable) {
   if (std::optional<int> exitCode = state.parseArguments(
-          options, helpTexts, args, /*stopAtFirstInput=*/true))
+          optTable, options::helpTexts(), args, /*stopAtFirstInput=*/true))
     return exitCode;
 
   ErrorOr<CommonParseResult> result = parseCommonMojoArguments(
@@ -278,7 +267,7 @@ executeModule(const State &state, AsyncRT::CPUDevice &cpuDevice,
 static int run(const State &subcommandState) {
   // Parse arguments.
   State state = subcommandState;
-  RunOptTable optionsTable;
+  options::Table optTable;
   llvm::opt::InputArgList args;
   llvm::SourceMgr sourceManager;
   DriverOptions driverOptions;
@@ -288,7 +277,7 @@ static int run(const State &subcommandState) {
   TargetInfoAttr target;
   if (std::optional<int> exitCode =
           parseArgs(state, args, sourceManager, driverOptions, options,
-                    frontendOptions, mlirCtx, target, optionsTable))
+                    frontendOptions, mlirCtx, target, optTable))
     return *exitCode;
 
 #ifdef KGEN_ENABLE_PASS_OPTIONS

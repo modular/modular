@@ -25,13 +25,8 @@
 using namespace M;
 
 #define DRIVER_OPTIONS_PATH "Debug/DebugOptions.inc"
+#include "Debug/DebugOptionsHelpTexts.inc"
 #include "Support/Driver/OptTable.inc"
-
-namespace {
-struct DebugOptTable : public llvm::opt::OptTable {
-  DebugOptTable() : llvm::opt::OptTable(optionTables()) {}
-};
-} // namespace
 
 /// Returns the path to the mojo tool, or an error if not found.
 static ErrorOr<std::string> getMojoDriver() {
@@ -106,15 +101,11 @@ static int debug(const State &subcommandState) {
   // (arguments that do not have a "-" or "--" prefix) as `INPUT`. The very
   // first of these is our launch input (a Mojo source file or a binary), and
   // everything after it is passed to the debuggee.
-  DebugOptTable options;
-  HelpTexts helpTexts(
-#include "Debug/DebugOptionsHelpText.inc"
-      ,
-#include "Debug/DebugOptionsHelpHiddenText.inc"
-  );
+  options::Table optTable;
   llvm::opt::InputArgList parsedArgs;
-  if (std::optional<int> exitCode = state.parseArguments(
-          options, helpTexts, parsedArgs, /*stopAtFirstInput=*/true))
+  if (std::optional<int> exitCode =
+          state.parseArguments(optTable, options::helpTexts(), parsedArgs,
+                               /*stopAtFirstInput=*/true))
     return *exitCode;
 
   std::optional<std::string> target;
