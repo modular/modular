@@ -37,8 +37,20 @@ only on full success. Progress lines go to stderr.
 
 from __future__ import annotations
 
-import json
 import logging
+import os
+
+# Must be set before `huggingface_hub` is imported: it reads this into a
+# module-level constant at import time. The Xet backend's Rust downloader
+# writes straight to the same `.incomplete` path that `_chmod_and_move`
+# renames from, and the two race on large shards (reproduced as a
+# `FileNotFoundError` on `shutil.move`, same two blobs every time regardless
+# of our own thread count). Disabling Xet falls back to the plain HTTP
+# downloader, which doesn't have this race.
+os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+
+import csv
+import json
 import sys
 from pathlib import Path
 
@@ -54,6 +66,24 @@ for _noisy in ("httpx", "httpcore", "urllib3", "huggingface_hub"):
 
 def _log(msg: str) -> None:
     click.echo(msg, err=True)
+
+
+def _snapshot_download_with_retry(repo: str, revision: str | None) -> str:
+    """Retries past a transient download failure, as a backstop on top of
+    disabling Xet above.
+    """
+    attempts = 3
+    for attempt in range(1, attempts + 1):
+        try:
+            return snapshot_download(repo, revision=revision)
+        except (FileNotFoundError, PermissionError):
+            if attempt == attempts:
+                raise
+            _log(
+                f"  Retrying after a download error"
+                f" (attempt {attempt}/{attempts})..."
+            )
+    raise AssertionError("unreachable")
 
 
 def _manifest_files(snapshot: Path) -> dict[str, int] | None:
@@ -133,8 +163,38 @@ def _snapshot_incomplete_reason(path: str) -> str | None:
     return None
 
 
+_HF_REPO_LOCK_RELPATH = (
+    "CloudInfra/services/huggingface-cache-populator/hf-repo-lock.tsv"
+)
+
+
+def _locked_revision(repo: str) -> str | None:
+    """The revision ``hf-repo-lock.tsv`` pins for the repo, if any.
+
+    The cache-populator DaemonSet on CI's GPU nodes prunes any on-disk
+    revision that isn't in this file every ``cleanup_interval_seconds``
+    (30s, see ``huggingface-cache-populator/main.py``). Downloading an
+    unpinned repo without passing this exact revision lands in a directory
+    the populator doesn't protect, and it gets swept out from under the
+    in-progress download.
+    """
+    for base in Path(__file__).resolve().parents:
+        candidate = base / _HF_REPO_LOCK_RELPATH
+        if candidate.is_file():
+            with candidate.open() as lock_file:
+                for row in csv.DictReader(lock_file, dialect="excel-tab"):
+                    if row["hf_repo"] == repo:
+                        return row["revision"]
+            return None
+    return None
+
+
 def _pinned_revision(repo: str) -> str | None:
-    """The revision the local cache pins for the repo, if it has one."""
+    """The revision to download, preferring the lockfile's pin (see
+    ``_locked_revision``) over whatever the local cache happens to hold.
+    """
+    if revision := _locked_revision(repo):
+        return revision
     try:
         return Path(snapshot_download(repo, local_files_only=True)).name
     except LocalEntryNotFoundError:
@@ -203,7 +263,7 @@ def _ensure(repo: str, *, allow_canonicalize: bool) -> str:
             _log("  Canonical name matches the input.")
 
     _log(f"  Downloading '{resolved}' from Hugging Face...")
-    path = snapshot_download(resolved, revision=_pinned_revision(resolved))
+    path = _snapshot_download_with_retry(resolved, _pinned_revision(resolved))
     _log(f"  Cached '{resolved}' to {path}")
     return resolved
 
