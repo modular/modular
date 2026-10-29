@@ -62,8 +62,8 @@ def free(ptr: OptionalPointer[mut=True, NoneType, MutAnyOrigin]):
 
 
 @inline(.always)
-def exit(status: c_int):
-    external_call["exit", NoneType](status)
+def exit(status: c_int) -> Never:
+    external_call["exit", Never](status)
 
 
 # ===-----------------------------------------------------------------------===#
