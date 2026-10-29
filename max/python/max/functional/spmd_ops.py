@@ -19,12 +19,13 @@ which decides how the op distributes its result.
 
 from __future__ import annotations
 
+import builtins
 import inspect
 import math
 import typing
 from collections import OrderedDict
 from collections.abc import Callable, Iterable, Sequence
-from typing import Any
+from typing import Any, Union
 
 from max import tree
 from max.driver import CPU, Buffer
@@ -40,7 +41,7 @@ from max.graph import (
     ops,
 )
 from max.graph.dim import Dim, DimLike, StaticDim
-from max.graph.ops.slice_tensor import SliceIndices
+from max.graph.ops.slice_tensor import SliceIndex, SliceIndices
 from max.graph.quantization import QuantizationEncoding
 from max.tensor import tensor
 from max.tensor.realization_context import ensure_context
@@ -49,11 +50,16 @@ from max.tensor.sharding import (
     DeviceMapping,
     Partial,
     Replicated,
+    Sharded,
     ShardingError,
 )
 from max.tensor.sharding._auto_reshard import pick_reshard_action
 from max.tensor.sharding.action import PerShard
-from max.tensor.sharding.per_shard_dim import global_dim, global_shape
+from max.tensor.sharding.per_shard_dim import (
+    global_dim,
+    global_shape,
+    is_per_shard_dim,
+)
 from max.tensor.sharding.rules import (
     argsort_rule,
     as_interleaved_complex_rule,
@@ -115,6 +121,7 @@ from max.tensor.sharding.rules import (
     while_loop_rule,
 )
 from max.tensor.sharding.rules.shape import (
+    _local_prefix_axes,
     localize_reshape_target,
     localize_same_shape_target,
 )
@@ -209,6 +216,116 @@ def any_distributed(args: tuple[object, ...]) -> bool:
     return any(t.is_distributed for t in _tensors_in(args))
 
 
+@tree.kind("slice_bounds")
+@tree.dataclass
+class _SliceBounds:
+    """A slice's bounds, held as a tree node so per-device values are visible.
+
+    ``max.tree`` opens only registered nodes, namedtuples, lists, tuples and
+    dicts, so a ``slice`` is an atom and a per-shard bound inside one never
+    reaches ``call_on_mesh``'s localisation. Lifting the bounds out makes
+    them ordinary children; ``lower`` rebuilds the slice on each device, by
+    which point the bound is that device's own value.
+    """
+
+    start: DimLike | None
+    stop: DimLike | None
+    step: DimLike | None
+
+
+#: ``SliceIndices`` after lifting: a prefix slice may now be a
+#: ``_SliceBounds`` node so ``max.tree`` can see its per-device values.
+LiftedIndices = Sequence[Union[SliceIndex, _SliceBounds, "builtins.ellipsis"]]
+
+
+def _static_bound_is(bound: DimLike | None, value: int) -> bool:
+    """Whether ``bound`` is absent or the static dim ``value``."""
+    if bound is None:
+        return True
+    try:
+        dim = Dim(bound)
+    except Exception:
+        return False
+    return isinstance(dim, StaticDim) and dim == Dim(value)
+
+
+def _lift_prefix_bounds(
+    indices: SliceIndices,
+    ndim: int,
+    out_mappings: Iterable[DeviceMapping],
+) -> SliceIndices | LiftedIndices:
+    """Lifts per-device prefix bounds, but only where the shard survives.
+
+    ``_local_prefix_axes`` is the rule's own notion of which axes a
+    per-device prefix trims, so the lift and the row the rule added cannot
+    drift apart. On top of that the picked action has to have *kept* a shard
+    on each trimmed axis: localising a per-device stop on an axis the action
+    left replicated gives each rank a different length on a dimension whose
+    placement claims they are equal.
+
+    Deliberately narrow. Two things it refuses rather than guesses at:
+
+    A multi-output op, because the sharded result need not be the one the
+    slice produced: authorising the lift from some other result could
+    localise a bound whose own result is replicated.
+
+    A mesh with more than one axis, because ``Sharded(axis)`` names a
+    *tensor* axis while its position in ``placements`` names the *mesh*
+    axis, and a per-device bound carries one value per device with no
+    record of which mesh axis it varies along. Matching them would take
+    more than this hook knows, so a multi-axis mesh declines.
+
+    All-or-nothing on purpose. A partial lift would localise some bounds and
+    not others in one slice, which is harder to reason about than declining.
+    """
+    if not isinstance(indices, (list, tuple)):
+        return indices
+    prefix = _local_prefix_axes(indices, ndim)
+    if not prefix:
+        return indices
+    mappings = list(out_mappings)
+    if len(mappings) != 1:
+        return indices
+    placements = mappings[0].placements
+    if len(placements) != 1:
+        return indices
+    placement = placements[0]
+    if not isinstance(placement, Sharded):
+        return indices
+    if not all(out_axis == placement.axis for out_axis in prefix.values()):
+        return indices
+    lifted = [_lift_slice_bounds(entry) for entry in indices]
+    return tuple(lifted) if isinstance(indices, tuple) else lifted
+
+
+def _lift_slice_bounds(
+    value: SliceIndex | builtins.ellipsis,
+) -> SliceIndex | _SliceBounds | builtins.ellipsis:
+    """Replaces a local-prefix slice with a tree-visible node.
+
+    Only the form ``x[..., :per_shard_stop, ...]`` is lifted, matching the row
+    ``slice_tensor_rule`` adds for it: each device trims its own shard to its
+    own count, so the trimmed shards still concatenate.
+
+    A per-shard ``start`` or ``step`` is deliberately left alone. The rule
+    sanctions no such row, so the picked action would gather, and localising
+    the bound afterwards would run per-device bounds against gathered data and
+    stamp the differing results as replicated. That is silent wrong output.
+    Leaving it unlifted keeps the existing loud failure.
+    """
+    if not isinstance(value, slice):
+        return value
+    if is_per_shard_dim(value.start) or is_per_shard_dim(value.step):
+        return value
+    if not is_per_shard_dim(value.stop):
+        return value
+    if not (
+        _static_bound_is(value.start, 0) and _static_bound_is(value.step, 1)
+    ):
+        return value
+    return _SliceBounds(value.start, value.stop, value.step)
+
+
 def functional(
     graph_op: Callable[..., Any],
     rule: Callable[..., list[AxisAssignment]] | None = None,
@@ -244,8 +361,9 @@ def functional(
         # their tensors by attribute.
         if hasattr(value, "to_graph_values"):
             return value.to_graph_values()
-        if isinstance(value, slice):
-            # A slice bounded by tensors, as a data-dependent slice is.
+        if isinstance(value, (slice, _SliceBounds)):
+            # A slice bounded by tensors, as a data-dependent slice is, or
+            # one whose per-shard bounds were lifted for localisation.
             return slice(
                 *(
                     _graph_value(bound) if isinstance(bound, Tensor) else bound
@@ -262,7 +380,7 @@ def functional(
                 lambda leaf, convert=convert: lower(leaf, convert),
                 value,
                 leaf=lambda leaf: (
-                    isinstance(leaf, (Tensor, slice))
+                    isinstance(leaf, (Tensor, slice, _SliceBounds))
                     or hasattr(leaf, "to_graph_values")
                 ),
             )
@@ -321,6 +439,13 @@ def functional(
             for value, target in zip(operands, action.inputs, strict=True)
         ]
         bound.arguments = tree.unflatten(structure, placed)
+        # Lift per-shard slice bounds only now: the rule ran above, and
+        # ``slice_tensor_rule``/``_untouched_axes`` compare entries against
+        # ``slice(None)``, which the node would not match.
+        if "indices" in bound.arguments and layouts:
+            bound.arguments["indices"] = _lift_prefix_bounds(
+                bound.arguments["indices"], layouts[0].rank, action.outputs
+            )
         return call_on_mesh(on_graph_values, mesh, out_specs=action.outputs)(
             *bound.args, **bound.kwargs
         )

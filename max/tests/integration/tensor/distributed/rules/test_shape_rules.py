@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import pytest
 from max.dtype import DType
+from max.functional.spmd_ops import _lift_prefix_bounds
 from max.graph import Dim, Shape, ShapeLike
 from max.tensor.sharding import (
     DeviceMapping,
@@ -57,6 +58,7 @@ from max.tensor.sharding.rules import (
     unsqueeze_rule,
 )
 from max.tensor.sharding.rules.shape import (
+    _scaled,
     localize_reshape_target,
     localize_same_shape_target,
 )
@@ -747,6 +749,45 @@ class TestSliceTensor:
         _, (out,) = pick(slice_tensor_rule, layout, indices=[0])
         assert out.placements == (S(0),)
 
+    def test_local_prefix_stop_keeps_the_shard(self) -> None:
+        """A per-device stop trims each rank to its own rows, so the shard lives.
+
+        ``x[:, :n_r]`` where ``n_r`` differs per device cuts each rank's own
+        shard down to its own count, and the trimmed shards still concatenate
+        into a valid sharded layout. Without this row the rule offers only
+        Replicated, the picker gathers, and every rank then slices a prefix of
+        rank 0's rows.
+        """
+        layout = _layout(M(MESH_2, S(1)), (1, 8))
+        stop = make_per_shard_dim([Dim(3), Dim(5)], force_wrap=True)
+        _, (out,) = pick(
+            slice_tensor_rule,
+            layout,
+            indices=[slice(None), slice(None, stop)],
+        )
+        assert out.placements == (S(1),)
+
+    def test_global_stop_on_sharded_axis_still_falls_back(self) -> None:
+        """Only a per-device stop qualifies; a global bound still gathers."""
+        layout = _layout(M(MESH_2, S(1)), (1, 8))
+        _, (out,) = pick(
+            slice_tensor_rule,
+            layout,
+            indices=[slice(None), slice(None, Dim(4))],
+        )
+        assert out.placements == (R,)
+
+    def test_per_device_start_does_not_qualify(self) -> None:
+        """A per-device ``start`` is not a prefix; its global meaning differs."""
+        layout = _layout(M(MESH_2, S(1)), (1, 8))
+        start = make_per_shard_dim([Dim(1), Dim(2)], force_wrap=True)
+        _, (out,) = pick(
+            slice_tensor_rule,
+            layout,
+            indices=[slice(None), slice(start, None)],
+        )
+        assert out.placements == (R,)
+
 
 class TestRepeatInterleave:
     def test_non_sharded_axis(self) -> None:
@@ -829,3 +870,97 @@ class TestTile:
         layout = _layout(M(MESH_2, S(0)), (4, 8))
         _, (out,) = pick(tile_rule, layout, repeats=(1, 2))
         assert out.placements == (S(0),)
+
+
+class TestScaled:
+    """``_scaled`` is what lets a reshape that splits a sharded axis localise.
+
+    Both calls below come from ``act_quant`` under data parallelism, where the
+    local size is ``n * 32``. Returning ``None`` for either makes the reshape
+    fall back to Replicated, which silently hands every rank all ranks' tokens.
+    """
+
+    def test_query_unflatten(self) -> None:
+        """``[n*32, 128] -> [n, 32, 128]``: trailing products 128 and 4096."""
+        assert _scaled(Dim("n") * 32, Dim(128), Dim(4096)) == Dim("n")
+
+    def test_scales_unflatten(self) -> None:
+        """``[1, n*32] -> [n, 32, 1]``: trailing products 1 and 32."""
+        assert _scaled(Dim("n") * 32, Dim(1), Dim(32)) == Dim("n")
+
+    def test_den_need_not_divide_the_static_factor(self) -> None:
+        """4096 does not divide 32; the exact condition is on ``k * num``."""
+        assert _scaled(Dim("n") * 32, Dim(128), Dim(4096)) is not None
+
+    def test_inexact_returns_none(self) -> None:
+        """An inexact ratio must still refuse rather than guess."""
+        assert _scaled(Dim("n") * 32, Dim(128), Dim(3000)) is None
+
+    def test_no_static_factor_returns_none(self) -> None:
+        assert _scaled(Dim("n") * Dim("m"), Dim(128), Dim(4096)) is None
+
+    def test_fires_for_equal_shard_tp_too(self) -> None:
+        """The branch cannot tell DP from TP, and is not meant to.
+
+        A DP local size is a plain symbolic product, not a ``PerShardDim``,
+        so there is nothing here to key on. An equal-shard TP reshape of the
+        same algebraic shape keeps its shard instead of gathering. Exactness
+        is the only guard, and it is the one that matters.
+        """
+        assert _scaled(Dim("b") * 8, Dim(64), Dim(512)) == Dim("b")
+
+    def test_refuses_an_inexact_tp_shaped_split(self) -> None:
+        """Same shape, inexact ratio: still refuses rather than guess."""
+        assert _scaled(Dim("b") * 8, Dim(64), Dim(384)) is None
+
+
+class TestLiftPrefixBounds:
+    """The lift must agree with the rule AND with the action that was picked.
+
+    Localising a per-device stop is only sound when the picked action kept a
+    shard on the axis being trimmed. On an axis the action left replicated,
+    each rank would trim to a different length while the placement still
+    claims they are equal.
+    """
+
+    def _stop(self) -> Dim:
+        return make_per_shard_dim([Dim(3), Dim(5)], force_wrap=True)
+
+    def test_lifts_when_the_trimmed_axis_stays_sharded(self) -> None:
+        indices = [slice(None), slice(None, self._stop())]
+        out = _lift_prefix_bounds(indices, 2, (M(MESH_2, S(1)),))
+        assert out is not indices, "a sanctioned prefix should be lifted"
+        assert not isinstance(out[1], slice), "bound should be tree-visible"
+
+    def test_declines_when_the_trimmed_axis_is_replicated(self) -> None:
+        """The regression: shard lives on axis 0, prefix trims axis 1."""
+        indices = [slice(None), slice(None, self._stop())]
+        out = _lift_prefix_bounds(indices, 2, (M(MESH_2, S(0)),))
+        assert out == indices, "must decline rather than localise"
+        assert isinstance(out[1], slice)
+
+    def test_declines_when_output_is_fully_replicated(self) -> None:
+        indices = [slice(None), slice(None, self._stop())]
+        out = _lift_prefix_bounds(indices, 2, (M(MESH_2, R),))
+        assert out == indices
+
+    def test_declines_on_a_multi_axis_mesh(self) -> None:
+        """``Sharded(axis)`` names a tensor axis; its slot names a mesh axis.
+
+        A per-device bound carries one value per device and does not record
+        which mesh axis it varies along, so a 2D mesh cannot be matched up
+        here and must decline.
+        """
+        indices = [slice(None), slice(None, self._stop())]
+        out = _lift_prefix_bounds(indices, 2, (M(MESH_2D, S(1), R),))
+        assert out == indices
+
+    def test_declines_for_multiple_outputs(self) -> None:
+        """One result being sharded must not authorise another's bound."""
+        indices = [slice(None), slice(None, self._stop())]
+        out = _lift_prefix_bounds(indices, 2, (M(MESH_2, S(1)), M(MESH_2, R)))
+        assert out == indices
+
+    def test_no_prefix_is_left_alone(self) -> None:
+        indices = [slice(None), slice(None)]
+        assert _lift_prefix_bounds(indices, 2, (M(MESH_2, S(1)),)) == indices

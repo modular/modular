@@ -802,6 +802,7 @@ class _Pad:
 
 
 class _SliceTensor:
+    MESH_1D: ClassVar[DeviceMesh]
     MESH_2: ClassVar[DeviceMesh]
 
     def test_slice_replicated(self) -> None:
@@ -814,6 +815,48 @@ class _SliceTensor:
         assert result.placements == (Replicated(),)
         assert list(result.shape) == [2, 5]
         np.testing.assert_allclose(result.to_numpy(), t_np[1:3], rtol=1e-5)
+
+    def test_slice_per_shard_prefix_keeps_shard_and_trims_locally(self) -> None:
+        """``x[:, :per_shard_stop]`` trims each device to its OWN count.
+
+        This is ``act_quant``'s ``x_scales[:, :num_rows]`` under data
+        parallelism. The numeric assertion is the point: if the per-device
+        bound is not localised, every device trims to rank 0's count and the
+        gathered result differs, while placements and global shape can still
+        look right.
+        """
+        if not isinstance(self.MESH_1D.devices[0], CPU):
+            pytest.skip("slice_tensor graph op crashes on GPU")
+
+        # Uneven sharding gives a genuinely per-device extent: 7 rows over
+        # four devices is [2, 2, 2, 1].
+        rows_np = np.arange(7 * 4, dtype=np.float32).reshape(7, 4)
+        rows = transfer_to(
+            Tensor(rows_np), DeviceMapping(self.MESH_1D, (Sharded(0),))
+        )
+        stop = rows.shape[0]
+
+        # Scales are laid out with the per-device extent on axis 1, three
+        # columns per device, so the trim actually drops something.
+        scales_np = np.arange(12, dtype=np.float32).reshape(1, 12)
+        scales = transfer_to(
+            Tensor(scales_np), DeviceMapping(self.MESH_1D, (Sharded(1),))
+        )
+
+        out = slice_tensor(scales, [slice(None), slice(None, stop)])
+
+        assert out.placements == (Sharded(1),)
+        # Each device keeps its first n columns of its own three.
+        expected = np.concatenate(
+            [
+                scales_np[:, 0:2],
+                scales_np[:, 3:5],
+                scales_np[:, 6:8],
+                scales_np[:, 9:10],
+            ],
+            axis=1,
+        )
+        np.testing.assert_allclose(out.to_numpy(), expected, rtol=1e-5)
 
     def test_slice_sharded_non_sliced(self) -> None:
         """Slice non-sharded dim on a sharded tensor."""

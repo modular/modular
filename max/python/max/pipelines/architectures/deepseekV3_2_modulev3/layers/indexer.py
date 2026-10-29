@@ -37,6 +37,27 @@ from max.nn.legacy.quant_config import (
 )
 from max.nn.norm import LayerNorm
 from max.tensor import Tensor
+from max.tensor.sharding.mappings import DeviceMapping
+from max.tensor.sharding.placements import Sharded
+
+
+def _scales_mapping(mapping: DeviceMapping) -> DeviceMapping:
+    """The placements of the scales for an activation mapped as ``mapping``.
+
+    ``quantize_dynamic_scaled_float8`` returns scales as
+    ``[head_dim // block_size, M_padded]``, so the extent that varies from one
+    rank to the next is axis 1, not axis 0. Copying the activation's mapping
+    claims the wrong axis once ``M`` is sharded, as it is under data
+    parallelism. ``Replicated`` is kept as it is: there every rank's scales
+    buffer holds every column, which is the tensor-parallel case.
+    """
+    return DeviceMapping(
+        mapping.mesh,
+        tuple(
+            Sharded(1) if placement == Sharded(0) else placement
+            for placement in mapping.placements
+        ),
+    )
 
 
 def act_quant(
@@ -57,7 +78,8 @@ def act_quant(
     )
     # Both outputs take the input's placements; the scales have a different
     # shape than the quantized tensor, which a placements-only mapping allows.
-    x_scales = x_scales.rebind_mapping(x.mapping)
+    # The scales' per-rank extent is axis 1, so a shard of ``M`` moves there.
+    x_scales = x_scales.rebind_mapping(_scales_mapping(x.mapping))
     x = x_q.rebind_mapping(x.mapping)
     num_rows = x.shape[0]
     x = x.reshape((*x_dims, head_dim))

@@ -21,7 +21,8 @@ import operator
 from collections.abc import Iterable, Sequence
 from typing import Any
 
-from max.graph.dim import Dim, DimLike, StaticDim
+from max._core.dialects import kgen
+from max.graph.dim import AlgebraicDim, Dim, DimLike, StaticDim
 from max.graph.ops.slice_tensor import SliceIndex, SliceIndices
 from max.graph.shape import Shape
 from max.tensor.sharding import (
@@ -102,6 +103,23 @@ def _is_one(d: Dim) -> bool:
     return isinstance(d, StaticDim) and d.dim == 1
 
 
+def _static_factor(size: Dim) -> tuple[Dim, int] | None:
+    """Returns ``(other, k)`` when ``size`` is ``other * k`` with a static ``k``."""
+    if not isinstance(size, AlgebraicDim):
+        return None
+    if size.attr.opcode != kgen.POC.mul_no_wrap:
+        return None
+    operands = [Dim(operand) for operand in size.attr.operands]
+    if len(operands) != 2:
+        return None
+    lhs, rhs = operands
+    if isinstance(rhs, StaticDim):
+        return lhs, rhs.dim
+    if isinstance(lhs, StaticDim):
+        return rhs, lhs.dim
+    return None
+
+
 def _scaled(size: Dim, num: Dim, den: Dim) -> Dim | None:
     """``size * num // den`` when it is provably exact, else ``None``."""
     if num == den:
@@ -112,6 +130,20 @@ def _scaled(size: Dim, num: Dim, den: Dim) -> Dim | None:
             return None if total % den.dim else Dim(total // den.dim)
         if num.dim % den.dim == 0:
             return size * (num.dim // den.dim)
+        # Splitting one sharded axis into ``(other, k)`` lands here: the
+        # local size is ``other * k`` and ``num``/``den`` are the trailing
+        # products either side of the split. ``den`` need not divide ``k``
+        # (for ``[n*32, 128] -> [n, 32, 128]`` it is 4096 against 32); what
+        # must be exact is ``k * num`` over ``den``.
+        # Any symbolic ``other * k`` qualifies, so this is not DP-only: an
+        # equal-shard TP reshape keeps its shard here where it used to
+        # gather. Exactness is the guard, not topology.
+        factored = _static_factor(size)
+        if factored is not None:
+            other, k = factored
+            total = k * num.dim
+            if total % den.dim == 0:
+                return other * (total // den.dim)
     return None
 
 
@@ -678,11 +710,71 @@ def pad_rule(
     return rows
 
 
+def _static_bound_is(bound: Any, value: int) -> bool:
+    """Whether ``bound`` is absent or the static dim ``value``.
+
+    A tensor-valued bound is neither, and must decline rather than raise:
+    ``Dim()`` rejects a tensor, so a data-dependent slice would crash the rule
+    instead of falling through to the replicated row.
+    """
+    if bound is None:
+        return True
+    try:
+        dim = Dim(bound)
+    except Exception:
+        return False
+    return isinstance(dim, StaticDim) and dim == Dim(value)
+
+
+def _is_zero_start(start: Any) -> bool:
+    return _static_bound_is(start, 0)
+
+
+def _is_unit_step(step: Any) -> bool:
+    return _static_bound_is(step, 1)
+
+
+def _local_prefix_axes(indices: SliceIndices, ndim: int) -> dict[int, int]:
+    """Maps input axis to output axis for axes trimmed to a per-device prefix.
+
+    ``x[:, :num_rows]`` with a per-shard ``num_rows`` cuts each device down to
+    its own count, so the shard survives: the trimmed shards concatenated in
+    device order are still a valid sharded layout, of the concatenated
+    prefixes. Only this form qualifies. A per-device ``start`` or ``step``
+    would be expressible too, but its global meaning is not the single-device
+    one and no caller needs it.
+    """
+    if not isinstance(indices, (list, tuple)):
+        return {}
+    prefix: dict[int, int] = {}
+    in_axis = out_axis = 0
+    for entry in _expand_ellipsis(indices, ndim):
+        if entry is None:
+            out_axis += 1
+            continue
+        if isinstance(entry, int):
+            in_axis += 1
+            continue
+        if (
+            isinstance(entry, slice)
+            and is_per_shard_dim(entry.stop)
+            and _is_zero_start(entry.start)
+            and _is_unit_step(entry.step)
+        ):
+            prefix[in_axis] = out_axis
+        in_axis += 1
+        out_axis += 1
+    return prefix
+
+
 def slice_tensor_rule(
     x: TensorLayout, indices: SliceIndices
 ) -> list[AxisAssignment]:
     """Strategies for ``slice_tensor``: sharding allowed on non-sliced axes only."""
     kept = _untouched_axes(indices, x.rank) if indices is not None else {}
+    # An axis trimmed to each device's own prefix keeps its shard as well.
+    if indices is not None:
+        kept = {**kept, **_local_prefix_axes(indices, x.rank)}
     rows: list[AxisAssignment] = [AxisAssignment((R,), (R,))]
     for in_axis, out_axis in sorted(kept.items()):
         rows.append(AxisAssignment((Sharded(in_axis),), (Sharded(out_axis),)))
