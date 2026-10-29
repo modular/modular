@@ -379,6 +379,26 @@ class _MiMoV2HFConfig(PretrainedConfig):
 AutoConfig.register("mimo_v2", _MiMoV2HFConfig, exist_ok=True)
 
 
+class _Lfm3HFConfig(PretrainedConfig):
+    """Local config class for LiquidAI LFM3 (``model_type: lfm3``).
+
+    LFM3 repos point ``auto_map`` at ``configuration_lfm3.py``, which the
+    installed transformers does not ship. The published ``config.json``
+    states every field the decoder reads, so each is kept verbatim.
+    """
+
+    model_type = "lfm3"
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        for k, v in kwargs.items():
+            if not hasattr(self, k):
+                setattr(self, k, v)
+
+
+AutoConfig.register("lfm3", _Lfm3HFConfig, exist_ok=True)
+
+
 class _KimiK3SubHFConfig(PretrainedConfig):
     """A Kimi K3 sub-config that preserves every field verbatim.
 

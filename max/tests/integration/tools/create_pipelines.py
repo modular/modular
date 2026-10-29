@@ -1589,6 +1589,11 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "gpu": ["float32", "bfloat16"],
         },
     ),
+    "LiquidAI/LFM3-1.7B": GenericOracle(
+        model_path="LiquidAI/LFM3-1.7B",
+        config_params={"max_length": 8192, "trust_remote_code": True},
+        device_encoding_map={"gpu": ["bfloat16"]},
+    ),
     "meta-llama/Llama-4-Scout-17B-16E-Instruct": GenericOracle(
         model_path="meta-llama/Llama-4-Scout-17B-16E-Instruct",
         # BF16 weights use ~278/288 GB on MI355X; cap context + batch to fit KV cache in remaining ~10 GB.

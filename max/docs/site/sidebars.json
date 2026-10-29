@@ -531,6 +531,7 @@
                 "api/python/pipelines.architectures.kimik2_5",
                 "api/python/pipelines.architectures.laguna",
                 "api/python/pipelines.architectures.lfm2",
+                "api/python/pipelines.architectures.lfm3",
                 "api/python/pipelines.architectures.llama3",
                 "api/python/pipelines.architectures.llama4",
                 "api/python/pipelines.architectures.mamba",

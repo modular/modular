@@ -39,6 +39,11 @@ This version is still a work in progress.
   are now all resolved per layer, so `poolside/Laguna-M.1-NVFP4` keeps its
   uniform layout.
 
+- Added support for
+  [`LiquidAI/LFM3-1.7B`](https://huggingface.co/LiquidAI/LFM3-1.7B) and
+  [`LiquidAI/LFM3-1.7B-Base`](https://huggingface.co/LiquidAI/LFM3-1.7B-Base)
+  on the new `Lfm3ForCausalLM` architecture.
+
 ## Inference server
 
 - Serving metric names now use `max.*` instead of `maxserve.*`. Batch
