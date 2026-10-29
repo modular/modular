@@ -68,11 +68,26 @@ toolchains.toolchain(
     edition = "2024",
     # The intent here is to use our CC toolchain's linker, there may be
     # a better approach here though. The build fails without these flags.
-    extra_exec_rustc_flags = {"x86_64-unknown-linux-gnu": ["-Clink-self-contained=no"]},
-    extra_rustc_flags = {"x86_64-unknown-linux-gnu": ["-Clink-self-contained=no"]},
+    # On macOS, split-debuginfo=packed runs dsymutil after linking and opt-mode
+    # stripping runs rust-objcopy; neither is on the hermetic sandbox's PATH
+    # or on the Linux image that cross-compiles to macOS.
+    extra_exec_rustc_flags = {
+        "aarch64-apple-darwin": [
+            "-Csplit-debuginfo=off",
+            "-Cstrip=none",
+        ],
+        "x86_64-unknown-linux-gnu": ["-Clink-self-contained=no"],
+    },
+    extra_rustc_flags = {
+        "aarch64-apple-darwin": [
+            "-Csplit-debuginfo=off",
+            "-Cstrip=none",
+        ],
+        "x86_64-unknown-linux-gnu": ["-Clink-self-contained=no"],
+    },
     # rustfmt.toml relies on nightly-only options
     rustfmt_version = "nightly/2026-03-05",
-    version = "1.94.0",
+    version = "1.99.1",
 )
 use_repo(toolchains, "default_rust_toolchains")
 
