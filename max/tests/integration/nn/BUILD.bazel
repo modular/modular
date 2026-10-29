@@ -39,6 +39,38 @@ modular_py_library(
     ],
 )
 
+modular_py_library(
+    name = "shared_nvfp4_dequant_impl",
+    testonly = True,
+    srcs = ["shared_nvfp4_dequant_impl.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_library(
+    name = "shared_mx_dequant_impl",
+    testonly = True,
+    srcs = ["shared_mx_dequant_impl.py"],
+    imports = ["."],
+    deps = [
+        ":shared_nvfp4_dequant_impl",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        requirement("numpy"),
+    ],
+)
+
 modular_py_test(
     name = "nn_tests",
     size = "large",
@@ -48,6 +80,8 @@ modular_py_test(
             "*_gpu.py",
             "shared_conv_impl.py",
             "shared_mlp_impl.py",
+            "shared_mx_dequant_impl.py",
+            "shared_nvfp4_dequant_impl.py",
         ],
     ),
     imports = ["."],
@@ -67,6 +101,7 @@ modular_py_test(
     deps = [
         ":shared_conv_impl",
         ":shared_mlp_impl",
+        ":shared_mx_dequant_impl",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
@@ -140,6 +175,8 @@ modular_py_test(
     ],
     deps = [
         ":shared_conv_impl",
+        ":shared_mx_dequant_impl",
+        ":shared_nvfp4_dequant_impl",
         "//max/python/max:tensor",
         "//max/python/max/_xgrammar",
         "//max/python/max/driver",

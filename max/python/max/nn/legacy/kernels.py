@@ -11368,38 +11368,52 @@ def quantize_dynamic_block_scaled_mxfp6(
     return result[0].tensor, result[1].tensor
 
 
-def mxfp4_dequant(
+def _mx_dequant(
+    op_name: str,
     packed_weights: TensorValue,
     scales: TensorValue,
-    out_type: DType = DType.bfloat16,
+    out_type: DType,
+    *,
+    format_name: str,
+    element_dtype: DType,
+    elements_per_byte: int,
+    allowed_out_types: tuple[DType, ...],
 ) -> TensorValue:
-    """Dequantizes MXFP4 packed weights to BF16 or FP8 on GPU.
+    """Shared implementation of the E8M0 block-32 dequant ops.
 
-    Supports rank 2 ``[N, K//2]`` and rank 3 ``[E, N, K//2]`` inputs.
-    For rank 3, leading dims are flattened to 2D, dequantized, and reshaped back.
-
-    Args:
-        packed_weights: Packed weights in uint8 (2 FP4 values per byte).
-            Shape ``[N, K//2]`` or ``[E, N, K//2]``.
-        scales: Block scales in float8_e8m0fnu.
-            Shape ``[N, K//32]`` or ``[E, N, K//32]``.
-        out_type: Output dtype (bfloat16 or float8_e4m3fn).
-
-    Returns:
-        Dequantized tensor ``[N, K]`` or ``[E, N, K]`` in out_type.
+    Validates dtypes, ranks and the statically known shapes (the kernels read
+    scales on trust), flattens rank 3 weights, and emits ``op_name``.
     """
+    block = 32
     if packed_weights.rank not in (2, 3):
         raise ValueError(
             f"packed_weights must be rank 2 or 3, got {packed_weights.rank}"
         )
-    if scales.rank != packed_weights.rank:
+    if packed_weights.dtype != element_dtype:
         raise ValueError(
-            f"scales rank ({scales.rank}) must match packed_weights rank"
-            f" ({packed_weights.rank})"
+            f"{format_name} weights must be {element_dtype}, got"
+            f" {packed_weights.dtype}"
         )
-    if packed_weights.dtype != DType.uint8:
+    if scales.dtype != DType.float8_e8m0fnu:
+        raise ValueError(f"scales must be float8_e8m0fnu, got {scales.dtype}")
+    if out_type not in allowed_out_types:
         raise ValueError(
-            f"packed_weights must be uint8, got {packed_weights.dtype}"
+            f"out_type must be one of {[str(t) for t in allowed_out_types]},"
+            f" got {out_type}"
+        )
+    if scales.rank not in (packed_weights.rank, 5):
+        raise ValueError(
+            f"scales must be rank {packed_weights.rank} (checkpoint layout) or"
+            f" rank 5 (SM100 interleaved), got rank {scales.rank}"
+        )
+    if scales.rank == 5 and packed_weights.rank != 2:
+        raise ValueError(
+            "interleaved (rank 5) scales are only supported for rank 2 weights"
+        )
+    if scales.rank == 5 and out_type not in (DType.bfloat16, DType.float32):
+        raise ValueError(
+            "interleaved (rank 5) scales support only bfloat16 or float32"
+            " output"
         )
 
     # Flatten leading dims if rank 3
@@ -11412,10 +11426,49 @@ def mxfp4_dequant(
         scales = ops.reshape(scales, [e * n, scales.shape[2]])
 
     rows = packed_weights.shape[0]
-    k = packed_weights.shape[1] * 2  # Unpacked column count
+    k_stored = packed_weights.shape[1]
+    k = k_stored * elements_per_byte  # Unpacked column count
+
+    if isinstance(k_stored, StaticDim):
+        k_static = int(k_stored) * elements_per_byte
+        if k_static % block != 0:
+            raise ValueError(f"K must be a multiple of {block}, got {k_static}")
+        if scales.rank == 2:
+            if (
+                isinstance(scales.shape[1], StaticDim)
+                and int(scales.shape[1]) * block != k_static
+            ):
+                raise ValueError(
+                    f"scales {scales.shape} do not match K = {k_static};"
+                    f" expected K//{block} = {k_static // block} scale columns"
+                )
+        elif isinstance(scales.shape[1], StaticDim):
+            # One interleaved atom spans 4 scales, i.e. 128 columns.
+            expected = -(-k_static // (block * 4))
+            if int(scales.shape[1]) != expected:
+                raise ValueError(
+                    f"scales {scales.shape} do not match K = {k_static};"
+                    f" expected ceildiv(K, {block * 4}) = {expected}"
+                )
+    if isinstance(rows, StaticDim) and isinstance(scales.shape[0], StaticDim):
+        expected_rows = int(rows) if scales.rank == 2 else -(-int(rows) // 128)
+        if int(scales.shape[0]) != expected_rows:
+            raise ValueError(
+                f"scales {scales.shape} do not match {int(rows)} rows;"
+                f" expected {expected_rows} in dimension 0"
+            )
+    if scales.rank == 5:
+        trailing = [
+            int(d) if isinstance(d, StaticDim) else None
+            for d in scales.shape[2:]
+        ]
+        if trailing != [32, 4, 4]:
+            raise ValueError(
+                f"interleaved scales must end in [32, 4, 4], got {scales.shape}"
+            )
 
     result = ops.custom(
-        "mo.dequant.mxfp4",
+        op_name,
         device=packed_weights.device,
         values=[packed_weights, scales],
         out_types=[
@@ -11432,6 +11485,89 @@ def mxfp4_dequant(
         result = ops.reshape(result, [e, n, k])
 
     return result
+
+
+def mxfp4_dequant(
+    packed_weights: TensorValue,
+    scales: TensorValue,
+    out_type: DType = DType.bfloat16,
+) -> TensorValue:
+    """Dequantizes MXFP4 packed weights to BF16, FP32 or FP8 on GPU.
+
+    Supports rank 2 ``[N, K//2]`` and rank 3 ``[E, N, K//2]`` inputs.
+    For rank 3, leading dims are flattened to 2D, dequantized, and reshaped back.
+
+    The scales are powers of two, so the multiply is exact: ``float32`` output
+    is bit-identical to a host reference, and ``bfloat16`` rounds once at the
+    final cast. Use ``float32`` when measuring quantization error.
+
+    Args:
+        packed_weights: Packed weights in uint8 (2 FP4 values per byte).
+            Shape ``[N, K//2]`` or ``[E, N, K//2]``.
+        scales: Block scales in float8_e8m0fnu. Either the checkpoint layout,
+            ``[N, K//32]`` (``[E, N, K//32]`` for rank 3 weights), or, for rank
+            2 weights only, the SM100 interleaved layout
+            ``[ceildiv(N, 128), ceildiv(K, 128), 32, 4, 4]``.
+        out_type: Output dtype: bfloat16, float32 or float8_e4m3fn. The FP8
+            output needs checkpoint-layout scales.
+
+    Returns:
+        Dequantized tensor ``[N, K]`` or ``[E, N, K]`` in out_type.
+    """
+    return _mx_dequant(
+        "mo.dequant.mxfp4",
+        packed_weights,
+        scales,
+        out_type,
+        format_name="MXFP4 packed",
+        element_dtype=DType.uint8,
+        elements_per_byte=2,
+        allowed_out_types=(
+            DType.bfloat16,
+            DType.float32,
+            DType.float8_e4m3fn,
+        ),
+    )
+
+
+def mxfp8_dequant(
+    weights: TensorValue,
+    scales: TensorValue,
+    out_type: DType = DType.bfloat16,
+) -> TensorValue:
+    """Dequantizes MXFP8 weights to BF16 or FP32.
+
+    Computes ``weights * 2^(scale - 127)`` per element, with one E8M0 scale per
+    32 elements along K. Supports rank 2 ``[N, K]`` and rank 3 ``[E, N, K]``
+    weights; for rank 3, leading dims are flattened to 2D, dequantized, and
+    reshaped back. Runs on GPU only: the graph compiler does not support
+    ``float8_e8m0fnu`` tensors on a CPU device.
+
+    The scales are powers of two, so the multiply is exact: ``float32`` output
+    is bit-identical to a host reference, and ``bfloat16`` rounds once at the
+    final cast.
+
+    Args:
+        weights: MXFP8 weights in float8_e4m3fn, ``[N, K]`` or ``[E, N, K]``.
+        scales: Block scales in float8_e8m0fnu. Either the checkpoint layout,
+            ``[N, K//32]`` (``[E, N, K//32]`` for rank 3 weights), or, for rank
+            2 weights only, the SM100 interleaved layout
+            ``[ceildiv(N, 128), ceildiv(K, 128), 32, 4, 4]``.
+        out_type: Output dtype (bfloat16 or float32).
+
+    Returns:
+        Dequantized tensor ``[N, K]`` or ``[E, N, K]`` in out_type.
+    """
+    return _mx_dequant(
+        "mo.dequant.mxfp8",
+        weights,
+        scales,
+        out_type,
+        format_name="MXFP8",
+        element_dtype=DType.float8_e4m3fn,
+        elements_per_byte=1,
+        allowed_out_types=(DType.bfloat16, DType.float32),
+    )
 
 
 def mxfp6_dequant(
@@ -11500,6 +11636,167 @@ def mxfp6_dequant(
             )
         ],
         parameters={"FP6_FORMAT": fp6_code},
+    )[0].tensor
+
+    if is_batched_weights:
+        result = ops.reshape(result, [e, n, k])
+
+    return result
+
+
+def _nvfp4_dequant_tensor_sf(tensor_sf: TensorValue | float) -> TensorValue:
+    """Returns the NVFP4 decode scale as the float32 CPU scalar the op reads."""
+    if isinstance(tensor_sf, (int, float)):
+        return ops.constant(
+            float(tensor_sf), DType.float32, device=DeviceRef.CPU()
+        )
+    if isinstance(tensor_sf, TensorValue):
+        return tensor_sf.cast(DType.float32).to(DeviceRef.CPU()).reshape(())
+    raise ValueError(
+        "tensor_sf must be a number or a single-element tensor, got"
+        f" {type(tensor_sf).__name__}"
+    )
+
+
+def nvfp4_dequant(
+    packed_weights: TensorValue,
+    scales: TensorValue,
+    tensor_sf: TensorValue | float = 1.0,
+    out_type: DType = DType.bfloat16,
+) -> TensorValue:
+    """Dequantizes NVFP4 packed weights to BF16 or FP32 on GPU.
+
+    Computes ``(e2m1(w) * abs(scale)) * tensor_sf`` per element. This is the
+    graph-level counterpart of
+    ``max.pipelines.weights.fp4_quantization.dequantize_nvfp4``, and for
+    ``float32`` output it is bit-identical to it.
+
+    Supports rank 2 ``[N, K//2]`` and rank 3 ``[E, N, K//2]`` weights. For rank
+    3, leading dims are flattened to 2D, dequantized, and reshaped back.
+
+    Args:
+        packed_weights: Packed weights in uint8 (two E2M1 values per byte, low
+            nibble first). Shape ``[N, K//2]`` or ``[E, N, K//2]``.
+        scales: Block scales in float8_e4m3fn, one per 16 elements along K.
+            Either the checkpoint layout, ``[N, K//16]`` (or ``[E, N, K//16]``
+            for rank 3 weights), or, for rank 2 weights only, the SM100
+            interleaved layout ``[ceildiv(N, 128), ceildiv(K, 64), 32, 4, 4]``
+            that :func:`quantize_dynamic_block_scaled` returns on SM100/SM120.
+        tensor_sf: The tensor-wide *decode* scale, i.e. the checkpoint's
+            ``weight_scale_2`` (what :func:`dynamic_block_scaled_matmul` takes
+            as ``tensor_sf``). This is not the inverted factor that
+            :func:`quantize_dynamic_block_scaled` takes. A tensor is cast to
+            float32 and moved to the CPU, since the op reads it as a scalar.
+        out_type: Output dtype (bfloat16 or float32).
+
+    Returns:
+        Dequantized tensor ``[N, K]`` or ``[E, N, K]`` in ``out_type``.
+
+    Raises:
+        ValueError: If a dtype, rank or (statically known) shape is
+            unsupported or inconsistent.
+    """
+    if packed_weights.rank not in (2, 3):
+        raise ValueError(
+            f"packed_weights must be rank 2 or 3, got {packed_weights.rank}"
+        )
+    if packed_weights.dtype != DType.uint8:
+        raise ValueError(
+            f"packed_weights must be uint8, got {packed_weights.dtype}"
+        )
+    if scales.dtype != DType.float8_e4m3fn:
+        raise ValueError(f"scales must be float8_e4m3fn, got {scales.dtype}")
+    if out_type not in (DType.bfloat16, DType.float32):
+        raise ValueError(
+            f"out_type must be bfloat16 or float32, got {out_type}"
+        )
+    if scales.rank not in (packed_weights.rank, 5):
+        raise ValueError(
+            f"scales must be rank {packed_weights.rank} (checkpoint layout) or"
+            f" rank 5 (SM100 interleaved), got rank {scales.rank}"
+        )
+    if scales.rank == 5 and packed_weights.rank != 2:
+        raise ValueError(
+            "interleaved (rank 5) scales are only supported for rank 2"
+            " packed_weights"
+        )
+
+    is_batched_weights = packed_weights.rank == 3
+    if is_batched_weights:
+        e = packed_weights.shape[0]
+        n = packed_weights.shape[1]
+        k_packed = packed_weights.shape[2]
+        packed_weights = ops.reshape(packed_weights, [e * n, k_packed])
+        scales = ops.reshape(scales, [e * n, scales.shape[2]])
+
+    rows = packed_weights.shape[0]
+    k_packed = packed_weights.shape[1]
+    k = k_packed * 2  # Unpacked column count
+
+    # The kernel reads scales on trust, so check what is statically known.
+    if isinstance(k_packed, StaticDim) and int(k_packed) % 8 != 0:
+        raise ValueError(f"K must be a multiple of 16, got {int(k_packed) * 2}")
+    if scales.rank == 2:
+        if isinstance(k_packed, StaticDim) and isinstance(
+            scales.shape[1], StaticDim
+        ):
+            if int(scales.shape[1]) * 16 != int(k_packed) * 2:
+                raise ValueError(
+                    f"scales {scales.shape} do not match packed_weights"
+                    f" {packed_weights.shape}; expected K//16 ="
+                    f" {int(k_packed) * 2 // 16} scale columns"
+                )
+        if (
+            isinstance(rows, StaticDim)
+            and isinstance(scales.shape[0], StaticDim)
+            and int(scales.shape[0]) != int(rows)
+        ):
+            raise ValueError(
+                f"scales {scales.shape} have a different row count than"
+                f" packed_weights {packed_weights.shape}"
+            )
+    else:
+        trailing = [
+            int(d) if isinstance(d, StaticDim) else None
+            for d in scales.shape[2:]
+        ]
+        if trailing != [32, 4, 4]:
+            raise ValueError(
+                f"interleaved scales must end in [32, 4, 4], got {scales.shape}"
+            )
+        if isinstance(rows, StaticDim) and isinstance(
+            scales.shape[0], StaticDim
+        ):
+            if int(scales.shape[0]) != -(-int(rows) // 128):
+                raise ValueError(
+                    f"scales {scales.shape} do not match {int(rows)} rows;"
+                    f" expected ceildiv(rows, 128) = {-(-int(rows) // 128)}"
+                )
+        if isinstance(k_packed, StaticDim) and isinstance(
+            scales.shape[1], StaticDim
+        ):
+            if int(scales.shape[1]) != -(-(int(k_packed) * 2) // 64):
+                raise ValueError(
+                    f"scales {scales.shape} do not match K ="
+                    f" {int(k_packed) * 2}; expected ceildiv(K, 64) ="
+                    f" {-(-(int(k_packed) * 2) // 64)}"
+                )
+
+    result = ops.custom(
+        "mo.dequant.nvfp4",
+        device=packed_weights.device,
+        values=[
+            packed_weights,
+            scales,
+            _nvfp4_dequant_tensor_sf(tensor_sf),
+        ],
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[rows, k],
+                device=packed_weights.device,
+            )
+        ],
     )[0].tensor
 
     if is_batched_weights:

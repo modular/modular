@@ -62,7 +62,9 @@ from linalg.matmul.gpu.amd import (
     Shuffler,
     block_scaled_grouped_matmul_amd,
 )
+from linalg.mx_dequant import dequant_mx
 from linalg.mxfp4_dequant import dequant_mxfp4
+from linalg.nvfp4_dequant import dequant_nvfp4
 from linalg.fp6_utils import FP6Format
 from linalg.fp6_quantization import quantize_mxfp6_amd
 from linalg.mxfp6_dequant import dequant_mxfp6
@@ -1427,7 +1429,14 @@ struct Struct_quantize_dynamic_block_scaled_mxfp4:
 
 @extensibility.register("mo.dequant.mxfp4")
 struct Struct_dequant_mxfp4:
-    """Registers the `mo.dequant.mxfp4` graph op with the graph compiler."""
+    """Registers the `mo.dequant.mxfp4` graph op with the graph compiler.
+
+    Rank-2 scales with bfloat16 or float8_e4m3fn output on a GPU take the
+    original H100-oriented kernel. Float32 output and the rank-5 SM100
+    interleaved scale layout (`[ceildiv(N, 128), ceildiv(K, 128), 32, 4, 4]`)
+    use the shared `dequant_mx` kernel, which only produces bfloat16 or
+    float32. GPU only.
+    """
 
     @inline(.always)
     @staticmethod
@@ -1447,18 +1456,18 @@ struct Struct_dequant_mxfp4:
         comptime scales_type = type_of(scales).dtype
         comptime assert type_of(output).rank == 2
         comptime assert type_of(input).rank == 2
-        comptime assert type_of(scales).rank == 2
+        comptime scales_rank = type_of(scales).rank
         comptime assert is_gpu[target](), "MXFP4 dequant only supports GPUs"
-        comptime assert out_type in (
-            DType.bfloat16,
-            DType.float8_e4m3fn,
-        ), "MXFP4 dequant output must be bfloat16 or float8_e4m3fn"
         comptime assert (
             in_type == .uint8
         ), "MXFP4 dequant input must be uint8 (packed FP4)"
         comptime assert (
             scales_type == .float8_e8m0fnu
         ), "MXFP4 dequant scales must be float8_e8m0fnu"
+        comptime assert scales_rank in (
+            2,
+            5,
+        ), "MXFP4 dequant scales must be rank 2 or rank 5 (SM100 interleaved)"
 
         var in_tt = input.to_tile_tensor()
         var scales_tt = scales.to_tile_tensor()
@@ -1468,11 +1477,152 @@ struct Struct_dequant_mxfp4:
         # num_cols is the unpacked column count (2x packed)
         var num_cols = Int(in_tt.dim[1]()) * 2
 
-        dequant_mxfp4(
+        comptime if scales_rank == 2 and out_type in (
+            DType.bfloat16,
+            DType.float8_e4m3fn,
+        ):
+            dequant_mxfp4(
+                context,
+                out_tt,
+                in_tt,
+                scales_tt,
+                num_rows=num_rows,
+                num_cols=num_cols,
+            )
+        else:
+            comptime assert out_type in (
+                DType.bfloat16,
+                DType.float32,
+            ), (
+                "MXFP4 dequant output must be bfloat16 or float32 with rank-5"
+                " scales; float8_e4m3fn needs rank-2 scales"
+            )
+            dequant_mx[target](
+                context,
+                out_tt,
+                in_tt,
+                scales_tt,
+                num_rows=num_rows,
+                num_cols=num_cols,
+            )
+
+
+@extensibility.register("mo.dequant.mxfp8")
+struct Struct_dequant_mxfp8:
+    """Registers the `mo.dequant.mxfp8` graph op with the graph compiler.
+
+    Dequantizes MXFP8 weights (`float8_e4m3fn`, `[N, K]`) with
+    `float8_e8m0fnu` block-32 scales to bfloat16 or float32. `scales` is either
+    the rank-2 `[N, K // 32]` checkpoint layout or the rank-5 SM100
+    interleaved layout `[ceildiv(N, 128), ceildiv(K, 128), 32, 4, 4]`.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        scales: Some[Input & Tensor],
+        context: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime out_type = type_of(output).dtype
+        comptime in_type = type_of(input).dtype
+        comptime scales_type = type_of(scales).dtype
+        comptime scales_rank = type_of(scales).rank
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(input).rank == 2
+        comptime assert out_type in (
+            DType.bfloat16,
+            DType.float32,
+        ), "MXFP8 dequant output must be bfloat16 or float32"
+        comptime assert (
+            in_type == .float8_e4m3fn
+        ), "MXFP8 dequant input must be float8_e4m3fn"
+        comptime assert (
+            scales_type == .float8_e8m0fnu
+        ), "MXFP8 dequant scales must be float8_e8m0fnu"
+        comptime assert scales_rank in (
+            2,
+            5,
+        ), "MXFP8 dequant scales must be rank 2 or rank 5 (SM100 interleaved)"
+
+        var in_tt = input.to_tile_tensor()
+        var scales_tt = scales.to_tile_tensor()
+        var out_tt = output.to_tile_tensor()
+
+        dequant_mx[target](
             context,
             out_tt,
             in_tt,
             scales_tt,
+            num_rows=Int(in_tt.dim[0]()),
+            num_cols=Int(in_tt.dim[1]()),
+        )
+
+
+@extensibility.register("mo.dequant.nvfp4")
+struct Struct_dequant_nvfp4:
+    """Registers the `mo.dequant.nvfp4` graph op with the graph compiler.
+
+    Dequantizes packed NVFP4 weights to bfloat16 or float32. `scales` is either
+    the rank-2 `[N, K // 16]` checkpoint layout or the rank-5 SM100 interleaved
+    layout, and `tensor_sf` is the tensor-wide decode scale (`weight_scale_2`).
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        scales: Some[Input & Tensor],
+        tensor_sf: Float32,
+        context: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime out_type = type_of(output).dtype
+        comptime in_type = type_of(input).dtype
+        comptime scales_type = type_of(scales).dtype
+        comptime scales_rank = type_of(scales).rank
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(input).rank == 2
+        comptime assert out_type in (
+            DType.bfloat16,
+            DType.float32,
+        ), "NVFP4 dequant output must be bfloat16 or float32"
+        comptime assert (
+            in_type == .uint8
+        ), "NVFP4 dequant input must be uint8 (packed FP4)"
+        comptime assert (
+            scales_type == .float8_e4m3fn
+        ), "NVFP4 dequant scales must be float8_e4m3fn"
+        comptime assert scales_rank in (
+            2,
+            5,
+        ), "NVFP4 dequant scales must be rank 2 or rank 5 (SM100 interleaved)"
+
+        var in_tt = input.to_tile_tensor()
+        var scales_tt = scales.to_tile_tensor()
+        var out_tt = output.to_tile_tensor()
+
+        var num_rows = Int(in_tt.dim[0]())
+        # num_cols is the unpacked column count (2x packed)
+        var num_cols = Int(in_tt.dim[1]()) * 2
+
+        dequant_nvfp4[target](
+            context,
+            out_tt,
+            in_tt,
+            scales_tt,
+            tensor_sf,
             num_rows=num_rows,
             num_cols=num_cols,
         )
