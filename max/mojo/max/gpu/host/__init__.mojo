@@ -42,6 +42,15 @@ from ._overlay import (
     _checked,
 )
 from ._legacy.dim import Dim
+from .launch_config import (
+    BlockExecutionConfig,
+    ClusterExecutionConfig,
+    ClusterLaunchConfig,
+    ExecutionConfig,
+    GridBlockExecutionConfig,
+    GridBlockLaunchConfig,
+    NearComputeGeneralPurposeScratchpadExecutionConfig,
+)
 from ._legacy.func_attribute import Attribute, FuncAttribute
 from ._legacy.launch_attribute import (
     LaunchAttribute,

@@ -315,6 +315,12 @@ This version is still a work in progress.
   `ctx.device().get_name()`, `ctx.device().can_access_peer(peer.device())`
   and so on.
 
+- `DeviceContext.enqueue_function()` accepts a `GridBlockLaunchConfig` (grid,
+  block, dynamic shared memory) or `ClusterLaunchConfig` (plus thread block
+  clusters) from `max.gpu.host` as its first argument. A cluster launch on a
+  GPU without clusters fails to compile; generic code checks
+  `conforms_to(DeviceContext.ExecutionConfigType, ClusterExecutionConfig)`.
+
 ## Tools
 
 - Added the ability to install `max-serve` and `max-benchmark` as Conda extras,

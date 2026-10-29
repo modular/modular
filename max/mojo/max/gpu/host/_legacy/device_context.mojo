@@ -95,6 +95,16 @@ from ._device_context_metal import (
 from .. import _launch_args
 from .._launch_args import DeviceFunctionWrapper, _IdentityWrapper, DenseArgs
 
+from ..launch_config import (
+    ClusterExecutionConfig,
+    ClusterLaunchConfig,
+    ExecutionConfig,
+    GridBlockExecutionConfig,
+    GridBlockLaunchConfig,
+    NearComputeGeneralPurposeScratchpadExecutionConfig,
+    _supports_cluster_launch,
+)
+
 from ._device_context_extras import *
 
 
@@ -4201,6 +4211,18 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
     comptime default_device_info = get_gpu_info[Self.target._arch()]()
     """`GPUInfo` object for the default accelerator."""
 
+    comptime ExecutionConfigType: ExecutionConfig = (
+        ClusterLaunchConfig if _supports_cluster_launch[
+            Self.target
+        ]() else GridBlockLaunchConfig
+    )
+    """The launch configuration type with every launch capability this target
+    supports.
+
+    Generic code checks for a capability with `conforms_to`, for example
+    `conforms_to(DeviceContext.ExecutionConfigType, ClusterExecutionConfig)`.
+    """
+
     # ===-------------------------------------------------------------------===#
     # Fields
     # ===-------------------------------------------------------------------===#
@@ -5623,6 +5645,86 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
+            location=location.or_else(call_location()),
+        )
+
+    @inline(.always)
+    def enqueue_function[
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        ConfigType: GridBlockExecutionConfig,
+        //,
+        func: def(*args: *declared_arg_types) thin -> None,
+        *encoded_types: DevicePassable,
+    ](
+        self,
+        config: ConfigType,
+        *encoded_args: *encoded_types,
+        location: Optional[SourceLocation] = None,
+    ) raises:
+        """Compiles and enqueues a kernel with a capability-typed launch
+        configuration.
+
+        `config` must be a `GridBlockLaunchConfig` or a
+        `ClusterLaunchConfig`. A capability this target lacks, such as
+        clusters, fails to compile:
+
+        ```mojo
+        from max.gpu.host import ClusterLaunchConfig, DeviceContext, Dim
+
+        def kernel():
+            pass
+
+        with DeviceContext() as ctx:
+            ctx.enqueue_function[kernel](
+                ClusterLaunchConfig(
+                    grid_dim=4, block_dim=128, cluster_dim=Dim(2, 1, 1)
+                )
+            )
+        ```
+
+        Parameters:
+            declared_arg_types: Types of the arguments to pass to the device
+                function.
+            ConfigType: The launch configuration type.
+            func: The function to compile and launch.
+            encoded_types: The `DevicePassable` argument types encoded to
+                device layout.
+
+        Args:
+            config: The launch configuration.
+            encoded_args: The variadic `DevicePassable` arguments encoded to
+                device layout.
+            location: Source location for the function call.
+
+        Raises:
+            If the operation fails.
+        """
+        comptime assert ConfigType == GridBlockLaunchConfig or (
+            ConfigType == ClusterLaunchConfig
+        ), (
+            "this DeviceContext launches only a GridBlockLaunchConfig or a"
+            " ClusterLaunchConfig"
+        )
+
+        var cluster_dim = OptionalReg[Dim](None)
+        comptime if conforms_to(ConfigType, ClusterExecutionConfig):
+            comptime assert conforms_to(
+                Self.ExecutionConfigType, ClusterExecutionConfig
+            ), "this target does not support thread block cluster launch"
+            cluster_dim = config.get_cluster_dim()
+
+        var shared_mem_bytes = OptionalReg[Int](None)
+        comptime if conforms_to(
+            ConfigType, NearComputeGeneralPurposeScratchpadExecutionConfig
+        ):
+            shared_mem_bytes = config.get_near_compute_scratchpad_usage()
+
+        self.enqueue_function[func](
+            *encoded_args,
+            grid_dim=config.get_grid_dim(),
+            block_dim=config.get_block_dim(),
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
             location=location.or_else(call_location()),
         )
 
