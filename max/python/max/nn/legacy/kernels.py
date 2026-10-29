@@ -5085,6 +5085,7 @@ def flash_attention_ragged_gpu(
     mask_variant: MHAMaskVariant,
     scale: float,
     local_window_size: int = -1,
+    segment_ids: TensorValueLike | None = None,
 ) -> TensorValue:
     """Computes flash attention for ragged inputs without a KV cache.
 
@@ -5093,9 +5094,10 @@ def flash_attention_ragged_gpu(
     Args:
         q: The query tensor, of shape ``[total_seq_len, num_heads,
             head_dim]`` (ragged).
-        k: The key tensor, of shape ``[total_seq_len, num_heads,
-            head_dim]`` (ragged).
-        v: The value tensor, of shape ``[total_seq_len, num_heads,
+        k: The key tensor, of shape ``[total_seq_len, num_kv_heads,
+            head_dim]`` (ragged), where ``num_kv_heads`` divides
+            ``num_heads``.
+        v: The value tensor, of shape ``[total_seq_len, num_kv_heads,
             head_dim]`` (ragged).
         input_row_offsets: The buffer of shape ``[batch_size + 1]`` with
             dtype uint32. Indicates where each sequence starts and ends in
@@ -5107,10 +5109,21 @@ def flash_attention_ragged_gpu(
         scale: The scaling factor for attention scores.
         local_window_size: The local window size for sliding window
             attention.
+        segment_ids: Each token's int32 segment id, of shape
+            ``[total_seq_len]``, to attend under a segment mask instead of
+            ``mask_variant``, which must be ``NULL_MASK``. A query sees a
+            key iff either token's id is -1 or the ids are equal. Within
+            each sequence the ids must be nondecreasing, with -1 the only
+            negative id.
 
     Returns:
         The output tensor, of shape ``[total_seq_len, num_heads,
         head_dim]``.
+
+    Raises:
+        ValueError: If the inputs' dtypes, ranks or shapes disagree, or if
+            ``segment_ids`` comes with a mask or a window or doesn't hold
+            one id per token.
 
     The following example applies causal attention to a ragged batch of
     two sequences, of lengths 3 and 5, on a GPU:
@@ -5252,10 +5265,14 @@ def flash_attention_ragged_gpu(
             f"q: {q.shape[0]}, k: {k.shape[0]}, v: {v.shape[0]}"
         )
 
-    # Validate num_heads match
-    if q.shape[1] != k.shape[1] or q.shape[1] != v.shape[1]:
+    num_heads, num_kv_heads = q.shape[1], k.shape[1]
+    if num_kv_heads != v.shape[1] or (
+        isinstance(num_heads, StaticDim)
+        and isinstance(num_kv_heads, StaticDim)
+        and int(num_heads) % int(num_kv_heads)
+    ):
         raise ValueError(
-            "q, k, v must have same num_heads. Got "
+            "k and v must have the same num_heads, which divides q's. Got "
             f"q: {q.shape[1]}, k: {k.shape[1]}, v: {v.shape[1]}"
         )
 
@@ -5275,12 +5292,39 @@ def flash_attention_ragged_gpu(
         "max_seq_len", max_seq_len, dtype=DType.uint32, device=DeviceRef.CPU()
     )
 
-    parameters = _mha_parameters(
-        mask_variant, local_window_size=local_window_size
-    )
-
-    op_name = "mo.mha.ragged.no_cache"
-    values = [q, k, v, input_row_offsets, max_seq_len]
+    if segment_ids is None:
+        parameters = _mha_parameters(
+            mask_variant, local_window_size=local_window_size
+        )
+        op_name = "mo.mha.ragged.no_cache"
+        values = [q, k, v, input_row_offsets, max_seq_len]
+    else:
+        if mask_variant != MHAMaskVariant.NULL_MASK or local_window_size != -1:
+            raise ValueError(
+                "segment_ids replaces the mask: pass NULL_MASK and no window"
+            )
+        segment_ids = TensorValue(segment_ids)
+        if segment_ids.dtype != DType.int32 or segment_ids.rank != 1:
+            raise ValueError(
+                "segment_ids must be a rank 1 int32 tensor, got rank"
+                f" {segment_ids.rank} {segment_ids.dtype}"
+            )
+        n_ids, n_tokens = segment_ids.shape[0], q.shape[0]
+        if (
+            isinstance(n_ids, StaticDim)
+            and isinstance(n_tokens, StaticDim)
+            and n_ids != n_tokens
+        ):
+            raise ValueError(
+                "segment_ids must hold one id per query token, got"
+                f" {n_ids} for {n_tokens} tokens"
+            )
+        segment_ids = segment_ids.rebind(
+            [n_tokens], "segment_ids must hold one id per query token"
+        )
+        parameters = {}
+        op_name = "mo.mha.ragged.no_cache.segment"
+        values = [q, k, v, input_row_offsets, segment_ids, max_seq_len]
     values.append(
         ops.constant(scale, dtype=DType.float32, device=DeviceRef.CPU())
     )

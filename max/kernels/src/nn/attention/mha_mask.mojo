@@ -2053,6 +2053,227 @@ struct PaddingMask[LayoutType: TensorLayout, origin_: ImmOrigin](
 
 
 # ===-----------------------------------------------------------------------===#
+# SegmentMask
+# ===-----------------------------------------------------------------------===#
+
+
+struct SegmentMask(MHAMask, TrivialRegisterPassable):
+    """Segment mask over ragged sequences: a query sees a key iff either
+    token's segment id is -1 or the two ids are equal.
+
+    Tokens with id -1 see, and are seen by, every token of their sequence;
+    every other segment sees only itself and the -1 tokens. Within each
+    sequence the ids must be nondecreasing, with -1 the only negative id,
+    so a tile's status follows from the ids at its corners, and the keys a
+    query tile sees lie in one range of columns.
+
+    Exactly the tiles past that range's end report `FULL_MASK`: some
+    producers count tiles up to the end and don't skip, while their
+    consumers skip `FULL_MASK` tiles up to the key count. A tile between
+    the -1 keys and the query's own segment is computed, all masked.
+
+    `segment_ids` holds one int32 id per token of the ragged batch, and
+    `row_offsets` the batch's `[batch + 1]` row offsets.
+    """
+
+    comptime apply_log2e_after_mask: Bool = False
+    comptime mask_out_of_bound: Bool = True
+    comptime mask_safe_out_of_bounds: Bool = True
+    comptime check_mask_during_decoding: Bool = True
+
+    @__allow_legacy_any_origin_fields
+    var segment_ids: ImmPointer[Int32, ImmutAnyOrigin]
+
+    @__allow_legacy_any_origin_fields
+    var row_offsets: ImmPointer[UInt32, ImmutAnyOrigin]
+
+    comptime device_type: AnyType = Self
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields[Self](self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        return "SegmentMask"
+
+    @staticmethod
+    def name() -> String:
+        return "SegmentMask"
+
+    def __init__(
+        out self,
+        segment_ids: ImmPointer[Int32, ImmutAnyOrigin],
+        row_offsets: ImmPointer[UInt32, ImmutAnyOrigin],
+    ):
+        self.segment_ids = segment_ids
+        self.row_offsets = row_offsets
+
+    @always_inline
+    def _bounds(self, seq_id: Int) -> Tuple[Int, Int]:
+        var start = Int(self.row_offsets[unsafe_offset=seq_id])
+        return start, Int(self.row_offsets[unsafe_offset=seq_id + 1]) - start
+
+    @always_inline
+    def _id(self, start: Int, length: Int, position: Int) -> Int32:
+        # Clamped, so the reads past a sequence's end that the kernels
+        # mask afterwards stay inside it.
+        return self.segment_ids[unsafe_offset=start + min(position, length - 1)]
+
+    @always_inline
+    def _end_of(self, start: Int, length: Int, id: Int32) -> Int:
+        """Returns the first position whose id exceeds `id`."""
+        var lo, hi = 0, length
+        while lo < hi:
+            var mid = (lo + hi) // 2
+            if self.segment_ids[unsafe_offset=start + mid] <= id:
+                lo = mid + 1
+            else:
+                hi = mid
+        return lo
+
+    @always_inline
+    def _key_end(self, start: Int, length: Int, row: Int, rows: Int) -> Int:
+        """Returns the end column of the keys query rows `[row, row + rows)`
+        see."""
+        if self._id(start, length, row) == -1:
+            return length
+        return self._end_of(
+            start, length, self._id(start, length, row + rows - 1)
+        )
+
+    @always_inline
+    def _key_range[
+        BM: Int, BN: Int
+    ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> Tuple[
+        UInt32, UInt32
+    ]:
+        """Returns the BN-aligned first and the end column of the keys the
+        query tile at `row` sees, empty for a tile past its sequence."""
+        var start, length = self._bounds(Int(seq_id))
+        if Int(row) >= length:
+            return UInt32(0), UInt32(0)
+        var q_first = self._id(start, length, Int(row))
+        var end = self._key_end(start, length, Int(row), BM)
+        var first = 0
+        if q_first != -1 and self.segment_ids[unsafe_offset=start] != -1:
+            first = align_down(self._end_of(start, length, q_first - 1), BN)
+        return UInt32(first), max(min(UInt32(end), num_cols), UInt32(first))
+
+    @always_inline
+    def mask[
+        dtype: DType,
+        width: SIMDLength,
+        //,
+    ](
+        self,
+        coord: Coord[Int, Int, Int, Int],
+        score_vec: SIMD[dtype, width],
+    ) -> SIMD[dtype, width]:
+        var start, length = self._bounds(coord[0])
+        var q_id = self._id(start, length, coord[2])
+        var visible = SIMD[DType.bool, width](fill=q_id == -1)
+        comptime for i in range(width):
+            var k_id = self._id(start, length, coord[3] + i)
+            visible[i] = visible[i] or k_id == -1 or k_id == q_id
+        return visible.select(score_vec, MASK_VALUE)
+
+    @always_inline
+    def status(
+        self,
+        seq_id: UInt32,
+        tile_offset: Coord[Int, Int],
+        tile_size: Coord[Int, Int],
+    ) -> TileMaskStatus:
+        var start, length = self._bounds(Int(seq_id))
+        var row, col = tile_offset[0], tile_offset[1]
+        if col >= length:
+            return TileMaskStatus.FULL_MASK
+        if row >= length:
+            return TileMaskStatus.PARTIAL_MASK
+        if col >= self._key_end(start, length, row, tile_size[0]):
+            return TileMaskStatus.FULL_MASK
+        var q_first = self._id(start, length, row)
+        var q_last = self._id(start, length, row + tile_size[0] - 1)
+        var k_first = self._id(start, length, col)
+        var k_last = self._id(start, length, col + tile_size[1] - 1)
+        if col + tile_size[1] > length:
+            return TileMaskStatus.PARTIAL_MASK
+        if (
+            q_last == -1
+            or k_last == -1
+            or (q_first == q_last and k_first == k_last and q_first == k_first)
+        ):
+            return TileMaskStatus.NO_MASK
+        return TileMaskStatus.PARTIAL_MASK
+
+    @always_inline
+    def start_column[
+        BM: Int, BN: Int, page_size: Int
+    ](self, seq_id: UInt32, row: UInt32) -> UInt32:
+        return self._key_range[BM, BN](seq_id, row, UInt32.MAX)[0]
+
+    @staticmethod
+    def start_column_alignment[BM: Int, BN: Int, page_size: Int]() -> Int:
+        return BN
+
+    @always_inline
+    def total_iters[
+        BM: Int, BN: Int, page_size: Int
+    ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> UInt32:
+        var first, end = self._key_range[BM, BN](seq_id, row, num_cols)
+        return ceildiv(end - first, UInt32(BN))
+
+    @staticmethod
+    def count_nonfull_sets(BM: Int, BN: Int) -> Int:
+        return 1
+
+    @always_inline
+    def last_masked_set_end[
+        BM: Int, BN: Int, page_size: Int
+    ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> UInt32:
+        return self.total_iters[BM, BN, page_size](seq_id, row, num_cols)
+
+    @always_inline
+    def masked_set_ends[
+        BM: Int, BN: Int, page_size: Int
+    ](self, seq_id: UInt32, row: UInt32, num_cols: UInt32) -> StaticTuple[
+        UInt32, Self.count_nonfull_sets(BM, BN)
+    ]:
+        return {
+            self.last_masked_set_end[BM, BN, page_size](seq_id, row, num_cols)
+        }
+
+    @staticmethod
+    def nonfull_sets[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[TileMaskStatus, Self.count_nonfull_sets(BM, BN)]:
+        return {TileMaskStatus.UNKNOWN_MASK}
+
+    @staticmethod
+    def mask_strategies[
+        BM: Int, BN: Int
+    ]() -> StaticTuple[MaskStrategy, Self.count_nonfull_sets(BM, BN)]:
+        return {MaskStrategy.COMPUTED | MaskStrategy.OUT_OF_BOUNDS}
+
+    @always_inline
+    def mask_bits(
+        self,
+        seq_id: UInt32,
+        score_row: Int32,
+        col_start: Int32,
+        num_keys: Int32,
+    ) -> UInt32:
+        # Unused: `mask_strategies` never selects `BITMASK`.
+        return UInt32(0xFFFF_FFFF)
+
+    @staticmethod
+    def sliding_window_size() -> Int:
+        return 0
+
+
+# ===-----------------------------------------------------------------------===#
 # SparseRowsDecodeMask
 # ===-----------------------------------------------------------------------===#
 

@@ -73,7 +73,7 @@ from nn.attention.gpu.nvidia.common import (
 from nn.attention.gpu.mha_decode_partition_heuristic import (
     amd_sparse_mla_inplace_decode_num_partitions,
 )
-from nn.attention.mha_mask import MHAMask
+from nn.attention.mha_mask import MHAMask, SegmentMask
 from nn.attention.mha_utils import dispatch_mask, maybe_null_pointer
 from nn.attention.gpu.mla_graph import (
     mla_prefill_branch_fp8,
@@ -1541,6 +1541,77 @@ struct RaggedFlashAttentionGPU:
             )
 
         dispatch_mask[mask_str, local_window_size](_dispatch_flash_attention)
+
+
+@extensibility.register("mo.mha.ragged.no_cache.segment")
+struct RaggedSegmentFlashAttentionGPU:
+    """Registers the `mo.mha.ragged.no_cache.segment` graph op with the graph
+    compiler."""
+
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        output: Some[Output & Tensor],
+        q: Some[Input & Tensor],
+        k: Some[Input & Tensor],
+        v: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        segment_ids: Some[Input & Tensor],
+        q_max_seq_len: Some[Input & Tensor],
+        scale: Float32,
+        ctx: DeviceContext,
+    ) raises:
+        """`mo.mha.ragged.no_cache.segment` computes flash attention for
+        ragged inputs without KV cache under a `SegmentMask`.
+
+        Parameters:
+            target: Target device identifier; must resolve to a GPU.
+
+        Args:
+            output: Output attention tensor with the same shape as `q`.
+            q: Query tensor in ragged format with shape
+                [total_seq_len, num_heads, head_dim].
+            k: Key tensor in ragged format with shape
+                [total_seq_len, num_heads, head_dim].
+            v: Value tensor in ragged format with shape
+                [total_seq_len, num_heads, head_dim].
+            input_row_offsets: Row offsets [batch_size + 1] marking the
+                start and end of each sequence in the ragged tensors.
+            segment_ids: Each token's int32 segment id [total_seq_len], -1
+                for the tokens every token of their sequence sees.
+            q_max_seq_len: Maximum query sequence length across the batch.
+            scale: Scaling factor applied to attention scores before softmax.
+            ctx: Device context for GPU execution.
+        """
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(q), TileTensorable)
+        comptime assert conforms_to(type_of(k), TileTensorable)
+        comptime assert conforms_to(type_of(v), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(segment_ids), TileTensorable)
+        comptime assert conforms_to(type_of(q_max_seq_len), TileTensorable)
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(segment_ids).rank == 1
+        comptime assert is_gpu[target](), "only valid on GPUs"
+
+        var row_offsets = input_row_offsets.to_tile_tensor[.uint32]()
+        flash_attention_ragged(
+            output.to_tile_tensor(),
+            q.to_tile_tensor(),
+            k.to_tile_tensor(),
+            v.to_tile_tensor(),
+            row_offsets,
+            q_max_seq_len.to_tile_tensor[.uint32](),
+            SegmentMask(
+                segment_ids.to_tile_tensor[.int32]()
+                .ptr.as_imm()
+                .unsafe_origin_cast[ImmutAnyOrigin](),
+                row_offsets.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
+            ),
+            scale,
+            ctx,
+        )
 
 
 @extensibility.register("mo.composite.no_mask_flash_attention_cpu")
