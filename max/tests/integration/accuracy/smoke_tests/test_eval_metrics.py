@@ -10,16 +10,51 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Checks metric reads across serving namespace generations."""
+"""Checks smoke evaluation timeouts and serving metrics."""
 
 from unittest.mock import Mock, patch
 
 import pytest
 from smoke_tests.eval_runner import (
     _spec_decode_acceptance_length_delta,
+    call_eval,
     get_num_tokens_generated,
     get_spec_decode_acceptance_totals,
 )
+
+
+@pytest.mark.parametrize(
+    ("model", "disable_timeouts", "expected_timeout"),
+    [
+        ("moonshotai/Kimi-K3", False, 1800),
+        ("org/model", False, 600),
+        ("moonshotai/Kimi-K3", True, None),
+    ],
+)
+def test_eval_timeout_keeps_the_request_timeout_separate(
+    model: str, disable_timeouts: bool, expected_timeout: int | None
+) -> None:
+    with (
+        patch("smoke_tests.eval_runner.check_call") as run,
+        patch(
+            "smoke_tests.eval_runner.parse_eval_results", return_value=({}, [])
+        ),
+    ):
+        call_eval(
+            "http://localhost/v1/chat/completions",
+            model,
+            "gsm8k_cot_llama",
+            max_concurrent=64,
+            num_questions=320,
+            disable_timeouts=disable_timeouts,
+        )
+
+    assert run.call_args.kwargs["timeout"] == expected_timeout
+    args = run.call_args.args[0]
+    model_args = next(arg for arg in args if arg.startswith("--model_args="))
+    request_timeout = "86400" if disable_timeouts else "600"
+    assert f",timeout={request_timeout}" in model_args
+    assert "--limit=320" in args
 
 
 @pytest.mark.parametrize(

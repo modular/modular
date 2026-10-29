@@ -233,7 +233,11 @@ def call_eval(
 
         args = [interpreter, "-m", *eval_cmd]
         logger.info(f"Running eval with:\n {' '.join(args)}")
-        eval_timeout = None if disable_timeouts else 600
+        eval_timeout = (
+            None
+            if disable_timeouts
+            else (1800 if model.casefold() == "moonshotai/kimi-k3" else 600)
+        )
         time.sleep(metrics_delay_s)
         tokens_before = (
             get_num_tokens_generated(metrics_url) if metrics_url else None
