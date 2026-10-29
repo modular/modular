@@ -15,6 +15,7 @@ _LIT_TESTS = [
     "test_gpu_storage_non_compact_layout_fail.mojo",
     "test_tile_tensor_copy_from_mismatched_total_elements_fail.mojo",
     "test_tile_tensor_split_static_non_divisible_fail.mojo",
+    "test_two_level_layout_bad_box_fail.mojo",
 ]
 
 _EXTRA_DEPS = {

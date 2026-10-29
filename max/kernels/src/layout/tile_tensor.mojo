@@ -2354,14 +2354,7 @@ struct TileTensor[
         return {self._storage, layout_val}
 
     @inline(.nodebug)
-    def transpose(
-        self,
-    ) -> Self.ViewType[
-        Layout[
-            Self.LayoutType._shape_types.reverse(),
-            Self.LayoutType._stride_types.reverse(),
-        ],
-    ]:
+    def transpose(self) -> Self.ViewType[Self.LayoutType._TransposedLayout]:
         """Create a transposed view of the tensor.
 
         Returns a new TileTensor sharing the same pointer but with the

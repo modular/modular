@@ -114,6 +114,12 @@ trait TensorLayout(DevicePassable, TrivialRegisterPassable):
     """Whether all stride dimensions are known at compile time."""
     comptime all_dims_known: Bool = Self.shape_known and Self.stride_known
     """Whether all shape and stride dimensions are known at compile time."""
+    comptime is_affine: Bool = True
+    """Whether the layout's offset is a sum of coordinate times stride.
+
+    Code that steps through memory by adding a stride to an offset must check
+    this first: only an affine layout makes that step exact.
+    """
     comptime static_shape[i: Int]: Int
     """Returns the compile-time value of the i-th shape dimension.
 
@@ -144,6 +150,17 @@ trait TensorLayout(DevicePassable, TrivialRegisterPassable):
 
     Parameters:
         TileShape: The tile's extent along each mode.
+    """
+
+    comptime _TransposedLayout: TensorLayout
+    """The layout returned by `transpose`: the same modes, reversed."""
+
+    comptime _DynamicLayout[dtype: DType]: TensorLayout
+    """The layout returned by `make_dynamic[dtype]`, with every dimension as a
+    runtime `Scalar[dtype]`.
+
+    Parameters:
+        dtype: The data type for the resulting `Scalar` values.
     """
 
     comptime __shape_types: TypeList[Trait=CoordLike, _]._mlir_type
@@ -257,32 +274,25 @@ trait TensorLayout(DevicePassable, TrivialRegisterPassable):
         """
         ...
 
-    def transpose(
-        self,
-    ) -> Layout[Self._shape_types.reverse(), Self._stride_types.reverse()]:
+    def transpose(self) -> Self._TransposedLayout:
         """Transposes the layout by reversing the order of dimensions.
 
         For an n-dimensional layout, this reverses the order of both shapes
         and strides. For 2D layouts, this swaps rows and columns.
 
         Returns:
-            A new Layout with transposed dimensions.
+            A new layout with transposed dimensions.
         """
         ...
 
-    def make_dynamic[
-        dtype: DType
-    ](self) -> Layout[
-        _CoordToDynamic[dtype, Self._shape_types],
-        _CoordToDynamic[dtype, Self._stride_types],
-    ]:
+    def make_dynamic[dtype: DType](self) -> Self._DynamicLayout[dtype]:
         """Converts all dimensions to runtime values of the given dtype.
 
         Parameters:
             dtype: The data type for the resulting `Scalar` values.
 
         Returns:
-            A new Layout with all dimensions as `Scalar[dtype]`.
+            A new layout with all dimensions as `Scalar[dtype]`.
         """
         ...
 
@@ -400,6 +410,23 @@ struct Layout[
 
     Parameters:
         TileShape: The tile's extent along each mode.
+    """
+
+    comptime _TransposedLayout: TensorLayout = Layout[
+        shape_types=Self.shape_types.reverse(),
+        stride_types=Self.stride_types.reverse(),
+    ]
+    """The layout returned by `transpose`: shape and stride reversed."""
+
+    comptime _DynamicLayout[dtype: DType]: TensorLayout = Layout[
+        shape_types=_CoordToDynamic[dtype, Self.shape_types],
+        stride_types=_CoordToDynamic[dtype, Self.stride_types],
+    ]
+    """The layout returned by `make_dynamic[dtype]`, with every dimension as
+    a runtime `Scalar[dtype]`.
+
+    Parameters:
+        dtype: The data type for the resulting `Scalar` values.
     """
 
     @inline(.nodebug)
@@ -656,9 +683,7 @@ struct Layout[
         return Layout(self._shape.reverse(), self._stride.reverse())
 
     @inline(.nodebug)
-    def transpose(
-        self,
-    ) -> Layout[Self.shape_types.reverse(), Self.stride_types.reverse()]:
+    def transpose(self) -> Self._TransposedLayout:
         """Transposes the layout by reversing the order of dimensions.
 
         For an n-dimensional layout, this reverses the order of both shapes
@@ -680,12 +705,7 @@ struct Layout[
         return self.reverse()
 
     @inline(.nodebug)
-    def make_dynamic[
-        dtype: DType
-    ](self) -> Layout[
-        _CoordToDynamic[dtype, Self.shape_types],
-        _CoordToDynamic[dtype, Self.stride_types],
-    ]:
+    def make_dynamic[dtype: DType](self) -> Self._DynamicLayout[dtype]:
         """Convert all elements in shape and stride to Scalar[dtype].
 
         Parameters:
