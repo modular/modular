@@ -451,15 +451,14 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         var indices_stride = Int(indices_stride_dev)
         var topk_stride = indices_stride // Self.sparse_row_parts
         var extra_indices_stride = Int(extra_indices_stride_dev)
+        var batch_size = Int(scalar_args[0])
+        var selection_lag = Int(selection_lag_dev)
+        var q_max_seq_len = Int(scalar_args[1])
+        var num_partitions = Int(mla_decode_pack.num_partitions)
+        var mask = mla_decode_pack.mask
+        var valid_length = mla_decode_pack.valid_length
+        var lse_accum_split_ptr = mla_decode_pack.lse_accum_split_ptr
         with PDL[overlap_at_beginning=True]():
-            var batch_size = Int(scalar_args[0])
-            var selection_lag = Int(selection_lag_dev)
-            var q_max_seq_len = Int(scalar_args[1])
-            var num_partitions = Int(mla_decode_pack.num_partitions)
-            var mask = mla_decode_pack.mask
-            var valid_length = mla_decode_pack.valid_length
-            var lse_accum_split_ptr = mla_decode_pack.lse_accum_split_ptr
-
             var offset_position = OffsetPosition[
                 Self.config,
                 Self.KVLUTType,

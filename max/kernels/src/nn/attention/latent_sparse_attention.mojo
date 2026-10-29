@@ -172,25 +172,24 @@ def _latent_sparse_attention_gpu_kernel[
     var h0 = (block_idx.y * warps_per_block + Int(warp_id())) * heads_per_warp
     var nh = Int(num_heads)
 
-    with PDL():
-        if h0 >= nh:
-            return
+    if h0 >= nh:
+        return
 
+    var d0 = lane * lane_width
+
+    var q = Array[SIMD[.float32, lane_width], heads_per_warp](
+        fill=SIMD[.float32, lane_width](0)
+    )
+    var m = Array[Float32, heads_per_warp](fill=min_or_neg_inf[DType.float32]())
+    var l = Array[Float32, heads_per_warp](fill=Float32(0))
+    var acc = Array[SIMD[.float32, lane_width], heads_per_warp](
+        fill=SIMD[.float32, lane_width](0)
+    )
+
+    with PDL():
         var b = _batch_of_row(t, row_offsets, Int(num_batches))
         var pos = (
             swa_cache.cache_length(b) + t - Int(row_offsets[unsafe_offset=b])
-        )
-        var d0 = lane * lane_width
-
-        var q = Array[SIMD[.float32, lane_width], heads_per_warp](
-            fill=SIMD[.float32, lane_width](0)
-        )
-        var m = Array[Float32, heads_per_warp](
-            fill=min_or_neg_inf[DType.float32]()
-        )
-        var l = Array[Float32, heads_per_warp](fill=Float32(0))
-        var acc = Array[SIMD[.float32, lane_width], heads_per_warp](
-            fill=SIMD[.float32, lane_width](0)
         )
         comptime for i in range(heads_per_warp):
             var h = h0 + i
@@ -371,16 +370,16 @@ def _sm100_decode_plan_kernel[
     """
     var t = block_idx.x
     var lane = Int(lane_id())
+    var nc = Int(num_comp)
+    var out_base = t * Int(comp_stride)
+    var count = 0
 
     with PDL():
         var b = _batch_of_row(t, row_offsets, Int(num_batches))
         var pos = (
             swa_cache.cache_length(b) + t - Int(row_offsets[unsafe_offset=b])
         )
-        var nc = Int(num_comp)
-        var out_base = t * Int(comp_stride)
 
-        var count = 0
         for c0 in range(0, nc, WARP_SIZE):
             var j = c0 + lane
             var e = Int32(-1)

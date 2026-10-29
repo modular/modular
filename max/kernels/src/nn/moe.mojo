@@ -1606,10 +1606,10 @@ def single_group_router_eplb_kernel[
     var tid = thread_idx.x
     var w_id = warp_id()
     var l_id = lane_id()
+    var thread_expert_bias = expert_bias[tid].cast[scores_type]()
 
     with PDL():
         var Lidx = Int(layer_idx[Idx[0]][0])
-        var thread_expert_bias = expert_bias[tid].cast[scores_type]()
 
         var thread_expert_score = scores_input_fn[width=1]((token_idx, tid))
         var biased_score = thread_expert_score + thread_expert_bias
@@ -2078,11 +2078,12 @@ def router_gemv_partials_kernel[
         alignment=vec_align,
     ]()
 
+    for i in range(tid * vec, tile_experts * slice_len, num_threads * vec):
+        var r, k = divmod(i, slice_len)
+        var w = gate_weight.load[width=vec]((first_expert + r, k0 + k))
+        w_smem.unsafe_store(r * stride + k, w)
+
     with PDL():
-        for i in range(tid * vec, tile_experts * slice_len, num_threads * vec):
-            var r, k = divmod(i, slice_len)
-            var w = gate_weight.load[width=vec]((first_expert + r, k0 + k))
-            w_smem.unsafe_store(r * stride + k, w)
         for i in range(tid * vec, tile_tokens * slice_len, num_threads * vec):
             var r, k = divmod(i, slice_len)
             var x = SIMD[weight_type, vec](0)
@@ -2438,9 +2439,9 @@ def sink_gate_router_kernel[
     var tid = thread_idx.x
     var warp_id = warp_id()
     var lane_id = lane_id()
+    var thread_bias = Float32(expert_bias[tid])
 
     with PDL():
-        var thread_bias = Float32(expert_bias[tid])
         var thread_logit = Float32(logits[token_idx, tid])
         var biased_score = sigmoid(thread_logit) + thread_bias
 

@@ -360,11 +360,11 @@ def _argsort_gpu_impl[
         var _step = Int(step)
         var _stage = Int(stage)
         var i = global_idx.x
-        with PDL():
-            if i >= _n_arg:
-                return
+        if i >= _n_arg:
+            return
 
-            var partner = i ^ _step
+        var partner = i ^ _step
+        with PDL():
             if partner > i and partner < _n_arg:
                 var cmp_val: Bool
                 comptime if ascending:

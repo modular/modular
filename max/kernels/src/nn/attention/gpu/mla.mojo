@@ -4717,10 +4717,10 @@ def mla_prefill_plan_kernel[
     comptime page_size = cache_t.page_size_
     comptime assert page_size != 0, "Only PagedKVCache is supported."
 
-    with PDL():
-        if seq_idx >= batch_size:
-            return
+    if seq_idx >= batch_size:
+        return
 
+    with PDL():
         # Calculate starting position for this sequence.
         # Note: the total cache length of each sequence is aligned to the page size.
         var prev_row_offset = Int(input_row_offsets[0])

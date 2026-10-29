@@ -102,25 +102,25 @@ def _im2col_nhwc_kernel[
     var _m_count = Int(m_count)
     var local_m = block_idx.x
 
+    if local_m >= _m_count:
+        return
+
+    var K = _R * _S * _C
+    var m = _m_offset + local_m
+
+    # Per-block decomposition (amortized across block_dim threads).
+    var HW_out = _H_out * _W_out
+    var batch, spatial = udivmod(m, HW_out)
+    var h_out, w_out = udivmod(spatial, _W_out)
+
+    var h_in_base = h_out * _stride_h - _pad_h
+    var w_in_base = w_out * _stride_w - _pad_w
+
+    var SC = _S * _C
+
+    var row_base = local_m * K
+    var k = thread_idx.x
     with PDL():
-        if local_m >= _m_count:
-            return
-
-        var K = _R * _S * _C
-        var m = _m_offset + local_m
-
-        # Per-block decomposition (amortized across block_dim threads).
-        var HW_out = _H_out * _W_out
-        var batch, spatial = udivmod(m, HW_out)
-        var h_out, w_out = udivmod(spatial, _W_out)
-
-        var h_in_base = h_out * _stride_h - _pad_h
-        var w_in_base = w_out * _stride_w - _pad_w
-
-        var SC = _S * _C
-
-        var row_base = local_m * K
-        var k = thread_idx.x
         while k < K:
             var r, sc = udivmod(k, SC)
             var s, c = udivmod(sc, _C)
@@ -161,16 +161,16 @@ def _transpose_filter_to_nk[
     var total = _F * K
     var tid = global_idx.x
 
+    if tid >= total:
+        return
+
+    var f, k = udivmod(tid, K)
+
+    var SC = _S * _C
+    var r, sc = udivmod(k, SC)
+    var s, c = udivmod(sc, _C)
+
     with PDL():
-        if tid >= total:
-            return
-
-        var f, k = udivmod(tid, K)
-
-        var SC = _S * _C
-        var r, sc = udivmod(k, SC)
-        var s, c = udivmod(sc, _C)
-
         var val: Scalar[dtype]
         comptime if filter_is_fcrs:
             val = src.load((f, c, r, s))[0]

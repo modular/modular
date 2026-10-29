@@ -910,21 +910,21 @@ def _concat_gpu_flat_kernel[
     var _total_concat_dim = Int(total_concat_dim)
     var _total_vec_items = Int(total_vec_items)
     var tid = block_idx.x * block_size + thread_idx.x
+    if tid >= _total_vec_items:
+        return
+
+    var vec_idx = tid * vec_width
+
+    # Decompose flat index into (outer, concat, inner) coordinates.
+    var remaining, inner_idx = divmod(vec_idx, _inner_size)
+    var outer_idx, concat_idx = divmod(remaining, _total_concat_dim)
+
+    # Find which input this concat_idx belongs to and compute source offset.
+    # Alignment is guaranteed: vec_idx is a multiple of vec_width, and
+    # in_offset is a multiple of vec_width when inner_size % vec_width == 0
+    # (enforced by the caller).
+    var acc = 0
     with PDL():
-        if tid >= _total_vec_items:
-            return
-
-        var vec_idx = tid * vec_width
-
-        # Decompose flat index into (outer, concat, inner) coordinates.
-        var remaining, inner_idx = divmod(vec_idx, _inner_size)
-        var outer_idx, concat_idx = divmod(remaining, _total_concat_dim)
-
-        # Find which input this concat_idx belongs to and compute source offset.
-        # Alignment is guaranteed: vec_idx is a multiple of vec_width, and
-        # in_offset is a multiple of vec_width when inner_size % vec_width == 0
-        # (enforced by the caller).
-        var acc = 0
         comptime for i in range(num_inputs):
             var input_concat_dim = Int(inputs[i].dim(axis))
             if concat_idx < acc + input_concat_dim:
@@ -978,10 +978,10 @@ def _concat_inner_most_single_dim[
     # used here; extra tail threads from `ceildiv` in `_concat_gpu` must exit
     # before subvolume indexing.
     var row_count = inputs[0].num_elements()
-    with PDL():
-        if idx >= row_count:
-            return
+    if idx >= row_count:
+        return
 
+    with PDL():
         # Static-divisor row -> n-D decomposition: the output's outer dims that are
         # statically known in `OutputLayoutType` fold the per-thread `divmod` to a
         # magic-multiply + shift (no `IDIV`); dynamic dims fall back to the runtime
@@ -1335,10 +1335,10 @@ def _fused_concat_inner_most_single_dim[
     comptime num_inputs = input_shapes.size
 
     var idx = block_idx.x * block_size + thread_idx.x
-    with PDL():
-        if idx >= _shape_product(input_shapes[0], 0, rank):
-            return
+    if idx >= _shape_product(input_shapes[0], 0, rank):
+        return
 
+    with PDL():
         # Static-divisor row -> n-D decomposition: the hot site of a fused
         # concat, and of a concat whose epilogue also stores a slice. The graph
         # compiler threads a `TileTensor` whose layout `_shape_types` preserve

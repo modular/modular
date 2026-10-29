@@ -3667,6 +3667,17 @@ def _reduce_partials_kernel(
 
     # Seed the champion with the group's first partial.
     var base0 = (row * count_in + first) * _TILE
+    # Seeded to keep definite-assignment happy; the half-cleaner overwrites all
+    # four before the merge reads them.
+    var neg_inf = min_or_neg_inf[.float32]()
+    var v0 = neg_inf
+    var v1 = neg_inf
+    var v2 = neg_inf
+    var v3 = neg_inf
+    var i0 = Int32(-1)
+    var i1 = Int32(-1)
+    var i2 = Int32(-1)
+    var i3 = Int32(-1)
     with PDL():
         champ_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
             e0,
@@ -3681,18 +3692,6 @@ def _reduce_partials_kernel(
             ),
         )
         barrier()
-
-        # Seeded to keep definite-assignment happy; the half-cleaner overwrites all
-        # four before the merge reads them.
-        var neg_inf = min_or_neg_inf[.float32]()
-        var v0 = neg_inf
-        var v1 = neg_inf
-        var v2 = neg_inf
-        var v3 = neg_inf
-        var i0 = Int32(-1)
-        var i1 = Int32(-1)
-        var i2 = Int32(-1)
-        var i3 = Int32(-1)
 
         for s in range(1, n_parts):
             var bs = (row * count_in + first + s) * _TILE
@@ -3804,6 +3803,17 @@ def _merge_partials_kernel(
 
     # Seed the champion with partial 0.
     var base0 = (row * count) * _TILE
+    # Seeded to keep definite-assignment happy; the half-cleaner below
+    # overwrites all four before the merge reads them.
+    var neg_inf = min_or_neg_inf[.float32]()
+    var v0 = neg_inf
+    var v1 = neg_inf
+    var v2 = neg_inf
+    var v3 = neg_inf
+    var i0 = Int32(-1)
+    var i1 = Int32(-1)
+    var i2 = Int32(-1)
+    var i3 = Int32(-1)
     with PDL():
         champ_v.unsafe_store[width=_PTOPK_ITEMS, alignment=_V4_ALIGN](
             e0,
@@ -3818,18 +3828,6 @@ def _merge_partials_kernel(
             ),
         )
         barrier()
-
-        # Seeded to keep definite-assignment happy; the half-cleaner below
-        # overwrites all four before the merge reads them.
-        var neg_inf = min_or_neg_inf[.float32]()
-        var v0 = neg_inf
-        var v1 = neg_inf
-        var v2 = neg_inf
-        var v3 = neg_inf
-        var i0 = Int32(-1)
-        var i1 = Int32(-1)
-        var i2 = Int32(-1)
-        var i3 = Int32(-1)
 
         for s in range(1, count):
             var bs = (row * count + s) * _TILE

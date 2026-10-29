@@ -326,10 +326,10 @@ struct SM100MHADepth512[
         # reads (same published base), so single-shot is bit-identical.
         var tmem_addr: UInt32 = smem.tmem_addr_ptr()[]
 
+        var cta_rank = UInt32(block_rank_in_cluster() % 2)
+
         with PDL():
             # ---- Warp dispatch -----------------------------------------------
-
-            var cta_rank = UInt32(block_rank_in_cluster() % 2)
 
             if warp_idx < 4:
                 # Softmax warp group (warps 0-3, 128 threads).

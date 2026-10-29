@@ -65,13 +65,14 @@ def _transpose_rscf_to_krsc[
     var _F = Int(F)
     var tid = global_idx.x
 
+    if tid >= _R * _S * _C * _F:
+        return
+    var k, rem = divmod(tid, _R * _S * _C)
+    var r: Int
+    r, rem = divmod(rem, _S * _C)
+    var s, c = divmod(rem, _C)
+
     with PDL():
-        if tid >= _R * _S * _C * _F:
-            return
-        var k, rem = divmod(tid, _R * _S * _C)
-        var r: Int
-        r, rem = divmod(rem, _S * _C)
-        var s, c = divmod(rem, _C)
         dst_ptr.unsafe_store(tid, src.load((r, s, c, k))[0])
 
 
@@ -96,13 +97,14 @@ def _transpose_fcrs_to_krsc[
     var _S = Int(S)
     var tid = global_idx.x
 
+    if tid >= _F * _C * _R * _S:
+        return
+    var k, rem = divmod(tid, _R * _S * _C)
+    var r: Int
+    r, rem = divmod(rem, _S * _C)
+    var s, c = divmod(rem, _C)
+
     with PDL():
-        if tid >= _F * _C * _R * _S:
-            return
-        var k, rem = divmod(tid, _R * _S * _C)
-        var r: Int
-        r, rem = divmod(rem, _S * _C)
-        var s, c = divmod(rem, _C)
         dst_ptr.unsafe_store(tid, src.load((k, c, r, s))[0])
 
 

@@ -1098,17 +1098,18 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
             " and SlidingWindowCausalMask only."
         )
 
-        with PDL[overlap_at_beginning=True]():
-            var batch_size = Int(scalar_args[0])
-            var q_max_seq_len = Int(scalar_args[1])
-            var num_partitions = Int(mla_decode_pack.num_partitions)
+        var batch_size = Int(scalar_args[0])
+        var q_max_seq_len = Int(scalar_args[1])
+        var num_partitions = Int(mla_decode_pack.num_partitions)
 
-            comptime num_reg_softmax = 192
-            comptime num_reg_correction = 184
-            comptime num_reg_other = 112
-            var mask = mla_decode_pack.mask
-            var valid_length = mla_decode_pack.valid_length
-            var lse_accum_split_ptr = mla_decode_pack.lse_accum_split_ptr
+        comptime num_reg_softmax = 192
+        comptime num_reg_correction = 184
+        comptime num_reg_other = 112
+        var mask = mla_decode_pack.mask
+        var valid_length = mla_decode_pack.valid_length
+        var lse_accum_split_ptr = mla_decode_pack.lse_accum_split_ptr
+
+        with PDL[overlap_at_beginning=True]():
             var offset_position = OffsetPosition[
                 Self.config,
                 Self.KVLUTType,

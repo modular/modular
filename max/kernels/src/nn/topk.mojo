@@ -1257,9 +1257,10 @@ def _topk_stage1[
 
     comptime HEAP_SIZE = 8
 
+    var heap = TopKHeap[T, largest, HEAP_SIZE]()
+
     with PDL():
         # Phase 1: Single scan to build per-thread register heap.
-        var heap = TopKHeap[T, largest, HEAP_SIZE]()
         for i in range(tid + block_offset, block_end, stride):
             heap.insert(_in_buffer_tmp[i], i)
 
@@ -1422,9 +1423,10 @@ def _topk_stage2[
     var s_val2 = type_of(vals_sram).unsafe_dangling()
     var s_id = type_of(idxs_sram).unsafe_dangling()
 
+    var k_batch = _max_k
+
     with PDL():
         # Handle the case where stage 1 is executed with a single block
-        var k_batch = _max_k
         if case .Some(K) = K:
             var k_raw = Int(K[batch_id])
             k_batch = _max_k if k_raw == -1 else k_raw
@@ -2544,10 +2546,10 @@ def apply_gumbel_noise_kernel[
     ), "SIMD width must be divisible by 4 to match RNG output size."
 
     # split workload across blocks
-    with PDL():
-        if sm_id >= num_groups * num_blocks_per_token:
-            return
+    if sm_id >= num_groups * num_blocks_per_token:
+        return
 
+    with PDL():
         for tok_idx in range(group_id, Int(num_tokens), num_groups):
             var temp_val = Float32(1.0)
             if case .Some(temperature) = temperature:

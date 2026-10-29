@@ -373,11 +373,11 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             " MLA_SM100_Decode_QKV_FP8 (native FP8)."
         )
 
-        with PDL[overlap_at_beginning=True]():
-            var batch_size = Int(scalar_args[0])
-            var q_max_seq_len = Int(scalar_args[1])
-            var num_partitions = Int(mla_decode_pack.num_partitions)
+        var batch_size = Int(scalar_args[0])
+        var q_max_seq_len = Int(scalar_args[1])
+        var num_partitions = Int(mla_decode_pack.num_partitions)
 
+        with PDL[overlap_at_beginning=True]():
             # Register allocation for 3 WGs (Softmax, Correction, MMA+Load+Store).
             #
             # Per-token FP8 scaling caches 32 float32 sigma_KV values in registers

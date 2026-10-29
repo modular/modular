@@ -256,6 +256,12 @@ def compress_windows_ragged_paged[
     }:
         var w = block_idx.x
         var batch = Int(window_offsets.dim[0]()) - 1
+        var c = thread_idx.x * vec
+
+        # Online softmax over the window's positions, `chunk` at a time.
+        var run_max = SIMD[.float32, vec](min_or_neg_inf[DType.float32]())
+        var den = SIMD[.float32, vec](0)
+        var num = SIMD[.float32, vec](0)
 
         with PDL():
             if w >= Int(window_offsets.load((batch,))):
@@ -267,12 +273,7 @@ def compress_windows_ragged_paged[
             var start = align_down(cached, ratio) + ratio * (
                 w - Int(window_offsets.load((b,)))
             )
-            var c = thread_idx.x * vec
 
-            # Online softmax over the window's positions, `chunk` at a time.
-            var run_max = SIMD[.float32, vec](min_or_neg_inf[DType.float32]())
-            var den = SIMD[.float32, vec](0)
-            var num = SIMD[.float32, vec](0)
             comptime for half in range(coff):
                 var col = half * head_dim + c
                 var first = start + (half + 1 - coff) * ratio

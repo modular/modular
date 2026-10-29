@@ -896,17 +896,17 @@ def _cumsum_serial_kernel[
     var num_chunks = 1
     comptime if has_carry:
         num_chunks = ceildiv(axis_len, chunk_len)
-    with PDL():
-        if global_idx.x >= Int(input.dim[0]()) * stride * num_chunks:
-            return
-        var row_chunk, col = divmod(global_idx.x, stride)
-        var row = row_chunk
-        var chunk = 0
-        comptime if has_carry:
-            row, chunk = divmod(row_chunk, num_chunks)
-        var begin = chunk * chunk_len
-        var end = min(begin + chunk_len, axis_len)
+    if global_idx.x >= Int(input.dim[0]()) * stride * num_chunks:
+        return
+    var row_chunk, col = divmod(global_idx.x, stride)
+    var row = row_chunk
+    var chunk = 0
+    comptime if has_carry:
+        row, chunk = divmod(row_chunk, num_chunks)
+    var begin = chunk * chunk_len
+    var end = min(begin + chunk_len, axis_len)
 
+    with PDL():
         var acc: Scalar[accum_type] = 0
         comptime if has_carry:
             acc = carry[row * stride + col, chunk]
@@ -946,14 +946,14 @@ def _cumsum_serial_total_kernel[
     var axis_len = Int(input.dim[1]())
     var stride = Int(input.dim[2]())
     var num_chunks = ceildiv(axis_len, chunk_len)
-    with PDL():
-        if global_idx.x >= Int(input.dim[0]()) * stride * num_chunks:
-            return
-        var row_chunk, col = divmod(global_idx.x, stride)
-        var row, chunk = divmod(row_chunk, num_chunks)
-        var begin = chunk * chunk_len
-        var end = min(begin + chunk_len, axis_len)
+    if global_idx.x >= Int(input.dim[0]()) * stride * num_chunks:
+        return
+    var row_chunk, col = divmod(global_idx.x, stride)
+    var row, chunk = divmod(row_chunk, num_chunks)
+    var begin = chunk * chunk_len
+    var end = min(begin + chunk_len, axis_len)
 
+    with PDL():
         var total: Scalar[accum_type] = 0
         for i in range(begin, end):
             total += input[row, _scan_pos[reverse](i, axis_len), col].cast[

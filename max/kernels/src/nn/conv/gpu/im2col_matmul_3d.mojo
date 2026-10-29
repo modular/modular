@@ -108,52 +108,53 @@ def _im2col_ndhwc_kernel[
     var _m_count = Int(m_count)
     var local_m = block_idx.x
 
+    if local_m >= _m_count:
+        return
+
+    var batch_size = Int(input.dim[0]())
+    var D = Int(input.dim[1]())
+    var H = Int(input.dim[2]())
+    var W = Int(input.dim[3]())
+
+    # The filter and output are passed to this kernel to provide static shape
+    # information.
+    comptime assert filter.shape_known, "filter shape must be static"
+
+    comptime Q = filter.static_shape[2 if filter_is_fcrs else 0]
+    comptime R = filter.static_shape[3 if filter_is_fcrs else 1]
+    comptime S = filter.static_shape[4 if filter_is_fcrs else 2]
+    comptime C = filter.static_shape[1 if filter_is_fcrs else 3]
+    comptime F = filter.static_shape[0 if filter_is_fcrs else 4]
+
+    comptime simd_width = gcd(simd_width_of[input_dtype](), C)
+
+    var D_out = Int(output.dim[1]())
+    var H_out = Int(output.dim[2]())
+    var W_out = Int(output.dim[3]())
+
+    var K = Q * R * S * C
+    var m = _m_offset + local_m
+
+    # Per-block decomposition (amortized across block_dim threads).
+    var DHW_out = D_out * H_out * W_out
+    var HW_out = H_out * W_out
+    var batch, spatial = udivmod(m, DHW_out)
+    var d_out, rem = udivmod(spatial, HW_out)
+    var h_out, w_out = udivmod(rem, W_out)
+
+    # Precompute the (stride, pad)-dependent input bases; within a block
+    # only (q, r, s, c) change across threads.
+    var d_in_base = d_out * _stride_d - _pad_d
+    var h_in_base = h_out * _stride_h - _pad_h
+    var w_in_base = w_out * _stride_w - _pad_w
+
+    var RSC = R * S * C
+    var SC = S * C
+
+    var row_base = local_m * K
+    var k = thread_idx.x * simd_width
+
     with PDL():
-        if local_m >= _m_count:
-            return
-
-        var batch_size = Int(input.dim[0]())
-        var D = Int(input.dim[1]())
-        var H = Int(input.dim[2]())
-        var W = Int(input.dim[3]())
-
-        # The filter and output are passed to this kernel to provide static shape
-        # information.
-        comptime assert filter.shape_known, "filter shape must be static"
-
-        comptime Q = filter.static_shape[2 if filter_is_fcrs else 0]
-        comptime R = filter.static_shape[3 if filter_is_fcrs else 1]
-        comptime S = filter.static_shape[4 if filter_is_fcrs else 2]
-        comptime C = filter.static_shape[1 if filter_is_fcrs else 3]
-        comptime F = filter.static_shape[0 if filter_is_fcrs else 4]
-
-        comptime simd_width = gcd(simd_width_of[input_dtype](), C)
-
-        var D_out = Int(output.dim[1]())
-        var H_out = Int(output.dim[2]())
-        var W_out = Int(output.dim[3]())
-
-        var K = Q * R * S * C
-        var m = _m_offset + local_m
-
-        # Per-block decomposition (amortized across block_dim threads).
-        var DHW_out = D_out * H_out * W_out
-        var HW_out = H_out * W_out
-        var batch, spatial = udivmod(m, DHW_out)
-        var d_out, rem = udivmod(spatial, HW_out)
-        var h_out, w_out = udivmod(rem, W_out)
-
-        # Precompute the (stride, pad)-dependent input bases; within a block
-        # only (q, r, s, c) change across threads.
-        var d_in_base = d_out * _stride_d - _pad_d
-        var h_in_base = h_out * _stride_h - _pad_h
-        var w_in_base = w_out * _stride_w - _pad_w
-
-        var RSC = R * S * C
-        var SC = S * C
-
-        var row_base = local_m * K
-        var k = thread_idx.x * simd_width
         while k < K:
             var q, rsc = udivmod(k, RSC)
             var r, sc = udivmod(rsc, SC)
@@ -197,18 +198,18 @@ def _transpose_qrscf_to_nk[
     comptime total = F * K
     var tid = global_idx.x
 
+    if tid >= total:
+        return
+
+    var f, k = udivmod(tid, K)
+
+    comptime RSC = R * S * C
+    comptime SC = S * C
+    var q, rsc = udivmod(k, RSC)
+    var r, sc = udivmod(rsc, SC)
+    var s, c = udivmod(sc, C)
+
     with PDL():
-        if tid >= total:
-            return
-
-        var f, k = udivmod(tid, K)
-
-        comptime RSC = R * S * C
-        comptime SC = S * C
-        var q, rsc = udivmod(k, RSC)
-        var r, sc = udivmod(rsc, SC)
-        var s, c = udivmod(sc, C)
-
         dst_ptr.unsafe_store(tid, filter[q, r, s, c, f])
 
 
@@ -236,18 +237,18 @@ def _transpose_fcqrs_to_nk[
     comptime total = F * K
     var tid = global_idx.x
 
+    if tid >= total:
+        return
+
+    var f, k = udivmod(tid, K)
+
+    comptime RSC = R * S * C
+    comptime SC = S * C
+    var q, rsc = udivmod(k, RSC)
+    var r, sc = udivmod(rsc, SC)
+    var s, c = udivmod(sc, C)
+
     with PDL():
-        if tid >= total:
-            return
-
-        var f, k = udivmod(tid, K)
-
-        comptime RSC = R * S * C
-        comptime SC = S * C
-        var q, rsc = udivmod(k, RSC)
-        var r, sc = udivmod(rsc, SC)
-        var s, c = udivmod(sc, C)
-
         dst_ptr.unsafe_store(tid, filter[f, c, q, r, s])
 
 

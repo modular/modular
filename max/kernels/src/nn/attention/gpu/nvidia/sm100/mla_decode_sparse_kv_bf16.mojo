@@ -335,14 +335,14 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         comptime num_reg_correction = 160
         comptime num_reg_gather = 80
         comptime num_reg_mma_store = 80
+        var batch_size = Int(scalar_args[0])
+        var selection_lag = Int(selection_lag_dev)
+        var q_max_seq_len = Int(scalar_args[1])
+        var num_partitions = Int(mla_decode_pack.num_partitions)
+        var mask = mla_decode_pack.mask
+        var valid_length = mla_decode_pack.valid_length
+        var lse_accum_split_ptr = mla_decode_pack.lse_accum_split_ptr
         with PDL[overlap_at_beginning=True]():
-            var batch_size = Int(scalar_args[0])
-            var selection_lag = Int(selection_lag_dev)
-            var q_max_seq_len = Int(scalar_args[1])
-            var num_partitions = Int(mla_decode_pack.num_partitions)
-            var mask = mla_decode_pack.mask
-            var valid_length = mla_decode_pack.valid_length
-            var lse_accum_split_ptr = mla_decode_pack.lse_accum_split_ptr
             # OffsetPosition[sparse=True] overrides num_keys with topk
             # (clamped to actual_tokens by `OffsetPosition.__init__`).
             var offset_position = OffsetPosition[

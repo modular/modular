@@ -86,15 +86,14 @@ def _bmm0_bs[
     comptime k_type = cache_t.dtype
     comptime kv_num_heads = cache_t.kv_params.num_heads
     var batch_head = block_idx.z
+    var batch, head = udivmod(batch_head, _num_heads)
+    var padded_num_keys = _kv_max_seq_len + _max_cache_size
+    var p_offset = batch_head * _q_max_seq_len * padded_num_keys
     with PDL():
-        var batch, head = udivmod(batch_head, _num_heads)
-
         var cur_query_len: Int
         var cur_kv_len: Int
         var q_offset: Int
         var num_keys: Int
-        var padded_num_keys = _kv_max_seq_len + _max_cache_size
-        var p_offset = batch_head * _q_max_seq_len * padded_num_keys
 
         var q_seq_start = Int(q_input_row_offsets[batch])
         var q_seq_end = Int(q_input_row_offsets[batch + 1])
@@ -199,14 +198,13 @@ def _bmm1_bs[
     # query seq_len
     var y = global_idx.y
     var batch_head = block_idx.z
+    var batch, head = udivmod(batch_head, _num_heads)
+    var padded_num_keys = _kv_max_seq_len + _max_cache_size
+    var p_offset = batch_head * _q_max_seq_len * padded_num_keys
     with PDL():
-        var batch, head = udivmod(batch_head, _num_heads)
-
         var cur_query_len: Int
         var cur_kv_len: Int
         var output_offset: Int
-        var padded_num_keys = _kv_max_seq_len + _max_cache_size
-        var p_offset = batch_head * _q_max_seq_len * padded_num_keys
 
         var q_seq_start = Int(q_input_row_offsets[batch])
         var q_seq_end = Int(q_input_row_offsets[batch + 1])

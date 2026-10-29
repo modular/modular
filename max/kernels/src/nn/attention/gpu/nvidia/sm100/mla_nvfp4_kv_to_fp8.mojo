@@ -205,11 +205,11 @@ def _remap_kernel[
     """
     var i = global_idx.x * _REMAP_WIDTH
     var tok, slot = divmod(i, Int(dst_stride))
+    var out = SIMD[DType.int32, _REMAP_WIDTH](-1)
 
     with PDL():
         if tok >= Int(num_tokens):
             return
-        var out = SIMD[DType.int32, _REMAP_WIDTH](-1)
         if slot < Int(top_k):
             var rows = indices.unsafe_offset(
                 tok * Int(src_stride) + slot

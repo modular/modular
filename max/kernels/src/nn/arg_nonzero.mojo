@@ -233,9 +233,9 @@ def _arg_nonzero_emit_kernel[
     var num_elements = Int(num_elements_arg)
     var tid = thread_idx.x
     var tile_start = tile_len * block_idx.x
+    var input_flat = input_buffer.reshape(row_major(num_elements))
     with PDL():
         var base = Int(offsets[block_idx.x])
-        var input_flat = input_buffer.reshape(row_major(num_elements))
         for chunk in range(0, tile_len, BLOCK_SIZE):
             var selected: Int32 = 0
             if (

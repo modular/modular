@@ -120,10 +120,10 @@ def tpool_patch_merger_kernel[
     var d_tile = block_idx.x
     var tid = thread_idx.x
 
-    with PDL():
-        if vid >= _n_vids:
-            return
+    if vid >= _n_vids:
+        return
 
+    with PDL():
         var t = Int(grid_thws[vid, Idx[0]])
         var h = Int(grid_thws[vid, Idx[1]])
         var w = Int(grid_thws[vid, Idx[2]])

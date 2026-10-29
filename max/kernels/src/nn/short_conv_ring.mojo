@@ -240,9 +240,10 @@ def short_conv_ring[
             (block_idx.x % Int(channel_blocks)) * block_dim.x + thread_idx.x
         ) * vec
 
+        if channel >= Int(channels_dev):
+            return
+
         with PDL():
-            if channel >= Int(channels_dev):
-                return
             var batch_idx, idx_in_seq = (
                 get_batch_and_token_idx_from_row_offsets(
                     input_row_offsets, token_idx

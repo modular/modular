@@ -110,10 +110,10 @@ def _accum_bf16_to_fp32_kernel[
     comptime fp32_alignment = align_of[SIMD[.float32, output_simd_width]]()
 
     var accum_idx = global_idx.x * output_simd_width
+    if accum_idx >= _per_batch_elems:
+        return
 
     with PDL():
-        if accum_idx >= _per_batch_elems:
-            return
         var src_val = src_bf16_ptr.unsafe_load[
             width=output_simd_width, alignment=bf16_alignment
         ](accum_idx).cast[.float32]()
@@ -137,10 +137,10 @@ def _fp32_to_dtype_plain_kernel[
     """Elementwise cast fp32 → `dtype` with no epilogue."""
     var _output_elems = Int(output_elems)
     var output_idx = global_idx.x * output_simd_width
+    if output_idx >= _output_elems:
+        return
 
     with PDL():
-        if output_idx >= _output_elems:
-            return
         dst_ptr.unsafe_store[
             alignment=align_of[SIMD[dtype, output_simd_width]]()
         ](
@@ -177,20 +177,20 @@ def _fp32_to_dtype_epilogue_kernel[
     var _W_out = Int(W_out)
     var _output_elems = Int(output_elems)
     var output_idx = global_idx.x * output_simd_width
+    if output_idx >= _output_elems:
+        return
+    var DHW_out = _D_out * _H_out * _W_out
+    var HW_out = _H_out * _W_out
+    var b, rem = udivmod(output_idx, DHW_out * C_out)
+    var d: Int
+    d, rem = udivmod(rem, HW_out * C_out)
+    var h: Int
+    h, rem = udivmod(rem, _W_out * C_out)
+    var w: Int
+    var c: Int
+    w, c = udivmod(rem, C_out)
 
     with PDL():
-        if output_idx >= _output_elems:
-            return
-        var DHW_out = _D_out * _H_out * _W_out
-        var HW_out = _H_out * _W_out
-        var b, rem = udivmod(output_idx, DHW_out * C_out)
-        var d: Int
-        d, rem = udivmod(rem, HW_out * C_out)
-        var h: Int
-        h, rem = udivmod(rem, _W_out * C_out)
-        var w: Int
-        var c: Int
-        w, c = udivmod(rem, C_out)
         var val = src_fp32_ptr.unsafe_load[
             width=output_simd_width,
             alignment=align_of[SIMD[.float32, output_simd_width]](),
@@ -222,20 +222,20 @@ def _fp32_to_dtype_compute_kernel[
     var _W_out = Int(W_out)
     var _output_elems = Int(output_elems)
     var output_idx = global_idx.x * output_simd_width
+    if output_idx >= _output_elems:
+        return
+    var DHW_out = _D_out * _H_out * _W_out
+    var HW_out = _H_out * _W_out
+    var b, rem = udivmod(output_idx, DHW_out * C_out)
+    var d: Int
+    d, rem = udivmod(rem, HW_out * C_out)
+    var h: Int
+    h, rem = udivmod(rem, _W_out * C_out)
+    var w: Int
+    var c: Int
+    w, c = udivmod(rem, C_out)
 
     with PDL():
-        if output_idx >= _output_elems:
-            return
-        var DHW_out = _D_out * _H_out * _W_out
-        var HW_out = _H_out * _W_out
-        var b, rem = udivmod(output_idx, DHW_out * C_out)
-        var d: Int
-        d, rem = udivmod(rem, HW_out * C_out)
-        var h: Int
-        h, rem = udivmod(rem, _W_out * C_out)
-        var w: Int
-        var c: Int
-        w, c = udivmod(rem, C_out)
         var val = src_fp32_ptr.unsafe_load[
             width=output_simd_width,
             alignment=align_of[SIMD[.float32, output_simd_width]](),

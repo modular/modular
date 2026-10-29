@@ -365,9 +365,9 @@ __extension SM100MLA:
         # fa4_softmax / fa4_correction consumers (see depth-512 fix).
         var tmem_addr = ptr_tmem_addr[0]
 
-        with PDL():
-            var role = warp_idx_to_role(warp_idx)
+        var role = warp_idx_to_role(warp_idx)
 
+        with PDL():
             # warp group partitioning
             # Two QO:
             match role:

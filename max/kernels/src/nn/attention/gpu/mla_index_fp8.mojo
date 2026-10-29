@@ -299,11 +299,11 @@ def _pin_kept_block_kernel[
     becomes `+inf` so the selection always keeps it. One thread per row.
     """
     var row = block_idx.x * _KEEP_PASS_THREADS + thread_idx.x
+    if row >= Int(rows):
+        return
+    var n = Int(num_blocks)
 
     with PDL():
-        if row >= Int(rows):
-            return
-        var n = Int(num_blocks)
         # Floor division: a token before the first key pins nothing.
         var pinned = ((Int(positions[row]) + 1) // Int(ratio) - 1) // block_size
         live[row] = Int32(clamp(pinned + 1, 0, n))
@@ -323,10 +323,10 @@ def _drop_dead_kept_blocks_kernel(
     One thread per id slot.
     """
     var i = block_idx.x * _KEEP_PASS_THREADS + thread_idx.x
+    if i >= Int(slots):
+        return
 
     with PDL():
-        if i >= Int(slots):
-            return
         var b = Int(ids[i])
         if b < 0:
             return

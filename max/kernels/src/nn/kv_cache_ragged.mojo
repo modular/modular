@@ -4977,10 +4977,10 @@ def kv_cache_row_offsets_ragged_paged_kernel[
     var batch_size = Int(input_row_offsets.dim[0]()) - 1
     var output_idx = global_idx.x
 
-    with PDL():
-        if output_idx > batch_size:
-            return
+    if output_idx > batch_size:
+        return
 
+    with PDL():
         var running_length = 0
         var prev_input_row_offset = Int(input_row_offsets[0])
         for batch_idx in range(output_idx):

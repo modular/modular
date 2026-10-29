@@ -281,8 +281,9 @@ def TopKMaskLogitsKernel[
     var logits_row = logits[bx : bx + 1, :]
     var masked_logits_row = masked_logits[bx : bx + 1, :]
 
+    var k = _top_k_val
+
     with PDL():
-        var k = _top_k_val
         if case .Some(top_k_arr) = top_k_arr:
             k = Int(top_k_arr[bx])
 
@@ -841,9 +842,10 @@ def TopKSamplingFromProbKernel[
     var bx = block_idx.x
     var tx = thread_idx.x
 
+    var generator = Random(seed=rng_seed, offset=UInt64(bx) + rng_offset)
+    var k = _top_k_val
+
     with PDL():
-        var generator = Random(seed=rng_seed, offset=UInt64(bx) + rng_offset)
-        var k = _top_k_val
         if case .Some(top_k_arr) = top_k_arr:
             k = Int(top_k_arr.unsafe_load(bx))
         var row_idx = bx
@@ -1989,8 +1991,9 @@ def TopKTopPSamplingFromProbKernel[
     if case .Some(indices) = indices:
         row_idx = Int(indices.unsafe_load(bx))
 
+    var seed_val = UInt64(0)
+
     with PDL():
-        var seed_val = UInt64(0)
         if case .Some(rng_seed) = rng_seed:
             seed_val = rng_seed[row_idx]
 
@@ -3025,15 +3028,15 @@ def topk_softmax_sample_kernel[
     var s_idxs = s_vals.unsafe_offset(k_rounded).unsafe_bitcast[Int]()
     var s_count = unsafe_stack_allocation[1, Int, address_space=.SHARED]()
 
+    if tx == 0:
+        s_count[0] = 0
+
+    var pivot = Float32.MIN
+    var max_logit: Float32
+    var logits_vec = SIMD[.float32, vec_size]()
+
     with PDL():
-        if tx == 0:
-            s_count[0] = 0
-
         # PHASE 1: Find pivot (k-th largest) via ternary search.
-        var pivot = Float32.MIN
-        var max_logit: Float32
-        var logits_vec = SIMD[.float32, vec_size]()
-
         if k < _d:
             var min_max = get_min_max_value[vec_size, block_size](
                 logits, row_idx, _d

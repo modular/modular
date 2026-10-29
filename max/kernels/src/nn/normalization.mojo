@@ -402,8 +402,8 @@ def rms_norm_gpu_warp_tiling_128[
     var local_tid = umod(tid, half_warp_size)
     var idx = local_tid * simd_width
 
+    var gamma_val = SIMD[dtype, simd_width](0)
     with PDL[pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
-        var gamma_val = SIMD[dtype, simd_width](0)
         if row < _num_rows and idx < _num_cols:
             vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
             # Prefetch gamma before reduction to overlap load with compute.
@@ -494,9 +494,9 @@ def rms_norm_gpu_warp_per_row[
             fill=SIMD[accum_type, simd_width](0)
         )
 
+        var thread_m2 = Scalar[accum_type](0)
         with PDL[pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
             # Single load pass: cache each chunk and accumulate mean-of-squares.
-            var thread_m2 = Scalar[accum_type](0)
             if row < _num_rows:
                 comptime for c in range(chunks):
                     var col = Int(lane) * simd_width + c * stride
@@ -531,9 +531,9 @@ def rms_norm_gpu_warp_per_row[
                         )
                     output_fn[simd_width, align](row, col, norm_val)
     else:
+        var thread_m2 = Scalar[accum_type](0)
         with PDL[pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
             # Pass 1: accumulate the per-thread mean-of-squares scalar only.
-            var thread_m2 = Scalar[accum_type](0)
             if row < _num_rows:
                 var col = Int(lane) * simd_width
                 while col < _num_cols:
@@ -693,9 +693,9 @@ def rms_norm_gpu_warp_tiling[
         fill=SIMD[dtype, simd_width](0)
     )
 
-    with PDL[pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
-        var thread_m2 = Scalar[accum_type](0)
+    var thread_m2 = Scalar[accum_type](0)
 
+    with PDL[pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
         comptime for c in range(chunks_per_thread):
             var col = (c * bdim + tid) * simd_width
             comptime if exact_fit:
@@ -2139,11 +2139,11 @@ def group_norm_gpu_block[
     var row_m2 = Scalar[accum_type]()
     var row_count = Scalar[accum_type]()
 
-    with PDL():
-        var thread_mean = Scalar[accum_type]()
-        var thread_m2 = Scalar[accum_type]()
-        var thread_count = Scalar[accum_type]()
+    var thread_mean = Scalar[accum_type]()
+    var thread_m2 = Scalar[accum_type]()
+    var thread_count = Scalar[accum_type]()
 
+    with PDL():
         for x in range(ceildiv(group_size // simd_width, block_dim.x)):
             var offset = x * block_dim.x * simd_width + tid * simd_width
             if offset < group_size:
@@ -2234,11 +2234,14 @@ def group_norm_gpu_multi_block_stats[
     var chunk_end = min(chunk_start + chunk_simd_size * simd_width, _group_size)
     var chunk_iters = ceildiv(chunk_simd_size, block_dim.x)
 
-    with PDL():
-        var thread_mean = Scalar[accum_type]()
-        var thread_m2 = Scalar[accum_type]()
-        var thread_count = Scalar[accum_type]()
+    var thread_mean = Scalar[accum_type]()
+    var thread_m2 = Scalar[accum_type]()
+    var thread_count = Scalar[accum_type]()
+    var row_mean = Scalar[accum_type]()
+    var row_m2 = Scalar[accum_type]()
+    var row_count = Scalar[accum_type]()
 
+    with PDL():
         for x in range(chunk_iters):
             var offset = (
                 chunk_start + x * block_dim.x * simd_width + tid * simd_width
@@ -2255,9 +2258,6 @@ def group_norm_gpu_multi_block_stats[
                         thread_count,
                     )
 
-        var row_mean = Scalar[accum_type]()
-        var row_m2 = Scalar[accum_type]()
-        var row_count = Scalar[accum_type]()
         welford_block_all_reduce(
             thread_mean,
             thread_m2,
@@ -2335,13 +2335,14 @@ def group_norm_gpu_multi_block_norm[
     var chunk_end = min(chunk_start + chunk_simd_size * simd_width, _group_size)
     var chunk_iters = ceildiv(chunk_simd_size, block_dim.x)
 
+    # Reduce all partial stats for this group (_num_splits is small,
+    # typically 4-16, so this loop is cheap).
+    var row_mean = Scalar[accum_type]()
+    var row_m2 = Scalar[accum_type]()
+    var row_count = Scalar[accum_type]()
+    var stats_row_base = row * _num_splits * 3
+
     with PDL():
-        # Reduce all partial stats for this group (_num_splits is small,
-        # typically 4-16, so this loop is cheap).
-        var row_mean = Scalar[accum_type]()
-        var row_m2 = Scalar[accum_type]()
-        var row_count = Scalar[accum_type]()
-        var stats_row_base = row * _num_splits * 3
         for s in range(_num_splits):
             var base_idx = stats_row_base + s * 3
             welford_combine(

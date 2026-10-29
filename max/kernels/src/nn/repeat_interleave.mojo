@@ -268,12 +268,12 @@ def _repeat_interleave_emit_kernel[
     var inner = Int(inner_arg)
     var tid = thread_idx.x
     var flat = block_idx.x * BLOCK_SIZE + tid
+    if flat >= outer * out_axis * inner:
+        return
+    var inner_idx = flat % inner
+    var axis_idx = (flat // inner) % out_axis
+    var outer_idx = flat // (inner * out_axis)
     with PDL():
-        if flat >= outer * out_axis * inner:
-            return
-        var inner_idx = flat % inner
-        var axis_idx = (flat // inner) % out_axis
-        var outer_idx = flat // (inner * out_axis)
         var src_axis = Int(offset_map[axis_idx])
         var src_flat = (
             outer_idx * in_axis * inner + src_axis * inner + inner_idx

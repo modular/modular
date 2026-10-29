@@ -1395,6 +1395,16 @@ def _mha_sm90[
     # The persistent kernels limit the grid size.
     # initial_seq_info = scheduler.unsafe_get_current_work_info(tile_summary, state)
 
+    if tid == 0:
+        comptime for i in range(pipeline_stages):
+            produced_mbar_kv[i].init(1)
+            consumed_mbar_kv[i].init(Int32(num_consumer_threads))
+
+        comptime if persistent:
+            comptime for i in range(2):
+                produced_mbar_q[i].init(1)
+                consumed_mbar_q[i].init(Int32(num_consumer_threads))
+
     with PDL():
         var initial_seq_info = scheduler.unsafe_seq_info(tile_summary, state)
 
@@ -1410,16 +1420,6 @@ def _mha_sm90[
                         return
                 else:
                     return
-
-        if tid == 0:
-            comptime for i in range(pipeline_stages):
-                produced_mbar_kv[i].init(1)
-                consumed_mbar_kv[i].init(Int32(num_consumer_threads))
-
-            comptime if persistent:
-                comptime for i in range(2):
-                    produced_mbar_q[i].init(1)
-                    consumed_mbar_q[i].init(Int32(num_consumer_threads))
 
         comptime PositionType = MHAPosition[
             BM,

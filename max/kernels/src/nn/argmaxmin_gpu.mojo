@@ -380,11 +380,9 @@ def _argmax_biased_scan_kernel[
     var begin = min(split * Int(split_len_arg), num_elements)
     var count = min(Int(split_len_arg), num_elements - begin)
 
+    var best_vals = SIMD[.float32, simd_width](_topk_dead_val[.float32, True]())
+    var best_idxs = SIMD[.int32, simd_width](0)
     with PDL():
-        var best_vals = SIMD[.float32, simd_width](
-            _topk_dead_val[.float32, True]()
-        )
-        var best_idxs = SIMD[.int32, simd_width](0)
         if aligned_arg != 0:
             _argmax_biased_scan[
                 dtype,
