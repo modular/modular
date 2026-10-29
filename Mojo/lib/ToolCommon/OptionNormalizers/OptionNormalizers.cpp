@@ -14,13 +14,11 @@
 #include "Mojo/ToolCommon/OptionNormalizers.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/FormatVariadic.h"
 
 using namespace M;
 using namespace KGEN;
 using llvm::SmallVector;
-using llvm::StringLiteral;
 using llvm::StringRef;
 
 ErrorOrSuccess
@@ -37,27 +35,6 @@ M::validateCompilationOptions(const CompilationOptions &options) {
                    "--sanitize=address");
   }
   return success();
-}
-
-std::optional<DiagnosticFormat>
-M::normalizeDiagnosticFormat(llvm::opt::OptSpecifier opt, int,
-                             const llvm::opt::ArgList &args,
-                             MarshallingErrors &errors) {
-  const llvm::opt::Arg *arg = args.getLastArg(opt);
-  if (!arg)
-    return std::nullopt;
-  StringLiteral kDiagnosticFormatText = "text";
-  StringLiteral kDiagnosticFormatJSON = "json";
-  StringRef format = arg->getValue();
-  if (format == kDiagnosticFormatText)
-    return DiagnosticFormat::Text;
-  if (format == kDiagnosticFormatJSON)
-    return DiagnosticFormat::JSON;
-  errors.push_back(
-      llvm::formatv("invalid diagnostic format '{0}', expected one of: `{1}` "
-                    "(the default), or `{2}`",
-                    format, kDiagnosticFormatText, kDiagnosticFormatJSON));
-  return std::nullopt;
 }
 
 /// Returns the last value of `opt`, or nothing if `opt` is absent or empty.
@@ -117,117 +94,6 @@ std::optional<FpMode> M::normalizeFpMode(llvm::opt::OptSpecifier opt, int,
   return mode;
 }
 
-std::optional<CompilationOptions::DebugInfoLevel>
-M::normalizeDebugLevel(llvm::opt::OptSpecifier opt, int,
-                       const llvm::opt::ArgList &args,
-                       MarshallingErrors &errors) {
-  const llvm::opt::Arg *arg = args.getLastArg(opt);
-  if (!arg)
-    return std::nullopt;
-  StringLiteral kDebugLevelNone = "none";
-  StringLiteral kDebugLevelLineTables = "line-tables";
-  StringLiteral kDebugLevelFull = "full";
-  StringRef level = arg->getValue();
-  if (!llvm::is_contained(
-          {kDebugLevelNone, kDebugLevelLineTables, kDebugLevelFull}, level)) {
-    errors.push_back(llvm::formatv("invalid debug level '{0}', expected one "
-                                   "of: `{1}` (the default value), `{2}`, or "
-                                   "`{3}`",
-                                   level, kDebugLevelNone,
-                                   kDebugLevelLineTables, kDebugLevelFull));
-    return std::nullopt;
-  }
-  return llvm::StringSwitch<CompilationOptions::DebugInfoLevel>(level)
-      .Case(kDebugLevelNone, CompilationOptions::kNoDebug)
-      .Case(kDebugLevelLineTables, CompilationOptions::kLineTablesOnly)
-      .Case(kDebugLevelFull, CompilationOptions::kFullDebugInfo);
-}
-
-std::optional<size_t> M::normalizeNumThreads(llvm::opt::OptSpecifier opt, int,
-                                             const llvm::opt::ArgList &args,
-                                             MarshallingErrors &errors) {
-  std::optional<StringRef> value = getLastNonEmptyValue(opt, args);
-  if (!value)
-    return std::nullopt;
-  size_t numThreads;
-  if (llvm::to_integer(*value, numThreads))
-    return numThreads;
-  errors.push_back("Invalid number of threads: " + value->str());
-  return std::nullopt;
-}
-
-std::optional<int64_t>
-M::normalizeLoopUnrollingWarnThreshold(llvm::opt::OptSpecifier opt, int,
-                                       const llvm::opt::ArgList &args,
-                                       MarshallingErrors &errors) {
-  std::optional<StringRef> value = getLastNonEmptyValue(opt, args);
-  if (!value)
-    return std::nullopt;
-  int64_t threshold;
-  if (llvm::to_integer(*value, threshold))
-    return threshold;
-  errors.push_back(("invalid loop-unrolling-warn-threshold'" + *value +
-                    "', expected an integer number")
-                       .str());
-  return std::nullopt;
-}
-
-std::optional<int>
-M::normalizeElaborationErrorLimit(llvm::opt::OptSpecifier opt, int,
-                                  const llvm::opt::ArgList &args,
-                                  MarshallingErrors &errors) {
-  std::optional<StringRef> value = getLastNonEmptyValue(opt, args);
-  if (!value)
-    return std::nullopt;
-  int limit;
-  if (llvm::to_integer(*value, limit))
-    return limit;
-  errors.push_back(("invalid elaboration-error-limit'" + *value +
-                    "', expected an integer number")
-                       .str());
-  return std::nullopt;
-}
-
-std::optional<CompilationOptions::ErrorVerboseLevel>
-M::normalizeElaborationErrorVerbose(llvm::opt::OptSpecifier opt, int,
-                                    const llvm::opt::ArgList &args,
-                                    MarshallingErrors &errors) {
-  const llvm::opt::Arg *arg = args.getLastArg(opt);
-  if (!arg)
-    return std::nullopt;
-  StringLiteral kNoParams = "no-params";
-  StringLiteral kSimpleParams = "simple-params";
-  StringLiteral kAllParams = "all-params";
-  StringRef verbose = arg->getValue();
-  if (!llvm::is_contained({kNoParams, kSimpleParams, kAllParams}, verbose)) {
-    errors.push_back(llvm::formatv(
-        "invalid elaboration-error-verbose '{0}', expected one of: "
-        "`{1}` (the default value), `{2}`, or `{3}`",
-        verbose, kNoParams, kSimpleParams, kAllParams));
-    return std::nullopt;
-  }
-  return llvm::StringSwitch<CompilationOptions::ErrorVerboseLevel>(verbose)
-      .Case(kNoParams, CompilationOptions::kNoParams)
-      .Case(kSimpleParams, CompilationOptions::kSimpleParams)
-      .Case(kAllParams, CompilationOptions::kAllParams);
-}
-
-std::optional<unsigned>
-M::normalizeElaborationMaxDepth(llvm::opt::OptSpecifier opt, int,
-                                const llvm::opt::ArgList &args,
-                                MarshallingErrors &errors) {
-  std::optional<StringRef> value = getLastNonEmptyValue(opt, args);
-  if (!value)
-    return std::nullopt;
-  unsigned depth;
-  if (llvm::to_integer(*value, depth))
-    return depth;
-  errors.push_back(("invalid elaboration-max-depth'" + *value +
-                    "', expected an unsigned number")
-                       .str());
-  return std::nullopt;
-}
-
 std::optional<Sanitizers> M::normalizeSanitizer(llvm::opt::OptSpecifier opt,
                                                 int,
                                                 const llvm::opt::ArgList &args,
@@ -247,21 +113,4 @@ std::optional<Sanitizers> M::normalizeSanitizer(llvm::opt::OptSpecifier opt,
     return std::nullopt;
   }
   return sanitizers;
-}
-
-std::optional<CompilationOptions::DebugInfoLanguage>
-M::normalizeDebugInfoLanguage(llvm::opt::OptSpecifier opt, int,
-                              const llvm::opt::ArgList &args,
-                              MarshallingErrors &errors) {
-  std::optional<StringRef> value = getLastNonEmptyValue(opt, args);
-  if (!value)
-    return std::nullopt;
-  if (*value == "C")
-    return CompilationOptions::kLangC;
-  if (*value == "Mojo")
-    return CompilationOptions::kLangMojo;
-  errors.push_back(("invalid debug info language '" + *value +
-                    "', expected one of: `C` or `Mojo`")
-                       .str());
-  return std::nullopt;
 }

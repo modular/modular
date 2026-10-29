@@ -50,4 +50,18 @@ class DriverState<string member>
 class MarshallingInfoCustom<KeyPathAndMacro kpm, code normalizer>
     : MarshallingInfo<kpm, "{}">, Normalizer<normalizer>;
 
+// An option whose value must be one of `values`. Each value sets the key path
+// to the enumerator at the same position in `enumerators`, which names a member
+// of the key path's enum type.
+class MarshallingInfoChoice<KeyPathAndMacro kpm, list<string> values,
+                            list<string> enumerators>
+    : MarshallingInfo<kpm, "{}"> {
+  code Normalizer = "makeChoiceNormalizer<decltype(" # kpm.KeyPath # ")>({"
+    # !interleave(!foreach(i, !range(values),
+                           "{\"" # values[i] # "\", decltype(" # kpm.KeyPath
+                           # ")::" # enumerators[i] # "}"),
+                  ", ")
+    # "})";
+}
+
 #endif // KGEN_TOOLS_MOJO_COMMON_MARSHALLING_TD

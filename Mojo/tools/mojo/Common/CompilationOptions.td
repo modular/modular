@@ -72,7 +72,9 @@ defm debug_level : CommandOption<["--", "-"], "debug-level",
     "there are issues when generating debug info for some Mojo programs that "
     "have yet to be addressed."
   >>,
-  MarshallingInfoCustom<CompilationOpts<"debugLevel">, "normalizeDebugLevel">;
+  MarshallingInfoChoice<CompilationOpts<"debugLevel">,
+                        ["none", "line-tables", "full"],
+                        ["kNoDebug", "kLineTablesOnly", "kFullDebugInfo"]>;
 
 def : Flag<["-"], "g">, Group<CompilationOptionGroup>, Index<6>,
   Alias<debug_level>, AliasArgs<["full"]>;
@@ -92,7 +94,7 @@ defm num_threads : CommandOption<["--", "-"], "num-threads",
     "Sets the maximum number of threads to use for compilation. "
     "The default is 0 (use all available threads)."
   >>,
-  MarshallingInfoCustom<CompilationOpts<"numThreads">, "normalizeNumThreads">;
+  MarshallingInfoInt<CompilationOpts<"numThreads">, "0", "size_t">;
 
 def : JoinedOrSeparate<["-"], "j">, Group<CompilationOptionGroup>,
   Index<11>, Alias<num_threads>;
@@ -102,8 +104,8 @@ defm loop_unrolling_warn_threshold: CommandOptionHidden<["--", "-"],
   CompilationOptionGroup, Index<12>, MetaVarName<"LUWT">,
   HelpText<"Sets loop unrolling factor warning threshold, "
            "default is 1024, set to 0 to disable the warning.">>,
-  MarshallingInfoCustom<CompilationOpts<"loopUnrollingWarnThreshold">,
-                        "normalizeLoopUnrollingWarnThreshold">;
+  MarshallingInfoInt<CompilationOpts<"loopUnrollingWarnThreshold">, "1024",
+                     "int64_t">;
 
 defm elaboration_error_limit: CommandOptionHidden<["--", "-"],
   "elaboration-error-limit",
@@ -112,8 +114,7 @@ defm elaboration_error_limit: CommandOptionHidden<["--", "-"],
     "Sets limit to number of produced errors during elaboration "
     "before stop emitting diagnostics. The default is 20, and "
     "the limit can be disabled with -elaboration-error-limit=0.">>,
-  MarshallingInfoCustom<CompilationOpts<"elaborationErrorLimit">,
-                        "normalizeElaborationErrorLimit">;
+  MarshallingInfoInt<CompilationOpts<"elaborationErrorLimit">, "20", "int">;
 
 def elaboration_error_include_prelude: Flag<["--", "-"],
   "elaboration-error-include-prelude">,
@@ -135,8 +136,9 @@ defm elaboration_error_verbose: CommandOptionHidden<["--", "-"],
     "strings, in a user-friendly format; "
     "`no-params` means don't display any concrete parameter values; "
     "`all-params` means show all concrete parameter values.">>,
-  MarshallingInfoCustom<CompilationOpts<"elaborationErrorVerbose">,
-                        "normalizeElaborationErrorVerbose">;
+  MarshallingInfoChoice<CompilationOpts<"elaborationErrorVerbose">,
+                        ["no-params", "simple-params", "all-params"],
+                        ["kNoParams", "kSimpleParams", "kAllParams"]>;
 
 defm elaboration_max_depth: CommandOptionHidden<["--", "-"],
   "elaboration-max-depth",
@@ -145,8 +147,7 @@ defm elaboration_max_depth: CommandOptionHidden<["--", "-"],
       "The maximum elaborator instantiation depth. Default is "
       "std::numeric_limits<unsigned>::max(). Elaborator errors out if "
       "the depth of compile time recursion exceeds this value.">>,
-  MarshallingInfoCustom<CompilationOpts<"elaborationMaxDepth">,
-                        "normalizeElaborationMaxDepth">;
+  MarshallingInfoInt<CompilationOpts<"elaborationMaxDepth">>;
 
 //===----------------------------------------------------------------------===//
 // Experimental Compilation Options
@@ -188,7 +189,7 @@ defm debug_info_language : CommandOption<["--", "-"], "debug-info-language",
     "enable rudimentary debugging and binary introspection in tools "
     "that don't understand Mojo, but is not required for `mojo debug`."
   >>,
-  MarshallingInfoCustom<CompilationOpts<"debugInfoLanguage">,
-                        "normalizeDebugInfoLanguage">;
+  MarshallingInfoChoice<CompilationOpts<"debugInfoLanguage">, ["Mojo", "C"],
+                        ["kLangMojo", "kLangC"]>;
 
 #endif // KGEN_TOOLS_MOJO_COMMON_COMPILATIONOPTIONS_TD

@@ -22,16 +22,23 @@
 # OPT: error: invalid optimization level '7', expected number from 0-3 inclusive
 
 # RUN: not mojo run --debug-level=some %s 2>&1 | FileCheck %s --check-prefix=DEBUG
-# DEBUG: error: invalid debug level 'some', expected one of: `none` (the default value), `line-tables`, or `full`
+# DEBUG: error: invalid value 'some' for '--debug-level', expected one of: `none`, `line-tables`, `full`
 
 # RUN: not mojo run --num-threads=many %s 2>&1 | FileCheck %s --check-prefix=THREADS
-# THREADS: error: Invalid number of threads: many
+# RUN: not mojo run -j many %s 2>&1 | FileCheck %s --check-prefix=THREADS
+# THREADS: error: invalid value 'many' for '--num-threads', expected a non-negative integer
+
+# RUN: not mojo run --elaboration-error-limit=lots %s 2>&1 | FileCheck %s --check-prefix=LIMIT
+# LIMIT: error: invalid value 'lots' for '--elaboration-error-limit', expected an integer
 
 # RUN: not mojo run --debug-info-language=Rust %s 2>&1 | FileCheck %s --check-prefix=LANGUAGE
-# LANGUAGE: error: invalid debug info language 'Rust', expected one of: `C` or `Mojo`
+# LANGUAGE: error: invalid value 'Rust' for '--debug-info-language', expected one of: `Mojo`, `C`
 
 # RUN: not mojo run --elaboration-error-verbose=loud %s 2>&1 | FileCheck %s --check-prefix=VERBOSE
-# VERBOSE: error: invalid elaboration-error-verbose 'loud', expected one of: `no-params` (the default value), `simple-params`, or `all-params`
+# VERBOSE: error: invalid value 'loud' for '--elaboration-error-verbose', expected one of: `no-params`, `simple-params`, `all-params`
+
+# RUN: not mojo run --diagnostic-format=xml %s 2>&1 | FileCheck %s --check-prefix=FORMAT
+# FORMAT: error: invalid value 'xml' for '--diagnostic-format', expected one of: `text`, `json`
 
 # RUN: not mojo run --shared-libasan %s 2>&1 | FileCheck %s --check-prefix=SHARED
 # SHARED: error: cannot enable --shared-libasan without enabling --sanitize=address

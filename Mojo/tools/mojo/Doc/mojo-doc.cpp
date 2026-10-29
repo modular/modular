@@ -21,7 +21,6 @@
 #include "Mojo/ToolCommon/DriverOptions.h"
 #include "Mojo/ToolCommon/FrontendOptions.h"
 #include "Mojo/ToolCommon/InitAllDialects.h"
-#include "Mojo/ToolCommon/OptionNormalizers.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/Driver/OptionMarshalling.h"
 

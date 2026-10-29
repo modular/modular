@@ -20,7 +20,6 @@
 #define KGEN_TOOLCOMMON_OPTIONNORMALIZERS_H
 
 #include "Mojo/ToolCommon/CompilationOptions.h"
-#include "Support/Driver/DiagnosticFormat.h"
 #include "Support/Driver/OptionMarshalling.h"
 #include "Support/ErrorOr.h"
 #include "llvm/Option/ArgList.h"
@@ -34,12 +33,9 @@ namespace M {
 ErrorOrSuccess
 validateCompilationOptions(const KGEN::CompilationOptions &options);
 
-// Normalizers for the shared options' marshalling rows. Each reports an
-// invalid value to `errors` and leaves the option at its default.
-std::optional<DiagnosticFormat>
-normalizeDiagnosticFormat(llvm::opt::OptSpecifier opt, int,
-                          const llvm::opt::ArgList &args,
-                          MarshallingErrors &errors);
+// Normalizers for the shared options whose values the generic integer and
+// choice normalizers cannot parse. Each reports an invalid value to `errors`
+// and leaves the option at its default.
 std::optional<unsigned>
 normalizeOptimizationLevel(llvm::opt::OptSpecifier opt, int,
                            const llvm::opt::ArgList &args,
@@ -47,35 +43,9 @@ normalizeOptimizationLevel(llvm::opt::OptSpecifier opt, int,
 std::optional<KGEN::FpMode> normalizeFpMode(llvm::opt::OptSpecifier opt, int,
                                             const llvm::opt::ArgList &args,
                                             MarshallingErrors &errors);
-std::optional<KGEN::CompilationOptions::DebugInfoLevel>
-normalizeDebugLevel(llvm::opt::OptSpecifier opt, int,
-                    const llvm::opt::ArgList &args, MarshallingErrors &errors);
-std::optional<size_t> normalizeNumThreads(llvm::opt::OptSpecifier opt, int,
-                                          const llvm::opt::ArgList &args,
-                                          MarshallingErrors &errors);
-std::optional<int64_t>
-normalizeLoopUnrollingWarnThreshold(llvm::opt::OptSpecifier opt, int,
-                                    const llvm::opt::ArgList &args,
-                                    MarshallingErrors &errors);
-std::optional<int>
-normalizeElaborationErrorLimit(llvm::opt::OptSpecifier opt, int,
-                               const llvm::opt::ArgList &args,
-                               MarshallingErrors &errors);
-std::optional<KGEN::CompilationOptions::ErrorVerboseLevel>
-normalizeElaborationErrorVerbose(llvm::opt::OptSpecifier opt, int,
-                                 const llvm::opt::ArgList &args,
-                                 MarshallingErrors &errors);
-std::optional<unsigned>
-normalizeElaborationMaxDepth(llvm::opt::OptSpecifier opt, int,
-                             const llvm::opt::ArgList &args,
-                             MarshallingErrors &errors);
 std::optional<Sanitizers> normalizeSanitizer(llvm::opt::OptSpecifier opt, int,
                                              const llvm::opt::ArgList &args,
                                              MarshallingErrors &errors);
-std::optional<KGEN::CompilationOptions::DebugInfoLanguage>
-normalizeDebugInfoLanguage(llvm::opt::OptSpecifier opt, int,
-                           const llvm::opt::ArgList &args,
-                           MarshallingErrors &errors);
 
 } // namespace M
 

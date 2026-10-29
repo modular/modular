@@ -22,13 +22,20 @@
 #ifndef SUPPORT_DRIVER_OPTIONMARSHALLING_H
 #define SUPPORT_DRIVER_OPTIONMARSHALLING_H
 
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Option/ArgList.h"
+#include "llvm/Option/Option.h"
+#include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/raw_ostream.h"
 
+#include <initializer_list>
 #include <optional>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace M {
@@ -73,19 +80,54 @@ normalizeString(llvm::opt::OptSpecifier opt, int,
   return std::nullopt;
 }
 
-/// A value that does not parse as an integer leaves the option at its
-/// default.
+/// An empty value leaves the option at its default.
 template <typename IntTy>
 std::optional<IntTy> normalizeStringIntegral(llvm::opt::OptSpecifier opt, int,
                                              const llvm::opt::ArgList &args,
-                                             MarshallingErrors &) {
+                                             MarshallingErrors &errors) {
   const llvm::opt::Arg *arg = args.getLastArg(opt);
   if (!arg)
     return std::nullopt;
-  IntTy value;
-  if (llvm::StringRef(arg->getValue()).getAsInteger(10, value))
+  llvm::StringRef text = arg->getValue();
+  if (text.empty())
     return std::nullopt;
-  return value;
+  IntTy value;
+  if (!text.getAsInteger(10, value))
+    return value;
+  errors.push_back(llvm::formatv(
+      "invalid value '{0}' for '{1}', expected {2}", text,
+      arg->getOption().getPrefixedName(),
+      std::is_signed_v<IntTy> ? "an integer" : "a non-negative integer"));
+  return std::nullopt;
+}
+
+/// Returns a normalizer for an option whose value must be one of the
+/// spellings in `choices`, each of which sets the enumerator it is paired
+/// with.
+template <typename EnumTy>
+auto makeChoiceNormalizer(
+    std::initializer_list<std::pair<llvm::StringRef, EnumTy>> choices) {
+  return [choices =
+              llvm::SmallVector<std::pair<llvm::StringRef, EnumTy>>(choices)](
+             llvm::opt::OptSpecifier opt, int, const llvm::opt::ArgList &args,
+             MarshallingErrors &errors) -> std::optional<EnumTy> {
+    const llvm::opt::Arg *arg = args.getLastArg(opt);
+    if (!arg)
+      return std::nullopt;
+    llvm::StringRef value = arg->getValue();
+    for (const auto &[spelling, enumerator] : choices)
+      if (spelling == value)
+        return enumerator;
+    std::string expected;
+    llvm::raw_string_ostream os(expected);
+    llvm::interleaveComma(choices, os, [&](const auto &choice) {
+      os << '`' << choice.first << '`';
+    });
+    errors.push_back(
+        llvm::formatv("invalid value '{0}' for '{1}', expected one of: {2}",
+                      value, arg->getOption().getPrefixedName(), expected));
+    return std::nullopt;
+  };
 }
 
 inline std::optional<std::vector<std::string>>
