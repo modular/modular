@@ -48,7 +48,7 @@ from max.tensor.sharding import DeviceMesh, NamedMapping
 
 from .norm import KimiRMSNormGated
 from .short_conv import kimi_short_conv_qkv
-from .tensor_parallel import check_divisible, shard_fused_blocks
+from .tensor_parallel import check_divisible, shard_interleaved_blocks
 
 _KIMI_O_NORM_EPS = 1e-5
 """``KIMI_RMS_NORM_EPS`` in ``kimi_k3/layers/norm.py`` -- ``o_norm``'s eps,
@@ -303,7 +303,7 @@ def tensor_parallel_kda_attention(
     layer.dt_bias = layer.dt_bias.to(row_mapping)
     layer.g_proj.weight = layer.g_proj.weight.to(row_mapping)
     layer.o_proj.weight = layer.o_proj.weight.to(NamedMapping(mesh, (None, TP)))
-    layer.conv_weight = shard_fused_blocks(
+    layer.conv_weight = shard_interleaved_blocks(
         layer.conv_weight, mesh, num_blocks=3, axis=0
     )
     return layer

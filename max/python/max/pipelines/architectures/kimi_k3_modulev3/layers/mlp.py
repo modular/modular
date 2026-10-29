@@ -24,7 +24,7 @@ from max.nn.common_layers.mesh_axis import TP
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMesh, NamedMapping
 
-from .tensor_parallel import shard_fused_blocks
+from .tensor_parallel import shard_interleaved_blocks
 
 
 def kimi_situ_and_mul(
@@ -114,7 +114,7 @@ def tensor_parallel_dense_mlp(
     """
     if mesh.axis_size(TP) == 1:
         return layer
-    layer.gate_up_proj.weight = shard_fused_blocks(
+    layer.gate_up_proj.weight = shard_interleaved_blocks(
         layer.gate_up_proj.weight, mesh, num_blocks=2, axis=0
     )
     layer.down_proj.weight = layer.down_proj.weight.to(

@@ -31,6 +31,9 @@ from max.pipelines.architectures.kimi_k3_modulev3.layers.moe_latent import (
     KimiK3LatentMoE,
     tensor_parallel_latent_moe,
 )
+from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
+    interleave_for_tp,
+)
 from max.tensor import Tensor, default_device
 from max.tensor.sharding import DeviceMesh
 
@@ -81,7 +84,11 @@ def test_dense_mlp_tp2_matches_tp1(dtype: DType, tolerance: float) -> None:
             beta=beta,
             linear_beta=linear_beta,
         )
-        layer2.gate_up_proj.weight = Tensor(gate_up_np).cast(dtype)
+        # The TP layer takes the per-rank interleave the weight adapter
+        # writes.
+        layer2.gate_up_proj.weight = Tensor(
+            interleave_for_tp(np.split(gate_up_np, 2), 2)
+        ).cast(dtype)
         layer2.down_proj.weight = Tensor(down_np).cast(dtype)
         layer2 = tensor_parallel_dense_mlp(layer2, mesh)
         x2 = Tensor(x_np).cast(dtype)
@@ -136,7 +143,7 @@ def test_latent_moe_tp2_matches_tp1() -> None:
     shared_down_np = arr(hidden, shared_inter)
     x_np = rng.standard_normal((seq_len, hidden)).astype(np.float32)
 
-    def build() -> KimiK3LatentMoE:
+    def build(tp_size: int) -> KimiK3LatentMoE:
         layer = KimiK3LatentMoE(
             hidden_size=hidden,
             latent_size=latent,
@@ -165,12 +172,18 @@ def test_latent_moe_tp2_matches_tp1() -> None:
             up_proj_np, dtype=DType.float32
         )
         layer.routed_expert_norm.weight = Tensor(norm_np, dtype=DType.float32)
+        # The TP layer takes the per-rank interleave the weight adapter
+        # writes; with one rank it is the plain concatenation.
         layer.experts_gate_up_proj = Tensor(
-            experts_gate_up_np, dtype=DType.float32
+            interleave_for_tp(
+                np.split(experts_gate_up_np, 2, axis=1), tp_size, axis=1
+            ),
+            dtype=DType.float32,
         )
         layer.experts_down_proj = Tensor(experts_down_np, dtype=DType.float32)
         layer.shared_experts.gate_up_proj.weight = Tensor(
-            shared_gate_up_np, dtype=DType.float32
+            interleave_for_tp(np.split(shared_gate_up_np, 2), tp_size),
+            dtype=DType.float32,
         )
         layer.shared_experts.down_proj.weight = Tensor(
             shared_down_np, dtype=DType.float32
@@ -178,13 +191,13 @@ def test_latent_moe_tp2_matches_tp1() -> None:
         return layer
 
     with default_device(Accelerator(0)):
-        layer1 = build()
+        layer1 = build(1)
         x1 = Tensor(x_np, dtype=DType.float32)
         out1 = layer1(x1).to_numpy()
 
     mesh = _tp2_mesh()
     with default_device(mesh):
-        layer2 = tensor_parallel_latent_moe(build(), mesh)
+        layer2 = tensor_parallel_latent_moe(build(2), mesh)
         x2 = Tensor(x_np, dtype=DType.float32)
         # This layer reduces internally, so the caller does not allreduce.
         out2 = layer2(x2).to_numpy()

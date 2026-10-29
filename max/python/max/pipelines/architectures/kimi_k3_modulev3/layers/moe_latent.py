@@ -101,7 +101,7 @@ from . import ep
 from .amd_w4a8_validation import validate_amd_packed_k, validate_amd_tp_w4a8
 from .mlp import KimiK3DenseMLP, kimi_situ_and_mul, tensor_parallel_dense_mlp
 from .moe_router import make_kimi_k3_moe_router
-from .tensor_parallel import check_divisible, shard_fused_blocks
+from .tensor_parallel import check_divisible, shard_interleaved_blocks
 
 # Scale-factor block width for MXFP4/MXFP8: one E8M0 scale per this many
 # elements along the contraction axis. Matches V2's ``_MXFP8_GROUP``.
@@ -589,7 +589,7 @@ def tensor_parallel_latent_moe(
             per_device_ffn=layer.moe_intermediate_size // tp_size,
             opt_in_env="MAX_KIMI_K3_AMD_W4A8",
         )
-    layer.experts_gate_up_proj = shard_fused_blocks(
+    layer.experts_gate_up_proj = shard_interleaved_blocks(
         layer.experts_gate_up_proj, mesh, num_blocks=2, axis=1
     )
     layer.experts_down_proj = layer.experts_down_proj.to(
@@ -598,7 +598,7 @@ def tensor_parallel_latent_moe(
     if layer.mxfp4:
         # Scales carry one entry per 32 INPUT elements, so they split on the
         # same axis as the weight they scale.
-        layer.experts_gate_up_proj_scale = shard_fused_blocks(
+        layer.experts_gate_up_proj_scale = shard_interleaved_blocks(
             layer.experts_gate_up_proj_scale, mesh, num_blocks=2, axis=1
         )
         layer.experts_down_proj_scale = layer.experts_down_proj_scale.to(

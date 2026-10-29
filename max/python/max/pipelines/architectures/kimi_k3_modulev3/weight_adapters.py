@@ -27,6 +27,12 @@ path for them (the AMD CDNA4 W4A8 arm). The packed bytes fuse and stack the
 same way as the dense case; only the E8M0 scales need relabeling, since
 safetensors has no such dtype. A checkpoint without packed experts still
 loads through the dense path unchanged.
+
+Under tensor parallelism each fused tensor is written interleaved per TP
+rank (:func:`interleave_for_tp`) rather than block-major. The loader splits
+the checkpoint arrays contiguously along the sharded axis on the host and
+never reshards them on device, so each rank's contiguous slice must already
+hold its share of every fused block.
 """
 
 from __future__ import annotations
@@ -141,24 +147,85 @@ def _rewrap(array: np.ndarray, like: WeightData, name: str) -> WeightData:
     )
 
 
-def _fuse_gate_up(gate: WeightData, up: WeightData, name: str) -> WeightData:
-    """Row-concatenates gate and up, gate first.
+def _interleaved_slices(
+    widths: Sequence[int], tp_size: int
+) -> list[tuple[int, slice, slice]]:
+    """Returns ``(part, src, dst)`` row ranges for :func:`interleave_for_tp`.
 
-    Mirrors ``mlp.py``'s ``KimiK3DenseMLP.gate_up_proj`` layout.
+    Raises:
+        ValueError: If a part's width does not split evenly over ``tp_size``.
     """
-    fused = np.concatenate([_elements(gate), _elements(up)], axis=0)
+    for width in widths:
+        if width % tp_size:
+            raise ValueError(
+                f"Kimi K3: fused block width {width} is not divisible by the"
+                f" TP degree {tp_size}."
+            )
+    moves: list[tuple[int, slice, slice]] = []
+    dst = 0
+    for r in range(tp_size):
+        for p, width in enumerate(widths):
+            per_rank = width // tp_size
+            src = slice(r * per_rank, (r + 1) * per_rank)
+            moves.append((p, src, slice(dst, dst + per_rank)))
+            dst += per_rank
+    return moves
+
+
+def interleave_for_tp(
+    parts: Sequence[np.ndarray], tp_size: int, axis: int = 0
+) -> np.ndarray:
+    """Concatenates ``parts`` along ``axis``, grouped per TP rank.
+
+    The TP layers shard a fused weight contiguously along ``axis``, which
+    over a plain ``[p0; p1; ...]`` concat would hand one rank whole parts
+    and another none. This writes ``[p0_r0; p1_r0; ...; p0_r1; p1_r1; ...]``
+    instead, so rank ``r``'s contiguous shard is its slice of every part.
+    With ``tp_size == 1`` it is the plain concatenation.
+
+    Args:
+        parts: The blocks to fuse, equal in every dim but ``axis``.
+        tp_size: The TP degree the fused weight is sharded over.
+        axis: The fused axis.
+
+    Returns:
+        The fused array.
+
+    Raises:
+        ValueError: If a part's width along ``axis`` does not split evenly
+            over ``tp_size``.
+    """
+    lead = (slice(None),) * axis
+    moves = _interleaved_slices([p.shape[axis] for p in parts], tp_size)
+    return np.concatenate(
+        [parts[p][(*lead, src)] for p, src, _ in moves], axis=axis
+    )
+
+
+def _fuse_gate_up(
+    gate: WeightData, up: WeightData, name: str, tp_size: int
+) -> WeightData:
+    """Row-fuses gate and up, interleaved per TP rank.
+
+    Mirrors ``mlp.py``'s ``KimiK3DenseMLP.gate_up_proj`` layout, gate first
+    within each rank's slice.
+    """
+    fused = interleave_for_tp([_elements(gate), _elements(up)], tp_size)
     return _rewrap(fused, gate, name)
 
 
 def _fuse_qkv_conv_weight(
-    q: WeightData, k: WeightData, v: WeightData, name: str
+    q: WeightData, k: WeightData, v: WeightData, name: str, tp_size: int
 ) -> WeightData:
     """Packs three ``[C, 1, K]`` depthwise convs into one ``[3C, K]`` weight.
 
-    ``KimiK3KDAAttention.conv_weight`` takes the packed weight.
+    ``KimiK3KDAAttention.conv_weight`` takes the packed weight, interleaved
+    per TP rank.
     """
     arrays = [_elements(w) for w in (q, k, v)]
-    fused = np.concatenate([a.reshape(a.shape[0], -1) for a in arrays], axis=0)
+    fused = interleave_for_tp(
+        [a.reshape(a.shape[0], -1) for a in arrays], tp_size
+    )
     return _rewrap(fused, q, name)
 
 
@@ -269,46 +336,49 @@ def _stack_experts_arrays(parts: Sequence[np.ndarray]) -> np.ndarray:
 
 
 def _stack_gate_up_arrays(
-    gate: Sequence[np.ndarray], up: Sequence[np.ndarray]
+    gate: Sequence[np.ndarray], up: Sequence[np.ndarray], tp_size: int
 ) -> np.ndarray:
     """Stacks per-expert gate and up into ``[E, gate_rows + up_rows, cols]``.
 
-    Writes each expert into a preallocated output instead of fusing every
-    expert first and stacking the list, which costs the same result at twice
-    the peak memory and serializes every expert's page faults.
+    Each expert's rows are interleaved per TP rank, as
+    :func:`interleave_for_tp` lays them out. Writes each rank's gate and up
+    slices into a preallocated output instead of fusing every expert first
+    and stacking the list, which costs the same result at twice the peak
+    memory and serializes every expert's page faults.
     """
     if not gate:
         raise ValueError("_stack_gate_up_arrays needs at least one expert")
-    split = gate[0].shape[0]
+    moves = _interleaved_slices([gate[0].shape[0], up[0].shape[0]], tp_size)
     out = _stack_output(
-        (len(gate), split + up[0].shape[0], *gate[0].shape[1:]),
+        (len(gate), gate[0].shape[0] + up[0].shape[0], *gate[0].shape[1:]),
         gate[0].dtype,
     )
     pairs: list[tuple[np.ndarray, np.ndarray]] = []
-    for e, (g, u) in enumerate(zip(gate, up, strict=True)):
-        pairs.append((out[e, :split], g))
-        pairs.append((out[e, split:], u))
+    for e, parts in enumerate(zip(gate, up, strict=True)):
+        for p, src, dst in moves:
+            pairs.append((out[e, dst], parts[p][src]))
     _copy_into(pairs)
     return _settle(out)
 
 
 def _stack_expert_weights(
-    w1: list[WeightData], w2: list[WeightData], w3: list[WeightData], name: str
+    w1: list[WeightData],
+    w2: list[WeightData],
+    w3: list[WeightData],
+    name: str,
+    tp_size: int,
 ) -> tuple[WeightData, WeightData]:
     """Stacks per-expert checkpoint tensors into the two grouped tensors.
 
     ``KimiK3LatentMoE.experts_gate_up_proj`` and ``experts_down_proj`` take
     them. ``w1`` is gate, ``w3`` is up and ``w2`` is down: the checkpoint's own
     numbering does not follow the data flow. The MXFP4 case's ``weight_scale``
-    tensors go through the same stacking, since whether the values are packed or
-    dense makes no difference to it.
-    ``w1`` is gate, ``w3`` is up, ``w2`` is down -- the checkpoint's own
-    numbering does not follow the data flow. Also reused for the MXFP4
-    case's ``weight_scale`` tensors, since the stacking itself is the same
-    whether the values are packed or dense.
+    tensors go through the same stacking, since whether the values are packed
+    or dense makes no difference to it -- so the scales land in the same
+    per-rank interleaved row order as the weights they scale.
     """
     gate_up = _stack_gate_up_arrays(
-        [_elements(g) for g in w1], [_elements(u) for u in w3]
+        [_elements(g) for g in w1], [_elements(u) for u in w3], tp_size
     )
     down = _stack_experts_arrays([_elements(w) for w in w2])
     return (
@@ -341,6 +411,23 @@ def _as_e8m0(data: WeightData, name: str) -> WeightData:
     )
 
 
+def tp_degree(pipeline_config: Any) -> int:
+    """Returns the TP degree the module tree shards fused tensors over.
+
+    The mesh ``pipeline_model.py`` builds is 1-D over every device: ``tp``,
+    unless ``ep_size > 1`` makes it ``ep``, which shards nothing along TP.
+    Under data parallelism (which ``KimiK3Config`` rejects) nothing is
+    TP-sharded either.
+    """
+    if (
+        pipeline_config is None
+        or pipeline_config.runtime.ep_size > 1
+        or pipeline_config.model.data_parallel_degree > 1
+    ):
+        return 1
+    return len(pipeline_config.model.device_specs)
+
+
 def convert_kimi_k3_state_dict(
     state_dict: dict[str, Weights],
     huggingface_config: AutoConfig,
@@ -348,7 +435,9 @@ def convert_kimi_k3_state_dict(
 ) -> dict[str, WeightData]:
     """Converts a Kimi K3 checkpoint's text tower onto the module tree.
 
-    The names it produces are :class:`~.model.KimiK3Model`'s own.
+    The names it produces are :class:`~.model.KimiK3Model`'s own. Under TP,
+    every fused tensor (gate/up, routed-expert gate/up and its MXFP4 scales,
+    the KDA qkv conv) is interleaved per TP rank by :func:`interleave_for_tp`.
 
     Args:
         **unused_kwargs: Accepted so every adapter shares one signature.
@@ -379,6 +468,7 @@ def convert_kimi_k3_state_dict(
         if quantization_encoding == "float4_e2m1fnx2"
         else supported_encoding_dtype(quantization_encoding)
     )
+    tp_size = tp_degree(pipeline_config)
 
     text_config = KimiK3Config._get_text_config(huggingface_config)
     model = KimiK3ModelConfig.from_huggingface_config(
@@ -422,7 +512,7 @@ def convert_kimi_k3_state_dict(
                 for axis in ("q", "k", "v")
             )
             out[f"{attn_dst}.conv_weight"] = _fuse_qkv_conv_weight(
-                q_conv, k_conv, v_conv, f"{attn_dst}.conv_weight"
+                q_conv, k_conv, v_conv, f"{attn_dst}.conv_weight", tp_size
             )
             out[f"{attn_dst}.a_log"] = _canonical_a_log(
                 _wd(state_dict, f"{attn_src}.A_log"),
@@ -443,6 +533,7 @@ def convert_kimi_k3_state_dict(
                 _wd(state_dict, f"{src}.mlp.gate_proj.weight"),
                 _wd(state_dict, f"{src}.mlp.up_proj.weight"),
                 f"{ffn_dst}.gate_up_proj.weight",
+                tp_size,
             )
             out[f"{ffn_dst}.down_proj.weight"] = _wd(
                 state_dict, f"{src}.mlp.down_proj.weight"
@@ -479,7 +570,7 @@ def convert_kimi_k3_state_dict(
                 for e in range(num_experts)
             ]
             gate_up, down = _stack_expert_weights(
-                packed1, packed2, packed3, ffn_dst
+                packed1, packed2, packed3, ffn_dst, tp_size
             )
             out[f"{ffn_dst}.experts_gate_up_proj"] = gate_up
             out[f"{ffn_dst}.experts_down_proj"] = down
@@ -497,7 +588,7 @@ def convert_kimi_k3_state_dict(
                 for e in range(num_experts)
             ]
             gate_up_scale, down_scale = _stack_expert_weights(
-                scale1, scale2, scale3, f"{ffn_dst}_scale"
+                scale1, scale2, scale3, f"{ffn_dst}_scale", tp_size
             )
             out[f"{ffn_dst}.experts_gate_up_proj_scale"] = _as_e8m0(
                 gate_up_scale, f"{ffn_dst}.experts_gate_up_proj_scale"
@@ -518,13 +609,14 @@ def convert_kimi_k3_state_dict(
                 _wd(state_dict, f"{moe}.experts.{e}.w3.weight")
                 for e in range(num_experts)
             ]
-            gate_up, down = _stack_expert_weights(w1, w2, w3, ffn_dst)
+            gate_up, down = _stack_expert_weights(w1, w2, w3, ffn_dst, tp_size)
             out[f"{ffn_dst}.experts_gate_up_proj"] = gate_up
             out[f"{ffn_dst}.experts_down_proj"] = down
         out[f"{ffn_dst}.shared_experts.gate_up_proj.weight"] = _fuse_gate_up(
             _wd(state_dict, f"{moe}.shared_experts.gate_proj.weight"),
             _wd(state_dict, f"{moe}.shared_experts.up_proj.weight"),
             f"{ffn_dst}.shared_experts.gate_up_proj.weight",
+            tp_size,
         )
         out[f"{ffn_dst}.shared_experts.down_proj.weight"] = _wd(
             state_dict, f"{moe}.shared_experts.down_proj.weight"

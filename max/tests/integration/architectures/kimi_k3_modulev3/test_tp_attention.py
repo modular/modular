@@ -35,6 +35,9 @@ from max.pipelines.architectures.kimi_k3_modulev3.layers.mla_attention import (
     KimiK3MLAAttention,
     tensor_parallel_mla_attention,
 )
+from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
+    interleave_for_tp,
+)
 from max.tensor import Tensor, default_device
 from max.tensor.sharding import DeviceMesh, NamedMapping
 
@@ -192,7 +195,7 @@ def test_kda_tp1_matches_tp2(gate_lower_bound: float | None) -> None:
     )
     slot_idx_np = np.arange(batch_size, dtype=np.uint32)
 
-    def assign(layer: KimiK3KDAAttention) -> None:
+    def assign(layer: KimiK3KDAAttention, tp_size: int) -> None:
         layer.q_proj.weight = Tensor(weights["q_proj"], dtype=DType.float32)
         layer.k_proj.weight = Tensor(weights["k_proj"], dtype=DType.float32)
         layer.v_proj.weight = Tensor(weights["v_proj"], dtype=DType.float32)
@@ -201,7 +204,10 @@ def test_kda_tp1_matches_tp2(gate_lower_bound: float | None) -> None:
         layer.b_proj.weight = Tensor(weights["b_proj"], dtype=DType.float32)
         layer.g_proj.weight = Tensor(weights["g_proj"], dtype=DType.float32)
         layer.o_proj.weight = Tensor(weights["o_proj"], dtype=DType.float32)
-        layer.conv_weight = Tensor(conv_weight_np, dtype=DType.float32)
+        layer.conv_weight = Tensor(
+            interleave_for_tp(np.split(conv_weight_np, 3), tp_size),
+            dtype=DType.float32,
+        )
         layer.a_log = Tensor(a_log_np, dtype=DType.float32)
         layer.dt_bias = Tensor(dt_bias_np, dtype=DType.float32)
         layer.o_norm.weight = Tensor(o_norm_np, dtype=DType.float32)
@@ -224,7 +230,7 @@ def test_kda_tp1_matches_tp2(gate_lower_bound: float | None) -> None:
             outs.append(out.to_numpy())
         return outs
 
-    def build() -> KimiK3KDAAttention:
+    def build(tp_size: int) -> KimiK3KDAAttention:
         layer = KimiK3KDAAttention(
             hidden_size=hidden,
             num_heads=heads,
@@ -232,7 +238,7 @@ def test_kda_tp1_matches_tp2(gate_lower_bound: float | None) -> None:
             conv_kernel_size=conv_kernel,
             gate_lower_bound=gate_lower_bound,
         )
-        assign(layer)
+        assign(layer, tp_size)
         return layer
 
     conv_pool_shape = [max_slots, 3 * inner, conv_kernel - 1]
@@ -241,7 +247,7 @@ def test_kda_tp1_matches_tp2(gate_lower_bound: float | None) -> None:
     # TP=1.
     with default_device(Accelerator(0)):
         outs1 = run(
-            build(),
+            build(1),
             Tensor.zeros(conv_pool_shape, dtype=DType.float32),
             Tensor.zeros(state_pool_shape, dtype=DType.float32),
         )
@@ -254,7 +260,7 @@ def test_kda_tp1_matches_tp2(gate_lower_bound: float | None) -> None:
     with default_device(mesh):
         pool_mapping = NamedMapping(mesh, (None, "tp"))
         outs2 = run(
-            tensor_parallel_kda_attention(build(), mesh),
+            tensor_parallel_kda_attention(build(len(devices)), mesh),
             Tensor.zeros(
                 conv_pool_shape, dtype=DType.float32, device=pool_mapping
             ),

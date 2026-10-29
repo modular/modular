@@ -43,6 +43,9 @@ from max.pipelines.architectures.kimi_k3_modulev3.layers.mlp import (
 from max.pipelines.architectures.kimi_k3_modulev3.layers.moe_latent import (
     KimiK3LatentMoE,
 )
+from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
+    interleave_for_tp,
+)
 from max.tensor import Tensor, default_device
 from max.tensor.sharding import DeviceMesh, NamedMapping
 
@@ -93,10 +96,8 @@ def test_decoder_layer_mla_dense_tp1_matches_tp2() -> None:
         "q_a_layernorm": np.ones(q_lora, dtype=np.float32),
         "kv_a_layernorm": np.ones(kv_lora, dtype=np.float32),
     }
-    ffn_weights = {
-        "gate_up_proj": _arr(2 * inter, hidden),
-        "down_proj": _arr(hidden, inter),
-    }
+    gate_up_np = _arr(2 * inter, hidden)
+    down_np = _arr(hidden, inter)
     res_weights = {
         "input_layernorm_weight": np.ones(hidden, dtype=np.float32),
         "post_attention_layernorm_weight": np.ones(hidden, dtype=np.float32),
@@ -108,7 +109,7 @@ def test_decoder_layer_mla_dense_tp1_matches_tp2() -> None:
     x_np = _arr(total_seq_len, hidden)
     block_residual_np = [_arr(total_seq_len, hidden)]
 
-    def build() -> KimiK3DecoderLayer:
+    def build(tp_size: int) -> KimiK3DecoderLayer:
         attention = KimiK3MLAAttention(
             hidden_size=hidden,
             num_heads=heads,
@@ -126,8 +127,11 @@ def test_decoder_layer_mla_dense_tp1_matches_tp2() -> None:
             beta=beta,
             linear_beta=linear_beta,
         )
-        for name, arr in ffn_weights.items():
-            getattr(ffn, name).weight = Tensor(arr, dtype=DType.float32)
+        ffn.gate_up_proj.weight = Tensor(
+            interleave_for_tp(np.split(gate_up_np, 2), tp_size),
+            dtype=DType.float32,
+        )
+        ffn.down_proj.weight = Tensor(down_np, dtype=DType.float32)
         layer = KimiK3DecoderLayer(
             layer_idx=_LAYER_IDX,
             attn_res_block_size=_ATTN_RES_BLOCK_SIZE,
@@ -142,7 +146,7 @@ def test_decoder_layer_mla_dense_tp1_matches_tp2() -> None:
         return layer
 
     with default_device(Accelerator(0)):
-        layer1 = build()
+        layer1 = build(1)
         out1, _ = layer1(
             Tensor(x_np, dtype=DType.float32),
             [Tensor(c, dtype=DType.float32) for c in block_residual_np],
@@ -154,7 +158,7 @@ def test_decoder_layer_mla_dense_tp1_matches_tp2() -> None:
         devices=tuple(devices), mesh_shape=(2,), axis_names=("tp",)
     )
     with default_device(mesh):
-        layer2 = build()
+        layer2 = build(len(devices))
         tensor_parallel_decoder_layer(layer2, mesh)
         out2, _ = layer2(
             Tensor(x_np, dtype=DType.float32),
@@ -221,7 +225,7 @@ def test_decoder_layer_kda_moe_tp1_matches_tp2() -> None:
     )
     slot_idx_np = np.arange(batch_size, dtype=np.uint32)
 
-    def build() -> KimiK3DecoderLayer:
+    def build(tp_size: int) -> KimiK3DecoderLayer:
         attention = KimiK3KDAAttention(
             hidden_size=hidden,
             num_heads=heads,
@@ -231,7 +235,10 @@ def test_decoder_layer_kda_moe_tp1_matches_tp2() -> None:
         )
         for name, arr in attn_weights.items():
             getattr(attention, name).weight = Tensor(arr, dtype=DType.float32)
-        attention.conv_weight = Tensor(conv_weight_np, dtype=DType.float32)
+        attention.conv_weight = Tensor(
+            interleave_for_tp(np.split(conv_weight_np, 3), tp_size),
+            dtype=DType.float32,
+        )
         attention.a_log = Tensor(a_log_np, dtype=DType.float32)
         attention.dt_bias = Tensor(dt_bias_np, dtype=DType.float32)
         attention.o_norm.weight = Tensor(o_norm_np, dtype=DType.float32)
@@ -261,11 +268,15 @@ def test_decoder_layer_kda_moe_tp1_matches_tp2() -> None:
         )
         ffn.routed_expert_norm.weight = Tensor(norm_np, dtype=DType.float32)
         ffn.experts_gate_up_proj = Tensor(
-            experts_gate_up_np, dtype=DType.float32
+            interleave_for_tp(
+                np.split(experts_gate_up_np, 2, axis=1), tp_size, axis=1
+            ),
+            dtype=DType.float32,
         )
         ffn.experts_down_proj = Tensor(experts_down_np, dtype=DType.float32)
         ffn.shared_experts.gate_up_proj.weight = Tensor(
-            shared_gate_up_np, dtype=DType.float32
+            interleave_for_tp(np.split(shared_gate_up_np, 2), tp_size),
+            dtype=DType.float32,
         )
         ffn.shared_experts.down_proj.weight = Tensor(
             shared_down_np, dtype=DType.float32
@@ -285,7 +296,7 @@ def test_decoder_layer_kda_moe_tp1_matches_tp2() -> None:
         return layer
 
     with default_device(Accelerator(0)):
-        layer1 = build()
+        layer1 = build(1)
         conv_pool1 = Tensor.zeros(
             [max_slots, 3 * inner, conv_kernel - 1], dtype=DType.float32
         )
@@ -308,7 +319,7 @@ def test_decoder_layer_kda_moe_tp1_matches_tp2() -> None:
         devices=tuple(devices), mesh_shape=(2,), axis_names=("tp",)
     )
     with default_device(mesh):
-        layer2 = build()
+        layer2 = build(len(devices))
         tensor_parallel_decoder_layer(layer2, mesh)
         pool_mapping = NamedMapping(mesh, (None, "tp"))
         conv_pool2 = Tensor.zeros(

@@ -543,6 +543,24 @@ modular_eager_py_test(
     ],
 )
 
+modular_py_library(
+    name = "tp_model_test_utils",
+    testonly = True,
+    srcs = ["_tp_model_test_utils.py"],
+    imports = ["."],
+    deps = [
+        ":paged_cache_test_utils",
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+    ],
+)
+
 modular_eager_py_test(
     name = "tp_model_tests_gpu",
     size = "enormous",
@@ -556,14 +574,38 @@ modular_eager_py_test(
     tags = ["gpu"],
     target_compatible_with = ["//:has_multi_gpu"],
     deps = [
-        ":paged_cache_test_utils",
+        ":tp_model_test_utils",
         requirement("numpy"),
         "//max/python/max:tensor",
-        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_eager_py_test(
+    name = "tp_lazy_load_tests_gpu",
+    size = "enormous",
+    srcs = ["test_tp_lazy_load.py"],
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
+    exec_properties = {
+        "test.resources:gpu-1": "0",
+        "test.resources:gpu-2": "0.01",
+        "test.resources:gpu-memory": "16",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_multi_gpu"],
+    deps = [
+        ":tp_model_test_utils",
+        requirement("numpy"),
+        requirement("safetensors"),
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
         "//max/python/max/pipelines/lib",
     ],

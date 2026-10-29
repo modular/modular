@@ -27,25 +27,21 @@ def check_divisible(what: str, size: int, tp_size: int) -> None:
         )
 
 
-def shard_fused_blocks(
+def shard_interleaved_blocks(
     weight: Tensor, mesh: DeviceMesh, num_blocks: int, axis: int
 ) -> Tensor:
     """Shards a weight that fuses ``num_blocks`` equal blocks along ``axis``.
 
-    A contiguous shard of the fused axis would give one device whole blocks
-    and another none. This reorders the axis from block-major to
-    device-major first, so each device's contiguous shard holds its slice of
-    every block.
+    A contiguous shard of a block-major fused axis would give one device
+    whole blocks and another none, so the weight must already be interleaved
+    per TP rank -- each rank's contiguous slice holding its slice of every
+    block -- as the weight adapter's ``interleave_for_tp`` writes it. This
+    only checks the block width splits evenly and shards contiguously: a
+    reorder here would act on the lazily built placeholder, not on the
+    checkpoint arrays the loader splits on the host.
     """
     tp_size = mesh.axis_size(TP)
     shape = [int(dim) for dim in weight.shape]
-    block = shape[axis] // num_blocks
-    check_divisible("Fused block width", block, tp_size)
-    split = (
-        shape[:axis]
-        + [num_blocks, tp_size, block // tp_size]
-        + shape[axis + 1 :]
-    )
-    reordered = weight.reshape(split).transpose(axis, axis + 1).reshape(shape)
+    check_divisible("Fused block width", shape[axis] // num_blocks, tp_size)
     spec = tuple(TP if dim == axis else None for dim in range(len(shape)))
-    return reordered.to(NamedMapping(mesh, spec))
+    return weight.to(NamedMapping(mesh, spec))

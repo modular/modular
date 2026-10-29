@@ -33,8 +33,13 @@ from max.dtype import DType
 from max.graph.weights import WeightData, Weights
 from max.graph.weights.weights import Shape
 from max.pipelines.architectures.kimi_k3_modulev3 import model as km
+from max.pipelines.architectures.kimi_k3_modulev3 import (
+    weight_adapters as wa,
+)
 from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
     convert_kimi_k3_state_dict,
+    interleave_for_tp,
+    tp_degree,
 )
 from max.support.math import ceildiv
 
@@ -708,3 +713,103 @@ def test_dense_checkpoint_has_no_quantized_expert_keys(
 ) -> None:
     """The existing dense (BF16) fixture never produces scale tensors."""
     assert "layers.1.ffn.experts_gate_up_proj_scale" not in (converted)
+
+
+@pytest.mark.parametrize(
+    "tp_size, expected",
+    [
+        (1, [0, 1, 2, 3, 10, 11, 12, 13]),
+        (2, [0, 1, 10, 11, 2, 3, 12, 13]),
+        (4, [0, 10, 1, 11, 2, 12, 3, 13]),
+    ],
+)
+def test_interleave_for_tp_groups_rows_per_rank(
+    tp_size: int, expected: list[int]
+) -> None:
+    gate = np.arange(4)[:, None] + np.zeros((1, 3), dtype=np.int64)
+    up = gate + 10
+    fused = interleave_for_tp([gate, up], tp_size)
+    np.testing.assert_array_equal(fused[:, 0], expected)
+    assert fused.shape == (8, 3)
+
+
+def test_interleave_for_tp_three_blocks_on_a_later_axis() -> None:
+    q, k, v = (np.arange(4)[None, :] + 10 * b for b in range(3))
+    fused = interleave_for_tp([q, k, v], 2, axis=1)
+    np.testing.assert_array_equal(
+        fused[0], [0, 1, 10, 11, 20, 21, 2, 3, 12, 13, 22, 23]
+    )
+
+
+def test_interleave_for_tp_rejects_a_non_divisible_width() -> None:
+    with pytest.raises(ValueError, match="not divisible by the TP degree 4"):
+        interleave_for_tp([np.zeros((6, 2)), np.zeros((6, 2))], 4)
+
+
+@pytest.mark.parametrize("tp_size", [1, 2, 4])
+def test_stacked_gate_up_matches_interleave_for_tp(tp_size: int) -> None:
+    gate = [_fp32((8, 3)) for _ in range(_NUM_EXPERTS)]
+    up = [_fp32((8, 3)) for _ in range(_NUM_EXPERTS)]
+    stacked = wa._stack_gate_up_arrays(gate, up, tp_size)
+    for e in range(_NUM_EXPERTS):
+        np.testing.assert_array_equal(
+            stacked[e], interleave_for_tp([gate[e], up[e]], tp_size)
+        )
+
+
+def test_stacked_scales_follow_their_weights_rows() -> None:
+    """Packed weights and their E8M0 scales get the same row permutation.
+
+    Each row of both tensors stores its own source tag (expert, block, row),
+    so the stacked tensors must agree tag for tag.
+    """
+    rows, tp_size = 8, 2
+
+    def tagged(block: int, cols: int) -> list[WeightData]:
+        return [
+            WeightData.from_numpy(
+                np.repeat(
+                    (e * 64 + block * 16 + np.arange(rows, dtype=np.uint8))[
+                        :, None
+                    ],
+                    cols,
+                    axis=1,
+                ),
+                f"w{block}.{e}",
+            )
+            for e in range(_NUM_EXPERTS)
+        ]
+
+    weight_gate_up, _ = wa._stack_expert_weights(
+        tagged(1, 4), tagged(2, 4), tagged(3, 4), "w", tp_size
+    )
+    scale_gate_up, _ = wa._stack_expert_weights(
+        tagged(1, 1), tagged(2, 1), tagged(3, 1), "s", tp_size
+    )
+    weight_tags = _to_numpy_u8(weight_gate_up)[..., 0]
+    scale_tags = _to_numpy_u8(scale_gate_up)[..., 0]
+    np.testing.assert_array_equal(weight_tags, scale_tags)
+    # Rank 0's shard is gate rows 0-3 then up rows 0-3.
+    np.testing.assert_array_equal(
+        weight_tags[0, :rows], [16, 17, 18, 19, 48, 49, 50, 51]
+    )
+
+
+def _pipeline_config(
+    n_devices: int, ep_size: int = 1, data_parallel_degree: int = 1
+) -> Any:
+    return SimpleNamespace(
+        model=SimpleNamespace(
+            device_specs=[object()] * n_devices,
+            data_parallel_degree=data_parallel_degree,
+        ),
+        runtime=SimpleNamespace(ep_size=ep_size),
+    )
+
+
+def test_tp_degree_follows_the_mesh() -> None:
+    assert tp_degree(None) == 1
+    assert tp_degree(_pipeline_config(8)) == 8
+    # An ``ep`` mesh shards nothing along TP.
+    assert tp_degree(_pipeline_config(8, ep_size=8)) == 1
+    assert tp_degree(_pipeline_config(8, data_parallel_degree=8)) == 1
