@@ -373,6 +373,7 @@ struct Set[
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
+    @inline(.always)
     def __bool__(self) -> Bool:
         """Whether the set is non-empty or not.
 
@@ -381,6 +382,7 @@ struct Set[
         """
         return len(self).__bool__()
 
+    @inline(.always)
     def __len__(self) -> Int:
         """The size of the set.
 
