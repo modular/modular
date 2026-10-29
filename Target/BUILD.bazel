@@ -237,7 +237,9 @@ modular_cc_test(
     visibility = ["//visibility:private"],
     deps = [
         ":DriverPluginTests",
+        ":Support",
         "//Support:Base",
+        "@llvm-project//llvm:Support",
         "@metal-cpp//:metal-cpp",
         "@tl_expected",
     ],
@@ -279,7 +281,9 @@ modular_cc_test(
     visibility = ["//visibility:private"],
     deps = [
         ":DriverPluginTests",
+        ":Support",
         "@dlpack",
+        "@llvm-project//llvm:Support",
         "@tl_expected",
     ],
 )
@@ -317,6 +321,17 @@ modular_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//SDK:HAL",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
+    name = "HostMemoryTest",
+    size = "small",
+    srcs = ["test/HostMemoryTest.cpp"],
+    copts = ["-Wno-nonportable-include-path"],
+    deps = [
+        ":Support",
         "@llvm-project//llvm:Support",
     ],
 )

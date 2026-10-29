@@ -880,6 +880,7 @@ modular_cc_library(
         "//Support:TimeProfiler",
         "//Support:TypeID",
         "//Target:DriverPlugin",
+        "//Target:Support",
         "@dlpack",
         "@llvm-project//llvm:Support",
     ] + select({

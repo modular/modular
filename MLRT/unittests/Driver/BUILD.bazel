@@ -591,6 +591,7 @@ modular_cc_test(
         "//AsyncRT:RuntimeGlobals",
         "//MLRT:Driver/DeviceContextImpl",
         "//Support:Base",
+        "//Target:Support",
         "@llvm-project//llvm:Support",
     ],
 )

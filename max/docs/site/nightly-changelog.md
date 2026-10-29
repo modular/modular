@@ -320,6 +320,10 @@ This version is still a work in progress.
   `InputError` for such an id in `input_ids`. Embeddings requests the
   tokenizer rejects, such as a too-long prompt, now return a 400, not a 500.
 
+- The free memory that CPU and Apple GPU devices report now accounts for
+  memory used by other processes. Before, MAX could start a model that didn't
+  fit in memory, which on macOS could exhaust swap and crash the machine.
+
 ## Mojo language
 
 For all the updates to the Mojo language, standard library, and tools,

@@ -20,6 +20,7 @@
 #include "Fixture.h"
 #include "HAL/M_driver_bundle.h"
 #include "HAL/M_driver_common.h"
+#include "Target/lib/Support/HostMemory.h"
 #include <chrono>
 #include <map>
 #include <string>
@@ -189,6 +190,21 @@ TEST_F(DriverPluginContextTest, MaxAllocationSizeMatchesAllocGuard) {
     std::string message = getStatusMessage(status);
     EXPECT_NE(message.find("larger than allowed"), std::string::npos)
         << "Expected the maxBufferLength guard to fire, got: " << message;
+  }
+}
+
+TEST_F(DriverPluginContextTest, MemoryInfoCappedAtHostAvailability) {
+  // The working-set budget ignores other processes, which share the unified
+  // memory, so free memory must not exceed what the host has left. Other
+  // processes can move the host figure between reads.
+  constexpr uint64_t drift = 1024ull * 1024 * 1024;
+  for (M_driver_context_t context : contexts) {
+    uint64_t freeBytes = 0;
+    uint64_t totalBytes = 0;
+    ASSERT_SUCCESS(context_memory_info(context, &freeBytes, &totalBytes));
+    auto host = M::Target::queryHostMemory();
+    ASSERT_TRUE(bool(host)) << llvm::toString(host.takeError());
+    EXPECT_LE(freeBytes, host->available + drift);
   }
 }
 
