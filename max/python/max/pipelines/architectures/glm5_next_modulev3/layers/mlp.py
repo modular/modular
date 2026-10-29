@@ -21,7 +21,6 @@ test never reaches and a real checkpoint does.
 from __future__ import annotations
 
 import functools
-from typing import ClassVar
 
 from max import functional as F
 from max.dtype import DType
@@ -42,13 +41,14 @@ __all__ = ["Glm5NextExpertParallelMoE", "Glm5NextMLP", "build_mlp"]
 
 
 class Glm5NextExpertParallelMoE(DeepseekV3_2ExpertParallelMoE):
-    """Expert-parallel MoE with the routed experts' SwiGLU in float32.
+    """Expert-parallel MoE with the routed experts' clamped SwiGLU in bfloat16.
 
-    DeepSeek-V3.2 keeps it in bfloat16 to use the fused NVFP4 SwiGLU, which
-    the clamp rules out anyway, so GLM takes the reference's float32.
+    The clamp and SwiGLU read the bfloat16 gate/up output and fuse into the
+    row-bounded FP8 quantize. A float32 gate/up cast over the EP receive
+    buffer cannot fuse and costs a full-buffer pass per MoE layer. This
+    matches the legacy EP path; the dense MLP and an unfused shared expert
+    keep float32.
     """
-
-    gate_up_accum_dtype: ClassVar[DType | None] = DType.float32
 
 
 class Glm5NextMLP(QuantizedMLP):

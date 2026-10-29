@@ -1037,10 +1037,12 @@ def grouped_matmul_silu(
     """Gate/up grouped matmul + SwiGLU, returning the down-projection input.
 
     ``accum_dtype`` upcasts the gate/up output before the SwiGLU, which
-    DeepSeek-V3.2 does in float32. ``activation`` overrides the gated
-    activation (the asymmetric training clamp, on V4.1). A non-zero
-    ``swiglu_limit`` clamps the activation's inputs, ``silu(min(gate, limit))
-    * clamp(up, -limit, limit)``, which GLM-5.3-Flash needs.
+    DeepSeek-V3.2's non-expert-parallel MoEs do in float32. GLM's
+    expert-parallel MoE keeps bfloat16 so the SwiGLU fuses into the quantize.
+    ``activation`` overrides the gated activation (the asymmetric training
+    clamp, on V4.1). A non-zero ``swiglu_limit`` clamps the activation's
+    inputs, ``silu(min(gate, limit)) * clamp(up, -limit, limit)``, which
+    GLM-5.3-Flash needs.
     """
     # Pre-quantized EP activations carry their own per-expert scale offset;
     # single-device tokens rely on the caller-supplied one.

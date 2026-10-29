@@ -573,7 +573,7 @@ class ExpertParallelMoE(QuantizedMoE):
     def _uses_fused_swiglu(self) -> bool:
         """Whether the NVFP4 EP gate/up path uses the fused SwiGLU kernel.
 
-        A float32 gate/up accumulation (DeepSeek-V3.2 and GLM) rules the
+        A float32 gate/up accumulation or a SwiGLU clamp (GLM) rules the
         fused kernel out, so the sigma permutation this gates must come off
         with it.
         """
