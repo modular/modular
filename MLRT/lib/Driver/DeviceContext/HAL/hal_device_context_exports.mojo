@@ -478,9 +478,11 @@ def MojoHAL_DeviceContext_getMemoryInfo(
     ctx: _DeviceContextBoxPtr,
 ) abi("C") -> _CString[]:
     try:
-        var info = ctx[].get_memory_info()
-        out_free[] = UInt64(info[0])
-        out_total[] = UInt64(info[1])
+        # The raw HAL context, not `DeviceContext.get_memory_info`, which
+        # raises on `M_DRIVER_MEMORY_UNKNOWN` instead of passing it to C++.
+        var info = ctx[]._context[].get_memory_info()
+        out_free[] = info[0]
+        out_total[] = info[1]
         return None
     except e:
         return _err_cstr(String(e))

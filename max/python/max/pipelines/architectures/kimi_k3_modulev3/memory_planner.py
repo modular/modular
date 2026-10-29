@@ -33,6 +33,7 @@ from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
+from max.pipelines.lib.memory_estimation import FreeMemory
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
@@ -356,12 +357,8 @@ def _infer_optimal_batch_size(
     if per_request_bytes == 0:
         return 32
     try:
-        free_bytes = min(
-            (int(d.stats.get("free_memory", 0)) for d in devices), default=0
-        )
+        free_bytes = FreeMemory.smallest(devices).hi
     except Exception:
-        free_bytes = 0
-    if free_bytes <= 0:
         return 32
     budget = int(free_bytes * device_memory_utilization) - weights_per_device
     if budget <= 0:

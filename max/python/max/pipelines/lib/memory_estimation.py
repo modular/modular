@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass
 from io import StringIO
 from typing import TYPE_CHECKING, cast
@@ -48,6 +49,45 @@ from .vision_encoder_cache import (
 logger = logging.getLogger("max.pipelines")
 
 _DEFAULT_BATCH_SIZE = 512
+
+
+@dataclass(frozen=True)
+class FreeMemory:
+    """Bounds on free device memory, in bytes.
+
+    ``lo`` is the memory known to be free and ``hi`` the most that could be.
+    They are equal when the driver measures free memory; when it can't,
+    ``lo`` is 0 and ``hi`` is the device's capacity.
+    """
+
+    lo: int
+    hi: int
+
+    def __add__(self, other: FreeMemory) -> FreeMemory:
+        return FreeMemory(self.lo + other.lo, self.hi + other.hi)
+
+    @classmethod
+    def from_stats(cls, device: Device) -> FreeMemory:
+        """Reads the free-memory range from ``device.stats``."""
+        stats = device.stats
+        free = stats["free_memory"]
+        if free is None:
+            return cls(0, int(stats["total_memory"]))
+        return cls(int(free), int(free))
+
+    @classmethod
+    def summed(cls, devices: Iterable[Device]) -> FreeMemory:
+        """Returns the free memory summed across ``devices``."""
+        return sum((cls.from_stats(d) for d in devices), cls(0, 0))
+
+    @classmethod
+    def smallest(cls, devices: Iterable[Device]) -> FreeMemory:
+        """Returns the least free memory on any one of ``devices``."""
+        ranges = [cls.from_stats(d) for d in devices]
+        return cls(
+            min((r.lo for r in ranges), default=0),
+            min((r.hi for r in ranges), default=0),
+        )
 
 
 @dataclass(frozen=True)
@@ -222,16 +262,10 @@ class MemoryEstimator:
         return plan
 
     @classmethod
-    def _free_memory(cls, devices: list[Device]) -> int:
-        """Returns the total free memory available across all provided devices."""
+    def _free_memory(cls, devices: list[Device]) -> FreeMemory:
+        """Returns the free memory summed across ``devices``."""
         try:
-            free_memory = int(sum(d.stats["free_memory"] for d in devices))
-            if free_memory == 0:
-                total_memory = int(
-                    sum(d.stats.get("total_memory", 0) for d in devices)
-                )
-                return total_memory
-            return free_memory
+            return FreeMemory.summed(devices)
         except Exception as e:
             logger.warning(
                 "Unable to estimate memory footprint of model, can't query device stats: "
@@ -282,7 +316,7 @@ class MemoryEstimator:
         """
         return int(
             (
-                cls._free_memory(devices)
+                cls._free_memory(devices).hi
                 * model_config.kv_cache.device_memory_utilization
             )
             - cls._static_memory_size(
@@ -416,7 +450,7 @@ class MemoryEstimator:
             )
 
         try:
-            free_memory = cls._free_memory(devices)
+            free = cls._free_memory(devices)
         except Exception:
             # A KV-cache model cannot be planned without device stats: the plan
             # would carry no cache budget and ``load_kv_manager`` rejects that
@@ -444,6 +478,9 @@ class MemoryEstimator:
         static_memory_size = (
             model_weights_size + activation_memory_size + signal_buffer_size
         )
+        # Plan against the upper bound: a driver that can't measure free
+        # memory reports a lower bound of 0, which would reject every model.
+        free_memory = free.hi
 
         if static_memory_size > free_memory:
             error_msg = f"Model size exceeds available memory ({to_human_readable_bytes(static_memory_size)} > {to_human_readable_bytes(free_memory)}). "
@@ -476,6 +513,27 @@ class MemoryEstimator:
             available_kv_cache_memory,
             sum(d.max_single_alloc_size for d in devices),
         )
+
+        unmeasured = "free memory couldn't be measured exactly on some devices"
+        if static_memory_size > free.lo:
+            logger.warning(
+                "Model size %s exceeds the %s of free memory known to be "
+                "available; %s, so loading may fail.",
+                to_human_readable_bytes(static_memory_size),
+                to_human_readable_bytes(free.lo),
+                unmeasured,
+            )
+        elif available_kv_cache_memory > int(
+            free.lo * model_config.kv_cache.device_memory_utilization
+            - static_memory_size
+        ):
+            logger.warning(
+                "KV cache budget %s exceeds what the %s of free memory known "
+                "to be available allows; %s, so allocating it may fail.",
+                to_human_readable_bytes(available_kv_cache_memory),
+                to_human_readable_bytes(free.lo),
+                unmeasured,
+            )
 
         vision_cache_bytes, vision_cache_plan = (
             cls._reserve_vision_cache_memory(

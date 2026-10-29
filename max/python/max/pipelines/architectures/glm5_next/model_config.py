@@ -48,6 +48,7 @@ from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces import ArchConfigWithVisionCache
+from max.pipelines.lib.memory_estimation import FreeMemory
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
@@ -258,10 +259,8 @@ def state_bounded_batch_size(
     if per_request_bytes == 0:
         return 32
     try:
-        free_bytes = int(sum(d.stats.get("free_memory", 0) for d in devices))
+        free_bytes = FreeMemory.summed(devices).hi
     except Exception:
-        free_bytes = 0
-    if free_bytes <= 0:
         # Only the minimized bring-up fixture lands here.
         return 8
     budget = int(free_bytes * device_memory_utilization) - weights_size

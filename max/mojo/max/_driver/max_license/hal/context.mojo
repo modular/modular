@@ -87,6 +87,11 @@ def _code_digest[origin: ImmOrigin](code: StringSlice[origin=origin]) -> UInt64:
     return hash_bytes(code.as_bytes())
 
 
+comptime MEMORY_UNKNOWN = UInt64.MAX
+"""The free byte count `Context.get_memory_info` reports when the device can't
+measure its free memory; mirrors `M_DRIVER_MEMORY_UNKNOWN`."""
+
+
 @fieldwise_init
 struct Context[device_spec: DeviceSpec](Deinitable, Movable):
     """A context loaded on a specific device.
@@ -535,7 +540,8 @@ struct Context[device_spec: DeviceSpec](Deinitable, Movable):
         self._raw[].set_current_driver_context(self._handle, driver_context)
 
     def get_memory_info(self) raises HALError -> Tuple[UInt64, UInt64]:
-        """Returns the free and total device memory, in bytes."""
+        """Returns the free and total device memory, in bytes. Free is
+        `MEMORY_UNKNOWN` when the device can't measure it."""
         return self._raw[].get_context_memory_info(self._handle)
 
     # ===-------------------------------------------------------------------===#

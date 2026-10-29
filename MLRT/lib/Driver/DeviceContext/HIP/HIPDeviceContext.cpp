@@ -280,8 +280,9 @@ gethipDeviceAttribute(Device::Attribute attr) {
 HIPDevice::HIPDevice(const HIPDriver &driver, int id, hipDevice_t device,
                      std::string name, std::string arch, MemInfo memInfo,
                      size_t allocAlignment)
-    : Device(api, name, id, memInfo, allocAlignment), arch_(arch),
-      driver_(driver), device_(device) {}
+    : Device(api, name, id, memInfo, allocAlignment,
+             /*useMemoryManager=*/true),
+      arch_(arch), driver_(driver), device_(device) {}
 
 HIPDevice::~HIPDevice() {
   // Destroy the function map before destroying other device structures.
@@ -829,8 +830,10 @@ ErrorOrSuccess HIPDevice::vmmUnmap(void *va, size_t byteSize) {
 
 ErrorOr<Device::MemInfo> HIPDevice::getMemoryInfo() const {
   Device::MemInfo memInfo;
+  size_t freeBytes = 0;
   HIP_WITH_DEV_ERR(*this);
-  HIP_CHECK_ERR(driver_.hipMemGetInfo(&memInfo.free, &memInfo.total));
+  HIP_CHECK_ERR(driver_.hipMemGetInfo(&freeBytes, &memInfo.total));
+  memInfo.free = freeBytes;
 #if MODULAR_LINUX
   DEFINE_OR_RETURN_ERROR(bool, unified, isHostUnified());
   if (unified)
@@ -905,7 +908,9 @@ ErrorOr<HIPDevice &> HIPDevice::get(int id) {
 
     HIPDeviceScope withDev(hipDevice, driver);
     Device::MemInfo memInfo;
-    HIP_CHECK_ERR(driver.hipMemGetInfo(&memInfo.free, &memInfo.total));
+    size_t freeBytes = 0;
+    HIP_CHECK_ERR(driver.hipMemGetInfo(&freeBytes, &memInfo.total));
+    memInfo.free = freeBytes;
 
 #if MODULAR_LINUX
     int integrated = 0;

@@ -104,9 +104,10 @@ public:
   static constexpr API metalAPI = "metal"; // Apple Metal device
 
   struct MemInfo {
-    MemInfo() : total(0), free(0) {}
+    MemInfo() : total(0) {}
     size_t total;
-    size_t free;
+    // Unset when the driver cannot measure free memory.
+    std::optional<size_t> free;
   };
 
   struct GraphMemInfo {

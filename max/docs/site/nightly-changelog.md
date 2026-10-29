@@ -323,6 +323,11 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Loading a model on a device that reports no free memory now fails with a
+  "Model size exceeds available memory" error. Memory planning used to treat
+  0 as unmeasured and size against the device's total memory, so a full host
+  could crash during loading instead.
+
 - `max serve` now runs prompts given as token ids, with no images, on Gemma 3,
   InternVL, Idefics3, Pixtral and Qwen 2.5 VL. These requests used to fail in
   the tokenizer.

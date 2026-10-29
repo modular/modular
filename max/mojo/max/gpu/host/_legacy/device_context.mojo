@@ -6962,7 +6962,8 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
             A tuple of (free memory, total memory) in bytes.
 
         Raises:
-            If there's an error retrieving the memory information.
+            If there's an error retrieving the memory information, or the
+            device can't measure its free memory.
 
         Example:
 

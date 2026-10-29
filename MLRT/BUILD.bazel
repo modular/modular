@@ -784,6 +784,7 @@ modular_cc_library(
         ":Driver/HALDeviceContextExports",
         ":Driver/LaunchTraceRegistry",
         "//AsyncRT:Runtime",
+        "//SDK:HAL",
         "//Support:Base",
         "//Support:BinaryID",
         "//Support:Configuration",

@@ -1008,8 +1008,8 @@ TEST_F(CUDADeviceContextTest, SymmetricPoolFailedCreateLeavesNothingBehind) {
   EXPECT_FALSE(SymmetricPool::lookup(contexts));
 
   ASSIGN_NO_ERR(Device::MemInfo, after, dev0.getMemoryInfo());
-  EXPECT_GE(after.free + kFreeMemoryTolerance, before.free)
-      << "failed create leaked " << (before.free - after.free) << " bytes";
+  EXPECT_GE(after.free.value() + kFreeMemoryTolerance, before.free.value())
+      << "failed create leaked " << (*before.free - *after.free) << " bytes";
 
   ASSIGN_NO_ERR(DeviceMulticastBufferRef, pool,
                 SymmetricPool::create(contexts, 4 * 1024));
@@ -1128,7 +1128,7 @@ TEST_F(CUDADeviceContextTest, CUDAMemoryInfoAgreesWithNVML) {
   ASSIGN_NO_ERR(Device::MemInfo, cudaMem, deviceOr->getMemoryInfo());
 
   EXPECT_GT(cudaMem.total, 0u);
-  EXPECT_LE(cudaMem.free, cudaMem.total);
+  EXPECT_LE(cudaMem.free.value(), cudaMem.total);
 
   ErrorOr<const NVML &> nvmlOr = NVML::get();
   ASSERT_FALSE(nvmlOr.isError()) << nvmlOr.getError();

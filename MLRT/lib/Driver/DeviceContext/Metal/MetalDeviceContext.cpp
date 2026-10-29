@@ -147,9 +147,9 @@ static ErrorOr<MTL::Buffer *> wrapExistingPages(MTL::Device *metalDev,
 //
 MetalDevice::MetalDevice(int id, NS::SharedPtr<MTL::Device> device,
                          std::string name, Device::MemInfo memInfo,
-                         size_t allocAlignment)
-    : Device(api, name, id, memInfo, allocAlignment), device_(device),
-      memInfo_(memInfo), driverVersion_([]() -> std::string {
+                         size_t allocAlignment, bool useMemoryManager)
+    : Device(api, name, id, memInfo, allocAlignment, useMemoryManager),
+      device_(device), memInfo_(memInfo), driverVersion_([]() -> std::string {
         // Metal drivers ship with macOS, Darwin release is the driver version
         struct utsname systemInfo;
         uname(&systemInfo);
@@ -166,11 +166,11 @@ ErrorOr<Device::MemInfo> MetalDevice::getMemInfo(MTL::Device *metalDev) {
   Device::MemInfo info;
   info.total = metalDev->recommendedMaxWorkingSetSize();
   size_t used = metalDev->currentAllocatedSize();
-  info.free = info.total > used ? info.total - used : 0;
+  size_t budget = info.total > used ? info.total - used : 0;
   // The working-set budget ignores other processes, which draw on the same
   // unified memory.
   DEFINE_OR_RETURN_ERROR(Device::MemInfo, host, getHostMemoryInfo());
-  info.free = std::min(info.free, host.free);
+  info.free = std::min(budget, host.free.value_or(budget));
   return info;
 }
 
@@ -476,8 +476,8 @@ ErrorOr<MetalDevice &> MetalDevice::get(int id) {
 
     size_t allocAlignment = 64;
 
-    metalDeviceInstance =
-        RCRef<MetalDevice>::create(id, device, name, memInfo, allocAlignment);
+    metalDeviceInstance = RCRef<MetalDevice>::create(
+        id, device, name, memInfo, allocAlignment, useMemoryManager);
   }
 
   return *metalDeviceInstance;

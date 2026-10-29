@@ -277,7 +277,7 @@ public:
   // Factory methods configure the memory manager based on defaults or the
   // environment.
   // `memInfo` contains the total and free memory of the device.
-  // Setting memInfo.free to 0 will disable the memory manager.
+  // Unset memInfo.free sizes the memory manager against memInfo.total.
   // `memoryLimit` (bytes) is the maximum memory limit for the memory manager.
   // If -1, then the memory manager will use the default memory limit.
   // Note that MEMORY_MANAGER_SIZE_LIMIT environment variable overrides this.
@@ -288,6 +288,8 @@ public:
                                  size_t alignment, int64_t memoryLimit = -1,
                                  int64_t largeAllocAlignment = -1);
   static MemoryManager *onHost(Device &device, size_t alignment);
+  // A device memory manager with no budget, for devices that run without one.
+  static MemoryManager *disabled(Device &device, size_t alignment);
 
 private:
   friend class Chunk;

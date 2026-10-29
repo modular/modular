@@ -20,6 +20,7 @@
 #include "MLRT/Driver/DeviceContext/HALDeviceContext.h"
 
 #include "AsyncRT/Runtime/CPUDevice.h"
+#include "HAL/M_driver_context.h"
 #include "MLRT/Driver/DeviceContext/BinaryID.h"
 #include "MLRT/Driver/DeviceContext/DeviceAPINames.h"
 #include "Support/BinaryID.h"
@@ -177,6 +178,19 @@ Error virtualDeviceError(const char *what) {
 
 /// Memory a virtual device reports, matching the legacy backend's constant.
 constexpr size_t kVirtualDeviceMemoryBytes = 192ULL * 1024 * 1024 * 1024;
+
+ErrorOr<Device::MemInfo> queryMemoryInfo(MojoHALContextBox *ctx) {
+  uint64_t memFree = 0;
+  uint64_t memTotal = 0;
+  if (const char *err =
+          MojoHAL_DeviceContext_getMemoryInfo(&memFree, &memTotal, ctx))
+    return takeError(err);
+  Device::MemInfo info;
+  info.total = memTotal;
+  if (memFree != M_DRIVER_MEMORY_UNKNOWN)
+    info.free = memFree;
+  return info;
+}
 } // namespace
 
 // ===-- Device ----------------------------------------------------------=== //
@@ -350,14 +364,7 @@ ErrorOr<Device::MemInfo> Device::getMemoryInfo() const {
     info.total = kVirtualDeviceMemoryBytes;
     return info;
   }
-  uint64_t memFree = 0;
-  uint64_t memTotal = 0;
-  if (const char *err =
-          MojoHAL_DeviceContext_getMemoryInfo(&memFree, &memTotal, mojoCtx_))
-    return takeError(err);
-  info.free = memFree;
-  info.total = memTotal;
-  return info;
+  return queryMemoryInfo(mojoCtx_);
 }
 
 ErrorOr<int> Device::getAttribute(Attribute attr) const {
@@ -842,15 +849,7 @@ ErrorOrSuccess DeviceContext::pollPendingEvents() {
 ErrorOr<Device::MemInfo> DeviceContext::getMemoryInfo() const {
   if (device_->isVirtual())
     return device_->getMemoryInfo();
-  Device::MemInfo info;
-  uint64_t memFree = 0;
-  uint64_t memTotal = 0;
-  if (const char *err =
-          MojoHAL_DeviceContext_getMemoryInfo(&memFree, &memTotal, mojoCtx_))
-    return takeError(err);
-  info.free = memFree;
-  info.total = memTotal;
-  return info;
+  return queryMemoryInfo(mojoCtx_);
 }
 
 ErrorOr<const char *> DeviceContext::getArchName() const {

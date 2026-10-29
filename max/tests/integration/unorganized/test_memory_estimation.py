@@ -19,7 +19,7 @@ from typing import Any
 from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
-from max.driver import CPU, DeviceSpec, load_devices
+from max.driver import CPU, Device, DeviceSpec, load_devices
 from max.nn.legacy.comm import MulticastPool, Signals
 from max.nn.legacy.kv_cache.cache_params import KVConnectorType
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
@@ -30,7 +30,7 @@ from max.pipelines.lib import (
 from max.pipelines.lib.interfaces import (
     ArchConfigWithKVCache,
 )
-from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.memory_estimation import FreeMemory, MemoryPlan
 from test_common.mocks import DummyPipelineConfig
 from test_common.pipeline_model_dummy import (
     DUMMY_LLAMA_ARCH,
@@ -124,12 +124,16 @@ def _set_kv_connector(
     )
 
 
-def _estimate(config: DummyPipelineConfig, **kwargs: Any) -> MemoryPlan:
-    """Runs a successful estimate against ample mocked device memory."""
+def _estimate(
+    config: DummyPipelineConfig,
+    stats: dict[str, int | None] | None = None,
+    **kwargs: Any,
+) -> MemoryPlan:
+    """Runs an estimate against mocked device stats, ample by default."""
     with patch(
         "max.driver.Device.stats", new_callable=PropertyMock
     ) as device_mock:
-        device_mock.return_value = {"free_memory": 100 * GIB}
+        device_mock.return_value = stats or {"free_memory": 100 * GIB}
         arch_config = DUMMY_LLAMA_ARCH.config.initialize(
             config, max_seq_len=config.model.max_length or 4096
         )
@@ -339,6 +343,57 @@ def test_estimate__draft_bound_lowers_plan_max_length() -> None:
     estimate = _estimate(config, draft_max_seq_len=1500)
     assert estimate.planned_max_length == 1500
     assert config.model.max_length == 4096
+
+
+def test_plan__zero_free_memory_does_not_plan_against_total() -> None:
+    """A host reporting no free memory is full, not unmeasured."""
+    config = _dummy_llama_config(max_length=4096)
+    with pytest.raises(
+        RuntimeError, match="Model size exceeds available memory"
+    ):
+        _estimate(config, {"free_memory": 0, "total_memory": 100 * GIB})
+
+
+def test_plan__unmeasured_free_memory_rejects_above_upper_bound() -> None:
+    config = _dummy_llama_config(max_length=4096)
+    with pytest.raises(
+        RuntimeError, match="Model size exceeds available memory"
+    ):
+        _estimate(config, {"free_memory": None, "total_memory": GIB // 2})
+
+
+def test_plan__unmeasured_free_memory_plans_against_upper_bound(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    config = _dummy_llama_config(max_length=4096)
+    stats = {"free_memory": None, "total_memory": 100 * GIB}
+    with caplog.at_level(logging.WARNING):
+        plan = _estimate(config, stats)
+    assert plan.available_cache_memory
+    assert "couldn't be measured exactly" in caplog.text
+
+
+def _device_with_stats(**stats: int | None) -> Device:
+    device = MagicMock(spec=Device)
+    device.stats = stats
+    return device
+
+
+def test_free_memory__sums_exact_and_unmeasured_devices() -> None:
+    exact = _device_with_stats(free_memory=10 * GIB, total_memory=80 * GIB)
+    unmeasured = _device_with_stats(free_memory=None, total_memory=80 * GIB)
+    assert MemoryEstimator._free_memory([exact, unmeasured]) == FreeMemory(
+        lo=10 * GIB, hi=90 * GIB
+    )
+
+
+def test_free_memory__smallest_takes_each_bound_independently() -> None:
+    devices = [
+        _device_with_stats(free_memory=10 * GIB, total_memory=80 * GIB),
+        _device_with_stats(free_memory=None, total_memory=80 * GIB),
+    ]
+    assert FreeMemory.smallest(devices) == FreeMemory(lo=0, hi=10 * GIB)
+    assert FreeMemory.smallest([]) == FreeMemory(lo=0, hi=0)
 
 
 @pytest.mark.skip("TODO: AITLIB-238")

@@ -74,11 +74,18 @@ typedef M_driver_status_t (
     M_driver_context_t context, M_driver_native_handle_t driver_context);
 
 /**
+ * The free byte count M_driver_context_memory_info() reports when the device
+ * can't measure its free memory. 0 always means the device is full.
+ */
+#define M_DRIVER_MEMORY_UNKNOWN UINT64_MAX
+
+/**
  * Query the device memory visible to @p context: the current free byte count
  * and the device's total byte capacity.
  *
  * @param[in] context The context whose device memory to query.
- * @param[out] free Current free device memory, in bytes.
+ * @param[out] free Current free device memory, in bytes, or
+ *             M_DRIVER_MEMORY_UNKNOWN if the device can't measure it.
  * @param[out] total Total device memory, in bytes.
  * @return Standard Status Protocol or M_DRIVER_STATUS_BAD_CONTEXT if the
  *         `context` is not a valid handle.

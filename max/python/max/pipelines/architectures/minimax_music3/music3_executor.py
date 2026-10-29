@@ -42,6 +42,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.pipelines.audio import AudioExecutorOutputs
 from max.pipelines.context import AudioContext
+from max.pipelines.lib.memory_estimation import FreeMemory
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_executor import PipelineExecutor
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
@@ -157,11 +158,7 @@ class MiniMaxMusic3Executor(
     def _must_stage(checkpoint: Checkpoint, device: Device) -> bool:
         """Whether the components have to take turns on this device."""
         weights = checkpoint.weight_bytes()
-        # A card that reports no free memory is reporting nothing, not a full
-        # card, so fall back to its capacity as the memory estimator does.
-        free = int(device.stats["free_memory"]) or int(
-            device.stats["total_memory"]
-        )
+        free = FreeMemory.from_stats(device).hi
         staged = weights + ACTIVATION_HEADROOM > free
         logger.info(
             "MiniMax Music 3: %s of weights against %s free, %s residency.",

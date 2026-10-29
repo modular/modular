@@ -57,8 +57,9 @@ namespace M::Driver {
 // ===== CpuDevice ===== //
 //
 // TODO(iposva): Consider using the actual device name.
-CpuDevice::CpuDevice(Device::MemInfo memInfo)
-    : Device(api, "cpu", 0, memInfo, M::kPreferredMemoryAlignment) {}
+CpuDevice::CpuDevice(Device::MemInfo memInfo, bool useMemoryManager)
+    : Device(api, "cpu", 0, memInfo, M::kPreferredMemoryAlignment,
+             useMemoryManager) {}
 
 CpuDevice::~CpuDevice() { clearMemoryManager(); }
 
@@ -140,7 +141,9 @@ ErrorOr<CpuDevice &> CpuDevice::get(int id) {
     RETURN_ERROR("CPU device only supports id == 0.");
   }
 
-  static CpuDevice *device = new CpuDevice(Device::MemInfo());
+  // We rely on malloc optimizations instead of a MemoryManager.
+  static CpuDevice *device =
+      new CpuDevice(Device::MemInfo(), /*useMemoryManager=*/false);
   return *device;
 }
 

@@ -60,6 +60,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <stddef.h>
 #include <string>
 #include <vector>
@@ -168,9 +169,10 @@ public:
   };
 
   struct MemInfo {
-    MemInfo() : total(0), free(0) {}
+    MemInfo() : total(0) {}
     size_t total;
-    size_t free;
+    // Unset when the driver cannot measure free memory.
+    std::optional<size_t> free;
   };
 
   struct GraphMemInfo {
@@ -365,7 +367,9 @@ public:
   virtual DLDevice getDLDevice(bool pinned) const = 0;
 
 protected:
-  Device(API api, std::string name, int id, MemInfo memInfo, size_t alignment);
+  // A device built with `useMemoryManager` false runs without a MemoryManager.
+  Device(API api, std::string name, int id, MemInfo memInfo, size_t alignment,
+         bool useMemoryManager);
 
   // Enable peer access between devices.
   virtual ErrorOrSuccess enablePeerAccessImpl(const Device &peer);
@@ -390,6 +394,7 @@ private:
   // the inputs that deferred construction needs.
   MemInfo memInfo_;
   size_t allocAlignment_;
+  bool useMemoryManager_;
   mutable std::once_flag memoryManagerOnce_;
   mutable std::unique_ptr<MemoryManager> memoryManager_;
   std::unique_ptr<MemoryManager> hostMemoryManager_;

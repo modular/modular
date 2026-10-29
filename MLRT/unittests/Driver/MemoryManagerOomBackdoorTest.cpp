@@ -98,7 +98,7 @@ TEST_F(MemoryManagerOomBackdoorTest, ClassifiedMissCarriesTheBackdoorNote) {
 
   ASSIGN_NO_ERR(Device::MemInfo, mem, device.getMemoryInfo());
   if (mem.free < (mem.total * 8) / 10)
-    GTEST_SKIP() << "GPU is not near-empty (free=" << mem.free
+    GTEST_SKIP() << "GPU is not near-empty (free=" << mem.free.value_or(0)
                  << ", total=" << mem.total
                  << "); another process is resident, skipping to avoid a "
                     "spurious failure";
@@ -110,7 +110,7 @@ TEST_F(MemoryManagerOomBackdoorTest, ClassifiedMissCarriesTheBackdoorNote) {
 
   auto freeNow = [&device]() -> size_t {
     ErrorOr<Device::MemInfo> m = device.getMemoryInfo();
-    return m.isError() ? 0 : m->free;
+    return m.isError() ? 0 : m->free.value_or(0);
   };
 
   // Consume the device out of band, stepping the size down as the driver starts

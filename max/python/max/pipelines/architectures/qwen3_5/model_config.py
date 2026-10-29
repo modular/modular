@@ -34,6 +34,7 @@ from max.nn.legacy.quant_config import QuantConfig
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithVisionCache
+from max.pipelines.lib.memory_estimation import FreeMemory
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.weights import resolve_hf_quant_config
 from transformers.models.auto.configuration_auto import AutoConfig
@@ -613,12 +614,8 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
         """
         per_req = self._per_request_state_bytes() + extra_per_request_bytes
         try:
-            free_bytes = int(
-                sum(d.stats.get("free_memory", 0) for d in devices)
-            )
+            free_bytes = FreeMemory.summed(devices).hi
         except Exception:
-            free_bytes = 0
-        if free_bytes <= 0:
             # Conservative fallback: safe for Qwen3.5-27B on H100/A100 (80 GB).
             return 32
         budget = int(free_bytes * device_memory_utilization) - weights_size

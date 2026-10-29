@@ -707,9 +707,14 @@ AsyncRT_DeviceContext_getMemoryInfo(DeviceContext *ctx, size_t *free,
   Device::MemInfo memInfo;
   const char *errMsg =
       checkVal(&memInfo, Device::MemInfo(), ctx->getMemoryInfo());
-  *free = memInfo.free;
+  if (errMsg)
+    return errMsg;
+  // This ABI has no "unknown", and 0 would read as a full device.
+  if (!memInfo.free)
+    return raiseError("free memory could not be measured on this device");
+  *free = *memInfo.free;
   *total = memInfo.total;
-  return errMsg;
+  return nullptr;
 }
 
 MODULAR_EXPORT const char *AsyncRT_occupancyMaxActiveBlocksPerMultiprocessor(

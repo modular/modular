@@ -1257,9 +1257,9 @@ TEST_F(MetalDeviceContextTestBase, GetMemInfo_TotalAndFree) {
   // it in between.
   constexpr size_t drift = 1024ull * 1024 * 1024;
   EXPECT_EQ(info.total, expectedTotal);
-  EXPECT_LE(info.free, budgetFree);
-  EXPECT_LE(info.free, host.free + drift);
-  EXPECT_GE(info.free + drift, std::min(budgetFree, host.free));
+  EXPECT_LE(info.free.value(), budgetFree);
+  EXPECT_LE(info.free.value(), host.free.value() + drift);
+  EXPECT_GE(info.free.value() + drift, std::min(budgetFree, host.free.value()));
 }
 
 // maxSingleAllocationSize on Metal is maxBufferLength.

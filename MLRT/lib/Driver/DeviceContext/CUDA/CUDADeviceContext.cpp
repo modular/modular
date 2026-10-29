@@ -313,7 +313,8 @@ CUDADevice::CUDADevice(const CUDADriver &driver, int id,
                        CUcontext context, std::string name,
                        int computeCapabilityMajor, int computeCapabilityMinor,
                        Device::MemInfo memInfo, size_t allocAlignment)
-    : Device(api, std::move(name), id, memInfo, allocAlignment),
+    : Device(api, std::move(name), id, memInfo, allocAlignment,
+             /*useMemoryManager=*/true),
       driver_(driver), cudaDevice_(cudaDevice), nvmlDevice_(nvmlDevice),
       context_(context), computeCapability_(cudaCCMonolithic(
                              computeCapabilityMajor, computeCapabilityMinor)),
@@ -812,8 +813,10 @@ ErrorOrSuccess CUDADevice::vmmUnmap(void *va, size_t byteSize) {
 
 ErrorOr<Device::MemInfo> CUDADevice::getMemoryInfo() const {
   Device::MemInfo memInfo;
+  size_t freeBytes = 0;
   CUDA_WITH_DEV_ERR(*this);
-  CUDA_CHECK_ERR(driver_.cuMemGetInfo_v2(&memInfo.free, &memInfo.total));
+  CUDA_CHECK_ERR(driver_.cuMemGetInfo_v2(&freeBytes, &memInfo.total));
+  memInfo.free = freeBytes;
 #if MODULAR_LINUX
   DEFINE_OR_RETURN_ERROR(bool, unified, isHostUnified());
   if (unified)
@@ -944,12 +947,14 @@ ErrorOr<CUDADevice &> CUDADevice::get(int id) {
     if (memInfoFromCUDA) {
       CUDAContextScope ctxScope(cuContext, driver);
       CUDA_CHECK_ERR(ctxScope.status());
+      size_t freeBytes = 0;
       CUDA_CHECK_ERR_MSG(
-          driver.cuMemGetInfo_v2(&memInfo.free, &memInfo.total),
+          driver.cuMemGetInfo_v2(&freeBytes, &memInfo.total),
           std::string("fallback after NVML rejected the memory query for "
                       "device ") +
               std::to_string(id) + " with error " +
               nvml.nvmlErrorString(nvmlMemResult));
+      memInfo.free = freeBytes;
     }
 
 #if MODULAR_LINUX

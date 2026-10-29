@@ -20,7 +20,7 @@ from .plugin import FunctionHandle, RawDriver
 from .driver import Driver, get_device_spec
 from .device import Device
 from .buffer import Buffer, BufferView
-from .context import Context, RuntimeBundle
+from .context import Context, MEMORY_UNKNOWN, RuntimeBundle
 from .event import Event
 from .host import Host
 from .memory import copy, fill, set_memory

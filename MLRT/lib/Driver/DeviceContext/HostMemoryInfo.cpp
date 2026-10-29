@@ -43,7 +43,9 @@ M::Driver::getHostUnifiedMemoryInfo(Device::MemInfo deviceMemoryInfo,
 
   // Preserve driver limits, including reserved memory and device-local limits
   // on systems where an integrated GPU can access only part of host memory.
-  deviceMemoryInfo.free = std::min(hostMemoryInfo.free, deviceMemoryInfo.total);
+  if (hostMemoryInfo.free)
+    deviceMemoryInfo.free =
+        std::min(*hostMemoryInfo.free, deviceMemoryInfo.total);
   return deviceMemoryInfo;
 }
 

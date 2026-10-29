@@ -172,9 +172,9 @@ MODULAR_CXX_EXPORT size_t getPreferredAlignment(std::string label) {
 // ===== Device ===== //
 //
 Device::Device(API api, std::string name, int id, MemInfo memInfo,
-               size_t allocAlignment)
+               size_t allocAlignment, bool useMemoryManager)
     : name_(std::move(name)), id_(id), api_(api), memInfo_(memInfo),
-      allocAlignment_(allocAlignment),
+      allocAlignment_(allocAlignment), useMemoryManager_(useMemoryManager),
       hostMemoryManager_(MemoryManager::onHost(*this, allocAlignment)) {}
 
 Device::~Device() {
@@ -2073,8 +2073,11 @@ MemoryManager &Device::memoryManager() const {
   // is alive: an access during or after subclass destruction queries the base
   // vmmSupported() (always false) and silently builds a non-VMM manager.
   std::call_once(memoryManagerOnce_, [&] {
-    memoryManager_.reset(MemoryManager::onDevice(const_cast<Device &>(*this),
-                                                 memInfo_, allocAlignment_));
+    Device &device = const_cast<Device &>(*this);
+    memoryManager_.reset(
+        useMemoryManager_
+            ? MemoryManager::onDevice(device, memInfo_, allocAlignment_)
+            : MemoryManager::disabled(device, allocAlignment_));
   });
   return *memoryManager_;
 }

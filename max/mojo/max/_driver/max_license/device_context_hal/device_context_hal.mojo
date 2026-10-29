@@ -60,6 +60,7 @@ from ..hal import (
     Driver,
     Event,
     FunctionHandle,
+    MEMORY_UNKNOWN,
     RuntimeBundle,
     Stream,
     get_device_spec,
@@ -744,7 +745,8 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
             A tuple of (free memory, total memory) in bytes.
 
         Raises:
-            If there's an error retrieving the memory information.
+            If there's an error retrieving the memory information, or the
+            device can't measure its free memory.
 
         Example:
 
@@ -761,6 +763,8 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         ```
         """
         var info = self._context[].get_memory_info()
+        if info[0] == MEMORY_UNKNOWN:
+            raise Error("free memory could not be measured on this device")
         return (c_size_t(info[0]), c_size_t(info[1]))
 
     @deprecated("Use `DeviceContext.device().get_attribute()` instead.")

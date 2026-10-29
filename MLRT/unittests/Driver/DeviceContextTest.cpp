@@ -856,9 +856,9 @@ TEST(DeviceContextTest, GetMemoryInfoWithoutMemoryManager) {
   // between the two reads.
   constexpr size_t drift = 1024ull * 1024 * 1024;
   EXPECT_EQ(memInfo.total, deviceMemInfo.total);
-  EXPECT_GE(memInfo.free + drift, deviceMemInfo.free);
-  EXPECT_GE(deviceMemInfo.free + drift, memInfo.free);
-  EXPECT_LT(deviceMemInfo.free, deviceMemInfo.total);
+  EXPECT_GE(memInfo.free.value() + drift, deviceMemInfo.free.value());
+  EXPECT_GE(deviceMemInfo.free.value() + drift, memInfo.free.value());
+  EXPECT_LT(deviceMemInfo.free.value(), deviceMemInfo.total);
 }
 
 TEST(DeviceContextTest, CpuMemoryInfoIsHostWide) {
@@ -871,8 +871,8 @@ TEST(DeviceContextTest, CpuMemoryInfoIsHostWide) {
 
   constexpr size_t drift = 1024ull * 1024 * 1024;
   EXPECT_EQ(info.total, host->total);
-  EXPECT_LE(info.free, host->available + drift);
-  EXPECT_GE(info.free + drift, host->available);
+  EXPECT_LE(info.free.value(), host->available + drift);
+  EXPECT_GE(info.free.value() + drift, host->available);
 }
 
 TEST(DeviceContextTest, GetMemoryInfoWithMemoryManager) {
@@ -933,7 +933,7 @@ TEST(DeviceContextTest, GetMemoryInfoDynamicUpdate) {
 
   // Memory info should show less free memory
   ASSIGN_NO_ERR(Device::MemInfo, afterAllocMemInfo, ctx->getMemoryInfo());
-  EXPECT_LT(afterAllocMemInfo.free, initialMemInfo.free);
+  EXPECT_LT(afterAllocMemInfo.free.value(), initialMemInfo.free.value());
   EXPECT_EQ(afterAllocMemInfo.total, initialMemInfo.total);
 
   // Free the buffer (destructor releases it)
@@ -942,7 +942,7 @@ TEST(DeviceContextTest, GetMemoryInfoDynamicUpdate) {
 
   // Memory info should show more free memory again
   ASSIGN_NO_ERR(Device::MemInfo, afterFreeMemInfo, ctx->getMemoryInfo());
-  EXPECT_GE(afterFreeMemInfo.free, afterAllocMemInfo.free);
+  EXPECT_GE(afterFreeMemInfo.free.value(), afterAllocMemInfo.free.value());
   EXPECT_EQ(afterFreeMemInfo.total, initialMemInfo.total);
 }
 
