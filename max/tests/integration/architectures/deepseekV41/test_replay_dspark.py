@@ -101,7 +101,6 @@ def mapping_graph() -> Model:
             longest,
         ) = [v.tensor for v in graph.inputs]
         kept = ReplicaTokens.from_splits(offsets, splits, indices.shape[0], 2)
-        original = ReplicaTokens.from_splits(original_offsets, splits, 12, 2)
         # Each device's cache lengths cover only its own replica's requests.
         replica_lengths = [
             cache_lengths[
@@ -115,7 +114,7 @@ def mapping_graph() -> Model:
             offsets,
             splits,
             kept,
-            original,
+            [original_offsets, original_offsets],
             replica_lengths,
             128,
             longest,

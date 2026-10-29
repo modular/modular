@@ -434,15 +434,17 @@ def local_replay_rows(
     kept_offsets: TensorValue,
     splits: TensorValue,
     kept_tokens: ReplicaTokens,
-    original_tokens: ReplicaTokens,
+    original_offsets: Sequence[TensorValue],
     cache_lengths: Sequence[TensorValue],
     window: int,
     longest: TensorValue,
 ) -> list[ReplayRows]:
     """Maps batch-global replay rows to each DP replica, including empty ones.
 
-    ``cache_lengths`` are per device and cover only that replica's requests,
-    so each replica's start and floor are rebased after the request slice.
+    ``original_offsets`` are the whole batch's merged row offsets on each
+    device. ``cache_lengths`` are per device and cover only that replica's
+    requests, so each replica's start and floor are rebased after the request
+    slice.
     """
     local = []
     for i, (device_indices, device_skip) in enumerate(
@@ -453,13 +455,16 @@ def local_replay_rows(
         local_indices = device_indices[
             ((slice(first, last), f"replay_indices_{i}"),)
         ]
-        original_first = original_tokens.ranges[i][0].to(local_indices.device)
-        offsets = kept_offsets.to(local_indices.device)[
+        # Rebase from device copies: moving a host scalar to the device adds
+        # an mgp.sync, which blocks the eager executor until the GPU drains.
+        original_first = ops.cast(
+            original_offsets[i][request_first], DType.int64
+        )
+        device_offsets = kept_offsets.to(local_indices.device)
+        offsets = device_offsets[
             ((slice(request_first, request_last + 1), f"replay_offsets_{i}"),)
         ]
-        offsets = offsets - ops.cast(
-            first.to(local_indices.device), DType.uint32
-        )
+        offsets = offsets - device_offsets[request_first]
         local_skip = device_skip[
             ((slice(request_first, request_last), f"replay_skip_{i}"),)
         ]
@@ -826,7 +831,7 @@ class _Verify:
                 output_offsets,
                 splits,
                 kept_replica_tokens,
-                split.replica_tokens,
+                batch.merged_offsets_per_dev,
                 [cache.swa_collection.cache_lengths for cache in caches],
                 self.config.sliding_window,
                 batch.extra[_REPLAY_LONGEST],
