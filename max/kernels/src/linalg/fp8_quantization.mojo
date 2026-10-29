@@ -1237,6 +1237,7 @@ def matmul_dynamic_scaled_fp8[
     k_scale_granularity: Int,
     transpose_b: Bool = False,
     target: StaticString = "cpu",
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
@@ -1284,6 +1285,7 @@ def matmul_dynamic_scaled_fp8[
         k_scale_granularity,
         transpose_b,
         target,
+        pdl_level,
     ](
         c,
         a,
@@ -1308,6 +1310,7 @@ def _matmul_dynamic_scaled_fp8_impl[
     k_scale_granularity: Int,
     transpose_b: Bool = False,
     target: StaticString = "cpu",
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
@@ -1610,6 +1613,7 @@ def _matmul_dynamic_scaled_fp8_impl[
                 n_scale_granularity,
                 k_scale_granularity,
             ),
+            pdl_level=pdl_level,
         ](c, a, b, a_scales, b_scales, ctx)
 
     else:
@@ -2271,6 +2275,7 @@ def blockwise_scaled_fp8_with_epilogue[
     scales_granularity_mnk: Coord[Int, Int, Int],
     transpose_b: Bool = False,
     has_epilogue_fn: Bool = False,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
@@ -2286,6 +2291,9 @@ def blockwise_scaled_fp8_with_epilogue[
     operations. For non B200 GPUs, we use the naive blockwise scaled fp8 matmul which support normal epilogue natively.
     Callers must allocate `c`; with `has_epilogue_fn` the matmul result is
     written into `c` and then read back by `epilogue_fn`.
+
+    `pdl_level` applies to the SM100 matmul launch only (defaults to
+    `PDLLevel()`, which is off).
     """
 
     # 1D/2D blockwise scaling with (m, n, k) granularity in
@@ -2384,6 +2392,7 @@ def blockwise_scaled_fp8_with_epilogue[
                     b_scales_type=b_scales_type,
                     config=small_m_config,
                     n_scale_granularity=scales_granularity_mnk[1],
+                    pdl_level=pdl_level,
                 ](c, a, b, a_scales, b_scales, ctx)
             elif m <= mid_m_max:
                 blockwise_fp8_matmul[
@@ -2392,6 +2401,7 @@ def blockwise_scaled_fp8_with_epilogue[
                     b_scales_type=b_scales_type,
                     config=mid_m_config,
                     n_scale_granularity=scales_granularity_mnk[1],
+                    pdl_level=pdl_level,
                 ](c, a, b, a_scales, b_scales, ctx)
             else:
                 blockwise_fp8_matmul[
@@ -2400,6 +2410,7 @@ def blockwise_scaled_fp8_with_epilogue[
                     b_scales_type=b_scales_type,
                     config=big_m_config,
                     n_scale_granularity=scales_granularity_mnk[1],
+                    pdl_level=pdl_level,
                 ](c, a, b, a_scales, b_scales, ctx)
             elementwise[
                 simd_size,
@@ -2415,6 +2426,7 @@ def blockwise_scaled_fp8_with_epilogue[
                     b_scales_type=b_scales_type,
                     config=small_m_config,
                     n_scale_granularity=scales_granularity_mnk[1],
+                    pdl_level=pdl_level,
                 ](c, a, b, a_scales, b_scales, ctx)
             elif m_runtime <= mid_m_max:
                 blockwise_fp8_matmul[
@@ -2423,6 +2435,7 @@ def blockwise_scaled_fp8_with_epilogue[
                     b_scales_type=b_scales_type,
                     config=mid_m_config,
                     n_scale_granularity=scales_granularity_mnk[1],
+                    pdl_level=pdl_level,
                 ](c, a, b, a_scales, b_scales, ctx)
             else:
                 blockwise_fp8_matmul[
@@ -2431,6 +2444,7 @@ def blockwise_scaled_fp8_with_epilogue[
                     b_scales_type=b_scales_type,
                     config=big_m_config,
                     n_scale_granularity=scales_granularity_mnk[1],
+                    pdl_level=pdl_level,
                 ](c, a, b, a_scales, b_scales, ctx)
 
     else:

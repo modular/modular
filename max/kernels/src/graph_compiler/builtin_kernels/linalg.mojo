@@ -2395,6 +2395,7 @@ struct MatmulDynamicScaledFloat8:
             k_scale_granularity,
             transpose_b=True,
             target=target,
+            pdl_level=PDLLevel.ON,
         ](
             output.to_tile_tensor(),
             a.to_tile_tensor(),

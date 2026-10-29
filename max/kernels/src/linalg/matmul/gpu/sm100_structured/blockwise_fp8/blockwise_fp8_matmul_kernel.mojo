@@ -40,6 +40,11 @@ from max.gpu.memory import (
     fence_mbarrier_init,
 )
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
+from max.gpu.primitives.grid_controls import (
+    PDLLevel,
+    launch_dependent_grids,
+    wait_on_dependent_grids,
+)
 from max.gpu.sync import named_barrier
 from max.gpu.compute.arch.tcgen05 import *
 from layout import (
@@ -127,6 +132,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     # B-scale N-direction block size (independent of BK_kernel).
     n_scale_granularity: Int = 128,
     b_scales_engine: TensorEngine = DefaultEngine[element_width=1],
+    pdl_level: PDLLevel = PDLLevel(),
 ]:
     """Blockwise FP8 matmul kernel with register-based accumulation.
 
@@ -149,6 +155,11 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         n_scale_granularity: B-scales N-direction block size in elements
             (defaults to 128).
         b_scales_engine: Engine of the B-scales `TileTensor`.
+        pdl_level: Programmatic dependent launch level. Above `PDLLevel.OFF`
+            the load warp waits for the predecessor grid immediately before
+            its first TMA load of A and the A-scales, and the MMA warp
+            releases dependent grids once its main loop is done (defaults to
+            `PDLLevel()`, which is off).
     """
 
     # ========== Derived Constants (from config) ==========
@@ -829,6 +840,15 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             ](Pointer(to=a_scales_tma_op))
 
             var producer = input_pipeline.producer()
+
+            # A and the A-scales are written by the predecessor grid (the
+            # activation quantizer); B and the B-scales are weights. Everything
+            # above this point is host-provided or CTA-local, so it overlaps
+            # the predecessor's tail. The MMA and epilogue warps only consume
+            # tiles this warp loads, so they need no wait of their own.
+            comptime if Self.pdl_level > PDLLevel.OFF:
+                wait_on_dependent_grids()
+
             for current in load_iter:
                 scheduler.throttle_signal(ctx.is_first_cta_in_cluster)
 
@@ -889,6 +909,11 @@ struct BlackwellBlockwiseFP8MatmulKernel[
                         # Release resources (compiler enforces these calls)
                         input_tiles^.release()
                         mma_stage^.release()
+
+            # Every MMA has been issued; a dependent grid's own wait still
+            # blocks until this grid completes and its stores are visible.
+            comptime if Self.pdl_level > PDLLevel.OFF:
+                launch_dependent_grids()
 
             # Wait for epilogue and deallocate TMEM
             mma_handle^.release()

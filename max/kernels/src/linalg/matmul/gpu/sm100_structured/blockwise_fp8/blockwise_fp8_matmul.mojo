@@ -22,6 +22,7 @@ from std.sys import get_defined_bool, size_of
 
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.info import B200
+from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from layout import TileTensor, coord
 from structured_kernels.tile_types import create_tma_tile
 
@@ -49,6 +50,7 @@ def blockwise_fp8_matmul[
     *,
     config: MatmulConfig[_, _, _, transpose_b],
     n_scale_granularity: Int = 128,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     c: TileTensor,
     a: TileTensor[mut=False, ...],
@@ -71,6 +73,9 @@ def blockwise_fp8_matmul[
         n_scale_granularity: B-scale block size along the N dimension in
             elements (defaults to 128). Set smaller when the matmul's N-tile
             spans multiple finer-grained scale blocks.
+        pdl_level: Programmatic dependent launch level for the structured
+            kernel (defaults to `PDLLevel()`, which is off). Ignored by the
+            legacy kernel selected with `USE_LEGACY_BLOCKWISE_FP8`.
 
     Args:
         c: Output matrix (M x N).
@@ -176,6 +181,7 @@ def blockwise_fp8_matmul[
         cluster_shape=corrected_config.cluster_shape,
         n_scale_granularity=n_scale_granularity,
         b_scales_engine=type_of(b_scales).Engine,
+        pdl_level=pdl_level,
     ]
 
     # Create TMA descriptors using kernel's layout types
@@ -251,4 +257,5 @@ def blockwise_fp8_matmul[
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(b200_smem)
         ),
+        attributes=pdl_launch_attributes(pdl_level),
     )
