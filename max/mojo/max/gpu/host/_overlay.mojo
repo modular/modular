@@ -25,6 +25,7 @@ from ._legacy.device_context import (
     _DeviceContextPtr,
     _DeviceFunctionPtr,
     _DumpPath,
+    _check_dim,
     _checked,
 )
 from ._legacy.device_graph import *
