@@ -2294,9 +2294,9 @@ class TextBatchConstructor:
         def _has_seat(replica_idx: int) -> bool:
             return len(queues[replica_idx]) < seats[replica_idx]
 
-        # Ties on CE tokens are common (cross-replica prefix copy prices every
-        # replica the same); breaking them by request count keeps them from
-        # all landing on replica 0 until it runs out of decode seats.
+        # Ties on CE tokens are common (no replica holding the prefix prices
+        # them the same); breaking them by request count keeps them from all
+        # landing on replica 0 until it runs out of decode seats.
         def _bind_key(replica_idx: int, weight: int) -> tuple[int, int]:
             return (
                 sum(queues[replica_idx]) + weight,

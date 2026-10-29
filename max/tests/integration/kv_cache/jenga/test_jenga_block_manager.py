@@ -1474,27 +1474,37 @@ def test_get_prefix_cache_hit_counts_is_per_replica() -> None:
     assert hits[1].device_blocks == 0
 
 
-def test_hit_counts_see_other_replicas_when_copies_are_on() -> None:
-    """A prefix only replica 1 holds still counts for replica 0."""
+def test_hit_counts_keep_the_prefix_holder_ahead_when_copies_are_on() -> None:
+    """Copies extend only the best local holder's count.
+
+    The DP balancer binds a request to the replica its hit makes cheapest,
+    so pricing every replica the same would send it away from its prefix.
+    """
     bm = make_manager(
         {FULL: full(ratio=1)},
         block_size=1,
-        num_huge_blocks=8,
-        num_replicas=2,
+        num_huge_blocks=16,
+        num_replicas=3,
         enable_prefix_caching=True,
-        replica_kv_memory=make_replica_kv_memory([FULL], num_pages=8),
+        replica_kv_memory=make_replica_kv_memory(
+            [FULL], num_replicas=3, num_pages=16
+        ),
     )
-    warm = make_ctx(num_tokens=4)
-    bm.claim(warm, replica_idx=1)
-    bm.alloc(warm)
-    warm.update(42)
-    bm.step(warm)
-    bm.release(warm)
+    hashes = bm._compute_block_hashes(make_ctx(num_tokens=5), [])
+    commit_hashes(bm, [FULL], hashes[:2], replica_idx=1)
+    commit_hashes(bm, [FULL], hashes[2:4], replica_idx=2)
 
-    hits = bm.get_prefix_cache_hit_counts(make_ctx(num_tokens=4))
+    hits = bm.get_prefix_cache_hit_counts(make_ctx(num_tokens=5))
 
-    assert hits[1].device_blocks > 0
-    assert hits[0].device_blocks == hits[1].device_blocks
+    # Replica 1 holds the start, and copying the rest from replica 2 gives it
+    # the whole run.
+    assert [h.device_blocks for h in hits] == [0, 4, 0]
+
+    commit_hashes(bm, [FULL], hashes[:2], replica_idx=2)
+
+    hits = bm.get_prefix_cache_hit_counts(make_ctx(num_tokens=5))
+
+    assert [h.device_blocks for h in hits] == [0, 2, 4]
 
 
 def test_hit_counts_stay_local_when_copies_are_off() -> None:
@@ -2113,11 +2123,22 @@ def test_device_hit_matches_an_exhaustive_scan(
                 assert bm._find_longest_device_prefix_cache_hit(
                     hashes, replica_idx, cross
                 ) == exhaustive_device_hit(bm, hashes, replica_idx, cross)
+            local = bm._find_longest_device_prefix_cache_hit(
+                hashes, replica_idx, False
+            )
+            assert bm._find_longest_cross_replica_hit(
+                hashes, replica_idx, local
+            ) == exhaustive_device_hit(bm, hashes, replica_idx, True)
         # The DP CE balancer's weights come from these.
         hits = bm.get_prefix_cache_hit_counts(ctx)
-        assert [h.device_blocks for h in hits] == [
-            exhaustive_device_hit(bm, hashes, replica_idx, cross_replica_copy)
+        local_hits = [
+            exhaustive_device_hit(bm, hashes, replica_idx, False)
             for replica_idx in range(4)
+        ]
+        cross_hit = exhaustive_device_hit(bm, hashes, 0, True)
+        assert [h.device_blocks for h in hits] == [
+            cross_hit if cross_replica_copy and hit == max(local_hits) else hit
+            for hit in local_hits
         ]
 
 
@@ -2228,15 +2249,14 @@ def test_lookup_does_not_evict_the_local_part_of_the_hit() -> None:
         local + remote, 0
     )
 
-    # Holding ``a`` leaves room for one of the two remote pages, so the hit
-    # is the local block plus what fit. ``a`` survives either way, which is
-    # what this test is here for.
-    assert num_hit_blocks == 2
-    assert len(hit_blocks[FULL]) == 2
+    # Holding ``a`` leaves room for one of the two remote pages, so nothing
+    # is copied and the hit is the local block. ``a`` survives either way,
+    # which is what this test is here for.
+    assert num_hit_blocks == 1
+    assert len(hit_blocks[FULL]) == 1
     assert hit_blocks[FULL][0] is local_block
     assert bm.pools[0].prefix_caches[FULL][local[0]] is local_block
-    # One page fit: 1 x 8 bytes per page.
-    assert bm.metrics.cross_replica_bytes_copied == 8
+    assert bm.metrics.cross_replica_bytes_copied == 0
 
 
 def test_lookup_copies_the_remote_half_and_keeps_the_local_half() -> None:
@@ -2339,7 +2359,7 @@ def test_copy_prefix_from_peers_skips_leaves_already_present() -> None:
 def test_copy_prefix_from_peers_hands_back_its_pages_when_allocation_fails() -> (
     None
 ):
-    """A refused allocation keeps what landed and strands nothing.
+    """A copy that does not all fit copies nothing and strands nothing.
 
     A page dropped here would be referenced by nothing and recorded
     nowhere, so no later release could ever find it.
@@ -2364,9 +2384,7 @@ def test_copy_prefix_from_peers_hands_back_its_pages_when_allocation_fails() -> 
 
     assert pool.num_free_blocks(FULL) == 1
     assert all(block.ref_cnt == 1 for block in squeeze)
-    # The first page landed before the refusal, so it is kept rather than
-    # thrown away; only the hash whose page never arrived is missing.
-    assert set(pool.prefix_caches[FULL]) == {b"a"}
+    assert not pool.prefix_caches[FULL]
 
 
 def test_copy_prefix_from_peers_hands_back_its_pages_when_the_copy_raises(
@@ -2486,6 +2504,57 @@ def test_lookup_serves_a_cross_replica_window() -> None:
     assert len(row) == 3
     assert row[0] is bm.pools[0].null_little_blocks[SLIDING]
     assert not any(block.is_null for block in row[1:])
+
+
+def test_lookup_copies_nothing_when_the_window_cannot_be_made_local() -> None:
+    """Full pages are not copied when the window they need cannot follow.
+
+    Without the window the hit cannot grow, so the full pages would be
+    copied for nothing and evict other commits on the way in.
+    """
+    bm = make_manager(
+        {FULL: full(), SLIDING: sliding(window=3)},
+        num_huge_blocks=8,
+        num_replicas=2,
+        replica_kv_memory=make_replica_kv_memory([FULL, SLIDING], num_pages=8),
+    )
+    hashes = [b"a", b"b", b"c"]
+    commit_hashes(bm, [FULL, SLIDING], hashes, replica_idx=1)
+    commit_hashes(bm, [FULL, SLIDING], hashes[:1], replica_idx=0)
+    pool = bm.pools[0]
+    # Room for the two missing full pages, not for the window's two as well.
+    squeeze = [pool.alloc_block(FULL) for _ in range(3)]
+    assert pool.num_free_blocks(FULL) == 2
+
+    _, num_hit_blocks = bm._lookup_device_prefix_cache_hit(hashes, 0)
+
+    assert num_hit_blocks == 1
+    assert set(pool.prefix_caches[FULL]) == {b"a"}
+    assert bm.metrics.cross_replica_bytes_copied == 0
+    assert pool.num_free_blocks(FULL) == 2
+    assert all(block.ref_cnt == 1 for block in squeeze)
+
+
+def test_lookup_skips_the_copy_when_no_peer_holds_a_longer_hit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A hit the replica already serves in full costs no copy pass."""
+    bm = make_manager(
+        {FULL: full(), SLIDING: sliding(window=3)},
+        num_huge_blocks=8,
+        num_replicas=2,
+        replica_kv_memory=make_replica_kv_memory([FULL, SLIDING], num_pages=8),
+    )
+    hashes = [b"a", b"b", b"c"]
+    for replica_idx in range(2):
+        commit_hashes(bm, [FULL, SLIDING], hashes[:2], replica_idx)
+    copy = MagicMock(wraps=bm._copy_prefix_from_peers)
+    monkeypatch.setattr(bm, "_copy_prefix_from_peers", copy)
+
+    _, num_hit_blocks = bm._lookup_device_prefix_cache_hit(hashes, 0)
+
+    assert num_hit_blocks == 2
+    copy.assert_not_called()
 
 
 def test_occupancy_adds_up_to_the_pool_counts() -> None:
