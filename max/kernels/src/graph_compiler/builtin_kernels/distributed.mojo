@@ -53,6 +53,7 @@ from comm.reducescatter import ReduceScatterConfig, reducescatter
 from comm.reducescatter_rmsnorm import _dispatch_rs_norm, reducescatter_rmsnorm
 from nn.normalization import rms_norm_gpu
 from comm.broadcast import broadcast
+from comm.device_collective import _launch_device_collective
 from comm.scatter import scatter
 from comm import MAX_GPUS, Signal
 import comm.vendor.ccl as vendor_ccl
@@ -95,7 +96,6 @@ from .kernels import *
 from .kernels import (
     _check_signal_buffer_size,
     _check_tensor_tuple,
-    _launch_device_collective,
     _partitioned_scratch_requirement,
 )
 

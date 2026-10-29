@@ -53,7 +53,8 @@ from extensibility import (
     _FusedOutputTensor as FusedOutputTensor,
 )
 
-from .kernels import _check_tensor_tuple, _launch_device_collective
+from comm.device_collective import _launch_device_collective
+from .kernels import _check_tensor_tuple
 
 from shmem import (
     shmem_init_thread_mpi,
