@@ -44,6 +44,10 @@ This version is still a work in progress.
   [`LiquidAI/LFM3-1.7B-Base`](https://huggingface.co/LiquidAI/LFM3-1.7B-Base)
   on the new `Lfm3ForCausalLM` architecture.
 
+- Added support for
+  [`LiquidAI/LFM3-VL-2B`](https://huggingface.co/LiquidAI/LFM3-VL-2B) on the
+  `Lfm3VlForConditionalGeneration` architecture, with image and video input.
+
 ## Inference server
 
 - Serving metric names now use `max.*` instead of `maxserve.*`. Batch

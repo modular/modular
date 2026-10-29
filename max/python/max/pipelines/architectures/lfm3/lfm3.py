@@ -224,14 +224,19 @@ class Lfm3(Module[..., ModuleV3Outputs]):
     ) -> ModuleV3Outputs:
         """Runs the decoder over the tokens and returns the logits."""
         del return_n_logits
-        kv, conv_pool, conv_rows = self.unpack_kv(kv_inputs, tokens.mapping)
-        h = self.model(
-            self.model.embed_tokens(tokens),
-            kv,
-            conv_pool,
-            conv_rows,
-            input_row_offsets,
+        return self.decode(
+            self.model.embed_tokens(tokens), input_row_offsets, kv_inputs
         )
+
+    def decode(
+        self,
+        embeds: Tensor,
+        input_row_offsets: Tensor,
+        kv_inputs: tuple[Tensor, ...],
+    ) -> ModuleV3Outputs:
+        """Runs the decoder over token embeddings and returns the logits."""
+        kv, conv_pool, conv_rows = self.unpack_kv(kv_inputs, embeds.mapping)
+        h = self.model(embeds, kv, conv_pool, conv_rows, input_row_offsets)
         last = F.gather(h, input_row_offsets[1:] - 1, axis=0)
         if self.return_logits == ReturnLogits.ALL:
             logits = self._logits(h)

@@ -626,6 +626,9 @@ class Qwen3VLPipelineOracle(PipelineOracle):
             torch_dtype=torch_dtype,
             trust_remote_code=True,
         )
+        # The logits recorder runs after the generation config's processors,
+        # and MAX's logits carry no repetition penalty.
+        model.generation_config.repetition_penalty = 1.0
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
     def run_torch_text_generation(
@@ -1593,6 +1596,9 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         model_path="LiquidAI/LFM3-1.7B",
         config_params={"max_length": 8192, "trust_remote_code": True},
         device_encoding_map={"gpu": ["bfloat16"]},
+    ),
+    "LiquidAI/LFM3-VL-2B": Qwen3VLPipelineOracle(
+        model_path="LiquidAI/LFM3-VL-2B"
     ),
     "meta-llama/Llama-4-Scout-17B-16E-Instruct": GenericOracle(
         model_path="meta-llama/Llama-4-Scout-17B-16E-Instruct",

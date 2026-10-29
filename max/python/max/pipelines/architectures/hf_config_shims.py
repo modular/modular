@@ -399,6 +399,47 @@ class _Lfm3HFConfig(PretrainedConfig):
 AutoConfig.register("lfm3", _Lfm3HFConfig, exist_ok=True)
 
 
+class _Lfm3VlVisionHFConfig(_Lfm3HFConfig):
+    """The LFM3-VL vision tower's config, kept verbatim."""
+
+    model_type = "lfm3_vl_vision"
+
+
+class _Lfm3VlHFConfig(PretrainedConfig):
+    """Local config class for LiquidAI LFM3-VL (``model_type: lfm3_vl``).
+
+    The repos point ``auto_map`` at remote configuration code, as LFM3's do.
+    Both halves become objects because the architecture reads their fields
+    by attribute.
+    """
+
+    model_type = "lfm3_vl"
+    sub_configs = {
+        "text_config": _Lfm3HFConfig,
+        "vision_config": _Lfm3VlVisionHFConfig,
+    }
+
+    def __init__(
+        self,
+        text_config: dict[str, Any] | _Lfm3HFConfig | None = None,
+        vision_config: dict[str, Any] | _Lfm3VlVisionHFConfig | None = None,
+        **kwargs: Any,
+    ) -> None:
+        if not isinstance(text_config, _Lfm3HFConfig):
+            text_config = _Lfm3HFConfig(**(text_config or {}))
+        if not isinstance(vision_config, _Lfm3VlVisionHFConfig):
+            vision_config = _Lfm3VlVisionHFConfig(**(vision_config or {}))
+        self.text_config = text_config
+        self.vision_config = vision_config
+        super().__init__(**kwargs)
+        for k, v in kwargs.items():
+            if not hasattr(self, k):
+                setattr(self, k, v)
+
+
+AutoConfig.register("lfm3_vl", _Lfm3VlHFConfig, exist_ok=True)
+
+
 class _KimiK3SubHFConfig(PretrainedConfig):
     """A Kimi K3 sub-config that preserves every field verbatim.
 

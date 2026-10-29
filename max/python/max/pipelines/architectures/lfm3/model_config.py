@@ -78,6 +78,20 @@ class Lfm3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     kv_params: MultiKVCacheParams
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
 
+    @staticmethod
+    def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """Returns the text config's decoder layer count."""
+        return int(huggingface_config.get_text_config().num_hidden_layers)
+
+    @classmethod
+    def calculate_max_seq_len(
+        cls, huggingface_config: AutoConfig, model_config: MAXModelConfig
+    ) -> int:
+        """Returns the max sequence length the text config allows."""
+        return super().calculate_max_seq_len(
+            huggingface_config.get_text_config(), model_config
+        )
+
     @classmethod
     def construct_kv_params(
         cls,
@@ -92,7 +106,9 @@ class Lfm3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         """Returns the sliding and full KV caches beside the conv windows.
 
         Each kind of layer indexes its own cache 0, 1, 2, ... in layer order.
+        A vision-language config contributes its text half.
         """
+        huggingface_config = huggingface_config.get_text_config()
         layer_types = huggingface_config.layer_types
         attention = hybrid_swa_full_kv_params(
             layer_types=[t for t in layer_types if t != CONV],
@@ -134,12 +150,12 @@ class Lfm3Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     ) -> Self:
         """Builds the config from the checkpoint's text config."""
         model_config = model_config or pipeline_config.model
-        hf = model_config.huggingface_config
-        if hf is None:
+        if model_config.huggingface_config is None:
             raise ValueError(
                 f"HuggingFace config is required for "
                 f"'{model_config.model_path}', but it could not be loaded."
             )
+        hf = model_config.huggingface_config.get_text_config()
         encoding = _select_quantization_encoding(
             model_config, cls.DEFAULT_ENCODING
         )

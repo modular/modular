@@ -56,6 +56,7 @@ family.
    pipelines.architectures.laguna
    pipelines.architectures.lfm2
    pipelines.architectures.lfm3
+   pipelines.architectures.lfm3_vl
    pipelines.architectures.llama3
    pipelines.architectures.llama4
    pipelines.architectures.mamba
@@ -129,6 +130,7 @@ Text generation
    ~max.pipelines.architectures.laguna
    ~max.pipelines.architectures.lfm2
    ~max.pipelines.architectures.lfm3
+   ~max.pipelines.architectures.lfm3_vl
    ~max.pipelines.architectures.llama3
    ~max.pipelines.architectures.llama4
    ~max.pipelines.architectures.mamba
