@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, ClassVar
+from typing import Any, ClassVar, TypeVar
 
 import numpy as np
 import numpy.typing as npt
@@ -49,6 +49,7 @@ from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.tensor import default_dtype
 
+from ..lfm3.model_config import Lfm3Config
 from ..llama3_modulev3.batch_processor import Llama3ModuleV3BatchProcessor
 from ..llama3_modulev3.inputs import Llama3Inputs
 from .lfm3_vl import Lfm3VlLanguage, Lfm3VlVision
@@ -161,16 +162,23 @@ def pack_frames(
     )
 
 
-class Lfm3VlModel(
-    LogProbabilitiesMixin,
-    ModuleV3MultiGraphPipelineModelWithKVCache[TextAndVisionContext],
-):
-    """LFM3-VL: the vision graph encodes frames the language graph reads."""
+_ConfigT = TypeVar("_ConfigT", bound=Lfm3Config)
 
-    model_config_cls: ClassVar[type[Any]] = Lfm3VlConfig
+
+class Lfm3MediaModel(
+    LogProbabilitiesMixin,
+    ModuleV3MultiGraphPipelineModelWithKVCache[TextAndVisionContext, _ConfigT],
+):
+    """An LFM3 media model.
+
+    A media graph encodes what the language graph reads at its placeholders.
+    """
+
     batch_processor_cls: ClassVar[type[Lfm3VlBatchProcessor]] = (
         Lfm3VlBatchProcessor
     )
+    language_cls: ClassVar[type[Lfm3VlLanguage]]
+    _config: _ConfigT
 
     def __init__(
         self,
@@ -197,7 +205,7 @@ class Lfm3VlModel(
             memory_plan=memory_plan,
         )
         if len(self.devices) > 1:
-            raise NotImplementedError("LFM3-VL runs on one device.")
+            raise NotImplementedError("LFM3 media models run on one device.")
         self.vision_model, self.language_model = self._load_towers(session)
         self._empty_embeddings = [
             Buffer.zeros(
@@ -209,6 +217,63 @@ class Lfm3VlModel(
     def model(self) -> Callable[..., Any]:
         """The language tower, which device graph capture replays."""
         return self.language_model
+
+    def _create_model_config(
+        self, state_dict: dict[str, WeightData]
+    ) -> _ConfigT:
+        del state_dict
+        assert self.model_config_cls is not None
+        config = self.model_config_cls.initialize(
+            self.pipeline_config, max_seq_len=self.max_seq_len
+        )
+        config.return_logits = self.return_logits
+        self._config = config
+        return config
+
+    def _language_spec(
+        self, model_config: _ConfigT, state_dict: dict[str, Any]
+    ) -> GraphSpec:
+        with F.lazy(), default_dtype(model_config.dtype):
+            language = self.language_cls(model_config)
+            language.to(self.devices[0])
+        return GraphSpec(
+            language,
+            type(language).__qualname__,
+            modulev3_gemma_multimodal_language_symbolic_inputs(
+                kv_params=self.kv_params,
+                device_ref=DeviceRef.from_device(self.devices[0]),
+                hidden_size=model_config.hidden_size,
+                embedding_dtype=model_config.dtype,
+            ),
+            weights=state_dict,
+        )
+
+    def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
+        """Returns the embeddings of a batch without media."""
+        return self._empty_embeddings
+
+    def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
+        """Runs the language graph on the inputs."""
+        outputs = self.language_model(*model_inputs.buffers)
+        logits = outputs.logits
+        if logits is None:
+            logits = outputs.next_token_logits
+        return ModelOutputs(
+            logits=logits.driver_tensor,
+            next_token_logits=outputs.next_token_logits.driver_tensor,
+            logit_offsets=(
+                None
+                if outputs.logit_offsets is None
+                else outputs.logit_offsets.driver_tensor
+            ),
+        )
+
+
+class Lfm3VlModel(Lfm3MediaModel[Lfm3VlConfig]):
+    """LFM3-VL: the vision graph encodes frames the language graph reads."""
+
+    model_config_cls: ClassVar[type[Any]] = Lfm3VlConfig
+    language_cls: ClassVar[type[Lfm3VlLanguage]] = Lfm3VlLanguage
 
     def _load_state_dict(self) -> dict[str, WeightData]:
         vision: dict[str, WeightData] = {}
@@ -225,16 +290,6 @@ class Lfm3VlModel(
         self._vision_weights_dict = vision
         self._language_weights_dict = language
         return {**vision, **language}
-
-    def _create_model_config(
-        self, state_dict: dict[str, WeightData]
-    ) -> Lfm3VlConfig:
-        del state_dict
-        self._config = Lfm3VlConfig.initialize(
-            self.pipeline_config, max_seq_len=self.max_seq_len
-        )
-        self._config.return_logits = self.return_logits
-        return self._config
 
     def _vision_spec(
         self, model_config: Lfm3VlConfig, state_dict: dict[str, Any]
@@ -265,31 +320,13 @@ class Lfm3VlModel(
             weights=state_dict,
         )
 
-    def _language_spec(
-        self, model_config: Lfm3VlConfig, state_dict: dict[str, Any]
-    ) -> GraphSpec:
-        with F.lazy(), default_dtype(model_config.dtype):
-            language = Lfm3VlLanguage(model_config)
-            language.to(self.devices[0])
-        return GraphSpec(
-            language,
-            type(language).__qualname__,
-            modulev3_gemma_multimodal_language_symbolic_inputs(
-                kv_params=self.kv_params,
-                device_ref=DeviceRef.from_device(self.devices[0]),
-                hidden_size=model_config.hidden_size,
-                embedding_dtype=model_config.dtype,
-            ),
-            weights=state_dict,
-        )
-
     def pack_vision_inputs(
         self,
         selection: Sequence[
             tuple[TextAndVisionContext, Sequence[ImageMetadata]]
         ],
         devices: list[Device],
-    ) -> Lfm3VlVisionInputs | None:
+    ) -> object | None:
         """Packs the batch's frames for the vision graph."""
         frames = [frame for _, frames in selection for frame in frames]
         if not frames:
@@ -305,7 +342,7 @@ class Lfm3VlModel(
             tuple[TextAndVisionContext, Sequence[ImageMetadata]]
         ],
         devices: list[Device],
-        packed: Lfm3VlVisionInputs | None,
+        packed: object | None,
     ) -> VisionEncodeResult:
         """Encodes the batch's frames into embeddings."""
         packed = packed or self.pack_vision_inputs(selection, devices)
@@ -313,6 +350,7 @@ class Lfm3VlModel(
             return VisionEncodeResult(
                 embeddings=self.empty_vision_embeddings(devices)
             )
+        assert isinstance(packed, Lfm3VlVisionInputs)
         assert self.vision_model is not None
         embeddings = self.vision_model(
             packed.patches,
@@ -322,23 +360,3 @@ class Lfm3VlModel(
             packed.conv_taps,
         )
         return VisionEncodeResult(embeddings=[embeddings.driver_tensor])
-
-    def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
-        """Returns the embeddings of a batch without media."""
-        return self._empty_embeddings
-
-    def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
-        """Runs the language graph on the inputs."""
-        outputs = self.language_model(*model_inputs.buffers)
-        logits = outputs.logits
-        if logits is None:
-            logits = outputs.next_token_logits
-        return ModelOutputs(
-            logits=logits.driver_tensor,
-            next_token_logits=outputs.next_token_logits.driver_tensor,
-            logit_offsets=(
-                None
-                if outputs.logit_offsets is None
-                else outputs.logit_offsets.driver_tensor
-            ),
-        )

@@ -440,6 +440,84 @@ class _Lfm3VlHFConfig(PretrainedConfig):
 AutoConfig.register("lfm3_vl", _Lfm3VlHFConfig, exist_ok=True)
 
 
+class _Lfm3AudioEncoderHFConfig(_Lfm3HFConfig):
+    """The LFM3-Audio speech encoder's config.
+
+    Its LFM2 stack is ``text_config``.
+    """
+
+    model_type = "lfm3_audio_encoder"
+    sub_configs = {"text_config": _Lfm3HFConfig}
+
+    def __init__(
+        self,
+        text_config: dict[str, Any] | _Lfm3HFConfig | None = None,
+        **kwargs: Any,
+    ) -> None:
+        text_config = kwargs.pop("lfm", text_config)
+        if not isinstance(text_config, _Lfm3HFConfig):
+            text_config = _Lfm3HFConfig(**(text_config or {}))
+        self.text_config = text_config
+        super().__init__(**kwargs)
+
+
+class _Lfm3AudioHFConfig(PretrainedConfig):
+    """Local config class for LiquidAI LFM3-Audio (``model_type: lfm3_audio``).
+
+    The released ``config.json`` is the training export's: ``lfm`` holds the
+    language model, ``encoder`` the speech encoder and ``depthformer`` the
+    depth decoder. They become ``text_config``, ``audio_encoder_config`` and
+    ``depth_config``, and the special token ids default to the reference
+    config's, which the export leaves out.
+    """
+
+    model_type = "lfm3_audio"
+    sub_configs = {
+        "text_config": _Lfm3HFConfig,
+        "audio_encoder_config": _Lfm3AudioEncoderHFConfig,
+        "depth_config": _Lfm3HFConfig,
+    }
+
+    def __init__(
+        self,
+        text_config: dict[str, Any] | _Lfm3HFConfig | None = None,
+        audio_encoder_config: dict[str, Any]
+        | _Lfm3AudioEncoderHFConfig
+        | None = None,
+        depth_config: dict[str, Any] | _Lfm3HFConfig | None = None,
+        **kwargs: Any,
+    ) -> None:
+        text_config = kwargs.pop("lfm", text_config)
+        audio_encoder_config = kwargs.pop("encoder", audio_encoder_config)
+        depth_config = kwargs.pop("depthformer", depth_config)
+        if not isinstance(text_config, _Lfm3HFConfig):
+            text_config = _Lfm3HFConfig(**(text_config or {}))
+        if not isinstance(audio_encoder_config, _Lfm3AudioEncoderHFConfig):
+            audio_encoder_config = _Lfm3AudioEncoderHFConfig(
+                **(audio_encoder_config or {})
+            )
+        if not isinstance(depth_config, _Lfm3HFConfig):
+            depth_config = _Lfm3HFConfig(**(depth_config or {}))
+        self.text_config = text_config
+        self.audio_encoder_config = audio_encoder_config
+        self.depth_config = depth_config
+        for name, default in (
+            ("audio_token_id", 125_031),
+            ("audio_out_token_id", 125_032),
+            ("audio_start_token_id", 125_012),
+            ("text_end_token_id", 125_014),
+            ("mixed_start_token_id", 125_015),
+        ):
+            kwargs.setdefault(name, default)
+        super().__init__(**kwargs)
+        for k, v in kwargs.items():
+            if not hasattr(self, k):
+                setattr(self, k, v)
+
+
+AutoConfig.register("lfm3_audio", _Lfm3AudioHFConfig, exist_ok=True)
+
+
 class _KimiK3SubHFConfig(PretrainedConfig):
     """A Kimi K3 sub-config that preserves every field verbatim.
 

@@ -61,20 +61,26 @@ class Lfm3DecoderLayer(Module[..., Tensor]):
     """
 
     def __init__(
-        self, config: Lfm3Config, operator: Lfm3Attention | Lfm3ShortConv
+        self,
+        operator: Module[..., Tensor],
+        layer_type: str,
+        *,
+        hidden_size: int,
+        intermediate_size: int,
+        norm_eps: float,
+        use_sandwich_norm: bool = False,
     ) -> None:
-        if isinstance(operator, Lfm3ShortConv):
+        if layer_type == CONV:
             self.conv = operator
         else:
             self.self_attn = operator
-        hidden, eps = config.hidden_size, config.norm_eps
-        self.feed_forward = Lfm3MLP(hidden, config.intermediate_size)
-        self.operator_norm = RMSNorm(hidden, eps=eps)
-        self.ffn_norm = RMSNorm(hidden, eps=eps)
-        self.use_sandwich_norm = config.use_sandwich_norm
+        self.feed_forward = Lfm3MLP(hidden_size, intermediate_size)
+        self.operator_norm = RMSNorm(hidden_size, eps=norm_eps)
+        self.ffn_norm = RMSNorm(hidden_size, eps=norm_eps)
+        self.use_sandwich_norm = use_sandwich_norm
         if self.use_sandwich_norm:
-            self.post_operator_norm = RMSNorm(hidden, eps=eps)
-            self.post_ffn_norm = RMSNorm(hidden, eps=eps)
+            self.post_operator_norm = RMSNorm(hidden_size, eps=norm_eps)
+            self.post_ffn_norm = RMSNorm(hidden_size, eps=norm_eps)
 
     def forward(
         self, h: Tensor, *operator_args: Tensor | PagedCacheValues
@@ -130,7 +136,16 @@ class Lfm3TextModel(Module[..., Tensor]):
                         else config.sliding_window
                     ),
                 )
-            layers.append(Lfm3DecoderLayer(config, operator))
+            layers.append(
+                Lfm3DecoderLayer(
+                    operator,
+                    layer_type,
+                    hidden_size=config.hidden_size,
+                    intermediate_size=config.intermediate_size,
+                    norm_eps=config.norm_eps,
+                    use_sandwich_norm=config.use_sandwich_norm,
+                )
+            )
         self.layers = ModuleList(layers)
         self.embedding_norm = RMSNorm(config.hidden_size, eps=config.norm_eps)
 

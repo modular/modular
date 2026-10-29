@@ -60,9 +60,12 @@ from ..qwen3vl_moe.tokenizer import qwen3vl_image_preprocessing
 
 IMAGE_TOKEN = "<|image|>"
 VIDEO_TOKEN = "<|video|>"
-_MEDIA_TOKEN = re.compile(
-    "(" + "|".join(map(re.escape, (IMAGE_TOKEN, VIDEO_TOKEN))) + ")"
-)
+
+Frame = tuple[npt.NDArray[np.float32], int, int]
+"""An encoder input, its hash and its placeholder token count."""
+
+Media = dict[str, list[tuple[str, list[Frame]]]]
+"""Per placeholder token, each item's replacement text and frames."""
 
 
 def _frame_hash(frame: npt.NDArray[np.float32]) -> int:
@@ -76,7 +79,8 @@ class Lfm3VlTokenizer(TextAndVisionTokenizer):
     Each entry of the context's ``images`` holds one frame's patches as
     ``[blocks_h, blocks_w, merge**2, patch_dim]``, so the frame's grid
     travels with its pixels. A video contributes one frame per temporal
-    patch, each in its own timestamped placeholder run.
+    patch, each in its own timestamped placeholder run. Subclasses add media
+    kinds through :meth:`_media`.
     """
 
     def __init__(
@@ -111,11 +115,18 @@ class Lfm3VlTokenizer(TextAndVisionTokenizer):
         )
         config = pipeline_config.model.huggingface_config
         assert config is not None
-        self.vision_token_ids = [config.image_token_id, config.video_token_id]
-        vision = config.vision_config
-        self.patch_size = vision.patch_size
-        self.temporal_patch_size = vision.temporal_patch_size
-        self.merge_size = vision.spatial_merge_size
+        self.config = config
+        self.vision_token_ids: list[int] = []
+        vision = getattr(config, "vision_config", None)
+        self.has_vision = vision is not None
+        if vision is not None:
+            self.vision_token_ids += [
+                config.image_token_id,
+                config.video_token_id,
+            ]
+            self.patch_size = vision.patch_size
+            self.temporal_patch_size = vision.temporal_patch_size
+            self.merge_size = vision.spatial_merge_size
 
     def _as_frame(
         self, pixels: npt.NDArray[np.float32], h: int, w: int
@@ -160,41 +171,57 @@ class Lfm3VlTokenizer(TextAndVisionTokenizer):
             clips.append(list(zip(frames, times, strict=True)))
         return clips
 
-    def _expand(
-        self,
-        prompt: str,
-        images: Sequence[tuple[npt.NDArray[np.float32], int]],
-        clips: Sequence[list[tuple[npt.NDArray[np.float32], float]]],
-    ) -> tuple[str, list[tuple[npt.NDArray[np.float32], int]]]:
-        """Expands the media placeholders.
+    async def _media(self, request: TextGenerationRequest) -> Media:
+        """Preprocesses the request's media for :meth:`_expand`."""
+        if not self.has_vision:
+            if request.images or request.videos:
+                raise ValueError("This model doesn't take images or video.")
+            return {}
+        images = await run_with_default_executor(
+            self._preprocess_images,
+            request.images_for_processing() if request.images else [],
+        )
+        clips = await run_with_default_executor(
+            self._preprocess_videos, request.videos, request.max_decoded_bytes
+        )
+        media: Media = {IMAGE_TOKEN: [], VIDEO_TOKEN: []}
+        for frame, raw in zip(images, request.images, strict=True):
+            n = frame.shape[0] * frame.shape[1]
+            frame_hash = hash_image(raw, QWEN3VL_MAX_PIXELS)
+            media[IMAGE_TOKEN].append(
+                (IMAGE_TOKEN * n, [(frame, frame_hash, n)])
+            )
+        for clip in clips:
+            runs, frames = [], []
+            for frame, time in clip:
+                n = frame.shape[0] * frame.shape[1]
+                runs.append(
+                    f"<{time:.1f} seconds><|vision_start|>{VIDEO_TOKEN * n}"
+                    "<|vision_end|>"
+                )
+                frames.append((frame, _frame_hash(frame), n))
+            media[VIDEO_TOKEN].append(("".join(runs), frames))
+        return media
 
-        Returns the frames in order with their hashes.
-        """
-        for token, media in ((IMAGE_TOKEN, images), (VIDEO_TOKEN, clips)):
-            if prompt.count(token) != len(media):
+    @staticmethod
+    def _expand(prompt: str, media: Media) -> tuple[str, list[Frame]]:
+        """Expands the media placeholders, and returns the frames in order."""
+        for token, items in media.items():
+            if prompt.count(token) != len(items):
                 raise ValueError(
                     f"The prompt has {prompt.count(token)} {token} tokens, "
-                    f"but the request has {len(media)} of that media."
+                    f"but the request has {len(items)} of that media."
                 )
-        image_iter, clip_iter = iter(images), iter(clips)
-        pieces = _MEDIA_TOKEN.split(prompt)
+        if not media:
+            return prompt, []
+        queues = {token: iter(entries) for token, entries in media.items()}
+        pattern = "(" + "|".join(map(re.escape, media)) + ")"
+        pieces = re.split(pattern, prompt)
         expanded, frames = [pieces[0]], []
         for token, text in zip(pieces[1::2], pieces[2::2], strict=True):
-            if token == IMAGE_TOKEN:
-                frame, image_hash = next(image_iter)
-                expanded.append(IMAGE_TOKEN * (frame.shape[0] * frame.shape[1]))
-                frames.append((frame, image_hash))
-            else:
-                runs = []
-                for frame, time in next(clip_iter):
-                    tokens = VIDEO_TOKEN * (frame.shape[0] * frame.shape[1])
-                    runs.append(
-                        f"<{time:.1f} seconds><|vision_start|>{tokens}"
-                        "<|vision_end|>"
-                    )
-                    frames.append((frame, _frame_hash(frame)))
-                expanded.append("".join(runs))
-            expanded.append(text)
+            replacement, item_frames = next(queues[token])
+            expanded += [replacement, text]
+            frames += item_frames
         return "".join(expanded), frames
 
     async def new_context(
@@ -216,21 +243,10 @@ class Lfm3VlTokenizer(TextAndVisionTokenizer):
         else:
             raise ValueError(f"{request} does not provide messages or prompt.")
 
-        images = await run_with_default_executor(
-            self._preprocess_images,
-            request.images_for_processing() if request.images else [],
-        )
-        clips = await run_with_default_executor(
-            self._preprocess_videos, request.videos, request.max_decoded_bytes
-        )
-        frames: list[tuple[npt.NDArray[np.float32], int]] = []
+        media = await self._media(request)
+        frames: list[Frame] = []
         if isinstance(prompt, str):
-            image_hashes = [
-                hash_image(raw, QWEN3VL_MAX_PIXELS) for raw in request.images
-            ]
-            expanded, frames = self._expand(
-                prompt, list(zip(images, image_hashes, strict=True)), clips
-            )
+            expanded, frames = self._expand(prompt, media)
             encoded = np.array(
                 await run_with_default_executor(
                     self.delegate.encode,
@@ -239,7 +255,7 @@ class Lfm3VlTokenizer(TextAndVisionTokenizer):
                 ),
                 dtype=np.int64,
             )
-        elif images or clips:
+        elif any(media.values()):
             raise ValueError(
                 "A prompt given as token ids can't carry media. Send the "
                 "media with messages instead."
@@ -254,8 +270,7 @@ class Lfm3VlTokenizer(TextAndVisionTokenizer):
         # Frames claim placeholders in order, so adjacent runs stay apart.
         positions = np.flatnonzero(np.isin(encoded, self.vision_token_ids))
         metadata, cursor = [], 0
-        for frame, frame_hash in frames:
-            n = frame.shape[0] * frame.shape[1]
+        for frame, frame_hash, n in frames:
             run = positions[cursor : cursor + n]
             if len(run) != n or run[-1] - run[0] != n - 1:
                 raise ValueError(
