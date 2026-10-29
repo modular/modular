@@ -4107,6 +4107,28 @@ struct DeviceExternalFunction[
         return Int(result)
 
 
+@fieldwise_init
+struct DeviceClosureFunction[
+    ClosureType: RegisterPassable & def() -> None,
+    target: CompilationTarget,
+](ImplicitlyCopyable):
+    """A closure kernel compiled by `DeviceContext.compile_function[ClosureType]`.
+
+    The MAX plugin for `target` compiles and launches the kernel and owns its
+    representation.
+
+    Parameters:
+        ClosureType: The closure's type.
+        target: The compilation target.
+    """
+
+    # Launches match on `ClosureType` through this wrapper: matching the
+    # plugin's kernel type against a launch argument fails to unify for
+    # nested captures.
+    var kernel: MaxPluginForTarget[Self.target].ClosureKernel[Self.ClosureType]
+    """The plugin's compiled kernel."""
+
+
 comptime DeviceContext = DeviceContextBase[]
 """Temporary type alias as DeviceContext transitions to being
 parameterized by compilation target.
@@ -4974,6 +4996,37 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
             func_attribute=func_attribute,
         )
 
+    def compile_function[
+        ClosureType: RegisterPassable & def() -> None,
+    ](self) raises -> DeviceClosureFunction[ClosureType, Self.target]:
+        """Compiles a closure as a kernel that takes no arguments.
+
+        Launch the result with `enqueue_function(kernel, closure, ...)`, which
+        passes the closure's captures. Only targets whose MAX plugin handles
+        closure kernels support this.
+
+        ```mojo
+        var kernel = ctx.compile_function[type_of(closure)]()
+        ctx.enqueue_function(kernel, closure, grid_dim=1, block_dim=1)
+        ```
+
+        Parameters:
+            ClosureType: The closure's type, such as `type_of(closure)`.
+
+        Returns:
+            The compiled kernel.
+
+        Raises:
+            If compilation or loading fails.
+        """
+        comptime plugin = MaxPluginForTarget[Self.target]
+        comptime assert (
+            plugin._handles_closure_kernels
+        ), "compile_function[ClosureType] is not supported on this target"
+        return {
+            plugin.compile_closure_fn[ClosureType](self.assert_default_target())
+        }
+
     @inline(.always)
     def enqueue_function[
         *Ts: AnyType
@@ -5317,6 +5370,45 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
                 constant_memory=constant_memory^,
                 location=location.or_else(call_location()),
             )
+
+    @inline(.always)
+    def enqueue_function[
+        ClosureType: RegisterPassable & def() -> None,
+    ](
+        self,
+        f: DeviceClosureFunction[ClosureType, Self.target],
+        closure: ClosureType,
+        *,
+        grid_dim: Dim,
+        block_dim: Dim,
+        location: Optional[SourceLocation] = None,
+    ) raises:
+        """Enqueues a closure kernel compiled by `compile_function[ClosureType]`.
+
+        The target's MAX plugin defines what `grid_dim` and `block_dim` mean
+        for a closure kernel.
+
+        Parameters:
+            ClosureType: The closure's type.
+
+        Args:
+            f: The compiled kernel.
+            closure: The closure whose captures to launch with.
+            grid_dim: The grid dimensions.
+            block_dim: The block dimensions.
+            location: Source location for the function call.
+
+        Raises:
+            If the launch fails.
+        """
+        MaxPluginForTarget[Self.target].enqueue_closure_fn[ClosureType](
+            self.assert_default_target(),
+            f.kernel,
+            closure,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            location=location.or_else(call_location()),
+        )
 
     @inline(.always)
     def enqueue_function[

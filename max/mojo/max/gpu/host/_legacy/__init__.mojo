@@ -20,6 +20,7 @@ from .device_attribute import DeviceAttribute
 from .device_context import (
     CompletionFlag,
     DeviceBuffer,
+    DeviceClosureFunction,
     DeviceContext,
     DeviceContextArray,
     DeviceContextList,

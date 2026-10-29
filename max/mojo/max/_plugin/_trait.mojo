@@ -413,6 +413,64 @@ trait MaxPluginHooks:
     comptime _handles_enqueue_function: Bool = False
     """Whether this plugin overrides launching a compiled `DeviceFunction`."""
 
+    comptime ClosureKernel[
+        ClosureType: RegisterPassable & def() -> None
+    ]: ImplicitlyCopyable & Deinitable = NoneType
+    """The compiled form of a closure kernel, from `compile_closure_fn`."""
+
+    @staticmethod
+    def compile_closure_fn[
+        ClosureType: RegisterPassable & def() -> None
+    ](ctx: _LegacyDeviceContext) raises -> Self.ClosureKernel[ClosureType]:
+        """Per-target plugin hook for `DeviceContext.compile_function[ClosureType]`.
+
+        Parameters:
+            ClosureType: The closure's type.
+
+        Args:
+            ctx: The device context to compile for.
+
+        Returns:
+            The compiled kernel.
+
+        Raises:
+            If compilation fails, or always when `_handles_closure_kernels` is
+            `False`.
+        """
+        raise Error("closure kernels are not supported on this target")
+
+    @staticmethod
+    def enqueue_closure_fn[
+        ClosureType: RegisterPassable & def() -> None
+    ](
+        ctx: _LegacyDeviceContext,
+        kernel: Self.ClosureKernel[ClosureType],
+        closure: ClosureType,
+        grid_dim: Dim,
+        block_dim: Dim,
+        location: SourceLocation,
+    ) raises:
+        """Per-target plugin hook for launching a closure kernel.
+
+        Parameters:
+            ClosureType: The closure's type.
+
+        Args:
+            ctx: The device context to launch on.
+            kernel: The kernel `compile_closure_fn` compiled for `ClosureType`.
+            closure: The closure whose captures to launch with.
+            grid_dim: The grid dimensions.
+            block_dim: The block dimensions.
+            location: Source location of the launch.
+
+        Only invoked when `_handles_closure_kernels` is `True`; the default
+        is never called and is a no-op.
+        """
+        pass
+
+    comptime _handles_closure_kernels: Bool = False
+    """Whether this plugin compiles and launches closure kernels."""
+
     comptime _supports_default_compile_function: Bool = True
     """Whether `DeviceContext.compile_function[func]` can compile `func`
     unchanged for this target."""
