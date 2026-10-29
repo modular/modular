@@ -13,10 +13,10 @@
 
 # Vendored by Modular, verbatim below this header, from
 # huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash at revision
-# 2cba9e42aa026125f3ed06c6d98c1db82f7ca027, file encoding/encoding.py.
-# Confirmed byte-identical to this file in the nvidia/DeepSeek-V4.1-Flash-NVFP4
-# checkpoint (the serving target) at snapshot
-# 3431dde3247c13b5957f682b1e3c6fcae2566079. The checkpoint ships no chat
+# 314113f8a7dadb388215396ba5fbee2c610a04d6, file encoding/encoding.py.
+# Confirmed byte-identical to this file in the
+# deepseek-ai/DeepSeek-V4.1-Flash-1017 checkpoint at revision
+# 1bae0e1088993b9b82de08f59de5be5a34e42170. The checkpoint ships no chat
 # template; this is its reference prompt format.
 # Kept unformatted and excluded from ruff so a re-vendor diffs cleanly; mypy's
 # var-annotated findings on unannotated empty-list literals are silenced here,
@@ -223,10 +223,13 @@ def merge_tool_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
         if role == "tool":
             # Convert tool message to a user message with tool_result block
+            content = msg.get("content", "")
+            if msg.get("content_blocks") and not isinstance(msg.get("content"), str):
+                content = msg["content_blocks"]
             tool_block = {
                 "type": "tool_result",
                 "tool_use_id": msg.get("tool_call_id", ""),
-                "content": msg.get("content", ""),
+                "content": content,
             }
             # Merge into previous message if it's already a user (merged tool)
             if merged and merged[-1].get("role") == "user" and "content_blocks" in merged[-1]:
@@ -239,7 +242,8 @@ def merge_tool_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         elif role == "user":
             content_blocks = msg.get("content_blocks")
             if content_blocks is None:
-                content_blocks = [{"type": "text", "text": msg.get("content", "")}]
+                content = msg.get("content", "")
+                content_blocks = content if isinstance(content, list) else [{"type": "text", "text": content}]
             if merged and merged[-1].get("role") == "user" and "content_blocks" in merged[-1] and merged[-1].get("task") is None:
                 merged[-1]["content_blocks"].extend(content_blocks)
             else:
@@ -588,11 +592,18 @@ def find_last_user_index(messages: List[Dict[str, Any]]) -> int:
 
     V4.1 supports mid-conversation system messages, which count as user
     messages for the purposes of the assistant generation header.
+    User messages containing only tool results do not start a new turn.
     """
     last_user_index = -1
     for idx in range(len(messages) - 1, -1, -1):
         role = messages[idx].get("role")
         if role == "user" or (role == "system" and idx > 0):
+            content_blocks = messages[idx].get("content_blocks")
+            if content_blocks and not any(
+                block.get("type") in ("text", "image", "image_url")
+                for block in content_blocks
+            ):
+                continue
             last_user_index = idx
             break
     return last_user_index
@@ -794,13 +805,6 @@ def _encode_messages_text(
     """Encode preprocessed (text-only) messages into the V4.1 prompt format."""
     context = context if context else []
 
-    # Preprocess: merge tool messages and sort tool results
-    messages = merge_tool_messages(messages)
-    messages = sort_tool_results_by_call_order(context + messages)[len(context):]
-    if context:
-        context = merge_tool_messages(context)
-        context = sort_tool_results_by_call_order(context)
-
     full_messages = context + messages
 
     prompt = bos_token if add_default_bos_token and len(context) == 0 else ""
@@ -844,7 +848,14 @@ def encode_messages(
     Text-only calls return the prompt string. When return_multi_modal_data is
     true, the result is ``(prompt, media_data)``.
     """
-    context = context or []
+    # Validate before merging can discard message-level textual fields.
+    for msg in (context or []) + messages:
+        _validate_no_image_sp_tokens(msg)
+
+    # Collect images only after tool results are in their final prompt order.
+    context = merge_tool_messages(context or [])
+    messages = merge_tool_messages(messages)
+    messages = sort_tool_results_by_call_order(context + messages)[len(context):]
     processed_context, _ = process_image_messages(context) if context else ([], [])
     processed_messages, images = process_image_messages(messages)
     prompt = _encode_messages_text(
