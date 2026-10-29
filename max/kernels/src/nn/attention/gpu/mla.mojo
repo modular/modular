@@ -2725,9 +2725,16 @@ def _ragged_kv_view(
     linear-index type to the canonical GENERIC + `ImmutAnyOrigin` form the
     `RaggedMHAOperand` buffer field expects.
     """
-    return TileTensor(
-        rebind[ImmPointer[Scalar[src.dtype], ImmutAnyOrigin]](src.ptr),
-        row_major(Int(src.dim[0]()), Int(src.dim[1]()), Int(src.dim[2]())),
+    return rebind[
+        TileTensor[
+            src.dtype,
+            RowMajorLayout[*Coord[Int, Int, Int].element_types],
+            ImmutAnyOrigin,
+        ]
+    ](
+        src.reshape(
+            row_major(Int(src.dim[0]()), Int(src.dim[1]()), Int(src.dim[2]()))
+        )
     )
 
 
@@ -2741,10 +2748,11 @@ def _ragged_offsets_view(
 
     Mirrors `_ragged_kv_view` for the rank-1 `cache_row_offsets` operand.
     """
-    return TileTensor(
-        rebind[ImmPointer[UInt32, ImmutAnyOrigin]](src.ptr),
-        row_major(Int(src.dim[0]())),
-    )
+    return rebind[
+        TileTensor[
+            .uint32, RowMajorLayout[*Coord[Int].element_types], ImmutAnyOrigin
+        ]
+    ](src.reshape(row_major(Int(src.dim[0]()))))
 
 
 @inline(.always)
@@ -2758,10 +2766,13 @@ def _ragged_scales_view(
     Mirrors `_ragged_kv_view` for the rank-2 `[total_keys, 1]` `k_scales`
     operand, normalizing to the GENERIC + `ImmutAnyOrigin` scale-buffer form.
     """
-    return TileTensor(
-        rebind[ImmPointer[Scalar[src.dtype], ImmutAnyOrigin]](src.ptr),
-        row_major(Int(src.dim[0]()), Int(src.dim[1]())),
-    )
+    return rebind[
+        TileTensor[
+            src.dtype,
+            RowMajorLayout[*Coord[Int, Int].element_types],
+            ImmutAnyOrigin,
+        ]
+    ](src.reshape(row_major(Int(src.dim[0]()), Int(src.dim[1]()))))
 
 
 # entrypoint for MLA prefill kernels

@@ -234,10 +234,10 @@ def _rms_norm_fused_fp8_gpu[
         return input_fn[simd_width](shape_layout.idx2crd(row * cols + col))
 
     # Create 2D output TileTensor view
-    var output_2d = TileTensor(output._storage, row_major(rows, cols))
+    var output_2d = output.reshape(row_major(rows, cols))
 
     # Create 1D view of scale_output for internal kernel use
-    var scale_output_1d = TileTensor(scale_output._storage, row_major(rows))
+    var scale_output_1d = scale_output.reshape(row_major(rows))
 
     # Dispatch based on column count (following rms_norm_gpu pattern)
     comptime warp_size = ctx.default_device_info.warp_size

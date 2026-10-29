@@ -677,12 +677,12 @@ struct FusedMatmulAdd:
             epi_m = Int64(Int(residual.shape()[0].value()))
             epi_n = Int64(Int(residual.shape()[1].value()))
         # The epilogue views `residual` through its flat pointer; a non-pointer storage policy aborts here at run time.
-        var epilogue = TileTensor(
+        var epilogue = (
             residual.to_tile_tensor[type_of(c).dtype]()
+            .as_imm()
             .as_unsafe_any_origin()
-            .ptr,
-            row_major(epi_m, epi_n),
-        ).as_imm()
+            .reshape(row_major(epi_m, epi_n))
+        )
 
         fused_bias_residual_matmul_dispatch_sm100[
             transpose_b=transpose_b,
@@ -2171,7 +2171,7 @@ struct Struct_matmul_int8_w8a8_apple:
         # No bias: a length-1 dummy bias TileTensor (the `has_bias=False` GEMM
         # path ignores it). Reuse `b_scale` as the dummy source (same dtype is
         # not required -- it is never read -- but a valid 1-elem view is).
-        var dummy_bias = TileTensor(c_tt._storage, row_major(Int64(1))).as_imm()
+        var dummy_bias = c_tt.reshape(row_major(Int64(1))).as_imm()
         _apple_int8_w8a8_dispatch[c_type, has_bias=False, target=target](
             c_tt,
             a.to_tile_tensor[.bfloat16](),
@@ -2892,9 +2892,10 @@ struct Struct_router_gate_mixed_gemv:
 
         # The GEMV paths view `c` and `a` through their flat pointers; a
         # non-pointer storage policy aborts here at run time.
-        var c_tt = TileTensor(
-            c.to_tile_tensor[.float32]().as_unsafe_any_origin().ptr,
-            row_major(M, Idx[N]),
+        var c_tt = (
+            c.to_tile_tensor[.float32]()
+            .as_unsafe_any_origin()
+            .reshape(row_major(M, Idx[N]))
         )
 
         # SM100's fused window reaches M = 128 (c128 decode); above it the
@@ -2902,9 +2903,10 @@ struct Struct_router_gate_mixed_gemv:
         comptime max_m = 64 if context.target.is_amd_gpu() else 128
         if router_gate_use_mixed_gemv(M, max_m):
             # Tiny-M decode: fused mixed bf16-A × fp32-B GEMV, one launch.
-            var a_tt = TileTensor(
-                a.to_tile_tensor[.bfloat16]().as_unsafe_any_origin().ptr,
-                row_major(M, Idx[K]),
+            var a_tt = (
+                a.to_tile_tensor[.bfloat16]()
+                .as_unsafe_any_origin()
+                .reshape(row_major(M, Idx[K]))
             )
             router_gate_mixed_gemv[N](
                 c_tt,
@@ -2922,9 +2924,10 @@ struct Struct_router_gate_mixed_gemv:
         # avoids), then run the ordinary fp32 matmul against the fp32 weight.
         # Routing large M through the tiny-M GEMV is catastrophically slow.
         var a_f32 = context.enqueue_create_buffer[.float32](M * K)
-        var a_bf16_tt = TileTensor(
-            a.to_tile_tensor[.bfloat16]().as_unsafe_any_origin().ptr,
-            row_major(M, Idx[K]),
+        var a_bf16_tt = (
+            a.to_tile_tensor[.bfloat16]()
+            .as_unsafe_any_origin()
+            .reshape(row_major(M, Idx[K]))
         )
         var a_f32_tt = TileTensor(a_f32, row_major(M, Idx[K]))
 

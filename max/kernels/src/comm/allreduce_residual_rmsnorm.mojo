@@ -1120,9 +1120,7 @@ def _launch_split_allreduce_rmsnorm[
         return residual_output_2d.load[width=width, alignment=width](coords)
 
     var shape = (rows, cols)
-    var scale_output_2d = TileTensor(
-        scale_output_1d.ptr, row_major(rows, Idx[1])
-    )
+    var scale_output_2d = scale_output_1d.reshape(row_major(rows, Idx[1]))
 
     comptime norm_threads = 256
     comptime norm_simd_width = simd_width_of[in_dtype, target=ctx.target]()
@@ -1750,16 +1748,8 @@ def allreduce_rmsnorm[
     )
 
     # Create internal 2D/1D TileTensor views for _dispatch_fused_kernel.
-    var output_2d = TileTensor(
-        rebind[MutPointer[Scalar[out_dtype], MutAnyOrigin]](output.ptr),
-        row_major(rows, cols),
-    )
-    var scale_output_1d = TileTensor(
-        rebind[MutPointer[Scalar[scales_dtype], MutAnyOrigin]](
-            scale_output.ptr
-        ),
-        row_major(rows),
-    )
+    var output_2d = output.reshape(row_major(rows, cols))
+    var scale_output_1d = scale_output.reshape(row_major(rows))
 
     _dispatch_fused_kernel[
         in_dtype,
@@ -1887,24 +1877,14 @@ def allreduce_residual_rmsnorm[
     )
 
     # Create internal 2D/1D TileTensor views for _dispatch_fused_kernel.
-    var output_2d = TileTensor(
-        rebind[MutPointer[Scalar[out_dtype], MutAnyOrigin]](output.ptr),
-        row_major(rows, cols),
+    var output_2d = output.reshape(row_major(rows, cols))
+    var residual_2d = (
+        residual.as_imm().as_unsafe_any_origin().reshape(row_major(rows, cols))
     )
-    var residual_2d = TileTensor(
-        rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](residual.ptr),
-        row_major(rows, cols),
+    var residual_output_2d = residual_output.as_unsafe_any_origin().reshape(
+        row_major(rows, cols)
     )
-    var residual_output_2d = TileTensor(
-        rebind[MutPointer[Scalar[in_dtype], MutAnyOrigin]](residual_output.ptr),
-        row_major(rows, cols),
-    )
-    var scale_output_1d = TileTensor(
-        rebind[MutPointer[Scalar[scales_dtype], MutAnyOrigin]](
-            scale_output.ptr
-        ),
-        row_major(rows),
-    )
+    var scale_output_1d = scale_output.reshape(row_major(rows))
 
     _dispatch_fused_kernel[
         in_dtype,

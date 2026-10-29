@@ -66,18 +66,9 @@ def test_convtranspose_pads():
     var pad_w = Index(2, 2)
 
     conv_transpose_naive[type](
-        TileTensor(
-            output._storage,
-            row_major(Coord(IndexList[5](1, 1, 7, 3, 2))),
-        ),
-        TileTensor(
-            input._storage,
-            row_major(Coord(IndexList[5](1, 1, 3, 3, 1))),
-        ),
-        TileTensor(
-            filter._storage,
-            row_major(Coord(IndexList[5](1, 3, 3, 2, 1))),
-        ),
+        output.reshape(row_major(Coord(IndexList[5](1, 1, 7, 3, 2)))),
+        input.reshape(row_major(Coord(IndexList[5](1, 1, 3, 3, 1)))),
+        filter.reshape(row_major(Coord(IndexList[5](1, 3, 3, 2, 1)))),
         stride,
         dilation,
         pad_d,
@@ -140,18 +131,9 @@ def test_convtranspose():
     var pad_w = Index(0, 0)
 
     conv_transpose_naive[type](
-        TileTensor(
-            output._storage,
-            row_major(Coord(IndexList[5](1, 1, 5, 5, 2))),
-        ),
-        TileTensor(
-            input._storage,
-            row_major(Coord(IndexList[5](1, 1, 3, 3, 1))),
-        ),
-        TileTensor(
-            filter._storage,
-            row_major(Coord(IndexList[5](1, 3, 3, 2, 1))),
-        ),
+        output.reshape(row_major(Coord(IndexList[5](1, 1, 5, 5, 2)))),
+        input.reshape(row_major(Coord(IndexList[5](1, 1, 3, 3, 1)))),
+        filter.reshape(row_major(Coord(IndexList[5](1, 3, 3, 2, 1)))),
         stride,
         dilation,
         pad_d,
@@ -221,18 +203,9 @@ def test_convtranspose_dilation():
     var pad_w = Index(0, 0)
 
     conv_transpose_naive[type](
-        TileTensor(
-            output._storage,
-            row_major(Coord(IndexList[5](1, 1, 5, 5, 1))),
-        ),
-        TileTensor(
-            input._storage,
-            row_major(Coord(IndexList[5](1, 1, 3, 3, 1))),
-        ),
-        TileTensor(
-            filter._storage,
-            row_major(Coord(IndexList[5](1, 2, 2, 1, 1))),
-        ),
+        output.reshape(row_major(Coord(IndexList[5](1, 1, 5, 5, 1)))),
+        input.reshape(row_major(Coord(IndexList[5](1, 1, 3, 3, 1)))),
+        filter.reshape(row_major(Coord(IndexList[5](1, 2, 2, 1, 1)))),
         stride,
         dilation,
         pad_d,
@@ -305,18 +278,9 @@ def test_convtranspose_attributes():
     var pad_w = Index(0, 0)
 
     conv_transpose_naive[type](
-        TileTensor(
-            output._storage,
-            row_major(Coord(IndexList[5](1, 1, 10, 8, 2))),
-        ),
-        TileTensor(
-            input._storage,
-            row_major(Coord(IndexList[5](1, 1, 3, 3, 1))),
-        ),
-        TileTensor(
-            filter._storage,
-            row_major(Coord(IndexList[5](1, 3, 3, 2, 1))),
-        ),
+        output.reshape(row_major(Coord(IndexList[5](1, 1, 10, 8, 2)))),
+        input.reshape(row_major(Coord(IndexList[5](1, 1, 3, 3, 1)))),
+        filter.reshape(row_major(Coord(IndexList[5](1, 3, 3, 2, 1)))),
         stride,
         dilation,
         pad_d,

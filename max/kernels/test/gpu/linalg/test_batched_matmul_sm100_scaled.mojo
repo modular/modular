@@ -371,8 +371,8 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
         Coord(Idx[B], M, Idx[N]),
         Coord(Idx[N], Idx[B * N], Idx[1]),
     )
-    var c = TileTensor(c_device_nd._storage, c_non_rm_layout)
-    var c_ref = TileTensor(c_device_ref_nd._storage, c_non_rm_layout)
+    var c = c_device_nd.reshape(c_non_rm_layout)
+    var c_ref = c_device_ref_nd.reshape(c_non_rm_layout)
 
     bmm_sm100_blockwise_scaled_fp8[
         transpose_b=transpose_b,

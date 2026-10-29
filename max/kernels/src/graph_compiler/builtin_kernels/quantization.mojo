@@ -158,10 +158,7 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
         # [1, rows]. View it as rank-1 and index it by row number.
         var in_shape = input.shape_coord()
         var rows = Int(in_shape.product()) // Int(in_shape[rank - 1])
-        var scale_t = TileTensor(
-            scales.to_tile_tensor[.int64]()._storage,
-            row_major(rows),
-        )
+        var scale_t = scales.to_tile_tensor[.int64]().reshape(row_major(rows))
 
         @inline(.always)
         def input_fn[
@@ -899,10 +896,9 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
         gpu_qint4_repack_GPTQ[128, target](
             b.to_tile_tensor[.uint8](),
             b_packed.to_tile_tensor[.uint8](),
-            TileTensor(
-                ptr=permutation.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
-                layout=row_major(Int(permutation.dim[0]())),
-            ),
+            rebind[
+                TileTensor[.int32, type_of(row_major(Int(0))), ImmutAnyOrigin]
+            ](permutation.reshape(row_major(Int(permutation.dim[0]())))),
             ctx=ctx,
         )
 

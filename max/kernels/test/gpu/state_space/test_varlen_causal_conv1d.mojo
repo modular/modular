@@ -403,42 +403,35 @@ def run_varlen_causal_conv1d_fwd_gpu[
                     )
 
     # Create TileTensors for CPU reference
-    var x_cpu_tt = TileTensor(x_buf._storage, row_major(dim, total_seqlen))
-    var weight_cpu_tt = TileTensor(weight_buf._storage, row_major(dim, width))
-    var bias_cpu_tt = TileTensor(
-        bias_buf._storage,
+    var x_cpu_tt = x_buf.reshape(row_major(dim, total_seqlen))
+    var weight_cpu_tt = weight_buf.reshape(row_major(dim, width))
+    var bias_cpu_tt = bias_buf.reshape(
         row_major(
             bias_len,
-        ),
+        )
     )
-    var query_start_loc_cpu_tt = TileTensor(
-        query_start_loc_buf._storage,
+    var query_start_loc_cpu_tt = query_start_loc_buf.reshape(
         row_major(
             batch + 1,
-        ),
+        )
     )
-    var cache_indices_cpu_tt = TileTensor(
-        cache_indices_buf._storage,
+    var cache_indices_cpu_tt = cache_indices_buf.reshape(
         row_major(
             batch,
-        ),
+        )
     )
-    var has_initial_state_cpu_tt = TileTensor(
-        has_initial_state_buf._storage,
+    var has_initial_state_cpu_tt = has_initial_state_buf.reshape(
         row_major(
             batch,
-        ),
+        )
     )
     var update_state_cpu_tt = TileTensor(
         update_state_h._storage, row_major(update_len)
     )
-    var conv_states_cpu_tt = TileTensor(
-        conv_states_buf._storage,
-        row_major(batch, dim, state_len),
+    var conv_states_cpu_tt = conv_states_buf.reshape(
+        row_major(batch, dim, state_len)
     )
-    var output_cpu_tt = TileTensor(
-        output_cpu_buf._storage, row_major(dim, total_seqlen)
-    )
+    var output_cpu_tt = output_cpu_buf.reshape(row_major(dim, total_seqlen))
 
     # Run CPU reference
     _conv_cpu[

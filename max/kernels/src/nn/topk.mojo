@@ -2361,10 +2361,7 @@ def _topk_topp_sampling_fi[
     [batch_size, d] probability buffer is materialized.
     """
     # Reshape out_idxs from [batch, 1] (rank 2) to [batch] (rank 1).
-    var out_1d = TileTensor(
-        out_idxs._storage,
-        row_major(Int(out_idxs.dim(0))),
-    )
+    var out_1d = out_idxs.reshape(row_major(Int(out_idxs.dim(0))))
     topk_topp_sampling_from_prob[dtype, out_idx_type, from_logits=True](
         ctx,
         input,

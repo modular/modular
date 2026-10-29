@@ -1713,8 +1713,7 @@ struct NVBlockScaledTokenFormat[
         # Merge the last two dimensions of the output_scales tensor into a single
         # dimension. This is required by the TMA instructions that the leading
         # dimensions must be multiples of 16-byte strides
-        var scales_tensor_view = TileTensor(
-            output_scales._storage,
+        var scales_tensor_view = output_scales.reshape(
             row_major(
                 (
                     Int(output_scales.dim(0)),
@@ -1722,7 +1721,7 @@ struct NVBlockScaledTokenFormat[
                     Idx[SF_ATOM_M[0]],
                     Idx[SF_ATOM_K * SF_ATOM_M[1]],
                 ),
-            ),
+            )
         )
 
         try:

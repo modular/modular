@@ -101,10 +101,7 @@ def test_concat() raises:
     # CHECK-COUNT-2: 1.0
     # CHECK-COUNT-4: 2.0
     # CHECK-COUNT-6: 3.0
-    var output_flat = TileTensor(
-        output._storage,
-        row_major(output.num_elements()),
-    )
+    var output_flat = output.reshape(row_major(output.num_elements()))
     for i in range(output.layout.product()):
         print(output_flat[i])
 
@@ -171,10 +168,7 @@ def test_concat_parallel() raises:
     # CHECK-COUNT-2: 1.0
     # CHECK-COUNT-4: 2.0
     # CHECK-COUNT-6: 3.0
-    var output_flat = TileTensor(
-        output._storage,
-        row_major(output.num_elements()),
-    )
+    var output_flat = output.reshape(row_major(output.num_elements()))
     for i in range(output.layout.product()):
         print(output_flat[i])
 
@@ -236,10 +230,7 @@ def test_concat_inner() raises:
     # CHECK-COUNT-4: 1.0
     # CHECK-COUNT-8: 2.0
     # CHECK-COUNT-12: 3.0
-    var output_flat = TileTensor(
-        output._storage,
-        row_major(output.num_elements()),
-    )
+    var output_flat = output.reshape(row_major(output.num_elements()))
     for i in range(output.layout.product()):
         print(output_flat[i])
 
