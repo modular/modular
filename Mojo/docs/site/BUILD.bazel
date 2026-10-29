@@ -155,6 +155,7 @@ pkg_files(
             "post-process-mojodocs.py",
             "write-nightly-release.py",
             "releases/**",
+            "scripts/**",
         ],
     ),
     strip_prefix = strip_prefix.from_pkg(""),
