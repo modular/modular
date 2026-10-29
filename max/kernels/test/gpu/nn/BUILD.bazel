@@ -3,6 +3,9 @@ load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
 package(default_visibility = ["//max:consumers"])
 
+# Also run against the HAL `DeviceContext`, with its driver plugin staged.
+exports_files(["attention/test_dsmem_cluster_smoke.mojo"])
+
 _EXTRA_CONSTRAINTS = {
     # The MXFP4 indexer's windowed kept-block score hooks; SM100 scorer only.
     "test_mla_index_windowed_keep.mojo": select({

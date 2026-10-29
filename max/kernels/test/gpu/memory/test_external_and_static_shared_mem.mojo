@@ -13,7 +13,7 @@
 
 from std.sys.info import align_of
 
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu import thread_idx
 from max.gpu.memory import external_memory
 from max.gpu.sync import barrier
@@ -48,12 +48,9 @@ def test_external_shared_mem(ctx: DeviceContext) raises:
     ctx.enqueue_copy(res_device, res_host_ptr)
 
     comptime kernel_func = dynamic_smem_kernel
-    ctx.enqueue_function[kernel_func, dump_llvm=True](
+    ctx.enqueue_function[kernel_func](
+        GridBlockLaunchConfig(grid_dim=1, block_dim=16, shared_mem_bytes=24960),
         res_device,
-        grid_dim=1,
-        block_dim=16,
-        shared_mem_bytes=24960,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(24960),
     )
 
     ctx.enqueue_copy(res_host_ptr, res_device)

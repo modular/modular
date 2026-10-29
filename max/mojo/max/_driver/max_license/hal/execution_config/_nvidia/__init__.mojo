@@ -59,6 +59,8 @@ comptime _ExecutionConfigDictForTarget = TypeDict[
         "nvidia:sm_120a",
         "nvidia:sm_121a",
         "nvidia:sm_110a",
+        "nvidia:sm_103a",
+        "nvidia:sm_121",
     ],
     MaxwellConsumerExecutionConfiguration,
     TeslaP100ExecutionConfiguration,
@@ -76,6 +78,8 @@ comptime _ExecutionConfigDictForTarget = TypeDict[
     BlackwellConsumerExecutionConfiguration,
     DgxSparkExecutionConfiguration,
     JetsonThorExecutionConfiguration,
+    BlackwellDatacenterExecutionConfiguration,
+    DgxSparkExecutionConfiguration,
 ]
 
 comptime ExecutionConfigForTarget[

@@ -65,7 +65,8 @@ from ..hal import (
     Stream,
     get_device_spec,
 )
-from ..hal._machine import DeviceSpec
+from ..hal._machine import DeviceRef, DeviceSpec
+from ..hal._plugin._overlay import HAL_PLUGINS
 from ..hal.event import EVENT_FLAG_CPU_VISIBLE
 from ..hal.extensions.traits import SupportsPeerAccessV1
 from max.gpu.host import (
@@ -83,8 +84,10 @@ from ..hal.execution_config import (
 from std.builtin.variadics import TypeList
 
 from max.gpu.host import (
+    ClusterLaunchConfig,
     ConstantMemoryMapping,
     Dim,
+    GridBlockLaunchConfig,
     LaunchAttribute,
     default_accelerator,
 )
@@ -104,17 +107,29 @@ from max.gpu.host._launch_args import (
 )
 
 
-def _check_device_context_hal_only_supported_exec_config[
-    ExecutionConfigType: ExecutionConfig
-](execution_config: ExecutionConfigType) raises:
-    # HAL doesn't yet support cluster launch or arbitrary launch
-    # attributes; the underlying Stream.execute primitive surfaces only
-    # `shared_mem_bytes`. Refuse non-default values rather than silently
-    # dropping them.
-    comptime assert not conforms_to(
-        ExecutionConfigType, ClusterExecutionConfig
-    ), "HAL DeviceContext.enqueue_function does not support `cluster_dim`."
+def _launch_attributes_ptr(
+    mut attributes: List[LaunchAttribute],
+) -> OptionalReg[OpaquePointer[MutUntrackedOrigin]]:
+    # The caller keeps `attributes` alive until the plugin has read them.
+    if len(attributes) == 0:
+        return None
+    return (
+        attributes.unsafe_ptr()
+        .unsafe_bitcast[NoneType]()
+        .unsafe_origin_cast[MutUntrackedOrigin]()
+    )
 
+
+def _check_exec_config_launch_support[
+    ExecutionConfigType: ExecutionConfig, ContextT: _HALFunctionEnqueuer
+]():
+    comptime if conforms_to(ExecutionConfigType, ClusterExecutionConfig):
+        comptime assert conforms_to(
+            ContextT.ExecutionConfigType, ClusterExecutionConfig
+        ), "cluster launch is not supported on this device"
+
+    # Launch attributes and constant memory held by a config are not plumbed
+    # yet; refuse them rather than drop them.
     comptime assert not conforms_to(
         ExecutionConfigType, LaunchAttributeHolderExecutionConfig
     ), (
@@ -165,6 +180,9 @@ trait _HALFunctionEnqueuer:
     surfaces the underlying `Stream` that `DeviceFunction._call_with_pack_checked`
     enqueues kernels on.
     """
+
+    comptime ExecutionConfigType: ExecutionConfig
+    """The launch configuration type for the device this enqueues on."""
 
     def _hal_stream(
         self,
@@ -398,6 +416,26 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
 
     comptime device_spec = get_device_spec[0]()
     """`DeviceSpec` describing the device this context targets."""
+
+    comptime _PluginExecutionConfigType: ExecutionConfig = HAL_PLUGINS.for_target[
+        DeviceSpec._mlir_target[Self.device_spec]()
+    ].HookFor[
+        DeviceSpec.target[Self.device_spec]()
+    ].ExecutionConfigType[
+        DeviceRef(Self.device_spec, 0, private=())
+    ]
+
+    comptime ExecutionConfigType: ExecutionConfig = (
+        ClusterLaunchConfig if conforms_to(
+            Self._PluginExecutionConfigType, ClusterExecutionConfig
+        ) else GridBlockLaunchConfig
+    )
+    """The launch configuration type with every launch capability this
+    device supports.
+
+    Generic code checks for a capability with `conforms_to`, for example
+    `conforms_to(DeviceContext.ExecutionConfigType, ClusterExecutionConfig)`.
+    """
 
     comptime default_device_info = get_gpu_info[
         DeviceSpec.target[Self.device_spec]()._arch()
@@ -984,7 +1022,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         *actual_arg_types: DevicePassable,
     ](
         self,
-        mut execution_config: ExecutionConfigType,
+        execution_config: ExecutionConfigType,
         *args: *actual_arg_types,
         location: Optional[SourceLocation] = None,
     ) raises:
@@ -1047,7 +1085,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         //,
     ](
         self,
-        mut execution_config: ExecutionConfigType,
+        execution_config: ExecutionConfigType,
         func: FuncType,
         location: Optional[SourceLocation] = None,
     ) raises:
@@ -1096,7 +1134,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         *Ts: DevicePassable,
     ](
         self,
-        mut execution_config: ExecutionConfigType,
+        execution_config: ExecutionConfigType,
         f: DeviceFunction,
         *args: *Ts,
         location: Optional[SourceLocation] = None,
@@ -2788,7 +2826,7 @@ struct DeviceFunction[
     ](
         imm self,
         ctx: ContextT,
-        mut execution_config: ExecutionConfigType,
+        execution_config: ExecutionConfigType,
         closure: FuncType,
         location: Optional[SourceLocation],
     ) raises:
@@ -2865,7 +2903,7 @@ struct DeviceFunction[
     ](
         imm self,
         ctx: ContextT,
-        mut execution_config: ExecutionConfigType,
+        execution_config: ExecutionConfigType,
         *args: *Ts,
         host_args: Tuple[*HostArgs] = (),
         var attributes: List[LaunchAttribute] = [],
@@ -2873,7 +2911,7 @@ struct DeviceFunction[
     ) raises:
         comptime extra_host_count = HostArgs.length
 
-        _check_device_context_hal_only_supported_exec_config(execution_config)
+        _check_exec_config_launch_support[ExecutionConfigType, ContextT]()
 
         var shared_mem_bytes: Int = 0
 
@@ -2972,13 +3010,7 @@ struct DeviceFunction[
         # Kernels that use `with PDL()` emit `griddepcontrol` instructions and
         # require the launch to be configured with the matching attribute;
         # dropping it faults the launch.
-        var attr_ptr = OptionalReg[OpaquePointer[MutUntrackedOrigin]](None)
-        if len(attributes) > 0:
-            attr_ptr = OptionalReg(
-                attributes.unsafe_ptr()
-                .unsafe_bitcast[NoneType]()
-                .unsafe_origin_cast[MutUntrackedOrigin]()
-            )
+        var attr_ptr = _launch_attributes_ptr(attributes)
 
         ctx._hal_stream()[].execute(
             self._inner[]._func_handle,
@@ -3045,13 +3077,7 @@ struct DeviceFunction[
         # Kernels that use `with PDL()` emit `griddepcontrol` instructions and
         # require the launch to be configured with the matching attribute;
         # dropping it faults the launch.
-        var attr_ptr = OptionalReg[OpaquePointer[MutUntrackedOrigin]](None)
-        if len(attributes) > 0:
-            attr_ptr = OptionalReg(
-                attributes.unsafe_ptr()
-                .unsafe_bitcast[NoneType]()
-                .unsafe_origin_cast[MutUntrackedOrigin]()
-            )
+        var attr_ptr = _launch_attributes_ptr(attributes)
 
         ctx._hal_stream()[].execute(
             self._inner[]._func_handle,
@@ -3086,11 +3112,11 @@ struct DeviceFunction[
     ](
         imm self,
         ctx: ContextT,
-        mut execution_config: ExecutionConfigType,
+        execution_config: ExecutionConfigType,
         *args: *Ts,
         location: Optional[SourceLocation] = None,
     ) raises:
-        _check_device_context_hal_only_supported_exec_config(execution_config)
+        _check_exec_config_launch_support[ExecutionConfigType, ContextT]()
 
         comptime num_args = Ts.length
         # Function scope so the storage outlives the enqueue; see
@@ -3257,13 +3283,7 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
         # Kernels that use `with PDL()` emit `griddepcontrol` instructions
         # and require the launch to be configured with the matching attribute;
         # dropping it faults the launch.
-        var attr_ptr = OptionalReg[OpaquePointer[MutUntrackedOrigin]](None)
-        if len(attributes) > 0:
-            attr_ptr = OptionalReg(
-                attributes.unsafe_ptr()
-                .unsafe_bitcast[NoneType]()
-                .unsafe_origin_cast[MutUntrackedOrigin]()
-            )
+        var attr_ptr = _launch_attributes_ptr(attributes)
 
         ctx._hal_stream()[].execute(
             self._inner[]._func_handle,
@@ -3285,6 +3305,9 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
             num_attributes=UInt32(len(attributes)),
         )
 
+        # Keep attributes alive until the plugin has read them.
+        _ = attributes^
+
     @inline(.always)
     def _call_with_pack[
         ExecutionConfigType: GridBlockExecutionConfig,
@@ -3294,11 +3317,11 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
     ](
         imm self,
         ctx: ContextT,
-        mut execution_config: ExecutionConfigType,
+        execution_config: ExecutionConfigType,
         *args: *Ts,
         location: Optional[SourceLocation] = None,
     ) raises:
-        _check_device_context_hal_only_supported_exec_config(execution_config)
+        _check_exec_config_launch_support[ExecutionConfigType, ContextT]()
 
         comptime num_args = Ts.length
         var dense_args = DenseArgs[ImmutAnyOrigin, num_args + 1]()
@@ -3354,6 +3377,11 @@ struct DeviceStream(ImplicitlyCopyable, Movable, _HALFunctionEnqueuer):
     stream.synchronize()
     ```
     """
+
+    comptime ExecutionConfigType: ExecutionConfig = (
+        DeviceContext.ExecutionConfigType
+    )
+    """The launch configuration type of the stream's device context."""
 
     # ===-------------------------------------------------------------------===#
     # Fields
@@ -3623,7 +3651,7 @@ struct DeviceStream(ImplicitlyCopyable, Movable, _HALFunctionEnqueuer):
         *actual_arg_types: DevicePassable,
     ](
         self,
-        mut execution_config: ExecutionConfigType,
+        execution_config: ExecutionConfigType,
         *args: *actual_arg_types,
         location: Optional[SourceLocation] = None,
     ) raises:
@@ -3710,7 +3738,7 @@ struct DeviceStream(ImplicitlyCopyable, Movable, _HALFunctionEnqueuer):
         //,
     ](
         self,
-        mut execution_config: ExecutionConfigType,
+        execution_config: ExecutionConfigType,
         func: FuncType,
         *,
         location: Optional[SourceLocation] = None,
@@ -3805,7 +3833,7 @@ struct DeviceStream(ImplicitlyCopyable, Movable, _HALFunctionEnqueuer):
         *Ts: DevicePassable,
     ](
         self,
-        mut execution_config: ExecutionConfigType,
+        execution_config: ExecutionConfigType,
         f: DeviceFunction,
         *args: *Ts,
         location: Optional[SourceLocation] = None,
@@ -3901,7 +3929,7 @@ struct DeviceStream(ImplicitlyCopyable, Movable, _HALFunctionEnqueuer):
         *Ts: AnyType,
     ](
         self,
-        mut execution_config: ExecutionConfigType,
+        execution_config: ExecutionConfigType,
         f: DeviceExternalFunction,
         *args: *Ts,
         location: Optional[SourceLocation] = None,

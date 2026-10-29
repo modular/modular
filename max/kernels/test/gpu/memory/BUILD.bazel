@@ -3,6 +3,9 @@ load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
 package(default_visibility = ["//max:consumers"])
 
+# Also run against the HAL `DeviceContext`, with its driver plugin staged.
+exports_files(["test_external_and_static_shared_mem.mojo"])
+
 _FILECHECK_TESTS = [
     "test_memory.mojo",
     "test_tma_ops.mojo",
