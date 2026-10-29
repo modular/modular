@@ -169,6 +169,9 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     imports = ["."],
+    per_test_shard_count = {
+        "test_conv_gpu.py": 2,
+    },
     precompile_mefs = True,
     tags = [
         "gpu",

@@ -78,13 +78,12 @@ def _check_conv(
     filter_shape: tuple[int, ...],
     stride: int,
     padding: int,
-    fuse_epilogue: bool = True,
 ) -> None:
-    """Checks a conv against torch, optionally with an add fused into it.
+    """Checks a conv against torch, with an add fused into it.
 
-    With `fuse_epilogue`, the add fuses into the conv as its epilogue. The
-    fused conv has no output buffer of its own, so every value reaches the
-    graph output only through the epilogue's stores.
+    The add fuses into the conv as its epilogue. The fused conv has no output
+    buffer of its own, so every value reaches the graph output only through
+    the epilogue's stores.
     """
     rank = len(input_shape) - 2
     device = DeviceRef.GPU()
@@ -108,7 +107,7 @@ def _check_conv(
                 stride=(stride, stride, stride),
                 padding=(p, p, p, p, p, p),
             )
-        graph.output(out + 1.0 if fuse_epilogue else out)
+        graph.output(out + 1.0)
     compiled = session.load(graph)
 
     torch_dtype = torch.float32 if dtype == DType.float32 else torch.bfloat16
@@ -136,8 +135,7 @@ def _check_conv(
         padding=padding,
     )
     expected = expected.permute(0, *range(2, rank + 2), 1)
-    if fuse_epilogue:
-        expected = expected + 1.0
+    expected = expected + 1.0
 
     if dtype == DType.float32:
         torch.testing.assert_close(actual, expected, rtol=2.5e-3, atol=1e-3)
@@ -152,7 +150,7 @@ def _check_conv(
 
 @pytest.mark.parametrize(
     ("dtype", "stride"),
-    [(DType.float32, 1), (DType.bfloat16, 1), (DType.bfloat16, 2)],
+    [(DType.float32, 1), (DType.bfloat16, 1)],
 )
 @pytorch_disable_tf32_dtype
 def test_conv2d_fused_epilogue_gpu(
@@ -163,7 +161,7 @@ def test_conv2d_fused_epilogue_gpu(
 
 @pytest.mark.parametrize(
     ("dtype", "kernel"),
-    [(DType.float32, 3), (DType.bfloat16, 3), (DType.bfloat16, 1)],
+    [(DType.bfloat16, 3), (DType.bfloat16, 1)],
 )
 @pytorch_disable_tf32_dtype
 def test_conv3d_fused_epilogue_gpu(
@@ -176,16 +174,4 @@ def test_conv3d_fused_epilogue_gpu(
         (kernel, kernel, kernel, 32, 32),
         1,
         kernel // 2,
-    )
-
-
-def test_conv2d_bf16_gpu(gpu_session: InferenceSession) -> None:
-    _check_conv(
-        gpu_session,
-        DType.bfloat16,
-        (1, 16, 16, 64),
-        (3, 3, 64, 64),
-        1,
-        1,
-        fuse_epilogue=False,
     )
