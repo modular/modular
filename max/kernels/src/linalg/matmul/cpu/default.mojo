@@ -92,7 +92,7 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
                 ](b_ptr.unsafe_offset(prefetch_offset + idx * simd_size))
 
         # This inner kernels works with non-transposed A.
-        var K = Int(a.dim[1]())
+        var a_stride = Int(a.dynamic_stride(0))
         var a_ptr = a.ptr_at_offset(Coord(global_offset.M, global_k))
 
         comptime c_type = c_local.dtype
@@ -102,7 +102,7 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
             comptime for idx1 in range(kernel_cols // simd_size):
                 comptime alignment = align_of[SIMD[c_type, simd_size]]()
 
-                var a_val = a_ptr[idx0 * K]
+                var a_val = a_ptr[idx0 * a_stride]
                 var b_val = b_ptr.unsafe_load[
                     width=simd_size, alignment=alignment
                 ](idx1 * simd_size)
@@ -149,7 +149,7 @@ struct Inner_matmul_default(InnerMatmulKernel, Movable):
         comptime assert b_packed.flat_rank == 3, "b_packed must be rank 3"
         comptime assert c.flat_rank == 2, "c must be rank 2"
 
-        var c_stride = Int(c.dim[1]())
+        var c_stride = Int(c.dynamic_stride(0))
 
         var c_ptr = c.ptr_at_offset(Coord(global_offset.M, global_offset.N))
 
