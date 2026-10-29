@@ -23,6 +23,7 @@ reconnection, and metrics; this shim only adapts the MAX-side types (device
 from __future__ import annotations
 
 import hashlib
+import inspect
 import logging
 import math
 import os
@@ -30,15 +31,15 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Protocol
 
 from max.driver import Buffer, Device
-from max.nn.kv_cache import KVCacheGroupId
-from max.nn.kv_cache.cache_params import (
+from max.nn.legacy.kv_cache import KVCacheGroupId
+from max.nn.legacy.kv_cache.cache_params import (
     KVCacheMemory,
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,
 )
-from max.nn.kv_cache.data_parallelism_utils import split_into_groups
-from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache.data_parallelism_utils import split_into_groups
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache._nixl_backend import (
     NIXL_BACKEND_ENV_VAR,
     SUPPORTED_NIXL_BACKENDS,
@@ -66,6 +67,9 @@ _logger = logging.getLogger("max.pipelines")
 # calls it has rather than failing on the first request.
 _ASYNC_LOOKUP_ENTRIES = ("start_prepare_load", "load_lookup", "abandon_lookup")
 _PRESENCE_ENTRIES = ("presence", "presence_supported", "start_presence")
+# Lookup entries that gained ``chain_start`` later. pyo3 rejects an unknown
+# keyword, so each entry is passed it only where its signature names it.
+_CHAIN_START_ENTRIES = ("prepare_load", "start_prepare_load")
 
 
 class _DkvLookup(Protocol):
@@ -110,6 +114,7 @@ class _DkvClient(Protocol):
         group_id: int,
         block_hashes: Sequence[int],
         hint: bytes | None = ...,
+        chain_start: int | None = ...,
     ) -> Sequence[bool]: ...
 
     def load_prepared(
@@ -129,6 +134,7 @@ class _DkvClient(Protocol):
         group_id: int,
         block_hashes: Sequence[int],
         hint: bytes | None = ...,
+        chain_start: int | None = ...,
     ) -> _DkvLookup: ...
 
     def load_lookup(
@@ -162,6 +168,8 @@ class _DkvClient(Protocol):
     ) -> _DkvPresence: ...
 
     def is_healthy(self) -> bool: ...
+
+    def attached_peers(self) -> int: ...
 
     def lookup(
         self,
@@ -256,6 +264,21 @@ def _group_recency(group_id: KVCacheGroupId) -> int:
     if group_id.is_sliding_window():
         return _DKV_RECENCY_SLIDING_WINDOW
     return _DKV_RECENCY_FULL_SEQUENCE
+
+
+def _takes_chain_start(client: object, entry: str) -> bool:
+    """Returns whether ``client``'s ``entry`` accepts ``chain_start``.
+
+    An entry the client lacks, or one whose signature cannot be read, does
+    not.
+    """
+    method = getattr(client, entry, None)
+    if method is None:
+        return False
+    try:
+        return "chain_start" in inspect.signature(method).parameters
+    except (TypeError, ValueError):
+        return False
 
 
 def _to_dkv_u64(h: bytes) -> int:
@@ -618,7 +641,7 @@ def _layout_fields(
     block_value_bytes = (
         math.prod(params.shape_per_block) * params.dtype.size_in_bytes
     )
-    return [
+    fields = [
         ("dtype", _dtype_tag(params.dtype)),
         ("dtype_bytes", str(params.dtype.size_in_bytes)),
         ("kv_dim", str(params.kv_dim)),
@@ -646,6 +669,11 @@ def _layout_fields(
         # fold has to stay a stable string for whatever a caller hands over.
         ("window_size", str(getattr(params, "window_size", -1))),
     ]
+    # Appended only for a split layout, so every other fingerprint is
+    # unchanged. A params stand-in that predates the field is unsplit.
+    if getattr(params, "has_split_head_dims", False):
+        fields.append(("v_head_dim", str(params.v_head_dim)))
+    return fields
 
 
 def _kv_config_hash(
@@ -1062,9 +1090,9 @@ class _DkvPendingProbe:
     """One pricing's presence calls, one per shard layout, polled as one.
 
     Answers per replica asked, as :meth:`DKVConnector.probe` does. A
-    replica that could not load when the calls started answers an empty
-    mapping, so it still leases if it reconnects. Reads ``None`` when any
-    call was shed, timed out, or reached a server without presence.
+    replica the calls did not price answers an empty mapping, so its own
+    lease decides what it loads. Reads ``None`` when any call was shed, timed
+    out, or reached a server without presence.
     """
 
     def __init__(
@@ -1450,6 +1478,7 @@ class DKVConnector(KVConnector):
 
     @property
     def leaves(self) -> Mapping[str, KVCacheGroupId]:
+        """Returns the leaf IDs this connector services."""
         return self._leaves
 
     @staticmethod
@@ -1547,6 +1576,7 @@ class DKVConnector(KVConnector):
 
     @property
     def name(self) -> str:
+        """Reports the name ``dkv`` in logs and metrics."""
         return "dkv"
 
     def _derive_leaf_shape(self) -> None:
@@ -1628,7 +1658,8 @@ class DKVConnector(KVConnector):
         """Records which newer entries each client's extension carries.
 
         An extension without the handle carried lookup and presence entries
-        is driven through the blocking calls instead.
+        is driven through the blocking calls instead, and one whose lookups
+        predate ``chain_start`` is called without it.
         """
         self._async_lookup_replicas = [
             all(
@@ -1647,12 +1678,42 @@ class DKVConnector(KVConnector):
             }
             for clients in self._clients
         ]
+        self._peer_count_replicas = [
+            all(
+                hasattr(client, "attached_peers") for client in clients.values()
+            )
+            for clients in self._clients
+        ]
+        self._chain_start_entries = [
+            {
+                leaf_id: frozenset(
+                    entry
+                    for entry in _CHAIN_START_ENTRIES
+                    if _takes_chain_start(client, entry)
+                )
+                for leaf_id, client in clients.items()
+            }
+            for clients in self._clients
+        ]
+
+    def _chain_start_kwargs(
+        self,
+        replica_idx: int,
+        leaf_id: str,
+        entry: str,
+        chain_start: int | None,
+    ) -> dict[str, int | None]:
+        """Returns ``chain_start`` as a keyword if ``entry`` takes it."""
+        if entry in self._chain_start_entries[replica_idx][leaf_id]:
+            return {"chain_start": chain_start}
+        return {}
 
     def lookup(
         self,
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> Mapping[str, Sequence[bool]]:
         """Reports which of ``block_hashes`` dkv holds, per leaf, under a lease.
 
@@ -1667,6 +1728,9 @@ class DKVConnector(KVConnector):
 
         ``hint`` routes the read to the peer that may hold the blocks;
         :meth:`load` inherits it from the lease. See :meth:`_usable_hint`.
+        ``chain_start`` goes with it to an extension that takes it, so the
+        client can tell a hint that cannot serve this read from one that
+        describes another chain.
         """
         # `prepare_load` may well supersede its own plan, but that is the Rust
         # client's business and not written down on this side of the FFI.
@@ -1681,6 +1745,9 @@ class DKVConnector(KVConnector):
                 group_id=self._wire_ids[leaf_id],
                 block_hashes=dkv_hashes,
                 hint=self._usable_hint(hint),
+                **self._chain_start_kwargs(
+                    replica_idx, leaf_id, "prepare_load", chain_start
+                ),
             )
             for leaf_id in leaf_ids
         }
@@ -1719,10 +1786,13 @@ class DKVConnector(KVConnector):
         client of that layout, which is one call for a uniform tree. Every
         replica of a tenant shares one store, so one healthy replica's
         clients answer for every replica that can load, and a replica with
-        a degraded leaf client loads nothing until it reconnects, so it
-        answers all misses. Those answers share two masks mappings, one for
-        every replica that can load and one for every replica that cannot,
-        so a caller reads them and never changes them in place. Presence
+        a degraded leaf client loads nothing from that store until it
+        reconnects, so it answers all misses. When no replica can load,
+        a hint can still be served by the peers it names, so the first
+        replica whose clients have a peer attached is priced through its own
+        client instead (see :meth:`_pricing_replicas`). Those answers share
+        two masks mappings, one for every replica priced and one for every
+        other, so a caller reads them and never changes them in place. Presence
         pins nothing, stages no disk block and bumps no read tally, all
         three of which a leased ``lookup`` does, so it leaves every
         request's outstanding lease alone.
@@ -1731,12 +1801,15 @@ class DKVConnector(KVConnector):
         peer, prices with one client ``lookup`` on the first full-attention
         leaf, which pins and releases inline and stages disk blocks. It
         takes no hint, so pricing never dials a peer on the scheduler
-        thread. ``None`` only for a tree without a full-attention leaf.
+        thread, and a degraded replica priced through its peers answers
+        misses without that lookup. ``None`` only for a tree without a
+        full-attention leaf.
         """
         misses: Mapping[str, Sequence[bool]] = {
             leaf_id: [False] * len(block_hashes) for leaf_id in self._leaves
         }
-        able = [r for r in replica_idxs if self._can_load(r)]
+        usable_hint = self._usable_hint(hint)
+        able = self._pricing_replicas(replica_idxs, usable_hint)
         if not block_hashes or not able:
             return [misses for _ in replica_idxs]
 
@@ -1749,9 +1822,10 @@ class DKVConnector(KVConnector):
             and clients[leaf_ids[0]].presence_supported()
             for leaf_ids in self._presence_layouts
         ):
-            return self._probe_one_leaf(dkv_hashes, replica_idxs, able)
+            return self._probe_without_presence(
+                dkv_hashes, replica_idxs, able, misses
+            )
 
-        usable_hint = self._usable_hint(hint)
         answered: dict[str, Sequence[bool]] = {}
         for leaf_ids in self._presence_layouts:
             answer = clients[leaf_ids[0]].presence(
@@ -1760,7 +1834,9 @@ class DKVConnector(KVConnector):
                 hint=usable_hint,
             )
             if answer is None:
-                return self._probe_one_leaf(dkv_hashes, replica_idxs, able)
+                return self._probe_without_presence(
+                    dkv_hashes, replica_idxs, able, misses
+                )
             if len(answer) != len(leaf_ids) or any(
                 len(mask) != len(dkv_hashes) for mask in answer
             ):
@@ -1787,9 +1863,8 @@ class DKVConnector(KVConnector):
         """Starts :meth:`probe`'s presence calls and returns at once.
 
         Returns a handle that answers as :meth:`probe` does for the replicas
-        that could load when it started, and ``None`` when some layout's
-        client or server lacks presence, which leaves the manager on
-        :meth:`probe`.
+        it priced when it started, and ``None`` when some layout's client or
+        server lacks presence, which leaves the manager on :meth:`probe`.
         """
         if not block_hashes:
             return CompletedProbe(
@@ -1798,7 +1873,8 @@ class DKVConnector(KVConnector):
                     for _ in replica_idxs
                 ]
             )
-        able = [r for r in replica_idxs if self._can_load(r)]
+        usable_hint = self._usable_hint(hint)
+        able = self._pricing_replicas(replica_idxs, usable_hint)
         if not able:
             return CompletedProbe(None)
 
@@ -1812,7 +1888,6 @@ class DKVConnector(KVConnector):
             return None
 
         dkv_hashes = [_to_dkv_u64(h) for h in block_hashes]
-        usable_hint = self._usable_hint(hint)
         handles = [
             (
                 leaf_ids,
@@ -1827,6 +1902,24 @@ class DKVConnector(KVConnector):
         return _DkvPendingProbe(
             list(self._leaves), handles, len(dkv_hashes), replica_idxs, able
         )
+
+    def _probe_without_presence(
+        self,
+        dkv_hashes: Sequence[int],
+        replica_idxs: Sequence[int],
+        able: Sequence[int],
+        misses: Mapping[str, Sequence[bool]],
+    ) -> list[Mapping[str, Sequence[bool]]] | None:
+        """Prices :meth:`probe` where presence cannot answer.
+
+        A degraded replica is priced only through the peers its hint names,
+        and the client lookup takes no hint, so its client would answer that
+        lookup all misses behind the connector lock. Every replica then
+        answers misses and no client is asked.
+        """
+        if not self._can_load(able[0]):
+            return [misses for _ in replica_idxs]
+        return self._probe_one_leaf(dkv_hashes, replica_idxs, able)
 
     def _probe_one_leaf(
         self,
@@ -1866,6 +1959,38 @@ class DKVConnector(KVConnector):
         """Whether every leaf client of ``replica_idx`` is serving."""
         return all(
             client.is_healthy()
+            for client in self._clients[replica_idx].values()
+        )
+
+    def _pricing_replicas(
+        self, replica_idxs: Sequence[int], hint: bytes | None
+    ) -> list[int]:
+        """Returns the replicas one presence answer prices.
+
+        Every replica that can load, or, when none can, the first whose
+        clients have a peer attached that ``hint`` could name. A degraded
+        client still serves those peers and misses what it leaves to the
+        co-located dKV, so its presence answer is what its own lease would
+        find. Which peers a client has attached, and which it remembers as
+        failed, is its own, so that answer prices its replica alone. A
+        degraded replica without a hint or an attached peer would answer all
+        misses, so it is not asked and its connector lock is not taken.
+
+        TODO(CLIN-1918): pricing a degraded replica takes its connector lock
+        on the scheduler thread, so it waits out the teardown RPCs a
+        reconnect issues under that lock. They are quick on a real restart,
+        but a dKV that answers probes and stalls block operations stalls
+        pricing with them.
+        """
+        able = [r for r in replica_idxs if self._can_load(r)]
+        if able or hint is None:
+            return able
+        return next(([r] for r in replica_idxs if self._reaches_peers(r)), [])
+
+    def _reaches_peers(self, replica_idx: int) -> bool:
+        """Whether a leaf client of ``replica_idx`` has a peer attached."""
+        return self._peer_count_replicas[replica_idx] and any(
+            client.attached_peers() > 0
             for client in self._clients[replica_idx].values()
         )
 
@@ -1998,6 +2123,7 @@ class DKVConnector(KVConnector):
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> KVLookup:
         """Starts one leased read per leaf and returns before any answers.
 
@@ -2005,8 +2131,8 @@ class DKVConnector(KVConnector):
         the handle rather than a client slot carries their leases, so one
         request's lookup never cancels another's. :meth:`load_lookup` reads
         out of the handle and :meth:`abandon_lookup` hands it back, and a
-        handle the manager drops does the same on its own. ``hint`` routes
-        the reads as in :meth:`lookup`.
+        handle the manager drops does the same on its own. ``hint`` and
+        ``chain_start`` go to the reads as in :meth:`lookup`.
 
         An extension without the async entries answers through the blocking
         :meth:`lookup` here instead. That lease lives in the prepared slot,
@@ -2021,7 +2147,10 @@ class DKVConnector(KVConnector):
             return CompletedLookup({leaf_id: [] for leaf_id in self._leaves})
         if not self._async_lookup_replicas[replica_idx]:
             masks = self.lookup(
-                block_hashes, replica_idx=replica_idx, hint=hint
+                block_hashes,
+                replica_idx=replica_idx,
+                hint=hint,
+                chain_start=chain_start,
             )
             return _DkvSyncLookup(
                 masks, replica_idx, self._leased_depths.get(replica_idx)
@@ -2036,6 +2165,9 @@ class DKVConnector(KVConnector):
                     group_id=self._wire_ids[leaf_id],
                     block_hashes=dkv_hashes,
                     hint=usable_hint,
+                    **self._chain_start_kwargs(
+                        replica_idx, leaf_id, "start_prepare_load", chain_start
+                    ),
                 )
         except Exception:
             _logger.exception(
@@ -2431,21 +2563,23 @@ class DKVConnector(KVConnector):
                 client.poll_transfers()
 
     def shutdown(self) -> None:
-        # No-op: the Rust client releases its NIXL agent, heartbeat poller, and
-        # RPC connection when the object is dropped (at process teardown).
-        # Per-batch transfer throughput is surfaced by the scheduler from
-        # ``metrics`` below, so no background logger is needed here.
-        pass
+        """Does nothing: the Rust client frees its NIXL agent when dropped.
+
+        Dropping the object also releases the heartbeat poller and RPC
+        connection. Per-batch transfer throughput reaches the scheduler
+        through :attr:`metrics`, so no background logger runs here.
+        """
 
     def reset_prefix_cache(self) -> None:
-        # No-op: dKV manages its own external block lifecycle server-side.
-        pass
+        """Does nothing: dKV manages block lifetime on the server."""
 
     @property
     def metrics(self) -> KVCacheMetrics:
+        """Reports transfer counters without resetting them."""
         return self._aggregate_metrics(lambda client: client.metrics())
 
     def take_metrics(self) -> KVCacheMetrics:
+        """Reports transfer counters and resets the refusal counter."""
         metrics = self._aggregate_metrics(lambda client: client.take_metrics())
         self._loads_refused = 0
         return metrics
@@ -2529,6 +2663,12 @@ class DKVConnector(KVConnector):
                     dkv_hints_rejected_by_reason=dict(
                         m["hints_rejected_by_reason"]
                     ),
+                    # An extension predating these reports none, which folds
+                    # as no unused hint rather than as a missing key.
+                    dkv_hints_unused=m.get("hints_unused", 0),
+                    dkv_hints_unused_by_reason=dict(
+                        m.get("hints_unused_by_reason", {})
+                    ),
                     # A per-window delta like its neighbours. An extension
                     # predating it reports none, which folds as nothing
                     # dropped rather than as a missing key.
@@ -2539,6 +2679,30 @@ class DKVConnector(KVConnector):
                     dkv_prepare_load_degraded=m["prepare_load_degraded"],
                     dkv_load_with_plan_degraded=m["load_with_plan_degraded"],
                     dkv_load_with_plan_expired=m["load_with_plan_expired"],
+                    # What the peers covered of those fail-opens. An
+                    # extension predating it reports none, read as no round.
+                    dkv_peer_rounds_while_degraded=m.get(
+                        "peer_rounds_while_degraded", 0
+                    ),
+                    # The orphan queue, folded per leaf client like the settle
+                    # worker below: per-window outcome counts and a depth
+                    # level. An extension predating them reports none.
+                    dkv_orphan_cleanups_reissued=m.get(
+                        "orphan_cleanups_reissued", 0
+                    ),
+                    dkv_orphan_cleanups_abandoned=m.get(
+                        "orphan_cleanups_abandoned", 0
+                    ),
+                    dkv_orphan_cleanups_dropped=m.get(
+                        "orphan_cleanups_dropped", 0
+                    ),
+                    dkv_orphan_cleanups_refused=m.get(
+                        "orphan_cleanups_refused", 0
+                    ),
+                    dkv_orphan_cleanups_expired=m.get(
+                        "orphan_cleanups_expired", 0
+                    ),
+                    dkv_orphan_queue_depth=m.get("orphan_queue_depth", 0),
                     # The settle worker, which every leaf client runs for
                     # itself, so these fold per leaf client and KVCacheMetrics
                     # sums the depth and the finished count and maxes the age

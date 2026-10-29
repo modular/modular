@@ -54,6 +54,7 @@ from max.benchmark.benchmark_shared.datasets.types import (
     SampledRequest,
     Samples,
 )
+from openai.types.chat.completion_create_params import ResponseFormat
 from pydantic import BaseModel
 from transformers.tokenization_utils_base import VERY_LARGE_INTEGER
 
@@ -144,6 +145,9 @@ class WorkloadStats(BaseModel):
     input_len_first_turn: Distribution | None
     input_len_later_turn: Distribution | None
     output_len: Distribution | None
+    # Defaulted so stats written before the turn split still load.
+    output_len_first_turn: Distribution | None = None
+    output_len_later_turn: Distribution | None = None
     tool_request_fraction: float | None
     # Over requests that send tools, as production's tools-per-request
     # histogram only records those.
@@ -173,6 +177,15 @@ def _prompt_has_image(prompt: str | list[ChatMessage]) -> bool:
     )
 
 
+def _constrains_output(response_format: ResponseFormat | None) -> bool:
+    # A "text" format leaves the output free, and MAX Serve's structured
+    # output counter, which production's share is read from, skips it.
+    return response_format is not None and response_format["type"] in (
+        "json_object",
+        "json_schema",
+    )
+
+
 def _single_turn_request(
     request: SampledRequest, run_prefix_len: int
 ) -> WorkloadRequest:
@@ -181,7 +194,7 @@ def _single_turn_request(
         output_len=request.output_len,
         first_turn=not _prompt_has_assistant(request.prompt_formatted),
         num_tools=len(request.tools or []),
-        constrained=request.response_format is not None,
+        constrained=_constrains_output(request.response_format),
         carries_image=bool(request.encoded_images)
         or _prompt_has_image(request.prompt_formatted),
     )
@@ -246,7 +259,7 @@ def _chat_session_requests(
                     output_len=output_len,
                     first_turn=idx == 0,
                     num_tools=len(user.tools or []),
-                    constrained=user.response_format is not None,
+                    constrained=_constrains_output(user.response_format),
                     carries_image=image_seen,
                 )
             )
@@ -341,6 +354,20 @@ def compute_workload_stats(
         ),
         output_len=Distribution.of(
             [r.output_len for r in requests if r.output_len is not None]
+        ),
+        output_len_first_turn=Distribution.of(
+            [
+                r.output_len
+                for r in requests
+                if r.first_turn and r.output_len is not None
+            ]
+        ),
+        output_len_later_turn=Distribution.of(
+            [
+                r.output_len
+                for r in requests
+                if not r.first_turn and r.output_len is not None
+            ]
         ),
         tool_request_fraction=_fraction([r.num_tools > 0 for r in requests]),
         tools_per_request=Distribution.of(

@@ -20,7 +20,7 @@ from typing import Literal
 import pytest
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental.sharding import (
+from max.tensor.sharding import (
     ALL_TRANSITIONS,
     DEFAULT_TRANSITIONS,
     AxisAssignment,
@@ -35,7 +35,7 @@ from max.experimental.sharding import (
     Transition,
     auto_reshard,
 )
-from max.experimental.sharding._auto_reshard import (
+from max.tensor.sharding._auto_reshard import (
     _format_transition_set,
     pick_reshard_action,
 )

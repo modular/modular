@@ -23,6 +23,7 @@ from __future__ import annotations
 import functools
 import json
 import logging
+import os
 import struct
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -31,7 +32,8 @@ from pathlib import Path
 from typing import Any
 
 from max.dtype import DType
-from max.nn.kv_cache import spec_decode_cache_slack
+from max.nn.legacy.kv_cache import spec_decode_cache_slack
+from max.nn.legacy.quant_config import fp4_packed_k
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.support.human_readable_formatter import to_human_readable_bytes
 
@@ -49,7 +51,9 @@ from .layers.indexer import (
 )
 from .layers.moe import router_reads_bf16_gate
 from .model_config import (
+    MEGAFFN_MAX_LOCAL_EXPERTS,
     DeepseekV41Config,
+    RoutedExpertFormat,
     compressor_bf16_enabled,
     data_parallel_ep_config,
     forward_row_bound,
@@ -57,6 +61,7 @@ from .model_config import (
     max_images_per_request,
     nvfp4_sf_preinterleave_enabled,
     q_mxfp8_enabled,
+    routed_expert_format,
     woa_mxfp8_enabled,
 )
 from .weight_adapters import (
@@ -94,10 +99,11 @@ _MOE_ROW_BYTES = 256 << 10
 # exactly with the rows but not broken down further (rounded up to 4.5 B).
 _HEAD_LOGITS_BYTES = 6
 _HEAD_SAMPLING_BYTES = 4.5
-# NVFP4 block scales: one byte per 16 values, in 128-row x 4-column tiles.
-_NVFP4_SCALE_TILE_ROWS = 128
-_NVFP4_SCALE_TILE_BYTES = 512
-_NVFP4_SCALE_TILE_COLS = 64
+# Activation block scales: one byte per block (16 values for NVFP4, 32 for
+# MXFP8), in tiles of 128 rows by 4 scale columns.
+_SCALE_TILE_ROWS = 128
+_SCALE_TILE_SCALES = 4
+_SCALE_TILE_BYTES = 512
 _ARENA_FIXED_BYTES = 5 << 28  # 1.25 GiB
 # The candidate ops' window scratch holds one float32 block maximum (source)
 # or one flag byte (consumer) per block of a window row; they never overlap.
@@ -179,32 +185,72 @@ def graph_arena_bytes(
     return _mm_pages(_ARENA_FIXED_BYTES + live_rows * row_bytes)
 
 
-def ep_receive_pool_bytes(ep_config: Any) -> int:
+def replay_enabled() -> bool:
+    """Whether the decoder replay graph is requested (same gate as trim)."""
+    value = int(os.environ.get("MODULAR_DEEPSEEK_V41_REPLAY_MIN_TOKENS", "0"))
+    if value < 0:
+        raise ValueError("Replay threshold must be nonnegative")
+    return value > 0
+
+
+def replay_rows_bound(
+    *, live_rows: int, max_batch_size: int, window_size: int
+) -> int:
+    """Returns the most rows one replica's replay step can keep.
+
+    A request keeps its final window plus the alignment remainder, fewer
+    than ``2 * window_size`` rows (see ``build_replay_plan``).
+    """
+    return min(live_rows, max_batch_size * (2 * window_size - 1))
+
+
+def ep_receive_pool_bytes(
+    ep_config: Any,
+    expert_format: RoutedExpertFormat,
+    moe_intermediate_size: int,
+) -> int:
     """Returns the routed experts' statically sized receive-side bytes.
 
-    The dispatched NVFP4 rows, their block scales and source info stay live
-    while the fused expert kernel writes the bf16 down projection, all sized
-    for the most rows a device can receive, whatever the batch. This is the
-    largest single transient of a forward, and every forward and captured
-    graph holds one.
+    The dispatched rows, their block scales and source info stay live while
+    the experts write the bf16 down projection, all sized for the most rows a
+    device can receive, whatever the batch. MXFP4 experts also allocate
+    their E4M3 intermediate and scales the same way, and, on devices with more
+    experts than the fused kernel holds
+    (:data:`~.model_config.MEGAFFN_MAX_LOCAL_EXPERTS`), the unfused chain's
+    bf16 gate/up projection and SwiGLU. This is the largest single transient
+    of a forward, and every forward and captured graph holds one.
 
     Args:
         ep_config: The expert-parallel :class:`EPConfig`.
+        expert_format: The routed experts' format.
+        moe_intermediate_size: The routed experts' intermediate width.
     """
     rows = int(ep_config.get_max_recv_tokens())
     hidden = int(ep_config.hidden_size)
     n_ranks = int(ep_config.n_gpus_per_node) * int(ep_config.n_nodes)
     n_local_experts = int(ep_config.n_experts) // n_ranks
-    scale_tiles = -(
-        -(rows + n_local_experts * _NVFP4_SCALE_TILE_ROWS)
-        // _NVFP4_SCALE_TILE_ROWS
-    ) * -(-hidden // _NVFP4_SCALE_TILE_COLS)
-    tokens = rows * hidden // 2
+    quant_config = expert_format.activation_quant_config
+    block_size = quant_config.input_scale.block_size
+    assert block_size is not None
+    block = block_size[1]
+    tile_rows = -(
+        -(rows + n_local_experts * _SCALE_TILE_ROWS) // _SCALE_TILE_ROWS
+    )
+
+    def scale_bytes(width: int) -> int:
+        tile_cols = -(-width // (block * _SCALE_TILE_SCALES))
+        return tile_rows * tile_cols * _SCALE_TILE_BYTES
+
+    tokens = rows * fp4_packed_k(hidden, quant_config)
     src_info = rows * 2 * 4
     down = rows * hidden * 2
-    return _mm_pages(
-        tokens + scale_tiles * _NVFP4_SCALE_TILE_BYTES + src_info + down
-    )
+    total = tokens + scale_bytes(hidden) + src_info + down
+    if expert_format is RoutedExpertFormat.MXFP4:
+        inter = moe_intermediate_size
+        total += rows * inter + scale_bytes(inter)
+        if n_local_experts > MEGAFFN_MAX_LOCAL_EXPERTS:
+            total += rows * 2 * inter * 2 + rows * inter * 2
+    return _mm_pages(total)
 
 
 def graph_capture_pool_bytes(
@@ -350,10 +396,12 @@ _QUERY_PROJECTIONS = tuple(
 # The router gate's bf16 weight, held in float32 unless the fused route
 # reads it as is.
 _ROUTER_GATE_SUFFIX = ".ffn.gate.weight"
-# Routed-expert NVFP4 block scales. Unless pre-interleaved on the host, the
-# compiler hoists the in-graph interleave into a second resident copy (2x).
+# Routed-expert block scales: NVFP4's ``weight_scale`` and MXFP4's ``scale``.
+# Both load compact, stacked by expert. Unless pre-interleaved on the host,
+# the compiler hoists the in-graph interleave into a second resident copy
+# (2x).
 _ROUTED_EXPERT_SCALE_MARKER = ".ffn.experts."
-_ROUTED_EXPERT_SCALE_SUFFIX = ".weight_scale"
+_ROUTED_EXPERT_SCALE_SUFFIXES = (".weight_scale", ".scale")
 
 
 @dataclass(frozen=True)
@@ -421,9 +469,10 @@ def _device_bytes_factor(
     """How many bytes one checkpoint byte becomes once loaded on a device.
 
     bf16 weights widened to float32 double. fp8 weights dequantized to bf16
-    on the host double, and their e8m0 scales never reach a device. Every
-    other MXFP8 weight's compact ``[N / block, K / block]`` e8m0 scale is
-    row-expanded to ``[N, K / block]``.
+    on the host double, and their e8m0 scales never reach a device. Routed
+    experts' block scales stay compact unless interleaved in the graph.
+    Every other MXFP8 weight's compact ``[N / block, K / block]`` e8m0 scale
+    is row-expanded to ``[N, K / block]``.
     """
     name, dtype = tensor.name, tensor.dtype
     if name == HEAD_WEIGHT:
@@ -442,6 +491,10 @@ def _device_bytes_factor(
         ):
             return 2.0
         return 1.0
+    if _ROUTED_EXPERT_SCALE_MARKER in name and name.endswith(
+        _ROUTED_EXPERT_SCALE_SUFFIXES
+    ):
+        return 1.0 if layout.expert_scales_preinterleaved else 2.0
     if dtype == "F8_E8M0" and name.endswith(".scale"):
         base = name[: -len(".scale")]
         if layout.host_dequantized(base) or (
@@ -449,13 +502,6 @@ def _device_bytes_factor(
         ):
             return 0.0
         return float(MXFP8_BLOCK_SIZE)
-    if (
-        dtype == "F8_E4M3"
-        and _ROUTED_EXPERT_SCALE_MARKER in name
-        and name.endswith(_ROUTED_EXPERT_SCALE_SUFFIX)
-        and not layout.expert_scales_preinterleaved
-    ):
-        return 2.0
     return 1.0
 
 
@@ -651,8 +697,9 @@ class DeepseekV41MemoryPlanner(PagedMemoryPlanner):
         Returns:
             :func:`graph_arena_bytes`, :func:`indexer_activation_bytes`,
             the expert-parallel buffers, :func:`graph_capture_pool_bytes`
-            with device graph capture, :func:`csa2_activation_bytes`, and
-            fragmentation headroom per device, summed over devices (free
+            with device graph capture, :func:`csa2_activation_bytes`, the
+            replay graph's arena and EP receive pool when replay is enabled,
+            and fragmentation headroom per device, summed over devices (free
             memory is summed the same way), plus
             :func:`vision_activation_bytes` of one largest image on device 0.
             Excludes KV leaf storage (see module docstring).
@@ -700,7 +747,10 @@ class DeepseekV41MemoryPlanner(PagedMemoryPlanner):
         attention = csa2_activation_bytes(
             live_rows=live_rows, num_heads=text_config.num_attention_heads
         )
-        ep_config = data_parallel_ep_config(pipeline_config, text_config)
+        expert_format = routed_expert_format(huggingface_config)
+        ep_config = data_parallel_ep_config(
+            pipeline_config, text_config, expert_format
+        )
         row_bytes = (
             _ARENA_ROW_BYTES if ep_config is None else _EP_ARENA_ROW_BYTES
         )
@@ -711,7 +761,11 @@ class DeepseekV41MemoryPlanner(PagedMemoryPlanner):
             # and the experts' intermediates over the statically sized
             # receive rows.
             ep_buffers = ep_config.estimate_memory_usage()
-            ep_pool = ep_receive_pool_bytes(ep_config)
+            ep_pool = ep_receive_pool_bytes(
+                ep_config,
+                expert_format,
+                int(text_config.moe_intermediate_size),
+            )
             moe_rows = ep_buffers + ep_pool
             speculative = pipeline_config.speculative
             if speculative is not None and speculative.is_dspark():
@@ -762,24 +816,47 @@ class DeepseekV41MemoryPlanner(PagedMemoryPlanner):
                 ),
                 ep_pool_bytes=ep_pool,
             )
+        replay_pool = 0
+        if replay_enabled():
+            # The replay graph is a second compiled graph whose transients
+            # are freed asynchronously, so its arena and EP receive tensors
+            # sit beside the full graph's. The coefficients reuse the full
+            # graph's and are an upper bound until calibrated on a GPU run.
+            assert runtime.max_batch_size is not None
+            kept_rows = replay_rows_bound(
+                live_rows=live_rows,
+                max_batch_size=runtime.max_batch_size,
+                window_size=int(text_config.sliding_window),
+            )
+            replay_arena = graph_arena_bytes(
+                live_rows=kept_rows, row_bytes=row_bytes
+            )
+            replay_pool = replay_arena + ep_pool
         # Freed transients are reused only in place, so a fragmented free
         # list must still fit a fresh copy of the largest one.
         headroom = max(ep_pool, _MM_PAGE_BYTES)
         per_device = (
-            arena + indexer + attention + moe_rows + graph_pool + headroom
+            arena
+            + indexer
+            + attention
+            + moe_rows
+            + graph_pool
+            + replay_pool
+            + headroom
         )
 
         logger.info(
             "Estimated DeepSeek-V4.1-Flash forward activation memory: %s per "
             "device x %d devices (graph arena %s + indexer %s + attention %s "
-            "+ device graph pool %s + fragmentation headroom %s; %d live "
-            "rows, %d candidate blocks)",
+            "+ device graph pool %s + replay graph %s + fragmentation "
+            "headroom %s; %d live rows, %d candidate blocks)",
             to_human_readable_bytes(per_device),
             num_devices,
             to_human_readable_bytes(arena),
             to_human_readable_bytes(indexer),
             to_human_readable_bytes(attention),
             to_human_readable_bytes(graph_pool),
+            to_human_readable_bytes(replay_pool),
             to_human_readable_bytes(headroom),
             live_rows,
             blocks,

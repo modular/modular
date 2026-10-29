@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Gemma 4 multimodal model."""
 
 from __future__ import annotations
 
@@ -30,8 +31,8 @@ from max.graph import (
     Module,
 )
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.nn.kv_cache import MultiKVCacheParams
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.kv_cache import MultiKVCacheParams
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import ImageMetadata
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
@@ -256,9 +257,11 @@ class Gemma3_MultiModalModel(
 
     @property
     def vision_model(self) -> Model | None:
-        """The compiled vision model, or None for text-only
-        ("gemma4_unified") checkpoints whose vision embedder is not
-        implemented yet."""
+        """The compiled vision model, or None when the checkpoint is text-only.
+
+        ``gemma4_unified`` checkpoints carry no vision embedder, so they build
+        no vision graph.
+        """
         return self._models.get(GraphRole.VISION)
 
     @property
@@ -293,15 +296,17 @@ class Gemma3_MultiModalModel(
         return self._batching.vision_execute(selection, devices, packed)
 
     def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
-        """Returns the batch processor's embeddings for a batch with no new
-        images."""
+        """Returns the batch processor's embeddings for a batch with no new images."""
         return self._batching.empty_vision_embeddings(devices)
 
     def graph_specs(
         self, model_config: Gemma4ForConditionalGenerationConfig
     ) -> dict[str, GraphSpec]:
-        """Returns the decoder, and the vision encoder unless the checkpoint
-        is text-only, in one compile group."""
+        """Returns the graphs to compile, keyed by role.
+
+        The decoder is always there. The vision encoder joins it in the same
+        compile group unless the checkpoint is text-only.
+        """
         specs: dict[str, GraphSpec] = {
             GraphRole.DECODER: self._language_spec(
                 model_config, self._language_weights_dict
@@ -469,7 +474,7 @@ class Gemma3_MultiModalModel(
         state_dict: dict[str, WeightData],
         module: Module | None = None,
     ) -> tuple[Graph, Mapping[str, DLPackArray]]:
-        """Build the vision model with our input types and graph"""
+        """Build the vision model with our input types and graph."""
         spec = self._vision_spec(config, state_dict)
         return spec.trace(module), spec.weights_registry()
 

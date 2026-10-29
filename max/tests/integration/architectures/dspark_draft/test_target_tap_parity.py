@@ -72,12 +72,12 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.graph.weights import load_weights
-from max.nn.comm import Signals
-from max.nn.kv_cache import (
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.kv_cache import (
     MHAKVCacheParams,
     MultiKVCacheParams,
 )
-from max.nn.transformer import ReturnHiddenStates
+from max.nn.legacy.transformer import ReturnHiddenStates
 from max.pipelines.architectures.gemma4.gemma4 import Gemma4TextModel
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     ProportionalScalingParams,

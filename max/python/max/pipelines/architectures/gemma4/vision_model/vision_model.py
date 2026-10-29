@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Gemma 4 vision tower."""
 
 from __future__ import annotations
 
@@ -32,7 +33,7 @@ from max.graph import (
     Weight,
 )
 from max.graph import Module as GraphModule
-from max.nn.layer import Module
+from max.nn.legacy.layer import Module
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     compute_vision_freqs_cis,
 )
@@ -227,13 +228,11 @@ class Gemma4VisionModel(Module):
         ]
 
     def input_types(self) -> tuple[TensorType | BufferType, ...]:
-        """Returns the vision graph's input types: the leaves of
-        :meth:`input_tree`."""
+        """Returns the vision graph's input types: the leaves of :meth:`input_tree`."""
         return tuple(tree.leaves(self.input_tree()))
 
     def input_tree(self) -> OrderedDict[str, object]:
-        """Names the vision graph's inputs, keyed by :meth:`__call__`'s
-        arguments.
+        """Names the vision graph's inputs, keyed by :meth:`__call__`'s arguments.
 
         The vision model receives four tensors per device plus one CPU
         scalar.

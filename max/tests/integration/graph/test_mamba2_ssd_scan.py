@@ -29,7 +29,7 @@ from max.driver import accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.state_space import mamba2_ssd_chunk_scan_varlen_fwd_inplace
+from max.nn.legacy.state_space import mamba2_ssd_chunk_scan_varlen_fwd_inplace
 
 _NHEADS = 4
 # Not a multiple of the 16 channels per block of the split kernel, so the

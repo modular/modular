@@ -16,25 +16,25 @@ from __future__ import annotations
 
 import functools
 
+from max import functional as F
 from max import tree
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.mlp import MLP
-from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.experimental.nn.embedding import Embedding
-from max.experimental.nn.linear import Linear
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.tensor import Tensor
 from max.graph import ops
-from max.nn.kv_cache import (
+from max.nn import Module
+from max.nn.common_layers.mlp import MLP
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.embedding import Embedding
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     KVCacheParams,
     PagedCacheValues,
 )
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
+from max.nn.linear import Linear
+from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
+from max.tensor import Tensor
 
 from .layers.attention import Olmo2Attention
 from .layers.rms_norm import Olmo2RMSNorm
@@ -140,6 +140,7 @@ class Olmo2TextModel(
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
     ) -> ModuleV3Outputs:
+        """Runs the text model over the graph inputs."""
         h = self.embed_tokens(tokens)
 
         if self.embedding_multiplier != 1.0:
@@ -212,6 +213,7 @@ class Olmo2(Module[..., ModuleV3Outputs]):
         input_row_offsets: Tensor,
         *variadic_args,
     ) -> ModuleV3Outputs:
+        """Unflattens the KV inputs, then runs the text model."""
         symbolic_inputs = self.kv_params.unflatten_kv_inputs(
             iter(variadic_args)
         )

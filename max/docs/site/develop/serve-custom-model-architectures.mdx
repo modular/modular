@@ -100,13 +100,13 @@ assert my_arch.name == "MyModelForCausalLM"
 
 `MyModel` subclasses
 [`ModuleV3PipelineModelWithKVCache`](/api/python/generated/max.pipelines.lib.ModuleV3PipelineModelWithKVCache/),
-which builds your [`max.experimental.nn`](/api/python/experimental.nn/) module
-and compiles it with the checkpoint weights. Set
-`model_config_cls = MyModelConfig` on `MyModel`: the pipeline model uses it to
-size the KV cache and build the batch processor, and raises an error at startup
-when it's unset. MAX reads the `config` field in `arch.py` to plan memory, so
-both name the same class. The `batching` field names the batch processor that
-prepares each batch's inputs, and `memory_planner` sizes the KV cache.
+which builds your [`max.nn`](/api/python/nn/) module and compiles it with the
+checkpoint weights. Set `model_config_cls = MyModelConfig` on `MyModel`: the
+pipeline model uses it to size the KV cache and build the batch processor, and
+raises an error at startup when it's unset. MAX reads the `config` field in
+`arch.py` to plan memory, so both name the same class. The `batching` field
+names the batch processor that prepares each batch's inputs, and
+`memory_planner` sizes the KV cache.
 
 When you pass your package to `max serve` with `--custom-architectures`, MAX
 imports it, reads the `ARCHITECTURES` list, and registers every entry. When the

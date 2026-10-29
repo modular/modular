@@ -50,21 +50,17 @@ from max.driver import (
     set_virtual_device_target_arch,
 )
 from max.dtype import DType
-from max.experimental.tensor_spec_serialization import (
-    layout_to_json,
-    layouts_from_json,
-)
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn import graph_groups
-from max.nn.comm.ep import EPBatchManager, EPConfig
-from max.nn.graph_groups import RaggedBatch
-from max.nn.kv_cache import MHAKVCacheParams, max_pages_per_request
-from max.nn.kv_cache.cache_params import (
+from max.nn.legacy import graph_groups
+from max.nn.legacy.comm.ep import EPBatchManager, EPConfig
+from max.nn.legacy.graph_groups import RaggedBatch
+from max.nn.legacy.kv_cache import MHAKVCacheParams, max_pages_per_request
+from max.nn.legacy.kv_cache.cache_params import (
     KVCacheParamInterface,
     MultiKVCacheParams,
     RecurrentStateParams,
 )
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.deepseekV3.deepseekV3 import DeepseekV3
 from max.pipelines.architectures.deepseekV3_2.deepseekV3_2 import DeepseekV3_2
 from max.pipelines.architectures.deepseekV4.deepseekV4 import DeepseekV4
@@ -100,6 +96,10 @@ from max.pipelines.lib.interfaces import (
     BatchProcessorRuntime,
     PipelineModel,
     modulev3_ragged_kv_symbolic_input_tree,
+)
+from max.tensor.tensor_spec_serialization import (
+    layout_to_json,
+    layouts_from_json,
 )
 
 _SNAPSHOT = Path(__file__).parent / "testdata" / "graph_input_trees.json"

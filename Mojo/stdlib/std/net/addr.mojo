@@ -31,7 +31,7 @@ struct Ipv4Addr(Equatable, Hashable, ImplicitlyCopyable, Writable):
     """The unspecified address, 0.0.0.0."""
 
     def __init__(out self, a: Byte, b: Byte, c: Byte, d: Byte, /):
-        """Constructs an address from its four octets, first octet first.
+        """Constructs an address from its four octets.
 
         Args:
             a: The first octet.
@@ -58,7 +58,7 @@ struct Ipv4Addr(Equatable, Hashable, ImplicitlyCopyable, Writable):
         """Constructs an address from its octets in network byte order.
 
         Args:
-            octets: The four octets, first octet first.
+            octets: The four octets, such as `[127, 0, 0, 1]` for 127.0.0.1.
         """
         self._octets = octets^
 
@@ -80,6 +80,15 @@ struct Ipv4Addr(Equatable, Hashable, ImplicitlyCopyable, Writable):
             The address as an integer in host byte order.
         """
         return UInt32.from_bytes[endian=.big](self._octets)
+
+    def octets(self) -> Array[Byte, 4]:
+        """Returns the address's four octets.
+
+        Returns:
+            The octets in network byte order, such as `[127, 0, 0, 1]` for
+            127.0.0.1.
+        """
+        return self._octets.copy()
 
     def write_to(self, mut writer: Some[Writer]):
         """Writes the address in dotted-decimal notation, such as `127.0.0.1`.
@@ -116,8 +125,7 @@ struct Ipv6Addr(Equatable, Hashable, ImplicitlyCopyable, Writable):
         h: UInt16,
         /,
     ):
-        """Constructs an address from its eight 16-bit segments, first
-        segment first.
+        """Constructs an address from its eight 16-bit segments.
 
         Args:
             a: The first segment.
@@ -148,7 +156,8 @@ struct Ipv6Addr(Equatable, Hashable, ImplicitlyCopyable, Writable):
         """Constructs an address from an array of its eight 16-bit segments.
 
         Args:
-            segments: The segments in host byte order, first segment first.
+            segments: The eight segments in host byte order, such as
+                `[0x2001, 0xDB8, 0, 0, 0, 0, 0, 1]` for `2001:db8::1`.
         """
         self = Self(
             segments[0],
@@ -165,7 +174,7 @@ struct Ipv6Addr(Equatable, Hashable, ImplicitlyCopyable, Writable):
         """Constructs an address from its octets in network byte order.
 
         Args:
-            octets: The sixteen octets, first octet first.
+            octets: The sixteen octets.
         """
         self._octets = octets^
 
@@ -187,6 +196,14 @@ struct Ipv6Addr(Equatable, Hashable, ImplicitlyCopyable, Writable):
             The address as an integer in host byte order.
         """
         return UInt128.from_bytes[endian=.big](self._octets)
+
+    def octets(self) -> Array[Byte, 16]:
+        """Returns the address's sixteen octets.
+
+        Returns:
+            The octets in network byte order.
+        """
+        return self._octets.copy()
 
     def write_to(self, mut writer: Some[Writer]):
         """Writes the address in RFC 5952 notation, such as `2001:db8::1`.

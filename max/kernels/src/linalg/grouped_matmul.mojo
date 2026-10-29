@@ -458,7 +458,7 @@ def dispatch_amd_matmul_by_block_shape[
     transpose_b: Bool,
     N: Int,
     K: Int,
-    default_block_tile_shape: Coord[Int, Int, Int],
+    default_block_tile_shape: Tuple[Int, Int, Int],
     use_heuristic: Bool = False,
     *,
     LauncherFnType: ImplicitlyCopyable
@@ -554,7 +554,7 @@ def grouped_matmul_amd[
     //,
     *,
     transpose_b: Bool = True,
-    block_tile_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](128, 128, 64),
+    block_tile_shape: Tuple[Int, Int, Int] = (128, 128, 64),
     has_epilogue_fn: Bool = False,
     has_compute_fn: Bool = False,
 ](
@@ -853,18 +853,14 @@ def grouped_matmul[
             comptime static_N = c.static_shape[1]
             comptime BN = _find_largest_bn_for_sm90_matmul[a_type, static_N]()
             comptime mma_k = 32 // size_of[a_type]()
-            comptime wgmma_shape = IndexList[3](64, BN, mma_k)
+            comptime wgmma_shape = (64, BN, mma_k)
 
             var stats = resolve_usage_stats()
             var max_num_tokens_per_expert = stats[0]
             var num_active_experts = stats[1]
 
             grouped_matmul_sm90[
-                wgmma_shape=(
-                    Int(wgmma_shape[0]),
-                    Int(wgmma_shape[1]),
-                    Int(wgmma_shape[2]),
-                ),
+                wgmma_shape=wgmma_shape,
                 has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
             ](
@@ -902,8 +898,8 @@ def grouped_matmul[
             comptime BK = (a_swizzle.bytes() // size_of[a_type]())
             # For cta_group = 2, N must be divisible by 256 to ensure correct tiling and memory alignment for the kernel.
             comptime cta_group = 2 if N % 256 == 0 else 1
-            comptime block_tile_shape = Index(128, 32 // cta_group, BK)
-            comptime umma_shape = Index(
+            comptime block_tile_shape = (128, 32 // cta_group, BK)
+            comptime umma_shape = (
                 block_tile_shape[0] * cta_group,
                 block_tile_shape[1] * cta_group,
                 MMA_K,
@@ -911,16 +907,8 @@ def grouped_matmul[
             comptime cluster_shape = (cta_group, 1, 1)
             comptime transpose_b = True
             comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                block_tile_shape=(
-                    Int(block_tile_shape[0]),
-                    Int(block_tile_shape[1]),
-                    Int(block_tile_shape[2]),
-                ),
-                mma_shape=(
-                    Int(umma_shape[0]),
-                    Int(umma_shape[1]),
-                    Int(umma_shape[2]),
-                ),
+                block_tile_shape=block_tile_shape,
+                mma_shape=umma_shape,
                 cluster_shape=cluster_shape,
             )
 

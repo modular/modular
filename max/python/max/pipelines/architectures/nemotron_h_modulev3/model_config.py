@@ -19,18 +19,18 @@ import logging
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import Any, ClassVar
 
 from max.driver import DeviceSpec, load_devices
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kernels import _moe_sigmoid_gemv_router_unsupported
-from max.nn.kv_cache import (
+from max.nn.legacy.kernels import _moe_sigmoid_gemv_router_unsupported
+from max.nn.legacy.kv_cache import (
     MultiKVCacheParams,
     RecurrentStateParams,
     RecurrentStateRegion,
 )
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
@@ -52,9 +52,6 @@ from .quantization import (
     linear_parallelism,
     parse_quant_scheme,
 )
-
-if TYPE_CHECKING:
-    from max.pipelines.speculative.config import SpeculativeMethod
 
 logger = logging.getLogger("max.pipelines")
 
@@ -253,8 +250,10 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
     @property
     def router_gate_dtype(self) -> DType:
-        """The dtype of the MoE router's gate weight, both in the module and
-        in the state dict it loads."""
+        """The dtype of the MoE router's gate weight.
+
+        Both the module and the state dict it loads use it.
+        """
         return DType.bfloat16 if self.bf16_router_gate else DType.float32
 
     def w4a4_mixers(self) -> frozenset[str]:
@@ -267,9 +266,13 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         )
 
     def shared_expert_slices(self, mixer: str) -> int:
-        """Returns how many routed experts' worth of channels the shared
-        expert runs as, inside the routed W4A4 grouped matmul.
+        """Returns the shared expert's width in routed experts.
 
+        The shared expert runs inside the routed W4A4 grouped matmul. ``relu2``
+        acts on each channel alone, so the shared expert's channels split into
+        slices as wide as a routed expert's, and the shared output is the sum of
+        the slices' outputs. Each slice runs as one more expert that every token
+        picks at weight 1.
         relu2 acts on each channel alone, so the shared expert's channels
         split into slices as wide as a routed expert's, and the shared output
         is the sum of the slices' outputs. Each slice runs as one more expert
@@ -356,17 +359,16 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
     @property
     def moe_intermediate_size_per_device(self) -> int:
-        """Returns the routed expert channels each device holds, padding
-        included."""
+        """Returns the routed expert channels each device holds, padding included."""
         return moe_channels_per_device(
             self.moe_intermediate_size, len(self.devices)
         )
 
     @property
     def nvfp4_experts_split_by_block(self) -> bool:
-        """Returns whether each device's share of the routed expert channels
-        is a whole number of NVFP4 blocks.
+        """Whether each device's share of the routed channels is whole blocks.
 
+        The down projection's block scales can only be split between blocks.
         The down projection's block scales can only be split between blocks.
         """
         share = self.moe_intermediate_size // len(self.devices)
@@ -374,10 +376,12 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
     @property
     def mamba_intermediate_size(self) -> int:
+        """The mixer's width, from the head count and the head width."""
         return self.mamba_num_heads * self.mamba_head_dim
 
     @property
     def conv_dim(self) -> int:
+        """The width the causal convolution runs at."""
         return (
             self.mamba_intermediate_size
             + 2 * self.n_groups * self.ssm_state_size
@@ -393,20 +397,14 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         cache_dtype: DType,
         *,
         allow_kv_head_replication: bool = False,
-        speculative_method: SpeculativeMethod | None = None,
-        num_draft_tokens: int = 0,
     ) -> MultiKVCacheParams:
         """Returns the attention leaf beside the Mamba state.
 
         The attention layers index the KV cache 0, 1, 2, ... in layer order;
-        the Mamba layers do the same in the state leaves.
-
-        Args:
-            speculative_method: The speculative method, which sizes the
-                attention cache's dispatch for the verify width.
-            num_draft_tokens: How many drafts a step verifies, which the
-                cache reserves pages for.
+        the Mamba layers do the same in the state leaves. Under speculative
+        decoding the attention cache reserves the drafts' pages.
         """
+        speculative = pipeline_config.speculative
         data_parallel_degree = pipeline_config.model.data_parallel_degree
         if data_parallel_degree > 1:
             raise ValueError("Nemotron-H does not support data parallelism")
@@ -421,8 +419,10 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             num_layers=kinds.count(LayerKind.ATTENTION),
             devices=devices,
             data_parallel_degree=data_parallel_degree,
-            speculative_method=speculative_method,
-            num_draft_tokens=num_draft_tokens,
+            speculative_method=speculative.speculative_method
+            if speculative
+            else None,
+            num_draft_tokens=speculative.draft_width if speculative else 0,
         )
         hf = huggingface_config
         num_mamba_layers = kinds.count(LayerKind.MAMBA)
@@ -473,6 +473,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         *,
         max_seq_len: int,
     ) -> Self:
+        """Builds the config from the pipeline configuration."""
         model_config = model_config or pipeline_config.model
         hf = model_config.huggingface_config
         if hf is None:

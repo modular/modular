@@ -25,6 +25,7 @@ import ml_dtypes
 import numpy as np
 import pytest
 from max import _core, _eager_policy, engine
+from max import functional as F
 from max._core.dialects import mo, rmo
 from max._interpreter_ops import (
     data_movement_gc,
@@ -56,34 +57,33 @@ from max._interpreter_ops.handlers import (
 from max.driver import CPU, Accelerator, Buffer, Device, accelerator_count
 from max.dtype import DType
 from max.engine import MissingArtifactError
-from max.experimental import functional as F
-from max.experimental import random as max_random
-from max.experimental import realization_context as rc
-from max.experimental.executor import (
+from max.functional import random as max_random
+from max.functional import (
+    reduce_scatter,
+)
+from max.functional import (
+    transfer_to as df_shard,
+)
+from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
+from max.graph import ops as graph_ops
+from max.graph.ops import CoordinateTransformMode, RoundMode
+from max.nn import Linear as ExperimentalLinear
+from max.tensor import realization_context as rc
+from max.tensor.executor import (
     CompilingExecutor,
     InterpreterExecutor,
     UnsupportedGraphError,
     set_default_executor,
 )
-from max.experimental.functional import (
-    reduce_scatter,
-)
-from max.experimental.functional import (
-    transfer_to as df_shard,
-)
-from max.experimental.nn import Linear as ExperimentalLinear
-from max.experimental.realization_context import set_seed
-from max.experimental.sharding import (
+from max.tensor.realization_context import set_seed
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Partial,
     Replicated,
     Sharded,
 )
-from max.experimental.tensor import Tensor, realization_context
-from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
-from max.graph import ops as graph_ops
-from max.graph.ops import CoordinateTransformMode, RoundMode
+from max.tensor.tensor import Tensor, realization_context
 
 
 @pytest.fixture(autouse=True)

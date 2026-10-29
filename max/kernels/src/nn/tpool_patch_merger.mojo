@@ -17,6 +17,11 @@ from std.sys.info import simd_width_of
 
 from max.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceContext
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from layout import (
     Coord,
     Idx,
@@ -115,59 +120,60 @@ def tpool_patch_merger_kernel[
     var d_tile = block_idx.x
     var tid = thread_idx.x
 
-    if vid >= _n_vids:
-        return
-
-    var t = Int(grid_thws[vid, Idx[0]])
-    var h = Int(grid_thws[vid, Idx[1]])
-    var w = Int(grid_thws[vid, Idx[2]])
-
-    var new_H = h // _kH
-    var new_W = w // _kW
-    var n_patches = new_H * new_W
-    var n_kernel = _kH * _kW
-    var n_pat_total = n_patches * n_kernel
-
-    if pat_idx >= n_pat_total:
-        return
-
-    # Scan grid_thws to compute input and output offsets for this video.
-    var in_offset: Int = 0
-    var out_offset: Int = 0
-    for i in range(vid):
-        var ti = Int(grid_thws[i, Idx[0]])
-        var hi = Int(grid_thws[i, Idx[1]])
-        var wi = Int(grid_thws[i, Idx[2]])
-        in_offset += ti * hi * wi
-        out_offset += hi * wi
-
-    var sp_idx, ker_idx = divmod(pat_idx, n_kernel)
-    var nh, nw = divmod(sp_idx, new_W)
-    var ph, pw = divmod(ker_idx, _kW)
-    var h_src = nh * _kH + ph
-    var w_src = nw * _kW + pw
-    var spatial_flat = h_src * w + w_src
-
-    comptime if vec_width == 1:
-        var d = d_tile * num_threads + tid
-        if d >= _D:
+    with PDL():
+        if vid >= _n_vids:
             return
-        var acc = Scalar[dtype](0)
-        for t_i in range(t):
-            var row = in_offset + t_i * (h * w) + spatial_flat
-            acc += x_tile[row, d][0]
-        acc /= Scalar[dtype](t)
-        out_tile.store((out_offset + pat_idx, d), acc)
-    else:
-        var d_start = (d_tile * num_threads + tid) * vec_width
-        if d_start >= _D:
+
+        var t = Int(grid_thws[vid, Idx[0]])
+        var h = Int(grid_thws[vid, Idx[1]])
+        var w = Int(grid_thws[vid, Idx[2]])
+
+        var new_H = h // _kH
+        var new_W = w // _kW
+        var n_patches = new_H * new_W
+        var n_kernel = _kH * _kW
+        var n_pat_total = n_patches * n_kernel
+
+        if pat_idx >= n_pat_total:
             return
-        var acc = SIMD[dtype, vec_width](0)
-        for t_i in range(t):
-            var row = in_offset + t_i * (h * w) + spatial_flat
-            acc += x_tile.load[width=vec_width]((row, d_start))
-        acc /= Scalar[dtype](t)
-        out_tile.store((out_offset + pat_idx, d_start), acc)
+
+        # Scan grid_thws to compute input and output offsets for this video.
+        var in_offset: Int = 0
+        var out_offset: Int = 0
+        for i in range(vid):
+            var ti = Int(grid_thws[i, Idx[0]])
+            var hi = Int(grid_thws[i, Idx[1]])
+            var wi = Int(grid_thws[i, Idx[2]])
+            in_offset += ti * hi * wi
+            out_offset += hi * wi
+
+        var sp_idx, ker_idx = divmod(pat_idx, n_kernel)
+        var nh, nw = divmod(sp_idx, new_W)
+        var ph, pw = divmod(ker_idx, _kW)
+        var h_src = nh * _kH + ph
+        var w_src = nw * _kW + pw
+        var spatial_flat = h_src * w + w_src
+
+        comptime if vec_width == 1:
+            var d = d_tile * num_threads + tid
+            if d >= _D:
+                return
+            var acc = Scalar[dtype](0)
+            for t_i in range(t):
+                var row = in_offset + t_i * (h * w) + spatial_flat
+                acc += x_tile[row, d][0]
+            acc /= Scalar[dtype](t)
+            out_tile.store((out_offset + pat_idx, d), acc)
+        else:
+            var d_start = (d_tile * num_threads + tid) * vec_width
+            if d_start >= _D:
+                return
+            var acc = SIMD[dtype, vec_width](0)
+            for t_i in range(t):
+                var row = in_offset + t_i * (h * w) + spatial_flat
+                acc += x_tile.load[width=vec_width]((row, d_start))
+            acc /= Scalar[dtype](t)
+            out_tile.store((out_offset + pat_idx, d_start), acc)
 
 
 # ------------------------------------------------------------------------------
@@ -252,6 +258,7 @@ def tpool_patch_merger[
             Int32(n_vids),
             grid_dim=(grid_x, max_pat, n_vids),
             block_dim=(num_threads, 1, 1),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
     else:
         var grid_x = ceildiv(D, num_threads * 1)
@@ -279,4 +286,5 @@ def tpool_patch_merger[
             Int32(n_vids),
             grid_dim=(grid_x, max_pat, n_vids),
             block_dim=(num_threads, 1, 1),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )

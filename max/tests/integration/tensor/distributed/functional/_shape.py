@@ -31,7 +31,7 @@ import pytest
 from _test_helpers import assert_no_shadowed_tests
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental.functional import (
+from max.functional import (
     argsort,
     bottom_k,
     broadcast_to,
@@ -62,7 +62,8 @@ from max.experimental.functional import (
     unsqueeze,
     where,
 )
-from max.experimental.sharding import (
+from max.tensor import Tensor
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Partial,
@@ -70,7 +71,6 @@ from max.experimental.sharding import (
     Sharded,
     auto_reshard,
 )
-from max.experimental.tensor import Tensor
 
 _F32 = DType.float32
 
@@ -859,9 +859,9 @@ class _Scatter:
         shape/dtype combinations on this branch (unrelated to the cost
         model), so we exercise the rule directly instead of running the
         kernel end-to-end."""
-        from max.experimental.sharding import TensorLayout
-        from max.experimental.sharding.rules import scatter_rule
         from max.graph import Shape
+        from max.tensor.sharding import TensorLayout
+        from max.tensor.sharding.rules import scatter_rule
 
         x = TensorLayout(
             DType.float32,

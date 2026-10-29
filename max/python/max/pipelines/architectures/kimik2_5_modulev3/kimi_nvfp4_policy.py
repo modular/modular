@@ -18,7 +18,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from max.dtype import DType
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.quant_config import QuantConfig
 
 
 def _weight_entry_dtype(value: Any) -> DType | None:

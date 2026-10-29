@@ -25,7 +25,12 @@ from max.algorithm.functional import elementwise
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu, is_gpu
-from max.gpu.primitives.grid_controls import PDLLevel
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+)
 from std.collections import Optional, OptionalReg
 from kv_cache.types import (
     KVCacheStaticParams,
@@ -175,7 +180,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged[
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         return _fused_qkv_matmul_kv_cache_ragged[
             kv_collection.CacheType,
@@ -271,7 +276,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         return _fused_qkv_matmul_kv_cache_ragged_bias[
             kv_collection.CacheType,
@@ -406,7 +411,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         return _fused_qkv_matmul_kv_cache_ragged_scale[
             kv_collection.CacheType,
@@ -540,7 +545,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         return _fused_qkv_matmul_kv_cache_ragged_scale_float4[
             kv_collection.CacheType,
@@ -1763,7 +1768,7 @@ def generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         return _fused_qkv_index_matmul_kv_cache_ragged_scale_float4[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
@@ -2161,7 +2166,7 @@ def generic_fused_qkv_index_matmul_kv_cache_paged_ragged[
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         return _fused_qkv_index_matmul_kv_cache_ragged[target=target,](
             hidden_state,
@@ -2806,7 +2811,7 @@ def kv_matmul_ragged_paged[
         + ".hdim_"
         + String(kv_collection.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         return _matmul_kv_cache_ragged[target=target](
             hidden_state,
@@ -3013,7 +3018,7 @@ def k_matmul_ragged_paged[
         + ".hdim_"
         + String(kv_collection.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         return _matmul_k_cache_ragged[target=target](
             hidden_state,
@@ -3200,7 +3205,7 @@ def k_matmul_ragged_paged_scale[
         + ".hdim_"
         + String(kv_collection.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         comptime assert is_gpu[
             target
@@ -3812,7 +3817,7 @@ def generic_fused_qk_rope_bshd_paged_ragged[
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(context.id()),
+        task_id=Int(context.device().id),
     ):
         comptime if has_position_ids:
             fused_qk_rope_ragged[
@@ -3934,7 +3939,7 @@ def generic_flash_attention_kv_cache_ragged[
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(context.id()),
+        task_id=Int(context.device().id),
     ):
         return _flash_attention_dispatch[
             target=target,
@@ -3985,6 +3990,9 @@ def _launch_flash_attention_with_mask[
             "CPU flash attention requires output dtype == q dtype;"
             " the distinct-output-dtype (fp8->bf16) path is GPU-only."
         )
+        comptime assert (
+            not cache_t.kv_params.is_split()
+        ), "a split KV cache's attention is GPU-only"
         return flash_attention_kv_cache_cpu(
             q,
             input_row_offsets,
@@ -4163,7 +4171,7 @@ def generic_flash_attention_kv_cache_ragged_rel_logits[
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(context.id()),
+        task_id=Int(context.device().id),
     ):
         return dispatch_relative_logits_mask[local_window_size,](
             bias,
@@ -4255,7 +4263,7 @@ def generic_flash_attention_kv_cache_ragged_sink[
     with Trace[TraceLevel.OP, target=target](
         name,
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(context.id()),
+        task_id=Int(context.device().id),
     ):
         return _flash_attention_dispatch[
             target=target,
@@ -4422,7 +4430,7 @@ def generic_flare_mla_decode_kv_cache_ragged[
         + ".hdim_"
         + String(collection_t.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(context.id()),
+        task_id=Int(context.device().id),
     ):
         return _flare_mla_decode_kv_cache_ragged[
             target=target,
@@ -4644,7 +4652,7 @@ def generic_flare_mla_prefill_kv_cache_ragged[
     buffer_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
-    cache_offsets: TileTensor[mut=True, .uint32, address_space=.GENERIC, ...],
+    cache_offsets: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
@@ -4675,7 +4683,7 @@ def generic_flare_mla_prefill_kv_cache_ragged[
         v: Value tile tensor with shape (total_seq_len, num_heads, kv_head_size).
         buffer_row_offsets: Tile tensor denoting the start and end position of
             each K entry in the ragged K/V tensor.
-        cache_offsets: Mutable tile tensor denoting the start position of each
+        cache_offsets: Tile tensor denoting the start position of each
             K entry in the PagedKVCacheCollection.
         input_row_offsets: Tile tensor denoting the start and end position of
             each Q entry in the batch.
@@ -4741,7 +4749,7 @@ def generic_flare_mla_prefill_kv_cache_ragged[
         + ".hdim_"
         + String(collection_t.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(context.id()),
+        task_id=Int(context.device().id),
     ):
         return _flare_mla_prefill_kv_cache_ragged[
             mask_str=mask_str,
@@ -4778,7 +4786,7 @@ def _flare_mla_prefill_kv_cache_ragged[
     buffer_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
-    cache_offsets: TileTensor[mut=True, .uint32, address_space=.GENERIC, ...],
+    cache_offsets: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
@@ -4882,7 +4890,7 @@ def generic_flare_mla_prefill_ragged_paged_plan[
     var k = kv_collection.get_key_cache(layer_idx_cast)
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.mla.prefill.ragged.paged.plan", task_id=Int(context.id())
+        "mo.mla.prefill.ragged.paged.plan", task_id=Int(context.device().id)
     ):
         mla_prefill_plan(
             buffer_row_offsets,
@@ -4938,6 +4946,7 @@ def kv_cache_row_offsets_ragged_paged[
         cache_lengths,
         grid_dim=max(ceildiv(batch_size, 128), 1),
         block_dim=128,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 
@@ -4983,19 +4992,23 @@ def kv_cache_row_offsets_ragged_paged_kernel[
 
     var batch_size = Int(input_row_offsets.dim[0]()) - 1
     var output_idx = global_idx.x
-    if output_idx > batch_size:
-        return
 
-    var running_length = 0
-    var prev_input_row_offset = Int(input_row_offsets[0])
-    for batch_idx in range(output_idx):
-        var row_offset = Int(input_row_offsets[batch_idx + 1])
-        running_length += (
-            Int(cache_lengths[batch_idx]) + row_offset - prev_input_row_offset
-        )
-        prev_input_row_offset = row_offset
+    with PDL():
+        if output_idx > batch_size:
+            return
 
-    cache_row_offsets[output_idx] = UInt32(running_length)
+        var running_length = 0
+        var prev_input_row_offset = Int(input_row_offsets[0])
+        for batch_idx in range(output_idx):
+            var row_offset = Int(input_row_offsets[batch_idx + 1])
+            running_length += (
+                Int(cache_lengths[batch_idx])
+                + row_offset
+                - prev_input_row_offset
+            )
+            prev_input_row_offset = row_offset
+
+        cache_row_offsets[output_idx] = UInt32(running_length)
 
 
 @inline(.always)
@@ -5269,7 +5282,7 @@ def generic_cross_attention_kv_cache[
         + ".hdim_"
         + String(collection_t.kv_params.head_size),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(context.id()),
+        task_id=Int(context.device().id),
     ):
         return _cross_attention_dispatch[
             target=target,
@@ -5426,6 +5439,8 @@ def kv_cache_store_ragged[
     InputFnType: ImplicitlyCopyable
     & RegisterPassable
     & def[width: Int, alignment: Int](Coord) -> SIMD[cache_t.dtype, width],
+    *,
+    head_dim_offset: Int = 0,
 ](
     cache: cache_t,
     input_shape: Coord,
@@ -5447,6 +5462,8 @@ def kv_cache_store_ragged[
         target: Compilation target string used to dispatch GPU versus CPU
             paths.
         InputFnType: Type of `input_fn` (inferred).
+        head_dim_offset: Cache column of the input's first column: the
+            value's `v_col_base()` in a split cache, else 0.
 
     Args:
         cache: The KVCache object to write key or value entries into.
@@ -5482,7 +5499,7 @@ def kv_cache_store_ragged[
         var batch_idx = get_batch_from_row_offsets(input_row_offsets, row)
         var token_idx = Int(UInt32(row) - input_row_offsets[batch_idx])
         var h_idx = Int(idx[1])
-        var hd_idx = Int(idx[2])
+        var hd_idx = Int(idx[2]) + head_dim_offset
         var cache_length = cache.cache_length(batch_idx)
         var cache_token_idx = token_idx + cache_length
         cache.store(
@@ -5701,7 +5718,7 @@ def kv_cache_2m_iadd_dispatch[
     comptime if is_gpu[target]():
         with Trace[TraceLevel.OP, target=target](
             "kv-cache-2m-iadd",
-            task_id=Int(ctx.id()),
+            task_id=Int(ctx.device().id),
         ):
             comptime compile_target = ctx.target
             comptime simd_width = simd_width_of[dtype, target=compile_target]()

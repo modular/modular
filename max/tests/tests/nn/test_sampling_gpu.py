@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for max.nn.sampling"""
+"""Tests for max.nn.legacy.sampling"""
 
 from __future__ import annotations
 
@@ -24,11 +24,11 @@ from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     topk_fused_sampling_with_dist,
     topk_topp_masked_probs,
 )
-from max.nn.sampling import (
+from max.nn.legacy.sampling import (
     AcceptanceSampler,
     MinPSampler,
     compute_synthetic_acceptance_base_rate,

@@ -36,7 +36,7 @@
 # RUN: echo "    return helper() + subfn() + utilsfn()" >> %t.dir/pkg/p.mojo
 # RUN: %precompile-mojo-isolated -I %t.dir/src %t.dir/pkg -o %t.dir/lib/pkg.mojoc
 # RUN: kgen-opt %t.dir/lib/pkg.mojoc | FileCheck %s --check-prefix=DEPS
-# RUN: %parse-mojo-isolated -I=%t.dir/lib -I=%t.dir/src %s | FileCheck %s
+# RUN: %parse-mojo-isolated -I%t.dir/lib -I%t.dir/src %s | FileCheck %s
 
 # DEPS: lit.package @pkg attributes {dependencies = #kgen<link.dependencies[@std, @ns::@inner::@utils, @ns::@sub]>}
 

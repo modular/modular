@@ -26,9 +26,9 @@ def main() raises:
         print("Number of GPUs:", num_devices)
 
         var ctx = DeviceContext()  # Get context for the default device, 0
-        print("Device ID:", ctx.id())
+        print("Device ID:", ctx.device().id)
         print("Device API:", ctx.api())
-        print("Device name:", ctx.name())
+        print("Device name:", ctx.device().get_name())
         print("Device API version:", ctx.get_api_version())
         var mem_info = ctx.get_memory_info()
         print("Total memory:", mem_info[1])
@@ -36,11 +36,13 @@ def main() raises:
 
         print(
             "DeviceAttribute.MAX_THREADS_PER_BLOCK:",
-            ctx.get_attribute(DeviceAttribute.MAX_THREADS_PER_BLOCK),
+            ctx.device().get_attribute(DeviceAttribute.MAX_THREADS_PER_BLOCK),
         )
         print(
             "DeviceAttribute.MAX_SHARED_MEMORY_PER_BLOCK:",
-            ctx.get_attribute(DeviceAttribute.MAX_SHARED_MEMORY_PER_BLOCK),
+            ctx.device().get_attribute(
+                DeviceAttribute.MAX_SHARED_MEMORY_PER_BLOCK
+            ),
         )
 
         comptime if not ctx.target.is_apple_gpu():
@@ -48,27 +50,31 @@ def main() raises:
 
             print(
                 "DeviceAttribute.MULTIPROCESSOR_COUNT:",
-                ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
+                ctx.device().get_attribute(
+                    DeviceAttribute.MULTIPROCESSOR_COUNT
+                ),
             )
             print(
                 "DeviceAttribute.MAX_THREADS_PER_MULTIPROCESSOR:",
-                ctx.get_attribute(
+                ctx.device().get_attribute(
                     DeviceAttribute.MAX_THREADS_PER_MULTIPROCESSOR
                 ),
             )
             print(
                 "DeviceAttribute.WARP_SIZE:",
-                ctx.get_attribute(DeviceAttribute.WARP_SIZE),
+                ctx.device().get_attribute(DeviceAttribute.WARP_SIZE),
             )
             print(
                 "DeviceAttribute.MAX_REGISTERS_PER_MULTIPROCESSOR:",
-                ctx.get_attribute(
+                ctx.device().get_attribute(
                     DeviceAttribute.MAX_REGISTERS_PER_MULTIPROCESSOR
                 ),
             )
             print(
                 "DeviceAttribute.MAX_REGISTERS_PER_BLOCK:",
-                ctx.get_attribute(DeviceAttribute.MAX_REGISTERS_PER_BLOCK),
+                ctx.device().get_attribute(
+                    DeviceAttribute.MAX_REGISTERS_PER_BLOCK
+                ),
             )
 
         comptime if not (ctx.target.is_amd_gpu() or ctx.target.is_apple_gpu()):
@@ -76,13 +82,13 @@ def main() raises:
 
             print(
                 "DeviceAttribute.MAX_BLOCKS_PER_MULTIPROCESSOR:",
-                ctx.get_attribute(
+                ctx.device().get_attribute(
                     DeviceAttribute.MAX_BLOCKS_PER_MULTIPROCESSOR
                 ),
             )
             print(
                 "DeviceAttribute.MAX_SHARED_MEMORY_PER_MULTIPROCESSOR:",
-                ctx.get_attribute(
+                ctx.device().get_attribute(
                     DeviceAttribute.MAX_SHARED_MEMORY_PER_MULTIPROCESSOR
                 ),
             )

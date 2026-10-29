@@ -48,7 +48,6 @@ def find_contiguous_ranges(
     Raises:
         ValueError: If ``arr`` is not 1D.
     """
-
     if arr.ndim != 1:
         raise ValueError(f"Array must be 1D, found {arr.shape}")
 

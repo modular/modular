@@ -26,21 +26,21 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.attention import MHAMaskVariant, num_heads_for_device
-from max.nn.kernels import (
+from max.nn.legacy.attention import MHAMaskVariant, num_heads_for_device
+from max.nn.legacy.kernels import (
     flash_attention_ragged,
     rope_split_store_ragged,
 )
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
     PagedCacheValues,
 )
-from max.nn.layer import Module, Shardable
-from max.nn.linear import Linear
-from max.nn.quant_config import QuantConfig
-from max.nn.rotary_embedding import Llama3RotaryEmbedding
-from max.nn.stacked_linear import StackedLinear
+from max.nn.legacy.layer import Module, Shardable
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.legacy.stacked_linear import StackedLinear
 from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
 
 
@@ -80,6 +80,7 @@ class Gemma3Attention(Module, Shardable):
             kv_params: KV Cache Params, including the number of kv heads, the
                 head dim, and data type.
             layer_idx: The layer number associated with this Attention block.
+            is_sliding: Whether this layer uses sliding-window attention.
             dtype: DType of the attention inputs and weights.
             devices: Device to place the weights and run the computation. If
                 multiple are provided, the first device is used. Use
@@ -89,9 +90,10 @@ class Gemma3Attention(Module, Shardable):
             scale: Value used to scale the results of the attention output.
             has_bias: Whether to use an attention bias. Defaults to False.
             qk_norm_eps: Value to use for numerical stability. Defaults to 1e-6.
+            local_window_size: Width of the sliding window, in tokens, that the
+                sliding layers attend over.
             quant_config: Scaled quantization configuration. Defaults to None.
         """
-
         super().__init__()
         self.rope_global = rope_global
         self.rope_local = rope_local
@@ -150,6 +152,7 @@ class Gemma3Attention(Module, Shardable):
         kv_collection: PagedCacheValues,
         **kwargs,
     ) -> TensorValue:
+        """Compute attention for the tokens and project the result back."""
         # Get attributes from input.
         total_seq_len = x.shape[0]
 
@@ -280,10 +283,12 @@ class Gemma3Attention(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """The sharding strategy applied to this layer's weights."""
         return self._sharding_strategy
 
     @sharding_strategy.setter
     def sharding_strategy(self, sharding_strategy: ShardingStrategy) -> None:
+        """Apply the sharding strategy to the projection and norm layers."""
         num_devices = sharding_strategy.num_devices
 
         if sharding_strategy.is_replicate:

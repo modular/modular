@@ -21,8 +21,8 @@ from typing import ClassVar, Literal
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import KVCacheParamInterface
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheParamInterface
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import (
@@ -151,10 +151,12 @@ class Olmo2Config(
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """The checkpoint's hidden layer count."""
         return huggingface_config.num_hidden_layers
 
     @staticmethod
     def calculate_attention_multiplier(huggingface_config: AutoConfig) -> float:
+        """The attention scale, from the checkpoint or the head width."""
         return getattr(
             huggingface_config,
             "attention_multiplier",

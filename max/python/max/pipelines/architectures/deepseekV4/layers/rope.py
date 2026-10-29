@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """RoPE for DeepSeek-V4.
 
 Two things differ from what ``YarnRotaryEmbedding`` gives out of the box.
@@ -44,8 +43,11 @@ from __future__ import annotations
 import numpy as np
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, StaticDim, TensorValue, ops
-from max.nn.kernels import rope_ragged
-from max.nn.rotary_embedding import YarnRotaryEmbedding, YarnScalingParams
+from max.nn.legacy.kernels import rope_ragged
+from max.nn.legacy.rotary_embedding import (
+    YarnRotaryEmbedding,
+    YarnScalingParams,
+)
 
 from ..model_config import DeepseekV4Config
 

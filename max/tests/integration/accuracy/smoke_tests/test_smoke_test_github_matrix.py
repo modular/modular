@@ -133,20 +133,24 @@ def test_8xmi355_stays_opt_in() -> None:
         "max-ci": {
             "MiniMaxAI/MiniMax-M3-MXFP8",
             "modularai/MiniMax-M3-MXFP6",
+            "moonshotai/Kimi-K3",
             "zai-org/GLM-5.3__fp8_tpep_mi355",
         },
         "max": {
             "MiniMaxAI/MiniMax-M3-MXFP8",
             "modularai/MiniMax-M3-MXFP6",
+            "moonshotai/Kimi-K3",
             "zai-org/GLM-5.3__fp8_tpep_mi355",
         },
         "vllm": {
             "MiniMaxAI/MiniMax-M3-MXFP8",
             "modularai/MiniMax-M3-MXFP6",
+            "moonshotai/Kimi-K3",
         },
         "sglang": {
             "MiniMaxAI/MiniMax-M3-MXFP8",
             "modularai/MiniMax-M3-MXFP6",
+            "moonshotai/Kimi-K3",
         },
     }
     for framework, models in expected.items():
@@ -159,15 +163,3 @@ def test_8xmi355_stays_opt_in() -> None:
             job["model"] for job in json.loads(result.output)["include"]
         }
         assert scheduled == models, f"{framework} on 8xMI355"
-
-
-def test_mach_skips_variants() -> None:
-    """Mach serves the base repo, so a variant would run without its recipe."""
-    result = CliRunner().invoke(
-        smoke_test_github_matrix.main,
-        ["--framework", "mach-ci", "--run-on-b200"],
-    )
-    assert result.exit_code == 0
-    scheduled = {job["model"] for job in json.loads(result.output)["include"]}
-    assert scheduled
-    assert not {m for m in scheduled if "__" in m}

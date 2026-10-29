@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Selects and starts the telemetry consumer for a process."""
+
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -25,6 +27,7 @@ from max.serve.telemetry.process_controller import start_process_consumer
 async def start_telemetry_consumer(
     settings: Settings,
 ) -> AsyncGenerator[MetricClient, None]:
+    """Starts the metric client matching the configured recording method."""
     method = settings.metric_recording
     if method == MetricRecordingMethod.NOOP:
         yield NoopClient()

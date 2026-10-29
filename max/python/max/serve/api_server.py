@@ -87,6 +87,7 @@ logger = logging.getLogger("max.serve")
 
 
 def validate_port_is_free(port: int) -> int:
+    """Returns the port after confirming it can be bound."""
     # check if port is already in use
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         try:
@@ -101,6 +102,8 @@ def validate_port_is_free(port: int) -> int:
 
 @dataclass(frozen=True)
 class ServingTokenGeneratorSettings:
+    """Settings that a serving token generator is built from."""
+
     # Pipeline config
     model_factory: PipelinesFactory  # type: ignore
     pipeline_config: PipelineConfig
@@ -121,6 +124,7 @@ async def lifespan(
     serving_settings: ServingTokenGeneratorSettings,
     zmq_endpoint_base: str,
 ) -> AsyncGenerator[None]:
+    """Runs the app's startup and shutdown work."""
     try:
         if not _telemetry_disabled(settings):
             send_telemetry_log(
@@ -157,6 +161,7 @@ async def lifespan(
         )
         METRICS.configure(client=metric_client)
         METRICS.export_zero_client_disconnect_cancellations()
+        METRICS.export_zero_structured_output_requests()
 
         # start model worker
 
@@ -295,6 +300,7 @@ async def health() -> Response:
 
 
 def make_metrics_app() -> Callable[..., Any]:
+    """Builds the ASGI app that serves Prometheus metrics."""
     from prometheus_client import disable_created_metrics, make_asgi_app
 
     disable_created_metrics()
@@ -329,7 +335,7 @@ async def _request_queue_full_exception_handler(
     before any response status is committed) by any endpoint that submits to the
     worker, so it is handled centrally here rather than per route. Returns the
     OpenAI ``rate_limit_error`` envelope with a ``Retry-After`` hint; the
-    rejection rate is observable via ``maxserve.request_count{code="429"}``.
+    rejection rate is observable via ``max.request_count{code="429"}``.
     """
     assert isinstance(exc, RequestQueueFull)
     request_id = getattr(request.state, "request_id", "<unknown>")
@@ -347,6 +353,7 @@ def fastapi_app(
     settings: Settings,
     serving_settings: ServingTokenGeneratorSettings,
 ) -> FastAPI:
+    """Builds the FastAPI app from the server settings."""
     zmq_endpoint_base = generate_zmq_ipc_path()
 
     @asynccontextmanager
@@ -480,6 +487,7 @@ def fastapi_app(
 
 
 def fastapi_config(app: FastAPI, server_settings: Settings) -> Config:
+    """Builds the uvicorn config for a FastAPI app."""
     config = Config(
         app=app,
         log_config=None,

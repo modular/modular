@@ -48,6 +48,11 @@ from max.gpu.sync import (
 from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
@@ -889,378 +894,388 @@ struct MLAPrefillSparseFP8[
         var warp_idx = warp_id()
         var lane_idx = lane_id()
         var warpgroup_idx = warp.broadcast(thread_idx.x // WARPGROUP_SIZE)
-        var top_k_length = rebind[UInt32](topk_lengths[seq_idx])
-        var num_k_blocks = max(
-            ceildiv(top_k_length, UInt32(Self.config.B_TOPK)), 1
-        )
-        var num_kv_rows = kv_lut.num_kv_rows()
-        var indices_base = seq_idx * UInt32(indices_stride)
 
-        if thread_idx.x == 0:
-            q_tma_op.prefetch_descriptor()
-            k_tma_op_fp8.prefetch_descriptor()
-            v_tma_op_fp8.prefetch_descriptor()
+        with PDL():
+            var top_k_length = rebind[UInt32](topk_lengths[seq_idx])
+            var num_k_blocks = max(
+                ceildiv(top_k_length, UInt32(Self.config.B_TOPK)), 1
+            )
+            var num_kv_rows = kv_lut.num_kv_rows()
+            var indices_base = seq_idx * UInt32(indices_stride)
 
-        ref smem_fp8 = external_memory[
-            UInt8, address_space=.SHARED, alignment=128
-        ]().unsafe_bitcast[
-            MLASparseSharedMemoryFP8[Self.config, scale_block_size]
-        ]()[]
-        ref smem = smem_fp8.base
-        ref qkvo_union = smem.qkvo_union
+            if thread_idx.x == 0:
+                q_tma_op.prefetch_descriptor()
+                k_tma_op_fp8.prefetch_descriptor()
+                v_tma_op_fp8.prefetch_descriptor()
 
-        var full_q_ptr = qkvo_union.unsafe_get[Self.FULL_Q_TYPE]().unsafe_ptr()
-        ref shared_qkv = qkvo_union.unsafe_get[Self.SHARED_QKV_TYPE]()
-        var shared_qkv_ptr: MutPointer[
-            Scalar[Self.qkv_dtype], origin_of(shared_qkv), address_space=.SHARED
-        ] = shared_qkv.unsafe_ptr()
-        var q_smem_ptr = shared_qkv_ptr
-        var v_smem_ptr = shared_qkv_ptr.unsafe_offset(
-            Self.SMemType.SHARED_Q_SIZE
-        )
-        var k_smem_ptr = v_smem_ptr.unsafe_offset(Self.SMemType.V_SIZE)
-        ref o_union = qkvo_union.unsafe_get[Self.O_TYPE]()
-        var o_ptr: MutPointer[
-            Scalar[Self.qkv_dtype], origin_of(o_union), address_space=.SHARED
-        ] = o_union.unsafe_ptr()
-        var scores_ptr = smem.scores.unsafe_ptr()
-        var p_ptr = smem.p.unsafe_ptr()
-        var prologue_q_ptr = smem.prologue_q.unsafe_ptr()
-        var prologue_q_cp_ptr = smem.prologue_q_cp.unsafe_ptr()
-        var qk_ss_done_ptr: MutPointer[
-            SharedMemBarrier, origin_of(smem.qk_ss_done), address_space=.SHARED
-        ] = smem.qk_ss_done.unsafe_ptr()
-        var qk_ts_done_ptr: MutPointer[
-            SharedMemBarrier, origin_of(smem.qk_ts_done), address_space=.SHARED
-        ] = smem.qk_ts_done.unsafe_ptr()
-        var sv_p0_done_ptr: MutPointer[
-            SharedMemBarrier, origin_of(smem.sv_p0_done), address_space=.SHARED
-        ] = smem.sv_p0_done.unsafe_ptr()
-        var sv_p1_done_ptr: MutPointer[
-            SharedMemBarrier, origin_of(smem.sv_p1_done), address_space=.SHARED
-        ] = smem.sv_p1_done.unsafe_ptr()
-        var k_p0_ready_ptr: MutPointer[
-            SharedMemBarrier, origin_of(smem.k_p0_ready), address_space=.SHARED
-        ] = smem.k_p0_ready.unsafe_ptr()
-        var k_p1_ready_ptr: MutPointer[
-            SharedMemBarrier, origin_of(smem.k_p1_ready), address_space=.SHARED
-        ] = smem.k_p1_ready.unsafe_ptr()
-        var v_p0_ready_ptr: MutPointer[
-            SharedMemBarrier, origin_of(smem.v_p0_ready), address_space=.SHARED
-        ] = smem.v_p0_ready.unsafe_ptr()
-        var v_p1_ready_ptr: MutPointer[
-            SharedMemBarrier, origin_of(smem.v_p1_ready), address_space=.SHARED
-        ] = smem.v_p1_ready.unsafe_ptr()
-        var p_free_ptr: MutPointer[
-            SharedMemBarrier, origin_of(smem.p_free), address_space=.SHARED
-        ] = smem.p_free.unsafe_ptr()
-        var so_ready_ptr: MutPointer[
-            SharedMemBarrier, origin_of(smem.so_ready), address_space=.SHARED
-        ] = smem.so_ready.unsafe_ptr()
-        var k_valid_ready_ptr: MutPointer[
-            SharedMemBarrier,
-            origin_of(smem.k_valid_ready),
-            address_space=.SHARED,
-        ] = smem.k_valid_ready.unsafe_ptr()
-        var k_valid_free_ptr: MutPointer[
-            SharedMemBarrier,
-            origin_of(smem.k_valid_free),
-            address_space=.SHARED,
-        ] = smem.k_valid_free.unsafe_ptr()
-        var is_k_valid_ptr: MutPointer[
-            UInt8, origin_of(smem.is_k_valid), address_space=.SHARED
-        ] = smem.is_k_valid.unsafe_ptr()
-        var tmem_addr_ptr = smem.tmem_addr.unsafe_ptr()
-        var rowwise_max_ptr: MutPointer[
-            Float32, origin_of(smem.rowwise_max), address_space=.SHARED
-        ] = smem.rowwise_max.unsafe_ptr()
-        var rowwise_sum_ptr: MutPointer[
-            Float32, origin_of(smem.rowwise_sum), address_space=.SHARED
-        ] = smem.rowwise_sum.unsafe_ptr()
+            ref smem_fp8 = external_memory[
+                UInt8, address_space=.SHARED, alignment=128
+            ]().unsafe_bitcast[
+                MLASparseSharedMemoryFP8[Self.config, scale_block_size]
+            ]()[]
+            ref smem = smem_fp8.base
+            ref qkvo_union = smem.qkvo_union
 
-        # FP8-specific SMEM pointers.
-        var k_scales_ptr = smem_fp8.k_scales.unsafe_ptr()
-        var v_scales_ptr = smem_fp8.v_scales.unsafe_ptr()
-        var k_fp8_tma_done_ptr: MutPointer[
-            SharedMemBarrier,
-            origin_of(smem_fp8.k_fp8_tma_done),
-            address_space=.SHARED,
-        ] = smem_fp8.k_fp8_tma_done.unsafe_ptr()
-        var v_fp8_tma_done_ptr: MutPointer[
-            SharedMemBarrier,
-            origin_of(smem_fp8.v_fp8_tma_done),
-            address_space=.SHARED,
-        ] = smem_fp8.v_fp8_tma_done.unsafe_ptr()
-        # FP8 K staging: upper half of K SMEM (k_smem_ptr + K_SIZE FP8 bytes).
-        # FP8 V staging: upper half of V SMEM (v_smem_ptr + V_SIZE FP8 bytes).
-        var k_smem_fp8_ptr = k_smem_ptr.unsafe_bitcast[
-            Float8_e4m3fn
-        ]().unsafe_offset(Self.SMemType.K_SIZE)
-        var v_smem_fp8_ptr = v_smem_ptr.unsafe_bitcast[
-            Float8_e4m3fn
-        ]().unsafe_offset(Self.SMemType.V_SIZE)
+            var full_q_ptr = qkvo_union.unsafe_get[
+                Self.FULL_Q_TYPE
+            ]().unsafe_ptr()
+            ref shared_qkv = qkvo_union.unsafe_get[Self.SHARED_QKV_TYPE]()
+            var shared_qkv_ptr: MutPointer[
+                Scalar[Self.qkv_dtype],
+                origin_of(shared_qkv),
+                address_space=.SHARED,
+            ] = shared_qkv.unsafe_ptr()
+            var q_smem_ptr = shared_qkv_ptr
+            var v_smem_ptr = shared_qkv_ptr.unsafe_offset(
+                Self.SMemType.SHARED_Q_SIZE
+            )
+            var k_smem_ptr = v_smem_ptr.unsafe_offset(Self.SMemType.V_SIZE)
+            ref o_union = qkvo_union.unsafe_get[Self.O_TYPE]()
+            var o_ptr: MutPointer[
+                Scalar[Self.qkv_dtype],
+                origin_of(o_union),
+                address_space=.SHARED,
+            ] = o_union.unsafe_ptr()
+            var scores_ptr = smem.scores.unsafe_ptr()
+            var p_ptr = smem.p.unsafe_ptr()
+            var prologue_q_ptr = smem.prologue_q.unsafe_ptr()
+            var prologue_q_cp_ptr = smem.prologue_q_cp.unsafe_ptr()
+            var qk_ss_done_ptr: MutPointer[
+                SharedMemBarrier,
+                origin_of(smem.qk_ss_done),
+                address_space=.SHARED,
+            ] = smem.qk_ss_done.unsafe_ptr()
+            var qk_ts_done_ptr: MutPointer[
+                SharedMemBarrier,
+                origin_of(smem.qk_ts_done),
+                address_space=.SHARED,
+            ] = smem.qk_ts_done.unsafe_ptr()
+            var sv_p0_done_ptr: MutPointer[
+                SharedMemBarrier,
+                origin_of(smem.sv_p0_done),
+                address_space=.SHARED,
+            ] = smem.sv_p0_done.unsafe_ptr()
+            var sv_p1_done_ptr: MutPointer[
+                SharedMemBarrier,
+                origin_of(smem.sv_p1_done),
+                address_space=.SHARED,
+            ] = smem.sv_p1_done.unsafe_ptr()
+            var k_p0_ready_ptr: MutPointer[
+                SharedMemBarrier,
+                origin_of(smem.k_p0_ready),
+                address_space=.SHARED,
+            ] = smem.k_p0_ready.unsafe_ptr()
+            var k_p1_ready_ptr: MutPointer[
+                SharedMemBarrier,
+                origin_of(smem.k_p1_ready),
+                address_space=.SHARED,
+            ] = smem.k_p1_ready.unsafe_ptr()
+            var v_p0_ready_ptr: MutPointer[
+                SharedMemBarrier,
+                origin_of(smem.v_p0_ready),
+                address_space=.SHARED,
+            ] = smem.v_p0_ready.unsafe_ptr()
+            var v_p1_ready_ptr: MutPointer[
+                SharedMemBarrier,
+                origin_of(smem.v_p1_ready),
+                address_space=.SHARED,
+            ] = smem.v_p1_ready.unsafe_ptr()
+            var p_free_ptr: MutPointer[
+                SharedMemBarrier, origin_of(smem.p_free), address_space=.SHARED
+            ] = smem.p_free.unsafe_ptr()
+            var so_ready_ptr: MutPointer[
+                SharedMemBarrier,
+                origin_of(smem.so_ready),
+                address_space=.SHARED,
+            ] = smem.so_ready.unsafe_ptr()
+            var k_valid_ready_ptr: MutPointer[
+                SharedMemBarrier,
+                origin_of(smem.k_valid_ready),
+                address_space=.SHARED,
+            ] = smem.k_valid_ready.unsafe_ptr()
+            var k_valid_free_ptr: MutPointer[
+                SharedMemBarrier,
+                origin_of(smem.k_valid_free),
+                address_space=.SHARED,
+            ] = smem.k_valid_free.unsafe_ptr()
+            var is_k_valid_ptr: MutPointer[
+                UInt8, origin_of(smem.is_k_valid), address_space=.SHARED
+            ] = smem.is_k_valid.unsafe_ptr()
+            var tmem_addr_ptr = smem.tmem_addr.unsafe_ptr()
+            var rowwise_max_ptr: MutPointer[
+                Float32, origin_of(smem.rowwise_max), address_space=.SHARED
+            ] = smem.rowwise_max.unsafe_ptr()
+            var rowwise_sum_ptr: MutPointer[
+                Float32, origin_of(smem.rowwise_sum), address_space=.SHARED
+            ] = smem.rowwise_sum.unsafe_ptr()
 
-        if warp_idx == 0:
-            if elect_one_sync():
-                prologue_q_ptr[].init(1)
-                prologue_q_cp_ptr[].init(1)
-                comptime for i in range(Self.SMemType.num_mbars):
-                    qk_ss_done_ptr[i].init(1)
-                    qk_ts_done_ptr[i].init(1)
-                    sv_p0_done_ptr[i].init(1)
-                    sv_p1_done_ptr[i].init(1)
-                    # FP8: the converts arrive these manually (no TMA
-                    # transaction). At cta_group=2 the MMA consumes BOTH
-                    # CTAs' converted K/V, so CTA0's instance expects one
-                    # arrival per CTA (arrive_cluster below).
-                    k_p0_ready_ptr[i].init(Int32(Self.config.cta_group))
-                    k_p1_ready_ptr[i].init(Int32(Self.config.cta_group))
-                    v_p0_ready_ptr[i].init(Int32(Self.config.cta_group))
-                    v_p1_ready_ptr[i].init(Int32(Self.config.cta_group))
-                    p_free_ptr[i].init(
-                        Int32(WARPGROUP_SIZE * Self.config.cta_group)
+            # FP8-specific SMEM pointers.
+            var k_scales_ptr = smem_fp8.k_scales.unsafe_ptr()
+            var v_scales_ptr = smem_fp8.v_scales.unsafe_ptr()
+            var k_fp8_tma_done_ptr: MutPointer[
+                SharedMemBarrier,
+                origin_of(smem_fp8.k_fp8_tma_done),
+                address_space=.SHARED,
+            ] = smem_fp8.k_fp8_tma_done.unsafe_ptr()
+            var v_fp8_tma_done_ptr: MutPointer[
+                SharedMemBarrier,
+                origin_of(smem_fp8.v_fp8_tma_done),
+                address_space=.SHARED,
+            ] = smem_fp8.v_fp8_tma_done.unsafe_ptr()
+            # FP8 K staging: upper half of K SMEM (k_smem_ptr + K_SIZE FP8 bytes).
+            # FP8 V staging: upper half of V SMEM (v_smem_ptr + V_SIZE FP8 bytes).
+            var k_smem_fp8_ptr = k_smem_ptr.unsafe_bitcast[
+                Float8_e4m3fn
+            ]().unsafe_offset(Self.SMemType.K_SIZE)
+            var v_smem_fp8_ptr = v_smem_ptr.unsafe_bitcast[
+                Float8_e4m3fn
+            ]().unsafe_offset(Self.SMemType.V_SIZE)
+
+            if warp_idx == 0:
+                if elect_one_sync():
+                    prologue_q_ptr[].init(1)
+                    prologue_q_cp_ptr[].init(1)
+                    comptime for i in range(Self.SMemType.num_mbars):
+                        qk_ss_done_ptr[i].init(1)
+                        qk_ts_done_ptr[i].init(1)
+                        sv_p0_done_ptr[i].init(1)
+                        sv_p1_done_ptr[i].init(1)
+                        # FP8: the converts arrive these manually (no TMA
+                        # transaction). At cta_group=2 the MMA consumes BOTH
+                        # CTAs' converted K/V, so CTA0's instance expects one
+                        # arrival per CTA (arrive_cluster below).
+                        k_p0_ready_ptr[i].init(Int32(Self.config.cta_group))
+                        k_p1_ready_ptr[i].init(Int32(Self.config.cta_group))
+                        v_p0_ready_ptr[i].init(Int32(Self.config.cta_group))
+                        v_p1_ready_ptr[i].init(Int32(Self.config.cta_group))
+                        p_free_ptr[i].init(
+                            Int32(WARPGROUP_SIZE * Self.config.cta_group)
+                        )
+                        so_ready_ptr[i].init(
+                            Int32(WARPGROUP_SIZE * Self.config.cta_group)
+                        )
+                        k_valid_ready_ptr[i].init(
+                            Int32(Self.SMemType.NUM_KV_VALID_LANES)
+                        )
+                        k_valid_free_ptr[i].init(Int32(WARPGROUP_SIZE))
+                    # FP8 TMA arrival mbarriers — loop count from the FP8 struct
+                    # so a future change to num_mbars in MLASparseSharedMemoryFP8
+                    # doesn't silently under/over-initialize them.
+                    comptime fp8_num_mbars = MLASparseSharedMemoryFP8[
+                        Self.config, scale_block_size
+                    ].num_mbars
+                    comptime for i in range(fp8_num_mbars):
+                        k_fp8_tma_done_ptr[i].init(1)
+                        v_fp8_tma_done_ptr[i].init(1)
+
+                    fence_mbarrier_init()
+
+            cluster_sync()
+
+            # Zero the padded Q SMEM (sub-64-head configs) and issue the Q TMA.
+            # Shared with `kernel` (Q is BF16 in both KV-cache paths) so the
+            # memset + manual depth-tile sub-copy fix lives in one place.
+            Self.Common._load_q_prologue(
+                full_q_ptr, q_tma_op, prologue_q_ptr, cta_id, seq_idx
+            )
+
+            if warp_idx == 0:
+                tcgen05_alloc[Int32(Self.config.cta_group)](
+                    tmem_addr_ptr, Self.config.sm100_tmem_cols
+                )
+                tcgen05_release_allocation_lock[Int32(Self.config.cta_group)]()
+
+            barrier()
+
+            if warpgroup_idx == 0:
+                warpgroup_reg_dealloc[96]()
+
+                var idx_in_wg = UInt32(thread_idx.x) % UInt32(WARPGROUP_SIZE)
+
+                comptime MAX_INIT_VAL = Float32(-1e30)
+                var mi: Float32 = MAX_INIT_VAL
+                var li: Float32 = 0.0
+                var real_mi: Float32 = Float32(min_or_neg_inf[.float32]())
+
+                var scale_log2e = scale * Float32(log2e)
+                comptime P_PER_THREAD = Self.config.B_TOPK // 2  # 64
+                comptime O_RESCALE_CHUNK = 32
+                comptime NUM_O_RESCALE_CHUNKS = (
+                    Self.V_DEPTH_PER_CTA // O_RESCALE_CHUNK
+                )
+
+                # Per-thread base bf16 element offset into the scores smem,
+                # matching the K-major SW128B layout the subsequent SV MMA
+                # expects. Upper-half threads write the left key-half of S;
+                # lower-half threads write the right key-half, which the s_p1
+                # SV descriptor reads at +PADDED_HEADS_PER_CTA * B_TOPK/2 bf16
+                # elements — the stride here MUST match that descriptor base.
+                # phase1.cuh:166-167 hardcodes the equivalent uint128 offset as
+                # 512 ((idx%64) + 64*((idx/64)*8)), which is only correct for
+                # its B_TOPK=128 geometry; at B_TOPK=64 the key-half stride is
+                # 256 uint128s, and the hardcoded 512 lands the second key-half
+                # in dead smem while the MMA reads zeros (drops keys [32:64) of
+                # every block from the numerator). ×8 converts uint128 units to
+                # bf16 elements.
+                comptime PAIR_KEYHALF_U128 = (
+                    Self.PADDED_HEADS_PER_CTA * P_PER_THREAD // 8
+                )
+                var s_smem_bf16_elem_base = Int(
+                    (
+                        (idx_in_wg % UInt32(64))
+                        + UInt32(PAIR_KEYHALF_U128) * (idx_in_wg / UInt32(64))
                     )
-                    so_ready_ptr[i].init(
-                        Int32(WARPGROUP_SIZE * Self.config.cta_group)
-                    )
-                    k_valid_ready_ptr[i].init(
-                        Int32(Self.SMemType.NUM_KV_VALID_LANES)
-                    )
-                    k_valid_free_ptr[i].init(Int32(WARPGROUP_SIZE))
-                # FP8 TMA arrival mbarriers — loop count from the FP8 struct
-                # so a future change to num_mbars in MLASparseSharedMemoryFP8
-                # doesn't silently under/over-initialize them.
-                comptime fp8_num_mbars = MLASparseSharedMemoryFP8[
-                    Self.config, scale_block_size
-                ].num_mbars
-                comptime for i in range(fp8_num_mbars):
-                    k_fp8_tma_done_ptr[i].init(1)
-                    v_fp8_tma_done_ptr[i].init(1)
-
-                fence_mbarrier_init()
-
-        cluster_sync()
-
-        # Zero the padded Q SMEM (sub-64-head configs) and issue the Q TMA.
-        # Shared with `kernel` (Q is BF16 in both KV-cache paths) so the
-        # memset + manual depth-tile sub-copy fix lives in one place.
-        Self.Common._load_q_prologue(
-            full_q_ptr, q_tma_op, prologue_q_ptr, cta_id, seq_idx
-        )
-
-        if warp_idx == 0:
-            tcgen05_alloc[Int32(Self.config.cta_group)](
-                tmem_addr_ptr, Self.config.sm100_tmem_cols
-            )
-            tcgen05_release_allocation_lock[Int32(Self.config.cta_group)]()
-
-        barrier()
-
-        if warpgroup_idx == 0:
-            warpgroup_reg_dealloc[96]()
-
-            var idx_in_wg = UInt32(thread_idx.x) % UInt32(WARPGROUP_SIZE)
-
-            comptime MAX_INIT_VAL = Float32(-1e30)
-            var mi: Float32 = MAX_INIT_VAL
-            var li: Float32 = 0.0
-            var real_mi: Float32 = Float32(min_or_neg_inf[.float32]())
-
-            var scale_log2e = scale * Float32(log2e)
-            comptime P_PER_THREAD = Self.config.B_TOPK // 2  # 64
-            comptime O_RESCALE_CHUNK = 32
-            comptime NUM_O_RESCALE_CHUNKS = (
-                Self.V_DEPTH_PER_CTA // O_RESCALE_CHUNK
-            )
-
-            # Per-thread base bf16 element offset into the scores smem,
-            # matching the K-major SW128B layout the subsequent SV MMA
-            # expects. Upper-half threads write the left key-half of S;
-            # lower-half threads write the right key-half, which the s_p1
-            # SV descriptor reads at +PADDED_HEADS_PER_CTA * B_TOPK/2 bf16
-            # elements — the stride here MUST match that descriptor base.
-            # phase1.cuh:166-167 hardcodes the equivalent uint128 offset as
-            # 512 ((idx%64) + 64*((idx/64)*8)), which is only correct for
-            # its B_TOPK=128 geometry; at B_TOPK=64 the key-half stride is
-            # 256 uint128s, and the hardcoded 512 lands the second key-half
-            # in dead smem while the MMA reads zeros (drops keys [32:64) of
-            # every block from the numerator). ×8 converts uint128 units to
-            # bf16 elements.
-            comptime PAIR_KEYHALF_U128 = (
-                Self.PADDED_HEADS_PER_CTA * P_PER_THREAD // 8
-            )
-            var s_smem_bf16_elem_base = Int(
-                (
-                    (idx_in_wg % UInt32(64))
-                    + UInt32(PAIR_KEYHALF_U128) * (idx_in_wg / UInt32(64))
-                )
-                * UInt32(8)
-            )
-
-            for k in range(num_k_blocks):
-                var cur_buf = k % UInt32(Self.SMemType.num_mbars)
-                var cur_phase = (k / UInt32(Self.SMemType.num_mbars)) & 1
-
-                qk_ts_done_ptr[cur_buf].wait(cur_phase)
-                tcgen05_fence_after()
-
-                var p = tcgen05_ld[
-                    datapaths=32,
-                    bits=32,
-                    repeat=P_PER_THREAD,
-                    dtype=DType.float32,
-                    pack=False,
-                    width=P_PER_THREAD,
-                ](UInt32(Self.P_TMEM_ADDR))
-                tcgen05_load_wait()
-                tcgen05_fence_before()
-                comptime if Self.config.cta_group == 2:
-                    p_free_ptr[cur_buf].arrive_cluster(UInt32(0), UInt32(1))
-                else:
-                    _ = p_free_ptr[cur_buf].arrive()
-
-                comptime MASK_BYTES_PER_BUF = Self.SMemType.MASK_BYTES_PER_BUF
-                comptime MASK_BYTES_PER_THREAD = MASK_BYTES_PER_BUF // 2
-                k_valid_ready_ptr[cur_buf].wait(cur_phase)
-                var mask_byte_base = (
-                    Int(cur_buf) * MASK_BYTES_PER_BUF
-                    + Int(idx_in_wg // UInt32(64)) * MASK_BYTES_PER_THREAD
-                )
-                comptime for i in range(P_PER_THREAD):
-                    comptime byte_offset = i // 8
-                    comptime bit_idx = i % 8
-                    var mask_byte = is_k_valid_ptr[mask_byte_base + byte_offset]
-                    if ((mask_byte >> UInt8(bit_idx)) & UInt8(1)) == UInt8(0):
-                        p[i] = Float32(min_or_neg_inf[.float32]())
-                _ = k_valid_free_ptr[cur_buf].arrive()
-
-                var cur_pi_max: Float32 = Float32(min_or_neg_inf[.float32]())
-                comptime for i in range(P_PER_THREAD):
-                    cur_pi_max = max(cur_pi_max, p[i])
-                cur_pi_max = mul_ftz(cur_pi_max, scale_log2e)
-
-                named_barrier[Int32(WARPGROUP_SIZE)](Int32(0))
-                rowwise_max_ptr[idx_in_wg] = cur_pi_max
-                named_barrier[Int32(WARPGROUP_SIZE)](Int32(0))
-                cur_pi_max = max(
-                    cur_pi_max,
-                    rowwise_max_ptr[idx_in_wg ^ UInt32(64)],
-                )
-                real_mi = max(real_mi, cur_pi_max)
-
-                # Per-lane decision for the STATE update (new_max/mi/li):
-                # `idx_in_wg` packs one independent head-row's softmax
-                # state per lane, so an OR here would leak a sibling
-                # head's rescale trajectory into this one's.
-                var should_scale_o = cur_pi_max - mi > Float32(6.0)
-
-                var new_max: Float32
-                var scale_for_old: Float32
-                if not should_scale_o:
-                    scale_for_old = 1.0
-                    new_max = mi
-                else:
-                    new_max = max(cur_pi_max, mi)
-                    scale_for_old = exp2(mi - new_max)
-                mi = new_max
-                li = mul_ftz(li, scale_for_old)
-
-                # The O-rescale WALK below touches TMEM via tcgen05_ld/st,
-                # which are warp-collective ops (datapaths=32) requiring
-                # every lane to participate uniformly -- a per-lane branch
-                # here would diverge the warp on those ops and hang. Vote
-                # ANY (not the state above): any lane needing a rescale
-                # pulls every lane through the walk, but each lane applies
-                # its OWN `scale_for_old` (exactly 1.0 for a lane that
-                # didn't need it), so a coerced lane's contribution is an
-                # exact no-op multiply, not a value substitution.
-                var any_rescale = warp.vote[.uint32](should_scale_o) != UInt32(
-                    0
+                    * UInt32(8)
                 )
 
-                var s_bf16 = Array[Scalar[Self.qkv_dtype], P_PER_THREAD](
-                    uninitialized=True
-                )
-                comptime for i in range(P_PER_THREAD):
-                    var d: Float32 = p[i] * scale_log2e - new_max
-                    var ed: Float32 = exp2(d)
-                    li = li + ed
-                    s_bf16[i] = ed.cast[Self.qkv_dtype]()
+                for k in range(num_k_blocks):
+                    var cur_buf = k % UInt32(Self.SMemType.num_mbars)
+                    var cur_phase = (k / UInt32(Self.SMemType.num_mbars)) & 1
 
-                if k > 0:
-                    var prev_buf = (k - 1) % UInt32(Self.SMemType.num_mbars)
-                    var prev_phase = (
-                        (k - 1) / UInt32(Self.SMemType.num_mbars)
-                    ) & 1
-                    sv_p1_done_ptr[prev_buf].wait(prev_phase)
-
-                var o_chunk_prefetch = Array[Float32, O_RESCALE_CHUNK](
-                    uninitialized=True
-                )
-                if k > 0 and any_rescale:
+                    qk_ts_done_ptr[cur_buf].wait(cur_phase)
                     tcgen05_fence_after()
-                    o_chunk_prefetch = tcgen05_ld[
+
+                    var p = tcgen05_ld[
                         datapaths=32,
                         bits=32,
-                        repeat=O_RESCALE_CHUNK,
+                        repeat=P_PER_THREAD,
                         dtype=DType.float32,
                         pack=False,
-                        width=O_RESCALE_CHUNK,
-                    ](UInt32(Self.O_TMEM_ADDR))
-
-                # Write S to scores smem as 8 bf16 per uint128, stride 64
-                # uint128 between writes--exactly the K-major SW128B layout
-                # the SS-MMA reads. Keep the packed 128-bit store: a plain
-                # SIMD[bf16, 8] store scalarizes into bank-conflicting
-                # half-word stores.
-                comptime for i in range(P_PER_THREAD // 8):
-                    var s_vec = SIMD[Self.qkv_dtype, 8](
-                        s_bf16[i * 8 + 0],
-                        s_bf16[i * 8 + 1],
-                        s_bf16[i * 8 + 2],
-                        s_bf16[i * 8 + 3],
-                        s_bf16[i * 8 + 4],
-                        s_bf16[i * 8 + 5],
-                        s_bf16[i * 8 + 6],
-                        s_bf16[i * 8 + 7],
-                    )
-                    st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.qkv_dtype](
-                        scores_ptr,
-                        s_smem_bf16_elem_base + i * 512,
-                        bitcast[.uint32, 4](s_vec),
-                    )
-
-                # Rescale O (in TMEM) if mi changed materially; chunk 0
-                # was prefetched above, chunks 1..N-1 load sequentially.
-                if k > 0 and any_rescale:
+                        width=P_PER_THREAD,
+                    ](UInt32(Self.P_TMEM_ADDR))
                     tcgen05_load_wait()
-                    var o_scaled_0 = Array[_, O_RESCALE_CHUNK](
-                        fill_with_unrolled=lambda [j: Int]() -> Float32: (
-                            mul_ftz(o_chunk_prefetch[j], scale_for_old)
-                        )
+                    tcgen05_fence_before()
+                    comptime if Self.config.cta_group == 2:
+                        p_free_ptr[cur_buf].arrive_cluster(UInt32(0), UInt32(1))
+                    else:
+                        _ = p_free_ptr[cur_buf].arrive()
+
+                    comptime MASK_BYTES_PER_BUF = Self.SMemType.MASK_BYTES_PER_BUF
+                    comptime MASK_BYTES_PER_THREAD = MASK_BYTES_PER_BUF // 2
+                    k_valid_ready_ptr[cur_buf].wait(cur_phase)
+                    var mask_byte_base = (
+                        Int(cur_buf) * MASK_BYTES_PER_BUF
+                        + Int(idx_in_wg // UInt32(64)) * MASK_BYTES_PER_THREAD
                     )
-                    tcgen05_st[
-                        datapaths=32,
-                        bits=32,
-                        repeat=O_RESCALE_CHUNK,
-                        pack=False,
-                    ](UInt32(Self.O_TMEM_ADDR), o_scaled_0)
-                    comptime for chunk_idx in range(1, NUM_O_RESCALE_CHUNKS):
-                        var o_chunk = tcgen05_ld[
+                    comptime for i in range(P_PER_THREAD):
+                        comptime byte_offset = i // 8
+                        comptime bit_idx = i % 8
+                        var mask_byte = is_k_valid_ptr[
+                            mask_byte_base + byte_offset
+                        ]
+                        if ((mask_byte >> UInt8(bit_idx)) & UInt8(1)) == UInt8(
+                            0
+                        ):
+                            p[i] = Float32(min_or_neg_inf[.float32]())
+                    _ = k_valid_free_ptr[cur_buf].arrive()
+
+                    var cur_pi_max: Float32 = Float32(
+                        min_or_neg_inf[.float32]()
+                    )
+                    comptime for i in range(P_PER_THREAD):
+                        cur_pi_max = max(cur_pi_max, p[i])
+                    cur_pi_max = mul_ftz(cur_pi_max, scale_log2e)
+
+                    named_barrier[Int32(WARPGROUP_SIZE)](Int32(0))
+                    rowwise_max_ptr[idx_in_wg] = cur_pi_max
+                    named_barrier[Int32(WARPGROUP_SIZE)](Int32(0))
+                    cur_pi_max = max(
+                        cur_pi_max,
+                        rowwise_max_ptr[idx_in_wg ^ UInt32(64)],
+                    )
+                    real_mi = max(real_mi, cur_pi_max)
+
+                    # Per-lane decision for the STATE update (new_max/mi/li):
+                    # `idx_in_wg` packs one independent head-row's softmax
+                    # state per lane, so an OR here would leak a sibling
+                    # head's rescale trajectory into this one's.
+                    var should_scale_o = cur_pi_max - mi > Float32(6.0)
+
+                    var new_max: Float32
+                    var scale_for_old: Float32
+                    if not should_scale_o:
+                        scale_for_old = 1.0
+                        new_max = mi
+                    else:
+                        new_max = max(cur_pi_max, mi)
+                        scale_for_old = exp2(mi - new_max)
+                    mi = new_max
+                    li = mul_ftz(li, scale_for_old)
+
+                    # The O-rescale WALK below touches TMEM via tcgen05_ld/st,
+                    # which are warp-collective ops (datapaths=32) requiring
+                    # every lane to participate uniformly -- a per-lane branch
+                    # here would diverge the warp on those ops and hang. Vote
+                    # ANY (not the state above): any lane needing a rescale
+                    # pulls every lane through the walk, but each lane applies
+                    # its OWN `scale_for_old` (exactly 1.0 for a lane that
+                    # didn't need it), so a coerced lane's contribution is an
+                    # exact no-op multiply, not a value substitution.
+                    var any_rescale = warp.vote[.uint32](
+                        should_scale_o
+                    ) != UInt32(0)
+
+                    var s_bf16 = Array[Scalar[Self.qkv_dtype], P_PER_THREAD](
+                        uninitialized=True
+                    )
+                    comptime for i in range(P_PER_THREAD):
+                        var d: Float32 = p[i] * scale_log2e - new_max
+                        var ed: Float32 = exp2(d)
+                        li = li + ed
+                        s_bf16[i] = ed.cast[Self.qkv_dtype]()
+
+                    if k > 0:
+                        var prev_buf = (k - 1) % UInt32(Self.SMemType.num_mbars)
+                        var prev_phase = (
+                            (k - 1) / UInt32(Self.SMemType.num_mbars)
+                        ) & 1
+                        sv_p1_done_ptr[prev_buf].wait(prev_phase)
+
+                    var o_chunk_prefetch = Array[Float32, O_RESCALE_CHUNK](
+                        uninitialized=True
+                    )
+                    if k > 0 and any_rescale:
+                        tcgen05_fence_after()
+                        o_chunk_prefetch = tcgen05_ld[
                             datapaths=32,
                             bits=32,
                             repeat=O_RESCALE_CHUNK,
                             dtype=DType.float32,
                             pack=False,
                             width=O_RESCALE_CHUNK,
-                        ](
-                            UInt32(Self.O_TMEM_ADDR)
-                            + UInt32(chunk_idx * O_RESCALE_CHUNK)
+                        ](UInt32(Self.O_TMEM_ADDR))
+
+                    # Write S to scores smem as 8 bf16 per uint128, stride 64
+                    # uint128 between writes--exactly the K-major SW128B layout
+                    # the SS-MMA reads. Keep the packed 128-bit store: a plain
+                    # SIMD[bf16, 8] store scalarizes into bank-conflicting
+                    # half-word stores.
+                    comptime for i in range(P_PER_THREAD // 8):
+                        var s_vec = SIMD[Self.qkv_dtype, 8](
+                            s_bf16[i * 8 + 0],
+                            s_bf16[i * 8 + 1],
+                            s_bf16[i * 8 + 2],
+                            s_bf16[i * 8 + 3],
+                            s_bf16[i * 8 + 4],
+                            s_bf16[i * 8 + 5],
+                            s_bf16[i * 8 + 6],
+                            s_bf16[i * 8 + 7],
                         )
+                        st_shared_v4_b32_at_bf16_elem_off[
+                            out_dtype=Self.qkv_dtype
+                        ](
+                            scores_ptr,
+                            s_smem_bf16_elem_base + i * 512,
+                            bitcast[.uint32, 4](s_vec),
+                        )
+
+                    # Rescale O (in TMEM) if mi changed materially; chunk 0
+                    # was prefetched above, chunks 1..N-1 load sequentially.
+                    if k > 0 and any_rescale:
                         tcgen05_load_wait()
-                        var o_scaled = Array[_, O_RESCALE_CHUNK](
+                        var o_scaled_0 = Array[_, O_RESCALE_CHUNK](
                             fill_with_unrolled=lambda [j: Int]() -> Float32: (
-                                mul_ftz(o_chunk[j], scale_for_old)
+                                mul_ftz(o_chunk_prefetch[j], scale_for_old)
                             )
                         )
                         tcgen05_st[
@@ -1268,397 +1283,441 @@ struct MLAPrefillSparseFP8[
                             bits=32,
                             repeat=O_RESCALE_CHUNK,
                             pack=False,
-                        ](
-                            UInt32(Self.O_TMEM_ADDR)
-                            + UInt32(chunk_idx * O_RESCALE_CHUNK),
-                            o_scaled,
-                        )
-                    tcgen05_store_wait()
-                    tcgen05_fence_before()
-
-                fence_async_view_proxy()
-                comptime if Self.config.cta_group == 2:
-                    so_ready_ptr[cur_buf].arrive_cluster(UInt32(0), UInt32(1))
-                else:
-                    _ = so_ready_ptr[cur_buf].arrive()
-
-            if real_mi == Float32(min_or_neg_inf[.float32]()):
-                li = 0.0
-                mi = Float32(min_or_neg_inf[.float32]())
-
-            rowwise_sum_ptr[idx_in_wg] = li
-            named_barrier[Int32(WARPGROUP_SIZE)](Int32(0))
-            li = add_ftz(li, rowwise_sum_ptr[idx_in_wg ^ UInt32(64)])
-
-            var last_buf = (num_k_blocks - 1) % UInt32(Self.SMemType.num_mbars)
-            var last_phase = (
-                (num_k_blocks - 1) / UInt32(Self.SMemType.num_mbars)
-            ) & 1
-            sv_p1_done_ptr[last_buf].wait(last_phase)
-            tcgen05_fence_after()
-
-            var output_scale: Float32
-            # Only the real head rows [0, NUM_Q_HEADS_PER_CTA) may index the
-            # `num_q_heads`-sized sink buffer; padded rows
-            # [NUM_Q_HEADS_PER_CTA, 64) must NOT dereference it (that would read
-            # past the buffer end when num_q_heads < 64). At head 64/128 the
-            # bound is 64, so every row reads the sink exactly as before (NFC).
-            # Mirrors the per-head sink guard in `kernel` (BF16).
-            var sink_row = idx_in_wg % UInt32(64)
-            if attn_sink_ptr and sink_row < UInt32(Self.NUM_Q_HEADS_PER_CTA):
-                var sink_head_idx = (
-                    cta_id * UInt32(Self.NUM_Q_HEADS_PER_CTA) + sink_row
-                )
-                var attn_sink_val = attn_sink_ptr.unsafe_value()[
-                    Int(sink_head_idx)
-                ] * Float32(log2e)
-                output_scale = 1.0 / (li + exp2(attn_sink_val - mi))
-            else:
-                output_scale = 1.0 / li
-
-            var have_valid_indices = warp.vote[.uint32](
-                li != Float32(0.0)
-            ) != UInt32(0)
-            if not have_valid_indices:
-                output_scale = 1.0
-
-            var head_row_block = UInt32(warp_idx) % UInt32(2)
-            var depth_col_block = UInt32(warp_idx) // UInt32(2)
-            var local_lane = UInt32(lane_idx)
-            var head_local = head_row_block * UInt32(32) + local_lane
-
-            comptime GROUP_STRIDE = Self.NUM_Q_HEADS_PER_CTA * 64
-
-            comptime o_sw = make_swizzle[
-                Self.output_dtype, TensorMapSwizzle.SWIZZLE_128B
-            ]()
-
-            comptime for atom_idx in range(Self.NUM_SV_ATOMS):
-                comptime atom_o_tmem_addr = (
-                    Self.O_TMEM_ADDR + atom_idx * Self.O_ATOM_PHYS_COLS
-                )
-
-                comptime for chunk in range(2):
-                    comptime CHUNK = 64
-                    var col_group = (
-                        Int(depth_col_block) * 2 + atom_idx * 4 + chunk
-                    )
-                    var c_chunk: Array[Float32, CHUNK]
-                    c_chunk = tcgen05_ld[
-                        datapaths=32,
-                        bits=32,
-                        repeat=CHUNK,
-                        dtype=DType.float32,
-                        pack=False,
-                        width=CHUNK,
-                    ](UInt32(atom_o_tmem_addr + chunk * CHUNK))
-                    tcgen05_load_wait()
-
-                    comptime for i in range(CHUNK // 2):
-                        var v0_f32 = c_chunk[2 * i] * output_scale
-                        var v1_f32 = c_chunk[2 * i + 1] * output_scale
-                        var v = SIMD[Self.qkv_dtype, 2](
-                            v0_f32.cast[Self.qkv_dtype](),
-                            v1_f32.cast[Self.qkv_dtype](),
-                        )
-                        var smem_offset = col_group * GROUP_STRIDE + o_sw(
-                            Int(head_local) * 64 + i * 2
-                        )
-                        # Store only the real head rows; padded rows
-                        # [num_q_heads, 64) carry dropped MMA output and would
-                        # clobber the next col-group at the real GROUP_STRIDE.
-                        # Redirect them to a dead dump slot past the real O
-                        # region using a BRANCH-FREE arithmetic mask: a
-                        # divergent `if head_local < N` here splits warps 0/2
-                        # at the head boundary and deadlocks the next
-                        # warpgroup-collective `tcgen05_ld`. `async_store`
-                        # reads only [0, NUM_Q_HEADS_PER_CTA * v_depth). NFC at
-                        # 64/128 (head_local < 64 always -> mask 0 -> real off).
-                        var pad_row = Int(
-                            head_local >= UInt32(Self.NUM_Q_HEADS_PER_CTA)
-                        )
-                        # Each pad thread gets its own dump slot: the two
-                        # depth-column warps of a head row share head_local.
-                        var dump_slot = Int(
-                            depth_col_block
-                        ) * Self.PADDED_HEADS_PER_CTA + Int(head_local)
-                        var store_off = (
-                            smem_offset * (1 - pad_row)
-                            + (
-                                Self.SMemType.O_SIZE
-                                - 2
-                                * (2 * Self.PADDED_HEADS_PER_CTA - dump_slot)
+                        ](UInt32(Self.O_TMEM_ADDR), o_scaled_0)
+                        comptime for chunk_idx in range(
+                            1, NUM_O_RESCALE_CHUNKS
+                        ):
+                            var o_chunk = tcgen05_ld[
+                                datapaths=32,
+                                bits=32,
+                                repeat=O_RESCALE_CHUNK,
+                                dtype=DType.float32,
+                                pack=False,
+                                width=O_RESCALE_CHUNK,
+                            ](
+                                UInt32(Self.O_TMEM_ADDR)
+                                + UInt32(chunk_idx * O_RESCALE_CHUNK)
                             )
-                            * pad_row
-                        )
-                        (o_ptr.unsafe_offset(store_off)).unsafe_store[width=2](
-                            v
-                        )
+                            tcgen05_load_wait()
+                            var o_scaled = Array[_, O_RESCALE_CHUNK](
+                                fill_with_unrolled=lambda [
+                                    j: Int
+                                ]() -> Float32: (
+                                    mul_ftz(o_chunk[j], scale_for_old)
+                                )
+                            )
+                            tcgen05_st[
+                                datapaths=32,
+                                bits=32,
+                                repeat=O_RESCALE_CHUNK,
+                                pack=False,
+                            ](
+                                UInt32(Self.O_TMEM_ADDR)
+                                + UInt32(chunk_idx * O_RESCALE_CHUNK),
+                                o_scaled,
+                            )
+                        tcgen05_store_wait()
+                        tcgen05_fence_before()
 
-            named_barrier[Int32(WARPGROUP_SIZE)](Int32(0))
-            if warp_idx == 0:
-                if elect_one_sync():
                     fence_async_view_proxy()
-                    var o_smem_tile = TileTensor(
-                        o_ptr.unsafe_bitcast[Scalar[Self.output_dtype]](),
-                        row_major[
-                            Self.NUM_Q_HEADS_PER_CTA, Self.config.v_depth
-                        ](),
-                    )
-                    o_tma_op.async_store(
-                        o_smem_tile,
-                        (
-                            0,
-                            Int(seq_idx) * Self.config.num_q_heads
-                            + Int(cta_id) * Self.NUM_Q_HEADS_PER_CTA,
-                        ),
-                    )
-                    cp_async_bulk_commit_group()
-            cp_async_bulk_wait_group[0]()
-
-            if warp_idx == 0:
-                tcgen05_dealloc[Int32(Self.config.cta_group)](
-                    tmem_addr_ptr[], Self.config.sm100_tmem_cols
-                )
-
-        elif warpgroup_idx == 1:
-            # K producer (FP8 path)
-            warpgroup_reg_alloc[168]()
-            var local_warp_idx = UInt32(warp_id() - 4)
-
-            for k in range(num_k_blocks):
-                var cur_buf = k % UInt32(Self.SMemType.num_mbars)
-                var cur_phase = k / UInt32(Self.SMemType.num_mbars) & 1
-                var prev_buf = (k - 1) % UInt32(Self.SMemType.num_mbars)
-                var prev_phase = (k - 1) / UInt32(Self.SMemType.num_mbars) & 1
-
-                # Load K scales cooperatively (all 128 WG1 threads).
-                # Overlaps with the previous iteration's MMA while we wait.
-                # scale_block_size == 0 => no-scale mode: skip the gather and
-                # its flush; convert_k applies unit scale.
-                comptime if scale_block_size > 0:
-                    Self.load_k_scales_to_smem[scale_block_size](
-                        scales_ptr,
-                        indices,
-                        kv_lut,
-                        k_scales_ptr,
-                        k,
-                        cta_id,
-                        indices_base,
-                        Int32(num_kv_rows),
-                    )
-                    # Flush all 128 scale writes before any thread reads them
-                    # in convert_k_fp8_to_bf16. The mbarrier.wait below only
-                    # provides acquire ordering for TMA completion, not for
-                    # this cooperative SMEM store loop.
-                    named_barrier[Int32(WARPGROUP_SIZE)](5)
-
-                # Wait for WG3 to finish with the previous K SMEM buffer
-                # BEFORE issuing the new FP8 TMA.  The FP8 staging region
-                # (k_smem[K_SIZE..]) overlaps with the p1 (TS MMA) columns
-                # [24576..73727] of K SMEM, so we must wait for qk_ts_done
-                # (not just qk_ss_done) before overwriting.
-                if k > 0:
-                    qk_ss_done_ptr[prev_buf].wait(prev_phase)
-                    qk_ts_done_ptr[prev_buf].wait(prev_phase)
-
-                # Arm k_fp8_tma_done mbarrier (one thread) and issue FP8 K TMA
-                # (all four WG1 warps each issue a portion via elect_one_sync).
-                # The barrier between expect_bytes and the TMA loop ensures
-                # expect_bytes is globally visible before any TMA arrival can
-                # satisfy the mbarrier (CUDA spec: expect_tx must happen-before
-                # the cp.async.bulk.tensor that signals the same mbarrier).
-                if local_warp_idx == 0 and elect_one_sync():
-                    k_fp8_tma_done_ptr[cur_buf].expect_bytes(
-                        Int32(Self.B_TOPK_PER_CTA * Self.config.qk_depth)
-                    )
-                named_barrier[Int32(WARPGROUP_SIZE)](3)
-                if elect_one_sync():
-                    Self.load_k_fp8_tma(
-                        k_tma_op_fp8,
-                        indices,
-                        kv_lut,
-                        k_smem_fp8_ptr,
-                        k_fp8_tma_done_ptr.unsafe_offset(cur_buf),
-                        k,
-                        cta_id,
-                        local_warp_idx,
-                        indices_base,
-                    )
-
-                # Wait for FP8 K TMA to land, then convert in-place.
-                k_fp8_tma_done_ptr[cur_buf].wait(cur_phase)
-                Self.convert_k_fp8_to_bf16[scale_block_size](
-                    k_smem_fp8_ptr, k_smem_ptr, k_scales_ptr
-                )
-
-                # All 128 WG1 threads must finish their convert stores
-                # (+ the per-thread async-proxy fence at the end of
-                # convert_k) BEFORE the ready signal: the elected arrive
-                # alone orders only its own thread's writes.
-                named_barrier[Int32(WARPGROUP_SIZE)](3)
-                # Signal K ready (both p0 and p1 barriers). At cta_group=2
-                # the MMA runs on CTA0 and reads BOTH CTAs' converted K
-                # smem, so each CTA signals CTA0's barrier instance
-                # (init count = cta_group).
-                if local_warp_idx == 0 and elect_one_sync():
                     comptime if Self.config.cta_group == 2:
-                        k_p0_ready_ptr[cur_buf].arrive_cluster(UInt32(0))
-                        k_p1_ready_ptr[cur_buf].arrive_cluster(UInt32(0))
+                        so_ready_ptr[cur_buf].arrive_cluster(
+                            UInt32(0), UInt32(1)
+                        )
                     else:
-                        _ = k_p0_ready_ptr[cur_buf].arrive()
-                        _ = k_p1_ready_ptr[cur_buf].arrive()
+                        _ = so_ready_ptr[cur_buf].arrive()
 
-        elif warpgroup_idx == 2:
-            # V producer (FP8 path)
-            warpgroup_reg_alloc[144]()
-            var local_warp_idx = UInt32(warp_id() - 8)
+                if real_mi == Float32(min_or_neg_inf[.float32]()):
+                    li = 0.0
+                    mi = Float32(min_or_neg_inf[.float32]())
 
-            # Wait for Q copy to TMEM before starting V loads.
-            prologue_q_cp_ptr[].wait()
+                rowwise_sum_ptr[idx_in_wg] = li
+                named_barrier[Int32(WARPGROUP_SIZE)](Int32(0))
+                li = add_ftz(li, rowwise_sum_ptr[idx_in_wg ^ UInt32(64)])
 
-            for k in range(num_k_blocks):
-                var cur_buf = k % UInt32(Self.SMemType.num_mbars)
-                var cur_phase = k / UInt32(Self.SMemType.num_mbars) & 1
-                var prev_buf = (k - 1) % UInt32(Self.SMemType.num_mbars)
-                var prev_phase = (k - 1) / UInt32(Self.SMemType.num_mbars) & 1
-
-                # Wait for previous V SMEM to be free BEFORE issuing new TMA.
-                # FP8 V staging [v_smem+V_SIZE..v_smem+2*V_SIZE] overlaps kh1 V BF16
-                # data that WG3's SV MMA for k-1 is still reading. Must wait first.
-                if k > 0:
-                    sv_p0_done_ptr[prev_buf].wait(prev_phase)
-                    sv_p1_done_ptr[prev_buf].wait(prev_phase)
-
-                # Arm v_fp8_tma_done mbarrier (one thread per WG2), then
-                # barrier so expect_bytes is visible before any TMA arrival
-                # can satisfy the mbarrier (same CUDA-spec ordering as K).
-                if local_warp_idx == 0 and elect_one_sync():
-                    v_fp8_tma_done_ptr[cur_buf].expect_bytes(
-                        Int32(Self.config.B_TOPK * Self.V_SMEM_COLS_PER_CTA)
-                    )
-                named_barrier[Int32(WARPGROUP_SIZE)](4)
-
-                # Issue FP8 V TMA (one elected thread per warp in WG2).
-                if elect_one_sync():
-                    Self.load_v_fp8_tma(
-                        v_tma_op_fp8,
-                        indices,
-                        kv_lut,
-                        v_smem_fp8_ptr,
-                        v_fp8_tma_done_ptr.unsafe_offset(cur_buf),
-                        k,
-                        cta_id,
-                        local_warp_idx,
-                        indices_base,
-                    )
-
-                # Load V scales cooperatively (all 128 WG2 threads).
-                # Overlaps TMA latency while we wait for v_fp8_tma_done.
-                # scale_block_size == 0 => no-scale mode: skip the gather and
-                # its flush; convert_v applies unit scale.
-                comptime if scale_block_size > 0:
-                    Self.load_v_scales_to_smem[scale_block_size](
-                        scales_ptr,
-                        indices,
-                        kv_lut,
-                        v_scales_ptr,
-                        k,
-                        indices_base,
-                        Int32(num_kv_rows),
-                    )
-                    # Flush all 128 scale writes before convert_v_fp8_to_bf16
-                    # reads them. Use ID 6 (not 5) — named barriers are CTA-wide
-                    # resources; WG1 uses ID 5 concurrently, so sharing it would
-                    # mix arrivals from both warpgroups and defeat the flush.
-                    named_barrier[Int32(WARPGROUP_SIZE)](6)
-
-                # Wait for FP8 V TMA to complete (all threads spin).
-                v_fp8_tma_done_ptr[cur_buf].wait(cur_phase)
-
-                # Convert V FP8→BF16 in-place (all 128 WG2 threads).
-                Self.convert_v_fp8_to_bf16[scale_block_size](
-                    v_smem_fp8_ptr, v_smem_ptr, v_scales_ptr, cta_id
+                var last_buf = (num_k_blocks - 1) % UInt32(
+                    Self.SMemType.num_mbars
                 )
-
-                # All 128 WG2 threads must finish their convert stores
-                # before the ready signal (same reasoning as K).
-                named_barrier[Int32(WARPGROUP_SIZE)](6)
-                # Signal both V halves ready. At cta_group=2 the MMA reads
-                # BOTH CTAs' converted V smem; signal CTA0's instance.
-                if local_warp_idx == 0 and elect_one_sync():
-                    comptime if Self.config.cta_group == 2:
-                        v_p0_ready_ptr[cur_buf].arrive_cluster(UInt32(0))
-                        v_p1_ready_ptr[cur_buf].arrive_cluster(UInt32(0))
-                    else:
-                        _ = v_p0_ready_ptr[cur_buf].arrive()
-                        _ = v_p1_ready_ptr[cur_buf].arrive()
-
-        else:
-            warpgroup_reg_dealloc[96]()
-
-            if cta_id == 0 and warp_idx == 12 and elect_one_sync():
-                var q_tmem_desc = Self.QKMMAOpType.tmem_descriptor_q(
-                    q_smem_ptr.unsafe_offset(Self.SMemType.SHARED_Q_SIZE)
-                )
-                # Expect exactly the REAL in-bounds Q bytes (num_q_heads):
-                # both the 64/128 built-in copy and the sub-64 manual depth-
-                # tile sub-copies read only real heads from GMEM, so the
-                # transaction delivers num_q_heads * qk_depth * cta_group
-                # elements. (The sub-64 padding rows are memset, not TMA'd, so
-                # they contribute no bytes here.) NFC at 64/128:
-                # NUM_Q_HEADS_PER_CTA == padded per-CTA == 64. Mirrors `kernel`.
-                prologue_q_ptr[].expect_bytes(
-                    Int32(
-                        Self.NUM_Q_HEADS_PER_CTA
-                        * Self.config.qk_depth
-                        * Self.config.cta_group
-                        * Self.qkv_dtype_size
-                    )
-                )
-                prologue_q_ptr[].wait()
+                var last_phase = (
+                    (num_k_blocks - 1) / UInt32(Self.SMemType.num_mbars)
+                ) & 1
+                sv_p1_done_ptr[last_buf].wait(last_phase)
                 tcgen05_fence_after()
 
-                Self.Common.cp_q_from_smem_to_tmem(
-                    q_tmem_desc, UInt32(Self.Q_TMEM_ADDR)
-                )
-                mma_arrive_multicast[cta_group=Self.config.cta_group](
-                    prologue_q_cp_ptr,
-                    Self.CTA_MASK,
-                )
+                var output_scale: Float32
+                # Only the real head rows [0, NUM_Q_HEADS_PER_CTA) may index the
+                # `num_q_heads`-sized sink buffer; padded rows
+                # [NUM_Q_HEADS_PER_CTA, 64) must NOT dereference it (that would read
+                # past the buffer end when num_q_heads < 64). At head 64/128 the
+                # bound is 64, so every row reads the sink exactly as before (NFC).
+                # Mirrors the per-head sink guard in `kernel` (BF16).
+                var sink_row = idx_in_wg % UInt32(64)
+                if attn_sink_ptr and sink_row < UInt32(
+                    Self.NUM_Q_HEADS_PER_CTA
+                ):
+                    var sink_head_idx = (
+                        cta_id * UInt32(Self.NUM_Q_HEADS_PER_CTA) + sink_row
+                    )
+                    var attn_sink_val = attn_sink_ptr.unsafe_value()[
+                        Int(sink_head_idx)
+                    ] * Float32(log2e)
+                    output_scale = 1.0 / (li + exp2(attn_sink_val - mi))
+                else:
+                    output_scale = 1.0 / li
 
-                for k in range(num_k_blocks + 1):
-                    Self.Common.mma[fp8_active=True](
-                        q_smem_ptr,
-                        k_smem_ptr,
-                        scores_ptr,
-                        v_smem_ptr,
-                        k_p0_ready_ptr,
-                        k_p1_ready_ptr,
-                        v_p0_ready_ptr,
-                        v_p1_ready_ptr,
-                        sv_p0_done_ptr,
-                        sv_p1_done_ptr,
-                        so_ready_ptr,
-                        p_free_ptr,
-                        qk_ss_done_ptr,
-                        qk_ts_done_ptr,
-                        k,
-                        num_k_blocks,
+                var have_valid_indices = warp.vote[.uint32](
+                    li != Float32(0.0)
+                ) != UInt32(0)
+                if not have_valid_indices:
+                    output_scale = 1.0
+
+                var head_row_block = UInt32(warp_idx) % UInt32(2)
+                var depth_col_block = UInt32(warp_idx) // UInt32(2)
+                var local_lane = UInt32(lane_idx)
+                var head_local = head_row_block * UInt32(32) + local_lane
+
+                comptime GROUP_STRIDE = Self.NUM_Q_HEADS_PER_CTA * 64
+
+                comptime o_sw = make_swizzle[
+                    Self.output_dtype, TensorMapSwizzle.SWIZZLE_128B
+                ]()
+
+                comptime for atom_idx in range(Self.NUM_SV_ATOMS):
+                    comptime atom_o_tmem_addr = (
+                        Self.O_TMEM_ADDR + atom_idx * Self.O_ATOM_PHYS_COLS
                     )
 
-            elif warp_idx == 13 and lane_idx < Self.SMemType.NUM_KV_VALID_LANES:
-                Self.Common.kv_valid_producer(
-                    indices,
-                    is_k_valid_ptr,
-                    k_valid_ready_ptr,
-                    k_valid_free_ptr,
-                    UInt32(lane_idx),
-                    indices_base,
-                    Int32(num_kv_rows),
-                    Int32(top_k_length),
-                    Int(num_k_blocks),
-                )
+                    comptime for chunk in range(2):
+                        comptime CHUNK = 64
+                        var col_group = (
+                            Int(depth_col_block) * 2 + atom_idx * 4 + chunk
+                        )
+                        var c_chunk: Array[Float32, CHUNK]
+                        c_chunk = tcgen05_ld[
+                            datapaths=32,
+                            bits=32,
+                            repeat=CHUNK,
+                            dtype=DType.float32,
+                            pack=False,
+                            width=CHUNK,
+                        ](UInt32(atom_o_tmem_addr + chunk * CHUNK))
+                        tcgen05_load_wait()
+
+                        comptime for i in range(CHUNK // 2):
+                            var v0_f32 = c_chunk[2 * i] * output_scale
+                            var v1_f32 = c_chunk[2 * i + 1] * output_scale
+                            var v = SIMD[Self.qkv_dtype, 2](
+                                v0_f32.cast[Self.qkv_dtype](),
+                                v1_f32.cast[Self.qkv_dtype](),
+                            )
+                            var smem_offset = col_group * GROUP_STRIDE + o_sw(
+                                Int(head_local) * 64 + i * 2
+                            )
+                            # Store only the real head rows; padded rows
+                            # [num_q_heads, 64) carry dropped MMA output and would
+                            # clobber the next col-group at the real GROUP_STRIDE.
+                            # Redirect them to a dead dump slot past the real O
+                            # region using a BRANCH-FREE arithmetic mask: a
+                            # divergent `if head_local < N` here splits warps 0/2
+                            # at the head boundary and deadlocks the next
+                            # warpgroup-collective `tcgen05_ld`. `async_store`
+                            # reads only [0, NUM_Q_HEADS_PER_CTA * v_depth). NFC at
+                            # 64/128 (head_local < 64 always -> mask 0 -> real off).
+                            var pad_row = Int(
+                                head_local >= UInt32(Self.NUM_Q_HEADS_PER_CTA)
+                            )
+                            # Each pad thread gets its own dump slot: the two
+                            # depth-column warps of a head row share head_local.
+                            var dump_slot = Int(
+                                depth_col_block
+                            ) * Self.PADDED_HEADS_PER_CTA + Int(head_local)
+                            var store_off = (
+                                smem_offset * (1 - pad_row)
+                                + (
+                                    Self.SMemType.O_SIZE
+                                    - 2
+                                    * (
+                                        2 * Self.PADDED_HEADS_PER_CTA
+                                        - dump_slot
+                                    )
+                                )
+                                * pad_row
+                            )
+                            (o_ptr.unsafe_offset(store_off)).unsafe_store[
+                                width=2
+                            ](v)
+
+                named_barrier[Int32(WARPGROUP_SIZE)](Int32(0))
+                if warp_idx == 0:
+                    if elect_one_sync():
+                        fence_async_view_proxy()
+                        var o_smem_tile = TileTensor(
+                            o_ptr.unsafe_bitcast[Scalar[Self.output_dtype]](),
+                            row_major[
+                                Self.NUM_Q_HEADS_PER_CTA, Self.config.v_depth
+                            ](),
+                        )
+                        o_tma_op.async_store(
+                            o_smem_tile,
+                            (
+                                0,
+                                Int(seq_idx) * Self.config.num_q_heads
+                                + Int(cta_id) * Self.NUM_Q_HEADS_PER_CTA,
+                            ),
+                        )
+                        cp_async_bulk_commit_group()
+                cp_async_bulk_wait_group[0]()
+
+                if warp_idx == 0:
+                    tcgen05_dealloc[Int32(Self.config.cta_group)](
+                        tmem_addr_ptr[], Self.config.sm100_tmem_cols
+                    )
+
+            elif warpgroup_idx == 1:
+                # K producer (FP8 path)
+                warpgroup_reg_alloc[168]()
+                var local_warp_idx = UInt32(warp_id() - 4)
+
+                for k in range(num_k_blocks):
+                    var cur_buf = k % UInt32(Self.SMemType.num_mbars)
+                    var cur_phase = k / UInt32(Self.SMemType.num_mbars) & 1
+                    var prev_buf = (k - 1) % UInt32(Self.SMemType.num_mbars)
+                    var prev_phase = (k - 1) / UInt32(
+                        Self.SMemType.num_mbars
+                    ) & 1
+
+                    # Load K scales cooperatively (all 128 WG1 threads).
+                    # Overlaps with the previous iteration's MMA while we wait.
+                    # scale_block_size == 0 => no-scale mode: skip the gather and
+                    # its flush; convert_k applies unit scale.
+                    comptime if scale_block_size > 0:
+                        Self.load_k_scales_to_smem[scale_block_size](
+                            scales_ptr,
+                            indices,
+                            kv_lut,
+                            k_scales_ptr,
+                            k,
+                            cta_id,
+                            indices_base,
+                            Int32(num_kv_rows),
+                        )
+                        # Flush all 128 scale writes before any thread reads them
+                        # in convert_k_fp8_to_bf16. The mbarrier.wait below only
+                        # provides acquire ordering for TMA completion, not for
+                        # this cooperative SMEM store loop.
+                        named_barrier[Int32(WARPGROUP_SIZE)](5)
+
+                    # Wait for WG3 to finish with the previous K SMEM buffer
+                    # BEFORE issuing the new FP8 TMA.  The FP8 staging region
+                    # (k_smem[K_SIZE..]) overlaps with the p1 (TS MMA) columns
+                    # [24576..73727] of K SMEM, so we must wait for qk_ts_done
+                    # (not just qk_ss_done) before overwriting.
+                    if k > 0:
+                        qk_ss_done_ptr[prev_buf].wait(prev_phase)
+                        qk_ts_done_ptr[prev_buf].wait(prev_phase)
+
+                    # Arm k_fp8_tma_done mbarrier (one thread) and issue FP8 K TMA
+                    # (all four WG1 warps each issue a portion via elect_one_sync).
+                    # The barrier between expect_bytes and the TMA loop ensures
+                    # expect_bytes is globally visible before any TMA arrival can
+                    # satisfy the mbarrier (CUDA spec: expect_tx must happen-before
+                    # the cp.async.bulk.tensor that signals the same mbarrier).
+                    if local_warp_idx == 0 and elect_one_sync():
+                        k_fp8_tma_done_ptr[cur_buf].expect_bytes(
+                            Int32(Self.B_TOPK_PER_CTA * Self.config.qk_depth)
+                        )
+                    named_barrier[Int32(WARPGROUP_SIZE)](3)
+                    if elect_one_sync():
+                        Self.load_k_fp8_tma(
+                            k_tma_op_fp8,
+                            indices,
+                            kv_lut,
+                            k_smem_fp8_ptr,
+                            k_fp8_tma_done_ptr.unsafe_offset(cur_buf),
+                            k,
+                            cta_id,
+                            local_warp_idx,
+                            indices_base,
+                        )
+
+                    # Wait for FP8 K TMA to land, then convert in-place.
+                    k_fp8_tma_done_ptr[cur_buf].wait(cur_phase)
+                    Self.convert_k_fp8_to_bf16[scale_block_size](
+                        k_smem_fp8_ptr, k_smem_ptr, k_scales_ptr
+                    )
+
+                    # All 128 WG1 threads must finish their convert stores
+                    # (+ the per-thread async-proxy fence at the end of
+                    # convert_k) BEFORE the ready signal: the elected arrive
+                    # alone orders only its own thread's writes.
+                    named_barrier[Int32(WARPGROUP_SIZE)](3)
+                    # Signal K ready (both p0 and p1 barriers). At cta_group=2
+                    # the MMA runs on CTA0 and reads BOTH CTAs' converted K
+                    # smem, so each CTA signals CTA0's barrier instance
+                    # (init count = cta_group).
+                    if local_warp_idx == 0 and elect_one_sync():
+                        comptime if Self.config.cta_group == 2:
+                            k_p0_ready_ptr[cur_buf].arrive_cluster(UInt32(0))
+                            k_p1_ready_ptr[cur_buf].arrive_cluster(UInt32(0))
+                        else:
+                            _ = k_p0_ready_ptr[cur_buf].arrive()
+                            _ = k_p1_ready_ptr[cur_buf].arrive()
+
+            elif warpgroup_idx == 2:
+                # V producer (FP8 path)
+                warpgroup_reg_alloc[144]()
+                var local_warp_idx = UInt32(warp_id() - 8)
+
+                # Wait for Q copy to TMEM before starting V loads.
+                prologue_q_cp_ptr[].wait()
+
+                for k in range(num_k_blocks):
+                    var cur_buf = k % UInt32(Self.SMemType.num_mbars)
+                    var cur_phase = k / UInt32(Self.SMemType.num_mbars) & 1
+                    var prev_buf = (k - 1) % UInt32(Self.SMemType.num_mbars)
+                    var prev_phase = (k - 1) / UInt32(
+                        Self.SMemType.num_mbars
+                    ) & 1
+
+                    # Wait for previous V SMEM to be free BEFORE issuing new TMA.
+                    # FP8 V staging [v_smem+V_SIZE..v_smem+2*V_SIZE] overlaps kh1 V BF16
+                    # data that WG3's SV MMA for k-1 is still reading. Must wait first.
+                    if k > 0:
+                        sv_p0_done_ptr[prev_buf].wait(prev_phase)
+                        sv_p1_done_ptr[prev_buf].wait(prev_phase)
+
+                    # Arm v_fp8_tma_done mbarrier (one thread per WG2), then
+                    # barrier so expect_bytes is visible before any TMA arrival
+                    # can satisfy the mbarrier (same CUDA-spec ordering as K).
+                    if local_warp_idx == 0 and elect_one_sync():
+                        v_fp8_tma_done_ptr[cur_buf].expect_bytes(
+                            Int32(Self.config.B_TOPK * Self.V_SMEM_COLS_PER_CTA)
+                        )
+                    named_barrier[Int32(WARPGROUP_SIZE)](4)
+
+                    # Issue FP8 V TMA (one elected thread per warp in WG2).
+                    if elect_one_sync():
+                        Self.load_v_fp8_tma(
+                            v_tma_op_fp8,
+                            indices,
+                            kv_lut,
+                            v_smem_fp8_ptr,
+                            v_fp8_tma_done_ptr.unsafe_offset(cur_buf),
+                            k,
+                            cta_id,
+                            local_warp_idx,
+                            indices_base,
+                        )
+
+                    # Load V scales cooperatively (all 128 WG2 threads).
+                    # Overlaps TMA latency while we wait for v_fp8_tma_done.
+                    # scale_block_size == 0 => no-scale mode: skip the gather and
+                    # its flush; convert_v applies unit scale.
+                    comptime if scale_block_size > 0:
+                        Self.load_v_scales_to_smem[scale_block_size](
+                            scales_ptr,
+                            indices,
+                            kv_lut,
+                            v_scales_ptr,
+                            k,
+                            indices_base,
+                            Int32(num_kv_rows),
+                        )
+                        # Flush all 128 scale writes before convert_v_fp8_to_bf16
+                        # reads them. Use ID 6 (not 5) — named barriers are CTA-wide
+                        # resources; WG1 uses ID 5 concurrently, so sharing it would
+                        # mix arrivals from both warpgroups and defeat the flush.
+                        named_barrier[Int32(WARPGROUP_SIZE)](6)
+
+                    # Wait for FP8 V TMA to complete (all threads spin).
+                    v_fp8_tma_done_ptr[cur_buf].wait(cur_phase)
+
+                    # Convert V FP8→BF16 in-place (all 128 WG2 threads).
+                    Self.convert_v_fp8_to_bf16[scale_block_size](
+                        v_smem_fp8_ptr, v_smem_ptr, v_scales_ptr, cta_id
+                    )
+
+                    # All 128 WG2 threads must finish their convert stores
+                    # before the ready signal (same reasoning as K).
+                    named_barrier[Int32(WARPGROUP_SIZE)](6)
+                    # Signal both V halves ready. At cta_group=2 the MMA reads
+                    # BOTH CTAs' converted V smem; signal CTA0's instance.
+                    if local_warp_idx == 0 and elect_one_sync():
+                        comptime if Self.config.cta_group == 2:
+                            v_p0_ready_ptr[cur_buf].arrive_cluster(UInt32(0))
+                            v_p1_ready_ptr[cur_buf].arrive_cluster(UInt32(0))
+                        else:
+                            _ = v_p0_ready_ptr[cur_buf].arrive()
+                            _ = v_p1_ready_ptr[cur_buf].arrive()
+
+            else:
+                warpgroup_reg_dealloc[96]()
+
+                if cta_id == 0 and warp_idx == 12 and elect_one_sync():
+                    var q_tmem_desc = Self.QKMMAOpType.tmem_descriptor_q(
+                        q_smem_ptr.unsafe_offset(Self.SMemType.SHARED_Q_SIZE)
+                    )
+                    # Expect exactly the REAL in-bounds Q bytes (num_q_heads):
+                    # both the 64/128 built-in copy and the sub-64 manual depth-
+                    # tile sub-copies read only real heads from GMEM, so the
+                    # transaction delivers num_q_heads * qk_depth * cta_group
+                    # elements. (The sub-64 padding rows are memset, not TMA'd, so
+                    # they contribute no bytes here.) NFC at 64/128:
+                    # NUM_Q_HEADS_PER_CTA == padded per-CTA == 64. Mirrors `kernel`.
+                    prologue_q_ptr[].expect_bytes(
+                        Int32(
+                            Self.NUM_Q_HEADS_PER_CTA
+                            * Self.config.qk_depth
+                            * Self.config.cta_group
+                            * Self.qkv_dtype_size
+                        )
+                    )
+                    prologue_q_ptr[].wait()
+                    tcgen05_fence_after()
+
+                    Self.Common.cp_q_from_smem_to_tmem(
+                        q_tmem_desc, UInt32(Self.Q_TMEM_ADDR)
+                    )
+                    mma_arrive_multicast[cta_group=Self.config.cta_group](
+                        prologue_q_cp_ptr,
+                        Self.CTA_MASK,
+                    )
+
+                    for k in range(num_k_blocks + 1):
+                        Self.Common.mma[fp8_active=True](
+                            q_smem_ptr,
+                            k_smem_ptr,
+                            scores_ptr,
+                            v_smem_ptr,
+                            k_p0_ready_ptr,
+                            k_p1_ready_ptr,
+                            v_p0_ready_ptr,
+                            v_p1_ready_ptr,
+                            sv_p0_done_ptr,
+                            sv_p1_done_ptr,
+                            so_ready_ptr,
+                            p_free_ptr,
+                            qk_ss_done_ptr,
+                            qk_ts_done_ptr,
+                            k,
+                            num_k_blocks,
+                        )
+
+                elif (
+                    warp_idx == 13
+                    and lane_idx < Self.SMemType.NUM_KV_VALID_LANES
+                ):
+                    Self.Common.kv_valid_producer(
+                        indices,
+                        is_k_valid_ptr,
+                        k_valid_ready_ptr,
+                        k_valid_free_ptr,
+                        UInt32(lane_idx),
+                        indices_base,
+                        Int32(num_kv_rows),
+                        Int32(top_k_length),
+                        Int(num_k_blocks),
+                    )
 
 
 @inline(.always)
@@ -1797,4 +1856,5 @@ def mla_prefill_sparse_fp8[
         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
             UInt32(smem_size)
         ),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )

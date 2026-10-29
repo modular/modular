@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Gemma 3 language model and vision tower."""
 
 from __future__ import annotations
 
@@ -35,21 +36,21 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,
     PagedCacheValues,
 )
-from max.nn.layer import LayerList, Module
-from max.nn.linear import MLP, ColumnParallelLinear
-from max.nn.norm import LayerNorm
-from max.nn.rotary_embedding import (
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import MLP, ColumnParallelLinear
+from max.nn.legacy.norm import LayerNorm
+from max.nn.legacy.rotary_embedding import (
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
 )
-from max.nn.transformer import DecoderOutputs
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.transformer import DecoderOutputs
+from max.nn.legacy.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
 )
 from max.pipelines.architectures.gemma3.layers.attention import Gemma3Attention
@@ -76,7 +77,7 @@ logger = logging.getLogger("max.pipelines")
 
 
 class Gemma3LanguageModel(DistributedLogitsPostprocessMixin, Module):
-    """The Gemma3 Multi-Modal model's text component, shared with Gemma3"""
+    """The Gemma3 Multi-Modal model's text component, shared with Gemma3."""
 
     def __init__(self, config: Gemma3ForConditionalGenerationConfig) -> None:
         super().__init__()
@@ -252,8 +253,7 @@ class Gemma3LanguageModel(DistributedLogitsPostprocessMixin, Module):
         custom_extensions: Iterable[Path] = (),
         is_device_graph: bool = False,
     ) -> Graph:
-        """Traces the language graph, whose inputs are :meth:`input_tree`'s
-        leaves.
+        """Traces the language graph, whose inputs are :meth:`input_tree`'s leaves.
 
         Splits the KV cache into its sliding and global collections.
 
@@ -320,6 +320,7 @@ class Gemma3LanguageModel(DistributedLogitsPostprocessMixin, Module):
         sliding_kv_collections: Sequence[PagedCacheValues],
         global_kv_collections: Sequence[PagedCacheValues],
     ) -> DecoderOutputs:
+        """Runs the language model over the tokens and image embeddings."""
         h = self.embed_tokens(tokens, signal_buffers)
 
         # Replace image placeholder tokens with vision embeddings
@@ -361,13 +362,15 @@ class Gemma3LanguageModel(DistributedLogitsPostprocessMixin, Module):
 
 
 class Gemma3VisionModel(Module):
-    """The Gemma3 Multi-Modal model's vision component"""
+    """The Gemma3 Multi-Modal model's vision component."""
 
     def __init__(
         self, config: Gemma3ForConditionalGenerationConfig, device: DeviceRef
     ) -> None:
-        """Initializes the necessary components for processing vision inputs and
-        projecting into language space, with multi-device functionality."""
+        """Builds the vision tower and the projector into the text width.
+
+        The config supplies both halves, and the tower runs on one device.
+        """
         super().__init__()
         self.config = config
         self.devices = config.devices
@@ -439,13 +442,11 @@ class Gemma3VisionModel(Module):
         self.projector_list = self.projector.shard(config.devices)
 
     def input_types(self) -> tuple[Type[Any], ...]:
-        """Returns the vision graph's input types: the leaves of
-        :meth:`input_tree`."""
+        """Returns the vision graph's input types: the leaves of :meth:`input_tree`."""
         return tuple(tree.leaves(self.input_tree()))
 
     def input_tree(self) -> OrderedDict[str, object]:
-        """Names the vision graph's inputs, keyed by :meth:`__call__`'s
-        arguments.
+        """Names the vision graph's inputs, keyed by :meth:`__call__`'s arguments.
 
         Each device takes the batch of images, then each device's allreduce
         signal buffer.
@@ -517,8 +518,11 @@ class Gemma3VisionModel(Module):
         pixel_values: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
     ) -> Sequence[TensorValue]:
-        """Processes vision inputs through the Gemma3 vision tower and produces
-        a sequence of image embeddings"""
+        """Runs the vision tower and projects the patches into the text width.
+
+        The output is one embedding sequence per image, ready for the language
+        model.
+        """
         hidden_states: TensorValue | Sequence[TensorValue] = [
             embed(pixels)
             for embed, pixels in zip(

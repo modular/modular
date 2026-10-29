@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# DOC: Mojo/docs/site/reference/cheat-sheets/compile-time.mdx
 # test_compile_time.mojo
 # Tests for the Mojo "compile-time" cheat-sheet card.
 #

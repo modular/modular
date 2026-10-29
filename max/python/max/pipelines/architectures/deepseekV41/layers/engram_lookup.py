@@ -40,6 +40,13 @@ _HEAD_DIM = 256
 _ROW_SCALES = _HEAD_DIM // 32
 # Rows per bucket of the sorted host path, 2^19.
 _BUCKET_SHIFT = 19
+# The kernels' comptime table capacities and sort geometry
+# (Kernels/lib/engram/engram_hash_gather.mojo): the production primes'
+# TABLE_ROWS per layer, which _BUCKET_SHIFT buckets into 733 buckets per
+# layer whatever the config's tables hold. The ops' work must hold those
+# counters even for reduced layouts, so the adapter sizes from this
+# constant, never from the layout's rows.
+_PRODUCTION_TABLE_ROWS = (384006168, 384016682)
 # Tokens from which the full-table op sorts host reads; the sharded op takes
 # the same crossover in local rows.
 _SORT_MIN_TOKENS = 1024
@@ -90,6 +97,7 @@ class EngramTokens:
     """``[R, max_ngram_size - 1]`` bool, true where a lookback token is dead."""
 
     def values(self) -> list[TensorValue]:
+        """The token values the n-gram slots hold."""
         return [
             self.ids,
             self.positions,
@@ -180,6 +188,12 @@ class EngramLookup:
                 f"engram_num_embeddings {list(layout.num_embeddings)} do not "
                 f"match the hash layout's table rows {rows}"
             )
+        if any(rows[i] > cap for i, cap in enumerate(_PRODUCTION_TABLE_ROWS)):
+            raise ValueError(
+                f"engram_num_embeddings {rows} exceed the kernels' "
+                f"production table capacities "
+                f"{list(_PRODUCTION_TABLE_ROWS)}"
+            )
         token_map_i32 = np.asarray(token_map, dtype=np.int32)
         if not 0 <= layout.pad_token_id < token_map_i32.shape[0]:
             raise ValueError(
@@ -197,14 +211,19 @@ class EngramLookup:
             layout.max_ngram_size,
             layout.compressed_vocab_size,
         )
-        self._buckets = (max(rows) >> _BUCKET_SHIFT) + 1
+        # The kernels' BUCKETS is comptime, from the production primes,
+        # not from this layout: a reduced table still sorts with production
+        # buckets, so its work reserves the production counters.
+        self._buckets = (max(_PRODUCTION_TABLE_ROWS) >> _BUCKET_SHIFT) + 1
         self.host_gather = engram_host_gather_enabled()
 
     @property
     def lookback_depth(self) -> int:
+        """How many earlier tokens a slot's n-gram reaches."""
         return self.layout.max_ngram_size - 1
 
     def heads_per_rank(self, n_ranks: int) -> int:
+        """How many heads each rank owns."""
         if n_ranks < 1 or self.n_hash_cols % n_ranks:
             raise ValueError(
                 f"{self.n_hash_cols} Engram hash columns do not split over "
@@ -273,6 +292,34 @@ class EngramLookup:
             for i, layer_id in enumerate(self.layer_ids)
         }
 
+    def _check_full_tables(self, tables: Sequence[TensorValue]) -> None:
+        """Checks the full tables' static shapes against the layout.
+
+        The op cannot check the runtime primes against the tables without a
+        synchronization, and a nonempty but too-short table would let the
+        hash read rows past the allocation, so the check belongs here where
+        the layout is known.
+
+        Args:
+            tables: Each layer's codes ``[rows, head_dim]`` and scales
+                ``[rows, head_dim / 32]``, layer-major.
+
+        Raises:
+            ValueError: If a table's static shape isn't its layer's
+                ``[table_rows, head_dim]`` / ``[table_rows, head_dim / 32]``.
+        """
+        expected = [
+            (rows, cols)
+            for rows in self.table_rows
+            for cols in (_HEAD_DIM, _ROW_SCALES)
+        ]
+        for i, (table, shape) in enumerate(zip(tables, expected, strict=True)):
+            if [int(dim) for dim in table.shape] != list(shape):
+                raise ValueError(
+                    f"Engram table {i} must be {list(shape)}, got "
+                    f"{[str(dim) for dim in table.shape]}"
+                )
+
     def full(
         self,
         tokens: EngramTokens,
@@ -289,7 +336,11 @@ class EngramLookup:
             tables: Each layer's pinned host codes ``[rows, head_dim]`` and
                 scales ``[rows, head_dim / 32]``, layer-major.
             device: The GPU the op runs on.
+
+        Raises:
+            ValueError: If a table's static shape isn't its layer's.
         """
+        self._check_full_tables(tables)
         codes, scales = self._lookup(
             tokens.values(),
             self._lookup_constants(device),
@@ -352,7 +403,11 @@ class EngramLookup:
 
         Returns:
             The pending operands; join them before reading them.
+
+        Raises:
+            ValueError: If a table's static shape isn't its layer's.
         """
+        self._check_full_tables(tables)
         # Constants and tables are captured from the enclosing graph rather
         # than passed as region inputs.
         constants = self._lookup_constants(device)

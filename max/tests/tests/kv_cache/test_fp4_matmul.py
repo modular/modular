@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Tests for FP4 matmul kernels in max.nn.kernels."""
+"""Tests for FP4 matmul kernels in max.nn.legacy.kernels."""
 
 from __future__ import annotations
 
@@ -20,16 +20,16 @@ from typing import Any
 import pytest
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     _fused_qkv_ragged_matmul_scaled_float4 as fused_qkv_ragged_matmul_scaled_float4,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     block_scales_interleave,
     dynamic_block_scaled_matmul,
     grouped_matmul_block_scaled,
     quantize_dynamic_block_scaled,
 )
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
     PagedCacheValues,
@@ -227,7 +227,7 @@ def test_quantize_dynamic_block_scaled_fp4(
     expected_scales_shape: list[int],
 ) -> None:
     """Tests quantize_dynamic_block_scaled with valid FP4 inputs."""
-    from max.nn.kernels import _is_sm10x_gpu
+    from max.nn.legacy.kernels import _is_sm10x_gpu
 
     device = DeviceRef.CPU()
     with Graph(
@@ -255,7 +255,7 @@ def test_quantize_dynamic_block_scaled_fp4(
 
 def test_quantize_mxfp4() -> None:
     """Tests quantize_dynamic_block_scaled with MXFP4 params."""
-    from max.nn.kernels import _is_sm10x_gpu
+    from max.nn.legacy.kernels import _is_sm10x_gpu
 
     device = DeviceRef.CPU()
     with Graph(
@@ -536,7 +536,7 @@ def test_grouped_matmul_block_scaled_admits_split_expert_intermediate(
     Packed NVFP4 needs K in multiples of 32 elements, which the Mojo kernel
     asserts, and it is tempting to restate that here as a multiple of 128 --
     the bound the *W4A8* pair carries. Measured on one B200 through
-    ``max.nn.moe.MoEQuantized`` at NVFP4, an expert intermediate of 640, 320,
+    ``max.nn.legacy.moe.MoEQuantized`` at NVFP4, an expert intermediate of 640, 320,
     160, 96 or 32 compiles and executes, and 320 and 160 are the TP2 and TP4
     splits of Qwen3.8-Flash-Next's 640, so tightening the bound here would
     reject configurations the kernel runs.

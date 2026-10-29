@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Idefics3 pipeline model."""
 
 from __future__ import annotations
 
@@ -28,7 +29,7 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import (
     KVCacheConfig,

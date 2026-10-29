@@ -14,22 +14,20 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.functional_kernels import (
+from max.nn import Module
+from max.nn.common_layers.functional_kernels import (
     mla_fp8_index_top_k_physical,
     quantize_dynamic_scaled_float8,
     rope_ragged,
     store_k_cache_ragged,
     store_k_scale_cache_ragged,
 )
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.quant_linear import QuantizedLinear
-from max.experimental.nn.norm import LayerNorm
-from max.experimental.tensor import Tensor
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.quant_config import (
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.quant_linear import QuantizedLinear
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -37,11 +35,14 @@ from max.nn.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
+from max.nn.norm import LayerNorm
+from max.tensor import Tensor
 
 
 def act_quant(
     x: Tensor, quant_config: QuantConfig, block_size: int = 128
 ) -> tuple[Tensor, Tensor]:
+    """Quantizes the activation's last axis and returns its scales."""
     *x_dims, head_dim = x.shape
     x = x.reshape((-1, head_dim))
     assert int(head_dim) % block_size == 0
@@ -183,7 +184,8 @@ class Indexer(
         mla_collection: PagedCacheValues,
         mask_variant: MHAMaskVariant = MHAMaskVariant.NULL_MASK,
     ) -> Tensor:
-        """
+        """Runs the indexer over the activations and the normed queries.
+
         Args:
             x: Tensor of shape (total_seq_len, dim) Input activations.
             qr: Tensor of shape (total_seq_len, q_lora_rank) Pre-normed queries.

@@ -61,10 +61,11 @@ def _launch_dims(ctx: DeviceContext, n: Int) -> Tuple[Int, Int]:
     var max_grid = _FALLBACK_GRID
     try:
         block = min(
-            block, ctx.get_attribute(DeviceAttribute.MAX_THREADS_PER_BLOCK)
+            block,
+            ctx.device().get_attribute(DeviceAttribute.MAX_THREADS_PER_BLOCK),
         )
         max_grid = (
-            ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+            ctx.device().get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
             * _BLOCKS_PER_SM
         )
     except:

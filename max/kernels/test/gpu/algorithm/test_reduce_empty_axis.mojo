@@ -58,8 +58,10 @@ argmax, which still runs its hand-written kernel, and reuses one output
 buffer on purpose, which a graph-level test can't.
 
 Tier coverage: at `row_size == 0` an inner-axis reduce always lands on the
-warp tier (`row_size <= warp_max` holds trivially), so this file exercises
-`_WarpKernel` only.
+warp tier (`row_size <= warp_max` holds trivially), so the inner-axis test
+exercises `_WarpKernel` only. The non-inner test adds the tiled tier, whose
+`pjoin` no-ops -- the tier the nightly kernel fuzzer caught emitting the
+unclamped identity.
 """
 
 from std.sys import align_of
@@ -140,6 +142,98 @@ def _test_reduce_argmax_stale_buffer_gpu[dtype: DType = DType.float32]() raises:
 
 def test_reduce_argmax_stale_buffer_gpu() raises:
     _test_reduce_argmax_stale_buffer_gpu()
+
+
+def _test_reduce_argmax_empty_non_inner_axis_gpu[
+    dtype: DType = DType.float32
+]() raises:
+    """Same contract on the non-inner axis, which lands on a different tier.
+
+    An empty axis with a contiguous inner dim picks the *tiled* tier (one
+    thread owns `emit_tile_width` adjacent output columns), whose
+    `rowwise.pjoin` no-ops by design -- so the monoid's own
+    `_in_range_index` finalization never runs and the identity index reaches
+    the tensor unless the entry point clamps at the emit site. The shape
+    below is the one the nightly kernel fuzzer shrank to (`rank=3
+    reduce_dim=1 d0=64 d1=0 d2=16`); on a device that picks the cooperative
+    tier instead, that tier's own clamp satisfies the same assertion.
+    """
+    with DeviceContext() as ctx:
+        comptime out_dtype = DType.int64
+        comptime outer = 64
+        comptime inner = 16
+        comptime real_axis_size = 4
+        # Deliberately not `0`, so `out_h` reading back `0` after run 1 would
+        # itself be a (different) bug, not a false pass for run 2.
+        comptime winner_idx = 2
+        comptime num_rows = outer * inner
+
+        var in_h = ctx.enqueue_create_host_buffer[dtype](
+            num_rows * real_axis_size
+        )
+        var out_h = ctx.enqueue_create_host_buffer[out_dtype](num_rows)
+        ctx.synchronize()
+        for i in range(num_rows * real_axis_size):
+            in_h[i] = 1
+        # `(o, winner_idx, k)` in row-major order: one winner per output row.
+        for o in range(outer):
+            for k in range(inner):
+                in_h[(o * real_axis_size + winner_idx) * inner + k] = 5
+
+        var in_d = ctx.enqueue_create_buffer[dtype](num_rows * real_axis_size)
+        var out_d = ctx.enqueue_create_buffer[out_dtype](num_rows)
+        ctx.enqueue_copy(in_d, in_h)
+
+        var in_buf = TileTensor(in_d, row_major((outer, real_axis_size, inner)))
+        var out_ptr = out_d.unsafe_ptr()
+        var inner_stride = inner
+
+        @inline(.always)
+        def input_fn[
+            width: Int, alignment: Int
+        ](coords: Coord) {var in_buf} -> SIMD[dtype, width]:
+            return in_buf.load[
+                width=width, alignment=alignment * align_of[dtype]()
+            ](coords)
+
+        @inline(.always)
+        def output_fn[
+            width: SIMDLength
+        ](coords: Coord, val: SIMD[out_dtype, width]) {
+            var out_ptr, var inner_stride
+        }:
+            # The reduced axis stays in the coord, so the output row is the
+            # row-major flatten of the remaining dims.
+            out_ptr.unsafe_store[width=width](
+                Int(coords[0]) * inner_stride + Int(coords[2]), val
+            )
+
+        # Run 1: real winner at `winner_idx` in every row.
+        reduce_argmax[dtype, target="gpu", reduce_dim=1](
+            input_fn, output_fn, Coord(outer, real_axis_size, inner), ctx
+        )
+        ctx.enqueue_copy(out_h, out_d)
+        ctx.synchronize()
+        for r in range(num_rows):
+            assert_equal(out_h[r], Int64(winner_idx))
+
+        # Run 2: SAME `out_d`, empty axis. Every output must become `0`
+        # (the `_in_range_index`-clamped identity), not the stale winner.
+        reduce_argmax[dtype, target="gpu", reduce_dim=1](
+            input_fn, output_fn, Coord(outer, 0, inner), ctx
+        )
+        ctx.enqueue_copy(out_h, out_d)
+        ctx.synchronize()
+        for r in range(num_rows):
+            assert_equal(out_h[r], Int64(0))
+
+        _ = in_buf
+        _ = in_d^
+        _ = out_d^
+
+
+def test_reduce_argmax_empty_non_inner_axis_gpu() raises:
+    _test_reduce_argmax_empty_non_inner_axis_gpu()
 
 
 def main() raises:

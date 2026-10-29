@@ -77,7 +77,7 @@ _COMMON_DEPS = [
     "//max/python/max/dtype",
     "//max/python/max/engine",
     "//max/python/max/graph",
-    "//max/python/max/nn",
+    "//max/python/max/nn/legacy",
     "//max/tests/integration/test_common:graph_utils",
     requirement("torch"),
 ]
@@ -87,7 +87,7 @@ modular_py_test(
     size = "large",
     srcs = glob(
         ["test_*.py"],
-        exclude = _QUANTIZED_TESTS + _TRACED_TESTS + _EP8_TESTS + _FUSED_EP2_TESTS + _FUSED_EP2_WIDE_TESTS + _FUSED_EP4_TESTS + _FUSED_EP4_WIDE_TESTS + _TWO_GPU_TESTS,
+        exclude = _QUANTIZED_TESTS + _TRACED_TESTS + _EP8_TESTS + _FUSED_EP2_TESTS + _FUSED_EP2_WIDE_TESTS + _FUSED_EP4_TESTS + _FUSED_EP4_WIDE_TESTS + _TWO_GPU_TESTS + ["test_capture_manifest.py"],
     ) + ["conftest.py"],
     env = _COMMON_ENV,
     exec_properties = {
@@ -140,7 +140,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("torch"),
     ],
 )
@@ -189,7 +189,7 @@ modular_py_library(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("pytest"),
         requirement("torch"),
     ],
@@ -381,8 +381,39 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# Checks captured device graphs' profiler manifests against the graphs'
+# own DOT dumps, for TP and EP on two GPUs.
+modular_py_test(
+    name = "capture_manifest_tests",
+    size = "large",
+    srcs = ["test_capture_manifest.py"],
+    env = _COMMON_ENV,
+    exec_properties = {
+        "test.resources:gpu-memory": "11",
+    },
+    gpu_constraints = [
+        "//:has_multi_gpu",
+    ],
+    mojo_deps = [
+        "//max:shmem",
+    ],
+    tags = [
+        "gpu",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
         requirement("numpy"),
         requirement("torch"),
     ],

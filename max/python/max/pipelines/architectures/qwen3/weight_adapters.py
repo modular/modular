@@ -60,6 +60,7 @@ def convert_qwen3_moe_state_dict(
         - layers.{i}.mlp.gate.gate_score.weight
 
     Args:
+        **unused_kwargs: Accepted so every adapter shares one signature.
         state_dict: The raw Qwen3-MoE checkpoint weights.
         huggingface_config: HuggingFace model configuration.
         pipeline_config: Pipeline configuration.

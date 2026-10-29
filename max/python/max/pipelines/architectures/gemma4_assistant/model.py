@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.pipelines.lib.interfaces.pipeline_model import (
     ModelLoadContext,
 )
@@ -57,8 +57,11 @@ class Gemma4AssistantDraftArchConfig(Gemma4AssistantConfig):
     def build_module(
         cls, context: ModelLoadContext
     ) -> tuple[Gemma4Assistant, Gemma4AssistantDraftConfig]:
-        """Builds the assistant over the target's KV params, which
-        ``context`` names.
+        """Builds the assistant over the target's KV params.
+
+        ``context`` names them. It embeds through the target's embedding, so
+        spec decoding shares that onto it.
+
 
         It embeds through the target's embedding, so spec decoding shares
         that onto it.

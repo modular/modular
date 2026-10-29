@@ -45,11 +45,11 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.layer import LayerList, Module
-from max.nn.linear import Linear
-from max.nn.transformer.transformer import forward_sharded_layers
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.transformer.transformer import forward_sharded_layers
 
 from .model_config import Qwen3_5Config
 from .qwen3_5 import Qwen3_5FullAttentionBlock, norm_factory, rotary_embedding
@@ -190,6 +190,7 @@ class Qwen3_5MTP(Module):
             layer_idx,
             signal_buffers,
             [kv.kv_blocks for kv in kv_collections],
+            [kv.page_stride for kv in kv_collections],
             [kv.cache_lengths for kv in kv_collections],
             [kv.lookup_table for kv in kv_collections],
             [kv.max_prompt_length for kv in kv_collections],

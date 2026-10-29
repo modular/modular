@@ -36,7 +36,7 @@ from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, Type, ops
-from max.nn import Signals
+from max.nn.legacy import Signals
 
 COLS = 6144  # M3 hidden size; the fuse threshold is bytes = rows*COLS*2.
 EPS = 1e-6

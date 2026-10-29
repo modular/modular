@@ -28,7 +28,7 @@ import pytest
 from max.driver import CPU, Device
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheGroupId,
     KVConnectorType,
     MHAKVCacheParams,
@@ -292,6 +292,7 @@ class HintRecordingConnector(NullConnector):
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> Mapping[str, Sequence[bool]]:
         self.lookup_hints.append(hint)
         held = [i == 0 for i in range(len(block_hashes))]
@@ -3062,7 +3063,7 @@ def test_decode_insufficient_blocks_defers_with_pending_prefill() -> None:
 
 
 # ---------------------------------------------------------------------------
-# maxserve.num_requests_queued gauge (MXSERV-29).
+# max.num_requests_queued gauge (MXSERV-29).
 #
 # The gauge is a synchronous OTel Gauge: ``BatchMetrics.publish_metrics``
 # samples ``num_pending_reqs`` once per scheduler iteration and replaces

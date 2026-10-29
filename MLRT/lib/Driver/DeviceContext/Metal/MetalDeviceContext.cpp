@@ -21,6 +21,7 @@
 
 #include "AsyncRT/Runtime/Globals/Globals.h"
 #include "MLRT/Driver/DeviceContext/ErrorMacros.h"
+#include "MLRT/lib/Driver/DeviceContext/HostMemoryInfo.h"
 #include "MetalDriver.h"
 #include "Support/AlignedAlloc.h"
 #include "Support/ErrorOr.h"
@@ -31,6 +32,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include <CoreFoundation/CoreFoundation.h>
 #include <IOKit/IOKitLib.h>
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -165,6 +167,10 @@ ErrorOr<Device::MemInfo> MetalDevice::getMemInfo(MTL::Device *metalDev) {
   info.total = metalDev->recommendedMaxWorkingSetSize();
   size_t used = metalDev->currentAllocatedSize();
   info.free = info.total > used ? info.total - used : 0;
+  // The working-set budget ignores other processes, which draw on the same
+  // unified memory.
+  DEFINE_OR_RETURN_ERROR(Device::MemInfo, host, getHostMemoryInfo());
+  info.free = std::min(info.free, host.free);
   return info;
 }
 

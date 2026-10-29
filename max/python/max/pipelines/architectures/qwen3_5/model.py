@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Qwen3.5 pipeline model."""
 
 from __future__ import annotations
 
@@ -24,7 +25,7 @@ from max.driver import Buffer, Device, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph.buffer_utils import cast_tensors_to
-from max.nn.kv_cache import KVCacheParamInterface, recurrent_leaf
+from max.nn.legacy.kv_cache import KVCacheParamInterface, recurrent_leaf
 from max.pipelines.context import ImageMetadata
 from max.pipelines.lib import (
     ModelInputs,
@@ -74,6 +75,7 @@ class Qwen3_5Inputs(Llama3Inputs):
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
+        """The step's buffers, in the graph's input order."""
         return (
             self.tokens,
             self.input_row_offsets,
@@ -275,6 +277,7 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
 
     @traced
     def load_model(self, session: InferenceSession) -> Model:
+        """Loads the graphs into ``session`` and returns the decoder."""
         self._session = session
 
         self._input_row_offsets_prealloc: Buffer | None = None
@@ -408,8 +411,11 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         )
 
     def graph_specs(self, model_config: Qwen3_5Config) -> dict[str, GraphSpec]:
-        """Returns the decoder, and the vision encoder unless the checkpoint
-        is text-only, in one compile group."""
+        """Returns the decoder and the vision encoder as one compile group.
+
+        A text-only checkpoint has no vision encoder, so the group holds the
+        decoder alone.
+        """
         nn_model = _loaded_module(model_config, self._checkpoint)
         input_types = self._bind_graph_inputs(
             nn_model.input_tree(self.kv_params)
@@ -462,6 +468,7 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         return specs
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
+        """Runs one decoding step and returns its logits."""
         assert isinstance(model_inputs, Qwen3_5Inputs)
         assert model_inputs.kv_cache_inputs is not None
 

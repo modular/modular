@@ -15,21 +15,21 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.functional_kernels import (
+from max.graph import DeviceRef, TensorType
+from max.nn import Module
+from max.nn.common_layers.functional_kernels import (
     flash_attention_ragged_gpu,
 )
-from max.experimental.nn.linear import Linear
-from max.experimental.nn.norm import LayerNorm
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.tensor import Tensor
-from max.graph import DeviceRef, TensorType
-from max.nn.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.linear import Linear
+from max.nn.norm import LayerNorm
+from max.nn.sequential import ModuleList
 from max.pipelines.architectures.gemma4_modulev3.layers.rms_norm import (
     Gemma4RMSNorm,
 )
+from max.tensor import Tensor
 
 from ..model_config import MuseGlimmerVisionConfig
 
@@ -62,6 +62,7 @@ class MuseGlimmerVisionAttention(Module[..., Tensor]):
         cu_seqlens: Tensor,
         max_seqlen: Tensor,
     ) -> Tensor:
+        """Runs the vision attention with rotary ``rot_cos`` and ``rot_sin``."""
         shape = (-1, self.num_heads, self.head_dim)
         q = _apply_rope(self.q_proj(x).reshape(shape), rot_cos, rot_sin)
         k = _apply_rope(self.k_proj(x).reshape(shape), rot_cos, rot_sin)
@@ -78,12 +79,15 @@ class MuseGlimmerVisionAttention(Module[..., Tensor]):
 
 
 class MuseGlimmerVisionMLP(Module[[Tensor], Tensor]):
+    """The vision tower's feed-forward block."""
+
     def __init__(self, hidden_size: int, intermediate_size: int) -> None:
         super().__init__()
         self.fc1 = Linear(hidden_size, intermediate_size)
         self.fc2 = Linear(intermediate_size, hidden_size)
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the vision feed-forward over ``x``."""
         return self.fc2(F.gelu(self.fc1(x)))
 
 
@@ -109,6 +113,7 @@ class MuseGlimmerVisionEncoderLayer(Module[..., Tensor]):
         cu_seqlens: Tensor,
         max_seqlen: Tensor,
     ) -> Tensor:
+        """Runs the encoder layer's attention, then its MLP."""
         x = x + self.attn(
             self.norm1(x), rot_cos, rot_sin, cu_seqlens, max_seqlen
         )
@@ -130,6 +135,7 @@ class MuseGlimmerVisionPatchEmbedder(Module[..., Tensor]):
     def forward(
         self, pixel_values: Tensor, interp_idx: Tensor, interp_w: Tensor
     ) -> Tensor:
+        """Embeds and interpolates ``pixel_values`` into patch tokens."""
         h = self.patch_embedding(pixel_values)
         taps = F.gather(self.position_embedding_table, interp_idx, axis=0)
         pos = (taps.cast(DType.float32) * interp_w.unsqueeze(-1)).sum(axis=1)
@@ -174,6 +180,7 @@ class MuseGlimmerVisionTower(Module[..., Tensor]):
         max_seqlen: Tensor,
         max_window_seqlen: Tensor,
     ) -> Tensor:
+        """Runs the vision tower over the image patches."""
         h = self.patch_embedder(pixel_values, interp_idx, interp_w)
         h = F.gather(self.ln_pre(h), window_index, axis=0)
         for layer, full in zip(self.layers, self.full_attention, strict=True):
@@ -197,12 +204,15 @@ class MuseGlimmerVisionTower(Module[..., Tensor]):
 
 
 class MuseGlimmerVisionAdapter(Module[[Tensor], Tensor]):
+    """Projects the vision tower's output to the text width."""
+
     def __init__(self, in_dim: int, hidden_dim: int) -> None:
         super().__init__()
         self.fc1 = Linear(in_dim, hidden_dim, bias=False)
         self.fc2 = Linear(hidden_dim, hidden_dim, bias=False)
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the adapter's two projections over ``x``."""
         return F.gelu(self.fc2(F.gelu(self.fc1(x))))
 
 
@@ -232,6 +242,7 @@ class MuseGlimmerVisionModel(Module[..., Tensor]):
         )
 
     def forward(self, *inputs: Tensor) -> Tensor:
+        """Runs the vision tower and adapter over the graph inputs."""
         h = self.vision_adapter(self.vision_tower(*inputs))
         return self.perception_emb_norm(self.vision_projection(h))
 

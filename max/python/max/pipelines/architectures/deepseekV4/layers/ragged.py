@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Ragged-batch bookkeeping, computed in-graph from the row offsets.
 
 A serving batch is ``T`` tokens of ``b`` requests laid end to end, described
@@ -28,7 +27,7 @@ The window count ``W`` is a sum of per-request ceilings, so it is data, and
 reading it back would sync every forward and rule out device graph capture.
 The cached path never needs it on the host: one op pools every window, sized
 by a bound derived from shapes
-(:func:`~max.nn.kernels.compress_windows_ragged`). Only the cache-less
+(:func:`~max.nn.legacy.kernels.compress_windows_ragged`). Only the cache-less
 reference path, whose lengths are fixed at graph build, lays the windows out
 row by row (:class:`WindowTables`).
 
@@ -120,6 +119,7 @@ def segment_ids(
         offsets: ``[b + 1]`` int32 segment boundaries; row ``r`` belongs to
             segment ``i`` when ``offsets[i] <= r < offsets[i + 1]``.
         total: The row count ``offsets[b]`` as a graph dim.
+        device: The device the row-number arange is built on.
     """
     b = offsets.shape[0] - 1
     # A row's segment is the number of segment ends at or before it. Ends at
@@ -190,6 +190,7 @@ class RaggedRows:
 
     @property
     def offsets_i32(self) -> TensorValue:
+        """The row offsets as int32."""
         return ops.cast(self.offsets, DType.int32)
 
     @property
@@ -268,7 +269,7 @@ class WindowTables:
 
     That path pools with graph ops over a table per window, so the window
     count ``W`` has to be known at graph build; the cached path pools in
-    place (:func:`~max.nn.kernels.compress_windows_ragged`) and builds none.
+    place (:func:`~max.nn.legacy.kernels.compress_windows_ragged`) and builds none.
     """
 
     start: TensorValue
@@ -305,6 +306,7 @@ class WindowRows:
 
     @property
     def coff(self) -> int:
+        """The window's closing offset for this ratio."""
         return window_coff(self.ratio)
 
     def __tree_flatten__(self) -> tuple[dict[str, TensorValue], int]:
@@ -341,9 +343,11 @@ class WindowRows:
         ratio: int,
         count: DimLike | None = None,
     ) -> WindowRows:
-        """``ratio``'s windows over ``rows``; ``lengths`` is each request's
-        ``[b]`` int32 chunk length and ``count``, given for the cache-less
-        path's :class:`WindowTables`, is ``W``."""
+        """Builds ``ratio``'s windows over ``rows``.
+
+        ``lengths`` is each request's ``[b]`` int32 chunk length; ``count``,
+        given for the cache-less path's :class:`WindowTables`, is ``W``.
+        """
         device = rows.device
         base = rows.starts // ratio
         n_new = (lengths + scalar(ratio - 1, device)) // ratio

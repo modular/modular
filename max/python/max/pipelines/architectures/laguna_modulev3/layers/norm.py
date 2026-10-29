@@ -15,9 +15,9 @@
 from __future__ import annotations
 
 from max.dtype import DType
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.nn.norm.rms_norm import rms_norm
-from max.experimental.tensor import Tensor
+from max.nn.norm import RMSNorm
+from max.nn.norm.rms_norm import rms_norm
+from max.tensor import Tensor
 
 
 class LagunaRMSNorm(RMSNorm):
@@ -39,4 +39,5 @@ class LagunaRMSNorm(RMSNorm):
         self.weight = Tensor.ones([dim], dtype=dtype)
 
     def forward(self, x: Tensor) -> Tensor:
+        """Normalizes ``x`` by its root mean square, then scales."""
         return rms_norm(x, self.weight.cast(x.dtype), self.eps)

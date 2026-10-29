@@ -30,7 +30,7 @@ from max.driver import Accelerator, Buffer, DeviceEvent
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.legacy.kv_cache import MHAKVCacheParams
 from test_chunked_qkv_rope_store_gpu import (
     _bits,
     _CompiledFixture,

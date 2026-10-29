@@ -46,6 +46,11 @@ from .tile_layout import (
     row_major,
     col_major,
 )
+from .two_level_layout import (
+    TwoLevelLayout,
+    SwizzledTwoLevelLayout,
+    two_level_layout_from_swizzle,
+)
 from .numpy import from_numpy, to_numpy
 from .tile_tensor import (
     ImmTileTensor,

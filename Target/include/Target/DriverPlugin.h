@@ -44,7 +44,9 @@ public:
   virtual ErrorOr<int64_t> deviceCount() const = 0;
 };
 
-/// Auto-load plugins from MODULAR_DRIVER_PLUGINS env var.
+/// Auto-load plugins from MODULAR_DRIVER_PLUGINS env var, e.g.
+/// "CUDA@/a/CUDAPlugin.so;/b/QAICPlugin.so". Plugins that implement only the
+/// `SDK/include/HAL/` C ABI are skipped.
 /// Returns the number of plugins loaded, or error.
 ErrorOr<int> loadPlugins();
 

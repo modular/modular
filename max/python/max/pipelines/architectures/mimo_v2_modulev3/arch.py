@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Registers MiMo-V2 with the ModuleV3 registry."""
 
 from dataclasses import replace
 

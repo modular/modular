@@ -18,7 +18,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from max.driver import Buffer
-from max.nn.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache import KVCacheInputs
 from max.pipelines.architectures.llama3.batch_processor import (
     Llama3EpBatchProcessor,
 )
@@ -42,6 +42,7 @@ class HyV3BatchProcessor(Llama3EpBatchProcessor):
         kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> HYV3Inputs:
+        """Packs the first step's inputs for each replica."""
         from .model import HYV3Inputs
 
         (

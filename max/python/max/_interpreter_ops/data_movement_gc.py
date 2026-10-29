@@ -248,8 +248,10 @@ def store_slice(
     stops: NDArray[np.int64],
     steps: NDArray[np.int64],
 ) -> None:
-    """Writes ``src`` into ``in_buffer``'s slice in place, via zero-copy
-    uint views padded to ``MAX_RANK`` with leading full-extent unit axes.
+    """Writes ``src`` into ``in_buffer``'s slice in place.
+
+    The write is zero-copy, through uint views padded to ``MAX_RANK`` with
+    leading full-extent unit axes.
 
     Sub-byte dtypes (fp4) raise NotImplementedError in uint_view_dtype,
     matching the deleted Mojo kernel's unsupported-dtype behavior.
@@ -274,9 +276,12 @@ def _symbolic_dims(prefix: str) -> list[str]:
 def _build_transpose_graph(
     module: Module, device: Device, dtype: DType
 ) -> None:
-    """rmo.MoTransposeOp with the permutation as a runtime [MAX_RANK] host
-    operand: one graph serves every permutation. Handlers pad input and
-    perm to MAX_RANK and re-view the output to the real shape."""
+    """Transposes through ``rmo.MoTransposeOp`` with a runtime permutation.
+
+    The permutation is a ``[MAX_RANK]`` host operand, so one graph serves
+    every permutation. Handlers pad input and perm to MAX_RANK and re-view
+    the output to the real shape.
+    """
     device_ref = DeviceRef.from_device(device)
     graph = Graph(
         _graph_name(mo.TransposeOp, device, dtype),
@@ -313,7 +318,8 @@ def _build_broadcast_graph(
     dims. So each output dim ``o{i}`` is bound from the shape of a tiny
     host uint8 carrier input ``[o{i}]``; legality stays the handler's
     job (it has the concrete shapes). Always MAX_RANK carriers; handlers
-    pad both sides to MAX_RANK."""
+    pad both sides to MAX_RANK.
+    """
     device_ref = DeviceRef.from_device(device)
     out_dims = _symbolic_dims("o")
     graph = Graph(

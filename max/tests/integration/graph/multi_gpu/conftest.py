@@ -24,7 +24,7 @@ from max.driver import (
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn import Signals
+from max.nn.legacy import Signals
 
 
 @pytest.fixture(autouse=True)

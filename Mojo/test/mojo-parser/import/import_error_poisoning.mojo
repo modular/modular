@@ -18,7 +18,7 @@
 # only diagnosed when `imported_module` resolves to the real module rather
 # than binding a silent error state.
 
-# RUN: %parse-mojo-isolated -verify-diagnostics -I=%S/inputs %s
+# RUN: %parse-mojo-isolated -verify-diagnostics -I%S/inputs %s
 
 # expected-error @+1 {{unable to locate module 'imported_module'}}
 import test_package.imported_module

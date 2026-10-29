@@ -27,7 +27,7 @@ from unittest import mock
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     _fp6_format_code,
     block_scaled_preshuffle_grouped_scale_4d,
     grouped_dynamic_block_scaled_matmul_amd,

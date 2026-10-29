@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Qwen3 pipeline model."""
 
 from __future__ import annotations
 
@@ -23,9 +24,9 @@ from max._core.engine import Model
 from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
-from max.nn.comm.ep.ep_manager import EPBatchManager
+from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
+from max.nn.legacy.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
+from max.nn.legacy.comm.ep.ep_manager import EPBatchManager
 from max.pipelines.lib.config.model_config import (
     _select_quantization_encoding,
 )
@@ -56,6 +57,7 @@ class Qwen3Inputs(Llama3Inputs):
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
+        """The step's buffers, in the graph's input order."""
         base = [self.tokens, self.input_row_offsets, self.return_n_logits]
         if (
             self.host_input_row_offsets is not None
@@ -195,8 +197,11 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
 
     @override
     def graph_specs(self, model_config: Qwen3Config) -> dict[str, GraphSpec]:
-        """Returns the decoder: single-device, tensor-parallel, or
-        data-parallel attention with expert-parallel MoE."""
+        """Returns the decoder graph spec.
+
+        It covers single-device, tensor-parallel, or data-parallel attention
+        with expert-parallel MoE, whichever the config selects.
+        """
         ep_config = model_config.ep_config
         # Create EP batch manager for graph buffer wiring (runtime init is
         # in `_init_distributed_runtime`).

@@ -14,18 +14,18 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Linear, Module
-from max.experimental.nn.common_layers.functional_kernels import mtp_eh_norm
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.multi_latent_attention import (
+from max.nn import Linear, Module
+from max.nn.common_layers.functional_kernels import mtp_eh_norm
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.multi_latent_attention import (
     MLAPrefillMetadata,
 )
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.tensor import Tensor
-from max.nn.comm.ep import EPBatchManager, EPCommBuffers
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
+from max.nn.norm import RMSNorm
+from max.tensor import Tensor
 
 from .layers.transformer_block import DeepseekV3_2TransformerBlock
 from .model_config import DeepseekV3_2Config

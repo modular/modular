@@ -53,7 +53,6 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
 from .barriers import Depth512MBars
 from .config import Depth512SM100Config
 from .smem import Depth512AttentionSMem
-from std.utils.index import Index
 
 
 @inline(.always)
@@ -411,8 +410,8 @@ def depth512_mma[
             if (
                 mask.status(
                     seq_id,
-                    Index[dtype=.int32](Int(score_row), Int(kv_row)),
-                    Index[dtype=.int32](PairBM_mask, BN),
+                    (Int(score_row), Int(kv_row)),
+                    (Int(PairBM_mask), Int(BN)),
                 )
                 == TileMaskStatus.FULL_MASK
             ):

@@ -44,7 +44,7 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.kernels import topk_fused_sampling
+from max.nn.legacy.kernels import topk_fused_sampling
 from max.pipelines.context import SamplingParams, TextContext, TokenBuffer
 from max.pipelines.request import RequestID
 from max.pipelines.sampling import request_row_seed

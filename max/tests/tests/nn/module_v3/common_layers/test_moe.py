@@ -18,16 +18,17 @@ from collections.abc import Iterator
 from unittest.mock import MagicMock, patch
 
 import pytest
+from max import functional as F
 from max.driver import Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn.common_layers.functional_kernels import moe_finalize
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.nn.common_layers.moe import (
+from max.nn.common_layers.functional_kernels import moe_finalize
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.moe import (
     MoE,
     TensorParallelMoE,
 )
-from max.experimental.sharding import (
+from max.tensor import Tensor, default_device
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Partial,
@@ -35,7 +36,6 @@ from max.experimental.sharding import (
     Replicated,
     Sharded,
 )
-from max.experimental.tensor import Tensor, default_device
 
 # Small dimensions for fast graph-trace tests.
 _HIDDEN_DIM = 256

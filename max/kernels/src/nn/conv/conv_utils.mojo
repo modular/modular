@@ -23,10 +23,8 @@ from std.sys._build import is_debug_build
 from std.sys.info import CompilationTarget, simd_width_of, size_of
 
 from layout import IntTuple, TileTensor, UNKNOWN_VALUE
-from layout.coord import Coord, DynamicCoord, coord, coord_to_index_list
+from layout.coord import Coord, DynamicCoord, coord
 from linalg.utils import partition_work
-
-from std.utils.index import Index, IndexList
 
 
 # ===----------------------------------------------------------------------=== #
@@ -320,12 +318,9 @@ struct ConvShape[rank: Int](TrivialRegisterPassable):
         return Int(self.output_dims.product())
 
     @inline(.always)
-    def output_space_dims(self) -> IndexList[Self.rank]:
-        # The compiler types the result as `IndexList[Int(len(tabulate(rank)))]`
-        # and cannot prove that length equals `rank`, so reconcile the two.
-        return rebind[IndexList[Self.rank]](
-            coord_to_index_list(self.output_dims)
-        )
+    def output_space_dims(self) -> DynamicCoord[.int64, Self.rank]:
+        """Output spatial dimensions in the output's own (NHWC) space."""
+        return self.output_dims
 
     @inline(.always)
     def output_flat_coord_to_input_offset(
@@ -448,11 +443,11 @@ def get_conv_shape[
     output: TileTensor,
     input: TileTensor[mut=False, ...],
     filter: TileTensor[mut=False, ...],
-    stride: IndexList[rank],
-    dilation: IndexList[rank],
-    pad_d: IndexList[2],
-    pad_h: IndexList[2],
-    pad_w: IndexList[2],
+    stride: DynamicCoord[.int64, rank],
+    dilation: DynamicCoord[.int64, rank],
+    pad_d: DynamicCoord[.int64, 2],
+    pad_h: DynamicCoord[.int64, 2],
+    pad_w: DynamicCoord[.int64, 2],
     num_groups: Int,
 ) -> ConvShape[rank]:
     """Builds a `ConvShape` from the output, input, and filter tile tensors.
@@ -504,11 +499,11 @@ def get_conv_shape[
         filter_dims=filter_dims,
         c=Int(input.dim[rank + 1]()),
         f=Int(output.dim[rank + 1]()),
-        stride=Coord(stride),
-        dilation=Coord(dilation),
-        pad_d=Coord(pad_d),
-        pad_h=Coord(pad_h),
-        pad_w=Coord(pad_w),
+        stride=stride,
+        dilation=dilation,
+        pad_d=pad_d,
+        pad_h=pad_h,
+        pad_w=pad_w,
         num_groups=num_groups,
     )
 
@@ -545,7 +540,7 @@ def get_conv_tile_size[dtype: DType]() -> Int:
 @inline(.always)
 def get_conv_tile_shape[
     dtype: DType,
-](c: Int, filter_window_size: Int, micro_kernel_width: Int,) -> IndexList[2]:
+](c: Int, filter_window_size: Int, micro_kernel_width: Int,) -> Coord[Int, Int]:
     """Compute the (c, f) tile shape in L2.
 
     Assume NHWC layout, the tile shape is (R, S, c_tile, f_tile). R and S are
@@ -584,53 +579,49 @@ def get_conv_tile_shape[
         max(CF_tile_size // c_tile_size // micro_kernel_f, 1) * micro_kernel_f
     )
 
-    return Index(c_tile_size, f_tile_size)
+    return (c_tile_size, f_tile_size)
 
 
 @inline(.always)
-def extend_shape[
-    rank: Int
-](in_shape: IndexList[rank], first: Int, last: Int) -> IndexList[rank + 2]:
+def extend_shape(
+    in_shape: Coord, first: Int, last: Int
+) -> DynamicCoord[.int64, in_shape.rank + 2]:
     """Extend input shape by inserting `first` and `last` at both ends.
-
-    Parameters:
-        rank: Spatial rank of the input shape.
 
     Args:
         in_shape: Input shape to extend.
         first: Value inserted at the front of the shape.
         last: Value inserted at the back of the shape.
     """
-    var out_shape = IndexList[rank + 2](0)
-    out_shape[0] = first
-    out_shape[rank + 1] = last
+    comptime rank = in_shape.rank
+    var out_shape = DynamicCoord[.int64, rank + 2]()
+    out_shape.replace_dynamic[0](Int64(first))
+    out_shape.replace_dynamic[rank + 1](Int64(last))
 
     comptime for i in range(rank):
-        out_shape[i + 1] = in_shape[i]
+        out_shape.replace_dynamic[i + 1](Int64(in_shape[i]))
 
     return out_shape
 
 
 @inline(.always)
-def append_shape[
-    rank: Int
-](in_shape: IndexList[rank], last2nd: Int, last: Int) -> IndexList[rank + 2]:
+def append_shape(
+    in_shape: Coord, last2nd: Int, last: Int
+) -> DynamicCoord[.int64, in_shape.rank + 2]:
     """Append input shape by inserting `last2nd` and `last` at the end.
-
-    Parameters:
-        rank: Spatial rank of the input shape.
 
     Args:
         in_shape: Input shape to extend.
         last2nd: Value inserted at the second-to-last position.
         last: Value inserted at the last position.
     """
-    var out_shape = IndexList[rank + 2](0)
-    out_shape[rank] = last2nd
-    out_shape[rank + 1] = last
+    comptime rank = in_shape.rank
+    var out_shape = DynamicCoord[.int64, rank + 2]()
+    out_shape.replace_dynamic[rank](Int64(last2nd))
+    out_shape.replace_dynamic[rank + 1](Int64(last))
 
     comptime for i in range(rank):
-        out_shape[i] = in_shape[i]
+        out_shape.replace_dynamic[i](Int64(in_shape[i]))
 
     return out_shape
 
@@ -737,12 +728,12 @@ struct ConvInfoStatic[rank: Int](Defaultable):
         return Int(self.pad[0])
 
     @inline(.always)
-    def strides(self) -> IndexList[2]:
-        return Index(self.stride[0], self.stride[1])
+    def strides(self) -> Coord[Int, Int]:
+        return (Int(self.stride[0]), Int(self.stride[1]))
 
     @inline(.always)
-    def dilations(self) -> IndexList[2]:
-        return Index(self.dilation[0], self.dilation[1])
+    def dilations(self) -> Coord[Int, Int]:
+        return (Int(self.dilation[0]), Int(self.dilation[1]))
 
 
 def get_direct_conv_micro_kernel_height() -> Int:
@@ -771,7 +762,7 @@ def get_direct_conv_micro_kernel_width() -> Int:
 
 def get_micro_kernel_shape[
     rank: Int, WO: Int, F: Int, conv_attr: ConvInfoStatic[rank], simd_size: Int
-]() -> IndexList[2]:
+]() -> Coord[Int, Int]:
     """Selects the `(height, width)` micro-kernel tile shape for the target.
 
     When the output width, filter count, and convolution attributes are all
@@ -789,7 +780,7 @@ def get_micro_kernel_shape[
     Args:
 
     Returns:
-        A two-element `IndexList` of `(micro_kernel_height, micro_kernel_width)`.
+        A two-element `Coord` of `(micro_kernel_height, micro_kernel_width)`.
     """
     comptime optimize_static_shapes = WO != UNKNOWN_VALUE and F != UNKNOWN_VALUE and conv_attr.all_known()
 
@@ -800,10 +791,11 @@ def get_micro_kernel_shape[
 
     comptime if optimize_static_shapes:
         # TODO: extend to 1d/3d.
-        comptime pad_h_val = Index(conv_attr.pad[0], conv_attr.pad[2])
-        comptime pad_w_val = Index(conv_attr.pad[1], conv_attr.pad[3])
-        comptime has_padding = pad_h_val != Index(0, 0) or pad_w_val != Index(
-            0, 0
+        comptime has_padding = (
+            Int(conv_attr.pad[0]) != 0
+            or Int(conv_attr.pad[1]) != 0
+            or Int(conv_attr.pad[2]) != 0
+            or Int(conv_attr.pad[3]) != 0
         )
 
         comptime if CompilationTarget.has_avx512f():
@@ -828,9 +820,9 @@ def get_micro_kernel_shape[
                     # E.x. for WO=7 and F=512, 7x2 can be a better micro kernel than 7x3
                     # for multi-threading due to partition granularity (kernel width) in F.
                     if F % (n * simd_size) == 0 and WO <= m:
-                        return Index(WO, n)
+                        return (WO, n)
             # Use 6x4 by default as it achieves the best performance for most shapes.
-            return Index(6, 4)
+            return (6, 4)
 
         comptime if CompilationTarget.has_avx2():
             if has_padding:
@@ -851,26 +843,26 @@ def get_micro_kernel_shape[
                         micro_kernel_height = m
                         micro_kernel_width = n
                         min_num_residual = num_residual
-                return Index(micro_kernel_height, micro_kernel_width)
-            return Index(4, 3)
+                return (micro_kernel_height, micro_kernel_width)
+            return (4, 3)
 
         comptime if CompilationTarget.is_neoverse_n1():
-            return Index(8, 2)
+            return (8, 2)
         elif CompilationTarget.has_neon():  # neon other than neoverse-N1
-            return Index(6, 4)
+            return (6, 4)
 
-        return Index(6, 2)
+        return (6, 2)
 
     else:  # Default options for dynamic shapes.
         comptime if CompilationTarget.has_avx512f():
-            return Index(6, 4)
+            return (6, 4)
         elif CompilationTarget.is_neoverse_n1():
-            return Index(8, 2)
+            return (8, 2)
         elif CompilationTarget.has_neon():  # neon other than neoverse-N1
-            return Index(6, 4)
+            return (6, 4)
         # default, including AVX2
         else:
-            return Index(4, 3)
+            return (4, 3)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -937,7 +929,7 @@ def get_conv_num_tasks(num_threads: Int, conv_shape: ConvShape) -> Int:
 
 def get_conv_num_partitions[
     micro_kernel_w: Int, micro_kernel_f: Int
-](num_threads: Int, conv_shape: ConvShape) -> IndexList[4]:
+](num_threads: Int, conv_shape: ConvShape) -> Coord[Int, Int, Int, Int]:
     """Partition the workload in (batch, C, F, HOWO) dimensions.
     HOWO is the combination of HO and WO dimensions.
     The actual number of tasks are the product of return num_partitions.
@@ -1028,15 +1020,18 @@ def get_conv_num_partitions[
 
     num_row_tasks = num_row_tasks // num_batch_group_tasks
 
-    return Index(
-        num_batch_group_tasks, num_channel_tasks, num_col_tasks, num_row_tasks
+    return (
+        num_batch_group_tasks,
+        num_channel_tasks,
+        num_col_tasks,
+        num_row_tasks,
     )
 
 
 @inline(.always)
 def get_partition(
     task_id: Int,
-    num_partitions: IndexList[4],
+    num_partitions: Coord[Int, Int, Int, Int],
     conv_shape: ConvShape,
     micro_kernel_height: Int,
     micro_kernel_f_size: Int,

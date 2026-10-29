@@ -13,10 +13,11 @@
 
 include "BuildDescription.td"
 
-include "Common/CompilationOptions.td"
+include "Common/BackendOptions.td"
 include "Common/DiagnosticFormatOptions.td"
 include "Common/DiagnosticOptions.td"
-include "Common/TargetOptions.td"
+include "Common/FixItOptions.td"
+include "Common/TargetQueryOptions.td"
 include "Support/Driver/CommonOptions.td"
 
 //===----------------------------------------------------------------------===//

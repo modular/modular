@@ -64,14 +64,14 @@ from max.driver import (
     _ChunkedStagingRegion,
     accelerator_api,
 )
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheGroupId,
     KVCacheMemory,
     KVCacheParamInterface,
     KVConnectorType,
 )
-from max.nn.kv_cache.cache_params import HostStagingAlloc
-from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache.cache_params import HostStagingAlloc
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_pool import (
     compute_jenga_ratios,
 )
@@ -80,9 +80,11 @@ from max.support.human_readable_formatter import to_human_readable_bytes
 
 from ..kv_connector import (
     ByteCount,
+    CompletedProbe,
     KVConnector,
     KVConnectorTransfer,
     KVLoadRefused,
+    KVProbe,
     KVTransfer,
 )
 from ..paged_kv_cache._common import (
@@ -215,10 +217,12 @@ _GTT_SHARED_LIMIT_NOTE = (
 
 
 def _check_gtt_capacity(requested_bytes: int) -> None:
-    """Raises when a driver-allocated host staging region exceeds the node's
-    free GTT (GPU driver pinned memory) -- the limit that binds for
-    ``host_staging_alloc='driver'`` on HIP, where the allocation is NOT
-    charged to this process's memory cgroup."""
+    """Raises when driver-allocated host staging exceeds free GTT.
+
+    GTT is the GPU driver's pinned memory, and it is the limit that binds
+    for ``host_staging_alloc='driver'`` on HIP, where the allocation is NOT
+    charged to this process's memory cgroup.
+    """
     usage = _read_gtt_usage()
     if usage is None:
         logger.warning(
@@ -608,6 +612,7 @@ class TierConnector(KVConnector):
         params: KVCacheParamInterface,
         device_memory_bytes: int,
     ) -> TierConnector:
+        """Builds a tiered connector for the given leaves and replicas."""
         _validate_leaves(leaves)
         leaf0 = next(iter(leaves.keys()))
         cfg = params.kv_connector_config
@@ -821,10 +826,12 @@ class TierConnector(KVConnector):
 
     @property
     def leaves(self) -> Mapping[str, KVCacheGroupId]:
+        """Returns the leaf IDs this connector services."""
         return self._leaves
 
     @property
     def name(self) -> str:
+        """Reports the name ``TieredConnector`` in logs and metrics."""
         return "TieredConnector"
 
     def lookup(
@@ -832,12 +839,13 @@ class TierConnector(KVConnector):
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> Mapping[str, Sequence[bool]]:
         """Which of ``block_hashes`` the host and disk tiers hold, per leaf.
 
-        ``hint`` is ignored for the same reason :meth:`load` ignores it. The
-        Rust side knows leaves only by index, so the answer comes back in
-        ``leaves()`` order and is keyed here.
+        ``hint`` is ignored for the same reason :meth:`load` ignores it, and
+        ``chain_start`` with it. The Rust side knows leaves only by index, so
+        the answer comes back in ``leaves()`` order and is keyed here.
 
         Takes no pin, and the disk index is not this thread's alone: an
         offload's write-through LRU-evicts from it on the disk-write lane. A
@@ -869,6 +877,36 @@ class TierConnector(KVConnector):
                 f"{len(leaf_ids)}-leaf tree over {width} blocks"
             )
         return dict(zip(leaf_ids, resident, strict=True))
+
+    def probe(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idxs: Sequence[int],
+        hint: bytes | None = None,
+    ) -> Sequence[Mapping[str, Sequence[bool]]]:
+        """Answers every replica with one :meth:`lookup`.
+
+        The tiers are keyed by hash alone, so every replica can load the same
+        blocks.
+        """
+        return [self.lookup(block_hashes, hint=hint)] * len(replica_idxs)
+
+    def start_probe(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idxs: Sequence[int],
+        hint: bytes | None = None,
+    ) -> KVProbe:
+        """Answers :meth:`probe` at once, as a handle the manager keeps.
+
+        The manager reads it again at the request's first allocation, which
+        then loads from it rather than looking up again.
+        """
+        return CompletedProbe(self.probe(block_hashes, replica_idxs, hint))
+
+    def probe_is_lookup(self) -> bool:
+        """Returns ``True``, since :meth:`probe` is one :meth:`lookup`."""
+        return True
 
     def load(
         self,
@@ -995,6 +1033,7 @@ class TierConnector(KVConnector):
             logger.exception("Tier touch skipped")
 
     def shutdown(self) -> None:
+        """Stops the native lanes and releases the host and disk regions."""
         if self._shutdown:
             return
         self._shutdown = True
@@ -1009,6 +1048,7 @@ class TierConnector(KVConnector):
 
     @property
     def host_byte_count(self) -> ByteCount:
+        """Reports free and total pinned host bytes."""
         return ByteCount(
             free=self._native.free_host_bytes(),
             total=self._native.host_bytes(),
@@ -1016,12 +1056,14 @@ class TierConnector(KVConnector):
 
     @property
     def disk_byte_count(self) -> ByteCount:
+        """Reports free and total offload directory bytes."""
         return ByteCount(
             free=self._native.free_disk_bytes(),
             total=self._native.disk_bytes(),
         )
 
     def reset_prefix_cache(self) -> None:
+        """Clears the native prefix cache."""
         self._native.reset_prefix_cache()
 
     def _wrap_native_metrics(
@@ -1039,9 +1081,11 @@ class TierConnector(KVConnector):
 
     @property
     def metrics(self) -> KVCacheMetrics:
+        """Reports transfer counters without resetting them."""
         return self._wrap_native_metrics(*self._native.metrics())
 
     def take_metrics(self) -> KVCacheMetrics:
+        """Reports transfer counters and resets the refusal counters."""
         metrics = self._wrap_native_metrics(*self._native.take_metrics())
         self._loads_refused = 0
         self._offload_blocks_dropped = 0

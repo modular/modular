@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Idefics3 text model, a Llama 3 decoder."""
 
 from __future__ import annotations
 
@@ -22,12 +23,12 @@ from max import tree
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorValue, Type, Value, ops
 from max.graph import Module as GraphModule
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
 )
-from max.nn.transformer import DecoderOutputs
+from max.nn.legacy.transformer import DecoderOutputs
 from max.pipelines.architectures.llama3.llama3 import Llama3
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.lib.interfaces.batch_processor import (
@@ -116,8 +117,9 @@ class Idefics3LanguageModel(Llama3):
         custom_extensions: Iterable[Path] = (),
         is_device_graph: bool = False,
     ) -> Graph:
-        """Traces the language graph, whose inputs are :meth:`input_tree`'s
-        leaves.
+        """Traces the language graph.
+
+        The graph's inputs are the leaves of :meth:`input_tree`.
 
         Args:
             *input_types: The graph's input types, the leaves of
@@ -181,7 +183,7 @@ class Idefics3LanguageModel(Llama3):
 
         Args:
             tokens: Input token IDs to process.
-            kv_cache_inputs: KV cache inputs for each device.
+            kv_collection: The paged cache values the graph reads and writes.
             return_n_logits: Number of logits to return.
             input_row_offsets: Offsets for flattened input sequences.
             image_embeddings: Image embeddings to merge into text embeddings,

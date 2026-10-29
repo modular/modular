@@ -30,7 +30,6 @@ from linalg.matmul.gpu.sm100.blockwise_fp8 import (
 )
 from linalg.utils import _as_compute_fn
 
-from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 
 
@@ -42,7 +41,7 @@ def test_matmul_sm100_blockwise_scaled_fp8[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    umma_shape: DynamicCoord[.int, 3],
+    umma_shape: Tuple[Int, Int, Int],
     swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_b: Bool = True,
     value_epilogue: Bool = False,

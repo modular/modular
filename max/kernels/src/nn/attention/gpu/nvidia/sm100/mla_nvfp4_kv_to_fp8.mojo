@@ -41,6 +41,11 @@ from std.memory import bitcast
 
 from max.gpu import WARP_SIZE, block_idx, global_idx, lane_id, thread_idx
 from max.gpu.host import DeviceContext
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 
 from kv_cache.types import (
     KVCacheStaticParams,
@@ -95,7 +100,7 @@ def nvfp4_prefill_converts_once(
     Converting costs per context row and saves per query token, so it pays
     off while rows per query token stay under `ratio` (0 turns it off).
     `max_rows` caps the scratch, which the memory planner reserves through
-    `nvfp4_mla_prefill_convert_bytes` in `max.nn.kernels`.
+    `nvfp4_mla_prefill_convert_bytes` in `max.nn.legacy.kernels`.
     """
     return (
         ratio > 0
@@ -149,28 +154,36 @@ def _convert_pages_kernel[
     comptime page_size = cache_t.page_size_
     var slot = Int(block_idx.x)
     var b, page = divmod(slot, Int(pages_per_seq))
-    var context = cache.cache_length(b) + Int(
-        input_row_offsets[b + 1] - input_row_offsets[b]
-    )
-    if page * page_size >= context:
-        return
-    var first_tok = UInt32(page * page_size)
-    var value_base = Int(cache.row_idx(UInt32(b), first_tok))
-    var scale_base = Int(cache.scale_row_idx(UInt32(b), first_tok))
-    if thread_idx.x == 0:
-        # `get_tma_row(page_size)` is the distance between blocks in rows.
-        var block_rows = Int(cache.get_tma_row(Int32(page_size)))
-        page_slots[value_base // block_rows] = UInt32(slot)
-    var values = cache.blocks_raw_ptr().unsafe_bitcast[Scalar[DType.uint8]]()
-    var scales = cache.scales_raw_ptr().unsafe_bitcast[Scalar[DType.uint8]]()
-    var lane = Int(lane_id())
-    for r in range(Int(thread_idx.x // WARP_SIZE), page_size, _WARPS_PER_BLOCK):
-        _convert_row(
-            values.unsafe_offset((value_base + r) * _PACKED_ROW_BYTES),
-            scales.unsafe_offset((scale_base + r) * _SF_ROW_BYTES),
-            fp8.unsafe_offset((slot * page_size + r) * _FP8_ROW_BYTES),
-            lane,
+
+    with PDL():
+        var context = cache.cache_length(b) + Int(
+            input_row_offsets[b + 1] - input_row_offsets[b]
         )
+        if page * page_size >= context:
+            return
+        var first_tok = UInt32(page * page_size)
+        var value_base = Int(cache.row_idx(UInt32(b), first_tok))
+        var scale_base = Int(cache.scale_row_idx(UInt32(b), first_tok))
+        if thread_idx.x == 0:
+            # `get_tma_row(page_size)` is the distance between blocks in rows.
+            var block_rows = Int(cache.get_tma_row(Int32(page_size)))
+            page_slots[value_base // block_rows] = UInt32(slot)
+        var values = cache.blocks_raw_ptr().unsafe_bitcast[
+            Scalar[DType.uint8]
+        ]()
+        var scales = cache.scales_raw_ptr().unsafe_bitcast[
+            Scalar[DType.uint8]
+        ]()
+        var lane = Int(lane_id())
+        for r in range(
+            Int(thread_idx.x // WARP_SIZE), page_size, _WARPS_PER_BLOCK
+        ):
+            _convert_row(
+                values.unsafe_offset((value_base + r) * _PACKED_ROW_BYTES),
+                scales.unsafe_offset((scale_base + r) * _SF_ROW_BYTES),
+                fp8.unsafe_offset((slot * page_size + r) * _FP8_ROW_BYTES),
+                lane,
+            )
 
 
 def _remap_kernel[
@@ -192,22 +205,24 @@ def _remap_kernel[
     """
     var i = Int(global_idx.x) * _REMAP_WIDTH
     var tok, slot = divmod(i, Int(dst_stride))
-    if tok >= Int(num_tokens):
-        return
-    var out = SIMD[DType.int32, _REMAP_WIDTH](-1)
-    if slot < Int(top_k):
-        var rows = indices.unsafe_offset(
-            tok * Int(src_stride) + slot
-        ).unsafe_load[width=_REMAP_WIDTH, alignment=16]()
-        comptime for j in range(_REMAP_WIDTH):
-            var row = Int(rows[j])
-            if row >= 0:
-                var block, offset = divmod(row, page_size)
-                if block < Int(num_blocks):
-                    var page = page_slots[block]
-                    if page != _NO_PAGE:
-                        out[j] = Int32(Int(page) * page_size + offset)
-    dense.unsafe_offset(i).unsafe_store[alignment=16](out)
+
+    with PDL():
+        if tok >= Int(num_tokens):
+            return
+        var out = SIMD[DType.int32, _REMAP_WIDTH](-1)
+        if slot < Int(top_k):
+            var rows = indices.unsafe_offset(
+                tok * Int(src_stride) + slot
+            ).unsafe_load[width=_REMAP_WIDTH, alignment=16]()
+            comptime for j in range(_REMAP_WIDTH):
+                var row = Int(rows[j])
+                if row >= 0:
+                    var block, offset = divmod(row, page_size)
+                    if block < Int(num_blocks):
+                        var page = page_slots[block]
+                        if page != _NO_PAGE:
+                            out[j] = Int32(Int(page) * page_size + offset)
+        dense.unsafe_offset(i).unsafe_store[alignment=16](out)
 
 
 def mla_prefill_sparse_nvfp4_via_fp8[
@@ -289,6 +304,7 @@ def mla_prefill_sparse_nvfp4_via_fp8[
         Int32(pages_per_seq),
         grid_dim=num_pages,
         block_dim=block_threads,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
     var remap_threads = num_tokens * dense_stride // _REMAP_WIDTH
     ctx.enqueue_function[_remap_kernel[page_size]](
@@ -302,6 +318,7 @@ def mla_prefill_sparse_nvfp4_via_fp8[
         Int32(num_blocks),
         grid_dim=ceildiv(remap_threads, block_threads),
         block_dim=block_threads,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
     # The FP8 kernel addresses rows through the indices alone, so the scratch

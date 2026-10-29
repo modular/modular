@@ -205,8 +205,8 @@ def _system_prompt_template(variant: int) -> str:
 class ScaledUserMessage:
     """User message scaled to a per-turn token budget, with optional sys prefix.
 
-    `content` is the full text sent to the model
-    (`sys_prefix.text + "\\n\\n" + user_body_scaled` when `sys_prefix` is set).
+    `content` is the full text sent to the model: `sys_prefix.text`, a blank
+    line, then `user_body_scaled`, when `sys_prefix` is set.
     `sys_prefix` describes the leading sys-prefix slice, or `None` when
     `sys_prompt_ratio <= 0`.
     """

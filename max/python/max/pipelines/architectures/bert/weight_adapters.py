@@ -42,6 +42,7 @@ BERT_SAFETENSOR_MAP: dict[str, str | None] = {
 def convert_safetensor_state_dict(
     state_dict: Mapping[str, Weights],
 ) -> dict[str, WeightData]:
+    """Renames the checkpoint's weights for the module tree."""
     new_state_dict: dict[str, WeightData] = {}
     value: Weights | None
 

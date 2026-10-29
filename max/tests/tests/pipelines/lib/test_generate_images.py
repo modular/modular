@@ -315,6 +315,11 @@ Call = Callable[[FakeImagePipeline, FakeImageTokenizer], object]
             id="no-images",
         ),
         pytest.param(
+            lambda p, t: generate_images(p, t, "a", num_images_per_prompt=5),
+            "num_images_per_prompt must be at most 4, got 5.",
+            id="too-many-images",
+        ),
+        pytest.param(
             lambda p, t: generate_images(p, t, "a", seed=-1),
             "seed must be in [0, 2**32), got -1.",
             id="negative-seed",

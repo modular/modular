@@ -11,7 +11,7 @@ guide](https://max.modular.com/get-started).
 ## Set up your environment
 
 First, make sure your system meets the
-[MAX system requirements](https://max.modular.com/packages#system-requirements).
+[MAX system requirements](https://max.modular.com/system-requirements/).
 The same requirements that apply to the `modular` package apply to developing in
 this repo.
 

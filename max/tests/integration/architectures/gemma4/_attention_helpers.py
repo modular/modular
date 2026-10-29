@@ -27,9 +27,9 @@ import torch
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
-from max.nn.layer import Module
-from max.nn.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.legacy.kv_cache import MHAKVCacheParams, PagedCacheValues
+from max.nn.legacy.layer import Module
+from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.gemma4.layers.attention import (
     Gemma4Attention as MaxGemma4Attention,
 )

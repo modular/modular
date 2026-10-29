@@ -152,7 +152,7 @@ struct QuickLogger:
     def __deinit__(deinit self):
         try:
             print(t"Closing: {self.temporary_file.name}")
-            self.temporary_file.close()
+            self.temporary_file^.close()
         except e:
             print(t"Error: {e}")
 

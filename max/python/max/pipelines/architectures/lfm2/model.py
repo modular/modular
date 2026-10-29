@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The LFM2 pipeline model."""
 
 from __future__ import annotations
 
@@ -21,7 +22,7 @@ from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
@@ -90,15 +91,20 @@ def _split_buffer_dim0(buf: Buffer, device: Device) -> list[Buffer]:
 
 @dataclass
 class LFM2Inputs(Llama3Inputs):
+    """The graph inputs of one LFM2 step."""
+
     conv_states: list[Buffer] = dataclasses.field(default_factory=list)
     request_ids: list[RequestID] = dataclasses.field(default_factory=list)
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
+        """The step's buffers, in the graph's input order."""
         return super().buffers + tuple(self.conv_states)
 
 
 class ConvStateCache:
+    """Per-request slots for the convolution states."""
+
     def __init__(
         self,
         num_conv_layers: int,
@@ -128,6 +134,7 @@ class ConvStateCache:
         ]
 
     def claim(self, request_id: RequestID) -> None:
+        """Returns the slot a request writes its convolution state to."""
         if request_id in self._request_to_slot:
             return
         if not self._free:
@@ -137,6 +144,7 @@ class ConvStateCache:
         self._slots[slot] = self._make_slot()
 
     def release(self, request_id: RequestID) -> None:
+        """Frees the slot a request held."""
         slot = self._request_to_slot.pop(request_id, None)
         if slot is not None:
             self._free.add(slot)
@@ -289,6 +297,7 @@ class LFM2Model(LlamaModelBase):
         return 1 + 2 * int(has_offsets) + int(has_hidden)
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
+        """Runs the model and returns its outputs."""
         assert isinstance(model_inputs, LFM2Inputs)
         all_outputs = self.model.execute(*model_inputs.buffers)
         n_logit = self._num_logit_outputs()
@@ -326,4 +335,5 @@ class LFM2Model(LlamaModelBase):
         )
 
     def release(self, request_id: RequestID) -> None:
+        """Frees the request's convolution state slot."""
         self._conv_cache.release(request_id)

@@ -803,7 +803,7 @@ ErrorOr<ModelsWithBuffer> ConstantFoldPass::lowerSubgraphs(ModuleOp module) {
     return bufOr.takeError();
   BufferRef buf = bufOr.takeValue();
 
-  auto mefFileOr = MEFFile::open(buf->getBuffer());
+  auto mefFileOr = MEFFile::open(buf.copy());
   if (mefFileOr.isError())
     return mefFileOr.takeError();
   auto modelsOr = M::loadMGPMEFFile(std::move(*mefFileOr));

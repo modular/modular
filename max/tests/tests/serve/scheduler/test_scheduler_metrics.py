@@ -22,7 +22,7 @@ from typing import Any
 from unittest.mock import MagicMock, call, patch
 
 import pytest
-from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache import JengaKVCacheManager
 from max.pipelines.kv_cache.kv_connector import BlockCount, ByteCount
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_manager import (
@@ -493,6 +493,7 @@ def test_dkv_peer_counters_report_zero_while_a_tier_is_attached() -> None:
     mock_metrics.dkv_peer_loads.assert_called_once_with(0)
     mock_metrics.dkv_peer_load_failures.assert_called_once_with(0)
     mock_metrics.dkv_hints_rejected.assert_called_once_with(0)
+    mock_metrics.dkv_hints_unused.assert_called_once_with(0)
     mock_metrics.dkv_peer_transfer_failures.assert_called_once_with(0)
     mock_metrics.dkv_peer_metadata_refreshes.assert_called_once_with(0)
     mock_metrics.dkv_peer_metadata_refresh_failures.assert_called_once_with(0)
@@ -504,6 +505,7 @@ def test_dkv_peer_counters_report_zero_while_a_tier_is_attached() -> None:
     assert extra["dkv_peer_transfer_failures"] == 0
     assert extra["dkv_peer_metadata_refresh_failures"] == 0
     assert extra["dkv_hints_rejected"] == 0
+    assert extra["dkv_hints_unused"] == 0
 
     # the console line stays quiet, since there is nothing to say about peers
     assert "dKV peers" not in metrics.pretty_format()
@@ -519,6 +521,7 @@ def test_dkv_peer_counters_are_silent_without_a_tier() -> None:
     mock_metrics.dkv_peer_attaches.assert_not_called()
     mock_metrics.dkv_peer_loads.assert_not_called()
     mock_metrics.dkv_hints_rejected.assert_not_called()
+    mock_metrics.dkv_hints_unused.assert_not_called()
     mock_metrics.dkv_touches_deduplicated.assert_not_called()
     mock_metrics.dkv_settle_queue_depth.assert_not_called()
     mock_metrics.dkv_settle_jobs_finished.assert_not_called()
@@ -529,6 +532,7 @@ def test_dkv_peer_counters_are_silent_without_a_tier() -> None:
     assert "dkv_touches_deduplicated" not in extra
     assert "dkv_settle_queue_depth" not in extra
     assert "dkv_hints_rejected" not in extra
+    assert "dkv_hints_unused" not in extra
 
 
 def test_dkv_settle_metrics_reach_the_log_and_the_published_metrics() -> None:
@@ -576,11 +580,13 @@ def test_dkv_peer_counters_carry_their_values_to_every_surface() -> None:
         dkv_peer_loads=3,
         dkv_peer_load_failures=4,
         dkv_hints_rejected=5,
+        dkv_hints_unused=12,
         dkv_peer_transfer_failures=7,
         dkv_peer_metadata_refreshes=8,
         dkv_peer_metadata_refresh_failures=9,
         dkv_touches_deduplicated=11,
         dkv_hints_rejected_by_reason={"chain_mismatch": 5, "unparseable": 0},
+        dkv_hints_unused_by_reason={"past_end": 12, "gapped": 0},
         dkv_rpc_calls={"read_blocks": 3, "heartbeat": 0},
         dkv_rpc_time_ms={"read_blocks": 2.5, "heartbeat": 0.0},
         dkv_rpc_socket_wait_ms={"read_blocks": 0.5},
@@ -603,6 +609,7 @@ def test_dkv_peer_counters_carry_their_values_to_every_surface() -> None:
     assert extra["dkv_peer_loads"] == 3
     assert extra["dkv_peer_load_failures"] == 4
     assert extra["dkv_hints_rejected"] == 5
+    assert extra["dkv_hints_unused"] == 12
     assert extra["dkv_peer_transfer_failures"] == 7
     assert extra["dkv_peer_metadata_refreshes"] == 8
     assert extra["dkv_peer_metadata_refresh_failures"] == 9
@@ -622,6 +629,8 @@ def test_dkv_peer_counters_carry_their_values_to_every_surface() -> None:
     }
     assert extra["dkv_hints_rejected_chain_mismatch"] == 5
     assert "dkv_hints_rejected_unparseable" not in extra
+    assert extra["dkv_hints_unused_past_end"] == 12
+    assert "dkv_hints_unused_gapped" not in extra
 
     with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
         metrics.publish_metrics()
@@ -632,12 +641,16 @@ def test_dkv_peer_counters_carry_their_values_to_every_surface() -> None:
     mock_metrics.dkv_peer_loads.assert_called_once_with(3)
     mock_metrics.dkv_peer_load_failures.assert_called_once_with(4)
     mock_metrics.dkv_hints_rejected.assert_called_once_with(5)
+    mock_metrics.dkv_hints_unused.assert_called_once_with(12)
     mock_metrics.dkv_peer_transfer_failures.assert_called_once_with(7)
     mock_metrics.dkv_peer_metadata_refreshes.assert_called_once_with(8)
     mock_metrics.dkv_peer_metadata_refresh_failures.assert_called_once_with(9)
     mock_metrics.dkv_touches_deduplicated.assert_called_once_with(11)
     mock_metrics.dkv_hints_rejected_by_reason.assert_called_once_with(
         5, reason="chain_mismatch"
+    )
+    mock_metrics.dkv_hints_unused_by_reason.assert_called_once_with(
+        12, reason="past_end"
     )
     mock_metrics.dkv_rpc_calls.assert_called_once_with(3, op="read_blocks")
     mock_metrics.dkv_rpc_time_ms.assert_called_once_with(2.5, op="read_blocks")
@@ -677,6 +690,7 @@ def test_dkv_per_call_counters_publish_one_series_per_label() -> None:
         dkv_blocked_calls={"poll_transfers": 6, "offload": 0},
         dkv_blocked_ms={"poll_transfers": 2.5, "offload": 0.0},
         dkv_hints_rejected_by_reason={"chain_mismatch": 7, "unparseable": 0},
+        dkv_hints_unused_by_reason={"window_ahead": 3, "past_end": 0},
     )
 
     with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
@@ -708,6 +722,9 @@ def test_dkv_per_call_counters_publish_one_series_per_label() -> None:
     )
     mock_metrics.dkv_hints_rejected_by_reason.assert_called_once_with(
         7, reason="chain_mismatch"
+    )
+    mock_metrics.dkv_hints_unused_by_reason.assert_called_once_with(
+        3, reason="window_ahead"
     )
 
 
@@ -1698,7 +1715,7 @@ def test_scheduler_overlap_attributes_execution_metrics_to_completed_batch() -> 
 
     Regression test: previously a CE batch's execution time was published
     under the next iteration's batch type (usually TG), corrupting the CE/TG
-    split of maxserve.batch_execution_time and both throughput histograms.
+    split of max.batch.execution_time and both throughput histograms.
     """
     recorder = _ExecMetricsRecorder()
     with patch("max.serve.scheduler.utils.METRICS", recorder):
@@ -1993,7 +2010,7 @@ def test_dp_context_occupancy_in_log_line_and_extra() -> None:
 
 
 def test_cache_hit_tiers_sum_to_the_untagged_total() -> None:
-    """CLIN-1785: ``maxserve.cache.hits`` carries a ``tier`` attribute.
+    """CLIN-1785: ``max.cache.hits`` carries a ``tier`` attribute.
 
     The whole design rests on one invariant: the per-tier points SUM to the
     counter's untagged total. That is what lets the dashboard replace a
@@ -2052,7 +2069,7 @@ def test_cold_cache_still_stamps_the_device_tier() -> None:
 
     Before the tier label this recorded ``cache_hits(0)``, which creates and
     keeps the series alive. Skipping every empty tier would leave
-    ``maxserve_cache_hits_tokens_total`` absent on a cold server, and
+    ``max_cache_hits_tokens_total`` absent on a cold server, and
     ``rate()``/``sum()`` over an absent series returns no data rather than
     zero, which reads as a broken panel instead of a cold cache.
     """
@@ -2286,7 +2303,110 @@ def test_dkv_fail_open_counters_are_silent_without_a_tier() -> None:
     mock_metrics.dkv_prepare_load_degraded.assert_not_called()
     mock_metrics.dkv_load_with_plan_degraded.assert_not_called()
     mock_metrics.dkv_load_with_plan_expired.assert_not_called()
+    mock_metrics.dkv_peer_rounds_while_degraded.assert_not_called()
     assert "dkv_prepare_load_degraded" not in metrics.to_log_extra()
+
+
+def test_dkv_peer_rounds_while_degraded_reach_the_log_and_the_counters() -> (
+    None
+):
+    """Rounds hinted peers served while dKV was down publish beside the
+    fail-opens, so a dKV restart shows how much of it the peers covered."""
+    kv_cache = MagicMock()
+    kv_cache.block_count.return_value = BlockCount(free=60, total=100)
+    kv_cache.pressure_pct.return_value = 40.0
+    kv_cache.host_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.disk_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.take_metrics_aggregated.return_value = KVCacheMetrics(
+        dkv_total_clients=1,
+        dkv_peer_rounds_while_degraded=7,
+    )
+
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(),
+        inputs=_mock_inputs(batch_size=1, batch_type=BatchType.TG),
+        kv_cache=kv_cache,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+    )
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    assert metrics.dkv_peer_rounds_while_degraded == 7
+    mock_metrics.dkv_peer_rounds_while_degraded.assert_called_once_with(7)
+    assert metrics.to_log_extra()["dkv_peer_rounds_while_degraded"] == 7
+
+
+_DKV_ORPHAN_FIELDS = {
+    "dkv_orphan_cleanups_reissued": 1,
+    "dkv_orphan_cleanups_abandoned": 2,
+    "dkv_orphan_cleanups_dropped": 3,
+    "dkv_orphan_cleanups_refused": 4,
+    "dkv_orphan_cleanups_expired": 5,
+    "dkv_orphan_queue_depth": 6,
+}
+
+
+def test_create_carries_dkv_orphan_metrics_through() -> None:
+    """The orphan queue's outcome counts and depth reach the batch."""
+    kv_cache = MagicMock()
+    kv_cache.block_count.return_value = BlockCount(free=60, total=100)
+    kv_cache.pressure_pct.return_value = 40.0
+    kv_cache.host_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.disk_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.take_metrics_aggregated.return_value = KVCacheMetrics(
+        dkv_total_clients=1,
+        dkv_orphan_cleanups_reissued=1,
+        dkv_orphan_cleanups_abandoned=2,
+        dkv_orphan_cleanups_dropped=3,
+        dkv_orphan_cleanups_refused=4,
+        dkv_orphan_cleanups_expired=5,
+        dkv_orphan_queue_depth=6,
+    )
+
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(),
+        inputs=_mock_inputs(batch_size=1, batch_type=BatchType.TG),
+        kv_cache=kv_cache,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+    )
+
+    for name, value in _DKV_ORPHAN_FIELDS.items():
+        assert getattr(metrics, name) == value, name
+
+
+def test_dkv_orphan_metrics_reach_the_log_and_the_meters() -> None:
+    """Published while a tier is attached, as the fail-open counters are."""
+    metrics = _make_metrics(
+        dkv_connected_clients=0, dkv_total_clients=1, **_DKV_ORPHAN_FIELDS
+    )
+
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    extra = metrics.to_log_extra()
+    for name, value in _DKV_ORPHAN_FIELDS.items():
+        getattr(mock_metrics, name).assert_called_once_with(value)
+        assert extra[name] == value, name
+
+
+def test_dkv_orphan_metrics_are_silent_without_a_tier() -> None:
+    metrics = _make_metrics()
+
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    extra = metrics.to_log_extra()
+    for name in _DKV_ORPHAN_FIELDS:
+        getattr(mock_metrics, name).assert_not_called()
+        assert name not in extra, name
 
 
 def test_connector_loads_refused_publish_for_a_dkv_tier() -> None:

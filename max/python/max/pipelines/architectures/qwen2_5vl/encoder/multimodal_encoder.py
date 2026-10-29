@@ -31,7 +31,7 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.graph.type import BufferType
 from max.graph.weights import WeightData, Weights
-from max.nn.comm import Signals
+from max.nn.legacy.comm import Signals
 from max.pipelines.context import TokenBuffer
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.modeling.config_enums import supported_encoding_dtype
@@ -401,6 +401,7 @@ class Qwen25VLMultimodalEncoderModel:
         images: list[npt.NDArray[np.uint8]] | None = None,
         num_images_per_prompt: int = 1,
     ) -> Buffer:
+        """Runs the vision tower, then splices the embeddings into the tokens."""
         device = self.devices[0]
 
         pixel_values_u16: npt.NDArray[np.uint16] | None = None

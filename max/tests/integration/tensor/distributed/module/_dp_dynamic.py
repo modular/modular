@@ -27,7 +27,7 @@ from typing import ClassVar
 import numpy as np
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental.functional import (
+from max.functional import (
     add,
     matmul,
     relu,
@@ -37,15 +37,15 @@ from max.experimental.functional import (
     transpose,
     unsqueeze,
 )
-from max.experimental.nn.module import Module, module_dataclass
-from max.experimental.sharding import (
+from max.nn.module import Module, module_dataclass
+from max.tensor import Tensor
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Replicated,
     Sharded,
     TensorLayout,
 )
-from max.experimental.tensor import Tensor
 
 F32 = DType.float32
 H = 4

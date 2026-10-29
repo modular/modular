@@ -9,7 +9,7 @@ modular_py_binary(
     imports = ["."],
     deps = [
         "//max/python/max:tensor",
-        "//max/python/max/experimental/nn",
+        "//max/python/max/nn",
     ],
 )
 

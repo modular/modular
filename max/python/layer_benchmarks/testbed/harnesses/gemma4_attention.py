@@ -49,8 +49,8 @@ import torch  # type: ignore[import-not-found]
 from max.driver import DLPackArray
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.kv_cache import MHAKVCacheParams
-from max.nn.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.gemma4.layers.attention import Gemma4Attention
 
 from testbed.harnesses.ragged_attention_harness import (
@@ -63,6 +63,8 @@ from testbed.registry import register_harness
 
 @dataclass
 class Gemma4AttentionStaticParams(AttentionStaticParams):
+    """Static parameters for the Gemma4 attention harness."""
+
     rope_theta: float = 1000000.0
     qk_norm_eps: float = 1e-6
     local_window_size: int = 1024
@@ -84,15 +86,22 @@ class Gemma4AttentionHarness(
 
     @staticmethod
     def static_params_type() -> type:
+        """Returns the static parameters type for the Gemma4 harness."""
         return Gemma4AttentionStaticParams
 
     @property
     def name(self) -> str:
+        """Returns the harness name, suffixed with the attention scope.
+
+        The suffix is ``local`` for a sliding layer and ``global`` for a
+        full-attention layer.
+        """
         is_sliding = self.static_params.is_sliding
         suffix = "local" if is_sliding else "global"
         return f"gemma4_attention_{suffix}"
 
     def build_graph(self) -> tuple[Graph, dict[str, DLPackArray]]:
+        """Builds the Gemma4 attention graph with its paged KV cache inputs."""
         p = self.static_params
         hidden_size = p.hidden_size
         n_heads = p.n_heads
@@ -225,6 +234,7 @@ class Gemma4AttentionHarness(
     def torch_reference_layer(
         self, device: str = "cuda"
     ) -> tuple[Any, dict[str, Any]]:
+        """Raises because no Gemma4 reference model is available."""
         raise NotImplementedError(
             "No HuggingFace Gemma4 model available for correctness testing"
         )
@@ -235,6 +245,7 @@ class Gemma4AttentionHarness(
         dynamic_params: AttentionDynamicParams,
         device: str = "cuda",
     ) -> list[Any]:
+        """Raises because no Gemma4 reference model is available."""
         raise NotImplementedError(
             "No HuggingFace Gemma4 model available for correctness testing"
         )

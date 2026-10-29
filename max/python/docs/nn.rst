@@ -4,7 +4,7 @@
 :wrapper_class: rst-module-autosummary
 
 max.nn
-======
+===================
 
 .. automodule:: max.nn
    :no-members:
@@ -17,27 +17,17 @@ Submodules
 .. autosummary::
    :nosignatures:
 
-   max.nn.attention
-   max.nn.comm
-   max.nn.graph_groups
-   max.nn.kernels
-   max.nn.kv_cache
-   max.nn.moe
-   max.nn.sampling
-   max.nn.state_space
+   max.nn.legacy
+   max.nn.norm
+   max.nn.rope
 
 .. toctree::
    :maxdepth: 1
    :hidden:
 
-   nn.attention
-   nn.comm
-   nn.graph_groups
-   nn.kernels
-   nn.kv_cache
-   nn.moe
-   nn.sampling
-   nn.state_space
+   nn.legacy
+   nn.norm
+   nn.rope
 
 Base classes
 ------------
@@ -47,14 +37,11 @@ Base classes
    :toctree: generated
    :template: autosummary/class.rst
 
-   Identity
-   Layer
-   LayerList
-   MissingLayer
    Module
+   ModuleList
+   PinnedDeviceTensor
    Sequential
-   Shardable
-   Signals
+   TransparentModule
 
 Linear layers
 -------------
@@ -64,156 +51,49 @@ Linear layers
    :toctree: generated
    :template: autosummary/class.rst
 
-   ColumnParallelLinear
-   Embedding
-   GPTQLinear
-   Linear
-   MLP
-   StackedLinear
-   VocabParallelEmbedding
-
-Normalization
--------------
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   ConstantLayerNorm
-   GroupNorm
-   LayerNorm
-   RMSNorm
-
-Rotary embeddings
------------------
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   DynamicRotaryEmbedding
-   LinearScalingParams
-   Llama3RopeScalingParams
-   Llama3RotaryEmbedding
-   LongRoPERotaryEmbedding
-   LongRoPEScalingParams
-   RotaryEmbedding
-   YarnRotaryEmbedding
-   YarnScalingParams
-
-Transformer
------------
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   DistributedTransformer
-   DistributedTransformerBlock
-   HyperConnection
-   ReturnHiddenStates
-   ReturnLogits
-   Transformer
-   TransformerBlock
-   ~max.nn.transformer.DistributedLogitsPostprocessMixin
-   ~max.nn.transformer.LogitsPostprocessMixin
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/function.rst
-
-   ~max.nn.transformer.distributed_logits_postprocess
-   ~max.nn.transformer.forward_sequential_layers
-   ~max.nn.transformer.logits_outputs
-   ~max.nn.transformer.logits_postprocess
-
-Convolution
------------
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   Conv1D
    Conv2d
-   Conv3D
-   ConvTranspose1d
-   WeightNormConvTranspose1d
+   Embedding
+   Linear
 
-Mixture of experts
-------------------
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   Allreduce
-   ~max.nn.comm.ep.EPCommBuffers
-   MoE
-   MoEGate
-   MoEQuantized
-
-Parallelism
------------
+Attention and rotary embeddings
+-------------------------------
 
 .. autosummary::
    :nosignatures:
    :toctree: generated
    :template: autosummary/class.rst
 
-   ~max.nn.parallel.ParallelArrayOps
+   ~max.nn.common_layers.attention.AttentionWithRope
+   ~max.nn.common_layers.rotary_embedding.RotaryEmbedding
+   ~max.nn.common_layers.rotary_embedding.YarnRotaryEmbedding
 
-Sampling
---------
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   MinPSampler
-   RejectionSampler
-   RejectionSamplerWithResiduals
-
-Quantization
-------------
+LoRA
+----
 
 .. autosummary::
    :nosignatures:
    :toctree: generated
    :template: autosummary/class.rst
 
-   QuantConfig
-   QuantFormat
-   WeightSource
-   InputScaleSpec
-   ScaleGranularity
-   ScaleOrigin
-   WeightScaleSpec
-
-Hooks
------
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/class.rst
-
-   ~max.nn.hooks.PrintHook
+   LoRA
 
 .. autosummary::
    :nosignatures:
    :toctree: generated
    :template: autosummary/function.rst
 
-   ~max.nn.layer.add_layer_hook
-   ~max.nn.layer.clear_hooks
+   lora_layers
+   lora_parameters
+
+Hyper-connection
+----------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   HyperConnection
 
 Functions
 ---------
@@ -223,8 +103,17 @@ Functions
    :toctree: generated
    :template: autosummary/function.rst
 
-   build_max_lengths_tensors
-   clamp
-   forward_moe_sharded_layers
-   split_batch
-   split_batch_replicated
+   as_subgraph
+   module_dataclass
+
+Mesh axes
+---------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/data.rst
+
+   ~max.nn.common_layers.mesh_axis.DP
+   ~max.nn.common_layers.mesh_axis.EP
+   ~max.nn.common_layers.mesh_axis.TP

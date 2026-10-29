@@ -22,8 +22,8 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import WeightData
-from max.nn.kv_cache import KVCacheParams
-from max.nn.quant_config import (
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -31,8 +31,8 @@ from max.nn.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.rotary_embedding import Llama3RopeScalingParams
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.rotary_embedding import Llama3RopeScalingParams
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -107,8 +107,10 @@ def _build_llama4_fp8_quant_config(
     huggingface_config: AutoConfig,
     dtype: DType,
 ) -> QuantConfig | None:
-    """Builds the :class:`QuantConfig` for a compressed-tensors float-quantized
-    (FP8 e4m3) Llama4 checkpoint.
+    """Builds the :class:`QuantConfig` of an FP8 Llama4 checkpoint.
+
+    The checkpoint is a compressed-tensors float-quantized (FP8 e4m3) Llama4
+    checkpoint.
 
     The released ``RedHatAI/Llama-4-Scout-...-FP8-dynamic`` checkpoint quantizes
     only the feed-forward linears (routed experts + shared expert) to FP8 e4m3
@@ -327,6 +329,7 @@ class Llama4Config(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         *,
         max_seq_len: int,
     ) -> Self:
+        """Builds the config from the pipeline and HF configs."""
         model_config = model_config or pipeline_config.model
         text_config = get_text_config(huggingface_config)
         kv_cache_config = model_config.kv_cache

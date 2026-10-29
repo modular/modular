@@ -16,6 +16,7 @@
 #include "MLRT/Driver/DeviceContext/CPU/CpuDeviceContext.h"
 #include "MLRT/lib/Driver/DeviceContext/MemoryManager.h"
 #include "ScopedEnvVar.h"
+#include "Target/lib/Support/HostMemory.h"
 #include "TestUtils.h"
 
 #include "gtest/gtest.h"
@@ -850,9 +851,28 @@ TEST(DeviceContextTest, GetMemoryInfoWithoutMemoryManager) {
   ASSIGN_NO_ERR(Device::MemInfo, memInfo, ctx->getMemoryInfo());
   ASSIGN_NO_ERR(Device::MemInfo, deviceMemInfo, ctx->device().getMemoryInfo());
 
-  // Without memory manager, context memory info should match device memory info
+  // Without memory manager, context memory info should match device memory
+  // info. Free memory is read system-wide, so other processes can move it
+  // between the two reads.
+  constexpr size_t drift = 1024ull * 1024 * 1024;
   EXPECT_EQ(memInfo.total, deviceMemInfo.total);
-  EXPECT_EQ(memInfo.free, deviceMemInfo.free);
+  EXPECT_GE(memInfo.free + drift, deviceMemInfo.free);
+  EXPECT_GE(deviceMemInfo.free + drift, memInfo.free);
+  EXPECT_LT(deviceMemInfo.free, deviceMemInfo.total);
+}
+
+TEST(DeviceContextTest, CpuMemoryInfoIsHostWide) {
+  // Free memory is what the whole host has left, not physical memory minus
+  // this process's footprint. Other processes can move it between reads.
+  ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::cpuAPI));
+  ASSIGN_NO_ERR(Device::MemInfo, info, ctx->device().getMemoryInfo());
+  auto host = M::Target::queryHostMemory();
+  ASSERT_TRUE(bool(host)) << llvm::toString(host.takeError());
+
+  constexpr size_t drift = 1024ull * 1024 * 1024;
+  EXPECT_EQ(info.total, host->total);
+  EXPECT_LE(info.free, host->available + drift);
+  EXPECT_GE(info.free + drift, host->available);
 }
 
 TEST(DeviceContextTest, GetMemoryInfoWithMemoryManager) {

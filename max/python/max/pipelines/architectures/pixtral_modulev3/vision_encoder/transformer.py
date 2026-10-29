@@ -10,24 +10,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
+"""Pixtral's vision transformer."""
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.linear import Linear
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.nn.linear import Linear
+from max.nn.norm import RMSNorm
+from max.nn.sequential import ModuleList
+from max.tensor import Tensor
 
 from .attention import Attention
 
 
 class MLP(Module[[Tensor], Tensor]):
-    """
-    Simple multi-layer perceptron composed of three linear layers.
+    """Simple multi-layer perceptron composed of three linear layers.
+
     Uses SiLU activation function.
     """
 
@@ -53,6 +53,7 @@ class MLP(Module[[Tensor], Tensor]):
         )
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the SwiGLU feed-forward over ``x``."""
         return self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
 
 
@@ -87,6 +88,7 @@ class TransformerBlock(Module[..., Tensor]):
         attention_mask: Tensor,
         position_embeddings: tuple[Tensor, Tensor],
     ) -> Tensor:
+        """Runs the block's attention, then its MLP."""
         attn_out = self.attention(
             x=self.attention_norm(x),
             attention_mask=attention_mask,
@@ -106,6 +108,7 @@ class TransformerBlock(Module[..., Tensor]):
 
 class Transformer(Module[..., Tensor]):
     """Transformer model consisting of TransformerBlock layers.
+
     The input is embeddings created using convolution followed by normalization.
 
     The differences between this transformer and other decoder model transformers:
@@ -134,6 +137,7 @@ class Transformer(Module[..., Tensor]):
         attention_mask: Tensor,
         position_embeddings: tuple[Tensor, Tensor],
     ) -> Tensor:
+        """Runs the encoder stack over the patch embeddings."""
         h = patch_embeds
 
         for _, layer in enumerate(self.layers):

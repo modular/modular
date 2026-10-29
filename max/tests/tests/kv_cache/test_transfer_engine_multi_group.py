@@ -26,7 +26,7 @@ from __future__ import annotations
 import pytest
 from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.nn.kv_cache.cache_params import (
+from max.nn.legacy.kv_cache.cache_params import (
     KVCacheBuffer,
     KVCacheMemory,
     MultiKVCacheBuffer,

@@ -90,6 +90,8 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Added `normpath()` to `std.os.path`, matching Python's `os.path.normpath()`.
+
 - `Tuple` element types no longer need to be `Movable`. A `Tuple` is now
   `Movable` only when all of its elements are.
   `Tuple` has a new `init_with` initializer, which constructs each element in
@@ -142,12 +144,34 @@ This version is still a work in progress.
 - `ArcPointer` element types no longer need to be `Deinitable`. Destroy an
   `ArcPointer` of a non-`Deinitable` type with the new `deinit_with()` method.
 
+- `FileHandle` now owns its descriptor through a `FileDescriptor` and always
+  refers to an open file. It is no longer `Defaultable`, and `close()`
+  consumes the handle (`f^.close()`) instead of leaving it in an invalid
+  state. It still raises if the close fails. Use `Optional[FileHandle]`,
+  which is the same size as `FileHandle`, for a file that may not be open.
+  `NamedTemporaryFile` follows the same rules: it always holds an open file,
+  `close()` consumes it, and `Optional[NamedTemporaryFile]` is the same size
+  as `NamedTemporaryFile`.
+
 ## GPU programming
 
 - Added the `apple-m6` and `apple-m6-metal4` accelerator targets, and
   `CompilationTarget.is_apple_m6()` to `std.sys`. Apple M6 GPUs are now
   detected automatically, so you no longer need to pass
   `--target-accelerator=apple-m5` on M6 hardware.
+
+- `Bool`, `Scalar` (including `Int`), `String`, `StringSpan`, and
+  `StringLiteral` now conform to `ConvertibleToPython`, so they can be passed
+  to generic code bounded on that trait. The dedicated `PythonObject`
+  constructors for these types are removed; implicit conversion still works
+  through the single `ConvertibleToPython` constructor.
+  `ConvertibleToPython` gains an associated `ConversionToPythonErrorType`
+  (default `Never`), so conversions that cannot fail, such as `Bool` and
+  `Scalar`, stay non-raising, while `String` conversions keep raising
+  `Error`. This is a breaking change. If a conversion is non-raising, the
+  `raises` effect can be removed from the `ConvertibleToPython` constructor.
+  If a conversion is raising, an error type must be assigned to
+  `ConversionToPythonErrorType`.
 
 ## Tooling changes
 
@@ -181,6 +205,11 @@ This version is still a work in progress.
   next to the other vendor-specific GPU intrinsics. Import them from there
   instead. `std.sys.intrinsics.ballot()` is removed; use
   `max.gpu.primitives.warp.vote()`, which works on every GPU vendor.
+
+- The `Powable` and `CeilDivableRaising` traits are removed. A type that
+  defines `__pow__()` still supports the `**` operator without conforming to a
+  trait, and `pow()` now takes `SIMD` values only. Nothing conformed to
+  `CeilDivableRaising`, so the raising `ceildiv()` overload is removed too.
 
 ## Fixed
 

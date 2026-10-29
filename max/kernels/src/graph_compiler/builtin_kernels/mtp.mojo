@@ -18,9 +18,10 @@ to the graph compiler's registry.
 """
 
 import extensibility
-from extensibility import InputTensor, OutputTensor
+from extensibility import Input, Output, Tensor, TileTensorable
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_gpu
+from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from max.gpu import WARP_SIZE
 
 from nn.mtp_eh_norm import mtp_eh_norm_kernel
@@ -32,24 +33,22 @@ struct MTPEhNorm:
 
     @staticmethod
     def execute[
-        dtype: DType,
         target: StaticString,
         //,
         hidden_size: Int,
         block_threads: Int,
     ](
-        out_buf: OutputTensor[dtype=dtype, rank=2, ...],
-        embed: InputTensor[dtype=dtype, rank=2, ...],
-        prev: InputTensor[dtype=dtype, rank=2, ...],
-        enorm_weight: InputTensor[dtype=dtype, rank=1, ...],
-        hnorm_weight: InputTensor[dtype=dtype, rank=1, ...],
+        out_buf: Some[Output & Tensor],
+        embed: Some[Input & Tensor],
+        prev: Some[Input & Tensor],
+        enorm_weight: Some[Input & Tensor],
+        hnorm_weight: Some[Input & Tensor],
         epsilon: Float32,
         ctx: DeviceContext,
     ) raises:
         """Normalizes both draft inputs and writes them side by side.
 
         Parameters:
-            dtype: Element type of the inputs, weights and output.
             target: Compilation target.
             hidden_size: Channels per input; the output row is twice this.
             block_threads: Threads per block.
@@ -66,6 +65,17 @@ struct MTPEhNorm:
         Raises:
             Error: If the target is not a GPU.
         """
+        comptime assert conforms_to(type_of(out_buf), TileTensorable)
+        comptime assert conforms_to(type_of(embed), TileTensorable)
+        comptime assert conforms_to(type_of(prev), TileTensorable)
+        comptime assert conforms_to(type_of(enorm_weight), TileTensorable)
+        comptime assert conforms_to(type_of(hnorm_weight), TileTensorable)
+        comptime dtype = type_of(out_buf).dtype
+        comptime assert type_of(out_buf).rank == 2
+        comptime assert type_of(embed).rank == 2
+        comptime assert type_of(prev).rank == 2
+        comptime assert type_of(enorm_weight).rank == 1
+        comptime assert type_of(hnorm_weight).rank == 1
         comptime assert is_gpu[target](), "mo.mtp.eh_norm is GPU only"
         comptime assert (
             block_threads % WARP_SIZE == 0
@@ -80,11 +90,11 @@ struct MTPEhNorm:
             ctx.default_device_info.max_thread_block_size // WARP_SIZE
         )
 
-        var out_tt = out_buf.to_tile_tensor[.int64]()
-        var embed_tt = embed.to_tile_tensor[.int64]()
-        var prev_tt = prev.to_tile_tensor[.int64]()
-        var ew_tt = enorm_weight.to_tile_tensor[.int64]()
-        var hw_tt = hnorm_weight.to_tile_tensor[.int64]()
+        var out_tt = out_buf.to_tile_tensor()
+        var embed_tt = embed.to_tile_tensor[dtype]()
+        var prev_tt = prev.to_tile_tensor[dtype]()
+        var ew_tt = enorm_weight.to_tile_tensor[dtype]()
+        var hw_tt = hnorm_weight.to_tile_tensor[dtype]()
 
         var num_tokens = Int(out_tt.dim[0]())
         if num_tokens == 0:
@@ -103,12 +113,14 @@ struct MTPEhNorm:
             type_of(hw_tt.as_imm()).LayoutType,
             ImmOrigin(hw_tt.origin),
             hidden_size,
+            block_threads,
             max_warps,
             out_tt.Engine,
             type_of(embed_tt.as_imm()).Engine,
             type_of(prev_tt.as_imm()).Engine,
             type_of(ew_tt.as_imm()).Engine,
             type_of(hw_tt.as_imm()).Engine,
+            pdl_level=PDLLevel.ON,
         ]
         ctx.enqueue_function[kernel](
             out_tt,
@@ -120,4 +132,7 @@ struct MTPEhNorm:
             Int32(num_tokens),
             grid_dim=num_tokens,
             block_dim=block_threads,
+            # The launch may start while the grid before it in the stream
+            # drains; the kernel waits for that grid before its first read.
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )

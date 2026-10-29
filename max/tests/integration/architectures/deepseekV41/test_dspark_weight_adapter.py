@@ -13,9 +13,9 @@
 """Tests that converted DSpark checkpoint tensors strict-load into the drafter.
 
 A small-width checkpoint with the real ``mtp.*`` names, stored dtypes and
-shape relations, plus one trunk layer, is converted and loaded
-``strict=True`` into a :class:`DeepseekV41DSparkDrafter`. Values are
-placeholders.
+shape relations, plus one trunk layer the conversion leaves out, is
+converted and loaded ``strict=True`` into a
+:class:`DeepseekV41DSparkDrafter`. Values are placeholders.
 """
 
 from __future__ import annotations
@@ -216,18 +216,10 @@ def _convert() -> dict[str, WeightData]:
     )
 
 
-def _drafter_part(converted: dict[str, WeightData]) -> dict[str, WeightData]:
-    return {
-        name.removeprefix("dspark."): data
-        for name, data in converted.items()
-        if name.startswith("dspark.")
-    }
-
-
 def test_dspark_tensors_strict_load_into_the_drafter() -> None:
-    """Checks converted ``dspark.*`` tensors match the drafter's weights."""
+    """Checks the converted tensors are exactly the drafter's weights."""
     drafter = DeepseekV41DSparkDrafter(_config(), DeviceRef.CPU())
-    part = _drafter_part(_convert())
+    part = _convert()
     drafter.load_state_dict(part, weight_alignment=1, strict=True)
 
     declared = drafter.raw_state_dict()
@@ -246,7 +238,7 @@ def test_dspark_wo_a_loads_as_mxfp8() -> None:
     """DSpark ``wo_a`` keeps its e4m3 weight and a tile-interleaved scale."""
     converted = _convert()
     for stage in range(STAGES):
-        base = f"dspark.stages.{stage}.attn.wo_a"
+        base = f"stages.{stage}.attn.wo_a"
         assert converted[f"{base}.weight"].dtype == DType.float8_e4m3fn
         scale = converted[f"{base}.weight_scale"]
         assert scale.dtype == DType.float8_e8m0fnu

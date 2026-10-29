@@ -62,6 +62,11 @@ from max.gpu import (
     thread_idx,
 )
 from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 import max.gpu.primitives.warp as warp
 
 from kv_cache.types import KVCacheT
@@ -251,90 +256,99 @@ def compress_windows_ragged_paged[
     }:
         var w = block_idx.x
         var batch = Int(window_offsets.dim[0]()) - 1
-        if w >= Int(window_offsets.load((batch,))):
-            return
-        var b = get_batch_from_row_offsets(window_offsets, w)
-        var first_row = Int(input_row_offsets.load((b,)))
-        var last_row = Int(input_row_offsets.load((b + 1,))) - 1
-        var cached = Int(starts.load((b,)))
-        var start = align_down(cached, ratio) + ratio * (
-            w - Int(window_offsets.load((b,)))
-        )
-        var c = thread_idx.x * vec
 
-        # Online softmax over the window's positions, `chunk` at a time.
-        var run_max = SIMD[.float32, vec](min_or_neg_inf[DType.float32]())
-        var den = SIMD[.float32, vec](0)
-        var num = SIMD[.float32, vec](0)
-        comptime for half in range(coff):
-            var col = half * head_dim + c
-            var first = start + (half + 1 - coff) * ratio
-            # Windows are ratio-aligned, so one lies wholly before position 0
-            # (the first window's predecessor) or wholly after it.
-            if first >= 0:
-                for k0 in range(0, ratio, chunk):
-                    var values = Array[SIMD[.float32, vec], chunk](fill=0)
-                    var logits = Array[SIMD[.float32, vec], chunk](fill=0)
-                    comptime for i in range(chunk):
-                        var pos = first + k0 + i
-                        if pos < cached:
-                            values[i] = kv_cache.load[
-                                width=vec, output_dtype=.float32
-                            ](b, 0, pos, col)
-                            logits[i] = score_cache.load[
-                                width=vec, output_dtype=.float32
-                            ](b, 0, pos, col)
-                        else:
-                            var row = min(first_row + pos - cached, last_row)
-                            values[i] = kv.load[width=vec]((row, col))
-                            logits[i] = score.load[width=vec]((row, col))
-                        logits[i] += ape.load[width=vec]((k0 + i, col))
-                    var chunk_max = logits[0]
-                    comptime for i in range(1, chunk):
-                        chunk_max = max(chunk_max, logits[i])
-                    var new_max = max(run_max, chunk_max)
-                    var rescale = exp(run_max - new_max)
-                    den *= rescale
-                    num *= rescale
-                    comptime for i in range(chunk):
-                        var e = exp(logits[i] - new_max)
-                        den += e
-                        num += e * values[i]
-                    run_max = new_max
+        with PDL():
+            if w >= Int(window_offsets.load((batch,))):
+                return
+            var b = get_batch_from_row_offsets(window_offsets, w)
+            var first_row = Int(input_row_offsets.load((b,)))
+            var last_row = Int(input_row_offsets.load((b + 1,))) - 1
+            var cached = Int(starts.load((b,)))
+            var start = align_down(cached, ratio) + ratio * (
+                w - Int(window_offsets.load((b,)))
+            )
+            var c = thread_idx.x * vec
 
-        # The reference norms the entry after rounding it to `dtype`.
-        var normed = _rms_norm_warp_tiling_subkernel[
-            threads // WARP_SIZE, multiply_before_cast=True
-        ](
-            w,
-            c,
-            (num / den).cast[dtype]().cast[.float32](),
-            norm_weight.load[width=vec]((c,)),
-            epsilon,
-            Float32(0),
-            head_dim,
-        )
-        var y = normed.cast[.float32]()
+            # Online softmax over the window's positions, `chunk` at a time.
+            var run_max = SIMD[.float32, vec](min_or_neg_inf[DType.float32]())
+            var den = SIMD[.float32, vec](0)
+            var num = SIMD[.float32, vec](0)
+            comptime for half in range(coff):
+                var col = half * head_dim + c
+                var first = start + (half + 1 - coff) * ratio
+                # Windows are ratio-aligned, so one lies wholly before position 0
+                # (the first window's predecessor) or wholly after it.
+                if first >= 0:
+                    for k0 in range(0, ratio, chunk):
+                        var values = Array[SIMD[.float32, vec], chunk](fill=0)
+                        var logits = Array[SIMD[.float32, vec], chunk](fill=0)
+                        comptime for i in range(chunk):
+                            var pos = first + k0 + i
+                            if pos < cached:
+                                values[i] = kv_cache.load[
+                                    width=vec, output_dtype=.float32
+                                ](b, 0, pos, col)
+                                logits[i] = score_cache.load[
+                                    width=vec, output_dtype=.float32
+                                ](b, 0, pos, col)
+                            else:
+                                var row = min(
+                                    first_row + pos - cached, last_row
+                                )
+                                values[i] = kv.load[width=vec]((row, col))
+                                logits[i] = score.load[width=vec]((row, col))
+                            logits[i] += ape.load[width=vec]((k0 + i, col))
+                        var chunk_max = logits[0]
+                        comptime for i in range(1, chunk):
+                            chunk_max = max(chunk_max, logits[i])
+                        var new_max = max(run_max, chunk_max)
+                        var rescale = exp(run_max - new_max)
+                        den *= rescale
+                        num *= rescale
+                        comptime for i in range(chunk):
+                            var e = exp(logits[i] - new_max)
+                            den += e
+                            num += e * values[i]
+                        run_max = new_max
 
-        if c >= rope_start:
-            comptime for p in range(0, vec, 2):
-                var cos_sin = freqs.load[width=2](
-                    (start, (c - rope_start + p) // 2, 0)
-                )
-                var re = y[p]
-                var im = y[p + 1]
-                y[p] = re * cos_sin[0] - im * cos_sin[1]
-                y[p + 1] = re * cos_sin[1] + im * cos_sin[0]
-            y = y.cast[dtype]().cast[.float32]()
+            # The reference norms the entry after rounding it to `dtype`.
+            var normed = _rms_norm_warp_tiling_subkernel[
+                threads // WARP_SIZE, multiply_before_cast=True
+            ](
+                w,
+                c,
+                (num / den).cast[dtype]().cast[.float32](),
+                norm_weight.load[width=vec]((c,)),
+                epsilon,
+                Float32(0),
+                head_dim,
+            )
+            var y = normed.cast[.float32]()
 
-        comptime if rotate:
-            y = _hadamard[head_dim](y).cast[dtype]().cast[.float32]()
-            y = _fake_quantize[group, fp4=True](y)
-        else:
-            # Every lane joins the group reduction; the rotary ones drop it.
-            var q = _fake_quantize[group, fp4=False](y)
-            if c < rope_start:
-                y = q
-        output.store((w, c), y.cast[dtype]())
+            if c >= rope_start:
+                comptime for p in range(0, vec, 2):
+                    var cos_sin = freqs.load[width=2](
+                        (start, (c - rope_start + p) // 2, 0)
+                    )
+                    var re = y[p]
+                    var im = y[p + 1]
+                    y[p] = re * cos_sin[0] - im * cos_sin[1]
+                    y[p + 1] = re * cos_sin[1] + im * cos_sin[0]
+                y = y.cast[dtype]().cast[.float32]()
 
-    ctx.enqueue_function(kernel, grid_dim=rows, block_dim=threads)
+            comptime if rotate:
+                y = _hadamard[head_dim](y).cast[dtype]().cast[.float32]()
+                y = _fake_quantize[group, fp4=True](y)
+            else:
+                # Every lane joins the group reduction; the rotary ones drop it.
+                var q = _fake_quantize[group, fp4=False](y)
+                if c < rope_start:
+                    y = q
+            output.store((w, c), y.cast[dtype]())
+
+    ctx.enqueue_function(
+        kernel,
+        grid_dim=rows,
+        block_dim=threads,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
+    )

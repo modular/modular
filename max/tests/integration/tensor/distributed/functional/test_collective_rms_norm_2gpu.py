@@ -22,20 +22,20 @@ import numpy as np
 import pytest
 from max.driver import Accelerator, Device
 from max.dtype import DType
-from max.experimental.functional import (
+from max.functional import (
     allgather_rms_norm,
     reduce_scatter_rms_norm,
     transfer_to,
 )
-from max.experimental.sharding import (
+from max.tensor import Tensor
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Partial,
     Replicated,
     Sharded,
 )
-from max.experimental.sharding.placements import even_shard_sizes
-from max.experimental.tensor import Tensor
+from max.tensor.sharding.placements import even_shard_sizes
 
 MESH_2 = DeviceMesh(
     devices=(Accelerator(0), Accelerator(1)),

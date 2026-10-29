@@ -107,7 +107,7 @@ def test_fcntl_forwards_variadic_argument() raises:
         pass
 
     with open(path, "w") as f:
-        var fd = c_int(f.handle)
+        var fd = f._get_raw_fd()._value
         assert_true(
             fcntl(fd, FcntlCommands.F_SETFD, FcntlFDFlags.FD_CLOEXEC) != -1
         )

@@ -26,34 +26,39 @@ not have, the fix belongs in the layer or the config, not here.
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, ClassVar
 
-import numpy as np
-import numpy.typing as npt
-from max.driver import Buffer, Device, Usage
+from max.driver import Buffer, Device
 from max.dtype import DType
-from max.engine import Model
-from max.graph import DeviceRef, TensorType, TensorValue
+from max.engine import InferenceSession, Model
+from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.weights import WeightData
-from max.nn.kv_cache.cache_params import KVCacheParams, MultiKVCacheParams
-from max.nn.layer import LayerList, Module
-from max.pipelines.architectures.deepseekV3_2.model import DeepseekV3_2Model
-from max.pipelines.context import ImageMetadata
-from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
-from max.pipelines.lib.vision_batching import create_empty_image_embeddings
-from max.pipelines.lib.vision_encoder_cache import (
-    VisionEncodeResult,
-    concat_device_buffers,
+from max.nn.legacy.kv_cache.cache_params import (
+    KVCacheParams,
+    MultiKVCacheParams,
 )
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.architectures.deepseekV3_2.model import DeepseekV3_2Model
+from max.pipelines.architectures.deepseekV3_2.model_config import (
+    DeepseekV3_2Config,
+)
+from max.pipelines.context import ImageMetadata
+from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
+from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
+from max.pipelines.lib.utils import parse_state_dict_from_weights
+from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
+from transformers import AutoConfig
+from typing_extensions import override
 
 from .batch_processor import Glm5NextBatchProcessor
 from .context import Glm5NextTextAndVisionContext
 from .glm5_next import Glm5Next
 from .model_config import SPARSE_ATTENTION, Glm5NextConfig
-from .nn.vision_geometry import vision_cu_seqlens, vision_position_ids
 from .nn.visual_transformer import Glm5NextVisionTransformer
-from .weight_adapters import VISION_WEIGHT_PREFIX
+from .weight_adapters import VISION_CHECKPOINT_PREFIX, VISION_WEIGHT_PREFIX
 
 logger = logging.getLogger("max.pipelines")
 
@@ -146,7 +151,6 @@ class Glm5NextModel(DeepseekV3_2Model):
     )
 
     _vision_weights_dict: dict[str, WeightData]
-    _empty_vision_embeddings: list[Buffer] | None = None
 
     #: Whether every device runs its own vision tower rather than device 0
     #: encoding and copying the rows. Replicated until encode time and memory
@@ -157,8 +161,7 @@ class Glm5NextModel(DeepseekV3_2Model):
 
     @property
     def vision_model(self) -> Model | None:
-        """The compiled vision tower, or ``None`` for a checkpoint without
-        one."""
+        """The compiled vision tower, or ``None`` for a checkpoint without one."""
         return self._models.get(GraphRole.VISION)
 
     # Without allreduce, the decoder splits tokens across the TP ranks before
@@ -166,7 +169,8 @@ class Glm5NextModel(DeepseekV3_2Model):
     # recipe serves. Exporters pick the matching EP backend from it.
     ep_dispatch_token_layout: ClassVar[str] = "tp_sharded"
 
-    def _first_mla_layer(self) -> int:
+    @classmethod
+    def _first_mla_layer(cls, huggingface_config: AutoConfig) -> int:
         """Reads the first sparse-MLA layer off the schedule.
 
         GLM-5.3-Flash interleaves KDA and sparse MLA on a period-4 schedule, so
@@ -174,7 +178,7 @@ class Glm5NextModel(DeepseekV3_2Model):
         hardcoded to 3: the index follows ``layer_types``, and a sibling that
         retunes the period would otherwise probe the wrong layer and raise.
         """
-        text_config = Glm5NextConfig._get_text_config(self.huggingface_config)
+        text_config = Glm5NextConfig._get_text_config(huggingface_config)
         for index, layer_type in enumerate(
             Glm5NextConfig.resolve_layer_types(text_config)
         ):
@@ -196,13 +200,6 @@ class Glm5NextModel(DeepseekV3_2Model):
         """
         config = super()._create_model_config(state_dict)
         assert isinstance(config, Glm5NextConfig)
-
-        # The base class installs the shared blockscaled-FP8 map, which
-        # describes every layer as quantized. Replace it: GLM-5.3-Flash leaves
-        # the 34 KDA layers, the whole indexer and `kv_b_proj` in bfloat16, and
-        # reading those as FP8 produces plausible tensors and garbage output.
-        config.quant_config = config.resolve_quant_scheme(state_dict)
-
         self._glm_config = config
         state_bytes = config.per_request_state_bytes()
         logger.info(
@@ -221,14 +218,123 @@ class Glm5NextModel(DeepseekV3_2Model):
         )
         return config
 
+    @override
+    @classmethod
+    def finalized_config(
+        cls,
+        pipeline_config: PipelineConfig,
+        state_dict: Mapping[str, Any],
+        *,
+        max_seq_len: int,
+        max_batch_total_tokens: int | None,
+        return_logits: ReturnLogits,
+        return_hidden_states: ReturnHiddenStates,
+        model_config: DeepseekV3_2Config | None = None,
+    ) -> Glm5NextConfig:
+        """Builds the config, with the precision map read off ``state_dict``."""
+        config = super().finalized_config(
+            pipeline_config,
+            state_dict,
+            max_seq_len=max_seq_len,
+            max_batch_total_tokens=max_batch_total_tokens,
+            return_logits=return_logits,
+            return_hidden_states=return_hidden_states,
+            model_config=model_config,
+        )
+        assert isinstance(config, Glm5NextConfig)
+        # The base class installs the shared blockscaled-FP8 map, which
+        # describes every layer as quantized. Replace it: GLM-5.3-Flash leaves
+        # the 34 KDA layers, the whole indexer and `kv_b_proj` in bfloat16, and
+        # reading those as FP8 produces plausible tensors and garbage output.
+        config.quant_config = config.resolve_quant_scheme(state_dict)
+        return config
+
+    @classmethod
+    def build_module(
+        cls, context: ModelLoadContext
+    ) -> tuple[Glm5Next, Glm5NextConfig]:
+        """Builds the decoder from the checkpoint that ``context`` names.
+
+        The vision tower is left out; :meth:`build_vision_graph` builds it.
+
+        A caller that sized the cache passes its KV params. It starts expert
+        parallelism's runtime through ``context`` before it shards the
+        experts.
+        """
+        state_dict = {
+            name: weight
+            for name, weight in parse_state_dict_from_weights(
+                context.pipeline_config, context.weights, context.adapter
+            ).items()
+            if not name.startswith(VISION_WEIGHT_PREFIX)
+        }
+        config = cls.finalized_config(
+            context.pipeline_config,
+            state_dict,
+            max_seq_len=context.max_seq_len,
+            max_batch_total_tokens=context.max_batch_total_tokens,
+            return_logits=context.return_logits,
+            return_hidden_states=context.return_hidden_states,
+        )
+        if context.kv_params is not None:
+            assert isinstance(context.kv_params, MultiKVCacheParams)
+            config.kv_params = context.kv_params
+        context.start_ep(config.ep_config)
+        module = Glm5Next(config, kv_params=config.kv_params)
+        module.attach_layers(module.build_layers())
+        module.load_state_dict(state_dict, weight_alignment=1, strict=True)
+        return module, config
+
+    @classmethod
+    def build_vision_graph(
+        cls, context: ModelLoadContext
+    ) -> tuple[Graph, dict[str, Any]]:
+        """Builds the vision tower's graph and the weights it loads.
+
+        It serves a caller that runs the module :meth:`build_module` builds.
+
+        Raises:
+            ValueError: If the checkpoint has no vision tower.
+        """
+        config = Glm5NextConfig.initialize(
+            context.pipeline_config, max_seq_len=context.max_seq_len
+        )
+        if config.vision_config is None:
+            raise ValueError(
+                "This GLM-5.3-Flash checkpoint has no vision tower."
+            )
+        # The adapter converts each tower weight on its own, so it is handed
+        # only the tower: a whole-checkpoint pass would concatenate and upcast
+        # every text layer again just to drop it.
+        assert context.adapter is not None
+        state_dict = context.adapter(
+            {
+                name: weight
+                for name, weight in context.weights.items()
+                if name.startswith(VISION_CHECKPOINT_PREFIX)
+            },
+            huggingface_config=context.pipeline_config.model.huggingface_config,
+            pipeline_config=context.pipeline_config,
+        )
+        spec = cls._vision_spec(
+            config,
+            {
+                name.removeprefix(VISION_WEIGHT_PREFIX): weight
+                for name, weight in state_dict.items()
+            },
+        )
+        return spec.trace(), dict(spec.weights_registry())
+
     #: The resolved config, captured in :meth:`_create_model_config`. The base
     #: class keeps it as a local, and the state pools are allocated after the
     #: graph is built, so it has to be held somewhere.
     _glm_config: Glm5NextConfig | None = None
 
     def _load_state_dict(self) -> dict[str, Any]:
-        """Loads the weights and sets the vision tower's aside, without their
-        prefix, so the decoder's strict load sees only its own."""
+        """Loads the weights, setting the vision tower's aside.
+
+        They lose their prefix, so the decoder's strict load sees only its own.
+        """
         state_dict = super()._load_state_dict()
         self._vision_weights_dict = {
             name.removeprefix(VISION_WEIGHT_PREFIX): state_dict.pop(name)
@@ -239,8 +345,12 @@ class Glm5NextModel(DeepseekV3_2Model):
         return state_dict
 
     def graph_specs(self, model_config: Any) -> dict[str, GraphSpec]:
-        """Returns the GLM-5.3-Flash language graph and, for a checkpoint with
-        a vision tower, the tower's graph, compiled together.
+        """Returns the language graph, with the tower's when there is one.
+
+        The two are compiled together. The language graph's inputs are in the
+        order :meth:`Glm5Next.input_types` declares them, which is the one place
+        that order is written down. It stays :attr:`model`, the graph
+        device-graph capture records; vision runs only on prefill steps.
 
         The language graph's inputs are in the order
         :meth:`Glm5Next.input_types` declares them, which is the one place that
@@ -268,14 +378,14 @@ class Glm5NextModel(DeepseekV3_2Model):
             )
         return specs
 
+    @classmethod
     def _vision_spec(
-        self, config: Glm5NextConfig, state_dict: dict[str, WeightData]
+        cls, config: Glm5NextConfig, state_dict: dict[str, WeightData]
     ) -> GraphSpec:
-        """Returns the vision graph: its towers, built from shared host
-        weights."""
+        """Returns the vision graph: its towers, built from shared host weights."""
         vision_config = config.vision_config
         assert vision_config is not None
-        towers = _VisionTowers(config, replicate=self.replicate_vision_tower)
+        towers = _VisionTowers(config, replicate=cls.replicate_vision_tower)
         # Keyed by replica index; the host arrays are shared, not copied.
         towers.load_state_dict(
             {
@@ -307,6 +417,21 @@ class Glm5NextModel(DeepseekV3_2Model):
             group=_COMPILE_GROUP,
         )
 
+    @override
+    def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
+        """Loads the graphs, then binds the vision tower to the batching."""
+        models = super().load_graphs(session)
+        if GraphRole.VISION in models:
+            self._batching.bind_vision_encoder(
+                vision_model=models[GraphRole.VISION], session=session
+            )
+        return models
+
+    @property
+    def _batching(self) -> Glm5NextBatchProcessor:
+        assert isinstance(self._batch_processor, Glm5NextBatchProcessor)
+        return self._batch_processor
+
     def pack_vision_inputs(
         self,
         selection: Sequence[
@@ -314,8 +439,8 @@ class Glm5NextModel(DeepseekV3_2Model):
         ],
         devices: list[Device],
     ) -> None:
-        """Packs inline in :meth:`vision_execute` instead."""
-        return
+        """Packs as the batch processor does."""
+        return self._batching.pack_vision_inputs(selection, devices)
 
     def vision_execute(
         self,
@@ -325,119 +450,9 @@ class Glm5NextModel(DeepseekV3_2Model):
         devices: list[Device],
         packed: None,
     ) -> VisionEncodeResult:
-        """Encodes the cache-miss images, context-major then image-minor.
-
-        Runs in chunks of at most ``max_batch_input_tokens`` output rows, the
-        same bound the decoder honors, so the tower's activations stay within
-        what the memory planner reserved. An image is never split.
-        """
-        assert self.vision_model is not None, (
-            "This checkpoint has no vision tower, so it cannot encode images."
-        )
-        config = self._glm_config
-        assert config is not None and config.vision_config is not None
-        merge_unit = config.vision_config.spatial_merge_size**2
-
-        entries: list[
-            tuple[npt.NDArray[np.float32], npt.NDArray[np.int64]]
-        ] = []
-        for ctx, miss_images in selection:
-            # Spans never overlap, so a start index names one image even when
-            # the miss list holds a reconstructed `ImageMetadata`.
-            index_of = {img.start_idx: i for i, img in enumerate(ctx.images)}
-            for img in miss_images:
-                i = index_of[img.start_idx]
-                entries.append((ctx.images[i].pixel_values, ctx.grid_thws[i]))
-        counts = [int(np.prod(grid)) // merge_unit for _, grid in entries]
-
-        budget = self.pipeline_config.runtime.max_batch_input_tokens
-        chunks: list[list[int]] = [[]]
-        chunk_rows = 0
-        for index, count in enumerate(counts):
-            if chunks[-1] and chunk_rows + count > budget:
-                chunks.append([])
-                chunk_rows = 0
-            chunks[-1].append(index)
-            chunk_rows += count
-
-        outputs = [
-            self._encode_images([entries[i] for i in chunk]) for chunk in chunks
-        ]
-        embeddings = (
-            outputs[0]
-            if len(outputs) == 1
-            else [
-                concat_device_buffers([output[d] for output in outputs])
-                for d in range(len(devices))
-            ]
-        )
-        return VisionEncodeResult(
-            embeddings=embeddings, per_image_token_counts=counts
-        )
-
-    def _encode_images(
-        self,
-        entries: Sequence[
-            tuple[npt.NDArray[np.float32], npt.NDArray[np.int64]]
-        ],
-    ) -> list[Buffer]:
-        """Runs the tower once; returns one ``[rows, hidden]`` copy per device."""
-        assert self.vision_model is not None
-        config = self._glm_config
-        assert config is not None and config.vision_config is not None
-        device0 = self.devices[0]
-        grids = np.stack([grid for _, grid in entries])
-        row_offsets = vision_cu_seqlens(grids)
-        max_seqlen = np.array(
-            [np.diff(row_offsets.astype(np.int64)).max()], dtype=np.uint32
-        )
-        # Packed straight into staging memory: a concatenated numpy copy is a
-        # fresh allocation of up to hundreds of MB per chunk, and on a host
-        # with a fragmented page cache its huge-page faults compact
-        # synchronously.
-        pixels = Buffer(
-            dtype=DType.float32,
-            shape=(
-                sum(len(entry) for entry, _ in entries),
-                entries[0][0].shape[1],
-            ),
-            device=device0,
-            usage=Usage.DEFAULT
-            if device0.is_host
-            else Usage.STAGING | Usage.UNTRACKED,
-        )
-        staged = pixels.to_numpy()
-        row = 0
-        for entry, _ in entries:
-            staged[row : row + len(entry)] = entry
-            row += len(entry)
-        outputs = self.vision_model.execute(
-            pixels.to(device0),
-            Buffer.from_numpy(
-                vision_position_ids(
-                    grids, config.vision_config.spatial_merge_size
-                )
-            ).to(device0),
-            Buffer.from_numpy(row_offsets).to(device0),
-            Buffer.from_numpy(max_seqlen),
-        )
-        assert len(outputs) == len(self.devices)
-        buffers: list[Buffer] = []
-        for output in outputs:
-            assert isinstance(output, Buffer)
-            buffers.append(output)
-        return buffers
+        """Encodes the selected images, as the batch processor does."""
+        return self._batching.vision_execute(selection, devices, packed)
 
     def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
-        """Per-device ``[0, hidden]`` rows for a step that encodes nothing.
-
-        Cached, because every decode step asks for them.
-        """
-        if self._empty_vision_embeddings is None:
-            text_config = Glm5NextConfig._get_text_config(
-                self.huggingface_config
-            )
-            self._empty_vision_embeddings = create_empty_image_embeddings(
-                devices, text_config.hidden_size
-            )
-        return self._empty_vision_embeddings
+        """Returns the batch processor's rows for a step with no encoding."""
+        return self._batching.empty_vision_embeddings(devices)

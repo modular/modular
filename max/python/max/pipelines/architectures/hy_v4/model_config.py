@@ -19,12 +19,12 @@ from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
     KVCacheQuantizationConfig,
     MultiKVCacheParams,
 )
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.quant_config import QuantConfig
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
@@ -112,10 +112,12 @@ class HYV4Config(ArchConfigWithKVCache):
 
     @property
     def qk_head_dim(self) -> int:
+        """The query and key width per head."""
         return self.qk_nope_head_dim + self.qk_rope_head_dim
 
     @property
     def full_indexer_layers(self) -> list[int]:
+        """The layers whose indexer runs at full width."""
         return full_indexer_layers(self.indexer_types)
 
     def indexer_cache_layer(self, layer_idx: int) -> int:
@@ -127,9 +129,11 @@ class HYV4Config(ArchConfigWithKVCache):
         return self.full_indexer_layers.index(layer_idx)
 
     def get_kv_params(self) -> KVCacheParamInterface:
+        """The KV cache parameters the config declares."""
         return self.kv_params
 
     def get_max_seq_len(self) -> int:
+        """The maximum sequence length the config allows."""
         return self.max_seq_len
 
     @classmethod
@@ -138,6 +142,7 @@ class HYV4Config(ArchConfigWithKVCache):
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """The checkpoint's context length, bounded by the config's."""
         return upper_bounded_default(
             upper_bound=huggingface_config.max_position_embeddings,
             default=model_config.max_length,
@@ -151,6 +156,7 @@ class HYV4Config(ArchConfigWithKVCache):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> MultiKVCacheParams:
+        """Builds the MLA and indexer cache params for the devices."""
         dp_degree = pipeline_config.model.data_parallel_degree
         speculative = pipeline_config.speculative
         # Every leaf of a cache tree must agree on these.

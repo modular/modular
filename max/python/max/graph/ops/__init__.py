@@ -46,7 +46,8 @@ Shapes are aligned from the trailing dimension, and each pair of dimensions
 must either match exactly, be ``1``, or be absent. Size-1 dimensions (and
 any missing leading dimensions) are stretched to match the corresponding
 dimension of the other input. If the shapes can't be reconciled under
-these rules, MAX raises an error."""
+these rules, MAX raises an error.
+"""
 
 from __future__ import annotations
 
@@ -62,7 +63,7 @@ from . import (
     random,
     reducescatter,
 )
-from .allgather import allgather
+from .allgather import allgather, allgather_rows_slice
 from .allgather_rms_norm import (
     allgather_rms_norm,
     allgather_rms_norm_quant_mxfp6,

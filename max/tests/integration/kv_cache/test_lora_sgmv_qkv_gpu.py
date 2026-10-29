@@ -22,8 +22,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.torch import max_dtype_to_torch
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.kernels import sgmv_qkv_lora_kernel
-from max.nn.kv_cache import (
+from max.nn.legacy.kernels import sgmv_qkv_lora_kernel
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
 )

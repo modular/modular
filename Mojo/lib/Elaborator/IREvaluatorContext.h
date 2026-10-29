@@ -207,14 +207,14 @@ public:
   /// concrete subclass's hooks. Returns:
   ///   - `nullopt`: `generator` is not a transparent thunk; nothing to do.
   ///   - error: rebinding produced an error; the caller should propagate it.
-  ///   - null `SymbolConstantAttr`: rebinding is not yet ready (a
+  ///   - null `FuncSymbolGenerator`: rebinding is not yet ready (a
   ///     sub-dependency is still being elaborated); the caller should
   ///     skip/retry.
-  ///   - non-null `SymbolConstantAttr`: the fully resolved wrapped callee.
+  ///   - non-null `FuncSymbolGenerator`: the fully resolved wrapped callee.
   ///     Nested thunks are peeled, so this is never itself a thunk.
-  std::optional<ErrorTreeOr<SymbolConstantAttr>>
+  std::optional<ErrorTreeOr<FuncSymbolGenerator>>
   resolveTransparentThunkCallee(GeneratorOp generator,
-                                SymbolConstantAttr symbol, Location loc);
+                                FuncSymbolGenerator symbol, Location loc);
 
 protected:
   /// Evaluate an apply-like operator.
@@ -280,7 +280,7 @@ private:
   virtual void addDeferredFunction(OwningOpRef<FuncOp> func) = 0;
 
   virtual ErrorOr<CrossDeviceFunction>
-  compileAsm(MLIRContext *ctx, GeneratorOp, SymbolConstantAttr, StringAttr,
+  compileAsm(MLIRContext *ctx, GeneratorOp, FuncSymbolAttr, StringAttr,
              TargetInfoAttr, EmitAs, EmissionOptions emissionOptions) = 0;
 
   virtual ImplNodeBase *getParentNode() = 0;
@@ -290,24 +290,26 @@ private:
 // Utils
 //===----------------------------------------------------------------------===//
 
-SymbolConstantAttr extractSymbolConstantAttr(TypedAttr attr);
+/// Returns the function reference `attr` denotes, or null if it is not one.
+/// Accepts a `FuncSymbolGenerator`, a function literal, or a fully bound
+/// `SymbolConstantAttr`.
+FuncSymbolGenerator extractFuncSymbolGenerator(TypedAttr attr);
 
 /// Return true if `symbol` binds any of its input parameters directly to
 /// `#kgen.unbound` or `#kgen.unknown`.
-bool hasUnresolvedParamValue(SymbolConstantAttr symbol);
+bool hasUnresolvedParamValue(FuncSymbolGenerator symbol);
 
 /// Decomposed view of a `compile_offload` op's `func` attribute. Populated by
-/// `extractOffloadFunc` when the func resolves to a fully-bound
-/// `SymbolConstantAttr` referencing a valid generator in the supplied symbol
-/// table.
+/// `extractOffloadFunc` when the func resolves to a fully-bound function
+/// reference to a valid generator in the supplied symbol table.
 struct OffloadFunc {
-  SymbolConstantAttr symbol;
+  FuncSymbolGenerator symbol;
   GeneratorOp generator;
 };
 
 /// Decompose a `compile_offload` op's `func` attribute. Returns an error if
-/// the func does not resolve to a `SymbolConstantAttr`, is not fully bound,
-/// or does not reference a valid generator in `symtab`.
+/// the func does not resolve to a function reference, is not fully bound, or
+/// does not reference a valid generator in `symtab`.
 ErrorTreeOr<OffloadFunc> extractOffloadFunc(CompileOffloadOp op,
                                             mlir::SymbolTable &symtab);
 

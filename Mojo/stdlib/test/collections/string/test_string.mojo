@@ -16,6 +16,7 @@ from std.collections.string.string import (
     _calc_initial_buffer_size_int64,
 )
 from std.collections.string.string_span import _to_string_list
+from std.compile import compile_info
 from std.math import isinf, isnan
 
 from std.memory import unsafe_memcpy
@@ -29,7 +30,11 @@ from std.testing import (
 )
 from std.testing import TestSuite
 from std.sys import size_of
-from test_utils import check_niches
+from test_utils import (
+    check_convertible_to_python,
+    check_niches,
+    check_python_object,
+)
 
 
 def test_constructors() raises:
@@ -227,13 +232,15 @@ def test_ord() raises:
     comptime single_byte2 = ord("!")
     assert_equal(single_byte2, 33)
 
-    # TODO: change these to parameter domain when it work.
-    var multi_byte = ord("α")
+    comptime multi_byte = ord("α")
     assert_equal(multi_byte, 945)
-    var multi_byte2 = ord("➿")
+    comptime multi_byte2 = ord("➿")
     assert_equal(multi_byte2, 10175)
-    var multi_byte3 = ord("🔥")
+    comptime multi_byte3 = ord("🔥")
     assert_equal(multi_byte3, 128293)
+
+    comptime literal = "α"
+    assert_equal(ord(literal), 945)
 
     # Test StringSpan overload
     assert_equal(ord(StringSpan("A")), 65)
@@ -252,6 +259,33 @@ def test_ord() raises:
     assert_equal(ord("\xff"), 0xFF)
     assert_equal(ord("\205"), 0x85)  # octal form of U+0085 NEL
     assert_equal(ord("\377"), 0xFF)  # octal form of U+00FF
+
+
+def test_ord_string_literal_folds() raises:
+    # Unoptimized IR, so the constant must come from comptime evaluation of
+    # the `StringLiteral` overload rather than from LLVM folding the decoder.
+    def ord_ascii() -> Int:
+        return ord("A")
+
+    def ord_multi_byte() -> Int:
+        return ord("🔥")
+
+    def ord_slice() -> Int:
+        return ord(StringSpan("🔥"))
+
+    var ascii_ir = compile_info[ord_ascii, emission_kind="llvm"]()
+    assert_true("ret i64 65" in ascii_ir)
+    assert_false("call " in ascii_ir)
+
+    var multi_byte_ir = compile_info[ord_multi_byte, emission_kind="llvm"]()
+    assert_true("ret i64 128293" in multi_byte_ir)
+    assert_false("call " in multi_byte_ir)
+
+    # Guards against the check above passing vacuously: the `StringSpan`
+    # overload decodes at runtime.
+    var slice_ir = compile_info[ord_slice, emission_kind="llvm"]()
+    assert_false("ret i64 128293" in slice_ir)
+    assert_true("call " in slice_ir)
 
 
 def test_chr() raises:
@@ -1848,6 +1882,17 @@ def test_string_zero_init() raises:
     assert_equal(s._capacity_or_data, String.FLAG_IS_INLINE)
 
 
+def test_convertible_to_Python() raises:
+    check_convertible_to_python(StringSpan("Foo"), "Foo")
+    check_convertible_to_python(String("Bar"), "Bar")
+    check_convertible_to_python("Baz", "Baz")
+
+    # test implicit conversions
+    check_python_object(StringSpan("Foo"), "Foo")
+    check_python_object(String("Bar"), "Bar")
+    check_python_object("Baz", "Baz")
+
+
 def test_string_niche() raises:
     assert_equal(String.niche_count(), String.FLAG_IS_REF_COUNTED)
     assert_equal(size_of[Optional[String]](), size_of[String]())
@@ -1895,7 +1940,7 @@ def test_string_niche() raises:
     var heap_copy = heap
     assert_optional_keeps(heap)
     assert_optional_keeps(heap_copy)
-
+    assert_false(Optional[String](None))
     assert_false(Optional[String](None))
 
 

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # DOC: develop/tensors.mdx
 
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 # 1-D tensor
 x = Tensor([1, 2, 3, 4])

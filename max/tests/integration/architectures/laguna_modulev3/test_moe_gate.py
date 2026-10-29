@@ -22,14 +22,14 @@ are one value; see ``laguna/test_moe_gate.py`` for the derivation.
 from __future__ import annotations
 
 import torch
+from max import functional as F
 from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import default_dtype
 from max.graph import DeviceRef, TensorType
 from max.pipelines.architectures.laguna_modulev3.layers.moe_gate import (
     LagunaTopKRouter,
 )
+from max.tensor import default_dtype
 
 NUM_EXPERTS = 256
 TOP_K = 10

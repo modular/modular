@@ -50,6 +50,7 @@ class QwenImageEditTransformerModel(ComponentModel):
         self.load_model()
 
     def load_model(self) -> Callable[..., Any]:
+        """Loads the transformer's weights."""
         state_dict = {key: value.data() for key, value in self.weights.items()}
 
         nn_model = QwenImageTransformer2DModel(self.config)
@@ -80,6 +81,7 @@ class QwenImageEditTransformerModel(ComponentModel):
         img_ids: Buffer,
         txt_ids: Buffer,
     ) -> Any:
+        """Runs the transformer over the latents and text states."""
         return self.model.execute(
             hidden_states,
             encoder_hidden_states,

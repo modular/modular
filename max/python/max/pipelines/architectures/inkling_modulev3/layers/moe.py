@@ -10,30 +10,33 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Inkling's sink-expert MoE and dense MLP, verified against the reference
-``_inkling_gate_select_kernel`` (``nvidia/moe.py`` at vLLM v0.26.0)."""
+"""Inkling's sink-expert MoE and dense MLP.
+
+The routing matches the reference ``_inkling_gate_select_kernel``
+(``nvidia/moe.py`` at vLLM v0.26.0).
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.mlp import MLP
-from max.experimental.realization_context import ensure_context
-from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
-from max.nn.activation import GatedActivation
-from max.nn.comm.ep.ep_kernels import fused_silu
-from max.nn.kernels import (
+from max.nn import Module
+from max.nn.common_layers.mlp import MLP
+from max.nn.legacy.activation import GatedActivation
+from max.nn.legacy.comm.ep.ep_kernels import fused_silu
+from max.nn.legacy.kernels import (
     grouped_matmul_ragged,
     moe_create_indices,
     moe_finalize,
     moe_sink_gate_router,
 )
-from max.nn.moe.quant_strategy import Nvfp4Scales, NvMxf4f8Strategy
-from max.nn.quant_config import QuantConfig, fp4_packed_k
+from max.nn.legacy.moe.quant_strategy import Nvfp4Scales, NvMxf4f8Strategy
+from max.nn.legacy.quant_config import QuantConfig, fp4_packed_k
+from max.tensor import Tensor
+from max.tensor.realization_context import ensure_context
 
 from ...inkling.layers.moe import padded_router_rows
 from .placement import as_partial, as_replicated, shard_axis
@@ -53,6 +56,7 @@ class InklingDenseMLP(MLP):
     """The dense layers' gated MLP, scaled by a learned scalar."""
 
     def __init__(self, hidden_dim: int, feed_forward_length: int) -> None:
+        """Builds the gated MLP and allocates a zero output scale."""
         super().__init__(hidden_dim, feed_forward_length)
         self.global_scale = Tensor.zeros([1], dtype=DType.float32)
 
@@ -78,6 +82,12 @@ class InklingGate(Module[[Tensor], tuple[Tensor, Tensor, Tensor]]):
         n_shared_experts: int,
         route_scale: float,
     ) -> None:
+        """Stores the routing shape and allocates the router parameters.
+
+        ``weight`` covers the padded router rows for the routed and sink
+        experts, while ``bias`` covers the routed experts alone. Both the bias
+        and the global scale are float32 for the router kernel.
+        """
         self.n_routed_experts = num_experts
         self.num_experts_per_token = num_experts_per_token
         self.n_shared_experts = n_shared_experts
@@ -382,8 +392,10 @@ def _sink_experts(
     down_proj: TensorValue,
     sinks: range,
 ) -> TensorValue:
-    """Runs every sink expert on every token, weighted by its gate value,
-    applied to the intermediate as the reference fuses it."""
+    """Runs every sink expert on every token, weighted by its gate value.
+
+    The weighting lands on the intermediate, where the reference fuses it.
+    """
     ffl = gate_proj.shape[0]
     gate_up = ops.concat((gate_proj, up_proj))
     gate, up = ops.split(x @ gate_up.T, [ffl, ffl], axis=-1)
@@ -442,6 +454,11 @@ class InklingMoE(Module[[Tensor], Tensor]):
         num_devices: int,
         quant_config: QuantConfig | None = None,
     ) -> None:
+        """Builds the gate, the routed experts and the sink experts.
+
+        Sink experts share one intermediate of ``n_shared_experts * moe_dim``
+        columns, split over the device count.
+        """
         self.num_experts = num_experts
         self.num_experts_per_token = num_experts_per_token
         self.quant_config = quant_config

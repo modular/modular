@@ -15,26 +15,26 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.functional_kernels import (
+from max.nn import Module
+from max.nn.common_layers.functional_kernels import (
     flash_attention_ragged,
     rope_split_store_ragged,
 )
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.linear import (
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.linear import (
     ColumnParallelLinear,
     RowParallelLinear,
 )
-from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.experimental.tensor import Tensor
-from max.nn.attention import MHAMaskVariant
-from max.nn.kv_cache import KVCacheParams
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kv_cache import KVCacheParams
 from max.pipelines.architectures.gemma4_modulev3.layers.rms_norm import (
     Gemma4RMSNorm,
 )
+from max.tensor import Tensor
 
 
 class MuseGlimmerAttention(Module[..., Tensor]):
@@ -107,6 +107,7 @@ class MuseGlimmerAttention(Module[..., Tensor]):
         *,
         input_row_offsets: Tensor,
     ) -> Tensor:
+        """Runs the attention over ``x``."""
         layer_idx = F.constant(
             self.layer_idx_in_cache, DType.uint32, device=CPU()
         )

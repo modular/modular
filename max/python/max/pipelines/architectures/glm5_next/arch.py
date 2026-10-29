@@ -72,6 +72,12 @@ glm5_next_arch = SupportedArchitecture(
     },
     config=Glm5NextConfig,
     memory_planner=Glm5NextMemoryPlanner,
+    # A speculative pairing serves with prefix caching off: the KDA state
+    # checkpoints only at a page boundary, which a step's accepted drafts
+    # move past.
+    checkpoints_recurrent_state=True,
+    checkpoint_drafts={"mtp": "MTPGlm5NextDraftModel"},
+    spec_decode_graph_names={"mtp": "glm5_next_with_mtp_graph"},
     multi_gpu_supported=True,
     supports_empty_batches=True,
     requires_max_batch_context_length=True,

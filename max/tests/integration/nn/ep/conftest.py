@@ -29,15 +29,15 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn import Signals
-from max.nn.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
-from max.nn.moe import (
+from max.nn.legacy import Signals
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
+from max.nn.legacy.moe import (
     GatedActivation,
     MoE,
     MoEGate,
     make_concatenated_gated_activation_fn,
 )
-from max.nn.moe.expert_parallel import forward_moe_sharded_layers
+from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers
 
 """
 Fixtures for EP tests, including dummy weights.

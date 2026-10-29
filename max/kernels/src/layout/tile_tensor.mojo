@@ -69,6 +69,7 @@ from layout.coord import (
     DynamicCoord,
 )
 from .int_tuple import coord_to_int_tuple, _IntTupleToCoordLike
+from .owned_tensor import OwnedTensor
 
 
 @inline(.always)
@@ -879,6 +880,42 @@ struct TileTensor[
         ), "TileTensor.__init__ from HostBuffer requires DefaultEngine"
         self._storage = rebind[type_of(self._storage)](host_buffer.unsafe_ptr())
         self.layout = layout
+
+    @implicit
+    def __init__(
+        ref tensor: OwnedTensor,
+        out self: TileTensor[
+            tensor.dtype,
+            tensor.LayoutType,
+            origin_of(tensor),
+            address_space=tensor.address_space,
+            Engine=tensor.Engine.ViewEngine,
+        ],
+    ):
+        """Creates a `TileTensor` view of an `OwnedTensor`.
+
+        The view borrows from `tensor`, so its origin is `origin_of(tensor)`
+        and it can't outlive the owner. It takes the owner's element type,
+        layout, and address space, and uses the `ViewEngine` of the owner's
+        engine.
+
+        ```mojo
+        from layout import TileTensor, row_major
+        from layout.owned_tensor import GPUTensor
+
+        def kernel():
+            var owned = GPUTensor[.float32, .SHARED](row_major[4, 8]())
+            var tile = TileTensor(owned)
+            tile[1, 2] = 7.0
+        ```
+
+        Args:
+            tensor: The owned tensor to view.
+        """
+        self.layout = tensor.layout
+        self._storage = tensor.Engine.get_storage_view[
+            result_origin=origin_of(tensor)
+        ](tensor._storage)
 
     @inline(.nodebug)
     @implicit
@@ -2317,14 +2354,7 @@ struct TileTensor[
         return {self._storage, layout_val}
 
     @inline(.nodebug)
-    def transpose(
-        self,
-    ) -> Self.ViewType[
-        Layout[
-            Self.LayoutType._shape_types.reverse(),
-            Self.LayoutType._stride_types.reverse(),
-        ],
-    ]:
+    def transpose(self) -> Self.ViewType[Self.LayoutType._TransposedLayout]:
         """Create a transposed view of the tensor.
 
         Returns a new TileTensor sharing the same pointer but with the

@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Register the GLM-5.1 text-generation architecture."""
+
 from max.graph.weights import WeightsFormat
 from max.pipelines.architectures.deepseekV3.batch_processor import (
     DeepseekV3BatchProcessor,

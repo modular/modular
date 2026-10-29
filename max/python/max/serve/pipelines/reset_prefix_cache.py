@@ -11,8 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Reset prefix cache functionality for MAX. This simply allows the API Worker to
-communicate with the model worker about when to reset the prefix cache.
+"""Reset prefix cache functionality for MAX.
+
+This simply allows the API Worker to communicate with the model worker about when to
+reset the prefix cache.
 
 The actual resetting of prefix cache is handled by caller to `should_reset_prefix_cache()`
 in model_worker.py.
@@ -49,6 +51,7 @@ class ResetPrefixCacheFrontend:
         )
 
     def enqueue_reset_prefix_cache(self) -> None:
+        """Queues a prefix cache reset for the model worker."""
         self.socket.put(None)
 
 

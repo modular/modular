@@ -74,6 +74,18 @@ def KGENDialect : Dialect {
     /// Get the "name" of the type, if it has registered one.
     std::optional<StringRef> getTypeName(mlir::TypeID id);
 
+    /// Register attribute classes whose values are compound parameter
+    /// expressions.
+    template <typename... AttrTs>
+    void registerNonTrivialParamAttrs() {
+      (nonTrivialParamAttrs.insert(mlir::TypeID::get<AttrTs>()), ...);
+    }
+
+    /// Returns true if `attr` belongs to a registered non-trivial class.
+    bool isNonTrivialParamAttr(Attribute attr) const {
+      return nonTrivialParamAttrs.contains(attr.getTypeID());
+    }
+
     /// Set the special parser for symbol references.
     void setSymbolTypeParser(
         std::function<FailureOr<Type>(AsmParser &, SymbolRefAttr)> parser) {
@@ -87,6 +99,7 @@ def KGENDialect : Dialect {
     DenseMap<mlir::TypeID, TypePrintFn> typePrintFns;
     /// A map containing the "names" of types.
     DenseMap<mlir::TypeID, StringRef> typeNames;
+    DenseSet<mlir::TypeID> nonTrivialParamAttrs;
 
     /// Function that parses symbol references as types.
     std::function<FailureOr<Type>(AsmParser &, SymbolRefAttr)> symbolTypeParser;
@@ -94,7 +107,7 @@ def KGENDialect : Dialect {
     /// Allow the type pretty printer and parser utilities to access the
     /// pretty functions.
     friend OptionalParseResult parseOptionalKGENType(AsmParser &, Type &);
-    friend void printKGENType(AsmPrinter &, Type);
+    friend class KGENParamPrinter;
     friend void printParamName(AsmPrinter &p, StringAttr, bool);
   }];
 }

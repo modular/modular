@@ -212,7 +212,7 @@ kgen.generator @callee<a: !kgen.struct<(index)>>(
 
 // CHECK-LABEL: kgen.func @unbox_in_result_sig
 kgen.generator @unbox_in_result_sig() {
-  // CHECK-NEXT: kgen.create_func_ptr[(!pop.array<2, index>) -> (): @"callee,a={ 2 }"]()
+  // CHECK-NEXT: kgen.create_func_ptr[(!pop.array<2, index>) -> (): #kgen.gen<#kgen.func.symbol<@"callee,a={ 2 }">>]()
   kgen.param.declare a = <2>
   kgen.param.declare fn: <!kgen.struct<(index)>>(
     !pop.array<apply(:(!kgen.struct<(index)>) -> index @unbox, *(0,0)), index>
@@ -276,7 +276,8 @@ kgen.generator @return_closure_formation() -> !kgen.generator<() -> ()> {
 
 // CHECK-LABEL: kgen.func export @interpret_create_func_ptr
 kgen.generator export @interpret_create_func_ptr() {
-  // CHECK-NEXT: constant: () -> () = <@some_function>
+  // COM: Only `-verify-parameters` concretizes the callee before interpreting.
+  // CHECK-NEXT: constant: () -> () = <{{@some_function|#kgen.gen<#kgen.func.symbol<@some_function>>}}>
   kgen.param.constant: () -> () = <apply(:() -> !kgen.generator<() -> ()> @return_closure_formation)>
   hlcf.return
 }
@@ -1207,7 +1208,7 @@ kgen.generator @recursive_fnptr_init(
 // `func_ptr_bitcast` of the symbol.
 // CHECK-LABEL: kgen.func export @recursive_fnptr_driver
 kgen.generator export @recursive_fnptr_driver() {
-  // CHECK: kgen.param.constant: struct<(index, (!kgen.pointer<struct<(index, pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly> = <{ 3, #kgen.func_ptr_bitcast<#kgen.symbol.constant<@recursive_fnptr_bar> : !kgen.generator<(!kgen.pointer<struct<(index, (!kgen.pointer<struct<(index, pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly>> owned_in_mem) -> !kgen.none>> }>
+  // CHECK: kgen.param.constant: struct<(index, (!kgen.pointer<struct<(index, pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly> = <{ 3, #kgen.func_ptr_bitcast<#kgen.func.symbol<@recursive_fnptr_bar> : !kgen.func<(!kgen.pointer<struct<(index, (!kgen.pointer<struct<(index, pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly>> owned_in_mem) -> !kgen.none>> }>
   kgen.param.constant: struct<(index, (!kgen.pointer<struct<(index, pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly> = <apply_result_slot(:(index, !kgen.generator<(!kgen.pointer<struct<(index, (!kgen.pointer<struct<(index, pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly>> owned_in_mem) -> !kgen.none>, !kgen.pointer<struct<(index, (!kgen.pointer<struct<(index, pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly>> byref_result) -> !kgen.none @recursive_fnptr_init, 3, @recursive_fnptr_bar)>
   hlcf.return
 }

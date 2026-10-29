@@ -63,7 +63,7 @@ class KGENCallOpInterface;
 class KGENDialect;
 class FuncOp;
 class GeneratorOp;
-class SymbolConstantAttr;
+class FuncSymbolAttr;
 struct ExportedSymbol;
 
 namespace POP {
@@ -169,7 +169,7 @@ struct OffloadInfo {
   };
 
   struct Group {
-    using SymbolInfo = llvm::MapVector<SymbolConstantAttr, KernelInfo>;
+    using SymbolInfo = llvm::MapVector<FuncSymbolAttr, KernelInfo>;
 
     uint64_t numKernels = 0;
     ExportMap exportedSymbols;
@@ -212,7 +212,7 @@ using EmissionOptions = ArrayRef<StringRef>;
 /// input parameters and target. The expected mangled name of the generate is
 /// passed to be used as the entry point.
 using ElaboratorCompileAsmFn = ErrorOr<CrossDeviceFunction> (*)(
-    GeneratorOp, SymbolConstantAttr, StringAttr, const SymbolTable &,
+    GeneratorOp, FuncSymbolAttr, StringAttr, const SymbolTable &,
     TargetInfoAttr, EmitAs, EmissionOptions, CompilationOptions,
     ElaborateGeneratorsOptions);
 

@@ -33,7 +33,7 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn import LayerList, MissingLayer, Module
+from max.nn.legacy import LayerList, MissingLayer, Module
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     MAXModelConfig,

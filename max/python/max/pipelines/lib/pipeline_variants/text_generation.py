@@ -35,7 +35,6 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.experimental.compilation import CompiledCallable
 from max.graph import DeviceRef
 from max.graph.weights import (
     WeightsAdapter,
@@ -43,7 +42,7 @@ from max.graph.weights import (
     load_weights,
     weights_format,
 )
-from max.nn import ReturnLogits
+from max.nn.legacy import ReturnLogits
 from max.pipelines.context import (
     BatchLogitsProcessor,
     LogProbabilities,
@@ -74,6 +73,7 @@ from max.pipelines.modeling.types import (
 )
 from max.profiler import Tracer, traced
 from max.support.algorithm import flatten2d
+from max.tensor.compilation import CompiledCallable
 
 from ._label_scoring import BatchLabelScorer
 from .utils import StructuredOutputHelper, update_context_and_prepare_responses
@@ -346,9 +346,18 @@ class TextGenerationPipeline(
             else self._devices[0]
         )
         sampler_device_ref = DeviceRef.from_device(self._sampler_device)
+        sampler_extensions = (
+            ()
+            if self._sampler_device.is_host
+            else self._pipeline_model.sampler_custom_extensions
+        )
 
         samplers = load_sampler_graphs(
-            session, pipeline_config, sampler_device_ref, self.vocab_size
+            session,
+            pipeline_config,
+            sampler_device_ref,
+            self.vocab_size,
+            custom_extensions=sampler_extensions,
         )
         bitmask_sampler = samplers.get(GraphRole.SAMPLER_BITMASK)
         self._sampler_with_bitmask: Model | None = (
@@ -598,36 +607,11 @@ class TextGenerationPipeline(
         # Prepare the batch.
         model_inputs, bitmask, flat_batch = self.prepare_batch(inputs.batches)
 
-        batch_processors: list[BatchLogitsProcessor] = []
-        if len(flat_batch) > 0:
-            # If structured output is present in the batch, use the sampler with bitmask.
-            sampler: Model
-            if bitmask is not None:
-                assert self._sampler_with_bitmask is not None, (
-                    "Sampler must be built with bitmask sampling"
-                )
-                sampler = self._sampler_with_bitmask
-            else:
-                assert self._sampler_without_bitmask is not None
-                sampler = self._sampler_without_bitmask
-
-            with Tracer("FusedSamplingProcessor"):
-                sampling_processor = FusedSamplingProcessor(
-                    sampler=sampler,
-                    pipeline_config=self._pipeline_config,
-                    context_batch=flat_batch,
-                    device=self._sampler_device,
-                    pinned_new_tokens=self._pinned_new_tokens,
-                    identity_logit_offsets=self._identity_logit_offsets,
-                    bitmask=bitmask,
-                    vocab_size=self.vocab_size,
-                )
-
-            batch_processors.append(sampling_processor)
-
         curr_step_inputs = model_inputs
         batch_log_probabilities: list[list[LogProbabilities | None]] = []
-        # Launch the forward pass.
+        # Launch the forward pass before building the sampling processor so
+        # its host-side setup overlaps the device forward, and so a model that
+        # returns `next_tokens` skips the sampler entirely.
         model_outputs = self._launch_forward_pass(
             curr_step_inputs, flat_batch, step=0
         )
@@ -642,64 +626,42 @@ class TextGenerationPipeline(
                 "Model must return logit_offsets when enable_variable_logits is True."
             )
 
-        # Execute the single step if the batch is not empty.
-        label_log_probabilities: dict[RequestID, list[float]] = {}
-        if len(flat_batch) > 0:
-            # Scoring precedes sampling: the sampler's penalty and min-token
-            # processors edit the logits buffer in place.
-            label_log_probabilities = self._label_scorer.score(
-                model_outputs, flat_batch
-            )
-            # Sample next token.
-            with Tracer("sample_next_token"):
-                sample_logits, sample_offsets = (
-                    sampling_processor.logits_for_sampling(
-                        logits=model_outputs.logits,
-                        next_token_logits=model_outputs.next_token_logits,
-                        logit_offsets=model_outputs.logit_offsets,
-                    )
-                )
-                apply_logits_processors(
-                    context_batch=flat_batch,
-                    batch_logits=sample_logits,
-                    batch_logit_offsets=sample_offsets,
-                    batch_processors=batch_processors,
-                )
-                new_tokens = sampling_processor.new_tokens
-                assert new_tokens is not None
-
-            if inputs.enable_log_probs:
-                with Tracer("compute_log_probabilities"):
-                    try:
-                        batch_log_probabilities.append(
-                            self._pipeline_model.compute_log_probabilities(
-                                self.session,
-                                curr_step_inputs,
-                                model_outputs,
-                                new_tokens,
-                                inputs.batch_top_log_probs,
-                                inputs.batch_echo,
-                            )
-                        )
-                    except NotImplementedError:
-                        logger.warning(
-                            "Unable to compute log probabilities for"
-                            f" {self._pipeline_config.model.model_path}"
-                        )
-                        batch_log_probabilities.append(
-                            [None for _ in flat_batch]
-                        )
-
         # Return early if the batch is empty.
         if len(flat_batch) == 0:
             return {}
 
-        # Do the copy to host for each token generated. The sampler output
-        # lives on the sampler device (the model device, or the host CPU when
-        # ``sample_on_host`` is set), so stage the D2H copy from there.
-        sampler_device = self._sampler_device
+        # Scoring precedes sampling: the sampler's penalty and min-token
+        # processors edit the logits buffer in place.
+        label_log_probabilities = self._label_scorer.score(
+            model_outputs, flat_batch
+        )
+
+        if model_outputs.next_tokens is not None:
+            if bitmask is not None:
+                raise AssertionError(
+                    "Model returned next_tokens for a batch with a "
+                    "structured-output bitmask."
+                )
+            next_tokens = model_outputs.next_tokens
+            # [B] -> [B, 1]
+            generated_tokens_device = next_tokens.view(
+                dtype=next_tokens.dtype, shape=(next_tokens.shape[0], 1)
+            )
+        else:
+            generated_tokens_device = self._sample(
+                inputs,
+                flat_batch,
+                bitmask,
+                curr_step_inputs,
+                model_outputs,
+                batch_log_probabilities,
+            )
+
+        # Do the copy to host for each token generated. The tokens live on
+        # whichever device produced them (the model device, or the host CPU
+        # when ``sample_on_host`` is set), so stage the D2H copy from there.
+        sampler_device = generated_tokens_device.device
         with Tracer("d2h_generated_tokens"):
-            generated_tokens_device = sampling_processor.generated_tokens
             # Staging memory keeps the d2h transfer async on accelerators.
             # Left tracked (no UNTRACKED) so to_numpy() waits for the copy.
             generated_tokens_host = Buffer(
@@ -725,10 +687,90 @@ class TextGenerationPipeline(
 
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.
+        self._pipeline_model.finalize_kv_cache_writes(inputs.flat_batch)
         for ctx in inputs.flat_batch:
             self._kv_manager.step(ctx)
 
         return res
+
+    def _sample(
+        self,
+        inputs: TextGenerationInputs[TextGenerationContextType],
+        flat_batch: list[TextGenerationContextType],
+        bitmask: npt.NDArray[np.int32] | None,
+        curr_step_inputs: ModelInputs,
+        model_outputs: ModelOutputs,
+        batch_log_probabilities: list[list[LogProbabilities | None]],
+    ) -> Buffer:
+        """Runs the sampler graph over the step's logits.
+
+        Appends this step's log probabilities to `batch_log_probabilities`
+        when the batch requests them, and returns the ``[B, 1]`` generated
+        tokens on the sampler device.
+        """
+        # If structured output is present in the batch, use the sampler with bitmask.
+        sampler: Model
+        if bitmask is not None:
+            assert self._sampler_with_bitmask is not None, (
+                "Sampler must be built with bitmask sampling"
+            )
+            sampler = self._sampler_with_bitmask
+        else:
+            assert self._sampler_without_bitmask is not None
+            sampler = self._sampler_without_bitmask
+
+        with Tracer("FusedSamplingProcessor"):
+            sampling_processor = FusedSamplingProcessor(
+                sampler=sampler,
+                pipeline_config=self._pipeline_config,
+                context_batch=flat_batch,
+                device=self._sampler_device,
+                pinned_new_tokens=self._pinned_new_tokens,
+                identity_logit_offsets=self._identity_logit_offsets,
+                bitmask=bitmask,
+                vocab_size=self.vocab_size,
+            )
+        batch_processors: list[BatchLogitsProcessor] = [sampling_processor]
+
+        # Sample next token.
+        with Tracer("sample_next_token"):
+            sample_logits, sample_offsets = (
+                sampling_processor.logits_for_sampling(
+                    logits=model_outputs.logits,
+                    next_token_logits=model_outputs.next_token_logits,
+                    logit_offsets=model_outputs.logit_offsets,
+                )
+            )
+            apply_logits_processors(
+                context_batch=flat_batch,
+                batch_logits=sample_logits,
+                batch_logit_offsets=sample_offsets,
+                batch_processors=batch_processors,
+            )
+            new_tokens = sampling_processor.new_tokens
+            assert new_tokens is not None
+
+        if inputs.enable_log_probs:
+            with Tracer("compute_log_probabilities"):
+                try:
+                    batch_log_probabilities.append(
+                        self._pipeline_model.compute_log_probabilities(
+                            self.session,
+                            curr_step_inputs,
+                            model_outputs,
+                            new_tokens,
+                            inputs.batch_top_log_probs,
+                            inputs.batch_echo,
+                        )
+                    )
+                except NotImplementedError:
+                    logger.warning(
+                        "Unable to compute log probabilities for"
+                        f" {self._pipeline_config.model.model_path}"
+                    )
+                    batch_log_probabilities.append([None for _ in flat_batch])
+
+        return sampling_processor.generated_tokens
 
     def _launch_forward_pass(
         self,

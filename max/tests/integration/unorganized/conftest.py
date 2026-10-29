@@ -30,9 +30,6 @@ SMOLLM2_HF_REPO_ID = "HuggingFaceTB/SmolLM2-135M"
 DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REPO_ID = (
     "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
 )
-LMSTUDIO_DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REPO_ID = (
-    "lmstudio-community/DeepSeek-R1-Distill-Llama-8B-GGUF"
-)
 TINY_RANDOM_LLAMA_HF_REPO_ID = (
     "trl-internal-testing/tiny-random-LlamaForCausalLM"
 )
@@ -181,21 +178,6 @@ def deepseek_r1_distill_llama_8b_local_path() -> str:
             f"Falling back to repo_id: {DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REPO_ID} as config to PipelineConfig"
         )
         model_path = DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REPO_ID
-    return model_path
-
-
-@pytest.fixture
-def lmstudio_deepseek_r1_distill_llama_8b_local_path() -> str:
-    try:
-        model_path = generate_local_model_path(
-            LMSTUDIO_DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REPO_ID
-        )
-    except FileNotFoundError as e:
-        logger.warning(f"Failed to generate local model path: {e}")
-        logger.warning(
-            f"Falling back to repo_id: {LMSTUDIO_DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REPO_ID} as config to PipelineConfig"
-        )
-        model_path = LMSTUDIO_DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REPO_ID
     return model_path
 
 

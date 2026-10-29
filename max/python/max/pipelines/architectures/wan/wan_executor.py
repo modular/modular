@@ -54,8 +54,7 @@ logger = logging.getLogger("max.pipelines")
 
 
 def _tokens_are_cfg_batched(tokens_shape: tuple[int, ...]) -> bool:
-    """Whether a tokens tensor holds a pre-concatenated ``[cond; uncond]`` CFG
-    batch.
+    """Whether a tokens tensor holds a pre-concatenated ``[cond; uncond]`` CFG batch.
 
     ``prepare_inputs`` only batches CFG for the T2V path, producing a 2-D
     ``[2, seq_len]`` tensor. The I2V / sequential path leaves tokens 1-D
@@ -273,6 +272,7 @@ class WanExecutor(
 
     @traced(message="WanExecutor.prepare_inputs")
     def prepare_inputs(self, contexts: list[WanContext]) -> WanExecutorInputs:
+        """Builds the executor's inputs from the request contexts."""
         if len(contexts) != 1:
             raise ValueError(
                 "WanExecutor currently supports batch_size=1. "
@@ -416,6 +416,7 @@ class WanExecutor(
 
     @traced(message="WanExecutor.execute")
     def execute(self, inputs: WanExecutorInputs) -> WanExecutorOutputs:
+        """Runs the graphs over the prepared inputs."""
         device = self._model_device
 
         # Bulk device transfer.

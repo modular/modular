@@ -320,6 +320,7 @@ def calculate_metrics(
     record_request_text: bool = False,
     all_outputs: Sequence[RequestFuncOutput] | None = None,
 ) -> BenchmarkResult:
+    """Computes serving metrics from the finished requests."""
     actual_output_lens: list[int] = []
     failures = 0
     failed_responses: list[RequestFuncOutput] = []
@@ -706,6 +707,7 @@ def calculate_pixel_generation_metrics(
     metrics_by_endpoint: Mapping[str, ParsedMetrics] | None = None,
     gpu_device_groups: Mapping[str, str] | None = None,
 ) -> BenchmarkResult:
+    """Computes pixel generation metrics from the finished requests."""
     completed = 0
     failures = 0
     latencies: list[float] = []

@@ -30,7 +30,7 @@ from typing import ClassVar
 
 import numpy as np
 from max.dtype import DType
-from max.experimental.functional import (
+from max.functional import (
     add,
     cast,
     div,
@@ -42,7 +42,8 @@ from max.experimental.functional import (
     transfer_to,
     where,
 )
-from max.experimental.sharding import (
+from max.tensor import Tensor
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Partial,
@@ -50,7 +51,6 @@ from max.experimental.sharding import (
     Sharded,
     auto_reshard,
 )
-from max.experimental.tensor import Tensor
 
 # ── TestUnaryNonlinear (relu) ────────────────────────────────────────────
 

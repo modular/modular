@@ -30,15 +30,19 @@ from max.graph import (
     Value,
 )
 from max.graph import Module as GraphModule
-from max.nn.embedding import Embedding
-from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
-from max.nn.layer import Module
-from max.nn.linear import MLP, Linear
-from max.nn.moe import StackedMoE
-from max.nn.moe.stacked_moe import GateUpFormat
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import Llama3RotaryEmbedding
-from max.nn.transformer import DecoderOutputs, Transformer, TransformerBlock
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import MLP, Linear
+from max.nn.legacy.moe import StackedMoE
+from max.nn.legacy.moe.stacked_moe import GateUpFormat
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.legacy.transformer import (
+    DecoderOutputs,
+    Transformer,
+    TransformerBlock,
+)
 
 from .layers import Llama4TextAttention, Llama4TextMoEGate
 from .model_config import Llama4Config
@@ -84,12 +88,12 @@ def _build_feed_forward(config: Llama4Config, is_moe_layer: bool) -> Module:
 class Llama4(Transformer):
     """The Llama4 text model.
 
-    Reuses the standard :class:`~max.nn.transformer.Transformer` for embedding,
+    Reuses the standard :class:`~max.nn.legacy.transformer.Transformer` for embedding,
     final norm, language-model head, and logits post-processing. Each decoder
-    layer is a :class:`~max.nn.transformer.TransformerBlock` whose attention is
+    layer is a :class:`~max.nn.legacy.transformer.TransformerBlock` whose attention is
     the Llama4-specific :class:`Llama4TextAttention` and whose feed-forward is
-    either a shared-expert :class:`~max.nn.moe.StackedMoE` (MoE layers) or a
-    dense :class:`~max.nn.linear.MLP`.
+    either a shared-expert :class:`~max.nn.legacy.moe.StackedMoE` (MoE layers) or a
+    dense :class:`~max.nn.legacy.linear.MLP`.
     """
 
     def __init__(self, config: Llama4Config) -> None:
@@ -187,6 +191,7 @@ class Llama4(Transformer):
     def input_types(
         self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
+        """The graph's input types, in :meth:`forward`'s order."""
         device_ref = self.config.devices[0]
         return (
             TensorType(DType.int64, shape=["total_seq_len"], device=device_ref),

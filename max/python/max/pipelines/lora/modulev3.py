@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Serving for adapters-as-inputs LoRA on ModuleV3 models.
 
-A model whose projections were wrapped with :class:`~max.experimental.nn.LoRA`
+A model whose projections were wrapped with :class:`~max.nn.LoRA`
 (see :meth:`LoRAManagerV3.wrap`) takes the adapters and routing as extra graph inputs
 rather than mutable weights. :class:`LoRAManagerV3` loads the adapters
 unfused (per-projection q/k/v), produces the batch routing, declares the extra
@@ -34,25 +34,25 @@ _CtxT = TypeVar("_CtxT")
 
 import numpy as np
 import numpy.typing as npt
+from max import functional as F
 from max.driver import CPU, Buffer, Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import LoRA, lora_layers, lora_parameters
-from max.experimental.nn.module import Module
-from max.experimental.tensor import Tensor, TensorType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsAdapter, WeightsFormat
+from max.nn import LoRA, lora_layers, lora_parameters
+from max.nn.module import Module
 from max.pipelines.weights.hf_utils import (
     HuggingFaceRepo,
     download_weight_files,
 )
+from max.tensor.tensor import Tensor, TensorType
 
 from .config import LoRAConfig
 from .lora import ADAPTER_CONFIG_FILE, LoRAModel, _LoRALRUCache
 from .lora_types import LoRAStatus
 
 #: Number of routing tensors in ModuleV3 LoRA batch info, matching
-#: :meth:`max.experimental.nn.LoRA.set_lora_batch_info`.
+#: :meth:`max.nn.LoRA.set_lora_batch_info`.
 NUM_ROUTING_INPUTS = 3
 
 
@@ -446,7 +446,7 @@ class LoRAManagerV3:
         """Returns the extra compile-input types for a ModuleV3 LoRA model.
 
         The routing triple first, then one adapter-stack type per slot in
-        :func:`~max.experimental.nn.lora_parameters` order -- the same order fed
+        :func:`~max.nn.lora_parameters` order -- the same order fed
         at runtime and consumed by :meth:`bind_inputs` during tracing.
         """
         assert self._model is not None, (
@@ -495,7 +495,7 @@ class LoRAManagerV3:
         """Makes ``model`` ModuleV3 LoRA ready and returns it.
 
         Wraps each of this manager's target projections in place with
-        :class:`~max.experimental.nn.LoRA`, then returns (and remembers) a
+        :class:`~max.nn.LoRA`, then returns (and remembers) a
         top-level module that fans the per-call LoRA inputs into those layers, so
         the inner model's ``forward`` stays LoRA-oblivious. The returned wrapper
         holds ``model`` at attribute ``model`` (adding a ``model.`` prefix that
@@ -529,7 +529,7 @@ class LoRAManagerV3:
         return adapter
 
     def _apply_lora(self, model: Module[..., Any]) -> int:
-        """Wraps each target's leaf projection with :class:`~max.experimental.nn.LoRA` in place.
+        """Wraps each target's leaf projection with :class:`~max.nn.LoRA` in place.
 
         Locates each target's container by its within-layer parent path and
         wraps the leaf on every matching container, using this manager's slot
@@ -607,7 +607,7 @@ class LoRATargetModule:
 
     ``stacked`` marks a wrapped module that stores one pre-fused base weight (a
     ``stacked=True``
-    :class:`~max.experimental.nn.common_layers.linear.QKVLinear`), so its base
+    :class:`~max.nn.common_layers.linear.QKVLinear`), so its base
     q/k/v weights are concatenated into that single weight. The default
     (``False``) is a name-transparent module that keeps separate per-projection
     children, whose base weights stay under their native checkpoint names.
@@ -708,11 +708,11 @@ def _fuse_projections_for_lora(
     under the target's parent path) concatenate on the output axis into the
     target's single pre-fused weight. A name-transparent target (the default;
     for example, a ``stacked=False``
-    :class:`~max.experimental.nn.common_layers.linear.QKVLinear`) keeps its
+    :class:`~max.nn.common_layers.linear.QKVLinear`) keeps its
     separate per-projection children, so its base weights pass through unchanged
     under their native names -- concatenating them would drop the ``q_proj`` /
     ``k_proj`` / ``v_proj`` keys the module still expects.
-    :class:`~max.experimental.nn.LoRA` is name-transparent, so a rewritten base
+    :class:`~max.nn.LoRA` is name-transparent, so a rewritten base
     weight keeps the target's native path (no ``.module`` infix). A
     single-projection target is renamed, not concatenated. Bias tensors are
     handled the same way; all other keys pass through unchanged.

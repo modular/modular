@@ -65,7 +65,7 @@ def check_model_flag_conflict(args: list[str]) -> None:
 
 
 class WithLazyPipelineOptions(click.Command):
-    """Command wrapper that defers loading pipeline configuration options
+    """Command wrapper that defers loading pipeline configuration options.
 
     Lazily applies pipeline_config_options to the callback only when
     command help or execution is actually requested, improving startup time.
@@ -165,7 +165,6 @@ def _handle_import_error(
         subcommand: The subcommand that was run (that is, "serve" for `max serve`)
         suggestion: Which package to install, first item is when using conda, second is for wheels.
     """
-
     if sys.version_info < (3, 11):
         # Backport `add_note()`
         import exceptiongroup  # noqa: F401
@@ -850,6 +849,12 @@ def cli_pipeline(
     ),
 )
 @click.option(
+    "--verbose",
+    is_flag=True,
+    default=False,
+    help="Print the patched module before the quantizer count.",
+)
+@click.option(
     "--prompt",
     type=str,
     default="I believe the meaning of life is",
@@ -905,6 +910,7 @@ def cli_pipeline(
 def quantize(
     targets: list[str],
     quantization_format: str,
+    verbose: bool,
     prompt: str,
     image_url: list[str],
     num_warmups: int,
@@ -976,6 +982,7 @@ def quantize(
         targets=targets,
         prompt=prompt,
         quantization_format=quantization_format,
+        verbose=verbose,
         image_urls=image_url,
         num_warmups=num_warmups,
         profile=profile,

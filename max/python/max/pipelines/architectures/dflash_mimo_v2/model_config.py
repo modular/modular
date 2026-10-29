@@ -19,7 +19,7 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.kv_cache import KVCacheParams
 
 
 def _get(source: Mapping[str, object], key: str) -> object:

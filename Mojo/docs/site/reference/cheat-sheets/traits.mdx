@@ -339,12 +339,11 @@ If the method can fail (`Int("two")`), use the `Raising` variant.
 
 ## Math
 
-<Panel title="Absable, Powable, Roundable" summary="unary math operators" source="math/math.mojo" table="requires">
+<Panel title="Absable, Roundable" summary="unary math operators" source="math/math.mojo" table="requires">
 
 | Signature                               | Remark                             |
 |-----------------------------------------|------------------------------------|
 | `__abs__(self) -> Self`                 | `Absable` · `abs()`                |
-| `__pow__(self, exp: Self) -> Self`      | `Powable` · `pow()`, `**`          |
 | `__round__(self) -> Self`               | `Roundable` · `round()`            |
 | `__round__(self, ndigits: Int) -> Self` | `Roundable` · `round()`, precision |
 
@@ -360,12 +359,11 @@ If the method can fail (`Int("two")`), use the `Raising` variant.
 
 </Panel>
 
-<Panel title="CeilDivable, CeilDivableRaising" summary="ceiling division" source="math/math.mojo" table="requires">
+<Panel title="CeilDivable" summary="ceiling division" source="math/math.mojo" table="requires">
 
-| Signature                                             | Remark               |
-|-------------------------------------------------------|----------------------|
-| `__ceildiv__(self, denominator: Self) -> Self`        | `CeilDivable`        |
-| `__ceildiv__(self, denominator: Self) raises -> Self` | `CeilDivableRaising` |
+| Signature                                      | Remark        |
+|------------------------------------------------|---------------|
+| `__ceildiv__(self, denominator: Self) -> Self` | `CeilDivable` |
 
 Rounds up instead of down.
 

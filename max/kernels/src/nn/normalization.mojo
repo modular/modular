@@ -1931,7 +1931,7 @@ def apply_qk_rms_norm[
     with Trace[TraceLevel.OP, target=target](
         "apply_qk_rms_norm",
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         if rows == 0:
             return
@@ -2888,7 +2888,7 @@ def group_norm[
     with Trace[TraceLevel.OP, target=target](
         "group_norm",
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         comptime if is_cpu[target]():
             group_norm_cpu[dtype=dtype, rank=rank](
@@ -3182,7 +3182,7 @@ def rms_norm_quantize_dynamic_scaled_fp8[
 
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "rms_norm_quantize_dynamic_scaled_fp8",
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         if num_rows == 0:
             return

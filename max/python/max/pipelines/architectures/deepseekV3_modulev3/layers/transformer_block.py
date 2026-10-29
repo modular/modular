@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """DeepSeek-V3 Transformer block (ModuleV3)."""
 
 from __future__ import annotations
@@ -19,29 +18,29 @@ import enum
 import functools
 from typing import Any
 
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.multi_latent_attention import (
+from max import functional as F
+from max.nn import Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.multi_latent_attention import (
     MLAPrefillMetadata,
 )
-from max.experimental.nn.common_layers.quant_linear import (
+from max.nn.common_layers.quant_linear import (
     QuantizedMLP,
     tensor_parallel_mlp,
 )
-from max.experimental.nn.common_layers.quant_mla import (
+from max.nn.common_layers.quant_mla import (
     QuantizedLatentAttentionWithRope,
     tensor_parallel_latent_attention_with_rope,
 )
-from max.experimental.nn.common_layers.quant_moe import (
+from max.nn.common_layers.quant_moe import (
     ExpertParallelMoE,
     QuantizedMoE,
     TensorParallelMoE,
 )
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.sharding import DeviceMapping, Partial
-from max.experimental.tensor import Tensor
-from max.nn.comm.ep import EPBatchManager, EPCommBuffers
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
+from max.nn.norm import RMSNorm
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, Partial
 
 from ..model_config import DeepseekV3Config
 from .moe_gate import DeepseekV3TopKRouter
@@ -196,6 +195,7 @@ class DeepseekV3TransformerBlock(Module[..., Tensor]):
         mla_prefill_metadata: MLAPrefillMetadata | None = None,
         comm_buffers: EPCommBuffers | None = None,
     ) -> Tensor:
+        """Runs one decoder block over ``x``."""
         residual = x
         norm_x = self.input_layernorm(x)
         attn_out = self.self_attn(

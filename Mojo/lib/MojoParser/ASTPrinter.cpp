@@ -30,6 +30,8 @@
 #include "Mojo/MojoParser/DeclResolver.h"
 #include "Mojo/POPDialect/POPAttrs.h"
 
+#include "llvm/ADT/DenseMap.h"
+
 using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
@@ -676,6 +678,8 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return printParam(os, cast.getArg(), ctx);
   if (auto cast = dyn_cast<CastToBuiltinAttr>(param))
     return printParam(os, cast.getArg(), ctx);
+  if (auto upcast = dyn_cast<UpcastAttr>(param))
+    return printParam(os, upcast.getInputTypeValue(), ctx);
 
   // It is pretty common for function arguments to use default conversions
   // from the actual value they want, and may not be an
@@ -691,6 +695,15 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     removeImplicitCtorCall(param, ctx.shared);
     if (param != oldParam) // Only allow one implicit conversion.
       hasContextualType = false;
+  }
+
+  // Checked after the transparent unwrapping above so elided wrappers don't
+  // consume labels of their own.
+  if (ctx.dedup && isNonTrivialParamAttr(param)) {
+    bool isRepeat = false;
+    os << ctx.dedup->mark(param.getAsOpaquePointer(), isRepeat);
+    if (isRepeat)
+      return;
   }
 
   auto printOperands =
@@ -1108,9 +1121,6 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     ASTType(typeAttr.getMlirType()).print(os, ctx);
     return;
   }
-  if (auto upcast = dyn_cast<UpcastAttr>(param))
-    return printParam(os, upcast.getInputTypeValue(), ctx);
-
   if (auto downcast = dyn_cast<DowncastAttr>(param)) {
     printParam(os, downcast.getInputTypeValue(), ctx);
     os << "(";
@@ -1559,7 +1569,7 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
   if (auto fnLiteralGen = type.getIfFnLiteralTypeGenerator()) {
     os << " "
        << getNameFromSymbolRef(
-              fnLiteralGen.getSymbolConstantAttr().getSymbol());
+              fnLiteralGen.getBody().getTargetLiteral().getSymbol());
   }
 
   FuncType fnType = type.getBodyFnType();

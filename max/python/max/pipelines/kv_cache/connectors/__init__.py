@@ -26,8 +26,8 @@ import logging
 from collections.abc import Mapping, Sequence
 
 from max.driver import Device
-from max.nn.kv_cache import KVCacheGroupId
-from max.nn.kv_cache.cache_params import (
+from max.nn.legacy.kv_cache import KVCacheGroupId
+from max.nn.legacy.kv_cache.cache_params import (
     TIERED_CONNECTOR_TYPES,
     KVCacheMemory,
     KVCacheParamInterface,
@@ -63,6 +63,7 @@ def create_connector(
     inherits ``rust_tiered``'s CUDA/HIP requirement.
 
     Args:
+        leaves: Leaf ids and the KV cache group each one belongs to.
         devices: Devices for the KV cache tensors (all participating devices).
         replica_kv_memory: Per-replica offload-ready KV memory units, one
             mapping per DP replica, keyed by the leaf ids ``params.leaves()``

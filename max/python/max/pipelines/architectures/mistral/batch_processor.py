@@ -18,8 +18,8 @@ from typing import TYPE_CHECKING
 
 from max.driver import Buffer
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.kv_cache import KVCacheInputs
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
+from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.context import TextContext
 from max.pipelines.lib.interfaces.batch_processor import (
     SingleReplicaRaggedBatchProcessor,
@@ -41,6 +41,7 @@ class MistralBatchProcessor(
         kv_params: KVCacheParamInterface,
         device_refs: list[DeviceRef],
     ) -> list[TensorType | BufferType]:
+        """The symbolic inputs one ragged step declares."""
         return ragged_kv_symbolic_inputs(
             kv_params=kv_params,
             device_refs=device_refs,

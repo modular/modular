@@ -29,7 +29,7 @@ expression inside the subgraph body where it is legal.
 The partition is ``[T*r // G, T*(r+1) // G)``: contiguous, covering, and every
 rank lands on floor or ceil of ``T / G``. So ``ceildiv(T, G)`` remains the
 per-rank upper bound, which is exactly what
-:func:`~max.nn.comm.ep.ep_config.calculate_ep_max_tokens_per_rank` already
+:func:`~max.nn.legacy.comm.ep.ep_config.calculate_ep_max_tokens_per_rank` already
 returns -- the shared helper needs no architecture-specific override.
 :func:`~max.graph.ops.allgather` concatenates in device order, which inverts
 the split exactly.
@@ -61,31 +61,35 @@ def token_bound(
 
 
 def token_shard(
-    x: TensorValue, rank: int, degree: int, total_tokens: TensorValue
+    x: TensorValue,
+    rank: int,
+    degree: int,
+    total_tokens: TensorValue,
+    name: str = "moe_token_shard",
 ) -> TensorValue:
-    """Returns this rank\'s contiguous slice of ``x``\'s token axis.
+    """Returns this rank's contiguous slice of ``x``'s token axis.
 
     A local slice rather than a collective: every rank already holds the whole
-    tensor, so there is nothing to communicate. The result\'s row count is a
-    freshly *named* dimension rather than an expression over the input\'s, the
-    same way :func:`~max.nn.data_parallelism.split_batch` names its splits --
+    tensor, so there is nothing to communicate. The result's row count is a
+    freshly *named* dimension rather than an expression over the input's, the
+    same way :func:`~max.nn.legacy.data_parallelism.split_batch` names its splits --
     a named dimension is legal in the subgraph signature this crosses, and an
     expression is not.
 
     Args:
         x: ``[total_tokens, ...]``, identical on every rank.
-        rank: This device\'s index within the tensor-parallel group.
+        rank: This device's index within the tensor-parallel group.
         degree: Size of that group.
         total_tokens: The row count as an int64 scalar, on CPU.
+        name: Prefix of the shard's dim name. Every call site that splits a
+            different row count needs its own.
 
     Returns:
         ``[shard_tokens, ...]``.
     """
     start = token_bound(total_tokens, rank, degree)
     stop = token_bound(total_tokens, rank + 1, degree)
-    return ops.slice_tensor(
-        x, [(slice(start, stop), f"moe_token_shard_{rank}"), ...]
-    )
+    return ops.slice_tensor(x, [(slice(start, stop), f"{name}_{rank}"), ...])
 
 
 def gather_token_shards(
@@ -98,7 +102,7 @@ def gather_token_shards(
     Args:
         shards: ``[shard_tokens, ...]`` per device, in device order.
         like: The tensors :func:`token_shard` was given, used to restore the
-            token dimension\'s original symbol.
+            token dimension's original symbol.
         signal_buffers: Collective synchronization buffers, one per device.
 
     Returns:

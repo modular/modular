@@ -30,9 +30,11 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.attention.multi_latent_attention import LatentAttentionWithRope
-from max.nn.kv_cache import MLAKVCacheParams
-from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.attention.multi_latent_attention import (
+    LatentAttentionWithRope,
+)
+from max.nn.legacy.kv_cache import MLAKVCacheParams
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 from test_common.graph_utils import is_b100_b200
@@ -93,7 +95,7 @@ import math
 
 from max.dtype import DType
 from max.graph import TensorValue, Weight, ops
-from max.nn.layer import Module
+from max.nn.legacy.layer import Module
 
 
 class NaiveGlmMlaAttention(Module):

@@ -133,6 +133,7 @@ class ArtificialAnalysisBenchmarkDataset(BenchmarkDataset):
                 sample is used as a max-tokens cap with EOS left enabled (the
                 model may stop early but cannot run away).
             seed: Seed for reproducible content/length sampling. Default 0.
+            **kwargs: Accepted for interface compatibility; unused.
 
         Returns:
             The generated requests.

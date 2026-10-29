@@ -33,7 +33,7 @@ from std.math.uutils import ualign_down
 from std.math import ceildiv
 from std.sys import simd_width_of, align_of, size_of
 
-from layout import DefaultEngine, TensorEngine, TileTensor
+from layout import DefaultEngine, TensorEngine, TileTensor, row_major
 from layout.tile_layout import TensorLayout
 from layout.tma_async import SharedMemBarrier
 from max.gpu import (
@@ -1202,4 +1202,129 @@ def allgather[
         _max_num_blocks,
         ctx,
         my_rank,
+    )
+
+
+@inline(.always)
+def allgather_rows_slice[
+    dtype: DType,
+    ngpus: Int,
+    in_layout: TensorLayout,
+    in_origin: Origin,
+    out_layout: TensorLayout,
+    out_origin: MutOrigin,
+    in_engine: TensorEngine,
+    out_engine: TensorEngine,
+](
+    input_buffers: Array[
+        TileTensor[dtype, in_layout, in_origin, Engine=in_engine], ngpus
+    ],
+    output_buffers: Array[
+        TileTensor[mut=True, dtype, out_layout, out_origin, Engine=out_engine],
+        ngpus * ngpus,
+    ],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
+    row_elems: Int,
+    ctx: DeviceContext,
+    my_rank: Int,
+    _max_num_blocks: Optional[Int] = None,
+) raises:
+    """Per-device all-gather in which each device keeps only its own row block.
+
+    Every device holds a row-major `[rows, row_elems]` shard of one tensor
+    (typically a column-sharded GEMM output). Device `d` receives rows
+    `[d * rows / ngpus, (d + 1) * rows / ngpus)` of EVERY peer's shard, so
+    `output_buffers[d * ngpus + j]` holds that row block of shard `j`.
+    Concatenating those blocks along the column axis gives the same bytes as
+    `allgather` + concat + a row slice, with `ngpus` times fewer bytes moved.
+
+    A row block is contiguous in a row-major shard, so this is `allgather`
+    over per-reader windows: the pointer each reader pulls from peer `j` is
+    offset by `my_rank` row blocks. Barriers, P2P/TMA paths and the signal
+    protocol are `allgather`'s own.
+
+    Data movement only; no arithmetic touches the elements, so the result is
+    bit-identical to the reference composition for every dtype.
+
+    Parameters:
+        dtype: Data type of the tensor elements.
+        ngpus: Number of devices; one full-world group.
+        in_layout: Layout of the input TileTensors.
+        in_origin: Origin of the input TileTensors.
+        out_layout: Layout of the output TileTensors.
+        out_origin: Origin of the output TileTensors.
+        in_engine: Engine of the input TileTensors.
+        out_engine: Engine of the output TileTensors.
+
+    Args:
+        input_buffers: Every device's flat `[rows * row_elems]` shard, indexed
+            by GLOBAL device rank. All shards must be the same size.
+        output_buffers: Every device's `ngpus` outputs, laid out
+            `[device * ngpus + source]`, each `rows / ngpus * row_elems`
+            elements.
+        rank_sigs: All `ngpus` devices' Signal pointers.
+        row_elems: Elements per row (the product of all dimensions after the
+            first).
+        ctx: Device context for THIS GPU.
+        my_rank: GLOBAL rank of this GPU in `[0, ngpus)`.
+        _max_num_blocks: Maximum number of blocks for kernel launch (optional).
+
+    Raises:
+        Error: The shards differ in size, `rows` is not a multiple of `ngpus`,
+            a row block is not a multiple of 16 bytes (the window offset must
+            stay vector-aligned), or an output buffer is not one row block.
+    """
+    comptime assert ngpus >= 2, "allgather_rows_slice requires at least 2 GPUs"
+
+    var total = input_buffers[0].num_elements()
+    comptime for i in range(1, ngpus):
+        if input_buffers[i].num_elements() != total:
+            raise Error(
+                "allgather_rows_slice requires the same shard size on every"
+                " device"
+            )
+    if row_elems <= 0 or total % row_elems != 0:
+        raise Error(
+            "allgather_rows_slice: shard size is not a whole number of rows"
+        )
+    var rows = total // row_elems
+    if rows % ngpus != 0:
+        raise Error(
+            String(
+                (
+                    "allgather_rows_slice requires the row count to be a"
+                    " multiple of the device count: "
+                ),
+                rows,
+                " rows over ",
+                ngpus,
+                " devices",
+            )
+        )
+    var slice_elems = (rows // ngpus) * row_elems
+    if (slice_elems * size_of[dtype]()) % 16 != 0:
+        raise Error(
+            "allgather_rows_slice requires each device's row block to be a"
+            " multiple of 16 bytes"
+        )
+    # A rejected peer must not leave other ranks spinning at the barrier.
+    comptime for j in range(ngpus * ngpus):
+        if output_buffers[j].num_elements() != slice_elems:
+            raise Error(
+                "allgather_rows_slice: an output buffer is not one row block"
+            )
+
+    # Reader-specific windows: this device pulls its own row block from every
+    # peer. The windows keep the input type so `allgather` is reused as is.
+    comptime InTileType = type_of(input_buffers[0])
+    var windows = Array[InTileType, ngpus](
+        fill_with_unrolled=lambda [j: Int]() -> InTileType: rebind[InTileType](
+            TileTensor(
+                input_buffers[j].ptr.unsafe_offset(my_rank * slice_elems),
+                row_major(slice_elems),
+            )
+        )
+    )
+    return allgather(
+        windows, output_buffers, rank_sigs, ctx, my_rank, _max_num_blocks
     )

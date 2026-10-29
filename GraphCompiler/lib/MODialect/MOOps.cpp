@@ -225,6 +225,22 @@ void printMatmulAttrs(OpAsmPrinter &p, Operation *, BoolAttr transposeB,
                      nonDefault("packed_b", packedB, false)});
 }
 
+ParseResult parseAllGatherAttrs(OpAsmParser &p, IntegerAttr &groupSize,
+                                BoolAttr &sliceRows) {
+  Builder &b = p.getBuilder();
+  return parseAttrGroup(
+      p, {{"group_size",
+           [&] { return p.parseAttribute(groupSize, b.getIntegerType(64)); }},
+          {"slice_rows",
+           [&] { return p.parseAttribute(sliceRows, b.getIntegerType(1)); }}});
+}
+
+void printAllGatherAttrs(OpAsmPrinter &p, Operation *, IntegerAttr groupSize,
+                         BoolAttr sliceRows) {
+  printAttrGroup(p, {nonDefault("group_size", groupSize, 0),
+                     nonDefault("slice_rows", sliceRows, false)});
+}
+
 ParseResult parseReduceScatterSumAttrs(OpAsmParser &p, IntegerAttr &axis,
                                        IntegerAttr &groupSize) {
   Type i64 = p.getBuilder().getIntegerType(64);
@@ -4454,6 +4470,11 @@ LogicalResult AllGatherOp::verify() {
         "number of outputs must be num_inputs * group_size for all-gather; "
         "expected {0} outputs, found {1} (num_inputs={2}, group_size={3})",
         expectedOutputs, outputs.size(), inputs.size(), groupSize));
+  if (getSliceRows() && groupSize != numInputs)
+    return emitError(llvm::formatv(
+        "slice_rows requires one full-world group, but group_size is {0} "
+        "for {1} inputs",
+        groupSize, numInputs));
   return success();
 }
 

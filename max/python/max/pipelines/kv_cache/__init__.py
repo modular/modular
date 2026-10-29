@@ -13,7 +13,7 @@
 
 """KV cache management for MAX pipelines."""
 
-from max.nn.kv_cache import KVCacheGroupId
+from max.nn.legacy.kv_cache import KVCacheGroupId
 
 from .config import (
     KVCacheConfig,

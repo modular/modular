@@ -12,12 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.memory import OwnedPointer
+from std.sys import size_of
 from test_utils import (
     ExplicitCopyOnly,
     ExplicitDelOnly,
     ImplicitCopyOnly,
     MoveOnly,
     ObservableDel,
+    check_niches,
     check_write_to,
 )
 from std.testing import (
@@ -183,6 +185,20 @@ def test_write_repr_to() raises:
         expected="OwnedPointer[String]('hello')",
         is_repr=True,
     )
+
+
+def test_owned_pointer_niche() raises:
+    comptime OwnedType = OwnedPointer[String]
+    assert_equal(OwnedType.niche_count(), 1)
+    assert_equal(size_of[Optional[OwnedType]](), size_of[OwnedType]())
+    check_niches[OwnedType]()
+
+    var some = Optional(OwnedPointer(String("hello")))
+    assert_true(some)
+    assert_equal(some.value()[], "hello")
+
+    var none = Optional[OwnedType](None)
+    assert_false(none)
 
 
 def main() raises:

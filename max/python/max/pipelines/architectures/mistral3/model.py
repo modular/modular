@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Mistral3 pipeline model."""
 
 from __future__ import annotations
 
@@ -20,8 +21,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.kv_cache import KVCacheParamInterface
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheParamInterface
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.memory_estimation import MemoryPlan
 from transformers import AutoConfig
@@ -69,6 +70,7 @@ class Mistral3Model(MistralModel):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
+        """Delegates to the parent with the text tower's config."""
         return super().get_kv_params(
             huggingface_config.text_config,
             pipeline_config,

@@ -318,11 +318,11 @@ def scatter_nd_model(
     dtype: DType,
     idx_dtype: DType,
 ) -> engine.Model:
-    """Returns scatter_nd's fused flatten-index-then-scatter
-    :class:`~max.engine.Model` for the given target.
+    """Returns scatter_nd's fused flatten-index-then-scatter model.
 
-    The multi-dim indices are flattened to a scalar per vector and fed
-    straight into the real ``ops.scatter_nd*`` inside one compiled graph (see
+    The model is built for the given target; its multi-dim indices are
+    flattened to a scalar per vector and fed straight into the real
+    ``ops.scatter_nd*`` inside one compiled graph (see
     :func:`_scatter_nd_graph`).
 
     Lazy by default: compiled on first use and cached for the process lifetime.
@@ -393,8 +393,9 @@ def model_dtype(op_type: type[_core.Operation], data_dtype: DType) -> DType:
 def scatter_nd_operand_views(
     in_shape: Sequence[int], idx_shape: Sequence[int]
 ) -> tuple[tuple[int, int], tuple[int, int], tuple[int, int], list[int]]:
-    """Zero-copy view shapes for scatter_nd's operands, plus the strides vector
-    for flat-index reduction.
+    """Returns zero-copy view shapes for scatter_nd's operands.
+
+    The tuple carries the strides vector for flat-index reduction as well.
 
     Collapses ``input``'s ``index_depth`` indexed dims into one flat axis:
     ``input_view = (flat_indexed, suffix)``, ``updates_view = (m, suffix)``.

@@ -33,7 +33,7 @@ from max.graph import (
     TensorType,
     ops,
 )
-from max.nn.state_space import (
+from max.nn.legacy.state_space import (
     gated_delta_recurrence_fwd,
     gated_delta_recurrence_verify_ring_fwd,
     verify_width_operand,

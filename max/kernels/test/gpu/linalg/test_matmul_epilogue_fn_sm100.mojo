@@ -29,7 +29,6 @@ from linalg.matmul.gpu.sm100_structured.default.matmul import (
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
-from std.utils.coord import DynamicCoord
 from std.testing import assert_equal
 
 from std.utils.index import Index, IndexList
@@ -39,8 +38,8 @@ def test_epilogue_fn[
     N: Int,
     K: Int,
     *,
-    mma_shape: DynamicCoord[.int, 3],
-    cluster_shape: Coord[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
     cta_group: Int,
     register_based_epilogue: Bool = True,
     swapAB: Bool = False,

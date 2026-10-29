@@ -26,12 +26,12 @@ import pytest
 import torch
 from max.driver import CPU, Accelerator
 from max.dtype import DType
-from max.experimental.nn.common_layers import quant_ops
-from max.experimental.nn.common_layers.quant_tensor import (
+from max.nn.common_layers import quant_ops
+from max.nn.common_layers.quant_tensor import (
     FP8BlockActivation,
     FP8BlockTensor,
 )
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 _ROWS = 64
 _MOE_DIM = 256

@@ -483,6 +483,8 @@ public:
 
   ErrorOr<DeviceEventRef> enqueueEvent() override;
   ErrorOrSuccess enqueueEvent(const DeviceEvent &event) override;
+  ErrorOr<DeviceEventRef> enqueueBaseStreamEvent() override;
+  bool isBaseStreamCapturing() const override;
   ErrorOr<DeviceEventRef> eventCreate(bool enableTiming) override;
   ErrorOrSuccess enqueueWaitFor(DeviceEvent &event) override;
   ErrorOrSuccess enqueueWaitFor(DeviceContext &ctx) override;

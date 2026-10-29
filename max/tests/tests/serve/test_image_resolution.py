@@ -515,7 +515,7 @@ async def test_redirect_with_no_location_counts_a_rejection(
 ) -> None:
     """A redirect an operator cannot follow is a refusal like any other.
 
-    It raised bare, so ``maxserve.media.rejections`` said nothing -- on one
+    It raised bare, so ``max.media.rejections`` said nothing -- on one
     of the two failure modes (with the redirect loop below) an operator
     reaches this counter to find.
     """

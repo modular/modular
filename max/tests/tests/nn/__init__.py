@@ -11,4 +11,4 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Tests for max.nn package."""
+"""Tests for max.nn.legacy package."""

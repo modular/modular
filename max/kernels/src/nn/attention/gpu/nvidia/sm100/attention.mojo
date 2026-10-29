@@ -143,15 +143,15 @@ struct FA4Config[
 
     # Concrete scale/rope dtypes for `Scalar[...]`/pointer reads. When the
     # optional param is unset, fall back to `qkv_dtype` so the type is always
-    # well-formed; the "is it present?" signal lives in the `_size` aliases
-    # below (0 when the optional is unset).
+    # well-formed. Scale presence is signalled by `scale_dtype_size` (0 when
+    # unset). An unset rope dtype stores any rope region at `qkv_dtype`: MLA
+    # always sets one, and an MHA config has a rope region only for a key
+    # wider than its value (`k_tail()`), whose extra columns are plain keys.
     comptime rope_dtype = Self.rope_dtype_.or_else(Self.qkv_dtype)
     comptime scale_dtype = Self.scale_dtype_.or_else(Self.qkv_dtype)
 
     comptime qkv_dtype_size: Int = size_of[Self.qkv_dtype]()
-    comptime rope_dtype_size: Int = size_of[
-        Self.rope_dtype_.value()
-    ]() if Self.rope_dtype_ else 0
+    comptime rope_dtype_size: Int = size_of[Self.rope_dtype]()
     comptime scale_dtype_size: Int = size_of[
         Self.scale_dtype_.value()
     ]() if Self.scale_dtype_ else 0
@@ -1154,6 +1154,36 @@ struct FA4Config[
         )
 
     @inline(.always)
+    def k_tail(self) -> Bool:
+        """Whether an MHA K tile is split between the shared K/V ring slot and
+        a rope buffer.
+
+        A key wider than its value (`qk_depth > ov_depth`, e.g. a 192-wide key
+        with a 128-wide value) keeps `nope_depth == ov_depth`, so its first
+        `nope_depth` columns share the V-sized ring slot and the remaining
+        `rope_depth()` columns -- plain key columns, not rotary ones -- go to
+        the rope buffers, as MLA prefill lays out K_nope and K_rope. Q@K' is
+        then two MMAs accumulating into one S. Only the shared ring has rope
+        buffers; a non-shared K stage holds all `qk_depth` columns
+        contiguously.
+        """
+        return self.use_shared_kv and not self.is_mla and self.rope_depth() > 0
+
+    @inline(.always)
+    def k_tma_box_cols(self) -> Int:
+        """K TMA box depth (columns) per issued K load.
+
+        One swizzle chunk for `k_tail()`, whose chunks land in two SMEM
+        regions, else `BK0`. Every K TMA type-param site (dispatch
+        `create_tma_tile`, the kernel's `KTMAOpType`, the `fa4_load`
+        signature) routes through this method so the box folds identically
+        at each, as `v_box_cols()` does for V.
+        """
+        if self.k_tail():
+            return self.swizzle_mode.bytes() // Self.qkv_dtype_size
+        return self.BK0
+
+    @inline(.always)
     def num_rope_buffers(self) -> Int:
         """Number of separate rope smem buffers (shared mode only).
 
@@ -1928,6 +1958,21 @@ struct FA4Config[
         if self.pair_cta:
             # Pair-CTA: depth > 64 (depth=64 needs 32B swizzles) and <= 128.
             return base and self.qk_depth > 64 and self.qk_depth <= 128
+        # The K-tail load and MMA exist only in the 2Q shared-ring warp bodies,
+        # for a tail of one swizzle chunk. K tile n's tail buffer is refilled by
+        # K tile n + num_rope_buffers(), 2 * num_rope_buffers() ring positions
+        # later, which the producer may fill only once the consumer released
+        # the position `num_kv_stages` before it. That position is K tile n's
+        # own or a later one -- so the MMAs reading the old tail have retired --
+        # exactly when the last conjunct holds.
+        if self.k_tail():
+            return (
+                base
+                and self.num_q == 2
+                and self.rope_depth()
+                == self.swizzle_mode.bytes() // Self.qkv_dtype_size
+                and 2 * self.num_rope_buffers() >= self.num_kv_stages
+            )
         return base and self.qk_depth >= 64
 
     @inline(.always)
@@ -2101,6 +2146,12 @@ struct FA4Config[
         1 stage). When this returns False the kernel runs pure 2Q.
         """
         if self.num_q != 2 or self.pair_cta:
+            return False
+        # The 1Q body has no K-tail path: it reads the whole key from its K
+        # stage through a K TMA op `BK0` columns wide, while the 2Q K-tail
+        # tile loads 64-column boxes and keeps the last one in a rope buffer.
+        # The 2Q-built K TMA op cannot feed the 1Q body.
+        if self.k_tail():
             return False
         var cfg1 = self.switch_1q_config()
         return cfg1.supported() and cfg1.num_qk_stages == self.num_qk_stages

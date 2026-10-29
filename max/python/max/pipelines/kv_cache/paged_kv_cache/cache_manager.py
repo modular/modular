@@ -24,22 +24,24 @@ from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     BatchCharacteristics,
     KVCacheInputs,
     KVCacheParamInterface,
 )
-from max.nn.kv_cache import KVCacheInputsPerDevice as _KVCacheInputsPerDevice
-from max.nn.kv_cache.cache_params import (
+from max.nn.legacy.kv_cache import (
+    KVCacheInputsPerDevice as _KVCacheInputsPerDevice,
+)
+from max.nn.legacy.kv_cache.cache_params import (
     KVCacheAssignments,
     KVCacheBufferInterface,
     KVCacheMemory,
     KVConnectorType,
     recurrent_leaf,
 )
-from max.nn.kv_cache.data_parallelism_utils import split_into_groups
-from max.nn.kv_cache.metrics import KVCacheMetrics
-from max.nn.kv_cache.utils import (
+from max.nn.legacy.kv_cache.data_parallelism_utils import split_into_groups
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache.utils import (
     build_max_lengths_tensors,
     padded_lut_cols,
 )
@@ -118,7 +120,7 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
         from max.dtype import DType
         from max.engine import InferenceSession
         from max.graph import DeviceRef
-        from max.nn.kv_cache import MHAKVCacheParams
+        from max.nn.legacy.kv_cache import MHAKVCacheParams
         from max.pipelines.context import TextContext, TokenBuffer
         from max.pipelines.kv_cache import PagedKVCacheManager
         from max.pipelines.modeling.types import RequestID

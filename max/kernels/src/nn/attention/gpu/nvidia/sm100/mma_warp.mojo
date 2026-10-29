@@ -1802,6 +1802,81 @@ def fa4_mma[
             comptime KVPipeType = StagedPipeline[config.num_kv_stages, 1]
             var kv_pipeline: KVPipeType = {mbars.get_k_mbars()}
 
+            # K-tail (`config.k_tail()`): Q@K' is a nope MMA over the ring slot
+            # plus a tail MMA over the K tile's rope buffer, accumulating into
+            # the same S. Q stays one chunk-major `padded_qk_depth`-wide tile,
+            # so its tail chunks start `q_tail_bytes` into each Q half. The
+            # rope buffers cycle once per K tile, in the producer's order.
+            comptime assert not (
+                CrossP and config.k_tail()
+            ), "cross-stage P has no K-tail path"
+            comptime UMMA0NopeType = SM100TensorAccumulator[
+                config.qkv_dtype,
+                accum_type,
+                MMA_M=config.MMA_M,
+                MMA_N=BN,
+                BK=config.padded_nope_depth,
+                a_tmem=False,
+                swizzle_a=config.swizzle_mode,
+                swizzle_b=config.swizzle_mode,
+                transpose_b=True,
+                cta_group=cta_group,
+                mma_kind=mma_kind,
+            ]
+            comptime UMMA0TailType = SM100TensorAccumulator[
+                config.qkv_dtype,
+                accum_type,
+                MMA_M=config.MMA_M,
+                MMA_N=BN,
+                BK=config.rope_depth(),
+                a_tmem=False,
+                swizzle_a=config.swizzle_mode,
+                swizzle_b=config.swizzle_mode,
+                transpose_b=True,
+                cta_group=cta_group,
+                mma_kind=mma_kind,
+            ]
+            comptime q_tail_bytes = (
+                (BM // num_q)
+                * config.padded_nope_depth
+                * size_of[config.qkv_dtype]()
+            )
+            comptime k_tail_bytes = (
+                config.k_rows_per_cta()
+                * config.rope_depth()
+                * size_of[config.qkv_dtype]()
+            )
+            var k_tail_idx: UInt32 = 0
+
+            @inline(.always)
+            def _qk(
+                q: MMASmemDescriptorPair,
+                k: MMASmemDescriptorPair,
+                s_tmem: UInt32,
+                tail_idx: UInt32,
+            ) {imm}:
+                comptime if config.k_tail():
+                    var k_tail = smem_descriptor[
+                        BMN=config.k_rows_per_cta(),
+                        BK=config.rope_depth(),
+                        swizzle_mode=config.swizzle_mode,
+                        is_k_major=True,
+                    ](
+                        smem.rope_smem_base().unsafe_bitcast[
+                            Scalar[config.qkv_dtype]
+                        ]()
+                    )
+                    UMMA0NopeType.mma(q, k, s_tmem, elect=e, c_scale=0)
+                    UMMA0TailType.mma(
+                        q + UInt32(q_tail_bytes),
+                        k_tail + UInt32(k_tail_bytes) * tail_idx,
+                        s_tmem,
+                        elect=e,
+                        c_scale=1,
+                    )
+                else:
+                    UMMA0Type.mma[stage_idx=0](q, k, s_tmem, elect=e, c_scale=0)
+
             # We peel the first iteration, as we want to wait on q1.
             # Peel consumes 1 K_0 (shared by both Q halves); the main loop
             # decrements once per iter. iter_count = total_iters - 1.
@@ -1974,13 +2049,17 @@ def fa4_mma[
             var k0 = (
                 kv_desc_k + UInt32(kv_stage_bytes) * kv_pipeline.state.index()
             )
-            UMMA0Type.mma[stage_idx=0](q0, k0, s0_tmem, elect=e, c_scale=0)
+            _qk(q0, k0, s0_tmem, k_tail_idx)
             _commit(pipeline_s0.producer_mbar())
 
             # Q_1 @ K_0 (q1 half, same K).
             var q1_mbar = mbars.q1_wait_mbar()
             q1_mbar[0].wait()
-            UMMA0Type.mma[stage_idx=0](q1, k0, s1_tmem, elect=e, c_scale=0)
+            _qk(q1, k0, s1_tmem, k_tail_idx)
+            comptime if config.k_tail():
+                k_tail_idx = (k_tail_idx + 1) % UInt32(
+                    config.num_rope_buffers()
+                )
 
             # Release K_0 and advance.
             _commit(kv_pipeline.consumer_mbar())
@@ -2025,7 +2104,7 @@ def fa4_mma[
                     kv_desc_k
                     + UInt32(kv_stage_bytes) * kv_pipeline.state.index()
                 )
-                UMMA0Type.mma[stage_idx=0](q0, kn, s0_tmem, elect=e, c_scale=0)
+                _qk(q0, kn, s0_tmem, k_tail_idx)
                 _commit(pipeline_s0.producer_mbar())
 
                 # P1 @ V_{n-1} (held V_o[n-1]). Per-depth-tile ring slots for
@@ -2044,7 +2123,11 @@ def fa4_mma[
                 _commit(kv_pipeline.consumer_mbar(v_prev_idx))  # V_{n-1}_d0
 
                 # Q_1 @ K_n (q1 + same kn).
-                UMMA0Type.mma[stage_idx=0](q1, kn, s1_tmem, elect=e, c_scale=0)
+                _qk(q1, kn, s1_tmem, k_tail_idx)
+                comptime if config.k_tail():
+                    k_tail_idx = (k_tail_idx + 1) % UInt32(
+                        config.num_rope_buffers()
+                    )
                 _commit(
                     kv_pipeline.consumer_mbar()
                 )  # release K_n / K_o[n] last

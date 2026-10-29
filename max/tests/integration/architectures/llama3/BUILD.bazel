@@ -53,7 +53,7 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/experimental/torch",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/llama3",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/kv_cache",
@@ -76,7 +76,7 @@ modular_py_test(
         "//max/python/max/_artifact",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/llama3",
     ],
 )

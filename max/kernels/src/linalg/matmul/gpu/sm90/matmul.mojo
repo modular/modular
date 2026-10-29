@@ -57,7 +57,7 @@ comptime logger = Logger()
 
 
 def _is_valid_cluster_shape[
-    cluster_shape: Coord[Int, Int, Int]
+    cluster_shape: Tuple[Int, Int, Int]
 ](grid_shape: IndexList[2], num_tiles_n: Int) -> Bool:
     if num_tiles_n % cluster_shape[0] != 0:
         return False
@@ -73,7 +73,7 @@ def _is_valid_cluster_shape[
 
 
 def _get_grid_shape[
-    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1)
+    cluster_shape: Tuple[Int, Int, Int] = (1, 1, 1)
 ](num_tiles_n: Int) -> IndexList[2]:
     # Hardcode values on purpose until we move this inside tile scheduler
     # in a more robust way.
@@ -94,7 +94,7 @@ def _get_grid_shape[
 
 
 def _is_valid_grid_shape[
-    grid_shape: IndexList[2], cluster_shape: Coord[Int, Int, Int]
+    grid_shape: IndexList[2], cluster_shape: Tuple[Int, Int, Int]
 ](num_tiles_n: Int) -> Bool:
     comptime assert (
         grid_shape[0] * grid_shape[1] <= H100.sm_count
@@ -831,7 +831,7 @@ def _warp_specialize_gemm_with_multicasting_impl[
 
 
 def _get_c_smem_layout[
-    block_tile_shape: Coord[Int, Int, Int],
+    block_tile_shape: Tuple[Int, Int, Int],
     a_type: DType,
     b_type: DType,
     c_type: DType,

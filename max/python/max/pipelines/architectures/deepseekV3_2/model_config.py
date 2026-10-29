@@ -20,7 +20,7 @@ from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache.cache_params import (
+from max.nn.legacy.kv_cache.cache_params import (
     KVCacheParamInterface,
     KVCacheParams,
     KVCacheQuantizationConfig,
@@ -157,6 +157,7 @@ class DeepseekV3_2Config(DeepseekV3Config):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
+        """Builds the KV cache parameters from the cache config."""
         mla_kv_params = DeepseekV3Config.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,
@@ -246,6 +247,9 @@ class DeepseekV3_2Config(DeepseekV3Config):
 
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
+            model_config: The model config entry this config is built from,
+                or ``None`` with the entry taken from ``pipeline_config``.
+            max_seq_len: The sequence length the graph is traced for.
 
         Returns:
             An initialized DeepseekV3_2Config instance.

@@ -362,10 +362,7 @@ struct DeviceGraphCache(Movable):
         var key = Self._closure_key(build)
 
         if case .Some(ctx) = ctx:
-            try:
-                key.write(t"Device({ctx.id()})", "|")
-            except e:
-                pass
+            key.write(t"Device({ctx.device().id})", "|")
 
         # Every contribution is separated, so no set of inputs can spell the
         # same key as a different set by running together -- inputs writing
@@ -883,7 +880,7 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
         comptime for i in range(N):
             var ctx = ctxs[i]
             var key = DeviceGraphCache._closure_key(build_for)
-            key.write(t"|Device({ctx.id()})|")
+            key.write(t"|Device({ctx.device().id})|")
             key.write(key_for[i]())
 
             def build(mut b: DeviceGraphBuilder[_]) raises {imm}:

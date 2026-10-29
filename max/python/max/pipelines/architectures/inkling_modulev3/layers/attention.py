@@ -13,26 +13,27 @@
 """Inkling attention: qkvr projection, K/V short convolutions, relative bias.
 
 Reference: ``nvidia/ops/qkvr_prep.py`` and ``nvidia/attention.py`` at vLLM
-v0.26.0."""
+v0.26.0.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.linear import (
+from max import functional as F
+from max.graph import BufferValue, TensorValue
+from max.nn import Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.linear import (
     RowParallelLinear,
     col_parallel,
 )
-from max.experimental.nn.linear import Linear
-from max.experimental.tensor import Tensor
-from max.graph import BufferValue, TensorValue
-from max.nn.attention import MHAMaskVariant
-from max.nn.kernels import flash_attention_ragged
-from max.nn.kv_cache import MHAKVCacheParams
-from max.nn.kv_cache import PagedCacheValues as PagedCacheGraphValues
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kernels import flash_attention_ragged
+from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.legacy.kv_cache import PagedCacheValues as PagedCacheGraphValues
+from max.nn.linear import Linear
+from max.tensor import Tensor
 
 from ...inkling.layers.attention import _scale_rows
 from ...inkling.layers.short_convolution import (
@@ -80,8 +81,10 @@ def _attention_on_device(
     *,
     block: _DeviceAttention,
 ) -> TensorValue:
-    """Runs one device's heads from the qkvr projection to the attention
-    output, ``[total_tokens, q_dim]``."""
+    """Runs one device's heads over the qkvr projection.
+
+    Returns the attention output, ``[total_tokens, q_dim]``.
+    """
     q_dim, k_dim, v_dim, _ = block.out_dims
     total_tokens = qkvr.shape[0]
     r = qkvr[:, q_dim + k_dim + v_dim :]
@@ -164,6 +167,12 @@ class InklingAttention(Module[..., Tensor]):
         is_local: bool | None = None,
         commit_conv_state: bool = True,
     ) -> None:
+        """Builds the projections, norms, short convs and the attention block.
+
+        Resolves the attention flavor from ``is_local`` when it is not given,
+        and rejects a layer whose head counts do not divide over
+        ``num_devices`` or whose KV heads disagree with ``kv_params``.
+        """
         if is_local is None:
             is_local = text_config.is_local_attention(layer_idx)
         num_heads = text_config.num_heads(is_local)
@@ -267,11 +276,11 @@ class InklingAttention(Module[..., Tensor]):
         v_layer_row: Tensor,
         cache_layer_idx: Tensor,
     ) -> Tensor:
-        """Runs the block over one ragged batch. Returns each device's
-        partial sum of the output.
+        """Runs the block over one ragged batch.
 
-        ``cache_layer_idx`` is an operand, not a folded constant, so every
-        layer of one attention flavor can share a compiled subgraph.
+        Returns each device's partial sum of the output. ``cache_layer_idx``
+        is an operand, not a folded constant, so every layer of one attention
+        flavor can share a compiled subgraph.
         """
         attn_out = _attention(
             self._qkvr(x),

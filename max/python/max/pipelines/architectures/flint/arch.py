@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Registers Flint with the pipeline registry."""
 
 from max.graph.weights import WeightsFormat

@@ -15,11 +15,11 @@
 
 from __future__ import annotations
 
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.mlp import MLP
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.tensor import Tensor
-from max.nn.kv_cache import PagedCacheValues
+from max.nn import Module
+from max.nn.common_layers.mlp import MLP
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.norm import RMSNorm
+from max.tensor import Tensor
 
 
 class Olmo2TransformerBlock(
@@ -53,6 +53,7 @@ class Olmo2TransformerBlock(
         kv_collection: PagedCacheValues,
         input_row_offsets: Tensor,
     ) -> Tensor:
+        """Runs the block's attention, then its MLP."""
         attn_out = self.self_attn(
             x,
             kv_collection,

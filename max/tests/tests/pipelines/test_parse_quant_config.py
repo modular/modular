@@ -26,7 +26,7 @@ from max.dtype import DType
 from max.experimental.torch import max_dtype_to_torch
 from max.graph import Shape
 from max.graph.weights import WeightData
-from max.nn.quant_config import (
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

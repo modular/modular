@@ -273,7 +273,7 @@ def KGEN_GeneratorUserOpInterface : OpInterface<"GeneratorUserOpInterface"> {
       its callee has been concretized into a symbol constant. The method should
       use the builder to create a new operation that invokes the callee.
     }], "void", "concretizeCallee", (ins "IRRewriter &":$b,
-                                         "SymbolConstantAttr":$callee), [{}], [{
+                                         "FuncSymbolGenerator":$callee), [{}], [{
       $_op.setCalleeAttr(callee);
     }]>
   ];
@@ -546,8 +546,8 @@ def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
 
     /// Get the symbol backing the callee.
     SymbolRefAttr getCalleeSymbol() {
-      if (auto callee = dyn_cast<SymbolConstantAttr>($_op.getCallee()))
-        return callee.getSymbol();
+      if (auto generator = FuncSymbolGenerator::dynCast($_op.getCallee()))
+        return generator.getSymbol();
       return {};
     }
   }];

@@ -10,20 +10,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""ModuleV3 Flux2 autoencoder KL with its decode postprocessing."""
 
 from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
 
+from max import functional as F
 from max.driver import Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights
+from max.nn import Module
 from max.pipelines.lib import SupportedEncoding
 from max.profiler import traced
+from max.tensor import Tensor
 
 from .model import BaseAutoencoderModel
 from .model_config import AutoencoderKLFlux2Config
@@ -123,6 +124,7 @@ class PostprocessAndDecode(Module[..., Tensor]):
         h_carrier: Tensor,
         w_carrier: Tensor,
     ) -> Tensor:
+        """Unpatches the latents and decodes them to an image."""
         batch = latents_bsc.shape[0]
         c = latents_bsc.shape[2]
         # Extract spatial dims from carrier shapes (symbolic Dims, not runtime values)
@@ -167,6 +169,7 @@ class PostprocessAndDecode(Module[..., Tensor]):
         return F.transfer_to(F.cast(decoded, DType.uint8), DeviceRef.CPU())
 
     def input_types(self) -> tuple[TensorType, ...]:
+        """The module's input types."""
         return (
             TensorType(
                 self._dtype,

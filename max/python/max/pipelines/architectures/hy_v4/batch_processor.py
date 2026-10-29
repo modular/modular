@@ -19,8 +19,8 @@ from collections.abc import Sequence
 from max.driver import Buffer
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.kv_cache import KVCacheInputs, MultiKVCacheParams
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
+from max.nn.legacy.kv_cache import KVCacheInputs, MultiKVCacheParams
+from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.context import TextContext
 from max.pipelines.lib.interfaces.batch_processor import (
     BatchProcessorRuntime,
@@ -34,9 +34,11 @@ from .model_config import HYV4Config
 def prefill_buffer_length(
     contexts: Sequence[TextContext], page_size: int
 ) -> int:
-    """Returns the MLA prefill plan's ``buffer_lengths[0]`` for a batch: each
-    request's cache plus new tokens, ``current_position``, rounded up to a
-    page and summed."""
+    """Returns the MLA prefill plan's buffer length for a batch.
+
+    It is ``buffer_lengths[0]``: each request's cache plus new tokens,
+    ``current_position``, rounded up to a page and summed.
+    """
     return sum(
         (ctx.tokens.current_position + page_size - 1) // page_size * page_size
         for ctx in contexts
@@ -46,9 +48,11 @@ def prefill_buffer_length(
 class HYV4BatchProcessor(
     ModuleV3SingleReplicaBatchProcessor[TextContext, HYV4Inputs]
 ):
-    """Ragged single-replica batching plus the host copy of the MLA prefill
-    buffer length, so the graph never reads the plan's back (a host sync that
-    device graph capture rejects)."""
+    """Ragged single-replica batching, plus the host prefill buffer length.
+
+    The length is a host copy, so the graph never reads the plan's back, a host
+    sync that device graph capture rejects.
+    """
 
     def __init__(
         self, config: HYV4Config, runtime: BatchProcessorRuntime
@@ -64,8 +68,10 @@ class HYV4BatchProcessor(
         kv_params: KVCacheParamInterface,
         device_refs: list[DeviceRef],
     ) -> list[TensorType | BufferType]:
-        """Returns the ModuleV3 inputs with the host length after the row
-        offsets, as ``HYV4.forward`` takes them."""
+        """Returns the inputs, with the host length after the row offsets.
+
+        That is the order ``HYV4.forward`` takes them in.
+        """
         inputs = super().get_symbolic_inputs(
             kv_params=kv_params, device_refs=device_refs
         )
@@ -78,6 +84,7 @@ class HYV4BatchProcessor(
         kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> HYV4Inputs:
+        """Builds the first step's inputs from the replica batches."""
         self._batch_context_length.to_numpy()[0] = prefill_buffer_length(
             [ctx for batch in replica_batches for ctx in batch],
             self._page_size,

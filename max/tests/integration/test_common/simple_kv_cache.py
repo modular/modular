@@ -35,7 +35,7 @@ from collections.abc import Sequence
 
 import numpy as np
 from max.driver import Buffer
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     PACKED_PAGE_STRIDE,
     KVCacheInputsPerDevice,
     KVCacheParams,
@@ -96,8 +96,8 @@ def paged_kv_cache_inputs(
         ValueError: If ``params`` names more than one device, if the batch is
             empty, if the two length sequences disagree in length, or if the
             batch needs more pages than ``total_num_pages``.
-        NotImplementedError: If ``params`` asks for speculative decoding or
-            per-layer buffers, whose extra inputs this helper does not build.
+        NotImplementedError: If ``params`` asks for speculative decoding,
+            whose extra inputs this helper does not build.
     """
     if params.n_devices != 1:
         raise ValueError(
@@ -105,10 +105,10 @@ def paged_kv_cache_inputs(
             f"{params.n_devices}. Use PagedKVCacheManager for a distributed "
             "cache."
         )
-    if params.speculative_method is not None or params.per_layer_buffers:
+    if params.speculative_method is not None:
         raise NotImplementedError(
-            "paged_kv_cache_inputs does not build the draft or per-layer KV "
-            "inputs; use PagedKVCacheManager for those."
+            "paged_kv_cache_inputs does not build the draft KV inputs; use "
+            "PagedKVCacheManager for those."
         )
     if not prompt_lens:
         raise ValueError("prompt_lens must not be empty")

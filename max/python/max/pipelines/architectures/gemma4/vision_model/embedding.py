@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Gemma 4's vision patch embedding."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -17,8 +19,8 @@ from collections.abc import Iterable
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
 from max.graph.weight import ShardingStrategy
-from max.nn.layer import Module
-from max.nn.linear import Linear
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
 
 from ..model_config import Gemma4ForConditionalGenerationConfig
 
@@ -111,6 +113,7 @@ class Gemma4VisionPatchEmbedder(Module):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the input projection is split across devices."""
         return self.input_proj.weight.sharding_strategy
 
     @sharding_strategy.setter
@@ -121,6 +124,7 @@ class Gemma4VisionPatchEmbedder(Module):
     def shard(
         self, devices: Iterable[DeviceRef]
     ) -> list[Gemma4VisionPatchEmbedder]:
+        """Splits the input projection across ``devices``."""
         assert self.sharding_strategy
 
         input_proj_shards = self.input_proj.weight.shard(devices)

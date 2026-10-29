@@ -10,16 +10,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""RMSNorm layer with the Gemma 3 ``1 + weight`` scale offset."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.norm.rms_norm import RMSNorm
+from max.nn.legacy.norm.rms_norm import RMSNorm
 
 
 class Gemma3RMSNorm(RMSNorm):
+    """RMSNorm whose scale is ``1 + weight``."""
+
     def __init__(self, dim: int, dtype: DType, eps: float = 1e-6) -> None:
         # Gemma3 uses (1.0 + weight) as the scale factor
         super().__init__(dim=dim, dtype=dtype, eps=eps, weight_offset=1)

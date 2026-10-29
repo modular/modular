@@ -367,6 +367,7 @@ static std::string formatRegistration(llvm::StringRef name,
 /// here without that conversation is a review blocker, whatever the diff
 /// says about why it was needed.
 static constexpr UnfusedExecuteRegistration kUnfusedExecuteRegistrations[] = {
+    {"mo.conv", "gpu"},
     {"mo.conv_transpose", "cpu"},
     {"mo.conv_transpose", "gpu"},
     {"mo.matmul", "cpu"},

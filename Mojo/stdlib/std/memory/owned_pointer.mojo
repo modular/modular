@@ -31,6 +31,7 @@ from std.memory.alloc import (
     dealloc,
     Layout,
 )
+from std.utils._nicheable import _FieldNicheable
 
 
 struct OwnedPointer[T: AnyType](
@@ -41,6 +42,7 @@ struct OwnedPointer[T: AnyType](
     ),
     RegisterPassable,
     Writable where conforms_to(T, Writable),
+    _FieldNicheable,
 ):
     """A safe, owning, smart pointer.
 
@@ -281,3 +283,5 @@ struct OwnedPointer[T: AnyType](
         FormatStruct(writer, "OwnedPointer").params(
             TypeNames[Self.T](),
         ).fields(Repr(self[]))
+
+    comptime _KgenNichedFieldName = "_inner".value

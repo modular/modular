@@ -822,7 +822,7 @@ async def test_parse_reports_preprocess_cache_hits_and_misses(
 
 
 # ---------------------------------------------------------------------------
-# CLIN-1911: the ``maxserve.media.*`` family. The media fetch path was
+# CLIN-1911: the ``max.media.*`` family. The media fetch path was
 # entirely untimed, so a request that spent seconds downloading an image was
 # indistinguishable from one that spent them in prefill.
 # ---------------------------------------------------------------------------

@@ -31,11 +31,13 @@ from typing import ClassVar
 
 import numpy as np
 import pytest
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.functional import transfer_to
-from max.experimental.sharding import (
+from max.functional import transfer_to
+from max.graph import DeviceRef, TensorType
+from max.tensor import Tensor
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Partial,
@@ -43,8 +45,6 @@ from max.experimental.sharding import (
     Sharded,
     auto_reshard,
 )
-from max.experimental.tensor import Tensor
-from max.graph import DeviceRef, TensorType
 
 _F32 = DType.float32
 # ═══════════════════════════════════════════════════════════════════════

@@ -25,7 +25,7 @@ from unittest.mock import Mock
 from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheQuantizationConfig, MHAKVCacheParams
+from max.nn.legacy.kv_cache import KVCacheQuantizationConfig, MHAKVCacheParams
 from max.pipelines.architectures.qwen3_5.memory_planner import (
     Qwen3_5MemoryPlanner,
 )

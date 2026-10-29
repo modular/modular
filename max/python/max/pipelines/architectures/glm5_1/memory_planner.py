@@ -30,12 +30,14 @@ from .model_config import Glm5_1Config
 
 
 class Glm5_1MemoryPlanner(PagedMemoryPlanner):
-    """The paged planner, plus what EP init allocates for the fused MoE: the
-    counter reserve, which this model's EP config always gets, and the
-    one-launch fused MoE workspace when ``MODULAR_EP_FUSED_MOE=1`` asks for
-    it. The EP communication buffers and the rest of the counter buffers stay
-    unplanned here, as on main. Over an NVFP4 cache it also reserves the
-    sparse prefill's FP8 conversion scratch."""
+    """Paged planner that also reserves the fused-MoE init allocations.
+
+    Adds the MoE counter reserve that this model's EP config always takes, and
+    the one-launch fused MoE workspace when ``MODULAR_EP_FUSED_MOE=1`` asks
+    for it. The EP communication buffers and the rest of the counter buffers
+    stay unplanned here. Over an NVFP4 cache it also reserves the sparse
+    prefill's FP8 conversion scratch.
+    """
 
     def estimate_activation_memory(
         self,

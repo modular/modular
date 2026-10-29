@@ -10,9 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""DSpark: V4's speculative head.
 
-"""DSpark: V4's speculative head. Reference: ``inference/model.py``
-``DSparkAttention``, ``DSparkMarkovHead``.
+Reference: ``inference/model.py`` ``DSparkAttention``, ``DSparkMarkovHead``.
 
 Three MTP stages drafting ``dspark_block_size`` tokens at a time. What makes
 them stages rather than three copies is that only the ends are special --
@@ -42,9 +42,9 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.embedding import Embedding
-from max.nn.layer import Module
-from max.nn.linear import Linear
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
 
 from ..model_config import DeepseekV4Config
 from .attention import DeepseekV4Attention, weightless_rms_normalize

@@ -10,5 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Qwen3 text encoder layers."""
 
 from .attention import EncoderAttention

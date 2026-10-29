@@ -74,7 +74,6 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
 )
 from nn.attention.mha_mask import MHAMask, TileMaskStatus, MaskStrategy
 from nn.attention.gpu.nvidia.common import OptionalPointer
-from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 from .barriers import Depth512MBars
 from .config import Depth512SM100Config
@@ -893,8 +892,8 @@ def depth512_softmax[
                 break
             var cur_mask_status = mask.status(
                 seq_id,
-                Index[dtype=.int32](Int(score_row), Int(kv_row)),
-                Index[dtype=.int32](PairBM_mask, BN),
+                (Int(score_row), Int(kv_row)),
+                (Int(PairBM_mask), Int(BN)),
             )
             if cur_mask_status == TileMaskStatus.FULL_MASK:
                 continue

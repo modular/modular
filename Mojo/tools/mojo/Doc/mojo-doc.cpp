@@ -18,8 +18,11 @@
 #include "AsyncRT/Runtime/WorkQueue.h"
 #include "Init/Init.h"
 #include "Mojo/MojoTooling/DocGen.h"
+#include "Mojo/ToolCommon/DriverOptions.h"
+#include "Mojo/ToolCommon/FrontendOptions.h"
 #include "Mojo/ToolCommon/InitAllDialects.h"
 #include "Support/Driver/DriverSupport.h"
+#include "Support/Driver/OptionMarshalling.h"
 
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/MLIRContext.h"
@@ -35,13 +38,8 @@
 using namespace M;
 
 #define DRIVER_OPTIONS_PATH "Doc/DocOptions.inc"
+#include "Doc/DocOptionsHelpTexts.inc"
 #include "Support/Driver/OptTable.inc"
-
-namespace {
-struct DocOptTable : public llvm::opt::OptTable {
-  DocOptTable() : llvm::opt::OptTable(optionTables()) {}
-};
-} // namespace
 
 /// Given the path to a Mojo source file, opens and parses that file's doc
 /// strings in order to generate structured output (currently JSON). Returns an
@@ -50,26 +48,20 @@ struct DocOptTable : public llvm::opt::OptTable {
 static int doc(const State &subcommandState) {
   // Parse command line arguments.
   State state = subcommandState;
-  DocOptTable options;
-  unsigned missingIndex = 0;
-  unsigned missingCount = 0;
-  llvm::opt::InputArgList args =
-      options.ParseArgs(state.arguments, missingIndex, missingCount);
+  options::Table optTable;
+  llvm::opt::InputArgList args;
+  if (std::optional<int> exitCode =
+          state.parseArguments(optTable, options::helpTexts(), args))
+    return *exitCode;
 
-  if (args.hasArg(options::OPT_help)) {
-    return state.printHelp(
-#include "Doc/DocOptionsHelpText.inc"
-    );
-  } else if (args.hasArg(options::OPT_help_hidden)) {
-    return state.printHelp(
-#include "Doc/DocOptionsHelpHiddenText.inc"
-    );
-  }
-
-  if (int result = state.parseDiagnosticFormatArguments(
-          args, options::OPT_diagnostic_format,
-          /*disableWarningsId=*/llvm::opt::OptSpecifier(), options::OPT_werror,
-          options::OPT_wno_error))
+  DriverOptions driverOptions;
+  KGEN::FrontendOptions frontendOptions;
+  MarshallingErrors errors;
+#define MOJO_OPTION_WITH_MARSHALLING(...)                                      \
+  PARSE_OPTION_WITH_MARSHALLING(args, errors, __VA_ARGS__)
+#include "Doc/DocOptions.inc"
+#undef MOJO_OPTION_WITH_MARSHALLING
+  if (int result = state.rejectInvalidArguments(args, errors))
     return result;
 
   // Handle deprecated --validate-doc-strings flag as an alias for -Werror.
@@ -81,9 +73,6 @@ static int doc(const State &subcommandState) {
         "--validate-doc-strings is deprecated, use -Werror instead");
     state.warningsAsErrors = true;
   }
-
-  if (int result = state.rejectUnknownArguments(args, options::OPT_UNKNOWN))
-    return result;
 
   if (!args.hasArg(options::OPT_INPUT))
     return state.reportError("no input file provided");
@@ -120,23 +109,13 @@ static int doc(const State &subcommandState) {
   if (!out)
     return state.reportError(outputError);
 
-  DocGenConfig config;
-  config.warningsAsErrors = state.areWarningsAsErrors();
-  config.diagnoseMissingDocStrings =
-      args.hasArg(options::OPT_diagnose_missing_doc_strings);
-  int maxNotes = 0;
-  if (!args.getLastArgValue(options::OPT_max_notes).getAsInteger(10, maxNotes))
-    config.maxNotesPerDiagnostic = maxNotes;
-  config.stripFilePrefix = args.getLastArgValue(options::OPT_strip_file_prefix);
-  config.docsBasePath = args.getLastArgValue(options::OPT_docs_base_path);
-  config.includePaths = args.getAllArgValues(options::OPT_I);
-  config.diagnosticFormat = state.diagnosticFormat;
-  config.ignoredDeprecations =
-      args.getAllArgValues(options::OPT_ignore_deprecated);
+  setWarningPolicy(state, frontendOptions);
 
   // Note: timing scope removed during DocGen extraction — it was never
   // surfaced to users.
-  if (!generateMojoDocJSON(*pathOrErr, context, config, out->os()))
+  if (!generateMojoDocJSON(*pathOrErr, context, frontendOptions,
+                           driverOptions.includePaths, state.diagnosticFormat,
+                           out->os()))
     return state.reportError("could not generate documentation");
 
   out->keep();

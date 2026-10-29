@@ -129,6 +129,15 @@ void rangeBeginWithId(uint64_t correlationId, StringRef name, uint32_t color) {
     sink->rangeBeginWithId(correlationId, name, color);
 }
 
+void setTraceMetadata(StringRef key, StringRef value) {
+  if (!isRangeRecordingActive())
+    return;
+  const Detail::RangeSink *sink =
+      Detail::getCachedSink().load(std::memory_order_acquire);
+  if (sink && sink->setTraceMetadata)
+    sink->setTraceMetadata(key, value);
+}
+
 void rangeEnd() {
   // Deliberately NOT gated on the recording flag: the profiler tracks
   // begin/end balance on a per-thread stack that must see every end, even

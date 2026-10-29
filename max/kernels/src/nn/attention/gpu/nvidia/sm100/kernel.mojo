@@ -66,7 +66,6 @@ from nn.attention.mha_utils import (
     OptionallyStaticInt,
     _is_decoding,
 )
-from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 from linalg.arch.sm100.mma import smem_descriptor
 from .smem import SM100AttentionSMem
@@ -253,7 +252,7 @@ struct SM100MHA2Q[
         Self.KVLUTType.dtype,
         Self.config.swizzle_mode,
         BN=kv_sub_tile_rows(Self.config.k_rows_per_cta(), Self.page_size),
-        BK=Self.config.BK0,
+        BK=Self.config.k_tma_box_cols(),
     ]
     comptime VTMAOpType = KVTMATile[
         Self.KVLUTType.dtype,
@@ -695,6 +694,7 @@ struct SM100MHA2Q[
                     ws_num_partitions=ws_np,
                     ws_lse_ptr=ws_lse,
                     ws_num_rows_q=num_rows_q,
+                    ws_o_ptr=pack.partition.o_partial_pointer(),
                 )
 
         elif warp_idx < 12:
@@ -899,11 +899,8 @@ struct SM100MHA2Q[
     ) -> TileMaskStatus:
         return mask.status(
             seq_id,
-            Index[dtype=DType.int32](
-                Int(score_row),
-                Int(kv_row),
-            ),
-            Index[dtype=DType.int32](Self.BM_mask, Self.BN),
+            (Int(score_row), Int(kv_row)),
+            (Int(Self.BM_mask), Int(Self.BN)),
         )
 
     @staticmethod

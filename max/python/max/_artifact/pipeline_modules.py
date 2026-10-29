@@ -18,7 +18,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from max.experimental.compilation import CompiledCallable
+from max.tensor.compilation import CompiledCallable
 from typing_extensions import Self
 
 from .codec import prefix_files
@@ -30,7 +30,7 @@ class PipelineModules:
     """A pipeline's compiled graphs, keyed by role.
 
     Each role's graph is a
-    :class:`~max.experimental.compilation.CompiledCallable` whose MEF holds
+    :class:`~max.tensor.compilation.CompiledCallable` whose MEF holds
     only that graph. Each role's files are stored under a directory named
     after the role, such as ``decoder/model.mef``. ``max export`` compiles
     each role on its own so that every MEF holds one graph.

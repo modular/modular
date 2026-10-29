@@ -14,7 +14,9 @@
 
 Each layer routes every token to a few quantized experts, chosen by a scored
 gate with a separate bias for image tokens, and adds one always-active shared
-expert. Experts can be split across devices (expert parallelism).
+expert. Experts can be split across devices (expert parallelism). The routed
+experts are NVFP4 or MXFP4, as the checkpoint's
+:class:`~..model_config.RoutedExpertFormat` says.
 """
 
 from __future__ import annotations
@@ -34,10 +36,10 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn.activation import GatedActivation
-from max.nn.comm.ep import EPBatchManager
-from max.nn.comm.ep.ep_kernels import fused_silu_quantized
-from max.nn.kernels import (
+from max.nn.legacy.activation import GatedActivation
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.legacy.comm.ep.ep_kernels import fused_silu, fused_silu_quantized
+from max.nn.legacy.kernels import (
     _is_apple_gpu,
     _is_sm10x_gpu,
     block_scales_interleave,
@@ -47,9 +49,9 @@ from max.nn.kernels import (
     moe_router_image_bias,
     swiglu_quantize_dynamic_block_scaled,
 )
-from max.nn.layer import Module
-from max.nn.linear import Linear, linear
-from max.nn.quant_config import (
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear, linear
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -59,6 +61,7 @@ from max.nn.quant_config import (
 )
 
 from ...deepseekV4.layers.moe import (
+    FP4_WEIGHT_BLOCK,
     DeepseekV4Gate,
     DeepseekV4RoutedExperts,
     _PackedExpertWeight,
@@ -71,6 +74,7 @@ from ..model_config import (
     NVFP4_SF_ATOM_COLS,
     NVFP4_SF_ATOM_ROWS,
     DeepseekV41Config,
+    RoutedExpertFormat,
     gate_up_rows_interleaved,
     nvfp4_sf_preinterleaved,
 )
@@ -99,6 +103,49 @@ def _use_fused_silu_quant(n_local_experts: int) -> bool:
 # shares this id (the role travels in a separate `types` tensor), so routing
 # tests `==` rather than a range.
 IMAGE_SENTINEL_BASE_ID = 129264
+
+
+def _sf_atom_scales(
+    weight_scale: Weight,
+    n_experts: int,
+    out_dim: int,
+    in_dim: int,
+    block: int,
+    device: DeviceRef,
+) -> TensorValue:
+    """Returns stacked expert block scales in the grouped matmul's layout.
+
+    The result is ``[E, N/128, K/(4 * block), 32, 4, 4]``. Scales the weight
+    adapter interleaved on the host
+    (:func:`~..model_config.nvfp4_sf_preinterleaved`) keep their
+    ``[E, N, K/block]`` shape, and only their byte order differs.
+    """
+    scales = weight_scale.to(device)
+    scale_cols = in_dim // block
+    if nvfp4_sf_preinterleaved(out_dim, scale_cols):
+        # A free view. Interleaving in the graph would make the compiler
+        # keep a second resident copy of every expert scale.
+        return ops.reshape(
+            scales,
+            [
+                scales.shape[0],
+                out_dim // NVFP4_SF_ATOM_ROWS,
+                scale_cols // NVFP4_SF_ATOM_COLS,
+                32,
+                4,
+                4,
+            ],
+        )
+    per_expert = ops.split(scales, [1] * n_experts, axis=0)
+    return ops.stack(
+        [
+            block_scales_interleave(
+                ops.reshape(e, [out_dim, scale_cols]), block
+            )
+            for e in per_expert
+        ],
+        axis=0,
+    )
 
 
 class _PackedExpertWeightNvFp4(_PackedExpertWeight):
@@ -150,46 +197,40 @@ class _PackedExpertWeightNvFp4(_PackedExpertWeight):
             device=device,
         )
 
-    @property
-    def sf_preinterleaved(self) -> bool:
-        """Whether ``weight_scale`` was interleaved on the host before loading.
-
-        For these shapes the scale bytes arrive already in the grouped
-        matmul's interleaved layout; the buffer keeps its ``[E, N, K/16]``
-        shape and only its byte order differs.
-        """
-        return nvfp4_sf_preinterleaved(self.out_dim, self.in_dim // NVFP4_BLOCK)
-
     def __call__(self, device: DeviceRef) -> TensorValue:
         """Returns the block scales in the grouped matmul's interleaved layout.
 
         The result is ``[E, N/128, K/64, 32, 4, 4]``.
         """
-        scales = self.weight_scale.to(device)
-        if self.sf_preinterleaved:
-            # A free view. Interleaving in the graph would make the compiler
-            # keep a second resident copy of every expert scale.
-            return ops.reshape(
-                scales,
-                [
-                    scales.shape[0],
-                    self.out_dim // NVFP4_SF_ATOM_ROWS,
-                    self.in_dim // NVFP4_BLOCK // NVFP4_SF_ATOM_COLS,
-                    32,
-                    4,
-                    4,
-                ],
-            )
-        per_expert = ops.split(scales, [1] * self.n_experts, axis=0)
-        return ops.stack(
-            [
-                block_scales_interleave(
-                    ops.reshape(e, [self.out_dim, self.in_dim // NVFP4_BLOCK]),
-                    NVFP4_BLOCK,
-                )
-                for e in per_expert
-            ],
-            axis=0,
+        return _sf_atom_scales(
+            self.weight_scale,
+            self.n_experts,
+            self.out_dim,
+            self.in_dim,
+            NVFP4_BLOCK,
+            device,
+        )
+
+
+class _HostInterleavedExpertWeight(_PackedExpertWeight):
+    """A stacked MXFP4 expert projection whose scales may be host-interleaved.
+
+    The trunk's weight adapter interleaves the E8M0 scales on the host
+    wherever their shape tiles the scale-factor tile, as for NVFP4.
+    """
+
+    def __call__(self, device: DeviceRef) -> TensorValue:
+        """Returns the block scales in the grouped matmul's interleaved layout.
+
+        The result is ``[E, N/128, K/128, 32, 4, 4]``.
+        """
+        return _sf_atom_scales(
+            self.weight_scale,
+            self.n_experts,
+            self.out_dim,
+            self.in_dim,
+            FP4_WEIGHT_BLOCK,
+            device,
         )
 
 
@@ -301,6 +342,16 @@ class DeepseekV41NvFp4RoutedExperts(DeepseekV4RoutedExperts):
             scale_offsets,
             expert_ids,
         )
+
+    def dispatch_input_scale(self, device: DeviceRef) -> TensorValue | None:
+        """The one global gate/up input scale expert dispatch quantizes with.
+
+        Every device holds the same value; the dispatch kernel reads the
+        first element.
+        """
+        proj = self.gate_up_proj
+        assert isinstance(proj, _PackedExpertWeightNvFp4)
+        return proj.input_scale.to(device)[0:1]
 
     def dispatched(
         self,
@@ -473,6 +524,269 @@ class DeepseekV41NvFp4RoutedExperts(DeepseekV4RoutedExperts):
             a_offsets,
             scale_offsets,
             expert_ids,
+        )
+
+
+def mxfp8_grouped_quantize(
+    x: TensorValue,
+    row_offsets: TensorValue,
+    scales_offsets: TensorValue,
+    expert_ids: TensorValue,
+) -> tuple[TensorValue, TensorValue]:
+    """Quantizes expert-sorted activations to MXFP8, one scale per 32 values.
+
+    The reference's ``act_quant(x, 32, "ue8m0")``: each block's E8M0 scale
+    is its absolute max over 448 rounded up to a power of two. There is no
+    per-expert static input scale, so the kernel's tensor-wise scale is one.
+
+    Args:
+        x: ``[total_tokens, K]``, one row per token slot sorted by expert;
+            any float dtype (cast to bf16 for the kernel).
+        row_offsets: Cumulative token offsets per expert, ``[num_experts+1]``
+            uint32.
+        scales_offsets: Per-expert scale-tile offset corrections,
+            ``[num_experts]`` uint32.
+        expert_ids: Expert id mapping, ``[num_experts]`` int32.
+
+    Returns:
+        ``(quantized, a_scales)``: ``float8_e4m3fn[total_tokens, K]`` and
+        ``float8_e8m0fnu`` scales ``[total_m_tiles, K/128, 32, 4, 4]``, in
+        the interleaved layout ``grouped_matmul_block_scaled`` takes.
+    """
+    device = x.device
+    # Pure block scaling: the per-expert tensor-wise factor is one.
+    sf_tensor = ops.broadcast_to(
+        ops.constant(1.0, DType.float32, device=device), expert_ids.shape
+    )
+    return grouped_quantize_dynamic_block_scaled(
+        ops.cast(x, DType.bfloat16),
+        row_offsets=row_offsets,
+        scales_offsets=scales_offsets,
+        expert_ids=expert_ids,
+        sf_tensor=sf_tensor,
+        sf_vector_size=_MXFP8_BLOCK_SIZE,
+        scales_type=DType.float8_e8m0fnu,
+        out_type=DType.float8_e4m3fn,
+    )
+
+
+class DeepseekV41Mxfp4RoutedExperts(DeepseekV4RoutedExperts):
+    """Routed experts with MXFP4 weights and MXFP8 activations (W4A8).
+
+    Weights are ``[E, N, K/2]`` uint8 (two E2M1 values per byte) with
+    ``[E, N, K/32]`` E8M0 scales. Each GEMM's input is quantized by
+    :func:`mxfp8_grouped_quantize`, as the reference's ``fp4_gemm`` inputs
+    are. The trunk's MXFP4 experts and DSpark's stages both run this.
+    """
+
+    # In the routed path the routing weight scales the down projection's
+    # input before it is quantized, as in the reference. Under expert
+    # parallelism the combine applies it after the down projection instead,
+    # so that path's MXFP8 quantize rounds the unweighted activation.
+    _weight_after_down_proj = False
+
+    def __init__(
+        self,
+        n_experts: int,
+        hidden_size: int,
+        moe_intermediate_size: int,
+        num_experts_per_tok: int,
+        swiglu_limit: float,
+        device: DeviceRef,
+        *,
+        host_interleaved_scales: bool = False,
+    ) -> None:
+        """Declares the stacked ``gate_up_proj`` and ``down_proj``.
+
+        Args:
+            n_experts: Routed experts.
+            hidden_size: Model hidden width.
+            moe_intermediate_size: Expert intermediate width.
+            num_experts_per_tok: Experts each token routes to.
+            swiglu_limit: SwiGLU clamp limit; ``<= 0`` disables the clamp.
+            device: Device the weights live on.
+            host_interleaved_scales: Whether the weight adapter interleaves
+                the block scales on the host (the trunk's do; DSpark's are
+                interleaved in the graph).
+        """
+        Module.__init__(self)
+        self.n_experts = n_experts
+        self.topk = num_experts_per_tok
+        self.hidden = hidden_size
+        self.inter = moe_intermediate_size
+        self.swiglu_limit = swiglu_limit
+        weight_type = (
+            _HostInterleavedExpertWeight
+            if host_interleaved_scales
+            else _PackedExpertWeight
+        )
+        self.gate_up_proj = weight_type(
+            n_experts, 2 * moe_intermediate_size, hidden_size, device
+        )
+        self.down_proj = weight_type(
+            n_experts, hidden_size, moe_intermediate_size, device
+        )
+        self.expert_offset = 0
+        self.n_global_experts = n_experts
+        self.gate_up_interleaved = False
+        """Whether ``gate_up_proj`` rows alternate gate, up.
+
+        Set for the trunk behind expert-parallel dispatch
+        (:func:`~..model_config.gate_up_rows_interleaved`), where
+        :meth:`dispatched` runs the fused SwiGLU GEMM that the graph compiler
+        fuses with the down GEMM into the W4A8 MegaFFN.
+        """
+
+    def _grouped(
+        self,
+        proj: _PackedExpertWeight,
+        x: TensorValue,
+        a_offsets: TensorValue,
+        scale_offsets: TensorValue,
+        scale_slot: TensorValue,
+        expert_ids: TensorValue,
+    ) -> TensorValue:
+        # Quantized at group 32 directly; no reslice.
+        del scale_slot
+        quantized, a_scales = mxfp8_grouped_quantize(
+            x, a_offsets, scale_offsets, expert_ids
+        )
+        usage = ops.concat(
+            [
+                ops.cast(ops.shape_to_tensor([x.shape[0]]), DType.uint32),
+                ops.constant(
+                    np.array([self.n_experts], np.uint32),
+                    DType.uint32,
+                    DeviceRef.CPU(),
+                ),
+            ],
+            axis=0,
+        )
+        return self._w4a8_matmul(
+            proj,
+            quantized,
+            a_scales,
+            a_offsets,
+            scale_offsets,
+            expert_ids,
+            usage,
+        )
+
+    def _w4a8_matmul(
+        self,
+        proj: _PackedExpertWeight,
+        quantized: TensorValue,
+        a_scales: TensorValue,
+        a_offsets: TensorValue,
+        scale_offsets: TensorValue,
+        expert_ids: TensorValue,
+        usage: TensorValue,
+        estimated_total_m: TensorValue | None = None,
+    ) -> TensorValue:
+        """The grouped W4A8 GEMM over MXFP8 rows, bf16 out."""
+        device = quantized.device
+        ones_f32 = ops.constant(
+            np.ones(self.n_experts, np.float32), DType.float32, device
+        )
+        return grouped_matmul_block_scaled(
+            quantized,
+            proj.weight.to(device),
+            a_scales,
+            proj(device),
+            a_offsets,
+            scale_offsets,
+            expert_ids,
+            ones_f32,
+            usage,
+            out_type=DType.bfloat16,
+            estimated_total_m=estimated_total_m,
+        )
+
+    def dispatch_input_scale(self, device: DeviceRef) -> TensorValue | None:
+        """``None``: MXFP8 dispatch scales each block by its own max."""
+        del device
+        return None
+
+    def dispatched(
+        self,
+        received: Sequence[TensorValue],
+        estimated_total_m: TensorValue,
+    ) -> TensorValue:
+        """Runs this device's experts over rows delivered by expert dispatch.
+
+        The rows arrive MXFP8-quantized with E8M0 block scales per 32. With
+        :attr:`gate_up_interleaved`, the gate/up GEMM runs with the clamped
+        SwiGLU and the activation's MXFP8 quantize in its epilogue, and the
+        graph compiler fuses it with the down GEMM into one MegaFFN launch.
+        Otherwise the four run as separate ops. Either way they share the
+        dispatch's routing tensors and touch only the rows received, not the
+        whole receive buffer.
+
+        Args:
+            received: The dispatch's ``(rows, block scales, expert_start,
+                scale offsets, expert_ids, usage)``: E4M3 rows sorted by
+                expert group, their E8M0 block scales, the ``[groups + 1]``
+                uint32 row offsets, each group's scale-tile offset, the
+                ``[groups]`` int32 local expert of each group (``-1`` when
+                unused), and host ``[max rows per expert, groups]`` uint32.
+            estimated_total_m: Estimated rows actually received.
+
+        Returns:
+            ``[rows, hidden]`` bf16 down projections, without routing weights.
+        """
+        tokens, a_scales, expert_start, scale_offsets, expert_ids, usage = (
+            TensorValue(v) for v in received
+        )
+        if self.gate_up_interleaved:
+            device = tokens.device
+            activated, activated_scales = grouped_matmul_blocked_swiglu(
+                tokens,
+                self.gate_up_proj.weight.to(device),
+                a_scales,
+                self.gate_up_proj(device),
+                expert_start,
+                scale_offsets,
+                expert_ids,
+                usage,
+                estimated_total_m=estimated_total_m,
+                activation=_clamped_swiglu(self.swiglu_limit),
+            )
+            return self._w4a8_matmul(
+                self.down_proj,
+                activated,
+                activated_scales,
+                expert_start,
+                scale_offsets,
+                expert_ids,
+                usage,
+                estimated_total_m,
+            )
+        gate_up = self._w4a8_matmul(
+            self.gate_up_proj,
+            tokens,
+            a_scales,
+            expert_start,
+            scale_offsets,
+            expert_ids,
+            usage,
+            estimated_total_m,
+        )
+        # The combine applies the routing weights, after the down projection.
+        activated = fused_silu(
+            gate_up, expert_start, activation=_clamped_swiglu(self.swiglu_limit)
+        )
+        quantized, activated_scales = mxfp8_grouped_quantize(
+            activated, expert_start, scale_offsets, expert_ids
+        )
+        return self._w4a8_matmul(
+            self.down_proj,
+            quantized,
+            activated_scales,
+            expert_start,
+            scale_offsets,
+            expert_ids,
+            usage,
+            estimated_total_m,
         )
 
 
@@ -740,8 +1054,42 @@ class ExpertParallelFFN(Protocol):
         ...
 
 
+def _routed_experts(
+    config: DeepseekV41Config, device: DeviceRef
+) -> DeepseekV41NvFp4RoutedExperts | DeepseekV41Mxfp4RoutedExperts:
+    """The trunk's routed experts in ``config.routed_expert_format``."""
+    experts: DeepseekV41NvFp4RoutedExperts | DeepseekV41Mxfp4RoutedExperts
+    if config.routed_expert_format is RoutedExpertFormat.MXFP4:
+        experts = DeepseekV41Mxfp4RoutedExperts(
+            n_experts=config.n_routed_experts,
+            hidden_size=config.hidden_size,
+            moe_intermediate_size=config.moe_intermediate_size,
+            num_experts_per_tok=config.num_experts_per_tok,
+            swiglu_limit=config.swiglu_limit,
+            device=device,
+            host_interleaved_scales=True,
+        )
+    else:
+        experts = DeepseekV41NvFp4RoutedExperts(
+            n_experts=config.n_routed_experts,
+            hidden_size=config.hidden_size,
+            moe_intermediate_size=config.moe_intermediate_size,
+            num_experts_per_tok=config.num_experts_per_tok,
+            swiglu_limit=config.swiglu_limit,
+            device=device,
+        )
+    # Only expert-parallel dispatch runs the interleaved layout's kernel.
+    experts.gate_up_interleaved = (
+        config.ep_config is not None
+        and gate_up_rows_interleaved(
+            config.n_routed_experts, config.data_parallel_degree
+        )
+    )
+    return experts
+
+
 class DeepseekV41MoE(Module):
-    """The trunk FFN: gate, NVFP4 routed experts and MXFP8 shared expert.
+    """The trunk FFN: gate, routed experts and MXFP8 shared expert.
 
     Under expert parallelism the shared expert is added after the routed
     all-reduce (:meth:`tensor_parallel`), so it is counted once.
@@ -762,21 +1110,7 @@ class DeepseekV41MoE(Module):
             dtype=DType.bfloat16,
             device=device,
         )
-        self.experts = DeepseekV41NvFp4RoutedExperts(
-            n_experts=config.n_routed_experts,
-            hidden_size=config.hidden_size,
-            moe_intermediate_size=config.moe_intermediate_size,
-            num_experts_per_tok=config.num_experts_per_tok,
-            swiglu_limit=config.swiglu_limit,
-            device=device,
-        )
-        # Only expert-parallel dispatch runs the interleaved layout's kernel.
-        self.experts.gate_up_interleaved = (
-            config.ep_config is not None
-            and gate_up_rows_interleaved(
-                config.n_routed_experts, config.data_parallel_degree
-            )
-        )
+        self.experts = _routed_experts(config, device)
         self.ep_batch_manager: EPBatchManager | None = None
         """Set on data-parallel replicas whose routed experts run behind
         expert-parallel dispatch (:meth:`data_parallel`)."""
@@ -952,9 +1286,9 @@ class DeepseekV41MoE(Module):
         Each device routes its own rows, sends each routed copy to the device
         that owns its expert, runs its experts over the rows it receives, and
         sends the down projections back, where the combine weights and sums
-        each row's copies. Rows travel NVFP4-quantized against one global
-        gate/up input scale. Each device then adds its replicated shared
-        expert.
+        each row's copies. Rows travel in the experts' activation format:
+        NVFP4 against one global gate/up input scale, or MXFP8. Each device
+        then adds its replicated shared expert.
 
         Args:
             moes: One replica per device, each with the same
@@ -985,15 +1319,13 @@ class DeepseekV41MoE(Module):
             )
         ]
         device_ids = [x.device.id for x in xs]
-        # One global gate/up input scale, the same on every device; the
-        # dispatch kernel reads the first element.
-        input_scales = []
-        for moe, x in zip(moes, xs, strict=True):
-            proj = moe.experts.gate_up_proj
-            assert isinstance(proj, _PackedExpertWeightNvFp4)
-            input_scales.append(proj.input_scale.to(x.device)[0:1])
+        input_scales = [
+            scale
+            for moe, x in zip(moes, xs, strict=True)
+            if (scale := moe.experts.dispatch_input_scale(x.device)) is not None
+        ]
         received = manager.ep_dispatch_all(
-            rows, indices, device_ids, input_scales=input_scales
+            rows, indices, device_ids, input_scales=input_scales or None
         )
         # The routed copies one device can expect, for the GEMMs' tile plan.
         total = ops.shape_to_tensor(rows[0].shape)[0]
@@ -1034,8 +1366,8 @@ class DeepseekV41MoE(Module):
         return ops.cast(y, x.dtype)
 
 
-def nvfp4_moe_ffn_factory(
+def moe_ffn_factory(
     config: DeepseekV41Config, layer_info: LayerInfo, device: DeviceRef
 ) -> Module:
-    """Builds the NVFP4-routed MoE for one trunk layer."""
+    """Builds the MoE for one trunk layer."""
     return DeepseekV41MoE(config, layer_info.layer_id, device)

@@ -20,11 +20,15 @@ either serves the wrong graph or refuses a pairing that should work.
 
 from __future__ import annotations
 
+import pytest
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     SpecDecodeArchConfig,
     SpecDecodePipelineModel,
+    _SpecDecodeModuleV3PipelineModel,
+    _SpecDecodeModuleV3VisionCachePipelineModel,
     spec_decode_architecture,
 )
+from max.pipelines.modeling.types import InputModality
 
 TARGET = "LlamaForCausalLM"
 # An EAGLE checkpoint declares its target's own architecture; the target maps
@@ -87,3 +91,61 @@ def test_a_draft_only_architecture_is_never_the_target() -> None:
     assert (
         spec_decode_architecture(DFLASH_DRAFT, "dflash", DFLASH_DRAFT) is None
     )
+
+
+@pytest.mark.parametrize(
+    ("target", "draft"),
+    [
+        ("Gemma4ForConditionalGeneration", "Gemma4AssistantForCausalLM"),
+        # The MTP depths ship in the target's checkpoint.
+        ("InklingForConditionalGeneration", None),
+    ],
+)
+def test_an_mtp_draft_caps_the_context_its_batch_keeps_resident(
+    target: str, draft: str | None
+) -> None:
+    """Neither target caps it alone, so an uncapped pairing lets the
+    scheduler admit more resident context than the cache holds."""
+    arch = spec_decode_architecture(target, "mtp", draft)
+    assert arch is not None
+    assert arch.requires_max_batch_context_length
+
+
+def test_a_pairing_neither_side_caps_stays_uncapped() -> None:
+    arch = spec_decode_architecture(TARGET, "eagle", EAGLE_DRAFT)
+    assert arch is not None
+    assert not arch.requires_max_batch_context_length
+
+
+def test_a_modulev3_target_pairs_with_its_modulev3_draft() -> None:
+    arch = spec_decode_architecture(
+        "Gemma4ForConditionalGeneration",
+        "mtp",
+        "Gemma4AssistantForCausalLM",
+        prefer_module_v3=True,
+    )
+    assert arch is not None
+    assert arch.name == "Gemma4ForConditionalGeneration_ModuleV3+mtp"
+    assert arch.pipeline_model is _SpecDecodeModuleV3VisionCachePipelineModel
+    assert InputModality.IMAGE in arch.input_modalities
+    assert arch.requires_max_batch_context_length
+
+
+def test_a_modulev3_block_target_pairs_with_its_modulev3_drafter() -> None:
+    # The checkpoint names its drafter as Llama 3's, which the target renames.
+    arch = spec_decode_architecture(
+        "MiMoV2ForCausalLM", "dflash", "DFlashDraftModel", prefer_module_v3=True
+    )
+    assert arch is not None
+    assert arch.name == "MiMoV2ForCausalLM_ModuleV3+dflash"
+    assert arch.pipeline_model is _SpecDecodeModuleV3PipelineModel
+    assert arch.multi_gpu_supported
+    assert arch.supports_spec_decode_mixed_batches
+
+
+def test_a_target_that_builds_both_pairs_on_the_graph_api_by_default() -> None:
+    arch = spec_decode_architecture(
+        "Gemma4ForConditionalGeneration", "mtp", "Gemma4AssistantForCausalLM"
+    )
+    assert arch is not None
+    assert arch.name == "Gemma4ForConditionalGeneration+mtp"

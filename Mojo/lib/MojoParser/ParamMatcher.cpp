@@ -655,8 +655,7 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
   // Allowing match a FnLiteralType To a FuncType, but not vice versa.
   if (auto actual = dyn_cast<FnLiteralTypeGeneratorType>(actualType))
     if (auto expected = dyn_cast<FnTypeGeneratorType>(expectedType))
-      return matchFunctionTypes(actual.getSymbolConstantAttr().getType(),
-                                expected);
+      return matchFunctionTypes(actual.getNonLiteralGeneratorType(), expected);
 
   // Handle GeneratorType
   if (auto actual = dyn_cast<GeneratorType>(actualType)) {
@@ -708,14 +707,13 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
   if (auto expectedTrait = dyn_cast<TraitType>(expectedType)) {
     if (auto expected = extractClosureSymbol(shared, expectedTrait)) {
       // We can infer from a parametric closure trait and a fn literal type.
-      FnTypeGeneratorType fnSigActual = [&]() {
+      FnTypeGeneratorType fnSigActual = [&]() -> FnTypeGeneratorType {
         if (auto actual = extractClosureSymbol(
                 shared, ASTType(actualType).getProvidedTrait(shared))) {
           return shared.getClosureFnSigWithoutSelf(actual);
         } else if (auto actual =
                        dyn_cast<FnLiteralTypeGeneratorMetaType>(actualType)) {
-          return cast<FnTypeGeneratorType>(
-              actual.getType().getSymbolConstantAttr().getType());
+          return actual.getType().getNonLiteralGeneratorType();
         }
         return FnTypeGeneratorType();
       }();
@@ -889,31 +887,33 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
           state.declScope.getKnownAssumptionsIncludingParents(assumptions);
         }
 
-        fixableByUpCast = llvm::all_of(toCheck, [&](TypedAttr typeExpr) {
-          assert(LIT::isTypeExpr(typeExpr));
-          // Try get the tightest possible metatype bound.
-          Type tightestBound = ASTType(typeExpr).extractMetaType();
-          if (!tightestBound) {
-            // `struct __MLIRType` is the corner case here :(.
-            tightestBound = typeExpr.getType();
-          }
-          FailureOr<ConstraintResult> upCastable =
-              IREmitter::canMetaTypeUpCastToWithDetails(
-                  shared, state.declScope.getLoc(), tightestBound, targetMT,
-                  &state.declScope, /*scopeDependent=*/nullptr);
-          if (succeeded(upCastable) && upCastable->isYes())
-            return true;
-          if (succeeded(upCastable))
-            upCastFailure = std::move(*upCastable);
+        fixableByUpCast =
+            !state.paramFinder.hasReferences(targetMT) &&
+            llvm::all_of(toCheck, [&](TypedAttr typeExpr) {
+              assert(LIT::isTypeExpr(typeExpr));
+              // Try get the tightest possible metatype bound.
+              Type tightestBound = ASTType(typeExpr).extractMetaType();
+              if (!tightestBound) {
+                // `struct __MLIRType` is the corner case here :(.
+                tightestBound = typeExpr.getType();
+              }
+              FailureOr<ConstraintResult> upCastable =
+                  IREmitter::canMetaTypeUpCastToWithDetails(
+                      shared, state.declScope.getLoc(), tightestBound, targetMT,
+                      &state.declScope, /*scopeDependent=*/nullptr);
+              if (succeeded(upCastable) && upCastable->isYes())
+                return true;
+              if (succeeded(upCastable))
+                upCastFailure = std::move(*upCastable);
 
-          if (!assumptions.empty()) {
-            if (auto targetTrait = dyn_cast<TraitType>(targetMT)) {
-              return (LIT::attrConformsToTraitUnderAssumptions(
-                  typeExpr, targetTrait, shared, assumptions));
-            }
-          }
-          return false;
-        });
+              if (!assumptions.empty()) {
+                if (auto targetTrait = dyn_cast<TraitType>(targetMT)) {
+                  return (LIT::attrConformsToTraitUnderAssumptions(
+                      typeExpr, targetTrait, shared, assumptions));
+                }
+              }
+              return false;
+            });
 
         if (fixableByUpCast) {
           SmallVector<TypedAttr> casted =

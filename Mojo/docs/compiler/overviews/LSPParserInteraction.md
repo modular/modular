@@ -41,14 +41,14 @@ LSPServer.cpp        JSON-RPC method names  <->  C++ handlers
 MojoServer           document map, debouncer, dispatch by URI
    |
 MojoDocument         <- where the parser is invoked
-   |__ Context { MLIRContext, ParserConfig, MojoParserContext,
+   |__ Context { MLIRContext, FrontendOptions, MojoParserContext,
                  SymbolIndex, LSPParserListener }
 ```
 
 Each open file is a `MojoTextDocument` (a subclass of `MojoDocument`). Every
-document owns a `Context` that bundles a fresh `MLIRContext`, a `ParserConfig`,
-the `MojoParserContext`, and the two bridge objects (`SymbolIndex` +
-`LSPParserListener`).
+document owns a `Context` that bundles a fresh `MLIRContext`, the
+`FrontendOptions`, the `MojoParserContext`, and the two bridge objects
+(`SymbolIndex` + `LSPParserListener`).
 
 Key source files:
 
@@ -57,7 +57,7 @@ Key source files:
 | `Mojo/tools/mojo-lsp-server/MojoServer.cpp`    | Bulk of the implementation: `Context`, `LSPParserListener`, `SymbolIndex`, parse flow, all feature handlers |
 | `Mojo/tools/mojo-lsp-server/MojoDocument.h`    | Document model headers, feature API                                                                         |
 | `Mojo/include/Mojo/MojoTooling/ParserDriver.h` | `MojoParserContext` — the tooling-facing parser driver                                                      |
-| `Mojo/include/Mojo/MojoParser/EntryPoint.h`    | `ParserConfig` and the `ParserListener` interface                                                           |
+| `Mojo/include/Mojo/MojoParser/EntryPoint.h`    | `FrontendOptions` and the `ParserListener` interface                                                        |
 
 ## The seam: `MojoParserContext`
 
@@ -66,18 +66,17 @@ The boundary between the LSP and the parser is one class, `MojoParserContext`
 LSP holds one per open document and drives it.
 
 It is constructed inside `MojoDocument::Context`, which also wires the LSP's
-listener into the `ParserConfig`:
+listener into the `FrontendOptions`:
 
-```728:749:Mojo/tools/mojo-lsp-server/MojoServer.cpp
+```cpp
 struct MojoDocument::Context {
   Context(MojoDocument &mainDoc)
-      : mlirContext(MLIRContext::Threading::DISABLED),
-        parserConfig(&mlirContext, compilationOptions), symbolIndex(mainDoc),
+      : mlirContext(MLIRContext::Threading::DISABLED), symbolIndex(mainDoc),
         parserListener(mainDoc, symbolIndex) {
-    parserConfig.parserListener = &parserListener;
+    frontendOptions.parserListener = &parserListener;
     ...
-    parserContext =
-        std::make_unique<MojoParserContext>(mainDoc.sourceMgr, parserConfig);
+    parserContext = std::make_unique<MojoParserContext>(
+        mainDoc.sourceMgr, &mlirContext, compilationOptions, frontendOptions);
   }
 ```
 
@@ -729,7 +728,7 @@ throwaway parse — the source of the "re-parses on every keystroke" cost.
 1. Add the buffer to a fresh `SourceMgr`.
 2. **Suppress diagnostics** (install a no-op diag handler) — completion never
    reports errors.
-3. Build a `ParserConfig` with `parserListener = &listener`.
+3. Build a `FrontendOptions` with `parserListener = &listener`.
 4. Create a fresh `MojoParserContext`.
 5. `computeCompletionRange(...)` — convert the byte offset into an `SMRange`
    bracketing the partial identifier under the cursor: `Start` walks back over

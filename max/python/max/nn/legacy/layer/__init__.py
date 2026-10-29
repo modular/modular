@@ -1,0 +1,33 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Reusable building blocks for the legacy NN layers."""
+
+from .layer import (
+    Layer,
+    Module,
+    Shardable,
+    add_layer_hook,
+    clear_hooks,
+)
+from .layer_list import LayerList
+from .missing_layer import MissingLayer
+
+__all__ = [
+    "Layer",
+    "LayerList",
+    "MissingLayer",
+    "Module",
+    "Shardable",
+    "add_layer_hook",
+    "clear_hooks",
+]

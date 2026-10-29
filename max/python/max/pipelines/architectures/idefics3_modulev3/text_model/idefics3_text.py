@@ -20,25 +20,25 @@ from __future__ import annotations
 
 import functools
 
+from max import functional as F
 from max import tree
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.attention import AttentionWithRope
-from max.experimental.nn.common_layers.mlp import MLP
-from max.experimental.nn.embedding import Embedding
-from max.experimental.nn.linear import Linear
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.tensor import Tensor
 from max.graph import ops
-from max.nn.kernels import scatter_nd_skip_oob_indices as _scatter_nd
-from max.nn.kv_cache import (
+from max.nn import Module
+from max.nn.common_layers.attention import AttentionWithRope
+from max.nn.common_layers.mlp import MLP
+from max.nn.embedding import Embedding
+from max.nn.legacy.kernels import scatter_nd_skip_oob_indices as _scatter_nd
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
 )
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
+from max.nn.linear import Linear
+from max.nn.norm import RMSNorm
+from max.nn.sequential import ModuleList
+from max.tensor import Tensor
 
 from ...llama3_modulev3.layers.mlp import LlamaStackedMLP
 from ...llama3_modulev3.layers.rotary_embedding import Llama3RotaryEmbedding
@@ -190,6 +190,7 @@ class Idefics3TextModel(
         image_embeddings: Tensor,
         image_token_indices: Tensor,
     ) -> tuple[Tensor, ...]:
+        """Runs the decoder over ``tokens``, merging the image embeddings."""
         # Get text embeddings and merge in image embeddings.
         h = self.embed_tokens(tokens)
         h = merge_multimodal_embeddings(
@@ -285,6 +286,7 @@ class Idefics3Language(Module[..., tuple[Tensor, ...]]):
         image_token_indices: Tensor,
         *variadic_args,
     ) -> tuple[Tensor, ...]:
+        """Runs the language model over the tokens and the KV inputs."""
         symbolic_inputs = self.kv_params.unflatten_kv_inputs(
             iter(variadic_args)
         )

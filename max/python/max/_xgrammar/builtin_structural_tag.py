@@ -2416,6 +2416,9 @@ def get_deepseek_v41_structural_tag(
                         # Omitted items / additionalProperties allow anything
                         # in JSON Schema; strict mode would forbid them.
                         strict_mode=False,
+                        # A no-argument tool's block is the invoke header and
+                        # nothing but separator whitespace, so cap the run.
+                        max_whitespace_cnt=1,
                     ),
                     end=INVOKE_END,
                 )

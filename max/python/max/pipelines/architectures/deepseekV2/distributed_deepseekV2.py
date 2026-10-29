@@ -28,18 +28,18 @@ from max.graph import (
     Value,
 )
 from max.graph import Module as GraphModule
-from max.nn.attention.multi_latent_attention import (
+from max.nn.legacy.attention.multi_latent_attention import (
     TensorParallelLatentAttentionWithRope,
 )
-from max.nn.embedding import VocabParallelEmbedding
-from max.nn.linear import MLP, ColumnParallelLinear
-from max.nn.moe import MoE
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import (
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.linear import MLP, ColumnParallelLinear
+from max.nn.legacy.moe import MoE
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
-from max.nn.transformer import (
+from max.nn.legacy.transformer import (
     DecoderOutputs,
     DistributedTransformer,
     DistributedTransformerBlock,
@@ -147,8 +147,7 @@ class DistributedDeepseekV2(DistributedTransformer):
         )
 
     def input_types(self) -> tuple[TensorType | BufferType, ...]:
-        """Returns the graph's input types; see
-        :func:`~max.pipelines.architectures.deepseekV2.deepseekV2.deepseekV2_input_types`."""
+        """The graph's input types for this device set and KV params."""
         return deepseekV2_input_types(self.devices, self.kv_params)
 
     def trace(
@@ -205,12 +204,11 @@ class DistributedDeepseekV2(DistributedTransformer):
         )
 
     def _get_mlp(self, config: DeepseekV2Config, idx: int) -> MLP | MoE:
-        """Helper function to return a mixture of experts layer or traditional multi-layer perceptron layer
-        for the TransformerBlock's mlp depending on the layer idx.
+        """Returns the MLP or MoE layer the TransformerBlock uses for a layer.
 
         Args:
             config: Configuration object containing model parameters
-            i: Layer index
+            idx: Layer index
 
         Returns:
             List of MLP shards or MoE modules depending on the layer index and config

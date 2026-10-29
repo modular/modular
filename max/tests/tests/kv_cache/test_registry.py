@@ -22,7 +22,7 @@ import pytest
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     KVCacheQuantizationConfig,
     KVConnectorType,
@@ -34,7 +34,7 @@ from max.nn.kv_cache import (
     RecurrentStateRegion,
     estimated_memory_size,
 )
-from max.nn.kv_cache.cache_params import TIERED_CONNECTOR_TYPES
+from max.nn.legacy.kv_cache.cache_params import TIERED_CONNECTOR_TYPES
 from max.pipelines.kv_cache import (
     JengaKVCacheManager,
     PagedKVCacheManager,

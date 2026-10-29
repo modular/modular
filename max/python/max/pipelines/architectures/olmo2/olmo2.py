@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Build an Olmo2 model that uses continuous or paged kv-caching"""
+"""Build an Olmo2 model that uses continuous or paged kv-caching."""
 
 import functools
 from collections.abc import Callable, Iterable
@@ -29,13 +29,13 @@ from max.graph import (
 )
 from max.graph import Module as GraphModule
 from max.graph.quantization import QuantizationEncoding
-from max.nn.embedding import Embedding
-from max.nn.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
-from max.nn.layer import Module
-from max.nn.linear import MLP, Linear
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import Llama3RotaryEmbedding
-from max.nn.transformer import DecoderOutputs, Transformer
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, KVCacheParamInterface
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import MLP, Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.legacy.transformer import DecoderOutputs, Transformer
 from max.pipelines.architectures.llama3.llama3 import StackedMLP
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.architectures.olmo2.layers.attention import Olmo2Attention
@@ -44,6 +44,8 @@ from .layers.transformer import Olmo2TransformerBlock
 
 
 class Olmo2(Transformer):
+    """Olmo2 graph model built from single-device attention and MLP blocks."""
+
     def __init__(self, config: Llama3Config) -> None:
         assert len(config.devices) == 1
         self.config = config
@@ -184,6 +186,7 @@ class Olmo2(Transformer):
     def input_types(
         self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
+        """Builds the symbolic graph inputs for one device's KV cache."""
         # TODO: Move input symbol computation from the manager classes.
         # It should be possible to compute the input symbols from the model
         # config.

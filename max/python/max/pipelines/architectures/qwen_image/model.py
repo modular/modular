@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Qwen-Image transformer model."""
 
 from collections.abc import Callable
 from typing import Any
@@ -26,6 +27,8 @@ from .qwen_image import QwenImageTransformer2DModel
 
 
 class QwenImageTransformerModel(ComponentModel):
+    """The Qwen-Image denoising transformer, wrapped for the pipeline."""
+
     def __init__(
         self,
         config: dict[str, Any],
@@ -49,6 +52,7 @@ class QwenImageTransformerModel(ComponentModel):
         self.load_model()
 
     def load_model(self) -> Callable[..., Any]:
+        """Loads the transformer's weights onto its device."""
         state_dict = {key: value.data() for key, value in self.weights.items()}
 
         nn_model = QwenImageTransformer2DModel(self.config)
@@ -79,6 +83,7 @@ class QwenImageTransformerModel(ComponentModel):
         img_ids: Buffer,
         txt_ids: Buffer,
     ) -> Any:
+        """Runs the transformer over one denoising step."""
         return self.model.execute(
             hidden_states,
             encoder_hidden_states,

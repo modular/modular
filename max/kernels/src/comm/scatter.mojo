@@ -204,7 +204,7 @@ def scatter[
         input_ptrs,
         chunk_num_elems,
         rank_sigs,
-        Int32(ctx.id()),
+        Int32(ctx.device().id),
         grid_dim=grid_size,
         block_dim=BLOCK_SIZE,
         attributes=pdl_launch_attributes(pdl_level),

@@ -27,7 +27,7 @@ import pytest
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     MHAKVCacheParams,
     MultiKVCacheParams,
     RecurrentStateParams,
@@ -35,7 +35,7 @@ from max.nn.kv_cache import (
     compute_num_device_blocks,
     estimated_memory_size,
 )
-from max.nn.kv_cache.cache_params import (
+from max.nn.legacy.kv_cache.cache_params import (
     KVCacheBuffer,
     KVCacheQuantizationConfig,
 )

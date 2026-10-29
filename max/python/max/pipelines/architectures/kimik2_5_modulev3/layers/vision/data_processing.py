@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Preprocesses images for the Kimi K2.5 vision tower."""
 
 from __future__ import annotations
 

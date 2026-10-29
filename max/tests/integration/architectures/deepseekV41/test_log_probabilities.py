@@ -19,13 +19,10 @@ import pytest
 from max.driver import CPU, Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.deepseekV41.model import (
     DeepseekV41Inputs,
     DeepseekV41Model,
-)
-from max.pipelines.architectures.unified_dspark_deepseekV41.model import (
-    UnifiedDSparkDeepseekV41Model,
 )
 from max.pipelines.lib import ModelOutputs
 from max.pipelines.lib.log_probabilities import (
@@ -39,14 +36,11 @@ def _log_softmax(x: np.ndarray) -> np.ndarray:
     return x - np.log(np.exp(x).sum(axis=-1, keepdims=True))
 
 
-@pytest.mark.parametrize(
-    "model_cls", [DeepseekV41Model, UnifiedDSparkDeepseekV41Model]
-)
-def test_overrides_compute_log_probabilities(model_cls: type) -> None:
-    """Both models inherit ``LogProbabilitiesMixin``'s implementation."""
-    assert issubclass(model_cls, LogProbabilitiesMixin)
+def test_overrides_compute_log_probabilities() -> None:
+    """The model inherits ``LogProbabilitiesMixin``'s implementation."""
+    assert issubclass(DeepseekV41Model, LogProbabilitiesMixin)
     assert (
-        model_cls.compute_log_probabilities
+        DeepseekV41Model.compute_log_probabilities
         is LogProbabilitiesMixin.compute_log_probabilities
     )
 

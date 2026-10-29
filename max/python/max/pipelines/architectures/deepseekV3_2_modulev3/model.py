@@ -18,9 +18,9 @@ import logging
 from typing import Any, ClassVar
 
 from max.dtype import DType
-from max.experimental.tensor import default_device
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParamInterface
+from max.nn.legacy.kv_cache import KVCacheParamInterface
+from max.tensor import default_device
 from transformers import AutoConfig
 from typing_extensions import override
 
@@ -49,6 +49,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
         kv_cache_config: Any,
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
+        """The KV cache parameters this model was traced with."""
         return DeepseekV3_2Config.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,

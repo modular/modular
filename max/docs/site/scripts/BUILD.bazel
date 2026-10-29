@@ -1,0 +1,84 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_test")
+
+package(default_visibility = ["//visibility:private"])
+
+modular_py_binary(
+    name = "report-code-coverage",
+    srcs = ["report-code-coverage.py"],
+    visibility = [
+        "//:__pkg__",
+        "//bazel/lint:__pkg__",
+    ],
+)
+
+modular_py_test(
+    name = "tests",
+    srcs = ["test_report_code_coverage.py"],
+    ignore_extra_deps = [":report-code-coverage"],
+    # Runfiles for importlib; not a static import (pydeps would flag unused).
+    deps = [":report-code-coverage"],
+)
+
+_MOJODOC_JSON = [
+    "//max/kernels/src:mojodoc_json",
+    "//max/mojo/max:mojodoc_json",
+]
+
+modular_py_binary(
+    name = "report-mojo-docstring-coverage",
+    srcs = ["report-mojo-docstring-coverage.py"],
+    args = ["$(rootpaths %s)" % target for target in _MOJODOC_JSON],
+    data = _MOJODOC_JSON,
+    tags = ["manual"],
+)
+
+modular_py_test(
+    name = "test_report_mojo_docstring_coverage",
+    srcs = ["test_report_mojo_docstring_coverage.py"],
+    ignore_extra_deps = [":report-mojo-docstring-coverage"],
+    # Runfiles for importlib; not a static import (pydeps would flag unused).
+    deps = [":report-mojo-docstring-coverage"],
+)
+
+modular_py_binary(
+    name = "generate-models-table",
+    srcs = ["generate-models-table.py"],
+    visibility = [
+        "//:__pkg__",
+        "//bazel/lint:__pkg__",
+    ],
+)
+
+modular_py_binary(
+    name = "generate-metrics-table",
+    srcs = ["generate-metrics-table.py"],
+    visibility = [
+        "//:__pkg__",
+        "//bazel/lint:__pkg__",
+    ],
+    deps = ["//max/python/max/serve/telemetry"],
+)
+
+modular_py_binary(
+    name = "generate-arch-docs",
+    srcs = ["generate-arch-docs.py"],
+    visibility = [
+        "//:__pkg__",
+        "//bazel/lint:__pkg__",
+    ],
+)
+
+modular_py_binary(
+    name = "post-process-docs",
+    srcs = ["post-process-docs.py"],
+    tags = ["manual"],
+    visibility = ["//max/docs/site:__pkg__"],
+)
+
+modular_py_binary(
+    name = "write-nightly-release",
+    srcs = ["write-nightly-release.py"],
+    data = ["//max/docs/site:nightly-changelog"],
+    tags = ["manual"],
+    visibility = ["//max/docs/site:__pkg__"],
+)

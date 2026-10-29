@@ -16,13 +16,13 @@ from __future__ import annotations
 
 import math
 
+from max import functional as F
 from max.driver import CPU, Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.experimental.tensor import Tensor
 from max.graph import Dim
-from max.nn.rotary_embedding import DeepseekYarnRopeScalingParams
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.rotary_embedding import DeepseekYarnRopeScalingParams
+from max.tensor import Tensor
 
 
 def _yarn_get_mscale(scale: float = 1.0, mscale: float = 1.0) -> float:
@@ -77,6 +77,7 @@ class DeepseekYarnRotaryEmbedding(RotaryEmbedding):
         )
 
     def freqs_cis_base(self) -> Tensor:
+        """The base rotary frequencies before YaRN scaling."""
         if self._freqs_cis is None:
             if self.scaling_params is None:
                 raise ValueError("scaling_params must be provided")

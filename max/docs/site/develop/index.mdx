@@ -16,7 +16,7 @@ implementation pattern.
 
 Use ModuleV3 when porting a new model architecture to MAX. To migrate an
 existing architecture from the Graph API ([`max.graph`](/api/python/graph/) and
-[`max.nn`](/api/python/nn/)) to ModuleV3, use our
+[`max.nn.legacy`](/api/python/nn.legacy/)) to ModuleV3, use our
 [`/migrate-max-v2-to-v3`](https://github.com/modular/skills/blob/main/migrate-max-v2-to-v3/SKILL.md)
 skill.
 
@@ -77,8 +77,8 @@ You write `Module` subclasses for the layers, and the pipeline model compiles
 the graph those modules describe.
 
 Standard architectures like Llama 3 compose mostly from built-in modules.
-`Linear`, `Embedding`, and `RMSNorm` come from `max.experimental.nn`; `MLP` and
-`AttentionWithRope` from `max.experimental.nn.common_layers`. The transformer
+`Linear`, `Embedding`, and `RMSNorm` come from `max.nn`; `MLP` and
+`AttentionWithRope` from `max.nn.common_layers`. The transformer
 block that ties them together belongs to the architecture. You need a custom
 `Module` subclass only for model-specific behavior (such as novel attention or
 custom MoE gating).

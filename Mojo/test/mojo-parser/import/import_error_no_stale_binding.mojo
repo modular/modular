@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated -split-input-file -I=%S/inputs -verify-diagnostics %s
+# RUN: %parse-mojo-isolated -split-input-file -I%S/inputs -verify-diagnostics %s
 
 # A structural import failure records its diagnostic keyed by the full dotted
 # path, but must not bind that name in the importing scope. An

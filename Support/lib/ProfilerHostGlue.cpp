@@ -308,6 +308,13 @@ bool sinkRequestBurst(StringRef reason) {
   return table->requestBurst(reason.data(), reason.size());
 }
 
+void sinkSetTraceMetadata(StringRef key, StringRef value) {
+  const M_ProfilerPluginAPI *table = api();
+  if (!M_PROFILER_API_HAS(table, setTraceMetadata))
+    return;
+  table->setTraceMetadata(key.data(), key.size(), value.data(), value.size());
+}
+
 constexpr RangeSink kSink = {
     .enable = sinkEnable,
     .disable = sinkDisable,
@@ -322,6 +329,7 @@ constexpr RangeSink kSink = {
     .rangeEnd = sinkRangeEnd,
     .registerCurrentThread = sinkRegisterCurrentThread,
     .requestBurst = sinkRequestBurst,
+    .setTraceMetadata = sinkSetTraceMetadata,
 };
 
 } // namespace

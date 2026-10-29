@@ -717,7 +717,7 @@ def _allreduce_naive_single_ptr[
     ctx.enqueue_memset(accum, 0)
 
     # Resolve this device's rank and allocate a temp staging buffer.
-    var my_rank: Int = Int(ctx.id())
+    var my_rank: Int = Int(ctx.device().id)
     var scratch = ctx.enqueue_create_buffer[dtype](num_elements)
 
     # Grid configuration for naive kernels.
@@ -1940,7 +1940,7 @@ def allreduce[
     # This device's group. `group_start` is 0 for a full-world collective
     # (group_size == ngpus), so every group_start-relative read below is
     # byte-identical to the pre-grouping `input_tensors[0]` in that case.
-    var global_rank = my_rank.or_else(Int(ctx.id()))
+    var global_rank = my_rank.or_else(Int(ctx.device().id))
     var group_start = ualign_down(global_rank, group_size)
 
     # Return early, if the input buffer is empty. Read from THIS DEVICE'S

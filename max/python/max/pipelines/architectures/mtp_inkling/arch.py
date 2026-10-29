@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Registers the Inkling MTP draft."""
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextAndVisionContext
@@ -47,5 +48,7 @@ mtp_inkling_draft_arch = SupportedArchitecture(
     },
     config=MTPInklingDraftArchConfig,
     checkpoint_draft_width=inkling_mtp_draft_width,
+    # Its pairing caps the context a batch keeps resident.
+    requires_max_batch_context_length=True,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
 )

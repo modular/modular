@@ -1301,7 +1301,7 @@ def _load_matrix_frag[
 @inline(.always)
 def get_mma_shape[
     input_type: DType, accum_type: DType, shape_id: Int = 0
-]() -> DynamicCoord[.int, 3]:
+]() -> Tuple[Int, Int, Int]:
     """Returns the appropriate matrix multiply-accumulate (MMA) shape for tensor core operations.
 
     Selects the optimal MMA shape based on the GPU architecture, input data type,
@@ -1314,34 +1314,33 @@ def get_mma_shape[
         shape_id: Optional identifier to select between multiple valid shapes (default: 0).
 
     Returns:
-        A `Coord` containing the MMA dimensions in the format `[M, N, K]`,
+        A tuple containing the MMA dimensions in the format `(M, N, K)`,
         where `MxN` is the output matrix size and `K` is the reduction dimension.
     """
-
     comptime if default_accelerator().is_nvidia_gpu():
         comptime match (accum_type, input_type):
             case (.float32, .float32):
                 comptime if shape_id == 0:
-                    return shape_16x8x8
+                    return (16, 8, 8)
                 else:
-                    return shape_16x8x4
+                    return (16, 8, 4)
 
             case (.float32, .bfloat16):
                 comptime if shape_id == 0:
-                    return shape_16x8x16
+                    return (16, 8, 16)
                 else:
-                    return shape_16x8x8
+                    return (16, 8, 8)
 
             case (.float32, .float16):
                 comptime match shape_id:
                     case 0:
-                        return shape_16x8x16
+                        return (16, 8, 16)
                     case 1:
-                        return shape_16x8x8
+                        return (16, 8, 8)
                     case _:
-                        return shape_8x8x4
+                        return (8, 8, 4)
             case (.float32, .float8_e4m3fn) | (.float32, .float8_e5m2):
-                return shape_16x8x32
+                return (16, 8, 32)
             case _:
                 comptime assert False, "Unsupported mma shape."
     else:
@@ -1359,23 +1358,23 @@ def get_mma_shape[
                         " -> FP32)"
                     )
                 case (.float32, t) if t.is_half_float():
-                    return shape_16x16x16
+                    return (16, 16, 16)
                 case (.float32, t) if _is_amd_rdna4() and t.is_float8():
-                    return shape_16x16x16
+                    return (16, 16, 16)
                 case (.int32, .int8) | (.int32, .uint8):
-                    return shape_16x16x16
+                    return (16, 16, 16)
                 case (.int32, ._uint4):
-                    return shape_16x16x16
+                    return (16, 16, 16)
                 case _:
                     comptime assert False, "Unsupported RDNA mma shape."
         else:
             comptime match (accum_type, input_type):
                 case (.float32, .float32):
-                    return shape_16x16x4
+                    return (16, 16, 4)
                 case (.float32, t) if t.is_half_float():
-                    return shape_16x16x16
+                    return (16, 16, 16)
                 case (.float32, t) if t.is_float8():
-                    return shape_16x16x32
+                    return (16, 16, 32)
                 case _:
                     comptime assert False, "Unsupported CDNA mma shape."
 

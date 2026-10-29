@@ -10,16 +10,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Gemma 3's vision attention."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, ops
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kernels import flash_attention_gpu
-from max.nn.layer import Module
-from max.nn.linear import Linear
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.kernels import flash_attention_gpu
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
 
 from ..model_config import Gemma3ForConditionalGenerationConfig
 
@@ -33,7 +35,7 @@ class Gemma3VisionAttention(Module):
         layer_idx: int,
         device: DeviceRef | None = None,
     ) -> None:
-        """Initialise the vision attention layers for projection and attention"""
+        """Initialise the vision attention layers for projection and attention."""
         super().__init__()
         self.config = config
         vision_config = config.vision_config
@@ -77,7 +79,7 @@ class Gemma3VisionAttention(Module):
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
-        """Process a tensor through the self attention layers and apply scaling"""
+        """Process a tensor through the self attention layers and apply scaling."""
         batch_size, n_patches = x.shape[0], x.shape[1]
 
         # Project to Q, K, V
@@ -110,6 +112,7 @@ class Gemma3VisionAttention(Module):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the attention weights are split across devices."""
         return self.q_proj.sharding_strategy
 
     @sharding_strategy.setter
@@ -127,6 +130,7 @@ class Gemma3VisionAttention(Module):
     def shard(
         self, devices: Iterable[DeviceRef]
     ) -> list[Gemma3VisionAttention]:
+        """Splits the attention weights across ``devices``."""
         assert self.sharding_strategy
 
         q_proj_shards = self.q_proj.shard(devices)

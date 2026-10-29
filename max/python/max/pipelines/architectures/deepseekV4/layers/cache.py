@@ -10,14 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """DeepSeek-V4's KV state as paged cache leaves.
 
 The reference keeps, per compressed layer, a two-zone flat buffer (a 128-slot
 sliding window of per-token latents plus one compressed entry per
 ``compress_ratio`` tokens), the compressor's open-window projections, and for
 ratio-4 layers the same again for the lightning indexer. Here every one of
-those is a leaf of one :class:`~max.nn.kv_cache.MultiKVCacheParams`, all paged
+those is a leaf of one :class:`~max.nn.legacy.kv_cache.MultiKVCacheParams`, all paged
 by token with one shared lookup table:
 
 * the latent window is a ``sliding_window_group(128)`` leaf;
@@ -53,8 +52,8 @@ from typing import Any
 from max import tree
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.kernels import store_k_cache_ragged, store_v_cache_ragged
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.legacy.kernels import store_k_cache_ragged, store_v_cache_ragged
+from max.nn.legacy.kv_cache import PagedCacheValues
 from max.support.math import ceildiv as ceildiv
 
 from ..model_config import DeepseekV4Config
@@ -64,10 +63,12 @@ VALUE = 1
 
 
 def arange(n: int, device: DeviceRef) -> TensorValue:
+    """Returns an int32 range tensor on the device."""
     return ops.range(0, n, 1, out_dim=n, device=device, dtype=DType.int32)
 
 
 def scalar(value: int, device: DeviceRef) -> TensorValue:
+    """Returns a scalar constant as a tensor on the device."""
     return ops.constant(value, DType.int32, device)
 
 
@@ -237,9 +238,11 @@ class DeepseekV4Cache:
         groups: Sequence[Sequence[PagedCacheValues]],
         device_idx: int = 0,
     ) -> DeepseekV4Cache:
-        """Bundle the leaves ``MultiKVCacheParams.unflatten_basic_kv_tree``
-        returned, which are in ``config.kv_leaf_specs()`` order, one list per
-        leaf holding one entry per device.
+        """Bundles ``unflatten_basic_kv_tree``'s leaves into a cache.
+
+        The leaves come from ``MultiKVCacheParams.unflatten_basic_kv_tree``, in
+        ``config.kv_leaf_specs()`` order, one list per leaf holding one entry
+        per device.
         """
         page_size = config.kv_params.page_size
         specs = config.kv_leaf_specs()

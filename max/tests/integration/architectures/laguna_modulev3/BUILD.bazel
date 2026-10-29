@@ -29,14 +29,14 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/architectures/laguna",
         "//max/python/max/pipelines/architectures/laguna_modulev3",
@@ -57,7 +57,7 @@ modular_py_library(
         "//max/python/max/driver",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/architectures/laguna",
         "//max/python/max/pipelines/architectures/laguna_modulev3",
@@ -81,6 +81,7 @@ modular_py_test(
         "//conditions:default": [],
     }),
     imports = ["."],
+    precompile_mefs = True,
     tags = ["gpu"],
     deps = [":laguna_parity"],
 )
@@ -95,6 +96,7 @@ modular_py_test(
     # The NVFP4 grouped MoE matmul is SM100-only.
     gpu_constraints = ["//:b200_gpu"],
     imports = ["."],
+    precompile_mefs = True,
     tags = ["gpu"],
     deps = [":laguna_parity"],
 )

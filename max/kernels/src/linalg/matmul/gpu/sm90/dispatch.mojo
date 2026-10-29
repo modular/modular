@@ -19,6 +19,7 @@ static N and K, falling back to a generic kernel for unsupported shapes.
 """
 
 from std.math import ceildiv
+from std.collections import OptionalReg
 from std.sys import get_defined_bool, get_defined_int, size_of
 
 from layout import TileTensor
@@ -28,7 +29,7 @@ from max.gpu.host.info import H100
 from internal_utils import Table
 from std.logger import Logger
 
-from std.utils.index import Index
+from std.utils.index import Index, IndexList
 
 from ....utils import (
     ElementwiseComputeFn,
@@ -62,6 +63,14 @@ comptime DISPATCH_MISS = 0
 comptime DISPATCH_HIT = 1
 
 comptime logger = Logger()
+
+
+def _kernel_grid_shape(
+    grid_shape: Optional[Tuple[Int, Int]],
+) -> OptionalReg[IndexList[2]]:
+    if grid_shape:
+        return Index(grid_shape.value()[0], grid_shape.value()[1])
+    return None
 
 
 def matmul_dispatch_sm90[
@@ -214,7 +223,7 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         num_pipeline_stages=8,
         num_consumer=1,
         partitioned_multicast=False,
-        grid_shape=Index(128, 1),
+        grid_shape=(128, 1),
         schedule=MatmulSchedule.DS_SCHEDULER,
     ),
     TuningConfigSM90(
@@ -227,7 +236,7 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
-        grid_shape=Index(H100.sm_count, 1),
+        grid_shape=(H100.sm_count, 1),
         schedule=MatmulSchedule.DS_SCHEDULER,
     ),
     TuningConfigSM90(
@@ -240,7 +249,7 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
-        grid_shape=Index(H100.sm_count, 1),
+        grid_shape=(H100.sm_count, 1),
         schedule=MatmulSchedule.DS_SCHEDULER,
     ),
     TuningConfigSM90(
@@ -254,7 +263,7 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         num_consumer=2,
         partitioned_multicast=True,
         schedule=MatmulSchedule.DS_SCHEDULER,
-        grid_shape=Index(H100.sm_count, 1),
+        grid_shape=(H100.sm_count, 1),
     ),
     TuningConfigSM90(
         M=1024,
@@ -266,7 +275,7 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
-        grid_shape=Index(H100.sm_count, 1),
+        grid_shape=(H100.sm_count, 1),
         schedule=MatmulSchedule.DS_SCHEDULER,
     ),
     TuningConfigSM90(
@@ -279,7 +288,7 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
-        grid_shape=Index(8, H100.sm_count // 8),
+        grid_shape=(8, H100.sm_count // 8),
         schedule=MatmulSchedule.TILE2D,
     ),
     ##############################
@@ -295,7 +304,7 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         num_consumer=1,
         partitioned_multicast=False,
         schedule=MatmulSchedule.DS_SCHEDULER,
-        grid_shape=Index(H100.sm_count, 1),
+        grid_shape=(H100.sm_count, 1),
     ),
     TuningConfigSM90(
         M=128,
@@ -308,7 +317,7 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         num_consumer=1,
         partitioned_multicast=False,
         schedule=MatmulSchedule.DS_SCHEDULER,
-        grid_shape=Index(H100.sm_count, 1),
+        grid_shape=(H100.sm_count, 1),
     ),
     TuningConfigSM90(
         M=256,
@@ -321,7 +330,7 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         num_consumer=1,
         partitioned_multicast=False,
         schedule=MatmulSchedule.DS_SCHEDULER,
-        grid_shape=Index(H100.sm_count, 1),
+        grid_shape=(H100.sm_count, 1),
     ),
     TuningConfigSM90(
         M=512,
@@ -334,7 +343,7 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         num_consumer=2,
         partitioned_multicast=False,
         schedule=MatmulSchedule.DS_SCHEDULER,
-        grid_shape=Index(H100.sm_count, 1),
+        grid_shape=(H100.sm_count, 1),
     ),
     TuningConfigSM90(
         M=1024,
@@ -347,7 +356,7 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         num_consumer=2,
         partitioned_multicast=False,
         schedule=MatmulSchedule.DS_SCHEDULER,
-        grid_shape=Index(H100.sm_count, 1),
+        grid_shape=(H100.sm_count, 1),
     ),
     TuningConfigSM90(
         M=2048,
@@ -359,7 +368,7 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
-        grid_shape=Index(16, 8),
+        grid_shape=(16, 8),
         schedule=MatmulSchedule.TILE2D,
     ),
     TuningConfigSM90(
@@ -388,7 +397,7 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         num_consumer=1,
         partitioned_multicast=False,
         schedule=MatmulSchedule.DS_SCHEDULER,
-        grid_shape=Index(128, 1),
+        grid_shape=(128, 1),
     ),
     TuningConfigSM90(
         M=128,
@@ -452,7 +461,7 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
-        grid_shape=Index(8, H100.sm_count // 8),
+        grid_shape=(8, H100.sm_count // 8),
         schedule=MatmulSchedule.TILE2D,
     ),
     ##############################
@@ -468,7 +477,7 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         num_consumer=1,
         partitioned_multicast=False,
         schedule=MatmulSchedule.DS_SCHEDULER,
-        grid_shape=Index(128, 1),
+        grid_shape=(128, 1),
     ),
     TuningConfigSM90(
         M=1024,
@@ -493,7 +502,7 @@ comptime llama_405b_fp8_list: List[TuningConfigSM90] = [
         num_pipeline_stages=4,
         num_consumer=2,
         partitioned_multicast=True,
-        grid_shape=Index(8, H100.sm_count // 8),
+        grid_shape=(8, H100.sm_count // 8),
         schedule=MatmulSchedule.TILE2D,
     ),
 ]
@@ -541,7 +550,7 @@ comptime llama_8b_fp8_list: List[TuningConfigSM90] = [
         num_pipeline_stages=6,
         num_consumer=2,
         partitioned_multicast=True,
-        grid_shape=Index(8, H100.sm_count // 8),
+        grid_shape=(8, H100.sm_count // 8),
         schedule=MatmulSchedule.TILE2D,
     ),
 ]
@@ -657,11 +666,7 @@ def matmul_dispatch_sm90_fp8[
     def _dispatch[entry: TuningConfigSM90]() raises {imm}:
         comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
             block_tile_shape=entry.block_tile_shape,
-            mma_shape=(
-                entry.mma_shape[0],
-                entry.mma_shape[1],
-                entry.mma_shape[2],
-            ),
+            mma_shape=entry.mma_shape,
             cluster_shape=entry.cluster_shape,
             num_pipeline_stages=entry.num_pipeline_stages,
             num_consumer=entry.num_consumer,
@@ -674,7 +679,7 @@ def matmul_dispatch_sm90_fp8[
             has_compute_fn=has_compute_fn,
             config=config,
             schedule=entry.schedule,
-            grid_shape=entry.grid_shape,
+            grid_shape=_kernel_grid_shape(entry.grid_shape),
         ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
 
     @inline(.nodebug)
@@ -1014,11 +1019,7 @@ def matmul_dispatch_sm90_bf16_fp32[
     def _dispatch[entry: TuningConfigSM90]() raises {imm}:
         comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
             block_tile_shape=entry.block_tile_shape,
-            mma_shape=(
-                entry.mma_shape[0],
-                entry.mma_shape[1],
-                entry.mma_shape[2],
-            ),
+            mma_shape=entry.mma_shape,
             cluster_shape=entry.cluster_shape,
             num_pipeline_stages=entry.num_pipeline_stages,
             num_consumer=entry.num_consumer,
@@ -1033,7 +1034,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 has_compute_fn=has_compute_fn,
                 config=config,
                 schedule=entry.schedule,
-                grid_shape=entry.grid_shape,
+                grid_shape=_kernel_grid_shape(entry.grid_shape),
                 splits=splits,
                 raster_order=entry.raster_order.value(),
             ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
@@ -1044,7 +1045,7 @@ def matmul_dispatch_sm90_bf16_fp32[
                 has_compute_fn=has_compute_fn,
                 config=config,
                 schedule=entry.schedule,
-                grid_shape=entry.grid_shape,
+                grid_shape=_kernel_grid_shape(entry.grid_shape),
             ](c, a, b, ctx, epilogue_fn=epilogue_fn, compute_fn=compute_fn)
 
     @inline(.nodebug)

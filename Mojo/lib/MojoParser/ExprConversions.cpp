@@ -173,7 +173,7 @@ canConvertGeneratorTypes(ASTExprAnd<CValue> valueExpr, GeneratorType actual,
     if (auto expectedType = sugarDynCast<FnTypeGeneratorType>(expected)) {
       // See if the literal itself has a compatible type.
       return TriBool::fromBool(
-          canConvertFunctionTypes(actualType.getSymbolConstantAttr().getType(),
+          canConvertFunctionTypes(actualType.getNonLiteralGeneratorType(),
                                   expectedType, valueExpr.expr, declScope));
     }
   }
@@ -1239,7 +1239,7 @@ canZeroCostConvertImpl(ASTType sugaredFromType, ASTType sugaredToType,
 
   if (auto actual = sugarDynCast<FnLiteralTypeGeneratorType>(sugaredFromType))
     if (sugarIsa<FnTypeGeneratorType>(sugaredToType))
-      return canZeroCostConvertImpl(actual.getSymbolConstantAttr().getType(),
+      return canZeroCostConvertImpl(actual.getNonLiteralGeneratorType(),
                                     sugaredToType, shared, declScope,
                                     additionalAssumptions, unprovenConstraints);
 

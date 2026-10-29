@@ -41,11 +41,11 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.kernels import fused_dual_qk_rms_norm_rope_ragged
-from max.nn.kv_cache import (
+from max.nn.legacy.kernels import fused_dual_qk_rms_norm_rope_ragged
+from max.nn.legacy.kv_cache import (
     MHAKVCacheParams,
 )
-from max.nn.kv_cache.input_types import KVCacheInputsPerDevice
+from max.nn.legacy.kv_cache.input_types import KVCacheInputsPerDevice
 from test_common.graph_utils import is_b100_b200
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 

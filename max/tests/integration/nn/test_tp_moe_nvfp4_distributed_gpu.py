@@ -22,9 +22,9 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, ShardingStrategy, TensorType
 from max.graph.weights import WeightData
-from max.nn import Allreduce, Signals
-from max.nn.moe import MoEGate, MoEQuantized
-from max.nn.quant_config import (
+from max.nn.legacy import Allreduce, Signals
+from max.nn.legacy.moe import MoEGate, MoEQuantized
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

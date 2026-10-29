@@ -62,7 +62,7 @@ modular_cc_library(
     visibility = [
         "//GraphCompiler:__subpackages__",
         "//MLRT/unittests/Driver/NIXL:__subpackages__",
-        "//plugins/internal-trainium/runtime/test:__pkg__",
+        "//plugins:__subpackages__",
     ],
     deps = [
         "@llvm-project//third-party/unittest:gmock",
@@ -591,6 +591,7 @@ modular_cc_test(
         "//AsyncRT:RuntimeGlobals",
         "//MLRT:Driver/DeviceContextImpl",
         "//Support:Base",
+        "//Target:Support",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -726,6 +727,17 @@ modular_cc_test(
         "//MLRT:Driver/CompilerDeviceArch",
         "//MLRT:Driver/DeviceContextAPI",
         "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
+    name = "LaunchTraceLabelsTest",
+    size = "small",
+    srcs = ["LaunchTraceLabelsTest.cpp"],
+    deps = [
+        "//MLRT:Driver/DeviceContextAPI",
+        "//MLRT:Driver/LaunchTraceRegistry",
+        "//Support:ProfilingRanges",
     ],
 )
 

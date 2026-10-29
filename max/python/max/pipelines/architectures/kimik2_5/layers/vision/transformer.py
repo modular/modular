@@ -33,9 +33,9 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
-from max.nn.comm import Allreduce, Signals
-from max.nn.kernels import tpool_patch_merger
-from max.nn.layer import Module
+from max.nn.legacy.comm import Allreduce, Signals
+from max.nn.legacy.kernels import tpool_patch_merger
+from max.nn.legacy.layer import Module
 
 from ...model_config import VisionConfig
 from .encoder import Encoder
@@ -148,6 +148,7 @@ class Transformer(Module):
             signal_buffers: Per-device communication buffers for allreduce.
                 Only required when using multiple devices; ignored on
                 single device.
+
         Returns:
             Per-device allreduced merged patch tensors of shape
             ``(sum_i(H_i * W_i), hidden_dim)``.
@@ -211,8 +212,10 @@ class Transformer(Module):
         return hs
 
     def input_types(self) -> tuple[TensorType | BufferType, ...]:
-        """Returns the graph's input types, in :meth:`__call__`'s argument
-        order, one per device for each argument."""
+        """Returns the graph's input types, in :meth:`__call__` order.
+
+        Each argument takes one input per device.
+        """
         config = self.config
         devices = self.devices
         return (

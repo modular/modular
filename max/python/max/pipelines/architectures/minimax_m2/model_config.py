@@ -20,7 +20,7 @@ from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.comm.ep import EPConfig
+from max.nn.legacy.comm.ep import EPConfig
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
@@ -107,6 +107,9 @@ class MiniMaxM2Config(Llama3Config):
 
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
+            model_config: The MAX Engine model configuration; defaults to
+                ``pipeline_config.model``.
+            max_seq_len: The sequence length the cache was sized for.
 
         Returns:
             An initialized MiniMaxM2Config instance.
@@ -139,6 +142,7 @@ class MiniMaxM2Config(Llama3Config):
             pipeline_config: The MAX Engine pipeline configuration.
             huggingface_config: The HuggingFace model configuration.
             model_config: The MAX Engine model configuration.
+            max_seq_len: The sequence length the cache was sized for.
 
         Returns:
             An initialized MiniMaxM2Config instance.

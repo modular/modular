@@ -14,6 +14,7 @@
 #include "GraphCompiler/MODialect/MODevices.h"
 #include "GraphCompiler/MODialect/MOOps.h"
 #include "GraphCompiler/MODialect/Transforms/MOTransforms.h"
+#include "GraphCompiler/MODialect/Transforms/Utils.h"
 #include "mlir/Analysis/TopologicalSortUtils.h"
 #include "mlir/Pass/Pass.h"
 
@@ -37,22 +38,9 @@ struct DebugPrintAllTensorsPass
     : public impl::DebugPrintAllTensorsPassBase<DebugPrintAllTensorsPass> {
   using DebugPrintAllTensorsPassBase::DebugPrintAllTensorsPassBase;
 
-  std::string valueToLabel(Value value) {
-    std::string str;
-    llvm::raw_string_ostream os(str);
-
-    if (auto op = value.getDefiningOp())
-      os << " " << op->getName() << " ";
-
-    value.printAsOperand(os, mlir::OpPrintingFlags().printGenericOpForm());
-
-    return str;
-  }
-
   /// Insert mo.debug.tensor.prints into block.
-  void process(OpBuilder &builder, Location loc, Block *block) {
-    mlir::sortTopologically(block);
-
+  void process(OpBuilder &builder, mlir::AsmState &state, Location loc,
+               Block *block) {
     builder.setInsertionPointToStart(block);
 
     Value currentChain = MO::ChainCreateOp::create(builder, loc, ValueRange{});
@@ -61,20 +49,20 @@ struct DebugPrintAllTensorsPass
       if (isa<MO::TensorType>(arg.getType())) {
         currentChain = MO::DebugTensorPrintOp::create(
             builder, loc, /*inChain=*/currentChain, /*input=*/arg,
-            /*label=*/valueToLabel(arg));
+            /*label=*/valueToLabel(state, arg));
       }
     }
 
     for (Operation &op : block->getOperations()) {
       for (Region &subRegion : op.getRegions())
-        process(builder, op.getLoc(), &subRegion.front());
+        process(builder, state, op.getLoc(), &subRegion.front());
 
       builder.setInsertionPointAfter(&op);
       for (Value res : op.getResults()) {
         if (isa<MO::TensorType>(res.getType())) {
           currentChain = MO::DebugTensorPrintOp::create(
               builder, op.getLoc(), /*inChain=*/currentChain, /*input=*/res,
-              /*label=*/valueToLabel(res));
+              /*label=*/valueToLabel(state, res));
         }
       }
     }
@@ -100,7 +88,11 @@ struct DebugPrintAllTensorsPass
       return signalPassFailure();
     }
     OpBuilder builder(graphOp->getContext());
-    process(builder, graphOp.getLoc(), graphOp.getBodyBlock());
+    // Sort before building the AsmState so the labels number the sorted IR,
+    // and so the print chains can't form a cycle.
+    graphOp.walk([](Block *block) { mlir::sortTopologically(block); });
+    mlir::AsmState state(graphOp, mlir::OpPrintingFlags().printGenericOpForm());
+    process(builder, state, graphOp.getLoc(), graphOp.getBodyBlock());
   }
 };
 

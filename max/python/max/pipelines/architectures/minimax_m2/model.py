@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The MiniMax-M2 pipeline model."""
 
 from __future__ import annotations
 
@@ -22,8 +23,8 @@ from max._core.engine import Model
 from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
+from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
+from max.nn.legacy.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
 from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.interfaces import AlwaysSignalBuffersMixin
 from typing_extensions import override
@@ -45,6 +46,7 @@ class MiniMaxM2Inputs(Llama3Inputs):
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
+        """The step's buffers, in the graph's input order."""
         # Must match MiniMaxM2.input_types / the graph-input unpacking:
         #   tokens, input_row_offsets, return_n_logits,
         #   [data_parallel_splits, host_input_row_offsets]  (DP attention only),

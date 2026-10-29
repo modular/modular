@@ -1,21 +1,20 @@
 ---
 title: Write a custom layer
 sidebar_label: Custom layers
-description: Write a custom layer for a model component that max.experimental.nn
+description: Write a custom layer for a model component that max.nn
   doesn't provide, and connect it to your model.
 ---
 
-In MAX, the [`max.experimental.nn`](/api/python/experimental.nn/) library
-contains the common layers you use to
-[bring up a model architecture](/develop/model-bringup-workflow/), such as
-[`Linear`](/api/python/generated/max.experimental.nn.Linear/),
-[`AttentionWithRope`](/api/python/generated/max.experimental.nn.common_layers.attention.AttentionWithRope/),
-and [`RMSNorm`](/api/python/generated/max.experimental.nn.norm.RMSNorm/). Newly
-released models frequently introduce novel architectures, with layers that the
-library doesn't provide yet.
+In MAX, the [`max.nn`](/api/python/nn/) library contains the common layers you
+use to [bring up a model architecture](/develop/model-bringup-workflow/), such
+as [`Linear`](/api/python/generated/max.nn.Linear/),
+[`AttentionWithRope`](/api/python/generated/max.nn.common_layers.attention.AttentionWithRope/),
+and [`RMSNorm`](/api/python/generated/max.nn.norm.RMSNorm/). Newly released
+models frequently introduce novel architectures, with layers that the library
+doesn't provide yet.
 
 To implement those parts of your model, you write a custom layer: a
-[`Module`](/api/python/generated/max.experimental.nn.Module/) you define
+[`Module`](/api/python/generated/max.nn.Module/) you define
 yourself and compose alongside the built-in layers you reuse.
 
 You can subclass the closest built-in layer, define a new module from scratch,
@@ -39,8 +38,8 @@ changes the `forward()` call and nothing else:
 
 ```python
 from max.driver import CPU
-from max.experimental.nn.norm import RMSNorm, rms_norm
-from max.experimental.tensor import Tensor, default_device
+from max.nn.norm import RMSNorm, rms_norm
+from max.tensor import Tensor, default_device
 
 
 class MultiplyBeforeCastRMSNorm(RMSNorm):
@@ -77,13 +76,13 @@ track upstream changes yourself.
 
 When no built-in layer is close, define a module with `@module_dataclass` and
 name each parameter as a
-[`Tensor`](/api/python/generated/max.experimental.tensor.Tensor/) field. Here a
+[`Tensor`](/api/python/generated/max.tensor.Tensor/) field. Here a
 learnable per-channel scale owns one weight:
 
 ```python
 from max.driver import CPU
-from max.experimental.nn import Module, module_dataclass
-from max.experimental.tensor import Tensor, default_device
+from max.nn import Module, module_dataclass
+from max.tensor import Tensor, default_device
 
 
 @module_dataclass
@@ -130,13 +129,13 @@ The following example composes a small model from custom and built-in layers.
 `NormalizedProjection` composes a `Linear` with an `RMSNorm`. `DecoderBlock`
 takes that custom layer and calls it beside its own projection. `MiniDecoder`
 holds two blocks in a
-[`ModuleList`](/api/python/generated/max.experimental.nn.ModuleList/)
+[`ModuleList`](/api/python/generated/max.nn.ModuleList/)
 and adds an output projection:
 
 ```python
 from max.driver import CPU
-from max.experimental.nn import Linear, Module, ModuleList, RMSNorm
-from max.experimental.tensor import Tensor, default_device
+from max.nn import Linear, Module, ModuleList, RMSNorm
+from max.tensor import Tensor, default_device
 
 
 class NormalizedProjection(Module[[Tensor], Tensor]):
@@ -205,7 +204,7 @@ adapter](/develop/weight-adapters/) maps them.
 When you need a primitive the library lacks, or a fusion the compiler isn't
 finding, write the computation as a custom operation in Mojo and wrap it in a
 layer that calls
-[`F.custom()`](/api/python/experimental.functional/#max.experimental.functional.custom)
+[`F.custom()`](/api/python/functional/#max.functional.custom)
 in `forward()`. The op's `name` matches the string your Mojo kernel registers
 with [`@extensibility.register`](/api/mojo/extensibility/decorators/register/),
 and `out_types` declares the shapes it returns:
@@ -213,9 +212,9 @@ and `out_types` declares the shapes it returns:
 <!-- skip: next "wrapper pattern; F.custom needs a registered Mojo kernel" -->
 
 ```python
-from max.experimental import functional as F
-from max.experimental.nn import Linear, Module
-from max.experimental.tensor import Tensor
+from max import functional as F
+from max.nn import Linear, Module
+from max.tensor import Tensor
 
 
 class FusedActivation(Module[[Tensor], Tensor]):
@@ -260,11 +259,12 @@ Assign the layer to an attribute on the parent module, then call it in the
 forward pass. These details determine whether the layer loads and runs
 correctly:
 
-- **Parameter names**: a layer registers its parameters under its attribute
-  path. Match these to the checkpoint so the weights load, or write a [weight
+- **Parameter names**: a layer registers its parameters under its
+  [attribute path](/develop/modules/#walk-a-modules-parameters). Match these to
+  the checkpoint so the weights load, or write a [weight
   adapter](/develop/weight-adapters/) when the checkpoint names differ.
 - **Stacks**: hold a repeated layer, such as a stack of transformer blocks, in a
-  [`ModuleList`](/api/python/generated/max.experimental.nn.ModuleList/), never
+  [`ModuleList`](/api/python/generated/max.nn.ModuleList/), never
   a plain Python list. A plain list still registers its children's weights
   under index paths (`layers.0.fc1.weight`), so they load. What it skips is
   placement: `children` and `to()` visit only `Module` attributes, so a layer

@@ -20,20 +20,20 @@ from max.dtype import DType
 from max.engine.api import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
-from max.nn import (
+from max.nn.legacy import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
     ScaleGranularity,
     ScaleOrigin,
 )
-from max.nn.attention.attention_with_rope import AttentionWithRope
-from max.nn.kv_cache import (
+from max.nn.legacy.attention.attention_with_rope import AttentionWithRope
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
 )
-from max.nn.quant_config import WeightScaleSpec
-from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.quant_config import WeightScaleSpec
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 

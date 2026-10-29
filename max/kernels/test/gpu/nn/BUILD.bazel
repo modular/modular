@@ -111,6 +111,8 @@ _EXTRA_CONSTRAINTS = {
     "test_attention_fp8_tail_stress_amd.mojo": ["//:mi355_gpu"],
     "test_amd_4wave_conv_rt_hw.mojo": ["//:mi355_gpu"],
     "test_amd_4wave_conv3d.mojo": ["//:mi355_gpu"],
+    # `mhc_pre` projects on the gfx950-only bf16 16x16x32 MFMA.
+    "test_mhc_pre.mojo": ["//:mi355_gpu"],
     "test_conv2d_sm100.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
@@ -188,6 +190,18 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_mla_decode_sparse_rows_inplace_amd.mojo": select({
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mla_prefill_sparse_fp8_amd_determinism.mojo": select({
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mla_decode_sparse_rows_bf16_amd.mojo": select({
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mla_decode_sparse_bf16_key_amd.mojo": select({
         "//:mi355_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -395,6 +409,11 @@ _EXTRA_CONSTRAINTS = {
     # SM100 FA4 1Q attention-sink double-count regression. SM100-only
     # (exercises the FA4 `fa4_softmax` 1Q warp-specialized path).
     "attention/test_mha_sm100_1q_sink.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # SM100 FA4 tile configs for a 192-wide key with a 128-wide value.
+    "attention/test_mha_sm100_split_kv_config.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -621,6 +640,7 @@ _GPU_MEMORY = {
     "test_mla_decode_qkv_fp8_tail_stress.mojo": "3",
     "test_mla_decode_sparse_kv_bf16.mojo": "3",
     "test_mla_decode_sparse_kv_fp8_gather.mojo": "4",
+    "test_mla_decode_sparse_rows_bf16_amd.mojo": "8",
     "test_mla_decode_split_policy.mojo": "4",
     "test_mla_index_fp8.mojo": "3",
     "test_mla_prefill_blockwise_fp8.mojo": "4",
@@ -1912,3 +1932,32 @@ mojo_test(
         ),
     ]
 ]
+
+# The BF16 sparse MLA rows test at 16 heads per device, where the split
+# heuristic takes its other branch. The catch-all target runs 32 heads.
+mojo_test(
+    name = "test_mla_decode_sparse_rows_bf16_amd_h16.mojo.test",
+    size = "large",
+    srcs = ["test_mla_decode_sparse_rows_bf16_amd.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
+        "-D",
+        "NUM_HEADS=16",
+    ],
+    enable_assertions = True,
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    main = "test_mla_decode_sparse_rows_bf16_amd.mojo",
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:internal_utils",
+        "//max:linalg",
+        "//max:nn",
+        "//max:testdata",
+        "@mojo//:std",
+    ],
+)

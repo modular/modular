@@ -34,4 +34,5 @@ class Idefics3Inputs(ModelInputs):
 
     @property
     def has_vision_inputs(self) -> bool:
+        """Whether this step carries pixel values."""
         return self.pixel_values is not None

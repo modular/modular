@@ -3,6 +3,8 @@ load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
 package(default_visibility = ["//max:consumers"])
 
+exports_files(["test_hip_stream.mojo"])
+
 _APPLE_GPU_INCOMPATIBLE = select({
     "//:apple_gpu": ["@platforms//:incompatible"],
     "//conditions:default": [],
@@ -15,6 +17,7 @@ _GPU_MEMORY = {
 
 _EXTRA_MOJO_TEST_CONSTRAINTS = {
     "test_dump_sass.mojo": ["//:nvidia_gpu"],
+    "test_hip_stream.mojo": ["//:amd_gpu"],
     "test_function_attributes.mojo": _APPLE_GPU_INCOMPATIBLE,
     "test_external_stream.mojo": _APPLE_GPU_INCOMPATIBLE,  # Metal does not support external streams
     "test_occupancy_max_active_blocks.mojo": _APPLE_GPU_INCOMPATIBLE,  # occupancy query not implemented for Metal

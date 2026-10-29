@@ -20,12 +20,12 @@ NHWC uint8 image in ``[0, 255]``.
 
 from __future__ import annotations
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
+from max.nn import Module
+from max.tensor import Tensor
 
 from ..autoencoders_modulev3.vae import Decoder
 from .latent_norm import latent_scale_array, latent_shift_array
@@ -44,6 +44,7 @@ class Ideogram4DecodeStep(Module[..., Tensor]):
         self.decoder = decoder
 
     def input_types(self) -> tuple[TensorType, ...]:
+        """The graph's input types."""
         num_channels = self.decoder.in_channels * 4  # 32 * 4 = 128
         dtype = self.decoder.dtype
         device = self.decoder.device
@@ -66,6 +67,7 @@ class Ideogram4DecodeStep(Module[..., Tensor]):
         h_carrier: Tensor,
         w_carrier: Tensor,
     ) -> Tensor:
+        """Decodes the latents and unpacks them into an image."""
         batch = latents_bsc.shape[0]
         c = latents_bsc.shape[2]
         gh = h_carrier.shape[0]

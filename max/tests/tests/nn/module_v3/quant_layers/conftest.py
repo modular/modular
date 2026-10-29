@@ -13,7 +13,7 @@
 
 """Shared fixtures for the quant_layers lazy-trace tests.
 
-The quant layers are traced under :func:`max.experimental.functional.lazy`
+The quant layers are traced under :func:`max.functional.lazy`
 against a mocked accelerator, so they exercise GPU kernel dispatch without a
 real device. ``mock_accelerator`` provides that stand-in device;
 ``fp8_quant_config``, ``nvfp4_quant_config`` and ``mxfp8_quant_config`` provide
@@ -30,7 +30,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from max.driver import Device
 from max.dtype import DType
-from max.nn.quant_config import (
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -96,7 +96,8 @@ def sm100_arch() -> Iterator[None]:
     elsewhere), so tracing the Blackwell path takes more than a fake device.
     """
     with patch(
-        "max.nn.kernels.accelerator_architecture_name", return_value="sm_100a"
+        "max.nn.legacy.kernels.accelerator_architecture_name",
+        return_value="sm_100a",
     ):
         yield
 
@@ -107,10 +108,10 @@ def amd_arch() -> Iterator[None]:
 
     MXFP4's matmul has no NVIDIA path, so tracing it takes more than a fake
     device. ``quant_ops`` binds ``_is_amd_gpu`` at import, so the patch has
-    to target that name rather than the one in ``max.nn.kernels``.
+    to target that name rather than the one in ``max.nn.legacy.kernels``.
     """
     with patch(
-        "max.experimental.nn.common_layers.quant_ops._is_amd_gpu",
+        "max.nn.common_layers.quant_ops._is_amd_gpu",
         return_value=True,
     ):
         yield

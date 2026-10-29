@@ -35,7 +35,6 @@ from layout import (
     Idx,
 )
 
-from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 
 from linalg.fp4_utils import (
@@ -66,8 +65,8 @@ def test_grouped_gemm_epilogue[
     scales_dtype: DType,
     transpose_b: Bool,
     cta_group: Int,
-    mma_shape: DynamicCoord[.int, 3],
-    cluster_shape: Coord[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
     register_based_epilogue: Bool = True,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     """Test grouped block-scaled GEMM with epilogue lambda.

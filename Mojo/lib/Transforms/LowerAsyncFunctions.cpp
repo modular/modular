@@ -96,9 +96,8 @@ struct LowerAsyncBuildContext {
         targetInfoAttr(targetInfoAttr), dominanceInfo(domInfo),
         evaluateFrame(evaluateFrame) {}
 
-  void
-  preprocessAsyncFunction(FuncOp funcOp, mlir::DominanceInfo &domInfo,
-                          DenseMap<SymbolConstantAttr, Temp> &temperatures);
+  void preprocessAsyncFunction(FuncOp funcOp, mlir::DominanceInfo &domInfo,
+                               DenseMap<SymbolRefAttr, Temp> &temperatures);
 
   /// Given an async function and its frame types, create a ramp function and a
   /// resume function.
@@ -1207,7 +1206,7 @@ static Operation *findNearestCommonAncestor(mlir::DominanceInfo &domInfo,
 
 void LowerAsyncBuildContext::preprocessAsyncFunction(
     FuncOp funcOp, mlir::DominanceInfo &domInfo,
-    DenseMap<SymbolConstantAttr, Temp> &temperatures) {
+    DenseMap<SymbolRefAttr, Temp> &temperatures) {
 
   // Preprocess the function to
   // (1) move stack allocation ops as close to their first use as possible.
@@ -1237,16 +1236,14 @@ void LowerAsyncBuildContext::preprocessAsyncFunction(
            llvm::zip(hotInvoke.getResults(), results.getResults()))
         result.replaceAllUsesWith(image);
       hotInvoke->erase();
-      SymbolConstantAttr callee =
-          cast<SymbolConstantAttr>(partiallyLoweredHotInvoke.getCallee());
+      SymbolRefAttr callee = partiallyLoweredHotInvoke.getCalleeSymbol();
       auto maybe = temperatures.find(callee);
       if (maybe == temperatures.end())
         temperatures[callee] = Temp::Hot;
       else if (maybe->getSecond() == Temp::Cold)
         temperatures[callee] = Temp::Both;
     } else if (auto coldInvoke = dyn_cast<InvokeOp>(op)) {
-      SymbolConstantAttr callee =
-          cast<SymbolConstantAttr>(coldInvoke.getCallee());
+      SymbolRefAttr callee = coldInvoke.getCalleeSymbol();
       auto maybe = temperatures.find(callee);
       if (maybe == temperatures.end())
         temperatures[callee] = Temp::Cold;
@@ -1298,7 +1295,7 @@ void LowerAsyncFunctionsPass::runOnOperation() {
   LowerAsyncBuildContext buildContext(sharedTable, b, domInfo, targetInfo,
                                       evaluateFrame);
 
-  DenseMap<SymbolConstantAttr, Temp> temperatures;
+  DenseMap<SymbolRefAttr, Temp> temperatures;
   SmallVector<FuncOp> asyncFunctions;
   FrameData empty;
   COTypes opaqueCoroutineTypes(module.getContext(), std::move(empty),
@@ -1314,8 +1311,7 @@ void LowerAsyncFunctionsPass::runOnOperation() {
                                             /*replaceLocs=*/true,
                                             /*replaceTypes=*/true);
       funcOp.walk([&](InvokeOp coldInvoke) {
-        SymbolConstantAttr callee =
-            cast<SymbolConstantAttr>(coldInvoke.getCallee());
+        SymbolRefAttr callee = coldInvoke.getCalleeSymbol();
         auto maybe = temperatures.find(callee);
         if (maybe == temperatures.end())
           temperatures[callee] = Temp::Cold;
@@ -1332,13 +1328,13 @@ void LowerAsyncFunctionsPass::runOnOperation() {
                                           /*replaceTypes=*/true);
     asyncFunctions.push_back(funcOp);
   }
-  DenseMap<SymbolConstantAttr, std::pair<SymbolConstantAttr, Type>>
+  DenseMap<SymbolRefAttr, std::pair<SymbolConstantAttr, Type>>
       asyncFuncToColdRampFunctions;
-  DenseMap<SymbolConstantAttr, std::pair<SymbolConstantAttr, Type>>
+  DenseMap<SymbolRefAttr, std::pair<SymbolConstantAttr, Type>>
       asyncFuncToHotRampFunctions;
   for (FuncOp funcOp : asyncFunctions) {
     // Store a clone of the function so we can generate the hot ramp/resume.
-    SymbolConstantAttr key = SymbolConstantAttr::get(funcOp);
+    SymbolRefAttr key = FlatSymbolRefAttr::get(funcOp.getSymNameAttr());
     auto temperatureMaybe = temperatures.find(key);
 
     // TODO: DCE should have eliminated this function. It's useful for unit
@@ -1378,7 +1374,7 @@ void LowerAsyncFunctionsPass::runOnOperation() {
   IRRewriter rewriter(b);
   module.walk([&](Operation *op) {
     if (auto invokeOp = dyn_cast<InvokeOp>(op)) {
-      auto symbol = cast<SymbolConstantAttr>(invokeOp.getCallee());
+      SymbolRefAttr symbol = invokeOp.getCalleeSymbol();
       auto newSymbolPtr = asyncFuncToColdRampFunctions.find(symbol);
       if (newSymbolPtr != asyncFuncToColdRampFunctions.end()) {
         auto [newSymbol, continuationType] = newSymbolPtr->getSecond();
@@ -1391,7 +1387,7 @@ void LowerAsyncFunctionsPass::runOnOperation() {
             "every callee of an invoke operation should have been lowered");
       }
     } else if (auto hotInvokeOp = dyn_cast<HotInvokeOp>(op)) {
-      auto symbol = cast<SymbolConstantAttr>(hotInvokeOp.getCallee());
+      SymbolRefAttr symbol = hotInvokeOp.getCalleeSymbol();
       auto newSymbolPtr = asyncFuncToHotRampFunctions.find(symbol);
       if (newSymbolPtr != asyncFuncToHotRampFunctions.end()) {
         auto [newSymbol, continuationType] = newSymbolPtr->getSecond();

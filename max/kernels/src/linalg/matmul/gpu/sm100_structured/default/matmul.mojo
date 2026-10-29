@@ -1103,13 +1103,13 @@ def _splitk_context(ctx: DeviceContext) raises -> _SplitKContext:
         The state; it lives as long as the process.
     """
     var key = String(
-        "LINALG_SM100_SPLITK_", ctx.id(), "_", Int(ctx._handle.value())
+        "LINALG_SM100_SPLITK_", ctx.device().id, "_", Int(ctx._handle.value())
     )
     var cached = _get_global_or_null(key)
     if cached:
         return cached.unsafe_value().unsafe_bitcast[_SplitKContext]()[]
     var slot = -1
-    var device = ctx.id()
+    var device = ctx.device().id
     if device < _SPLITK_MAX_DEVICES:
         var counts = _SPLITK_SLOT_COUNTS.get_or_create_ptr()
         var taken = Int(
@@ -1384,7 +1384,9 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
                 c_row_stride,
             )
         var ctas = grid_dim[0] * grid_dim[1] * grid_dim[2]
-        var resident = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+        var resident = ctx.device().get_attribute(
+            DeviceAttribute.MULTIPROCESSOR_COUNT
+        )
         if ctas > resident:
             raise Error(
                 "split-K parallel reduction needs every CTA resident: grid of ",
@@ -1623,8 +1625,8 @@ def matmul_sm100_fallback[
     b_type: DType,
     *,
     transpose_b: Bool,
-    umma_shape: Coord[Int, Int, Int],
-    block_tile_shape: Coord[Int, Int, Int],
+    umma_shape: Tuple[Int, Int, Int],
+    block_tile_shape: Tuple[Int, Int, Int],
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     has_compute_fn: Bool = False,

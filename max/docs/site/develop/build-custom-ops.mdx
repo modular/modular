@@ -31,11 +31,11 @@ language basics](https://mojolang.org/docs/manual/basics).
 ## Requirements
 
 <Requirements requirementsData={requirementsWithGPU}
-url="/packages#system-requirements" />
+url="/system-requirements/" />
 
 Although these examples work on both CPUs and GPUs, in order for the GPU code
 paths to run, your system must meet the [GPU
-requirements](/packages/#gpu-compatibility).
+requirements](/system-requirements/#gpu-compatibility).
 
 ## Get the examples
 
@@ -209,8 +209,7 @@ package directory that holds the kernels. The directory needs an `__init__.mojo`
 file (which can be empty) so the compiler can find the ops.
 
 On eager tensors, call the op directly with
-[`F.custom()`](/api/python/experimental.functional/#max.experimental.functional.custom),
-as the
+[`F.custom()`](/api/python/functional/#max.functional.custom), as the
 [`custom_ops/eager_vector_addition.py`](https://github.com/modular/modular/tree/main/max/examples/custom_ops/eager_vector_addition.py)
 example does:
 

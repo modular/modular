@@ -34,19 +34,19 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
-from max.nn.graph_groups import HiddenStates
-from max.nn.kv_cache import (
+from max.nn.legacy.graph_groups import HiddenStates
+from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,
     PagedCacheValues,
 )
-from max.nn.layer import LayerList, MissingLayer, Module
-from max.nn.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.moe import GatedActivation, MoE, MoEQuantized
-from max.nn.rotary_embedding import Llama3RotaryEmbedding
-from max.nn.transformer import DecoderOutputs, ReturnHiddenStates
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.layer import LayerList, MissingLayer, Module
+from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.legacy.moe import GatedActivation, MoE, MoEQuantized
+from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.legacy.transformer import DecoderOutputs, ReturnHiddenStates
+from max.nn.legacy.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
 )
 from max.pipelines.architectures.gemma3.layers.scaled_word_embedding import (
@@ -507,13 +507,12 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
         custom_extensions: Iterable[Path] = (),
         is_device_graph: bool = False,
     ) -> Graph:
-        """Traces the language graph, whose inputs are :meth:`input_tree`'s
-        leaves, then on a pipeline stage after the first the hidden states
-        per device the previous stage returned.
+        """Traces the language graph, whose inputs are :meth:`input_tree`'s.
 
-        Adapts the flat graph inputs to :meth:`__call__`: stages the row
-        offsets on every device and splits the KV cache into its sliding and
-        global collections.
+        On the first pipeline stage the leaves are the graph inputs. Later
+        stages take the hidden states per device the previous stage
+        returned. The trace stages the row offsets on every device and
+        splits the KV cache into its sliding and global collections.
 
         Args:
             *input_types: The graph's input types, the leaves of

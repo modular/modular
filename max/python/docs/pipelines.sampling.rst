@@ -78,6 +78,7 @@ Logits processing
    build_greedy_acceptance_sampler_graph
    build_stochastic_acceptance_sampler_graph
    build_synthetic_acceptance_sampler_graph
+   greedy_argmax_suffices
    request_row_seed
 
 Label scoring

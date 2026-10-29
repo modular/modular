@@ -10,22 +10,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Whisper audio encoder."""
+
 from __future__ import annotations
 
 import math
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType, TensorValue, ops
-from max.nn.conv import Conv1D
-from max.nn.embedding import Embedding
-from max.nn.layer import Module
-from max.nn.linear import Linear
-from max.nn.norm import LayerNorm
-from max.nn.sequential import Sequential
+from max.nn.legacy.conv import Conv1D
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import LayerNorm
+from max.nn.legacy.sequential import Sequential
 from transformers import AutoConfig
 
 
 class WhisperSdpaAttention(Module):
+    """The encoder's scaled dot-product attention."""
+
     def __init__(
         self, huggingface_config: AutoConfig, dtype: DType, device: DeviceRef
     ) -> None:
@@ -42,6 +46,7 @@ class WhisperSdpaAttention(Module):
     def scaled_dot_product_attention(
         self, xq: TensorValue, xk: TensorValue, xv: TensorValue
     ) -> TensorValue:
+        """Runs the attention over the projected query, key and value."""
         xq = xq.transpose(1, 2)
         xk = xk.transpose(1, 2)
         xv = xv.transpose(1, 2)
@@ -80,6 +85,8 @@ class WhisperSdpaAttention(Module):
 
 
 class MLP(Module):
+    """The encoder's feed-forward block."""
+
     def __init__(
         self, huggingface_config: AutoConfig, dtype: DType, device: DeviceRef
     ) -> None:
@@ -100,6 +107,7 @@ class MLP(Module):
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Runs the feed-forward over ``x``."""
         x = self.fc1(x)
         x = ops.gelu(x)
         x = self.fc2(x)
@@ -123,6 +131,7 @@ class WhisperEncoderLayer(Module):
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Runs the layer's attention, then its feed-forward."""
         attn_out = self.attention(self.attention_norm(x))
 
         h = x + attn_out
@@ -201,9 +210,11 @@ class WhisperEncoder(Module):
         )
 
     def __call__(self, input_features: TensorValue) -> tuple[TensorValue, ...]:
-        """
+        """Runs the encoder over the log-Mel features.
+
         Args:
-            input_features: Buffer of shape (batch_size, feature_size, sequence_length)
+            input_features: Buffer of shape (batch_size, feature_size,
+                sequence_length).
         """
         # Encoder stem: two convolution layers and the GELU activation function.
         inputs_embeds = ops.gelu(self.conv1(input_features))

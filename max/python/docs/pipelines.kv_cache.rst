@@ -17,12 +17,14 @@ Submodules
 .. autosummary::
    :nosignatures:
 
+   max.pipelines.kv_cache.checkpoint
    max.pipelines.kv_cache.paged_kv_cache
 
 .. toctree::
    :maxdepth: 1
    :hidden:
 
+   pipelines.kv_cache.checkpoint
    pipelines.kv_cache.paged_kv_cache
 
 Memory planning

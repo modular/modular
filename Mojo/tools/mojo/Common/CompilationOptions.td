@@ -21,20 +21,23 @@
 #ifndef KGEN_TOOLS_MOJO_COMMON_COMPILATIONOPTIONS_TD
 #define KGEN_TOOLS_MOJO_COMMON_COMPILATIONOPTIONS_TD
 
+include "Common/IncludeOptions.td"
+include "Common/IncrParsingOptions.td"
+include "Common/Marshalling.td"
 include "Support/Driver/DriverCommand.td"
 
 //===----------------------------------------------------------------------===//
 // Compilation Options
 //===----------------------------------------------------------------------===//
 
-def CompilationOptionGroup : OptionGroup<"Compilation options">, Index<5>;
-
 defm optimization_level : CommandOption<["--", "-"], "optimization-level",
   CompilationOptionGroup, Index<0>, MetaVarName<"LEVEL">,
   HelpText<
     "Sets the level of optimization to use at compilation. The value must be "
     "a number between 0 and 3. The default is 3."
-  >>;
+  >>,
+  MarshallingInfoCustom<CompilationOpts<"optimizationLevel">,
+                        "normalizeOptimizationLevel">;
 def : JoinedOrSeparate<["-"], "O">, Group<CompilationOptionGroup>,
   Index<1>, Alias<optimization_level>;
 def : Flag<["--", "-"], "no-optimization">, Group<CompilationOptionGroup>,
@@ -49,19 +52,16 @@ defm fp_mode : CommandOption<["--", "-"], "fp-mode",
     "Clang's `-ffp-contract=fast`: it fuses `a + b*c` into an FMA across "
     "statements and breaking strict IEEE compliance. "
     "`contract=off` disables contraction."
-  >>;
-
-def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<3>,
-  MetaVarName<"PATH">,
-  HelpText<"Appends the given path to the list of directories to search for "
-           "imported Mojo files.">;
+  >>,
+  MarshallingInfoCustom<CompilationOpts<"fpMode">, "normalizeFpMode">;
 
 def D : JoinedOrSeparate<["-"], "D">, Group<CompilationOptionGroup>, Index<4>,
   MetaVarName<"KEY=VALUE">,
   HelpText<"Defines a named value that can be used from within the Mojo source "
            "file being executed. For example, `-Dfoo=42` defines a name `foo` "
            "that, when queried with the `std.defines` module from within the "
-           "Mojo program, would yield the compile-time value `42`.">;
+           "Mojo program, would yield the compile-time value `42`.">,
+  MarshallingInfoStringVector<DriverOpts<"defines">>;
 
 defm debug_level : CommandOption<["--", "-"], "debug-level",
   CompilationOptionGroup, Index<5>, MetaVarName<"LEVEL">,
@@ -71,7 +71,10 @@ defm debug_level : CommandOption<["--", "-"], "debug-level",
     "using `mojo debug foo.mojo`, which defaults to `full`. Please note that "
     "there are issues when generating debug info for some Mojo programs that "
     "have yet to be addressed."
-  >>;
+  >>,
+  MarshallingInfoChoice<CompilationOpts<"debugLevel">,
+                        ["none", "line-tables", "full"],
+                        ["kNoDebug", "kLineTablesOnly", "kFullDebugInfo"]>;
 
 def : Flag<["-"], "g">, Group<CompilationOptionGroup>, Index<6>,
   Alias<debug_level>, AliasArgs<["full"]>;
@@ -90,7 +93,8 @@ defm num_threads : CommandOption<["--", "-"], "num-threads",
   HelpText<
     "Sets the maximum number of threads to use for compilation. "
     "The default is 0 (use all available threads)."
-  >>;
+  >>,
+  MarshallingInfoInt<CompilationOpts<"numThreads">, "0", "size_t">;
 
 def : JoinedOrSeparate<["-"], "j">, Group<CompilationOptionGroup>,
   Index<11>, Alias<num_threads>;
@@ -99,7 +103,9 @@ defm loop_unrolling_warn_threshold: CommandOptionHidden<["--", "-"],
   "loop-unrolling-warn-threshold",
   CompilationOptionGroup, Index<12>, MetaVarName<"LUWT">,
   HelpText<"Sets loop unrolling factor warning threshold, "
-           "default is 1024, set to 0 to disable the warning.">>;
+           "default is 1024, set to 0 to disable the warning.">>,
+  MarshallingInfoInt<CompilationOpts<"loopUnrollingWarnThreshold">, "1024",
+                     "int64_t">;
 
 defm elaboration_error_limit: CommandOptionHidden<["--", "-"],
   "elaboration-error-limit",
@@ -107,14 +113,16 @@ defm elaboration_error_limit: CommandOptionHidden<["--", "-"],
   HelpText<
     "Sets limit to number of produced errors during elaboration "
     "before stop emitting diagnostics. The default is 20, and "
-    "the limit can be disabled with -elaboration-error-limit=0.">>;
+    "the limit can be disabled with -elaboration-error-limit=0.">>,
+  MarshallingInfoInt<CompilationOpts<"elaborationErrorLimit">, "20", "int">;
 
 def elaboration_error_include_prelude: Flag<["--", "-"],
   "elaboration-error-include-prelude">,
   Group<CompilationOptionGroup>, Index<14>,
   HelpText<
     "Show elaboration error with locations in mojo startup modules "
-    "(prelude).">;
+    "(prelude).">,
+  MarshallingInfoFlag<CompilationOpts<"elaborationErrorIncludePrelude">>;
 
 defm elaboration_error_verbose: CommandOptionHidden<["--", "-"],
   "elaboration-error-verbose",
@@ -127,7 +135,10 @@ defm elaboration_error_verbose: CommandOptionHidden<["--", "-"],
     "simple types, including numeric types and "
     "strings, in a user-friendly format; "
     "`no-params` means don't display any concrete parameter values; "
-    "`all-params` means show all concrete parameter values.">>;
+    "`all-params` means show all concrete parameter values.">>,
+  MarshallingInfoChoice<CompilationOpts<"elaborationErrorVerbose">,
+                        ["no-params", "simple-params", "all-params"],
+                        ["kNoParams", "kSimpleParams", "kAllParams"]>;
 
 defm elaboration_max_depth: CommandOptionHidden<["--", "-"],
   "elaboration-max-depth",
@@ -135,73 +146,8 @@ defm elaboration_max_depth: CommandOptionHidden<["--", "-"],
   HelpText<
       "The maximum elaborator instantiation depth. Default is "
       "std::numeric_limits<unsigned>::max(). Elaborator errors out if "
-      "the depth of compile time recursion exceeds this value.">>;
-
-def mlir_timing: Flag<["--", "-"], "mlir-timing">,
-  Group<CompilationOptionGroup>, Index<18>, Flags<[HelpHidden]>,
-  HelpText<
-    "Times each MLIR pass and analysis, printing a report to stderr when "
-    "compilation finishes, which for `mojo run` is before the program starts. "
-    "Passes that the compilation cache serves from an earlier build never "
-    "run, so a warm cache reports the parse and nothing else; point "
-    "`MODULAR_CACHE_DIR` at an empty directory to time a whole pipeline.">;
-
-def llvm_timing: Flag<["--", "-"], "llvm-timing">,
-  Group<CompilationOptionGroup>, Index<20>, Flags<[HelpHidden]>,
-  HelpText<
-    "Measures the time of each LLVM pass and analysis. Writes the LLVM report "
-    "to stderr when the compilation is complete. The timers of LLVM are "
-    "global to the process and are not safe for more than one thread. "
-    "Therefore this option makes the compiler use one thread, and it "
-    "overrides `--num-threads`. The report then shows the time that LLVM "
-    "uses, but it does not show the cost of a parallel build. LLVM does not "
-    "get the object code that the compilation cache keeps from an earlier "
-    "build. Therefore the report is empty if the cache has the object code. "
-    "Set `MODULAR_CACHE_DIR` to an empty directory to measure a full "
-    "pipeline. The report holds the passes of the host and the passes of "
-    "each `compile_offload` target together.">;
-
-defm mlir_timing_display: CommandOptionHidden<["--", "-"],
-  "mlir-timing-display",
-  CompilationOptionGroup, Index<19>, MetaVarName<"MODE">,
-  HelpText<
-    "How `--mlir-timing` groups its report. `tree` (the default) nests "
-    "timings by pipeline structure; `list` aggregates per pass name, sorted "
-    "by total time. The `list` mode merges the passes of all pipelines, so it "
-    "cannot show the time of one offload target on its own.">>;
-
-def timing_json: Flag<["--", "-"], "timing-json">,
-  Group<CompilationOptionGroup>, Index<21>, Flags<[HelpHidden]>,
-  HelpText<
-    "Writes the timing that `--mlir-timing` and `--llvm-timing` collect as "
-    "one JSON object rather than as text. The object holds a `mlir` member "
-    "and an `llvm` member, and only the members the command asks for, so it "
-    "is empty if the command asks for no timing. The `mlir` member keeps the "
-    "tree or the list that `--mlir-timing-display` selects. The `llvm` member "
-    "holds one entry for each pipeline, with the name of the pipeline and the "
-    "times of its passes.">;
-
-defm timing_file: CommandOptionHidden<["--", "-"], "timing-file",
-  CompilationOptionGroup, Index<22>, MetaVarName<"FILE">,
-  HelpText<
-    "Writes the timing reports to FILE rather than to stderr. The reports are "
-    "text, or JSON with `--timing-json`.">>;
-
-//===----------------------------------------------------------------------===//
-// Linker Options
-//===----------------------------------------------------------------------===//
-
-def LinkOptionGroup : OptionGroup<"Linker options">, Index<15>;
-
-defm Xlinker : CommandOption<["-"], "Xlinker",
-  LinkOptionGroup, Index<1>, MetaVarName<"ARG">,
-  HelpText<"Pass ARG to the linker.">>;
-
-defm lld_path : CommandOption<["--", "-"], "lld-path",
-  LinkOptionGroup, Index<2>, MetaVarName<"PATH">,
-  HelpText<"Overrides the path to the `lld` linker used when linking. Takes "
-           "precedence over the `MODULAR_MOJO_MAX_LLD_PATH` environment "
-           "variable and the `mojo-max.lld_path` configuration value.">>;
+      "the depth of compile time recursion exceeds this value.">>,
+  MarshallingInfoInt<CompilationOpts<"elaborationMaxDepth">>;
 
 //===----------------------------------------------------------------------===//
 // Experimental Compilation Options
@@ -215,14 +161,16 @@ defm sanitize : CommandOption<["--", "-"], "sanitize",
   HelpText<
     "Turns on runtime checks. The following values are supported: `address` "
     "(detects memory issues), and `thread` (detects multi-threading issues)."
-  >>;
+  >>,
+  MarshallingInfoCustom<CompilationOpts<"sanitizers">, "normalizeSanitizer">;
 
 def shared_libasan : Flag<["--", "-"], "shared-libasan">,
   Group<ExperimentalCompilationOptionGroup>, Index<2>,
   HelpText<
     "Dynamically link the address sanitizer runtime. Requires address "
     "sanitization turned on with `--sanitize` option."
-  >;
+  >,
+  MarshallingInfoFlag<CompilationOpts<"sharedLibasan">>;
 
 defm external_libasan : CommandOptionHidden<["--", "-"], "external-libasan",
   ExperimentalCompilationOptionGroup, Index<3>, MetaVarName<"FILE">,
@@ -230,13 +178,8 @@ defm external_libasan : CommandOptionHidden<["--", "-"], "external-libasan",
     "Uses the provided file as libasan instead of the default provided by "
     "the system. This file must provide a compatible interface as libasan, "
     "and must be present at both compile time and run time of the program."
-  >>;
-
-defm bitcode_libs : CommandOptionHidden<["--", "-"], "bitcode-libs",
-  ExperimentalCompilationOptionGroup, Index<4>, MetaVarName<"LIBS">,
-  HelpText<
-    "External bitcode libraries to link into the generated LLVM IR."
-  >>;
+  >>,
+  MarshallingInfoString<CompilationOpts<"externalLibasan">>;
 
 defm debug_info_language : CommandOption<["--", "-"], "debug-info-language",
   ExperimentalCompilationOptionGroup, Index<5>, MetaVarName<"LANGUAGE">,
@@ -245,6 +188,8 @@ defm debug_info_language : CommandOption<["--", "-"], "debug-info-language",
     "languages are: `Mojo`, and `C`. `Mojo` is the default. `C` is useful to "
     "enable rudimentary debugging and binary introspection in tools "
     "that don't understand Mojo, but is not required for `mojo debug`."
-  >>;
+  >>,
+  MarshallingInfoChoice<CompilationOpts<"debugInfoLanguage">, ["Mojo", "C"],
+                        ["kLangMojo", "kLangC"]>;
 
 #endif // KGEN_TOOLS_MOJO_COMMON_COMPILATIONOPTIONS_TD

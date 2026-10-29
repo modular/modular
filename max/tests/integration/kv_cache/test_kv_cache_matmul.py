@@ -26,12 +26,12 @@ from max.engine import InferenceSession
 from max.experimental.torch import max_dtype_to_torch
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.mlir import StringAttr
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     fused_qkv_ragged_matmul,
     matmul_k_cache_ragged,
     matmul_kv_cache_ragged,
 )
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     MHAKVCacheParams,
 )

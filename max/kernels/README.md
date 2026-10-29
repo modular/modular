@@ -20,7 +20,8 @@ To benchmark, autotune, and analyze Mojo kernel performance, use the
 [`kbench` tool](benchmarks/autotune#readme).
 
 If you're looking for the high-level Python APIs based on these kernels and used
-to build MAX graphs, see the [`python/max/nn/`](/max/python/max/nn) directory.
+to build MAX graphs, see the [`python/max/nn/`](/max/python/max/nn/legacy)
+directory.
 
 ## Contributing
 

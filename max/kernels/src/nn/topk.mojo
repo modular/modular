@@ -49,7 +49,7 @@ from layout import (
     coord_to_index_list,
     row_major,
 )
-from layout.coord import DynamicCoord
+from layout.coord import CoordLike, DynamicCoord
 from layout.tile_layout import Layout
 from std.math import log2
 from std.memory import unsafe_stack_allocation
@@ -58,7 +58,6 @@ from nn.reshape import reshape
 from nn.sampling import topk_topp_sampling_from_prob
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from std.utils.index import IndexList, product
 from std.utils.numerics import max_or_inf, min_or_neg_inf
 from max.gpu.primitives.grid_controls import PDLLevel
 
@@ -106,7 +105,9 @@ def _topk_stage2_smem_budget(ctx: DeviceContext) raises -> Int:
     """
     comptime if ctx.target.is_nvidia_gpu():
         return (
-            ctx.get_attribute(DeviceAttribute.MAX_SHARED_MEMORY_PER_BLOCK_OPTIN)
+            ctx.device().get_attribute(
+                DeviceAttribute.MAX_SHARED_MEMORY_PER_BLOCK_OPTIN
+            )
             - _TOPK_STAGE2_SMEM_HEADROOM_BYTES
         )
     else:
@@ -138,11 +139,55 @@ def _topk_stage2_smem_bytes[
 
 
 @inline(.always)
+def _dynamic_shape_of[
+    dtype: DType, //
+](input: TileTensor[mut=False, dtype, ...]) -> DynamicCoord[.int, input.rank]:
+    """The all-dynamic `Coord` shape of `input`."""
+    var shape = DynamicCoord[.int, input.rank]()
+    comptime for i in range(input.rank):
+        shape.replace_dynamic[i](Int(input.dim[i]()))
+    return shape
+
+
+@inline(.always)
+def _dynamic_shape_of[
+    dtype: DType, //
+](
+    input: TileTensor[mut=False, dtype, ...], axis: Int, value: Int
+) -> DynamicCoord[.int, input.rank]:
+    """The shape of `input` with `value` substituted at the runtime `axis`."""
+    var shape = DynamicCoord[.int, input.rank]()
+    comptime for i in range(input.rank):
+        var dim_value = Int(input.dim[i]())
+        if i == axis:
+            dim_value = value
+        shape.replace_dynamic[i](dim_value)
+    return shape
+
+
+@inline(.always)
+def _with_dim_at_axis[
+    element_types: TypeList[Trait=CoordLike, ...], //
+](shape: Coord[*element_types], axis: Int, value: Int) -> DynamicCoord[
+    .int, Coord[*element_types].rank
+]:
+    """`shape` with `value` substituted at the runtime `axis`."""
+    comptime rank = Coord[*element_types].rank
+    var result = DynamicCoord[.int, rank]()
+    comptime for i in range(rank):
+        var dim_value = Int(shape[i])
+        if i == axis:
+            dim_value = value
+        result.replace_dynamic[i](dim_value)
+    return result
+
+
+@inline(.always)
 def top_k_shape_impl[
     dtype: DType
 ](
     input: TileTensor[mut=False, dtype, ...], max_k: Int, axis: Int
-) raises -> IndexList[input.rank]:
+) raises -> DynamicCoord[.int, input.rank]:
     """
     Compute the output shape of a top/bottom k operation.
 
@@ -163,17 +208,13 @@ def top_k_shape_impl[
     var normalized_axis = normalize_neg_index(axis, input.rank)
 
     # Clamp max_k
-    var bound_max_k = Int(input.dim(normalized_axis)) if max_k == -1 else max_k
+    var axis_dim = Int(input.dim(normalized_axis))
+    var bound_max_k = axis_dim if max_k == -1 else max_k
 
-    if bound_max_k < 0 or bound_max_k > Int(input.dim(normalized_axis)):
+    if bound_max_k < 0 or bound_max_k > axis_dim:
         raise Error("[top/bottom-k] k must be within [0, input_shape[axis]]")
 
-    var shape = rebind[IndexList[input.rank]](
-        coord_to_index_list(input.layout.shape_coord())
-    )
-    shape[normalized_axis] = bound_max_k
-
-    return shape
+    return _dynamic_shape_of(input, normalized_axis, bound_max_k)
 
 
 @inline(.always)
@@ -250,9 +291,7 @@ def top_k[
         input.rank == out_idxs.rank
     ), "input.rank must match out_idx.rank"
 
-    var input_shape = rebind[IndexList[input.rank]](
-        coord_to_index_list(input.layout.shape_coord())
-    )
+    var input_shape = input.layout.shape_coord()
 
     def trace_information() {imm} -> String:
         return String(";").join(
@@ -269,7 +308,7 @@ def top_k[
     with Trace[TraceLevel.OP, target=target](
         "top_k",
         Trace[TraceLevel.OP]._get_detail_str(trace_information),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         var normalized_axis = normalize_neg_index(Int64(axis), input.rank)
 
@@ -337,36 +376,39 @@ def _top_k_cpu[
         input.rank == out_idxs.rank
     ), "input.rank must match out_idx.rank"
     comptime assert k.T.flat_rank == 1
-    var shape = coord_to_index_list(input.layout.shape_coord())
+    var shape = input.layout.shape_coord()
+    var axis_dim = Int(input.dim(axis))
 
-    def process_rows(start_row: Int, end_row: Int) {var shape, imm}:
+    def process_rows(start_row: Int, end_row: Int) {imm}:
         # Allocate the index list without initializing its elements.
-        var idxs = List[Int64](unsafe_uninit_length=shape[axis])
+        var idxs = List[Int64](unsafe_uninit_length=axis_dim)
 
         for row_idx in range(start_row, end_row):
             var indices = _get_nd_indices_from_flat_index(row_idx, shape, axis)
             iota(idxs)
 
-            var batch_idx = indices[0] if axis != 0 else 0
+            var batch_idx = Int(indices[0]) if axis != 0 else 0
             var k_val = max_k
             if case .Some(k) = k:
                 var k_raw = Int(k[batch_idx])
                 k_val = max_k if k_raw == -1 else k_raw
 
             # Clamp k to the size of the axis to avoid out-of-bounds access
-            if k_val > shape[axis]:
-                k_val = shape[axis]
+            if k_val > axis_dim:
+                k_val = axis_dim
 
             comptime if largest:
 
                 @inline(.always)
                 def _val_greater_than(
                     lhs: Int64, rhs: Int64
-                ) {mut indices, input, axis} -> Bool:
-                    indices[axis] = Int(lhs)
-                    var lhs_val = input[Coord(indices)]
-                    indices[axis] = Int(rhs)
-                    var rhs_val = input[Coord(indices)]
+                ) {imm indices, imm input, imm axis} -> Bool:
+                    var lhs_val = input[
+                        _with_dim_at_axis(indices, axis, Int(lhs))
+                    ]
+                    var rhs_val = input[
+                        _with_dim_at_axis(indices, axis, Int(rhs))
+                    ]
                     return lhs_val > rhs_val
 
                 if sorted:
@@ -378,11 +420,13 @@ def _top_k_cpu[
                 @inline(.always)
                 def _val_less_than(
                     lhs: Int64, rhs: Int64
-                ) {mut indices, input, axis} -> Bool:
-                    indices[axis] = Int(lhs)
-                    var lhs_val = input[Coord(indices)]
-                    indices[axis] = Int(rhs)
-                    var rhs_val = input[Coord(indices)]
+                ) {imm indices, imm input, imm axis} -> Bool:
+                    var lhs_val = input[
+                        _with_dim_at_axis(indices, axis, Int(lhs))
+                    ]
+                    var rhs_val = input[
+                        _with_dim_at_axis(indices, axis, Int(rhs))
+                    ]
                     return lhs_val < rhs_val
 
                 if sorted:
@@ -397,13 +441,15 @@ def _top_k_cpu[
                 # this is also what tensorflow and PT do:
                 # https://github.com/tensorflow/tensorflow/blob/v2.10.0/tensorflow/core/kernels/topk_op.cc#L171-L172
                 var i = 0
-                while i < shape[axis] - 1:
-                    indices[axis] = Int(idxs[i])
-                    var curr = input[Coord(indices)]
+                while i < axis_dim - 1:
+                    var curr = input[
+                        _with_dim_at_axis(indices, axis, Int(idxs[i]))
+                    ]
                     var num_equal = 1
-                    for j in range(i + 1, shape[axis]):
-                        indices[axis] = Int(idxs[j])
-                        var next = input[Coord(indices)]
+                    for j in range(i + 1, axis_dim):
+                        var next = input[
+                            _with_dim_at_axis(indices, axis, Int(idxs[j]))
+                        ]
                         if curr != next:
                             break
                         num_equal += 1
@@ -414,22 +460,27 @@ def _top_k_cpu[
                     i += num_equal
 
             for i in range(k_val):
-                indices[axis] = Int(idxs[i])
-                var val = input.load[width=1](Coord(indices))
-                indices[axis] = i
-                out_vals.store(Coord(indices), val)
-                out_idxs[Coord(indices)] = rebind[Scalar[out_idx_type]](idxs[i])
+                var val = input.load[width=1](
+                    _with_dim_at_axis(indices, axis, Int(idxs[i]))
+                )
+                var out_coord = _with_dim_at_axis(indices, axis, i)
+                out_vals.store(out_coord, val)
+                out_idxs[out_coord] = rebind[Scalar[out_idx_type]](idxs[i])
 
             # A row asking for fewer than the output width gets the padding
             # the GPU kernels write, not whatever the buffer held.
-            var out_k = coord_to_index_list(out_idxs.layout.shape_coord())[axis]
+            var out_k = Int(out_idxs.dim(axis))
             for i in range(k_val, out_k):
-                indices[axis] = i
-                out_vals[Coord(indices)] = _topk_dead_val[dtype, largest]()
-                out_idxs[Coord(indices)] = Scalar[out_idx_type](-1)
+                var out_coord = _with_dim_at_axis(indices, axis, i)
+                out_vals[out_coord] = _topk_dead_val[dtype, largest]()
+                out_idxs[out_coord] = Scalar[out_idx_type](-1)
 
     parallelize_over_rows(
-        process_rows, shape, axis, parallelism_grain_size, ctx
+        process_rows,
+        coord_to_index_list(shape),
+        axis,
+        parallelism_grain_size,
+        ctx,
     )
 
 
@@ -515,9 +566,7 @@ def fused_token_sampling_cpu[
     ), "input.rank must match out_idx.rank"
     comptime assert out_idx_type == .int64, "out_idx_type must be int64"
 
-    var input_shape = rebind[IndexList[input.rank]](
-        coord_to_index_list(input.layout.shape_coord())
-    )
+    var input_shape = input.layout.shape_coord()
 
     def trace_information() {imm} -> String:
         return String(";").join(
@@ -549,17 +598,18 @@ def fused_token_sampling_cpu[
                 bound_max_k = max(bound_max_k, row_k)
 
         # materialize the out_vals which is of shape [input[:-1]] + [k]
-        var out_vals_shape = coord_to_index_list(input.layout.shape_coord())
-        out_vals_shape[input.rank - 1] = bound_max_k
+        var out_vals_shape = _dynamic_shape_of(
+            input, input.rank - 1, bound_max_k
+        )
         var out_vals_alloc = alloc(
-            AllocLayout[Scalar[dtype]](length=out_vals_shape.flattened_length())
+            AllocLayout[Scalar[dtype]](length=out_vals_shape.product())
         ).into_managed()
         var out_vals_ptr: MutPointer[
             Scalar[dtype], origin_of(out_vals_alloc)
         ] = out_vals_alloc.unsafe_ptr()
         var out_vals = TileTensor(
             out_vals_ptr,
-            row_major(Coord(out_vals_shape)),
+            row_major(out_vals_shape),
         )
 
         if resolved_k:
@@ -680,34 +730,46 @@ def _top_k_sampling[
     comptime assert seed.T.flat_rank == 1
 
     # Now reshape for sampling
-    var orig_in_shape = rebind[IndexList[input.rank]](
-        coord_to_index_list(input.layout.shape_coord())
-    )
-    var last_dim = orig_in_shape[input.rank - 1]
+    var orig_in_shape = input.layout.shape_coord()
+    var last_dim = Int(orig_in_shape[input.rank - 1])
 
     comptime internal_rank = 2
     var internal_bs: Int
-    var internal_in_shape: IndexList[internal_rank]
+    var internal_in_shape: DynamicCoord[.int, internal_rank]
 
     comptime if input.rank == 1:
         internal_bs = 1
-        internal_in_shape = IndexList[internal_rank](1, input.num_elements())
+        internal_in_shape = DynamicCoord[.int, internal_rank](
+            1, input.num_elements()
+        )
     elif input.rank == internal_rank:
-        internal_bs = orig_in_shape[0]
-        internal_in_shape = rebind[IndexList[internal_rank]](orig_in_shape)
+        internal_bs = Int(orig_in_shape[0])
+        internal_in_shape = DynamicCoord[.int, internal_rank](
+            Int(orig_in_shape[0]), Int(orig_in_shape[1])
+        )
     elif input.rank > internal_rank:
         internal_bs = Int(
-            Float64(orig_in_shape.flattened_length()) / Float64(last_dim)
+            Float64(Int(orig_in_shape.product())) / Float64(last_dim)
         )
-        internal_in_shape = IndexList[internal_rank](internal_bs, last_dim)
+        internal_in_shape = DynamicCoord[.int, internal_rank](
+            internal_bs, last_dim
+        )
     else:
         raise Error("Unsupported input rank. Must be >= 1.")
 
-    var internal_out_shape = IndexList[internal_rank](internal_bs, max_k)
-    var internal_out_idxs_shape = IndexList[internal_rank](internal_bs, 1)
+    var internal_out_shape = DynamicCoord[.int, internal_rank](
+        internal_bs, max_k
+    )
+    var internal_out_idxs_shape = DynamicCoord[.int, internal_rank](
+        internal_bs, 1
+    )
 
-    var reshaped_out_idxs = reshape(out_idxs, internal_out_idxs_shape)
-    var reshaped_out_vals = reshape(out_vals, internal_out_shape)
+    var reshaped_out_idxs = reshape(
+        out_idxs, coord_to_index_list(internal_out_idxs_shape)
+    )
+    var reshaped_out_vals = reshape(
+        out_vals, coord_to_index_list(internal_out_shape)
+    )
 
     var out_idxs_tmp_alloc = alloc(
         AllocLayout[Int64](length=out_vals.num_elements())
@@ -717,9 +779,9 @@ def _top_k_sampling[
     ] = out_idxs_tmp_alloc.unsafe_ptr()
     var out_idxs_tmp = TileTensor(
         out_idxs_tmp_ptr,
-        row_major(Coord(internal_out_shape)),  # topk returns K as last dim
+        row_major(internal_out_shape),  # topk returns K as last dim
     )
-    var reshaped_input = reshape(input, internal_in_shape)
+    var reshaped_input = reshape(input, coord_to_index_list(internal_in_shape))
     _top_k_cpu[dtype=dtype, largest=True](
         reshaped_input,
         max_k,
@@ -2010,9 +2072,7 @@ def topk_gpu[
             was found (e.g. all-NaN rows); rows default to 1 via memset.
     """
     comptime assert input.rank > 0, "Input rank must be positive"
-    var orig_in_shape = rebind[IndexList[input.rank]](
-        coord_to_index_list(input.layout.shape_coord())
-    )
+    var orig_in_shape = input.layout.shape_coord()
 
     def trace_information() {imm} -> String:
         return String(";").join(
@@ -2029,9 +2089,9 @@ def topk_gpu[
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "topk_gpu",
         Trace[TraceLevel.OP]._get_detail_str(trace_information),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
-        var N = orig_in_shape[input.rank - 1]
+        var N = Int(orig_in_shape[input.rank - 1])
         var last_idx_dim = 1 if sampling else max_k
 
         # Clamp max_k
@@ -2090,22 +2150,28 @@ def topk_gpu[
         comptime if input.rank == 1:
             # Handle 1D input: treat it as a single batch with one element
             internal_bs = 1
-            var internal_in_shape = IndexList[internal_rank](
+            var internal_in_shape = DynamicCoord[.int, internal_rank](
                 1, input.num_elements()
             )
-            var internal_out_vals_shape = IndexList[internal_rank](
+            var internal_out_vals_shape = DynamicCoord[.int, internal_rank](
                 1, bound_max_k
             )
-            var internal_out_idxs_shape = IndexList[internal_rank](
+            var internal_out_idxs_shape = DynamicCoord[.int, internal_rank](
                 1, last_idx_dim
             )
             # Reshape 1D inputs to 2D
-            internal_input = reshape(input, internal_in_shape)
-            internal_out_idxs = reshape(out_idxs, internal_out_idxs_shape)
-            internal_out_vals = reshape(out_vals, internal_out_vals_shape)
+            internal_input = reshape(
+                input, coord_to_index_list(internal_in_shape)
+            )
+            internal_out_idxs = reshape(
+                out_idxs, coord_to_index_list(internal_out_idxs_shape)
+            )
+            internal_out_vals = reshape(
+                out_vals, coord_to_index_list(internal_out_vals_shape)
+            )
         elif input.rank == internal_rank:
             # Input is already 2D, no reshaping needed
-            internal_bs = orig_in_shape[0]
+            internal_bs = Int(orig_in_shape[0])
             internal_input = rebind[type_of(internal_input)](
                 input.make_dynamic[.int64]()
             )
@@ -2117,25 +2183,31 @@ def topk_gpu[
             )
         else:  # rank > 2
             # Handle higher dimensional inputs by flattening all but the last dimension
-            var _last_dim = orig_in_shape[input.rank - 1]
+            var _last_dim = Int(orig_in_shape[input.rank - 1])
             internal_bs = Int(
-                Float64(orig_in_shape.flattened_length()) / Float64(_last_dim)
+                Float64(Int(orig_in_shape.product())) / Float64(_last_dim)
             )
 
-            var internal_in_shape = IndexList[internal_rank](
+            var internal_in_shape = DynamicCoord[.int, internal_rank](
                 internal_bs, _last_dim
             )
-            var internal_out_idxs_shape = IndexList[internal_rank](
+            var internal_out_idxs_shape = DynamicCoord[.int, internal_rank](
                 internal_bs, last_idx_dim
             )
-            var internal_out_vals_shape = IndexList[internal_rank](
+            var internal_out_vals_shape = DynamicCoord[.int, internal_rank](
                 internal_bs, bound_max_k
             )
 
             # Reshape higher dimensional inputs to 2D
-            internal_input = reshape(input, internal_in_shape)
-            internal_out_idxs = reshape(out_idxs, internal_out_idxs_shape)
-            internal_out_vals = reshape(out_vals, internal_out_vals_shape)
+            internal_input = reshape(
+                input, coord_to_index_list(internal_in_shape)
+            )
+            internal_out_idxs = reshape(
+                out_idxs, coord_to_index_list(internal_out_idxs_shape)
+            )
+            internal_out_vals = reshape(
+                out_vals, coord_to_index_list(internal_out_vals_shape)
+            )
 
         # Short rows with a small k go to the single-warp, single-launch
         # kernel. An explicit `num_blocks_per_input` is a caller pinning the
@@ -2191,26 +2263,26 @@ def topk_gpu[
             num_blocks_per_input_ -= 1
 
         # Define shape for the kernel's internal cache buffers
-        var internal_cache_shape = IndexList[2](
+        var internal_cache_shape = DynamicCoord[.int, 2](
             internal_bs, num_blocks_per_input_ * bound_max_k
         )
 
         # Create temporary buffer for local top-K values
         var internal_vals_buf = ctx.enqueue_create_buffer[dtype](
-            product(internal_cache_shape)
+            internal_cache_shape.product()
         )
         var device_local_topk_vals = TileTensor(
             internal_vals_buf,
-            row_major(Coord(internal_cache_shape)),
+            row_major(internal_cache_shape),
         )
 
         # Create temporary buffer for local top-K indices
         var internal_idxs_buf = ctx.enqueue_create_buffer[out_idx_type](
-            product(internal_cache_shape)
+            internal_cache_shape.product()
         )
         var device_local_topk_idxs = TileTensor(
             internal_idxs_buf,
-            row_major(Coord(internal_cache_shape)),
+            row_major(internal_cache_shape),
         )
 
         _topk_gpu[
@@ -2289,10 +2361,9 @@ def _topk_topp_sampling_fi[
     [batch_size, d] probability buffer is materialized.
     """
     # Reshape out_idxs from [batch, 1] (rank 2) to [batch] (rank 1).
-    var out_shape = coord_to_index_list(out_idxs.layout.shape_coord())
     var out_1d = TileTensor(
         out_idxs._storage,
-        row_major(out_shape[0]),
+        row_major(Int(out_idxs.dim(0))),
     )
     topk_topp_sampling_from_prob[dtype, out_idx_type, from_logits=True](
         ctx,
@@ -2358,9 +2429,7 @@ def fused_token_sampling_gpu[
     dimension of the input tensor for each row/subvolume.
     """
 
-    var input_shape = rebind[IndexList[input.rank]](
-        coord_to_index_list(input.layout.shape_coord())
-    )
+    var input_shape = input.layout.shape_coord()
 
     def trace_information() {imm} -> String:
         return String(";").join(
@@ -2376,7 +2445,7 @@ def fused_token_sampling_gpu[
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "fused_token_sampling_gpu",
         Trace[TraceLevel.OP]._get_detail_str(trace_information),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         comptime assert (
             input.rank == out_idxs.rank
@@ -2864,9 +2933,7 @@ def gumbel_sampling_fused_gpu[
         not from_probs or not is_apple_gpu()
     ), "from_probs is not supported on Apple GPUs"
 
-    var input_shape = rebind[IndexList[input.rank]](
-        coord_to_index_list(input.layout.shape_coord())
-    )
+    var input_shape = input.layout.shape_coord()
 
     def trace_information() {imm} -> String:
         return trace_arg("input", input_shape, dtype)
@@ -2874,7 +2941,7 @@ def gumbel_sampling_fused_gpu[
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "gumbel_sampling_fused_gpu",
         Trace[TraceLevel.OP]._get_detail_str(trace_information),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         var batch_size = Int(input.dim(0))
         # Speculative decoding can ask for zero rows, and a grid of 0 is not
@@ -3002,9 +3069,7 @@ def gumbel_sampling_gpu[
         seed: Optional per-token random seeds [batch] for reproducibility.
     """
 
-    var input_shape = rebind[IndexList[input.rank]](
-        coord_to_index_list(input.layout.shape_coord())
-    )
+    var input_shape = input.layout.shape_coord()
 
     def trace_information() {imm} -> String:
         return trace_arg("input", input_shape, dtype)
@@ -3012,7 +3077,7 @@ def gumbel_sampling_gpu[
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         "gumbel_sampling_gpu",
         Trace[TraceLevel.OP]._get_detail_str(trace_information),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         # create a buffer to hold the Gumbel noise applied input
         var noised_input_buf = ctx.enqueue_create_buffer[dtype](
@@ -3051,14 +3116,13 @@ def gumbel_sampling_gpu[
         )
 
         # Extract argmax after Gumbel noise application.
-        var out_vals_shape = coord_to_index_list(input.layout.shape_coord())
-        out_vals_shape[input.rank - 1] = 1
+        var out_vals_shape = _dynamic_shape_of(input, input.rank - 1, 1)
         var out_vals_buf = ctx.enqueue_create_buffer[dtype](
-            out_vals_shape.flattened_length()
+            out_vals_shape.product()
         )
         var out_vals = TileTensor(
             out_vals_buf,
-            row_major(Coord(out_vals_shape)),
+            row_major(out_vals_shape),
         )
 
         topk_gpu[sampling=False](

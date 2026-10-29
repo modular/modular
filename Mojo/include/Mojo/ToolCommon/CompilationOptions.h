@@ -142,9 +142,7 @@ public:
       bool elaborationErrorIncludePrelude = false,
       ErrorVerboseLevel elaborationErrorVerbose = kSimpleParams,
       unsigned elaborationMaxDepth = std::numeric_limits<unsigned>::max(),
-      DebugInfoLanguage debugInfoLanguage = kLangMojo,
-      std::string searchPaths = "",
-      SmallVector<std::string> extraSearchPaths = {});
+      DebugInfoLanguage debugInfoLanguage = kLangMojo);
 
   /// Return the corresponding codegen optimization level for the current option
   /// set.
@@ -223,8 +221,6 @@ public:
   /// so the toolchain behind that embedded kind still runs even when the host
   /// output is discarded.
   EmitAs offloadOutputKind = EmitAs::ASM;
-  std::string searchPaths;
-  SmallVector<std::string> extraSearchPaths;
 
   // File paths to external bitcode libraries specified via command line.
   SmallVector<std::string> bitcodeLibs;
@@ -257,16 +253,6 @@ public:
 
   // Maximum number of threads to be used by AsyncRT. 0 means use all available.
   size_t numThreads = 0;
-
-  bool disableWarnings = false;
-  bool warningsAsErrors = false;
-  bool warnOnUnstableAPIs = false;
-  bool ignoreIncompatiblePrecompiledFileErrors = false;
-
-  /// Qualified names (e.g. `Foo.bar`, or just `some_fn` for a top-level
-  /// declaration) of `@deprecated` declarations whose deprecation warning
-  /// should be suppressed, set via `--ignore-deprecated`.
-  SmallVector<std::string> ignoredDeprecations;
 
   // Extra handle name to separate cache base between mojo, kgen, kgen-opt,
   // to avoid internal test cache pruning races caused by different binary IDs.

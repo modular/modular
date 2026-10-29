@@ -1229,9 +1229,9 @@ and lowering ownership still need the contract described here.
 [source-traces]: https://github.com/modularml/modular/blob/ceaf9aea9ed803119df09686e567a9edf3cb9f05/GraphCompiler/lib/MGPDialect/Transforms/AttachPythonStackTraces.cpp#L44
 [custom-op-tests]: https://github.com/modularml/modular/blob/ceaf9aea9ed803119df09686e567a9edf3cb9f05/max/tests/integration/tensor/test_custom_op_def.py#L249
 [shape-reuse]: https://github.com/modularml/modular/blob/ceaf9aea9ed803119df09686e567a9edf3cb9f05/max/tests/integration/tensor/test_custom_op_def.py#L415
-[sharding-types]: https://github.com/modularml/modular/blob/ceaf9aea9ed803119df09686e567a9edf3cb9f05/max/python/max/experimental/sharding/types.py
-[resharding-policy]: https://github.com/modularml/modular/blob/ceaf9aea9ed803119df09686e567a9edf3cb9f05/max/python/max/experimental/sharding/_auto_reshard.py
-[kv-parameters]: https://github.com/modularml/modular/blob/ceaf9aea9ed803119df09686e567a9edf3cb9f05/max/python/max/nn/kernels.py#L710
+[sharding-types]: https://github.com/modularml/modular/blob/ceaf9aea9ed803119df09686e567a9edf3cb9f05/max/python/max/tensor/sharding/types.py
+[resharding-policy]: https://github.com/modularml/modular/blob/ceaf9aea9ed803119df09686e567a9edf3cb9f05/max/python/max/tensor/sharding/_auto_reshard.py
+[kv-parameters]: https://github.com/modularml/modular/blob/ceaf9aea9ed803119df09686e567a9edf3cb9f05/max/python/max/nn/legacy/kernels.py#L710
 [mo-to-map]: https://github.com/modularml/modular/blob/ceaf9aea9ed803119df09686e567a9edf3cb9f05/GraphCompiler/lib/Conversion/MOToMAP/MOToMAP.cpp#L744
 
 [review-revision]: https://github.com/modularml/modular/commit/ceaf9aea9ed803119df09686e567a9edf3cb9f05

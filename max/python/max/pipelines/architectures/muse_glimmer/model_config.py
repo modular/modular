@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Muse Glimmer configuration."""
 
 from __future__ import annotations
 
@@ -19,8 +20,8 @@ from typing import ClassVar
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import MultiKVCacheParams
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.kv_cache import MultiKVCacheParams
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.gpt_oss.hybrid_kv_params_util import (
     hybrid_swa_full_kv_params,
 )
@@ -199,6 +200,7 @@ class MuseGlimmerVisionConfig:
 
     @property
     def head_dim(self) -> int:
+        """The width of one vision attention head."""
         return self.hidden_size // self.num_attention_heads
 
     @property
@@ -283,8 +285,10 @@ class MuseGlimmerConfig(ArchConfigWithKVCache, ArchConfigWithVisionCache):
     def estimate_vision_cache_entry_bytes(
         cls, huggingface_config: AutoConfig
     ) -> int:
-        """Bytes of one max-resolution image's embeddings, or ``0`` for a
-        checkpoint without a vision tower."""
+        """Bytes of one max-resolution image's embeddings.
+
+        A checkpoint without a vision tower gets ``0``.
+        """
         spec = cls.get_vision_cache_row_spec(huggingface_config)
         if spec is None:
             return 0

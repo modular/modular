@@ -18,13 +18,13 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+from max import functional as F
 from max import tree
 from max.driver import CPU, Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.nn.common_layers.quant_tensor import (
+from max.nn import Module
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.quant_tensor import (
     FP8BlockTensor,
     MXFP4Quantizer,
     MXFP4Tensor,
@@ -39,8 +39,8 @@ from max.experimental.nn.common_layers.quant_tensor import (
     all_mxfp8,
     all_nvfp4,
 )
-from max.experimental.sharding import DeviceMesh, Sharded
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMesh, Sharded
 
 
 def test_init_stores_tensors_and_block_size() -> None:
@@ -629,6 +629,19 @@ def test_nvfp4_quantizer_packs_nvfp4_on_first_use(sm100_arch: None) -> None:
         assert list(qt.weight_scale_2.shape) == []
         assert qt.input_scale.dtype == DType.float32
         assert list(qt.input_scale.shape) == []
+
+
+def test_nvfp4_quantizer_rejects_a_late_global_scale_pin(
+    sm100_arch: None,
+) -> None:
+    """A pin after quantization cannot rewrite block scales already encoded."""
+    del sm100_arch
+    with F.lazy():
+        qt = NVFP4TensorQuantizer(Tensor.zeros((128, 64), dtype=DType.bfloat16))
+        _ = qt.weight
+        pinned = Tensor.zeros((), dtype=DType.float32, device=CPU())
+        with pytest.raises(RuntimeError, match="before its fused"):
+            qt.pin_global_amax(pinned)
 
 
 def test_type_guards_narrow_homogeneous_bundles() -> None:

@@ -21,7 +21,7 @@ from std.collections import OptionalReg
 from std.math import align_up, ceildiv, iota
 from std.os import getenv
 from std.random import seed
-from std.sys.info import size_of
+from std.sys.info import _accelerator_arch, size_of
 import extensibility
 
 # ===-----------------------------------------------------------------------===#
@@ -71,11 +71,7 @@ from nn.conv.conv_transpose import (
 from nn.fold import fold, fold_shape
 from nn.gather_scatter import apply_packed_bitmask, normalize_neg_index
 from nn.irfft import irfft
-from nn.kv_cache import (
-    generic_get_paged_cache,
-    print_kv_cache_paged_generic_cpu,
-    print_kv_cache_paged_generic_gpu,
-)
+from nn.kv_cache import generic_get_paged_cache
 from nn.chunked_qkv_rope_store import chunked_qkv_rope_store_paged_ragged
 from nn.rope_split_store import (
     rope_split_store_paged_ragged,
@@ -90,7 +86,12 @@ from nn.kv_cache_ragged import (
     generic_fused_qkv_matmul_kv_cache_paged_ragged_bias,
 )
 from nn.attention.gpu.mha import MHADecodeDispatchMetadata
-from nn.mhc import hyper_connection_gates, mhc_post, mhc_post_block_size
+from nn.mhc import (
+    hyper_connection_gates,
+    mhc_post,
+    mhc_post_block_size,
+    mhc_pre,
+)
 from nn.moe import (
     eplb_remap,
     moe_create_indices,
@@ -391,20 +392,26 @@ struct NanCheckCountOp:
 
     @staticmethod
     def execute[
-        dtype: DType,
-        rank: Int,
         target: StaticString,
         _trace_name: StaticString = "",
     ](
-        nan_count_out: OutputTensor[dtype=.int32, rank=1, ...],
-        inf_count_out: OutputTensor[dtype=.int32, rank=1, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
+        nan_count_out: Some[Output & Tensor],
+        inf_count_out: Some[Output & Tensor],
+        input: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(nan_count_out), TileTensorable)
+        comptime assert conforms_to(type_of(inf_count_out), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert type_of(nan_count_out).rank == 1
+        comptime assert type_of(inf_count_out).rank == 1
         from .nan_check import nan_check_count
 
-        nan_check_count[dtype, rank, target](
-            nan_count_out, inf_count_out, input, ctx
+        nan_check_count[target](
+            nan_count_out.to_tile_tensor[.int32](),
+            inf_count_out.to_tile_tensor[.int32](),
+            input.to_tile_tensor(),
+            ctx,
         )
 
 
@@ -422,13 +429,20 @@ struct NanCheckRaiseOp:
         label: StaticString = "",
         type_str: StaticString = "",
     ](
-        nan_count: InputTensor[dtype=.int32, rank=1, ...],
-        inf_count: InputTensor[dtype=.int32, rank=1, ...],
+        nan_count: Some[Input & Tensor],
+        inf_count: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(nan_count), TileTensorable)
+        comptime assert conforms_to(type_of(inf_count), TileTensorable)
+        comptime assert type_of(nan_count).rank == 1
+        comptime assert type_of(inf_count).rank == 1
         from .nan_check import nan_check_raise
 
-        nan_check_raise[label, type_str](nan_count, inf_count)
+        nan_check_raise[label, type_str](
+            nan_count.to_tile_tensor[.int32](),
+            inf_count.to_tile_tensor[.int32](),
+        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -932,29 +946,43 @@ struct RandomNormal:
 
     @staticmethod
     def execute[
-        dtype: DType,
         target: StaticString,
     ](
-        output: FusedOutputTensor[dtype=dtype, ...],
-        shape: InputTensor[rank=1, ...],
+        output: Some[Output & Fused & StoreAccess],
+        shape: Some[Input & Tensor],
         mean: Float32,
         variance: Float32,
-        seed_value: InputTensor[dtype=.uint64, rank=1, ...],
+        seed_value: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(seed_value), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(shape).rank == 1
+        comptime assert type_of(seed_value).rank == 1
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # store on the GPU lane.
+        comptime assert conforms_to(type_of(output), UnsafeFusedView)
+        var output_view = unsafe_fused_view(output)
+        comptime assert conforms_to(type_of(output_view), Storable)
+
         @inline(.always)
         def output_fn[
             _width: SIMDLength
-        ](coords: Coord, val: SIMD[dtype, _width]) {imm output}:
-            output._lambda_store[width=_width](
-                coords, rebind[SIMD[output.dtype, _width]](val)
+        ](coords: Coord, val: SIMD[dtype, _width]) {var output_view}:
+            output_view.store[width=_width](
+                coords, rebind[SIMD[type_of(output_view).dtype, _width]](val)
             )
 
+        # The seed is read through its flat pointer; a non-pointer storage
+        # policy aborts here at run time.
         random_normal[target=target](
-            output.shape_coord(),
+            output.shape().flatten(),
             mean,
             variance,
-            seed_value.unsafe_ptr[.uint64](),
+            seed_value.to_tile_tensor[.uint64]()
+            .as_imm()
+            .ptr.unsafe_origin_cast[ImmutAnyOrigin](),
             ctx,
             output_fn,
         )
@@ -1010,26 +1038,41 @@ struct RandomUniform:
         dtype: DType,
         target: StaticString,
     ](
-        output: FusedOutputTensor[dtype=dtype, ...],
-        shape: InputTensor[rank=1, ...],
+        output: Some[Output & Fused & StoreAccess],
+        shape: Some[Input & Tensor],
         lower_bound: Scalar[dtype],
         upper_bound: Scalar[dtype],
-        seed_value: InputTensor[dtype=.uint64, rank=1, ...],
+        seed_value: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(seed_value), TileTensorable)
+        comptime assert type_of(output).dtype == dtype
+        comptime assert type_of(shape).rank == 1
+        comptime assert type_of(seed_value).rank == 1
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # store on the GPU lane.
+        comptime assert conforms_to(type_of(output), UnsafeFusedView)
+        var output_view = unsafe_fused_view(output)
+        comptime assert conforms_to(type_of(output_view), Storable)
+
         @inline(.always)
         def output_fn[
             _width: SIMDLength
-        ](coords: Coord, val: SIMD[dtype, _width]) {imm output}:
-            output._lambda_store[width=_width](
-                coords, rebind[SIMD[output.dtype, _width]](val)
+        ](coords: Coord, val: SIMD[dtype, _width]) {var output_view}:
+            output_view.store[width=_width](
+                coords, rebind[SIMD[type_of(output_view).dtype, _width]](val)
             )
 
+        # The seed is read through its flat pointer; a non-pointer storage
+        # policy aborts here at run time.
         random_uniform[target=target](
-            output.shape_coord(),
+            output.shape().flatten(),
             lower_bound,
             upper_bound,
-            seed_value.unsafe_ptr[.uint64](),
+            seed_value.to_tile_tensor[.uint64]()
+            .as_imm()
+            .ptr.unsafe_origin_cast[ImmutAnyOrigin](),
             ctx,
             output_fn,
         )
@@ -1399,147 +1442,12 @@ struct IRFFT:
 # ===-----------------------------------------------------------------------===#
 
 
-@inline(.always)
-def generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
-    dtype: DType,
-    weight_type: DType,
-    kv_type: DType,
-    target: StaticString,
-    group_size: Optional[Int] = None,
-    has_zp: Optional[Bool] = None,
-](
-    hidden_state: ManagedTensorSlice[dtype=dtype, rank=2, ...],
-    input_row_offsets: ManagedTensorSlice[dtype=DType.uint32, rank=1, ...],
-    weight: ManagedTensorSlice[dtype=weight_type, rank=2, ...],
-    kv_collection: PagedKVCacheCollection[kv_type, ...],
-    layer_idx: UInt32,
-    output: ManagedTensorSlice[dtype=dtype, rank=2, ...],
-    ctx: DeviceContext,
-) raises:
-    """Implements the fused QKV matmul for ragged inputs, writing the K and V projections directly into a paged KV cache.
-
-    Parameters:
-        dtype: Element type of the `hidden_state` input and `output`
-            tensors.
-        weight_type: Element type of the `weight` tensor.
-        kv_type: Element type of the paged KV cache. BF16 activations may
-            store into an FP8 cache; the epilogue saturates on the write.
-        target: Target device identifier for kernel dispatch.
-        group_size: Block size for GPTQ-style quantization of `weight`;
-            when set, `weight` must be `uint8` (defaults to `None` for no
-            quantization).
-        has_zp: Whether the weight quantization uses a zero point;
-            currently must be falsy when `group_size` is set (defaults to
-            `None`).
-
-    Args:
-        hidden_state: Input tensor of shape
-            `(sum(seq_lens), num_heads * head_size)`.
-        input_row_offsets: One-dimensional tensor of shape
-            `(batch_size + 1)` whose value at each index is the start
-            offset of the corresponding batch in `hidden_state`.
-        weight: Weight matrix of shape
-            `(num_heads * head_size, num_kv_heads * head_size)`.
-        kv_collection: Paged KV cache collection holding the keys and
-            values; the cache for this layer is retrieved via
-            `layer_idx`.
-        layer_idx: Index of the layer whose K and V projections are
-            written into the cache.
-        output: Pre-allocated output buffer of shape
-            `(sum(seq_lens), num_heads * head_size)` for the Q
-            projections; K and V projections are written in place to the
-            cache.
-        ctx: Device context used for kernel dispatch.
-    """
-    generic_fused_qkv_matmul_kv_cache_paged_ragged[
-        target=target,
-        group_size=group_size,
-        has_zp=has_zp,
-    ](
-        hidden_state.to_tile_tensor[.int64](),
-        input_row_offsets.to_tile_tensor[.int64](),
-        weight.to_tile_tensor[.int64](),
-        kv_collection,
-        layer_idx,
-        output.to_tile_tensor[.int64](),
-        ctx,
-    )
-
-
-@inline(.always)
-def generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
-    dtype: DType,
-    weight_type: DType,
-    kv_type: DType,
-    target: StaticString,
-    group_size: Optional[Int] = None,
-    has_zp: Optional[Bool] = None,
-](
-    hidden_state: ManagedTensorSlice[dtype=dtype, rank=2, ...],
-    input_row_offsets: ManagedTensorSlice[dtype=DType.uint32, rank=1, ...],
-    weight: ManagedTensorSlice[dtype=weight_type, rank=2, ...],
-    kv_collection: PagedKVCacheCollection[kv_type, ...],
-    layer_idx: UInt32,
-    output: ManagedTensorSlice[dtype=dtype, rank=2, ...],
-    bias: ManagedTensorSlice[dtype=dtype, rank=1, ...],
-    ctx: DeviceContext,
-) raises:
-    """Implements the fused QKV matmul with bias for ragged inputs, writing the K and V projections directly into a paged KV cache.
-
-    Parameters:
-        dtype: Element type of the `hidden_state`, `output`, and `bias`
-            tensors.
-        weight_type: Element type of the `weight` tensor.
-        kv_type: Element type of the paged KV cache. BF16 activations may
-            store into an FP8 cache; the epilogue saturates on the write.
-        target: Target device identifier for kernel dispatch.
-        group_size: Block size for GPTQ-style quantization of `weight`;
-            when set, `weight` must be `uint8` (defaults to `None` for no
-            quantization).
-        has_zp: Whether the weight quantization uses a zero point;
-            currently must be falsy when `group_size` is set (defaults to
-            `None`).
-
-    Args:
-        hidden_state: Input tensor of shape
-            `(sum(seq_lens), num_heads * head_size)`.
-        input_row_offsets: One-dimensional tensor of shape
-            `(batch_size + 1)` whose value at each index is the start
-            offset of the corresponding batch in `hidden_state`.
-        weight: Weight matrix of shape
-            `(num_heads * head_size, num_kv_heads * head_size)`.
-        kv_collection: Paged KV cache collection holding the keys and
-            values; the cache for this layer is retrieved via
-            `layer_idx`.
-        layer_idx: Index of the layer whose K and V projections are
-            written into the cache.
-        output: Pre-allocated output buffer of shape
-            `(sum(seq_lens), num_heads * head_size)` for the Q
-            projections; K and V projections are written in place to the
-            cache.
-        bias: One-dimensional bias tensor concatenating Q, K, and V
-            biases in the same order as the weight rows.
-        ctx: Device context used for kernel dispatch.
-    """
-    generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
-        target=target,
-        group_size=group_size,
-        has_zp=has_zp,
-    ](
-        hidden_state.to_tile_tensor[.int64](),
-        input_row_offsets.to_tile_tensor[.int64](),
-        weight.to_tile_tensor[.int64](),
-        kv_collection,
-        layer_idx,
-        output.to_tile_tensor[.int64](),
-        bias.to_tile_tensor[.int64](),
-        ctx,
-    )
-
-
 @extensibility.register("mo.chunked_qkv_rope_store.ragged.paged")
 struct Struct_chunked_qkv_rope_store_ragged_paged[
-    qk_head_dim: Int, v_head_dim: Int, chunk_padding: Int = 0
+    qk_head_dim: Int,
+    v_head_dim: Int,
+    chunk_padding: Int = 0,
+    split_cache: Bool = False,
 ]:
     """Registers chunked QKV unpacking, partial NeoX RoPE, and paged stores.
 
@@ -1550,25 +1458,25 @@ struct Struct_chunked_qkv_rope_store_ragged_paged[
         qk_head_dim: Unpadded query and key head width.
         v_head_dim: Unpadded value head width.
         chunk_padding: Trailing projection rows to ignore in each chunk.
+        split_cache: Whether each cache row packs a `qk_head_dim`-wide key
+            and a `v_head_dim`-wide value, rather than K and V planes.
     """
 
     @inline(.always)
     @staticmethod
     def execute[
-        cache_dtype: DType,
-        //,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=.bfloat16, rank=3, ...],
-        qkv: InputTensor[dtype=.bfloat16, rank=3, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        freqs_cis: InputTensor[dtype=.bfloat16, rank=2, ...],
-        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        output: Some[Output & Tensor],
+        qkv: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        freqs_cis: Some[Input & Tensor],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
         layer_idx: UInt32,
         value_scale: Float32,
         ctx: DeviceContext,
@@ -1576,28 +1484,50 @@ struct Struct_chunked_qkv_rope_store_ragged_paged[
         comptime assert is_gpu[
             target
         ](), "chunked QKV preparation requires a GPU"
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(qkv), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(freqs_cis), TileTensorable)
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime assert type_of(output).rank == 3
+        comptime assert type_of(qkv).rank == 3
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(freqs_cis).rank == 2
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
         comptime assert (
-            cache_dtype == DType.bfloat16
+            type_of(kv_blocks).dtype == DType.bfloat16
         ), "kv_blocks must be a rank-6 BF16 cache"
-        var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            page_stride,
-            cache_lengths,
-            kv_lookup_table,
-            max_prompt_length,
-            max_cache_length,
+        var kv_collection = generic_get_paged_cache[
+            v_head_size=Self.v_head_dim if Self.split_cache else -1
+        ](
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
         )
         return chunked_qkv_rope_store_paged_ragged[
             qk_head_dim=Self.qk_head_dim,
             v_head_dim=Self.v_head_dim,
             chunk_padding=Self.chunk_padding,
         ](
-            qkv.to_tile_tensor[.int64](),
-            input_row_offsets.to_tile_tensor[.int64](),
-            freqs_cis.to_tile_tensor[.int64](),
+            qkv.to_tile_tensor[.bfloat16](),
+            input_row_offsets.to_tile_tensor[.uint32](),
+            freqs_cis.to_tile_tensor[.bfloat16](),
             kv_collection,
             layer_idx,
-            output.to_tile_tensor[.int64](),
+            output.to_tile_tensor[.bfloat16](),
             value_scale,
             ctx,
         )
@@ -1617,45 +1547,61 @@ struct Struct_rope_split_store_ragged_paged[interleaved: Bool]:
     @inline(.always)
     @staticmethod
     def execute[
-        out_dtype: DType,
-        qkv_dtype: DType,
-        freq_dtype: DType,
-        cache_dtype: DType,
-        //,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=out_dtype, rank=2, ...],
-        qkv: InputTensor[dtype=qkv_dtype, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
-        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        output: Some[Output & Tensor],
+        qkv: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        freqs_cis: Some[Input & Tensor],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(qkv), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(freqs_cis), TileTensorable)
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime out_dtype = type_of(output).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(qkv).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(freqs_cis).rank == 2
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
         var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            page_stride,
-            cache_lengths,
-            kv_lookup_table,
-            max_prompt_length,
-            max_cache_length,
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
         )
         return rope_split_store_paged_ragged[
             q_out_dtype=out_dtype,
             target=target,
             interleaved=Self.interleaved,
         ](
-            qkv.to_tile_tensor[.int64](),
-            input_row_offsets.to_tile_tensor[.int64](),
-            freqs_cis.to_tile_tensor[.int64](),
+            qkv.to_tile_tensor(),
+            input_row_offsets.to_tile_tensor[.uint32](),
+            freqs_cis.to_tile_tensor(),
             kv_collection,
             layer_idx,
-            output.to_tile_tensor[.int64](),
+            output.to_tile_tensor(),
             ctx,
         )
 
@@ -1674,35 +1620,52 @@ struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
     @inline(.always)
     @staticmethod
     def execute[
-        out_dtype: DType,
-        qkv_dtype: DType,
-        freq_dtype: DType,
-        cache_dtype: DType,
-        //,
         mrope_section: StaticString,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=out_dtype, rank=2, ...],
-        qkv: InputTensor[dtype=qkv_dtype, rank=2, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
-        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
-        position_ids: InputTensor[dtype=.uint32, rank=2, ...],
+        output: Some[Output & Tensor],
+        qkv: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        freqs_cis: Some[Input & Tensor],
+        kv_blocks: Some[MutableInput & Tensor],
+        page_stride: Some[Input & Tensor],
+        cache_lengths: Some[Input & Tensor],
+        kv_lookup_table: Some[Input & Tensor],
+        max_prompt_length: Some[Input & Tensor],
+        max_cache_length: Some[Input & Tensor],
+        position_ids: Some[Input & Tensor],
         layer_idx: UInt32,
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(qkv), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(freqs_cis), TileTensorable)
+        comptime assert conforms_to(type_of(kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(page_stride), TileTensorable)
+        comptime assert conforms_to(type_of(cache_lengths), TileTensorable)
+        comptime assert conforms_to(type_of(kv_lookup_table), TileTensorable)
+        comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
+        comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
+        comptime assert conforms_to(type_of(position_ids), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(qkv).rank == 2
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(freqs_cis).rank == 2
+        comptime assert type_of(kv_blocks).rank == 6
+        comptime assert type_of(page_stride).rank == 1
+        comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(kv_lookup_table).rank == 2
+        comptime assert type_of(max_prompt_length).rank == 1
+        comptime assert type_of(max_cache_length).rank == 1
+        comptime assert type_of(position_ids).rank == 2
         var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            page_stride,
-            cache_lengths,
-            kv_lookup_table,
-            max_prompt_length,
-            max_cache_length,
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor[.int64](),
+            cache_lengths.to_tile_tensor[.uint32](),
+            kv_lookup_table.to_tile_tensor[.uint32](),
+            max_prompt_length.to_tile_tensor[.uint32](),
+            max_cache_length.to_tile_tensor[.uint32](),
         )
 
         comptime if mrope_section == "":
@@ -1710,13 +1673,13 @@ struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
                 target=target,
                 interleaved=Self.interleaved,
             ](
-                qkv.to_tile_tensor[.int64](),
-                input_row_offsets.to_tile_tensor[.int64](),
-                freqs_cis.to_tile_tensor[.int64](),
+                qkv.to_tile_tensor(),
+                input_row_offsets.to_tile_tensor[.uint32](),
+                freqs_cis.to_tile_tensor(),
                 kv_collection,
-                position_ids.to_tile_tensor[.int64](),
+                position_ids.to_tile_tensor[.uint32](),
                 layer_idx,
-                output.to_tile_tensor[.int64](),
+                output.to_tile_tensor(),
                 ctx,
             )
         else:
@@ -1727,13 +1690,13 @@ struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
                 mrope_types=mrope.element_types,
                 mrope_section=mrope,
             ](
-                qkv.to_tile_tensor[.int64](),
-                input_row_offsets.to_tile_tensor[.int64](),
-                freqs_cis.to_tile_tensor[.int64](),
+                qkv.to_tile_tensor(),
+                input_row_offsets.to_tile_tensor[.uint32](),
+                freqs_cis.to_tile_tensor(),
                 kv_collection,
-                position_ids.to_tile_tensor[.int64](),
+                position_ids.to_tile_tensor[.uint32](),
                 layer_idx,
-                output.to_tile_tensor[.int64](),
+                output.to_tile_tensor(),
                 ctx,
             )
 
@@ -1741,82 +1704,6 @@ struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
 # ===-----------------------------------------------------------------------===#
 # Fused QK Rope Ragged
 # ===-----------------------------------------------------------------------===#
-
-
-@inline(.always)
-def generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
-    dtype: DType,
-    freq_dtype: DType,
-    cache_dtype: DType,
-    //,
-    *,
-    interleaved: Bool,
-    has_position_ids: Bool,
-    target: StaticString,
-    mrope_types: TypeList[Trait=CoordLike, ...] = TypeList.of[
-        Trait=CoordLike
-    ](),
-    mrope_section: Optional[Coord[*mrope_types]] = None,
-](
-    q_proj: ManagedTensorSlice[dtype=dtype, rank=3, ...],
-    input_row_offsets: ManagedTensorSlice[dtype=DType.uint32, rank=1, ...],
-    kv_collection: PagedKVCacheCollection[cache_dtype, ...],
-    freqs_cis: ManagedTensorSlice[dtype=freq_dtype, rank=2, ...],
-    position_ids: ManagedTensorSlice[dtype=DType.uint32, rank=2, ...],
-    layer_idx: UInt32,
-    output: ManagedTensorSlice[dtype=dtype, rank=3, ...],
-    context: DeviceContext,
-) raises:
-    """Applies fused rotary position embedding to Q and K, updating keys in the paged KV cache.
-
-    Parameters:
-        dtype: Element type of the query projection and output tensors
-            (inferred).
-        freq_dtype: Element type of the `freqs_cis` RoPE frequency table
-            (inferred).
-        cache_dtype: Element type of the paged KV cache entries (inferred).
-        interleaved: Whether RoPE pairs adjacent real and imaginary
-            components rather than splitting them into halves.
-        has_position_ids: Whether per-token `position_ids` are supplied and
-            used for the rotation.
-        target: Target backend identifier for kernel dispatch.
-        mrope_types: Coordinate element types for the M-RoPE section split
-            (defaults to an empty `TypeList`).
-        mrope_section: Optional M-RoPE section coordinate describing how
-            the head dimension is partitioned across modalities (defaults
-            to `None`).
-
-    Args:
-        q_proj: Query projection tensor of shape
-            `[batch, seq, head_dim]`.
-        input_row_offsets: Cumulative row offsets per batch, shape
-            `[batch_size + 1]`.
-        kv_collection: Paged KV cache collection whose keys are read and
-            updated in place.
-        freqs_cis: RoPE frequency table applied to the query and key
-            projections.
-        position_ids: Per-token position ids used to index `freqs_cis`.
-        layer_idx: Index of the layer whose keys are updated in the cache.
-        output: Output tensor for the rotation-applied query projection,
-            shape `[batch, seq, head_dim]`.
-        context: Device context for kernel dispatch.
-    """
-    generic_fused_qk_rope_bshd_paged_ragged[
-        interleaved=interleaved,
-        has_position_ids=has_position_ids,
-        target=target,
-        mrope_types=mrope_types,
-        mrope_section=mrope_section,
-    ](
-        q_proj.to_tile_tensor[.int64](),
-        input_row_offsets.to_tile_tensor[.int64](),
-        kv_collection,
-        freqs_cis.to_tile_tensor[.int64](),
-        position_ids.to_tile_tensor[.int64](),
-        layer_idx,
-        output.to_tile_tensor[.int64](),
-        context,
-    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1996,51 +1883,73 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
 
 @inline(.always)
 def _unmarshal_mha_decode_dispatch_metadata(
-    mha_decode_dispatch_metadata: InputTensor[dtype=.int64, rank=1, ...],
+    mha_decode_dispatch_metadata: TileTensor[
+        DType.int64, address_space=.GENERIC, ...
+    ],
 ) -> MHADecodeDispatchMetadata:
+    comptime assert mha_decode_dispatch_metadata.rank == 1
+    # The metadata is read through its flat pointer; a non-pointer storage
+    # policy aborts here at run time.
+    var metadata_ptr = mha_decode_dispatch_metadata.ptr
     return MHADecodeDispatchMetadata(
-        Int(mha_decode_dispatch_metadata.unsafe_ptr()[0]),
-        Int(mha_decode_dispatch_metadata.unsafe_ptr()[1]),
-        Int(mha_decode_dispatch_metadata.unsafe_ptr()[2]),
-        Int(mha_decode_dispatch_metadata.unsafe_ptr()[3]),
+        Int(metadata_ptr[0]),
+        Int(metadata_ptr[1]),
+        Int(metadata_ptr[2]),
+        Int(metadata_ptr[3]),
     )
 
 
 @inline(.always)
 def _execute_mha_ragged_paged_scalar_args[
     q_dtype: DType,
+    output_dtype: DType,
     //,
     target: StaticString,
     mask_str: StaticString,
     sink: Bool = False,
     local_window_size: Int = -1,
-    output_dtype: DType = q_dtype,
-    cache_dtype: DType = q_dtype,
     SinkLayoutType: TensorLayout = RowMajorLayout[*Coord[Int64].element_types],
     # `sink_weights` is optional, so its engine cannot be inferred.
     SinkEngine: TensorEngine = DefaultEngine[element_width=1],
+    v_head_dim: Int = -1,
 ](
-    output: OutputTensor[dtype=output_dtype, rank=3, ...],
-    q: InputTensor[dtype=q_dtype, rank=3, ...],
-    input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-    kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-    page_stride: InputTensor[dtype=.int64, rank=1, ...],
-    cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-    kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-    max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-    max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+    output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
+    q: TileTensor[q_dtype, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[DType.uint32, address_space=.GENERIC, ...],
+    kv_blocks: TileTensor[mut=True, address_space=.GENERIC, ...],
+    page_stride: TileTensor[
+        mut=False, DType.int64, address_space=.GENERIC, ...
+    ],
+    cache_lengths: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    kv_lookup_table: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    max_prompt_length: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    max_cache_length: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
     layer_idx: UInt32,
     scale: Float32,
-    mha_decode_dispatch_metadata: InputTensor[dtype=.int64, rank=1, ...],
+    mha_decode_dispatch_metadata: TileTensor[
+        DType.int64, address_space=.GENERIC, ...
+    ],
     context: DeviceContext,
     sink_weights: OptionalReg[
         TileTensor[q_dtype, SinkLayoutType, ImmutAnyOrigin, Engine=SinkEngine]
     ] = None,
 ) raises:
+    comptime assert output.rank == 3
+    comptime assert q.rank == 3
+    comptime assert input_row_offsets.rank == 1
+    comptime assert kv_blocks.rank == 6
     var decode_dispatch_metadata = _unmarshal_mha_decode_dispatch_metadata(
         mha_decode_dispatch_metadata
     )
-    var kv_collection = generic_get_paged_cache(
+    var kv_collection = generic_get_paged_cache[v_head_size=v_head_dim](
         kv_blocks,
         page_stride,
         cache_lengths,
@@ -2055,12 +1964,12 @@ def _execute_mha_ragged_paged_scalar_args[
             local_window_size=local_window_size,
             output_dtype=output_dtype,
         ](
-            q.to_tile_tensor(),
-            input_row_offsets.to_tile_tensor(),
+            q,
+            input_row_offsets,
             kv_collection,
             layer_idx,
             scale,
-            output.to_tile_tensor(),
+            output,
             context,
             sink_weights.value(),
             decode_dispatch_metadata,
@@ -2072,12 +1981,12 @@ def _execute_mha_ragged_paged_scalar_args[
             local_window_size=local_window_size,
             output_dtype=output_dtype,
         ](
-            q.to_tile_tensor(),
-            input_row_offsets.to_tile_tensor(),
+            q,
+            input_row_offsets,
             kv_collection,
             layer_idx,
             scale,
-            output.to_tile_tensor(),
+            output,
             context,
             decode_dispatch_metadata,
         )
@@ -2086,27 +1995,45 @@ def _execute_mha_ragged_paged_scalar_args[
 @inline(.always)
 def _execute_mha_ragged_paged_rel_logits[
     q_dtype: DType,
+    output_dtype: DType,
     //,
     target: StaticString,
     local_window_size: Int = -1,
-    output_dtype: DType = q_dtype,
-    cache_dtype: DType = q_dtype,
 ](
-    output: OutputTensor[dtype=output_dtype, rank=3, ...],
-    q: InputTensor[dtype=q_dtype, rank=3, ...],
-    input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-    kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
-    page_stride: InputTensor[dtype=.int64, rank=1, ...],
-    cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-    kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-    max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-    max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+    output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
+    q: TileTensor[q_dtype, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    kv_blocks: TileTensor[mut=True, address_space=.GENERIC, ...],
+    page_stride: TileTensor[
+        mut=False, DType.int64, address_space=.GENERIC, ...
+    ],
+    cache_lengths: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    kv_lookup_table: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    max_prompt_length: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    max_cache_length: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
     layer_idx: UInt32,
     scale: Float32,
-    bias: InputTensor[dtype=q_dtype, rank=3, ...],
-    mha_decode_dispatch_metadata: InputTensor[dtype=.int64, rank=1, ...],
+    bias: TileTensor[mut=False, q_dtype, address_space=.GENERIC, ...],
+    mha_decode_dispatch_metadata: TileTensor[
+        DType.int64, address_space=.GENERIC, ...
+    ],
     context: DeviceContext,
 ) raises:
+    comptime assert output.rank == 3
+    comptime assert q.rank == 3
+    comptime assert input_row_offsets.rank == 1
+    comptime assert kv_blocks.rank == 6
+    comptime assert bias.rank == 3
     var decode_dispatch_metadata = _unmarshal_mha_decode_dispatch_metadata(
         mha_decode_dispatch_metadata
     )
@@ -2118,19 +2045,31 @@ def _execute_mha_ragged_paged_rel_logits[
         max_prompt_length,
         max_cache_length,
     )
+    # The helper takes pointer-backed tiles for the row offsets, bias and
+    # cache lengths, so rebuild them over the tiles' data; a non-pointer
+    # storage policy aborts here at run time.
     generic_flash_attention_kv_cache_ragged_rel_logits[
         target=target,
         local_window_size=local_window_size,
         output_dtype=output_dtype,
     ](
-        q.to_tile_tensor(),
-        input_row_offsets.to_tile_tensor().as_imm(),
+        q.as_imm(),
+        TileTensor[.uint32, input_row_offsets.LayoutType, ImmutAnyOrigin](
+            ptr=input_row_offsets.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+            layout=input_row_offsets.layout,
+        ),
         kv_collection,
         layer_idx,
         scale,
-        bias.to_tile_tensor().as_imm(),
-        cache_lengths.to_tile_tensor().as_imm(),
-        output.to_tile_tensor(),
+        TileTensor[q_dtype, bias.LayoutType, ImmutAnyOrigin](
+            ptr=bias.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+            layout=bias.layout,
+        ),
+        TileTensor[.uint32, cache_lengths.LayoutType, ImmutAnyOrigin](
+            ptr=cache_lengths.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+            layout=cache_lengths.layout,
+        ),
+        output,
         context,
         decode_dispatch_metadata,
     )
@@ -2183,21 +2122,37 @@ struct Struct_moe_create_indices:
     def execute[
         target: StaticString,
     ](
-        token_expert_order: OutputTensor[dtype=.uint32, rank=1, ...],
-        expert_start_indices: OutputTensor[dtype=.uint32, rank=1, ...],
-        restore_token_order: OutputTensor[dtype=.uint32, rank=1, ...],
-        expert_ids: OutputTensor[dtype=.int32, rank=1, ...],
-        expert_usage_stats: OutputTensor[dtype=.uint32, rank=1, ...],
-        topk_ids: InputTensor[dtype=.int32, rank=1, ...],
+        token_expert_order: Some[Output & Tensor],
+        expert_start_indices: Some[Output & Tensor],
+        restore_token_order: Some[Output & Tensor],
+        expert_ids: Some[Output & Tensor],
+        expert_usage_stats: Some[Output & Tensor],
+        topk_ids: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(token_expert_order), TileTensorable)
+        comptime assert conforms_to(
+            type_of(expert_start_indices), TileTensorable
+        )
+        comptime assert conforms_to(
+            type_of(restore_token_order), TileTensorable
+        )
+        comptime assert conforms_to(type_of(expert_ids), TileTensorable)
+        comptime assert conforms_to(type_of(expert_usage_stats), TileTensorable)
+        comptime assert conforms_to(type_of(topk_ids), TileTensorable)
+        comptime assert type_of(token_expert_order).rank == 1
+        comptime assert type_of(expert_start_indices).rank == 1
+        comptime assert type_of(restore_token_order).rank == 1
+        comptime assert type_of(expert_ids).rank == 1
+        comptime assert type_of(expert_usage_stats).rank == 1
+        comptime assert type_of(topk_ids).rank == 1
         moe_create_indices[target=target](
-            token_expert_order.to_tile_tensor[.int64](),
-            expert_start_indices.to_tile_tensor[.int64](),
-            restore_token_order.to_tile_tensor[.int64](),
-            expert_ids.to_tile_tensor[.int64](),
-            expert_usage_stats.to_tile_tensor[.int64](),
-            topk_ids.to_tile_tensor[.int64](),
+            token_expert_order.to_tile_tensor[.uint32](),
+            expert_start_indices.to_tile_tensor[.uint32](),
+            restore_token_order.to_tile_tensor[.uint32](),
+            expert_ids.to_tile_tensor[.int32](),
+            expert_usage_stats.to_tile_tensor[.uint32](),
+            topk_ids.to_tile_tensor[.int32, mut=False](),
             context,
         )
 
@@ -2209,23 +2164,29 @@ struct Struct_moe_finalize:
     @inline(.always)
     @staticmethod
     def execute[
-        out_type: DType,
-        down_type: DType,
-        weight_type: DType,
-        //,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=out_type, rank=2, ...],
-        down: InputTensor[dtype=down_type, rank=2, ...],
-        restore_token_order: InputTensor[dtype=.uint32, rank=1, ...],
-        router_weight: InputTensor[dtype=weight_type, rank=2, ...],
+        output: Some[Output & Tensor],
+        down: Some[Input & Tensor],
+        restore_token_order: Some[Input & Tensor],
+        router_weight: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(down), TileTensorable)
+        comptime assert conforms_to(
+            type_of(restore_token_order), TileTensorable
+        )
+        comptime assert conforms_to(type_of(router_weight), TileTensorable)
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(down).rank == 2
+        comptime assert type_of(restore_token_order).rank == 1
+        comptime assert type_of(router_weight).rank == 2
         moe_finalize[target=target](
-            output.to_tile_tensor[.int64](),
-            down.to_tile_tensor[.int64](),
-            restore_token_order.to_tile_tensor[.int64](),
-            router_weight.to_tile_tensor[.int64](),
+            output.to_tile_tensor(),
+            down.to_tile_tensor[mut=False](),
+            restore_token_order.to_tile_tensor[.uint32, mut=False](),
+            router_weight.to_tile_tensor[mut=False](),
             context,
         )
 
@@ -2292,24 +2253,46 @@ struct Struct_moe_create_indices_with_scales_offset:
     def execute[
         target: StaticString,
     ](
-        token_expert_order: OutputTensor[dtype=.uint32, rank=1, ...],
-        expert_start_indices: OutputTensor[dtype=.uint32, rank=1, ...],
-        restore_token_order: OutputTensor[dtype=.uint32, rank=1, ...],
-        expert_ids: OutputTensor[dtype=.int32, rank=1, ...],
-        expert_usage_stats: OutputTensor[dtype=.uint32, rank=1, ...],
-        scales_offset: OutputTensor[dtype=.uint32, rank=1, ...],
-        topk_ids: InputTensor[dtype=.int32, rank=1, ...],
+        token_expert_order: Some[Output & Tensor],
+        expert_start_indices: Some[Output & Tensor],
+        restore_token_order: Some[Output & Tensor],
+        expert_ids: Some[Output & Tensor],
+        expert_usage_stats: Some[Output & Tensor],
+        scales_offset: Some[Output & Tensor],
+        topk_ids: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(token_expert_order), TileTensorable)
+        comptime assert conforms_to(
+            type_of(expert_start_indices), TileTensorable
+        )
+        comptime assert conforms_to(
+            type_of(restore_token_order), TileTensorable
+        )
+        comptime assert conforms_to(type_of(expert_ids), TileTensorable)
+        comptime assert conforms_to(type_of(expert_usage_stats), TileTensorable)
+        comptime assert conforms_to(type_of(scales_offset), TileTensorable)
+        comptime assert conforms_to(type_of(topk_ids), TileTensorable)
+        comptime assert type_of(token_expert_order).rank == 1
+        comptime assert type_of(expert_start_indices).rank == 1
+        comptime assert type_of(restore_token_order).rank == 1
+        comptime assert type_of(expert_ids).rank == 1
+        comptime assert type_of(expert_usage_stats).rank == 1
+        comptime assert type_of(scales_offset).rank == 1
+        comptime assert type_of(topk_ids).rank == 1
+        # `scales_offset` is handed to the helper as a flat pointer; a
+        # non-pointer storage policy aborts here at run time.
         moe_create_indices[target=target](
-            token_expert_order.to_tile_tensor[.int64](),
-            expert_start_indices.to_tile_tensor[.int64](),
-            restore_token_order.to_tile_tensor[.int64](),
-            expert_ids.to_tile_tensor[.int64](),
-            expert_usage_stats.to_tile_tensor[.int64](),
-            topk_ids.to_tile_tensor[.int64](),
+            token_expert_order.to_tile_tensor[.uint32](),
+            expert_start_indices.to_tile_tensor[.uint32](),
+            restore_token_order.to_tile_tensor[.uint32](),
+            expert_ids.to_tile_tensor[.int32](),
+            expert_usage_stats.to_tile_tensor[.uint32](),
+            topk_ids.to_tile_tensor[.int32, mut=False](),
             context,
-            scales_offset_p=scales_offset._ptr.as_unsafe_any_origin(),
+            scales_offset_p=scales_offset.to_tile_tensor[.uint32]()
+            .as_unsafe_any_origin()
+            .ptr,
         )
 
 
@@ -2326,32 +2309,64 @@ struct Struct_moe_create_indices_with_slots:
         local_experts: Int,
         target: StaticString,
     ](
-        token_expert_order: OutputTensor[dtype=.uint32, rank=1, ...],
-        expert_start_indices: OutputTensor[dtype=.uint32, rank=1, ...],
-        restore_token_order: OutputTensor[dtype=.int32, rank=1, ...],
-        expert_ids: OutputTensor[dtype=.int32, rank=1, ...],
-        expert_usage_stats: OutputTensor[dtype=.uint32, rank=1, ...],
-        scales_offset: OutputTensor[dtype=.uint32, rank=1, ...],
-        slot_token: OutputTensor[dtype=.int32, rank=1, ...],
-        slot_weight: OutputTensor[dtype=.float32, rank=1, ...],
-        scale_slot: OutputTensor[dtype=.int32, rank=1, ...],
-        topk_ids: InputTensor[dtype=.int32, rank=1, ...],
-        slot_weights: InputTensor[dtype=.float32, rank=1, ...],
+        token_expert_order: Some[Output & Tensor],
+        expert_start_indices: Some[Output & Tensor],
+        restore_token_order: Some[Output & Tensor],
+        expert_ids: Some[Output & Tensor],
+        expert_usage_stats: Some[Output & Tensor],
+        scales_offset: Some[Output & Tensor],
+        slot_token: Some[Output & Tensor],
+        slot_weight: Some[Output & Tensor],
+        scale_slot: Some[Output & Tensor],
+        topk_ids: Some[Input & Tensor],
+        slot_weights: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(token_expert_order), TileTensorable)
+        comptime assert conforms_to(
+            type_of(expert_start_indices), TileTensorable
+        )
+        comptime assert conforms_to(
+            type_of(restore_token_order), TileTensorable
+        )
+        comptime assert conforms_to(type_of(expert_ids), TileTensorable)
+        comptime assert conforms_to(type_of(expert_usage_stats), TileTensorable)
+        comptime assert conforms_to(type_of(scales_offset), TileTensorable)
+        comptime assert conforms_to(type_of(slot_token), TileTensorable)
+        comptime assert conforms_to(type_of(slot_weight), TileTensorable)
+        comptime assert conforms_to(type_of(scale_slot), TileTensorable)
+        comptime assert conforms_to(type_of(topk_ids), TileTensorable)
+        comptime assert conforms_to(type_of(slot_weights), TileTensorable)
+        comptime assert type_of(token_expert_order).rank == 1
+        comptime assert type_of(expert_start_indices).rank == 1
+        comptime assert type_of(restore_token_order).rank == 1
+        comptime assert type_of(expert_ids).rank == 1
+        comptime assert type_of(expert_usage_stats).rank == 1
+        comptime assert type_of(scales_offset).rank == 1
+        comptime assert type_of(slot_token).rank == 1
+        comptime assert type_of(slot_weight).rank == 1
+        comptime assert type_of(scale_slot).rank == 1
+        comptime assert type_of(topk_ids).rank == 1
+        comptime assert type_of(slot_weights).rank == 1
+        var scale_slot_tile = scale_slot.to_tile_tensor[.int32]()
+        # The slot maps are handed to the helper as flat pointers; a
+        # non-pointer storage policy aborts here at run time. The helper takes
+        # `slot_weights` as a mutable pointer but only reads it.
         moe_create_indices_with_slots[slot_stride, target=target](
-            token_expert_order.to_tile_tensor[.int64](),
-            expert_start_indices.to_tile_tensor[.int64](),
-            restore_token_order.to_tile_tensor[.int64](),
-            expert_ids.to_tile_tensor[.int64](),
-            expert_usage_stats.to_tile_tensor[.int64](),
-            scales_offset._ptr.as_unsafe_any_origin(),
-            slot_token._ptr.as_unsafe_any_origin(),
-            slot_weight._ptr.as_unsafe_any_origin(),
-            scale_slot._ptr.as_unsafe_any_origin(),
-            scale_slot.dim_size(0),
-            topk_ids.to_tile_tensor[.int64](),
-            slot_weights._ptr.as_unsafe_any_origin(),
+            token_expert_order.to_tile_tensor[.uint32](),
+            expert_start_indices.to_tile_tensor[.uint32](),
+            restore_token_order.to_tile_tensor[.int32](),
+            expert_ids.to_tile_tensor[.int32](),
+            expert_usage_stats.to_tile_tensor[.uint32](),
+            scales_offset.to_tile_tensor[.uint32]().as_unsafe_any_origin().ptr,
+            slot_token.to_tile_tensor[.int32]().as_unsafe_any_origin().ptr,
+            slot_weight.to_tile_tensor[.float32]().as_unsafe_any_origin().ptr,
+            scale_slot_tile.as_unsafe_any_origin().ptr,
+            Int(scale_slot_tile.dim[0]()),
+            topk_ids.to_tile_tensor[.int32, mut=False](),
+            slot_weights.to_tile_tensor[.float32, mut=False]()
+            .ptr.unsafe_mut_cast[True]()
+            .unsafe_origin_cast[MutAnyOrigin](),
             expert_offset,
             local_experts,
             context,
@@ -2536,34 +2551,41 @@ struct Struct_moe_sigmoid_gemv_single_group_router:
     @inline(.always)
     @staticmethod
     def execute[
-        hidden_type: DType,
-        weight_type: DType,
-        bias_type: DType,
-        //,
         n_routed_experts: Int,
         n_experts_per_tok: Int,
         norm_weights: Bool,
         target: StaticString,
     ](
-        expert_indices: OutputTensor[dtype=.int32, rank=2, ...],
-        expert_weights: OutputTensor[dtype=weight_type, rank=2, ...],
-        hidden: InputTensor[dtype=hidden_type, rank=2, ...],
-        gate_weight: InputTensor[dtype=weight_type, rank=2, ...],
-        expert_bias: InputTensor[dtype=bias_type, rank=1, ...],
+        expert_indices: Some[Output & Tensor],
+        expert_weights: Some[Output & Tensor],
+        hidden: Some[Input & Tensor],
+        gate_weight: Some[Input & Tensor],
+        expert_bias: Some[Input & Tensor],
         routed_scaling_factor: Float32,
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(expert_indices), TileTensorable)
+        comptime assert conforms_to(type_of(expert_weights), TileTensorable)
+        comptime assert conforms_to(type_of(hidden), TileTensorable)
+        comptime assert conforms_to(type_of(gate_weight), TileTensorable)
+        comptime assert conforms_to(type_of(expert_bias), TileTensorable)
+        comptime weight_type = type_of(expert_weights).dtype
+        comptime assert type_of(expert_indices).rank == 2
+        comptime assert type_of(expert_weights).rank == 2
+        comptime assert type_of(hidden).rank == 2
+        comptime assert type_of(gate_weight).rank == 2
+        comptime assert type_of(expert_bias).rank == 1
         sigmoid_gemv_single_group_router[
             n_routed_experts,
             n_experts_per_tok,
             norm_weights=norm_weights,
             target=target,
         ](
-            expert_indices.to_tile_tensor[.int64](),
-            expert_weights.to_tile_tensor[.int64](),
-            hidden.to_tile_tensor[.int64]().as_imm(),
-            gate_weight.to_tile_tensor[.int64]().as_imm(),
-            expert_bias.to_tile_tensor[.int64]().as_imm(),
+            expert_indices.to_tile_tensor[.int32](),
+            expert_weights.to_tile_tensor(),
+            hidden.to_tile_tensor[mut=False](),
+            gate_weight.to_tile_tensor[weight_type, mut=False](),
+            expert_bias.to_tile_tensor[mut=False](),
             routed_scaling_factor,
             context,
         )
@@ -2577,35 +2599,45 @@ struct Struct_moe_sink_gate_router:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType,
-        bias_type: DType,
-        //,
         n_routed_experts: Int,
         n_experts_per_tok: Int,
         n_shared_experts: Int,
         target: StaticString,
     ](
-        expert_indices: OutputTensor[dtype=.int32, rank=2, ...],
-        expert_weights: OutputTensor[dtype=dtype, rank=2, ...],
-        sink_weights: OutputTensor[dtype=dtype, rank=2, ...],
-        logits: InputTensor[dtype=dtype, rank=2, ...],
-        expert_bias: InputTensor[dtype=bias_type, rank=1, ...],
-        global_scale: InputTensor[dtype=.float32, rank=1, ...],
+        expert_indices: Some[Output & Tensor],
+        expert_weights: Some[Output & Tensor],
+        sink_weights: Some[Output & Tensor],
+        logits: Some[Input & Tensor],
+        expert_bias: Some[Input & Tensor],
+        global_scale: Some[Input & Tensor],
         route_scale: Float32,
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(expert_indices), TileTensorable)
+        comptime assert conforms_to(type_of(expert_weights), TileTensorable)
+        comptime assert conforms_to(type_of(sink_weights), TileTensorable)
+        comptime assert conforms_to(type_of(logits), TileTensorable)
+        comptime assert conforms_to(type_of(expert_bias), TileTensorable)
+        comptime assert conforms_to(type_of(global_scale), TileTensorable)
+        comptime dtype = type_of(expert_weights).dtype
+        comptime assert type_of(expert_indices).rank == 2
+        comptime assert type_of(expert_weights).rank == 2
+        comptime assert type_of(sink_weights).rank == 2
+        comptime assert type_of(logits).rank == 2
+        comptime assert type_of(expert_bias).rank == 1
+        comptime assert type_of(global_scale).rank == 1
         sink_gate_router[
             n_routed_experts,
             n_experts_per_tok,
             n_shared_experts,
             target=target,
         ](
-            expert_indices.to_tile_tensor[.int64](),
-            expert_weights.to_tile_tensor[.int64](),
-            sink_weights.to_tile_tensor[.int64](),
-            logits.to_tile_tensor[.int64]().as_imm(),
-            expert_bias.to_tile_tensor[.int64]().as_imm(),
-            global_scale.to_tile_tensor[.int64]().as_imm(),
+            expert_indices.to_tile_tensor[.int32](),
+            expert_weights.to_tile_tensor(),
+            sink_weights.to_tile_tensor[dtype](),
+            logits.to_tile_tensor[dtype, mut=False](),
+            expert_bias.to_tile_tensor[mut=False](),
+            global_scale.to_tile_tensor[.float32, mut=False](),
             route_scale,
             context,
         )
@@ -2624,13 +2656,23 @@ struct Struct_moe_eplb_remap:
         hash_decorrelate: Bool,
         target: StaticString,
     ](
-        phy_idx: OutputTensor[dtype=.int32, rank=2, ...],
-        router_idx: InputTensor[dtype=.int32, rank=2, ...],
-        logcnt: InputTensor[dtype=.int32, rank=2, ...],
-        log2phy: InputTensor[dtype=.int32, rank=3, ...],
-        layer_idx: InputTensor[dtype=.int32, rank=1, ...],
+        phy_idx: Some[Output & Tensor],
+        router_idx: Some[Input & Tensor],
+        logcnt: Some[Input & Tensor],
+        log2phy: Some[Input & Tensor],
+        layer_idx: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(phy_idx), TileTensorable)
+        comptime assert conforms_to(type_of(router_idx), TileTensorable)
+        comptime assert conforms_to(type_of(logcnt), TileTensorable)
+        comptime assert conforms_to(type_of(log2phy), TileTensorable)
+        comptime assert conforms_to(type_of(layer_idx), TileTensorable)
+        comptime assert type_of(phy_idx).rank == 2
+        comptime assert type_of(router_idx).rank == 2
+        comptime assert type_of(logcnt).rank == 2
+        comptime assert type_of(log2phy).rank == 3
+        comptime assert type_of(layer_idx).rank == 1
         eplb_remap[
             num_log=num_log,
             max_replicas=max_replicas,
@@ -2638,11 +2680,11 @@ struct Struct_moe_eplb_remap:
             hash_decorrelate=hash_decorrelate,
             target=target,
         ](
-            phy_idx.to_tile_tensor[.int64](),
-            router_idx.to_tile_tensor[.int64]().as_imm(),
-            logcnt.to_tile_tensor[.int64]().as_imm(),
-            log2phy.to_tile_tensor[.int64]().as_imm(),
-            layer_idx.to_tile_tensor[.int64]().as_imm(),
+            phy_idx.to_tile_tensor[.int32](),
+            router_idx.to_tile_tensor[.int32, mut=False](),
+            logcnt.to_tile_tensor[.int32, mut=False](),
+            log2phy.to_tile_tensor[.int32, mut=False](),
+            layer_idx.to_tile_tensor[.int32, mut=False](),
             context,
         )
 
@@ -2664,27 +2706,99 @@ struct Struct_hyper_connection_gates:
         hc_sinkhorn_iters: Int,
         target: StaticString,
     ](
-        pre: OutputTensor[dtype=.float32, rank=2, ...],
-        post: OutputTensor[dtype=.float32, rank=2, ...],
-        comb: OutputTensor[dtype=.float32, rank=2, ...],
-        hc_proj: InputTensor[dtype=.float32, rank=2, ...],
-        pre_post_comb_b: InputTensor[dtype=.float32, rank=1, ...],
-        pre_post_comb_scale: InputTensor[dtype=.float32, rank=1, ...],
+        pre: Some[Output & Tensor],
+        post: Some[Output & Tensor],
+        comb: Some[Output & Tensor],
+        hc_proj: Some[Input & Tensor],
+        pre_post_comb_b: Some[Input & Tensor],
+        pre_post_comb_scale: Some[Input & Tensor],
         hc_eps: Float32,
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(pre), TileTensorable)
+        comptime assert conforms_to(type_of(post), TileTensorable)
+        comptime assert conforms_to(type_of(comb), TileTensorable)
+        comptime assert conforms_to(type_of(hc_proj), TileTensorable)
+        comptime assert conforms_to(type_of(pre_post_comb_b), TileTensorable)
+        comptime assert conforms_to(
+            type_of(pre_post_comb_scale), TileTensorable
+        )
+        comptime assert type_of(pre).rank == 2
+        comptime assert type_of(post).rank == 2
+        comptime assert type_of(comb).rank == 2
+        comptime assert type_of(hc_proj).rank == 2
+        comptime assert type_of(pre_post_comb_b).rank == 1
+        comptime assert type_of(pre_post_comb_scale).rank == 1
         hyper_connection_gates[
             hc_mult=hc_mult,
             hc_sinkhorn_iters=hc_sinkhorn_iters,
             target=target,
         ](
-            pre.to_tile_tensor[.int64](),
+            pre.to_tile_tensor[.float32](),
+            post.to_tile_tensor[.float32](),
+            comb.to_tile_tensor[.float32](),
+            hc_proj.to_tile_tensor[.float32, mut=False](),
+            pre_post_comb_b.to_tile_tensor[.float32, mut=False](),
+            pre_post_comb_scale.to_tile_tensor[.float32, mut=False](),
+            hc_eps,
+            context,
+        )
+
+
+@extensibility.register("mo.mhc.pre")
+struct Struct_mhc_pre:
+    """Registers the `mo.mhc.pre` graph op with the graph compiler."""
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        dtype: DType,
+        fn_dtype: DType,
+        //,
+        hc_mult: Int,
+        hidden_size: Int,
+        hc_sinkhorn_iters: Int,
+        has_norm: Bool,
+        target: StaticString,
+    ](
+        post: OutputTensor[dtype=.float32, rank=2, ...],
+        comb: OutputTensor[dtype=.float32, rank=3, ...],
+        collapsed: OutputTensor[dtype=dtype, rank=2, ...],
+        pre: OutputTensor[dtype=.float32, rank=2, ...],
+        streams: InputTensor[dtype=dtype, rank=3, ...],
+        hc_fn: InputTensor[dtype=fn_dtype, rank=2, ...],
+        base: InputTensor[dtype=.float32, rank=1, ...],
+        scale: InputTensor[dtype=.float32, rank=1, ...],
+        gamma: InputTensor[dtype=dtype, rank=1, ...],
+        rms_eps: Float32,
+        hc_eps: Float32,
+        norm_eps: Float32,
+        context: DeviceContext,
+    ) raises:
+        # The projection issues CDNA4-only MFMA; callers gate on
+        # `mhc_pre_supports`.
+        comptime assert (
+            _accelerator_arch() == "amdgpu:gfx950"
+        ), "mo.mhc.pre requires gfx950"
+        mhc_pre[
+            hc_mult=hc_mult,
+            hidden_size=hidden_size,
+            hc_sinkhorn_iters=hc_sinkhorn_iters,
+            has_norm=has_norm,
+            target=target,
+        ](
             post.to_tile_tensor[.int64](),
             comb.to_tile_tensor[.int64](),
-            hc_proj.to_tile_tensor[.int64]().as_imm(),
-            pre_post_comb_b.to_tile_tensor[.int64]().as_imm(),
-            pre_post_comb_scale.to_tile_tensor[.int64]().as_imm(),
+            collapsed.to_tile_tensor[.int64](),
+            pre.to_tile_tensor[.int64](),
+            streams.to_tile_tensor[.int64]().as_imm(),
+            hc_fn.to_tile_tensor[.int64]().as_imm(),
+            base.to_tile_tensor[.int64]().as_imm(),
+            scale.to_tile_tensor[.int64]().as_imm(),
+            gamma.to_tile_tensor[.int64]().as_imm(),
+            rms_eps,
             hc_eps,
+            norm_eps,
             context,
         )
 
@@ -2696,30 +2810,39 @@ struct Struct_mhc_post:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType,
-        //,
         hc_mult: Int,
         hidden_size: Int,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=3, ...],
-        streams: InputTensor[dtype=dtype, rank=3, ...],
-        y: InputTensor[dtype=dtype, rank=2, ...],
-        post: InputTensor[dtype=.float32, rank=2, ...],
-        comb: InputTensor[dtype=.float32, rank=3, ...],
+        output: Some[Output & Tensor],
+        streams: Some[Input & Tensor],
+        y: Some[Input & Tensor],
+        post: Some[Input & Tensor],
+        comb: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(streams), TileTensorable)
+        comptime assert conforms_to(type_of(y), TileTensorable)
+        comptime assert conforms_to(type_of(post), TileTensorable)
+        comptime assert conforms_to(type_of(comb), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        comptime assert type_of(output).rank == 3
+        comptime assert type_of(streams).rank == 3
+        comptime assert type_of(y).rank == 2
+        comptime assert type_of(post).rank == 2
+        comptime assert type_of(comb).rank == 3
         mhc_post[
             hc_mult=hc_mult,
             hidden_size=hidden_size,
             target=target,
             block_size=mhc_post_block_size[dtype, hidden_size](),
         ](
-            output.to_tile_tensor[.int64](),
-            streams.to_tile_tensor[.int64]().as_imm(),
-            y.to_tile_tensor[.int64]().as_imm(),
-            post.to_tile_tensor[.int64]().as_imm(),
-            comb.to_tile_tensor[.int64]().as_imm(),
+            output.to_tile_tensor(),
+            streams.to_tile_tensor[dtype, mut=False](),
+            y.to_tile_tensor[dtype, mut=False](),
+            post.to_tile_tensor[.float32, mut=False](),
+            comb.to_tile_tensor[.float32, mut=False](),
             context,
         )
 
@@ -2740,35 +2863,24 @@ struct Struct_mhc_post:
 # TODO(GEX-1492): use filter_rank+1 instead of packed_filter_rank
 def layout_transform_conv_transpose_filter_common[
     dtype: DType,
-    filter_rank: Int,
-    packed_filter_rank: Int,
 ](
-    packed_filter: ManagedTensorSlice[
-        dtype=dtype, rank=packed_filter_rank, ...
-    ],
-    filter: ManagedTensorSlice[dtype=dtype, rank=filter_rank, ...],
+    packed_filter: TileTensor[mut=True, dtype, ...],
+    filter: TileTensor[dtype, ...],
 ):
     """Packs a transposed-convolution filter into the layout expected by the conv_transpose kernels.
 
     Parameters:
         dtype: Element type of the `filter` and `packed_filter` tensors.
-        filter_rank: Number of dimensions of the input `filter` tensor.
-        packed_filter_rank: Number of dimensions of the `packed_filter`
-            output tensor; must equal `filter_rank + 1`.
 
     Args:
         packed_filter: Output tensor holding the packed filter in the
             layout expected by the conv_transpose kernels.
         filter: Input transposed-convolution filter tensor to pack.
     """
-    comptime assert filter_rank + 1 == packed_filter_rank
+    comptime assert filter.rank + 1 == packed_filter.rank
     # last param is num_groups which is currently not an available
     # arg for the MO level op
-    _pack_conv_transpose_filter(
-        filter.to_tile_tensor[.int64](),
-        packed_filter.to_tile_tensor[.int64](),
-        1,
-    )
+    _pack_conv_transpose_filter(filter, packed_filter, 1)
 
 
 @extensibility.register("pack_conv_transpose_filter_shape")
@@ -2778,10 +2890,10 @@ struct PackConvTransposeFilterShape:
 
     @inline(.always)
     @staticmethod
-    def execute[
-        rank: Int,
-        filter_type: DType,
-    ](filter_buf: InputTensor[dtype=filter_type, rank=rank, ...]) raises:
+    def execute(
+        filter_buf: Some[Input & Tensor],
+    ) raises:
+        comptime assert conforms_to(type_of(filter_buf), TileTensorable)
         raise Error("Only meant to be used for shape function!")
 
 
@@ -2804,18 +2916,15 @@ def pack_conv_transpose_filter_shape_shape(
 # This is required unti `mo.layout.transform` passes `num_groups` as a runtime
 # value.
 def layout_transform_conv_filter_common[
-    dtype: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
+    dtype: DType, //, num_groups: Int
 ](
-    packed_filter: ManagedTensorSlice[dtype=dtype, rank=packed_rank, ...],
-    filter: ManagedTensorSlice[dtype=dtype, rank=filter_rank, ...],
+    packed_filter: TileTensor[mut=True, dtype, ...],
+    filter: TileTensor[dtype, ...],
 ):
     """Packs a convolution filter into the layout expected by the conv kernels.
 
     Parameters:
         dtype: Element type of the `filter` and `packed_filter` tensors.
-        filter_rank: Number of dimensions of the input `filter` tensor.
-        packed_rank: Number of dimensions of the `packed_filter` output
-            tensor; must equal `filter_rank + 1`.
         num_groups: Number of convolution groups for groupwise
             convolution.
 
@@ -2824,33 +2933,25 @@ def layout_transform_conv_filter_common[
             layout expected by the conv kernels.
         filter: Input convolution filter tensor to pack.
     """
-    comptime assert packed_rank == filter_rank + 1
+    comptime assert packed_filter.rank == filter.rank + 1
 
     # last param is num_groups which is currently not an available
     # arg for the MO level op
-    _pack_conv_filter(
-        filter.to_tile_tensor[.int64](),
-        packed_filter.to_tile_tensor[.int64](),
-        num_groups,
-    )
+    _pack_conv_filter(filter, packed_filter, num_groups)
 
 
 def _layout_transform_conv_filter_from_fcrs[
-    dtype: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
+    dtype: DType, //, num_groups: Int
 ](
-    packed_filter: ManagedTensorSlice[dtype=dtype, rank=packed_rank, ...],
-    filter: ManagedTensorSlice[dtype=dtype, rank=filter_rank, ...],
+    packed_filter: TileTensor[mut=True, dtype, ...],
+    filter: TileTensor[dtype, ...],
 ):
-    comptime assert packed_rank == filter_rank + 1
+    comptime assert packed_filter.rank == filter.rank + 1
 
     # With the compiler-level FCRS→RSCF transpose in PatternFusion,
     # this kernel should no longer be called. But keep it as a fallback
     # using int64 convention (same as the RSCF path).
-    _pack_conv_filter_from_fcrs(
-        filter.to_tile_tensor[.int64](),
-        packed_filter.to_tile_tensor[.int64](),
-        num_groups,
-    )
+    _pack_conv_filter_from_fcrs(filter, packed_filter, num_groups)
 
 
 # Note: These FCRS/FCQRS kernels are currently unused — the compiler
@@ -2864,66 +2965,6 @@ def _layout_transform_conv_filter_from_fcrs[
 # Expected kernel name format:
 # mo.rms_norm_kv_cache.<padded/ragged>.paged
 # ===-----------------------------------------------------------------------===#
-
-
-# ===-----------------------------------------------------------------------===#
-# Print KV Cache
-#
-# Expected kernel name format:
-# mo.print_kv_cache.paged
-# ===-----------------------------------------------------------------------===#
-
-
-def print_kv_cache_paged_generic_kernel_api[
-    dtype: DType,
-    //,
-    target: StaticString,
-    kv_params: KVCacheStaticParams,
-    page_size: Int,
-](
-    valid_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-    kv_collection: PagedKVCacheCollection[dtype, kv_params, page_size, ...],
-    layer_idx: UInt32,
-    is_print_compact: InputTensor[dtype=.bool, rank=1, ...],
-    context: DeviceContext,
-) raises:
-    """Prints the contents of a paged KV cache for debugging.
-
-    Parameters:
-        dtype: Element type of the KV cache `blocks` tensor (inferred).
-        target: Target device identifier for kernel dispatch.
-        kv_params: Static KV cache parameters carrying `num_heads` and
-            `head_size`.
-        page_size: Number of tokens stored per page in the paged KV cache.
-
-    Args:
-        valid_lengths: One-dimensional tensor of shape `[batch]` giving the
-            valid length of each sequence; only positions within these
-            lengths are printed.
-        kv_collection: Paged KV cache collection holding the keys and values
-            to print; the cache for this layer is retrieved via `layer_idx`.
-        layer_idx: Index of the layer whose key and value caches are printed.
-        is_print_compact: One-element boolean tensor; when element zero is
-            true, abbreviates the output with ellipses (CPU only).
-        context: Device context used to copy device buffers to host on GPU
-            targets.
-    """
-    comptime if is_gpu[target]():
-        print_kv_cache_paged_generic_gpu[target](
-            valid_lengths.to_tile_tensor(),
-            kv_collection,
-            layer_idx,
-            True,
-            context,
-        )
-    elif is_cpu[target]():
-        print_kv_cache_paged_generic_cpu[target](
-            valid_lengths.to_tile_tensor(),
-            kv_collection,
-            layer_idx,
-            is_print_compact[0],
-            context,
-        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -2955,23 +2996,35 @@ struct Struct_fused_token_sampling:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType,
-        rank: Int,
-        out_idx_type: DType,
         target: StaticString,
         _trace_name: StaticString,
     ](
-        out_idxs: OutputTensor[dtype=out_idx_type, rank=rank, ...],
-        K: InputTensor[dtype=.int64, rank=1, ...],
+        out_idxs: Some[Output & Tensor],
+        K: Some[Input & Tensor],
         max_k: Scalar,
-        temperature: InputTensor[dtype=.float32, rank=1, ...],
-        top_p: InputTensor[dtype=.float32, rank=1, ...],
+        temperature: Some[Input & Tensor],
+        top_p: Some[Input & Tensor],
         min_top_p: Float32,
-        min_p: InputTensor[dtype=.float32, rank=1, ...],
-        seed: InputTensor[dtype=.uint64, rank=1, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
+        min_p: Some[Input & Tensor],
+        seed: Some[Input & Tensor],
+        input: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(out_idxs), TileTensorable)
+        comptime assert conforms_to(type_of(K), TileTensorable)
+        comptime assert conforms_to(type_of(temperature), TileTensorable)
+        comptime assert conforms_to(type_of(top_p), TileTensorable)
+        comptime assert conforms_to(type_of(min_p), TileTensorable)
+        comptime assert conforms_to(type_of(seed), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime rank = type_of(out_idxs).rank
+        comptime assert type_of(K).rank == 1
+        comptime assert type_of(temperature).rank == 1
+        comptime assert type_of(top_p).rank == 1
+        comptime assert type_of(min_p).rank == 1
+        comptime assert type_of(min_p).dtype == DType.float32
+        comptime assert type_of(seed).rank == 1
+        comptime assert type_of(input).rank == rank
         comptime assert is_valid_target[target](), "not a valid target"
 
         comptime if is_cpu[target]():
@@ -2980,24 +3033,24 @@ struct Struct_fused_token_sampling:
             # drop in q4_k benchmarking for llama 3.
             if max_k == 1:
                 argmax(
-                    input.to_tile_tensor[.int64](),
+                    input.to_tile_tensor(),
                     rank - 1,
-                    out_idxs.to_tile_tensor[.int64](),
+                    out_idxs.to_tile_tensor(),
                     Optional(ctx.assert_cpu_target()),
                 )
                 return
             _fused_token_sampling_cpu(
                 Int(max_k),
-                input.to_tile_tensor[.int64](),
-                out_idxs.to_tile_tensor[.int64](),
+                input.to_tile_tensor(),
+                out_idxs.to_tile_tensor(),
                 k=K.to_tile_tensor[.int64]().as_unsafe_any_origin().as_imm(),
-                temperature=temperature.to_tile_tensor[.int64]()
+                temperature=temperature.to_tile_tensor[.float32]()
                 .as_unsafe_any_origin()
                 .as_imm(),
-                top_p=top_p.to_tile_tensor[.int64]()
+                top_p=top_p.to_tile_tensor[.float32]()
                 .as_unsafe_any_origin()
                 .as_imm(),
-                seed=seed.to_tile_tensor[.int64]()
+                seed=seed.to_tile_tensor[.uint64]()
                 .as_unsafe_any_origin()
                 .as_imm(),
             )
@@ -3006,19 +3059,19 @@ struct Struct_fused_token_sampling:
                 ctx,
                 Int(max_k),
                 min_top_p,
-                input.to_tile_tensor[.int64](),
-                out_idxs.to_tile_tensor[.int64](),
+                input.to_tile_tensor(),
+                out_idxs.to_tile_tensor(),
                 k=K.to_tile_tensor[.int64]().as_unsafe_any_origin().as_imm(),
-                temperature=temperature.to_tile_tensor[.int64]()
+                temperature=temperature.to_tile_tensor[.float32]()
                 .as_unsafe_any_origin()
                 .as_imm(),
-                top_p=top_p.to_tile_tensor[.int64]()
+                top_p=top_p.to_tile_tensor[.float32]()
                 .as_unsafe_any_origin()
                 .as_imm(),
-                min_p=min_p.to_tile_tensor[.int64]()
+                min_p=min_p.to_tile_tensor[.float32]()
                 .as_unsafe_any_origin()
                 .as_imm(),
-                seed=seed.to_tile_tensor[.int64]()
+                seed=seed.to_tile_tensor[.uint64]()
                 .as_unsafe_any_origin()
                 .as_imm(),
             )
@@ -3039,21 +3092,34 @@ struct Struct_fused_token_sampling_with_dist:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType,
-        dist_dtype: DType,
         target: StaticString,
         _trace_name: StaticString,
     ](
-        out_tokens: OutputTensor[dtype=.int64, rank=1, ...],
-        out_dist: OutputTensor[dtype=dist_dtype, rank=2, ...],
-        K: InputTensor[dtype=.int64, rank=1, ...],
+        out_tokens: Some[Output & Tensor],
+        out_dist: Some[Output & Tensor],
+        K: Some[Input & Tensor],
         max_k: Scalar,
-        temperature: InputTensor[dtype=.float32, rank=1, ...],
-        top_p: InputTensor[dtype=.float32, rank=1, ...],
-        seed: InputTensor[dtype=.uint64, rank=1, ...],
-        input: InputTensor[dtype=dtype, rank=2, ...],
+        temperature: Some[Input & Tensor],
+        top_p: Some[Input & Tensor],
+        seed: Some[Input & Tensor],
+        input: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(out_tokens), TileTensorable)
+        comptime assert conforms_to(type_of(out_dist), TileTensorable)
+        comptime assert conforms_to(type_of(K), TileTensorable)
+        comptime assert conforms_to(type_of(temperature), TileTensorable)
+        comptime assert conforms_to(type_of(top_p), TileTensorable)
+        comptime assert conforms_to(type_of(seed), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime dist_dtype = type_of(out_dist).dtype
+        comptime assert type_of(out_tokens).rank == 1
+        comptime assert type_of(out_dist).rank == 2
+        comptime assert type_of(K).rank == 1
+        comptime assert type_of(temperature).rank == 1
+        comptime assert type_of(top_p).rank == 1
+        comptime assert type_of(seed).rank == 1
+        comptime assert type_of(input).rank == 2
         comptime assert is_gpu[
             target
         ](), "sampler.fused_token_sampling_with_dist is GPU-only"
@@ -3061,24 +3127,22 @@ struct Struct_fused_token_sampling_with_dist:
             from_logits=True, emit_dist=True, dist_dtype=dist_dtype
         ](
             ctx,
-            input.to_tile_tensor[.int64](),
+            input.to_tile_tensor(),
             out_tokens.to_tile_tensor[.int64](),
             Int(max_k),
             top_k_arr=K.to_tile_tensor[.int64]()
             .as_unsafe_any_origin()
             .as_imm(),
-            top_p_arr=top_p.to_tile_tensor[.int64]()
+            top_p_arr=top_p.to_tile_tensor[.float32]()
             .as_unsafe_any_origin()
             .as_imm(),
-            temperature=temperature.to_tile_tensor[.int64]()
+            temperature=temperature.to_tile_tensor[.float32]()
             .as_unsafe_any_origin()
             .as_imm(),
-            rng_seed=seed.to_tile_tensor[.int64]()
+            rng_seed=seed.to_tile_tensor[.uint64]()
             .as_unsafe_any_origin()
             .as_imm(),
-            out_dist=out_dist.to_tile_tensor[
-                DType.int64
-            ]().as_unsafe_any_origin(),
+            out_dist=out_dist.to_tile_tensor().as_unsafe_any_origin(),
         )
 
 
@@ -3095,32 +3159,41 @@ struct Struct_topk_topp_masked_probs:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType,
         target: StaticString,
         _trace_name: StaticString,
     ](
-        probs: OutputTensor[dtype=.float32, rank=2, ...],
-        K: InputTensor[dtype=.int64, rank=1, ...],
-        temperature: InputTensor[dtype=.float32, rank=1, ...],
-        top_p: InputTensor[dtype=.float32, rank=1, ...],
-        input: InputTensor[dtype=dtype, rank=2, ...],
+        probs: Some[Output & Tensor],
+        K: Some[Input & Tensor],
+        temperature: Some[Input & Tensor],
+        top_p: Some[Input & Tensor],
+        input: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(probs), TileTensorable)
+        comptime assert conforms_to(type_of(K), TileTensorable)
+        comptime assert conforms_to(type_of(temperature), TileTensorable)
+        comptime assert conforms_to(type_of(top_p), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert type_of(probs).rank == 2
+        comptime assert type_of(K).rank == 1
+        comptime assert type_of(temperature).rank == 1
+        comptime assert type_of(top_p).rank == 1
+        comptime assert type_of(input).rank == 2
         comptime assert is_gpu[
             target
         ](), "sampler.topk_topp_masked_probs is GPU-only"
         topk_topp_masked_probs(
             ctx,
-            input.to_tile_tensor[.int64](),
-            probs.to_tile_tensor[.int64]().as_unsafe_any_origin(),
+            input.to_tile_tensor(),
+            probs.to_tile_tensor[.float32]().as_unsafe_any_origin(),
             top_k_val=-1,
             top_k_arr=K.to_tile_tensor[.int64]()
             .as_unsafe_any_origin()
             .as_imm(),
-            top_p_arr=top_p.to_tile_tensor[.int64]()
+            top_p_arr=top_p.to_tile_tensor[.float32]()
             .as_unsafe_any_origin()
             .as_imm(),
-            temperature=temperature.to_tile_tensor[.int64]()
+            temperature=temperature.to_tile_tensor[.float32]()
             .as_unsafe_any_origin()
             .as_imm(),
         )
@@ -3143,19 +3216,25 @@ struct Struct_gumbel_argmax_from_probs:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        out_tokens: OutputTensor[dtype=.int64, rank=1, ...],
-        seed: InputTensor[dtype=.uint64, rank=1, ...],
-        probs: InputTensor[dtype=.float32, rank=2, ...],
+        out_tokens: Some[Output & Tensor],
+        seed: Some[Input & Tensor],
+        probs: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(out_tokens), TileTensorable)
+        comptime assert conforms_to(type_of(seed), TileTensorable)
+        comptime assert conforms_to(type_of(probs), TileTensorable)
+        comptime assert type_of(out_tokens).rank == 1
+        comptime assert type_of(seed).rank == 1
+        comptime assert type_of(probs).rank == 2
         comptime assert is_gpu[
             target
         ](), "sampler.gumbel_argmax_from_probs is GPU-only"
         gumbel_sampling_fused_gpu[from_probs=True](
             ctx,
-            probs.to_tile_tensor[.int64](),
+            probs.to_tile_tensor[.float32](),
             out_tokens.to_tile_tensor[.int64](),
-            seed=seed.to_tile_tensor[.int64]().as_unsafe_any_origin().as_imm(),
+            seed=seed.to_tile_tensor[.uint64]().as_unsafe_any_origin().as_imm(),
         )
 
 
@@ -3172,22 +3251,26 @@ struct Struct_argmax_with_bias:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType,
-        bias_dtype: DType,
         target: StaticString,
         _trace_name: StaticString,
     ](
-        out_tokens: OutputTensor[dtype=.int64, rank=1, ...],
+        out_tokens: Some[Output & Tensor],
         position: Scalar,
-        logits: InputTensor[dtype=dtype, rank=3, ...],
-        bias: InputTensor[dtype=bias_dtype, rank=2, ...],
+        logits: Some[Input & Tensor],
+        bias: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(out_tokens), TileTensorable)
+        comptime assert conforms_to(type_of(logits), TileTensorable)
+        comptime assert conforms_to(type_of(bias), TileTensorable)
+        comptime assert type_of(out_tokens).rank == 1
+        comptime assert type_of(logits).rank == 3
+        comptime assert type_of(bias).rank == 2
         comptime assert is_gpu[target](), "sampler.argmax_with_bias is GPU-only"
         argmax_with_bias_gpu(
             ctx,
-            logits.to_tile_tensor[.int64](),
-            bias.to_tile_tensor[.int64](),
+            logits.to_tile_tensor(),
+            bias.to_tile_tensor(),
             Int(position),
             out_tokens.to_tile_tensor[.int64](),
         )
@@ -3211,13 +3294,17 @@ struct Struct_keyed_uniform:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        out_values: OutputTensor[dtype=.float32, rank=1, ...],
-        seed: InputTensor[dtype=.uint64, rank=1, ...],
+        out_values: Some[Output & Tensor],
+        seed: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(out_values), TileTensorable)
+        comptime assert conforms_to(type_of(seed), TileTensorable)
+        comptime assert type_of(out_values).rank == 1
+        comptime assert type_of(seed).rank == 1
         keyed_uniform[target=target](
-            out_values.to_tile_tensor[.int64]().as_unsafe_any_origin(),
-            seed.to_tile_tensor[.int64]().as_unsafe_any_origin().as_imm(),
+            out_values.to_tile_tensor[.float32]().as_unsafe_any_origin(),
+            seed.to_tile_tensor[.uint64]().as_unsafe_any_origin().as_imm(),
             ctx,
         )
 
@@ -3230,32 +3317,46 @@ struct Struct_min_p_sampling:
     @staticmethod
     def execute[
         dtype: DType,
-        rank: Int,
-        out_idx_type: DType,
         target: StaticString,
         _trace_name: StaticString,
     ](
-        out_token_ids: OutputTensor[dtype=out_idx_type, rank=rank, ...],
-        min_ps: InputTensor[dtype=dtype, rank=1, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
+        out_token_ids: Some[Output & Tensor],
+        min_ps: Some[Input & Tensor],
+        input: Some[Input & Tensor],
         temperature: Scalar[dtype],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(out_token_ids), TileTensorable)
+        comptime assert conforms_to(type_of(min_ps), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime rank = type_of(out_token_ids).rank
+        comptime assert type_of(min_ps).rank == 1
+        comptime assert type_of(input).rank == rank
         comptime assert is_valid_target[target](), "not a valid target"
 
         comptime if is_cpu[target]():
+            # The CPU helper writes probabilities back into its logits, which
+            # the legacy input projection allowed. Rebuild a mutable view from
+            # the pointer to keep that behavior; a non-pointer storage policy
+            # aborts here at run time.
+            var input_tile = input.to_tile_tensor[dtype]()
             min_p_sampling_cpu(
-                min_ps.to_tile_tensor[.int64](),
-                input.to_tile_tensor[.int64](),
-                out_token_ids.to_tile_tensor[.int64](),
+                min_ps.to_tile_tensor[dtype](),
+                TileTensor(
+                    ptr=input_tile.ptr.unsafe_mut_cast[
+                        True
+                    ]().unsafe_origin_cast[MutAnyOrigin](),
+                    layout=input_tile.layout,
+                ),
+                out_token_ids.to_tile_tensor(),
                 temperature,
             )
         else:
             min_p_sampling_gpu(
                 ctx,
-                min_ps.to_tile_tensor[.int64](),
-                input.to_tile_tensor[.int64](),
-                out_token_ids.to_tile_tensor[.int64](),
+                min_ps.to_tile_tensor[dtype](),
+                input.to_tile_tensor[dtype](),
+                out_token_ids.to_tile_tensor(),
                 temperature,
             )
 
@@ -3312,37 +3413,53 @@ struct Struct_sampler_apply_packed_bitmask_with_penalties:
     @staticmethod
     def execute[
         dtype: DType,
-        penalty_type: DType,
         //,
         target: StaticString,
         _trace_name: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=2, ...],
-        logits: InputTensor[dtype=dtype, rank=2, ...],
-        packed: InputTensor[dtype=.int32, rank=2, ...],
+        output: Some[Output & Tensor],
+        logits: Some[Input & Tensor],
+        packed: Some[Input & Tensor],
         fill_value: Scalar[dtype],
-        compressed_frequency_data: InputTensor[dtype=.int32, rank=2, ...],
-        frequency_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        frequency_penalty: InputTensor[dtype=penalty_type, rank=1, ...],
-        presence_penalty: InputTensor[dtype=penalty_type, rank=1, ...],
+        compressed_frequency_data: Some[Input & Tensor],
+        frequency_offsets: Some[Input & Tensor],
+        frequency_penalty: Some[Input & Tensor],
+        presence_penalty: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(logits), TileTensorable)
+        comptime assert conforms_to(type_of(packed), TileTensorable)
+        comptime assert conforms_to(
+            type_of(compressed_frequency_data), TileTensorable
+        )
+        comptime assert conforms_to(type_of(frequency_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(frequency_penalty), TileTensorable)
+        comptime assert conforms_to(type_of(presence_penalty), TileTensorable)
+        comptime penalty_type = type_of(frequency_penalty).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(logits).rank == 2
+        comptime assert type_of(packed).rank == 2
+        comptime assert type_of(compressed_frequency_data).rank == 2
+        comptime assert type_of(frequency_offsets).rank == 1
+        comptime assert type_of(frequency_penalty).rank == 1
+        comptime assert type_of(presence_penalty).rank == 1
         comptime assert is_valid_target[target](), "not a valid target"
 
         apply_packed_bitmask[target](
-            output.to_tile_tensor(),
-            logits.to_tile_tensor(),
-            packed.to_tile_tensor(),
+            output.to_tile_tensor[dtype](),
+            logits.to_tile_tensor[dtype](),
+            packed.to_tile_tensor[.int32](),
             fill_value,
             ctx,
         )
         apply_masked_penalties_to_logits[target=target](
-            output.to_tile_tensor[.int64](),
-            packed.to_tile_tensor[.int64](),
-            compressed_frequency_data.to_tile_tensor[.int64](),
-            frequency_offsets.to_tile_tensor[.int64](),
-            frequency_penalty.to_tile_tensor[.int64](),
-            presence_penalty.to_tile_tensor[.int64](),
+            output.to_tile_tensor[dtype](),
+            packed.to_tile_tensor[.int32](),
+            compressed_frequency_data.to_tile_tensor[.int32](),
+            frequency_offsets.to_tile_tensor[.uint32](),
+            frequency_penalty.to_tile_tensor(),
+            presence_penalty.to_tile_tensor[penalty_type](),
             ctx,
         )
 
@@ -3381,6 +3498,15 @@ struct Struct_sampler_update_frequency_data:
 # ===-----------------------------------------------------------------------===#
 # Misc Operations
 # ===-----------------------------------------------------------------------===#
+
+
+def _check_tensor_tuple[size: Int, dtype: DType, rank: Int, *Ts: Tensor]():
+    """Checks that a collective's tensor tuple has one element per device, each
+    of the given dtype and rank."""
+    comptime assert len(Ts) == size, "expected one tensor per device"
+    comptime for i in range(len(Ts)):
+        comptime assert Ts[i].dtype == dtype, "unexpected tensor dtype"
+        comptime assert Ts[i].rank == rank, "unexpected tensor rank"
 
 
 @inline(.always)
@@ -3936,26 +4062,37 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
 
     @staticmethod
     def execute[
-        work_dtype: DType,
-        state_dtype: DType,
         target: StaticString,
     ](
-        conv_output_ragged: OutputTensor[dtype=work_dtype, rank=2, ...],
-        qkv_input_ragged: InputTensor[dtype=work_dtype, rank=2, ...],
-        conv_weight: InputTensor[dtype=work_dtype, rank=2, ...],
-        conv_state: MutableInputTensor[dtype=state_dtype, rank=3, ...],
-        slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        conv_output_ragged: Some[Output & Tensor],
+        qkv_input_ragged: Some[Input & Tensor],
+        conv_weight: Some[Input & Tensor],
+        conv_state: Some[MutableInput & Tensor],
+        slot_idx: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        Self.launch[work_dtype, state_dtype, target, capture_input=False](
-            conv_output_ragged,
-            qkv_input_ragged,
-            conv_weight,
-            conv_state,
-            slot_idx,
-            input_row_offsets,
-            conv_output_ragged,
+        comptime assert conforms_to(type_of(conv_output_ragged), TileTensorable)
+        comptime assert conforms_to(type_of(qkv_input_ragged), TileTensorable)
+        comptime assert conforms_to(type_of(conv_weight), TileTensorable)
+        comptime assert conforms_to(type_of(conv_state), TileTensorable)
+        comptime assert conforms_to(type_of(slot_idx), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime work_dtype = type_of(conv_output_ragged).dtype
+        comptime assert type_of(conv_output_ragged).rank == 2
+        comptime assert type_of(qkv_input_ragged).rank == 2
+        comptime assert type_of(conv_weight).rank == 2
+        comptime assert type_of(conv_state).rank == 3
+        comptime assert type_of(slot_idx).rank == 1
+        comptime assert type_of(input_row_offsets).rank == 1
+        Self.launch[target, capture_input=False](
+            conv_output_ragged.to_tile_tensor(),
+            qkv_input_ragged.to_tile_tensor[work_dtype](),
+            conv_weight.to_tile_tensor[work_dtype](),
+            conv_state.to_tile_tensor(),
+            slot_idx.to_tile_tensor[.uint32](),
+            input_row_offsets.to_tile_tensor[.uint32](),
+            conv_output_ragged.to_tile_tensor(),
             ctx,
         )
 
@@ -3963,74 +4100,70 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
     def launch[
         work_dtype: DType,
         state_dtype: DType,
+        //,
         target: StaticString,
         capture_input: Bool,
     ](
-        conv_output_ragged: OutputTensor[dtype=work_dtype, rank=2, ...],
-        qkv_input_ragged: InputTensor[dtype=work_dtype, rank=2, ...],
-        conv_weight: InputTensor[dtype=work_dtype, rank=2, ...],
-        conv_state: MutableInputTensor[dtype=state_dtype, rank=3, ...],
-        slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        qkv_window: OutputTensor[dtype=work_dtype, rank=2, ...],
+        conv_output_ragged: TileTensor[mut=True, work_dtype, ...],
+        qkv_input_ragged: TileTensor[work_dtype, ...],
+        conv_weight: TileTensor[work_dtype, ...],
+        conv_state: TileTensor[mut=True, state_dtype, ...],
+        slot_idx: TileTensor[DType.uint32, ...],
+        input_row_offsets: TileTensor[DType.uint32, ...],
+        qkv_window: TileTensor[mut=True, work_dtype, ...],
         ctx: DeviceContext,
     ) raises:
         """Launches the conv, also copying its input to `qkv_window` when
         `capture_input`. `qkv_window` then has the output's shape and is
         otherwise never touched.
         """
+        comptime assert conv_output_ragged.rank == 2
+        comptime assert qkv_input_ragged.rank == 2
+        comptime assert conv_weight.rank == 2
+        comptime assert conv_state.rank == 3
+        comptime assert slot_idx.rank == 1
+        comptime assert input_row_offsets.rank == 1
+        comptime assert qkv_window.rank == 2
         # Number of threads per block along the conv_dim axis.
         comptime CONV1D_BLOCK_DIM: Int = 128
 
-        var total_seq_len = qkv_input_ragged.dim_size(0)
-        var conv_dim = qkv_input_ragged.dim_size(1)
-        var kernel_size = conv_weight.dim_size(1)
-        var batch_size = slot_idx.dim_size(0)
+        var total_seq_len = Int(qkv_input_ragged.dim[0]())
+        var conv_dim = Int(qkv_input_ragged.dim[1]())
+        var kernel_size = Int(conv_weight.dim[1]())
+        var batch_size = Int(slot_idx.dim[0]())
 
         # Host-side shape sanity checks. The kernel indexes the conv_state pool
         # via `slot = slot_idx[batch_item]`; slot bounds are guaranteed by the
         # Python-side `GatedDeltaNetStateCache.claim`, so we only validate that
         # tensor shapes are mutually consistent here.
         debug_assert(
-            input_row_offsets.dim_size(0) == batch_size + 1,
+            Int(input_row_offsets.dim[0]()) == batch_size + 1,
             (
                 "gated_delta_conv1d_fwd: input_row_offsets must"
                 " have batch_size + 1 entries"
             ),
         )
         debug_assert(
-            conv_state.dim_size(0) > 0,
+            Int(conv_state.dim[0]()) > 0,
             (
                 "gated_delta_conv1d_fwd: conv_state pool must"
                 " have at least one slot"
             ),
         )
         debug_assert(
-            conv_state.dim_size(1) == conv_dim,
+            Int(conv_state.dim[1]()) == conv_dim,
             (
                 "gated_delta_conv1d_fwd: conv_state pool channel"
                 " dim must equal conv_dim"
             ),
         )
         debug_assert(
-            conv_state.dim_size(2) == kernel_size - 1,
+            Int(conv_state.dim[2]()) == kernel_size - 1,
             (
                 "gated_delta_conv1d_fwd: conv_state pool window"
                 " dim must equal kernel_size - 1"
             ),
         )
-
-        var conv_output_ragged_tt = conv_output_ragged.to_tile_tensor[
-            DType.int64
-        ]()
-        var qkv_input_ragged_tt = qkv_input_ragged.to_tile_tensor[.int64]()
-        var conv_weight_tt = conv_weight.to_tile_tensor[.int64]()
-        var conv_state_tt = conv_state.to_tile_tensor[.int64]()
-        var slot_idx_tt = slot_idx.to_tile_tensor[.int64]()
-        var input_row_offsets_tt = input_row_offsets.to_tile_tensor[
-            DType.int64
-        ]()
-        var qkv_window_tt = qkv_window.to_tile_tensor[.int64]()
 
         comptime assert is_gpu[
             target
@@ -4041,14 +4174,12 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
 
         # The kernel addresses the ragged input and output with 32-bit linear
         # offsets (the conv_state pool keeps 64-bit offsets).
-        var qkv_input_strides = qkv_input_ragged.strides()
-        var conv_output_strides = conv_output_ragged.strides()
-        var max_input_offset = (total_seq_len - 1) * qkv_input_strides[0] + (
-            conv_dim - 1
-        ) * qkv_input_strides[1]
-        var max_output_offset = (total_seq_len - 1) * conv_output_strides[0] + (
-            conv_dim - 1
-        ) * conv_output_strides[1]
+        var max_input_offset = (total_seq_len - 1) * Int(
+            qkv_input_ragged.dynamic_stride(0)
+        ) + (conv_dim - 1) * Int(qkv_input_ragged.dynamic_stride(1))
+        var max_output_offset = (total_seq_len - 1) * Int(
+            conv_output_ragged.dynamic_stride(0)
+        ) + (conv_dim - 1) * Int(conv_output_ragged.dynamic_stride(1))
         if max(max_input_offset, max_output_offset) > Int(UInt32.MAX):
             raise Error(
                 t"gated_delta_conv1d_fwd: ragged input/output linear offsets"
@@ -4077,28 +4208,28 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
                     kKernelSize,
                     CONV1D_BLOCK_DIM,
                     Self.write_state,
-                    qkv_input_ragged_tt.LayoutType,
-                    conv_weight_tt.LayoutType,
-                    conv_state_tt.LayoutType,
-                    slot_idx_tt.LayoutType,
-                    input_row_offsets_tt.LayoutType,
-                    conv_output_ragged_tt.LayoutType,
-                    qkv_input_ragged_tt.Engine,
+                    qkv_input_ragged.LayoutType,
+                    conv_weight.LayoutType,
+                    conv_state.LayoutType,
+                    slot_idx.LayoutType,
+                    input_row_offsets.LayoutType,
+                    conv_output_ragged.LayoutType,
+                    qkv_input_ragged.Engine,
                     capture_input,
-                    qkv_window_tt.LayoutType,
+                    qkv_window.LayoutType,
                 ]
             ](
                 Int32(batch_size),
                 Int32(total_seq_len),
                 Int32(conv_dim),
                 Int32(tokens_per_block),
-                qkv_input_ragged_tt,
-                conv_weight_tt,
-                conv_state_tt,
-                slot_idx_tt,
-                input_row_offsets_tt,
-                conv_output_ragged_tt,
-                qkv_window_tt,
+                qkv_input_ragged,
+                conv_weight,
+                conv_state,
+                slot_idx,
+                input_row_offsets,
+                conv_output_ragged,
+                qkv_window,
                 grid_dim=(grid_dim_tokens, grid_dim_channels),
                 block_dim=(CONV1D_BLOCK_DIM,),
             )
@@ -4185,31 +4316,47 @@ struct GatedDeltaConv1dVerifyFwd[rollback: Bool]:
 
     @staticmethod
     def execute[
-        work_dtype: DType,
-        state_dtype: DType,
         target: StaticString,
     ](
-        conv_output_ragged: OutputTensor[dtype=work_dtype, rank=2, ...],
-        qkv_window: OutputTensor[dtype=work_dtype, rank=2, ...],
-        qkv_input_ragged: InputTensor[dtype=work_dtype, rank=2, ...],
-        conv_weight: InputTensor[dtype=work_dtype, rank=2, ...],
-        conv_state: MutableInputTensor[dtype=state_dtype, rank=3, ...],
-        slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        verify_width: InputTensor[dtype=.int64, rank=1, ...],
+        conv_output_ragged: Some[Output & Tensor],
+        qkv_window: Some[Output & Tensor],
+        qkv_input_ragged: Some[Input & Tensor],
+        conv_weight: Some[Input & Tensor],
+        conv_state: Some[MutableInput & Tensor],
+        slot_idx: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        verify_width: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        var num_draft_tokens = verify_width.dim_size(0)
+        comptime assert conforms_to(type_of(conv_output_ragged), TileTensorable)
+        comptime assert conforms_to(type_of(qkv_window), TileTensorable)
+        comptime assert conforms_to(type_of(qkv_input_ragged), TileTensorable)
+        comptime assert conforms_to(type_of(conv_weight), TileTensorable)
+        comptime assert conforms_to(type_of(conv_state), TileTensorable)
+        comptime assert conforms_to(type_of(slot_idx), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(verify_width), TileTensorable)
+        comptime work_dtype = type_of(conv_output_ragged).dtype
+        comptime assert type_of(conv_output_ragged).rank == 2
+        comptime assert type_of(qkv_window).rank == 2
+        comptime assert type_of(qkv_input_ragged).rank == 2
+        comptime assert type_of(conv_weight).rank == 2
+        comptime assert type_of(conv_state).rank == 3
+        comptime assert type_of(slot_idx).rank == 1
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(verify_width).rank == 1
+        comptime assert type_of(verify_width).dtype == DType.int64
+        var num_draft_tokens = Int(verify_width.shape()[0].value())
         var committed = num_draft_tokens == 0
         if Self.rollback and committed:
             return
         # The rollback's replay plan is sized to one token plus its drafts
         # per row, so a wider row would take it out of bounds.
-        var batch_size = slot_idx.dim_size(0)
+        var batch_size = Int(slot_idx.shape()[0].value())
         if (
             not Self.rollback
             and not committed
-            and qkv_input_ragged.dim_size(0)
+            and Int(qkv_input_ragged.shape()[0].value())
             != batch_size * (num_draft_tokens + 1)
         ):
             raise Error(
@@ -4220,12 +4367,10 @@ struct GatedDeltaConv1dVerifyFwd[rollback: Bool]:
                 " rows for ",
                 batch_size,
                 " requests, got ",
-                qkv_input_ragged.dim_size(0),
+                Int(qkv_input_ragged.shape()[0].value()),
             )
         if committed or Self.rollback:
-            GatedDeltaConv1dFwd[write_state=True].execute[
-                work_dtype, state_dtype, target
-            ](
+            GatedDeltaConv1dFwd[write_state=True].execute[target](
                 conv_output_ragged,
                 qkv_input_ragged,
                 conv_weight,
@@ -4236,15 +4381,15 @@ struct GatedDeltaConv1dVerifyFwd[rollback: Bool]:
             )
         else:
             GatedDeltaConv1dFwd[write_state=False].launch[
-                work_dtype, state_dtype, target, capture_input=True
+                target, capture_input=True
             ](
-                conv_output_ragged,
-                qkv_input_ragged,
-                conv_weight,
-                conv_state,
-                slot_idx,
-                input_row_offsets,
-                qkv_window,
+                conv_output_ragged.to_tile_tensor(),
+                qkv_input_ragged.to_tile_tensor[work_dtype](),
+                conv_weight.to_tile_tensor[work_dtype](),
+                conv_state.to_tile_tensor(),
+                slot_idx.to_tile_tensor[.uint32](),
+                input_row_offsets.to_tile_tensor[.uint32](),
+                qkv_window.to_tile_tensor[work_dtype](),
                 ctx,
             )
 
@@ -4267,13 +4412,13 @@ struct _GatedDeltaRecurrenceShape(TrivialRegisterPassable):
         //,
         op_name: StaticString,
     ](
-        recurrence_output: OutputTensor[dtype=work_dtype, rank=2, ...],
-        qkv_conv_output: InputTensor[dtype=work_dtype, rank=2, ...],
-        decay_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
-        beta_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
-        recurrent_state: MutableInputTensor[dtype=state_dtype, rank=4, ...],
-        slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        recurrence_output: TileTensor[work_dtype, ...],
+        qkv_conv_output: TileTensor[work_dtype, ...],
+        decay_per_token: TileTensor[work_dtype, ...],
+        beta_per_token: TileTensor[work_dtype, ...],
+        recurrent_state: TileTensor[state_dtype, ...],
+        slot_idx: TileTensor[DType.uint32, ...],
+        input_row_offsets: TileTensor[DType.uint32, ...],
     ) raises -> Self:
         """Validates the operands of a recurrence launch and returns their
         dims.
@@ -4298,12 +4443,19 @@ struct _GatedDeltaRecurrenceShape(TrivialRegisterPassable):
         Raises:
             If the operands' shapes disagree.
         """
-        var total_seq_len = qkv_conv_output.dim_size(0)
-        var conv_dim = qkv_conv_output.dim_size(1)
-        var num_value_heads = decay_per_token.dim_size(1)
-        var batch_size = slot_idx.dim_size(0)
-        var key_head_dim = recurrent_state.dim_size(2)
-        var value_head_dim = recurrent_state.dim_size(3)
+        comptime assert recurrence_output.rank == 2
+        comptime assert qkv_conv_output.rank == 2
+        comptime assert decay_per_token.rank == 2
+        comptime assert beta_per_token.rank == 2
+        comptime assert recurrent_state.rank == 4
+        comptime assert slot_idx.rank == 1
+        comptime assert input_row_offsets.rank == 1
+        var total_seq_len = Int(qkv_conv_output.dim[0]())
+        var conv_dim = Int(qkv_conv_output.dim[1]())
+        var num_value_heads = Int(decay_per_token.dim[1]())
+        var batch_size = Int(slot_idx.dim[0]())
+        var key_head_dim = Int(recurrent_state.dim[2]())
+        var value_head_dim = Int(recurrent_state.dim[3]())
         var value_dim = num_value_heads * value_head_dim
         # conv_dim = 2 * key_dim + value_dim.
         var key_dim = (conv_dim - value_dim) // 2
@@ -4325,14 +4477,14 @@ struct _GatedDeltaRecurrenceShape(TrivialRegisterPassable):
         # The kernel indexes the pool by `slot_idx`, whose bounds the cache
         # guarantees, so only the shapes are checked here.
         if (
-            input_row_offsets.dim_size(0) != batch_size + 1
-            or recurrent_state.dim_size(0) == 0
-            or recurrent_state.dim_size(1) != num_value_heads
-            or decay_per_token.dim_size(0) != total_seq_len
-            or beta_per_token.dim_size(0) != total_seq_len
-            or beta_per_token.dim_size(1) != num_value_heads
-            or recurrence_output.dim_size(0) != total_seq_len
-            or recurrence_output.dim_size(1) != value_dim
+            Int(input_row_offsets.dim[0]()) != batch_size + 1
+            or Int(recurrent_state.dim[0]()) == 0
+            or Int(recurrent_state.dim[1]()) != num_value_heads
+            or Int(decay_per_token.dim[0]()) != total_seq_len
+            or Int(beta_per_token.dim[0]()) != total_seq_len
+            or Int(beta_per_token.dim[1]()) != num_value_heads
+            or Int(recurrence_output.dim[0]()) != total_seq_len
+            or Int(recurrence_output.dim[1]()) != value_dim
         ):
             raise Error(
                 op_name,
@@ -4393,40 +4545,49 @@ struct GatedDeltaRecurrenceFwd:
 
     @staticmethod
     def execute[
-        work_dtype: DType,
-        state_dtype: DType,
         target: StaticString,
     ](
-        recurrence_output: OutputTensor[dtype=work_dtype, rank=2, ...],
-        qkv_conv_output: InputTensor[dtype=work_dtype, rank=2, ...],
-        decay_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
-        beta_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
-        recurrent_state: MutableInputTensor[dtype=state_dtype, rank=4, ...],
-        slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        recurrence_output: Some[Output & Tensor],
+        qkv_conv_output: Some[Input & Tensor],
+        decay_per_token: Some[Input & Tensor],
+        beta_per_token: Some[Input & Tensor],
+        recurrent_state: Some[MutableInput & Tensor],
+        slot_idx: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(recurrence_output), TileTensorable)
+        comptime assert conforms_to(type_of(qkv_conv_output), TileTensorable)
+        comptime assert conforms_to(type_of(decay_per_token), TileTensorable)
+        comptime assert conforms_to(type_of(beta_per_token), TileTensorable)
+        comptime assert conforms_to(type_of(recurrent_state), TileTensorable)
+        comptime assert conforms_to(type_of(slot_idx), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime work_dtype = type_of(recurrence_output).dtype
+        comptime state_dtype = type_of(recurrent_state).dtype
+        comptime assert type_of(recurrence_output).rank == 2
+        comptime assert type_of(qkv_conv_output).rank == 2
+        comptime assert type_of(decay_per_token).rank == 2
+        comptime assert type_of(beta_per_token).rank == 2
+        comptime assert type_of(recurrent_state).rank == 4
+        comptime assert type_of(slot_idx).rank == 1
+        comptime assert type_of(input_row_offsets).rank == 1
+        var recurrence_output_tt = recurrence_output.to_tile_tensor()
+        var qkv_conv_output_tt = qkv_conv_output.to_tile_tensor[work_dtype]()
+        var decay_per_token_tt = decay_per_token.to_tile_tensor[work_dtype]()
+        var beta_per_token_tt = beta_per_token.to_tile_tensor[work_dtype]()
+        var recurrent_state_tt = recurrent_state.to_tile_tensor()
+        var slot_idx_tt = slot_idx.to_tile_tensor[.uint32]()
+        var input_row_offsets_tt = input_row_offsets.to_tile_tensor[.uint32]()
         var shape = _GatedDeltaRecurrenceShape.of["gated_delta_recurrence_fwd"](
-            recurrence_output,
-            qkv_conv_output,
-            decay_per_token,
-            beta_per_token,
-            recurrent_state,
-            slot_idx,
-            input_row_offsets,
+            recurrence_output_tt,
+            qkv_conv_output_tt,
+            decay_per_token_tt,
+            beta_per_token_tt,
+            recurrent_state_tt,
+            slot_idx_tt,
+            input_row_offsets_tt,
         )
-
-        var recurrence_output_tt = recurrence_output.to_tile_tensor[
-            DType.int64
-        ]()
-        var qkv_conv_output_tt = qkv_conv_output.to_tile_tensor[.int64]()
-        var decay_per_token_tt = decay_per_token.to_tile_tensor[.int64]()
-        var beta_per_token_tt = beta_per_token.to_tile_tensor[.int64]()
-        var recurrent_state_tt = recurrent_state.to_tile_tensor[.int64]()
-        var slot_idx_tt = slot_idx.to_tile_tensor[.int64]()
-        var input_row_offsets_tt = input_row_offsets.to_tile_tensor[
-            DType.int64
-        ]()
 
         comptime assert is_gpu[
             target
@@ -4574,26 +4735,47 @@ struct GatedDeltaRecurrenceVerifyRingFwd:
 
     @staticmethod
     def execute[
-        work_dtype: DType,
-        state_dtype: DType,
-        ring_dtype: DType,
         target: StaticString,
     ](
-        recurrence_output: OutputTensor[dtype=work_dtype, rank=2, ...],
-        qkv_conv_output: InputTensor[dtype=work_dtype, rank=2, ...],
-        decay_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
-        beta_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
-        recurrent_state: MutableInputTensor[dtype=state_dtype, rank=4, ...],
-        ring: MutableInputTensor[dtype=ring_dtype, rank=4, ...],
-        slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
-        ring_slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        verify_width: InputTensor[dtype=.int64, rank=1, ...],
+        recurrence_output: Some[Output & Tensor],
+        qkv_conv_output: Some[Input & Tensor],
+        decay_per_token: Some[Input & Tensor],
+        beta_per_token: Some[Input & Tensor],
+        recurrent_state: Some[MutableInput & Tensor],
+        ring: Some[MutableInput & Tensor],
+        slot_idx: Some[Input & Tensor],
+        ring_slot_idx: Some[Input & Tensor],
+        input_row_offsets: Some[Input & Tensor],
+        verify_width: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        var num_draft_tokens = verify_width.dim_size(0)
+        comptime assert conforms_to(type_of(recurrence_output), TileTensorable)
+        comptime assert conforms_to(type_of(qkv_conv_output), TileTensorable)
+        comptime assert conforms_to(type_of(decay_per_token), TileTensorable)
+        comptime assert conforms_to(type_of(beta_per_token), TileTensorable)
+        comptime assert conforms_to(type_of(recurrent_state), TileTensorable)
+        comptime assert conforms_to(type_of(ring), TileTensorable)
+        comptime assert conforms_to(type_of(slot_idx), TileTensorable)
+        comptime assert conforms_to(type_of(ring_slot_idx), TileTensorable)
+        comptime assert conforms_to(type_of(input_row_offsets), TileTensorable)
+        comptime assert conforms_to(type_of(verify_width), TileTensorable)
+        comptime work_dtype = type_of(recurrence_output).dtype
+        comptime state_dtype = type_of(recurrent_state).dtype
+        comptime ring_dtype = type_of(ring).dtype
+        comptime assert type_of(recurrence_output).rank == 2
+        comptime assert type_of(qkv_conv_output).rank == 2
+        comptime assert type_of(decay_per_token).rank == 2
+        comptime assert type_of(beta_per_token).rank == 2
+        comptime assert type_of(recurrent_state).rank == 4
+        comptime assert type_of(ring).rank == 4
+        comptime assert type_of(slot_idx).rank == 1
+        comptime assert type_of(ring_slot_idx).rank == 1
+        comptime assert type_of(input_row_offsets).rank == 1
+        comptime assert type_of(verify_width).rank == 1
+        comptime assert type_of(verify_width).dtype == DType.int64
+        var num_draft_tokens = Int(verify_width.shape()[0].value())
         if num_draft_tokens == 0:
-            GatedDeltaRecurrenceFwd.execute[work_dtype, state_dtype, target](
+            GatedDeltaRecurrenceFwd.execute[target](
                 recurrence_output,
                 qkv_conv_output,
                 decay_per_token,
@@ -4605,18 +4787,25 @@ struct GatedDeltaRecurrenceVerifyRingFwd:
             )
             return
 
+        var recurrence_output_tt = recurrence_output.to_tile_tensor()
+        var qkv_conv_output_tt = qkv_conv_output.to_tile_tensor[work_dtype]()
+        var decay_per_token_tt = decay_per_token.to_tile_tensor[work_dtype]()
+        var beta_per_token_tt = beta_per_token.to_tile_tensor[work_dtype]()
+        var recurrent_state_tt = recurrent_state.to_tile_tensor()
+        var slot_idx_tt = slot_idx.to_tile_tensor[.uint32]()
+        var input_row_offsets_tt = input_row_offsets.to_tile_tensor[.uint32]()
         var shape = _GatedDeltaRecurrenceShape.of[
             "gated_delta_recurrence_verify_ring_fwd"
         ](
-            recurrence_output,
-            qkv_conv_output,
-            decay_per_token,
-            beta_per_token,
-            recurrent_state,
-            slot_idx,
-            input_row_offsets,
+            recurrence_output_tt,
+            qkv_conv_output_tt,
+            decay_per_token_tt,
+            beta_per_token_tt,
+            recurrent_state_tt,
+            slot_idx_tt,
+            input_row_offsets_tt,
         )
-        var ring_len = ring.dim_size(2)
+        var ring_len = Int(ring.shape()[2].value())
         if num_draft_tokens + 1 > ring_len:
             raise Error(
                 "gated_delta_recurrence_verify_ring_fwd: a verify of ",
@@ -4627,8 +4816,8 @@ struct GatedDeltaRecurrenceVerifyRingFwd:
                 ring_len,
             )
         if (
-            ring.dim_size(1) != shape.num_key_heads
-            or ring_slot_idx.dim_size(0) != shape.batch_size
+            Int(ring.shape()[1].value()) != shape.num_key_heads
+            or Int(ring_slot_idx.shape()[0].value()) != shape.batch_size
         ):
             raise Error(
                 "gated_delta_recurrence_verify_ring_fwd: the ring must hold ",
@@ -4636,20 +4825,13 @@ struct GatedDeltaRecurrenceVerifyRingFwd:
                 " key heads and its row table ",
                 shape.batch_size,
                 " rows, got ",
-                ring.dim_size(1),
+                Int(ring.shape()[1].value()),
                 " and ",
-                ring_slot_idx.dim_size(0),
+                Int(ring_slot_idx.shape()[0].value()),
             )
 
-        var recurrence_output_tt = recurrence_output.to_tile_tensor[.int64]()
-        var qkv_conv_output_tt = qkv_conv_output.to_tile_tensor[.int64]()
-        var decay_per_token_tt = decay_per_token.to_tile_tensor[.int64]()
-        var beta_per_token_tt = beta_per_token.to_tile_tensor[.int64]()
-        var recurrent_state_tt = recurrent_state.to_tile_tensor[.int64]()
-        var ring_tt = ring.to_tile_tensor[.int64]()
-        var slot_idx_tt = slot_idx.to_tile_tensor[.int64]()
-        var ring_slot_idx_tt = ring_slot_idx.to_tile_tensor[.int64]()
-        var input_row_offsets_tt = input_row_offsets.to_tile_tensor[.int64]()
+        var ring_tt = ring.to_tile_tensor()
+        var ring_slot_idx_tt = ring_slot_idx.to_tile_tensor[.uint32]()
 
         comptime assert is_gpu[
             target
@@ -4659,7 +4841,7 @@ struct GatedDeltaRecurrenceVerifyRingFwd:
         if shape.key_head_dim == 128 and shape.value_head_dim == 128:
             _check_ring_record_stride[128, 128](
                 "gated_delta_recurrence_verify_ring_fwd",
-                ring.dim_size(3),
+                Int(ring.shape()[3].value()),
                 shape.num_value_heads // shape.num_key_heads,
             )
             comptime for shift in range(1, 4):
@@ -4788,33 +4970,46 @@ struct GatedDeltaStateFold:
 
     @staticmethod
     def execute[
-        state_dtype: DType,
-        ring_dtype: DType,
         target: StaticString,
     ](
-        recurrent_state: MutableInputTensor[dtype=state_dtype, rank=4, ...],
+        recurrent_state: Some[MutableInput & Tensor],
         # Mutable, though only read, to order the fold after the verify.
-        ring: MutableInputTensor[dtype=ring_dtype, rank=4, ...],
-        row_ids: InputTensor[dtype=.uint32, rank=2, ...],
-        ring_row_ids: InputTensor[dtype=.uint32, rank=2, ...],
-        num_accepted: InputTensor[dtype=.uint32, rank=1, ...],
-        verify_width: InputTensor[dtype=.int64, rank=1, ...],
+        ring: Some[MutableInput & Tensor],
+        row_ids: Some[Input & Tensor],
+        ring_row_ids: Some[Input & Tensor],
+        num_accepted: Some[Input & Tensor],
+        verify_width: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        if verify_width.dim_size(0) == 0:
+        comptime assert conforms_to(type_of(recurrent_state), TileTensorable)
+        comptime assert conforms_to(type_of(ring), TileTensorable)
+        comptime assert conforms_to(type_of(row_ids), TileTensorable)
+        comptime assert conforms_to(type_of(ring_row_ids), TileTensorable)
+        comptime assert conforms_to(type_of(num_accepted), TileTensorable)
+        comptime assert conforms_to(type_of(verify_width), TileTensorable)
+        comptime state_dtype = type_of(recurrent_state).dtype
+        comptime ring_dtype = type_of(ring).dtype
+        comptime assert type_of(recurrent_state).rank == 4
+        comptime assert type_of(ring).rank == 4
+        comptime assert type_of(row_ids).rank == 2
+        comptime assert type_of(ring_row_ids).rank == 2
+        comptime assert type_of(num_accepted).rank == 1
+        comptime assert type_of(verify_width).rank == 1
+        comptime assert type_of(verify_width).dtype == DType.int64
+        if Int(verify_width.shape()[0].value()) == 0:
             return
-        var num_layers = row_ids.dim_size(0)
-        var batch_size = row_ids.dim_size(1)
-        var num_value_heads = recurrent_state.dim_size(1)
-        var num_key_heads = ring.dim_size(1)
-        var key_head_dim = recurrent_state.dim_size(2)
-        var value_head_dim = recurrent_state.dim_size(3)
-        var ring_len = ring.dim_size(2)
+        var num_layers = Int(row_ids.shape()[0].value())
+        var batch_size = Int(row_ids.shape()[1].value())
+        var num_value_heads = Int(recurrent_state.shape()[1].value())
+        var num_key_heads = Int(ring.shape()[1].value())
+        var key_head_dim = Int(recurrent_state.shape()[2].value())
+        var value_head_dim = Int(recurrent_state.shape()[3].value())
+        var ring_len = Int(ring.shape()[2].value())
 
         if (
-            ring_row_ids.dim_size(0) != num_layers
-            or ring_row_ids.dim_size(1) != batch_size
-            or num_accepted.dim_size(0) != batch_size
+            Int(ring_row_ids.shape()[0].value()) != num_layers
+            or Int(ring_row_ids.shape()[1].value()) != batch_size
+            or Int(num_accepted.shape()[0].value()) != batch_size
         ):
             raise Error(
                 "gated_delta_state_fold: the ring row table must match the",
@@ -4835,11 +5030,11 @@ struct GatedDeltaStateFold:
                 " key heads",
             )
 
-        var recurrent_state_tt = recurrent_state.to_tile_tensor[.int64]()
-        var ring_tt = ring.to_tile_tensor[.int64]()
-        var row_ids_tt = row_ids.to_tile_tensor[.int64]()
-        var ring_row_ids_tt = ring_row_ids.to_tile_tensor[.int64]()
-        var num_accepted_tt = num_accepted.to_tile_tensor[.int64]()
+        var recurrent_state_tt = recurrent_state.to_tile_tensor()
+        var ring_tt = ring.to_tile_tensor()
+        var row_ids_tt = row_ids.to_tile_tensor[.uint32]()
+        var ring_row_ids_tt = ring_row_ids.to_tile_tensor[.uint32]()
+        var num_accepted_tt = num_accepted.to_tile_tensor[.uint32]()
 
         comptime assert is_gpu[
             target
@@ -4849,7 +5044,7 @@ struct GatedDeltaStateFold:
         if key_head_dim == 128 and value_head_dim == 128:
             _check_ring_record_stride[128, 128](
                 "gated_delta_state_fold",
-                ring.dim_size(3),
+                Int(ring.shape()[3].value()),
                 num_value_heads // num_key_heads,
             )
             comptime for shift in range(1, 4):
@@ -5832,12 +6027,16 @@ struct Sleep:
     ](
         # In order to prevent this kernel from being DCE'd, we pass in a mutable
         # input buffer. A fix is tracked in GEX-3080.
-        duration_sec_buffer: MutableInputTensor[
-            dtype=DType.float64, rank=1, ...
-        ],
+        duration_sec_buffer: Some[MutableInput & Tensor],
         ctx: DeviceContext,
     ) raises:
-        var duration_sec = duration_sec_buffer[0]
+        comptime assert conforms_to(
+            type_of(duration_sec_buffer), TileTensorable
+        )
+        comptime assert type_of(duration_sec_buffer).rank == 1
+        var duration_sec = duration_sec_buffer.to_tile_tensor[.float64]().load[
+            width=1
+        ](Coord(0))
         if duration_sec < 0:
             raise Error(
                 "Sleep duration must be non-negative. Found: ", duration_sec
@@ -6024,12 +6223,15 @@ struct LaunchHostFunc:
     ](
         # A mutable input buffer prevents the op from being DCE'd (see
         # `mo.sleep` above; tracked in GEX-3080).
-        payload: MutableInputTensor[dtype=.int64, rank=1, ...],
+        payload: Some[MutableInput & Tensor],
         ctx: DeviceContext,
     ) raises:
+        comptime assert conforms_to(type_of(payload), TileTensorable)
+        comptime assert type_of(payload).rank == 1
         comptime _HostFuncTy = def(OpaquePointer[MutAnyOrigin]) thin -> None
-        var tr_addr = Int(payload[0])
-        var ud_addr = Int(payload[1])
+        var payload_tile = payload.to_tile_tensor[.int64]()
+        var tr_addr = Int(payload_tile.load[width=1](Coord(0)))
+        var ud_addr = Int(payload_tile.load[width=1](Coord(1)))
         var tr_ptr = OpaquePointer[MutAnyOrigin](unsafe_from_address=tr_addr)
         var ud_ptr = OpaquePointer[MutAnyOrigin](unsafe_from_address=ud_addr)
         # Reinterpret the raw trampoline address as a thin function value.
@@ -6066,14 +6268,19 @@ struct WaitHostValue:
     def execute[
         target: StaticString,
     ](
-        # MutableInputTensor mirrors `mo.launch_host_func` so this op is
+        # A `MutableInput` payload mirrors `mo.launch_host_func` so this op is
         # not DCE'd. Both the CompletionFlag pointer and the expected
         # value encode into 64-bit elements.
-        payload: MutableInputTensor[dtype=.int64, rank=1, ...],
+        payload: Some[MutableInput & Tensor],
         ctx: DeviceContext,
     ) raises:
-        var flag = CompletionFlag(unsafe_from_address=Int(payload[0]))
-        var value = UInt64(Int(payload[1]))
+        comptime assert conforms_to(type_of(payload), TileTensorable)
+        comptime assert type_of(payload).rank == 1
+        var payload_tile = payload.to_tile_tensor[.int64]()
+        var flag = CompletionFlag(
+            unsafe_from_address=Int(payload_tile.load[width=1](Coord(0)))
+        )
+        var value = UInt64(Int(payload_tile.load[width=1](Coord(1))))
         ctx.stream().wait_for_host_value(flag, value)
 
 
@@ -6099,18 +6306,22 @@ struct WaitHostValueWithDep:
     @staticmethod
     def execute[
         target: StaticString,
-        dep_dtype: DType,
-        dep_rank: Int,
     ](
-        payload: MutableInputTensor[dtype=.int64, rank=1, ...],
+        payload: Some[MutableInput & Tensor],
         # `dep` is intentionally unused: it exists only to register a
         # mutation on the buffer so downstream consumers of the same
         # buffer chain after this op.
-        dep: MutableInputTensor[dtype=dep_dtype, rank=dep_rank, ...],
+        dep: Some[MutableInput & Tensor],
         ctx: DeviceContext,
     ) raises:
-        var flag = CompletionFlag(unsafe_from_address=Int(payload[0]))
-        var value = UInt64(Int(payload[1]))
+        comptime assert conforms_to(type_of(payload), TileTensorable)
+        comptime assert conforms_to(type_of(dep), TileTensorable)
+        comptime assert type_of(payload).rank == 1
+        var payload_tile = payload.to_tile_tensor[.int64]()
+        var flag = CompletionFlag(
+            unsafe_from_address=Int(payload_tile.load[width=1](Coord(0)))
+        )
+        var value = UInt64(Int(payload_tile.load[width=1](Coord(1))))
         ctx.stream().wait_for_host_value(flag, value)
 
 

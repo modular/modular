@@ -32,15 +32,15 @@ from __future__ import annotations
 
 import math
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import LayerNorm, Linear, Module, ModuleList
-from max.experimental.nn.common_layers.functional_kernels import (
+from max.graph import DimLike, TensorType
+from max.nn import LayerNorm, Linear, Module, ModuleList
+from max.nn.common_layers.functional_kernels import (
     flash_attention_gpu,
 )
-from max.experimental.tensor import Tensor
-from max.graph import DimLike, TensorType
-from max.nn.attention import MHAMaskVariant
+from max.nn.legacy.attention import MHAMaskVariant
+from max.tensor import Tensor
 
 from ..model_config import TransformerConfig
 
@@ -58,6 +58,7 @@ class FourierEmbedding(Module[[Tensor], Tensor]):
         self.weight = Tensor.zeros([embedding_dim // 2, 1])
 
     def forward(self, timestep: Tensor) -> Tensor:
+        """Embeds ``timestep`` as Fourier features."""
         angles = (
             2.0
             * math.pi
@@ -75,6 +76,7 @@ class TimestepEmbedding(Module[[Tensor], Tensor]):
         self.linear_2 = Linear(out_dim, out_dim, bias=True)
 
     def forward(self, x: Tensor) -> Tensor:
+        """Projects the Fourier features to the model width."""
         return self.linear_2(F.silu(self.linear_1(x)))
 
 
@@ -114,6 +116,7 @@ class Attention(Module[..., Tensor]):
         self.to_out = ModuleList([Linear(inner_dim, dim, bias=False)])
 
     def forward(self, x: Tensor, cos: Tensor, sin: Tensor) -> Tensor:
+        """Runs the diffusion attention with rotary ``cos`` and ``sin``."""
         batch, seq = x.shape[0], x.shape[1]
         shape: list[DimLike] = [batch, seq, self.heads, self.head_dim]
         query = partial_rotary(F.reshape(self.to_q(x), shape), cos, sin)
@@ -150,6 +153,7 @@ class TransformerBlock(Module[..., Tensor]):
         self.ff_out = Linear(ff_inner_dim, dim, bias=True)
 
     def forward(self, x: Tensor, cos: Tensor, sin: Tensor) -> Tensor:
+        """Runs the block's attention, then its feed-forward."""
         x = x + self.attn(self.norm1(x), cos, sin)
         gated, gate = F.chunk(self.ff_in(self.norm2(x)), 2, axis=-1)
         # SiLU applies to the *second* half. Swapping them is a plausible-looking

@@ -32,7 +32,6 @@ model:
   kv_cache:
     kv_cache_format: float8_e4m3fn
     device_memory_utilization: 0.9
-    enable_prefix_caching: false  # prefix-cache determinism unverified on MI355
 
 runtime:
   ep_size: 8

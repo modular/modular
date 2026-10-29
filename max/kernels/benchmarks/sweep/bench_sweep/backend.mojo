@@ -51,7 +51,7 @@ def auto_evict_bytes(ctx: DeviceContext) raises -> Int:
     """
     var l2 = 0
     try:
-        l2 = ctx.get_attribute(DeviceAttribute.L2_CACHE_SIZE)
+        l2 = ctx.device().get_attribute(DeviceAttribute.L2_CACHE_SIZE)
     except:
         pass
     if l2 == 0 or ctx.api() == "hip":
@@ -119,7 +119,7 @@ def _visible_index(ctx: DeviceContext, env: StaticString) raises -> String:
     The runtime numbers only the visible devices; the tool numbers all of
     them, so map through the visibility list when there is one.
     """
-    var ordinal = Int(ctx.id())
+    var ordinal = Int(ctx.device().id)
     var visible = getenv(String(env), "")
     if visible.byte_length() == 0:
         return String(ordinal)

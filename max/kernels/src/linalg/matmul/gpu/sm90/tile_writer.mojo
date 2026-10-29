@@ -678,7 +678,7 @@ struct RegisterToGMemWriter[
     dst_engine: TensorEngine,
     dst_linear_idx_type: DType,
     //,
-    wgmma_shape: Coord,
+    wgmma_shape: Tuple[Int, Int, Int],
     num_consumer: Int,
     N: Int,  # Matrix N dimension
     check_runtime_bounds: Bool = False,  # New parameter for N-dimension bounds checking

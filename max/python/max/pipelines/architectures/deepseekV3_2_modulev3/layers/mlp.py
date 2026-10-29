@@ -15,9 +15,9 @@
 from __future__ import annotations
 
 from max.dtype import DType
-from max.experimental.nn.common_layers import quant_ops
-from max.experimental.nn.common_layers.quant_linear import QuantizedMLP
-from max.experimental.tensor import Tensor
+from max.nn.common_layers import quant_ops
+from max.nn.common_layers.quant_linear import QuantizedMLP
+from max.tensor import Tensor
 
 
 class DeepseekV3_2MLP(QuantizedMLP):
@@ -28,6 +28,7 @@ class DeepseekV3_2MLP(QuantizedMLP):
     """
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the feed-forward layer over ``x``."""
         # V2 runs gate and up as two matmuls; fusing them is one FP8 matmul
         # fewer and was measured bit-identical here (the 2048-row split lands
         # on the 128-row weight-scale block boundary, so the concatenated

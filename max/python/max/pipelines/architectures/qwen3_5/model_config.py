@@ -23,14 +23,14 @@ from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,
     RecurrentStateParams,
     RecurrentStateRegion,
 )
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.quant_config import QuantConfig
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithVisionCache
@@ -157,14 +157,13 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
     """Storage dtype override for the linear-attention state pools.
 
     ``None`` (the default) stores both pools at :attr:`compute_dtype`
-    (bfloat16), the configuration every exported artifact and the Mach
-    registry declare. ``float32`` makes a speculated generation follow the
-    exact state trajectory of an unspeculated one — the recurrence rounds to
-    the pool dtype only at a call boundary, so a lossy pool makes the
-    trajectory depend on speculation's chunking — at roughly double the
-    per-request state memory (74.8 to 149.6 MiB for Qwen3.8-27B). Set via the
-    ``state_pool_dtype`` KV-cache config knob; read through
-    :attr:`state_dtype`."""
+    (bfloat16), the configuration every exported artifact declares.
+    ``float32`` makes a speculated generation follow the exact state
+    trajectory of an unspeculated one — the recurrence rounds to the pool
+    dtype only at a call boundary, so a lossy pool makes the trajectory depend
+    on speculation's chunking — at roughly double the per-request state memory
+    (74.8 to 149.6 MiB for Qwen3.8-27B). Set via the ``state_pool_dtype``
+    KV-cache config knob; read through :attr:`state_dtype`."""
 
     # Vision encoder (optional - text-only models leave these None)
     vision_config: VisionConfig | None = None
@@ -537,6 +536,7 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """How many layers the text tower has."""
         text_config = Qwen3_5Config._get_text_config(huggingface_config)
         return text_config.num_hidden_layers
 

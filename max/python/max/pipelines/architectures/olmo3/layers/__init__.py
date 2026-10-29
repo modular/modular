@@ -10,9 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The OLMo3 layers."""
 
-from max.experimental.nn.common_layers.mlp import MLP
-from max.experimental.nn.common_layers.rotary_embedding import (
+from max.nn.common_layers.mlp import MLP
+from max.nn.common_layers.rotary_embedding import (
     YarnRotaryEmbedding,
     YarnScalingParams,
 )

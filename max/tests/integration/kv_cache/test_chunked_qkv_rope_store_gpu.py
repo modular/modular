@@ -29,8 +29,8 @@ from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.kernels import fused_chunked_qkv_rope_store_ragged
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.legacy.kernels import fused_chunked_qkv_rope_store_ragged
+from max.nn.legacy.kv_cache import MHAKVCacheParams
 from max.pipelines.architectures.mimo_v2.layers.attention import (
     QkvChunkLayout,
     prepare_qkv_unfused,

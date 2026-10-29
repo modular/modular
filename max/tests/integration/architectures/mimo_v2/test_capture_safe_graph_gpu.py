@@ -25,8 +25,8 @@ from max import tree
 from max.driver import accelerator_count
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.comm import Signals
-from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.kv_cache import MHAKVCacheParams, MultiKVCacheParams
 from max.pipelines.architectures.mimo_v2.mimo_v2 import MiMoV2
 from max.pipelines.architectures.mimo_v2.model_config import (
     FULL,

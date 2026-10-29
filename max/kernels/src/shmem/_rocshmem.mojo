@@ -303,7 +303,7 @@ def rocshmem_init_thread_tcp(
     """
     ctx.set_as_current()
 
-    var global_rank = node_id * gpus_per_node + Int(ctx.id())
+    var global_rank = node_id * gpus_per_node + Int(ctx.device().id)
     var total_gpus = gpus_per_node * total_nodes
 
     var attr = ROCSHMEMInitAttr()

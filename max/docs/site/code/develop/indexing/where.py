@@ -17,9 +17,9 @@
 # Output:
 #   [Dim(2), Dim(4), Dim(4)]
 
-import max.experimental.functional as F
+import max.functional as F
 from max.dtype import DType
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 seq_len = 4
 

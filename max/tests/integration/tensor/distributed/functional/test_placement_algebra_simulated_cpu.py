@@ -18,14 +18,14 @@ from __future__ import annotations
 import numpy as np
 import numpy.typing as npt
 from max.driver import CPU
-from max.experimental.sharding import (
+from max.tensor import Tensor
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Partial,
     Placement,
     Replicated,
 )
-from max.experimental.tensor import Tensor
 
 MESH = DeviceMesh((CPU(),) * 4, (2, 2), ("dp", "tp"))
 R, P = Replicated(), Partial()

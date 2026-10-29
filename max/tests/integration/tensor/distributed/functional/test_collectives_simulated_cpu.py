@@ -14,7 +14,7 @@
 
 from _test_helpers import make_partial
 from max.driver import CPU
-from max.experimental.sharding import DeviceMesh
+from max.tensor.sharding import DeviceMesh
 
 from functional._collectives import CollectivesTests
 

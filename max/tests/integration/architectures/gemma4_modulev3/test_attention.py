@@ -39,26 +39,26 @@ from _attention_helpers import (
     make_kv_manager,
     make_text_config,
 )
+from max import functional as F
 from max import tree
 from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental import functional as F
-from max.experimental.compilation import CompiledCallable
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.sharding import (
-    DeviceMapping,
-    DeviceMesh,
-    Replicated,
-)
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
-from max.nn.kv_cache import KVCacheParams
+from max.nn import Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.legacy.kv_cache import KVCacheParams
 from max.pipelines.architectures.gemma4_modulev3.layers.attention import (
     Gemma4Attention,
 )
 from max.pipelines.kv_cache import PagedKVCacheManager
+from max.tensor import Tensor
+from max.tensor.compilation import CompiledCallable
+from max.tensor.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    Replicated,
+)
 from test_common.context_utils import create_text_context
 from test_common.graph_utils import is_b100_b200
 from torch.utils.dlpack import from_dlpack

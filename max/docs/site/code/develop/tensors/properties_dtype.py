@@ -13,7 +13,7 @@
 # DOC: develop/tensors.mdx
 
 from max.dtype import DType
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 # Float tensor (the default on CPU)
 floats = Tensor.ones([2, 2], dtype=DType.float32)

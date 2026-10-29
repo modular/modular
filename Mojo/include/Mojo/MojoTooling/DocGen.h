@@ -14,8 +14,8 @@
 // Shared doc-generation pipeline used by `mojo doc` and `kgen-translate`.
 // Callers are responsible for creating the Init context, resolving the input
 // path, setting up the MLIRContext (with registerAllKGENDialects), and managing
-// the output file lifetime. This helper constructs a SourceMgr and
-// LIT::ParserConfig internally for the parse/serialize steps.
+// the output file lifetime. This helper constructs a SourceMgr internally for
+// the parse/serialize steps.
 //
 //===----------------------------------------------------------------------===//
 
@@ -24,41 +24,34 @@
 
 #include "Support/Driver/DiagnosticFormat.h"
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <filesystem>
 #include <string>
-#include <vector>
 
 namespace mlir {
 class MLIRContext;
 } // namespace mlir
 
 namespace M {
+namespace KGEN {
+struct FrontendOptions;
+} // namespace KGEN
 
-/// Configuration for Mojo documentation generation. Mirrors the flags exposed
-/// by `mojo doc` and `kgen-translate`; callers populate this from their
-/// respective CLI parsers.
-struct DocGenConfig {
-  bool diagnoseMissingDocStrings = false;
-  bool warningsAsErrors = false;
-  unsigned maxNotesPerDiagnostic = 10;
-  std::string stripFilePrefix;
-  std::string docsBasePath;
-  std::vector<std::string> includePaths;
-  DiagnosticFormat diagnosticFormat = DiagnosticFormat::Text;
-  std::vector<std::string> ignoredDeprecations;
-};
-
-/// Parses the Mojo file or package at \p resolvedPath, serializes its public
-/// API documentation as JSON (including the top-level version wrapper) to
-/// \p os, and returns true on success.
+/// Parses the Mojo file or package at \p resolvedPath with \p frontendOptions,
+/// serializes its public API documentation as JSON (including the top-level
+/// version wrapper) to \p os, and returns true on success.
 ///
 /// \p context must have all KGEN dialects already registered (e.g. via
-/// registerAllKGENDialects). Diagnostics are written to stderr through the
-/// SourceMgr handler selected by \p config.diagnosticFormat.
+/// registerAllKGENDialects). Imports are resolved against \p includePaths.
+/// Diagnostics are written to stderr through the SourceMgr handler selected by
+/// \p diagnosticFormat.
 bool generateMojoDocJSON(const std::filesystem::path &resolvedPath,
-                         mlir::MLIRContext &context, const DocGenConfig &config,
+                         mlir::MLIRContext &context,
+                         const KGEN::FrontendOptions &frontendOptions,
+                         llvm::ArrayRef<std::string> includePaths,
+                         DiagnosticFormat diagnosticFormat,
                          llvm::raw_ostream &os);
 
 } // namespace M

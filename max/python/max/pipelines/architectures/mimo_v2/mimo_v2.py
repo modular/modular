@@ -31,20 +31,24 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
-from max.nn.comm.allreduce import Allreduce
-from max.nn.embedding import Embedding
-from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams, PagedCacheValues
-from max.nn.layer import LayerList, Module
-from max.nn.linear import MLP, ColumnParallelLinear
-from max.nn.moe import MoEQuantized
-from max.nn.norm.rms_norm import RMSNorm
-from max.nn.rotary_embedding import RotaryEmbedding
-from max.nn.transformer import (
+from max.nn.legacy.comm.allreduce import Allreduce
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.kv_cache import (
+    KVCacheParams,
+    MultiKVCacheParams,
+    PagedCacheValues,
+)
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import MLP, ColumnParallelLinear
+from max.nn.legacy.moe import MoEQuantized
+from max.nn.legacy.norm.rms_norm import RMSNorm
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.transformer import (
     DecoderOutputs,
     ReturnHiddenStates,
     forward_sequential_layers,
 )
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
     forward_sharded_layers,
 )
@@ -99,6 +103,7 @@ class MiMoV2DecoderLayer(Module):
         freqs_cis: Sequence[TensorValue],
         input_row_offsets: Sequence[TensorValue],
     ) -> list[TensorValue]:
+        """Runs the layer over its sharded hidden states."""
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
         attn_out = [
             shard(
@@ -335,6 +340,7 @@ class MiMoV2(DistributedLogitsPostprocessMixin, Module):
         return_n_logits: TensorValue,
         input_row_offsets: Sequence[TensorValue],
     ) -> DecoderOutputs:
+        """Runs the model over the graph inputs."""
         h_embed = self.embed_tokens(tokens)
         # A broadcast over the signal buffers, not a GPU-to-GPU transfer: the
         # transfer makes one device's stream wait on another's, which device

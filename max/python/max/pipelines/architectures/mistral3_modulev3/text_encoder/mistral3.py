@@ -21,15 +21,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Embedding, Linear, Module
-from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.tensor import Tensor
 from max.graph import TensorType
+from max.nn import Embedding, Linear, Module
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.norm import RMSNorm
+from max.nn.sequential import ModuleList
+from max.tensor import Tensor
 
 from .attention import EncoderAttention
 
@@ -47,6 +47,7 @@ class Mistral3MLP(Module[[Tensor], Tensor]):
         self.down_proj = Linear(intermediate_size, hidden_size, bias=False)
 
     def forward(self, hidden_states: Tensor) -> Tensor:
+        """Runs the gated MLP over ``hidden_states``."""
         gate = F.silu(self.gate_proj(hidden_states))
         up = self.up_proj(hidden_states)
         return self.down_proj(gate * up)
@@ -118,8 +119,8 @@ class Mistral3TextEncoderTransformer(Module[[Tensor], Tensor]):
         self._output_seq_len: int | None = config.output_seq_len
 
         # Compute the rotary-embedding cos/sin lookup table on CPU to
-        # match the legacy graph API's ``max.nn.RotaryEmbedding`` (see
-        # ``max/python/max/nn/rotary_embedding.py``).  GPU and CPU fp32
+        # match the legacy graph API's ``max.nn.legacy.RotaryEmbedding`` (see
+        # ``max/python/max/nn/legacy/rotary_embedding.py``).  GPU and CPU fp32
         # transcendentals can disagree by ~1 ULP, and even tiny rope
         # offsets shift the entire denoising trajectory once they feed
         # text conditioning into 50 FLUX.2 diffusion steps -- enough to

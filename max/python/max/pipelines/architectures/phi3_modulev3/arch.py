@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Registers Phi3 on ModuleV3 with the registry."""
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext

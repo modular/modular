@@ -19,16 +19,19 @@ import functools
 import logging
 import re
 from collections.abc import Callable, Iterable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import requests
 from max import tree
-from max.experimental.nn import Linear, Module
-from max.experimental.nn.common_layers.quant_linear import (
+from max.nn import Linear, Module
+from max.nn.common_layers.linear import QKVLinear
+from max.nn.common_layers.mlp import MLP
+from max.nn.common_layers.quant_linear import (
     QuantizedLinear,
+    QuantizedMLP,
+    QuantizedQKVLinear,
 )
-from max.experimental.tensor import Tensor
-from max.nn.quant_config import QuantConfig, WeightSource
+from max.nn.legacy.quant_config import QuantConfig, WeightSource
 from max.pipelines import (
     PIPELINE_REGISTRY,
 )
@@ -36,6 +39,7 @@ from max.pipelines.context import (
     SamplingParams,
 )
 from max.pipelines.lib import (
+    ModuleV3MultiGraphPipelineModelWithKVCache,
     ModuleV3PipelineModelWithKVCache,
     PipelineArgs,
     PipelineConfig,
@@ -45,6 +49,7 @@ from max.pipelines.modeling.types import (
     Pipeline,
 )
 from max.profiler import OneShotCapture, Tracer
+from max.tensor import Tensor
 
 from .generate import stream_text_to_console
 from .metrics import TextGenerationMetrics
@@ -53,20 +58,71 @@ logger = logging.getLogger("max._entrypoints")
 
 MODEL_NAME = "model"
 
+_FUSED_GROUPS = (
+    (MLP, ("gate_proj", "up_proj")),
+    (QKVLinear, ("q_proj", "k_proj", "v_proj")),
+)
+
+
+def _child_path(parent: str, name: str) -> str:
+    return f"{parent}.{name}" if parent else name
+
+
+def _fused_modules_to_swap(
+    module: Module[..., Any], patterns: Iterable[re.Pattern[str]]
+) -> list[MLP | QKVLinear]:
+    """Returns fusers whose members all match ``patterns``.
+
+    Gate/up and q/k/v are each one matmul. A pattern that hits only part of
+    a group has no shared global scale, so that is rejected before compile.
+    A stacked ``QKVLinear`` is already one weight and is left alone.
+    """
+    compiled = list(patterns)
+    swaps: list[MLP | QKVLinear] = []
+    for cls, names in _FUSED_GROUPS:
+        for path, node in tree.nodes(module, cls).items():
+            if type(node) is not cls:
+                continue
+            if isinstance(node, QKVLinear) and not node.name_transparent:
+                continue
+            paths = [_child_path(path, name) for name in names]
+            hits = [
+                child
+                for child in paths
+                if any(pattern.search(child) for pattern in compiled)
+            ]
+            if not hits:
+                continue
+            if len(hits) != len(paths):
+                missing = [child for child in paths if child not in hits]
+                joined = ", ".join(names)
+                raise ValueError(
+                    f"{joined} are one matmul, so quantize all of them or "
+                    f"none of them. Matched {hits}; left out {missing}."
+                )
+            swaps.append(node)
+    return swaps
+
 
 def insert_quantized_linears(
-    module: Module[Any, Any],
+    module: Module[..., Any],
     targets: Iterable[str],
     quant_config: QuantConfig,
+    *,
+    verbose: bool = False,
 ) -> None:
     """Replaces every ``Linear`` matching ``targets`` with a quantized one.
 
     The config is supplied rather than built here: it is the caller's
-    statement of intent.
+    statement of intent. Gate/up and unstacked q/k/v are one matmul, so a
+    full match swaps the parent onto the quant fuser. A partial match is
+    rejected.
     """
+    patterns = [re.compile(pattern) for pattern in targets]
+    swaps = _fused_modules_to_swap(module, patterns)
     count = 0
     for key, value in tree.nodes(module, Linear).items():
-        if any(re.compile(pattern).search(key) for pattern in targets):
+        if any(pattern.search(key) for pattern in patterns):
             wrapped = QuantizedLinear(
                 int(value.in_dim),
                 int(value.out_dim),
@@ -79,6 +135,14 @@ def insert_quantized_linears(
                 leaf=lambda node, value=value: node is value,
             )
             count += 1
+    for fused in swaps:
+        if type(fused) is MLP:
+            # QuantizedMLP does not subclass MLP, so this is not a type[MLP].
+            fused.__class__ = cast(type[MLP], QuantizedMLP)
+        elif type(fused) is QKVLinear:
+            fused.__class__ = QuantizedQKVLinear
+    if verbose:
+        print(module)
     logger.info(f"Quantizing {count} weight tensors.")
 
 
@@ -124,17 +188,83 @@ def on_the_fly_config(name: str) -> QuantConfig:
     return dataclasses.replace(config)
 
 
+def _single_graph_quantizing_model(
+    model_cls: type[Any],
+    targets: Iterable[str],
+    quant_config: QuantConfig,
+    verbose: bool,
+) -> type[Any]:
+    """Returns a subclass that quantizes what ``_instantiate_module`` builds.
+
+    Single-graph ``graph_specs`` calls ``_instantiate_module`` and never
+    ``_language_spec``.
+    """
+    # mypy only accepts a class as a base. The runtime base is the concrete
+    # pipeline model retrieved for this checkpoint.
+    if TYPE_CHECKING:
+        base = ModuleV3PipelineModelWithKVCache[Any, Any]
+    else:
+        base = model_cls
+
+    class QuantizingPipelineModel(base):
+        def _instantiate_module(self, model_config: Any) -> Any:
+            nn_model = super()._instantiate_module(model_config)
+            insert_quantized_linears(
+                nn_model, targets, quant_config, verbose=verbose
+            )
+            return nn_model
+
+    return QuantizingPipelineModel
+
+
+def _multi_graph_quantizing_model(
+    model_cls: type[Any],
+    targets: Iterable[str],
+    quant_config: QuantConfig,
+    verbose: bool,
+) -> type[Any]:
+    """Returns a subclass that quantizes what ``_language_spec`` builds.
+
+    Multi-graph ``graph_specs`` calls ``_language_spec`` and never
+    ``_instantiate_module``.
+    """
+    if TYPE_CHECKING:
+        base = ModuleV3MultiGraphPipelineModelWithKVCache[Any, Any]
+    else:
+        base = model_cls
+
+    class QuantizingPipelineModel(base):
+        def _language_spec(
+            self, model_config: Any, state_dict: dict[str, Any]
+        ) -> Any:
+            spec = super()._language_spec(model_config, state_dict)
+            language = spec.module
+            if not isinstance(language, Module):
+                raise TypeError(
+                    f"{type(language).__name__} is not a ModuleV3 module, "
+                    "so layer quantizers cannot be inserted"
+                )
+            insert_quantized_linears(
+                language, targets, quant_config, verbose=verbose
+            )
+            return spec
+
+    return QuantizingPipelineModel
+
+
 def _factory_with_layer_quantizers(
     factory: Callable[[], Any],
     targets: Iterable[str],
     quant_config: QuantConfig,
+    *,
+    verbose: bool = False,
 ) -> Callable[[], Any]:
     """Returns a factory that quantizes layers before the module is compiled.
 
     ``retrieve_factory`` binds the pipeline-model class into the factory.
-    The pipeline constructor instantiates that class, and ``load_model``
-    compiles whatever ``_instantiate_module`` returns, so the subclass has
-    to be substituted before the factory is called.
+    The subclass overrides the one hook ``graph_specs`` calls for that
+    class: ``_instantiate_module`` for a single graph, ``_language_spec``
+    for a multi-graph model.
     """
     if not isinstance(factory, functools.partial):
         raise TypeError(
@@ -143,28 +273,22 @@ def _factory_with_layer_quantizers(
         )
     keywords = dict(factory.keywords or {})
     model_cls = keywords["pipeline_model"]
-    if not issubclass(model_cls, ModuleV3PipelineModelWithKVCache):
+    if issubclass(model_cls, ModuleV3MultiGraphPipelineModelWithKVCache):
+        pipeline_model = _multi_graph_quantizing_model(
+            model_cls, targets, quant_config, verbose
+        )
+    elif issubclass(model_cls, ModuleV3PipelineModelWithKVCache):
+        pipeline_model = _single_graph_quantizing_model(
+            model_cls, targets, quant_config, verbose
+        )
+    else:
         raise TypeError(
             f"{model_cls.__name__} is not a ModuleV3 pipeline model, so "
-            "layer quantizers cannot be inserted in _instantiate_module"
+            "layer quantizers cannot be inserted"
         )
-
-    # mypy only accepts a class as a base. The runtime base is the concrete
-    # pipeline model retrieved for this checkpoint.
-    if TYPE_CHECKING:
-        pipeline_model_base = ModuleV3PipelineModelWithKVCache[Any, Any]
-    else:
-        pipeline_model_base = model_cls
-
-    class QuantizingPipelineModel(pipeline_model_base):
-        def _instantiate_module(self, model_config: Any) -> Any:
-            nn_model = super()._instantiate_module(model_config)
-            insert_quantized_linears(nn_model, targets, quant_config)
-            return nn_model
-
-    QuantizingPipelineModel.__name__ = f"Quantizing{model_cls.__name__}"
-    QuantizingPipelineModel.__qualname__ = QuantizingPipelineModel.__name__
-    keywords["pipeline_model"] = QuantizingPipelineModel
+    pipeline_model.__name__ = f"Quantizing{model_cls.__name__}"
+    pipeline_model.__qualname__ = pipeline_model.__name__
+    keywords["pipeline_model"] = pipeline_model
     return functools.partial(factory.func, *factory.args, **keywords)
 
 
@@ -174,6 +298,7 @@ def quantize_pipeline(
     targets: Iterable[str],
     prompt: str,
     quantization_format: str,
+    verbose: bool = False,
     image_urls: Iterable[str] = (),
     num_warmups: int = 0,
     profile: bool = False,
@@ -184,7 +309,7 @@ def quantize_pipeline(
     retrieved = PIPELINE_REGISTRY.retrieve_factory(pipeline_config)
     tokenizer = retrieved.tokenizer
     pipeline = _factory_with_layer_quantizers(
-        retrieved.factory, targets, quant_config
+        retrieved.factory, targets, quant_config, verbose=verbose
     )()
     assert isinstance(pipeline, Pipeline)
     log_basic_config(pipeline_config, memory_plan=retrieved.memory_plan)

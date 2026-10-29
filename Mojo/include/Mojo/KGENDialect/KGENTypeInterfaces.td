@@ -47,9 +47,12 @@ def ParameterTypeInterface : TypeInterface<"ParameterTypeInterface"> {
                                                   "TypedAttr &":$value)>,
     InterfaceMethod<[{
       Print an attribute of this type, using pretty syntax if desired. Return
-      false if the attribute is not one the type knows how to print.
+      false if the attribute is not one the type knows how to print. `printer`
+      carries the dedup state (if any) and must be forwarded to any nested
+      parameter value printing.
     }], "LogicalResult", "printValue", (ins "AsmPrinter &":$p,
-                                            "TypedAttr":$value)>,
+                                            "TypedAttr":$value,
+                                            "::M::KGEN::KGENParamPrinter &":$printer)>,
     InterfaceMethod<[{
       Return whether the type is a metatype.
     }], "bool", "isMetaType", (ins), [{}], [{ return false; }]>,

@@ -39,8 +39,8 @@ from max.driver import Accelerator
 from max.engine import InferenceSession
 from max.experimental.torch import torch_dtype_to_max
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.attention import MHAMaskVariant
-from max.nn.kernels import flash_attention_gpu
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kernels import flash_attention_gpu
 
 # Try importing external baselines (resolved from the pip lock)
 _flashinfer: types.ModuleType | None

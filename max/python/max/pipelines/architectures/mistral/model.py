@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Mistral pipeline model."""
 
 from __future__ import annotations
 
@@ -21,7 +22,7 @@ from max import tree
 from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -61,6 +62,8 @@ class MistralInputs(ModelInputs):
 
 
 class MistralModel(PipelineModelWithKVCache[TextContext, MistralConfig, Model]):
+    """The Mistral pipeline model."""
+
     model_config_cls: ClassVar[type[Any]] = MistralConfig
     batch_processor_cls: ClassVar[type[MistralBatchProcessor]] = (
         MistralBatchProcessor

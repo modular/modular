@@ -450,22 +450,23 @@ private:
       // Identity that outlives the unlocked window in drainCompletedFrees().
       uint64_t seq;
       // Device work that must complete before the buffer can migrate.
-      DeviceEventRef event;
+      llvm::SmallVector<DeviceEventRef, 2> events;
       // Free list owning the buffer; cancels its records when destroyed.
       MemoryManagerFreeList *fl;
       // Which of that free list's double-buffered lists to flush.
       int bufferId;
     };
 
-    void add(DeviceEventRef event, MemoryManagerFreeList *fl, int bufferId);
+    void add(llvm::SmallVector<DeviceEventRef, 2> events,
+             MemoryManagerFreeList *fl, int bufferId);
     // Drop every record naming `fl`.
     void cancel(const MemoryManagerFreeList *fl);
     // Remove and return the record identified by `seq`, or nullopt if it is
     // gone. Identity is by `seq` rather than position so a caller that released
     // `mu_` mid-drain cannot act on a record cancelled meanwhile.
     std::optional<Record> take(uint64_t seq);
-    // The (seq, event) of every record naming `fl`, or of all of them when `fl`
-    // is null.
+    // The (seq, event) of every event of every record naming `fl`, or of all
+    // of them when `fl` is null.
     llvm::SmallVector<std::pair<uint64_t, DeviceEventRef>>
     collect(const MemoryManagerFreeList *fl) const;
     bool empty() const { return records_.empty(); }
@@ -583,11 +584,10 @@ public:
   ErrorOr<void *> allocate(size_t size, Device::AllocMode mode);
   ErrorOrSuccess free(void *buf);
 
-  // Return every cached free buffer to the parent, keeping this free list in
-  // service. Unlike a deferred free, nothing gates the move, so the caller
-  // guarantees no device work still references these buffers: it has
-  // synchronized this list's stream, and no one can enqueue more on it.
-  void flushCachedToParent();
+  // Queue every cached free buffer for the parent behind the work enqueued so
+  // far on this list's stream and its base stream, keeping this free list in
+  // service. Returns whether anything was queued.
+  bool deferCachedToParent();
 
   bool empty();
 
@@ -632,7 +632,7 @@ private:
   // so a later `free()` does not dispatch through `desc->allocatedBy_` after
   // this freelist is destroyed. Called only from the destructor.
   void flushToParent();
-  // Shared by `flushToParent` and `flushCachedToParent`. Caller holds `mu_`.
+  // Caller holds `mu_`.
   void flushCachedToParentLocked();
 
   void selfCheck() const;

@@ -174,8 +174,8 @@ def _exp_concrete(x: SIMD) -> type_of(x):
     """The concrete implementation of the exp function.
 
     This is a helper function that is used to provide a concrete implementation
-    of the exp function. This is necessary because exp uses the _Expable trait
-    and mojo cannot disambiguate between the different exp functions otherwise.
+    of the exp function. This is necessary because exp is overloaded and mojo
+    cannot disambiguate between the different exp functions otherwise.
     """
     comptime assert x.dtype.is_floating_point(), "dtype must be floating point"
     return exp(x)
@@ -829,7 +829,9 @@ def _softmax_gpu[
 
     var shape_il = rebind[IndexList[rank]](coord_to_index_list(shape))
     var num_rows = shape_il.flattened_length() // shape_il[axis]
-    var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+    var sm_count = ctx.device().get_attribute(
+        DeviceAttribute.MULTIPROCESSOR_COUNT
+    )
     comptime sm_overprovision_factor = 32  # tunable
 
     # Single-pass online softmax. The sink and logsoftmax variants stay on
@@ -946,6 +948,7 @@ def _softmax_gpu[
                             host_args=(input_fn_wrapper,),
                             grid_dim=num_pairs,
                             block_dim=BLOCK_SIZE,
+                            attributes=pdl_launch_attributes(PDLLevel.ON),
                         )
 
                         comptime combine_kernel = _softmax_split_combine_kernel[
@@ -970,6 +973,7 @@ def _softmax_gpu[
                             host_args=(input_fn_wrapper,),
                             grid_dim=num_pairs,
                             block_dim=BLOCK_SIZE,
+                            attributes=pdl_launch_attributes(PDLLevel.ON),
                         )
                         _ = partial_max^
                         _ = partial_sum^
@@ -1320,61 +1324,66 @@ def _softmax_split_partial_kernel[
     var tid = thread_idx.x
     var tiles_per_split = ceildiv(ceildiv(row_size, BLOCK_SPAN), num_splits)
 
-    for pair_idx in range(block_idx.x, num_pairs, grid_dim.x):
-        var row_idx, split = divmod(pair_idx, num_splits)
-        var row_coords = _get_nd_indices_from_flat_index(
-            row_idx, Coord(shape), axis
-        )
+    with PDL():
+        for pair_idx in range(block_idx.x, num_pairs, grid_dim.x):
+            var row_idx, split = divmod(pair_idx, num_splits)
+            var row_coords = _get_nd_indices_from_flat_index(
+                row_idx, Coord(shape), axis
+            )
 
-        # Every block owning this row must read the same temperature.
-        var temp = temperature.cast[accum_type]()
-        if case .Some(temperature_arr) = temperature_arr:
-            temp = temperature_arr.load[width=1]((row_idx,)).cast[accum_type]()
-        temp = max(temp, Scalar[accum_type](1e-6))
-        var inv_temp = Scalar[accum_type](1) / temp
+            # Every block owning this row must read the same temperature.
+            var temp = temperature.cast[accum_type]()
+            if case .Some(temperature_arr) = temperature_arr:
+                temp = temperature_arr.load[width=1]((row_idx,)).cast[
+                    accum_type
+                ]()
+            temp = max(temp, Scalar[accum_type](1e-6))
+            var inv_temp = Scalar[accum_type](1) / temp
 
-        var row_max = Scalar[accum_type].MIN
-        var exp_sum = Scalar[accum_type](0)
+            var row_max = Scalar[accum_type].MIN
+            var exp_sum = Scalar[accum_type](0)
 
-        # BLOCK_SPAN-aligned chunk so `lane_base` stays simd_width-aligned and
-        # the caller's vectorized-load predicate still holds.
-        var col_lo = split * tiles_per_split * BLOCK_SPAN
-        var col_hi = min(col_lo + tiles_per_split * BLOCK_SPAN, row_size)
+            # BLOCK_SPAN-aligned chunk so `lane_base` stays simd_width-aligned and
+            # the caller's vectorized-load predicate still holds.
+            var col_lo = split * tiles_per_split * BLOCK_SPAN
+            var col_hi = min(col_lo + tiles_per_split * BLOCK_SPAN, row_size)
 
-        for tile_base in range(col_lo, col_hi, BLOCK_SPAN):
-            var lane_base = tile_base + tid * simd_width
-            if lane_base < row_size:
-                var lane_count = min(row_size - lane_base, simd_width)
+            for tile_base in range(col_lo, col_hi, BLOCK_SPAN):
+                var lane_base = tile_base + tid * simd_width
+                if lane_base < row_size:
+                    var lane_count = min(row_size - lane_base, simd_width)
 
-                @inline(.always)
-                def online_max_sum[
-                    width: Int
-                ](offset: Int) {row_coords, lane_base, input_fn, mut}:
-                    var coords = row_coords
-                    coords.replace_dynamic[axis](lane_base + offset)
-                    var v = input_fn[dtype, width](coords).cast[accum_type]()
-                    var lane_max = v.reduce_max()
-                    if lane_max > NEG_INF:
-                        var new_max = max(row_max, lane_max)
-                        exp_sum = (
-                            exp_sum * exp((row_max - new_max) * inv_temp)
-                            + exp(
-                                (v - SIMD[accum_type, width](new_max))
-                                * SIMD[accum_type, width](inv_temp)
-                            ).reduce_add()
-                        )
-                        row_max = new_max
+                    @inline(.always)
+                    def online_max_sum[
+                        width: Int
+                    ](offset: Int) {row_coords, lane_base, input_fn, mut}:
+                        var coords = row_coords
+                        coords.replace_dynamic[axis](lane_base + offset)
+                        var v = input_fn[dtype, width](coords).cast[
+                            accum_type
+                        ]()
+                        var lane_max = v.reduce_max()
+                        if lane_max > NEG_INF:
+                            var new_max = max(row_max, lane_max)
+                            exp_sum = (
+                                exp_sum * exp((row_max - new_max) * inv_temp)
+                                + exp(
+                                    (v - SIMD[accum_type, width](new_max))
+                                    * SIMD[accum_type, width](inv_temp)
+                                ).reduce_add()
+                            )
+                            row_max = new_max
 
-                vectorize[simd_width](lane_count, online_max_sum)
+                    vectorize[simd_width](lane_count, online_max_sum)
 
-        var chunk_max = block.max[block_size=BLOCK_SIZE](row_max)
-        if chunk_max > NEG_INF:
-            exp_sum *= exp((row_max - chunk_max) * inv_temp)
-        var chunk_sum = block.sum[block_size=BLOCK_SIZE](exp_sum)
+            var chunk_max = block.max[block_size=BLOCK_SIZE](row_max)
+            if chunk_max > NEG_INF:
+                exp_sum *= exp((row_max - chunk_max) * inv_temp)
+            var chunk_sum = block.sum[block_size=BLOCK_SIZE](exp_sum)
 
-        if tid == 0:
-            partial_max[pair_idx] = chunk_max
-            partial_sum[pair_idx] = chunk_sum
+            if tid == 0:
+                partial_max[pair_idx] = chunk_max
+                partial_sum[pair_idx] = chunk_sum
 
 
 @__name(t"softmax_split_combine_{dtype}_{temp_dtype}_{simd_width}")
@@ -1430,55 +1439,60 @@ def _softmax_split_combine_kernel[
     var tid = thread_idx.x
     var tiles_per_split = ceildiv(ceildiv(row_size, BLOCK_SPAN), num_splits)
 
-    for pair_idx in range(block_idx.x, num_pairs, grid_dim.x):
-        var row_idx, split = divmod(pair_idx, num_splits)
-        var row_coords = _get_nd_indices_from_flat_index(
-            row_idx, Coord(shape), axis
-        )
+    with PDL():
+        for pair_idx in range(block_idx.x, num_pairs, grid_dim.x):
+            var row_idx, split = divmod(pair_idx, num_splits)
+            var row_coords = _get_nd_indices_from_flat_index(
+                row_idx, Coord(shape), axis
+            )
 
-        var temp = temperature.cast[accum_type]()
-        if case .Some(temperature_arr) = temperature_arr:
-            temp = temperature_arr.load[width=1]((row_idx,)).cast[accum_type]()
-        temp = max(temp, Scalar[accum_type](1e-6))
-        var inv_temp = Scalar[accum_type](1) / temp
+            var temp = temperature.cast[accum_type]()
+            if case .Some(temperature_arr) = temperature_arr:
+                temp = temperature_arr.load[width=1]((row_idx,)).cast[
+                    accum_type
+                ]()
+            temp = max(temp, Scalar[accum_type](1e-6))
+            var inv_temp = Scalar[accum_type](1) / temp
 
-        # Threads outside `[0, num_splits)` contribute the neutral `(NEG_INF, 0)`.
-        var my_max = Scalar[accum_type].MIN
-        var my_sum = Scalar[accum_type](0)
-        if tid < num_splits:
-            my_max = partial_max[row_idx * num_splits + tid]
-            my_sum = partial_sum[row_idx * num_splits + tid]
+            # Threads outside `[0, num_splits)` contribute the neutral `(NEG_INF, 0)`.
+            var my_max = Scalar[accum_type].MIN
+            var my_sum = Scalar[accum_type](0)
+            if tid < num_splits:
+                my_max = partial_max[row_idx * num_splits + tid]
+                my_sum = partial_sum[row_idx * num_splits + tid]
 
-        var global_max = block.max[block_size=BLOCK_SIZE](my_max)
-        if my_max > NEG_INF:
-            my_sum *= exp((my_max - global_max) * inv_temp)
-        var global_sum = block.sum[block_size=BLOCK_SIZE](my_sum)
-        var recip = Scalar[accum_type](1) / global_sum
+            var global_max = block.max[block_size=BLOCK_SIZE](my_max)
+            if my_max > NEG_INF:
+                my_sum *= exp((my_max - global_max) * inv_temp)
+            var global_sum = block.sum[block_size=BLOCK_SIZE](my_sum)
+            var recip = Scalar[accum_type](1) / global_sum
 
-        var col_lo = split * tiles_per_split * BLOCK_SPAN
-        var col_hi = min(col_lo + tiles_per_split * BLOCK_SPAN, row_size)
+            var col_lo = split * tiles_per_split * BLOCK_SPAN
+            var col_hi = min(col_lo + tiles_per_split * BLOCK_SPAN, row_size)
 
-        for tile_base in range(col_lo, col_hi, BLOCK_SPAN):
-            var lane_base = tile_base + tid * simd_width
-            if lane_base < row_size:
-                var lane_count = min(row_size - lane_base, simd_width)
+            for tile_base in range(col_lo, col_hi, BLOCK_SPAN):
+                var lane_base = tile_base + tid * simd_width
+                if lane_base < row_size:
+                    var lane_count = min(row_size - lane_base, simd_width)
 
-                @inline(.always)
-                def normalize[
-                    width: Int
-                ](offset: Int) {row_coords, lane_base, output, input_fn, mut}:
-                    var coords = row_coords
-                    coords.replace_dynamic[axis](lane_base + offset)
-                    var logit = input_fn[dtype, width](coords).cast[
-                        accum_type
-                    ]()
-                    var diff = (
-                        logit - SIMD[accum_type, width](global_max)
-                    ) * SIMD[accum_type, width](inv_temp)
-                    var val = exp(diff) * SIMD[accum_type, width](recip)
-                    output.store(coords, val.cast[dtype]())
+                    @inline(.always)
+                    def normalize[
+                        width: Int
+                    ](offset: Int) {
+                        row_coords, lane_base, output, input_fn, mut
+                    }:
+                        var coords = row_coords
+                        coords.replace_dynamic[axis](lane_base + offset)
+                        var logit = input_fn[dtype, width](coords).cast[
+                            accum_type
+                        ]()
+                        var diff = (
+                            logit - SIMD[accum_type, width](global_max)
+                        ) * SIMD[accum_type, width](inv_temp)
+                        var val = exp(diff) * SIMD[accum_type, width](recip)
+                        output.store(coords, val.cast[dtype]())
 
-                vectorize[simd_width](lane_count, normalize)
+                    vectorize[simd_width](lane_count, normalize)
 
 
 # ===----------------------------------------------------------------------=== #

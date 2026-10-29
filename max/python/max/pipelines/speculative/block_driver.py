@@ -20,7 +20,7 @@ state, no per-step cache advance, no token shift and no stack at the end.
 
 Like :class:`~.driver.SequentialDriver`, this driver runs on graph values, but
 nothing outside it has to. A caller may pass experimental
-:class:`~max.experimental.tensor.Tensor` inputs, one per device, and gets
+:class:`~max.tensor.Tensor` inputs, one per device, and gets
 ``Tensor`` outputs back; an adapter that subclasses
 :class:`~.driver.TensorAdapter` reads and returns ``Tensor`` values too. Both
 convert at the boundary, so a ModuleV3 model never reaches for the graph API.
@@ -34,9 +34,6 @@ from typing import Any, Generic, Literal, Protocol, TypeVar
 
 from max import tree
 from max.dtype import DType
-from max.experimental.nn import Module as ModuleV3
-from max.experimental.realization_context import current_realization_context
-from max.experimental.tensor import Tensor
 from max.graph import (
     BufferType,
     BufferValue,
@@ -48,13 +45,16 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn.kernels import topk_fused_sampling_with_dist
-from max.nn.kv_cache import KVCacheInputsPerDevice, PagedCacheValues
-from max.nn.layer import Module
-from max.nn.sampling.rejection_sampler import (
+from max.nn import Module as ModuleV3
+from max.nn.legacy.kernels import topk_fused_sampling_with_dist
+from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, PagedCacheValues
+from max.nn.legacy.layer import Module
+from max.nn.legacy.sampling.rejection_sampler import (
     AcceptanceSampler,
     _draft_step_seed,
 )
+from max.tensor import Tensor
+from max.tensor.realization_context import current_realization_context
 from typing_extensions import override
 
 from ._tensor_compat import as_graph_values, as_tensors
@@ -186,7 +186,7 @@ class BlockBatch(Generic[_T, _B, _V]):
 
     Mirrors :class:`~.driver.SequentialBatch` for the block shape, including
     the value types: graph values by default, single-device
-    :class:`~max.experimental.tensor.Tensor` values for the adapters that
+    :class:`~max.tensor.Tensor` values for the adapters that
     subclass :class:`~.driver.TensorAdapter`. The optional fields are the
     ones a ``distributed=False`` signature does not declare; the
     single-device DFlash graphs leave them unset.

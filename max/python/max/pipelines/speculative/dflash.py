@@ -19,9 +19,9 @@ from typing import Protocol, runtime_checkable
 
 from max.dtype import DType
 from max.graph import BufferValue, TensorValue, ops
-from max.nn.embedding import Embedding, VocabParallelEmbedding
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.linear import ColumnParallelLinear, Linear
+from max.nn.legacy.embedding import Embedding, VocabParallelEmbedding
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.linear import ColumnParallelLinear, Linear
 
 from .block_driver import (
     Accepted,

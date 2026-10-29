@@ -135,5 +135,60 @@ def test_optional_borrowed_fd_uses_niche() raises:
     assert_true(still_open)
 
 
+def test_from_borrowed_duplicates_fd() raises:
+    var read_fd, write_fd = _make_pipe()
+    var owner = FileDescriptor(unsafe_raw_fd=RawFileDescriptor(write_fd))
+    var duplicate: FileDescriptor
+    try:
+        duplicate = FileDescriptor(copy_borrowed=BorrowedFileDescriptor(owner))
+    except e:
+        owner^.close()
+        raise e^
+    var distinct = duplicate._value._value != write_fd
+
+    # Both descriptors write to the same pipe, and each closes independently.
+    var raw_writer = RawFileDescriptor(write_fd)
+    raw_writer.write_string("a")
+    var owner_closed: Bool
+    try:
+        owner^.close()
+        owner_closed = not _is_open(write_fd)
+        duplicate._value.write_string("b")
+    finally:
+        duplicate^.close()
+
+    var reader = RawFileDescriptor(read_fd)
+    var buffer = List[Byte](length=2, fill=0)
+    var n = 0
+    try:
+        while n < 2:
+            var got = reader.read_bytes(Span(buffer)[n:])
+            if got == 0:
+                break
+            n += got
+    finally:
+        reader.close()
+    var text = String(StringSpan(unsafe_from_utf8=Span(buffer)[:n]))
+    assert_true(distinct)
+    assert_true(owner_closed)
+    assert_equal(text, "ab")
+
+
+def test_from_borrowed_raises_on_invalid_fd() raises:
+    var owner = FileDescriptor(unsafe_raw_fd=RawFileDescriptor(9999))
+    var dup_raised = False
+    try:
+        var duplicate = FileDescriptor(
+            copy_borrowed=BorrowedFileDescriptor(owner)
+        )
+        duplicate^.close()
+    except e:
+        dup_raised = "dup failed" in String(e)
+    # Nothing owns descriptor 9999, so closing it fails too.
+    with assert_raises():
+        owner^.close()
+    assert_true(dup_raised)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

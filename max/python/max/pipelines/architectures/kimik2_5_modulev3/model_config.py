@@ -19,7 +19,7 @@ from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParamInterface,
 )
 from max.pipelines.kv_cache import cache_dtype_for_encoding
@@ -144,6 +144,9 @@ class KimiK2_5TextConfig(
 
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
+            model_config: The MAX model configuration, or none to read it
+                from ``pipeline_config.model``.
+            max_seq_len: The maximum sequence length the config allows.
 
         Returns:
             An initialized DeepseekV3Config instance.
@@ -235,6 +238,7 @@ class KimiK2_5TextConfig(
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """The checkpoint's ``max_position_embeddings``."""
         # DeepseekV3Config does not inherit ArchConfigWithStoredKVParams, so the
         # VLM mixin cannot delegate max_seq_len to this class directly.
         return ArchConfigWithStoredKVParams.calculate_max_seq_len(
@@ -326,6 +330,7 @@ class VisionConfig:
                 ``text_hidden_size`` from ``text_config.hidden_size`` when
                 ``hf_vision_config`` does not carry the attribute directly
                 (such as moonshotai/Kimi-VL-A3B-Instruct vs nvidia/Kimi-K2.5-NVFP4).
+            max_seq_len: The maximum sequence length the config allows.
 
         Note: dtype fields will be set to defaults and should be updated
         via finalize() once state_dict is available.
@@ -449,6 +454,7 @@ class KimiK2_5Config(
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """How many layers the text tower has."""
         # Delegate to KimiK2_5TextConfig for language model parameters.
         llm_config = getattr(
             huggingface_config, "text_config", huggingface_config
@@ -468,6 +474,9 @@ class KimiK2_5Config(
 
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
+            model_config: The MAX model configuration, or none to read it
+                from ``pipeline_config.model``.
+            max_seq_len: The maximum sequence length the config allows.
 
         Returns:
             A Qwen3VLConfig instance with fields initialized from config.
@@ -503,6 +512,9 @@ class KimiK2_5Config(
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
             huggingface_config: HuggingFace model configuration.
+            llm_config: The text config to read the language model settings
+                from, or none to build one.
+            max_seq_len: The maximum sequence length the config allows.
             llm_config: Pre-initialized DeepseekV3 configuration.
 
         Returns:

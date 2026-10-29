@@ -78,6 +78,10 @@ Knobs: `CS_JOBS` (local parallelism), `CS_GPU` (pin to one physical GPU),
 `CS_RESULTS_DIR`, `COMPUTE_SANITIZER` (path to the binary). For the stress tool:
 `STRESS_REPS`, `STRESS_JOBS`.
 
+The nightly racecheck lane uses Compute Sanitizer 2026.3 from CUDA 13.4.
+Earlier versions can report false positives involving cluster and `mbarrier`
+synchronization.
+
 Exit status — the script doubles as the lane's CI gate, so its status
 distinguishes *what it found* from *whether it measured anything*:
 

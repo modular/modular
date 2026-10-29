@@ -444,7 +444,7 @@ def _allgather_rmsnorm_impl[
     if not is_p2p_enabled():
         raise Error("allgather_rmsnorm requires P2P access between GPUs")
 
-    var global_rank = my_rank.or_else(Int(ctx.id()))
+    var global_rank = my_rank.or_else(Int(ctx.device().id))
     if not 0 <= global_rank < ngpus:
         raise Error(
             String(
@@ -738,7 +738,7 @@ def _dispatch_ag_norm[
 
     # Fusing only when every group in the span fuses keeps the threshold's
     # per-group meaning.
-    var global_rank = my_rank.or_else(Int(ctx.id()))
+    var global_rank = my_rank.or_else(Int(ctx.device().id))
     comptime gate_groups = 2 if _relay_pairs[ngpus, group_size](
         ctx.default_device_info.version
     ) else 1
@@ -867,7 +867,7 @@ def _dispatch_ag_norm_quant[
 
     # Fusing only when every group in the span fuses keeps the threshold's
     # per-group meaning.
-    var global_rank = my_rank.or_else(Int(ctx.id()))
+    var global_rank = my_rank.or_else(Int(ctx.device().id))
     comptime gate_groups = 2 if _relay_pairs[ngpus, group_size](
         ctx.default_device_info.version
     ) else 1

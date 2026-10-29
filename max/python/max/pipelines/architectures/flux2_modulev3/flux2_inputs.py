@@ -27,8 +27,8 @@ from dataclasses import dataclass, fields, replace
 from typing import Any, ClassVar
 
 from max.driver import Buffer, Device
-from max.experimental.tensor import Tensor
 from max.pipelines.modeling.base import TensorStruct
+from max.tensor import Tensor
 from typing_extensions import Self
 
 

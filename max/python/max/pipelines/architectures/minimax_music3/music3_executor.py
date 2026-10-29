@@ -40,7 +40,6 @@ import numpy.typing as npt
 from max.driver import Accelerator, Device, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental.tensor import Tensor
 from max.pipelines.audio import AudioExecutorOutputs
 from max.pipelines.context import AudioContext
 from max.pipelines.lib.model_manifest import ModelManifest
@@ -49,6 +48,7 @@ from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.modeling.base import TensorStruct
 from max.profiler import traced
 from max.support.human_readable_formatter import to_human_readable_bytes
+from max.tensor import Tensor
 
 from . import denoise
 from .autoregressive import (
@@ -238,8 +238,9 @@ class MiniMaxMusic3Executor(
 
     @traced(message="MiniMaxMusic3Executor.execute")
     def execute(self, inputs: MiniMaxMusic3Inputs) -> AudioExecutorOutputs:
-        """Runs the language model, diffusion, and vocoder stages, returning
-        the finished stereo waveform.
+        """Runs the language model, diffusion and vocoder stages.
+
+        The result is the finished stereo waveform.
         """
         seed = _read(inputs.seed)
         conditioning = self._generate(inputs, seed)
@@ -389,8 +390,11 @@ class MiniMaxMusic3Executor(
         return self._diffusion
 
     def _vocoder_stage(self) -> ChunkedVocoder:
-        """The waveform decoder, which stays float32 -- it is small, and it is
-        the one component whose rounding would be audible rather than diffuse."""
+        """The waveform decoder, which stays float32.
+
+        It is small, and it is the one component whose rounding would be audible
+        rather than diffuse.
+        """
         if self._vocoder is None:
             self._evict(keep="vocoder")
             self._vocoder = ChunkedVocoder(

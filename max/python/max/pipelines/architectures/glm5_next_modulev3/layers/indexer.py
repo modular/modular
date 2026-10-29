@@ -30,18 +30,15 @@ from __future__ import annotations
 
 import dataclasses
 
+from max import functional as F
 from max import tree
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.quant_linear import QuantizedLinear
-from max.experimental.nn.norm import LayerNorm
-from max.experimental.sharding import DeviceMapping
-from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorValue, ops
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kernels import (
+from max.nn import Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.quant_linear import QuantizedLinear
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.kernels import (
     mla_fp8_index_top_k,
     mla_kpool_compress,
     mla_kpool_expand_topk,
@@ -52,11 +49,14 @@ from max.nn.kernels import (
     store_k_cache_ragged,
     store_k_scale_cache_ragged,
 )
-from max.nn.kv_cache import PagedCacheValues as GraphPagedCacheValues
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.kv_cache import PagedCacheValues as GraphPagedCacheValues
+from max.nn.legacy.quant_config import QuantConfig
+from max.nn.norm import LayerNorm
 from max.pipelines.architectures.deepseekV3_2.layers.indexer import (
     exclusive_prefix_sum,
 )
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping
 
 from ...deepseekV3_2_modulev3.layers.indexer import (
     act_quant,
@@ -149,8 +149,11 @@ def _store_closed_pools(
     layer_idx: TensorValue,
     p: _Pooling,
 ) -> None:
-    """Compacts the rows that closed a pool and writes them behind the
-    cache length, at the closed pool's own boundary."""
+    """Compacts the rows that closed a pool.
+
+    It writes them behind the cache length, at the closed pool's own
+    boundary.
+    """
     device = pooled.device
     closed = (closed_pool >= 0).cast(DType.int32)
     closed_before = exclusive_prefix_sum(closed)
@@ -335,6 +338,7 @@ class PooledIndexer(Module[..., Tensor]):
         layer_idx: Tensor,
         tail: KPoolTail,
     ) -> Tensor:
+        """Indexes ``x`` and returns the top-k pool picks per token."""
         q = self.wq_b(qr).reshape((-1, self.n_heads, self.head_dim))
         k = self.k_norm(self.wk(x))
         q_fp8, q_scale = act_quant(q, self.quant_config)

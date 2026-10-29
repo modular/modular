@@ -311,8 +311,7 @@ fn touch_order(recency: LeafRecency, hashes: &[BlockHash]) -> Vec<BlockHash> {
 /// `leaf_idx`'s free queue, if the host tier holds one.
 fn touch_host(pool: &mut JengaBlockPool<BlockHash>, leaf_idx: usize, block_hash: BlockHash) {
     if let Some(host_bid) = pool.lookup_hash(leaf_idx, block_hash) {
-        pool.touch(leaf_idx, host_bid);
-        pool.free_block(leaf_idx, host_bid);
+        pool.refresh(leaf_idx, host_bid);
     }
 }
 
@@ -407,6 +406,13 @@ impl TieredConnector {
     fn pick_onload_lane(&self) -> (usize, Arc<TransferLane>) {
         let i = next_onload_lane(&self.onload_rr, self.onload_lanes.len());
         (i, Arc::clone(&self.onload_lanes[i]))
+    }
+
+    /// The connector's leaf count, carried from construction: the width of
+    /// the per-leaf lists [`Self::load`] and [`Self::offload`] take.
+    #[must_use]
+    pub fn num_leaves(&self) -> usize {
+        self.num_leaves
     }
 
     /// Which of `hashes` each of `leaf_idxs` holds, one mask per leaf.

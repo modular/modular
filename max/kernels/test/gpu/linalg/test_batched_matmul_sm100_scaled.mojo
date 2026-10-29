@@ -30,7 +30,6 @@ from linalg.bmm import (
     batched_matmul_dynamic_scaled_fp8_naive,
 )
 
-from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
 
 from layout import TileTensor, Coord, CoordLike, Idx, row_major
@@ -46,7 +45,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    umma_shape: DynamicCoord[.int, 3],
+    umma_shape: Tuple[Int, Int, Int],
     swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_b: Bool = True,
     use_epilogue: Bool = False,
@@ -256,7 +255,7 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    umma_shape: DynamicCoord[.int, 3],
+    umma_shape: Tuple[Int, Int, Int],
     B: Int,
     N: Int,
     K: Int,

@@ -25,16 +25,16 @@ from max._artifact.value_types import ArtifactError, treedef_to_json
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.experimental.compilation import CompiledCallable
-from max.experimental.nn import Module as ModuleV3
-from max.experimental.nn import module_dataclass
-from max.experimental.sharding.types import as_layout
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType, TensorValue, Weight
-from max.nn import Module
-from max.nn.graph_groups import HiddenStates, Logits, RaggedBatch
-from max.nn.transformer import DecoderOutputs
+from max.nn import Module as ModuleV3
+from max.nn import module_dataclass
+from max.nn.legacy import Module
+from max.nn.legacy.graph_groups import HiddenStates, Logits, RaggedBatch
+from max.nn.legacy.transformer import DecoderOutputs
 from max.pipelines.lib import GraphRole, GraphSpec, compile_and_init_graphs
+from max.tensor import Tensor
+from max.tensor.compilation import CompiledCallable
+from max.tensor.sharding.types import as_layout
 
 X = TensorType(DType.float32, [2], device=DeviceRef.CPU())
 

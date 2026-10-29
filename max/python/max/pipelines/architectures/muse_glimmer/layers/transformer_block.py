@@ -15,10 +15,10 @@
 
 from __future__ import annotations
 
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.norm import GemmaRMSNorm
-from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.norm import GemmaRMSNorm
+from max.tensor import Tensor
 
 
 class MuseGlimmerTransformerBlock(Module[..., Tensor]):
@@ -52,6 +52,7 @@ class MuseGlimmerTransformerBlock(Module[..., Tensor]):
         kv_collection: PagedCacheValues,
         input_row_offsets: Tensor,
     ) -> Tensor:
+        """Runs the block's attention, then its MLP."""
         attn_out = self.self_attn(
             self.input_layernorm(x),
             kv_collection,

@@ -22,6 +22,7 @@
 #include "Mojo/Support/CompilerProfiling.h"
 #include "Mojo/ToolCommon/CLOptions.h"
 #include "Mojo/ToolCommon/CompilationOptions.h"
+#include "Mojo/ToolCommon/FrontendOptions.h"
 #include "Mojo/ToolCommon/InitAllDialects.h"
 #include "Mojo/ToolCommon/KGENPasses.h"
 #include "Support/Driver/DiagnosticFormat.h"
@@ -70,14 +71,11 @@ std::optional<int> tryEmitMojoDoc(int argc, char *argv[], ContextRef &ctxRef) {
   // kgen-translate invocation also passes through this loop.
   SmallVector<StringRef> unknownArguments;
   std::vector<std::string> includePaths;
-  std::vector<std::string> ignoredDeprecations;
+  FrontendOptions frontendOptions;
   bool emitMojoDoc = false;
-  bool diagnoseMissingDocStrings = false;
-  bool warningsAsErrors = false;
   bool hasExplicitWarningPolicy = false;
   bool validateDocStrings = false;
-  std::string stripFilePrefix;
-  std::string outputPath;
+  std::string outputPath = "-";
   DiagnosticFormat diagnosticFormat = DiagnosticFormat::Text;
   for (int i = 1; i < argc; ++i) {
     llvm::StringRef argument(argv[i]);
@@ -94,16 +92,16 @@ std::optional<int> tryEmitMojoDoc(int argc, char *argv[], ContextRef &ctxRef) {
       continue;
     }
     if (argument == "--diagnose-missing-doc-strings") {
-      diagnoseMissingDocStrings = true;
+      frontendOptions.diagnoseMissingDocStrings = true;
       continue;
     }
     if (argument == "-Werror") {
-      warningsAsErrors = true;
+      frontendOptions.warningsAsErrors = true;
       hasExplicitWarningPolicy = true;
       continue;
     }
     if (argument == "-Wno-error") {
-      warningsAsErrors = false;
+      frontendOptions.warningsAsErrors = false;
       hasExplicitWarningPolicy = true;
       continue;
     }
@@ -112,11 +110,11 @@ std::optional<int> tryEmitMojoDoc(int argc, char *argv[], ContextRef &ctxRef) {
       continue;
     }
     if (argument.consume_front("--ignore-deprecated=")) {
-      ignoredDeprecations.push_back(argument.str());
+      frontendOptions.ignoredDeprecations.push_back(argument.str());
       continue;
     }
     if (argument.consume_front("-strip-file-prefix=")) {
-      stripFilePrefix = argument.str();
+      frontendOptions.stripFilePrefix = argument.str();
       continue;
     }
     if (argument.consume_front("--diagnostic-format=")) {
@@ -166,7 +164,15 @@ std::optional<int> tryEmitMojoDoc(int argc, char *argv[], ContextRef &ctxRef) {
   if (validateDocStrings && !hasExplicitWarningPolicy) {
     llvm::errs() << "warning: --validate-doc-strings is deprecated, use "
                     "-Werror instead\n";
-    warningsAsErrors = true;
+    frontendOptions.warningsAsErrors = true;
+  }
+
+  std::string outputError;
+  std::unique_ptr<llvm::ToolOutputFile> output =
+      mlir::openOutputFile(outputPath, &outputError);
+  if (!output) {
+    llvm::errs() << "kgen-translate: error: " << outputError << "\n";
+    return 1;
   }
 
   DialectRegistry registry;
@@ -174,18 +180,12 @@ std::optional<int> tryEmitMojoDoc(int argc, char *argv[], ContextRef &ctxRef) {
   registerContext(registry, ctxRef);
   MLIRContext context(registry);
 
-  DocGenConfig config;
-  config.includePaths = std::move(includePaths);
-  config.ignoredDeprecations = std::move(ignoredDeprecations);
-  config.diagnoseMissingDocStrings = diagnoseMissingDocStrings;
-  config.warningsAsErrors = warningsAsErrors;
-  config.stripFilePrefix = std::move(stripFilePrefix);
-  config.diagnosticFormat = diagnosticFormat;
-  llvm::raw_ostream &output = outputPath.empty() ? llvm::outs() : llvm::nulls();
-  if (!generateMojoDocJSON(*inputPath, context, config, output)) {
+  if (!generateMojoDocJSON(*inputPath, context, frontendOptions, includePaths,
+                           diagnosticFormat, output->os())) {
     llvm::errs() << "kgen-translate: error: could not generate documentation\n";
     return 1;
   }
+  output->keep();
   return 0;
 }
 } // namespace
@@ -266,7 +266,7 @@ int main(int argc, char *argv[]) {
       "import-mojo", "Import 'mojo' from source",
       [&](llvm::SourceMgr &sourceMgr,
           MLIRContext *context) -> OwningOpRef<ModuleOp> {
-        sourceMgr.setIncludeDirs(clOptions.getIncludePaths());
+        sourceMgr.setIncludeDirs(clOptions.includePaths);
 
         // Handle diagnostic format - JSON diagnostics require SourceMgr
         // diagnostics, not MLIR diagnostics.
@@ -292,14 +292,13 @@ int main(int argc, char *argv[]) {
 
         mlir::TimingScope ts;
         CompilationOptions options = clOptions.getCompilationOptions();
-        options.searchPaths = llvm::join(parserSearchPaths, ",");
-        LIT::ParserConfig config(context, options);
-        config.stripFilePrefix = clOptions.stripFilePrefix;
-        config.useMLIRDiagnostics = effectiveUseMLIRDiagnostics;
-        config.diagnoseMissingDocStrings = diagnoseMissingDocStrings;
-        config.maxNotesPerDiagnostic = maxNotesPerDiagnostic;
-        config.disablePrebuiltPackages = !enablePrebuiltPackages;
-        config.useBuiltinModule = !disableBuiltinModule;
+        FrontendOptions frontendOptions = clOptions.getFrontendOptions();
+        frontendOptions.searchPaths = llvm::join(parserSearchPaths, ",");
+        frontendOptions.useMLIRDiagnostics = effectiveUseMLIRDiagnostics;
+        frontendOptions.diagnoseMissingDocStrings = diagnoseMissingDocStrings;
+        frontendOptions.maxNotesPerDiagnostic = maxNotesPerDiagnostic;
+        frontendOptions.disablePrebuiltPackages = !enablePrebuiltPackages;
+        frontendOptions.useBuiltinModule = !disableBuiltinModule;
 
         OwningOpRef<ModuleOp> output;
         if (lspMode) {
@@ -313,9 +312,10 @@ int main(int argc, char *argv[]) {
           // (member lookups, reference resolution, import resolution) that are
           // otherwise skipped when no listener is present.
           MainFileParserListener lspListener(sourceMgr);
-          config.parserListener = &lspListener;
+          frontendOptions.parserListener = &lspListener;
 
-          MojoParserContext parserContext(sourceMgr, config);
+          MojoParserContext parserContext(sourceMgr, context, options,
+                                          frontendOptions);
           LIT::ASTDecl *decl =
               parserContext.parseFileForLSP(sourceMgr.getMainFileID());
           parserContext.ensureSignaturesResolved();
@@ -327,12 +327,22 @@ int main(int argc, char *argv[]) {
           // snapshot the pre-finalization "LSP view" the server sees.
           output = OwningOpRef<ModuleOp>(parserContext.getModule().clone());
         } else {
-          output = LIT::importMojoFile(*ctxOr, sourceMgr, config, ts,
+          output = LIT::importMojoFile(*ctxOr, sourceMgr, context, options,
+                                       frontendOptions, ts,
                                        /*includedFiles=*/nullptr);
         }
 
         if (!output)
           return {};
+
+        context->loadDialect<KGENDialect>();
+        ErrorOr<EnvAttr> env =
+            options.parseDefinesWithDefaults(context, clOptions.defines);
+        if (env.isError()) {
+          llvm::errs() << "error: " << env.getError() << "\n";
+          return {};
+        }
+        (*output)->setAttr(EnvAttr::getEnvAttrName(), *env);
 
         // To make sure the parser did a good thing, we run the
         // verify-parameters pass. We skip this in LSP mode: parseFileForLSP

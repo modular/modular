@@ -386,7 +386,7 @@ def MojoHAL_DeviceContext_getArchName(
     ctx: _DeviceContextBoxPtr,
 ) abi("C") -> _CString[]:
     try:
-        out_name[] = _alloc_cstr(ctx[].arch_name())
+        out_name[] = _alloc_cstr(ctx[].device().get_arch())
         return None
     except e:
         return _err_cstr(String(e))
@@ -398,7 +398,7 @@ def MojoHAL_DeviceContext_isHostUnified(
     ctx: _DeviceContextBoxPtr,
 ) abi("C") -> _CString[]:
     try:
-        out_unified[] = ctx[].is_host_unified()
+        out_unified[] = ctx[].device().is_host_unified()
         return None
     except e:
         return _err_cstr(String(e))
@@ -435,7 +435,7 @@ def MojoHAL_DeviceContext_getName(
     ctx: _DeviceContextBoxPtr,
 ) abi("C") -> _CString[]:
     try:
-        out_name[] = _alloc_cstr(ctx[].name())
+        out_name[] = _alloc_cstr(ctx[].device().get_name())
         return None
     except e:
         return _err_cstr(String(e))
@@ -466,7 +466,7 @@ def MojoHAL_DeviceContext_canAccess(
 ) abi("C") -> Bool:
     # The C++ signature has no error channel; a failed query is "no".
     try:
-        return ctx[].can_access(peer[])
+        return ctx[].device().can_access_peer(peer[].device())
     except:
         return False
 
@@ -495,7 +495,7 @@ def MojoHAL_DeviceContext_getAttribute(
     # `attr` is a CUDA-style `CUdevice_attribute` code (the values of
     # `DeviceAttribute`); the plugin translates it to its native equivalent.
     try:
-        out_value[] = Int32(ctx[].get_attribute(DeviceAttribute(attr)))
+        out_value[] = Int32(ctx[].device().get_attribute(DeviceAttribute(attr)))
         return None
     except e:
         return _err_cstr(String(e))
@@ -574,6 +574,15 @@ def MojoHAL_DeviceContext_reassignWait(
         return None
     except e:
         return _err_cstr(String(e))
+
+
+@export
+def MojoHAL_DeviceContext_sameStream(
+    a: _DeviceContextBoxPtr,
+    b: _DeviceContextBoxPtr,
+) abi("C") -> Bool:
+    # A `selectStream` view shares its context's stream: compare streams.
+    return a[]._stream is b[]._stream
 
 
 # A memmapped file wrapped as a host-visible buffer view; munmaps on release.

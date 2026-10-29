@@ -17,22 +17,23 @@ from __future__ import annotations
 
 import pytest
 from max.dtype import DType
-from max.experimental.sharding import (
+from max.graph import Dim, Shape, ShapeLike
+from max.tensor.sharding import (
     DeviceMapping,
     ShardingError,
     TensorLayout,
 )
-from max.experimental.sharding.per_shard_dim import (
+from max.tensor.sharding.per_shard_dim import (
     global_shape,
     local_dim_at,
     local_shape_at,
     make_per_shard_dim,
 )
-from max.experimental.sharding.placements import (
+from max.tensor.sharding.placements import (
     Placement,
     local_shard_shape_from_global,
 )
-from max.experimental.sharding.rules import (
+from max.tensor.sharding.rules import (
     argsort_rule,
     broadcast_to_rule,
     chunk_rule,
@@ -55,11 +56,10 @@ from max.experimental.sharding.rules import (
     transpose_rule,
     unsqueeze_rule,
 )
-from max.experimental.sharding.rules.shape import (
+from max.tensor.sharding.rules.shape import (
     localize_reshape_target,
     localize_same_shape_target,
 )
-from max.graph import Dim, Shape, ShapeLike
 
 from rules._fixtures import MESH_1D, MESH_2, MESH_2D, M, R, S, pick
 

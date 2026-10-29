@@ -616,8 +616,9 @@ PartiallySpecializedInputParams::from(
   boundParams.resize(paramTypes.size());
 
   evaluator.setEvaluationContext(evaluationContext);
-  evaluator.setInputDepth(1);
-  IndexDepthAdjuster minusOneAdjuster(/*adjustDepth=*/-1);
+  // Every binding is written inside the specialized generator, the scope the
+  // parameter types and the body live in.
+  IndexDepthAdjuster addOneAdjuster(/*adjustDepth=*/1);
 
   auto remapType = [&](Type type) -> Type {
     return evaluator.getReboundType(type);
@@ -635,36 +636,35 @@ PartiallySpecializedInputParams::from(
     // Even if we're skipping a binding site, we still need to remap the decl.
     // TODO: Disallow UnboundAttr for skipping bindings.
     if (::isa<UnboundAttr>(value)) {
-      // Set the binding to a declref of the thing itself - that will keep it
-      // from becoming #kgen.unbound.  This #param.index.ref will have a level
-      // of -1, and we adjust the level of its type by -1 so it balances out
-      // correctly when referenced.
-      auto adjustedParamType = minusOneAdjuster.replace(remappedDeclType);
+      // An unbound parameter stays a parameter of the specialized generator:
+      // bind it to that generator's own variable at its new index.
       auto value = ParamIndexRefAttr::get(
-          /*depth=*/-1, unboundParamTypes.size(), adjustedParamType);
+          /*depth=*/0, unboundParamTypes.size(), remappedDeclType);
       unboundParamTypes.push_back(remappedDeclType);
       evaluator.appendIndexBinding(value);
     } else {
-      // We must remap the value type being provided as well, because it may
-      // be referring to outer-context indexed parameters, whose depth will be
-      // increased when substituted into this signature, per STCHDDDOS.
-      auto valueType = value.getType();
-      remappedDeclType = minusOneAdjuster.replace(remappedDeclType);
-      if (valueType != remappedDeclType &&
-          !isEqualCanon(valueType, remappedDeclType)) {
+      // The value comes from the caller, one scope out, and may refer to
+      // outer-context indexed parameters. Increase depth by one when pushing
+      // into the current scope.
+      auto inScope = addOneAdjuster.replace(value);
+      auto inScopeType = inScope.getType();
+      if (inScopeType != remappedDeclType &&
+          !isEqualCanon(inScopeType, remappedDeclType)) {
         if (!emitErrorFn)
           return {};
+        // Report both types as the caller writes them.
+        IndexDepthAdjuster toCallerScope(/*adjustDepth=*/-1);
         emitErrorFn() << "caller input parameter #" << paramNo << " has type "
-                      << valueType << " but callee expected type "
-                      << remappedDeclType;
+                      << value.getType() << " but callee expected type "
+                      << toCallerScope.replace(remappedDeclType);
         return {};
       }
 
       // Realign sugar if necessary.
-      if (valueType != remappedDeclType)
-        value = ParamOperatorAttr::getRebind(value, remappedDeclType);
+      if (inScopeType != remappedDeclType)
+        inScope = ParamOperatorAttr::getRebind(inScope, remappedDeclType);
 
-      evaluator.appendIndexBinding(value);
+      evaluator.appendIndexBinding(inScope);
       boundParams.set(paramNo);
     }
   }

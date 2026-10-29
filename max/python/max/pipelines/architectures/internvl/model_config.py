@@ -20,8 +20,8 @@ from typing import ClassVar, Literal
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import KVCacheParamInterface
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheParamInterface
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.llama3.model_config import (
     Llama3Config as Qwen2Config,
 )
@@ -39,9 +39,11 @@ from typing_extensions import Self, override
 def _select_llm_config_class(
     hf_llm_cfg: AutoConfig,
 ) -> type[Qwen2Config | Qwen3Config]:
-    """Choose the correct config class based on parameters in the HuggingFace
-    config. Qwen2 is a wrapper around Llama3 and doesn't have its own config, so
-    we alias Llama3Config as Qwen2Config for clarity."""
+    """Chooses the config class from the HuggingFace config's parameters.
+
+    Qwen2 is a wrapper around Llama3 and doesn't have its own config, so we
+    alias Llama3Config as Qwen2Config for clarity.
+    """
     mt = getattr(hf_llm_cfg, "model_type", None)
     archs = getattr(hf_llm_cfg, "architectures", None) or []
     if mt == "qwen3" or "Qwen3ForCausalLM" in archs:
@@ -182,6 +184,10 @@ class InternVLConfig(ArchConfigWithKVCache):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
+        """Returns the language model's KV cache parameters.
+
+        Delegates to the decoder family's ``construct_kv_params``.
+        """
         # Delegate to the selected decoder family for language model parameters.
         llm_hf_cfg = getattr(
             huggingface_config, "llm_config", huggingface_config
@@ -197,6 +203,10 @@ class InternVLConfig(ArchConfigWithKVCache):
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """Returns the language model's layer count.
+
+        Delegates to the decoder family's ``get_num_layers``.
+        """
         # Delegate to the selected decoder family for language model parameters.
         llm_hf_cfg = getattr(
             huggingface_config, "llm_config", huggingface_config
@@ -234,6 +244,9 @@ class InternVLConfig(ArchConfigWithKVCache):
 
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
+            model_config: The model configuration. Defaults to
+                ``pipeline_config.model``.
+            max_seq_len: The maximum sequence length.
 
         Returns:
             An InternVLConfig instance with fields initialized from config.
@@ -263,6 +276,7 @@ class InternVLConfig(ArchConfigWithKVCache):
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
             huggingface_config: HuggingFace model configuration.
+            max_seq_len: The maximum sequence length.
 
         Returns:
             An InternVLConfig instance ready for finalization.

@@ -30,7 +30,11 @@ from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
 
 @pytest.mark.parametrize(
     "target",
-    ["InklingForConditionalGeneration", "Qwen3_5ForConditionalGeneration"],
+    [
+        "Glm5NextForConditionalGeneration",
+        "InklingForConditionalGeneration",
+        "Qwen3_5ForConditionalGeneration",
+    ],
 )
 def test_mtp_over_a_recurrent_target_disables_prefix_caching(
     target: str,

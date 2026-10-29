@@ -48,8 +48,8 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from typing import Any, Protocol, runtime_checkable
 
-from max.experimental.nn import Module
 from max.graph.weights import WeightData, Weights
+from max.nn import Module
 
 
 @runtime_checkable
@@ -297,7 +297,7 @@ def _check_no_unwrapped_module_containers(
     """Raises if any list/tuple/dict attribute holds Modules.
 
     Homogeneous collections of sub-Modules must be wrapped in
-    :class:`max.experimental.nn.ModuleList` so the walker visits them
+    :class:`max.nn.ModuleList` so the walker visits them
     under stringified-index dotted paths. A raw container of Modules
     bypasses :meth:`Module.descendants` and would silently drop its
     adapters.
@@ -314,7 +314,7 @@ def _check_no_unwrapped_module_containers(
                         f"``{type(value).__name__}`` attribute are not "
                         "visited by ``adapt_module_loader`` and their "
                         "adapters would be silently skipped. Wrap them "
-                        "in ``max.experimental.nn.ModuleList`` instead."
+                        "in ``max.nn.ModuleList`` instead."
                     )
         elif isinstance(value, dict):
             for key, item in value.items():
@@ -329,7 +329,7 @@ def _check_no_unwrapped_module_containers(
                         "``dict`` attribute are not visited by "
                         "``adapt_module_loader`` and their adapters "
                         "would be silently skipped. Wrap them in "
-                        "``max.experimental.nn.ModuleList`` (keyed by "
+                        "``max.nn.ModuleList`` (keyed by "
                         "stringified index) instead."
                     )
 
@@ -401,8 +401,8 @@ def adapt_module_loader(
 
     The walk uses :attr:`Module.descendants`. Homogeneous collections
     of sub-Modules must be wrapped in
-    :class:`max.experimental.nn.ModuleList` (or a subclass such as
-    :class:`~max.experimental.nn.Sequential`) so they are visited with
+    :class:`max.nn.ModuleList` (or a subclass such as
+    :class:`~max.nn.Sequential`) so they are visited with
     stringified-index names. A raw ``list``, ``tuple``, or ``dict``
     attribute whose elements are ``Module`` instances raises
     ``ValueError`` to surface the silent skip eagerly.

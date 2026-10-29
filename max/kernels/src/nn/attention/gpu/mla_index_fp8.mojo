@@ -37,6 +37,11 @@ from max.gpu import (
     thread_idx,
 )
 import max.gpu.primitives.warp as warp
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 
 from kv_cache.paged_sparse_kv_index_remap import NoRemap, SparseIndexRemap
@@ -294,14 +299,16 @@ def _pin_kept_block_kernel[
     becomes `+inf` so the selection always keeps it. One thread per row.
     """
     var row = Int(block_idx.x) * _KEEP_PASS_THREADS + Int(thread_idx.x)
-    if row >= Int(rows):
-        return
-    var n = Int(num_blocks)
-    # Floor division: a token before the first key pins nothing.
-    var pinned = ((Int(positions[row]) + 1) // Int(ratio) - 1) // block_size
-    live[row] = Int32(clamp(pinned + 1, 0, n))
-    if pinned >= 0 and pinned < n:
-        block_max[row * n + pinned] = inf[DType.float32]()
+
+    with PDL():
+        if row >= Int(rows):
+            return
+        var n = Int(num_blocks)
+        # Floor division: a token before the first key pins nothing.
+        var pinned = ((Int(positions[row]) + 1) // Int(ratio) - 1) // block_size
+        live[row] = Int32(clamp(pinned + 1, 0, n))
+        if pinned >= 0 and pinned < n:
+            block_max[row * n + pinned] = inf[DType.float32]()
 
 
 def _drop_dead_kept_blocks_kernel(
@@ -316,14 +323,18 @@ def _drop_dead_kept_blocks_kernel(
     One thread per id slot.
     """
     var i = Int(block_idx.x) * _KEEP_PASS_THREADS + Int(thread_idx.x)
-    if i >= Int(slots):
-        return
-    var b = Int(ids[i])
-    if b < 0:
-        return
-    var row = i // Int(top_k)
-    if not (block_max[row * Int(num_blocks) + b] > neg_inf[DType.float32]()):
-        ids[i] = -1
+
+    with PDL():
+        if i >= Int(slots):
+            return
+        var b = Int(ids[i])
+        if b < 0:
+            return
+        var row = i // Int(top_k)
+        if not (
+            block_max[row * Int(num_blocks) + b] > neg_inf[DType.float32]()
+        ):
+            ids[i] = -1
 
 
 # Threads per row expanding kept block ids into flags.
@@ -343,10 +354,12 @@ def _expand_kept_blocks_kernel(
     var row = Int(block_idx.x)
     var k = Int(top_k)
     var n = Int(num_blocks)
-    for j in range(Int(thread_idx.x), k, _EXPAND_THREADS):
-        var b = Int(ids[row * k + j])
-        if b >= 0 and b < n:
-            keep[row * n + b] = 1
+
+    with PDL():
+        for j in range(Int(thread_idx.x), k, _EXPAND_THREADS):
+            var b = Int(ids[row * k + j])
+            if b >= 0 and b < n:
+                keep[row * n + b] = 1
 
 
 struct BlockTopKScoreHook[block_size: Int](IndexerScoreHook):
@@ -485,6 +498,7 @@ struct BlockTopKScoreHook[block_size: Int](IndexerScoreHook):
             self.ratio,
             grid_dim=ceildiv(rows, _KEEP_PASS_THREADS),
             block_dim=_KEEP_PASS_THREADS,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
         persistent_topk_block_split(
             ctx,
@@ -503,6 +517,7 @@ struct BlockTopKScoreHook[block_size: Int](IndexerScoreHook):
             Int32(rows * k),
             grid_dim=ceildiv(rows * k, _KEEP_PASS_THREADS),
             block_dim=_KEEP_PASS_THREADS,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
     @inline(.always)
@@ -643,6 +658,7 @@ struct BlockTopKMaskScoreHook[block_size: Int](IndexerScoreHook):
             self.top_k,
             grid_dim=rows,
             block_dim=_EXPAND_THREADS,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
         return self
 
@@ -1937,6 +1953,7 @@ def _mla_indexer_paged_impl[
                 func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                     UInt32(smem_available)
                 ),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
         # The bounded top-k writes `output_indices` directly: a row's bound is

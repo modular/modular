@@ -27,10 +27,10 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
-from max.nn.layer import LayerList, Module
-from max.nn.linear import Linear
-from max.nn.norm import LayerNorm, RMSNorm
-from max.nn.transformer import forward_sequential_layers
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import LayerNorm, RMSNorm
+from max.nn.legacy.transformer import forward_sequential_layers
 
 from ..layers.clamped_swiglu import clamped_swiglu
 from ..model_config import Glm5NextVisionConfig
@@ -374,7 +374,8 @@ class Glm5NextVisionTransformer(Module):
         llm_dtype: DType | None = None,
         use_subgraphs: bool = True,
     ) -> None:
-        """
+        """Initializes the vision tower.
+
         Args:
             config: The tower's shapes and dtypes.
             device: Device every weight and activation lives on.

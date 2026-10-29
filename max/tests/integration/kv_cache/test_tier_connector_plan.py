@@ -27,7 +27,7 @@ from collections.abc import Mapping, Sequence
 from types import SimpleNamespace
 
 import pytest
-from max.nn.kv_cache import KVCacheGroupId
+from max.nn.legacy.kv_cache import KVCacheGroupId
 from max.pipelines.kv_cache.connectors.tier_connector import (
     TierConnector,
     _leaf_recency,
@@ -178,6 +178,16 @@ def test_the_flat_answer_is_cut_back_into_one_mask_per_leaf() -> None:
         "a": [True, False],
         "b": [False, True],
     }
+
+
+def test_one_lookup_prices_every_replica() -> None:
+    hashes = [_h(1), _h(2)]
+    rust = _FakeRust([(0, _h(1))])
+
+    answers = _connector({"a": FULL}, rust).probe(hashes, range(4))
+
+    assert answers == [{"a": [True, False]}] * 4
+    assert rust.calls == ["reclaim", "lookup"]
 
 
 def test_an_empty_request_asks_the_tiers_for_nothing() -> None:

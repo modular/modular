@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 from max.dtype import DType
-from max.nn.comm.ep.ep_config import (
+from max.nn.legacy.comm.ep.ep_config import (
     calculate_ep_max_tokens_per_rank,
     estimate_ep_memory_usage,
 )
@@ -44,6 +44,7 @@ class HyV3MemoryPlanner(PagedMemoryPlanner):
     def estimate_activation_memory(
         self, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
+        """Estimates the activation memory one forward pass needs."""
         encoding = _select_quantization_encoding(
             pipeline_config.model, HYV3Config.DEFAULT_ENCODING
         )

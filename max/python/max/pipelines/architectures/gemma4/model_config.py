@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Gemma 4 configuration."""
 
 from __future__ import annotations
 
@@ -19,8 +20,8 @@ from typing import ClassVar
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import MultiKVCacheParams
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.kv_cache import MultiKVCacheParams
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.gemma3.model_config import (
     _HIDDEN_ACTIVATION_MAP,
     Gemma3Config,
@@ -195,6 +196,7 @@ class Gemma4TextConfig(Gemma3Config):
 
     @property  # type: ignore[misc]
     def rope_theta(self) -> float:
+        """Unsupported: the text config carries a global and a local theta."""
         raise ValueError(
             "rope_theta is not supported for Gemma4TextConfig. Use"
             " global_rope_theta or sliding_window_rope_theta instead."
@@ -206,6 +208,7 @@ class Gemma4TextConfig(Gemma3Config):
 
     @property  # type: ignore[misc, override]
     def rope_scaling(self) -> ProportionalScalingParams | None:
+        """Unsupported: the text config carries a global and a local scaling."""
         raise ValueError(
             "rope_scaling is not supported for Gemma4TextConfig. Use"
             " global_rope_scaling or sliding_window_rope_scaling instead."
@@ -216,6 +219,7 @@ class Gemma4TextConfig(Gemma3Config):
         pass
 
     def get_max_seq_len(self) -> int:
+        """The maximum sequence length the config allows."""
         return self.max_seq_len
 
     @classmethod
@@ -224,6 +228,7 @@ class Gemma4TextConfig(Gemma3Config):
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """The checkpoint's ``max_position_embeddings``."""
         # Gemma3Config (parent) is permissive; Gemma4 text uses upper-bounded
         # max_length semantics instead.
         return ArchConfigWithStoredKVParams.calculate_max_seq_len(
@@ -287,11 +292,12 @@ class Gemma4TextConfig(Gemma3Config):
         *,
         max_seq_len: int,
     ) -> Self:
-        """Initialize Gemma4TextConfig from pipeline and HuggingFace configs.
+        """Builds the text config from the pipeline and HuggingFace configs.
 
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
             huggingface_config: HuggingFace text model configuration.
+            max_seq_len: The maximum sequence length the config allows.
 
         Returns:
             An initialized Gemma4TextConfig instance.
@@ -593,8 +599,7 @@ class Gemma4ForConditionalGenerationConfig(
     def construct_partition_spec(
         cls, huggingface_config: AutoConfig
     ) -> PartitionSpec:
-        """Returns where the decoder, nested under ``text_config``, may be
-        cut.
+        """Returns where the decoder, nested under ``text_config``, may be cut.
 
         Every stage needs both a sliding and a full attention layer, which
         depends on both of its ends rather than on one cut, so building a
@@ -657,6 +662,7 @@ class Gemma4ForConditionalGenerationConfig(
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
             model_config: Optional model config override.
+            max_seq_len: The maximum sequence length the config allows.
 
         Returns:
             An initialized config instance.
@@ -689,6 +695,7 @@ class Gemma4ForConditionalGenerationConfig(
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
             huggingface_config: Top-level HuggingFace model configuration.
+            max_seq_len: The maximum sequence length the config allows.
 
         Returns:
             A config instance ready for finalization.
@@ -791,7 +798,6 @@ class Gemma4ForConditionalGenerationConfig(
             state_dict: Model weights dictionary.
             return_logits: Return logits configuration.
         """
-
         hf_text_config = getattr(huggingface_config, "text_config", None)
         if hf_text_config is None:
             raise ValueError("text_config not found in huggingface_config")

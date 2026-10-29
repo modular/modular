@@ -1000,7 +1000,7 @@ kgen.generator @async_function() async {
 
 // CHECK-LABEL: kgen.func @call_it
 kgen.generator @call_it() {
-  // CHECK: co.invoke[() async -> (): @async_function]
+  // CHECK: co.invoke[() async -> (): #kgen.gen<#kgen.func.symbol<@async_function>>]
   kgen.param.declare fn: () async -> () = <@async_function>
   co.invoke[() async -> (): fn]()
   hlcf.return
@@ -1015,7 +1015,7 @@ kgen.generator @async_fn() async {
 
 // CHECK-LABEL: kgen.func export @nonparametric_async_call
 kgen.generator export @nonparametric_async_call() {
-  // CHECK-NEXT: co.invoke[() async -> (): @async_fn]
+  // CHECK-NEXT: co.invoke[() async -> (): #kgen.gen<#kgen.func.symbol<@async_fn>>]
   co.invoke[() async -> (): @async_fn]()
   hlcf.return
 }
@@ -1063,10 +1063,10 @@ kgen.generator @callee<a>(%arg0: index) {
 }
 
 kgen.generator @entry(%arg0: index) {
-  // CHECK: create_func_ptr[(index) -> (): @"callee,a=1"]
+  // CHECK: create_func_ptr[(index) -> (): #kgen.gen<#kgen.func.symbol<@"callee,a=1">>]
   kgen.create_func_ptr[(index) -> (): @callee<1>]()
   kgen.param.declare fn: (index) -> () = <@callee<2>>
-  // CHECK: create_func_ptr[(index) -> (): @"callee,a=2"]
+  // CHECK: create_func_ptr[(index) -> (): #kgen.gen<#kgen.func.symbol<@"callee,a=2">>]
   kgen.create_func_ptr[(index) -> (): fn]()
   hlcf.return
 }
@@ -1119,7 +1119,7 @@ kgen.generator @foo_k<N, M>() -> !kgen.scalar<index> {
 // CHECK-LABEL: kgen.func @"foo,N=5"(%arg0: !kgen.scalar<index>) {
 kgen.generator @foo<N>(%arg0: !kgen.scalar<index>) {
   kgen.param.declare k: <index>() -> !kgen.scalar<index> = <@foo_k<N, ?>>
-  // CHECK: kgen.create_func_ptr[() -> !kgen.scalar<index>: @"foo_k,N=5,M=3"]()
+  // CHECK: kgen.create_func_ptr[() -> !kgen.scalar<index>: #kgen.gen<#kgen.func.symbol<@"foo_k,N=5,M=3">>]()
   %1 = kgen.create_func_ptr[() -> !kgen.scalar<index>: bind_params(:<index>() -> !kgen.scalar<index> k, 3)]()
   hlcf.return
 }
@@ -1144,7 +1144,7 @@ kgen.generator @bat(%arg0: index) -> index {
 
 // CHECK-LABEL: kgen.func @bat_binder
 kgen.generator @bat_binder(%arg0: index) {
-  // CHECK: kgen.create_func_ptr[(index) -> index: @bat]()
+  // CHECK: kgen.create_func_ptr[(index) -> index: #kgen.gen<#kgen.func.symbol<@bat>>]()
 	%2 = kgen.create_func_ptr[(index) -> index: h]()
 	kgen.param.declare h: (index) -> index = <@bat>
 	hlcf.return
@@ -1165,7 +1165,7 @@ kgen.generator @count_ops(%arg0: !kgen.scalar<bool>) -> index {
 
 kgen.generator @cost_of<fn: (!kgen.scalar<bool>) -> index>() -> index {
   %0:8 = kgen.cost_of[(!kgen.scalar<bool>) -> index: fn]
-  // CHECK-MAIN: %loads, %stores, %additions, %comparisons, %divisions, %multiplications, %multiplyAdds, %other = kgen.cost_of[(!kgen.scalar<bool>) -> index: @count_ops]
+  // CHECK-MAIN: %loads, %stores, %additions, %comparisons, %divisions, %multiplications, %multiplyAdds, %other = kgen.cost_of[(!kgen.scalar<bool>) -> index: #kgen.gen<#kgen.func.symbol<@count_ops>>]
   hlcf.return %0#7  : index
 }
 
@@ -1185,13 +1185,13 @@ kgen.generator @pop_add(%arg1: !kgen.scalar<si32>) -> !kgen.scalar<si32> {
 
 kgen.generator
 @cost_of_pop_add<fn: (!kgen.scalar<si32>) -> !kgen.scalar<si32>>() -> index {
-  // CHECK-MAIN: %loads, %stores, %additions, %comparisons, %divisions, %multiplications, %multiplyAdds, %other = kgen.cost_of[(!kgen.scalar<si32>) -> !kgen.scalar<si32>: @pop_add]
+  // CHECK-MAIN: %loads, %stores, %additions, %comparisons, %divisions, %multiplications, %multiplyAdds, %other = kgen.cost_of[(!kgen.scalar<si32>) -> !kgen.scalar<si32>: #kgen.gen<#kgen.func.symbol<@pop_add>>]
   %0:8 = kgen.cost_of[(!kgen.scalar<si32>) -> !kgen.scalar<si32>: fn]
   hlcf.return %0#2  : index
 }
 
 kgen.generator @index_add(%arg1: index) -> index {
-  // CHECK-MAIN: %loads, %stores, %additions, %comparisons, %divisions, %multiplications, %multiplyAdds, %other = kgen.cost_of[(index) -> index: @index_add]
+  // CHECK-MAIN: %loads, %stores, %additions, %comparisons, %divisions, %multiplications, %multiplyAdds, %other = kgen.cost_of[(index) -> index: #kgen.gen<#kgen.func.symbol<@index_add>>]
   %0 = index.add %arg1, %arg1
   hlcf.return %0 : index
 }

@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Implements the DeepSeek-V4-Flash model.
 
 Module and weight names mirror the checkpoint's own layout (which follows the
@@ -39,7 +38,7 @@ once per layer with that layer's weights and its place in the cache leaves
 (:class:`~.layers.LayerIndex`). Only the cached forward does; the cache-less
 gates' path stays inline.
 
-The block's two mHC sites are :class:`~max.nn.HyperConnection` submodules
+The block's two mHC sites are :class:`~max.nn.legacy.HyperConnection` submodules
 (``hc_attn.hc_fn``), which the checkpoint stores flat on the block
 (``hc_attn_fn``); the weight adapter renames them. The head's contraction has
 no Sinkhorn step and keeps the checkpoint's flat ``hc_head_*`` names.
@@ -65,13 +64,13 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
-from max.nn.embedding import Embedding
-from max.nn.hyper_connection import HyperConnection
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.layer import LayerList, Module
-from max.nn.linear import Linear
-from max.nn.norm.rms_norm import RMSNorm
-from max.nn.transformer import (
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.hyper_connection import HyperConnection
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm.rms_norm import RMSNorm
+from max.nn.legacy.transformer import (
     DecoderOutputs,
     ReturnHiddenStates,
     forward_sequential_layers,
@@ -792,8 +791,7 @@ class DeepseekV4(Module):
         custom_extensions: Iterable[Path] = (),
         is_device_graph: bool = False,
     ) -> Graph:
-        """Traces the serving graph, whose inputs are :meth:`input_tree`'s
-        leaves.
+        """Traces the serving graph, whose inputs are :meth:`input_tree`'s leaves.
 
         The graph runs :meth:`serve` on a single device and
         :meth:`serve_tensor_parallel` over :meth:`tensor_parallel_replicas`
@@ -884,7 +882,7 @@ class DeepseekV4(Module):
             cache: The paged leaves.
 
         Returns:
-            What :func:`~max.nn.transformer.logits_postprocess` returns for
+            What :func:`~max.nn.legacy.transformer.logits_postprocess` returns for
             ``config.return_logits`` / ``config.return_hidden_states``.
             ``SELECTED_LAYERS`` returns the trunk state DSpark reads, the one
             capture of the layers in ``dspark_target_layer_ids``.
@@ -1264,9 +1262,11 @@ class DeepseekV4DSpark(Module):
         head: Linear,
         sampler: Callable[[TensorValue, int], TensorValue] | None = None,
     ) -> tuple[TensorValue, TensorValue]:
-        """``[b, K]`` draft ids and ``[b, K, vocab]`` logits off
-        :meth:`block`'s output (:meth:`DSparkBlock.forward_head`), through
-        the trunk's ``head``."""
+        """Returns draft ids and logits through the trunk's ``head``.
+
+        The ``[b, K]`` ids and ``[b, K, vocab]`` logits come off :meth:`block`'s
+        output (:meth:`DSparkBlock.forward_head`).
+        """
         last = self.mtp[-1]
         assert isinstance(last, DSparkBlock)
         return last.forward_head(x, anchor_ids, head, sampler)
@@ -1278,5 +1278,6 @@ class DeepseekV4DSpark(Module):
         head: Linear,
         sampler: Callable[[TensorValue, int], TensorValue] | None = None,
     ) -> tuple[TensorValue, TensorValue]:
+        """Runs the draft head over ``x`` and returns its logits."""
         # Alias for head to satisfy the Module ABC.
         return self.head(x, anchor_ids, head, sampler)

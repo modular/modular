@@ -28,24 +28,24 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from max import functional as F
 from max.driver import CPU, Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Linear, Module
-from max.experimental.nn.common_layers import quant_ops
-from max.experimental.nn.common_layers.functional_kernels import (
+from max.nn import Linear, Module
+from max.nn.common_layers import quant_ops
+from max.nn.common_layers.functional_kernels import (
     flare_mla_prefill_plan,
     mla_decode_graph,
     mla_prefill_decode_graph,
 )
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.nn.common_layers.quant_linear import QuantizedLinear
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.sharding import DeviceMapping, DeviceMesh, NamedMapping
-from max.experimental.tensor import Tensor
-from max.nn.attention import MHAMaskVariant
-from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.quant_linear import QuantizedLinear
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.norm import RMSNorm
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, DeviceMesh, NamedMapping
 from typing_extensions import Self
 
 from ..model_config import HYV4Config
@@ -57,8 +57,11 @@ _EPS = 1e-6
 
 
 def _neox_to_interleaved(x: Tensor, rope_dim: int) -> Tensor:
-    """Reorders the trailing ``rope_dim`` columns ``[a.., b..]`` to
-    ``[a0, b0, a1, b1, ..]``, so an interleaved rotation applies NeoX's."""
+    """Reorders the trailing ``rope_dim`` columns to interleaved order.
+
+    ``[a.., b..]`` becomes ``[a0, b0, a1, b1, ..]``, so an interleaved rotation
+    applies NeoX's layout.
+    """
     nope, rope = F.split(x, [int(x.shape[-1]) - rope_dim, rope_dim], axis=-1)
     lead = list(rope.shape[:-1])
     rope = rope.reshape([*lead, 2, rope_dim // 2]).transpose(-1, -2)
@@ -162,7 +165,6 @@ class HYV4Attention(Module[..., tuple[Tensor, Tensor]]):
         the indexer stay replicated, since every device needs the full
         latent, its own cache copy and the shared top-k.
         """
-
         mesh = self.kv_b_proj.mesh
         rows = NamedMapping(mesh, (TP, None))
         self.q_b_proj = self.q_b_proj.to(rows)

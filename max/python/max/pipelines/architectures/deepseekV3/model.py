@@ -23,9 +23,10 @@ from max import tree
 from max.driver import Buffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.kv_cache import KVCacheParams
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.layer import Module
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     GraphRole,
@@ -73,6 +74,7 @@ class DeepseekV3Inputs(DeepseekV2Inputs):
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
+        """The buffers the model takes as graph inputs."""
         return (
             self.tokens,
             self.input_row_offsets,
@@ -101,7 +103,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
     @classmethod
     def build_module(
         cls, context: ModelLoadContext
-    ) -> tuple[DeepseekV3, DeepseekV3Config]:
+    ) -> tuple[Module, DeepseekV3Config]:
         """Builds the DeepseekV3 module over the config's devices.
 
         A caller that sized the cache passes its KV params, and one that
@@ -378,6 +380,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         self,
         model_inputs: ModelInputs,
     ) -> ModelOutputs:
+        """Runs the model on one batch of inputs."""
         assert isinstance(model_inputs, DeepseekV3Inputs)
 
         model_outputs = self.model.execute(*model_inputs.buffers)

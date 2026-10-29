@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # DOC: develop/tensors.mdx
 
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 one_element = Tensor([42])  # Rank 1
 vector = Tensor([1, 2, 3])  # Rank 1

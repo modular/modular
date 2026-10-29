@@ -41,28 +41,28 @@ from max.graph import Module as GraphModule
 from max.graph.ops.allgather import allgather
 from max.graph.ops.resize import InterpolationMode
 from max.graph.weight import _compute_shard_range
-from max.nn.attention import (
+from max.nn.legacy.attention import (
     TensorParallelAttentionWithRope,
     num_heads_for_device,
 )
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.comm import Allreduce
-from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kernels import flash_attention_gpu
-from max.nn.kv_cache import (
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.comm import Allreduce
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.kernels import flash_attention_gpu
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
 )
-from max.nn.layer import LayerList, Module, Shardable
-from max.nn.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.norm import LayerNorm, RMSNorm
-from max.nn.rotary_embedding import DynamicRotaryEmbedding
-from max.nn.transformer import DecoderOutputs
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.layer import LayerList, Module, Shardable
+from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.legacy.norm import LayerNorm, RMSNorm
+from max.nn.legacy.rotary_embedding import DynamicRotaryEmbedding
+from max.nn.legacy.transformer import DecoderOutputs
+from max.nn.legacy.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
 )
-from max.nn.transformer.transformer import forward_sequential_layers
+from max.nn.legacy.transformer.transformer import forward_sequential_layers
 from max.pipelines.architectures.llama3.model_config import (
     Llama3Config as Qwen2Config,
 )
@@ -382,8 +382,9 @@ class InternVLLanguageModel(DistributedLogitsPostprocessMixin, Module):
         custom_extensions: Iterable[Path] = (),
         is_device_graph: bool = False,
     ) -> Graph:
-        """Traces the language graph, whose inputs are :meth:`input_tree`'s
-        leaves.
+        """Traces the language graph.
+
+        Its inputs are the leaves of :meth:`input_tree`.
 
         Args:
             *input_types: The graph's input types, the leaves of
@@ -455,11 +456,13 @@ class InternVLLanguageModel(DistributedLogitsPostprocessMixin, Module):
         Args:
             tokens: Input token IDs to process.
             signal_buffers: Communication buffers for distributed execution.
-            kv_cache_inputs_per_dev: KV cache inputs for each device.
+            kv_collections: Per-device paged KV cache inputs.
             return_n_logits: Number of logits to return (unused, always returns last).
             input_row_offsets: Offsets for flattened input sequences.
             image_embeddings: Image embeddings to merge into text embeddings,
                 one per device. Can be empty tensors for text-only inputs.
+            image_token_indices: Per-device positions where the image
+                embeddings scatter into the token embeddings.
 
         Returns:
             A tuple containing the output logits for the last token positions.
@@ -575,8 +578,9 @@ class InternVisionEmbeddings(Module, Shardable):
 
     @sharding_strategy.setter
     def sharding_strategy(self, strategy: ShardingStrategy) -> None:
-        """Set the sharding strategy for the patch, class, and position
-        embeddings.
+        """Set the sharding strategy of the vision embeddings.
+
+        Applies it to the patch, class, and position embeddings alike.
 
         Args:
             strategy: The strategy describing the embeddings' sharding.
@@ -762,6 +766,7 @@ class InternVLVisionMLP(Module, Shardable):
         device: DeviceRef,
         has_bias: bool = True,
     ) -> None:
+        """Builds the expanding and contracting linear projections."""
         super().__init__()
         self.fc1 = Linear(
             in_dim=hidden_size,
@@ -838,7 +843,7 @@ class InternVLVisionMLP(Module, Shardable):
         return shards
 
     def __call__(self, x: TensorValue) -> TensorValue:
-        """Simple forward: fc1 -> GELU -> fc2"""
+        """Simple forward: fc1 -> GELU -> fc2."""
         x = self.fc1(x)
         x = ops.gelu(x)
         x = self.fc2(x)
@@ -1162,7 +1167,9 @@ class InternVisionEncoderLayer(Module):
         """Compute flash attention with proper reshaping.
 
         Args:
-            q, k, v: Query, key, value tensors
+            q: Query tensor.
+            k: Key tensor.
+            v: Value tensor.
             device_heads: Number of heads for this device
             head_dim: Dimension per head
 
@@ -1494,16 +1501,15 @@ class InternVLVisionModel(Module):
         return x
 
     def input_types(self) -> tuple[Type[Any], ...]:
-        """Returns the vision graph's input types: the leaves of
-        :meth:`input_tree`."""
+        """Returns the vision graph's input types: the leaves of :meth:`input_tree`."""
         return tuple(tree.leaves(self.input_tree()))
 
     def input_tree(self) -> OrderedDict[str, object]:
-        """Names the vision graph's inputs, keyed by :meth:`__call__`'s
-        arguments.
+        """Names the vision graph's inputs.
 
-        Each device takes the pre-extracted patches, in bfloat16 to match the
-        tokenizer's output, then each device's allreduce signal buffer.
+        They are keyed by :meth:`__call__`'s arguments. Each device takes the
+        pre-extracted patches, in bfloat16 to match the tokenizer's output,
+        then each device's allreduce signal buffer.
 
         Returns:
             The input types under ``pixel_values`` and ``signal_buffers``, in

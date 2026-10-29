@@ -31,6 +31,7 @@ from .device_context import (
 )
 
 from . import Dim, LaunchAttribute
+from .._launch_args import DenseArgs
 
 
 @doc_hidden
@@ -243,15 +244,9 @@ def call_with_pack_checked_metal[
     comptime dense_args_origin = origin_of(
         host_args, ImmOrigin(translated_args_ptr.origin)
     )
-    var dense_args_addrs = Array[OpaquePointer[dense_args_origin], num_slots](
-        uninitialized=True
-    )
-    var sizes_inline = Array[UInt64, num_slots](fill=0)
+    var dense_args = DenseArgs[dense_args_origin, num_slots]()
     var is_dev_inline = Array[Bool, num_slots](fill=False)
 
-    var dense_args_sizes = sizes_inline.unsafe_ptr().unsafe_origin_cast[
-        MutUntrackedOrigin
-    ]()
     var dense_args_is_device_ptr = (
         is_dev_inline.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
     )
@@ -291,10 +286,10 @@ def call_with_pack_checked_metal[
             actual_arg_type.device_type,
             target=device_type_encoder.target(),
         ]()
-        dense_args_addrs.unsafe_get(
+        dense_args.addrs.unsafe_get(
             translated_arg_idx
         ) = first_word_addr.as_imm()._as_origin_superset[dense_args_origin]()
-        dense_args_sizes[unsafe_offset=translated_arg_idx] = UInt64(arg_size)
+        dense_args.sizes.unsafe_get(translated_arg_idx) = UInt64(arg_size)
         dense_args_is_device_ptr[unsafe_offset=translated_arg_idx] = (
             len(device_type_encoder._buffers) - buffers_before == 1
             and arg_size == size_of[OpaquePointer[MutAnyOrigin]]()
@@ -308,15 +303,15 @@ def call_with_pack_checked_metal[
             continue
 
         var arg_addr = Pointer(to=host_args[i]).unsafe_bitcast[NoneType]()
-        dense_args_addrs.unsafe_get(
+        dense_args.addrs.unsafe_get(
             translated_arg_idx
         ) = arg_addr._as_origin_superset[dense_args_origin]()
-        dense_args_sizes[unsafe_offset=translated_arg_idx] = UInt64(arg_size)
+        dense_args.sizes.unsafe_get(translated_arg_idx) = UInt64(arg_size)
         translated_arg_idx += 1
 
     var metal_args = MetalEnqueueFunctionArgs(
-        dense_args_addrs.unsafe_ptr(),
-        dense_args_sizes,
+        dense_args.addrs.unsafe_ptr(),
+        dense_args.sizes.unsafe_ptr(),
         dense_args_is_device_ptr,
         Optional[
             Pointer[

@@ -8,11 +8,13 @@ modular_cc_binary(
         "*.cpp",
         "*.h",
     ]),
+    data = [
+        "//Mojo:CompilerRT",
+    ],
     deps = [
         "//AsyncRT:RuntimeGlobals",
         "//Init",
         "//Mojo:Compiler",
-        "//Mojo:CompilerRT",
         "//Mojo:ExecutionEngine",
         "//Mojo:HLCFDialect",
         "//Mojo:KGENDialect",

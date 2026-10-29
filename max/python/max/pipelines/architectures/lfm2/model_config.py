@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any, ClassVar, Literal
 
 from max.graph.weights import WeightData
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from transformers import AutoConfig
 
@@ -97,6 +97,7 @@ class LFM2Config(Llama3Config):
         *,
         max_seq_len: int,
     ) -> LFM2Config:
+        """Builds the config from the pipeline and HF configs."""
         cls._ensure_optional_rope_fields(huggingface_config)
         cfg = super().initialize_from_config(
             pipeline_config,
@@ -127,6 +128,7 @@ class LFM2Config(Llama3Config):
         norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm",
         attention_bias: bool = False,
     ) -> None:
+        """Delegates to the parent, mapping LFM2's ``norm_eps``."""
         # LFM2 stores its norm epsilon under ``norm_eps``, not ``rms_norm_eps``.
         # Llama3Config.finalize reads ``huggingface_config.rms_norm_eps`` when
         # norm_method="rms_norm", which would raise AttributeError on LFM2

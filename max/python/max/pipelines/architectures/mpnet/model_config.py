@@ -65,6 +65,9 @@ class MPNetConfig(ArchConfigWithBoundedMaxSeqLen, ArchConfig):
 
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
+            model_config: The MAX Engine model configuration; defaults to
+                ``pipeline_config.model``.
+            max_seq_len: The sequence length the cache was sized for.
 
         Returns:
             An initialized MPNetConfig instance.

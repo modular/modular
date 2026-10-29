@@ -17,7 +17,7 @@ modular_py_library(
     # engine and nn depend on graph.
     docstring_example_deps = [
         "//max/python/max/engine",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
     ],
     # Each example compiles its own graph; sharded to stay under CI's 800s
     # test-timeout clamp.

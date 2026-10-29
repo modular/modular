@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# DOC: Mojo/docs/site/reference/cheat-sheets/conversions.mdx
 # test_conversions.mojo
 # Tests for the Mojo "conversions" cheat-sheet card.
 #

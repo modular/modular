@@ -45,12 +45,13 @@ from max._xgrammar.structural_tag import (
     AnyTextFormat,
     ConstStringFormat,
     Format,
-    OrFormat,
+    JSONSchemaFormat,
     SequenceFormat,
     StarFormat,
     StructuralTag,
     TagFormat,
     TagsWithSeparatorFormat,
+    TokenFormat,
     TriggeredTagsFormat,
 )
 from max.pipelines.context.exceptions import InputError
@@ -137,18 +138,6 @@ _LITERAL_TYPES = {
 
 _Schema = Mapping[str, Any] | bool
 
-_FREE_TEXT_KEYS = {"type", "title", "description", "default", "examples"}
-# What the grammar enforces of a strict tool's schema: its keys, required or
-# not; everything else must be an annotation.
-_FRAMED_KEYS = _FREE_TEXT_KEYS | {
-    "properties",
-    "required",
-    "additionalProperties",
-    "$defs",
-    "definitions",
-    "$schema",
-}
-
 
 def _resolve_ref(ref: str, root: Mapping[str, Any]) -> _Schema | None:
     """Follows a local ``#/...`` pointer such as ``#/$defs/Item``."""
@@ -210,9 +199,12 @@ def _admits(
     root: Mapping[str, Any],
     seen: frozenset[str] = frozenset(),
 ) -> bool:
-    """Whether ``arg_schema`` admits ``value``, checking its type and its
-    ``enum``/``const`` literals, through ``$ref`` and each ``anyOf``/``oneOf``
-    branch, in the order :func:`_schema_types` reads them."""
+    """Whether ``arg_schema`` admits ``value``.
+
+    The check covers ``value``'s type and its ``enum``/``const`` literals, and
+    follows ``$ref`` and each ``anyOf``/``oneOf`` branch, in the order
+    :func:`_schema_types` reads them.
+    """
     if not isinstance(arg_schema, Mapping):
         return arg_schema
     ref = arg_schema.get("$ref")
@@ -278,8 +270,7 @@ def _parse_value(
 
 
 def _property(root: Mapping[str, Any], key: str) -> _Schema:
-    """The schema of argument ``key``: its property, else
-    ``additionalProperties``."""
+    """The schema of argument ``key``: its property, else ``additionalProperties``."""
     properties = root.get("properties", {})
     if key in properties:
         return properties[key]
@@ -340,42 +331,22 @@ def _strict_calls(response: str) -> list[tuple[str, dict[str, object]]]:
     return calls
 
 
-def _argument(key: str | None = None) -> SequenceFormat:
-    """Frames one argument pair; without a ``key``, any key."""
+def _argument() -> SequenceFormat:
+    """Frames one argument pair with any key and value.
+
+    The markers are referenced by token: serving registers them special, so
+    their bytes do not match as text.
+    """
     return SequenceFormat(
         elements=[
-            ConstStringFormat(value=_KEY_OPEN),
-            AnyTextFormat() if key is None else ConstStringFormat(value=key),
-            ConstStringFormat(value=_KEY_CLOSE + _VALUE_OPEN),
+            TokenFormat(token=_KEY_OPEN),
             AnyTextFormat(),
-            ConstStringFormat(value=_VALUE_CLOSE),
+            TokenFormat(token=_KEY_CLOSE),
+            TokenFormat(token=_VALUE_OPEN),
+            AnyTextFormat(),
+            TokenFormat(token=_VALUE_CLOSE),
         ]
     )
-
-
-def _is_free_text(arg_schema: _Schema) -> bool:
-    if not isinstance(arg_schema, Mapping):
-        return arg_schema
-    return (
-        set(arg_schema) <= _FREE_TEXT_KEYS
-        and arg_schema.get("type", "string") == "string"
-    )
-
-
-def _unenforced(parameters: Mapping[str, Any]) -> str | None:
-    """Names the first part of a strict tool's schema that the grammar, which
-    frames keys and leaves values free text, cannot enforce."""
-    if keywords := sorted(set(parameters) - _FRAMED_KEYS):
-        return f"keyword '{keywords[0]}'"
-    if parameters.get("type", "object") != "object":
-        return "a non-object type"
-    extra = parameters.get("additionalProperties", True)
-    if not isinstance(extra, bool) and not _is_free_text(extra):
-        return "additionalProperties"
-    for key, arg_schema in (parameters.get("properties") or {}).items():
-        if not _is_free_text(arg_schema):
-            return f"argument '{key}'"
-    return None
 
 
 def _call(tool: FunctionToolParam, reject_unsupported: bool) -> TagFormat:
@@ -383,15 +354,8 @@ def _call(tool: FunctionToolParam, reject_unsupported: bool) -> TagFormat:
     parameters = tool.function.parameters
     if not isinstance(parameters, dict):
         parameters = {}
-    properties = parameters.get("properties") or {}
-    required = parameters.get("required") or []
     strict = tool.function.strict is not False
-    if strict and reject_unsupported and (part := _unenforced(parameters)):
-        raise InputError(
-            f"Hy4 tool calls cannot enforce {part} of tool '{name}': argument"
-            " values are free text."
-        )
-    keyed = bool(properties or required)
+    keyed = bool(parameters.get("properties") or parameters.get("required"))
     if strict and not keyed and parameters.get("additionalProperties") is False:
         # The name is the whole body, so it cannot run on into more text.
         return TagFormat(
@@ -405,23 +369,16 @@ def _call(tool: FunctionToolParam, reject_unsupported: bool) -> TagFormat:
             content=StarFormat(content=_argument()),
             end=_CALL_CLOSE,
         )
-    elements: list[Format] = [_argument(k) for k in properties if k in required]
-    elements += [_argument(k) for k in required if k not in properties]
-    optional: list[Format] = [
-        _argument(k) for k in properties if k not in required
-    ]
-    if optional:
-        # Optional keys may appear in any order, or not at all.
-        elements.append(
-            StarFormat(
-                content=optional[0]
-                if len(optional) == 1
-                else OrFormat(elements=optional)
-            )
-        )
     return TagFormat(
         begin=_CALL_OPEN + name,
-        content=SequenceFormat(elements=elements),
+        content=JSONSchemaFormat(
+            json_schema=parameters,
+            style="hy_v4_xml",
+            strict_mode=False,
+            require_object_root=True,
+            max_whitespace_cnt=1,
+            reject_unsupported=reject_unsupported,
+        ),
         end=_CALL_CLOSE,
     )
 
@@ -435,11 +392,13 @@ def _structural_tag(
     reject_unsupported: bool = False,
     **kwargs: object,
 ) -> StructuralTag:
-    """Frames calls, names and argument keys; values stay free text.
+    """Frames calls and names, typing a strict tool's arguments by its schema.
 
-    Values are bare text that no JSON style spells, so only the skeleton is
-    constrained. Adapted from vLLM's ``get_hy_v4_structural_tag``, which
-    ignores ``strict`` and lets a tool without keys run its name on.
+    It is adapted from vLLM's ``get_hy_v4_structural_tag``, which ignores
+    ``strict``, leaves values free text and lets a tool without keys run its
+    name on.
+    Adapted from vLLM's ``get_hy_v4_structural_tag``, which ignores ``strict``,
+    leaves values free text and lets a tool without keys run its name on.
     """
     calls = TagsWithSeparatorFormat(
         tags=[_call(tool, reject_unsupported) for tool in tools],
@@ -495,6 +454,7 @@ class HYV4ToolParser(StructuralTagToolParser):
         self._schemas = schemas
 
     def reset(self) -> None:
+        """Clears the parser's pending call state."""
         super().reset()
         self._active_schema = None
 
@@ -537,18 +497,16 @@ class HYV4ToolParser(StructuralTagToolParser):
             tools: OpenAI-style tool dicts.
             backend: Structured-output backend; must be ``"xgrammar"``.
             tool_choice: ``"auto"``, ``"required"``, or a named choice.
-            reject_unsupported: Whether a strict tool whose argument values
-                the grammar cannot enforce raises instead of going
-                unconstrained.
+            reject_unsupported: Whether to raise an error during grammar
+                compilation when a tool's schema cannot be enforced. Otherwise,
+                the schema is enforced best-effort.
             **kwargs: Ignored; accepts ``tokenizer`` and other kwargs.
 
         Returns:
             The StructuralTag serialized as a JSON string.
 
         Raises:
-            InputError: If ``backend`` is not ``"xgrammar"``, or if
-                ``reject_unsupported`` is set and a strict tool's schema
-                constrains more than its keys.
+            InputError: If ``backend`` is not ``"xgrammar"``.
         """
         if backend != "xgrammar":
             raise InputError(

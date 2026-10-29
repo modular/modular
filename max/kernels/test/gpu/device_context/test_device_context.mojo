@@ -125,7 +125,7 @@ def test_move(ctx: DeviceContext) raises:
 
 def test_id(ctx: DeviceContext) raises:
     # CPU always gets id 0 so test for that.
-    assert_equal(ctx.id(), 0)
+    assert_equal(ctx.device().id, 0)
 
 
 def test_print(ctx: DeviceContext) raises:

@@ -69,7 +69,6 @@ from layout.tensor_core_async import (
 from layout.tma_async import (
     TMATensorTile,
 )
-from std.utils.coord import Coord, DynamicCoord
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -246,9 +245,9 @@ struct HopperMatmulSM90Kernel[
     b_layout: TensorLayout,
     c_layout: TensorLayout,
     c_smem_layout: Layout,
-    block_tile_shape: Coord[Int, Int, Int],
-    wgmma_shape: Coord[Int, Int, Int],
-    cluster_shape: Coord[Int, Int, Int],
+    block_tile_shape: Tuple[Int, Int, Int],
+    wgmma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
     num_pipeline_stages: Int,
     num_threads: Int = 128,
     transpose_b: Bool = True,
@@ -386,7 +385,7 @@ struct HopperMatmulSM90Kernel[
         Self.accum_type,
         Self.a_type,
         Self.b_type,
-        (Self.wgmma_shape[0], Self.wgmma_shape[1], Self.wgmma_shape[2]),
+        Self.wgmma_shape,
         Self.a_swizzle,
         Self.b_swizzle,
         Self.transpose_b,
@@ -889,7 +888,11 @@ struct HopperMatmulSM90Kernel[
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
             Int32(Self.num_threads)
         ),
-        `nvvm.cluster_dim`=Self.cluster_shape,
+        `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+            Int32(Self.cluster_shape[0]),
+            Int32(Self.cluster_shape[1]),
+            Int32(Self.cluster_shape[2]),
+        ),
     )
     @__name(
         t"sm90_matmul_{Self.a_type}_{Self.b_type}_{Self.c_type}_{Self.transpose_b}",
@@ -1082,7 +1085,11 @@ struct HopperMatmulSM90Kernel[
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
             Int32(Self.num_threads)
         ),
-        `nvvm.cluster_dim`=Self.cluster_shape,
+        `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+            Int32(Self.cluster_shape[0]),
+            Int32(Self.cluster_shape[1]),
+            Int32(Self.cluster_shape[2]),
+        ),
     )
     @__name(
         t"sm90_matmul_split_k_{Self.a_type}_{Self.b_type}_{Self.c_type}_{Self.transpose_b}",
@@ -1318,7 +1325,11 @@ struct HopperMatmulSM90Kernel[
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
             Int32(Self.num_threads)
         ),
-        `nvvm.cluster_dim`=Self.cluster_shape,
+        `nvvm.cluster_dim`=StaticTuple[Int32, 3](
+            Int32(Self.cluster_shape[0]),
+            Int32(Self.cluster_shape[1]),
+            Int32(Self.cluster_shape[2]),
+        ),
     )
     @__name(
         t"sm90_matmul_grouped_{Self.a_type}_{Self.b_type}_{Self.c_type}_{Self.transpose_b}",

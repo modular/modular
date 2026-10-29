@@ -14,10 +14,10 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn.common_layers.moe import MoEGate
-from max.experimental.tensor import Tensor, default_dtype
+from max.nn.common_layers.moe import MoEGate
+from max.tensor import Tensor, default_dtype
 
 
 class LagunaTopKRouter(MoEGate):

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Registers the unified GLM-5.2 MTP draft on ModuleV3."""
 
 from dataclasses import replace
 

@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Mixture of Experts Gate Layer."""
 
 from __future__ import annotations
@@ -19,10 +18,10 @@ from collections.abc import Callable, Iterable, Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, Shape, TensorValue, Weight, ops
-from max.nn.kernels import moe_router_group_limited
-from max.nn.linear import Linear
-from max.nn.moe import MoEGate
-from max.nn.moe.moe import ShardingStrategy
+from max.nn.legacy.kernels import moe_router_group_limited
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.moe import MoEGate
+from max.nn.legacy.moe.moe import ShardingStrategy
 
 
 def _fill(
@@ -54,21 +53,24 @@ class DeepseekV3TopKRouter(MoEGate):
         use_fused_kernel: bool = True,
         linear_cls: Callable[..., Linear] = Linear,
     ) -> None:
-        """
+        """Stores the router dimensions and routing parameters.
+
         Args:
-            num_experts_per_token: The number of experts per token.
-            num_experts: The number of experts to route to.
-            routed_scaling_factor: The scaling factor for the routed experts.
-            scoring_func: The scoring function for the experts.
-            topk_method: The method to select the top-k experts.
-            n_group: The number of groups.
-            topk_group: The number of top-k groups.
-            norm_topk_prob: Whether to normalize the top-k probabilities.
-            hidden_dim: The dimension of the hidden state.
-            dtype: The data type of the MoEGate.
-            correction_bias_dtype: The data type of the correction bias.
-            devices: The devices to use for the MoEGate.
-            use_fused_kernel: Whether to use the fused kernel for the MoEGate.
+        num_experts_per_token: The number of experts per token.
+        num_experts: The number of experts to route to.
+        routed_scaling_factor: The scaling factor for the routed experts.
+        scoring_func: The scoring function for the experts.
+        topk_method: The method to select the top-k experts.
+        n_group: The number of groups.
+        topk_group: The number of top-k groups.
+        norm_topk_prob: Whether to normalize the top-k probabilities.
+        hidden_dim: The dimension of the hidden state.
+        dtype: The data type of the MoEGate.
+        correction_bias_dtype: The data type of the correction bias.
+        devices: The devices to use for the MoEGate.
+        use_fused_kernel: Whether to use the fused kernel for the MoEGate.
+        gate_dtype: The data type the gate's scores are computed in.
+        linear_cls: The linear layer class the gate builds.
         """
         super().__init__(
             devices=devices,
@@ -159,7 +161,8 @@ class DeepseekV3TopKRouter(MoEGate):
             devices: Iterable of devices to place the shards on.
 
         Returns:
-            List of sharded DeepseekV3TopKRouter instances, one for each device."""
+            List of sharded DeepseekV3TopKRouter instances, one for each device.
+        """
         if not self._sharding_strategy:
             raise ValueError(
                 "MoEGate module cannot be sharded because no sharding strategy was provided."

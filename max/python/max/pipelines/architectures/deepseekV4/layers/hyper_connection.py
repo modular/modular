@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """mHC -- manifold / hyper-connections, V4's replacement for the residual.
 
 Reference: ``inference/model.py`` ``Block.hc_pre`` / ``hc_post`` / ``hc_head``
@@ -37,7 +36,7 @@ normalization, which drives it toward doubly stochastic -- no copy can be
 amplified or dropped across the round trip, which is what keeps the ``hc``
 lanes from collapsing into each other over 43 layers.
 
-The per-block gates and contraction run in :class:`~max.nn.HyperConnection`
+The per-block gates and contraction run in :class:`~max.nn.legacy.HyperConnection`
 (see ``deepseekV4.py``); this module keeps the write-back, the head
 contraction and the initial expansion.
 

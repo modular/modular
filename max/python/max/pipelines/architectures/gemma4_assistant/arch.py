@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Registers Gemma4Assistant with the registry."""
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
@@ -47,5 +48,7 @@ gemma4_assistant_arch = SupportedArchitecture(
     # signature declares. Its pairing encodes images eagerly, so it isn't
     # captured.
     supports_device_graph_capture=False,
+    # Its pairing caps the context a batch keeps resident.
+    requires_max_batch_context_length=True,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
 )

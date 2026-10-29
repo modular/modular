@@ -11,9 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""
-Placeholder file for any configs (runtime, models, pipelines, etc)
-"""
+"""Placeholder file for any configs (runtime, models, pipelines, etc)."""
 
 from __future__ import annotations
 
@@ -31,6 +29,8 @@ logger = logging.getLogger("max.serve")
 
 
 class APIType(Enum):
+    """The API dialect a server exposes."""
+
     KSERVE = "kserve"
     OPENAI = "openai"
     SAGEMAKER = "sagemaker"
@@ -91,6 +91,8 @@ class KernelTraceLevel(Enum):
 
 
 class Settings(BaseSettings):
+    """Server settings, read from the environment."""
+
     # env files, direct initialization, and aliases interact in some confusing
     # ways.  this is the way:
     #   1. extra="allow"
@@ -453,6 +455,7 @@ class Settings(BaseSettings):
     def validate_transaction_recording_file(
         cls, path: Path | None
     ) -> Path | None:
+        """Validates the transaction recording path, if one is set."""
         if path is None:
             return None
         if not path.name.endswith(".rec.jsonl"):

@@ -203,7 +203,7 @@ def test_copies() raises:
     var ctx = create_test_device_context()
 
     print("-------")
-    print("Running test_copies(" + ctx.name() + "):")
+    print("Running test_copies(" + ctx.device().get_name() + "):")
 
     comptime one_mb = 1024 * 1024
 

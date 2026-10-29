@@ -27,7 +27,7 @@ from max import tree
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Type, Value
 from max.graph import Module as GraphModule
-from max.nn.comm import Signals
+from max.nn.legacy.comm import Signals
 from max.pipelines.architectures.qwen3vl_moe.nn.visual_transformer import (
     BilinearInterpolationPositionEmbedding,
     VisionBlock,
@@ -100,8 +100,7 @@ class Qwen3_5VisionTransformer(VisionTransformer):
         )
 
     def input_types(self) -> tuple[Type[Any], ...]:
-        """Returns the vision graph's input types: the leaves of
-        :meth:`input_tree`."""
+        """Returns the vision graph's input types: the leaves of :meth:`input_tree`."""
         return tuple(tree.leaves(self.input_tree()))
 
     def trace(

@@ -19,8 +19,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
-from max.nn.kv_cache import KVCacheGroupId
-from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache import KVCacheGroupId
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 
 
 class KVLoadRefused(Exception):
@@ -356,6 +356,7 @@ class KVConnector(Protocol):
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> Mapping[str, Sequence[bool]]:
         """Reports which of ``block_hashes`` each leaf holds. Presence only.
 
@@ -382,6 +383,11 @@ class KVConnector(Protocol):
             hint: As :meth:`load`, and it must be the SAME hint, or a lookup
                 would ask the co-located store about a peer-held prefix and
                 report it absent.
+            chain_start: The chain index of ``block_hashes[0]`` counted from
+                the root, so a connector can tell a hint that cannot serve
+                this lookup from one that describes another chain. ``None``
+                when unknown, which leaves the connector unable to tell the
+                two apart.
 
         Returns:
             One mask per leaf, keyed as :attr:`leaves` keys them, each exactly
@@ -447,6 +453,7 @@ class KVConnector(Protocol):
         block_hashes: Sequence[bytes],
         replica_idx: int = 0,
         hint: bytes | None = None,
+        chain_start: int | None = None,
     ) -> KVLookup:
         """Starts a :meth:`lookup` and returns at once.
 
@@ -460,7 +467,12 @@ class KVConnector(Protocol):
         which is right for a connector that answers from local memory.
         """
         return CompletedLookup(
-            self.lookup(block_hashes, replica_idx=replica_idx, hint=hint)
+            self.lookup(
+                block_hashes,
+                replica_idx=replica_idx,
+                hint=hint,
+                chain_start=chain_start,
+            )
         )
 
     def defers_lookup(self, replica_idx: int = 0) -> bool:
@@ -471,6 +483,17 @@ class KVConnector(Protocol):
         connector that answers in place is asked in place about the gap a
         short device hit leaves. ``False`` by default, matching the default
         :meth:`start_lookup`.
+        """
+        return False
+
+    def probe_is_lookup(self) -> bool:
+        """Returns whether :meth:`probe` answers as :meth:`lookup` would.
+
+        Only a connector whose lookup holds nothing a load reads out of can
+        say so. The manager then loads from a fresh pricing answer rather
+        than looking up again, and a block gone since then surfaces as
+        :class:`KVLoadRefused`, as it would after a lookup. ``False`` by
+        default.
         """
         return False
 

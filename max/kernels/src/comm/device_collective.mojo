@@ -13,6 +13,7 @@
 """Helpers for dispatching collective operations across devices."""
 
 from std.collections import Array, Optional
+from std.ffi import external_call
 from std.runtime._asyncrt import TaskGroup
 
 from max.gpu.host import DeviceContext, DeviceContextArray
@@ -60,7 +61,7 @@ def _launch_device_collective[
     # Resolved here because the deferred dispatch below cannot raise.
     var worker_ids = Array[Int, num_devices](fill=-1)
     comptime for i in range(num_devices):
-        worker_ids[i] = task_id_for_device(Int(dev_ctxs[i].id()))
+        worker_ids[i] = task_id_for_device(Int(dev_ctxs[i].device().id))
 
     var gate = CollectiveGate(dev_ctxs[0], num_devices)
     var tg = TaskGroup()
@@ -68,15 +69,31 @@ def _launch_device_collective[
     # outlives it, which the origin checker cannot see through the capture.
     var group = Pointer(to=tg).unsafe_origin_cast[MutUntrackedOrigin]()
 
+    # The tasks run on other threads; while a device graph is being captured
+    # they adopt the dispatching thread's op, so the kernels they launch are
+    # attributed to it when the graph is replayed.
+    var capture_op = external_call[
+        "KGEN_CompilerRT_CaptureLabelCurrent", UInt64
+    ]()
+
     # Wrap the launch function in a Mojo async function which does not raise.
     @inline(.always)
     __async def wrapper[index: Int]() {mut errors, mut gate, imm} -> None:
+        var adopted = (
+            capture_op != 0
+            and external_call["KGEN_CompilerRT_CaptureLabelAdopt", Int](
+                capture_op
+            )
+            != 0
+        )
         # Lets this worker's own loads through the gate its collective holds.
         with CollectiveEnqueueScope(dev_ctxs[index]):
             try:
                 func[index]()
             except e:
                 errors[index] = e^
+        if adopted:
+            external_call["KGEN_CompilerRT_CaptureLabelPop", NoneType]()
         gate.enqueue_done()
 
     # Dispatch to the worker threads that have affinity for each device.

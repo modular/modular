@@ -22,8 +22,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.torch import torch_dtype_to_max
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.attention import MHAMaskVariant
-from max.nn.kernels import flash_attention_gpu
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kernels import flash_attention_gpu
 from test_common.modular_graph_test import are_all_tensor_values
 from torch.nn.functional import scaled_dot_product_attention
 

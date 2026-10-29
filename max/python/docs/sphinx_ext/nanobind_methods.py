@@ -73,6 +73,12 @@ class NanobindMethodDocumenter(MethodDocumenter):
         isattr: bool,
         parent: object,
     ) -> bool:
+        """Reports whether the member documents as a method on this class.
+
+        A class-scoped nanobind callable documents as a method. Anything else
+        follows the ordinary method rules, except for members that the
+        attribute documenter claims.
+        """
         if _is_class_scoped_nanobind_callable(member, parent):
             return True
         if not super().can_document_member(member, membername, isattr, parent):
@@ -110,6 +116,11 @@ def _patch_sphinx_inspect() -> None:
 
 
 def setup(app: Sphinx) -> None:
+    """Registers the documenter that handles nanobind members as methods.
+
+    Registering overrides the built-in ``method`` documenter, and the
+    ``inspect`` predicates are patched so nanobind methods read as methods.
+    """
     # Replaces the registered "method" documenter; the automethod
     # directive resolves to the same class. ``override`` also re-registers
     # the directive itself, which skips the "already registered" warning.

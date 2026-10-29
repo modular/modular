@@ -53,10 +53,10 @@ void checkStabilityAndWarn(ASTDecl &decl, llvm::SMLoc useLoc,
 ///
 /// A warning is emitted when the declaration has a @deprecated decorator,
 /// unless its qualified name (e.g. `Variant.take`) appears in
-/// `shared.options.ignoredDeprecations` (set via `--ignore-deprecated`), in
-/// which case the warning is suppressed. If the declaration has a
-/// replacement identifier (from @deprecated(use=X)), a fixit will be emitted
-/// for direct calls (not for operator/subscript syntax).
+/// `shared.frontendOptions.ignoredDeprecations` (set via
+/// `--ignore-deprecated`), in which case the warning is suppressed. If the
+/// declaration has a replacement identifier (from @deprecated(use=X)), a fixit
+/// will be emitted for direct calls (not for operator/subscript syntax).
 ///
 /// \param decl The declaration being accessed
 /// \param useLoc Location of the use site (for warning emission)

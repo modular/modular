@@ -26,20 +26,23 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn.attention import MHAMaskVariant, num_heads_for_device
-from max.nn.comm.allreduce import Allreduce
-from max.nn.graph_groups import HiddenStates
-from max.nn.kernels import cross_attention_ragged, rope_ragged
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.layer import LayerList, Module, Shardable
-from max.nn.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.rotary_embedding import Llama3RotaryEmbedding, RotaryEmbedding
-from max.nn.transformer import DecoderOutputs, ReturnHiddenStates
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.attention import MHAMaskVariant, num_heads_for_device
+from max.nn.legacy.comm.allreduce import Allreduce
+from max.nn.legacy.graph_groups import HiddenStates
+from max.nn.legacy.kernels import cross_attention_ragged, rope_ragged
+from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.layer import LayerList, Module, Shardable
+from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.legacy.rotary_embedding import (
+    Llama3RotaryEmbedding,
+    RotaryEmbedding,
+)
+from max.nn.legacy.transformer import DecoderOutputs, ReturnHiddenStates
+from max.nn.legacy.transformer.distributed_transformer import (
     distributed_logits_postprocess,
     forward_sharded_layers,
 )
-from max.nn.transformer.transformer import extract_hs
+from max.nn.legacy.transformer.transformer import extract_hs
 from max.pipelines.architectures.gemma3.layers.scaled_word_embedding import (
     ScaledWordEmbedding,
 )
@@ -117,6 +120,7 @@ class Gemma4AssistantAttention(Module, Shardable):
         kv_collection: PagedCacheValues,
         **kwargs: object,
     ) -> TensorValue:
+        """Runs the assistant's attention over ``x``."""
         total_seq_len = x.shape[0]
 
         layer_idx = ops.constant(
@@ -188,6 +192,7 @@ class Gemma4AssistantAttention(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """The attention's sharding strategy, or ``None``."""
         return self._sharding_strategy
 
     @sharding_strategy.setter
@@ -219,6 +224,7 @@ class Gemma4AssistantAttention(Module, Shardable):
     def shard(
         self, devices: Iterable[DeviceRef]
     ) -> list[Gemma4AssistantAttention]:
+        """Returns one replica per device, sharded as the strategy says."""
         if not self.sharding_strategy:
             raise ValueError(
                 "Gemma4AssistantAttention layer cannot be sharded because "
@@ -346,6 +352,7 @@ class Gemma4AssistantDecoderLayer(Module):
         q_max_seq_len: TensorValue,
         **kwargs: object,
     ) -> list[TensorValue]:
+        """Runs the layer over its sharded hidden states."""
         residual = xs
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
         rope_cache_lengths_list = kwargs.get("rope_cache_lengths")
@@ -595,6 +602,7 @@ class Gemma4Assistant(Module):
         q_max_seq_len: TensorValue,
         rope_cache_lengths: Sequence[TensorValue] | None = None,
     ) -> DecoderOutputs:
+        """Runs the assistant over the target's hidden states."""
         n_devs = len(self.devices)
 
         kv_by_type: list[Sequence[PagedCacheValues]] = [

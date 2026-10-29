@@ -14,10 +14,18 @@
 from std.os import remove
 from std.pathlib import Path, _dir_of_current_file
 from std.subprocess import run
+from std.sys import size_of
+from std.sys._libc import FcntlCommands, fcntl
 from std.tempfile import gettempdir
 from std.time import sleep
 
-from std.testing import assert_equal, assert_raises, assert_true, TestSuite
+from std.testing import (
+    TestSuite,
+    assert_equal,
+    assert_false,
+    assert_raises,
+    assert_true,
+)
 
 comptime DUMMY_FILE_SIZE: Int = 954
 
@@ -139,7 +147,7 @@ def test_file_read_bytes_from_write_only() raises:
     # Should raise error with errno message (EBADF - Bad file descriptor)
     with assert_raises(contains="Bad file"):
         _ = f.read_bytes()
-    f.close()
+    f^.close()
 
 
 def test_file_read_bytes_sequential_small() raises:
@@ -315,7 +323,7 @@ def test_file_seek() raises:
 
 def test_file_open_nodir() raises:
     var f = open(Path("test_file_open_nodir"), "w")
-    f.close()
+    f^.close()
 
 
 def test_file_write() raises:
@@ -477,9 +485,9 @@ def test_file_get_raw_fd() raises:
     assert_equal(f2.read(), "test from file 2")
     assert_equal(f1.read(), "test from file 1")
 
-    f1.close()
-    f2.close()
-    f3.close()
+    f1^.close()
+    f2^.close()
+    f3^.close()
 
 
 def test_file_append_mode() raises:
@@ -657,7 +665,7 @@ def test_file_open_fifo() raises:
     # If this raises an error, the test will fail.
     var f = open(fifo_path, "w")
     f.write("test data\n")
-    f.close()
+    f^.close()
 
     # Clean up the FIFO and ready flag
     try:
@@ -665,30 +673,6 @@ def test_file_open_fifo() raises:
         remove(ready_flag)
     except:
         pass
-
-
-def test_file_read_from_closed_file() raises:
-    """Test that reading from a closed file raises an error with proper message.
-    """
-    var temp_file = Path(gettempdir().value()) / "test_file_read_closed"
-
-    # Clean up any leftover file from previous runs
-    try:
-        remove(temp_file)
-    except:
-        pass
-
-    # Create a file with some content
-    with open(temp_file, "w") as f:
-        f.write("test content")
-
-    # Open and immediately close the file
-    var f = open(temp_file, "r")
-    f.close()
-
-    # Trying to read from closed file should raise error with "invalid file handle"
-    with assert_raises(contains="invalid file handle"):
-        _ = f.read()
 
 
 def test_file_read_from_write_only_file() raises:
@@ -708,80 +692,33 @@ def test_file_read_from_write_only_file() raises:
     with assert_raises(contains="Bad file"):
         _ = f.read()
 
-    f.close()
+    f^.close()
 
 
-def test_file_seek_invalid_file() raises:
-    """Test that seeking on a closed file raises an error with proper message.
-    """
-    var temp_file = Path(gettempdir().value()) / "test_file_seek_closed"
-
-    # Clean up any leftover file from previous runs
-    try:
-        remove(temp_file)
-    except:
-        pass
-
-    with open(temp_file, "w") as f:
-        f.write("test content")
-
-    var f = open(temp_file, "r")
-    f.close()
-
-    # Trying to seek on closed file should raise error with "invalid file handle"
-    with assert_raises(contains="invalid file handle"):
-        _ = f.seek(0)
-
-
-def test_file_read_bytes_to_span_from_closed() raises:
-    """Test that reading bytes into a Span from a closed file raises an error.
-    """
-    var temp_file = Path(gettempdir().value()) / "test_file_read_span_closed"
-
-    # Clean up any leftover file from previous runs
-    try:
-        remove(temp_file)
-    except:
-        pass
-
-    with open(temp_file, "w") as f:
-        f.write("test content")
-
-    var f = open(temp_file, "r")
-    f.close()
-
-    # Try to read into a buffer from closed file - should get "invalid file handle"
-    var buffer = Array[UInt8, length=10](fill=0)
-    with assert_raises(contains="invalid file handle"):
-        _ = f.read(buffer)
-
-
-def test_file_multiple_close() raises:
-    """Test that closing a file multiple times is safe."""
-    var temp_file = Path(gettempdir().value()) / "test_file_multiple_close"
-
-    # Clean up any leftover file from previous runs
-    try:
-        remove(temp_file)
-    except:
-        pass
-
+def test_file_close_consumes_handle() raises:
+    var temp_file = Path(gettempdir().value()) / "test_file_close_consumes"
     with open(temp_file, "w") as f:
         f.write("test")
 
     var f = open(temp_file, "r")
+    var fd = f._get_raw_fd()._value
+    assert_true(fcntl(fd, FcntlCommands.F_GETFD) != -1)
+    f^.close()
+    assert_equal(fcntl(fd, FcntlCommands.F_GETFD), -1)
 
-    # First close should succeed
-    try:
-        f.close()
-    except e:
-        assert_true(False, "First close should not raise: " + String(e))
 
-    # Second close should also succeed (be a no-op)
-    try:
-        f.close()
-    except e:
-        assert_true(False, "Second close should not raise: " + String(e))
+def test_optional_file_handle_uses_niche() raises:
+    comptime assert size_of[Optional[FileHandle]]() == size_of[FileHandle]()
+
+    var temp_file = Path(gettempdir().value()) / "test_file_optional_niche"
+    var maybe: Optional[FileHandle] = open(temp_file, "w")
+    assert_true(maybe)
+    maybe.value().write("niche")
+    maybe = None
+    assert_false(maybe)
+
+    with open(temp_file, "r") as f:
+        assert_equal(f.read(), "niche")
 
 
 def test_file_invalid_mode() raises:

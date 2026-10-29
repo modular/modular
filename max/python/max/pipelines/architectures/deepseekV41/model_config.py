@@ -19,16 +19,21 @@ this module flattens the fields the model needs into one config object.
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, ClassVar
 
-from max.driver import accelerator_api
+from max.driver import Buffer, accelerator_api
 from max.dtype import DType
-from max.graph import DeviceRef
-from max.nn.comm.ep import EPConfig
-from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
-from max.nn.kv_cache import KVCacheParamInterface, spec_decode_cache_slack
-from max.nn.quant_config import (
+from max.graph import DeviceRef, TensorType
+from max.nn.legacy.comm.ep import EPConfig
+from max.nn.legacy.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
+from max.nn.legacy.kv_cache import (
+    KVCacheParamInterface,
+    spec_decode_cache_slack,
+)
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -36,7 +41,7 @@ from max.nn.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
@@ -125,8 +130,9 @@ MXFP8_SPLITK_ENV = "MAX_DSV41_MXFP8_SPLITK"
 
 
 def mxfp8_splitk_enabled() -> bool:
-    """Whether ``attn.wo_a``, ``attn.wo_b`` and the shared expert run on
-    the cluster split-K MXFP8 matmul.
+    """Whether the MXFP8 weights run on the cluster split-K matmul.
+
+    The switch covers ``attn.wo_a``, ``attn.wo_b`` and the shared expert.
 
     On (default): each weight shape and M takes cluster split-K or a
     pair-CTA GEMM (decode or prefill) where measured faster, and the
@@ -141,8 +147,7 @@ MHC_MXFP8_ENV = "MAX_DSV41_MHC_MXFP8"
 
 
 def mhc_mxfp8_enabled() -> bool:
-    """Whether each hyper-connection step also writes its sublayer's input
-    in MXFP8.
+    """Whether each hyper-connection step also writes its sublayer's input in MXFP8.
 
     On (default): on SM100 the shared expert and the attention's fused
     ``wq_a``/``wkv`` projection read that copy instead of quantizing their
@@ -168,7 +173,7 @@ def engram_host_gather_enabled() -> bool:
     return accelerator_api() == "cuda" and _env_switch(ENGRAM_HOST_GATHER_ENV)
 
 
-# Interleave routed-expert NVFP4 block scales on the host (default on). "0"
+# Interleave routed-expert block scales on the host (default on). "0"
 # interleaves in-graph, which the compiler hoists into a second resident copy.
 NVFP4_SF_PREINTERLEAVE_ENV = "MAX_DSV41_NVFP4_SF_PREINTERLEAVE"
 # Scale-factor tile ("SF atom") of the interleaved layout: 128 rows
@@ -178,7 +183,7 @@ NVFP4_SF_ATOM_COLS = 4
 
 
 def nvfp4_sf_preinterleave_enabled() -> bool:
-    """Whether stacked routed-expert NVFP4 scales are host-interleaved."""
+    """Whether stacked routed-expert block scales are host-interleaved."""
     return _env_switch(NVFP4_SF_PREINTERLEAVE_ENV)
 
 
@@ -206,28 +211,108 @@ NVFP4_ACTIVATION_QUANT_CONFIG = QuantConfig(
 )
 
 
+# MXFP8 activations: dynamic per-32 E8M0 block scales and no tensor-wise
+# scale, as the reference's ``act_quant(x, 32, "ue8m0")``. What the
+# expert-parallel dispatch of MXFP4 experts reads off its config.
+MXFP8_ACTIVATION_QUANT_CONFIG = QuantConfig.mxfp8(mlp_quantized_layers=())
+
+
+class RoutedExpertFormat(Enum):
+    """How the trunk's routed experts are quantized.
+
+    Resolved once from the checkpoint's ``quantization_config``
+    (:meth:`from_quantization_config`); the weight adapter, the MoE module,
+    the expert-parallel dispatch and the memory planner all follow it.
+    """
+
+    NVFP4 = "nvfp4"
+    """W4A4 from NVIDIA ModelOpt: packed E2M1 weights with an E4M3 scale per
+    16, a per-expert global scale and a static activation scale; activations
+    are quantized to NVFP4."""
+
+    MXFP4 = "mxfp4"
+    """W4A8 as DeepSeek releases it: packed E2M1 weights with an E8M0 scale
+    per 32; activations are quantized to MXFP8 (E4M3 with an E8M0 scale per
+    32) at run time."""
+
+    @classmethod
+    def from_quantization_config(
+        cls, quantization_config: Mapping[str, Any] | None
+    ) -> RoutedExpertFormat:
+        """Returns the format a checkpoint's ``quantization_config`` declares.
+
+        A ModelOpt config (``quant_method: "modelopt"``, ``moe_quant_algo``
+        or a ``quantized_layers`` map) is NVFP4, and so is a checkpoint
+        without ``quantization_config``.
+        DeepSeek's own config, ``expert_dtype: "fp4"`` without either, is
+        MXFP4.
+
+        Raises:
+            ValueError: If ``quantization_config`` declares neither.
+        """
+        config = quantization_config or {}
+        if (
+            not config
+            or config.get("quant_method") == "modelopt"
+            or config.get("moe_quant_algo") is not None
+            or "quantized_layers" in config
+        ):
+            return cls.NVFP4
+        if config.get("expert_dtype") == "fp4":
+            return cls.MXFP4
+        raise ValueError(
+            "DeepSeek-V4.1 routed experts need a ModelOpt NVFP4 "
+            "quantization_config or expert_dtype 'fp4'; got "
+            f"{dict(config)!r}"
+        )
+
+    @property
+    def activation_quant_config(self) -> QuantConfig:
+        """The format the experts' activations are quantized to."""
+        if self is RoutedExpertFormat.NVFP4:
+            return NVFP4_ACTIVATION_QUANT_CONFIG
+        return MXFP8_ACTIVATION_QUANT_CONFIG
+
+    @property
+    def dispatch_dtype(self) -> DType:
+        """The storage dtype of expert-parallel dispatch rows."""
+        if self is RoutedExpertFormat.NVFP4:
+            return DType.uint8
+        return DType.float8_e4m3fn
+
+
+def routed_expert_format(huggingface_config: Any) -> RoutedExpertFormat:
+    """Returns the routed-expert format of a top-level Hugging Face config."""
+    return RoutedExpertFormat.from_quantization_config(
+        getattr(huggingface_config, "quantization_config", None)
+    )
+
+
 def ep_dispatch_active(data_parallel_degree: int) -> bool:
     """Whether the routed experts run behind expert-parallel dispatch."""
     return data_parallel_degree > 1
 
 
 def data_parallel_ep_config(
-    pipeline_config: PipelineConfig, text_config: Any
+    pipeline_config: PipelineConfig,
+    text_config: Any,
+    expert_format: RoutedExpertFormat,
 ) -> EPConfig | None:
     """The routed experts' expert-parallel dispatch, or ``None`` without DP.
 
-    Under data parallelism each device quantizes its rows to NVFP4 against
-    one global gate/up input scale and sends the routed copies to the
-    devices owning their experts. Each rank holds up to
-    ``max_batch_input_tokens`` rows, plus with DSpark the draft rows that
-    verification adds for each of up to ``max_batch_size`` requests.
+    Under data parallelism each device quantizes its rows to the experts'
+    activation format (NVFP4 against one global gate/up input scale, or
+    MXFP8) and sends the routed copies to the devices owning their experts.
+    Each rank holds up to ``max_batch_input_tokens`` rows, plus with DSpark
+    the draft rows that verification adds for each of up to
+    ``max_batch_size`` requests.
 
     Raises:
         ValueError: If the devices are not ``0`` to ``n - 1``, a device
-            would hold more than :data:`MEGAFFN_MAX_LOCAL_EXPERTS` routed
-            experts, chunked prefill is off, so a forward step's rows are not
-            bounded by ``max_batch_input_tokens``, or DSpark runs without
-            ``max_batch_size``.
+            would hold more NVFP4 routed experts than
+            :data:`MEGAFFN_MAX_LOCAL_EXPERTS`, chunked prefill is off, so a
+            forward step's rows are not bounded by ``max_batch_input_tokens``,
+            or DSpark runs without ``max_batch_size``.
     """
     model_config = pipeline_config.model
     dp = int(model_config.data_parallel_degree)
@@ -240,7 +325,12 @@ def data_parallel_ep_config(
             f"needs devices 0 to {len(device_ids) - 1}, got {device_ids}"
         )
     local_experts = int(text_config.n_routed_experts) // dp
-    if local_experts > MEGAFFN_MAX_LOCAL_EXPERTS:
+    # NVFP4 experts run behind dispatch only as the fused kernel; MXFP4
+    # experts past its limit keep their unfused chain.
+    if (
+        expert_format is RoutedExpertFormat.NVFP4
+        and local_experts > MEGAFFN_MAX_LOCAL_EXPERTS
+    ):
         raise ValueError(
             "DeepSeek-V4.1 data parallelism runs each device's routed "
             f"experts in one fused kernel, which holds at most "
@@ -272,8 +362,8 @@ def data_parallel_ep_config(
         )
     n_devices = len(model_config.device_specs)
     return EPConfig(
-        dispatch_dtype=DType.uint8,
-        dispatch_quant_config=NVFP4_ACTIVATION_QUANT_CONFIG,
+        dispatch_dtype=expert_format.dispatch_dtype,
+        dispatch_quant_config=expert_format.activation_quant_config,
         combine_dtype=DType.bfloat16,
         hidden_size=int(text_config.hidden_size),
         top_k=int(text_config.num_experts_per_tok),
@@ -299,9 +389,10 @@ def gate_up_rows_interleaved(
 
     Under data parallelism the routed experts run behind expert-parallel
     dispatch, whose statically sized receive buffers let each device's
-    gate/up GEMM, SwiGLU and down GEMM fuse into one kernel when it holds at
-    most :data:`MEGAFFN_MAX_LOCAL_EXPERTS` experts. That kernel reads each
-    gate row next to its up row.
+    gate/up GEMM, SwiGLU and down GEMM fuse into one kernel (MegaFFN, at
+    NVFP4 or W4A8) when the device holds at most
+    :data:`MEGAFFN_MAX_LOCAL_EXPERTS` experts. That kernel and the fused
+    SwiGLU GEMM it falls back to read each gate row next to its up row.
     """
     return (
         ep_dispatch_active(data_parallel_degree)
@@ -312,6 +403,9 @@ def gate_up_rows_interleaved(
 
 def nvfp4_sf_preinterleaved(rows: int, scale_cols: int) -> bool:
     """Whether an ``[rows, scale_cols]`` expert scale is stored interleaved.
+
+    Applies to the trunk's routed-expert block scales in either
+    :class:`RoutedExpertFormat`.
 
     Only shapes that tile the scale-factor tile exactly are pre-interleaved,
     so the weight keeps its checkpoint shape. Weight loading and graph
@@ -453,10 +547,8 @@ class DeepseekV41Config(ArchConfigWithKVCache):
     dspark_n_routed_experts: int = 128
     dspark_num_experts_per_tok: int = 3
 
-    # From ``quantization_config`` (a sibling of ``text_config``); ``None``
-    # for an unquantized checkpoint.
-    expert_dtype: str | None = None
-    moe_quant_algo: str | None = None
+    # From ``quantization_config`` (a sibling of ``text_config``).
+    routed_expert_format: RoutedExpertFormat = RoutedExpertFormat.NVFP4
 
     # KV compression ratio per trunk and DSpark layer: 0 (sliding window
     # only), 1 or 2.
@@ -518,6 +610,16 @@ class DeepseekV41Config(ArchConfigWithKVCache):
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
 
+    kv_leaf_specs: list[kv_leaves.V41KVLeafSpec] = field(default_factory=list)
+    """The KV cache leaves, in params-tree order."""
+
+    # Set by ``DeepseekV41Model.build_module``, for the speculative graph,
+    # which takes the pinned Engram tables as inputs.
+    engram_input_types: list[TensorType] = field(default_factory=list)
+    """One CPU input pair per (device, Engram layer), device-major."""
+    engram_host_buffers: list[Buffer] = field(default_factory=list)
+    """The pinned tables of :attr:`engram_input_types`, once pinned."""
+
     def validate_num_speculative_tokens(
         self, num_speculative_tokens: int
     ) -> None:
@@ -538,9 +640,11 @@ class DeepseekV41Config(ArchConfigWithKVCache):
             )
 
     def get_kv_params(self) -> KVCacheParamInterface:
+        """The KV cache parameters for this config."""
         return self.kv_params
 
     def get_max_seq_len(self) -> int:
+        """The maximum sequence length the config allows."""
         return self.max_seq_len
 
     @staticmethod
@@ -597,6 +701,7 @@ class DeepseekV41Config(ArchConfigWithKVCache):
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """The longest sequence that fits the KV cache."""
         text_config = cls.get_text_config(huggingface_config)
         return upper_bounded_default(
             upper_bound=text_config.max_position_embeddings,
@@ -674,24 +779,6 @@ class DeepseekV41Config(ArchConfigWithKVCache):
             index_head_dim=text_config.index_head_dim,
         )
 
-    @classmethod
-    def resolve_quantization_fields(
-        cls, huggingface_config: AutoConfig
-    ) -> dict[str, Any]:
-        """Returns the config kwargs read from ``quantization_config``.
-
-        ``quantization_config`` sits at the top level, beside
-        ``text_config``. Both fields are ``None`` for an unquantized
-        checkpoint.
-        """
-        quantization_config = (
-            getattr(huggingface_config, "quantization_config", None) or {}
-        )
-        return dict(
-            expert_dtype=quantization_config.get("expert_dtype"),
-            moe_quant_algo=quantization_config.get("moe_quant_algo"),
-        )
-
     @override
     @classmethod
     def initialize(
@@ -737,6 +824,7 @@ class DeepseekV41Config(ArchConfigWithKVCache):
             cache_dtype,
         )
         runtime = pipeline_config.runtime
+        expert_format = routed_expert_format(config)
         return cls(
             dtype=dtype,
             kv_params=kv_params,
@@ -744,14 +832,17 @@ class DeepseekV41Config(ArchConfigWithKVCache):
             max_seq_len=max_seq_len,
             quantization_encoding=quantization_encoding,
             data_parallel_degree=model_config.data_parallel_degree,
-            ep_config=data_parallel_ep_config(pipeline_config, text_config),
+            ep_config=data_parallel_ep_config(
+                pipeline_config, text_config, expert_format
+            ),
             forward_max_rows=forward_row_bound(
                 runtime.max_num_input_tokens,
                 runtime.max_batch_input_tokens,
                 max_seq_len,
             ),
+            kv_leaf_specs=kv_leaves.kv_leaf_specs(text_config),
+            routed_expert_format=expert_format,
             **cls.resolve_text_fields(text_config),
-            **cls.resolve_quantization_fields(config),
         )
 
 

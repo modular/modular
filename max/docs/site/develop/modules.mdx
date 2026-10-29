@@ -5,7 +5,7 @@ description: Learn how to compose modules, name their parameters, load checkpoin
   data, trace a module to a graph, and compile it.
 ---
 
-A [`Module`](/api/python/generated/max.experimental.nn.Module/) holds your
+A [`Module`](/api/python/generated/max.nn.Module/) holds your
 model's parameters and defines the computation that runs on them. The same
 `forward()` method runs eagerly on real tensors, traces to a
 [`Graph`](/api/python/generated/max.graph.Graph/), or compiles into a callable
@@ -25,9 +25,9 @@ workflow, see the [Model development overview](/develop/).
 ## How a module runs
 
 A module declares the parameters it owns, then defines `forward()` over
-[`Tensor`](/api/python/generated/max.experimental.tensor.Tensor/) values.
+[`Tensor`](/api/python/generated/max.tensor.Tensor/) values.
 Operations come from
-[`max.experimental.functional`](/api/python/experimental.functional/), which you
+[`max.functional`](/api/python/functional/), which you
 import as `F`.
 
 A module runs in one of these ways:
@@ -47,20 +47,20 @@ constructors take shapes and options only.
 ## Define and compose modules
 
 Compose a module from built-in layers when they cover what you need:
-[`Linear`](/api/python/generated/max.experimental.nn.Linear/),
-[`Embedding`](/api/python/generated/max.experimental.nn.Embedding/),
-[`RMSNorm`](/api/python/generated/max.experimental.nn.norm.RMSNorm/),
-[`LayerNorm`](/api/python/generated/max.experimental.nn.norm.LayerNorm/), and
+[`Linear`](/api/python/generated/max.nn.Linear/),
+[`Embedding`](/api/python/generated/max.nn.Embedding/),
+[`RMSNorm`](/api/python/generated/max.nn.norm.RMSNorm/),
+[`LayerNorm`](/api/python/generated/max.nn.norm.LayerNorm/), and
 others. Subclass `Module` directly and assign each child layer to an attribute.
 Here two `Linear` projections form a feed-forward block, and a
-[`ModuleList`](/api/python/generated/max.experimental.nn.ModuleList/) stacks two
+[`ModuleList`](/api/python/generated/max.nn.ModuleList/) stacks two
 blocks:
 
 ```python
 from max.driver import CPU
-from max.experimental import functional as F
-from max.experimental.nn import Linear, Module, ModuleList
-from max.experimental.tensor import Tensor, default_device
+from max import functional as F
+from max.nn import Linear, Module, ModuleList
+from max.tensor import Tensor, default_device
 
 
 class FeedForward(Module[[Tensor], Tensor]):
@@ -118,8 +118,8 @@ keyed by those paths:
 
 ```python
 from max.driver import CPU
-from max.experimental.nn import Linear
-from max.experimental.tensor import Tensor, default_device
+from max.nn import Linear
+from max.tensor import Tensor, default_device
 
 
 with default_device(CPU()):
@@ -149,8 +149,8 @@ model runs. Here the checkpoint has a `bias` that the layer doesn't:
 
 ```python
 from max.driver import CPU
-from max.experimental.nn import Linear
-from max.experimental.tensor import Tensor, default_device
+from max.nn import Linear
+from max.tensor import Tensor, default_device
 
 
 with default_device(CPU()):
@@ -176,6 +176,97 @@ A checkpoint's names often differ from a module's parameter names. A [weight
 adapter](/develop/weight-adapters/) renames checkpoint keys to the module's
 parameter names.
 
+## Walk a module's parameters
+
+A module's parameter names are paths through its attributes.
+[`module.parameters`](/api/python/generated/max.nn.Module/#max.nn.Module.parameters)
+yields every parameter in the module and its submodules as `(name, tensor)`
+pairs, where the name is the tensor's dotted path through the module, such as
+`encoder.layer1.weight`.
+[`module.local_parameters`](/api/python/generated/max.nn.Module/#max.nn.Module.local_parameters)
+yields the tensors held directly on that module, keyed by attribute name.
+[`module.children`](/api/python/generated/max.nn.Module/#max.nn.Module.children)
+yields the direct submodules, and
+[`module.descendants`](/api/python/generated/max.nn.Module/#max.nn.Module.descendants)
+yields every module below it keyed by path.
+
+A module is also a tree: each attribute is a child keyed by attribute name,
+modules, lists, tuples, dicts, and other containers are interior nodes, and
+every other value is a leaf, such as `None` or an integer.
+`module.parameters` yields the items of `tree.paths(module, leaf=Tensor)`. The
+[`max.tree`](/api/python/tree/) API provides methods for traversing and
+modifying that tree, such as:
+
+- [`tree.paths()`](/api/python/generated/max.tree.paths/) returns a dict that
+  maps each leaf's dotted path to the leaf.
+- [`tree.update()`](/api/python/generated/max.tree.update/) writes path-keyed
+  values into the tree in place.
+- [`tree.map()`](/api/python/generated/max.tree.map/) builds a new tree with
+  each leaf replaced by what a function returns.
+
+Every walk takes `leaf`, a type, a tuple of types, or a predicate that says
+where the walk stops. The following example reads a module's paths with and
+without `leaf=Tensor`, then doubles every weight with `tree.map()`:
+
+```python
+from max import tree
+from max.driver import CPU
+from max.nn import Linear, Module
+from max.tensor import Tensor, default_device
+
+
+class Projection(Module[[Tensor], Tensor]):
+    """One linear projection."""
+
+    def __init__(self, dim: int) -> None:
+        super().__init__()
+        self.linear = Linear(dim, dim, bias=False)
+
+    def forward(self, x: Tensor) -> Tensor:
+        return self.linear(x)
+
+
+with default_device(CPU()):
+    model = Projection(4)
+    model.load_state_dict({"linear.weight": Tensor.ones([4, 4])})
+
+    # Without leaf, every attribute value is a leaf.
+    print(list(tree.paths(model)))
+
+    # With leaf=Tensor, the walk stops at tensors only.
+    print(list(tree.paths(model, leaf=Tensor)))
+
+    # The result keeps the structure: a Projection whose weights are doubled.
+    doubled = tree.map(lambda t: t * 2.0, model, leaf=Tensor)
+    weight = tree.paths(doubled, leaf=Tensor)["linear.weight"]
+    print(type(doubled).__name__, float(weight.to_numpy()[0, 0]))
+```
+
+The walk without `leaf` also reaches the layer's non-tensor attributes,
+`quant_config` and `bias`, and every weight in the mapped copy is 2.0:
+
+```output
+['linear.quant_config', 'linear.weight', 'linear.bias']
+['linear.weight']
+Projection 2.0
+```
+
+`load_state_dict()` reads the parameters with
+`tree.paths(module, leaf=Tensor)` and writes the loaded weights back with
+`tree.update()`.
+
+`tree.map()` returns a module of the same type with every tensor replaced, so
+one call builds a copy of a module for each device of a distributed layer.
+`local_shards` returns one tensor per device, and `device` picks one by index:
+
+```python
+tree.map(lambda t: t.local_shards[device], module, leaf=Tensor, shared=True)
+```
+
+That call returns a copy whose tensors are each one device's shard. With
+`shared=True`, a tensor that two attributes reference maps once, so the
+copy keeps them as one object.
+
 ## Trace a module to a graph
 
 Trace a module to inspect the MLIR that `compile()` compiles. The trace
@@ -185,8 +276,8 @@ name:
 ```python
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental.nn import Linear
-from max.experimental.tensor import Tensor, TensorType, default_device
+from max.nn import Linear
+from max.tensor.tensor import Tensor, TensorType, default_device
 
 
 with default_device(CPU()):
@@ -225,5 +316,7 @@ From here, go deeper on the pieces a module touches:
   one from scratch, or wrap a custom op.
 - [Eager execution](/develop/eager-execution/): run `Tensor` and `F`
   operations directly to check a forward pass.
+- [Weight adapters](/develop/weight-adapters/): rename checkpoint keys to the
+  module's parameter names before `load_state_dict()`.
 - [Model bring-up workflow](/develop/model-bringup-workflow/): see how modules
   become a served architecture, from config mapping to the KV cache.

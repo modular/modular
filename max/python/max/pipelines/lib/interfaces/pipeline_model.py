@@ -25,27 +25,25 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, ClassVar, Generic
 
+from max import functional as F
 from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.experimental import functional as F
-from max.experimental.compilation import CompiledCallable
-from max.experimental.nn._weight_utils import _SAFE_CAST_DTYPES, log_casts
-from max.experimental.nn.module import Module as _ModuleV3
-from max.experimental.tensor import Tensor, default_dtype
 from max.graph import DeviceRef, Graph, Value
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.nn.comm.ep import EPConfig
-from max.nn.kv_cache import (
+from max.nn._weight_utils import _SAFE_CAST_DTYPES, log_casts
+from max.nn.legacy.comm.ep import EPConfig
+from max.nn.legacy.kv_cache import (
     CacheLeafParamInterface,
     KVCacheInputs,
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     PagedCacheValues,
 )
-from max.nn.layer import Module as LayerModule
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.layer import Module as LayerModule
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.module import Module as _ModuleV3
 from max.pipelines.context import BaseContextType, LogProbabilities
 from max.pipelines.kv_cache.config import (
     KVCacheConfig,
@@ -73,6 +71,8 @@ from max.pipelines.modeling.config_enums import (
 )
 from max.pipelines.weights.weight_loading import auto_cast_weights_from_env
 from max.profiler import traced
+from max.tensor import Tensor, default_dtype
+from max.tensor.compilation import CompiledCallable
 from transformers import AutoConfig
 from typing_extensions import TypeVar
 
@@ -170,7 +170,7 @@ class AlwaysSignalBuffersMixin:
             in compile-only mode.
         """
         # Import here to avoid circular dependency
-        from max.nn.comm import MulticastPool, Signals
+        from max.nn.legacy.comm import MulticastPool, Signals
 
         # Signals.allocate initializes the signal buffers and enables p2p access
         buffers = Signals.allocate(self.devices)
@@ -208,6 +208,15 @@ class ModelOutputs:
 
     next_token_logits: Buffer | None = None
     """Next-token logits for text generation, shape ``[B, V]`` when present."""
+
+    next_tokens: Buffer | None = None
+    """Greedy next tokens the model sampled itself, int64 of shape ``[B]``.
+
+    Set only for a batch where ``greedy_argmax_suffices`` holds; the pipeline
+    then uses these tokens instead of running the sampler and does not read
+    :attr:`logits`, which a model may fill with any buffer of the right
+    dtype (a vocab shard, say) rather than the full logits.
+    """
 
     logit_offsets: Buffer | None = None
     """Cumulative row offsets into ``logits`` for text generation.
@@ -345,6 +354,9 @@ class UnifiedEagleOutputs(ModelOutputs):
     """The distribution each next-step draft token was sampled from,
     ``[batch_size, num_speculative_tokens, vocab_size]``. Only populated when
     the graph was built with ``draft_proposal="sampled"``."""
+    next_draft_probs_replicas: list[Buffer] | None = None
+    """The same distributions under ``draft_probs_layout="replica"``: one
+    tensor per data-parallel replica, holding its rows on its own device."""
 
     # HACK: These are required to inherit from ModelOutputs but are unused
     # for UnifiedEagleOutputs!
@@ -352,6 +364,33 @@ class UnifiedEagleOutputs(ModelOutputs):
     next_token_logits: None = None
     logit_offsets: None = None
     hidden_states: None = None
+
+    @classmethod
+    def from_buffers(cls, buffers: Sequence[Buffer]) -> UnifiedEagleOutputs:
+        """Reads a unified graph's outputs.
+
+        ``(num_accepted_draft_tokens, next_tokens, next_draft_tokens)``, then
+        under ``draft_proposal="sampled"`` the distributions: one tensor, or
+        one per replica (always more than one) under
+        ``draft_probs_layout="replica"``.
+
+        Raises:
+            RuntimeError: If there are fewer than three buffers.
+        """
+        if len(buffers) < 3:
+            raise RuntimeError(
+                f"unified spec-decode graph returned {len(buffers)} outputs;"
+                " expected num_accepted_draft_tokens, next_tokens,"
+                " next_draft_tokens and any draft distributions"
+            )
+        dists = list(buffers[3:])
+        return cls(
+            num_accepted_draft_tokens=buffers[0],
+            next_tokens=buffers[1],
+            next_draft_tokens=buffers[2],
+            next_draft_probs_full=dists[0] if len(dists) == 1 else None,
+            next_draft_probs_replicas=dists if len(dists) > 1 else None,
+        )
 
 
 @dataclass(kw_only=True)
@@ -368,6 +407,9 @@ class UnifiedSpecDecodeInputs(ModelInputs):
     ``[batch_size, num_speculative_tokens, vocab_size]``. The pipeline sets it
     exactly when the compiled graph declares it (``draft_proposal="sampled"``),
     so the tail packs it whenever it is present."""
+    draft_probs_replicas: list[Buffer] | None = None
+    """``draft_probs_full`` under ``draft_probs_layout="replica"``: each
+    replica's rows on its own device, packed in its place."""
     seed: Buffer | None = None
     temperature: Buffer | None = None
     top_k: Buffer | None = None
@@ -409,6 +451,8 @@ class UnifiedSpecDecodeInputs(ModelInputs):
         # allocates it only after checking the compiled graph declares it.
         if self.draft_probs_full is not None:
             tail += (self.draft_probs_full,)
+        if self.draft_probs_replicas is not None:
+            tail += tuple(self.draft_probs_replicas)
         assert self.seed is not None
         tail += (self.seed,)
         assert self.temperature is not None
@@ -451,6 +495,15 @@ class UnifiedSpecDecodeInputs(ModelInputs):
 
 
 @dataclass(frozen=True)
+class WeightLoad:
+    """A host-side weight load that runs once a module's graph is built."""
+
+    load: Callable[[dict[str, Any]], None]
+    """Fills the weights registry the graph initializes with."""
+    overlaps_compile: bool
+
+
+@dataclass(frozen=True)
 class ModelLoadContext:
     """What a pipeline model reads to build its module from a checkpoint."""
 
@@ -473,6 +526,9 @@ class ModelLoadContext:
     encodes_images: bool = True
     """Whether the module encodes images. ``False`` builds a multimodal
     checkpoint's language model alone."""
+    weight_loads: list[WeightLoad] | None = None
+    """The queue :meth:`defer_weight_load` adds to, for a caller that runs
+    host-side weight loads once the module's graph is built."""
 
     @classmethod
     def from_pipeline_model(cls, model: PipelineModel[Any]) -> ModelLoadContext:
@@ -496,6 +552,27 @@ class ModelLoadContext:
         """
         if ep_config is not None and self.ep_runtime is not None:
             self.ep_runtime(ep_config)
+
+    def defer_weight_load(
+        self,
+        load: Callable[[dict[str, Any]], None],
+        *,
+        overlaps_compile: bool,
+    ) -> None:
+        """Queues ``load`` to run once the module's graph is built.
+
+        ``load`` fills the weights registry the graph initializes with. One
+        that ``overlaps_compile`` runs during the compile, so it must not
+        hold the GIL; the compile waits for the others.
+
+        Raises:
+            ValueError: If the caller runs no deferred weight loads.
+        """
+        if self.weight_loads is None:
+            raise ValueError(
+                "This module defers weight loads, which its caller doesn't run."
+            )
+        self.weight_loads.append(WeightLoad(load, overlaps_compile))
 
     @property
     def max_seq_len(self) -> int:
@@ -772,7 +849,7 @@ class PipelineModel(
             return []
 
         # Import here to avoid circular dependency
-        from max.nn.comm import MulticastPool, Signals
+        from max.nn.legacy.comm import MulticastPool, Signals
 
         # Signals.allocate initializes the signal buffers and enables p2p access
         buffers = Signals.allocate(self.devices)
@@ -820,7 +897,9 @@ class PipelineModel(
         return ()
 
     @classmethod
-    def build_module(cls, context: ModelLoadContext) -> tuple[LayerModule, Any]:
+    def build_module(
+        cls, context: ModelLoadContext
+    ) -> tuple[LayerModule | _ModuleV3[..., Any], Any]:
         """Builds this architecture's module and config, compiling no graph.
 
         Both come from the checkpoint ``context`` names, with the config
@@ -873,6 +952,30 @@ class PipelineModel(
 
         This is an abstract method that must be implemented by concrete PipelineModels
         to define their specific execution logic.
+        """
+
+    def begin_captured_submission(self, model_inputs: ModelInputs) -> None:
+        """Prepares association for the selected captured submission.
+
+        Called with the original live inputs before captured buffers refresh.
+        Warmup and debug verification do not invoke this hook.
+        """
+
+    def on_captured_submission_success(self, model_inputs: ModelInputs) -> None:
+        """Associates a normally returned selected captured submission.
+
+        Receives the original live inputs, not reused captured buffers. This
+        is a host submission witness and does not imply device completion.
+        """
+
+    def finalize_kv_cache_writes(
+        self, contexts: Sequence[BaseContextType]
+    ) -> None:
+        """Publishes model-specific submitted write coverage before cache step.
+
+        The pipeline invokes this on its normal submission path before the
+        next batch is prepared. It retains existing stream-order guarantees
+        and does not imply device synchronization.
         """
 
     def prepare_initial_token_inputs(
@@ -1349,6 +1452,24 @@ class ModuleV3PipelineModelWithKVCache(
         """Loads the checkpoint, and keeps it for :meth:`graph_specs`."""
         self._checkpoint = super()._load_state_dict()
         return self._checkpoint
+
+    @classmethod
+    def checkpoint_weights(
+        cls, context: ModelLoadContext, config: Any
+    ) -> dict[str, Any]:
+        """Returns the weights :meth:`build_module`'s module compiles with.
+
+        They come from the checkpoint ``context`` names, laid out as
+        ``Module.compile`` loads them.
+
+        Raises:
+            NotImplementedError: If the architecture builds its module only
+                inside its own graph.
+        """
+        del context, config
+        raise NotImplementedError(
+            f"{cls.__qualname__} builds its module only inside its own graph."
+        )
 
     def _create_model_config(self, state_dict: dict[str, Any]) -> _ModelConfigT:
         """Builds model config from ``state_dict``."""

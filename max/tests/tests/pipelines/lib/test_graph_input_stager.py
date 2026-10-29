@@ -20,7 +20,7 @@ from typing import Any, cast
 import pytest
 from max.driver import CPU, Device
 from max.dtype import DType
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines import graph_input_stager
 from max.pipelines.graph_input_stager import (
     _FUSE_MAX_BYTES,

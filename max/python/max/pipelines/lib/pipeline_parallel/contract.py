@@ -29,8 +29,8 @@ from max.graph import (
     Type,
     Value,
 )
-from max.nn.graph_groups import HiddenStates
-from max.nn.transformer import DecoderOutputs
+from max.nn.legacy.graph_groups import HiddenStates
+from max.nn.legacy.transformer import DecoderOutputs
 from max.pipelines.context import BaseContextType
 from max.tree import Tree
 

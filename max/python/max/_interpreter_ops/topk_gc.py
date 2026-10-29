@@ -83,10 +83,11 @@ def _int_dtypes(device: Device) -> list[DType]:
 
 
 def _supported_dtypes(device: Device) -> list[DType]:
-    """The dtype set top_k/bottom_k sweep on *device*: floats + supported
-    int/uint widths (see ``_int_dtypes``), no bool (top-k's ordering
-    comparison has no bool kernel -- the deleted Mojo kernel rejected it the
-    same way via ``DType.is_numeric()``).
+    """The dtype set top_k/bottom_k sweep on *device*.
+
+    Floats plus the supported int/uint widths (see ``_int_dtypes``), and no
+    bool: top-k's ordering comparison has no bool kernel. The deleted Mojo
+    kernel rejected it the same way via ``DType.is_numeric()``.
     """
     return gc_compile.float_dtypes(device) + _int_dtypes(device)
 
@@ -187,8 +188,9 @@ gc_compile.register_family(_FAMILY)
 def topk_model(
     op_type: type[_core.Operation], device: Device, dtype: DType
 ) -> engine.Model:
-    """Returns the top-k/bottom-k :class:`~max.engine.Model` for the target
-    (lazy by default; see the module docstring).
+    """Returns the top-k/bottom-k :class:`~max.engine.Model` for the target.
+
+    Lazy by default; see the module docstring.
 
     Args:
         op_type: The concrete ``mo.TopKOp``/``mo.BottomKOp`` type being

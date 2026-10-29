@@ -25,9 +25,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     BlockScaledMatmulConfig as StructuredBlockScaledMatmulConfig,
 )
 from std.math import ceildiv, align_up
-from std.utils.coord import DynamicCoord
 from std.utils.index import Index, IndexList
-from std.utils.static_tuple import StaticTuple
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
     SF_ATOM_M,
@@ -59,9 +57,9 @@ def _test_kernel_impl_base[
     b_type: DType,
     c_type: DType,
     scales_dtype: DType,
-    block_tile_shape: Coord[Int, Int, Int],
-    mma_shape: DynamicCoord[.int, 3],
-    cluster_shape: Coord[Int, Int, Int],
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
     cta_group: Int,
     num_experts: Int,
     expert_shape: IndexList[2],
@@ -551,9 +549,9 @@ def run_grouped_matmul_sm100_block_fp4_suite[
             b_type: DType,
             c_type: DType,
             _scales_dtype: DType,
-            block_tile_shape: Coord[Int, Int, Int],
-            mma_shape: DynamicCoord[.int, 3],
-            cluster_shape: Coord[Int, Int, Int],
+            block_tile_shape: Tuple[Int, Int, Int],
+            mma_shape: Tuple[Int, Int, Int],
+            cluster_shape: Tuple[Int, Int, Int],
             cta_group: Int,
             num_experts: Int,
             expert_shape: IndexList[2],

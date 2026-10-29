@@ -21,15 +21,15 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 import numpy as np
 import numpy.typing as npt
+from max.graph.weights import WeightData, Weights, WeightsAdapter
 
 # Re-exported for back-compat with callers that import CompilationTimer from
-# max.pipelines.lib.utils. The canonical home is max.experimental.nn so that
+# max.pipelines.lib.utils. The canonical home is max.nn so that
 # Module.compile() can use it without max.experimental depending on
 # max.pipelines.
-from max.experimental.nn._compilation_timer import (  # noqa: F401
+from max.nn._compilation_timer import (  # noqa: F401
     CompilationTimer,
 )
-from max.graph.weights import WeightData, Weights, WeightsAdapter
 from transformers import AutoConfig
 
 # Break circular import by importing PipelineConfig under TYPE_CHECKING.

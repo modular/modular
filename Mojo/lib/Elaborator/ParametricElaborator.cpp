@@ -448,7 +448,7 @@ void ParametricElaborator::finalizeInstance(PImplNode *node) {
 
 ErrorTreeOr<FuncOp>
 ParametricElaborator::getConcreteFunction(PImplNode *parent, Location loc,
-                                          SymbolConstantAttr symbol) {
+                                          FuncSymbolGenerator symbol) {
   StringAttr name = cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr();
   auto gen = oldSymTab.lookup<GeneratorOpInterface>(name);
   // If this doesn't reference anything in the existing module, then it must
@@ -508,7 +508,8 @@ ParametricElaborator::concretizeSymbolsWithin(Attribute value,
         if (!cst.getType().getInputParamTypes().empty())
           return {cst, WalkResult::advance()};
 
-        ErrorTreeOr<FuncOp> func = getConcreteFunction(parent, loc, cst);
+        ErrorTreeOr<FuncOp> func =
+            getConcreteFunction(parent, loc, extractFuncSymbolGenerator(cst));
         if (func.isError()) {
           error = func.takeError();
           return {cst, WalkResult::interrupt()};
@@ -589,7 +590,7 @@ ElaborationState ParametricElaborator::processParamConstantOp(PImplNode *parent,
 
 std::pair<ElaborationState, PImplNode *>
 ParametricElaborator::instantiateGeneratorReference(
-    PImplNode *parent, Operation *user, SymbolConstantAttr calleeSymbol,
+    PImplNode *parent, Operation *user, FuncSymbolGenerator calleeSymbol,
     ParameterExprArrayAttr &inputParamKey, GeneratorOpInterface &gen,
     function_ref<bool(PParamNode *)> shouldWait) {
   // Lookup the callee.
@@ -662,11 +663,11 @@ FailureOr<PImplNode *> ParametricElaborator::collectConcreteImplementations(
 
 ElaborationState
 ParametricElaborator::processGeneratorUser(GeneratorUserOpInterface user,
-                                           SymbolConstantAttr calleeSymbol,
+                                           FuncSymbolGenerator calleeSymbol,
                                            PImplNode *parent) {
   // Not all operations can verify their callee type, if for instance, it is a
   // generic type. Verify here as a fallback.
-  if (!calleeSymbol.getType().getInputParamTypes().empty()) {
+  if (!calleeSymbol || !calleeSymbol.isFullyBound()) {
     parent->setToError(
         ErrorTree(user.getLoc(), "cannot reference parametric function"));
     return ElaborationState::error();
@@ -709,7 +710,8 @@ ParametricElaborator::processGeneratorUser(GeneratorUserOpInterface user,
   // symbol reference immediately.
   IRRewriter b{OpBuilder(user)};
   auto newCallee =
-      SymbolConstantAttr::get(concreteSymName, calleeSymbol.getType());
+      FuncSymbolGenerator::get(FlatSymbolRefAttr::get(concreteSymName),
+                               calleeSymbol.getInstantiatedType());
   user.concretizeCallee(b, newCallee);
   return ElaborationState::advance();
 }
@@ -727,7 +729,7 @@ ElaborationState ParametricElaborator::processParamApplyOp(PImplNode *inode,
 
   StringAttr name =
       cast<FlatSymbolRefAttr>(
-          extractSymbolConstantAttr(cast<TypedAttr>(calleeSymbol)).getSymbol())
+          extractFuncSymbolGenerator(cast<TypedAttr>(calleeSymbol)).getSymbol())
           .getAttr();
   auto genItf = oldSymTab.lookup<GeneratorOpInterface>(name);
   // If this doesn't reference anything in the existing module, then it must
@@ -753,7 +755,7 @@ ElaborationState ParametricElaborator::processParamApplyOp(PImplNode *inode,
 
   // Attempt to lookup a cached value. This returns a thread local cached value.
   auto operandsAttr = cast<ParameterExprArrayAttr>(value);
-  auto calleeAttr = extractSymbolConstantAttr(cast<TypedAttr>(callee));
+  auto calleeAttr = extractFuncSymbolGenerator(cast<TypedAttr>(callee));
 
   TypedAttr cached = lookupCachedInterpretation(((!gen) ? func : gen),
                                                 operandsAttr, calleeAttr);
@@ -801,7 +803,7 @@ ParametricElaborator::processCallOp(PImplNode *parent,
   Attribute symbol;
   HANDLE_EVALUATOR_CONC(symbol, parent, call.getLoc(), call.getCallee());
   return processGeneratorUser(
-      call, extractSymbolConstantAttr(cast<TypedAttr>(symbol)), parent);
+      call, extractFuncSymbolGenerator(cast<TypedAttr>(symbol)), parent);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1094,7 +1096,7 @@ ParametricElaborator::processComptimeForOp(PImplNode *parent,
                           type);
 
   //// Concretize the paramfor_has_next generator function.
-  auto hasNextSymbol = extractSymbolConstantAttr(cast<TypedAttr>(hasNext));
+  auto hasNextSymbol = extractFuncSymbolGenerator(cast<TypedAttr>(hasNext));
   StringAttr hasNextName =
       cast<FlatSymbolRefAttr>(hasNextSymbol.getSymbol()).getAttr();
   auto hasNextGen = oldSymTab.lookup<GeneratorOp>(hasNextName);
@@ -1134,7 +1136,7 @@ ParametricElaborator::processComptimeForOp(PImplNode *parent,
   }
 
   auto getNextIterSymbol =
-      extractSymbolConstantAttr(cast<TypedAttr>(getNextIter));
+      extractFuncSymbolGenerator(cast<TypedAttr>(getNextIter));
   StringAttr getNextIterName =
       cast<FlatSymbolRefAttr>(getNextIterSymbol.getSymbol()).getAttr();
   auto getNextIterGen = oldSymTab.lookup<GeneratorOp>(getNextIterName);
@@ -1943,7 +1945,7 @@ ParametricElaborator::bundleCompileOffloadOp(CompileOffloadOp op,
     replacer.addReplacement(
         [&](SymbolConstantAttr ref)
             -> std::optional<std::pair<Attribute, WalkResult>> {
-          if (ref != symbol)
+          if (ref.getSymbol() != symbol.getSymbol())
             exportedSymbols.insert(
                 {ref.getSymbol().getRootReference(), ExportKind::NotExported});
           return std::nullopt;
@@ -1969,7 +1971,7 @@ ParametricElaborator::bundleCompileOffloadOp(CompileOffloadOp op,
           Attribute newGenRef = replacer.replace(genRef);
           return std::make_pair(newGenRef, WalkResult::skip());
         });
-    symbol = cast<SymbolConstantAttr>(replacer.replace(symbol));
+    symbol = cast<TypedAttr>(replacer.replace(TypedAttr(symbol)));
 
     // The replacer above reaches the offload function's parameters only, so a
     // struct referenced solely by `opaque_plugin` would never be exported.
@@ -1988,8 +1990,9 @@ ParametricElaborator::bundleCompileOffloadOp(CompileOffloadOp op,
       sourceName = StringAttr::get(ctx, *srcName);
 
     auto pair = iter->second.insert(
-        {symbol, OffloadInfo::KernelInfo{
-                     name, offloadInfo.numKernels, {}, sourceName}});
+        {symbol.getInstantiatedFuncSymbol(),
+         OffloadInfo::KernelInfo{
+             name, offloadInfo.numKernels, {}, sourceName}});
 
     if (pair.second)
       offloadInfo.numKernels += 1;
@@ -2037,11 +2040,10 @@ ParametricElaborator::processCompileOffload(PImplNode *parent,
       parent->setToError(thunkCallee->takeError());
       return ElaborationState::error();
     }
-    SymbolConstantAttr calleeSym = thunkCallee->takeValue();
+    FuncSymbolGenerator calleeSym = thunkCallee->takeValue();
     if (!calleeSym)
       return ElaborationState::skipNode();
-    symbol = calleeSym;
-    op.setFuncAttr(symbol);
+    op.setFuncAttr(calleeSym);
   }
 
   compileOffloadOps.modify([&](auto &set) { set.insert(op); });

@@ -21,6 +21,11 @@ from std.format._utils import (
     FormatStruct,
 )
 from std.hash.hasher import Hasher
+from std.traits import (
+    IsTriviallyCopyable,
+    IsTriviallyDeinitable,
+    IsTriviallyMovable,
+)
 
 from std.utils._visualizers import lldb_formatter_wrapping_type
 
@@ -57,6 +62,10 @@ struct Tuple[*Ts: AnyType](
     @deprecated(use=Ts)
     comptime element_types = Self.Ts
     """The elements type. Deprecated alias for `Ts`."""
+
+    comptime __del__is_trivial = Self.Ts.all[IsTriviallyDeinitable]()
+    comptime __copy_ctor_is_trivial = Self.Ts.all[IsTriviallyCopyable]()
+    comptime __move_ctor_is_trivial = Self.Ts.all[IsTriviallyMovable]()
 
     comptime _mlir_type = __mlir_type[
         `!kgen.struct<:`,
@@ -191,7 +200,12 @@ struct Tuple[*Ts: AnyType](
         Args:
             copy: The value to copy from.
         """
-        self = Self(init_with=lambda [i: Int]() -> Self.Ts[i]: copy[i].copy())
+        comptime if Self.__copy_ctor_is_trivial:
+            self._mlir_value = copy._mlir_value
+        else:
+            self = Self(
+                init_with=lambda [i: Int]() -> Self.Ts[i]: copy[i].copy()
+            )
 
     @inline(.nodebug)
     def __init__(
@@ -202,15 +216,18 @@ struct Tuple[*Ts: AnyType](
         Args:
             move: The value to move from.
         """
-        # Mark '_mlir_value' as being initialized so we can work on it.
-        __mlir_op.`lit.ownership.mark_initialized`(
-            __get_mvalue_as_litref(self._mlir_value)
-        )
+        comptime if Self.__move_ctor_is_trivial:
+            self._mlir_value = move._mlir_value
+        else:
+            # Mark '_mlir_value' as being initialized so we can work on it.
+            __mlir_op.`lit.ownership.mark_initialized`(
+                __get_mvalue_as_litref(self._mlir_value)
+            )
 
-        comptime for i in range(Self.__len__()):
-            # TODO: We should not use self[i] as this returns a reference to
-            # uninitialized memory.
-            Pointer(to=self[i]).unsafe_write_move_from(Pointer(to=move[i]))
+            comptime for i in range(Self.__len__()):
+                # TODO: We should not use self[i] as this returns a reference
+                # to uninitialized memory.
+                Pointer(to=self[i]).unsafe_write_move_from(Pointer(to=move[i]))
         # Note: The destructor on `move` is auto-disabled in a moveinit.
 
     @always_inline("builtin")

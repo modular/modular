@@ -34,31 +34,23 @@ from collections.abc import Sequence
 from dataclasses import replace
 from typing import Any, ClassVar
 
+from max import functional as F
 from max.driver import Buffer, Device, DeviceSpec, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental import functional as F
-from max.experimental.compilation import CompiledCallable
-from max.experimental.nn.common_layers.quant_ops import (
-    routed_weight_dtype,
-)
-from max.experimental.sharding import (
-    DeviceMapping,
-    DeviceMesh,
-    Replicated,
-    TensorLayout,
-)
-from max.experimental.tensor import default_device, default_dtype
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import WeightData, Weights, WeightsAdapter
-from max.nn.comm.ep import (
+from max.nn.common_layers.quant_ops import (
+    routed_weight_dtype,
+)
+from max.nn.legacy.comm.ep import (
     EPBatchManager,
     EPCommInitializer,
     EPConfig,
     calculate_ep_max_tokens_per_rank,
 )
-from max.nn.kv_cache import KVCacheParamInterface
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheParamInterface
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.context import ImageMetadata
 from max.pipelines.lib import (
     GraphSpec,
@@ -74,6 +66,14 @@ from max.pipelines.lib.interfaces.batch_processor import (
 from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.pipelines.weights.quant import parse_quant_config
+from max.tensor import default_device, default_dtype
+from max.tensor.compilation import CompiledCallable
+from max.tensor.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    Replicated,
+    TensorLayout,
+)
 from transformers import AutoConfig
 
 from .batch_processor import KimiK2_5BatchProcessor
@@ -172,6 +172,7 @@ class KimiK2_5Model(
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
+        """The KV cache layout this architecture runs with."""
         return KimiK2_5TextConfig.construct_kv_params(
             huggingface_config=huggingface_config.text_config,
             pipeline_config=pipeline_config,
@@ -182,6 +183,7 @@ class KimiK2_5Model(
 
     @classmethod
     def get_num_layers(cls, huggingface_config: AutoConfig) -> int:
+        """How many layers the text tower has."""
         return KimiK2_5Config.get_num_layers(huggingface_config)
 
     def _load_state_dict(self) -> dict[str, Any]:
@@ -527,6 +529,7 @@ class KimiK2_5Model(
         return self._cached_empty_vision_embeddings
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
+        """Runs one decoding step and returns its logits."""
         assert isinstance(model_inputs, KimiK2_5ModelInputs)
         assert model_inputs.kv_cache_inputs is not None, (
             "KimiK2_5 requires KV cache inputs"

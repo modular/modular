@@ -10,30 +10,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Implements the Flint model on the ModuleV3 API."""
 
 from __future__ import annotations
 
 import functools
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.mlp import MLP
-from max.experimental.nn.common_layers.rotary_embedding import (
+from max.graph import ops
+from max.nn import Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.mlp import MLP
+from max.nn.common_layers.rotary_embedding import (
     RotaryEmbedding,
 )
-from max.experimental.nn.embedding import Embedding
-from max.experimental.nn.linear import Linear
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.tensor import Tensor
-from max.graph import ops
-from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
-from max.nn.transformer import ReturnLogits
+from max.nn.embedding import Embedding
+from max.nn.legacy.kv_cache import KVCacheParamInterface, MultiKVCacheParams
+from max.nn.legacy.transformer import ReturnLogits
+from max.nn.linear import Linear
+from max.nn.norm import RMSNorm
+from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
+from max.tensor import Tensor
 
 from .layers.attention import FlintAttention
 from .layers.hybrid_kv_cache import (
@@ -188,6 +187,7 @@ class FlintTextModel(
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
     ) -> ModuleV3Outputs:
+        """Runs the text model over the graph inputs."""
         kv_by_type = {SLIDING: sliding_kv, FULL: full_kv}
         h = self.embed_tokens(tokens)
 
@@ -264,6 +264,7 @@ class Flint(Module[..., ModuleV3Outputs]):
         input_row_offsets: Tensor,
         *variadic_args: Tensor,
     ) -> ModuleV3Outputs:
+        """Unflattens the hybrid KV leaves, then runs the text model."""
         # The variadic KV arguments are the tree's leaves, sliding child
         # first.
         sliding_kv, full_kv = unflatten_hybrid_kv(

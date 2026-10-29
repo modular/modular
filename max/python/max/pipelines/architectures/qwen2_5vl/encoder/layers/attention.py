@@ -17,11 +17,11 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kernels import flash_attention_gpu
-from max.nn.layer import Module
-from max.nn.linear import Linear
-from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.kernels import flash_attention_gpu
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
 
 
 class Qwen25VLEncoderAttention(Module):
@@ -92,6 +92,7 @@ class Qwen25VLEncoderAttention(Module):
         x: TensorValue,
         rope: RotaryEmbedding,
     ) -> TensorValue:
+        """Runs the attention over ``x`` with rotary embeddings applied."""
         total_seq_len = x.shape[0]
 
         q = self.q_proj(x)

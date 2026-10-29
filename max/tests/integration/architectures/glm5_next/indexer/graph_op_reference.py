@@ -66,10 +66,10 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn import LayerNorm, Linear, Module
-from max.nn.kernels import quantize_dynamic_scaled_float8
-from max.nn.layer import Shardable
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy import LayerNorm, Linear, Module
+from max.nn.legacy.kernels import quantize_dynamic_scaled_float8
+from max.nn.legacy.layer import Shardable
+from max.nn.legacy.quant_config import QuantConfig
 
 __all__ = [
     "Glm5NextIndexer",
@@ -340,7 +340,7 @@ class Glm5NextIndexer(Module, Shardable):
         """Declared ``head_dim`` of the pooled-key cache: 128 / 4 = 32.
 
         The paged cache manager indexes one row per *token* and every leaf of a
-        :class:`~max.nn.kv_cache.MultiKVCacheParams` shares one page table, so a
+        :class:`~max.nn.legacy.kv_cache.MultiKVCacheParams` shares one page table, so a
         cache holding one key per ``index_kpool`` tokens cannot be declared four
         times shorter. Declaring it ``index_head_dim / index_kpool`` wide
         instead spreads one 128-value pooled key across the ``index_kpool``

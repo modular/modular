@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The autoencoder layers."""
 
 from .attention import VAEAttention
 from .downsampling import Downsample2D

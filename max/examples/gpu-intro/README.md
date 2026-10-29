@@ -6,7 +6,7 @@ project, which is an implementation of a simple vector addition GPU kernel using
 Mojo. Please refer to the tutorial for an explanation of the code and concepts.
 
 This example requires a [supported
-GPU](https://max.modular.com/packages/#gpu-compatibility) to run the kernel. If
+GPU](https://max.modular.com/gpu/hardware-compatibility/) to run the kernel. If
 your system doesn't have a supported GPU, you can compile the program but the
 only output you'll see when you run it is:
 

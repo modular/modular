@@ -20,8 +20,8 @@ the draft's module for that graph, and supplies the draft's KV leaf.
 
 from __future__ import annotations
 
-from max.nn.embedding import Embedding
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.kv_cache import KVCacheParams
 from max.pipelines.lib.interfaces.pipeline_model import (
     ModelLoadContext,
 )

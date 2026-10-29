@@ -26,7 +26,7 @@ modular_py_test(
         "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental/nn",
+        "//max/python/max/nn",
         requirement("torch"),
     ],
 )
@@ -51,7 +51,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/deepseekV3",
         "//max/python/max/pipelines/architectures/deepseekV3_2",
         "//max/python/max/pipelines/architectures/deepseekV3_nextn",

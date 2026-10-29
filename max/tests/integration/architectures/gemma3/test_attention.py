@@ -22,11 +22,11 @@ from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     MHAKVCacheParams,
     PagedCacheValues,
 )
-from max.nn.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.gemma3.layers.attention import (
     Gemma3Attention as MaxGemma3Attention,
 )

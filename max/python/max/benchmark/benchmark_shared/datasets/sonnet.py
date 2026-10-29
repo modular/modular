@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Sonnet dataset."""
+
 from __future__ import annotations
 
 import importlib.resources
@@ -24,6 +26,8 @@ from .types import RequestSamples, SampledRequest
 
 
 class SonnetBenchmarkDataset(LocalBenchmarkDataset):
+    """Sonnet dataset."""
+
     def fetch(self) -> None:
         """Fetch Sonnet dataset from local file."""
         # Set default dataset path if not provided
@@ -48,6 +52,7 @@ class SonnetBenchmarkDataset(LocalBenchmarkDataset):
         shuffle: bool = True,
         **kwargs,
     ) -> RequestSamples:
+        """Samples requests from the Sonnet dataset."""
         # Extract required parameters from kwargs
         input_len = kwargs.get("input_len")
         prefix_len = kwargs.get("prefix_len")

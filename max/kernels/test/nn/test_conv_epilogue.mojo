@@ -122,12 +122,12 @@ def test[
 
     # Input buffer.
 
-    var input_shape = extend_shape(input_dims, N, C)
-    var input = TileTensor(Span(input_ptr), row_major(Coord(input_shape)))
+    var input_shape = extend_shape(Coord(input_dims), N, C)
+    var input = TileTensor(Span(input_ptr), row_major(input_shape))
 
     # Filter buffer.
-    var filter_shape = append_shape(filter_dims, C_per_group, F)
-    var filter = TileTensor(Span(filter_ptr), row_major(Coord(filter_shape)))
+    var filter_shape = append_shape(Coord(filter_dims), C_per_group, F)
+    var filter = TileTensor(Span(filter_ptr), row_major(filter_shape))
 
     var packed_filter_shape = pack_conv_filter_shape(filter, num_groups)
     var packed_filter_ptr = List(
@@ -137,11 +137,9 @@ def test[
         Span(packed_filter_ptr), row_major(Coord(packed_filter_shape))
     )
 
-    var output_shape = extend_shape(output_dims, N, F)
-    var output = TileTensor(Span(output_ptr), row_major(Coord(output_shape)))
-    var output_ref = TileTensor(
-        Span(output_ref_ptr), row_major(Coord(output_shape))
-    )
+    var output_shape = extend_shape(Coord(output_dims), N, F)
+    var output = TileTensor(Span(output_ptr), row_major(output_shape))
+    var output_ref = TileTensor(Span(output_ref_ptr), row_major(output_shape))
 
     comptime if filter_packed:
         pack_filter(filter, packed_filter, num_groups)

@@ -13,8 +13,8 @@
 # DOC: develop/layers.mdx
 
 from max.driver import CPU
-from max.experimental.nn.norm import RMSNorm, rms_norm
-from max.experimental.tensor import Tensor, default_device
+from max.nn.norm import RMSNorm, rms_norm
+from max.tensor import Tensor, default_device
 
 
 class MultiplyBeforeCastRMSNorm(RMSNorm):

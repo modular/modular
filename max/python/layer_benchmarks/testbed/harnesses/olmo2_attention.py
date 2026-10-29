@@ -43,8 +43,8 @@ import torch  # type: ignore[import-not-found]
 from max.driver import DLPackArray
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.kv_cache import MHAKVCacheParams
-from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
 from max.pipelines.architectures.olmo2.layers.attention import Olmo2Attention
 from transformers.models.olmo2.configuration_olmo2 import Olmo2Config
 from transformers.models.olmo2.modeling_olmo2 import (
@@ -62,6 +62,8 @@ from testbed.registry import register_harness
 
 @dataclass
 class Olmo2AttentionStaticParams(AttentionStaticParams):
+    """Static parameters for the OLMo 2 attention harness."""
+
     rms_norm_eps: float = 1e-5
 
 
@@ -76,13 +78,16 @@ class Olmo2AttentionHarness(RaggedAttentionHarness[Olmo2AttentionStaticParams]):
 
     @staticmethod
     def static_params_type() -> type:
+        """Returns the static parameters type for the OLMo 2 harness."""
         return Olmo2AttentionStaticParams
 
     @property
     def name(self) -> str:
+        """Returns the registered harness name, ``olmo2_attention``."""
         return "olmo2_attention"
 
     def build_graph(self) -> tuple[Graph, dict[str, DLPackArray]]:
+        """Builds the OLMo 2 attention graph with its paged KV cache inputs."""
         p = self.static_params
         hidden_size = p.hidden_size
         n_heads = p.n_heads
@@ -197,6 +202,7 @@ class Olmo2AttentionHarness(RaggedAttentionHarness[Olmo2AttentionStaticParams]):
     def torch_reference_layer(
         self, device: str = "cuda"
     ) -> tuple[HFOlmo2Attention, dict[str, Any]]:
+        """Returns the torch attention layer and the weights mapped for it."""
         p = self.static_params
         if not hasattr(self, "_torch_weights"):
             raise RuntimeError(
@@ -238,6 +244,7 @@ class Olmo2AttentionHarness(RaggedAttentionHarness[Olmo2AttentionStaticParams]):
         dynamic_params: AttentionDynamicParams,
         device: str = "cuda",
     ) -> list[Any]:
+        """Converts MAX execute args into torch inputs for the reference."""
         p = self.static_params
         seq_len = dynamic_params.seq_len
         ctx_len = dynamic_params.ctx_len

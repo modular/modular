@@ -29,6 +29,8 @@ try:
 except ImportError:
 
     class Gemma4HFConfig(PretrainedConfig):  # type: ignore[no-redef]
+        """Gemma 4 config for transformers releases that ship none."""
+
         model_type = "gemma4"
 
         def __init__(
@@ -558,8 +560,12 @@ except ImportError:
 
 
 class _InklingMMHFConfig(PretrainedConfig):
-    """Shim for the top-level ``inkling_mm_model`` model type; unmapped blocks
-    (``audio_config``, ``mtp_config``) stay as plain attributes."""
+    """Shim for the top-level ``inkling_mm_model`` model type.
+
+    ``text_config`` and ``vision_config`` become nested
+    ``PretrainedConfig`` objects. Everything else, ``audio_config`` and
+    ``mtp_config`` included, stays a plain attribute.
+    """
 
     model_type = "inkling_mm_model"
 
@@ -903,3 +909,127 @@ except ImportError:
 
 
 AutoConfig.register("flint", FlintHFConfig, exist_ok=True)
+
+
+# TODO: drop these shims once transformers >= 5.20, which ships native
+# muse_spark configs.
+class _MuseSparkTextHFConfig(_MuseGlimmerSubHFConfig):
+    """Shim for the ``muse_spark_text`` model type.
+
+    Defaults and derivations follow transformers 5.20.0's
+    ``MuseSparkTextConfig``.
+    """
+
+    model_type = "muse_spark_text"
+    _defaults: ClassVar[dict[str, Any]] = {
+        "vocab_size": 202048,
+        "hidden_size": 8192,
+        "intermediate_size": 16384,
+        "num_hidden_layers": 62,
+        "num_attention_heads": 128,
+        "num_key_value_heads": 16,
+        "head_dim": 64,
+        "max_position_embeddings": 1048576,
+        "rms_norm_eps": 1e-5,
+        "tie_word_embeddings": False,
+        "sliding_window": 2048,
+        "final_logit_softcapping": 20.0,
+        "qk_scale_factor": 5.4730064863875,
+        "output_multiplier": 0.1767766952966369,
+        "post_norm_eps": 1e-8,
+        "hidden_act": "silu",
+        "moe_intermediate_size": 4096,
+        "num_local_experts": 256,
+        "num_experts_per_tok": 8,
+        "routed_scaling_factor": 1.0,
+        "moe_hidden_size": 4096,
+        "residual_gate_temperature": 0.3,
+        "rope_parameters": {"rope_type": "default", "rope_theta": 500000.0},
+    }
+
+    def __init__(self, use_cache: bool = True, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        # The base init drops generation parameters such as use_cache; the
+        # reference declares it as a field.
+        self.use_cache = use_cache
+        n = self.num_hidden_layers
+        if getattr(self, "mlp_layer_types", None) is None:
+            self.mlp_layer_types = ["sparse"] * n
+        if getattr(self, "layer_types", None) is None:
+            self.layer_types = [
+                "full_attention"
+                if (n - 1 - i) % 4 == 0
+                else "sliding_attention"
+                for i in range(n)
+            ]
+        # Indexed like layer_types' default, not read from layer_types, as in
+        # the reference.
+        if getattr(self, "layer_rope_theta", None) is None:
+            self.layer_rope_theta = [
+                0
+                if (n - 1 - i) % 4 == 0
+                else self.rope_parameters["rope_theta"]
+                for i in range(n)
+            ]
+
+
+class _MuseSparkVisionHFConfig(_MuseGlimmerVisionHFConfig):
+    model_type = "muse_spark_vision"
+    # The reference leaves rope_parameters unset; its tower accepts only
+    # rope_type "axial", which the published config states.
+    _defaults: ClassVar[dict[str, Any]] = {
+        k: v
+        for k, v in _MuseGlimmerVisionHFConfig._defaults.items()
+        if k != "rope_parameters"
+    }
+
+    # PretrainedConfig replaces the init of a subclass that defines none with
+    # a dataclass init, which would skip the layer_types derivation.
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+
+
+class _MuseSparkAudioHFConfig(PretrainedConfig):
+    """Keeps the audio tower's fields; MAX does not load the tower."""
+
+    model_type = "muse_spark_audio"
+
+
+class MuseSparkHFConfig(_MuseGlimmerSubHFConfig):
+    """Local config class for Muse Spark (``model_type: muse_spark``)."""
+
+    model_type = "muse_spark"
+    sub_configs = {
+        "text_config": _MuseSparkTextHFConfig,
+        "vision_config": _MuseSparkVisionHFConfig,
+        "audio_config": _MuseSparkAudioHFConfig,
+    }
+    _defaults: ClassVar[dict[str, Any]] = {
+        "image_token_id": 200092,
+        "video_token_id": 200091,
+        "audio_token_id": 200038,
+        "out_hidden_size": 6144,
+        "projector_hidden_size": 4096,
+        "projector_hidden_act": "gelu",
+    }
+
+    def __init__(
+        self,
+        text_config: dict[str, Any] | PretrainedConfig | None = None,
+        vision_config: dict[str, Any] | PretrainedConfig | None = None,
+        audio_config: dict[str, Any] | PretrainedConfig | None = None,
+        **kwargs: Any,
+    ) -> None:
+        for name, value in (
+            ("text_config", text_config),
+            ("vision_config", vision_config),
+            ("audio_config", audio_config),
+        ):
+            if not isinstance(value, PretrainedConfig):
+                value = self.sub_configs[name](**(value or {}))
+            setattr(self, name, value)
+        super().__init__(**kwargs)
+
+
+AutoConfig.register("muse_spark", MuseSparkHFConfig, exist_ok=True)
+AutoConfig.register("muse_spark_text", _MuseSparkTextHFConfig, exist_ok=True)

@@ -228,6 +228,8 @@ def _print_requests_sent(stats: WorkloadStats) -> None:
         (stats.input_len_first_turn, "Input length (first turn)"),
         (stats.input_len_later_turn, "Input length (later turns)"),
         (stats.output_len, "Output length"),
+        (stats.output_len_first_turn, "Output length (first turn)"),
+        (stats.output_len_later_turn, "Output length (later turns)"),
         (stats.tools_per_request, "Tools per tool-offering request"),
     ):
         if dist is not None:
@@ -376,7 +378,6 @@ def print_workload_stats(
 
 def print_lora_benchmark_results(metrics: LoRAMetrics) -> None:
     """Print LoRA benchmark statistics if available."""
-
     print_section(title=" LoRA Adapter Benchmark Results ", char="=")
     print("{:<40} {:<10}".format("Total LoRA loads:", metrics.total_loads))
     print("{:<40} {:<10}".format("Total LoRA unloads:", metrics.total_unloads))

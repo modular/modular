@@ -21,8 +21,8 @@ import numpy as np
 from max.driver import Buffer
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.kv_cache import KVCacheInputs
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
+from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.batch_processor import (
@@ -132,6 +132,7 @@ class Qwen3VLMoeBatchProcessor(
         kv_params: KVCacheParamInterface,
         device_refs: list[DeviceRef],
     ) -> list[TensorType | BufferType]:
+        """The graph inputs' shapes, as symbols plus the KV cache params."""
         return ragged_kv_symbolic_inputs(
             kv_params=kv_params,
             device_refs=device_refs,
@@ -331,6 +332,7 @@ class Qwen3VLMoeBatchProcessor(
     def process_outputs(
         self, outputs: Sequence[Buffer | object]
     ) -> ModelOutputs:
+        """Unpacks the graph outputs into ragged KV results."""
         return process_ragged_kv_outputs(
             outputs,
             return_logits=self.runtime.return_logits,

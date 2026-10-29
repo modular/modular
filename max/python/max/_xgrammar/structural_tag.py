@@ -56,6 +56,7 @@ class JSONSchemaFormat(BaseModel):
         "deepseek_v41_xml",
         "glm_xml",
         "minimax_m3_xml",
+        "hy_v4_xml",
     ] = "json"
     """How to parse the content. Valid values:
 
@@ -73,6 +74,9 @@ class JSONSchemaFormat(BaseModel):
       ``<arg_key>key</arg_key><arg_value>value</arg_value>``.
     - ``"minimax_m3_xml"`` — MiniMax M3 tag-prefixed XML:
       ``prefix<key>value prefix</key>``.
+    - ``"hy_v4_xml"`` — Hy4 XML, GLM's pairs with ``:opensource`` tags and no
+      framing whitespace:
+      ``<arg_key:opensource>key</arg_key:opensource><arg_value:opensource>value</arg_value:opensource>``.
     """
     any_order: bool = False
     """Allow object properties to appear in any order."""

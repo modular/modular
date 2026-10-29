@@ -23,6 +23,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "MLRT/lib/Driver/DeviceContext/MemoryManager.h"
 #include "TestUtils.h"
 
@@ -243,6 +244,74 @@ TEST_F(MemoryManagerVMMTest, PendingFreeDoesNotKeepContextAlive) {
   EXPECT_EQ(ctx->getNumReferences(), 1u);
 
   EXPECT_NO_ERR(ctx->synchronize());
+}
+
+// A side-stream region's results are allocated through the side stream's view
+// and read by the base stream after the join. Their free is routed to the
+// view's free list, but it must stay out of the reclaim set until the base
+// stream has run past that read, or defrag remaps the granules under it.
+TEST_F(MemoryManagerVMMTest, ViewFreeStaysUnreclaimableWhileBaseReadQueued) {
+  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  ASSIGN_NO_ERR(DeviceRef, device, dev());
+  std::unique_ptr<MemoryManager> cache = makeCache(*device, 4 * kGiB);
+  ASSERT_NE(cache, nullptr);
+  ASSIGN_NO_ERR(DeviceContextRef, base, DeviceContext::create(Device::gpuAPI));
+  if (base->numStreams() < 2)
+    ASSERT_FALSE(base->createStream().isError());
+  ASSIGN_NO_ERR(DeviceContextRef, side, base->selectStream(1));
+  ASSIGN_NO_ERR(DeviceStreamRef, stream, base->stream());
+  ASSIGN_NO_ERR(CompletionFlagRef, flag, base->allocateCompletionFlag());
+  ASSIGN_NO_ERR(DeviceBufferRef, readback, base->createHostBuffer(64));
+
+  {
+    MemoryManagerFreeList sideList(side.getPointer(), *cache, cache->freeList(),
+                                   /*disableFlush=*/false, /*label=*/"side");
+    ASSIGN_NO_ERR(void *, result, sideList.allocate(1 * kGiB, mode));
+
+    flag->reset();
+    EXPECT_NO_ERR(stream->enqueueWaitOnHostValue(*flag, 1));
+    EXPECT_NO_ERR(base->enqueueCopyFromDevice(readback->ptr(), result, 64));
+
+    EXPECT_NO_ERR(sideList.free(result));
+    EXPECT_NO_ERR(side->synchronize());
+    EXPECT_NO_ERR(cache->drainCompletedFrees());
+    EXPECT_EQ(cache->oomSnapshotForTesting(0).reclaimableGranules, 0u)
+        << "defrag can remap granules the base stream has a queued read of";
+
+    flag->signal(1);
+    EXPECT_NO_ERR(base->synchronize());
+    EXPECT_NO_ERR(cache->drainCompletedFrees());
+  }
+  cache->clear();
+}
+
+// A capturing base stream cannot gate a view's free either, so the free is not
+// deferred, as when the view's own stream captures.
+TEST_F(MemoryManagerVMMTest, NoDeferredViewFreeWhileBaseCaptures) {
+  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  ASSIGN_NO_ERR(DeviceRef, device, dev());
+  std::unique_ptr<MemoryManager> cache = makeCache(*device, 4 * kGiB);
+  ASSERT_NE(cache, nullptr);
+  ASSIGN_NO_ERR(DeviceContextRef, base, DeviceContext::create(Device::gpuAPI));
+  if (base->numStreams() < 2)
+    ASSERT_FALSE(base->createStream().isError());
+  ASSIGN_NO_ERR(DeviceContextRef, side, base->selectStream(1));
+  ASSIGN_NO_ERR(DeviceStreamRef, stream, base->stream());
+
+  {
+    MemoryManagerFreeList sideList(side.getPointer(), *cache, cache->freeList(),
+                                   /*disableFlush=*/false, /*label=*/"side");
+    ASSIGN_NO_ERR(void *, ptr, sideList.allocate(256 * kMiB, mode));
+    EXPECT_NO_ERR(stream->beginCapture());
+    EXPECT_NO_ERR(sideList.free(ptr));
+    ErrorOr<DeviceGraphRef> graph = stream->endCapture();
+    EXPECT_FALSE(graph.isError()) << graph.getError();
+
+    EXPECT_NO_ERR(side->synchronize());
+    EXPECT_NO_ERR(cache->drainCompletedFrees());
+    EXPECT_FALSE(sideList.empty());
+  }
+  cache->clear();
 }
 
 } // namespace

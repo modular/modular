@@ -15,11 +15,11 @@
 
 import numpy as np
 import numpy.typing as npt
-from max import nn
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight, ops
+from max.nn import legacy as nn
 
 # --- Define and compose modules ---
 

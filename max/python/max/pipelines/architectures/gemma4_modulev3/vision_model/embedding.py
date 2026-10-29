@@ -15,19 +15,22 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.linear import Linear
-from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.nn.linear import Linear
 from max.pipelines.architectures.gemma4.model_config import (
     Gemma4ForConditionalGenerationConfig,
 )
+from max.tensor import Tensor
 
 
 class Gemma4VisionPatchEmbedder(Module[..., Tensor]):
-    """Pixel [0,1]->[-1,1] normalize + linear projection + 2-D position
-    embedding lookup. Port of the graph arch's Gemma4VisionPatchEmbedder.
+    """Turns raw pixels into embedded patches.
+
+    Each pixel is rescaled from ``[0, 1]`` to ``[-1, 1]``, projected
+    linearly, and given its 2D position embedding. This is the ModuleV3 port
+    of the graph architecture's ``Gemma4VisionPatchEmbedder``.
     """
 
     def __init__(self, config: Gemma4ForConditionalGenerationConfig) -> None:
@@ -48,6 +51,7 @@ class Gemma4VisionPatchEmbedder(Module[..., Tensor]):
     def forward(
         self, patches_flat: Tensor, pixel_position_ids: Tensor
     ) -> Tensor:
+        """Scales the pixels, projects them and adds their positions."""
         patches = patches_flat.cast(self.dtype) * 2.0 - 1.0
         hidden = self.input_proj(patches)
 

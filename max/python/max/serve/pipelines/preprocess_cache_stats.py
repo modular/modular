@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Publishes a tokenizer's preprocess-cache counters as ``maxserve.media.*``.
+"""Publishes a tokenizer's preprocess-cache counters as ``max.media.*``.
 
 The cache lives in ``max.pipelines``, which cannot import the serve telemetry
 stack (see ``max/tests/tests/serve/test_pipelines_serve_layering.py``), so it
@@ -134,7 +134,7 @@ class PreprocessCacheStatsRecorder:
         self._tokenizer_name = type(tokenizer).__name__
         self._stats = _stats_fn(tokenizer)
         # An architecture whose probe the route can use already has
-        # maxserve.vision.preprocess_cache_hits/_misses recorded for it, from
+        # max.vision.preprocess_cache_hits/_misses recorded for it, from
         # the admission peek in openai_routes. The peek and the tokenizer's
         # own lookup see the same image, so publishing both would count one
         # cached image twice. Every other architecture leaves that pair
@@ -149,7 +149,7 @@ class PreprocessCacheStatsRecorder:
         Args:
             carried_media: Whether the request carried any image or video.
                 Tokenization runs for every request, and a text-only one must
-                stay silent across the whole ``maxserve.media.*`` family.
+                stay silent across the whole ``max.media.*`` family.
         """
         if self._stats is None or not carried_media:
             return

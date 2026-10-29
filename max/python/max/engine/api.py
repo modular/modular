@@ -905,7 +905,7 @@ class InferenceSession:
 
         The compiling half of :meth:`load_all`, split out for callers that trace
         a graph and initialize it themselves rather than handing it over -- a
-        :class:`~max.experimental.nn.Module`, for one, which keeps the compiled
+        :class:`~max.nn.Module`, for one, which keeps the compiled
         artifact and the input/output plumbing it derived alongside it. Without
         this they would call :meth:`compile` and silently bypass the session's
         ``precompiled_mefs``/``export_mefs``.

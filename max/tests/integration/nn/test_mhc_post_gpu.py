@@ -24,7 +24,7 @@ import torch
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.kernels import mhc_post
+from max.nn.legacy.kernels import mhc_post
 from torch.utils.dlpack import from_dlpack
 
 _HC_MULT = 4

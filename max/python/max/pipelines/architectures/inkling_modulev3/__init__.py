@@ -11,8 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Inkling architecture on ModuleV3: a text-and-vision pipeline model with KV
-cache and short-convolution state.
+"""The Inkling architecture on ModuleV3.
+
+A text-and-vision pipeline model with KV cache and short-convolution state.
 """
 
 from .arch import inkling_modulev3_arch

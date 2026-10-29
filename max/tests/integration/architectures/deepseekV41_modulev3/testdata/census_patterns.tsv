@@ -1,0 +1,368 @@
+1	10240	aligner.w1.bias	BF16:1	[5120] x1
+1	94371840	aligner.w1.weight	BF16:1	[5120, 9216] x1
+1	10240	aligner.w2.bias	BF16:1	[5120] x1
+1	52428800	aligner.w2.weight	BF16:1	[5120, 5120] x1
+1	1323827200	embed.weight	BF16:1	[129280, 5120] x1
+1	1323827200	head.weight	BF16:1	[129280, 5120] x1
+1	10240	image_end	BF16:1	[5120] x1
+1	10240	image_newline	BF16:1	[5120] x1
+1	10240	image_start	BF16:1	[5120] x1
+40	10240	layers.{L}.attn.attn_sink	F32:40	[64] x40
+4	4096	layers.{L}.attn.compressor.norm.weight	BF16:4	[512] x4
+3	15728640	layers.{L}.attn.compressor.wgate.weight	BF16:3	[512, 5120] x3
+4	20971520	layers.{L}.attn.compressor.wkv.weight	BF16:4	[512, 5120] x4
+4	1024	layers.{L}.attn.indexer.k_norm.weight	BF16:4	[128] x4
+8	2621440	layers.{L}.attn.indexer.weights_proj.weight	BF16:8	[32, 5120] x8
+4	524288	layers.{L}.attn.indexer.wk.weight	BF16:4	[128, 512] x4
+8	40960	layers.{L}.attn.indexer.wq_b.scale	F8_E8M0:8	[128, 40] x8
+8	41943040	layers.{L}.attn.indexer.wq_b.weight	F8_E4M3:8	[4096, 1280] x8
+40	40960	layers.{L}.attn.kv_norm.weight	BF16:40	[512] x40
+40	102400	layers.{L}.attn.q_norm.weight	BF16:40	[1280] x40
+40	102400	layers.{L}.attn.wkv.scale	F8_E8M0:40	[16, 160] x40
+40	104857600	layers.{L}.attn.wkv.weight	F8_E4M3:40	[512, 5120] x40
+40	1310720	layers.{L}.attn.wo_a.scale	F8_E8M0:40	[256, 128] x40
+40	1342177280	layers.{L}.attn.wo_a.weight	F8_E4M3:40	[8192, 4096] x40
+40	1638400	layers.{L}.attn.wo_b.scale	F8_E8M0:40	[160, 256] x40
+40	1677721600	layers.{L}.attn.wo_b.weight	F8_E4M3:40	[5120, 8192] x40
+40	256000	layers.{L}.attn.wq_a.scale	F8_E8M0:40	[40, 160] x40
+40	262144000	layers.{L}.attn.wq_a.weight	F8_E4M3:40	[1280, 5120] x40
+40	1638400	layers.{L}.attn.wq_b.scale	F8_E8M0:40	[1024, 40] x40
+40	1677721600	layers.{L}.attn.wq_b.weight	F8_E4M3:40	[32768, 1280] x40
+40	409600	layers.{L}.attn_norm.weight	BF16:40	[5120] x40
+2	6144182800	layers.{L}.engram.embed.scale	F8_E8M0:2	[384006168, 8] x1; [384016682, 8] x1
+2	196613849600	layers.{L}.engram.embed.weight	F8_E4M3:2	[384006168, 256] x1; [384016682, 256] x1
+2	81920	layers.{L}.engram.k_weight	BF16:2	[4, 5120] x2
+2	81920	layers.{L}.engram.q_weight	BF16:2	[4, 5120] x2
+2	307200	layers.{L}.engram.wkv.scale	F8_E8M0:2	[800, 192] x2
+2	314572800	layers.{L}.engram.wkv.weight	F8_E4M3:2	[25600, 6144] x2
+15360	61440	layers.{L}.ffn.experts.{E}.w1.input_scale	F32:15360	[] x15360
+15360	90596966400	layers.{L}.ffn.experts.{E}.w1.weight	U8:15360	[2304, 2560] x15360
+15360	11324620800	layers.{L}.ffn.experts.{E}.w1.weight_scale	F8_E4M3:15360	[2304, 320] x15360
+15360	61440	layers.{L}.ffn.experts.{E}.w1.weight_scale_2	F32:15360	[] x15360
+15360	61440	layers.{L}.ffn.experts.{E}.w2.input_scale	F32:15360	[] x15360
+15360	90596966400	layers.{L}.ffn.experts.{E}.w2.weight	U8:15360	[5120, 1152] x15360
+15360	11324620800	layers.{L}.ffn.experts.{E}.w2.weight_scale	F8_E4M3:15360	[5120, 144] x15360
+15360	61440	layers.{L}.ffn.experts.{E}.w2.weight_scale_2	F32:15360	[] x15360
+15360	61440	layers.{L}.ffn.experts.{E}.w3.input_scale	F32:15360	[] x15360
+15360	90596966400	layers.{L}.ffn.experts.{E}.w3.weight	U8:15360	[2304, 2560] x15360
+15360	11324620800	layers.{L}.ffn.experts.{E}.w3.weight_scale	F8_E4M3:15360	[2304, 320] x15360
+15360	61440	layers.{L}.ffn.experts.{E}.w3.weight_scale_2	F32:15360	[] x15360
+40	61440	layers.{L}.ffn.gate.bias	F32:40	[384] x40
+40	61440	layers.{L}.ffn.gate.bias_vl	F32:40	[384] x40
+40	157286400	layers.{L}.ffn.gate.weight	BF16:40	[384, 5120] x40
+40	460800	layers.{L}.ffn.shared_experts.w1.scale	F8_E8M0:40	[72, 160] x40
+40	471859200	layers.{L}.ffn.shared_experts.w1.weight	F8_E4M3:40	[2304, 5120] x40
+40	460800	layers.{L}.ffn.shared_experts.w2.scale	F8_E8M0:40	[160, 72] x40
+40	471859200	layers.{L}.ffn.shared_experts.w2.weight	F8_E4M3:40	[5120, 2304] x40
+40	460800	layers.{L}.ffn.shared_experts.w3.scale	F8_E8M0:40	[72, 160] x40
+40	471859200	layers.{L}.ffn.shared_experts.w3.weight	F8_E4M3:40	[2304, 5120] x40
+40	409600	layers.{L}.ffn_norm.weight	BF16:40	[5120] x40
+40	3840	layers.{L}.hc_attn_base	F32:40	[24] x40
+40	78643200	layers.{L}.hc_attn_fn	F32:40	[24, 20480] x40
+40	480	layers.{L}.hc_attn_scale	F32:40	[3] x40
+40	3840	layers.{L}.hc_ffn_base	F32:40	[24] x40
+40	78643200	layers.{L}.hc_ffn_fn	F32:40	[24, 20480] x40
+40	480	layers.{L}.hc_ffn_scale	F32:40	[3] x40
+3	768	mtp.{N}.attn.attn_sink	F32:3	[64] x3
+3	3072	mtp.{N}.attn.kv_norm.weight	BF16:3	[512] x3
+3	7680	mtp.{N}.attn.q_norm.weight	BF16:3	[1280] x3
+3	7680	mtp.{N}.attn.wkv.scale	F8_E8M0:3	[16, 160] x3
+3	7864320	mtp.{N}.attn.wkv.weight	F8_E4M3:3	[512, 5120] x3
+3	98304	mtp.{N}.attn.wo_a.scale	F8_E8M0:3	[256, 128] x3
+3	100663296	mtp.{N}.attn.wo_a.weight	F8_E4M3:3	[8192, 4096] x3
+3	122880	mtp.{N}.attn.wo_b.scale	F8_E8M0:3	[160, 256] x3
+3	125829120	mtp.{N}.attn.wo_b.weight	F8_E4M3:3	[5120, 8192] x3
+3	19200	mtp.{N}.attn.wq_a.scale	F8_E8M0:3	[40, 160] x3
+3	19660800	mtp.{N}.attn.wq_a.weight	F8_E4M3:3	[1280, 5120] x3
+3	122880	mtp.{N}.attn.wq_b.scale	F8_E8M0:3	[1024, 40] x3
+3	125829120	mtp.{N}.attn.wq_b.weight	F8_E4M3:3	[32768, 1280] x3
+3	30720	mtp.{N}.attn_norm.weight	BF16:3	[5120] x3
+1	10752	mtp.{N}.confidence_head.proj.weight	BF16:1	[1, 5376] x1
+384	141557760	mtp.{N}.ffn.experts.{E}.w1.scale	F8_E8M0:384	[2304, 160] x384
+384	2264924160	mtp.{N}.ffn.experts.{E}.w1.weight	I8:384	[2304, 2560] x384
+384	141557760	mtp.{N}.ffn.experts.{E}.w2.scale	F8_E8M0:384	[5120, 72] x384
+384	2264924160	mtp.{N}.ffn.experts.{E}.w2.weight	I8:384	[5120, 1152] x384
+384	141557760	mtp.{N}.ffn.experts.{E}.w3.scale	F8_E8M0:384	[2304, 160] x384
+384	2264924160	mtp.{N}.ffn.experts.{E}.w3.weight	I8:384	[2304, 2560] x384
+3	1536	mtp.{N}.ffn.gate.bias	F32:3	[128] x3
+3	1536	mtp.{N}.ffn.gate.bias_vl	F32:3	[128] x3
+3	3932160	mtp.{N}.ffn.gate.weight	BF16:3	[128, 5120] x3
+3	34560	mtp.{N}.ffn.shared_experts.w1.scale	F8_E8M0:3	[72, 160] x3
+3	35389440	mtp.{N}.ffn.shared_experts.w1.weight	F8_E4M3:3	[2304, 5120] x3
+3	34560	mtp.{N}.ffn.shared_experts.w2.scale	F8_E8M0:3	[160, 72] x3
+3	35389440	mtp.{N}.ffn.shared_experts.w2.weight	F8_E4M3:3	[5120, 2304] x3
+3	34560	mtp.{N}.ffn.shared_experts.w3.scale	F8_E8M0:3	[72, 160] x3
+3	35389440	mtp.{N}.ffn.shared_experts.w3.weight	F8_E4M3:3	[2304, 5120] x3
+3	30720	mtp.{N}.ffn_norm.weight	BF16:3	[5120] x3
+3	288	mtp.{N}.hc_attn_base	F32:3	[24] x3
+3	5898240	mtp.{N}.hc_attn_fn	F32:3	[24, 20480] x3
+3	36	mtp.{N}.hc_attn_scale	F32:3	[3] x3
+3	288	mtp.{N}.hc_ffn_base	F32:3	[24] x3
+3	5898240	mtp.{N}.hc_ffn_fn	F32:3	[24, 20480] x3
+3	36	mtp.{N}.hc_ffn_scale	F32:3	[3] x3
+1	10240	mtp.{N}.main_norm.weight	BF16:1	[5120] x1
+1	76800	mtp.{N}.main_proj.scale	F8_E8M0:1	[160, 480] x1
+1	78643200	mtp.{N}.main_proj.weight	F8_E4M3:1	[5120, 15360] x1
+1	66191360	mtp.{N}.markov_head.embed.weight	BF16:1	[129280, 256] x1
+1	66191360	mtp.{N}.markov_head.head.weight	BF16:1	[129280, 256] x1
+1	10240	mtp.{N}.norm.weight	BF16:1	[5120] x1
+1	10240	norm.weight	BF16:1	[5120] x1
+1	2048	vision.blocks.0.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.0.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.0.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.0.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.0.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.0.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.0.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.0.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.1.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.1.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.1.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.1.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.1.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.1.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.1.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.1.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.10.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.10.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.10.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.10.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.10.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.10.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.10.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.10.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.11.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.11.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.11.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.11.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.11.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.11.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.11.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.11.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.12.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.12.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.12.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.12.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.12.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.12.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.12.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.12.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.13.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.13.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.13.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.13.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.13.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.13.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.13.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.13.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.14.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.14.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.14.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.14.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.14.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.14.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.14.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.14.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.15.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.15.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.15.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.15.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.15.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.15.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.15.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.15.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.16.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.16.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.16.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.16.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.16.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.16.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.16.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.16.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.17.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.17.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.17.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.17.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.17.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.17.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.17.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.17.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.18.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.18.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.18.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.18.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.18.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.18.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.18.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.18.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.19.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.19.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.19.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.19.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.19.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.19.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.19.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.19.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.2.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.2.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.2.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.2.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.2.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.2.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.2.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.2.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.20.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.20.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.20.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.20.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.20.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.20.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.20.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.20.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.21.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.21.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.21.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.21.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.21.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.21.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.21.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.21.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.22.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.22.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.22.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.22.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.22.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.22.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.22.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.22.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.23.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.23.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.23.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.23.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.23.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.23.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.23.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.23.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.24.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.24.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.24.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.24.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.24.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.24.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.24.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.24.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.25.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.25.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.25.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.25.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.25.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.25.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.25.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.25.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.26.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.26.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.26.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.26.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.26.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.26.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.26.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.26.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.27.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.27.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.27.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.27.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.27.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.27.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.27.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.27.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.28.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.28.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.28.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.28.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.28.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.28.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.28.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.28.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.29.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.29.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.29.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.29.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.29.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.29.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.29.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.29.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.3.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.3.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.3.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.3.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.3.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.3.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.3.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.3.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.30.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.30.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.30.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.30.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.30.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.30.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.30.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.30.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.31.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.31.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.31.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.31.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.31.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.31.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.31.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.31.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.4.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.4.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.4.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.4.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.4.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.4.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.4.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.4.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.5.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.5.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.5.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.5.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.5.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.5.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.5.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.5.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.6.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.6.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.6.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.6.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.6.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.6.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.6.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.6.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.7.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.7.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.7.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.7.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.7.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.7.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.7.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.7.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.8.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.8.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.8.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.8.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.8.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.8.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.8.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.8.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.9.attn.wo.bias	BF16:1	[1024] x1
+1	2097152	vision.blocks.9.attn.wo.weight	BF16:1	[1024, 1024] x1
+1	6144	vision.blocks.9.attn.wqkv.bias	BF16:1	[3072] x1
+1	6291456	vision.blocks.9.attn.wqkv.weight	BF16:1	[3072, 1024] x1
+1	11534336	vision.blocks.9.mlp.w1.weight	BF16:1	[5632, 1024] x1
+1	5767168	vision.blocks.9.mlp.w2.weight	BF16:1	[1024, 2816] x1
+1	2048	vision.blocks.9.norm1.weight	BF16:1	[1024] x1
+1	2048	vision.blocks.9.norm2.weight	BF16:1	[1024] x1
+1	2048	vision.norm.weight	BF16:1	[1024] x1
+1	2048	vision.patch_embed.proj.bias	BF16:1	[1024] x1
+1	1204224	vision.patch_embed.proj.weight	BF16:1	[1024, 588] x1

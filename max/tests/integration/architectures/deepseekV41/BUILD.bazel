@@ -13,11 +13,16 @@ package(default_visibility = [
 modular_py_test(
     name = "test_arch_registration",
     srcs = ["test_arch_registration.py"],
+    # The draft architecture the pairing resolves to is imported by the
+    # registry, not the test.
+    ignore_extra_deps = [
+        "//max/python/max/pipelines/architectures/dspark_deepseekV41",
+    ],
     deps = [
         "//max/python/max/graph",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures/deepseekV41",
-        "//max/python/max/pipelines/architectures/unified_dspark_deepseekV41",
+        "//max/python/max/pipelines/architectures/dspark_deepseekV41",
         "//max/python/max/pipelines/lib",
     ],
 )
@@ -56,11 +61,15 @@ modular_py_test(
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
         "//max/python/max/pipelines/speculative",
+        requirement("numpy"),
         requirement("transformers"),
     ],
 )
@@ -165,6 +174,19 @@ modular_py_test(
     ],
 )
 
+# Guards the Engram lookup adapter's workspace sizing and capacity bound
+# for reduced and over-capacity table layouts (engram_lookup.py). CPU only.
+modular_py_test(
+    name = "test_engram_reduced_layout",
+    srcs = ["test_engram_reduced_layout.py"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        requirement("numpy"),
+    ],
+)
+
 # Guards pipelines/lib/log_probabilities.py (LogProbabilitiesMixin and its
 # graph).
 modular_py_test(
@@ -174,22 +196,21 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/deepseekV41",
-        "//max/python/max/pipelines/architectures/unified_dspark_deepseekV41",
         "//max/python/max/pipelines/lib",
         requirement("numpy"),
     ],
 )
 
 # Guards the graph-spec load (pipelines/lib graph_specs and PipelineModel
-# load_graphs) around the deferred weight loads.
+# load_graphs) and the speculative pairing's compile (SpecDecodePipelineModel)
+# around the deferred weight loads.
 modular_py_test(
     name = "test_load_graphs",
     srcs = ["test_load_graphs.py"],
     deps = [
         "//max/python/max/pipelines/architectures/deepseekV41",
-        "//max/python/max/pipelines/architectures/unified_dspark_deepseekV41",
         "//max/python/max/pipelines/lib",
     ],
 )
@@ -211,9 +232,8 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/deepseekV41",
-        "//max/python/max/pipelines/architectures/unified_dspark_deepseekV41",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
@@ -241,9 +261,8 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/deepseekV41",
-        "//max/python/max/pipelines/architectures/unified_dspark_deepseekV41",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
@@ -264,9 +283,9 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/deepseekV41",
-        "//max/python/max/pipelines/architectures/unified_dspark_deepseekV41",
+        "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         requirement("numpy"),
     ],
@@ -284,6 +303,7 @@ modular_py_test(
         "test.resources:gpu-memory": "8",
     },
     gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
     tags = ["gpu"],
     # Needs mo.matmul.mxfp8.cluster_splitk, registered only by the
     # closed-source kernels.
@@ -293,7 +313,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/deepseekV41",
         requirement("numpy"),
     ],
@@ -325,11 +345,52 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/architectures/deepseekV41",
         requirement("numpy"),
         requirement("transformers"),
+    ],
+)
+
+# The routed-expert format a quantization config selects, and the trunk's
+# MXFP4 expert stacking. Guards strict state-dict loading
+# (nn/layer Module.load_state_dict). CPU only.
+modular_py_test(
+    name = "test_routed_expert_format",
+    srcs = ["test_routed_expert_format.py"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
+# The trunk's MXFP4 routed experts, routed and expert-parallel, against the
+# reference's W4A8 math. Guards nn/kernels grouped_matmul_block_scaled (W4A8),
+# the W4A8 fused SwiGLU grouped matmul, grouped_quantize_dynamic_block_scaled
+# (MXFP8) and the W4A8 MegaFFN.
+modular_py_test(
+    name = "test_mxfp4_experts_gpu",
+    srcs = ["test_mxfp4_experts_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
+    # Each test compiles its own graphs; shards compile them in parallel.
+    shard_count = 4,
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        requirement("numpy"),
+        requirement("torch"),
     ],
 )
 
@@ -346,17 +407,20 @@ modular_py_test(
     ],
 )
 
-# Guards the shared spec-decode graph (pipelines/speculative block_driver.py
-# and spec_input_types.py), SpeculativeConfig, the KV cache input types from
+# Guards the shared spec-decode graph (pipelines/lib build_spec_graph,
+# pipelines/speculative block_driver.py and spec_input_types.py),
+# SpeculativeConfig, the KV cache input types from
 # nn/kv_cache MultiKVCacheParams, and the expert-parallel graph inputs from
 # nn/comm/ep EPBatchManager. Traces only, but needs a GPU because
 # the MXFP8 scale layout follows the host's accelerator.
 modular_py_test(
-    name = "test_unified_dspark_construction",
+    name = "test_dspark_graph_construction",
     size = "large",
-    srcs = ["test_unified_dspark_construction.py"],
+    srcs = ["test_dspark_graph_construction.py"],
     data = ["//max/tests/integration/architectures/deepseekV41/testdata"],
     gpu_constraints = ["//:b200_gpu"],
+    # Importing it registers the architectures the pairing resolves.
+    ignore_extra_deps = ["//max/python/max/pipelines"],
     tags = ["gpu"],
     # Needs mo.engram.hash_gather and mo.engram.hash_gather_shard, registered
     # only by the closed-source kernels.
@@ -364,14 +428,40 @@ modular_py_test(
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/architectures/deepseekV41",
-        "//max/python/max/pipelines/architectures/unified_dspark_deepseekV41",
+        "//max/python/max/pipelines/architectures/dspark_deepseekV41",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/speculative",
         requirement("numpy"),
         requirement("transformers"),
+    ],
+)
+
+# Guards the per-replica DSpark draft head (deepseekV41/spec_adapters.py)
+# and SampledDraftSampler.split (pipelines/speculative/block_driver.py).
+modular_py_test(
+    name = "test_dspark_replica_head_gpu",
+    srcs = ["test_dspark_replica_head_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = [
+        "//:b200_gpu",
+        "//:has_multi_gpu",
+    ],
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/speculative",
+        requirement("numpy"),
     ],
 )
 
@@ -414,7 +504,7 @@ modular_py_library(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/deepseekV41",
         requirement("numpy"),
         requirement("torch"),
@@ -477,6 +567,7 @@ modular_py_test(
         "test.resources:gpu-memory": "8",
     },
     gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
     tags = ["gpu"],
     target_compatible_with = REQUIRES_INTERNAL_KERNELS,
     deps = [
@@ -484,7 +575,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/deepseekV4",
         requirement("numpy"),
     ],
@@ -499,6 +590,7 @@ modular_py_test(
         "test.resources:gpu-memory": "8",
     },
     gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
     tags = ["gpu"],
     target_compatible_with = REQUIRES_INTERNAL_KERNELS,
     deps = [
@@ -506,7 +598,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/deepseekV4",
         "//max/python/max/pipelines/architectures/deepseekV41",
         requirement("numpy"),
@@ -527,7 +619,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/deepseekV41",
         requirement("numpy"),
     ],
@@ -542,6 +634,7 @@ modular_py_test(
         "test.resources:gpu-memory": "16",
     },
     gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
     tags = ["gpu"],
     target_compatible_with = REQUIRES_INTERNAL_KERNELS,
     deps = [
@@ -549,7 +642,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/deepseekV41",
         requirement("numpy"),
         requirement("torch"),
@@ -565,6 +658,7 @@ modular_py_test(
         "test.resources:gpu-memory": "16",
     },
     gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
     tags = ["gpu"],
     target_compatible_with = REQUIRES_INTERNAL_KERNELS,
     deps = [
@@ -572,7 +666,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/deepseekV4",
         "//max/python/max/pipelines/architectures/deepseekV41",
         requirement("numpy"),
@@ -596,9 +690,61 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/deepseekV41",
         requirement("numpy"),
         requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "test_replay_plan",
+    srcs = ["test_replay_plan.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_replay_trunk",
+    srcs = ["test_replay_trunk.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_replay_dspark",
+    srcs = ["test_replay_dspark.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_replay_writes",
+    srcs = ["test_replay_writes.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/context",
+        requirement("numpy"),
     ],
 )

@@ -22,8 +22,8 @@ from max import tree
 from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.kv_cache import KVCacheInputs
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
+from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.legacy.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.context import ImageMetadata
 from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.batch_processor import (
@@ -164,6 +164,7 @@ class Gemma4BatchProcessor(
         kv_params: KVCacheParamInterface,
         device_refs: list[DeviceRef],
     ) -> list[TensorType | BufferType]:
+        """The graph inputs' shapes, as symbols plus the KV cache params."""
         assert self.input_tree is not None, "the model binds its inputs first"
         return tree.leaves(self.input_tree)
 
@@ -219,6 +220,7 @@ class Gemma4BatchProcessor(
     def process_outputs(
         self, outputs: Sequence[Buffer | object]
     ) -> ModelOutputs:
+        """Unpacks the graph outputs into ragged KV results."""
         return process_ragged_kv_outputs(
             outputs,
             return_logits=self.runtime.return_logits,

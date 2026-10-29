@@ -18,35 +18,35 @@ from collections.abc import Callable
 from typing import Any
 
 import numpy as np
+from max import functional as F
 from max import tree
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module, as_subgraph
-from max.experimental.nn.common_layers.embedding import VocabParallelEmbedding
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.linear import ColumnParallelLinear
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.sharding import (
-    DeviceMapping,
-    DeviceMesh,
-    NamedMapping,
-    Partial,
-)
-from max.experimental.tensor import Tensor
 from max.graph import BufferType, DeviceRef, TensorType, TensorValue
-from max.nn.kv_cache import (
+from max.nn import Module, as_subgraph
+from max.nn.common_layers.embedding import VocabParallelEmbedding
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.linear import ColumnParallelLinear
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.legacy.kv_cache import (
     CacheLeafKind,
     KVCacheInputsPerDevice,
     MHAKVCacheParams,
     MultiKVCacheParams,
     RecurrentStateInputsPerDevice,
 )
-from max.nn.quant_config import QuantConfig
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
+from max.tensor import Tensor
+from max.tensor.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    NamedMapping,
+    Partial,
+)
 
 from ..inkling.inkling import _subgraph_layer_groups
 from ..inkling.layers.attention import log_scaling_tau
@@ -68,16 +68,16 @@ _merge_multimodal_embeddings = F.functional(merge_multimodal_embeddings)
 
 
 class _ConvSites:
-    """One layer's conv pools, slot tables and rows, in :class:`ConvSite`
-    order.
+    """One layer's conv pools, slot tables and rows.
 
-    The kernels index the whole ``[num_layers, batch]`` slot table, so no
-    per-layer slice is materialized.
+    The tensors follow :class:`ConvSite` order. The kernels index the whole
+    ``[num_layers, batch]`` slot table, so no per-layer slice is materialized.
     """
 
     def __init__(
         self, pools: list[Tensor], rows: list[Tensor], layer_rows: list[Tensor]
     ) -> None:
+        """Carries the three per-site tensor lists."""
         self.pools = pools
         self.rows = rows
         self.layer_rows = layer_rows
@@ -97,8 +97,7 @@ class _ConvSites:
 
 
 class InklingDecoderLayer(Module[..., tuple[Tensor, Tensor]]):
-    """One decoder layer: attention and feed-forward, each with an output
-    conv."""
+    """One decoder layer: attention, feed-forward, and their output convs."""
 
     def __init__(
         self,
@@ -109,6 +108,12 @@ class InklingDecoderLayer(Module[..., tuple[Tensor, Tensor]]):
         num_devices: int,
         quant_config: QuantConfig | None = None,
     ) -> None:
+        """Builds one layer's norms, attention, convs, and feed-forward.
+
+        A routed-expert layer takes ``quant_config`` for its experts when
+        ``layer_idx`` appears in its quantized layers; the sinks and the gate
+        stay at dtype.
+        """
         hidden = text_config.hidden_size
         self.attn_norm = InklingRMSNorm(hidden, eps=text_config.rms_norm_eps)
         self.attn = InklingAttention(
@@ -243,6 +248,13 @@ class Inkling(Module[..., ModuleV3Outputs]):
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
     ) -> None:
+        """Builds the embedding, decoder layers, and LM head.
+
+        Collects the attention leaves of ``config.kv_params`` into local and
+        global cache parameters, records each layer's cache key and index, and
+        masks the padded vocabulary tail with ``-inf`` when the unpadded size
+        is the smaller one.
+        """
         if return_hidden_states != ReturnHiddenStates.NONE:
             raise NotImplementedError(
                 "Inkling ModuleV3 does not return hidden states"

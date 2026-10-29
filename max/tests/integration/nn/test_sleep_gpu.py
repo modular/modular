@@ -18,7 +18,7 @@ from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph
-from max.nn import kernels
+from max.nn.legacy import kernels
 
 
 def build_sleep_graph(device: Device) -> Model:

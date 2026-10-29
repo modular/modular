@@ -18,7 +18,7 @@ that state already predicts for ``k`` rather than adding to it. KDA's one
 change from Gated DeltaNet is that the forget gate decays the state **per
 channel** -- ``alpha_t`` is a ``head_dim``-wide vector per head, so
 ``S_t = diag(alpha_t) S_{t-1} + k_t delta_t^T``. MAX's
-:mod:`~max.nn.state_space.gated_delta` recurrence takes one decay per head per
+:mod:`~max.nn.legacy.state_space.gated_delta` recurrence takes one decay per head per
 token and cannot express that, which is why this is a sibling of Qwen3.5's
 ``GatedDeltaNet`` rather than a branch inside it.
 
@@ -64,26 +64,36 @@ from max.graph import (
     ops,
 )
 from max.graph.weight import Segment
-from max.nn.comm import Allreduce
-from max.nn.layer import Module, Shardable
-from max.nn.linear import Linear
-from max.nn.norm import RMSNorm
-from max.nn.state_space import (
+from max.nn.legacy.comm import Allreduce
+from max.nn.legacy.layer import Module, Shardable
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.state_space import (
     gated_delta_conv1d_fwd,
+    gated_delta_conv1d_verify_fwd,
     kda_chunk,
+    kda_chunk_is_registered,
     kda_chunk_supports_head_dims,
     kda_decode,
+    kda_verify_ring,
 )
-from max.nn.state_space.kimi_delta import (
+from max.nn.legacy.state_space.kimi_delta import (
     KDA_GATE_LOWER_BOUND,
     KdaGateMode,
     KdaStateLayout,
 )
 
 from ..model_config import Glm5NextConfig
-from .kda import KdaReplayInputs, KdaSublayerInputs
+from .kda import KdaReplayInputs, KdaRing, KdaSublayerInputs
 
-__all__ = ["Glm5NextKdaSublayer", "KimiDeltaAttention"]
+__all__ = [
+    "Glm5NextKdaSublayer",
+    "KimiDeltaAttention",
+    "amd_kda_chunk_eligible",
+    "kda_chunk_predicate",
+    "kda_chunk_servable",
+    "kda_gate_mode",
+]
 
 STATE_LAYOUT: KdaStateLayout = "K_FIRST"
 """Pool axis order, ``[num_rows, heads, head_dim, head_dim]``.
@@ -97,26 +107,112 @@ val_dim]`` layout Qwen3.5's recurrent state cache declares.
 _CHUNK_MIN_COMPUTE_CAPABILITY = 100
 """Lowest NVIDIA compute capability (``sm_100`` -> 100) ``kda_chunk`` builds for."""
 
+_AMD_CHUNK_MAX_ELEMENTS = 1 << 31
+"""Largest tensor or workspace the gfx950 ``kda_chunk`` launch indexes; it
+raises past this rather than overflow its 32-bit offsets."""
 
-def _chunk_servable(head_dim: int) -> bool:
-    """Whether prefill can take ``kda_chunk`` on this accelerator.
+_CHUNK_LEN = 64
+"""Tokens per chunk of the ``kda_chunk`` recurrence."""
 
-    The op's NVIDIA kernels only instantiate on SM100+, and its AMD path takes
-    bf16 q/k/v where this layer feeds float32, so everything else keeps the
-    sequential recurrence for prefill.
+
+def kda_chunk_servable(
+    head_dim: int, gate_mode: KdaGateMode, pool_dtype: DType
+) -> bool:
+    """Returns whether prefill can take ``kda_chunk``, not ``kda_decode``.
+
+    The op's NVIDIA kernels only instantiate on SM100+, and its AMD kernels
+    only on gfx950, where they also take only the ``"safe"`` gate and a
+    float32 pool. The AMD kernels take bf16 q/k/v and output, so callers cast
+    at the op boundary there. Builds without the closed-source kernels lack
+    the op. Anything outside that keeps the sequential recurrence for prefill.
+
+    Call this while a graph is being built: it reads that graph's kernel
+    library.
+
+    Args:
+        head_dim: Key and value head width.
+        gate_mode: The forget-gate form the layer passes the op.
+        pool_dtype: Dtype of the recurrent state pool.
+
+    Returns:
+        ``True`` when ``kda_chunk`` accepts this layer's arguments.
     """
+    api = accelerator_api()
+    if api == "hip":
+        return (
+            amd_kda_chunk_eligible(head_dim, gate_mode, pool_dtype)
+            and kda_chunk_is_registered()
+        )
     # TODO(KERN-3635): widen once kda_chunk compiles below SM100.
     name = accelerator_architecture_name()
     digits = name.removeprefix("sm_").rstrip("abcdefghijklmnopqrstuvwxyz")
     return (
-        accelerator_api() == "cuda"
+        api == "cuda"
         and digits.isdigit()
         and int(digits) >= _CHUNK_MIN_COMPUTE_CAPABILITY
+        and kda_chunk_supports_head_dims(head_dim, head_dim)
+        and kda_chunk_is_registered()
+    )
+
+
+def amd_kda_chunk_eligible(
+    head_dim: int, gate_mode: KdaGateMode, pool_dtype: DType
+) -> bool:
+    """Returns whether gfx950 prefill takes ``kda_chunk``, registration aside.
+
+    The part of :func:`kda_chunk_servable` that needs no graph, so the memory
+    planner can ask it too.
+
+    Args:
+        head_dim: Key and value head width.
+        gate_mode: The forget-gate form the layer passes the op.
+        pool_dtype: Dtype of the recurrent state pool.
+
+    Returns:
+        ``True`` on a gfx950 accelerator whose AMD ``kda_chunk`` contract
+        these arguments meet.
+    """
+    return (
+        accelerator_api() == "hip"
+        and accelerator_architecture_name().startswith("gfx950")
+        and gate_mode == "safe"
+        and pool_dtype == DType.float32
         and kda_chunk_supports_head_dims(head_dim, head_dim)
     )
 
 
-def _gate_mode(lower_bound: float | None) -> KdaGateMode:
+def kda_chunk_predicate(
+    total_tokens: TensorValue,
+    batch_size: TensorValue,
+    num_heads: int,
+    head_dim: int,
+) -> TensorValue:
+    """Returns whether a batch takes the ``kda_chunk`` side of the cond.
+
+    A batch with more tokens than sequences is a prefill. On AMD it must also
+    fit the launch's 32-bit indexing, or it falls back to ``kda_decode``
+    instead of raising: the largest buffer, ``kg_t``, holds ``(T // 64 + N) *
+    64 <= T + 64 N`` rows of ``num_heads * head_dim``. That also bounds q/k/v,
+    gate and output, and the launch's stride check, because the layers pass
+    them contiguous (q/k/v are fresh bf16 casts).
+
+    Args:
+        total_tokens: Scalar token count of the batch.
+        batch_size: Scalar sequence count of the batch.
+        num_heads: KDA heads on this device.
+        head_dim: Key and value head width.
+
+    Returns:
+        A boolean scalar.
+    """
+    is_prefill = total_tokens > batch_size
+    if accelerator_api() != "hip":
+        return is_prefill
+    max_rows = _AMD_CHUNK_MAX_ELEMENTS // (num_heads * head_dim)
+    return is_prefill & (total_tokens + _CHUNK_LEN * batch_size <= max_rows)
+
+
+def kda_gate_mode(lower_bound: float | None) -> KdaGateMode:
     """Selects the kernel's forget-gate form from the config's lower bound.
 
     Raises:
@@ -172,7 +268,7 @@ class KimiDeltaAttention(Module, Shardable):
         self.device = device
         self.rms_norm_eps = rms_norm_eps
         self.lower_bound = lower_bound
-        self.gate_mode = _gate_mode(lower_bound)
+        self.gate_mode = kda_gate_mode(lower_bound)
         self._sharding_strategy: ShardingStrategy | None = None
 
         self.qkv_dim = num_heads * head_dim
@@ -423,6 +519,8 @@ class KimiDeltaAttention(Module, Shardable):
         recurrent_row_id: TensorValue,
         input_row_offsets: TensorValue,
         replay_capture: list[KdaReplayInputs] | None = None,
+        ring: KdaRing | None = None,
+        verify_width: TensorValue | None = None,
     ) -> TensorValue:
         """Runs one KDA layer, mutating both state pools in place.
 
@@ -444,6 +542,14 @@ class KimiDeltaAttention(Module, Shardable):
             replay_capture: When given, this call's :class:`KdaReplayInputs`
                 are appended to it so a speculative rollback can re-run the
                 state kernels over a shorter prefix.
+            ring: The speculative verify's ring, set with ``verify_width``.
+                A verify records each token's state update into it instead of
+                writing ``recurrent_pool``, and the caller folds the accepted
+                records in before the pool is read again.
+            verify_width: The speculative graph's
+                :func:`~max.nn.legacy.state_space.verify_width_operand`. A launch at
+                width zero lands both pools on the forward, and a wider one
+                leaves them for the rollback.
 
         Returns:
             ``[total_tokens, hidden_size]``, a partial sum over the head axis
@@ -464,15 +570,26 @@ class KimiDeltaAttention(Module, Shardable):
             [self.conv_dim, self.conv_kernel_size],
         )
         row_offsets_uint32 = input_row_offsets.cast(DType.uint32)
-        conv_out = ops.silu(
-            gated_delta_conv1d_fwd(
+        qkv_window: TensorValue | None = None
+        if verify_width is None:
+            conv_out = gated_delta_conv1d_fwd(
                 qkv_input_ragged=qkv,
                 conv_weight=conv_weight,
                 conv_state=conv_pool,
                 slot_idx=conv_row_id.cast(DType.uint32),
                 input_row_offsets=row_offsets_uint32,
             )
-        )
+        else:
+            conv_out, qkv_window = gated_delta_conv1d_verify_fwd(
+                qkv_input_ragged=qkv,
+                conv_weight=conv_weight,
+                conv_state=conv_pool,
+                slot_idx=conv_row_id.cast(DType.uint32),
+                input_row_offsets=row_offsets_uint32,
+                verify_width=verify_width,
+                rollback=False,
+            )
+        conv_out = ops.silu(conv_out)
         q, k, v = (
             ops.reshape(part, head_shape)
             for part in ops.split(conv_out, [self.qkv_dim] * 3, axis=-1)
@@ -494,6 +611,7 @@ class KimiDeltaAttention(Module, Shardable):
                     conv_weight=conv_weight,
                     raw_gate=raw_gate,
                     beta_logits=beta_logits,
+                    qkv_window=qkv_window,
                 )
             )
 
@@ -503,16 +621,44 @@ class KimiDeltaAttention(Module, Shardable):
         cu_seqlens = input_row_offsets.cast(DType.int32)
 
         # Both ops take the same tensors and differ only in how they walk the
-        # recurrence. q/k/v stay float32 into the chunk op too: its bf16
-        # compute-bound kernel is faster, but that rounding has not been
-        # validated at this layer's depth and context, so prefill keeps the
-        # numerics decode has. float32 out because the next stage is a
-        # float32 gated norm.
+        # recurrence. On gfx950 the chunk-eligible configuration requires a
+        # float32 pool, so both ops write float32 state there. On NVIDIA q/k/v
+        # and the output stay float32 into the chunk op too. The gfx950 chunk
+        # kernels take only bf16 q/k/v and output, so that branch rounds at
+        # the op boundary and nowhere else; `test_kda_chunk_prefill.py` grades
+        # it against float32 decode. The output returns to float32 because the
+        # next stage is a float32 gated norm.
         out_shape: list[DimLike] = [x.shape[0], heads, head_dim]
 
         def _recurrence(chunked: bool) -> TensorValue:
             op = kda_chunk if chunked else kda_decode
+            io_dtype = (
+                DType.bfloat16
+                if chunked and accelerator_api() == "hip"
+                else DType.float32
+            )
             out = op(
+                q.cast(io_dtype),
+                k.cast(io_dtype),
+                v.cast(io_dtype),
+                raw_gate,
+                beta_logits,
+                a_log,
+                dt_bias,
+                cu_seqlens,
+                recurrent_pool,
+                state_indices,
+                output_dtype=io_dtype,
+                gate_mode=self.gate_mode,
+                beta_mode="logits",
+                state_layout=STATE_LAYOUT,
+            ).cast(DType.float32)
+            return ops.rebind(out, out_shape, "kda recurrence output rebind")
+
+        def _verify_recurrence() -> TensorValue:
+            assert verify_width is not None
+            assert ring is not None, "a verify needs a ring"
+            out = kda_verify_ring(
                 q,
                 k,
                 v,
@@ -523,31 +669,58 @@ class KimiDeltaAttention(Module, Shardable):
                 cu_seqlens,
                 recurrent_pool,
                 state_indices,
+                ring.pool,
+                ring.row_id,
+                verify_width,
                 output_dtype=DType.float32,
                 gate_mode=self.gate_mode,
                 beta_mode="logits",
                 state_layout=STATE_LAYOUT,
             )
-            return ops.rebind(out, out_shape, "kda recurrence output rebind")
+            return ops.rebind(out, out_shape, "kda verify output rebind")
 
-        # A speculative verify stays sequential, as Qwen3.5's does: a replay
-        # of the accepted prefix has to reproduce the forward's arithmetic.
-        if replay_capture is None and _chunk_servable(head_dim):
-            # Decided at runtime because `kda_chunk` reads `cu_seqlens` back
-            # to the host to build its chunk map. `ops.cond` branches are
-            # separate regions, so a decode batch (one token per sequence)
-            # never launches the prefill side, and the device graph captured
-            # for decode never contains that readback.
+        chunk_servable = kda_chunk_servable(
+            head_dim, self.gate_mode, recurrent_pool.dtype
+        )
+        if verify_width is None and chunk_servable:
+            # A decode batch (one token per sequence) must stay on float32
+            # `kda_decode`, and on NVIDIA `kda_chunk` also reads `cu_seqlens`
+            # back to the host to build its chunk map. `ops.cond` branches are
+            # separate regions, so a decode batch never launches the prefill
+            # side, and the device graph captured for decode never contains
+            # it. A mixed prefill+decode batch takes the chunk side whole,
+            # decode rows included.
             total_tokens = ops.shape_to_tensor(x.shape)[0]
             batch_size = ops.shape_to_tensor(input_row_offsets.shape)[0] - 1
             core_out = ops.cond(
-                total_tokens > batch_size,
+                kda_chunk_predicate(total_tokens, batch_size, heads, head_dim),
                 [TensorType(DType.float32, out_shape, device)],
                 lambda: _recurrence(chunked=True),
                 lambda: _recurrence(chunked=False),
             )[0]
-        else:
+        elif verify_width is None:
             core_out = _recurrence(chunked=False)
+        elif chunk_servable:
+            # A draft-free prefill has nothing to roll back, so it takes the
+            # forward's chunked kernel. A verify stays on the sequential
+            # recurrence, whose arithmetic the ring records and the fold
+            # replays.
+            total_tokens = ops.shape_to_tensor(x.shape)[0]
+            batch_size = ops.shape_to_tensor(input_row_offsets.shape)[0] - 1
+            no_drafts = ops.equal(ops.shape_to_tensor(verify_width.shape)[0], 0)
+            core_out = ops.cond(
+                ops.logical_and(
+                    no_drafts,
+                    kda_chunk_predicate(
+                        total_tokens, batch_size, heads, head_dim
+                    ),
+                ),
+                [TensorType(DType.float32, out_shape, device)],
+                lambda: _recurrence(chunked=True),
+                _verify_recurrence,
+            )[0]
+        else:
+            core_out = _verify_recurrence()
 
         # Normalize, scale by the learned weight, and only then gate. Gating
         # first is a different function of the same tensors.
@@ -568,6 +741,12 @@ class Glm5NextKdaSublayer(Module):
 
     Set by the speculative graph, which re-runs those kernels over the accepted
     prefix after the verify pass. ``None`` in the base graph.
+    """
+
+    verify_width: TensorValue | None = None
+    """The speculative graph's verify width operand, or ``None``.
+
+    Set alongside :attr:`replay_capture`. See :class:`KimiDeltaAttention`.
     """
 
     def __init__(self, config: Glm5NextConfig, layer_idx: int) -> None:
@@ -602,6 +781,9 @@ class Glm5NextKdaSublayer(Module):
         Returns:
             ``[total_tokens, hidden_size]`` per device.
         """
+        # Only the verify width keeps a captured call off `kda_chunk` and its
+        # own state writes, which the rollback would then advance again.
+        assert self.replay_capture is None or self.verify_width is not None
         return self.allreduce(
             [
                 shard(
@@ -616,6 +798,12 @@ class Glm5NextKdaSublayer(Module):
                         if self.replay_capture is None
                         else self.replay_capture[i]
                     ),
+                    ring=(
+                        KdaRing(inputs.ring_pools[i], inputs.ring_row_ids[i])
+                        if inputs.ring_pools
+                        else None
+                    ),
+                    verify_width=self.verify_width,
                 )
                 for i, shard in enumerate(self.shards)
             ],

@@ -377,6 +377,7 @@ def targets():
         name = "nvidia-cudnn-frontend@multiple",
         actual = select({
             "@@//:use_bench_setting": ":nvidia-cudnn-frontend@1.31.0",
+            "@@//:use_vllm_setting": ":nvidia-cudnn-frontend@1.31.0",
             "//conditions:default": ":nvidia-cudnn-frontend@1.26.0",
         }),
     )
@@ -394,7 +395,7 @@ def targets():
         name = "flashinfer-python@multiple",
         actual = select({
             "@@//:use_sglang_setting": ":flashinfer-python@0.6.11.post1",
-            "@@//:use_vllm_setting": ":flashinfer-python@0.6.18.post1",
+            "@@//:use_vllm_setting": ":flashinfer-python@0.7.0.post1",
             "@@//:use_bench_setting": ":flashinfer-python@0.7.0",
             "//conditions:default": ":flashinfer-python@0.6.8.post1",
         }),
@@ -424,13 +425,11 @@ def targets():
         name = "nvidia-cutlass-dsl-libs-core@multiple",
         testonly = True,
         target_compatible_with = select({
-            "@@//:use_sglang_setting": [],
             "@@//:use_vllm_setting": [],
             "@@//:use_bench_setting": [],
             "//conditions:default": ["@platforms//:incompatible"],
         }),
         actual = select({
-            "@@//:use_sglang_setting": ":nvidia-cutlass-dsl-libs-core@4.6.2",
             "@@//:use_vllm_setting": ":nvidia-cutlass-dsl-libs-core@4.7.1",
             "@@//:use_bench_setting": ":nvidia-cutlass-dsl-libs-core@4.8.0",
         }),
@@ -440,13 +439,11 @@ def targets():
         name = "nvidia-cutlass-dsl-libs-cu12@multiple",
         testonly = True,
         target_compatible_with = select({
-            "@@//:use_sglang_setting": [],
             "@@//:use_vllm_setting": [],
             "@@//:use_bench_setting": [],
             "//conditions:default": ["@platforms//:incompatible"],
         }),
         actual = select({
-            "@@//:use_sglang_setting": ":nvidia-cutlass-dsl-libs-cu12@4.6.2",
             "@@//:use_vllm_setting": ":nvidia-cutlass-dsl-libs-cu12@4.7.1",
             "@@//:use_bench_setting": ":nvidia-cutlass-dsl-libs-cu12@4.8.0",
         }),
@@ -652,14 +649,6 @@ def targets():
     )
 
     native.alias(
-        name = "nvidia-nvshmem-cu12@multiple",
-        testonly = True,
-        actual = select({
-            "//conditions:default": ":nvidia-nvshmem-cu12@3.4.5",
-        }),
-    )
-
-    native.alias(
         name = "sglang@multiple",
         testonly = True,
         actual = ":sglang@0.5.12.post1",
@@ -697,6 +686,20 @@ def targets():
     )
 
     native.alias(
+        name = "xgrammar@multiple",
+        testonly = True,
+        target_compatible_with = select({
+            "@@//:use_sglang_setting": [],
+            "@@//:use_vllm_setting": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        actual = select({
+            "@@//:use_sglang_setting": ":xgrammar@0.2.0",
+            "@@//:use_vllm_setting": ":xgrammar@0.2.7",
+        }),
+    )
+
+    native.alias(
         name = "torchcodec@multiple",
         testonly = True,
         target_compatible_with = select({
@@ -713,7 +716,7 @@ def targets():
     native.alias(
         name = "vllm@multiple",
         testonly = True,
-        actual = ":vllm@0.30.0",
+        actual = ":vllm@0.31.0",
         target_compatible_with = ["@@//:nvidia_gpu"],
     )
 
@@ -1341,228 +1344,6 @@ def targets():
             ":uvloop@0.22.1",
             ":zstandard@0.25.0",
         ],
-        ":_env_python_3.14_aarch64-apple-darwin": [
-            ":aiofiles@24.1.0",
-            ":aiohttp@3.13.3",
-            ":crick@0.0.8",
-            ":cyclopts@4.2.5",
-            ":dash-bootstrap-components@2.0.4",
-            ":dash@3.1.1",
-            ":ffmpeg-python@0.2.0",
-            ":filelock@3.16.1",
-            ":jinja2@3.1.6",
-            ":jmespath@1.0.1",
-            ":kaleido@0.2.1",
-            ":matplotlib@3.10.7",
-            ":msgspec@0.20.0",
-            ":nvidia-ml-py@12.560.30",
-            ":optuna@5.0.0",
-            ":orjson@3.11.8",
-            ":pandas@2.3.3",
-            ":pillow@12.3.0",
-            ":prometheus-client@0.20.0",
-            ":protobuf@6.33.5",
-            ":psutil@7.0.0",
-            ":pyarrow@22.0.0",
-            ":pydantic-settings@2.14.2",
-            ":pydantic@2.12.5",
-            ":ruamel-yaml@0.18.15",
-            ":seaborn@0.13.2",
-            ":sentencepiece@0.2.1",
-            ":setproctitle@1.3.7",
-            ":soundfile@0.13.1",
-            ":starlette-compress@1.8.0",
-            ":textual@5.3.0",
-            ":tiktoken@0.12.0",
-            ":uvicorn@0.51.0",
-            ":uvloop@0.22.1",
-            ":zstandard@0.25.0",
-        ],
-        ":_env_python_3.14_aarch64-apple-darwin-freethreaded": [
-            ":aiofiles@24.1.0",
-            ":aiohttp@3.13.3",
-            ":crick@0.0.8",
-            ":cyclopts@4.2.5",
-            ":dash-bootstrap-components@2.0.4",
-            ":dash@3.1.1",
-            ":ffmpeg-python@0.2.0",
-            ":filelock@3.16.1",
-            ":jinja2@3.1.6",
-            ":jmespath@1.0.1",
-            ":kaleido@0.2.1",
-            ":matplotlib@3.10.7",
-            ":msgspec@0.20.0",
-            ":nvidia-ml-py@12.560.30",
-            ":optuna@5.0.0",
-            ":orjson@3.11.8",
-            ":pandas@2.3.3",
-            ":pillow@12.3.0",
-            ":prometheus-client@0.20.0",
-            ":protobuf@6.33.5",
-            ":psutil@7.0.0",
-            ":pyarrow@22.0.0",
-            ":pydantic-settings@2.14.2",
-            ":pydantic@2.12.5",
-            ":ruamel-yaml@0.18.15",
-            ":seaborn@0.13.2",
-            ":sentencepiece@0.2.1",
-            ":setproctitle@1.3.7",
-            ":soundfile@0.13.1",
-            ":starlette-compress@1.8.0",
-            ":textual@5.3.0",
-            ":tiktoken@0.12.0",
-            ":uvicorn@0.51.0",
-            ":uvloop@0.22.1",
-            ":zstandard@0.25.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":aiofiles@24.1.0",
-            ":aiohttp@3.13.3",
-            ":crick@0.0.8",
-            ":cyclopts@4.2.5",
-            ":dash-bootstrap-components@2.0.4",
-            ":dash@3.1.1",
-            ":ffmpeg-python@0.2.0",
-            ":filelock@3.16.1",
-            ":jinja2@3.1.6",
-            ":jmespath@1.0.1",
-            ":kaleido@0.2.1",
-            ":matplotlib@3.10.7",
-            ":msgspec@0.20.0",
-            ":nvidia-ml-py@12.560.30",
-            ":optuna@5.0.0",
-            ":orjson@3.11.8",
-            ":pandas@2.3.3",
-            ":pillow@12.3.0",
-            ":prometheus-client@0.20.0",
-            ":protobuf@6.33.5",
-            ":psutil@7.0.0",
-            ":pyarrow@22.0.0",
-            ":pydantic-settings@2.14.2",
-            ":pydantic@2.12.5",
-            ":ruamel-yaml@0.18.15",
-            ":seaborn@0.13.2",
-            ":sentencepiece@0.2.1",
-            ":setproctitle@1.3.7",
-            ":soundfile@0.13.1",
-            ":starlette-compress@1.8.0",
-            ":textual@5.3.0",
-            ":tiktoken@0.12.0",
-            ":uvicorn@0.51.0",
-            ":uvloop@0.22.1",
-            ":zstandard@0.25.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
-            ":aiofiles@24.1.0",
-            ":aiohttp@3.13.3",
-            ":crick@0.0.8",
-            ":cyclopts@4.2.5",
-            ":dash-bootstrap-components@2.0.4",
-            ":dash@3.1.1",
-            ":ffmpeg-python@0.2.0",
-            ":filelock@3.16.1",
-            ":jinja2@3.1.6",
-            ":jmespath@1.0.1",
-            ":kaleido@0.2.1",
-            ":matplotlib@3.10.7",
-            ":msgspec@0.20.0",
-            ":nvidia-ml-py@12.560.30",
-            ":optuna@5.0.0",
-            ":orjson@3.11.8",
-            ":pandas@2.3.3",
-            ":pillow@12.3.0",
-            ":prometheus-client@0.20.0",
-            ":protobuf@6.33.5",
-            ":psutil@7.0.0",
-            ":pyarrow@22.0.0",
-            ":pydantic-settings@2.14.2",
-            ":pydantic@2.12.5",
-            ":ruamel-yaml@0.18.15",
-            ":seaborn@0.13.2",
-            ":sentencepiece@0.2.1",
-            ":setproctitle@1.3.7",
-            ":soundfile@0.13.1",
-            ":starlette-compress@1.8.0",
-            ":textual@5.3.0",
-            ":tiktoken@0.12.0",
-            ":uvicorn@0.51.0",
-            ":uvloop@0.22.1",
-            ":zstandard@0.25.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
-            ":aiofiles@24.1.0",
-            ":aiohttp@3.13.3",
-            ":crick@0.0.8",
-            ":cyclopts@4.2.5",
-            ":dash-bootstrap-components@2.0.4",
-            ":dash@3.1.1",
-            ":ffmpeg-python@0.2.0",
-            ":filelock@3.16.1",
-            ":jinja2@3.1.6",
-            ":jmespath@1.0.1",
-            ":kaleido@0.2.1",
-            ":matplotlib@3.10.7",
-            ":msgspec@0.20.0",
-            ":nvidia-ml-py@12.560.30",
-            ":optuna@5.0.0",
-            ":orjson@3.11.8",
-            ":pandas@2.3.3",
-            ":pillow@12.3.0",
-            ":prometheus-client@0.20.0",
-            ":protobuf@6.33.5",
-            ":psutil@7.0.0",
-            ":pyarrow@22.0.0",
-            ":pydantic-settings@2.14.2",
-            ":pydantic@2.12.5",
-            ":ruamel-yaml@0.18.15",
-            ":seaborn@0.13.2",
-            ":sentencepiece@0.2.1",
-            ":setproctitle@1.3.7",
-            ":soundfile@0.13.1",
-            ":starlette-compress@1.8.0",
-            ":textual@5.3.0",
-            ":tiktoken@0.12.0",
-            ":uvicorn@0.51.0",
-            ":uvloop@0.22.1",
-            ":zstandard@0.25.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
-            ":aiofiles@24.1.0",
-            ":aiohttp@3.13.3",
-            ":crick@0.0.8",
-            ":cyclopts@4.2.5",
-            ":dash-bootstrap-components@2.0.4",
-            ":dash@3.1.1",
-            ":ffmpeg-python@0.2.0",
-            ":filelock@3.16.1",
-            ":jinja2@3.1.6",
-            ":jmespath@1.0.1",
-            ":kaleido@0.2.1",
-            ":matplotlib@3.10.7",
-            ":msgspec@0.20.0",
-            ":nvidia-ml-py@12.560.30",
-            ":optuna@5.0.0",
-            ":orjson@3.11.8",
-            ":pandas@2.3.3",
-            ":pillow@12.3.0",
-            ":prometheus-client@0.20.0",
-            ":protobuf@6.33.5",
-            ":psutil@7.0.0",
-            ":pyarrow@22.0.0",
-            ":pydantic-settings@2.14.2",
-            ":pydantic@2.12.5",
-            ":ruamel-yaml@0.18.15",
-            ":seaborn@0.13.2",
-            ":sentencepiece@0.2.1",
-            ":setproctitle@1.3.7",
-            ":soundfile@0.13.1",
-            ":starlette-compress@1.8.0",
-            ":textual@5.3.0",
-            ":tiktoken@0.12.0",
-            ":uvicorn@0.51.0",
-            ":uvloop@0.22.1",
-            ":zstandard@0.25.0",
-        ],
         "//conditions:default": [],
     })
 
@@ -1643,36 +1424,6 @@ def targets():
             ":typing-extensions@4.16.0",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":mako@1.4.3",
-            ":sqlalchemy@2.0.44",
-            ":typing-extensions@4.16.0",
-        ],
-        ":_env_python_3.14_aarch64-apple-darwin": [
-            ":mako@1.4.3",
-            ":sqlalchemy@2.0.44",
-            ":typing-extensions@4.16.0",
-        ],
-        ":_env_python_3.14_aarch64-apple-darwin-freethreaded": [
-            ":mako@1.4.3",
-            ":sqlalchemy@2.0.44",
-            ":typing-extensions@4.16.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":mako@1.4.3",
-            ":sqlalchemy@2.0.44",
-            ":typing-extensions@4.16.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
-            ":mako@1.4.3",
-            ":sqlalchemy@2.0.44",
-            ":typing-extensions@4.16.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
-            ":mako@1.4.3",
-            ":sqlalchemy@2.0.44",
-            ":typing-extensions@4.16.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
             ":mako@1.4.3",
             ":sqlalchemy@2.0.44",
             ":typing-extensions@4.16.0",
@@ -3669,66 +3420,6 @@ def targets():
             ":typing-extensions@4.16.0",
             ":werkzeug@3.0.4",
         ],
-        ":_env_python_3.14_aarch64-apple-darwin": [
-            ":flask@3.0.3",
-            ":importlib-metadata@7.1.0",
-            ":nest-asyncio@1.6.0",
-            ":requests@2.32.3",
-            ":retrying@1.4.2",
-            ":setuptools@80.9.0",
-            ":typing-extensions@4.16.0",
-            ":werkzeug@3.0.4",
-        ],
-        ":_env_python_3.14_aarch64-apple-darwin-freethreaded": [
-            ":flask@3.0.3",
-            ":importlib-metadata@7.1.0",
-            ":nest-asyncio@1.6.0",
-            ":requests@2.32.3",
-            ":retrying@1.4.2",
-            ":setuptools@80.9.0",
-            ":typing-extensions@4.16.0",
-            ":werkzeug@3.0.4",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":flask@3.0.3",
-            ":importlib-metadata@7.1.0",
-            ":nest-asyncio@1.6.0",
-            ":requests@2.32.3",
-            ":retrying@1.4.2",
-            ":setuptools@80.9.0",
-            ":typing-extensions@4.16.0",
-            ":werkzeug@3.0.4",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
-            ":flask@3.0.3",
-            ":importlib-metadata@7.1.0",
-            ":nest-asyncio@1.6.0",
-            ":requests@2.32.3",
-            ":retrying@1.4.2",
-            ":setuptools@80.9.0",
-            ":typing-extensions@4.16.0",
-            ":werkzeug@3.0.4",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
-            ":flask@3.0.3",
-            ":importlib-metadata@7.1.0",
-            ":nest-asyncio@1.6.0",
-            ":requests@2.32.3",
-            ":retrying@1.4.2",
-            ":setuptools@80.9.0",
-            ":typing-extensions@4.16.0",
-            ":werkzeug@3.0.4",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
-            ":flask@3.0.3",
-            ":importlib-metadata@7.1.0",
-            ":nest-asyncio@1.6.0",
-            ":requests@2.32.3",
-            ":retrying@1.4.2",
-            ":setuptools@80.9.0",
-            ":typing-extensions@4.16.0",
-            ":werkzeug@3.0.4",
-        ],
         "//conditions:default": [],
     })
 
@@ -3771,24 +3462,6 @@ def targets():
             ":dash@3.1.1",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":dash@3.1.1",
-        ],
-        ":_env_python_3.14_aarch64-apple-darwin": [
-            ":dash@3.1.1",
-        ],
-        ":_env_python_3.14_aarch64-apple-darwin-freethreaded": [
-            ":dash@3.1.1",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":dash@3.1.1",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
-            ":dash@3.1.1",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
-            ":dash@3.1.1",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
             ":dash@3.1.1",
         ],
         "//conditions:default": [],
@@ -4692,24 +4365,6 @@ def targets():
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
             ":future@1.0.0",
         ],
-        ":_env_python_3.14_aarch64-apple-darwin": [
-            ":future@1.0.0",
-        ],
-        ":_env_python_3.14_aarch64-apple-darwin-freethreaded": [
-            ":future@1.0.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":future@1.0.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
-            ":future@1.0.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
-            ":future@1.0.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
-            ":future@1.0.0",
-        ],
         "//conditions:default": [],
     })
 
@@ -5160,131 +4815,6 @@ def targets():
         testonly = "flashinfer-python" in _TESTONLY_DEPS,
     )
 
-    _flashinfer_python_0_6_18_post1_deps = [
-        ":apache-tvm-ffi@multiple",
-        ":click@multiple",
-        ":cuda-python@multiple",
-        ":numpy@multiple",
-        ":nvidia-cudnn-frontend@multiple",
-        ":nvidia-cutlass-dsl@multiple",
-        ":torch@multiple",
-        ":tqdm@multiple",
-    ] + select({
-        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
-            ":cuda-tile@1.6.0",
-            ":einops@0.8.0",
-            ":nccl4py@0.6.0",
-            ":ninja@1.13.0",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-        ],
-        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
-            ":cuda-tile@1.6.0",
-            ":einops@0.8.0",
-            ":nccl4py@0.6.0",
-            ":ninja@1.13.0",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-        ],
-        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
-            ":cuda-tile@1.6.0",
-            ":einops@0.8.0",
-            ":nccl4py@0.6.0",
-            ":ninja@1.13.0",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-        ],
-        ":_env_python_3.12_x86_64-unknown-linux-gnu": [
-            ":cuda-tile@1.6.0",
-            ":einops@0.8.0",
-            ":nccl4py@0.6.0",
-            ":ninja@1.13.0",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-        ],
-        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
-            ":cuda-tile@1.6.0",
-            ":einops@0.8.0",
-            ":nccl4py@0.6.0",
-            ":ninja@1.13.0",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-        ],
-        ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":cuda-tile@1.6.0",
-            ":einops@0.8.0",
-            ":nccl4py@0.6.0",
-            ":ninja@1.13.0",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":cuda-tile@1.6.0",
-            ":einops@0.8.0",
-            ":nccl4py@0.6.0",
-            ":ninja@1.13.0",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
-            ":cuda-tile@1.6.0",
-            ":einops@0.8.0",
-            ":nccl4py@0.6.0",
-            ":ninja@1.13.0",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
-            ":cuda-tile@1.6.0",
-            ":einops@0.8.0",
-            ":nccl4py@0.6.0",
-            ":ninja@1.13.0",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
-            ":cuda-tile@1.6.0",
-            ":einops@0.8.0",
-            ":nccl4py@0.6.0",
-            ":ninja@1.13.0",
-            ":nvidia-ml-py@12.560.30",
-            ":packaging@25.0",
-            ":requests@2.32.3",
-            ":tabulate@0.9.0",
-        ],
-        "//conditions:default": [],
-    })
-
-    native.alias(
-        name = "_wheel_flashinfer-python@0.6.18.post1",
-        actual = "@pycross_lock_file_wheel_flashinfer_python_0.6.18.post1_py3_none_any//file",
-    )
-
-    pycross_wheel_library(
-        name = "flashinfer-python@0.6.18.post1",
-        deps = _flashinfer_python_0_6_18_post1_deps,
-        wheel = ":_wheel_flashinfer-python@0.6.18.post1",
-        testonly = "flashinfer-python" in _TESTONLY_DEPS,
-    )
-
     _flashinfer_python_0_7_0_deps = [
         ":apache-tvm-ffi@multiple",
         ":click@multiple",
@@ -5439,6 +4969,141 @@ def targets():
         name = "flashinfer-python@0.7.0",
         deps = _flashinfer_python_0_7_0_deps,
         wheel = ":_wheel_flashinfer-python@0.7.0",
+        testonly = "flashinfer-python" in _TESTONLY_DEPS,
+    )
+
+    _flashinfer_python_0_7_0_post1_deps = [
+        ":apache-tvm-ffi@multiple",
+        ":click@multiple",
+        ":cuda-python@multiple",
+        ":numpy@multiple",
+        ":nvidia-cudnn-frontend@multiple",
+        ":nvidia-cutlass-dsl@multiple",
+        ":torch@multiple",
+        ":tqdm@multiple",
+    ] + select({
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":cuda-tile@1.6.0",
+            ":einops@0.8.0",
+            ":nccl-extensions@0.1.0",
+            ":nccl4py@0.6.0",
+            ":ninja@1.13.0",
+            ":nvidia-ml-py@12.560.30",
+            ":packaging@25.0",
+            ":requests@2.32.3",
+            ":tabulate@0.9.0",
+        ],
+        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":cuda-tile@1.6.0",
+            ":einops@0.8.0",
+            ":nccl-extensions@0.1.0",
+            ":nccl4py@0.6.0",
+            ":ninja@1.13.0",
+            ":nvidia-ml-py@12.560.30",
+            ":packaging@25.0",
+            ":requests@2.32.3",
+            ":tabulate@0.9.0",
+        ],
+        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
+            ":cuda-tile@1.6.0",
+            ":einops@0.8.0",
+            ":nccl-extensions@0.1.0",
+            ":nccl4py@0.6.0",
+            ":ninja@1.13.0",
+            ":nvidia-ml-py@12.560.30",
+            ":packaging@25.0",
+            ":requests@2.32.3",
+            ":tabulate@0.9.0",
+        ],
+        ":_env_python_3.12_x86_64-unknown-linux-gnu": [
+            ":cuda-tile@1.6.0",
+            ":einops@0.8.0",
+            ":nccl-extensions@0.1.0",
+            ":nccl4py@0.6.0",
+            ":ninja@1.13.0",
+            ":nvidia-ml-py@12.560.30",
+            ":packaging@25.0",
+            ":requests@2.32.3",
+            ":tabulate@0.9.0",
+        ],
+        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":cuda-tile@1.6.0",
+            ":einops@0.8.0",
+            ":nccl-extensions@0.1.0",
+            ":nccl4py@0.6.0",
+            ":ninja@1.13.0",
+            ":nvidia-ml-py@12.560.30",
+            ":packaging@25.0",
+            ":requests@2.32.3",
+            ":tabulate@0.9.0",
+        ],
+        ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":cuda-tile@1.6.0",
+            ":einops@0.8.0",
+            ":nccl-extensions@0.1.0",
+            ":nccl4py@0.6.0",
+            ":ninja@1.13.0",
+            ":nvidia-ml-py@12.560.30",
+            ":packaging@25.0",
+            ":requests@2.32.3",
+            ":tabulate@0.9.0",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
+            ":cuda-tile@1.6.0",
+            ":einops@0.8.0",
+            ":nccl-extensions@0.1.0",
+            ":nccl4py@0.6.0",
+            ":ninja@1.13.0",
+            ":nvidia-ml-py@12.560.30",
+            ":packaging@25.0",
+            ":requests@2.32.3",
+            ":tabulate@0.9.0",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
+            ":cuda-tile@1.6.0",
+            ":einops@0.8.0",
+            ":nccl-extensions@0.1.0",
+            ":nccl4py@0.6.0",
+            ":ninja@1.13.0",
+            ":nvidia-ml-py@12.560.30",
+            ":packaging@25.0",
+            ":requests@2.32.3",
+            ":tabulate@0.9.0",
+        ],
+        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
+            ":cuda-tile@1.6.0",
+            ":einops@0.8.0",
+            ":nccl-extensions@0.1.0",
+            ":nccl4py@0.6.0",
+            ":ninja@1.13.0",
+            ":nvidia-ml-py@12.560.30",
+            ":packaging@25.0",
+            ":requests@2.32.3",
+            ":tabulate@0.9.0",
+        ],
+        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
+            ":cuda-tile@1.6.0",
+            ":einops@0.8.0",
+            ":nccl-extensions@0.1.0",
+            ":nccl4py@0.6.0",
+            ":ninja@1.13.0",
+            ":nvidia-ml-py@12.560.30",
+            ":packaging@25.0",
+            ":requests@2.32.3",
+            ":tabulate@0.9.0",
+        ],
+        "//conditions:default": [],
+    })
+
+    native.alias(
+        name = "_wheel_flashinfer-python@0.7.0.post1",
+        actual = "@pycross_lock_file_wheel_flashinfer_python_0.7.0.post1_py3_none_any//file",
+    )
+
+    pycross_wheel_library(
+        name = "flashinfer-python@0.7.0.post1",
+        deps = _flashinfer_python_0_7_0_post1_deps,
+        wheel = ":_wheel_flashinfer-python@0.7.0.post1",
         testonly = "flashinfer-python" in _TESTONLY_DEPS,
     )
 
@@ -6470,7 +6135,7 @@ def targets():
         testonly = "huggingface-hub" in _TESTONLY_DEPS,
     )
 
-    _humming_kernels_0_1_12_deps = [
+    _humming_kernels_0_1_16_deps = [
         ":cuda-bindings@multiple",
         ":numpy@multiple",
         ":torch@multiple",
@@ -6483,7 +6148,6 @@ def targets():
             ":nvidia-cuda-nvcc@13.3.73",
             ":nvidia-cuda-nvrtc@13.0.88",
             ":nvidia-cuda-runtime@13.0.96",
-            ":nvidia-ml-py@12.560.30",
             ":safetensors@0.6.2",
             ":tabulate@0.9.0",
         ],
@@ -6493,7 +6157,6 @@ def targets():
             ":nvidia-cuda-nvcc@13.3.73",
             ":nvidia-cuda-nvrtc@13.0.88",
             ":nvidia-cuda-runtime@13.0.96",
-            ":nvidia-ml-py@12.560.30",
             ":safetensors@0.6.2",
             ":tabulate@0.9.0",
         ],
@@ -6503,7 +6166,6 @@ def targets():
             ":nvidia-cuda-nvcc@13.3.73",
             ":nvidia-cuda-nvrtc@13.0.88",
             ":nvidia-cuda-runtime@13.0.96",
-            ":nvidia-ml-py@12.560.30",
             ":safetensors@0.6.2",
             ":tabulate@0.9.0",
         ],
@@ -6513,7 +6175,6 @@ def targets():
             ":nvidia-cuda-nvcc@13.3.73",
             ":nvidia-cuda-nvrtc@13.0.88",
             ":nvidia-cuda-runtime@13.0.96",
-            ":nvidia-ml-py@12.560.30",
             ":safetensors@0.6.2",
             ":tabulate@0.9.0",
         ],
@@ -6523,7 +6184,6 @@ def targets():
             ":nvidia-cuda-nvcc@13.3.73",
             ":nvidia-cuda-nvrtc@13.0.88",
             ":nvidia-cuda-runtime@13.0.96",
-            ":nvidia-ml-py@12.560.30",
             ":safetensors@0.6.2",
             ":tabulate@0.9.0",
         ],
@@ -6533,7 +6193,6 @@ def targets():
             ":nvidia-cuda-nvcc@13.3.73",
             ":nvidia-cuda-nvrtc@13.0.88",
             ":nvidia-cuda-runtime@13.0.96",
-            ":nvidia-ml-py@12.560.30",
             ":safetensors@0.6.2",
             ":tabulate@0.9.0",
         ],
@@ -6543,7 +6202,6 @@ def targets():
             ":nvidia-cuda-nvcc@13.3.73",
             ":nvidia-cuda-nvrtc@13.0.88",
             ":nvidia-cuda-runtime@13.0.96",
-            ":nvidia-ml-py@12.560.30",
             ":safetensors@0.6.2",
             ":tabulate@0.9.0",
         ],
@@ -6553,7 +6211,6 @@ def targets():
             ":nvidia-cuda-nvcc@13.3.73",
             ":nvidia-cuda-nvrtc@13.0.88",
             ":nvidia-cuda-runtime@13.0.96",
-            ":nvidia-ml-py@12.560.30",
             ":safetensors@0.6.2",
             ":tabulate@0.9.0",
         ],
@@ -6563,7 +6220,6 @@ def targets():
             ":nvidia-cuda-nvcc@13.3.73",
             ":nvidia-cuda-nvrtc@13.0.88",
             ":nvidia-cuda-runtime@13.0.96",
-            ":nvidia-ml-py@12.560.30",
             ":safetensors@0.6.2",
             ":tabulate@0.9.0",
         ],
@@ -6573,60 +6229,59 @@ def targets():
             ":nvidia-cuda-nvcc@13.3.73",
             ":nvidia-cuda-nvrtc@13.0.88",
             ":nvidia-cuda-runtime@13.0.96",
-            ":nvidia-ml-py@12.560.30",
             ":safetensors@0.6.2",
             ":tabulate@0.9.0",
         ],
         "//conditions:default": [],
     })
 
-    _humming_kernels_0_1_12_build_deps = [
+    _humming_kernels_0_1_16_build_deps = [
         ":setuptools",
         ":wheel",
     ]
 
     native.alias(
-        name = "_sdist_humming-kernels@0.1.12",
-        actual = "@pycross_lock_file_sdist_humming_kernels_0.1.12//file",
+        name = "_sdist_humming-kernels@0.1.16",
+        actual = "@pycross_lock_file_sdist_humming_kernels_0.1.16//file",
     )
 
     pycross_wheel_build(
-        name = "_build_humming-kernels@0.1.12",
-        sdist = ":_sdist_humming-kernels@0.1.12",
+        name = "_build_humming-kernels@0.1.16",
+        sdist = ":_sdist_humming-kernels@0.1.16",
         target_environment = _target,
-        deps = _humming_kernels_0_1_12_deps + _humming_kernels_0_1_12_build_deps,
+        deps = _humming_kernels_0_1_16_deps + _humming_kernels_0_1_16_build_deps,
         testonly = "humming-kernels" in _TESTONLY_DEPS,
         **extra_build_args
     )
 
     native.alias(
-        name = "_wheel_humming-kernels@0.1.12",
+        name = "_wheel_humming-kernels@0.1.16",
         actual = select({
-            ":_env_python_3.10_aarch64-apple-darwin": ":_build_humming-kernels@0.1.12",
-            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_humming_kernels_0.1.12_py3_none_manylinux_2_28_aarch64//file",
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_humming_kernels_0.1.12_py3_none_manylinux_2_28_x86_64//file",
-            ":_env_python_3.11_aarch64-apple-darwin": ":_build_humming-kernels@0.1.12",
-            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_humming_kernels_0.1.12_py3_none_manylinux_2_28_aarch64//file",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_humming_kernels_0.1.12_py3_none_manylinux_2_28_x86_64//file",
-            ":_env_python_3.12_aarch64-apple-darwin": ":_build_humming-kernels@0.1.12",
-            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_humming_kernels_0.1.12_py3_none_manylinux_2_28_aarch64//file",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_humming_kernels_0.1.12_py3_none_manylinux_2_28_x86_64//file",
-            ":_env_python_3.13_aarch64-apple-darwin": ":_build_humming-kernels@0.1.12",
-            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_humming_kernels_0.1.12_py3_none_manylinux_2_28_aarch64//file",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_humming_kernels_0.1.12_py3_none_manylinux_2_28_x86_64//file",
-            ":_env_python_3.14_aarch64-apple-darwin": ":_build_humming-kernels@0.1.12",
-            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": ":_build_humming-kernels@0.1.12",
-            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_humming_kernels_0.1.12_py3_none_manylinux_2_28_aarch64//file",
-            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_humming_kernels_0.1.12_py3_none_manylinux_2_28_aarch64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_humming_kernels_0.1.12_py3_none_manylinux_2_28_x86_64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_humming_kernels_0.1.12_py3_none_manylinux_2_28_x86_64//file",
+            ":_env_python_3.10_aarch64-apple-darwin": ":_build_humming-kernels@0.1.16",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_humming_kernels_0.1.16_cp310_abi3_manylinux_2_28_aarch64//file",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_humming_kernels_0.1.16_cp310_abi3_manylinux_2_28_x86_64//file",
+            ":_env_python_3.11_aarch64-apple-darwin": ":_build_humming-kernels@0.1.16",
+            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_humming_kernels_0.1.16_cp310_abi3_manylinux_2_28_aarch64//file",
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_humming_kernels_0.1.16_cp310_abi3_manylinux_2_28_x86_64//file",
+            ":_env_python_3.12_aarch64-apple-darwin": ":_build_humming-kernels@0.1.16",
+            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_humming_kernels_0.1.16_cp310_abi3_manylinux_2_28_aarch64//file",
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_humming_kernels_0.1.16_cp310_abi3_manylinux_2_28_x86_64//file",
+            ":_env_python_3.13_aarch64-apple-darwin": ":_build_humming-kernels@0.1.16",
+            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_humming_kernels_0.1.16_cp310_abi3_manylinux_2_28_aarch64//file",
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_humming_kernels_0.1.16_cp310_abi3_manylinux_2_28_x86_64//file",
+            ":_env_python_3.14_aarch64-apple-darwin": ":_build_humming-kernels@0.1.16",
+            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": ":_build_humming-kernels@0.1.16",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_humming_kernels_0.1.16_cp310_abi3_manylinux_2_28_aarch64//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_humming_kernels_0.1.16_cp310_abi3_manylinux_2_28_aarch64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_humming_kernels_0.1.16_cp310_abi3_manylinux_2_28_x86_64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_humming_kernels_0.1.16_cp310_abi3_manylinux_2_28_x86_64//file",
         }),
     )
 
     pycross_wheel_library(
-        name = "humming-kernels@0.1.12",
-        deps = _humming_kernels_0_1_12_deps,
-        wheel = ":_wheel_humming-kernels@0.1.12",
+        name = "humming-kernels@0.1.16",
+        deps = _humming_kernels_0_1_16_deps,
+        wheel = ":_wheel_humming-kernels@0.1.16",
         testonly = "humming-kernels" in _TESTONLY_DEPS,
     )
 
@@ -7761,24 +7416,6 @@ def targets():
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
             ":markupsafe@3.0.3",
         ],
-        ":_env_python_3.14_aarch64-apple-darwin": [
-            ":markupsafe@3.0.3",
-        ],
-        ":_env_python_3.14_aarch64-apple-darwin-freethreaded": [
-            ":markupsafe@3.0.3",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":markupsafe@3.0.3",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
-            ":markupsafe@3.0.3",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
-            ":markupsafe@3.0.3",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
-            ":markupsafe@3.0.3",
-        ],
         "//conditions:default": [],
     })
 
@@ -7822,24 +7459,6 @@ def targets():
             ":linkify-it-py@2.2.0",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":linkify-it-py@2.2.0",
-        ],
-        ":_env_python_3.14_aarch64-apple-darwin": [
-            ":linkify-it-py@2.2.0",
-        ],
-        ":_env_python_3.14_aarch64-apple-darwin-freethreaded": [
-            ":linkify-it-py@2.2.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":linkify-it-py@2.2.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
-            ":linkify-it-py@2.2.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
-            ":linkify-it-py@2.2.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
             ":linkify-it-py@2.2.0",
         ],
         "//conditions:default": [],
@@ -8078,24 +7697,6 @@ def targets():
             ":markdown-it-py@3.0.0",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":markdown-it-py@3.0.0",
-        ],
-        ":_env_python_3.14_aarch64-apple-darwin": [
-            ":markdown-it-py@3.0.0",
-        ],
-        ":_env_python_3.14_aarch64-apple-darwin-freethreaded": [
-            ":markdown-it-py@3.0.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":markdown-it-py@3.0.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
-            ":markdown-it-py@3.0.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
-            ":markdown-it-py@3.0.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
             ":markdown-it-py@3.0.0",
         ],
         "//conditions:default": [],
@@ -8858,73 +8459,37 @@ def targets():
         ":cuda-pathfinder@multiple",
         ":numpy@multiple",
     ] + select({
-        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+        ":_env_python_3.10_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":cuda-core@1.2.1",
             ":nccl4py@0.6.0",
             ":packaging@25.0",
             ":typing-extensions@4.16.0",
         ],
-        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+        ":_env_python_3.11_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":cuda-core@1.2.1",
             ":nccl4py@0.6.0",
             ":packaging@25.0",
             ":typing-extensions@4.16.0",
         ],
-        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+        ":_env_python_3.12_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":cuda-core@1.2.1",
             ":nccl4py@0.6.0",
             ":packaging@25.0",
             ":typing-extensions@4.16.0",
         ],
-        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+        ":_env_python_3.13_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":cuda-core@1.2.1",
             ":nccl4py@0.6.0",
             ":packaging@25.0",
             ":typing-extensions@4.16.0",
         ],
-        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
+        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded_nvidia_gpu": [
             ":cuda-core@1.2.1",
             ":nccl4py@0.6.0",
             ":packaging@25.0",
             ":typing-extensions@4.16.0",
         ],
-        ":_env_python_3.12_x86_64-unknown-linux-gnu": [
-            ":cuda-core@1.2.1",
-            ":nccl4py@0.6.0",
-            ":packaging@25.0",
-            ":typing-extensions@4.16.0",
-        ],
-        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
-            ":cuda-core@1.2.1",
-            ":nccl4py@0.6.0",
-            ":packaging@25.0",
-            ":typing-extensions@4.16.0",
-        ],
-        ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":cuda-core@1.2.1",
-            ":nccl4py@0.6.0",
-            ":packaging@25.0",
-            ":typing-extensions@4.16.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":cuda-core@1.2.1",
-            ":nccl4py@0.6.0",
-            ":packaging@25.0",
-            ":typing-extensions@4.16.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
-            ":cuda-core@1.2.1",
-            ":nccl4py@0.6.0",
-            ":packaging@25.0",
-            ":typing-extensions@4.16.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
-            ":cuda-core@1.2.1",
-            ":nccl4py@0.6.0",
-            ":packaging@25.0",
-            ":typing-extensions@4.16.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
+        ":_env_python_3.14_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":cuda-core@1.2.1",
             ":nccl4py@0.6.0",
             ":packaging@25.0",
@@ -11452,22 +11017,40 @@ def targets():
 
     _openai_harmony_0_0_8_deps = [
     ] + select({
-        ":_env_python_3.10_x86_64-unknown-linux-gnu_nvidia_gpu": [
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
             ":pydantic@2.12.5",
         ],
-        ":_env_python_3.11_x86_64-unknown-linux-gnu_nvidia_gpu": [
+        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
             ":pydantic@2.12.5",
         ],
-        ":_env_python_3.12_x86_64-unknown-linux-gnu_nvidia_gpu": [
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
             ":pydantic@2.12.5",
         ],
-        ":_env_python_3.13_x86_64-unknown-linux-gnu_nvidia_gpu": [
+        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
             ":pydantic@2.12.5",
         ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded_nvidia_gpu": [
+        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":pydantic@2.12.5",
         ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu_nvidia_gpu": [
+        ":_env_python_3.12_x86_64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+        ],
+        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+        ],
+        ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
+            ":pydantic@2.12.5",
+        ],
+        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+        ],
+        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
             ":pydantic@2.12.5",
         ],
         "//conditions:default": [],
@@ -11875,48 +11458,6 @@ def targets():
             ":pyyaml@6.0.3",
             ":sqlalchemy@2.0.44",
         ],
-        ":_env_python_3.14_aarch64-apple-darwin": [
-            ":alembic@1.20.0",
-            ":colorlog@6.12.0",
-            ":packaging@25.0",
-            ":pyyaml@6.0.3",
-            ":sqlalchemy@2.0.44",
-        ],
-        ":_env_python_3.14_aarch64-apple-darwin-freethreaded": [
-            ":alembic@1.20.0",
-            ":colorlog@6.12.0",
-            ":packaging@25.0",
-            ":pyyaml@6.0.3",
-            ":sqlalchemy@2.0.44",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":alembic@1.20.0",
-            ":colorlog@6.12.0",
-            ":packaging@25.0",
-            ":pyyaml@6.0.3",
-            ":sqlalchemy@2.0.44",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
-            ":alembic@1.20.0",
-            ":colorlog@6.12.0",
-            ":packaging@25.0",
-            ":pyyaml@6.0.3",
-            ":sqlalchemy@2.0.44",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
-            ":alembic@1.20.0",
-            ":colorlog@6.12.0",
-            ":packaging@25.0",
-            ":pyyaml@6.0.3",
-            ":sqlalchemy@2.0.44",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
-            ":alembic@1.20.0",
-            ":colorlog@6.12.0",
-            ":packaging@25.0",
-            ":pyyaml@6.0.3",
-            ":sqlalchemy@2.0.44",
-        ],
         "//conditions:default": [],
     })
 
@@ -11979,6 +11520,72 @@ def targets():
         name = "orjson@3.11.8",
         wheel = ":_wheel_orjson@3.11.8",
         testonly = "orjson" in _TESTONLY_DEPS,
+    )
+
+    _oss_harmony_0_0_11_deps = [
+    ] + select({
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+        ],
+        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+        ],
+        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+        ],
+        ":_env_python_3.12_x86_64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+        ],
+        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+        ],
+        ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
+            ":pydantic@2.12.5",
+        ],
+        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+        ],
+        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
+            ":pydantic@2.12.5",
+        ],
+        "//conditions:default": [],
+    })
+
+    native.alias(
+        name = "_wheel_oss-harmony@0.0.11",
+        actual = select({
+            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_oss_harmony_0.0.11_cp38_abi3_macosx_11_0_arm64//file",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_oss_harmony_0.0.11_cp38_abi3_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_oss_harmony_0.0.11_cp38_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_oss_harmony_0.0.11_cp38_abi3_macosx_11_0_arm64//file",
+            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_oss_harmony_0.0.11_cp38_abi3_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_oss_harmony_0.0.11_cp38_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_oss_harmony_0.0.11_cp38_abi3_macosx_11_0_arm64//file",
+            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_oss_harmony_0.0.11_cp38_abi3_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_oss_harmony_0.0.11_cp38_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_oss_harmony_0.0.11_cp38_abi3_macosx_11_0_arm64//file",
+            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_oss_harmony_0.0.11_cp38_abi3_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_oss_harmony_0.0.11_cp38_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.14_aarch64-apple-darwin": "@pycross_lock_file_wheel_oss_harmony_0.0.11_cp38_abi3_macosx_11_0_arm64//file",
+            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": "@pycross_lock_file_wheel_oss_harmony_0.0.11_cp38_abi3_macosx_11_0_arm64//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_oss_harmony_0.0.11_cp38_abi3_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_oss_harmony_0.0.11_cp38_abi3_manylinux_2_17_aarch64.manylinux2014_aarch64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_oss_harmony_0.0.11_cp38_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_oss_harmony_0.0.11_cp38_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64//file",
+        }),
+    )
+
+    pycross_wheel_library(
+        name = "oss-harmony@0.0.11",
+        deps = _oss_harmony_0_0_11_deps,
+        wheel = ":_wheel_oss-harmony@0.0.11",
+        testonly = "oss-harmony" in _TESTONLY_DEPS,
     )
 
     _outlines_0_1_11_deps = [
@@ -14603,30 +14210,6 @@ def targets():
             ":matplotlib@3.10.7",
             ":pandas@2.3.3",
         ],
-        ":_env_python_3.14_aarch64-apple-darwin": [
-            ":matplotlib@3.10.7",
-            ":pandas@2.3.3",
-        ],
-        ":_env_python_3.14_aarch64-apple-darwin-freethreaded": [
-            ":matplotlib@3.10.7",
-            ":pandas@2.3.3",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":matplotlib@3.10.7",
-            ":pandas@2.3.3",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
-            ":matplotlib@3.10.7",
-            ":pandas@2.3.3",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
-            ":matplotlib@3.10.7",
-            ":pandas@2.3.3",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
-            ":matplotlib@3.10.7",
-            ":pandas@2.3.3",
-        ],
         "//conditions:default": [],
     })
 
@@ -14806,6 +14389,7 @@ def targets():
         ":torchvision@multiple",
         ":tqdm@multiple",
         ":transformers@multiple",
+        ":xgrammar@multiple",
     ] + select({
         ":_env_python_3.10_aarch64-unknown-linux-gnu": [
             ":aiohttp@3.13.3",
@@ -14851,7 +14435,6 @@ def targets():
             ":uvicorn@0.51.0",
             ":uvloop@0.22.1",
             ":watchfiles@1.1.1",
-            ":xgrammar@0.2.1",
         ],
         ":_env_python_3.10_x86_64-unknown-linux-gnu": [
             ":aiohttp@3.13.3",
@@ -14895,7 +14478,6 @@ def targets():
             ":uvicorn@0.51.0",
             ":uvloop@0.22.1",
             ":watchfiles@1.1.1",
-            ":xgrammar@0.2.1",
         ],
         ":_env_python_3.11_aarch64-unknown-linux-gnu": [
             ":aiohttp@3.13.3",
@@ -14941,7 +14523,6 @@ def targets():
             ":uvicorn@0.51.0",
             ":uvloop@0.22.1",
             ":watchfiles@1.1.1",
-            ":xgrammar@0.2.1",
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
             ":aiohttp@3.13.3",
@@ -14985,7 +14566,6 @@ def targets():
             ":uvicorn@0.51.0",
             ":uvloop@0.22.1",
             ":watchfiles@1.1.1",
-            ":xgrammar@0.2.1",
         ],
         ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":aiohttp@3.13.3",
@@ -15031,7 +14611,6 @@ def targets():
             ":uvicorn@0.51.0",
             ":uvloop@0.22.1",
             ":watchfiles@1.1.1",
-            ":xgrammar@0.2.1",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
             ":aiohttp@3.13.3",
@@ -15075,7 +14654,6 @@ def targets():
             ":uvicorn@0.51.0",
             ":uvloop@0.22.1",
             ":watchfiles@1.1.1",
-            ":xgrammar@0.2.1",
         ],
         ":_env_python_3.13_aarch64-unknown-linux-gnu": [
             ":aiohttp@3.13.3",
@@ -15121,7 +14699,6 @@ def targets():
             ":uvicorn@0.51.0",
             ":uvloop@0.22.1",
             ":watchfiles@1.1.1",
-            ":xgrammar@0.2.1",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
             ":aiohttp@3.13.3",
@@ -15165,7 +14742,6 @@ def targets():
             ":uvicorn@0.51.0",
             ":uvloop@0.22.1",
             ":watchfiles@1.1.1",
-            ":xgrammar@0.2.1",
         ],
         ":_env_python_3.14_aarch64-unknown-linux-gnu": [
             ":aiohttp@3.13.3",
@@ -15211,7 +14787,6 @@ def targets():
             ":uvicorn@0.51.0",
             ":uvloop@0.22.1",
             ":watchfiles@1.1.1",
-            ":xgrammar@0.2.1",
         ],
         ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":aiohttp@3.13.3",
@@ -15257,7 +14832,6 @@ def targets():
             ":uvicorn@0.51.0",
             ":uvloop@0.22.1",
             ":watchfiles@1.1.1",
-            ":xgrammar@0.2.1",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu": [
             ":aiohttp@3.13.3",
@@ -15301,7 +14875,6 @@ def targets():
             ":uvicorn@0.51.0",
             ":uvloop@0.22.1",
             ":watchfiles@1.1.1",
-            ":xgrammar@0.2.1",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
             ":aiohttp@3.13.3",
@@ -15345,7 +14918,6 @@ def targets():
             ":uvicorn@0.51.0",
             ":uvloop@0.22.1",
             ":watchfiles@1.1.1",
-            ":xgrammar@0.2.1",
         ],
         "//conditions:default": [],
     })
@@ -15656,27 +15228,15 @@ def targets():
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
             ":cffi@2.0.0",
         ],
-        ":_env_python_3.14_aarch64-apple-darwin": [
-            ":cffi@2.0.0",
-        ],
-        ":_env_python_3.14_aarch64-apple-darwin-freethreaded": [
-            ":cffi@2.0.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":cffi@2.0.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
-            ":cffi@2.0.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
-            ":cffi@2.0.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
-            ":cffi@2.0.0",
-        ],
         "//conditions:default": [],
     }) + select({
         ":_env_python_3.10_x86_64-unknown-linux-gnu_nvidia_gpu": [
+            ":cffi@2.0.0",
+        ],
+        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded_nvidia_gpu": [
+            ":cffi@2.0.0",
+        ],
+        ":_env_python_3.14_x86_64-unknown-linux-gnu_nvidia_gpu": [
             ":cffi@2.0.0",
         ],
         "//conditions:default": [],
@@ -16040,30 +15600,6 @@ def targets():
             ":starlette@1.3.1",
             ":zstandard@0.25.0",
         ],
-        ":_env_python_3.14_aarch64-apple-darwin": [
-            ":brotli@1.2.1",
-            ":starlette@1.3.1",
-        ],
-        ":_env_python_3.14_aarch64-apple-darwin-freethreaded": [
-            ":brotli@1.2.1",
-            ":starlette@1.3.1",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":brotli@1.2.1",
-            ":starlette@1.3.1",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
-            ":brotli@1.2.1",
-            ":starlette@1.3.1",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
-            ":brotli@1.2.1",
-            ":starlette@1.3.1",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
-            ":brotli@1.2.1",
-            ":starlette@1.3.1",
-        ],
         "//conditions:default": [],
     })
 
@@ -16247,42 +15783,6 @@ def targets():
             ":typing-extensions@4.16.0",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
-            ":markdown-it-py@3.0.0",
-            ":platformdirs@4.2.2",
-            ":pygments@2.18.0",
-            ":typing-extensions@4.16.0",
-        ],
-        ":_env_python_3.14_aarch64-apple-darwin": [
-            ":markdown-it-py@3.0.0",
-            ":platformdirs@4.2.2",
-            ":pygments@2.18.0",
-            ":typing-extensions@4.16.0",
-        ],
-        ":_env_python_3.14_aarch64-apple-darwin-freethreaded": [
-            ":markdown-it-py@3.0.0",
-            ":platformdirs@4.2.2",
-            ":pygments@2.18.0",
-            ":typing-extensions@4.16.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
-            ":markdown-it-py@3.0.0",
-            ":platformdirs@4.2.2",
-            ":pygments@2.18.0",
-            ":typing-extensions@4.16.0",
-        ],
-        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
-            ":markdown-it-py@3.0.0",
-            ":platformdirs@4.2.2",
-            ":pygments@2.18.0",
-            ":typing-extensions@4.16.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
-            ":markdown-it-py@3.0.0",
-            ":platformdirs@4.2.2",
-            ":pygments@2.18.0",
-            ":typing-extensions@4.16.0",
-        ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
             ":markdown-it-py@3.0.0",
             ":platformdirs@4.2.2",
             ":pygments@2.18.0",
@@ -18939,7 +18439,7 @@ def targets():
         testonly = "uvloop" in _TESTONLY_DEPS,
     )
 
-    _vllm_0_30_0_deps = [
+    _vllm_0_31_0_deps = [
         ":apache-tvm-ffi@multiple",
         ":compressed-tensors@multiple",
         ":fastapi@multiple",
@@ -18962,6 +18462,7 @@ def targets():
         ":torchvision@multiple",
         ":tqdm@multiple",
         ":transformers@multiple",
+        ":xgrammar@multiple",
     ] + select({
         ":_env_python_3.11_aarch64-unknown-linux-gnu": [
             ":aiohttp@3.13.3",
@@ -18985,12 +18486,12 @@ def targets():
             ":ninja@1.13.0",
             ":numba@0.65.0",
             ":nvtx@0.2.15",
-            ":openai-harmony@0.0.8",
             ":opencv-python-headless@4.13.0.90",
             ":opentelemetry-api@1.35.0",
             ":opentelemetry-exporter-otlp@1.35.0",
             ":opentelemetry-sdk@1.35.0",
             ":opentelemetry-semantic-conventions-ai@0.4.13",
+            ":oss-harmony@0.0.11",
             ":partial-json-parser@0.2.1.1.post7",
             ":pillow@12.3.0",
             ":prometheus-client@0.20.0",
@@ -19013,7 +18514,6 @@ def targets():
             ":tokenizers@0.22.1",
             ":typing-extensions@4.16.0",
             ":watchfiles@1.1.1",
-            ":xgrammar@0.2.1",
         ],
         ":_env_python_3.11_x86_64-unknown-linux-gnu": [
             ":aiohttp@3.13.3",
@@ -19037,12 +18537,12 @@ def targets():
             ":ninja@1.13.0",
             ":numba@0.65.0",
             ":nvtx@0.2.15",
-            ":openai-harmony@0.0.8",
             ":opencv-python-headless@4.13.0.90",
             ":opentelemetry-api@1.35.0",
             ":opentelemetry-exporter-otlp@1.35.0",
             ":opentelemetry-sdk@1.35.0",
             ":opentelemetry-semantic-conventions-ai@0.4.13",
+            ":oss-harmony@0.0.11",
             ":partial-json-parser@0.2.1.1.post7",
             ":pillow@12.3.0",
             ":prometheus-client@0.20.0",
@@ -19065,7 +18565,6 @@ def targets():
             ":tokenizers@0.22.1",
             ":typing-extensions@4.16.0",
             ":watchfiles@1.1.1",
-            ":xgrammar@0.2.1",
         ],
         ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":aiohttp@3.13.3",
@@ -19089,12 +18588,12 @@ def targets():
             ":ninja@1.13.0",
             ":numba@0.65.0",
             ":nvtx@0.2.15",
-            ":openai-harmony@0.0.8",
             ":opencv-python-headless@4.13.0.90",
             ":opentelemetry-api@1.35.0",
             ":opentelemetry-exporter-otlp@1.35.0",
             ":opentelemetry-sdk@1.35.0",
             ":opentelemetry-semantic-conventions-ai@0.4.13",
+            ":oss-harmony@0.0.11",
             ":partial-json-parser@0.2.1.1.post7",
             ":pillow@12.3.0",
             ":prometheus-client@0.20.0",
@@ -19119,7 +18618,6 @@ def targets():
             ":tokenizers@0.22.1",
             ":typing-extensions@4.16.0",
             ":watchfiles@1.1.1",
-            ":xgrammar@0.2.1",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu": [
             ":aiohttp@3.13.3",
@@ -19143,12 +18641,12 @@ def targets():
             ":ninja@1.13.0",
             ":numba@0.65.0",
             ":nvtx@0.2.15",
-            ":openai-harmony@0.0.8",
             ":opencv-python-headless@4.13.0.90",
             ":opentelemetry-api@1.35.0",
             ":opentelemetry-exporter-otlp@1.35.0",
             ":opentelemetry-sdk@1.35.0",
             ":opentelemetry-semantic-conventions-ai@0.4.13",
+            ":oss-harmony@0.0.11",
             ":partial-json-parser@0.2.1.1.post7",
             ":pillow@12.3.0",
             ":prometheus-client@0.20.0",
@@ -19173,7 +18671,6 @@ def targets():
             ":tokenizers@0.22.1",
             ":typing-extensions@4.16.0",
             ":watchfiles@1.1.1",
-            ":xgrammar@0.2.1",
         ],
         ":_env_python_3.13_aarch64-unknown-linux-gnu": [
             ":aiohttp@3.13.3",
@@ -19197,12 +18694,12 @@ def targets():
             ":ninja@1.13.0",
             ":numba@0.65.0",
             ":nvtx@0.2.15",
-            ":openai-harmony@0.0.8",
             ":opencv-python-headless@4.13.0.90",
             ":opentelemetry-api@1.35.0",
             ":opentelemetry-exporter-otlp@1.35.0",
             ":opentelemetry-sdk@1.35.0",
             ":opentelemetry-semantic-conventions-ai@0.4.13",
+            ":oss-harmony@0.0.11",
             ":partial-json-parser@0.2.1.1.post7",
             ":pillow@12.3.0",
             ":prometheus-client@0.20.0",
@@ -19227,7 +18724,6 @@ def targets():
             ":tokenizers@0.22.1",
             ":typing-extensions@4.16.0",
             ":watchfiles@1.1.1",
-            ":xgrammar@0.2.1",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu": [
             ":aiohttp@3.13.3",
@@ -19251,12 +18747,12 @@ def targets():
             ":ninja@1.13.0",
             ":numba@0.65.0",
             ":nvtx@0.2.15",
-            ":openai-harmony@0.0.8",
             ":opencv-python-headless@4.13.0.90",
             ":opentelemetry-api@1.35.0",
             ":opentelemetry-exporter-otlp@1.35.0",
             ":opentelemetry-sdk@1.35.0",
             ":opentelemetry-semantic-conventions-ai@0.4.13",
+            ":oss-harmony@0.0.11",
             ":partial-json-parser@0.2.1.1.post7",
             ":pillow@12.3.0",
             ":prometheus-client@0.20.0",
@@ -19281,7 +18777,6 @@ def targets():
             ":tokenizers@0.22.1",
             ":typing-extensions@4.16.0",
             ":watchfiles@1.1.1",
-            ":xgrammar@0.2.1",
         ],
         ":_env_python_3.14_aarch64-unknown-linux-gnu": [
             ":aiohttp@3.13.3",
@@ -19305,12 +18800,12 @@ def targets():
             ":ninja@1.13.0",
             ":numba@0.65.0",
             ":nvtx@0.2.15",
-            ":openai-harmony@0.0.8",
             ":opencv-python-headless@4.13.0.90",
             ":opentelemetry-api@1.35.0",
             ":opentelemetry-exporter-otlp@1.35.0",
             ":opentelemetry-sdk@1.35.0",
             ":opentelemetry-semantic-conventions-ai@0.4.13",
+            ":oss-harmony@0.0.11",
             ":partial-json-parser@0.2.1.1.post7",
             ":pillow@12.3.0",
             ":prometheus-client@0.20.0",
@@ -19335,7 +18830,6 @@ def targets():
             ":tokenizers@0.22.1",
             ":typing-extensions@4.16.0",
             ":watchfiles@1.1.1",
-            ":xgrammar@0.2.1",
         ],
         ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
             ":aiohttp@3.13.3",
@@ -19359,12 +18853,12 @@ def targets():
             ":ninja@1.13.0",
             ":numba@0.65.0",
             ":nvtx@0.2.15",
-            ":openai-harmony@0.0.8",
             ":opencv-python-headless@4.13.0.90",
             ":opentelemetry-api@1.35.0",
             ":opentelemetry-exporter-otlp@1.35.0",
             ":opentelemetry-sdk@1.35.0",
             ":opentelemetry-semantic-conventions-ai@0.4.13",
+            ":oss-harmony@0.0.11",
             ":partial-json-parser@0.2.1.1.post7",
             ":pillow@12.3.0",
             ":prometheus-client@0.20.0",
@@ -19389,7 +18883,6 @@ def targets():
             ":tokenizers@0.22.1",
             ":typing-extensions@4.16.0",
             ":watchfiles@1.1.1",
-            ":xgrammar@0.2.1",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu": [
             ":aiohttp@3.13.3",
@@ -19413,12 +18906,12 @@ def targets():
             ":ninja@1.13.0",
             ":numba@0.65.0",
             ":nvtx@0.2.15",
-            ":openai-harmony@0.0.8",
             ":opencv-python-headless@4.13.0.90",
             ":opentelemetry-api@1.35.0",
             ":opentelemetry-exporter-otlp@1.35.0",
             ":opentelemetry-sdk@1.35.0",
             ":opentelemetry-semantic-conventions-ai@0.4.13",
+            ":oss-harmony@0.0.11",
             ":partial-json-parser@0.2.1.1.post7",
             ":pillow@12.3.0",
             ":prometheus-client@0.20.0",
@@ -19443,7 +18936,6 @@ def targets():
             ":tokenizers@0.22.1",
             ":typing-extensions@4.16.0",
             ":watchfiles@1.1.1",
-            ":xgrammar@0.2.1",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
             ":aiohttp@3.13.3",
@@ -19467,12 +18959,12 @@ def targets():
             ":ninja@1.13.0",
             ":numba@0.65.0",
             ":nvtx@0.2.15",
-            ":openai-harmony@0.0.8",
             ":opencv-python-headless@4.13.0.90",
             ":opentelemetry-api@1.35.0",
             ":opentelemetry-exporter-otlp@1.35.0",
             ":opentelemetry-sdk@1.35.0",
             ":opentelemetry-semantic-conventions-ai@0.4.13",
+            ":oss-harmony@0.0.11",
             ":partial-json-parser@0.2.1.1.post7",
             ":pillow@12.3.0",
             ":prometheus-client@0.20.0",
@@ -19497,75 +18989,74 @@ def targets():
             ":tokenizers@0.22.1",
             ":typing-extensions@4.16.0",
             ":watchfiles@1.1.1",
-            ":xgrammar@0.2.1",
         ],
         "//conditions:default": [],
     }) + select({
         ":_env_python_3.11_x86_64-unknown-linux-gnu_nvidia_gpu": [
-            ":humming-kernels@0.1.12",
+            ":humming-kernels@0.1.16",
         ],
         ":_env_python_3.12_x86_64-unknown-linux-gnu_nvidia_gpu": [
-            ":humming-kernels@0.1.12",
+            ":humming-kernels@0.1.16",
         ],
         ":_env_python_3.13_x86_64-unknown-linux-gnu_nvidia_gpu": [
-            ":humming-kernels@0.1.12",
+            ":humming-kernels@0.1.16",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded_nvidia_gpu": [
-            ":humming-kernels@0.1.12",
+            ":humming-kernels@0.1.16",
         ],
         ":_env_python_3.14_x86_64-unknown-linux-gnu_nvidia_gpu": [
-            ":humming-kernels@0.1.12",
+            ":humming-kernels@0.1.16",
         ],
         "//conditions:default": [],
     })
 
-    _vllm_0_30_0_build_deps = [
+    _vllm_0_31_0_build_deps = [
         ":setuptools",
         ":wheel",
     ]
 
     native.alias(
-        name = "_sdist_vllm@0.30.0",
-        actual = "@pycross_lock_file_sdist_vllm_0.30.0//file",
+        name = "_sdist_vllm@0.31.0",
+        actual = "@pycross_lock_file_sdist_vllm_0.31.0//file",
     )
 
     pycross_wheel_build(
-        name = "_build_vllm@0.30.0",
-        sdist = ":_sdist_vllm@0.30.0",
+        name = "_build_vllm@0.31.0",
+        sdist = ":_sdist_vllm@0.31.0",
         target_environment = _target,
-        deps = _vllm_0_30_0_deps + _vllm_0_30_0_build_deps,
+        deps = _vllm_0_31_0_deps + _vllm_0_31_0_build_deps,
         testonly = "vllm" in _TESTONLY_DEPS,
         **extra_build_args
     )
 
     native.alias(
-        name = "_wheel_vllm@0.30.0",
+        name = "_wheel_vllm@0.31.0",
         actual = select({
-            ":_env_python_3.10_aarch64-apple-darwin": ":_build_vllm@0.30.0",
-            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_vllm_0.30.0_cp38_abi3_manylinux_2_28_aarch64//file",
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_vllm_0.30.0_cp38_abi3_manylinux_2_28_x86_64//file",
-            ":_env_python_3.11_aarch64-apple-darwin": ":_build_vllm@0.30.0",
-            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_vllm_0.30.0_cp38_abi3_manylinux_2_28_aarch64//file",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_vllm_0.30.0_cp38_abi3_manylinux_2_28_x86_64//file",
-            ":_env_python_3.12_aarch64-apple-darwin": ":_build_vllm@0.30.0",
-            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_vllm_0.30.0_cp38_abi3_manylinux_2_28_aarch64//file",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_vllm_0.30.0_cp38_abi3_manylinux_2_28_x86_64//file",
-            ":_env_python_3.13_aarch64-apple-darwin": ":_build_vllm@0.30.0",
-            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_vllm_0.30.0_cp38_abi3_manylinux_2_28_aarch64//file",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_vllm_0.30.0_cp38_abi3_manylinux_2_28_x86_64//file",
-            ":_env_python_3.14_aarch64-apple-darwin": ":_build_vllm@0.30.0",
-            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": ":_build_vllm@0.30.0",
-            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_vllm_0.30.0_cp38_abi3_manylinux_2_28_aarch64//file",
-            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_vllm_0.30.0_cp38_abi3_manylinux_2_28_aarch64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_vllm_0.30.0_cp38_abi3_manylinux_2_28_x86_64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_vllm_0.30.0_cp38_abi3_manylinux_2_28_x86_64//file",
+            ":_env_python_3.10_aarch64-apple-darwin": ":_build_vllm@0.31.0",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_vllm_0.31.0_cp38_abi3_manylinux_2_28_aarch64//file",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_vllm_0.31.0_cp38_abi3_manylinux_2_28_x86_64//file",
+            ":_env_python_3.11_aarch64-apple-darwin": ":_build_vllm@0.31.0",
+            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_vllm_0.31.0_cp38_abi3_manylinux_2_28_aarch64//file",
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_vllm_0.31.0_cp38_abi3_manylinux_2_28_x86_64//file",
+            ":_env_python_3.12_aarch64-apple-darwin": ":_build_vllm@0.31.0",
+            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_vllm_0.31.0_cp38_abi3_manylinux_2_28_aarch64//file",
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_vllm_0.31.0_cp38_abi3_manylinux_2_28_x86_64//file",
+            ":_env_python_3.13_aarch64-apple-darwin": ":_build_vllm@0.31.0",
+            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_vllm_0.31.0_cp38_abi3_manylinux_2_28_aarch64//file",
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_vllm_0.31.0_cp38_abi3_manylinux_2_28_x86_64//file",
+            ":_env_python_3.14_aarch64-apple-darwin": ":_build_vllm@0.31.0",
+            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": ":_build_vllm@0.31.0",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_vllm_0.31.0_cp38_abi3_manylinux_2_28_aarch64//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_vllm_0.31.0_cp38_abi3_manylinux_2_28_aarch64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_vllm_0.31.0_cp38_abi3_manylinux_2_28_x86_64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_vllm_0.31.0_cp38_abi3_manylinux_2_28_x86_64//file",
         }),
     )
 
     pycross_wheel_library(
-        name = "vllm@0.30.0",
-        deps = _vllm_0_30_0_deps,
-        wheel = ":_wheel_vllm@0.30.0",
+        name = "vllm@0.31.0",
+        deps = _vllm_0_31_0_deps,
+        wheel = ":_wheel_vllm@0.31.0",
         testonly = "vllm" in _TESTONLY_DEPS,
     )
 
@@ -19766,34 +19257,58 @@ def targets():
         testonly = "wrapt" in _TESTONLY_DEPS,
     )
 
-    _xgrammar_0_2_1_deps = [
+    _xgrammar_0_2_0_deps = [
         ":apache-tvm-ffi@multiple",
         ":numpy@multiple",
         ":torch@multiple",
         ":transformers@multiple",
         ":triton@multiple",
     ] + select({
-        ":_env_python_3.10_x86_64-unknown-linux-gnu_nvidia_gpu": [
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
             ":pydantic@2.12.5",
             ":typing-extensions@4.16.0",
         ],
-        ":_env_python_3.11_x86_64-unknown-linux-gnu_nvidia_gpu": [
+        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
             ":pydantic@2.12.5",
             ":typing-extensions@4.16.0",
         ],
-        ":_env_python_3.12_x86_64-unknown-linux-gnu_nvidia_gpu": [
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
             ":pydantic@2.12.5",
             ":typing-extensions@4.16.0",
         ],
-        ":_env_python_3.13_x86_64-unknown-linux-gnu_nvidia_gpu": [
+        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
             ":pydantic@2.12.5",
             ":typing-extensions@4.16.0",
         ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded_nvidia_gpu": [
+        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
             ":pydantic@2.12.5",
             ":typing-extensions@4.16.0",
         ],
-        ":_env_python_3.14_x86_64-unknown-linux-gnu_nvidia_gpu": [
+        ":_env_python_3.12_x86_64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+            ":typing-extensions@4.16.0",
+        ],
+        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+            ":typing-extensions@4.16.0",
+        ],
+        ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+            ":typing-extensions@4.16.0",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+            ":typing-extensions@4.16.0",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
+            ":pydantic@2.12.5",
+            ":typing-extensions@4.16.0",
+        ],
+        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+            ":typing-extensions@4.16.0",
+        ],
+        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
             ":pydantic@2.12.5",
             ":typing-extensions@4.16.0",
         ],
@@ -19801,33 +19316,114 @@ def targets():
     })
 
     native.alias(
-        name = "_wheel_xgrammar@0.2.1",
+        name = "_wheel_xgrammar@0.2.0",
         actual = select({
-            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.2.1_cp310_cp310_macosx_11_0_arm64//file",
-            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.2.1_cp310_cp310_manylinux_2_26_aarch64.manylinux_2_28_aarch64//file",
-            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.2.1_cp310_cp310_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
-            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.2.1_cp311_cp311_macosx_11_0_arm64//file",
-            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.2.1_cp311_cp311_manylinux_2_26_aarch64.manylinux_2_28_aarch64//file",
-            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.2.1_cp311_cp311_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
-            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.2.1_cp312_cp312_macosx_11_0_arm64//file",
-            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.2.1_cp312_cp312_manylinux_2_26_aarch64.manylinux_2_28_aarch64//file",
-            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.2.1_cp312_cp312_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
-            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.2.1_cp313_cp313_macosx_11_0_arm64//file",
-            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.2.1_cp313_cp313_manylinux_2_26_aarch64.manylinux_2_28_aarch64//file",
-            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.2.1_cp313_cp313_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
-            ":_env_python_3.14_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.2.1_cp314_cp314_macosx_11_0_arm64//file",
-            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": "@pycross_lock_file_wheel_xgrammar_0.2.1_cp314_cp314t_macosx_11_0_arm64//file",
-            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.2.1_cp314_cp314_manylinux_2_26_aarch64.manylinux_2_28_aarch64//file",
-            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_xgrammar_0.2.1_cp314_cp314t_manylinux_2_26_aarch64.manylinux_2_28_aarch64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.2.1_cp314_cp314_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
-            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_xgrammar_0.2.1_cp314_cp314t_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.2.0_cp310_cp310_macosx_11_0_arm64//file",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.2.0_cp310_cp310_manylinux_2_26_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.2.0_cp310_cp310_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.2.0_cp311_cp311_macosx_11_0_arm64//file",
+            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.2.0_cp311_cp311_manylinux_2_26_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.2.0_cp311_cp311_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.2.0_cp312_cp312_macosx_11_0_arm64//file",
+            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.2.0_cp312_cp312_manylinux_2_26_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.2.0_cp312_cp312_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.2.0_cp313_cp313_macosx_11_0_arm64//file",
+            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.2.0_cp313_cp313_manylinux_2_26_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.2.0_cp313_cp313_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.14_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.2.0_cp314_cp314_macosx_11_0_arm64//file",
+            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": "@pycross_lock_file_wheel_xgrammar_0.2.0_cp314_cp314t_macosx_11_0_arm64//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.2.0_cp314_cp314_manylinux_2_26_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_xgrammar_0.2.0_cp314_cp314t_manylinux_2_26_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.2.0_cp314_cp314_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_xgrammar_0.2.0_cp314_cp314t_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
         }),
     )
 
     pycross_wheel_library(
-        name = "xgrammar@0.2.1",
-        deps = _xgrammar_0_2_1_deps,
-        wheel = ":_wheel_xgrammar@0.2.1",
+        name = "xgrammar@0.2.0",
+        deps = _xgrammar_0_2_0_deps,
+        wheel = ":_wheel_xgrammar@0.2.0",
+        testonly = "xgrammar" in _TESTONLY_DEPS,
+    )
+
+    _xgrammar_0_2_7_deps = [
+        ":apache-tvm-ffi@multiple",
+        ":numpy@multiple",
+        ":torch@multiple",
+        ":transformers@multiple",
+        ":triton@multiple",
+    ] + select({
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+            ":typing-extensions@4.16.0",
+        ],
+        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+            ":typing-extensions@4.16.0",
+        ],
+        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+            ":typing-extensions@4.16.0",
+        ],
+        ":_env_python_3.12_x86_64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+            ":typing-extensions@4.16.0",
+        ],
+        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+            ":typing-extensions@4.16.0",
+        ],
+        ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+            ":typing-extensions@4.16.0",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+            ":typing-extensions@4.16.0",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
+            ":pydantic@2.12.5",
+            ":typing-extensions@4.16.0",
+        ],
+        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
+            ":pydantic@2.12.5",
+            ":typing-extensions@4.16.0",
+        ],
+        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
+            ":pydantic@2.12.5",
+            ":typing-extensions@4.16.0",
+        ],
+        "//conditions:default": [],
+    })
+
+    native.alias(
+        name = "_wheel_xgrammar@0.2.7",
+        actual = select({
+            ":_env_python_3.10_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.2.7_cp310_cp310_macosx_11_0_arm64//file",
+            ":_env_python_3.10_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.2.7_cp310_cp310_manylinux_2_26_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.10_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.2.7_cp310_cp310_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.11_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.2.7_cp311_cp311_macosx_11_0_arm64//file",
+            ":_env_python_3.11_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.2.7_cp311_cp311_manylinux_2_26_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.11_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.2.7_cp311_cp311_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.12_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.2.7_cp312_cp312_macosx_11_0_arm64//file",
+            ":_env_python_3.12_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.2.7_cp312_cp312_manylinux_2_26_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.12_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.2.7_cp312_cp312_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.13_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.2.7_cp313_cp313_macosx_11_0_arm64//file",
+            ":_env_python_3.13_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.2.7_cp313_cp313_manylinux_2_26_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.13_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.2.7_cp313_cp313_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.14_aarch64-apple-darwin": "@pycross_lock_file_wheel_xgrammar_0.2.7_cp314_cp314_macosx_11_0_arm64//file",
+            ":_env_python_3.14_aarch64-apple-darwin-freethreaded": "@pycross_lock_file_wheel_xgrammar_0.2.7_cp314_cp314t_macosx_11_0_arm64//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.2.7_cp314_cp314_manylinux_2_26_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_xgrammar_0.2.7_cp314_cp314t_manylinux_2_26_aarch64.manylinux_2_28_aarch64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu": "@pycross_lock_file_wheel_xgrammar_0.2.7_cp314_cp314_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
+            ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": "@pycross_lock_file_wheel_xgrammar_0.2.7_cp314_cp314t_manylinux_2_27_x86_64.manylinux_2_28_x86_64//file",
+        }),
+    )
+
+    pycross_wheel_library(
+        name = "xgrammar@0.2.7",
+        deps = _xgrammar_0_2_7_deps,
+        wheel = ":_wheel_xgrammar@0.2.7",
         testonly = "xgrammar" in _TESTONLY_DEPS,
     )
 
@@ -20217,12 +19813,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_sdist_humming_kernels_0.1.12",
+        name = "pycross_lock_file_sdist_humming_kernels_0.1.16",
         urls = [
-            "https://files.pythonhosted.org/packages/93/b9/53797fff4b1b31b4567453a365646d724469b1bb0d76c07f8746617d0cb6/humming_kernels-0.1.12.tar.gz",
+            "https://files.pythonhosted.org/packages/70/d2/e286acb9f594f998bbc2d99617966a4f01a603c699d829793a86a42c2440/humming_kernels-0.1.16.tar.gz",
         ],
-        sha256 = "c96c37c95f74379067d2d2d0c5154d12ee9a8cfa29a7c3370a7f3e34f207ca72",
-        downloaded_file_path = "humming_kernels-0.1.12.tar.gz",
+        sha256 = "a5356a63c4adf6c16c46f541749dec90fc2d49cf29ebc33ac05e23c744731809",
+        downloaded_file_path = "humming_kernels-0.1.16.tar.gz",
     )
 
     maybe(
@@ -20457,12 +20053,12 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_sdist_vllm_0.30.0",
+        name = "pycross_lock_file_sdist_vllm_0.31.0",
         urls = [
-            "https://files.pythonhosted.org/packages/3d/88/fc455e2e8cd81764a81027a7464f775a7d613e6c95ac00e23b47824bf10d/vllm-0.30.0.tar.gz",
+            "https://files.pythonhosted.org/packages/96/89/11460eaeb96e636f716657d460a6daebc7ddbcd631dd6799f232cae25771/vllm-0.31.0.tar.gz",
         ],
-        sha256 = "5f8f4e890c042ffa1c3e103f81c35e2d96f60a0a175ac43a4adbae7006bef62b",
-        downloaded_file_path = "vllm-0.30.0.tar.gz",
+        sha256 = "dde46f1efbe846e5bd0c5c4ec6ec71842c42254c7ff3d9bebb2a57028715d380",
+        downloaded_file_path = "vllm-0.31.0.tar.gz",
     )
 
     maybe(
@@ -24427,22 +24023,22 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_flashinfer_python_0.6.18.post1_py3_none_any",
-        urls = [
-            "https://files.pythonhosted.org/packages/64/3f/bd0a74bfbb4f3813bfe61267ff696fb229ab70c0f1f44848287221928c95/flashinfer_python-0.6.18.post1-py3-none-any.whl",
-        ],
-        sha256 = "adb6d2952b47131138e108bd2999b1fe18b71f1a4c0b2684f168753db9563991",
-        downloaded_file_path = "flashinfer_python-0.6.18.post1-py3-none-any.whl",
-    )
-
-    maybe(
-        http_file,
         name = "pycross_lock_file_wheel_flashinfer_python_0.6.8.post1_py3_none_any",
         urls = [
             "https://files.pythonhosted.org/packages/73/6d/1e8a8533913e33a50a486332ce0673f4fdb860f6eb9ed450327c5c1762cb/flashinfer_python-0.6.8.post1-py3-none-any.whl",
         ],
         sha256 = "818f9b8cc2fe66c42a1f6264be4841ac8821ada703685a02cfccb2b5124a710b",
         downloaded_file_path = "flashinfer_python-0.6.8.post1-py3-none-any.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_flashinfer_python_0.7.0.post1_py3_none_any",
+        urls = [
+            "https://files.pythonhosted.org/packages/00/7d/16237087a2af99086ef4ae9808dff9b24f0a4db4cfd673233836821a32e0/flashinfer_python-0.7.0.post1-py3-none-any.whl",
+        ],
+        sha256 = "c7adf826568d61fc1b7d3aadd4cae387a35a138bfc08e2deca2f34ecfa280716",
+        downloaded_file_path = "flashinfer_python-0.7.0.post1-py3-none-any.whl",
     )
 
     maybe(
@@ -26107,22 +25703,22 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_humming_kernels_0.1.12_py3_none_manylinux_2_28_aarch64",
+        name = "pycross_lock_file_wheel_humming_kernels_0.1.16_cp310_abi3_manylinux_2_28_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/58/0f/01f871dc26f8d7e1683df9464890d48cfd5c4e46c4a264d7ee0868749197/humming_kernels-0.1.12-py3-none-manylinux_2_28_aarch64.whl",
+            "https://files.pythonhosted.org/packages/71/47/43794faeb47fe2067bef5c7d830fac4244bf872625b0bfddf116fd7a0a0d/humming_kernels-0.1.16-cp310-abi3-manylinux_2_28_aarch64.whl",
         ],
-        sha256 = "988e8b9da41e3679ae2816bdfb51acab53c05cc56254b5ca98e847f4efcf24fd",
-        downloaded_file_path = "humming_kernels-0.1.12-py3-none-manylinux_2_28_aarch64.whl",
+        sha256 = "fa1a86e31fc3c0fede5bceb3dc2f088e6bdda636a8f405fd71def853f12049e1",
+        downloaded_file_path = "humming_kernels-0.1.16-cp310-abi3-manylinux_2_28_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_humming_kernels_0.1.12_py3_none_manylinux_2_28_x86_64",
+        name = "pycross_lock_file_wheel_humming_kernels_0.1.16_cp310_abi3_manylinux_2_28_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/ec/a2/f96912ee7d68f56e61c15555657ffa057b8afbaa21241c63342b5969bb74/humming_kernels-0.1.12-py3-none-manylinux_2_28_x86_64.whl",
+            "https://files.pythonhosted.org/packages/a2/7f/08aad5a947d549aa21af5b93e711aad3d5689d39e8439c7fa72eab9773de/humming_kernels-0.1.16-cp310-abi3-manylinux_2_28_x86_64.whl",
         ],
-        sha256 = "cd3ef712a93f3a9075ea99de2c72bcd3ec89dab3759b3a248d869f5507b60331",
-        downloaded_file_path = "humming_kernels-0.1.12-py3-none-manylinux_2_28_x86_64.whl",
+        sha256 = "683212692f5e1339961e4322aff1ba116523e2681b2aafeaf7c081bc4e1f5627",
+        downloaded_file_path = "humming_kernels-0.1.16-cp310-abi3-manylinux_2_28_x86_64.whl",
     )
 
     maybe(
@@ -32953,6 +32549,36 @@ def repositories():
         ],
         sha256 = "7679bc2f01bb0d219758f1a5f87bb7c8a81c0a186824a393b366876b4948e14f",
         downloaded_file_path = "orjson-3.11.8-cp314-cp314-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_oss_harmony_0.0.11_cp38_abi3_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/8b/4c/400a7e375943ff06447c8cd3920819d2e37c808d0cfea3296b159e961610/oss_harmony-0.0.11-cp38-abi3-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "83ca71b85be6e2f8e93527673cd2eff4da9180608ee5d4197bd4f01afc4fa6be",
+        downloaded_file_path = "oss_harmony-0.0.11-cp38-abi3-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_oss_harmony_0.0.11_cp38_abi3_manylinux_2_17_aarch64.manylinux2014_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/fd/e9/0b33d4c592e1422c9faeaf1cfe10731328ecf3504e900dc7921109affd55/oss_harmony-0.0.11-cp38-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        ],
+        sha256 = "f1f74ef7f8be32fa1dcfe1644839af5f0873acce78b5668c2aa39f26d83218ff",
+        downloaded_file_path = "oss_harmony-0.0.11-cp38-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_oss_harmony_0.0.11_cp38_abi3_manylinux_2_17_x86_64.manylinux2014_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/89/68/001d7429a692b2db0c03bd49b756f834716b64afc0bbbece96824e8f0af8/oss_harmony-0.0.11-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+        ],
+        sha256 = "d877c6b526cdbdf55068bae8f05c60398e929c9e296c7f69a1d533339708be80",
+        downloaded_file_path = "oss_harmony-0.0.11-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
     )
 
     maybe(
@@ -41767,22 +41393,22 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_vllm_0.30.0_cp38_abi3_manylinux_2_28_aarch64",
+        name = "pycross_lock_file_wheel_vllm_0.31.0_cp38_abi3_manylinux_2_28_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/18/d9/8249dfb23baffe9b6f822debbf8ffebdfdaabe932b05d4d9c79861485dd8/vllm-0.30.0-cp38-abi3-manylinux_2_28_aarch64.whl",
+            "https://files.pythonhosted.org/packages/9f/ef/6827a6c74d241ae44bff21c4c770309fe0430231f6f23429a8438f599ae8/vllm-0.31.0-cp38-abi3-manylinux_2_28_aarch64.whl",
         ],
-        sha256 = "eb3e11bab695d085098579a6eda2d602419adec3826ebfbcce9a3ffa543eb62e",
-        downloaded_file_path = "vllm-0.30.0-cp38-abi3-manylinux_2_28_aarch64.whl",
+        sha256 = "56edd19c798510b6da5ae4dd38b3bdf55ea7ae261b339a906df006dc3faf751d",
+        downloaded_file_path = "vllm-0.31.0-cp38-abi3-manylinux_2_28_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_vllm_0.30.0_cp38_abi3_manylinux_2_28_x86_64",
+        name = "pycross_lock_file_wheel_vllm_0.31.0_cp38_abi3_manylinux_2_28_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/1a/25/f5087a8f382e197a73672768b389d020b9d92e38371c3b0fc6dd883bbb34/vllm-0.30.0-cp38-abi3-manylinux_2_28_x86_64.whl",
+            "https://files.pythonhosted.org/packages/e1/98/841d1328827dc082492fcbb0f57bdf6a9d35aa0df52bd47b75be3f504804/vllm-0.31.0-cp38-abi3-manylinux_2_28_x86_64.whl",
         ],
-        sha256 = "ef52ee58c410ead0b8afb190838fa4cbcb52075596f67862a03859d984966ac4",
-        downloaded_file_path = "vllm-0.30.0-cp38-abi3-manylinux_2_28_x86_64.whl",
+        sha256 = "39132b433967f0962d03d8a5f633b9bee6b32708f566c7d5637b79f8d0ef3433",
+        downloaded_file_path = "vllm-0.31.0-cp38-abi3-manylinux_2_28_x86_64.whl",
     )
 
     maybe(
@@ -42327,182 +41953,362 @@ def repositories():
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.2.1_cp310_cp310_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_xgrammar_0.2.0_cp310_cp310_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/93/23/a76aa8db4b058168e22d6fa118b8e040681d11ef2295cbebc7c6530efce8/xgrammar-0.2.1-cp310-cp310-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/9c/eb/a265fcd2f18e5c2cf343079b857d081889d1dc080c524b9fdffda4040f16/xgrammar-0.2.0-cp310-cp310-macosx_11_0_arm64.whl",
         ],
-        sha256 = "f4a37e1676346b9c87858f5252f35148eab4a3d6aecae9361906b870635d7cc0",
-        downloaded_file_path = "xgrammar-0.2.1-cp310-cp310-macosx_11_0_arm64.whl",
+        sha256 = "aa89d9eb2d989b90b19ff0d0fa9cf9be05e970e56ad2e979315772496f7fe8bb",
+        downloaded_file_path = "xgrammar-0.2.0-cp310-cp310-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.2.1_cp310_cp310_manylinux_2_26_aarch64.manylinux_2_28_aarch64",
+        name = "pycross_lock_file_wheel_xgrammar_0.2.0_cp310_cp310_manylinux_2_26_aarch64.manylinux_2_28_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/e4/19/52d1d1c767582e33e4544f6f63e1025b2b6899751e6bedcc2f2d52e52498/xgrammar-0.2.1-cp310-cp310-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+            "https://files.pythonhosted.org/packages/2a/56/f5da0311502ed14b4a25988210bf366d470a2e3c91ecb8fb4499400ef7f6/xgrammar-0.2.0-cp310-cp310-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
         ],
-        sha256 = "2b4f2d570db0da6e85533f6a46c714f59fafaa0fb5b83734c824020318c61c94",
-        downloaded_file_path = "xgrammar-0.2.1-cp310-cp310-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+        sha256 = "f6130eacd86161c2eae8bd46a7108c0856757bbc8e5efd207eba36fc82db541f",
+        downloaded_file_path = "xgrammar-0.2.0-cp310-cp310-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.2.1_cp310_cp310_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
+        name = "pycross_lock_file_wheel_xgrammar_0.2.0_cp310_cp310_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/1a/62/4fba98477159f4f79b2baa33f891708df3585ff6a1ac77b4c64895ec462b/xgrammar-0.2.1-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+            "https://files.pythonhosted.org/packages/dd/b0/d776e41054932b9fcee8204fa44c9ffe42469b6414410270ccc09662142d/xgrammar-0.2.0-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
         ],
-        sha256 = "5b80b8060fcf6c94324f563e1d4778029b21d35c556dca5bbf49428d307eca37",
-        downloaded_file_path = "xgrammar-0.2.1-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        sha256 = "8e5daf9ab32850fce44eed894a2704ca91d537bf1e41943f8d11145c235eaa87",
+        downloaded_file_path = "xgrammar-0.2.0-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.2.1_cp311_cp311_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_xgrammar_0.2.0_cp311_cp311_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/df/4c/2839328d7577378968db54c5dc2324ed1ffd1f212219f8543f24a7becd4c/xgrammar-0.2.1-cp311-cp311-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/2e/f2/166a5afbf6a236a5044a5f3f56a271781417cbd4c406aad7427c5f6da8a0/xgrammar-0.2.0-cp311-cp311-macosx_11_0_arm64.whl",
         ],
-        sha256 = "7dfe4b50d12325dc50f65ec837c03e02f2e2c366b7ae88d93bdcf4351e8bd440",
-        downloaded_file_path = "xgrammar-0.2.1-cp311-cp311-macosx_11_0_arm64.whl",
+        sha256 = "47815edecad20eed1b1084ca97ebc2f8c2ba054bd0ee3cb2d5dd5681e781b632",
+        downloaded_file_path = "xgrammar-0.2.0-cp311-cp311-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.2.1_cp311_cp311_manylinux_2_26_aarch64.manylinux_2_28_aarch64",
+        name = "pycross_lock_file_wheel_xgrammar_0.2.0_cp311_cp311_manylinux_2_26_aarch64.manylinux_2_28_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/0a/a6/838795496cd32429cbb6a05aeb3f9fec92d33a0ad47784666b251c52ef23/xgrammar-0.2.1-cp311-cp311-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+            "https://files.pythonhosted.org/packages/a2/f8/2122b33a44be20ee1466360c6916816b9a79ac38f430cd56676484614443/xgrammar-0.2.0-cp311-cp311-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
         ],
-        sha256 = "f16c1adf6bf31d0f2ba40a7fc5df69a01757641a06e1cbf17f2143a830180646",
-        downloaded_file_path = "xgrammar-0.2.1-cp311-cp311-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+        sha256 = "001e2177bd80bb7c49dca3a70a8c2a645c664afc03c3cad7abffc9340c9a4eff",
+        downloaded_file_path = "xgrammar-0.2.0-cp311-cp311-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.2.1_cp311_cp311_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
+        name = "pycross_lock_file_wheel_xgrammar_0.2.0_cp311_cp311_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/b4/c1/b31a56ef2d1e2083da4c0db1aefcc3772556675e4ac8b6ed99a968eea0b1/xgrammar-0.2.1-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+            "https://files.pythonhosted.org/packages/f0/bd/4c1598e93e1e9a6dcc650e57600a80b52d6d759f8f53b902ea34727bd6fe/xgrammar-0.2.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
         ],
-        sha256 = "1a1ae52372ae981c518a83576209343ec0e79a4ac3a1ed104b0126b870c0ca3b",
-        downloaded_file_path = "xgrammar-0.2.1-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        sha256 = "0f03bcbd6cfd96864d59d8acd18e9e5a3f1656beedcdc55a553bf078120758ac",
+        downloaded_file_path = "xgrammar-0.2.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.2.1_cp312_cp312_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_xgrammar_0.2.0_cp312_cp312_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/8b/e3/9b803c8168290421b3e79b001a823a7e381039fcdd349999c2eeaf454989/xgrammar-0.2.1-cp312-cp312-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/02/78/5a5faa8ac7d6b6dd4dcfcc31bb1ab4c5a2f10ee90224fb3891181c76e24e/xgrammar-0.2.0-cp312-cp312-macosx_11_0_arm64.whl",
         ],
-        sha256 = "29756a266a62da398151946f3d912a5b737df2000a7023696449f9eec0996208",
-        downloaded_file_path = "xgrammar-0.2.1-cp312-cp312-macosx_11_0_arm64.whl",
+        sha256 = "f70f6c2f062535f54836851794d11f96f2a15d8e42a4b21dfbc14767d52c096e",
+        downloaded_file_path = "xgrammar-0.2.0-cp312-cp312-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.2.1_cp312_cp312_manylinux_2_26_aarch64.manylinux_2_28_aarch64",
+        name = "pycross_lock_file_wheel_xgrammar_0.2.0_cp312_cp312_manylinux_2_26_aarch64.manylinux_2_28_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/44/60/7c6194b66e043f36a7fbdbf7e6e0e4c94b151f7e53ad1b197f53e711f5d1/xgrammar-0.2.1-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+            "https://files.pythonhosted.org/packages/b7/1c/92eac0cd125ba195e3f1e3e25e89aedcaecbf99a4034ab12b7655ac07453/xgrammar-0.2.0-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
         ],
-        sha256 = "9e8dd9853958a263b4015ce79133a0ff4eaa9d22ef781fb2350c7dfc40c2c012",
-        downloaded_file_path = "xgrammar-0.2.1-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+        sha256 = "ddad831bc7da41d52ed34b7e1050c9a37d3f5f2314eaed8e658cbd2a34625e31",
+        downloaded_file_path = "xgrammar-0.2.0-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.2.1_cp312_cp312_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
+        name = "pycross_lock_file_wheel_xgrammar_0.2.0_cp312_cp312_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/96/4b/327b3cf702b685a2be28d15490faa4beeac00c4fbcf9bb2d7db0fda32931/xgrammar-0.2.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+            "https://files.pythonhosted.org/packages/7e/30/99f4e83821db16d58dd41249ba46038ed47bce274c57ad5567030775fc62/xgrammar-0.2.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
         ],
-        sha256 = "cbc6014dc1c92fc317b14519121c8163fe35fd934179e5a45d83f780ff231826",
-        downloaded_file_path = "xgrammar-0.2.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        sha256 = "a36c744d24d93e178c138486aa02b390a80326b64ff11e222e063a028dd65849",
+        downloaded_file_path = "xgrammar-0.2.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.2.1_cp313_cp313_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_xgrammar_0.2.0_cp313_cp313_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/58/57/31d118a787debf1a0ab9c6a632e17373bffbaca65250c036498f58934246/xgrammar-0.2.1-cp313-cp313-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/f7/a1/ce7a1c2ebe89ee2715885935721169ecb9fbd13ab791d8f4dc0a86b87259/xgrammar-0.2.0-cp313-cp313-macosx_11_0_arm64.whl",
         ],
-        sha256 = "2e1964e2a1a5f59e138205996b8b41128c2f385a4de952292e8e47add556aa3c",
-        downloaded_file_path = "xgrammar-0.2.1-cp313-cp313-macosx_11_0_arm64.whl",
+        sha256 = "4c7d88530100b6bbb0bc3ccfa7fb50385c938ce15e9219b47bb91fd5b63c2788",
+        downloaded_file_path = "xgrammar-0.2.0-cp313-cp313-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.2.1_cp313_cp313_manylinux_2_26_aarch64.manylinux_2_28_aarch64",
+        name = "pycross_lock_file_wheel_xgrammar_0.2.0_cp313_cp313_manylinux_2_26_aarch64.manylinux_2_28_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/e8/ef/8b5a8f103818a2a2b779c6ca21b5cda3536c78800bf25c6a37f87b130877/xgrammar-0.2.1-cp313-cp313-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+            "https://files.pythonhosted.org/packages/36/22/18bfae3275613493f0fcbd274f2fa169f85c333ffa9581fca83c25669b8a/xgrammar-0.2.0-cp313-cp313-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
         ],
-        sha256 = "bb015d246a8c87bf46b11759442924cd6f96baf3ba444062a98e9a45ec5a1021",
-        downloaded_file_path = "xgrammar-0.2.1-cp313-cp313-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+        sha256 = "8ea1451a1df7aeb39ef97f7b4b8860b7f80424251943563aac48fa98b7b7e939",
+        downloaded_file_path = "xgrammar-0.2.0-cp313-cp313-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.2.1_cp313_cp313_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
+        name = "pycross_lock_file_wheel_xgrammar_0.2.0_cp313_cp313_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/32/75/25ddd211f073a9db8299bdfec4534874d5d5d5f69499bb0c2ce9bf75f483/xgrammar-0.2.1-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+            "https://files.pythonhosted.org/packages/5d/b5/0e4d77b7a91be685e7e388d06c7215cbb7c241402f64b4366d8a4a7a847e/xgrammar-0.2.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
         ],
-        sha256 = "ba024024a454f31d3cb88679a1b073eba0133860f14525f1f5856fa46dec5228",
-        downloaded_file_path = "xgrammar-0.2.1-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        sha256 = "91b3cd498713042ae51c458e2357954e54df0abaea217d6e4297e8065f31a258",
+        downloaded_file_path = "xgrammar-0.2.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.2.1_cp314_cp314_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_xgrammar_0.2.0_cp314_cp314_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/4a/cc/560094347c26b35c750a9ffda1082b941b783890f7ff026aea2a6dcfa0f7/xgrammar-0.2.1-cp314-cp314-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/17/2d/72b7437ac170983e2245e96044bce9836585307f83265cfd424f62ef96aa/xgrammar-0.2.0-cp314-cp314-macosx_11_0_arm64.whl",
         ],
-        sha256 = "4f8c7b50130f2d09cf19c43f40a4a7ef0421d14e73b68778d8d2ad50d8fb054b",
-        downloaded_file_path = "xgrammar-0.2.1-cp314-cp314-macosx_11_0_arm64.whl",
+        sha256 = "82ae4aeee4165274e8899f1dbfbc4e59cb1a69ef658c074b374cc1addf23c345",
+        downloaded_file_path = "xgrammar-0.2.0-cp314-cp314-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.2.1_cp314_cp314_manylinux_2_26_aarch64.manylinux_2_28_aarch64",
+        name = "pycross_lock_file_wheel_xgrammar_0.2.0_cp314_cp314_manylinux_2_26_aarch64.manylinux_2_28_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/7f/52/6e8de281657b27d9d18ad0ebf12de33b6ed43634eff1b0508e319e937a49/xgrammar-0.2.1-cp314-cp314-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+            "https://files.pythonhosted.org/packages/2e/3a/58a7524c130d7596e20da10ae0683567005e9a5eea5811849cb48b1ee261/xgrammar-0.2.0-cp314-cp314-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
         ],
-        sha256 = "34b7564e4074e41ec670973db92a7b8432e2095922db4389267a60da60824c40",
-        downloaded_file_path = "xgrammar-0.2.1-cp314-cp314-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+        sha256 = "2f26458f7fbfa8c2489a4f29d3d1d7026da114078a0cb96110b4e0a1bb2a1b6e",
+        downloaded_file_path = "xgrammar-0.2.0-cp314-cp314-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.2.1_cp314_cp314_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
+        name = "pycross_lock_file_wheel_xgrammar_0.2.0_cp314_cp314_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/96/33/ad8df7d7bfb1b0c7d75748ad89ea0cd3d8f06a7835eab952c10abb7dfdae/xgrammar-0.2.1-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+            "https://files.pythonhosted.org/packages/b0/39/4dba577b8d729d0f400d35d12194ff9754db4d15dd443b4e2a3f1f4653da/xgrammar-0.2.0-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
         ],
-        sha256 = "fffb35a49df2c825e706bd559a9d0bd59b1772a58c9aa90fbf9d7a929634048d",
-        downloaded_file_path = "xgrammar-0.2.1-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        sha256 = "fe904ebf9bfa46003fd098d9fb0696a4e37d85c170f435ee14dfaeab00f956ce",
+        downloaded_file_path = "xgrammar-0.2.0-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.2.1_cp314_cp314t_macosx_11_0_arm64",
+        name = "pycross_lock_file_wheel_xgrammar_0.2.0_cp314_cp314t_macosx_11_0_arm64",
         urls = [
-            "https://files.pythonhosted.org/packages/e8/e4/dee8d13dde3a61d757d3671d36ec9f4a11ad3a6cf629667838f3a1b42e1a/xgrammar-0.2.1-cp314-cp314t-macosx_11_0_arm64.whl",
+            "https://files.pythonhosted.org/packages/30/ec/3f2baa04c80e9a289b1f27ea96662ada212630c6c058ce4873069e1abb8e/xgrammar-0.2.0-cp314-cp314t-macosx_11_0_arm64.whl",
         ],
-        sha256 = "0cd55c698f2859053009ea9e1040ae1503265a3db717ce0580ca286663fe5da9",
-        downloaded_file_path = "xgrammar-0.2.1-cp314-cp314t-macosx_11_0_arm64.whl",
+        sha256 = "d3d4df5bdaa9d945f2b435c60c14af692b64435ab598c739813ab1fb3146e2f0",
+        downloaded_file_path = "xgrammar-0.2.0-cp314-cp314t-macosx_11_0_arm64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.2.1_cp314_cp314t_manylinux_2_26_aarch64.manylinux_2_28_aarch64",
+        name = "pycross_lock_file_wheel_xgrammar_0.2.0_cp314_cp314t_manylinux_2_26_aarch64.manylinux_2_28_aarch64",
         urls = [
-            "https://files.pythonhosted.org/packages/9d/07/35d5587604357fcdb831fd47aba9fe4557dea9fde636c05478830780f012/xgrammar-0.2.1-cp314-cp314t-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+            "https://files.pythonhosted.org/packages/ff/64/243ce8250877ee9b8f3f9745e2f6d5c8dc2e13ad71e875d09204b9f031aa/xgrammar-0.2.0-cp314-cp314t-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
         ],
-        sha256 = "5a3569ca924eaf0ac2380c3c421dfd08eefa0658ef000e7ae7545c7499c7b36c",
-        downloaded_file_path = "xgrammar-0.2.1-cp314-cp314t-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+        sha256 = "8675ca4512eb2a58a9314a022bf4e7089e1161edb9ef2b2c87390f84078611b8",
+        downloaded_file_path = "xgrammar-0.2.0-cp314-cp314t-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
     )
 
     maybe(
         http_file,
-        name = "pycross_lock_file_wheel_xgrammar_0.2.1_cp314_cp314t_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
+        name = "pycross_lock_file_wheel_xgrammar_0.2.0_cp314_cp314t_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
         urls = [
-            "https://files.pythonhosted.org/packages/37/99/9704f02c9a0320163fab9351c17c62b980f8e885dc530d998591ced84ed2/xgrammar-0.2.1-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+            "https://files.pythonhosted.org/packages/32/4c/507e35a290ce2bfb013efcf199e430b269282c9bb571df7788594ae9203a/xgrammar-0.2.0-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
         ],
-        sha256 = "fff6a09f844e6bbb5e4bd9cbc0bd5e07e21962c54b661dfeb2ec4ecd96e0eded",
-        downloaded_file_path = "xgrammar-0.2.1-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        sha256 = "4b17d98dd62c96aedd5b0ff0643cc2343eebe40782d469a14e650a3c7402d749",
+        downloaded_file_path = "xgrammar-0.2.0-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_xgrammar_0.2.7_cp310_cp310_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/ef/25/7e7ea62f1897f24e7adf0e8888aa6a8ae84f084eef8e4355892e4d2271f5/xgrammar-0.2.7-cp310-cp310-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "bc2bc2fa9ff57bbe7dbebf86db8c5c65228d255566e3d31db44aa6d6c64fef8a",
+        downloaded_file_path = "xgrammar-0.2.7-cp310-cp310-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_xgrammar_0.2.7_cp310_cp310_manylinux_2_26_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/1e/fd/33864da9bc1bd32531b421c46c4b63848698a9b6ffff8ae75790b5ca4d46/xgrammar-0.2.7-cp310-cp310-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "846c155ae16add86d66083340aa4d2a074abaefbe6d77d1314b85d6043b045d9",
+        downloaded_file_path = "xgrammar-0.2.7-cp310-cp310-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_xgrammar_0.2.7_cp310_cp310_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/59/c9/206034c5e4eafdac9b88d52f7ccb38d4354ccfbed44f21f48a6c2ce86d9c/xgrammar-0.2.7-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        ],
+        sha256 = "ea74cca223e834dfb4b96b25a3a3b8fc983a49d30dba782146420bb4732b8e52",
+        downloaded_file_path = "xgrammar-0.2.7-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_xgrammar_0.2.7_cp311_cp311_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/cd/59/87f0f419708818621a25245108609f67bbf5403c949ac138ec4b98945eec/xgrammar-0.2.7-cp311-cp311-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "7d0ce000a746cb44e4f3e68f5b0666c68797964087eb28ab07fc707dd709e3a7",
+        downloaded_file_path = "xgrammar-0.2.7-cp311-cp311-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_xgrammar_0.2.7_cp311_cp311_manylinux_2_26_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/36/8c/822c39926051c65b7023595863dab164b245d93931ca51e2419862c4c461/xgrammar-0.2.7-cp311-cp311-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "45e8fa9458269d44c5b4c439eb073daa2f4105d3bb2b731ae764231ef2ab1049",
+        downloaded_file_path = "xgrammar-0.2.7-cp311-cp311-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_xgrammar_0.2.7_cp311_cp311_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/8f/f8/18cd22ab580d3ae6d0dfa2b127bbad26598724f54c82817007e2854bfb6c/xgrammar-0.2.7-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        ],
+        sha256 = "e3a4cb4214b228d2fecefe46f46d2f2b0d6c8468fd448319250cae6bccb73339",
+        downloaded_file_path = "xgrammar-0.2.7-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_xgrammar_0.2.7_cp312_cp312_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/16/18/f79752cb28baa56a914d6e0d7eb66b334640acb80a987a638775b1e0b4cf/xgrammar-0.2.7-cp312-cp312-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "4957b0ab6c743ee8e178faa6e7804466f9caadccba551b52600720490d591349",
+        downloaded_file_path = "xgrammar-0.2.7-cp312-cp312-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_xgrammar_0.2.7_cp312_cp312_manylinux_2_26_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/ad/35/5d56e9dbe6f0ccefebcb5212b7ded0af17bec7f2d148dd6403c7d247d063/xgrammar-0.2.7-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "2df1a2292f6b1c5cdc4b176ef2f22c58a837ac99fd854d93856160f31f14a4b0",
+        downloaded_file_path = "xgrammar-0.2.7-cp312-cp312-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_xgrammar_0.2.7_cp312_cp312_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/9d/f2/cb90cfbcca316b3fa98b0928ec989f3fb75f6439bc5269c5c2121d361301/xgrammar-0.2.7-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        ],
+        sha256 = "e4397798f73512ab5abccbadf0a7b6aaf0753ccc4f3171c43b14c4d22df1ed28",
+        downloaded_file_path = "xgrammar-0.2.7-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_xgrammar_0.2.7_cp313_cp313_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/e7/0f/9b5921eeafac3338a31a24d517dffed71f0a92a1e5b58483829e7f196472/xgrammar-0.2.7-cp313-cp313-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "8cca1a85d520fd08675cf5a110b1e7c45f308ed3198e45c31ec38ef400f2d55a",
+        downloaded_file_path = "xgrammar-0.2.7-cp313-cp313-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_xgrammar_0.2.7_cp313_cp313_manylinux_2_26_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/0d/68/abf92308b9a49a7be185537bfc606a26f9ab8704fe5d780409e30b3091b5/xgrammar-0.2.7-cp313-cp313-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "3f63948994cdc1bc0733e74bcb15e38e76a39150695cc15b54653c1931295ce6",
+        downloaded_file_path = "xgrammar-0.2.7-cp313-cp313-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_xgrammar_0.2.7_cp313_cp313_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/62/10/0eefbd9e09bc8ec650a15131076f01011ac0aad23514086be812c278ae0b/xgrammar-0.2.7-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        ],
+        sha256 = "3a6bc5efcd80cda89da9a887239cc0d02ef22b3770c7372ab0bb4a56034da35f",
+        downloaded_file_path = "xgrammar-0.2.7-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_xgrammar_0.2.7_cp314_cp314_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/38/b5/4117dd6888a92853f7e8b16189d32f3565dc6b217900989c1df1a20ca0db/xgrammar-0.2.7-cp314-cp314-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "f70e7e45a7f50229a6b25043eec326458e8360a5a29a49eafe78c07cc3dd07b7",
+        downloaded_file_path = "xgrammar-0.2.7-cp314-cp314-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_xgrammar_0.2.7_cp314_cp314_manylinux_2_26_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/e4/09/3165a9cd402ee647e830706ca07131edf8afa1bd888ecb0b4f9f3e80fe6b/xgrammar-0.2.7-cp314-cp314-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "a89fe03bed4bb12e98c4dcaf583cd608aab601a401b9e39142d6de3df6eda873",
+        downloaded_file_path = "xgrammar-0.2.7-cp314-cp314-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_xgrammar_0.2.7_cp314_cp314_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/aa/d1/8f50654de9b7e84dde654353f603e18477622997911e823598b1b528e499/xgrammar-0.2.7-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        ],
+        sha256 = "ebb521bcce85dc832b0e5d21fe0acfea0641fdd66baa2c3295600ea22780582d",
+        downloaded_file_path = "xgrammar-0.2.7-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_xgrammar_0.2.7_cp314_cp314t_macosx_11_0_arm64",
+        urls = [
+            "https://files.pythonhosted.org/packages/5e/d9/3d17448903ad02c5c1237c348ad28c95368ec4268763b826adbe2ab7daa0/xgrammar-0.2.7-cp314-cp314t-macosx_11_0_arm64.whl",
+        ],
+        sha256 = "d5a8f7e5b7c4039bfd41ff8e7645ecab9e5be077bccf11936601fb799cf40c68",
+        downloaded_file_path = "xgrammar-0.2.7-cp314-cp314t-macosx_11_0_arm64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_xgrammar_0.2.7_cp314_cp314t_manylinux_2_26_aarch64.manylinux_2_28_aarch64",
+        urls = [
+            "https://files.pythonhosted.org/packages/b7/76/836320c6ef6d8c090562bfe29c943c78919be1ae00f6c17237430023b358/xgrammar-0.2.7-cp314-cp314t-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+        ],
+        sha256 = "a5f5fbe2a244aefe72c3c660f2c7ab575f147ae593371920d0f49c9fc121e03b",
+        downloaded_file_path = "xgrammar-0.2.7-cp314-cp314t-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl",
+    )
+
+    maybe(
+        http_file,
+        name = "pycross_lock_file_wheel_xgrammar_0.2.7_cp314_cp314t_manylinux_2_27_x86_64.manylinux_2_28_x86_64",
+        urls = [
+            "https://files.pythonhosted.org/packages/37/cb/49140e9bfc0ac3968fa87fcdbfdc3fb803bdfee11060840240899250f993/xgrammar-0.2.7-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+        ],
+        sha256 = "8b8bbfeb26995aea634ff6bc6a8eb555e465ee4821da21c684fbab9cfe319413",
+        downloaded_file_path = "xgrammar-0.2.7-cp314-cp314t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
     )
 
     maybe(

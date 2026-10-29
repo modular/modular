@@ -15,7 +15,7 @@
 # syntax, trying to import through a *module*. Only packages can have modules or
 # packages imported from them.
 
-# RUN: %parse-mojo-isolated -split-input-file -I=%S/inputs -verify-diagnostics %s
+# RUN: %parse-mojo-isolated -split-input-file -I%S/inputs -verify-diagnostics %s
 
 # expected-error @+1 {{'module' is a module, not a package; it has no nested module or package 'bar'}}
 import test_package.test_nested_package.module.bar

@@ -20,8 +20,8 @@ from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParamInterface
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheParamInterface
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
@@ -88,6 +88,7 @@ class PixtralConfig(
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """The language model's hidden layer count."""
         return huggingface_config.text_config.num_hidden_layers
 
     @override
@@ -106,6 +107,9 @@ class PixtralConfig(
 
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
+            model_config: The MAX model configuration to read the HuggingFace
+                config from. Defaults to ``pipeline_config.model``.
+            max_seq_len: The maximum sequence length the config allows.
 
         Returns:
             An initialized PixtralConfig instance.

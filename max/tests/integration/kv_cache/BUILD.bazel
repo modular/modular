@@ -15,7 +15,6 @@ modular_py_test(
         exclude = [
             "*_gpu.py",
             "test_jenga_arch_geometry.py",
-            "test_print_kv_cache.py",
             "test_rotary_embedding.py",
         ],
     ),
@@ -31,7 +30,7 @@ modular_py_test(
         "//max/python/max/experimental/torch",
         "//max/python/max/graph",
         "//max/python/max/mlir",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/kv_cache:kv_connector",
@@ -45,28 +44,6 @@ modular_py_test(
         requirement("numpy"),
         requirement("pytest-asyncio"),
         requirement("torch"),
-    ],
-)
-
-modular_py_test(
-    name = "test_print_kv_cache",
-    srcs = [
-        "conftest.py",
-        "test_print_kv_cache.py",
-    ],
-    target_compatible_with = select({
-        "@platforms//os:macos": ["@platforms//:incompatible"],
-        # Test takes too long on ASAN to run in presubmit
-        "//:asan": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
-    deps = [
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/graph",
-        "//max/python/max/nn",
-        requirement("hypothesis"),
     ],
 )
 
@@ -87,7 +64,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/tests/integration/test_common:modular_graph_test",
         "//max/tests/integration/test_common:simple_kv_cache",
         requirement("hypothesis"),
@@ -111,6 +88,8 @@ modular_py_test(
             "test_msa_nvfp4_kv_gpu.py",
             "test_chunked_staging_region_gpu.py",
             "test_kv_cache_buffer_pinned_gpu.py",
+            "test_split_head_dims_attention_gpu.py",
+            "test_split_head_dims_store_rope_gpu.py",
         ],
     ) + ["conftest.py"],
     exec_properties = {
@@ -130,7 +109,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/tests/integration/test_common:simple_kv_cache",
         requirement("hypothesis"),
         requirement("ml-dtypes"),
@@ -174,7 +153,7 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
     ],
 )
 
@@ -194,7 +173,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/mimo_v2",
         "//max/tests/integration/test_common:graph_utils",
         "//max/tests/integration/test_common:simple_kv_cache",
@@ -229,7 +208,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/mimo_v2",
         "//max/tests/integration/test_common:graph_utils",
         "//max/tests/integration/test_common:simple_kv_cache",
@@ -258,7 +237,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/tests/integration/test_common:graph_utils",
         "//max/tests/integration/test_common:simple_kv_cache",
         requirement("numpy"),
@@ -286,7 +265,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("numpy"),
         requirement("torch"),
     ],
@@ -313,7 +292,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/tests/integration/test_common:graph_utils",
         "//max/tests/integration/test_common:simple_kv_cache",
         requirement("numpy"),
@@ -347,7 +326,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/tests/integration/test_common:graph_utils",
         "//max/tests/integration/test_common:simple_kv_cache",
         requirement("numpy"),
@@ -371,7 +350,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/kv_cache",
         "//max/tests/integration/test_common:context_utils",
@@ -387,7 +366,7 @@ _LORA_TEST_DEPS = [
     "//max/python/max/engine",
     "//max/python/max/experimental/torch",
     "//max/python/max/graph",
-    "//max/python/max/nn",
+    "//max/python/max/nn/legacy",
     "//max/python/max:tree",
     "//max/tests/integration/test_common:simple_kv_cache",
     requirement("hypothesis"),
@@ -449,7 +428,7 @@ modular_py_test(
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/architectures/deepseekV2",
         "//max/python/max/pipelines/architectures/deepseekV41",
@@ -463,5 +442,64 @@ modular_py_test(
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/speculative",
         requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "test_split_head_dims_attention_gpu",
+    size = "large",
+    srcs = ["test_split_head_dims_attention_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    # A split KV cache's attention is the SM100 FA4 K-tail tile.
+    gpu_constraints = select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/tests/integration/test_common:graph_utils",
+        "//max/tests/integration/test_common:simple_kv_cache",
+        requirement("ml-dtypes"),
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_split_head_dims_store_rope_gpu",
+    srcs = ["test_split_head_dims_store_rope_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    # Building a split cache's inputs resolves its decode partition count,
+    # which is modeled only for the B200 and B300 SM counts.
+    gpu_constraints = select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/tests/integration/test_common:simple_kv_cache",
+        requirement("ml-dtypes"),
+        requirement("numpy"),
     ],
 )

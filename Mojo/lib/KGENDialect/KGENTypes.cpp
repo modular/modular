@@ -17,6 +17,7 @@
 #include "Mojo/KGENDialect/KGENDType.h"
 #include "Mojo/KGENDialect/KGENDialect.h"
 #include "Mojo/KGENDialect/KGENInterfaces.h"
+#include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/KGENParameters.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/KGENDialect/ParameterEvaluator.h"
@@ -191,7 +192,8 @@ OptionalParseResult ParamType::parseValue(AsmParser &p,
   return {}; // No custom parsing.
 }
 
-LogicalResult ParamType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult ParamType::printValue(AsmPrinter &p, TypedAttr value,
+                                    KGENParamPrinter &printer) const {
   return failure(); // No custom printing.
 }
 
@@ -229,19 +231,22 @@ OptionalParseResult NonStructTypeType::parseValue(AsmParser &p,
   return parseSugaredTypeValue(p, value, *this, parseOptionalKGENType);
 }
 
-LogicalResult NonStructTypeType::printValue(AsmPrinter &p,
-                                            TypedAttr value) const {
-  void (*typePrinter)(AsmPrinter &, Type) = &printKGENType; // Select overload.
-  return printSugaredTypeValue(p, value, typePrinter);
+LogicalResult NonStructTypeType::printValue(AsmPrinter &p, TypedAttr value,
+                                            KGENParamPrinter &printer) const {
+  return printSugaredTypeValue(p, value, [&printer](AsmPrinter &p, Type type) {
+    printer.printKGENType(p, type);
+  });
 }
 
 OptionalParseResult TypeType::parseValue(AsmParser &p, TypedAttr &value) const {
   return parseSugaredTypeValue(p, value, *this, parseOptionalKGENType);
 }
 
-LogicalResult TypeType::printValue(AsmPrinter &p, TypedAttr value) const {
-  void (*typePrinter)(AsmPrinter &, Type) = &printKGENType; // Select overload.
-  return printSugaredTypeValue(p, value, typePrinter);
+LogicalResult TypeType::printValue(AsmPrinter &p, TypedAttr value,
+                                   KGENParamPrinter &printer) const {
+  return printSugaredTypeValue(p, value, [&printer](AsmPrinter &p, Type type) {
+    printer.printKGENType(p, type);
+  });
 }
 
 std::optional<int64_t> TypeType::getTypeSize(TargetInfoAttr target) const {
@@ -403,7 +408,8 @@ OptionalParseResult GeneratorType::parseValue(AsmParser &p,
   return {};
 }
 
-LogicalResult GeneratorType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult GeneratorType::printValue(AsmPrinter &p, TypedAttr value,
+                                        KGENParamPrinter &printer) const {
   if (::isa<FuncTypeGeneratorType>(*this)) {
     if (auto mlirOp = dyn_cast<MLIROpAttr>(value)) {
       p << mlirOp.getName();
@@ -416,7 +422,7 @@ LogicalResult GeneratorType::printValue(AsmPrinter &p, TypedAttr value) const {
     if (!symbolCst)
       return failure();
     p << symbolCst.getSymbol();
-    printParameterValues(p, symbolCst.getParamValues());
+    printer.printParameterValues(p, symbolCst.getParamValues());
     return success();
   }
 
@@ -739,13 +745,13 @@ ErrorOr<TypedAttr> FuncType::readFrom(int64_t addr,
       // recursion but require one level of typing to preserve symbol storage in
       // the interpreter. Handle the resulting type mismatches with a bit cast.
       if (generatorType.getBody() != *this) {
-        assert(isa<SymbolConstantAttr>(*symbol) &&
-               "func slot must hold a symbol constant");
-        auto symbolCst = cast<SymbolConstantAttr>(*symbol);
+        auto generator = FuncSymbolGenerator::dynCast(*symbol);
+        assert(generator && generator.isFullyBound() &&
+               "func slot must hold a function symbol");
         auto shallowGen =
             cast<FuncTypeGeneratorType>(generatorType.getWithBody(*this));
-        symbol =
-            cast<TypedAttr>(FuncPtrBitcastAttr::get(symbolCst, shallowGen));
+        symbol = cast<TypedAttr>(FuncPtrBitcastAttr::get(
+            generator.getInstantiatedFuncSymbol(), shallowGen));
       }
     }
   }
@@ -874,8 +880,8 @@ OptionalParseResult FuncLiteralType::parseValue(AsmParser &p,
   return {};
 }
 
-LogicalResult FuncLiteralType::printValue(AsmPrinter &p,
-                                          TypedAttr value) const {
+LogicalResult FuncLiteralType::printValue(AsmPrinter &p, TypedAttr value,
+                                          KGENParamPrinter &printer) const {
   return failure();
 }
 
@@ -987,6 +993,103 @@ bool FuncTypeGeneratorType::classof(Type type) {
 }
 
 //===----------------------------------------------------------------------===//
+// FuncSymbolGenerator
+//===----------------------------------------------------------------------===//
+
+static bool isFuncSymbolGenerator(TypedAttr attr) {
+  auto gen = sugarDynCast<GeneratorAttr>(attr);
+  return gen && sugarIsa<FuncSymbolAttr>(gen.getBody());
+}
+
+FuncSymbolGenerator::FuncSymbolGenerator(TypedAttr attr) : storage(attr) {
+  assert((!attr || isFuncSymbolGenerator(attr)) &&
+         "expected a GeneratorAttr wrapping a FuncSymbolAttr");
+}
+
+FuncSymbolGenerator FuncSymbolGenerator::get(ArrayRef<Type> inputParamTypes,
+                                             FuncSymbolAttr funcSymbol,
+                                             Attribute metadata) {
+  return FuncSymbolGenerator(
+      GeneratorAttr::get(inputParamTypes, funcSymbol, metadata));
+}
+
+FuncSymbolGenerator FuncSymbolGenerator::get(SymbolRefAttr symbol,
+                                             FuncType type,
+                                             Attribute metadata) {
+  auto funcSymbol = FuncSymbolAttr::get(symbol, type, /*paramValues=*/{});
+  return get(/*inputParamTypes=*/{}, funcSymbol, metadata);
+}
+
+FuncSymbolGenerator FuncSymbolGenerator::get(FuncOp func) {
+  FuncTypeGeneratorType type = func.getFuncTypeGenerator();
+  return get(FlatSymbolRefAttr::get(func.getSymNameAttr()), type.getBody(),
+             type.getParamListAttrs());
+}
+
+FuncSymbolGenerator FuncSymbolGenerator::get(SymbolConstantAttr symbol) {
+  FuncTypeGeneratorType type = symbol.getType();
+  if (!type.isFullyBound())
+    return {};
+  IndexDepthAdjuster adjuster(1);
+  SmallVector<TypedAttr> bodyValues =
+      llvm::map_to_vector(symbol.getParamValues(), [&](TypedAttr value) {
+        return cast<TypedAttr>(adjuster.replace(value));
+      });
+  auto funcSymbol =
+      FuncSymbolAttr::get(symbol.getSymbol(), type.getBody(), bodyValues);
+  return get(/*inputParamTypes=*/{}, funcSymbol, type.getParamListAttrs());
+}
+
+FuncSymbolGenerator FuncSymbolGenerator::dynCast(Attribute attr) {
+  auto typedAttr = dyn_cast_if_present<TypedAttr>(attr);
+  if (!typedAttr)
+    return {};
+  if (isFuncSymbolGenerator(typedAttr))
+    return FuncSymbolGenerator(typedAttr);
+  if (auto symbol = dyn_cast<SymbolConstantAttr>(attr))
+    return get(symbol);
+  return {};
+}
+
+GeneratorAttr FuncSymbolGenerator::getGenerator() const {
+  return sugarCast<GeneratorAttr>(storage);
+}
+
+FuncTypeGeneratorType FuncSymbolGenerator::getType() const {
+  return ::cast<FuncTypeGeneratorType>(storage.getType());
+}
+
+ArrayRef<Type> FuncSymbolGenerator::getInputParamTypes() const {
+  return getGenerator().getInputParamTypes();
+}
+
+bool FuncSymbolGenerator::isFullyBound() const {
+  return getGenerator().isFullyBound();
+}
+
+FuncSymbolAttr FuncSymbolGenerator::getFuncSymbol() const {
+  return sugarCast<FuncSymbolAttr>(getGenerator().getBody());
+}
+
+SymbolRefAttr FuncSymbolGenerator::getSymbol() const {
+  return getFuncSymbol().getSymbol();
+}
+
+FuncSymbolAttr FuncSymbolGenerator::getInstantiatedFuncSymbol() const {
+  assert(isFullyBound() && "cannot instantiate a parameterized generator");
+  return sugarCast<FuncSymbolAttr>(getGenerator().getInstantiatedValue());
+}
+
+FuncType FuncSymbolGenerator::getInstantiatedType() const {
+  assert(isFullyBound() && "cannot instantiate a parameterized generator");
+  return getType().getInstantiatedBody();
+}
+
+ArrayRef<TypedAttr> FuncSymbolGenerator::getParamValues() const {
+  return getInstantiatedFuncSymbol().getParamValues();
+}
+
+//===----------------------------------------------------------------------===//
 // FuncLiteralTypeGeneratorType
 //===----------------------------------------------------------------------===//
 
@@ -1025,6 +1128,18 @@ FuncLiteralTypeGeneratorType::getSpecializedGenerator(
   return ::cast_or_null<FuncLiteralTypeGeneratorType>(
       GeneratorType::getSpecializedGenerator(paramBindings, evaluationContext,
                                              location));
+}
+
+TypedAttr FuncLiteralTypeGeneratorType::getFuncSymbolAttr() {
+  return GeneratorAttr::get(getInputParamTypes(), getBody().getTargetLiteral(),
+                            getParamListAttrs());
+}
+
+FuncTypeGeneratorType
+FuncLiteralTypeGeneratorType::getNonLiteralGeneratorType() {
+  auto directSymbol = getBody().getTargetLiteral();
+  return GeneratorType::get(getInputParamTypes(), directSymbol.getType(),
+                            getParamListAttrs());
 }
 
 SymbolConstantAttr FuncLiteralTypeGeneratorType::getSymbolConstantAttr() {
@@ -1235,7 +1350,8 @@ OptionalParseResult PointerType::parseValue(AsmParser &p,
   return {};
 }
 
-LogicalResult PointerType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult PointerType::printValue(AsmPrinter &p, TypedAttr value,
+                                      KGENParamPrinter &printer) const {
   // Print a raw pointer attribute as an integer.
   if (auto ptrAttr = dyn_cast<PointerAttr>(value)) {
     p << ptrAttr.getAddr();
@@ -1245,7 +1361,7 @@ LogicalResult PointerType::printValue(AsmPrinter &p, TypedAttr value) const {
   // Print a `store_to_mem` directive.
   if (auto memAttr = dyn_cast<StoreToMemAttr>(value)) {
     p << "store_to_mem(";
-    printParamValue(p, memAttr.getValue());
+    printer.printParamValue(p, memAttr.getValue());
     p << ')';
     return success();
   }
@@ -2138,12 +2254,13 @@ OptionalParseResult VariantType::parseValue(AsmParser &p,
   return mlir::success();
 }
 
-LogicalResult VariantType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult VariantType::printValue(AsmPrinter &p, TypedAttr value,
+                                      KGENParamPrinter &printer) const {
   auto variant = dyn_cast<VariantAttr>(value);
   if (!variant)
     return failure();
   p << '{';
-  printColonTypeParamValue(p, variant.getValue());
+  printer.printColonTypeParamValue(p, variant.getValue());
   p << ", " << variant.getIndex() << '}';
   return success();
 }

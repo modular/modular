@@ -36,6 +36,7 @@ import json
 
 import pytest
 import tiny_fixture
+from max import functional as F
 from max.driver import (
     Accelerator,
     set_virtual_device_api,
@@ -43,12 +44,9 @@ from max.driver import (
     set_virtual_device_target_arch,
 )
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import default_device, default_dtype
 from max.graph import BufferType, DeviceRef, StaticDim, TensorType
 from max.graph.weights import SafetensorWeights
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import MiMoV2
 from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
     MiMoV2Config,
@@ -59,6 +57,8 @@ from max.pipelines.architectures.mimo_v2_modulev3.weight_adapters import (
 from max.pipelines.lib.interfaces.batch_processor import (
     modulev3_ragged_kv_symbolic_inputs,
 )
+from max.tensor import default_device, default_dtype
+from max.tensor.sharding import DeviceMesh
 from mimo_v3_runner import kv_params
 from transformers.configuration_utils import PretrainedConfig
 
@@ -132,8 +132,9 @@ def _kv_block(
 
     A block is the writable cache pool
     ``[pages, arity, layers, page_size, heads, head_dim]``; the tiny
-    fixture runs 2 sliding and 2 full layers over 8 and 4 KV heads, and
-    every head is padded to the 256-wide cache.
+    fixture runs 2 sliding and 2 full layers over 8 and 4 KV heads. Each
+    head packs its 192-wide key and 128-wide value into one 320-wide plane,
+    the geometry the registry entry's groups declare.
     """
     block = types[slot]
     assert isinstance(block, BufferType), f"slot {slot} is not a cache pool"
@@ -141,7 +142,7 @@ def _kv_block(
     dims = [
         int(dim) if isinstance(dim, StaticDim) else None for dim in block.shape
     ]
-    assert dims == [None, 2, layers, 128, heads, 256], (
+    assert dims == [None, 1, layers, 128, heads, 320], (
         f"slot {slot}: {block.shape}"
     )
 

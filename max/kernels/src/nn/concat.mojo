@@ -27,6 +27,11 @@ from max.algorithm.functional import (
 from max.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceBuffer, DeviceContext, default_accelerator
 from max.gpu.host.info import is_cpu, is_valid_target
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from layout import (
     Coord,
     TensorLayout,
@@ -905,39 +910,42 @@ def _concat_gpu_flat_kernel[
     var _total_concat_dim = Int(total_concat_dim)
     var _total_vec_items = Int(total_vec_items)
     var tid = block_idx.x * block_size + thread_idx.x
-    if tid >= _total_vec_items:
-        return
-
-    var vec_idx = tid * vec_width
-
-    # Decompose flat index into (outer, concat, inner) coordinates.
-    var remaining, inner_idx = divmod(vec_idx, _inner_size)
-    var outer_idx, concat_idx = divmod(remaining, _total_concat_dim)
-
-    # Find which input this concat_idx belongs to and compute source offset.
-    # Alignment is guaranteed: vec_idx is a multiple of vec_width, and
-    # in_offset is a multiple of vec_width when inner_size % vec_width == 0
-    # (enforced by the caller).
-    var acc = 0
-    comptime for i in range(num_inputs):
-        var input_concat_dim = Int(inputs[i].dim(axis))
-        if concat_idx < acc + input_concat_dim:
-            var local_concat = concat_idx - acc
-            var in_offset = (
-                outer_idx * input_concat_dim + local_concat
-            ) * _inner_size + inner_idx
-            var output_flat = output.reshape(row_major(output.num_elements()))
-            var input_flat = inputs[i].reshape(
-                row_major(inputs[i].num_elements())
-            )
-            output_flat.store[alignment=vec_width](
-                (vec_idx,),
-                input_flat.load[width=vec_width, alignment=vec_width](
-                    Coord(in_offset)
-                ),
-            )
+    with PDL():
+        if tid >= _total_vec_items:
             return
-        acc += input_concat_dim
+
+        var vec_idx = tid * vec_width
+
+        # Decompose flat index into (outer, concat, inner) coordinates.
+        var remaining, inner_idx = divmod(vec_idx, _inner_size)
+        var outer_idx, concat_idx = divmod(remaining, _total_concat_dim)
+
+        # Find which input this concat_idx belongs to and compute source offset.
+        # Alignment is guaranteed: vec_idx is a multiple of vec_width, and
+        # in_offset is a multiple of vec_width when inner_size % vec_width == 0
+        # (enforced by the caller).
+        var acc = 0
+        comptime for i in range(num_inputs):
+            var input_concat_dim = Int(inputs[i].dim(axis))
+            if concat_idx < acc + input_concat_dim:
+                var local_concat = concat_idx - acc
+                var in_offset = (
+                    outer_idx * input_concat_dim + local_concat
+                ) * _inner_size + inner_idx
+                var output_flat = output.reshape(
+                    row_major(output.num_elements())
+                )
+                var input_flat = inputs[i].reshape(
+                    row_major(inputs[i].num_elements())
+                )
+                output_flat.store[alignment=vec_width](
+                    (vec_idx,),
+                    input_flat.load[width=vec_width, alignment=vec_width](
+                        Coord(in_offset)
+                    ),
+                )
+                return
+            acc += input_concat_dim
 
 
 @__name(t"concat_inner_most_single_dim_{dtype}")
@@ -970,30 +978,31 @@ def _concat_inner_most_single_dim[
     # used here; extra tail threads from `ceildiv` in `_concat_gpu` must exit
     # before subvolume indexing.
     var row_count = inputs[0].num_elements()
-    if idx >= row_count:
-        return
+    with PDL():
+        if idx >= row_count:
+            return
 
-    # Static-divisor row -> n-D decomposition: the output's outer dims that are
-    # statically known in `OutputLayoutType` fold the per-thread `divmod` to a
-    # magic-multiply + shift (no `IDIV`); dynamic dims fall back to the runtime
-    # divide read from the `Coord`'s leaf values. Behavior is bit-identical to
-    # `_get_start_indices_of_nth_subvolume[1]`.
-    var index = _get_start_indices_of_nth_subvolume_static(
-        idx, output.layout.shape_coord()
-    )
-    var in_coord = Coord(index)
+        # Static-divisor row -> n-D decomposition: the output's outer dims that are
+        # statically known in `OutputLayoutType` fold the per-thread `divmod` to a
+        # magic-multiply + shift (no `IDIV`); dynamic dims fall back to the runtime
+        # divide read from the `Coord`'s leaf values. Behavior is bit-identical to
+        # `_get_start_indices_of_nth_subvolume[1]`.
+        var index = _get_start_indices_of_nth_subvolume_static(
+            idx, output.layout.shape_coord()
+        )
+        var in_coord = Coord(index)
 
-    comptime for i in range(num_inputs):
-        var out_index = index
-        out_index[output.rank - 1] = i
-        var out_coord = Coord(out_index)
+        comptime for i in range(num_inputs):
+            var out_index = index
+            out_index[output.rank - 1] = i
+            var out_coord = Coord(out_index)
 
-        comptime if has_epilogue:
-            epilogue_fn[dtype, 1, alignment=1](
-                out_coord, inputs[i].load[width=1](in_coord)
-            )
-        else:
-            output.store(out_coord, inputs[i].load[width=1](in_coord))
+            comptime if has_epilogue:
+                epilogue_fn[dtype, 1, alignment=1](
+                    out_coord, inputs[i].load[width=1](in_coord)
+                )
+            else:
+                output.store(out_coord, inputs[i].load[width=1](in_coord))
 
 
 @inline(.always)
@@ -1084,6 +1093,7 @@ def _concat_gpu_elementwise[
                 Int32(total_vec_items),
                 grid_dim=(ceildiv(total_vec_items, _block_size),),
                 block_dim=(_block_size,),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
         # Check if _vec_width-wide loads are safe:
@@ -1246,6 +1256,7 @@ def _concat_gpu[
                 host_args=(epilogue_fn,),
                 grid_dim=(ceildiv(inputs[0].num_elements(), block_size),),
                 block_dim=(block_size),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
     _concat_gpu_elementwise[has_epilogue=has_epilogue](
@@ -1324,28 +1335,29 @@ def _fused_concat_inner_most_single_dim[
     comptime num_inputs = input_shapes.size
 
     var idx = block_idx.x * block_size + thread_idx.x
-    if idx >= _shape_product(input_shapes[0], 0, rank):
-        return
+    with PDL():
+        if idx >= _shape_product(input_shapes[0], 0, rank):
+            return
 
-    # Static-divisor row -> n-D decomposition: the hot site of a fused
-    # concat, and of a concat whose epilogue also stores a slice. The graph
-    # compiler threads a `TileTensor` whose layout `_shape_types` preserve
-    # the statically-known MLIR output dims, so the per-thread `divmod`
-    # over the outer dims folds to magic-multiply + shift
-    # (no `IDIV`). Dynamic dims fall back to the runtime divide; behavior is
-    # bit-identical to `_get_start_indices_of_nth_subvolume[1]`.
-    var index = _get_start_indices_of_nth_subvolume_static(
-        idx, output_layout.shape_coord()
-    )
-
-    comptime for i in range(num_inputs):
-        var out_index = index
-        out_index[rank - 1] = i
-
-        output_0_fn[dtype, width=1, alignment=1](
-            Coord(out_index),
-            input_fn[i, 1](Coord(index)),
+        # Static-divisor row -> n-D decomposition: the hot site of a fused
+        # concat, and of a concat whose epilogue also stores a slice. The graph
+        # compiler threads a `TileTensor` whose layout `_shape_types` preserve
+        # the statically-known MLIR output dims, so the per-thread `divmod`
+        # over the outer dims folds to magic-multiply + shift
+        # (no `IDIV`). Dynamic dims fall back to the runtime divide; behavior is
+        # bit-identical to `_get_start_indices_of_nth_subvolume[1]`.
+        var index = _get_start_indices_of_nth_subvolume_static(
+            idx, output_layout.shape_coord()
         )
+
+        comptime for i in range(num_inputs):
+            var out_index = index
+            out_index[rank - 1] = i
+
+            output_0_fn[dtype, width=1, alignment=1](
+                Coord(out_index),
+                input_fn[i, 1](Coord(index)),
+            )
 
 
 @inline(.always)
@@ -1386,38 +1398,38 @@ def _fused_dual_concat_inner_most_single_dim[
     so there is no intra-block branching beyond the standard bounds check.
     """
     var idx = block_idx.x * block_size + thread_idx.x
-
-    if idx < _shape_product(input_shapes_0[0], 0, rank):
-        # Static-divisor row -> n-D decomposition; folds the per-
-        # thread `divmod` over `output_0`'s statically-known outer dims.
-        var index = _get_start_indices_of_nth_subvolume_static(
-            idx, output_layout_0.shape_coord()
-        )
-
-        comptime for i in range(size_0):
-            var out_index = index
-            out_index[rank - 1] = i
-
-            output_0_fn[dtype, width=1, alignment=1](
-                Coord(out_index),
-                input_fn_0[i, 1](Coord(index)),
+    with PDL():
+        if idx < _shape_product(input_shapes_0[0], 0, rank):
+            # Static-divisor row -> n-D decomposition; folds the per-
+            # thread `divmod` over `output_0`'s statically-known outer dims.
+            var index = _get_start_indices_of_nth_subvolume_static(
+                idx, output_layout_0.shape_coord()
             )
 
-    if idx < _shape_product(input_shapes_1[0], 0, rank):
-        # Static-divisor row -> n-D decomposition; folds the per-
-        # thread `divmod` over `output_1`'s statically-known outer dims.
-        var index = _get_start_indices_of_nth_subvolume_static(
-            idx, output_layout_1.shape_coord()
-        )
+            comptime for i in range(size_0):
+                var out_index = index
+                out_index[rank - 1] = i
 
-        comptime for i in range(size_1):
-            var out_index = index
-            out_index[rank - 1] = i
+                output_0_fn[dtype, width=1, alignment=1](
+                    Coord(out_index),
+                    input_fn_0[i, 1](Coord(index)),
+                )
 
-            output_1_fn[dtype, width=1, alignment=1](
-                Coord(out_index),
-                input_fn_1[i, 1](Coord(index)),
+        if idx < _shape_product(input_shapes_1[0], 0, rank):
+            # Static-divisor row -> n-D decomposition; folds the per-
+            # thread `divmod` over `output_1`'s statically-known outer dims.
+            var index = _get_start_indices_of_nth_subvolume_static(
+                idx, output_layout_1.shape_coord()
             )
+
+            comptime for i in range(size_1):
+                var out_index = index
+                out_index[rank - 1] = i
+
+                output_1_fn[dtype, width=1, alignment=1](
+                    Coord(out_index),
+                    input_fn_1[i, 1](Coord(index)),
+                )
 
 
 @inline(.always)
@@ -1484,6 +1496,7 @@ def _fused_dual_concat_gpu[
         host_args=(input_fn_0, output_0_fn, input_fn_1, output_1_fn),
         grid_dim=(ceildiv(max_elems, block_size)),
         block_dim=block_size,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 
@@ -1795,6 +1808,7 @@ def _fused_concat_gpu[
                     )
                 ),
                 block_dim=(block_size),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
     # Without parameter dispatch there are 2 extra stack allocations in the GPU kernel

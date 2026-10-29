@@ -55,8 +55,11 @@ using llvm::SourceMgr;
 // MojoParserContext::Impl
 //===----------------------------------------------------------------------===//
 
-MojoParserContext::Impl::Impl(llvm::SourceMgr &sourceMgr, ParserConfig &config)
-    : sharedState(sourceMgr, config), replLocMapper(sourceMgr) {
+MojoParserContext::Impl::Impl(llvm::SourceMgr &sourceMgr, MLIRContext *context,
+                              const KGEN::CompilationOptions &options,
+                              const FrontendOptions &frontendOptions)
+    : sharedState(sourceMgr, context, options, frontendOptions),
+      replLocMapper(sourceMgr) {
   // Create the top-level outer decl, which will contain all things we parse.
   module = ModuleOp::create(UnknownLoc::get(sharedState.getContext()));
   topLevelDecl = &cast<TopLevelModuleASTDecl>(sharedState.declResolver->addDecl(
@@ -70,8 +73,11 @@ MojoParserContext::Impl::Impl(llvm::SourceMgr &sourceMgr, ParserConfig &config)
 // MojoParserContext
 //===----------------------------------------------------------------------===//
 
-MojoParserContext::MojoParserContext(SourceMgr &sourceMgr, ParserConfig &config)
-    : impl(std::make_unique<Impl>(sourceMgr, config)) {}
+MojoParserContext::MojoParserContext(SourceMgr &sourceMgr, MLIRContext *context,
+                                     const KGEN::CompilationOptions &options,
+                                     const FrontendOptions &frontendOptions)
+    : impl(std::make_unique<Impl>(sourceMgr, context, options,
+                                  frontendOptions)) {}
 
 MojoParserContext::~MojoParserContext() {
   // Finalize any imported bytecode now that we've resolved everything. This
@@ -100,6 +106,10 @@ MojoParserContext::getModuleSearchDirectories(unsigned fileId) {
 
 const KGEN::CompilationOptions &MojoParserContext::getCompilationOptions() {
   return impl->sharedState.options;
+}
+
+const FrontendOptions &MojoParserContext::getFrontendOptions() {
+  return impl->sharedState.frontendOptions;
 }
 
 ASTDecl *MojoParserContext::getTraitDecl(KGEN::TraitSymbolAttr traitSymbol) {

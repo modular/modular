@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""VisionArena dataset."""
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -23,6 +25,8 @@ from .types import RequestSamples, SampledRequest, encode_image
 
 
 class VisionArenaBenchmarkDataset(LocalBenchmarkDataset):
+    """VisionArena image-conversation dataset."""
+
     def fetch(self) -> None:
         """Fetch VisionArena dataset based on the current dataset_mode.
 
@@ -37,6 +41,7 @@ class VisionArenaBenchmarkDataset(LocalBenchmarkDataset):
         shuffle: bool = True,
         **kwargs,
     ) -> RequestSamples:
+        """Samples vision requests from the VisionArena dataset."""
         dataset = load_dataset(
             "lmarena-ai/vision-arena-bench-v0.1", split="train"
         )

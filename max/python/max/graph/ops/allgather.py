@@ -19,9 +19,11 @@ from collections.abc import Iterable
 from typing import TypeVar
 
 from max._core.dialects import mo
-from max._core.dialects.builtin import IntegerAttr, IntegerType
+from max._core.dialects.builtin import BoolAttr, IntegerAttr, IntegerType
 
+from ..dim import StaticDim
 from ..graph import Graph
+from ..shape import Shape
 from ..type import TensorType, _ChainType
 from ..value import BufferValueLike, TensorValue, TensorValueLike
 from .concat import concat
@@ -161,6 +163,7 @@ def allgather(
         signal_buffers,
         in_chain,
         group_size_attr,
+        BoolAttr(False),
     )
 
     # Update the chain.
@@ -173,3 +176,124 @@ def allgather(
     # Convert results to TensorValues.
     outputs = [res.tensor for res in results]
     return [concat(batch, axis=axis) for batch in _batched(outputs, group_size)]
+
+
+def allgather_rows_slice(
+    inputs: Iterable[TensorValueLike],
+    signal_buffers: Iterable[BufferValueLike],
+    axis: int = -1,
+) -> list[TensorValue]:
+    """Collective allgather in which each device keeps only its own row block.
+
+    Like :func:`allgather`, this gathers the inputs across devices and
+    concatenates them along ``axis``, but device ``d`` of ``N`` receives only
+    rows ``[d * R / N, (d + 1) * R / N)`` of the gathered tensor, where ``R``
+    is the row count (dimension 0) of every input. The result is bit-identical
+    to ``allgather(...)`` followed by that row slice on each device, while each
+    device receives ``N`` times fewer bytes. It suits a column-sharded GEMM
+    output (an LM head, say) when each device only consumes its own rows.
+
+    Every input must have the same shape, and ``R`` must be a multiple of
+    ``N``. A static ``R`` is checked here; a symbolic ``R`` is checked by the
+    kernel when the graph runs, and a block of rows that is not a multiple of
+    16 bytes is rejected there too. A caller whose row count can vary should
+    fall back to :func:`allgather` and slice.
+
+    Args:
+        inputs: The input tensors to gather, one per device.
+        signal_buffers: Device buffer values used for synchronization.
+        axis: Dimension to concatenate the row blocks along. It must not be 0,
+            the dimension that is split across devices.
+
+    Returns:
+        One tensor per device: the concatenation along ``axis`` of that
+        device's row block of every input.
+    """
+    inputs = _tensor_values(inputs)
+    signal_buffers = _buffer_values(signal_buffers)
+
+    if len(inputs) != len(signal_buffers):
+        raise ValueError(
+            f"expected number of inputs ({len(inputs)}) and number of "
+            f"signal buffers ({len(signal_buffers)}) to match"
+        )
+
+    if not inputs:
+        return inputs
+
+    num_devices = len(inputs)
+    if num_devices == 1:
+        return inputs
+
+    shape = inputs[0].shape
+    dtype = inputs[0].dtype
+    if shape.rank < 2:
+        raise ValueError(
+            "allgather_rows_slice requires inputs of rank 2 or more. "
+            f"Got: {shape=}"
+        )
+    if not all(input.shape == shape for input in inputs[1:]):
+        raise ValueError(
+            "allgather_rows_slice requires the same shape on every device. "
+            f"Got: {inputs=}"
+        )
+    if not all(input.dtype == dtype for input in inputs[1:]):
+        raise ValueError(
+            "allgather_rows_slice requires the same dtype on every device. "
+            f"Got: {inputs=}"
+        )
+
+    devices = [input.device for input in inputs]
+    if len(set(devices)) < len(devices):
+        raise ValueError(
+            "allgather_rows_slice requires unique devices across its input "
+            f"tensors. Got: {devices=}"
+        )
+
+    if not -shape.rank <= axis < shape.rank:
+        raise IndexError(f"Dimension out of range {shape.rank}, {axis=}")
+    if axis < 0:
+        axis += shape.rank
+    if axis == 0:
+        raise ValueError(
+            "allgather_rows_slice cannot concatenate along axis 0, the "
+            "dimension split across devices"
+        )
+
+    rows = shape[0]
+    if isinstance(rows, StaticDim) and int(rows) % num_devices != 0:
+        raise ValueError(
+            f"allgather_rows_slice requires the row count ({int(rows)}) to be "
+            f"a multiple of the number of devices ({num_devices})"
+        )
+    block_shape = Shape([rows // num_devices, *list(shape)[1:]])
+
+    # One block per source on every device, as `allgather` stages its pieces.
+    output_types = [
+        TensorType(dtype, block_shape, device)
+        for device in devices
+        for _ in inputs
+    ]
+
+    graph = Graph.current
+    in_chain = graph.device_chains.merge_for(devices)
+
+    *results, out_chain = graph._add_op_generated(
+        mo.DistributedAllgatherOp,
+        output_types,
+        _ChainType(),
+        inputs,
+        signal_buffers,
+        in_chain,
+        IntegerAttr(IntegerType(64), num_devices),
+        BoolAttr(True),
+    )
+
+    graph._update_chain(out_chain)
+    for device in devices:
+        graph.device_chains[device] = out_chain
+
+    outputs = [res.tensor for res in results]
+    return [
+        concat(batch, axis=axis) for batch in _batched(outputs, num_devices)
+    ]

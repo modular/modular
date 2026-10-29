@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 # DOC: develop/eager-execution.mdx
 
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max import functional as F
+from max.tensor import Tensor
 
 x = Tensor([[1.0, 2.0], [3.0, 4.0]])
 

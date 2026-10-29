@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for `max.experimental.custom.declare` and `CustomOp` staging, and
+"""Tests for `max.functional.custom_op.declare` and `CustomOp` staging, and
 the interpreter binding cache (`custom_gc`) they feed."""
 # MXF-353
 
@@ -24,19 +24,13 @@ from typing import Any
 
 import pytest
 from max import _core, _interpreter, engine
+from max import functional as F
 from max._core.dialects import builtin, mo
 from max._interpreter_ops import custom_gc
 from max._interpreter_ops import handlers as _handlers
 from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.experimental import custom as C
-from max.experimental import executor
-from max.experimental import functional as F
-from max.experimental import realization_context as rc
-from max.experimental.sharding import DeviceMapping, DeviceMesh, Sharded
-from max.experimental.sharding.rules import unary_rule
-from max.experimental.tensor import Tensor, realization_context
-from max.experimental.testing import assert_all_close
+from max.functional import custom_op as C
 from max.graph import (
     BufferType,
     DeviceRef,
@@ -50,6 +44,12 @@ from max.graph import (
     default_custom_extensions_scope,
     ops,
 )
+from max.tensor import executor
+from max.tensor import realization_context as rc
+from max.tensor.sharding import DeviceMapping, DeviceMesh, Sharded
+from max.tensor.sharding.rules import unary_rule
+from max.tensor.tensor import Tensor, realization_context
+from max.tensor.testing import assert_all_close
 
 KERNELS = Path(os.environ["MODULAR_CUSTOM_OP_DEF_KERNELS_PATH"])
 KERNEL_VERIFICATION_OPS = Path(

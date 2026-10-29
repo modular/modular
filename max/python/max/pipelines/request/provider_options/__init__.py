@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .max import MaxProviderOptions
 from .modality import (
+    MAX_NUM_IMAGES,
     AudioProviderOptions,
     GeneratedMediaResponseFormat,
     ImageProviderOptions,
@@ -67,6 +68,7 @@ class ProviderOptions(BaseModel):
 
 
 __all__ = [
+    "MAX_NUM_IMAGES",
     "AudioProviderOptions",
     "GeneratedMediaResponseFormat",
     "ImageProviderOptions",

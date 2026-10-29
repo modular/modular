@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Wan VAE autoencoder -- slim ComponentModel with init-time graph compilation.
 
 All decoder/encoder graphs are compiled once at ``load_model()`` time with
@@ -599,6 +598,7 @@ class AutoencoderKLWanModel(ComponentModel):
     def decode(
         self, latents: Buffer, return_dict: bool = False
     ) -> tuple[Buffer]:
+        """Decodes latents to a video clip."""
         del return_dict
         if latents.rank == 5:
             return (self.decode_5d(latents),)
@@ -739,6 +739,7 @@ class AutoencoderKLWanModel(ComponentModel):
         return _numpy_f32_to_buffer(full_latent, target_dtype, device)
 
     def __call__(self, latents: Buffer) -> Buffer:
+        """Decodes latents, handling rank-5 inputs separately."""
         if latents.rank == 5:
             return self.decode_5d(latents)
         return self.decode_4d(latents)

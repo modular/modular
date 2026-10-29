@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Pooling functions for Qwen3 Embedding models."""
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 
 def last_token_pool(

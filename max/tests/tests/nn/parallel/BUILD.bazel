@@ -22,7 +22,7 @@ modular_py_test(
     ],
     deps = [
         "//max/python/max/driver",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("numpy"),
     ],
 )

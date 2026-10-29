@@ -297,21 +297,6 @@ class SuppressionFilter:
         return True
 
 
-def use_macos_autosummary_filenames(app):
-    """Write the PACKED_PAGE_STRIDE page as PACKED_PAGE_STRIDE-data on macOS.
-
-    The constant and ``packed_page_stride`` generate filenames that differ
-    only by case. macOS stores those as one file, so Sphinx reports the
-    missing stub and the build stops. Linux keeps the qualified name.
-    """
-    if sys.platform != 'darwin':
-        return
-    qualified = 'max.nn.kv_cache.PACKED_PAGE_STRIDE'
-    filename_map = dict(app.config.autosummary_filename_map)
-    filename_map[qualified] = qualified + '-data'
-    app.config.autosummary_filename_map = filename_map
-
-
 def setup(app):
     # Add our suppression filter to ALL handlers on ALL loggers
     suppression_filter = SuppressionFilter()
@@ -349,8 +334,8 @@ def setup(app):
         if what == "class" and name == "finfo" and inspect.isclass(obj):
             return True
 
-        # ``:imported-members:`` module pages (``nn.kernels.rst``) pick up
-        # stdlib annotation names (``Any`` from ``typing``,
+        # ``:imported-members:`` module pages (``nn.legacy.kernels.rst``) pick
+        # up stdlib annotation names (``Any`` from ``typing``,
         # ``MutableSequence`` from ``collections.abc``). Documenting them
         # registers a py-domain object literally named ``typing.Any``,
         # which then resolves every ``typing.Any`` cross-reference in
@@ -398,7 +383,7 @@ def setup(app):
     def process_bases(app, name, obj, options, bases):
         """Strip type parameters from Module generic aliases for cleaner display.
 
-        Converts ``Module[(<class 'max.experimental.tensor.Tensor'>,), Tensor]``
+        Converts ``Module[(<class 'max.tensor.Tensor'>,), Tensor]``
         to ``Module`` so that type-checking generics don't leak into the docs.
         Scoped to Module only to avoid stripping meaningful type parameters
         from other generic base classes.
@@ -414,8 +399,4 @@ def setup(app):
     app.connect("autodoc-process-docstring", process_links)
     app.connect("autodoc-process-bases", process_bases)
     app.connect("autodoc-skip-member", skip_imported_for_modules)
-    # Before autosummary writes stubs (its handler uses the default priority).
-    app.connect(
-        "builder-inited", use_macos_autosummary_filenames, priority=100
-    )
     app.add_role('code_link', code_link_role)

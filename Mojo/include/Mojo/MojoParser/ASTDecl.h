@@ -178,9 +178,14 @@ public:
   /// the colon.
   LexerCursor &getCursor() { return cursor; }
 
+  /// Return the position where this declaration's signature parsing begins.
+  LexerCursor getDeclStartCursor() const { return declStartCursor; }
+
   /// Set the parse cursor and matching end-cursor together. Used when a decl's
   /// source is materialized after the decl is created.
   void setParseCursor(const LexerCursor &cursor, const LexerCursor &endCursor) {
+    if (this->declStartCursor.isInvalid())
+      this->declStartCursor = cursor;
     this->cursor = cursor;
     this->endCursorState = endCursor.getState();
   }
@@ -190,6 +195,9 @@ public:
   bool isMatchingEndCursor(const LexerCursor &cursor) const {
     return endCursorState == cursor.getState();
   }
+
+  /// Return the raw end-cursor position recorded by `setParseCursor`.
+  const char *getEndCursorState() const { return endCursorState; }
 
   /// Return the SymbolRefAttr for a declaration, including all scoping that may
   /// be needed, making it unique for every declaration.  This returns null for
@@ -409,6 +417,10 @@ protected:
   /// This is the cursor that points to the next part of declaration to continue
   /// parsing as the declaration is progressively resolved.
   LexerCursor cursor;
+
+  /// Snapshot of `cursor` when first established: where this decl's signature
+  /// parsing begins.
+  LexerCursor declStartCursor;
 
   /// This is the lexer cursor state for the first token /after/ the
   /// declaration.  This is used to make sure that bits of a declaration are not

@@ -22,10 +22,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from max.graph import TensorValue, ops
-from max.nn.layer import LayerList, Module
-from max.nn.linear import Linear
-from max.nn.norm.rms_norm import RMSNorm
-from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm.rms_norm import RMSNorm
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
 
 from .layers import Qwen25VLEncoderAttention
 
@@ -71,6 +71,7 @@ class Qwen25VLMLP(Module):
         )
 
     def __call__(self, hidden_states: TensorValue) -> TensorValue:
+        """Runs the SwiGLU feed-forward over ``hidden_states``."""
         gate = ops.silu(self.gate_proj(hidden_states))
         up = self.up_proj(hidden_states)
         return self.down_proj(gate * up)
@@ -124,6 +125,7 @@ class Qwen25VLEncoderTransformerBlock(Module):
         x: TensorValue,
         rope: RotaryEmbedding,
     ) -> TensorValue:
+        """Runs the block's attention, then its MLP."""
         residual = x
         x = self.input_layernorm(x)
         x = self.self_attn(x, rope)

@@ -18,6 +18,9 @@ modular_py_test(
         "test.resources:gpu-memory": "3",
     },
     gpu_constraints = ["//:has_multi_gpu"],
+    # The interpreter imports these handlers optionally, so the tests must
+    # provide them even though they do not import the handlers directly.
+    ignore_extra_deps = ["//max/python/max/_interpreter_ops"],
     per_test_target_compatible_with = {
         # Needs mo.composite.distributed.matmul_reduce_scatter.sum, registered only by the closed-source kernels.
         "test_matmul_reducescatter.py": REQUIRES_INTERNAL_KERNELS,
@@ -25,11 +28,13 @@ modular_py_test(
     tags = ["gpu"],
     deps = [
         "//max/python/max:_core",
+        "//max/python/max:interpreter",
+        "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/support",
         requirement("ml-dtypes"),
         requirement("numpy"),
@@ -73,7 +78,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("numpy"),
     ],
 )
@@ -114,7 +119,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("numpy"),
     ],
 )

@@ -492,7 +492,7 @@ def reducescatter_rmsnorm[
     if not is_p2p_enabled():
         raise Error("reducescatter_rmsnorm requires P2P access between GPUs")
 
-    var global_rank = my_rank.value() if my_rank else Int(ctx.id())
+    var global_rank = my_rank.value() if my_rank else Int(ctx.device().id)
     if not 0 <= global_rank < ngpus:
         raise Error(
             String(
@@ -731,7 +731,7 @@ def _dispatch_rs_norm[
     # This device's group. `group_start` is 0 for a full-world collective
     # (group_size == ngpus), so every group_start-relative read below is
     # byte-identical to the pre-grouping `input_buffers[0]` in that case.
-    var global_rank = my_rank.value() if my_rank else Int(ctx.id())
+    var global_rank = my_rank.value() if my_rank else Int(ctx.device().id)
     var group_start = ualign_down(global_rank, group_size)
 
     # Fuse-vs-two-launch MUST be invariant across every group sharing a barrier

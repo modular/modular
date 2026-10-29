@@ -17,9 +17,9 @@ from __future__ import annotations
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.attention import AttentionWithRope
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.legacy.attention import AttentionWithRope
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.kv_cache import MHAKVCacheParams
 from max.pipelines.architectures.dflash2_qwen3_5 import (
     DFlash2GroupedConv,
     DFlash2Qwen3_5,

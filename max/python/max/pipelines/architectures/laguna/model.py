@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Laguna pipeline model."""
 
 from __future__ import annotations
 
@@ -23,8 +24,8 @@ from max._core.engine import Model
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph.weights import WeightData
-from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.comm.ep.ep_config import (
+from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
+from max.nn.legacy.comm.ep.ep_config import (
     calculate_ep_max_tokens_per_rank,
     estimate_ep_memory_usage,
 )
@@ -84,6 +85,7 @@ class LagunaModel(AlwaysSignalBuffersMixin, LlamaModelBase):
     def estimate_activation_memory(
         cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
+        """Estimates the activation memory one forward pass needs."""
         encoding = _select_quantization_encoding(
             pipeline_config.model, LagunaConfig.DEFAULT_ENCODING
         )

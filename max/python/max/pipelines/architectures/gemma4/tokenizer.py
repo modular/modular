@@ -281,6 +281,7 @@ class Gemma4Tokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
         tools: list[TextGenerationRequestTool] | None = None,
         **chat_template_options: Any,
     ) -> str:
+        """Renders the messages through the tokenizer's chat template."""
         chat_template_options = {
             "add_generation_prompt": True,
             **chat_template_options,

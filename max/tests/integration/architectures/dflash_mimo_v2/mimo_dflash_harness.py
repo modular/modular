@@ -39,17 +39,17 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight, ops
 from max.graph.weights import WeightData
-from max.nn.comm import Signals
-from max.nn.kv_cache import (
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.kv_cache import (
     PACKED_PAGE_STRIDE,
     KVCacheInputsPerDevice,
     KVCacheParams,
     MultiKVCacheParams,
     padded_lut_cols,
 )
-from max.nn.layer import Module
-from max.nn.sampling import AcceptanceSampler
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.layer import Module
+from max.nn.legacy.sampling import AcceptanceSampler
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.architectures.dflash_mimo_v2 import (
     DFlashMiMoV2,
@@ -364,7 +364,8 @@ def fused_graph(
         speculative=speculative,
         needs_bitmask_constraints=True,
         runtime=SimpleNamespace(
-            reasoning_parser="mimo" if in_thinking_phase else None
+            reasoning_parser="mimo" if in_thinking_phase else None,
+            prefer_module_v3=False,
         ),
         model=SimpleNamespace(
             data_parallel_degree=1,

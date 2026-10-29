@@ -36,9 +36,9 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.graph.weights import WeightData
-from max.nn.kernels import quantize_dynamic_block_scaled
-from max.nn.layer import Module
-from max.nn.norm.rms_norm import RMSNorm
+from max.nn.legacy.kernels import quantize_dynamic_block_scaled
+from max.nn.legacy.layer import Module
+from max.nn.legacy.norm.rms_norm import RMSNorm
 from max.pipelines.architectures.deepseekV4.layers.rope import apply_rope_tail
 from max.pipelines.architectures.deepseekV41.layers.dspark import (
     dspark_main_proj_quant_config,

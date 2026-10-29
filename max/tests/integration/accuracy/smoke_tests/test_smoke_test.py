@@ -40,6 +40,11 @@ def test_hf_repos_for_model_includes_draft_model() -> None:
     assert "atomicapple0/EAGLE-LLaMA3.1-Instruct-8B" in repos
 
 
+def test_hf_repos_for_model_includes_variant_repos() -> None:
+    repos = smoke_test.hf_repos_for_model("google/gemma-4-31B-it__pp_mtp")
+    assert repos == ["google/gemma-4-31B-it", "google/gemma-4-31B-it-assistant"]
+
+
 def test_hf_repos_for_model_prefers_recipe_casing() -> None:
     """A lowercased variant still resolves to the recipe's canonical casing.
 

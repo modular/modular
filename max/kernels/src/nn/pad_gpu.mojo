@@ -15,6 +15,11 @@
 from std.algorithm.functional import vectorize
 from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext, DeviceBuffer, DeviceAttribute
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from layout import (
     Coord,
     TensorEngine,
@@ -146,20 +151,21 @@ def padded_copy_kernel[
 
     start_row += thread_idx.y
 
-    for row in range(start_row, end_row, rows_per_iter):
-        var coord = input_tensor.layout.idx2crd(row * _row_length)
-        var output_offset = Int(output_tensor.layout(coord))
-        var input_offset = row * _row_length
+    with PDL():
+        for row in range(start_row, end_row, rows_per_iter):
+            var coord = input_tensor.layout.idx2crd(row * _row_length)
+            var output_offset = Int(output_tensor.layout(coord))
+            var input_offset = row * _row_length
 
-        var output_ptr = output_tensor.ptr.unsafe_offset(output_offset)
-        var input_ptr = input_tensor.ptr.unsafe_offset(input_offset)
+            var output_ptr = output_tensor.ptr.unsafe_offset(output_offset)
+            var input_ptr = input_tensor.ptr.unsafe_offset(input_offset)
 
-        _vectorized_copy_row[dtype, simd_width](
-            input_ptr,
-            output_ptr,
-            _row_length,
-            threads_per_row,
-        )
+            _vectorized_copy_row[dtype, simd_width](
+                input_ptr,
+                output_ptr,
+                _row_length,
+                threads_per_row,
+            )
 
 
 def _pad_constant_impl[
@@ -189,7 +195,9 @@ def _pad_constant_impl[
 
     comptime assert threads_per_row > 0 and max_threads % threads_per_row == 0
 
-    var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+    var sm_count = ctx.device().get_attribute(
+        DeviceAttribute.MULTIPROCESSOR_COUNT
+    )
 
     var linear_block_count: Int
 
@@ -222,6 +230,7 @@ def _pad_constant_impl[
         Int32(row_length),
         grid_dim=(linear_block_count),
         block_dim=(threads_per_row, block_rows),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 
@@ -412,35 +421,36 @@ def padded_index_mode_kernel[
 
     start_row += thread_idx.y
 
-    for row in range(start_row, end_row, rows_per_iter):
-        # `idx2crd` yields an all-dynamic coordinate, so the last axis can be
-        # rewritten in place per element below.
-        var out_coord = output_tensor.layout.idx2crd(row * _row_length)
+    with PDL():
+        for row in range(start_row, end_row, rows_per_iter):
+            # `idx2crd` yields an all-dynamic coordinate, so the last axis can be
+            # rewritten in place per element below.
+            var out_coord = output_tensor.layout.idx2crd(row * _row_length)
 
-        # Compute the source coordinate for axes 0..rank-2 via the shared
-        # index map. The last axis is handled per-element below.
-        var src_idx = DynamicCoord[.int, rank]()
-        comptime for axis in range(output_tensor.rank - 1):
-            var in_len = Int(input_tensor.dim[axis]())
-            src_idx.replace_dynamic[axis](
-                _pad_src_index[mode](
-                    Int(out_coord[axis]), in_len, Int(pre_pads[axis])
+            # Compute the source coordinate for axes 0..rank-2 via the shared
+            # index map. The last axis is handled per-element below.
+            var src_idx = DynamicCoord[.int, rank]()
+            comptime for axis in range(output_tensor.rank - 1):
+                var in_len = Int(input_tensor.dim[axis]())
+                src_idx.replace_dynamic[axis](
+                    _pad_src_index[mode](
+                        Int(out_coord[axis]), in_len, Int(pre_pads[axis])
+                    )
                 )
-            )
 
-        var in_last = Int(input_tensor.dim[output_tensor.rank - 1]())
-        var pre_last = Int(pre_pads[output_tensor.rank - 1])
+            var in_last = Int(input_tensor.dim[output_tensor.rank - 1]())
+            var pre_last = Int(pre_pads[output_tensor.rank - 1])
 
-        var tid = thread_idx.x % threads_per_row
-        for j in range(tid, _row_length, threads_per_row):
-            src_idx.replace_dynamic[rank - 1](
-                _pad_src_index[mode](j, in_last, pre_last)
-            )
-            out_coord.replace_dynamic[rank - 1](Int64(j))
-            output_tensor.store(
-                out_coord,
-                input_tensor.load[invariant=False](src_idx),
-            )
+            var tid = thread_idx.x % threads_per_row
+            for j in range(tid, _row_length, threads_per_row):
+                src_idx.replace_dynamic[rank - 1](
+                    _pad_src_index[mode](j, in_last, pre_last)
+                )
+                out_coord.replace_dynamic[rank - 1](Int64(j))
+                output_tensor.store(
+                    out_coord,
+                    input_tensor.load[invariant=False](src_idx),
+                )
 
 
 def _pad_index_mode_impl[
@@ -498,7 +508,9 @@ def _pad_index_mode_impl[
 
     comptime assert threads_per_row > 0 and max_threads % threads_per_row == 0
 
-    var sm_count = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+    var sm_count = ctx.device().get_attribute(
+        DeviceAttribute.MULTIPROCESSOR_COUNT
+    )
 
     var linear_block_count: Int
     var rows_per_block: Int
@@ -532,6 +544,7 @@ def _pad_index_mode_impl[
         Int32(row_length),
         grid_dim=(linear_block_count),
         block_dim=(threads_per_row, block_rows),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 

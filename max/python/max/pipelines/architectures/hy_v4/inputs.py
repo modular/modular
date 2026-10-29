@@ -23,8 +23,11 @@ from max.pipelines.lib import ModelInputs
 
 @dataclass
 class HYV4Inputs(ModelInputs):
-    """Ragged tokens, row offsets, the host prefill buffer length and the MLA
-    plus indexer cache inputs."""
+    """The inputs one step takes.
+
+    That is the ragged tokens, the row offsets, the host prefill buffer length,
+    and the MLA and indexer cache inputs.
+    """
 
     tokens: Buffer
     input_row_offsets: Buffer

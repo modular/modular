@@ -34,25 +34,29 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.attention.multi_latent_attention import MLAPrefillMetadata
-from max.nn.comm import Signals
-from max.nn.data_parallelism import split_batch_replicated
-from max.nn.embedding import VocabParallelEmbedding
-from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
-from max.nn.layer import Module
-from max.nn.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.moe.expert_parallel import forward_moe_sharded_layers
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import (
+from max.nn.legacy.attention.multi_latent_attention import MLAPrefillMetadata
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.data_parallelism import split_batch_replicated
+from max.nn.legacy.embedding import VocabParallelEmbedding
+from max.nn.legacy.kv_cache import KVCacheParamInterface, PagedCacheValues
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
-from max.nn.transformer import DecoderOutputs, ReturnLogits, logits_outputs
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.transformer import (
+    DecoderOutputs,
+    ReturnLogits,
+    logits_outputs,
+)
+from max.nn.legacy.transformer.distributed_transformer import (
     extract_hs,
     forward_sharded_layers,
 )
-from max.nn.transformer.transformer import fuse_captured_hidden_states
+from max.nn.legacy.transformer.transformer import fuse_captured_hidden_states
 
 from ..deepseekV3.deepseekV3 import DeepseekV3DecoderLayer
 from ..deepseekV3.model_config import DeepseekV3Config
@@ -265,6 +269,15 @@ class Eagle3MLADraft(Module):
                 per device). The caller must produce per-device values already
                 sharded to each device's local DP batch; ``fc`` runs
                 per-device on the captures.
+            signal_buffers: The buffers ``embed_tokens``' collective uses.
+            kv_collections: Per device, the draft's paged K/V cache.
+            return_n_logits: How many trailing logits the graph returns.
+            input_row_offsets: Per device, the ragged row offsets.
+            host_input_row_offsets: CPU mirror of ``input_row_offsets``, which
+                data-parallel attention splits the batch by.
+            data_parallel_splits: Per-replica batch boundaries, on CPU.
+            batch_context_lengths: Per device, the cache length its MLA
+                prefill metadata carries.
             split_prefix: Prefix for symbolic dim names. Must be unique per
                 graph invocation to avoid dim conflicts between prefill
                 (step 0) and decode (step 1+).
@@ -504,6 +517,7 @@ class Eagle3MLADraft(Module):
     def input_types(
         self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
+        """The graph's input types, in :meth:`__call__`'s argument order."""
         devices = self.config.devices
         device_ref = devices[0]
 

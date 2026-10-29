@@ -33,7 +33,7 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.legacy.kv_cache import PagedCacheValues
 from max.pipelines.architectures.deepseekV41.layer_resolver import LayerInfo
 from max.pipelines.architectures.deepseekV41.layers.attention import (
     CandidateBlocks,

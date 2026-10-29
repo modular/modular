@@ -17,20 +17,20 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Generic, TypeVar
 
+from max import functional as F
 from max import tree
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.sharding import DeviceMesh, NamedMapping
-from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorValue
-from max.nn.state_space import (
+from max.nn import Module
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.legacy.state_space import (
     causal_conv1d_varlen_fwd,
     gated_group_rmsnorm,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace,
 )
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMesh, NamedMapping
 
 from ..model_config import NemotronHConfig
 from .quantized import quantized_linear
@@ -38,9 +38,10 @@ from .sharding import shard_axis, shard_segments
 
 
 def _layer_rows(rows: Tensor, layer: Tensor) -> TensorValue:
-    """Row ``layer`` of a ``[num_layers, batch_size]`` table, as
-    ``[1, batch_size]``.
+    """Row ``layer`` of a ``[num_layers, batch_size]`` table.
 
+    The row keeps its leading dim so the slice fuses into the kernels' slot
+    input and is read in place rather than copied.
     The row keeps its leading dim so the slice fuses into the kernels' slot
     input and is read in place rather than copied.
     """
@@ -208,6 +209,7 @@ class CausalConv1d(
         has_initial_state: Tensor,
         update_state: Tensor,
     ) -> Tensor:
+        """Runs the causal convolution over ``x``."""
         weight, bias = self.placed(x.mesh)
         return causal_conv1d(
             x,
@@ -234,6 +236,7 @@ class GatedGroupRMSNorm(Module[[Tensor, Tensor], Tensor]):
         self.eps = eps
 
     def forward(self, y: Tensor, gate: Tensor) -> Tensor:
+        """Normalizes ``y`` and scales it by the gate."""
         return F.functional(gated_group_rmsnorm)(
             y,
             gate,
@@ -303,6 +306,7 @@ class NemotronHMamba2Mixer(
         has_initial_state: Tensor,
         update_state: Tensor,
     ) -> Tensor:
+        """Runs the Mamba-2 mixer over ``x``."""
         output, _ = self.forward_with_replay(
             x, state, query_start_loc, has_initial_state, update_state
         )

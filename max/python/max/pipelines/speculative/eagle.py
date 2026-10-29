@@ -15,8 +15,8 @@
 from __future__ import annotations
 
 from max.graph import DimLike, TensorValue
-from max.nn.layer import Module
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.layer import Module
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 
 from .driver import (
     CarryDimNames,

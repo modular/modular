@@ -41,7 +41,7 @@ from fused_megaffn_gates import (
     refused_capacity,
 )
 from max.driver import accelerator_api, accelerator_count
-from max.nn.comm.ep.ep_manager import (
+from max.nn.legacy.comm.ep.ep_manager import (
     _bound_fused_moe_workspace,
     _plan_fused_moe_workspace,
 )

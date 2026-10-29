@@ -49,7 +49,7 @@ import numpy as np
 import pytest
 from max.driver import Accelerator
 from max.dtype import DType
-from max.experimental.functional import (
+from max.functional import (
     allgather,
     allgather_rms_norm,
     allreduce_sum,
@@ -57,15 +57,15 @@ from max.experimental.functional import (
     reduce_scatter_rms_norm,
     transfer_to,
 )
-from max.experimental.sharding import (
+from max.tensor import Tensor
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Partial,
     Replicated,
     Sharded,
 )
-from max.experimental.sharding.placements import local_shard_shape_from_global
-from max.experimental.tensor import Tensor
+from max.tensor.sharding.placements import local_shard_shape_from_global
 
 
 class CollectivesTests:

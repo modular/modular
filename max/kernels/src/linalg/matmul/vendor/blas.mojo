@@ -381,7 +381,7 @@ def _get_global_handle[
     dtype: DType,
     backend: Backend = _resolve_backend[Backend.AUTOMATIC, dtype=dtype](),
 ](ctx: DeviceContext) raises -> Handle[backend]:
-    var HANDLE_NAME = String(t"LINALG_VENDOR_BLAS_{backend}_{ctx.id()}")
+    var HANDLE_NAME = String(t"LINALG_VENDOR_BLAS_{backend}_{ctx.device().id}")
     var global_ptr = _get_global_or_null(HANDLE_NAME)
     if case .Some(global_ptr) = global_ptr:
         var ptr = global_ptr.unsafe_bitcast[Handle[backend]]()

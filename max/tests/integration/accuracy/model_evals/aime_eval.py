@@ -184,12 +184,14 @@ def build_messages(
     """Builds the chat messages for one problem.
 
     The ``root`` preamble turn is omitted when ``root_preamble`` is empty, so a
-    non-MiniMax target can run without it.
+    non-MiniMax target can run without it. The ``system`` turn is likewise
+    omitted when ``system_prompt`` is empty, for models evaluated without one.
     """
     messages: list[dict[str, str]] = []
     if root_preamble:
         messages.append({"role": "root", "content": root_preamble})
-    messages.append({"role": "system", "content": system_prompt})
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
     messages.append(
         {
             "role": "user",
@@ -392,7 +394,10 @@ def run_eval(
     help="Root identity turn (empty to omit; default is MiniMax-M3's).",
 )
 @click.option(
-    "--system-prompt", default=DEFAULT_SYSTEM_PROMPT, show_default=True
+    "--system-prompt",
+    default=DEFAULT_SYSTEM_PROMPT,
+    show_default=True,
+    help="System turn (empty to omit).",
 )
 @click.option(
     "--metric-prefix",

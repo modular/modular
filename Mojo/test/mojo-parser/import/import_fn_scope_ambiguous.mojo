@@ -19,7 +19,7 @@
 #
 # (Not -verify-diagnostics: the notes point into the shared input modules.)
 
-# RUN: not %parse-mojo-isolated -split-input-file -I=%S/inputs %s 2>&1 | FileCheck %s
+# RUN: not %parse-mojo-isolated -split-input-file -I%S/inputs %s 2>&1 | FileCheck %s
 
 
 def merged_fn_overloads():

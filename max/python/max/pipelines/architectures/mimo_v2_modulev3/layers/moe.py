@@ -13,8 +13,8 @@
 """MiMo-V2 routed experts with MXFP8 activations, on ModuleV3.
 
 The routed experts run the same W4A8 chain as the graph-API architecture
-(:class:`max.nn.moe.MoEQuantized` on NVIDIA), through
-:class:`max.nn.moe.NvMxf4f8Strategy`; the modulev3 MoE layers have no
+(:class:`max.nn.legacy.moe.MoEQuantized` on NVIDIA), through
+:class:`max.nn.legacy.moe.NvMxf4f8Strategy`; the modulev3 MoE layers have no
 MXFP4/e8m0 path of their own. Each device holds its share of every expert's
 channels, so its chain yields a partial sum the residual add reduces.
 
@@ -26,33 +26,33 @@ transit.
 
 from __future__ import annotations
 
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Linear, Module
-from max.experimental.nn.common_layers import quant_ops
-from max.experimental.nn.common_layers.functional_kernels import (
+from max.graph import TensorValue, ops
+from max.nn import Linear, Module
+from max.nn.common_layers import quant_ops
+from max.nn.common_layers.functional_kernels import (
     moe_router_group_limited,
 )
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.nn.common_layers.quant_tensor import FP8BlockTensor
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.realization_context import ensure_context
-from max.experimental.sharding import (
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.quant_tensor import FP8BlockTensor
+from max.nn.legacy.activation import GatedActivation
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
+from max.nn.legacy.comm.ep.ep_kernels import fused_silu
+from max.nn.legacy.kernels import moe_create_indices, moe_finalize
+from max.nn.legacy.moe import NvMxf4f8Strategy
+from max.nn.legacy.quant_config import QuantConfig
+from max.nn.sequential import ModuleList
+from max.tensor import Tensor
+from max.tensor.realization_context import ensure_context
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     NamedMapping,
     Partial,
     Sharded,
 )
-from max.experimental.tensor import Tensor
-from max.graph import TensorValue, ops
-from max.nn.activation import GatedActivation
-from max.nn.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.comm.ep.ep_kernels import fused_silu
-from max.nn.kernels import moe_create_indices, moe_finalize
-from max.nn.moe import NvMxf4f8Strategy
-from max.nn.quant_config import QuantConfig
 
 from ..quant import FP8_BLOCK
 
@@ -95,8 +95,7 @@ class _Fp8Weights(Module[[], None]):
 
 
 class MiMoV2MLP(Module[[Tensor], Tensor]):
-    """The dense FP8 SwiGLU MLP of the one non-MoE layer: ``down(silu(gate)
-    * up)``."""
+    """The dense FP8 SwiGLU MLP of the one non-MoE layer: ``down(silu(gate) * up)``."""
 
     def __init__(
         self,
@@ -111,6 +110,7 @@ class MiMoV2MLP(Module[[Tensor], Tensor]):
         self.down_proj = _Fp8Weights(hidden_dim, intermediate_dim)
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the feed-forward over ``x``."""
         shard = not self.data_parallel
         gate = self.gate_proj.matmul(x, axis=0, shard=shard)
         up = self.up_proj.matmul(x, axis=0, shard=shard)
@@ -143,6 +143,7 @@ class MiMoV2Router(Module[[Tensor], tuple[Tensor, Tensor]]):
         )
 
     def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
+        """Routes ``x`` and returns the expert picks with their weights."""
         mesh = x.mesh
         if isinstance(x.placements[0], Sharded):
             # Data parallelism: each replica routes only its own rows, which
@@ -266,41 +267,50 @@ class MiMoV2MoE(Module[..., Tensor]):
         """
         e, md, hidden = self.num_experts, self.moe_dim, self.hidden_dim
         n = mesh.num_devices
-        gate = F.stack([x.gate_proj.weight for x in self.experts], axis=0)
-        up = F.stack([x.up_proj.weight for x in self.experts], axis=0)
-        down = F.stack([x.down_proj.weight for x in self.experts], axis=0)
-        gate_scale = F.stack(
-            [x.gate_proj.weight_scale for x in self.experts], axis=0
-        )
-        up_scale = F.stack(
-            [x.up_proj.weight_scale for x in self.experts], axis=0
+        # Each device's share of every expert's channels: rows of the gate
+        # and up projections, columns of the down projection. Each weight
+        # stack is built whole on the host, whose parallel concat reads the
+        # checkpoint in order, and each device then receives only its final
+        # share: a device temporary freed between the persistent weight
+        # stacks strands allocator granules the KV cache cannot use. The
+        # scale interleave's device temporaries are small enough to ignore.
+        # TODO(DISTINF-813): F.stack(device=...) would place the shares
+        # directly, but its mo.shard_and_stack copies each device's slice
+        # out of the checkpoint mapping serially (TP4 init 118 s -> 264 s
+        # from a cold page cache). Return to it once DISTINF-813 is fixed.
+        # Alternating gate and up makes a device's [2e, md/n, k] share
+        # reshape to each expert's gate rows followed by its up rows.
+        rows = NamedMapping(mesh, (None, TP, None))
+        cols = NamedMapping(mesh, (None, None, TP))
+        gate_up_stack = F.stack(
+            [
+                w
+                for x in self.experts
+                for w in (x.gate_proj.weight, x.up_proj.weight)
+            ],
+            axis=0,
+        ).to(rows)
+        gate_up_scale_stack = F.stack(
+            [
+                w
+                for x in self.experts
+                for w in (x.gate_proj.weight_scale, x.up_proj.weight_scale)
+            ],
+            axis=0,
+        ).to(rows)
+        down = F.stack([x.down_proj.weight for x in self.experts], axis=0).to(
+            cols
         )
         down_scale = F.stack(
             [x.down_proj.weight_scale for x in self.experts], axis=0
-        )
-        # Each device's share of every expert's channels: rows of the gate
-        # and up projections, columns of the down projection.
-        gate = gate.to(NamedMapping(mesh, (None, TP, None)))
-        up = up.to(NamedMapping(mesh, (None, TP, None)))
-        gate_scale = gate_scale.to(NamedMapping(mesh, (None, TP, None)))
-        up_scale = up_scale.to(NamedMapping(mesh, (None, TP, None)))
-        down = down.to(NamedMapping(mesh, (None, None, TP)))
-        down_scale = down_scale.to(NamedMapping(mesh, (None, None, TP)))
+        ).to(cols)
         per_device: list[tuple[TensorValue, ...]] = []
         for d in range(n):
-            gate_up = ops.stack(
-                [
-                    TensorValue(gate.local_shards[d]),
-                    TensorValue(up.local_shards[d]),
-                ],
-                axis=1,
-            ).reshape([e, 2 * md // n, hidden // 2])
-            gate_up_scales = ops.stack(
-                [
-                    TensorValue(gate_scale.local_shards[d]),
-                    TensorValue(up_scale.local_shards[d]),
-                ],
-                axis=1,
+            gate_up = TensorValue(gate_up_stack.local_shards[d]).reshape(
+                [e, 2 * md // n, hidden // 2]
+            )
+            gate_up_scales = TensorValue(
+                gate_up_scale_stack.local_shards[d]
             ).reshape([e, 2 * md // n, hidden // 32])
             down_w = TensorValue(down.local_shards[d])
             gate_up_interleaved, down_interleaved = (
@@ -393,6 +403,7 @@ class MiMoV2MoE(Module[..., Tensor]):
         return moe_finalize(down_out, restore_order, router_weight, x.dtype)
 
     def forward(self, x: Tensor) -> Tensor:
+        """Routes ``x`` through its experts and combines their outputs."""
         experts, weights = self.gate(x)
         mesh = x.mesh
         n = mesh.num_devices
@@ -436,7 +447,7 @@ class MiMoV2ExpertParallelMoE(MiMoV2MoE):
     activation quantize on the receiving device.
 
     Hand-rolled rather than the stock ModuleV3
-    :class:`~max.experimental.nn.common_layers.quant_moe.ExpertParallelMoE`,
+    :class:`~max.nn.common_layers.quant_moe.ExpertParallelMoE`,
     which a W4A8 model cannot use: its experts must be ``QuantizedMLP`` s
     backed by ``FP8BlockTensor``/``NVFP4Tensor`` (no MXFP4 quant tensor
     exists), and ``EPDispatchPayload.from_dispatch`` keys its column
@@ -490,23 +501,31 @@ class MiMoV2ExpertParallelMoE(MiMoV2MoE):
         for d in range(n):
             experts = block[d * local : (d + 1) * local]
             device = mesh.devices[d]
-            gate = F.stack([x.gate_proj.weight for x in experts], axis=0).to(
-                device
-            )
-            up = F.stack([x.up_proj.weight for x in experts], axis=0).to(device)
-            gate_scale = F.stack(
-                [x.gate_proj.weight_scale for x in experts], axis=0
-            ).to(device)
-            up_scale = F.stack(
-                [x.up_proj.weight_scale for x in experts], axis=0
-            ).to(device)
             # One [gate; up] block per expert, the layout fused_silu's
-            # split mode reads.
-            gate_up = ops.stack(
-                [TensorValue(gate), TensorValue(up)], axis=1
+            # split mode reads, stacked on the host so that only the final
+            # stack reaches the device (see the tensor-parallel stacks).
+            gate_up = TensorValue(
+                F.stack(
+                    [
+                        w
+                        for x in experts
+                        for w in (x.gate_proj.weight, x.up_proj.weight)
+                    ],
+                    axis=0,
+                ).to(device)
             ).reshape([local, 2 * md, hidden // 2])
-            gate_up_scales = ops.stack(
-                [TensorValue(gate_scale), TensorValue(up_scale)], axis=1
+            gate_up_scales = TensorValue(
+                F.stack(
+                    [
+                        w
+                        for x in experts
+                        for w in (
+                            x.gate_proj.weight_scale,
+                            x.up_proj.weight_scale,
+                        )
+                    ],
+                    axis=0,
+                ).to(device)
             ).reshape([local, 2 * md, hidden // 32])
             down_w = TensorValue(
                 F.stack([x.down_proj.weight for x in experts], axis=0).to(
@@ -589,8 +608,10 @@ class MiMoV2ExpertParallelMoE(MiMoV2MoE):
         )
 
     def forward(self, x: Tensor, comm: EPCommBuffers | None = None) -> Tensor:
-        """Expert-parallel forward: gate -> dispatch -> local experts ->
-        combine.
+        """Runs the expert-parallel forward pass.
+
+        It gates, dispatches to the local experts, then combines their
+        outputs.
 
         Args:
             x: The residual stream, ``[tokens, hidden]`` -- replicated

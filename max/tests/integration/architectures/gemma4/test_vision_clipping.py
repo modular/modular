@@ -48,7 +48,7 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn import Linear
+from max.nn.legacy import Linear
 from max.pipelines.architectures.gemma4.vision_model.attention import (
     Gemma4VisionAttention,
 )

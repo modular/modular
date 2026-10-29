@@ -161,8 +161,8 @@ ASTDecl::ASTDecl(Kind declKind, SharedState &shared, llvm::SMLoc loc,
                  ASTDecl *parentDecl, LexerCursor cursor, LexerCursor endCursor,
                  ssize_t indentation)
     : shared(shared), loc(loc), parentDecl(parentDecl), cursor(cursor),
-      endCursorState(endCursor.getState()), indentation(indentation),
-      kind(static_cast<unsigned char>(declKind)) {
+      declStartCursor(cursor), endCursorState(endCursor.getState()),
+      indentation(indentation), kind(static_cast<unsigned char>(declKind)) {
   resolvedness = DeclResolvedness::unparsed;
   referencedFromBytecode = false;
   hasReferenceError = false;

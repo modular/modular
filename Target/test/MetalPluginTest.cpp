@@ -11,10 +11,16 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+// The plugin's metal-cpp instantiation is not linked into the test.
+#define NS_PRIVATE_IMPLEMENTATION
+#define MTL_PRIVATE_IMPLEMENTATION
+#include "../lib/Metal/MetalCpp.h"
+
 #include "../lib/Metal/Common.h"
 #include "Fixture.h"
 #include "HAL/M_driver_bundle.h"
 #include "HAL/M_driver_common.h"
+#include "Target/lib/Support/HostMemory.h"
 #include <chrono>
 #include <map>
 #include <string>
@@ -81,6 +87,25 @@ kernel void controlled_store(
         acc = fma(acc, 1.0000001f, 1.0f);
 
     out_ref.ptr[tid] = marker + (acc > 1e30f ? 1u : 0u);
+}
+)MSL";
+
+// One launch binds `big` (> 4 KB) via setBuffer and `length` via setBytes.
+static std::string largeArgMsl = R"MSL(
+#include <metal_stdlib>
+using namespace metal;
+
+struct UintBufPtr { device uint* ptr; };
+struct LargeArg   { uint vals[1100]; };
+
+kernel void large_arg_copy(
+    device UintBufPtr& out_ref [[buffer(0)]],
+    constant LargeArg& big     [[buffer(1)]],
+    constant uint&     length  [[buffer(2)]],
+    uint tid [[thread_position_in_grid]])
+{
+    if (tid < length)
+        out_ref.ptr[tid] = big.vals[tid];
 }
 )MSL";
 
@@ -165,6 +190,21 @@ TEST_F(DriverPluginContextTest, MaxAllocationSizeMatchesAllocGuard) {
     std::string message = getStatusMessage(status);
     EXPECT_NE(message.find("larger than allowed"), std::string::npos)
         << "Expected the maxBufferLength guard to fire, got: " << message;
+  }
+}
+
+TEST_F(DriverPluginContextTest, MemoryInfoCappedAtHostAvailability) {
+  // The working-set budget ignores other processes, which share the unified
+  // memory, so free memory must not exceed what the host has left. Other
+  // processes can move the host figure between reads.
+  constexpr uint64_t drift = 1024ull * 1024 * 1024;
+  for (M_driver_context_t context : contexts) {
+    uint64_t freeBytes = 0;
+    uint64_t totalBytes = 0;
+    ASSERT_SUCCESS(context_memory_info(context, &freeBytes, &totalBytes));
+    auto host = M::Target::queryHostMemory();
+    ASSERT_TRUE(bool(host)) << llvm::toString(host.takeError());
+    EXPECT_LE(freeBytes, host->available + drift);
   }
 }
 
@@ -470,6 +510,69 @@ TEST_F(DriverMetalPluginFunctionTest, QueueExecuteValidSharedMem) {
           << "Mismatch at index " << j << ": expected " << expected << ", got "
           << outHost[j];
     }
+  }
+}
+
+TEST_F(DriverPluginQueueTest, QueueExecuteBindsArgOverSetBytesLimit) {
+  constexpr uint32_t length = 1100;
+  struct LargeArg {
+    uint32_t vals[length];
+  };
+  static_assert(sizeof(LargeArg) > 4096);
+
+  for (size_t i = 0; i < contexts.size(); i++) {
+    M_driver_context_t context = contexts[i];
+    M_driver_queue_t queue = queues[i];
+
+    M_driver_runtime_bundle_t library;
+    std::string fileType("msl");
+    M_driver_static_bundle staticBundle{.mapped_data =
+                                            M_driver_slice_from(largeArgMsl),
+                                        .file_type = fileType.c_str(),
+                                        .file_type_len = fileType.size()};
+    M_driver_bundle_compilation_options opts{"", 0, -1};
+    ASSERT_SUCCESS(bundle_load(context, &staticBundle, &opts, &library));
+    std::string funcName("large_arg_copy");
+    M_driver_function_t function;
+    ASSERT_SUCCESS(function_load(context, library, funcName.c_str(),
+                                 funcName.size(), &function));
+
+    constexpr size_t memorySize = length * sizeof(uint32_t);
+    M_driver_memory_t outMemory;
+    ASSERT_SUCCESS(memory_alloc_sync(context, memorySize, &outMemory));
+    auto defer = llvm::scope_exit([&]() {
+      memory_free_sync(context, outMemory);
+      function_unload(context, function);
+      bundle_unload(context, library);
+    });
+
+    void *outPtr = nullptr;
+    ASSERT_SUCCESS(memory_property(outMemory, "address", &outPtr));
+    LargeArg big;
+    for (uint32_t j = 0; j < length; ++j)
+      big.vals[j] = 7 * j + 3;
+    uint32_t lengthValue = length;
+    void *args[] = {&outPtr, &big, &lengthValue};
+    uint64_t argSizes[] = {sizeof(outPtr), sizeof(big), sizeof(lengthValue)};
+
+    constexpr uint32_t blockDim = 100;
+    M_driver_queue_execute_config_t config = {
+        .mode = M_DRIVER_QUEUE_EXECUTE_MODE_GPU,
+        .config = {.gpu = {
+                       .grid = {length / blockDim, 1, 1},
+                       .block = {blockDim, 1, 1},
+                       .shared_mem_bytes = 0,
+                       .attributes = nullptr,
+                       .num_attributes = 0,
+                   }}};
+    ASSERT_SUCCESS(queue_execute(queue, function, &config, args, argSizes, 3));
+
+    std::vector<uint32_t> outHost(length, 0);
+    M_driver_memory_view fromView{outMemory, /*offset=*/0, memorySize};
+    ASSERT_SUCCESS(queue_copy_from_device(queue, outHost.data(), &fromView));
+    ASSERT_SUCCESS(queue_synchronize(queue));
+    for (uint32_t j = 0; j < length; ++j)
+      EXPECT_EQ(outHost[j], 7 * j + 3) << "Mismatch at index " << j;
   }
 }
 
@@ -785,6 +888,194 @@ TEST_F(DriverMetalPluginEventTest, WaitForEventsGatesSecondQueue) {
     ASSERT_SUCCESS(event_synchronize(context, probeB));
     EXPECT_EQ(outLongHost[0], 1u);
     EXPECT_EQ(outLongHost[kLength - 1], 1u);
+  }
+}
+
+// Plain events signpost; the CPU-visible probe is the host-side oracle.
+TEST_F(DriverMetalPluginEventTest, SignpostRecordGatesSecondQueue) {
+  for (size_t i = 0; i < contexts.size(); i++) {
+    M_driver_context_t context = contexts[i];
+    M_driver_queue_t queueA = queues[i];
+
+    M_driver_queue_t queueB;
+    ASSERT_SUCCESS(queue_create(context, &queueB));
+    auto deferQ = llvm::scope_exit([&] { queue_destroy(context, queueB); });
+
+    M_driver_memory_t outLong, itersLong;
+    volatile uint32_t *outLongHost, *itersLongHost;
+    allocWords(context, &outLong, &outLongHost);
+    allocWords(context, &itersLong, &itersLongHost);
+    fillIters(itersLongHost, kLongIters);
+
+    launchStore(queueA, functions[i], outLong, itersLong, /*marker=*/1);
+    M_driver_event_t eventA;
+    ASSERT_SUCCESS(event_create(context, M_DRIVER_EVENT_FLAG_NONE, &eventA));
+    auto deferA = llvm::scope_exit([&] { event_destroy(context, eventA); });
+    ASSERT_SUCCESS(queue_record_event(queueA, eventA));
+
+    ASSERT_SUCCESS(queue_wait_for_events(queueB, &eventA, 1));
+    M_driver_event_t probeB;
+    ASSERT_SUCCESS(
+        event_create(context, M_DRIVER_EVENT_FLAG_CPU_VISIBLE, &probeB));
+    auto deferB = llvm::scope_exit([&] { event_destroy(context, probeB); });
+    ASSERT_SUCCESS(queue_record_event(queueB, probeB));
+
+    EXPECT_FALSE(eventReady(context, probeB));
+    ASSERT_SUCCESS(event_synchronize(context, probeB));
+    EXPECT_EQ(outLongHost[0], 1u);
+    EXPECT_EQ(outLongHost[kLength - 1], 1u);
+  }
+}
+
+// C waits on B's signpost; B's op waited on A's.
+TEST_F(DriverMetalPluginEventTest, SignpostChainsThroughCarriedWait) {
+  for (size_t i = 0; i < contexts.size(); i++) {
+    M_driver_context_t context = contexts[i];
+    M_driver_queue_t queueA = queues[i];
+
+    M_driver_queue_t queueB, queueC;
+    ASSERT_SUCCESS(queue_create(context, &queueB));
+    auto deferQB = llvm::scope_exit([&] { queue_destroy(context, queueB); });
+    ASSERT_SUCCESS(queue_create(context, &queueC));
+    auto deferQC = llvm::scope_exit([&] { queue_destroy(context, queueC); });
+
+    M_driver_memory_t outLong, itersLong, outB, itersB;
+    volatile uint32_t *outLongHost, *itersLongHost, *outBHost, *itersBHost;
+    allocWords(context, &outLong, &outLongHost);
+    allocWords(context, &itersLong, &itersLongHost);
+    allocWords(context, &outB, &outBHost);
+    allocWords(context, &itersB, &itersBHost);
+    fillIters(itersLongHost, kLongIters);
+    fillIters(itersBHost, 1);
+
+    launchStore(queueA, functions[i], outLong, itersLong, /*marker=*/1);
+    M_driver_event_t eventA, eventB, probeC;
+    ASSERT_SUCCESS(event_create(context, M_DRIVER_EVENT_FLAG_NONE, &eventA));
+    auto deferA = llvm::scope_exit([&] { event_destroy(context, eventA); });
+    ASSERT_SUCCESS(event_create(context, M_DRIVER_EVENT_FLAG_NONE, &eventB));
+    auto deferB = llvm::scope_exit([&] { event_destroy(context, eventB); });
+    ASSERT_SUCCESS(
+        event_create(context, M_DRIVER_EVENT_FLAG_CPU_VISIBLE, &probeC));
+    auto deferC = llvm::scope_exit([&] { event_destroy(context, probeC); });
+
+    ASSERT_SUCCESS(queue_record_event(queueA, eventA));
+    ASSERT_SUCCESS(queue_wait_for_events(queueB, &eventA, 1));
+    launchStore(queueB, functions[i], outB, itersB, /*marker=*/5);
+    ASSERT_SUCCESS(queue_record_event(queueB, eventB));
+    ASSERT_SUCCESS(queue_wait_for_events(queueC, &eventB, 1));
+    ASSERT_SUCCESS(queue_record_event(queueC, probeC));
+
+    EXPECT_FALSE(eventReady(context, probeC));
+    ASSERT_SUCCESS(event_synchronize(context, probeC));
+    EXPECT_EQ(outLongHost[kLength - 1], 1u);
+    EXPECT_EQ(outBHost[kLength - 1], 5u);
+  }
+}
+
+// Covers the fallback: a wait no command buffer carried is not on the timeline.
+TEST_F(DriverMetalPluginEventTest, RecordAfterUncarriedWaitIsNotEarly) {
+  for (size_t i = 0; i < contexts.size(); i++) {
+    M_driver_context_t context = contexts[i];
+    M_driver_queue_t queueA = queues[i];
+
+    M_driver_queue_t queueB, queueC;
+    ASSERT_SUCCESS(queue_create(context, &queueB));
+    auto deferQB = llvm::scope_exit([&] { queue_destroy(context, queueB); });
+    ASSERT_SUCCESS(queue_create(context, &queueC));
+    auto deferQC = llvm::scope_exit([&] { queue_destroy(context, queueC); });
+
+    M_driver_memory_t outLong, itersLong;
+    volatile uint32_t *outLongHost, *itersLongHost;
+    allocWords(context, &outLong, &outLongHost);
+    allocWords(context, &itersLong, &itersLongHost);
+    fillIters(itersLongHost, kLongIters);
+
+    launchStore(queueA, functions[i], outLong, itersLong, /*marker=*/1);
+    M_driver_event_t eventA, eventB, probeC;
+    ASSERT_SUCCESS(event_create(context, M_DRIVER_EVENT_FLAG_NONE, &eventA));
+    auto deferA = llvm::scope_exit([&] { event_destroy(context, eventA); });
+    ASSERT_SUCCESS(event_create(context, M_DRIVER_EVENT_FLAG_NONE, &eventB));
+    auto deferB = llvm::scope_exit([&] { event_destroy(context, eventB); });
+    ASSERT_SUCCESS(
+        event_create(context, M_DRIVER_EVENT_FLAG_CPU_VISIBLE, &probeC));
+    auto deferC = llvm::scope_exit([&] { event_destroy(context, probeC); });
+
+    ASSERT_SUCCESS(queue_record_event(queueA, eventA));
+    ASSERT_SUCCESS(queue_wait_for_events(queueB, &eventA, 1));
+    ASSERT_SUCCESS(queue_record_event(queueB, eventB));
+    ASSERT_SUCCESS(queue_wait_for_events(queueC, &eventB, 1));
+    ASSERT_SUCCESS(queue_record_event(queueC, probeC));
+
+    EXPECT_FALSE(eventReady(context, probeC));
+    ASSERT_SUCCESS(event_synchronize(context, probeC));
+    EXPECT_EQ(outLongHost[kLength - 1], 1u);
+  }
+}
+
+TEST_F(DriverMetalPluginEventTest, SignpostBeforeAnyWorkIsComplete) {
+  for (size_t i = 0; i < contexts.size(); i++) {
+    M_driver_context_t context = contexts[i];
+    M_driver_queue_t queueA = queues[i];
+
+    M_driver_queue_t queueB;
+    ASSERT_SUCCESS(queue_create(context, &queueB));
+    auto deferQ = llvm::scope_exit([&] { queue_destroy(context, queueB); });
+
+    M_driver_event_t eventB, probeA;
+    ASSERT_SUCCESS(event_create(context, M_DRIVER_EVENT_FLAG_NONE, &eventB));
+    auto deferB = llvm::scope_exit([&] { event_destroy(context, eventB); });
+    ASSERT_SUCCESS(
+        event_create(context, M_DRIVER_EVENT_FLAG_CPU_VISIBLE, &probeA));
+    auto deferA = llvm::scope_exit([&] { event_destroy(context, probeA); });
+
+    ASSERT_SUCCESS(queue_record_event(queueB, eventB));
+    ASSERT_SUCCESS(queue_wait_for_events(queueA, &eventB, 1));
+    ASSERT_SUCCESS(queue_record_event(queueA, probeA));
+    ASSERT_SUCCESS(event_synchronize(context, probeA));
+    EXPECT_TRUE(eventReady(context, probeA));
+  }
+}
+
+// Covers the fallback: foreign command buffers are not on the timeline.
+TEST_F(DriverMetalPluginEventTest, RecordAfterForeignWorkIsNotEarly) {
+  for (size_t i = 0; i < contexts.size(); i++) {
+    M_driver_context_t context = contexts[i];
+    M_driver_queue_t queueA = queues[i];
+
+    M_driver_queue_t queueB;
+    ASSERT_SUCCESS(queue_create(context, &queueB));
+    auto deferQ = llvm::scope_exit([&] { queue_destroy(context, queueB); });
+
+    uint64_t handle = 0;
+    ASSERT_SUCCESS(
+        queue_property(queueB, M_DRIVER_QUEUE_PROPERTY_NATIVE_HANDLE, &handle));
+    auto *native = reinterpret_cast<MTL::CommandQueue *>(handle);
+    NS::SharedPtr<MTL::SharedEvent> gate =
+        NS::TransferPtr(native->device()->newSharedEvent());
+    ASSERT_TRUE(gate);
+    // A still-gated queue would hang queue_destroy.
+    auto openGate = llvm::scope_exit([&] { gate->setSignaledValue(1); });
+    MTL::CommandBuffer *foreign = native->commandBuffer();
+    ASSERT_NE(foreign, nullptr);
+    foreign->encodeWait(gate.get(), 1);
+    foreign->commit();
+
+    M_driver_event_t eventB, probeA;
+    ASSERT_SUCCESS(event_create(context, M_DRIVER_EVENT_FLAG_NONE, &eventB));
+    auto deferB = llvm::scope_exit([&] { event_destroy(context, eventB); });
+    ASSERT_SUCCESS(
+        event_create(context, M_DRIVER_EVENT_FLAG_CPU_VISIBLE, &probeA));
+    auto deferA = llvm::scope_exit([&] { event_destroy(context, probeA); });
+
+    ASSERT_SUCCESS(queue_record_event(queueB, eventB));
+    ASSERT_SUCCESS(queue_wait_for_events(queueA, &eventB, 1));
+    ASSERT_SUCCESS(queue_record_event(queueA, probeA));
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    EXPECT_FALSE(eventReady(context, probeA));
+    gate->setSignaledValue(1);
+    ASSERT_SUCCESS(event_synchronize(context, probeA));
+    EXPECT_TRUE(eventReady(context, probeA));
   }
 }
 

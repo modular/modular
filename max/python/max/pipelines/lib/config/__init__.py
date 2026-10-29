@@ -13,7 +13,7 @@
 
 """Configuration classes for MAX pipelines."""
 
-from max.nn.kv_cache.cache_params import KVConnectorType
+from max.nn.legacy.kv_cache.cache_params import KVConnectorType
 from max.pipelines.diffusion.config import (
     DenoisingCacheConfig,
     DenoisingCacheSettings,

@@ -35,6 +35,7 @@ modular_eager_py_test(
     per_test_shard_count = {
         # Each case compiles its own graph; shard so the per-test compiles run
         # in parallel and the suite stays well under the per-target timeout.
+        "test_module.py": 4,
         "test_subgraph.py": 4,
     },
     per_test_tags = {
@@ -53,15 +54,15 @@ modular_eager_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
-        "//max/python/max/experimental/testing",
         "//max/python/max/graph",
         "//max/python/max/nn",
-        "//max/python/max/nn/hooks:print_hook",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/nn/legacy/hooks:print_hook",
+        "//max/python/max/tensor/testing",
         requirement("numpy"),
         requirement("typing-extensions"),
     ],
@@ -78,10 +79,10 @@ modular_eager_py_test(
         "//conditions:default": ["//:nvidia_gpu"],
     }),
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
+        "//max/python/max/nn",
     ],
 )
 
@@ -96,10 +97,10 @@ modular_eager_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         requirement("numpy"),
     ],
 )
@@ -130,11 +131,11 @@ modular_eager_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         requirement("numpy"),
         requirement("torch"),
     ],
@@ -161,11 +162,12 @@ modular_py_test(
         "//conditions:default": ["//:has_gpu"],
     }),
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
+        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/tests/integration/test_common:hyper_connection_reference",
         requirement("torch"),
     ],
@@ -192,11 +194,11 @@ modular_py_test(
         "//conditions:default": ["//:has_gpu"],
     }),
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
+        "//max/python/max/nn",
         requirement("numpy"),
         requirement("torch"),
     ],
@@ -223,11 +225,11 @@ modular_py_test(
         "//conditions:default": ["//:has_gpu"],
     }),
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
+        "//max/python/max/nn",
         requirement("numpy"),
         requirement("torch"),
     ],
@@ -257,12 +259,12 @@ modular_py_test(
     # NVFP4 grouped matmuls are validated on B200 only.
     target_compatible_with = ["//:b200_gpu"],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
         "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("numpy"),
     ],
 )
@@ -280,10 +282,10 @@ modular_py_test(
     # The SGMV kernels are validated on B200 only.
     target_compatible_with = ["//:b200_gpu"],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
+        "//max/python/max/nn",
         requirement("numpy"),
         requirement("torch"),
     ],
@@ -301,11 +303,11 @@ modular_eager_py_test(
         "//conditions:default": ["//:nvidia_gpu"],
     }),
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
         "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("numpy"),
         requirement("torch"),
     ],

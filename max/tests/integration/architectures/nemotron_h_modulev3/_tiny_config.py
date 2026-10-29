@@ -109,6 +109,7 @@ def model_config(
     hf = hf_config(layers, dims)
     pipeline = Mock()
     pipeline.model.data_parallel_degree = 1
+    pipeline.speculative = None
     devices = [DeviceRef.CPU()] * n_devices
     kv_params = NemotronHConfig.construct_kv_params(
         huggingface_config=hf,

@@ -17,8 +17,8 @@
 # Output:
 #   [Dim(4), Dim(8)]
 
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
+from max import functional as F
+from max.tensor import Tensor
 
 weight = Tensor.ones([1, 8])  # (1, features=8)
 expanded = F.broadcast_to(weight, [4, 8])  # (batch=4, features=8)

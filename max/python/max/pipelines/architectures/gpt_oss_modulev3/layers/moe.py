@@ -15,18 +15,18 @@
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Linear
-from max.experimental.nn.common_layers.functional_kernels import (
+from max.nn import Linear
+from max.nn.common_layers.functional_kernels import (
     grouped_matmul_ragged,
     moe_create_indices,
     moe_finalize,
 )
-from max.experimental.nn.common_layers.moe import MoEGate
-from max.experimental.nn.module import Module
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.tensor import Tensor
+from max.nn.common_layers.moe import MoEGate
+from max.nn.module import Module
+from max.nn.sequential import ModuleList
+from max.tensor import Tensor
 
 from ..model_config import GptOssConfig
 
@@ -40,7 +40,8 @@ class GptOssMoEGate(MoEGate):
         num_experts: int,
         num_experts_per_token: int,
     ) -> None:
-        """
+        """Initializes the gate.
+
         Args:
             hidden_dim: The dimension of the hidden state.
             num_experts: The number of experts.
@@ -61,7 +62,8 @@ class GptOssMoEGate(MoEGate):
         )
 
     def forward(self, hidden_state: Tensor) -> tuple[Tensor, Tensor]:
-        """
+        """Scores each token's experts and returns the top-k picks.
+
         Args:
             hidden_state: The hidden state of the model.
 
@@ -83,10 +85,7 @@ class GptOssMoE(Module[[Tensor], Tensor]):
     """GptOss-style MoE implementation with custom activation and biases."""
 
     def __init__(self, config: GptOssConfig):
-        """
-        Args:
-            config: The configuration for the GPT OSS Model.
-        """
+        """Args: config: The configuration for the GPT OSS Model."""
         self.config = config
 
         self.hidden_dim = config.hidden_size
@@ -132,35 +131,39 @@ class GptOssMoE(Module[[Tensor], Tensor]):
 
     @property
     def gate_up_proj(self) -> Tensor:
+        """The gate and up projections, stacked for the grouped matmul."""
         # Return the combined gate_up projection weights, transposed for grouped_matmul_ragged
         # grouped_matmul_ragged expects shape [num_experts, out_features, in_features]
         return self._experts_gate_up_proj_weight.transpose(1, 2)
 
     @property
     def down_proj(self) -> Tensor:
+        """The down projection, stacked for the grouped matmul."""
         # Return the combined down projection weights, transposed for grouped_matmul_ragged
         # grouped_matmul_ragged expects shape [num_experts, out_features, in_features]
         return self._experts_down_proj_weight.transpose(1, 2)
 
     @property
     def gate_up_proj_bias_stacked(self) -> Tensor:
+        """The gate and up projections' biases, stacked per expert."""
         # Return the combined gate_up projection biases
         return self._experts_gate_up_proj_bias
 
     @property
     def down_proj_bias_stacked(self) -> Tensor:
+        """The down projection's biases, stacked per expert."""
         # Return the combined down projection biases
         return self._experts_down_proj_bias
 
     def forward(self, x: Tensor) -> Tensor:
-        """
+        """Runs the routed experts over ``x``.
+
         Args:
-            x: (seq_len, hidden_dim)
+            x: (seq_len, hidden_dim).
 
         Returns:
             (seq_len, hidden_dim)
         """
-
         # Get the topk experts per token and their weights
         router_idx, router_weight = self.gate(x)
         router_idx = F.reshape(

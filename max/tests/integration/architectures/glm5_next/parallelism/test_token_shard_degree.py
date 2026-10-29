@@ -25,7 +25,7 @@ architecture-specific override this replaced was working around.
 from __future__ import annotations
 
 import pytest
-from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
+from max.nn.legacy.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
 from max.pipelines.architectures.glm5_next.model_config import (
     token_shard_degree,
 )

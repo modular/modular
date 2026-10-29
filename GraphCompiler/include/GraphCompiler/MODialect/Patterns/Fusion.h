@@ -61,7 +61,8 @@ void applyFuseParallelBundledAllReduceAddRMSNormQuantFP8(
 void populateFusionPatterns(mlir::RewritePatternSet &patterns,
                             PackParamCache &cache,
                             M::DeviceRefAttr targetDeviceRef,
-                            const MHAOptions &mhaOpts);
+                            const MHAOptions &mhaOpts,
+                            const DeviceInfoMapping &deviceInfoMapping);
 
 /// Adds `MatmulAddPattern`, which the driver pass enables only on SM100-class
 /// GPUs.

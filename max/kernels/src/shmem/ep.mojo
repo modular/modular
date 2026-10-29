@@ -327,7 +327,7 @@ def ep_dispatch_async_kernel_api[
     comptime n_ranks = n_gpus_per_node * n_nodes
     comptime hw_info = gpu_ctx.default_device_info
 
-    var gpu_id = Int(gpu_ctx.id())
+    var gpu_id = Int(gpu_ctx.device().id)
     var my_rank = Int32(gpu_id)
 
     comptime if n_nodes > 1:
@@ -488,7 +488,7 @@ def ep_dispatch_wait_kernel_api[
     ), "Receive count pointers must be a 1D tensor."
 
     var gpu_ctx = context
-    var gpu_id = Int(gpu_ctx.id())
+    var gpu_id = Int(gpu_ctx.device().id)
     var my_rank = Int32(gpu_id)
 
     comptime if n_nodes > 1:
@@ -820,7 +820,7 @@ def ep_fused_dispatch_kernel_api[
     )
 
     var gpu_ctx = context
-    var gpu_id = Int(gpu_ctx.id())
+    var gpu_id = Int(gpu_ctx.device().id)
     var my_rank = Int32(gpu_id)
 
     comptime if n_nodes > 1:
@@ -1028,7 +1028,7 @@ def ep_combine_async_kernel_api[
     ), "Send pointers must be a 1D tensor."
 
     var gpu_ctx = context
-    var gpu_id = Int(gpu_ctx.id())
+    var gpu_id = Int(gpu_ctx.device().id)
     var my_rank = Int32(gpu_id)
 
     comptime if n_nodes > 1:
@@ -1281,7 +1281,7 @@ def ep_combine_wait_kernel_api[
     ), "Receive count pointers must be a 1D tensor."
 
     var gpu_ctx = context
-    var gpu_id = Int(gpu_ctx.id())
+    var gpu_id = Int(gpu_ctx.device().id)
     var my_rank = Int32(gpu_id)
 
     comptime if n_nodes > 1:
@@ -1605,7 +1605,7 @@ def ep_fused_combine_kernel_api[
     ), "Send pointers must be a 1D tensor."
 
     var gpu_ctx = context
-    var gpu_id = Int(gpu_ctx.id())
+    var gpu_id = Int(gpu_ctx.device().id)
     var my_rank = Int32(gpu_id)
 
     comptime if n_nodes > 1:

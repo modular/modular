@@ -144,6 +144,7 @@ def convert_step3p5_state_dict(
         state_dict: Raw checkpoint weights.
         huggingface_config: HuggingFace model configuration.
         pipeline_config: Pipeline configuration.
+        **unused_kwargs: Accepted so every adapter shares one signature.
 
     Returns:
         Transformed weights for the MAX Step-3.5 model.

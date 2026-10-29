@@ -20,6 +20,11 @@ from std.math import ceildiv, clamp, floor
 
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_gpu
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from max.gpu import block_dim, block_idx, grid_dim, thread_idx
 from layout import (
     Coord,
@@ -248,49 +253,50 @@ def gpu_bicubic_kernel[
     var first_pixel = block_idx.z * block_dim.x + tid
     var pixel_stride = grid_dim.z * block_dim.x
 
-    for pixel_idx in range(first_pixel, total_pixels, pixel_stride):
-        var y_out, x_out = divmod(pixel_idx, out_width)
+    with PDL():
+        for pixel_idx in range(first_pixel, total_pixels, pixel_stride):
+            var y_out, x_out = divmod(pixel_idx, out_width)
 
-        var in_y = map_output_to_input_coord(y_out, scale_h)
-        var in_x = map_output_to_input_coord(x_out, scale_w)
+            var in_y = map_output_to_input_coord(y_out, scale_h)
+            var in_x = map_output_to_input_coord(x_out, scale_w)
 
-        # get the pixel right above and to left of the output pixel
-        var in_y_floor = Int(floor(in_y))
-        var in_x_floor = Int(floor(in_x))
+            # get the pixel right above and to left of the output pixel
+            var in_y_floor = Int(floor(in_y))
+            var in_x_floor = Int(floor(in_x))
 
-        # (how far away from the pixel above and to the left is the output pixel?)
-        var dy = in_y - Float32(in_y_floor)
-        var dx = in_x - Float32(in_x_floor)
+            # (how far away from the pixel above and to the left is the output pixel?)
+            var dy = in_y - Float32(in_y_floor)
+            var dx = in_x - Float32(in_x_floor)
 
-        # Look at surrounding 4x4 pixels, assign weights to them (closer pixels
-        # have more weight) and get the final value for each channel.
-        var sum_value: Float32 = 0.0
-        var sum_weights: Float32 = 0.0
+            # Look at surrounding 4x4 pixels, assign weights to them (closer pixels
+            # have more weight) and get the final value for each channel.
+            var sum_value: Float32 = 0.0
+            var sum_weights: Float32 = 0.0
 
-        # Pre-compute cubic weights for better performance
-        var weights_y = cubic_kernel(SIMD[.float32, 4](-1, 0, 1, 2) - dy)
-        var weights_x = cubic_kernel(SIMD[.float32, 4](-1, 0, 1, 2) - dx)
+            # Pre-compute cubic weights for better performance
+            var weights_y = cubic_kernel(SIMD[.float32, 4](-1, 0, 1, 2) - dy)
+            var weights_x = cubic_kernel(SIMD[.float32, 4](-1, 0, 1, 2) - dx)
 
-        # get the 4x4 surrounding pixels, and assign weights to them
-        comptime for i, j in product(range(4), range(4)):
-            # don't be <0 or >frame bounds
-            var y_pos = clamp(in_y_floor + i - 1, 0, in_height - 1)
-            var x_pos = clamp(in_x_floor + j - 1, 0, in_width - 1)
+            # get the 4x4 surrounding pixels, and assign weights to them
+            comptime for i, j in product(range(4), range(4)):
+                # don't be <0 or >frame bounds
+                var y_pos = clamp(in_y_floor + i - 1, 0, in_height - 1)
+                var x_pos = clamp(in_x_floor + j - 1, 0, in_width - 1)
 
-            # get the weight of the surrounding pixel
-            var weight = weights_y[i] * weights_x[j]
+                # get the weight of the surrounding pixel
+                var weight = weights_y[i] * weights_x[j]
 
-            # now that i have the weight y and x of said pixel, i multiply it by its weight and add it to the sum
-            var pixel_value = input.load[width=1](
-                Coord(b, c, y_pos, x_pos)
-            ).cast[.float32]()
-            sum_value += pixel_value * weight
-            sum_weights += weight
+                # now that i have the weight y and x of said pixel, i multiply it by its weight and add it to the sum
+                var pixel_value = input.load[width=1](
+                    Coord(b, c, y_pos, x_pos)
+                ).cast[.float32]()
+                sum_value += pixel_value * weight
+                sum_weights += weight
 
-        output.store(
-            (b, c, y_out, x_out),
-            sum_value.cast[dtype](),
-        )
+            output.store(
+                (b, c, y_out, x_out),
+                sum_value.cast[dtype](),
+            )
 
 
 def resize_bicubic[
@@ -349,6 +355,7 @@ def resize_bicubic[
             input.as_imm(),
             grid_dim=(N, C, pixel_blocks),
             block_dim=(block_size,),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
     else:
         cpu_bicubic_kernel(output, input)

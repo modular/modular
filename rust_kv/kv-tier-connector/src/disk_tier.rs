@@ -104,8 +104,6 @@ pub mod page_cache {
         path::Path,
     };
 
-    pub(crate) const O_DIRECT_UNAVAILABLE: bool = true;
-
     pub(super) fn open_direct(_opts: &mut OpenOptions, path: &Path) -> std::io::Result<File> {
         Err(std::io::Error::other(format!(
             "the disk tier's direct I/O is only supported on 64-bit Linux, and \

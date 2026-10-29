@@ -28,9 +28,9 @@ from max.graph import (
     TensorValue,
 )
 from max.graph.weights import WeightData
-from max.nn.layer import Module
-from max.nn.quant_config import QuantConfig
-from max.nn.stacked_linear import StackedLinear
+from max.nn.legacy.layer import Module
+from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.stacked_linear import StackedLinear
 
 
 class SimpleModel(Module):
@@ -457,7 +457,7 @@ def test_omit_module_attr_name_collision_raises() -> None:
     """When a name-omitting module flattens a child name that collides
     with a sibling attribute, raw_state_dict raises a ValueError naming
     both colliding attribute paths."""
-    from max.nn.linear import Linear
+    from max.nn.legacy.linear import Linear
 
     class CollidingModel(Module):
         def __init__(self) -> None:

@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""LoRA admission and activity checks for the schedulers."""
+
 from __future__ import annotations
 
 from max.pipelines.context import TextContext
@@ -61,12 +63,12 @@ def can_allocate_lora_request(
 
 
 def is_lora(ctx: TextContext, lora_manager: LoRAManagerV3 | None) -> bool:
-    """Helper that checks the manager is not None and if the context is a lora"""
+    """Helper that checks the manager is not None and if the context is a lora."""
     return bool(lora_manager and lora_manager.is_lora(ctx.model_name))
 
 
 def is_active_lora(
     ctx: TextContext, lora_manager: LoRAManagerV3 | None
 ) -> bool:
-    """Helper that checks the manager is not None and if the LoRA is active"""
+    """Helper that checks the manager is not None and if the LoRA is active."""
     return bool(lora_manager and lora_manager.is_active_lora(ctx.model_name))

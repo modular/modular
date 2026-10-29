@@ -12,7 +12,7 @@ TuningConfigSM90(
     num_pipeline_stages=[@TUNE_NUM_PIPELINE_STAGES],
     num_consumer=[@TUNE_NUM_CONSUMER],
     partitioned_multicast=[@TUNE_PARTITIONED_MULTICAST],
-    grid_shape=Index([@TUNE_GRID_DIM_X], H100.sm_count // [@TUNE_GRID_DIM_X]),
+    grid_shape=([@TUNE_GRID_DIM_X], H100.sm_count // [@TUNE_GRID_DIM_X]),
     schedule=MatmulSchedule([@TUNE_SCHEDULE_TYPE]),
     splits=OptionalReg[Int]([@TUNE_SPLITS]) if [@TUNE_IS_SPLITK] else None,
     raster_order=OptionalReg[RasterOrder](

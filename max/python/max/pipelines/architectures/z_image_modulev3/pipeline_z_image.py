@@ -26,15 +26,15 @@ from typing import Any, Literal
 
 import numpy as np
 import numpy.typing as npt
+from max import functional as F
 from max.driver import CPU, Buffer, Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import TensorType
 from max.pipelines.context import PixelContext, TokenBuffer
 from max.pipelines.diffusion.cache import DenoisingCacheState
 from max.pipelines.diffusion.interface import DiffusionPipeline, max_compile
 from max.profiler import Tracer, traced
+from max.tensor import Tensor
 
 from ..autoencoders import AutoencoderKLModel
 from ..qwen3_modulev3.text_encoder import Qwen3TextEncoderZImageModel
@@ -418,6 +418,7 @@ class ZImagePipeline(DiffusionPipeline):
         cache_state: DenoisingCacheState,
         **kwargs: Any,
     ) -> tuple[Tensor, ...]:
+        """Runs the transformer's graph over the diffusion inputs."""
         return self.transformer(
             kwargs["latents"],
             kwargs["prompt_embeds"],
@@ -429,6 +430,7 @@ class ZImagePipeline(DiffusionPipeline):
         )
 
     def build_preprocess_latents(self) -> None:
+        """Compiles the graph that turns the inputs into latents."""
         device = self.transformer.devices[0]
         self.__dict__["_pack_latents_from_6d"] = max_compile(
             self._pack_latents_from_6d,
@@ -449,6 +451,7 @@ class ZImagePipeline(DiffusionPipeline):
         )
 
     def build_prepare_scheduler(self) -> None:
+        """Compiles the graph that prepares the scheduler's step sizes."""
         self.__dict__["prepare_scheduler"] = max_compile(
             self.prepare_scheduler,
             input_types=[
@@ -461,6 +464,7 @@ class ZImagePipeline(DiffusionPipeline):
         )
 
     def build_scheduler_step(self) -> None:
+        """Compiles the graph that advances the latents one step."""
         dtype = self.transformer.config.dtype
         device = self.transformer.devices[0]
         self.__dict__["scheduler_step"] = max_compile(
@@ -477,6 +481,7 @@ class ZImagePipeline(DiffusionPipeline):
         )
 
     def build_decode_latents(self) -> None:
+        """Compiles the graph that decodes the latents into pixels."""
         dtype = self.transformer.config.dtype
         device = self.transformer.devices[0]
         self.__dict__["_postprocess_latents"] = max_compile(
@@ -820,6 +825,7 @@ class ZImagePipeline(DiffusionPipeline):
         noise_pred: Tensor,
         dt: Tensor,
     ) -> Tensor:
+        """Advances the latents one step toward the prediction."""
         latents_dtype = latents.dtype
         latents = latents.cast(DType.float32)
         latents = latents + dt * noise_pred
@@ -901,6 +907,7 @@ class ZImagePipeline(DiffusionPipeline):
         image_tensor: Tensor,
         sigmas: Tensor,
     ) -> Tensor:
+        """Mixes the reference image into the latents at the step's noise level."""
         noise_latents = noise_latents.to(self.transformer.devices[0])
 
         encoder_output = self.vae.encode(
@@ -1002,7 +1009,6 @@ class ZImagePipeline(DiffusionPipeline):
         output_type: Literal["np", "latent", "pil"] = "np",
     ) -> ZImagePipelineOutput:
         """Run the Z-Image denoising loop and decode outputs."""
-
         # 1) Encode prompt embeddings.
         with Tracer("prepare_prompt_embeddings"):
             prompt_embeds = self.prepare_prompt_embeddings(

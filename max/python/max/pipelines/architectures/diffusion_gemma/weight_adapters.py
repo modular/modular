@@ -21,7 +21,7 @@ tied to ``model.decoder.embed_tokens``.
 MoE experts are stored per expert (``experts.J.{gate,up,down}_proj``), each as
 an NVFP4 quadruplet: packed ``weight`` (u8), ``weight_scale`` (fp8-e4m3 group
 scales), ``weight_scale_2`` and ``input_scale`` (fp32) — exactly the per-expert
-fields ``max.nn.moe.MoEQuantized`` reads. The BF16 checkpoint stores them
+fields ``max.nn.legacy.moe.MoEQuantized`` reads. The BF16 checkpoint stores them
 stacked, as the gemma4 donor's ``Gemma4MoE`` reads them.
 
 Both the encoder and decoder MAX graphs load from the same converted dict;

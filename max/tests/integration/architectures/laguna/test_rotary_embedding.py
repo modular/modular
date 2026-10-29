@@ -35,7 +35,7 @@ import torch
 from max.driver import CPU
 from max.engine import InferenceSession
 from max.graph import Graph
-from max.nn.rotary_embedding import (
+from max.nn.legacy.rotary_embedding import (
     RotaryEmbedding,
     YarnRotaryEmbedding,
     YarnScalingParams,

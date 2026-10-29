@@ -24,29 +24,29 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from max import functional as F
 from max import tree
 from max.driver import CPU, Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module, as_subgraph
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.experimental.nn.embedding import Embedding
-from max.experimental.nn.linear import Linear
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.tensor import Tensor
-from max.nn.kv_cache import (
+from max.nn import Module, as_subgraph
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.embedding import Embedding
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,
 )
-from max.nn.rotary_embedding import YarnScalingParams
+from max.nn.legacy.rotary_embedding import YarnScalingParams
+from max.nn.linear import Linear
+from max.nn.sequential import ModuleList
 from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
     ProportionalScalingParams,
 )
 from max.pipelines.architectures.laguna.model_config import LagunaConfig
 from max.pipelines.lib import ModuleV3Outputs
+from max.tensor import Tensor
 
 from .layers.norm import LagunaRMSNorm
 from .layers.rotary_embedding import (
@@ -282,6 +282,7 @@ class Laguna(Module[..., ModuleV3Outputs]):
         input_row_offsets: Tensor,
         *variadic_args: Tensor,
     ) -> ModuleV3Outputs:
+        """Runs the model over the graph inputs."""
         kv_inputs = iter(x._graph_value for x in variadic_args)
         kv_by_type: dict[str, PagedCacheValues] = {}
         if isinstance(self.kv_params, MultiKVCacheParams):

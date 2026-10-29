@@ -32,7 +32,6 @@ from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.host.info import A100
 from layout.tensor_core import get_mma_shape
 
-from std.utils.coord import Coord, DynamicCoord, coord_to_index_list
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 
@@ -117,7 +116,7 @@ struct MatmulConfig[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = False,
-](TrivialRegisterPassable, Writable):
+](ImplicitlyCopyable, RegisterPassable, Writable):
     """Static configuration of GPU matmul.
 
     Parameters:
@@ -128,11 +127,11 @@ struct MatmulConfig[
             `False`).
     """
 
-    var block_tile_shape: Coord[Int, Int, Int]
+    var block_tile_shape: Tuple[Int, Int, Int]
 
-    var warp_tile_shape: Coord[Int, Int, Int]
+    var warp_tile_shape: Tuple[Int, Int, Int]
 
-    var mma_shape: Coord[Int, Int, Int]
+    var mma_shape: Tuple[Int, Int, Int]
 
     var num_pipeline_stages: Int
 
@@ -142,7 +141,7 @@ struct MatmulConfig[
 
     var num_warp_k_partitions: Int
 
-    var cluster_shape: Coord[Int, Int, Int]
+    var cluster_shape: Tuple[Int, Int, Int]
 
     var num_consumer: Int
 
@@ -172,16 +171,12 @@ struct MatmulConfig[
     def __init__(
         out self,
         *,
-        block_tile_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](
-            128, 128, 32
-        ),
-        warp_tile_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](
-            64, 64, 32
-        ),
-        mma_shape: Coord[Int, Int, Int] = get_mma_shape[
+        block_tile_shape: Tuple[Int, Int, Int] = (128, 128, 32),
+        warp_tile_shape: Tuple[Int, Int, Int] = (64, 64, 32),
+        mma_shape: Tuple[Int, Int, Int] = get_mma_shape[
             Self.a_type, Self.accum_type
         ](),
-        cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
+        cluster_shape: Tuple[Int, Int, Int] = (1, 1, 1),
         num_pipeline_stages: Int = 4,
         num_k_partitions: Int = 1,
         k_group_size: Int = 1,
@@ -245,14 +240,14 @@ struct MatmulConfig[
             self.num_warp_k_partitions,
         )
 
-    def grid_dim(self, m: Int, n: Int) -> Coord[Int, Int, Int]:
+    def grid_dim(self, m: Int, n: Int) -> Tuple[Int, Int, Int]:
         return (
             uceildiv(n, self.block_tile_shape[1]),
             uceildiv(m, self.block_tile_shape[0]),
             self.num_k_partitions,
         )
 
-    def block_dim(self) -> Coord[Int, Int, Int]:
+    def block_dim(self) -> Tuple[Int, Int, Int]:
         return (self.num_threads(), 1, 1)
 
     def work_space_size(self, M: Int, N: Int) -> Int:
@@ -307,9 +302,9 @@ struct MatmulConfig[
         Self.c_type.__hash__(hasher)
         Self.transpose_b.__hash__(hasher)
         comptime for i in range(3):
-            Int(self.block_tile_shape[i]).__hash__(hasher)
-            Int(self.warp_tile_shape[i]).__hash__(hasher)
-            Int(self.cluster_shape[i]).__hash__(hasher)
+            self.block_tile_shape[i].__hash__(hasher)
+            self.warp_tile_shape[i].__hash__(hasher)
+            self.cluster_shape[i].__hash__(hasher)
         self.num_pipeline_stages.__hash__(hasher)
         self.num_k_partitions.__hash__(hasher)
         self.num_warp_k_partitions.__hash__(hasher)
@@ -340,7 +335,7 @@ def _bk_base[type: DType, amd_kernel: Bool = False]() -> Int:
 def _shared_memory_usage[
     a_type: DType, b_type: DType, c_type: DType
 ](
-    block_mnk: Coord[Int, Int, Int], num_pipeline_stages: Int, slice_k: Int = 1
+    block_mnk: Tuple[Int, Int, Int], num_pipeline_stages: Int, slice_k: Int = 1
 ) -> Int:
     # fmt: off
     var a_usage = slice_k * block_mnk[0] * block_mnk[2] * num_pipeline_stages * size_of[a_type]()
@@ -470,7 +465,7 @@ def select_config[
     comptime min_k_partition = 1024
 
     # Initial values overwritten in loop
-    var best_bmnk = Coord[Int, Int, Int](128, 128, _bk_base[a_type]())
+    var best_bmnk = (128, 128, _bk_base[a_type]())
     var best_num_k_partitions = 1
     var best_num_stages = 4
     var min_num_waves = Int.MAX

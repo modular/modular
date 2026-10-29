@@ -24,7 +24,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.nn.kernels import tpool_patch_merger
+from max.nn.legacy.kernels import tpool_patch_merger
 
 TORCH_DTYPE = torch.bfloat16
 MAX_DTYPE = DType.bfloat16

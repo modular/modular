@@ -276,6 +276,7 @@ _B200_SMOKE_TESTS = [
     "test_matmul_sm100_swiglu_2sm.mojo",
     "test_matmul_sm100_swiglu_bias_1sm.mojo",
     "test_matmul_sm100_swiglu_bias_2sm.mojo",
+    "test_matmul_sm100_swiglu_dispatch.mojo",
     "test_tma_im2col_unit.mojo",
 ]
 

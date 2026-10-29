@@ -22,39 +22,32 @@ from typing import cast
 from unittest.mock import MagicMock
 
 import pytest
+from max import functional as F
 from max.driver import CPU, Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn.common_layers.functional_kernels import (
+from max.graph import Graph
+from max.nn.common_layers.functional_kernels import (
     moe_create_indices,
 )
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.nn.common_layers.quant_linear import QuantizedMLP
-from max.experimental.nn.common_layers.quant_moe import (
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.quant_linear import QuantizedMLP
+from max.nn.common_layers.quant_moe import (
     ExpertParallelMoE,
     TensorParallelMoE,
 )
-from max.experimental.nn.common_layers.quant_tensor import (
+from max.nn.common_layers.quant_tensor import (
     FP8BlockTensor,
     MXFP8Tensor,
     NVFP4Tensor,
 )
-from max.experimental.sharding import (
-    DeviceMapping,
-    DeviceMesh,
-    Partial,
-    Replicated,
-)
-from max.experimental.tensor import Tensor, default_device, default_dtype
-from max.graph import Graph
-from max.nn.comm.ep import EPConfig
-from max.nn.comm.ep.ep_config import NUM_GROUPS
-from max.nn.comm.ep.ep_manager import (
+from max.nn.legacy.comm.ep import EPConfig
+from max.nn.legacy.comm.ep.ep_config import NUM_GROUPS
+from max.nn.legacy.comm.ep.ep_manager import (
     EPBatchManager,
     EPCommBuffers,
     get_ep_local_sync_counters_size,
 )
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.quant_config import QuantConfig
 from max.pipelines.architectures.deepseekV3_2_modulev3.layers.mlp import (
     DeepseekV3_2MLP,
 )
@@ -69,6 +62,13 @@ from max.pipelines.architectures.deepseekV3_2_modulev3.model_config import (
 )
 from max.pipelines.architectures.deepseekV3_modulev3.layers.transformer_block import (
     ParallelismMode,
+)
+from max.tensor import Tensor, default_device, default_dtype
+from max.tensor.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    Partial,
+    Replicated,
 )
 
 _HIDDEN_DIM = 256

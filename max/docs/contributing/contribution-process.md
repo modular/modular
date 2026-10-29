@@ -43,8 +43,8 @@ We consider the learning opportunities that open source software development
 provides to be valuable. We recommend taking some time to understand the
 existing code related to what you're about to fix. In MAX that usually means
 tracing a change through more than one layer: a model calls a layer in
-`max.nn`, which builds graph operations, which the graph compiler lowers to a
-kernel in `max/kernels`.
+`max.nn.legacy`, which builds graph operations, which the graph compiler lowers
+to a kernel in `max/kernels`.
 
 > [!NOTE]
 > Feel free to take advantage of AI to study the codebase. We ask that by the

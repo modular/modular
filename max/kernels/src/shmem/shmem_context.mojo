@@ -207,10 +207,10 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
 
         # nvshmem and rocshmem behave differently here, nvshmem requires that
         # you set the current context to a device ID corresponding with the
-        # GPU id on the node i.e. if team_my_pe is 3 then DeviceContext.id()
+        # GPU id on the node i.e. if team_my_pe is 3 then `Device.id`
         # should also be 3. rocshmem does this inside the rocshmem_init()
         # call, and each process will launch kernels on the associated pe
-        # from MPI, the DeviceContext.id() will always be 0, but it's
+        # from MPI, the `Device.id` will always be 0, but it's
         # associated with a different GPU in each process.
         var mype = shmem_team_my_pe(team)
         self._ctx = DeviceContext(device_id=Int(mype))
@@ -224,12 +224,12 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         self._end_event = self._ctx.create_event()
 
         # Store attributes to avoid retrieving them in each collective launch.
-        self._multiprocessor_count = self._ctx.get_attribute(
+        self._multiprocessor_count = self._ctx.device().get_attribute(
             DeviceAttribute.MULTIPROCESSOR_COUNT
         )
 
         self._cooperative = Bool(
-            self._ctx.get_attribute(DeviceAttribute.COOPERATIVE_LAUNCH)
+            self._ctx.device().get_attribute(DeviceAttribute.COOPERATIVE_LAUNCH)
         )
         self._thread_per_gpu = False
 
@@ -259,12 +259,12 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         self._end_event = self._ctx.create_event()
 
         # Store attributes to avoid retrieving them in each collective launch.
-        self._multiprocessor_count = self._ctx.get_attribute(
+        self._multiprocessor_count = self._ctx.device().get_attribute(
             DeviceAttribute.MULTIPROCESSOR_COUNT
         )
 
         self._cooperative = Bool(
-            self._ctx.get_attribute(DeviceAttribute.COOPERATIVE_LAUNCH)
+            self._ctx.device().get_attribute(DeviceAttribute.COOPERATIVE_LAUNCH)
         )
         self._thread_per_gpu = True
 
@@ -300,7 +300,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         self._end_event = self._ctx.create_event()
 
         # Store attributes to avoid retrieving them in each collective launch.
-        self._multiprocessor_count = self._ctx.get_attribute(
+        self._multiprocessor_count = self._ctx.device().get_attribute(
             DeviceAttribute.MULTIPROCESSOR_COUNT
         )
         # TODO(MSTDL-1761): add ability to query AMD cooperative launch

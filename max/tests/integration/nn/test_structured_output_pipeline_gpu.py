@@ -49,7 +49,7 @@ from max.driver import (
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, ops
-from max.nn import kernels
+from max.nn.legacy import kernels
 from max.pipelines.lib.pipeline_variants.structured_output_backend import (
     XgrammarBackend,
     XgrammarMatcher,

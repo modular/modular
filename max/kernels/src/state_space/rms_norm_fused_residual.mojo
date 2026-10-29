@@ -953,7 +953,7 @@ def rms_norm_fused_residual[
     with Trace[TraceLevel.OP, target=target](
         "rms_norm_fused_residual",
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=Int(ctx.id()),
+        task_id=Int(ctx.device().id),
     ):
         _rms_norm_fused_residual_impl[
             target=target,

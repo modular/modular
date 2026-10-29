@@ -36,7 +36,7 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn import Signals
+from max.nn.legacy import Signals
 
 M = 512
 N = 1024

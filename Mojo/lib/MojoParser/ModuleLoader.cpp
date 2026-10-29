@@ -119,7 +119,7 @@ static void collectDefaultImportPaths(SmallVector<std::string> &paths) {
 
 ModuleLoader::ModuleLoader(SharedState &shared)
     : SharedStateUser(shared), store(std::make_unique<ModuleStore>()) {
-  const CompilationOptions &options = shared.options;
+  const FrontendOptions &options = shared.frontendOptions;
   if (!options.searchPaths.empty()) {
     SmallVector<StringRef> paths;
     StringRef(options.searchPaths)
@@ -1181,7 +1181,8 @@ ModuleState &ModuleLoader::createBinaryPackageState(SMLoc loc,
         sourceMgr->getMemoryBuffer(sourceMgr->getMainFileID());
 
     auto mlirBufOrErr = getMLIRBufferFromPrecompiledFile(
-        *memoryBuf, shared.options.ignoreIncompatiblePrecompiledFileErrors);
+        *memoryBuf,
+        shared.frontendOptions.ignoreIncompatiblePrecompiledFileErrors);
     if (mlirBufOrErr.isError())
       return makeError(mlirBufOrErr.takeError().get());
     auto mlirResult = std::move(*mlirBufOrErr);

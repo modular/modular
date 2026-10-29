@@ -10,14 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Transformer block for Flint."""
 
 from __future__ import annotations
 
-from max.experimental.nn import Module
-from max.experimental.tensor import Tensor
-from max.nn.kv_cache import PagedCacheValues
+from max.nn import Module
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.tensor import Tensor
 
 
 class FlintTransformerBlock(Module[..., Tensor]):
@@ -44,6 +43,7 @@ class FlintTransformerBlock(Module[..., Tensor]):
         input_row_offsets: Tensor,
         **kwargs,
     ) -> Tensor:
+        """Runs the block's attention, then its MLP."""
         attn_out = self.self_attn(
             self.input_layernorm(x),
             kv_collection,

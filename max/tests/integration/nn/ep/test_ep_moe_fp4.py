@@ -29,10 +29,10 @@ from max.graph import (
     TensorValue,
 )
 from max.graph.weights import WeightData
-from max.nn.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
-from max.nn.moe import GatedActivation, MoEGate, MoEQuantized
-from max.nn.moe.expert_parallel import forward_moe_sharded_layers
-from max.nn.quant_config import (
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
+from max.nn.legacy.moe import GatedActivation, MoEGate, MoEQuantized
+from max.nn.legacy.moe.expert_parallel import forward_moe_sharded_layers
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

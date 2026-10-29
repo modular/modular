@@ -40,6 +40,7 @@
 extern "C" {
 void MojoHAL_strfree(const char *s);
 int32_t MojoHAL_Device_numberOfDevices(const char *api);
+const char *MojoHAL_DeviceContext_enableAllPeerAccess();
 const char *MojoHAL_DeviceContext_create(MojoHALContextBox **out_ctx,
                                          const char *api, int32_t device_id);
 void MojoHAL_DeviceContext_release(MojoHALContextBox *ctx);
@@ -106,6 +107,8 @@ const char *MojoHAL_HostBuffer_createSubBuffer(MojoHALBufferBox **out_buf,
                                                uint64_t byteSize);
 const char *MojoHAL_DeviceContext_reassignWait(MojoHALContextBox *dst_ctx,
                                                MojoHALContextBox *src_ctx);
+bool MojoHAL_DeviceContext_sameStream(MojoHALContextBox *a,
+                                      MojoHALContextBox *b);
 const char *MojoHAL_DeviceContext_memmapFile(MojoHALBufferBox **out_buf,
                                              void **out_ptr, uint64_t *out_size,
                                              MojoHALContextBox *ctx,
@@ -202,6 +205,14 @@ Device::API mapAPI(StringRef api) {
 }
 
 } // namespace
+
+ErrorOrSuccess Device::enableAllPeerAccess() {
+  if (AsyncRT::isVirtualDeviceMode())
+    return virtualDeviceError("peer access");
+  if (const char *err = MojoHAL_DeviceContext_enableAllPeerAccess())
+    return takeError(err);
+  return {};
+}
 
 ErrorOr<DeviceRef> Device::create(StringRef api, int id) {
   if (AsyncRT::isVirtualDeviceMode() &&
@@ -465,45 +476,12 @@ enqueueOnCpuKeepingAlive(DeviceContext &ctx,
 
 ErrorOrSuccess DeviceBuffer::copyTo(DeviceBuffer &dst, size_t srcByteOffset,
                                     size_t srcByteSize) {
-  // Mirror DeviceContext::enqueueCopyDeviceToDevice (the legacy impl):
-  // dispatch based on whether src and dst are host memory.
-  DeviceBuffer &src = *this;
-  const Device::API srcApi = src.context().device().api();
-  const Device::API dstApi = dst.context().device().api();
-  const uint8_t *srcAt = static_cast<const uint8_t *>(src.ptr_) + srcByteOffset;
+  return dst.context().enqueueCopyDeviceToDevice(dst, *this, srcByteOffset,
+                                                 srcByteSize);
+}
 
-  if (src.isHost() || srcApi == Device::cpuAPI) {
-    // Host -> device. If the source is owned by a CPU device context,
-    // synchronize it first: events cannot be awaited across device types.
-    if (srcApi == Device::cpuAPI && dstApi != Device::cpuAPI) {
-      ErrorOrSuccess sync = src.context().synchronize();
-      if (sync.isError())
-        return sync;
-    }
-    auto copy = [&] {
-      return dst.context().enqueueCopyToDevice(dst.ptr_, srcAt, srcByteSize);
-    };
-    if (dstApi == Device::cpuAPI)
-      return enqueueOnCpuKeepingAlive(dst.context(), {&src, &dst}, copy);
-    return copy();
-  }
-  if (dst.isHost() || dstApi == Device::cpuAPI) {
-    // Device -> host.
-    if (dstApi == Device::cpuAPI && srcApi != Device::cpuAPI) {
-      ErrorOrSuccess sync = dst.context().synchronize();
-      if (sync.isError())
-        return sync;
-    }
-    return src.context().enqueueCopyFromDevice(dst.ptr_, srcAt, srcByteSize);
-  }
-  if (srcApi == dstApi) {
-    if (const char *err = MojoHAL_DeviceContext_enqueueCopy(
-            dst.context().mojoCtx_, dst.ptr_, srcAt, srcByteSize))
-      return takeError(err);
-    return {};
-  }
-  return Error(llvm::Twine("device API mismatch copying from \"") + srcApi +
-               "\" to \"" + dstApi + "\"");
+ErrorOrSuccess DeviceBuffer::copyFrom(const void *src) {
+  return context().enqueueCopyToDevice(*this, src);
 }
 
 ErrorOrSuccess DeviceBuffer::synchronize(void *external_stream) {
@@ -716,6 +694,75 @@ ErrorOrSuccess DeviceContext::enqueueCopyToDevice(void *dst, const void *src,
           mojoCtx_, dst, src, byteSize))
     return takeError(err);
   return {};
+}
+
+ErrorOrSuccess DeviceContext::enqueueCopyDeviceToDevice(DeviceBuffer &dst,
+                                                        DeviceBuffer &src,
+                                                        size_t srcByteOffset,
+                                                        size_t srcByteSize,
+                                                        bool crossStreamSync) {
+  if (srcByteOffset + srcByteSize > src.byteSize())
+    return Error("not enough data in src");
+  if (srcByteSize != dst.byteSize())
+    return Error("size mismatch with dst");
+
+  DeviceContext &srcCtx = src.context();
+  DeviceContext &dstCtx = dst.context();
+  const Device::API srcApi = srcCtx.device().api();
+  const Device::API dstApi = dstCtx.device().api();
+  const uint8_t *srcAt = static_cast<const uint8_t *>(src.ptr_) + srcByteOffset;
+
+  // A CPU context is synchronized first: events can't be awaited across
+  // device types.
+  if (src.isHost() || srcApi == Device::cpuAPI) {
+    if (srcApi == Device::cpuAPI && dstApi != Device::cpuAPI) {
+      ErrorOrSuccess sync = srcCtx.synchronize();
+      if (sync.isError())
+        return sync;
+    }
+    auto copy = [&] {
+      return dstCtx.enqueueCopyToDevice(dst.ptr_, srcAt, srcByteSize);
+    };
+    if (dstApi == Device::cpuAPI)
+      return enqueueOnCpuKeepingAlive(dstCtx, {&src, &dst}, copy);
+    return copy();
+  }
+  if (dst.isHost() || dstApi == Device::cpuAPI) {
+    if (dstApi == Device::cpuAPI && srcApi != Device::cpuAPI) {
+      ErrorOrSuccess sync = dstCtx.synchronize();
+      if (sync.isError())
+        return sync;
+    }
+    return srcCtx.enqueueCopyFromDevice(dst.ptr_, srcAt, srcByteSize);
+  }
+  if (srcApi != dstApi)
+    return Error(llvm::Twine("device API mismatch copying from \"") + srcApi +
+                 "\" to \"" + dstApi + "\"");
+  if (device_->isVirtual() || srcCtx.device_->isVirtual())
+    return virtualDeviceError("memory operations");
+  if (device().id() != dstCtx.device().id())
+    return Error("device context does not match context of dst");
+
+  // Without the waits, the copy could read `src` before its stream writes it,
+  // or that stream could overwrite or free `src` mid-copy.
+  const bool needsSync = crossStreamSync && !MojoHAL_DeviceContext_sameStream(
+                                                mojoCtx_, srcCtx.mojoCtx_);
+  if (needsSync) {
+    ErrorOrSuccess wait = enqueueWaitFor(srcCtx);
+    if (wait.isError())
+      return wait;
+  }
+  if (const char *err = MojoHAL_DeviceContext_enqueueCopy(mojoCtx_, dst.ptr_,
+                                                          srcAt, srcByteSize))
+    return takeError(err);
+  if (!needsSync)
+    return {};
+  ErrorOrSuccess wait = srcCtx.enqueueWaitFor(*this);
+  // The copy is already enqueued: drain it before reporting failure, so the
+  // caller can't free a buffer the copy is still using.
+  if (wait.isError())
+    (void)synchronize();
+  return wait;
 }
 
 ErrorOrSuccess DeviceContext::enqueueCopyFromDevice(void *dst, const void *src,
@@ -1259,6 +1306,12 @@ using M::AsyncRT::AnyAsyncValueRef;
 using M::AsyncRT::CPUDevice;
 using M::Driver::DeviceBuffer;
 using M::Driver::DeviceBufferRef;
+
+// Backs the HAL Mojo `DeviceStream.wait_for_host_value`.
+MODULAR_EXPORT uint64_t
+AsyncRT_CompletionFlag_devicePtr(M::Driver::CompletionFlag *flag) {
+  return flag->devicePtr();
+}
 
 // Backs the HAL Mojo `DeviceBuffer.take_handle()`, so `takeRCRef` consumers
 // receive a refcount-1 shim `DeviceBuffer`, as with the legacy handle.

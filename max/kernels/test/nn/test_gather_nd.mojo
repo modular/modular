@@ -47,7 +47,7 @@ def main():
 
         var output_data_data = Array[Scalar[data_type], 2](fill={})
         var output_data_buffer = TileTensor(
-            output_data_data, row_major(Coord(output_shape))
+            output_data_data, row_major(output_shape)
         )
         gather_nd[batch_dims](
             data.make_dynamic[.int64](),
@@ -83,7 +83,7 @@ def main():
 
         var output_data_data = Array[Scalar[data_type], 4](fill={})
         var output_data_buffer = TileTensor(
-            output_data_data, row_major(Coord(output_shape))
+            output_data_data, row_major(output_shape)
         )
         gather_nd[batch_dims](
             data.make_dynamic[.int64](),
@@ -128,7 +128,7 @@ def main():
 
         var output_data_data = Array[Scalar[data_type], 4](fill={})
         var output_data_buffer = TileTensor(
-            output_data_data, row_major(Coord(output_shape))
+            output_data_data, row_major(output_shape)
         )
         gather_nd[batch_dims](
             data.make_dynamic[.int64](),
@@ -175,7 +175,7 @@ def main():
 
         var output_data_data = Array[Scalar[data_type], 4](fill={})
         var output_data_buffer = TileTensor(
-            output_data_data, row_major(Coord(output_shape))
+            output_data_data, row_major(output_shape)
         )
         gather_nd[batch_dims](
             data.make_dynamic[.int64](),
@@ -217,7 +217,7 @@ def main():
 
         var output_data_data = Array[Scalar[data_type], 4](fill={})
         var output_data_buffer = TileTensor(
-            output_data_data, row_major(Coord(output_shape))
+            output_data_data, row_major(output_shape)
         )
         gather_nd[batch_dims](
             data.make_dynamic[.int64](),
@@ -268,7 +268,7 @@ def main():
 
         var output_data_data = Array[Scalar[data_type], 6](fill={})
         var output_data_buffer = TileTensor(
-            output_data_data, row_major(Coord(output_shape))
+            output_data_data, row_major(output_shape)
         )
         gather_nd[batch_dims](
             data.make_dynamic[.int64](),
@@ -314,7 +314,7 @@ def main():
 
         var output_data_data = Array[Scalar[data_type], 8](fill={})
         var output_data_buffer = TileTensor(
-            output_data_data, row_major(Coord(output_shape))
+            output_data_data, row_major(output_shape)
         )
         gather_nd[batch_dims](
             data.make_dynamic[.int64](),
@@ -368,7 +368,7 @@ def main():
 
         var output_data_data = Array[Scalar[data_type], 6](fill={})
         var output_data_buffer = TileTensor(
-            output_data_data, row_major(Coord(output_shape))
+            output_data_data, row_major(output_shape)
         )
         gather_nd[batch_dims](
             data.make_dynamic[.int64](),
@@ -392,7 +392,7 @@ def main():
         )
 
     try:
-        # CHECK: Output shape:  (2,)
+        # CHECK: Output shape:  (2)
         # CHECK: Output buffer: 0 , 3
         test_gather_nd_eg1()
         # CHECK: Output shape:  (2, 2)

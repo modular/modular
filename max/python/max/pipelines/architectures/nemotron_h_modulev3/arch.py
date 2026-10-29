@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Registers Nemotron-H with the ModuleV3 registry."""
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
@@ -48,6 +49,8 @@ nemotron_h_modulev3_arch = SupportedArchitecture(
         WeightsFormat.safetensors: convert_nemotron_h_state_dict,
     },
     checkpoints_recurrent_state=True,
+    # The name Mach finds the fused DSpark graph by.
+    spec_decode_graph_names={"dspark": "UnifiedDSparkNemotronHModule"},
     config=NemotronHConfig,
     batching=NemotronHModel.batch_processor_cls,
     memory_planner=NemotronHMemoryPlanner,

@@ -70,6 +70,14 @@ struct KernelLaunchMetadata {
   uint64_t memsetValue = 0;
   size_t memsetValueSize = 0;
 
+  // ===== Capture labels (set while a device graph is being captured) =====
+  // The innermost op span open on the enqueuing thread and its thread group
+  // (see Support/Profiling/CaptureLabels.h); the graph's capture keeps the
+  // op's label. Not part of the semantic hash or of the comparisons below:
+  // replay verification must not depend on labels.
+  uint64_t opSeq = 0;
+  uint64_t opThread = 0;
+
   /// Default constructor
   KernelLaunchMetadata() = default;
 

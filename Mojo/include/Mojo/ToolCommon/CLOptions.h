@@ -16,6 +16,7 @@
 
 #include "AsyncRT/Runtime/RuntimeCLOptions.h"
 #include "Mojo/ToolCommon/CompilationOptions.h"
+#include "Mojo/ToolCommon/FrontendOptions.h"
 #include "Support/CommonCLOptions.h"
 #include "Support/ErrorOr.h"
 #include "Support/Profiling/TimeProfiler.h"
@@ -80,7 +81,7 @@ public:
 
   std::string stripFilePrefix;
 
-  SmallVector<std::string> includePaths;
+  std::vector<std::string> includePaths;
 
   SmallVector<std::string> defines;
 
@@ -125,17 +126,11 @@ public:
 
   bool warnOnUnstableAPIs{false};
 
-  SmallVector<std::string> ignoredDeprecations;
+  std::vector<std::string> ignoredDeprecations;
 
-  /// Get the include directories that exist on the file system.
-  std::vector<std::string> getIncludePaths() const {
-    std::vector<std::string> result;
-    result.reserve(includePaths.size());
-    for (auto &path : includePaths)
-      if (std::filesystem::is_directory(path))
-        result.push_back(path);
-    return result;
-  }
+  bool disableWarnings{false};
+
+  bool warningsAsErrors{false};
 
   /// Return a compilation options object based on the command line options.
   CompilationOptions getCompilationOptions() const {
@@ -157,8 +152,6 @@ public:
         targetCpu, targetFeatures, targetAccelerator, elaborationErrorLimit,
         elaborationErrorIncludePrelude, elaborationErrorVerbose,
         elaborationMaxDepth);
-    options.warnOnUnstableAPIs = warnOnUnstableAPIs;
-    options.ignoredDeprecations = ignoredDeprecations;
     // LLVM's MC layer already owns a global `-target-abi` flag (see the
     // comment by `targetFeatures` above); read its value instead of adding a
     // second one under the same name. `getABIName()` asserts unless this
@@ -168,6 +161,17 @@ public:
     static llvm::mc::RegisterMCTargetOptionsFlags mcTargetOptionsFlags;
     options.targetAbi = std::string(llvm::mc::getABIName());
 
+    return options;
+  }
+
+  /// Return a frontend options object based on the command line options.
+  FrontendOptions getFrontendOptions() const {
+    FrontendOptions options;
+    options.stripFilePrefix = stripFilePrefix;
+    options.warnOnUnstableAPIs = warnOnUnstableAPIs;
+    options.ignoredDeprecations = ignoredDeprecations;
+    options.disableWarnings = disableWarnings;
+    options.warningsAsErrors = warningsAsErrors;
     return options;
   }
 
@@ -324,7 +328,7 @@ private:
       llvm::cl::location(options.stripFilePrefix),
       llvm::cl::cat(KGENOptionsCategory)};
 
-  M::cl::MListOpt<std::string, SmallVector<std::string>> includePaths{
+  M::cl::MListOpt<std::string, std::vector<std::string>> includePaths{
       "I", cl::desc("Path to use to search for included files."),
       llvm::cl::Prefix, llvm::cl::location(options.includePaths),
       llvm::cl::cat(KGENOptionsCategory)};
@@ -505,13 +509,31 @@ private:
       llvm::cl::location(options.warnOnUnstableAPIs),
       llvm::cl::cat(KGENOptionsCategory)};
 
-  M::cl::MListOpt<std::string, SmallVector<std::string>> ignoredDeprecations{
+  M::cl::MListOpt<std::string, std::vector<std::string>> ignoredDeprecations{
       "ignore-deprecated",
       cl::desc("Suppress the deprecation warning for the given declaration "
                "(e.g. `Foo.bar`, or `some_fn` for a top-level "
                "declaration). May be specified multiple times. All other "
                "deprecation warnings are still emitted."),
       llvm::cl::location(options.ignoredDeprecations),
+      llvm::cl::cat(KGENOptionsCategory)};
+
+  M::cl::MOpt<bool, true> disableWarnings{
+      "disable-warnings", cl::desc("Do not print warning messages."),
+      llvm::cl::location(options.disableWarnings),
+      llvm::cl::cat(KGENOptionsCategory)};
+
+  // -Werror and -Wno-error write the same setting so the last one wins.
+  M::cl::MOpt<bool> warningsAsErrors{
+      "Werror", cl::desc("Treat warnings as errors."),
+      llvm::cl::callback(
+          [this](const bool &value) { options.warningsAsErrors = value; }),
+      llvm::cl::cat(KGENOptionsCategory)};
+
+  M::cl::MOpt<bool> noWarningsAsErrors{
+      "Wno-error", cl::desc("Do not treat warnings as errors."),
+      llvm::cl::callback(
+          [this](const bool &value) { options.warningsAsErrors = !value; }),
       llvm::cl::cat(KGENOptionsCategory)};
 };
 class KGENOptions : public KGENCommonOptions, public CommonOptions {

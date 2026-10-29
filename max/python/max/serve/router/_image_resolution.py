@@ -58,7 +58,7 @@ from pydantic import AnyUrl, ValidationError
 
 logger = logging.getLogger("max.serve")
 
-# Which ``maxserve.media.*`` ``source`` a reference's scheme resolves under.
+# Which ``max.media.*`` ``source`` a reference's scheme resolves under.
 # ``url`` rather than ``fetch``: the orchestrator tier tags the same split
 # ``url``, and one dashboard has to read both.
 _MEDIA_SOURCE_BY_SCHEME = {
@@ -80,7 +80,7 @@ _METRIC_IMAGE_FORMATS = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class _ImageFact:
-    """What one image cost at admission, for the ``maxserve.media.*`` family.
+    """What one image cost at admission, for the ``max.media.*`` family.
 
     Collected rather than recorded in place because the decode runs in a
     worker thread and the metric clients are not all thread-safe; the frame
@@ -762,10 +762,12 @@ async def _fetch_validated(
     budget: _MediaByteBudget,
     client: AsyncClient,
 ) -> bytes:
-    """SSRF-safe streaming fetch: validate + pin, following redirects manually so
-    every hop is re-validated. Streams the final body under the byte cap and
-    returns it, or raises ``HTTPStatusError`` (non-2xx -> caller maps) /
-    ``InputError``.
+    """Fetches a media reference with SSRF-safe validation on every hop.
+
+    The first host is validated and pinned, then redirects are followed
+    manually so each hop is re-validated. The final body streams under the
+    byte cap and is returned, or the call raises ``HTTPStatusError`` for a
+    non-2xx response (which the caller maps) or ``InputError``.
     """
     nets, names = _parse_allowed_hosts(settings.media_url_allowed_hosts)
     current = str(image_ref)
@@ -924,7 +926,7 @@ async def resolve_image_from_url(
     # One measured window around all three scheme arms, so ``source`` is the
     # only thing that distinguishes them and a fetch cannot be timed while an
     # inline decode is not. Only a resolved item is counted; a rejected one is
-    # already counted by ``maxserve.media.rejections``.
+    # already counted by ``max.media.rejections``.
     resolve = StopWatch()
 
     if image_ref.scheme == "http" or image_ref.scheme == "https":

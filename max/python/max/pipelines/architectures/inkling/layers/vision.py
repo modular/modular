@@ -24,9 +24,9 @@ from collections.abc import Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType, TensorValue, ops
-from max.nn.layer import LayerList, Module
-from max.nn.linear import Linear
-from max.nn.norm import RMSNorm
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import RMSNorm
 
 from ..model_config import InklingVisionConfig
 
@@ -113,9 +113,11 @@ def plan_folds(config: InklingVisionConfig) -> list[tuple[int, int, int]]:
 def fold_timespace_to_depth(
     x: TensorValue, t_fold: int, hw_fold: int
 ) -> TensorValue:
-    """Merges a ``t_fold x hw_fold x hw_fold`` neighborhood of
-    ``[patches, t, h, w, c]`` into the channels, ordered frame, row, column,
-    channel."""
+    """Folds a spatiotemporal neighborhood into the channels.
+
+    ``t_fold x hw_fold x hw_fold`` of ``[patches, t, h, w, c]`` moves into the
+    channel axis, ordered frame, row, column, channel.
+    """
     if t_fold == 1 and hw_fold == 1:
         return x
     patches = x.shape[0]
@@ -205,8 +207,12 @@ class InklingVisionModel(Module):
         )
 
     def normalize(self, pixels: TensorValue) -> TensorValue:
-        """Raw pixels ``[patches, patch, patch, channels]`` to the tower's
-        input frames ``[patches, temporal_patch_size, patch, patch, channels]``.
+        """Turns raw pixels into the tower's input frames.
+
+        ``[patches, patch, patch, channels]`` becomes ``[patches,
+        temporal_patch_size, patch, patch, channels]``. The scale runs in
+        float32 in the reference's order, then the one image frame is repeated
+        across the temporal axis.
 
         Normalizes in float32 in the reference's order, then repeats the one
         image frame across the temporal axis.
@@ -227,6 +233,7 @@ class InklingVisionModel(Module):
         )
 
     def __call__(self, patches: TensorValue) -> TensorValue:
+        """Runs the vision tower over the patches."""
         x = self.normalize(patches)
         for index, (t_fold, hw_fold, _) in enumerate(self.folds):
             x = fold_timespace_to_depth(x, t_fold, hw_fold)

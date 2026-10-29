@@ -42,6 +42,11 @@ from std.memory import unsafe_stack_allocation
 from max.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from max.gpu.sync import barrier
 
 from kv_cache.types import KVCacheT
@@ -218,63 +223,71 @@ def indexer_score_ragged_paged[
             var n = Int(num_cand_i32)
             var cap = n // 2
 
-            var b = _batch_of_row(t, input_row_offsets, Int(num_batches_i32))
-            var base_b = Int(rebind[Int32](base.load((b,))))
-            var cutoff_t = Int(rebind[Int32](cutoff.load((t,))))
-            var c = c0 + tid
-
-            # Live columns are [0, base) and [cap, cap + cutoff - base); a
-            # block that misses both skips the query load. The branch is
-            # block-uniform, so the early return cannot strand a barrier.
-            var c1 = c0 + block_size
-            if not (c0 < base_b or (c1 > cap and c0 < cap + cutoff_t - base_b)):
-                if c < n:
-                    output.store((t, c), Float32(0))
-                return
-
-            var sq = unsafe_stack_allocation[
-                num_heads * head_dim, Float32, address_space=.SHARED
-            ]()
-            var sw = unsafe_stack_allocation[
-                num_heads, Float32, address_space=.SHARED
-            ]()
-            for i in range(tid, num_heads * head_dim, block_size):
-                var h = i // head_dim
-                var d = i - h * head_dim
-                sq.unsafe_store(
-                    i, rebind[Float32](q.load((t, h, d)).cast[.float32]())
+            with PDL():
+                var b = _batch_of_row(
+                    t, input_row_offsets, Int(num_batches_i32)
                 )
-            for h in range(tid, num_heads, block_size):
-                sw.unsafe_store(h, rebind[Float32](weights.load((t, h))))
-            barrier()
+                var base_b = Int(rebind[Int32](base.load((b,))))
+                var cutoff_t = Int(rebind[Int32](cutoff.load((t,))))
+                var c = c0 + tid
 
-            if c >= n:
-                return
-            var e: Int
-            var live: Bool
-            if c < cap:
-                e = c
-                live = c < base_b
-            else:
-                e = base_b + c - cap
-                live = e < cutoff_t
+                # Live columns are [0, base) and [cap, cap + cutoff - base); a
+                # block that misses both skips the query load. The branch is
+                # block-uniform, so the early return cannot strand a barrier.
+                var c1 = c0 + block_size
+                if not (
+                    c0 < base_b or (c1 > cap and c0 < cap + cutoff_t - base_b)
+                ):
+                    if c < n:
+                        output.store((t, c), Float32(0))
+                    return
 
-            var score = Float32(0)
-            if live:
-                var acc = Array[Float32, num_heads](fill=Float32(0))
-                for d0 in range(0, head_dim, chunk):
-                    var k = cache.load[width=chunk, output_dtype=.float32](
-                        b, 0, e, d0
+                var sq = unsafe_stack_allocation[
+                    num_heads * head_dim, Float32, address_space=.SHARED
+                ]()
+                var sw = unsafe_stack_allocation[
+                    num_heads, Float32, address_space=.SHARED
+                ]()
+                for i in range(tid, num_heads * head_dim, block_size):
+                    var h = i // head_dim
+                    var d = i - h * head_dim
+                    sq.unsafe_store(
+                        i, rebind[Float32](q.load((t, h, d)).cast[.float32]())
                     )
+                for h in range(tid, num_heads, block_size):
+                    sw.unsafe_store(h, rebind[Float32](weights.load((t, h))))
+                barrier()
+
+                if c >= n:
+                    return
+                var e: Int
+                var live: Bool
+                if c < cap:
+                    e = c
+                    live = c < base_b
+                else:
+                    e = base_b + c - cap
+                    live = e < cutoff_t
+
+                var score = Float32(0)
+                if live:
+                    var acc = Array[Float32, num_heads](fill=Float32(0))
+                    for d0 in range(0, head_dim, chunk):
+                        var k = cache.load[width=chunk, output_dtype=.float32](
+                            b, 0, e, d0
+                        )
+                        comptime for h in range(num_heads):
+                            var qv = sq.unsafe_load[width=chunk](
+                                h * head_dim + d0
+                            )
+                            acc[h] += (qv * k).reduce_add()
                     comptime for h in range(num_heads):
-                        var qv = sq.unsafe_load[width=chunk](h * head_dim + d0)
-                        acc[h] += (qv * k).reduce_add()
-                comptime for h in range(num_heads):
-                    score += max(acc[h], Float32(0)) * sw.unsafe_load(h)
-            output.store((t, c), score)
+                        score += max(acc[h], Float32(0)) * sw.unsafe_load(h)
+                output.store((t, c), score)
 
         ctx.enqueue_function(
             kernel,
             grid_dim=(num_rows, ceildiv(num_cand, block_size)),
             block_dim=block_size,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )

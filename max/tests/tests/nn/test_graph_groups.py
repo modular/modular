@@ -21,8 +21,8 @@ from max import tree
 from max._artifact.value_types import treedef_from_json, treedef_to_json
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue
-from max.nn import graph_groups
-from max.nn.graph_groups import (
+from max.nn.legacy import graph_groups
+from max.nn.legacy.graph_groups import (
     BatchContext,
     ConvStates,
     DecoderOutputs,
@@ -37,7 +37,7 @@ from max.nn.graph_groups import (
     TPSignals,
     VisionMerge,
 )
-from max.nn.transformer import ReturnHiddenStates, logits_outputs
+from max.nn.legacy.transformer import ReturnHiddenStates, logits_outputs
 
 
 def _values(n: int) -> list[TensorValue]:

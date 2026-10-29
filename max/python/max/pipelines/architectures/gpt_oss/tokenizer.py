@@ -69,6 +69,7 @@ class GptOssTokenizer(TextTokenizer):
         tools: list[TextGenerationRequestTool] | None,
         **chat_template_options: Any,
     ) -> str:
+        """Renders the messages through the tokenizer's chat template."""
         return super().apply_chat_template(
             messages,
             tools,

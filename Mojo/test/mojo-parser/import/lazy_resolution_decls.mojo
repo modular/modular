@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 # COM: Run parsing twice to ensure the cache is populated.
-# RUN: %parse-mojo-isolated -I=%S/inputs %s -o /dev/null
-# RUN: %parse-mojo-isolated -I=%S/inputs %s | FileCheck %s
+# RUN: %parse-mojo-isolated -I%S/inputs %s -o /dev/null
+# RUN: %parse-mojo-isolated -I%S/inputs %s | FileCheck %s
 
 # CHECK: !Trait_AnyType = !lit.trait<@imported_cached_module::@Trait,
 # CHECK: #alias_StringLiteralAlias = {{.*}}"foobar">

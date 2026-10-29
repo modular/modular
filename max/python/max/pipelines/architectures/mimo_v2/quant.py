@@ -23,7 +23,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from max.dtype import DType
-from max.nn.quant_config import MXFP4_BLOCK_SIZE, QuantConfig
+from max.nn.legacy.quant_config import MXFP4_BLOCK_SIZE, QuantConfig
 from transformers.configuration_utils import PretrainedConfig
 
 FP8_BLOCK = 128

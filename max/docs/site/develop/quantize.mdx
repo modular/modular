@@ -21,7 +21,7 @@ weight distribution more closely and costs more to apply.
 Models often quantize only some of their projections. A layer can keep its
 attention projections at `bfloat16` while its MLP weights run at FP8, which is
 what the per-layer sets in a
-[`QuantConfig`](/api/python/generated/max.nn.QuantConfig/) express.
+[`QuantConfig`](/api/python/generated/max.nn.legacy.QuantConfig/) express.
 
 ## Serve a pre-quantized checkpoint
 
@@ -60,10 +60,10 @@ request.
 
 ## Quantize the layers in your model
 
-A [`QuantConfig`](/api/python/generated/max.nn.QuantConfig/)
+A [`QuantConfig`](/api/python/generated/max.nn.legacy.QuantConfig/)
 describes the scale granularity, the scale dtype, which layers are quantized,
 and the checkpoint format. Pass it to a layer that accepts one, such as
-[`Linear`](/api/python/generated/max.experimental.nn.Linear/), and the layer
+[`Linear`](/api/python/generated/max.nn.Linear/), and the layer
 allocates a quantized weight plus the scale tensors it needs. `Linear` accepts
 static per-tensor FP8 only; a block-scaled FP4 or a dynamic input scale raises
 `NotImplementedError` when the layer is constructed, so the failure surfaces at
@@ -72,9 +72,9 @@ model-build time:
 ```python
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental.nn import Linear
-from max.experimental.tensor import default_device
-from max.nn.quant_config import (
+from max.nn import Linear
+from max.tensor import default_device
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

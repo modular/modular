@@ -14,21 +14,23 @@
 
 import math
 
+from max import functional as F
 from max.driver import CPU, Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn.common_layers.rotary_embedding import (
+from max.nn.common_layers.rotary_embedding import (
     RotaryEmbedding,
 )
-from max.experimental.tensor import Tensor
-from max.nn.rotary_embedding import Llama3RopeScalingParams
+from max.nn.legacy.rotary_embedding import Llama3RopeScalingParams
+from max.tensor import Tensor
 
 __all__ = ["Llama3RotaryEmbedding"]
 
 
 class Llama3RotaryEmbedding(RotaryEmbedding):
-    """
-    RotaryEmbedding for Llama3 that takes rope scaling into account.
+    """Rotary embedding for Llama 3 that applies rope scaling.
+
+    ``_compute_inv_freqs`` rescales the inverse frequencies by the
+    ``Llama3RopeScalingParams`` low- and high-frequency wavelengths.
     """
 
     scaling_params: Llama3RopeScalingParams | None = None

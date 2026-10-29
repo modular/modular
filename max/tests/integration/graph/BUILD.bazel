@@ -33,7 +33,6 @@ _CPU_ONLY_TESTS = [
 # Tests with their own targets due to special configurations
 _SEPARATE_TARGET_TESTS = [
     "test_mega_ffn_amd_gpu.py",
-    "test_advanced_indexing.py",
     "test_buffer_create_init.py",
     "test_buffer_create_init_gpu.py",
     "test_debug_config.py",
@@ -47,6 +46,7 @@ _SEPARATE_TARGET_TESTS = [
     "test_graph_telemetry.py",
     "test_load_weights_no_deps.py",
     "test_logits_processor_gpu.py",
+    "test_matmul_swiglu_fusion_gpu.py",
     "test_mega_ffn_nvfp4_fusion_gpu.py",
     "test_mega_ffn_nvfp4_fusion_ir.py",
     "test_rowwise_reductions.py",
@@ -96,7 +96,7 @@ _GRAPH_COMMON_DEPS = [
     "//max/python/max/engine",
     "//max/python/max/graph",
     "//max/python/max/mlir",
-    "//max/python/max/nn",
+    "//max/python/max/nn/legacy",
     "//max/tests/integration/test_common:graph_utils",
     "//max/tests/integration/test_common:modular_graph_test",
     requirement("gguf"),
@@ -179,7 +179,7 @@ modular_py_library(
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("numpy"),
     ],
 )
@@ -197,48 +197,6 @@ modular_py_library(
         "//max/python/max/engine",
         "//max/python/max/graph",
         requirement("numpy"),
-    ],
-)
-
-# GEX-3523 / MAXPLAT-477: this test was originally disabled because its 16
-# GPU parametrizations exceeded the bulk graph target's timebox on H100.
-# Re-enabled as a dedicated, sharded target so each shard fits comfortably
-# under the 600s `ci-persistent --test_timeout=-1,-1,600,600` clamp.
-#
-# Per-case wall-clock (the `set_item*` cases are skipped on accelerators):
-#   H100: median 31.4s, p99 42.6s, max 60.9s (from a 16 000-case stress run).
-#   B200: median ~33s, max ~50s (from a smoke run with 16 GPU cases).
-#
-# Unsharded the B200 wall is ~640-650s, which trips the 600s ci-persistent
-# clamp (observed `TIMEOUT in 610.0s` on postsubmit b200, build 6395).
-# `shard_count = 4` splits the 16 cases roughly 4-per-shard, giving
-# ~150-200s per shard with ~3x headroom.
-modular_py_test(
-    name = "test_advanced_indexing",
-    size = "large",
-    srcs = [
-        "conftest.py",
-        "test_advanced_indexing.py",
-    ],
-    exec_properties = {
-        "test.resources:gpu-memory": "2",
-    },
-    gpu_constraints = ["//:has_gpu"] + select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
-    shard_count = 4,
-    tags = [
-        "gpu",
-    ],
-    deps = [
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/graph",
-        requirement("hypothesis"),
-        requirement("numpy"),
-        requirement("torch"),
     ],
 )
 
@@ -309,7 +267,7 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
-    # max.experimental.nn.Module.compile() reaches max.engine.InferenceSession
+    # max.nn.Module.compile() reaches max.engine.InferenceSession
     # transitively through its own lazy internals; optional at runtime, like
     # the experimental package's own ignore_extra_deps for the same target.
     ignore_unresolved_imports = ["max.engine.InferenceSession"],
@@ -318,11 +276,11 @@ modular_py_test(
         "gpu",
     ],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         requirement("hypothesis"),
     ],
 )
@@ -366,7 +324,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("hypothesis"),
         requirement("numpy"),
     ],
@@ -398,7 +356,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("hypothesis"),
         requirement("numpy"),
     ],
@@ -677,7 +635,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("hypothesis"),
         requirement("numpy"),
         requirement("torch"),
@@ -701,6 +659,22 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_matmul_swiglu_fusion_gpu",
+    size = "large",
+    srcs = ["test_matmul_swiglu_fusion_gpu.py"],
+    gpu_constraints = ["//:b200_gpu"],
+    mojo_deps = ["//max:builtin_kernels"],
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("torch"),
     ],
 )
 

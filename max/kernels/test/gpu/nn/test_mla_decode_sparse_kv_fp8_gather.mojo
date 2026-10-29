@@ -2088,7 +2088,7 @@ def main() raises:
             # The production split, `amd_sparse_mla_decode_num_partitions`:
             # 16 splits of 128 rows, so the 1200- and 530-row tokens leave 6
             # and 11 splits wholly past their valid length.
-            var sm_count = ctx.get_attribute(
+            var sm_count = ctx.device().get_attribute(
                 DeviceAttribute.MULTIPROCESSOR_COUNT
             )
             var topk_split = amd_sparse_mla_decode_num_partitions(

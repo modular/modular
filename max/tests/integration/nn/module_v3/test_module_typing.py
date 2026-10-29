@@ -26,13 +26,13 @@ the mypy aspect on this file.
 
 from __future__ import annotations
 
-from max.experimental import random
-from max.experimental.compilation import CompiledCallable
-from max.experimental.nn.module import (
+from max.functional import random
+from max.nn.module import (
     Module,
     module_dataclass,
 )
-from max.experimental.tensor import Tensor, TensorType, defaults
+from max.tensor.compilation import CompiledCallable
+from max.tensor.tensor import Tensor, TensorType, defaults
 from typing_extensions import assert_type
 
 

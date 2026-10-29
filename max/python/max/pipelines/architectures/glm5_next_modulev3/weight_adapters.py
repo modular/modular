@@ -38,13 +38,12 @@ _LM_PREFIXES = (
 # MLA projections the module holds as raw (unwrapped) weights.
 _MLA_RAW = ("q_a_proj", "q_b_proj", "kv_a_proj_with_mqa", "kv_b_proj")
 
-# Parameters the model reads in float32. `hc_*_fn` is BF16 in the checkpoint;
-# widening it is exact and matches what the mapping computes in.
+# Parameters the model reads in float32. `hc_*_fn` is left as the checkpoint
+# stores it: the model picks its dtype per device.
 _FLOAT32_SUFFIXES = (
     ".A_log",
     ".dt_bias",
     ".o_norm.weight",
-    ".hc_fn",
     ".hc_base",
     ".hc_scale",
 )
@@ -106,6 +105,7 @@ def convert_glm5_next_state_dict(
         state_dict: The raw checkpoint weights.
         huggingface_config: The checkpoint's config, read for the layer count
             that identifies the MTP draft layer.
+        **unused_kwargs: Accepted so every adapter shares one signature.
 
     Returns:
         The renamed weights. The vision tower and the MTP draft layer are

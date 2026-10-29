@@ -1678,8 +1678,8 @@ def test_mamba2_ssd_grouped_auto() raises:
             or ctx.target.is_nvidia_gpu["sm_100a"]()
         ):
             assert_true(use_grouped_cb_ssd(8192, 1, 32, 128, 4))
-            print("SSD_AUTO_DEVICE_NAME,", ctx.name(), sep="")
-            if ctx.name() == "NVIDIA B200":
+            print("SSD_AUTO_DEVICE_NAME,", ctx.device().get_name(), sep="")
+            if ctx.device().get_name() == "NVIDIA B200":
                 run_mamba2_ssd[
                     .bfloat16,
                     128,

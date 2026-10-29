@@ -78,6 +78,24 @@ void KGENDialect::registerAttributes() {
 #define GET_ATTRDEF_LIST
 #include "Mojo/KGENDialect/KGENAttrs.cpp.inc"
       >();
+
+  // Deduplicated compound expressions. A compound attribute is omitted when a
+  // label on it would be noise or mark nothing visible: references and
+  // constants are cheap to reprint; SugarAttr and type references print the
+  // same as the form they wrap; ParamListAttr splats its elements into the
+  // parent without delimiters, so a label would appear to mark only the first
+  // element.
+  registerNonTrivialParamAttrs<
+      ParamOperatorAttr, ParamIdenticalAttr, BindParamsAttr,
+      CastFromBuiltinAttr, CastToBuiltinAttr, TypeConformsToTraitAttr,
+      UpcastAttr, DowncastAttr, ExtensionAttr, QuoteAttr, GeneratorAttr,
+      FuncPtrBitcastAttr, GetWitnessAttr, ParamListReduceAttr,
+      ParamListTabulateAttr, ParamListSizeAttr, ParamListGetAttr,
+      ParamListConcatAttr, GetTypeNameAttr, GetBaseTypeNameAttr,
+      StructFieldTypesAttr, StructFieldNamesAttr, StructFieldIndexByNameAttr,
+      StructFieldTypeByNameAttr, StructFieldOffsetByIndexAttr,
+      StructFieldOffsetByNameAttr, GetNumAnnotationsAttr,
+      GetAnnotationValueAttr, GetAnnotationTypeAttr>();
 }
 
 //===----------------------------------------------------------------------===//
@@ -203,13 +221,15 @@ OptionalParseResult ParamListType::parseValue(AsmParser &p,
   return p.parseRSquare();
 }
 
-LogicalResult ParamListType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult ParamListType::printValue(AsmPrinter &p, TypedAttr value,
+                                        KGENParamPrinter &printer) const {
   auto variadic = ::dyn_cast<ParamListAttr>(value);
   if (!variadic)
     return failure();
   p << '[';
-  llvm::interleaveComma(variadic.getValues(), p,
-                        [&](TypedAttr value) { printParamValue(p, value); });
+  llvm::interleaveComma(variadic.getValues(), p, [&](TypedAttr value) {
+    printer.printParamValue(p, value);
+  });
   p << ']';
   return success();
 }
@@ -1743,31 +1763,39 @@ SymbolConstantAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
 
 LogicalResult
 FuncPtrBitcastAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                           SymbolConstantAttr callee,
-                           FuncTypeGeneratorType type) {
-  FuncTypeGeneratorType symbolType = callee.getType();
-  if (!isEqualCanon(symbolType.getWithBody(type.getBody()), type))
+                           FuncSymbolAttr callee, FuncTypeGeneratorType type) {
+  // The callee is already instantiated, so only its function type body may be
+  // re-presented.
+  if (!type.isFullyBound())
     return emitError()
            << "func_ptr_bitcast must only change the function type body";
   return success();
 }
 
-bool FuncPtrBitcastAttr::isConstant() const {
-  return getSymbolConstant().isConstant();
+SymbolRefAttr FuncPtrBitcastAttr::getSymbol() const {
+  return getCallee().getSymbol();
 }
 
-ParseResult parseFuncPtrBitcastCallee(AsmParser &p,
-                                      SymbolConstantAttr &callee) {
+ArrayRef<TypedAttr> FuncPtrBitcastAttr::getParamValues() const {
+  return getCallee().getParamValues();
+}
+
+bool FuncPtrBitcastAttr::isConstant() const {
+  return llvm::all_of(getParamValues(), ParameterAttr::isSimpleConstant) &&
+         getCallee().isConstant();
+}
+
+ParseResult parseFuncPtrBitcastCallee(AsmParser &p, FuncSymbolAttr &callee) {
   Attribute attr;
   if (p.parseAttribute(attr))
     return failure();
-  callee = dyn_cast<SymbolConstantAttr>(attr);
+  callee = dyn_cast<FuncSymbolAttr>(attr);
   if (!callee)
-    return p.emitError(p.getCurrentLocation(), "expected symbol constant");
+    return p.emitError(p.getCurrentLocation(), "expected function symbol");
   return success();
 }
 
-void printFuncPtrBitcastCallee(AsmPrinter &p, SymbolConstantAttr callee) {
+void printFuncPtrBitcastCallee(AsmPrinter &p, FuncSymbolAttr callee) {
   p.printAttribute(callee);
 }
 
@@ -1862,11 +1890,11 @@ FuncSymbolAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
   if (!declSignature)
     return failure();
 
-  // Parameter types match exactly.  We could support higher order rebinding
-  // if there is a need.
-  return verifyFuncTypesMatch("symbol use", remapper.replace(getType()), loc,
-                              symbol.getLeafReference(),
-                              declSignature.getBody(), func->getLoc());
+  auto useSignature = FuncTypeGeneratorType::get(
+      /*inputParamTypes=*/{}, remapper.replace(getType()), /*genMetadata=*/{});
+  return verifyDeclSignaturesMatch("symbol use", useSignature, loc,
+                                   symbol.getLeafReference(), declSignature,
+                                   func->getLoc());
 }
 
 //===----------------------------------------------------------------------===//
@@ -2189,13 +2217,15 @@ OptionalParseResult StructType::parseValue(AsmParser &p,
   return p.parseRBrace();
 }
 
-LogicalResult StructType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult StructType::printValue(AsmPrinter &p, TypedAttr value,
+                                     KGENParamPrinter &printer) const {
   auto structAttr = ::dyn_cast<StructAttr>(value);
   if (!structAttr)
     return failure();
   p << "{ ";
-  llvm::interleaveComma(structAttr.getValues(), p,
-                        [&](TypedAttr value) { printParamValue(p, value); });
+  llvm::interleaveComma(structAttr.getValues(), p, [&](TypedAttr value) {
+    printer.printParamValue(p, value);
+  });
   p << " }";
   return mlir::success();
 }
@@ -6146,7 +6176,8 @@ OptionalParseResult SIMDType::parseValue(AsmParser &p, TypedAttr &value) const {
   return result;
 }
 
-LogicalResult SIMDType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult SIMDType::printValue(AsmPrinter &p, TypedAttr value,
+                                   KGENParamPrinter &printer) const {
   auto simd = ::dyn_cast<SIMDAttr>(value);
   if (!simd)
     return failure();

@@ -24,6 +24,8 @@ from ..deepseekV2_modulev3.inputs import DeepseekV2Inputs
 
 @dataclass
 class DeepseekV3Inputs(DeepseekV2Inputs):
+    """Inputs the DeepSeek-V3 pipeline feeds its model."""
+
     batch_context_lengths: list[Buffer] = field(kw_only=True)
     """Host (CPU) page-aligned KV context length, one per DP replica.
 

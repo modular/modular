@@ -22,11 +22,11 @@ modular_py_test(
     # lookup finds nothing.
     ignore_extra_deps = ["//max/python/max/pipelines"],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures/minimax_music3",
         "//max/python/max/pipelines/context",

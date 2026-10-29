@@ -54,13 +54,13 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     fused_dual_qk_rms_norm_rope_nvfp4_ragged,
     msa_sparse_attention_ragged,
     msa_sparse_attention_ragged_mxfp8,
     msa_sparse_indexer,
 )
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheQuantizationConfig,
     MHAKVCacheParams,
     PagedCacheValues,

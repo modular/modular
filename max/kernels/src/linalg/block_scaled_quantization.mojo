@@ -606,6 +606,14 @@ def block_scales_interleave_fp4[
         MXFP4_SF_DTYPE,
     ), "scales dtype should be float8_e4m3fn (NVFP4) or float8_e8m0fnu (MXFP4)"
 
+    # An empty tile (a DP replica with no rows this step) has nothing to
+    # interleave; the enqueue below refuses a zero grid.
+    if (
+        Int(input_scales_tile.dim[0]()) == 0
+        or Int(input_scales_tile.dim[1]()) == 0
+    ):
+        return
+
     comptime num_SMs = B200.sm_count
 
     var num_rows = Int(input_scales_tile.dim[0]())
@@ -3125,9 +3133,7 @@ def block_scaled_matmul[
         comptime CLUSTER_DIM_X = get_defined_int["TUNE_CLUSTER_DIM_X", 2]()
         comptime CLUSTER_DIM_Y = get_defined_int["TUNE_CLUSTER_DIM_Y", 1]()
         comptime CLUSTER_DIM_Z = get_defined_int["TUNE_CLUSTER_DIM_Z", 1]()
-        comptime CLUSTER_DIM = Coord[Int, Int, Int](
-            CLUSTER_DIM_X, CLUSTER_DIM_Y, CLUSTER_DIM_Z
-        )
+        comptime CLUSTER_DIM = (CLUSTER_DIM_X, CLUSTER_DIM_Y, CLUSTER_DIM_Z)
         comptime BLOCK_SWIZZLE_SIZE = get_defined_int[
             "TUNE_BLOCK_SWIZZLE_SIZE", 0
         ]()
@@ -3149,11 +3155,7 @@ def block_scaled_matmul[
             scaling_kind=get_scaling_kind[
                 a_type, scales_dtype, SF_VECTOR_SIZE, b_type
             ](),
-            mma_shape=(
-                Int(umma_shape[0]),
-                Int(umma_shape[1]),
-                Int(umma_shape[2]),
-            ),
+            mma_shape=umma_shape,
             cluster_shape=CLUSTER_DIM,
             block_swizzle_size=BLOCK_SWIZZLE_SIZE,
             raster_order=RasterOrder(Int32(RASTERIZE_ORDER)),

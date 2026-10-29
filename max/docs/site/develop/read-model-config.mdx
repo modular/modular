@@ -226,7 +226,7 @@ in which each field is a class attribute. For example:
 ```python
 from dataclasses import dataclass
 
-from max.nn.kv_cache import KVCacheParams
+from max.nn.legacy.kv_cache import KVCacheParams
 from max.pipelines.lib.interfaces import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
@@ -489,7 +489,7 @@ Structural fields signal that the model departs from a standard transformer
 architecture and requires custom layer logic. When you identify these fields,
 prepare to declare or extend custom layers in the model's implementation file
 (such as `llama3_modulev3/llama3.py` or `deepseekV3_modulev3/deepseekV3.py`)
-using [`max.experimental.nn`](/api/python/experimental.nn/) modules:
+using [`max.nn`](/api/python/nn/) modules:
 
 - **Grouped-query or multi-query attention** (`num_key_value_heads` below
   `num_attention_heads`, or `multi_query`) shares keys and values across query
@@ -506,8 +506,8 @@ using [`max.experimental.nn`](/api/python/experimental.nn/) modules:
   `embedding_multiplier`, `logits_scaling`) add norms or scale factors inside
   the block.
 - **Quantized weights** (`quantization_config`) need a
-  [`QuantConfig`](/api/python/generated/max.nn.QuantConfig/) field in your
-  config class (see
+  [`QuantConfig`](/api/python/generated/max.nn.legacy.QuantConfig/) field in
+  your config class (see
   [Map checkpoint weights](/develop/model-bringup-workflow/#map-checkpoint-weights)).
 
 Often, the closest baseline MAX architecture already implements some of these

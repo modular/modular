@@ -19,16 +19,16 @@ from dataclasses import replace
 from functools import cached_property
 from typing import Any, ClassVar
 
+from max import functional as F
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.experimental import functional as F
-from max.experimental.compilation import CompiledCallable
-from max.experimental.tensor import default_device, default_dtype
-from max.nn.comm import Signals
-from max.nn.comm.ep import EPBatchManager
-from max.nn.kv_cache import MultiKVCacheParams
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.comm.ep import EPBatchManager
+from max.nn.legacy.kv_cache import MultiKVCacheParams
 from max.profiler import traced
+from max.tensor import default_device, default_dtype
+from max.tensor.compilation import CompiledCallable
 from typing_extensions import override
 
 from ..deepseekV3_2_modulev3.deepseekV3_2 import DeepseekV3_2
@@ -45,7 +45,7 @@ class UnifiedMTPGlm5_2ModuleV3Model(UnifiedMTPGlm5_2Model):
     """GLM-5.x with MTP on ModuleV3: target, draft and driver in one module.
 
     Weight loading, EP initialization and batching are the graph-API MTP
-    model's. The graph is :meth:`~max.experimental.nn.Module.compile`'s, so its
+    model's. The graph is :meth:`~max.nn.Module.compile`'s, so its
     signal buffers trail every other input.
     """
 
@@ -58,6 +58,7 @@ class UnifiedMTPGlm5_2ModuleV3Model(UnifiedMTPGlm5_2Model):
 
     @cached_property
     def signal_buffers(self) -> list[Buffer]:
+        """The collectives' buffers, empty on a single device."""
         # A compiled graph declares signal buffers only when it spans more
         # than one device.
         if len(self.devices) <= 1:

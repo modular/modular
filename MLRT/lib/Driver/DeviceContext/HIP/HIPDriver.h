@@ -116,10 +116,10 @@ enum class hipMemcpySrcAccessOrder {
 };
 
 using hipMemcpyAttributes = struct hipMemcpyAttributes_st {
-  hipMemcpySrcAccessOrder srcAccessOrder; 
+  hipMemcpySrcAccessOrder srcAccessOrder;
   hipMemLocation srcLocHint;
   hipMemLocation dstLocHint;
-  unsigned int flags; 
+  unsigned int flags;
 };
 
 // Virtual Memory Management types (mirroring CUDA's CUmem* VMM types). Used by
@@ -833,6 +833,10 @@ public:
   /// hipGraphAddBatchMemOpNode only appeared in ROCm 6.4, and the capture-info
   /// entry points it has to be paired with are equally optional here so that an
   /// older runtime degrades to a diagnosable error rather than failing to load.
+  bool hasStreamCaptureInfo() const {
+    return hipStreamGetCaptureInfo_v2_ != nullptr;
+  }
+
   bool hasBatchMemOpGraphNode() const {
     return hipGraphAddBatchMemOpNode_ != nullptr &&
            hipStreamGetCaptureInfo_v2_ != nullptr &&

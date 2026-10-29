@@ -40,6 +40,7 @@ Note: This implementation currently supports:
 """
 
 from std.math import align_up, ceildiv
+from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 
 from std.sys import size_of
 
@@ -459,6 +460,7 @@ def _conv2d_fprop_impl[
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 UInt32(b200_smem)
             ),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
     elif has_epilogue_fn:
         comptime kernel = conv_kernel.run_with_epilogue_fn[EpilogueFnType]
@@ -475,6 +477,7 @@ def _conv2d_fprop_impl[
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 UInt32(b200_smem)
             ),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
     else:
         comptime kernel = conv_kernel.run
@@ -490,6 +493,7 @@ def _conv2d_fprop_impl[
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 UInt32(b200_smem)
             ),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
 
@@ -744,6 +748,7 @@ def conv2d_fprop_with_residual[
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 UInt32(b200_smem)
             ),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
     else:
         comptime kernel = conv_kernel.run_with_residual
@@ -761,6 +766,7 @@ def conv2d_fprop_with_residual[
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 UInt32(b200_smem)
             ),
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
 

@@ -47,8 +47,8 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.kernels import _block_scaled_quantize_out_types
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.legacy.kernels import _block_scaled_quantize_out_types
+from max.nn.legacy.kv_cache import PagedCacheValues
 
 HEAD_DIM = 512
 """Channels of a query head, a latent and a dequantized record."""
@@ -404,7 +404,7 @@ def norm_quantize_q_store_kv(
     """Normalizes ``[q | kv]`` rows, quantizes q to MXFP8 and stores kv.
 
     One launch computes what
-    :func:`~max.nn.kernels.rms_norm_quantize_mxfp8_q_kv` and then
+    :func:`~max.nn.legacy.kernels.rms_norm_quantize_mxfp8_q_kv` and then
     :meth:`WindowStore.store` on its normalized kv compute, bit for bit,
     without writing the normalized kv out.
 
@@ -636,12 +636,13 @@ def csa2_attention_mxfp8(
     window_entries: int = WINDOW_ENTRIES,
     rope_q: bool = False,
 ) -> tuple[TensorValue, TensorValue]:
-    """Returns :func:`csa2_attention`'s output as the MXFP8 input of the
-    grouped output projection.
+    """Returns :func:`csa2_attention`'s output as MXFP8 projection input.
+
+    The output feeds the grouped output projection.
 
     Each head's last 64 channels rotate back by the conjugate of ``freqs``,
     then every 32 channels quantize to E4M3 under an E8M0 scale, byte for
-    byte as :func:`~max.nn.kernels.rope_quantize_dynamic_block_scaled` with
+    byte as :func:`~max.nn.legacy.kernels.rope_quantize_dynamic_block_scaled` with
     ``inverse`` quantizes the bf16 output. A 64-head prefill writes them
     from the attention kernel, so the bf16 output never reaches memory.
     SM100 only.
@@ -720,9 +721,11 @@ def _csa2_op(
     window_entries: int,
     rope_q: bool = False,
 ) -> list[TensorValue]:
-    """Builds a CSA2 attention op; with ``mxfp8_freqs``, its MXFP8 form,
-    whose outputs lead with the data and scales, and with ``rope_q`` too,
-    the form that rotates Q."""
+    """Builds a CSA2 attention op.
+
+    With ``mxfp8_freqs`` it is the op's MXFP8 form, whose outputs lead with the
+    data and scales; with ``rope_q`` too, the form that rotates Q.
+    """
     if (
         window_entries <= 0
         or window_entries % 64

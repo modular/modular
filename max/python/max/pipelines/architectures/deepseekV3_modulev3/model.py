@@ -20,18 +20,16 @@ from typing import Any, ClassVar
 from max.driver import Device, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import default_device
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
-from max.nn.comm.ep import (
+from max.nn.legacy.comm.ep import (
     EPBatchManager,
     EPCommInitializer,
     EPConfig,
     calculate_ep_max_tokens_per_rank,
 )
-from max.nn.kv_cache import KVCacheParamInterface
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheParamInterface
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     KVCacheConfig,
@@ -42,6 +40,8 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.memory_estimation import MemoryPlan
 from max.pipelines.weights.quant import parse_quant_config
+from max.tensor import default_device
+from max.tensor.sharding import DeviceMesh
 from transformers import AutoConfig
 from typing_extensions import override
 
@@ -221,6 +221,7 @@ class DeepseekV3Model(DeepseekV2Model):
         kv_cache_config: Any,
         cache_dtype: DType,
     ) -> KVCacheParamInterface:
+        """The KV cache parameters this model was traced with."""
         return DeepseekV3Config.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,

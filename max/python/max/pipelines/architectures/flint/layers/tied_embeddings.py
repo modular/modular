@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Decides whether the lm head shares the token embedding weights.
 
 Requires both the config tie and an absent ``lm_head`` tensor, so a missing
@@ -26,6 +25,7 @@ from typing import Any
 def resolve_tie_word_embeddings(
     hf_cfg: Any, state_dict_keys: Iterable[str]
 ) -> bool:
+    """Whether the config ties the embeddings and ships no head."""
     config_ties = bool(getattr(hf_cfg, "tie_word_embeddings", False))
     has_head = any(k.endswith("lm_head.weight") for k in state_dict_keys)
     return config_ties and not has_head

@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Helpers shared by the schedulers."""
+
 from __future__ import annotations
 
 import logging
@@ -21,7 +23,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field, fields
 from typing import NamedTuple, TypeVar
 
-from max.nn.kv_cache.metrics import dkv_tier_degraded
+from max.nn.legacy.kv_cache.metrics import dkv_tier_degraded
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import (
     JengaKVCacheManager,
@@ -244,6 +246,8 @@ class _ScheduledBatch(NamedTuple):
 
 @dataclass
 class BatchMetrics:
+    """Measurements published for a completed batch."""
+
     batch_type: BatchType
     batch_size: int
     max_batch_size: int
@@ -347,6 +351,8 @@ class BatchMetrics:
     dkv_peer_metadata_refresh_failures: int = 0
     dkv_hints_rejected: int = 0
     dkv_hints_rejected_by_reason: dict[str, int] = field(default_factory=dict)
+    dkv_hints_unused: int = 0
+    dkv_hints_unused_by_reason: dict[str, int] = field(default_factory=dict)
     # Recency touches the dKV client dropped because a recent one covered
     # them. A per-window delta, 0 against an extension that predates it.
     dkv_touches_deduplicated: int = 0
@@ -356,6 +362,18 @@ class BatchMetrics:
     dkv_prepare_load_degraded: int = 0
     dkv_load_with_plan_degraded: int = 0
     dkv_load_with_plan_expired: int = 0
+    # Lookups a hinted peer served while the co-located dKV was down, which
+    # read against the fail-opens show how much of an outage peers covered.
+    dkv_peer_rounds_while_degraded: int = 0
+    # The dKV orphan queue: per-window outcome counts that publish as counters
+    # and a depth level that publishes as a gauge, on the same guard. See
+    # KVCacheMetrics for what each counts.
+    dkv_orphan_cleanups_reissued: int = 0
+    dkv_orphan_cleanups_abandoned: int = 0
+    dkv_orphan_cleanups_dropped: int = 0
+    dkv_orphan_cleanups_refused: int = 0
+    dkv_orphan_cleanups_expired: int = 0
+    dkv_orphan_queue_depth: int = 0
 
     # Per-call dKV client counters this batch, keyed by RPC or by connector
     # entry point. Published as labeled counters, so a dashboard derives the
@@ -467,6 +485,7 @@ class BatchMetrics:
         completed_batch_stats: CompletedBatchStats | None = None,
         num_output_tokens: int | None = None,
     ) -> BatchMetrics:
+        """Builds the measurements for a batch."""
         num_input_tokens = inputs.input_tokens
         batch_size = inputs.batch_size
         prompt_throughput = (
@@ -529,10 +548,19 @@ class BatchMetrics:
         dkv_peer_metadata_refresh_failures = 0
         dkv_hints_rejected = 0
         dkv_hints_rejected_by_reason: dict[str, int] = {}
+        dkv_hints_unused = 0
+        dkv_hints_unused_by_reason: dict[str, int] = {}
         dkv_touches_deduplicated = 0
         dkv_prepare_load_degraded = 0
         dkv_load_with_plan_degraded = 0
         dkv_load_with_plan_expired = 0
+        dkv_peer_rounds_while_degraded = 0
+        dkv_orphan_cleanups_reissued = 0
+        dkv_orphan_cleanups_abandoned = 0
+        dkv_orphan_cleanups_dropped = 0
+        dkv_orphan_cleanups_refused = 0
+        dkv_orphan_cleanups_expired = 0
+        dkv_orphan_queue_depth = 0
         dkv_rpc_calls: dict[str, int] = {}
         dkv_rpc_time_ms: dict[str, float] = {}
         dkv_rpc_socket_wait_ms: dict[str, float] = {}
@@ -667,12 +695,33 @@ class BatchMetrics:
             dkv_hints_rejected_by_reason = (
                 metrics_agg.dkv_hints_rejected_by_reason
             )
+            dkv_hints_unused = metrics_agg.dkv_hints_unused
+            dkv_hints_unused_by_reason = metrics_agg.dkv_hints_unused_by_reason
             dkv_touches_deduplicated = metrics_agg.dkv_touches_deduplicated
             dkv_prepare_load_degraded = metrics_agg.dkv_prepare_load_degraded
             dkv_load_with_plan_degraded = (
                 metrics_agg.dkv_load_with_plan_degraded
             )
             dkv_load_with_plan_expired = metrics_agg.dkv_load_with_plan_expired
+            dkv_peer_rounds_while_degraded = (
+                metrics_agg.dkv_peer_rounds_while_degraded
+            )
+            dkv_orphan_cleanups_reissued = (
+                metrics_agg.dkv_orphan_cleanups_reissued
+            )
+            dkv_orphan_cleanups_abandoned = (
+                metrics_agg.dkv_orphan_cleanups_abandoned
+            )
+            dkv_orphan_cleanups_dropped = (
+                metrics_agg.dkv_orphan_cleanups_dropped
+            )
+            dkv_orphan_cleanups_refused = (
+                metrics_agg.dkv_orphan_cleanups_refused
+            )
+            dkv_orphan_cleanups_expired = (
+                metrics_agg.dkv_orphan_cleanups_expired
+            )
+            dkv_orphan_queue_depth = metrics_agg.dkv_orphan_queue_depth
             dkv_rpc_calls = metrics_agg.dkv_rpc_calls
             dkv_rpc_time_ms = metrics_agg.dkv_rpc_time_ms
             dkv_rpc_socket_wait_ms = metrics_agg.dkv_rpc_socket_wait_ms
@@ -813,10 +862,19 @@ class BatchMetrics:
             dkv_peer_metadata_refresh_failures=dkv_peer_metadata_refresh_failures,
             dkv_hints_rejected=dkv_hints_rejected,
             dkv_hints_rejected_by_reason=dkv_hints_rejected_by_reason,
+            dkv_hints_unused=dkv_hints_unused,
+            dkv_hints_unused_by_reason=dkv_hints_unused_by_reason,
             dkv_touches_deduplicated=dkv_touches_deduplicated,
             dkv_prepare_load_degraded=dkv_prepare_load_degraded,
             dkv_load_with_plan_degraded=dkv_load_with_plan_degraded,
             dkv_load_with_plan_expired=dkv_load_with_plan_expired,
+            dkv_peer_rounds_while_degraded=dkv_peer_rounds_while_degraded,
+            dkv_orphan_cleanups_reissued=dkv_orphan_cleanups_reissued,
+            dkv_orphan_cleanups_abandoned=dkv_orphan_cleanups_abandoned,
+            dkv_orphan_cleanups_dropped=dkv_orphan_cleanups_dropped,
+            dkv_orphan_cleanups_refused=dkv_orphan_cleanups_refused,
+            dkv_orphan_cleanups_expired=dkv_orphan_cleanups_expired,
+            dkv_orphan_queue_depth=dkv_orphan_queue_depth,
             dkv_rpc_calls=dkv_rpc_calls,
             dkv_rpc_time_ms=dkv_rpc_time_ms,
             dkv_rpc_socket_wait_ms=dkv_rpc_socket_wait_ms,
@@ -862,6 +920,7 @@ class BatchMetrics:
         )
 
     def pretty_format(self) -> str:
+        """Renders the measurements as a log line."""
         context_tokens_str = ""
         if self.max_batch_total_tokens != 0:
             context_tokens_str = f"Context Tokens: {self.num_context_tokens}/{self.max_batch_total_tokens} toks | "
@@ -1289,6 +1348,7 @@ class BatchMetrics:
                 self.dkv_peer_metadata_refresh_failures
             )
             extra["dkv_hints_rejected"] = self.dkv_hints_rejected
+            extra["dkv_hints_unused"] = self.dkv_hints_unused
             extra["dkv_touches_deduplicated"] = self.dkv_touches_deduplicated
             extra["dkv_prepare_load_degraded"] = self.dkv_prepare_load_degraded
             extra["dkv_load_with_plan_degraded"] = (
@@ -1297,9 +1357,29 @@ class BatchMetrics:
             extra["dkv_load_with_plan_expired"] = (
                 self.dkv_load_with_plan_expired
             )
+            extra["dkv_peer_rounds_while_degraded"] = (
+                self.dkv_peer_rounds_while_degraded
+            )
+            extra["dkv_orphan_cleanups_reissued"] = (
+                self.dkv_orphan_cleanups_reissued
+            )
+            extra["dkv_orphan_cleanups_abandoned"] = (
+                self.dkv_orphan_cleanups_abandoned
+            )
+            extra["dkv_orphan_cleanups_dropped"] = (
+                self.dkv_orphan_cleanups_dropped
+            )
+            extra["dkv_orphan_cleanups_refused"] = (
+                self.dkv_orphan_cleanups_refused
+            )
+            extra["dkv_orphan_cleanups_expired"] = (
+                self.dkv_orphan_cleanups_expired
+            )
+            extra["dkv_orphan_queue_depth"] = self.dkv_orphan_queue_depth
             # One scalar key per label that moved, as publish_metrics sends.
             labeled: tuple[tuple[str, Mapping[str, float]], ...] = (
                 ("dkv_hints_rejected", self.dkv_hints_rejected_by_reason),
+                ("dkv_hints_unused", self.dkv_hints_unused_by_reason),
                 ("dkv_rpc_calls", self.dkv_rpc_calls),
                 ("dkv_rpc_time_ms", self.dkv_rpc_time_ms),
                 ("dkv_rpc_socket_wait_ms", self.dkv_rpc_socket_wait_ms),
@@ -1496,16 +1576,38 @@ class BatchMetrics:
                 self.dkv_peer_metadata_refresh_failures
             )
             METRICS.dkv_hints_rejected(self.dkv_hints_rejected)
+            METRICS.dkv_hints_unused(self.dkv_hints_unused)
             METRICS.dkv_touches_deduplicated(self.dkv_touches_deduplicated)
             METRICS.dkv_prepare_load_degraded(self.dkv_prepare_load_degraded)
             METRICS.dkv_load_with_plan_degraded(
                 self.dkv_load_with_plan_degraded
             )
             METRICS.dkv_load_with_plan_expired(self.dkv_load_with_plan_expired)
+            METRICS.dkv_peer_rounds_while_degraded(
+                self.dkv_peer_rounds_while_degraded
+            )
+            METRICS.dkv_orphan_cleanups_reissued(
+                self.dkv_orphan_cleanups_reissued
+            )
+            METRICS.dkv_orphan_cleanups_abandoned(
+                self.dkv_orphan_cleanups_abandoned
+            )
+            METRICS.dkv_orphan_cleanups_dropped(
+                self.dkv_orphan_cleanups_dropped
+            )
+            METRICS.dkv_orphan_cleanups_refused(
+                self.dkv_orphan_cleanups_refused
+            )
+            METRICS.dkv_orphan_cleanups_expired(
+                self.dkv_orphan_cleanups_expired
+            )
+            METRICS.dkv_orphan_queue_depth(self.dkv_orphan_queue_depth)
             # Labeled counters only move by their increment, so a zero would
             # cost a trip through the telemetry queue and change nothing.
             for reason, count in _moved(self.dkv_hints_rejected_by_reason):
                 METRICS.dkv_hints_rejected_by_reason(count, reason=reason)
+            for reason, count in _moved(self.dkv_hints_unused_by_reason):
+                METRICS.dkv_hints_unused_by_reason(count, reason=reason)
             for op, calls in _moved(self.dkv_rpc_calls):
                 METRICS.dkv_rpc_calls(calls, op=op)
             for op, ms in _moved(self.dkv_rpc_time_ms):
@@ -1553,13 +1655,12 @@ class BatchMetrics:
 def publish_completed_batch_metrics(
     stats: CompletedBatchStats, terminated_reqs: int
 ) -> None:
-    """Publishes execution-time, throughput and termination telemetry for a
-    completed batch.
+    """Publishes telemetry for a batch whose outputs were synchronized.
 
     Used with the overlap pipeline, where a batch's completion is observed one
-    scheduler iteration after it was enqueued: these metrics must be labeled
-    with the completed batch's type and computed from that same batch's token
-    counts, not the current iteration's.
+    scheduler iteration after it was enqueued: these metrics must be labeled with
+    the completed batch's type and computed from that same batch's token counts,
+    not the current iteration's.
 
     Args:
         stats: Stats for the batch whose outputs were synchronized this
@@ -1595,7 +1696,6 @@ class SchedulerLogger:
             leaf_dump_interval_s: How frequently to log every Jenga leaf's
                 occupancy, busy or idle, in seconds.
         """
-
         if log_interval_s is None:
             log_interval_s = float(
                 os.getenv("MAX_SERVE_SCHEDULER_STATS_LOG_INTERVAL_S", "3")
@@ -1674,6 +1774,8 @@ class SchedulerLogger:
             batch_creation_time_s: The time it took to create the batch.
             batch_execution_time_s: The time it took to execute the batch.
             num_pending_reqs: The number of pending requests.
+            num_terminated_reqs: Requests terminated in this iteration,
+                published with ``completed_batch_stats``.
             total_preemption_count: The total number of preemptions.
             batch_spec_decode_metrics: Per-batch speculative decoding metrics
                 for the most recent batch.

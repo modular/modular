@@ -68,7 +68,7 @@ modular_py_library(
         "//max/python/max/engine",
         "//max/python/max/experimental/torch",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
     ] + select({
         # flash-attn-4 b31 resolves only in the bench lock group; the bench
         # scripts import it optionally.
@@ -125,7 +125,7 @@ modular_py_library(
         "//max/python/max/engine",
         "//max/python/max/experimental/torch",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
     ],
 )
 
@@ -211,7 +211,7 @@ modular_py_binary(
         "//max/python/max/engine",
         "//max/python/max/experimental/torch",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
     ],
 )
 
@@ -245,7 +245,7 @@ modular_py_binary(
         "//max/python/max/engine",
         "//max/python/max/experimental/torch",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
     ],
 )
 
@@ -277,47 +277,7 @@ modular_py_binary(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
-    ],
-)
-
-modular_py_binary(
-    name = "bench_mla_prefill_sparse",
-    srcs = ["bench_blackwell_mla_prefill_sparse.py"],
-    main = "bench_blackwell_mla_prefill_sparse.py",
-    tags = [
-        "gpu",
-        "manual",
-    ],
-    target_compatible_with = ["//:b200_gpu"],
-    deps = [
-        "//max/kernels/benchmarks/misc/utils:bench_utils",
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/graph",
-        "//max/python/max/nn",
-        requirement("torch"),
-    ],
-)
-
-modular_py_binary(
-    name = "bench_mla_prefill_sparse_fp8",
-    srcs = ["bench_blackwell_mla_prefill_sparse_fp8.py"],
-    main = "bench_blackwell_mla_prefill_sparse_fp8.py",
-    tags = [
-        "gpu",
-        "manual",
-    ],
-    target_compatible_with = ["//:b200_gpu"],
-    deps = [
-        "//max/kernels/benchmarks/misc/utils:bench_utils",
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/engine",
-        "//max/python/max/graph",
-        "//max/python/max/nn",
-        requirement("torch"),
+        "//max/python/max/nn/legacy",
     ],
 )
 
@@ -361,7 +321,7 @@ modular_py_binary(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("numpy"),
         requirement("torch"),
     ],
@@ -401,7 +361,7 @@ modular_py_binary(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/modeling",
@@ -429,7 +389,7 @@ modular_py_binary(
         "//max/python/max/engine",
         "//max/python/max/experimental/torch",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("torch"),
     ],
 )
@@ -452,7 +412,7 @@ modular_py_binary(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("torch"),
     ],
 )
@@ -482,7 +442,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         requirement("torch"),
     ] + select({
         "//:use_vllm_setting": [

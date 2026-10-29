@@ -18,7 +18,7 @@ to the nearest probed length and the graph captured at that length is replayed.
 This relies on ``num_partitions`` being monotonic non-decreasing in cache
 length, so the bucketed (longer) probe always yields ``num_partitions >=`` the
 runtime value -- a captured graph with enough partitions. These tests verify
-that invariant against the real ``mo.mla.compute_dispatch_args.scalar`` op.
+that invariant through ``MHAKVCacheParams.resolve_attn_key``.
 """
 
 from collections.abc import Sequence
@@ -26,8 +26,8 @@ from collections.abc import Sequence
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import MLAKVCacheParams
-from max.nn.kv_cache.utils import MLAAttnKey
+from max.nn.legacy.kv_cache import MLAKVCacheParams
+from max.nn.legacy.kv_cache.utils import MLAAttnKey
 
 NUM_HEADS = 128
 BATCH_SIZES = [1, 2, 4, 8, 16, 31, 32, 33, 63, 64, 65, 96, 128]

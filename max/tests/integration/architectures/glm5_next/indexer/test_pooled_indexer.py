@@ -48,12 +48,12 @@ from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     mla_kpool_compress,
     mla_kpool_ring_close,
     mla_kpool_seed_tail,
 )
-from max.nn.quant_config import (
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,

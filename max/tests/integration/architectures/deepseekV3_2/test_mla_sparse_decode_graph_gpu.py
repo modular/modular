@@ -21,9 +21,12 @@ layout masks the ``-1`` padding inside the scan, including for a reused row.
 ``test_mla_graph_sparse_plain_topk_selection_lag`` checks the same for a
 reused plain top-k row, through the decode and the combined op.
 ``test_mla_decode_graph_sparse_bf16_gfx950_matches_dense`` checks the gfx950
-gather arm against dense attention, and
+BF16 sparse arm, which reads the selected rows in place, against dense
+attention, and
 ``test_mla_decode_graph_sparse_bf16_gfx950_topk_lengths_bound`` checks that it
 drops slots past ``topk_lengths``.
+``test_mla_decode_graph_sparse_bf16_gfx950_poisoned_scratch`` reruns both with
+every device allocation NaN-filled.
 ``test_mla_decode_graph_sparse_multi_step_smoke`` runs prefill and decode through
 :class:`SparseLatentAttentionWithRopeFp8` and :class:`PagedKVCacheManager`.
 The prefill-routing tests live in ``test_mla_sparse_prefill_graph_gpu.py``.
@@ -33,6 +36,10 @@ from __future__ import annotations
 
 import dataclasses
 import functools
+import os
+import re
+import subprocess
+import sys
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -48,19 +55,21 @@ from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.attention.mask_config import MHAMaskVariant
-from max.nn.attention.multi_latent_attention import LatentAttentionWithRope
-from max.nn.attention.multi_latent_attention_fp8 import (
+from max.nn.legacy.attention.mask_config import MHAMaskVariant
+from max.nn.legacy.attention.multi_latent_attention import (
+    LatentAttentionWithRope,
+)
+from max.nn.legacy.attention.multi_latent_attention_fp8 import (
     LatentAttentionWithRopeFp8,
 )
-from max.nn.kernels import mla_decode_graph, mla_prefill_decode_graph
-from max.nn.kv_cache import (
+from max.nn.legacy.kernels import mla_decode_graph, mla_prefill_decode_graph
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheQuantizationConfig,
     MLAKVCacheParams,
     MultiKVCacheParams,
 )
-from max.nn.quant_config import (
+from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -68,7 +77,7 @@ from max.nn.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.rotary_embedding import (
+from max.nn.legacy.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
@@ -1319,13 +1328,15 @@ def _scattered_rows(
 
 
 @pytest.mark.skipif(
-    not is_gfx950(), reason="Exercises the gfx950 sparse MLA gather arm."
+    not is_gfx950(), reason="Exercises the gfx950 BF16 sparse MLA arm."
 )
 @pytest.mark.parametrize(
     "cache_len, seq_len",
     [
         (200, 1),
-        # Past one 256-token gather chunk, so the second chunk's offsets apply.
+        # A few keys per row, so one extra masked-in slot is visible.
+        (2, 3),
+        # Several hundred query tokens in one launch, each with its own row.
         (8, 290),
     ],
 )
@@ -1366,7 +1377,7 @@ def test_mla_decode_graph_sparse_bf16_gfx950_matches_dense(
 
 
 @pytest.mark.skipif(
-    not is_gfx950(), reason="Exercises the gfx950 sparse MLA gather arm."
+    not is_gfx950(), reason="Exercises the gfx950 BF16 sparse MLA arm."
 )
 def test_mla_decode_graph_sparse_bf16_gfx950_topk_lengths_bound() -> None:
     """Slots past ``topk_lengths`` are dropped even when they hold keys.
@@ -1394,6 +1405,65 @@ def test_mla_decode_graph_sparse_bf16_gfx950_topk_lengths_bound() -> None:
         np.array([_GFX950_SPARSE_WIDTH], dtype=np.int32),
     )
     assert np.array_equal(got, want)
+
+
+_POISON_ENV = "MODULAR_DEBUG_DEVICE_ALLOCATOR"
+_POISONED_CHILD_TIMEOUT_S = 600
+# The child's cases: three `matches_dense` shapes and `topk_lengths_bound`.
+_POISONED_CHILD_CASES = 4
+
+
+@pytest.mark.compile_on_gpu(
+    "Compiles nothing itself; its child pytest replays the recorded cases"
+)
+@pytest.mark.skipif(
+    not is_gfx950(), reason="Exercises the gfx950 BF16 sparse MLA arm."
+)
+@pytest.mark.skipif(
+    os.environ.get(_POISON_ENV) == "poison-all",
+    reason="Already running under the poisoned allocator.",
+)
+def test_mla_decode_graph_sparse_bf16_gfx950_poisoned_scratch() -> None:
+    """The gfx950 checks pass when every allocation starts as NaN.
+
+    The sparse arm allocates its zero row inside the op, and fresh memory there
+    is usually zero or finite, so an arm that skips clearing it still passes.
+    ``poison-all`` fills each allocation with 0xFF, a BF16 NaN, so the masked
+    reads of an uncleared zero row turn the output NaN. The allocator reads
+    the setting when the device is created, hence the child process.
+    """
+    # Under bazel the child inherits the replay environment; loading the
+    # plugin too lets it reuse the recorded compiles instead of compiling
+    # every case again on the GPU.
+    replay = (
+        ["-p", "precompile_mefs_plugin"]
+        if os.environ.get("PRECOMPILE_MEFS_MODE") == "replay"
+        else []
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            __file__,
+            "-q",
+            "--tb=line",
+            "-p",
+            "no:cacheprovider",
+            *replay,
+            "-k",
+            "bf16_gfx950_matches_dense or bf16_gfx950_topk_lengths_bound",
+        ],
+        env=os.environ | {_POISON_ENV: "poison-all"},
+        capture_output=True,
+        text=True,
+        timeout=_POISONED_CHILD_TIMEOUT_S,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    # A child that skipped or deselected cases would exit 0 too.
+    assert re.search(rf"\b{_POISONED_CHILD_CASES} passed\b", result.stdout), (
+        result.stdout
+    )
 
 
 @pytest.mark.skipif(

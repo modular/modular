@@ -210,7 +210,9 @@ def test_mhc_post_zero_rows(ctx: DeviceContext) raises:
 
 def test_mhc_post_non_temporal_threshold(ctx: DeviceContext) raises:
     # Both arms compute the same values, so only this pins the switch point.
-    var num_cus = ctx.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
+    var num_cus = ctx.device().get_attribute(
+        DeviceAttribute.MULTIPROCESSOR_COUNT
+    )
     var first_nt_row: Int
     comptime if default_accelerator().is_amd_gpu():
         first_nt_row = num_cus

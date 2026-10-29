@@ -228,151 +228,154 @@ def moe_create_indices_kernel[
     var scale_carry = UInt32(0)
     var max_count = UInt32(0)
 
-    for base in range(0, num_experts, block_threads):
-        var chunk_experts = min(block_threads, num_experts - base)
-        var expert = base + tid
+    with PDL():
+        for base in range(0, num_experts, block_threads):
+            var chunk_experts = min(block_threads, num_experts - base)
+            var expert = base + tid
 
-        counts[tid] = 0
-        barrier()
-
-        # Counts commute, so increment order does not matter.
-        # Block scope and relaxed are load-bearing: the default is system
-        # scope and sequentially consistent, which fences every increment
-        # and costs about 5x. The barrier below is what publishes these
-        # counts to their readers. That holds on NVIDIA, where the barrier
-        # fences shared memory; on AMD it rests on the backend emitting
-        # s_waitcnt lgkmcnt(0) ahead of s_barrier.
-        for i in range(tid, total_tokens, block_threads):
-            var e = (
-                _slot_group[slot_layout](
-                    Int(topk_ids[i]), Int(expert_offset), Int(local_experts)
-                )
-                - base
-            )
-            if e < 0 or e >= chunk_experts:
-                continue
-            _ = Atomic[UInt32, scope=atomic_scope].fetch_add[
-                ordering=Ordering.RELAXED
-            ](counts.ptr.unsafe_offset(e), UInt32(1))
-        barrier()
-
-        var count_val = counts[tid]
-        var aligned_val = align_up(count_val, _scale_alignment)
-
-        # These collectives do not leave the block synchronized, so each needs
-        # a barrier before the next reuses its scratch.
-        var g_offset = token_carry + block.prefix_sum[
-            block_size=block_threads, exclusive=True
-        ](count_val)
-        barrier()
-
-        var aligned_g_offset = scale_carry + block.prefix_sum[
-            block_size=block_threads, exclusive=True
-        ](aligned_val)
-        barrier()
-
-        # broadcast=False leaves the reduced value in warp 0 lane 0 only,
-        # which is why expert_usage_stats[0] is written from tid 0 below. That
-        # output sizes downstream grouped-matmul work, so if the primitive ever
-        # changes which thread holds the result, that write has to follow.
-        max_count = max(
-            max_count,
-            block.max[block_size=block_threads, broadcast=False](count_val),
-        )
-
-        if expert < num_experts:
-            expert_ids[expert] = Int32(expert)
-            expert_start_indices[expert] = g_offset
-            if case .Some(scales_offset) = scales_offset_p:
-                scales_offset[expert] = (
-                    aligned_g_offset // _scale_alignment
-                    - g_offset // _scale_alignment
-                )
-
-        if expert == num_experts - 1:
-            # Last expert's exclusive prefix plus its own count is the grand
-            # total: the final `expert_start_indices` entry.
-            expert_start_indices[num_experts] = g_offset + count_val
-            comptime if slot_layout:
-                group_aligned[block_threads] = aligned_g_offset + aligned_val
-
-        # The last thread's exclusive prefix plus its own count is the chunk
-        # total. Only another chunk needs it, so a single chunk pays nothing.
-        # A block collective does not leave the block synchronized and its
-        # scratch is private to the primitive, so every pair of them gets a
-        # barrier between. That is what the three here are for.
-        if base + block_threads < num_experts:
-            barrier()
-            token_carry = block.broadcast[block_size=block_threads](
-                g_offset + count_val, src_thread=block_threads - 1
-            )
-            barrier()
-            scale_carry = block.broadcast[block_size=block_threads](
-                aligned_g_offset + aligned_val, src_thread=block_threads - 1
-            )
+            counts[tid] = 0
             barrier()
 
-        # Reuse `counts` as the scatter cursor: seed each slot with its own
-        # start offset, then atomically claim positions from it.
-        counts[tid] = g_offset
-        comptime if slot_layout:
-            group_start[tid] = g_offset
-            group_aligned[tid] = aligned_g_offset
-        barrier()
-
-        for i in range(tid, total_tokens, block_threads):
-            var e = (
-                _slot_group[slot_layout](
-                    Int(topk_ids[i]), Int(expert_offset), Int(local_experts)
-                )
-                - base
-            )
-            if e < 0 or e >= chunk_experts:
-                continue
-            var pos = Atomic[UInt32, scope=atomic_scope].fetch_add[
-                ordering=Ordering.RELAXED
-            ](counts.ptr.unsafe_offset(e), UInt32(1))
-            token_expert_order[pos] = UInt32(i)
-            restore_token_order[i] = pos.cast[restore_type]()
-            comptime if slot_layout:
-                slot_token_p.unsafe_value()[pos] = Int32(i // slot_stride)
-                slot_weight_p.unsafe_value()[
-                    pos
-                ] = slot_weights_in_p.unsafe_value()[i]
-        barrier()
-
-        comptime if slot_layout:
-            # Scale rows of group g: [group_aligned[g], + align_up(count)).
-            # Row r of them holds sorted slot group_start[g] + r while r is
-            # below the count; the rest of the tile is never multiplied into
-            # a stored row and holds slot 0. A warp per group keeps the
-            # stores coalesced; `counts` now holds each group's end.
-            comptime warps = block_threads // WARP_SIZE
-            var lane = lane_id()
-            for g in range(warp_id(), chunk_experts, warps):
-                var start = group_start[g]
-                var count = counts[g] - start
-                var first = Int(group_aligned[g])
-                var rows = Int(align_up(count, _scale_alignment))
-                for r in range(lane, rows, WARP_SIZE):
-                    scale_slot_p.unsafe_value()[first + r] = (
-                        Int32(start) + Int32(r) if UInt32(r) < count else 0
+            # Counts commute, so increment order does not matter.
+            # Block scope and relaxed are load-bearing: the default is system
+            # scope and sequentially consistent, which fences every increment
+            # and costs about 5x. The barrier below is what publishes these
+            # counts to their readers. That holds on NVIDIA, where the barrier
+            # fences shared memory; on AMD it rests on the backend emitting
+            # s_waitcnt lgkmcnt(0) ahead of s_barrier.
+            for i in range(tid, total_tokens, block_threads):
+                var e = (
+                    _slot_group[slot_layout](
+                        Int(topk_ids[i]), Int(expert_offset), Int(local_experts)
                     )
-            # The next chunk reseeds `counts` and the group arrays.
+                    - base
+                )
+                if e < 0 or e >= chunk_experts:
+                    continue
+                _ = Atomic[UInt32, scope=atomic_scope].fetch_add[
+                    ordering=Ordering.RELAXED
+                ](counts.ptr.unsafe_offset(e), UInt32(1))
             barrier()
 
-    comptime if slot_layout:
-        # Rows past the last group's tiles are in no group.
-        for r in range(
-            Int(group_aligned[block_threads]) + tid,
-            Int(scale_rows),
-            block_threads,
-        ):
-            scale_slot_p.unsafe_value()[r] = 0
+            var count_val = counts[tid]
+            var aligned_val = align_up(count_val, _scale_alignment)
 
-    if tid == 0:
-        expert_usage_stats[0] = max_count
-        expert_usage_stats[1] = UInt32(num_experts)
+            # These collectives do not leave the block synchronized, so each needs
+            # a barrier before the next reuses its scratch.
+            var g_offset = token_carry + block.prefix_sum[
+                block_size=block_threads, exclusive=True
+            ](count_val)
+            barrier()
+
+            var aligned_g_offset = scale_carry + block.prefix_sum[
+                block_size=block_threads, exclusive=True
+            ](aligned_val)
+            barrier()
+
+            # broadcast=False leaves the reduced value in warp 0 lane 0 only,
+            # which is why expert_usage_stats[0] is written from tid 0 below. That
+            # output sizes downstream grouped-matmul work, so if the primitive ever
+            # changes which thread holds the result, that write has to follow.
+            max_count = max(
+                max_count,
+                block.max[block_size=block_threads, broadcast=False](count_val),
+            )
+
+            if expert < num_experts:
+                expert_ids[expert] = Int32(expert)
+                expert_start_indices[expert] = g_offset
+                if case .Some(scales_offset) = scales_offset_p:
+                    scales_offset[expert] = (
+                        aligned_g_offset // _scale_alignment
+                        - g_offset // _scale_alignment
+                    )
+
+            if expert == num_experts - 1:
+                # Last expert's exclusive prefix plus its own count is the grand
+                # total: the final `expert_start_indices` entry.
+                expert_start_indices[num_experts] = g_offset + count_val
+                comptime if slot_layout:
+                    group_aligned[block_threads] = (
+                        aligned_g_offset + aligned_val
+                    )
+
+            # The last thread's exclusive prefix plus its own count is the chunk
+            # total. Only another chunk needs it, so a single chunk pays nothing.
+            # A block collective does not leave the block synchronized and its
+            # scratch is private to the primitive, so every pair of them gets a
+            # barrier between. That is what the three here are for.
+            if base + block_threads < num_experts:
+                barrier()
+                token_carry = block.broadcast[block_size=block_threads](
+                    g_offset + count_val, src_thread=block_threads - 1
+                )
+                barrier()
+                scale_carry = block.broadcast[block_size=block_threads](
+                    aligned_g_offset + aligned_val, src_thread=block_threads - 1
+                )
+                barrier()
+
+            # Reuse `counts` as the scatter cursor: seed each slot with its own
+            # start offset, then atomically claim positions from it.
+            counts[tid] = g_offset
+            comptime if slot_layout:
+                group_start[tid] = g_offset
+                group_aligned[tid] = aligned_g_offset
+            barrier()
+
+            for i in range(tid, total_tokens, block_threads):
+                var e = (
+                    _slot_group[slot_layout](
+                        Int(topk_ids[i]), Int(expert_offset), Int(local_experts)
+                    )
+                    - base
+                )
+                if e < 0 or e >= chunk_experts:
+                    continue
+                var pos = Atomic[UInt32, scope=atomic_scope].fetch_add[
+                    ordering=Ordering.RELAXED
+                ](counts.ptr.unsafe_offset(e), UInt32(1))
+                token_expert_order[pos] = UInt32(i)
+                restore_token_order[i] = pos.cast[restore_type]()
+                comptime if slot_layout:
+                    slot_token_p.unsafe_value()[pos] = Int32(i // slot_stride)
+                    slot_weight_p.unsafe_value()[
+                        pos
+                    ] = slot_weights_in_p.unsafe_value()[i]
+            barrier()
+
+            comptime if slot_layout:
+                # Scale rows of group g: [group_aligned[g], + align_up(count)).
+                # Row r of them holds sorted slot group_start[g] + r while r is
+                # below the count; the rest of the tile is never multiplied into
+                # a stored row and holds slot 0. A warp per group keeps the
+                # stores coalesced; `counts` now holds each group's end.
+                comptime warps = block_threads // WARP_SIZE
+                var lane = lane_id()
+                for g in range(warp_id(), chunk_experts, warps):
+                    var start = group_start[g]
+                    var count = counts[g] - start
+                    var first = Int(group_aligned[g])
+                    var rows = Int(align_up(count, _scale_alignment))
+                    for r in range(lane, rows, WARP_SIZE):
+                        scale_slot_p.unsafe_value()[first + r] = (
+                            Int32(start) + Int32(r) if UInt32(r) < count else 0
+                        )
+                # The next chunk reseeds `counts` and the group arrays.
+                barrier()
+
+        comptime if slot_layout:
+            # Rows past the last group's tiles are in no group.
+            for r in range(
+                Int(group_aligned[block_threads]) + tid,
+                Int(scale_rows),
+                block_threads,
+            ):
+                scale_slot_p.unsafe_value()[r] = 0
+
+        if tid == 0:
+            expert_usage_stats[0] = max_count
+            expert_usage_stats[1] = UInt32(num_experts)
 
 
 @inline(.always)
@@ -425,7 +428,7 @@ def moe_create_indices[
     )
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.moe.create_indices", task_id=Int(context.id())
+        "mo.moe.create_indices", task_id=Int(context.device().id)
     ):
         comptime kernel = moe_create_indices_kernel[
             input_type,
@@ -462,6 +465,7 @@ def moe_create_indices[
             Int32(0),
             grid_dim=1,
             block_dim=block_threads,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
 
@@ -547,7 +551,7 @@ def moe_create_indices_with_slots[
     )
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.moe.create_indices.with_slots", task_id=Int(context.id())
+        "mo.moe.create_indices.with_slots", task_id=Int(context.device().id)
     ):
         comptime kernel = moe_create_indices_kernel[
             input_type,
@@ -586,6 +590,7 @@ def moe_create_indices_with_slots[
             Int32(scale_rows),
             grid_dim=1,
             block_dim=block_threads,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
 
@@ -1096,7 +1101,7 @@ def router_group_limited[
     var gpu_ctx = context
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.moe.router_group_limited", task_id=Int(gpu_ctx.id())
+        "mo.moe.router_group_limited", task_id=Int(gpu_ctx.device().id)
     ):
         comptime num_threads = n_routed_experts
         comptime hw_info = gpu_ctx.default_device_info
@@ -1976,7 +1981,7 @@ def single_group_router[
     var gpu_ctx = context
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.moe.router_single_group", task_id=Int(gpu_ctx.id())
+        "mo.moe.router_single_group", task_id=Int(gpu_ctx.device().id)
     ):
         # Several tokens a block keep large batches in one wave.
         comptime tokens_per_block = 4
@@ -2250,7 +2255,8 @@ def sigmoid_gemv_single_group_router[
     )
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.moe.sigmoid_gemv_router_single_group", task_id=Int(context.id())
+        "mo.moe.sigmoid_gemv_router_single_group",
+        task_id=Int(context.device().id),
     ):
         comptime gemv = router_gemv_partials_kernel[
             hidden_type,
@@ -2540,7 +2546,7 @@ def sink_gate_router[
     var gpu_ctx = context
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.moe.router_sink_gate", task_id=Int(gpu_ctx.id())
+        "mo.moe.router_sink_gate", task_id=Int(gpu_ctx.device().id)
     ):
         comptime num_threads = n_routed_experts
 
@@ -2751,7 +2757,7 @@ def single_group_router_eplb[
     var gpu_ctx = context
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.moe.single.group.router.eplb", task_id=Int(gpu_ctx.id())
+        "mo.moe.single.group.router.eplb", task_id=Int(gpu_ctx.device().id)
     ):
         comptime num_threads = n_routed_experts
 
@@ -3014,7 +3020,7 @@ def eplb_remap[
     var gpu_ctx = context
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.moe.eplb.remap", task_id=Int(gpu_ctx.id())
+        "mo.moe.eplb.remap", task_id=Int(gpu_ctx.device().id)
     ):
         # Target ~128 threads/block. Divides cleanly into NVIDIA warp=32,
         # AMD wave=64, and Apple SIMD=32 so no lanes idle from divisibility.

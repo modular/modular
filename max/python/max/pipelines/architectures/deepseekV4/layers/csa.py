@@ -10,9 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Compresses one attention stream over the batch's closed windows.
 
-"""One compressed stream: its state leaf, its zone leaf, and the windows that
-close in the current batch.
+One compressed stream: its state leaf, its zone leaf, and the windows that close
+in the current batch.
 
 Both the attention's compressor and the indexer's run this, each against its
 own pair of leaves. Given a ragged batch (:class:`~.ragged.RaggedRows`) and

@@ -32,19 +32,19 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     MultiKVCacheParams,
     PagedCacheValues,
 )
-from max.nn.layer import LayerList, Module
-from max.nn.linear import MLP, ColumnParallelLinear
-from max.nn.rotary_embedding import (
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import MLP, ColumnParallelLinear
+from max.nn.legacy.rotary_embedding import (
     Llama3RopeScalingParams,
     Llama3RotaryEmbedding,
 )
-from max.nn.transformer import DecoderOutputs
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.transformer import DecoderOutputs
+from max.nn.legacy.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
 )
 from max.pipelines.lib.interfaces.batch_processor import (
@@ -207,6 +207,7 @@ class Gemma3TextModel(DistributedLogitsPostprocessMixin, Module):
         input_row_offsets: Sequence[TensorValue],
         **kwargs,
     ) -> DecoderOutputs:
+        """Run the decoder layers and return their logits."""
         h = self.embed_tokens(tokens, signal_buffers)
 
         kv_collections_by_type = {
@@ -328,6 +329,7 @@ class Gemma3(Module):
         return_n_logits: TensorValue,
         input_row_offsets: Sequence[TensorValue],
     ) -> DecoderOutputs:
+        """Run the language model on the tokens and return its logits."""
         return self.language_model(
             tokens,
             signal_buffers,

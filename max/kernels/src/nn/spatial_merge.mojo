@@ -14,6 +14,11 @@
 
 from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from layout import (
     Coord,
     TensorLayout,
@@ -95,100 +100,103 @@ def spatial_merge_kernel[
     # Simultaneously find which batch item this patch belongs to.
     var b = 0
     var found = False
-    for i in range(_batch_size):
-        var t = grid_thw[i, 0]
-        var h = grid_thw[i, 1]
-        var w = grid_thw[i, 2]
-        var h_out = h // Int64(_merge_size)
-        var w_out = w // Int64(_merge_size)
-        var num_output_patches = t * h_out * w_out
 
-        # Check if patch_idx falls in this batch item.
-        if patch_idx < Int(offset_out + num_output_patches):
-            b = i
-            found = True
-            break
+    with PDL():
+        for i in range(_batch_size):
+            var t = grid_thw[i, 0]
+            var h = grid_thw[i, 1]
+            var w = grid_thw[i, 2]
+            var h_out = h // Int64(_merge_size)
+            var w_out = w // Int64(_merge_size)
+            var num_output_patches = t * h_out * w_out
 
-        # Accumulate offsets.
-        offset_in += rebind[Int64](h * w)
-        offset_out += rebind[Int64](num_output_patches)
+            # Check if patch_idx falls in this batch item.
+            if patch_idx < Int(offset_out + num_output_patches):
+                b = i
+                found = True
+                break
 
-    # Skip blocks whose patch index is past the last output patch.
-    if not found:
-        return
+            # Accumulate offsets.
+            offset_in += rebind[Int64](h * w)
+            offset_out += rebind[Int64](num_output_patches)
 
-    # Local patch index (i.e., within this batch item).
-    var patch_local_idx = patch_idx - Int(offset_out)
+        # Skip blocks whose patch index is past the last output patch.
+        if not found:
+            return
 
-    # Get dimensions for this batch item from grid_thw.
-    var T = grid_thw[b, 0]
-    var H = grid_thw[b, 1]
-    var W = grid_thw[b, 2]
-    var H_out = H // Int64(_merge_size)
-    var W_out = W // Int64(_merge_size)
-    var C_out = _hidden_size * _merge_size * _merge_size
+        # Local patch index (i.e., within this batch item).
+        var patch_local_idx = patch_idx - Int(offset_out)
 
-    # Create a layout for the patch space [T, H_out, W_out]
-    # to convert linear patch_local_idx to (t, ho, wo) coordinates.
-    var patch_space_rt_layout = row_major(T, H_out, W_out)
+        # Get dimensions for this batch item from grid_thw.
+        var T = grid_thw[b, 0]
+        var H = grid_thw[b, 1]
+        var W = grid_thw[b, 2]
+        var H_out = H // Int64(_merge_size)
+        var W_out = W // Int64(_merge_size)
+        var C_out = _hidden_size * _merge_size * _merge_size
 
-    # Convert linear patch index to 3D coordinates (t, ho, wo).
-    var patch_coords = patch_space_rt_layout.idx2crd(Int(patch_local_idx))
-    var t, ho, wo = (
-        patch_coords[0].value(),
-        patch_coords[1].value(),
-        patch_coords[2].value(),
-    )
+        # Create a layout for the patch space [T, H_out, W_out]
+        # to convert linear patch_local_idx to (t, ho, wo) coordinates.
+        var patch_space_rt_layout = row_major(T, H_out, W_out)
 
-    # Create a tiled layout for input representing
-    # [H_out, _merge_size, W_out, _merge_size, _hidden_size].
-    # This allows us to index the input as a 5D tiled tensor.
-    # Physical memory: [H, W, _hidden_size] row-major.
-    # Logical view: [H_out, _merge_size, W_out, _merge_size, _hidden_size].
-    var input_tiled_layout = Layout(
-        (Int(H_out), _merge_size, Int(W_out), _merge_size, _hidden_size),
-        (
-            _merge_size
-            * Int(W)
-            * _hidden_size,  # stride for H_out: skip _merge_size full rows.
-            Int(W) * _hidden_size,  # stride for dh: move one row within block.
-            _merge_size
-            * _hidden_size,  # stride for W_out: skip _merge_size columns.
-            _hidden_size,  # stride for dw: move one column within block.
-            1,  # stride for c: move one channel.
-        ),
-    )
-
-    var input_tensor = TileTensor(
-        input.ptr.unsafe_offset(Int(offset_in * Int64(_hidden_size))),
-        input_tiled_layout,
-    )
-
-    # Create TileTensor for output: [T, H_out, W_out, C_out].
-    # Note: in reality we want 2D flattened to [T * H_out * W_out, C_out], but
-    # we use 4D for semantic clarity - internally in memory it is handled correctly.
-    var output_runtime_layout = row_major((T, H_out, W_out, C_out))
-    var output_tensor = TileTensor(
-        output.ptr.unsafe_offset(Int(offset_out * Int64(C_out))),
-        output_runtime_layout,
-    )
-
-    # Create layout for the merged channel dimension structure.
-    # C_out represents [_merge_size, _merge_size, _hidden_size] flattened row-major.
-    var channel_layout = row_major((_merge_size, _merge_size, _hidden_size))
-
-    # Copy patch - threads loop over output channels.
-    # Each c_out in [0, C_out) corresponds to [_merge_size, _merge_size, _hidden_size]
-    # flattened in the permute(0, 1, 3, 2, 4, 5) order.
-    for c_out in range(thread_idx.x, C_out, block_dim.x):
-        # Decompose c_out into (dh, dw, c) using the channel layout.
-        var channel_coords = channel_layout.idx2crd(c_out)
-        var dh, dw, c = (
-            channel_coords[0].value(),
-            channel_coords[1].value(),
-            channel_coords[2].value(),
+        # Convert linear patch index to 3D coordinates (t, ho, wo).
+        var patch_coords = patch_space_rt_layout.idx2crd(Int(patch_local_idx))
+        var t, ho, wo = (
+            patch_coords[0].value(),
+            patch_coords[1].value(),
+            patch_coords[2].value(),
         )
-        output_tensor[t, ho, wo, c_out] = input_tensor[ho, dh, wo, dw, c]
+
+        # Create a tiled layout for input representing
+        # [H_out, _merge_size, W_out, _merge_size, _hidden_size].
+        # This allows us to index the input as a 5D tiled tensor.
+        # Physical memory: [H, W, _hidden_size] row-major.
+        # Logical view: [H_out, _merge_size, W_out, _merge_size, _hidden_size].
+        var input_tiled_layout = Layout(
+            (Int(H_out), _merge_size, Int(W_out), _merge_size, _hidden_size),
+            (
+                _merge_size
+                * Int(W)
+                * _hidden_size,  # stride for H_out: skip _merge_size full rows.
+                Int(W)
+                * _hidden_size,  # stride for dh: move one row within block.
+                _merge_size
+                * _hidden_size,  # stride for W_out: skip _merge_size columns.
+                _hidden_size,  # stride for dw: move one column within block.
+                1,  # stride for c: move one channel.
+            ),
+        )
+
+        var input_tensor = TileTensor(
+            input.ptr.unsafe_offset(Int(offset_in * Int64(_hidden_size))),
+            input_tiled_layout,
+        )
+
+        # Create TileTensor for output: [T, H_out, W_out, C_out].
+        # Note: in reality we want 2D flattened to [T * H_out * W_out, C_out], but
+        # we use 4D for semantic clarity - internally in memory it is handled correctly.
+        var output_runtime_layout = row_major((T, H_out, W_out, C_out))
+        var output_tensor = TileTensor(
+            output.ptr.unsafe_offset(Int(offset_out * Int64(C_out))),
+            output_runtime_layout,
+        )
+
+        # Create layout for the merged channel dimension structure.
+        # C_out represents [_merge_size, _merge_size, _hidden_size] flattened row-major.
+        var channel_layout = row_major((_merge_size, _merge_size, _hidden_size))
+
+        # Copy patch - threads loop over output channels.
+        # Each c_out in [0, C_out) corresponds to [_merge_size, _merge_size, _hidden_size]
+        # flattened in the permute(0, 1, 3, 2, 4, 5) order.
+        for c_out in range(thread_idx.x, C_out, block_dim.x):
+            # Decompose c_out into (dh, dw, c) using the channel layout.
+            var channel_coords = channel_layout.idx2crd(c_out)
+            var dh, dw, c = (
+                channel_coords[0].value(),
+                channel_coords[1].value(),
+                channel_coords[2].value(),
+            )
+            output_tensor[t, ho, wo, c_out] = input_tensor[ho, dh, wo, dw, c]
 
 
 def spatial_merge[
@@ -246,4 +254,5 @@ def spatial_merge[
         Int32(merge_size),
         grid_dim=(num_blocks, 1, 1),
         block_dim=(threads_per_block, 1, 1),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )

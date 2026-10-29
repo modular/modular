@@ -29,7 +29,7 @@ from max.driver import accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.state_space import (
+from max.nn.legacy.state_space import (
     causal_conv1d_varlen_fwd,
     mamba2_replay_fold,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace,

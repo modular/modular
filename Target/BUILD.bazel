@@ -224,6 +224,7 @@ modular_cc_test(
     size = "small",
     srcs = [
         "lib/Metal/Common.h",
+        "lib/Metal/MetalCpp.h",
         "test/Fixture.h",
         "test/MetalPluginTest.cpp",
     ],
@@ -236,6 +237,10 @@ modular_cc_test(
     visibility = ["//visibility:private"],
     deps = [
         ":DriverPluginTests",
+        ":Support",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+        "@metal-cpp//:metal-cpp",
         "@tl_expected",
     ],
 )
@@ -276,9 +281,37 @@ modular_cc_test(
     visibility = ["//visibility:private"],
     deps = [
         ":DriverPluginTests",
+        ":Support",
         "@dlpack",
+        "@llvm-project//llvm:Support",
         "@tl_expected",
     ],
+)
+
+modular_cc_binary(
+    name = "LegacyStubPlugin.so",
+    testonly = True,
+    srcs = ["test/LegacyStubPlugin.cpp"],
+    linkshared = True,
+    linkstatic = False,
+    visibility = ["//visibility:private"],
+    deps = ["//SDK:HAL"],
+)
+
+modular_cc_test(
+    name = "DriverPluginLoadTest",
+    size = "small",
+    srcs = ["test/DriverPluginLoadTest.cpp"],
+    data = [
+        ":CPUPlugin.so",
+        ":LegacyStubPlugin.so",
+    ],
+    env = {
+        "CPU_PLUGIN": "$(rootpath :CPUPlugin.so)",
+        "LEGACY_STUB_PLUGIN": "$(rootpath :LegacyStubPlugin.so)",
+    },
+    visibility = ["//visibility:private"],
+    deps = [":DriverPlugin"],
 )
 
 modular_cc_library(
@@ -288,6 +321,17 @@ modular_cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "//SDK:HAL",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
+    name = "HostMemoryTest",
+    size = "small",
+    srcs = ["test/HostMemoryTest.cpp"],
+    copts = ["-Wno-nonportable-include-path"],
+    deps = [
+        ":Support",
         "@llvm-project//llvm:Support",
     ],
 )

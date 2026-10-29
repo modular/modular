@@ -21,7 +21,7 @@ from __future__ import annotations
 import torch
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.nn.moe import GatedActivation, MoE
+from max.nn.legacy.moe import GatedActivation, MoE
 
 _HIDDEN_DIM = 64
 _MOE_DIM = 32

@@ -14,27 +14,28 @@
 
 from __future__ import annotations
 
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.nn.norm.rms_norm import rms_norm
-from max.experimental.tensor import Tensor
-from max.nn.state_space import short_conv_ring
+from max import functional as F
+from max.nn import Module
+from max.nn.legacy.state_space import short_conv_ring
+from max.nn.norm import RMSNorm
+from max.nn.norm.rms_norm import rms_norm
+from max.tensor import Tensor
 
 _short_conv_ring = F.functional(short_conv_ring)
 
 
 class InklingRMSNorm(RMSNorm):
-    """RMSNorm that scales before casting back, as max.nn.RMSNorm does."""
+    """RMSNorm that scales before casting back, as max.nn.legacy.RMSNorm does."""
 
     def forward(self, x: Tensor) -> Tensor:
+        """Applies RMSNorm, scaling by the weight before the cast back."""
         return rms_norm(x, self.weight, self.eps, multiply_before_cast=True)
 
 
 class ShortConvolution(Module[..., Tensor]):
-    """Depthwise causal conv1d with a residual; history lives in a
-    caller-owned ring of past inputs indexed by position.
+    """Depthwise causal conv1d with a residual.
 
+    History lives in a caller-owned ring of past inputs indexed by position.
     Each device convolves its own shard of the input with its own shard of
     the weight, so a replicated weight over per-device partial sums gives
     partial sums of the convolution.
@@ -43,6 +44,11 @@ class ShortConvolution(Module[..., Tensor]):
     def __init__(
         self, *, channels: int, kernel_size: int, commit_conv_state: bool = True
     ) -> None:
+        """Stores the conv shape and allocates a zero tap weight.
+
+        ``commit_conv_state`` selects whether ``forward`` writes the new
+        inputs into the caller's ring.
+        """
         self.channels = channels
         self.kernel_size = kernel_size
         self.commit_conv_state = commit_conv_state

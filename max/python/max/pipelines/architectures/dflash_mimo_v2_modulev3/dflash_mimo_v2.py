@@ -10,8 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The MiMo-V2 DFlash drafter on ModuleV3: a non-causal block over windowed
-target context.
+"""The MiMo-V2 DFlash drafter on ModuleV3.
+
+A non-causal block over windowed target context.
 
 The block is ``[anchor, mask x (block_size - 1)]``. Each block query attends
 to the context keys its window reaches and to every block key, with a learned
@@ -30,31 +31,31 @@ import numpy as np
 import numpy.typing as npt
 from max.driver import Buffer
 from max.dtype import DType
-from max.experimental.nn import (
+from max.graph import DeviceRef, TensorValue, ops
+from max.graph.weights import WeightData
+from max.nn import (
     Linear,
     Module,
     ModuleList,
     RMSNorm,
 )
-from max.experimental.nn.common_layers.linear import (
+from max.nn.common_layers.linear import (
     ColumnParallelLinear,
     RowParallelLinear,
 )
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.nn.common_layers.mlp import MLP
-from max.experimental.realization_context import ensure_context
-from max.experimental.sharding import NamedMapping
-from max.experimental.tensor import Tensor
-from max.graph import DeviceRef, TensorValue, ops
-from max.graph.weights import WeightData
-from max.nn.attention import MHAMaskVariant
-from max.nn.kernels import (
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.mlp import MLP
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.tensor import Tensor
+from max.tensor.realization_context import ensure_context
+from max.tensor.sharding import NamedMapping
 
 from ..dflash_mimo_v2 import DFlashMiMoV2Config
 from .context_writer import DFlashContextWriter, _heads_per_shard
@@ -67,8 +68,10 @@ __all__ = [
 
 
 class DFlashMiMoV2Attention(Module[..., Tensor]):
-    """A drafter layer's attention: its K/V projection, shared by context and
-    block rows, plus the block's queries.
+    """A drafter layer's attention.
+
+    It holds a K/V projection shared by context and block rows, plus the block's
+    queries.
 
     The K/V a block query attends to must be computed the same way whether it
     came from a target tap or from the block itself, so both paths go through

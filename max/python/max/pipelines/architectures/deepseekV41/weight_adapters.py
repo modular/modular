@@ -32,7 +32,7 @@ import sys
 import warnings
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Protocol, SupportsInt
+from typing import Any, Protocol, SupportsInt
 
 import numpy as np
 from max.driver import Buffer, DLPackArray
@@ -49,6 +49,7 @@ from transformers.configuration_utils import PretrainedConfig
 from .model_config import (
     NVFP4_SF_ATOM_COLS,
     NVFP4_SF_ATOM_ROWS,
+    RoutedExpertFormat,
     compressor_bf16_enabled,
     gate_up_rows_interleaved,
     head_bf16_enabled,
@@ -61,8 +62,8 @@ from .model_config import (
 _SCALE_SUFFIX = ".scale"
 _MAX_SCALE_SUFFIX = ".weight_scale"
 
-# ``<prefix>.ffn.experts.<e>.<w1|w2|w3>.<kind>``: trunk NVFP4 and DSpark
-# MXFP4 expert tensors.
+# ``<prefix>.ffn.experts.<e>.<w1|w2|w3>.<kind>``: trunk (NVFP4 or MXFP4) and
+# DSpark (MXFP4) expert tensors.
 _EXPERT_TENSOR = re.compile(
     r"^(?P<prefix>.*\.ffn\.experts)\.(?P<expert>\d+)\.(?P<proj>w[123])\."
     r"(?P<kind>weight_scale_2|weight_scale|input_scale|weight|scale)$"
@@ -572,19 +573,17 @@ _DSPARK_STAGE_TENSOR = re.compile(r"^mtp\.(?P<stage>\d+)\.(?P<rest>.+)$")
 # these prefixes under stage 0, and under the last stage.
 _DSPARK_FIRST_STAGE_OWNED = ("main_proj.", "main_norm.")
 _DSPARK_LAST_STAGE_OWNED = ("norm.", "markov_head.")
-DSPARK_MODULE_PREFIX = "dspark"
-"""Attribute that holds the drafter, and so the prefix of its weight names."""
 
 
 def rewire_dspark_state_dict(
     state_dict: dict[str, WeightData], last_stage: int
 ) -> dict[str, WeightData]:
-    """Maps ``mtp.{i}.*`` tensors onto the ``dspark`` drafter tree.
+    """Maps ``mtp.{i}.*`` tensors onto the drafter's tree.
 
     Stages get the trunk's attention, gate and shared-expert rewiring; then
     ``mtp.0.main_{proj,norm}`` and ``mtp.{last_stage}.{norm,markov_head}``
-    move to ``dspark.*``, and every other ``mtp.{i}.X`` to
-    ``dspark.stages.{i}.X``.
+    become the drafter's own, and every other ``mtp.{i}.X`` becomes
+    ``stages.{i}.X``.
 
     Args:
         state_dict: Only ``mtp.*`` tensors (already through
@@ -615,19 +614,31 @@ def rewire_dspark_state_dict(
         if (stage == 0 and rest.startswith(_DSPARK_FIRST_STAGE_OWNED)) or (
             stage == last_stage and rest.startswith(_DSPARK_LAST_STAGE_OWNED)
         ):
-            final[f"{DSPARK_MODULE_PREFIX}.{rest}"] = data
+            final[rest] = data
         else:
-            final[f"{DSPARK_MODULE_PREFIX}.stages.{stage}.{rest}"] = data
+            final[f"stages.{stage}.{rest}"] = data
     return final
 
 
 def stack_experts(
-    experts: Mapping[int, Mapping[str, np.ndarray]], prefix: str
+    experts: Mapping[int, Mapping[str, np.ndarray]],
+    prefix: str,
+    *,
+    defer: bool = False,
+    sf_interleave: bool = False,
+    interleave_gate_up: bool = False,
 ) -> dict[str, WeightData]:
     """Per-expert packed fp4 tensors -> the two stacked routed-expert weights.
 
-    DSpark's MXFP4 W4A8 format: ``experts[e]`` holds ``w1``, ``w2``, ``w3``
+    The MXFP4 W4A8 format: ``experts[e]`` holds ``w1``, ``w2``, ``w3``
     (uint8 ``[N, K/2]``) and ``w{1,2,3}.scale`` (uint8 e8m0 ``[N, K/32]``).
+    ``gate_up_proj`` stacks ``w1`` rows then ``w3`` rows, or with
+    ``interleave_gate_up`` alternates them (and their scale rows) for the
+    fused SwiGLU kernels. With ``defer``, each tensor is returned as a
+    :class:`DeferredExpertStack`. With ``sf_interleave``, each expert's
+    scales whose shape tiles the scale-factor tile are stored in the grouped
+    matmul's interleaved layout
+    (:func:`~.model_config.nvfp4_sf_preinterleaved`).
 
     Raises:
         ValueError: If expert ids are not dense ``0..E-1``.
@@ -635,38 +646,41 @@ def stack_experts(
     ids = sorted(experts)
     if ids != list(range(len(ids))):
         raise ValueError(f"{prefix}: expert ids are not dense: {ids}")
-    gate_up = np.stack(
-        [
-            np.concatenate([experts[e]["w1"], experts[e]["w3"]], axis=0)
-            for e in ids
-        ]
-    )
-    gate_up_scale = np.stack(
-        [
-            np.concatenate(
-                [experts[e]["w1.scale"], experts[e]["w3.scale"]], axis=0
-            )
-            for e in ids
-        ]
-    )
-    down = np.stack([experts[e]["w2"] for e in ids])
-    down_scale = np.stack([experts[e]["w2.scale"] for e in ids])
+
+    def stacked(keys: tuple[str, ...], dtype: DType, name: str) -> WeightData:
+        parts = [tuple(experts[e][key] for key in keys) for e in ids]
+        rows = sum(int(part.shape[0]) for part in parts[0])
+        deferred = DeferredExpertStack(
+            parts,
+            dtype,
+            name,
+            # The expert module decides its scale layout with the same
+            # predicate, so the stored and expected layouts agree.
+            sf_interleave=sf_interleave
+            and dtype == DType.float8_e8m0fnu
+            and nvfp4_sf_preinterleaved(rows, int(parts[0][0].shape[1])),
+            interleave_rows=interleave_gate_up and len(keys) == 2,
+        )
+        if defer:
+            return deferred
+        return with_dtype(deferred.materialize(), dtype, name)
+
+    gate_up_name = f"{prefix}.{GATE_UP_PROJ}"
+    down_name = f"{prefix}.{DOWN_PROJ}"
     return {
-        f"{prefix}.{GATE_UP_PROJ}.weight": with_dtype(
-            gate_up, DType.uint8, f"{prefix}.{GATE_UP_PROJ}.weight"
+        f"{gate_up_name}.weight": stacked(
+            ("w1", "w3"), DType.uint8, f"{gate_up_name}.weight"
         ),
-        f"{prefix}.{GATE_UP_PROJ}.weight_scale": with_dtype(
-            gate_up_scale,
+        f"{gate_up_name}.weight_scale": stacked(
+            ("w1.scale", "w3.scale"),
             DType.float8_e8m0fnu,
-            f"{prefix}.{GATE_UP_PROJ}.weight_scale",
+            f"{gate_up_name}.weight_scale",
         ),
-        f"{prefix}.{DOWN_PROJ}.weight": with_dtype(
-            down, DType.uint8, f"{prefix}.{DOWN_PROJ}.weight"
+        f"{down_name}.weight": stacked(
+            ("w2",), DType.uint8, f"{down_name}.weight"
         ),
-        f"{prefix}.{DOWN_PROJ}.weight_scale": with_dtype(
-            down_scale,
-            DType.float8_e8m0fnu,
-            f"{prefix}.{DOWN_PROJ}.weight_scale",
+        f"{down_name}.weight_scale": stacked(
+            ("w2.scale",), DType.float8_e8m0fnu, f"{down_name}.weight_scale"
         ),
     }
 
@@ -922,11 +936,17 @@ def stack_nvfp4_experts(
     }
 
 
-# Keys per complete expert, to detect when a layer can be stacked.
-# w{1,2,3} x {weight, scale}
-_W4A8_KEYS_PER_EXPERT = 6
-# w{1,2,3} x {weight, weight_scale, weight_scale_2, input_scale}
-_NVFP4_KEYS_PER_EXPERT = 12
+# Keys per complete expert, to detect when a layer can be stacked:
+# w{1,2,3} x {weight, scale} for MXFP4 and
+# w{1,2,3} x {weight, weight_scale, weight_scale_2, input_scale} for NVFP4.
+_KEYS_PER_EXPERT = {RoutedExpertFormat.MXFP4: 6, RoutedExpertFormat.NVFP4: 12}
+# The checkpoint dtype of each format's packed E2M1 weights.
+_PACKED_WEIGHT_DTYPE = {
+    RoutedExpertFormat.MXFP4: DType.int8,
+    RoutedExpertFormat.NVFP4: DType.uint8,
+}
+# Per-expert float32 scalars; every other expert tensor is kept as raw bytes.
+_SCALAR_EXPERT_KINDS = ("weight_scale_2", "input_scale")
 
 _StackFn = Callable[
     [Mapping[int, Mapping[str, np.ndarray]], str], dict[str, WeightData]
@@ -967,6 +987,7 @@ def convert_weight_data(
     *,
     num_routed_experts: int = 384,
     num_dspark_experts: int = 128,
+    routed_expert_format: RoutedExpertFormat = RoutedExpertFormat.NVFP4,
     defer_routed_experts: bool = False,
     woa_mxfp8: bool | None = None,
     head_bf16: bool | None = None,
@@ -981,7 +1002,9 @@ def convert_weight_data(
         num_routed_experts: Trunk experts per layer; a layer is stacked
             once all are seen.
         num_dspark_experts: DSpark experts per stage; likewise.
-        defer_routed_experts: Return the trunk's NVFP4 expert
+        routed_expert_format: How the trunk's routed experts are stored;
+            DSpark's are always MXFP4.
+        defer_routed_experts: Return the trunk's expert
             ``weight``/``weight_scale`` as :class:`DeferredExpertStack`.
         woa_mxfp8: Overrides :func:`~.model_config.woa_mxfp8_enabled`
             (whether the trunk's ``wo_a`` stays MXFP8).
@@ -993,6 +1016,9 @@ def convert_weight_data(
 
     Returns:
         The converted state dict, still keyed by checkpoint names.
+
+    Raises:
+        ValueError: If an expert's packed weight dtype is not its format's.
     """
     if woa_mxfp8 is None:
         woa_mxfp8 = woa_mxfp8_enabled()
@@ -1004,24 +1030,42 @@ def convert_weight_data(
         num_routed_experts, data_parallel_degree
     )
 
-    def stack_nvfp4(
+    def is_dspark(prefix: str) -> bool:
+        return prefix.startswith(DSPARK_CHECKPOINT_PREFIX)
+
+    def expert_format(prefix: str) -> RoutedExpertFormat:
+        return (
+            RoutedExpertFormat.MXFP4
+            if is_dspark(prefix)
+            else routed_expert_format
+        )
+
+    def stack(
         experts: Mapping[int, Mapping[str, np.ndarray]], prefix: str
     ) -> dict[str, WeightData]:
-        is_trunk = not prefix.startswith(DSPARK_CHECKPOINT_PREFIX)
+        if is_dspark(prefix):
+            return stack_experts(experts, prefix)
+        if routed_expert_format is RoutedExpertFormat.MXFP4:
+            return stack_experts(
+                experts,
+                prefix,
+                defer=defer_routed_experts,
+                sf_interleave=True,
+                interleave_gate_up=interleave_trunk,
+            )
         return stack_nvfp4_experts(
             experts,
             prefix,
             defer=defer_routed_experts,
-            interleave_gate_up=interleave_trunk and is_trunk,
+            interleave_gate_up=interleave_trunk,
         )
 
     host_dequantized = functools.partial(
         is_host_dequantized, woa_mxfp8=woa_mxfp8
     )
     # ``prefix -> expert id -> kind -> tensor``, filled only for packed-fp4
-    # experts, one dict per format since the two stack differently.
-    w4a8_packed_experts: dict[str, dict[int, dict[str, np.ndarray]]] = {}
-    nvfp4_packed_experts: dict[str, dict[int, dict[str, np.ndarray]]] = {}
+    # experts.
+    packed_experts: dict[str, dict[int, dict[str, np.ndarray]]] = {}
 
     for name, data in state_dict.items():
         hc_site = _HC_SITE_TENSOR.match(name)
@@ -1033,49 +1077,45 @@ def convert_weight_data(
 
         expert = _EXPERT_TENSOR.match(name)
         if expert is not None:
-            base = f"{expert['prefix']}.{expert['expert']}.{expert['proj']}"
+            prefix = expert["prefix"]
+            base = f"{prefix}.{expert['expert']}.{expert['proj']}"
             weight = state_dict.get(f"{base}.weight")
-            if weight is not None and weight.dtype == DType.int8:
-                # DSpark's MXFP4 W4A8 experts: "weight" and "scale" only.
-                if expert["kind"] in ("weight", "scale"):
-                    key = expert["proj"] + (
-                        ".scale" if expert["kind"] == "scale" else ""
+            fmt = expert_format(prefix)
+            if (
+                weight is not None
+                and weight.dtype in _PACKED_WEIGHT_DTYPE.values()
+            ):
+                if weight.dtype != _PACKED_WEIGHT_DTYPE[fmt]:
+                    raise ValueError(
+                        f"{base}: {weight.dtype} packed weights, but the "
+                        f"{fmt.value} experts store "
+                        f"{_PACKED_WEIGHT_DTYPE[fmt]}"
                     )
-                    experts = w4a8_packed_experts.setdefault(
-                        expert["prefix"], {}
-                    ).setdefault(int(expert["expert"]), {})
-                    experts[key] = as_uint8(data.data)
-                    _flush_complete_prefix(
-                        w4a8_packed_experts,
-                        expert["prefix"],
-                        num_dspark_experts,
-                        _W4A8_KEYS_PER_EXPERT,
-                        stack_experts,
-                        new_state_dict,
-                    )
-                    continue
-            elif weight is not None and weight.dtype == DType.uint8:
-                # The trunk's NVFP4 experts: four kinds per projection.
+                kind = expert["kind"]
                 key = (
                     expert["proj"]
-                    if expert["kind"] == "weight"
-                    else f"{expert['proj']}.{expert['kind']}"
+                    if kind == "weight"
+                    else f"{expert['proj']}.{kind}"
                 )
-                is_bytes = expert["kind"] in ("weight", "weight_scale")
-                experts = nvfp4_packed_experts.setdefault(
-                    expert["prefix"], {}
-                ).setdefault(int(expert["expert"]), {})
+                experts = packed_experts.setdefault(prefix, {}).setdefault(
+                    int(expert["expert"]), {}
+                )
                 experts[key] = (
-                    as_uint8(data.data) if is_bytes else as_float32(data.data)
+                    as_float32(data.data)
+                    if kind in _SCALAR_EXPERT_KINDS
+                    else as_uint8(data.data)
                 )
                 _flush_complete_prefix(
-                    nvfp4_packed_experts,
-                    expert["prefix"],
-                    num_routed_experts,
-                    _NVFP4_KEYS_PER_EXPERT,
-                    stack_nvfp4,
+                    packed_experts,
+                    prefix,
+                    num_dspark_experts
+                    if is_dspark(prefix)
+                    else num_routed_experts,
+                    _KEYS_PER_EXPERT[fmt],
+                    stack,
                     new_state_dict,
-                    page_out_inputs=not defer_routed_experts,
+                    page_out_inputs=is_dspark(prefix)
+                    or not defer_routed_experts,
                 )
                 continue
             # Otherwise a dequantized expert copy: passed through below.
@@ -1131,10 +1171,8 @@ def convert_weight_data(
         new_state_dict[name] = data
 
     # A partial state dict can leave a prefix incomplete; stack the rest.
-    for prefix, remaining_w4a8_experts in w4a8_packed_experts.items():
-        new_state_dict.update(stack_experts(remaining_w4a8_experts, prefix))
-    for prefix, remaining_nvfp4_experts in nvfp4_packed_experts.items():
-        new_state_dict.update(stack_nvfp4(remaining_nvfp4_experts, prefix))
+    for prefix, remaining_experts in packed_experts.items():
+        new_state_dict.update(stack(remaining_experts, prefix))
     return new_state_dict
 
 
@@ -1295,9 +1333,11 @@ class V41QuantizationInfo:
     """The validated facts this checkpoint's ``quantization_config`` carries.
 
     ``nvfp4_expert_layers`` is the allow-list from ``quantized_layers``,
-    not the complement of ``ignore_patterns``.
+    not the complement of ``ignore_patterns``; both are empty for MXFP4
+    experts, whose config declares neither.
     """
 
+    routed_expert_format: RoutedExpertFormat
     nvfp4_expert_layers: frozenset[int]
     ignore_patterns: tuple[str, ...]
 
@@ -1307,10 +1347,13 @@ def resolve_quantization_info(
     state_dict: Mapping[str, object],
     num_hidden_layers: int,
 ) -> V41QuantizationInfo | None:
-    """Validates and parses the checkpoint's MIXED_PRECISION quant config.
+    """Validates and parses the checkpoint's quantization config.
 
-    Uses :func:`read_modelopt_quantized_layers` after normalizing the
-    checkpoint's ``quant_method`` of ``"fp8"`` to ``"modelopt"``.
+    Resolves the routed experts' :class:`~.model_config.RoutedExpertFormat`.
+    For NVFP4, parses the MIXED_PRECISION config with
+    :func:`read_modelopt_quantized_layers` after normalizing the
+    checkpoint's ``quant_method`` of ``"fp8"`` to ``"modelopt"``. For MXFP4,
+    checks DeepSeek's own ``fp8`` config.
 
     Args:
         huggingface_config: The checkpoint's top-level Hugging Face config.
@@ -1323,12 +1366,20 @@ def resolve_quantization_info(
 
     Raises:
         ValueError: If ``quantization_config`` declares an algorithm,
-            KV-cache format, per-expert group size, or MXFP8 weight block
-            size other than this checkpoint's.
+            KV-cache format, per-expert group size, MXFP8 weight block size
+            or scale format other than this checkpoint's.
     """
     hf_quant_config = resolve_hf_quant_config(huggingface_config, state_dict)
     if not hf_quant_config:
         return None
+    expert_format = RoutedExpertFormat.from_quantization_config(hf_quant_config)
+    if expert_format is RoutedExpertFormat.MXFP4:
+        _check_mxfp4_quant_config(hf_quant_config)
+        return V41QuantizationInfo(
+            routed_expert_format=expert_format,
+            nvfp4_expert_layers=frozenset(),
+            ignore_patterns=(),
+        )
 
     method = hf_quant_config.get("quant_method")
     if method not in (None, "modelopt", "fp8"):
@@ -1370,12 +1421,41 @@ def resolve_quantization_info(
         ignore = hf_quant_config.get("exclude_modules", [])
 
     return V41QuantizationInfo(
+        routed_expert_format=expert_format,
         nvfp4_expert_layers=frozenset(
             int(module.removeprefix("layers.").removesuffix(".ffn.experts"))
             for module in modules
         ),
         ignore_patterns=tuple(str(pattern) for pattern in ignore),
     )
+
+
+def _check_mxfp4_quant_config(hf_quant_config: Mapping[str, Any]) -> None:
+    """Checks DeepSeek's own config for MXFP4 experts and MXFP8 linears.
+
+    Raises:
+        ValueError: If it declares a ``quant_method`` other than ``"fp8"``,
+            a weight block size other than 32 x 32, or a scale format other
+            than ``ue8m0``.
+    """
+    method = hf_quant_config.get("quant_method")
+    if method not in (None, "fp8"):
+        raise ValueError(
+            "DeepSeek-V4.1-Flash MXFP4 experts expect quantization_config."
+            f"quant_method 'fp8'; got {method!r}"
+        )
+    block_size = hf_quant_config.get("weight_block_size")
+    if block_size is not None and list(block_size) != [MXFP8_BLOCK_SIZE] * 2:
+        raise ValueError(
+            "DeepSeek-V4.1-Flash MXFP4 experts expect quantization_config."
+            f"weight_block_size {[MXFP8_BLOCK_SIZE] * 2}; got {block_size!r}"
+        )
+    scale_fmt = hf_quant_config.get("scale_fmt")
+    if scale_fmt not in (None, "ue8m0"):
+        raise ValueError(
+            "DeepSeek-V4.1-Flash MXFP4 experts expect quantization_config."
+            f"scale_fmt 'ue8m0'; got {scale_fmt!r}"
+        )
 
 
 def _data_parallel_degree(adapter_kwargs: Mapping[str, object]) -> int:
@@ -1402,7 +1482,7 @@ def convert_safetensor_state_dict(
     :func:`convert_weight_data`.
     """
     text_config = getattr(huggingface_config, "text_config", huggingface_config)
-    resolve_quantization_info(
+    info = resolve_quantization_info(
         huggingface_config, state_dict, text_config.num_hidden_layers
     )
     return rewire_trunk_state_dict(
@@ -1415,6 +1495,11 @@ def convert_safetensor_state_dict(
             },
             num_routed_experts=text_config.n_routed_experts,
             num_dspark_experts=text_config.dspark_n_routed_experts,
+            routed_expert_format=(
+                info.routed_expert_format
+                if info is not None
+                else RoutedExpertFormat.NVFP4
+            ),
             defer_routed_experts=defer_routed_experts,
             data_parallel_degree=_data_parallel_degree(unused_kwargs),
         )
@@ -1424,49 +1509,31 @@ def convert_safetensor_state_dict(
 def convert_dspark_safetensor_state_dict(
     state_dict: dict[str, Weights],
     huggingface_config: PretrainedConfig,
-    *,
-    defer_routed_experts: bool = False,
     **unused_kwargs: object,
 ) -> dict[str, WeightData]:
-    """Returns the trunk's weights together with the DSpark stages' weights.
+    """The DSpark stages' weights (``mtp.*``), under the drafter's names.
 
-    Applies :func:`convert_weight_data` to both, then
-    :func:`rewire_trunk_state_dict` to the trunk and
-    :func:`rewire_dspark_state_dict` to the ``mtp.*`` stages. Unused DSpark
-    tensors are dropped. ``defer_routed_experts`` defers only the trunk's
-    NVFP4 experts.
+    For the draft beside the trunk, which loads the same checkpoint through
+    :func:`convert_safetensor_state_dict`. Applies :func:`convert_weight_data`
+    and :func:`rewire_dspark_state_dict`; unused DSpark tensors are dropped.
     """
     text_config = getattr(huggingface_config, "text_config", huggingface_config)
     resolve_quantization_info(
         huggingface_config, state_dict, text_config.num_hidden_layers
     )
-    converted = convert_weight_data(
+    stages = convert_weight_data(
         {
             name: value.data()
             for name, value in state_dict.items()
-            if not is_unused_dspark_tensor(name)
-            and not is_skipped_checkpoint_tensor(name)
+            if name.startswith(DSPARK_CHECKPOINT_PREFIX)
+            and not is_unused_dspark_tensor(name)
         },
         num_routed_experts=text_config.n_routed_experts,
         num_dspark_experts=text_config.dspark_n_routed_experts,
-        defer_routed_experts=defer_routed_experts,
-        data_parallel_degree=_data_parallel_degree(unused_kwargs),
     )
-    num_stages = num_dspark_stages(text_config)
-    trunk = {
-        name: data
-        for name, data in converted.items()
-        if not name.startswith(DSPARK_CHECKPOINT_PREFIX)
-    }
-    stages = {
-        name: data
-        for name, data in converted.items()
-        if name.startswith(DSPARK_CHECKPOINT_PREFIX)
-    }
-    return {
-        **rewire_trunk_state_dict(trunk),
-        **rewire_dspark_state_dict(stages, last_stage=num_stages - 1),
-    }
+    return rewire_dspark_state_dict(
+        stages, last_stage=num_dspark_stages(text_config) - 1
+    )
 
 
 # The checkpoint stores the vision RMSNorm weights in bfloat16; the reference

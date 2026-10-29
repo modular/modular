@@ -383,7 +383,9 @@ def fused_qk_rope_ragged[
     comptime num_q_heads = Int(q_proj.static_shape[1])
     comptime num_k_heads = kv_params.num_heads
     comptime q_head_size = Int(q_proj.static_shape[2])
-    comptime k_head_size = kv_params.head_size
+    # The key's width, not the row pitch: a split cache's row also holds
+    # the value.
+    comptime k_head_size = kv_params.k_head_size()
     var batch_size = input_row_offsets.dim[0]() - 1
 
     # Add rope dimension parameters

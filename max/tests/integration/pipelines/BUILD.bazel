@@ -41,12 +41,12 @@ modular_eager_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         "//max/python/max/pipelines/lora",
         requirement("numpy"),
     ],
@@ -153,9 +153,9 @@ modular_py_test(
     name = "test_weight_loader",
     srcs = ["test_weight_loader.py"],
     deps = [
-        "//max/python/max/experimental",
-        "//max/python/max/experimental/nn",
+        "//max/python/max:tensor",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         "//max/python/max/pipelines/lib",
         requirement("numpy"),
     ],
@@ -536,12 +536,12 @@ modular_py_test(
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/python/max/experimental",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/gemma3multimodal",
         "//max/python/max/pipelines/architectures/gemma3multimodal_modulev3",
         "//max/python/max/pipelines/architectures/internvl",
@@ -583,7 +583,7 @@ modular_py_test(
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/test_common:mocks",
         requirement("numpy"),
@@ -609,10 +609,8 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
-        requirement("numpy"),
+        "//max/python/max/nn/legacy",
     ],
 )
 
@@ -629,10 +627,10 @@ modular_py_test(
         "gpu",
     ],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/experimental",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/lib",
         requirement("numpy"),
     ],
@@ -656,7 +654,7 @@ modular_py_test(
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
     ],
 )
 
@@ -680,7 +678,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/gemma3multimodal",
         "//max/python/max/pipelines/architectures/gemma3multimodal_modulev3",
         "//max/python/max/pipelines/architectures/internvl",

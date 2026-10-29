@@ -26,7 +26,7 @@ import numpy as np
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
+from max.nn.legacy.kv_cache import MHAKVCacheParams, MultiKVCacheParams
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManagerInterface
 from max.pipelines.kv_cache.paged_kv_cache.block_utils import (

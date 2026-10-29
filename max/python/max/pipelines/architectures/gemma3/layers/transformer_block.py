@@ -21,10 +21,10 @@ from max.graph import (
     ShardingStrategy,
     TensorValue,
 )
-from max.nn.comm.allreduce import Allreduce
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.layer import Module
-from max.nn.transformer.distributed_transformer import (
+from max.nn.legacy.comm.allreduce import Allreduce
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.layer import Module
+from max.nn.legacy.transformer.distributed_transformer import (
     ShardableCallable,
     forward_sharded_layers,
 )
@@ -34,7 +34,7 @@ from max.pipelines.architectures.gemma3.layers.attention import Gemma3Attention
 class Gemma3TransformerBlock(Module):
     """Stack of Attention, FeedForward, and RMSNorm layers.
 
-    Unlike the transformer block in the `max.nn` library, this class applies
+    Unlike the transformer block in the `max.nn.legacy` library, this class applies
     normalizations to the hidden states immediately after the attention, and
     before and after the feedforward layers.
     """
@@ -107,6 +107,7 @@ class Gemma3TransformerBlock(Module):
         input_row_offsets: list[TensorValue],
         **kwargs,
     ) -> list[TensorValue]:
+        """Run attention and the feedforward network over the sharded inputs."""
         residual = xs
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
         attn_out = [

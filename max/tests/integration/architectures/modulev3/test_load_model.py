@@ -23,6 +23,7 @@ from unittest.mock import MagicMock
 
 import pytest
 import torch
+from max import functional as F
 from max.driver import (
     Buffer,
     accelerator_count,
@@ -30,7 +31,6 @@ from max.driver import (
     scan_available_devices,
 )
 from max.engine import InferenceSession, Model
-from max.experimental import functional as F
 from max.graph.weights import SafetensorWeights
 from max.pipelines.architectures.gemma4_modulev3.model import Gemma4Model
 from max.pipelines.architectures.gemma4_modulev3.vision_model.vision_model import (

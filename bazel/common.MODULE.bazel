@@ -80,6 +80,14 @@ use_repo(toolchains, "default_rust_toolchains")
 rules_rust = use_extension("@rules_rs//rs:rules_rust.bzl", "rules_rust")
 use_repo(rules_rust, "rules_rust")
 
+# The pyo3 rule attaches rustfmt_aspect, which pulls the nightly rustfmt
+# toolchain into every cold build of a pyo3 extension. Nothing reads its
+# output; //:format runs rustfmt directly.
+rules_rust.patch(
+    patches = ["//bazel/public-patches:rules_rust_pyo3_no_rustfmt_aspect.patch"],
+    strip = 1,
+)
+
 register_toolchains(
     "@default_rust_toolchains//...",
     "@rules_rust//extensions/pyo3/toolchains:toolchain",

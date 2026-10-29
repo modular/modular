@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """FP8 activation quantize/dequantize, as DeepSeek-V4 trained with it.
 
 ``inference/model.py`` calls ``act_quant(kv[..., :-rd], 64, scale_fmt,
@@ -45,12 +44,12 @@ from typing import TYPE_CHECKING, NoReturn
 
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, TensorValue, ops
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     dynamic_scaled_matmul,
     quantize_dynamic_scaled_float8,
 )
-from max.nn.linear import Linear
-from max.nn.quant_config import (
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.quant_config import (
     QuantConfig,
 )
 
@@ -347,6 +346,7 @@ class DeepseekV4Fp8Linear(Linear):
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Runs the matmul with FP8 weights."""
         assert self.quant_config is not None
         assert self.weight_scale is not None
         leading = list(x.shape[:-1])

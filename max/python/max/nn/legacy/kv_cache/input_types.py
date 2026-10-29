@@ -1,0 +1,218 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+"""Graph input types for the KV cache."""
+
+from __future__ import annotations
+
+from typing import Any, Generic, TypeAlias, TypeVar
+
+from max import tree
+from max.driver import Buffer
+from max.dtype import DType
+from max.graph import (
+    BufferType,
+    BufferValue,
+    TensorType,
+    TensorValue,
+)
+from max.tensor import Tensor
+from max.tree import Tree
+
+_Tensor = TypeVar("_Tensor", TensorValue, TensorType, Buffer, Tensor)
+_Buffer = TypeVar("_Buffer", BufferValue, BufferType, Buffer, Tensor)
+
+
+@tree.kind("split_kv_head_dims")
+@tree.dataclass(frozen=True)
+class SplitKVHeadDims:
+    """Marks a paged cache that packs keys and values of different widths.
+
+    See :attr:`~max.nn.legacy.kv_cache.KVCacheParams.has_split_head_dims`.
+
+    A tree node without leaves, so it rides through flatten, unflatten and an
+    exported artifact's input structure without adding a graph input.
+    """
+
+
+@tree.kind("paged_kv")
+@tree.dataclass
+class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
+    """Symbolic graph input types for a single device's paged KV cache."""
+
+    kv_blocks: _Buffer
+    """The device's paged KV cache blocks."""
+    cache_lengths: _Tensor
+    """Per-request cache lengths, one rank-1 entry per request."""
+    lookup_table: _Tensor
+    """Per-request page lookup table, each row holding the block ids its
+    request reads."""
+    max_prompt_length: _Tensor
+    """The batch's maximum prompt length, as a scalar tensor."""
+    max_cache_length: _Tensor
+    """The batch's maximum cache length, as a scalar tensor."""
+    page_stride: _Tensor
+    """Page-to-page distance for ``kv_blocks``, as a rank-1 int64 tensor."""
+    kv_scales: _Buffer | None = None
+    """KV scales for FP8 quantization."""
+    scales_page_stride: _Tensor | None = None
+    """The same as ``page_stride``, for ``kv_scales``."""
+    scales_lookup_table: _Tensor | None = None
+    """Page lookup table for ``kv_scales``, present when the scales are paged
+    independently of the values so a request's scale pages carry their own
+    ids. ``None`` means the two share one block-id space and ``lookup_table``
+    resolves both, which is what every non-pooled cache does."""
+    attention_dispatch_metadata: _Tensor | None = None
+    """The device's attention dispatch metadata, as a rank-1 int64 tensor."""
+    draft_attention_dispatch_metadata: _Tensor | None = None
+    """Attention dispatch metadata resolved for the draft-forward query
+    width, as a rank-1 int64 tensor.
+
+    The ``draft_`` prefix names the shorter query length, not the draft
+    model; a target cache leaf carries this variant too.
+    """
+    mla_num_partitions: _Tensor | None = None
+    """Capturable-graph scalar the SM100 MLA dispatcher uses to align
+    grid-time partition decisions with the kernel's divmod. Populated only
+    for MLA paths; ``None`` otherwise."""
+    draft_mla_num_partitions: _Tensor | None = None
+    """The analog of :attr:`mla_num_partitions` for the draft-forward query
+    width, carried by target cache leaves as well as draft ones."""
+    split_head_dims: SplitKVHeadDims | None = None
+    """Set when each cache row packs a key and a value of different widths.
+    The blocks alone cannot say so: one plane also means an MLA cache. An op
+    that does not read this layout must refuse the cache."""
+
+    def __post_init__(self) -> None:
+        def verify_rank1_int64_tensor(name: str, t: _Tensor | None) -> None:
+            if t is None:
+                return
+            if t.dtype != DType.int64:
+                raise ValueError(
+                    f"Expected dtype int64, got {t.dtype} for tensor {name}"
+                )
+            if t.rank != 1:
+                raise ValueError(
+                    f"Expected rank 1, got {t.rank} for tensor {t}"
+                )
+
+        verify_rank1_int64_tensor(
+            "attention_dispatch_metadata", self.attention_dispatch_metadata
+        )
+        verify_rank1_int64_tensor(
+            "draft_attention_dispatch_metadata",
+            self.draft_attention_dispatch_metadata,
+        )
+        verify_rank1_int64_tensor("mla_num_partitions", self.mla_num_partitions)
+        verify_rank1_int64_tensor(
+            "draft_mla_num_partitions", self.draft_mla_num_partitions
+        )
+
+        if not (
+            (self.kv_scales is None)
+            == (self.scales_page_stride is None)
+            == (self.scales_lookup_table is None)
+        ):
+            raise ValueError(
+                "kv_scales, scales_page_stride and scales_lookup_table must "
+                "be provided together"
+            )
+
+    # TODO: FIX THIS HACK!!!
+    def flatten_without_attention_dispatch_metadata(
+        self,
+        *,
+        include_scales: bool = True,
+    ) -> list[_Tensor | _Buffer]:
+        """Serializes fields into a flat list.
+
+        Leaves out the attention dispatch metadata fields.
+
+        Args:
+            include_scales: Whether to append the quantization scale operands.
+                Pass ``False`` for an op that reads only the cache's lengths
+                and page table, so one registration serves every cache format.
+        """
+        return [
+            self.kv_blocks,
+            self.page_stride,
+            self.cache_lengths,
+            self.lookup_table,
+            self.max_prompt_length,
+            self.max_cache_length,
+            *(
+                (
+                    self.kv_scales,
+                    self.scales_page_stride,
+                    self.scales_lookup_table,
+                )
+                if include_scales
+                and self.kv_scales is not None
+                and self.scales_page_stride is not None
+                and self.scales_lookup_table is not None
+                else ()
+            ),
+        ]
+
+
+PagedCacheValues = KVCacheInputsPerDevice[TensorValue, BufferValue]
+"""Paged KV cache inputs for one device, with cache blocks and lengths
+as graph values."""
+
+
+# ===--------------------------------------------------------------------=== #
+# Recurrent state
+# ===--------------------------------------------------------------------=== #
+
+
+@tree.kind("recurrent_leaf")
+@tree.dataclass(frozen=True)
+class RecurrentLeafInputs(Generic[_Tensor, _Buffer]):
+    """One state leaf's graph inputs on one device."""
+
+    pool: _Buffer
+    """Shared by all layers, so it can exceed 2**32 elements. Kernels must
+    index it with 64-bit offsets."""
+    live_row_ids: _Tensor
+
+    def live_row_id(self, layer: int) -> TensorValue:
+        """Returns the ``[batch_size]`` pool row this layer runs in."""
+        return _layer_row_ids(self.live_row_ids, layer)
+
+
+def _layer_row_ids(ids: Any, layer: int) -> TensorValue:
+    """Returns one layer's row of a ``[num_layers, batch_size]`` id tensor."""
+    assert isinstance(ids, TensorValue), (
+        "per-layer row ids can only be taken from a graph value, not from "
+        f"{type(ids).__name__}"
+    )
+    return ids[layer]
+
+
+@tree.kind("recurrent_state")
+@tree.dataclass
+class RecurrentStateInputsPerDevice(Generic[_Tensor, _Buffer]):
+    """One device's recurrent-state leaves."""
+
+    leaves: tuple[RecurrentLeafInputs[_Tensor, _Buffer], ...]
+    """In the order the regions were declared."""
+
+
+KVCacheInputs: TypeAlias = Tree[
+    KVCacheInputsPerDevice[_Tensor, _Buffer]
+    | RecurrentStateInputsPerDevice[_Tensor, _Buffer]
+]
+"""The KV-cache inputs one model step consumes: a tree with one entry per
+device, holding either that device's paged-cache inputs or its
+recurrent-state leaves.
+"""

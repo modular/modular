@@ -33,7 +33,7 @@ from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.kernels import keyed_uniform
+from max.nn.legacy.kernels import keyed_uniform
 
 # Rows per setting: 1/sqrt(16384) puts the 4-sigma band near +/-1.6pp at
 # p=0.5, tight enough that a coin off its analytic rate cannot hide in it.

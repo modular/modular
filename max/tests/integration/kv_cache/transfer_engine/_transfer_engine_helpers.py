@@ -20,7 +20,7 @@ from multiprocessing.process import BaseProcess
 
 from max.driver import Buffer
 from max.dtype import DType
-from max.nn.kv_cache.cache_params import KVCacheMemory
+from max.nn.legacy.kv_cache.cache_params import KVCacheMemory
 from max.pipelines.kv_cache import KVTransferEngineMetadata
 
 # Under bazel's default 300s medium-test timeout, so a stuck peer fails the

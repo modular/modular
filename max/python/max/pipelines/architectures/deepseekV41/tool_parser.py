@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 # ruff: noqa: RUF002
 
-"""DeepSeek-V4.1 tool-call parser for the checkpoint's DSML format.
+r"""DeepSeek-V4.1 tool-call parser for the checkpoint's DSML format.
 
 V4.1 keeps V4's DSML layout but renames the tags, each now with a leading
 space::
 
-    \\n\\n<｜DSML｜ calls>
+    \n\n<｜DSML｜ calls>
     <｜DSML｜ invoke name="get_weather">
     <｜DSML｜ parameter name="location" string="true">Beijing</｜DSML｜ parameter>
     </｜DSML｜ invoke>

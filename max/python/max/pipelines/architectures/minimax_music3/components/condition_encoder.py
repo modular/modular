@@ -24,11 +24,11 @@ accuracy is nearly free here.
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.tensor import Tensor
 from max.graph import TensorType
+from max.nn import Module
+from max.tensor import Tensor
 
 from ..layers.conv import ShiftedConv1d
 from ..model_config import ConditionEncoderConfig

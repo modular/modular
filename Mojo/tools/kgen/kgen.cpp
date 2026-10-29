@@ -33,8 +33,10 @@
 #include "Mojo/Support/MojoPrecompiledFile.h"
 #include "Mojo/ToolCommon/CLOptions.h"
 #include "Mojo/ToolCommon/Debug.h"
+#include "Mojo/ToolCommon/FrontendOptions.h"
 #include "Mojo/ToolCommon/InitAllDialects.h"
 #include "Support/CommonCLOptions.h"
+#include "Support/Compiler/Diags.h"
 #include "Support/Compiler/TimeProfilerTimingManager.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/Filesystem/Paths.h"
@@ -145,6 +147,14 @@ public:
       "bitcode-libs",
       cl::desc(
           "External bitcode libraries to link into the generated LLVM IR.")};
+
+  /// Return the frontend options for parsing Mojo input.
+  FrontendOptions getFrontendOptions() const {
+    FrontendOptions options = KGENOptions::getFrontendOptions();
+    options.useMLIRDiagnostics = enableMLIRDiagnostics;
+    options.disablePrebuiltPackages = disablePrebuiltPackages;
+    return options;
+  }
 
   /// Add all the input files provided on the command line to the SourceMgr.
   /// This is how MLIR parses multiple files.
@@ -308,8 +318,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   options.verboseOutput = isEmitCmd(clOptions.cmd, kAsmVerboseKind);
   options.bitcodeLibs = llvm::to_vector_of<std::string>(clOptions.bitcodeLibs);
   options.cacheBaseExtra = "kgen";
-  options.warnOnUnstableAPIs = clOptions.warnOnUnstableAPIs;
-  options.ignoredDeprecations = clOptions.ignoredDeprecations;
 
   OwningOpRef<ModuleOp> theModule;
   auto inputFileName = llvm::StringRef(clOptions.inputFilename);
@@ -422,14 +430,12 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
           return failure();
         });
 
-    LIT::ParserConfig config(ctx, options);
-    config.stripFilePrefix = clOptions.stripFilePrefix;
-    config.useMLIRDiagnostics = true;
-    config.disablePrebuiltPackages = clOptions.disablePrebuiltPackages;
+    FrontendOptions frontendOptions = clOptions.getFrontendOptions();
+    frontendOptions.useMLIRDiagnostics = true;
     MainFileParserListener lspListener(mgr);
-    config.parserListener = &lspListener;
+    frontendOptions.parserListener = &lspListener;
 
-    MojoParserContext parserContext(mgr, config);
+    MojoParserContext parserContext(mgr, ctx, options, frontendOptions);
     LIT::ASTDecl *decl = parserContext.parseFileForLSP(mgr.getMainFileID());
     if (!decl)
       return failure(clOptions.reportError("could not parse the module"));
@@ -458,11 +464,9 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
 
   if (inputFileName.ends_with(".mojo")) {
     TimingScope litScope = timing.nest("Import Mojo source");
-    LIT::ParserConfig config(ctx, options);
-    config.stripFilePrefix = clOptions.stripFilePrefix;
-    config.useMLIRDiagnostics = clOptions.enableMLIRDiagnostics;
-    config.disablePrebuiltPackages = clOptions.disablePrebuiltPackages;
-    theModule = importMojoFile(*ctxOr, mgr, config, litScope, &includedFiles);
+    theModule = LIT::importMojoFile(*ctxOr, mgr, ctx, options,
+                                    clOptions.getFrontendOptions(), litScope,
+                                    &includedFiles);
   } else {
     theModule = parseSourceFile<ModuleOp>(mgr, ctx);
   }
@@ -853,26 +857,22 @@ static LogicalResult runPrecompile(CLOptions &clOptions) {
   MLIRContext context(registry, MLIRContext::Threading::DISABLED);
 
   llvm::SourceMgr sourceMgr;
-  sourceMgr.setIncludeDirs(clOptions.getIncludePaths());
+  sourceMgr.setIncludeDirs(clOptions.includePaths);
   mlir::SourceMgrDiagnosticHandler diagHandler(sourceMgr, &context);
+  ScopedMLIRWarningHandler warningHandler(&context, clOptions.disableWarnings,
+                                          clOptions.warningsAsErrors);
 
   CompilationOptions options = clOptions.getCompilationOptions();
   options.bitcodeLibs = llvm::to_vector_of<std::string>(clOptions.bitcodeLibs);
-  options.warnOnUnstableAPIs = clOptions.warnOnUnstableAPIs;
-  options.ignoredDeprecations = clOptions.ignoredDeprecations;
   // Precompiled packages are built to be agnostic of how their importers
   // compile them, so match `mojo precompile`'s conservative settings.
   options.debugLevel = CompilationOptions::kFullDebugInfo;
   options.optimizationLevel = 0;
 
-  LIT::ParserConfig config(&context, options);
-  config.stripFilePrefix = clOptions.stripFilePrefix;
-  config.useMLIRDiagnostics = clOptions.enableMLIRDiagnostics;
-  config.disablePrebuiltPackages = clOptions.disablePrebuiltPackages;
-
   TimingScope ts;
   auto [module, packageOp] = LIT::importMojoPackage(
-      *ctxOr, packagePath.string(), sourceName, sourceMgr, config, ts);
+      *ctxOr, packagePath.string(), sourceName, sourceMgr, &context, options,
+      clOptions.getFrontendOptions(), ts);
   if (!module)
     return failure(clOptions.reportError("could not parse the package"));
 
@@ -895,7 +895,7 @@ static LogicalResult runPrecompile(CLOptions &clOptions) {
     return failure(clOptions.reportError("failed to write the package"));
   }
   outFile->keep();
-  return mlir::success();
+  return failure(warningHandler.wasErrorEmitted());
 }
 
 int main(int argc, char **argv) {
@@ -1007,7 +1007,7 @@ int main(int argc, char **argv) {
 
   // Set up the input file(s).
   llvm::SourceMgr sourceManager;
-  sourceManager.setIncludeDirs(clOptions.getIncludePaths());
+  sourceManager.setIncludeDirs(clOptions.includePaths);
   clOptions.addInputFilesToSourceMgrOrExit(sourceManager);
   if (clOptions.targetAccelerator.empty()) {
 #if MLRT_ACCELERATOR_SUPPORT
@@ -1018,6 +1018,10 @@ int main(int argc, char **argv) {
   return failed(clOptions.configureMLIRContextAndExecute(
       sourceManager, [&](MLIRContext *ctx) -> LogicalResult {
         ctx->printOpOnDiagnostic(true);
-        return runToolPipeline(ctx, sourceManager, clOptions);
+        ScopedMLIRWarningHandler warningHandler(ctx, clOptions.disableWarnings,
+                                                clOptions.warningsAsErrors);
+        if (failed(runToolPipeline(ctx, sourceManager, clOptions)))
+          return failure();
+        return failure(warningHandler.wasErrorEmitted());
       }));
 }

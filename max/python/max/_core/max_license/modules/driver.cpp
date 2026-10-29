@@ -1607,6 +1607,29 @@ void M::Graph::Python::bindDriverModule(nb::module_ m) {
       (``dst is src``) are skipped. All buffers must have matching sizes.
   )nbdoc");
 
+  m.def(
+      "_batch_copy_rows",
+      [](nb::sequence dsts, nb::sequence srcs, const std::vector<int> &dstRows,
+         const std::vector<int> &srcRows) {
+        std::vector<Python::Buffer *> dstPtrs, srcPtrs;
+        for (nb::handle h : dsts)
+          dstPtrs.push_back(nb::cast<Python::Buffer *>(h));
+        for (nb::handle h : srcs)
+          srcPtrs.push_back(nb::cast<Python::Buffer *>(h));
+        Python::Buffer::batchCopyRows(dstPtrs, srcPtrs, dstRows, srcRows);
+      },
+      "dsts"_a, "srcs"_a, "dst_rows"_a, "src_rows"_a,
+      nb::sig("def _batch_copy_rows(dsts: Sequence[Buffer], srcs: "
+              "Sequence[Buffer], dst_rows: Sequence[int], src_rows: "
+              "Sequence[int]) -> None"),
+      R"nbdoc(
+      Batched copy of ``srcs[i][src_rows[i]]`` into ``dsts[i][dst_rows[i]]``.
+
+      Same as :func:`_batch_inplace_copy` over those row views, without
+      building a buffer per row. A row is one index of the leading axis.
+      Buffers must be contiguous and not host-hazard tracked.
+  )nbdoc");
+
   nb::class_<Python::ChunkedStagingRegion>(m, "_ChunkedStagingRegion",
                                            R"nbdoc(
       A host mapping made device-accessible in chunks.

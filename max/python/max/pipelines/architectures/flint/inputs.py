@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Inputs for the Flint pipeline."""
 
 from __future__ import annotations
@@ -25,12 +24,15 @@ from max.pipelines.lib import ModelInputs
 
 @dataclass
 class FlintInputs(ModelInputs):
+    """The graph inputs of one Flint step."""
+
     tokens: Buffer
     input_row_offsets: Buffer
     return_n_logits: Buffer
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
+        """The step's buffers, in the graph's input order."""
         if isinstance(self.input_row_offsets, np.ndarray):
             input_row_offsets = Buffer.from_numpy(self.input_row_offsets).to(
                 self.tokens.device

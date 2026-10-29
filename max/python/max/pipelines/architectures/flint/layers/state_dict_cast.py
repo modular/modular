@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Casts floating-point weights to the serving dtype, leaving other dtypes alone.
 
 The ModuleV3 load path does not apply the dtype cast a default GPU serve does.

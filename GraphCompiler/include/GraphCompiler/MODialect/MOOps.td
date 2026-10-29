@@ -5254,6 +5254,13 @@ def MO_AllGatherOp : MO_DistributedOp<"distributed.allgather", [
   let description = [{
     Concatenates inputs, one per device, along dimension 0 and replicates the
     result on every device.
+
+    With `slice_rows`, device `d` receives only rows
+    `[d * R / N, (d + 1) * R / N)` of each gathered piece, where `R` is the
+    row count of every input and `N` the device count, instead of the whole
+    piece. It needs one full-world group (`group_size` equal to the input
+    count), and its results have `R / N` rows. This moves `N` times fewer
+    bytes than the plain form followed by a row slice, with the same values.
   }];
   let hasVerifier = 1;
   // Folds the single-input case.
@@ -5262,7 +5269,8 @@ def MO_AllGatherOp : MO_DistributedOp<"distributed.allgather", [
     Variadic<MO_Tensor>:$inputs,
     Variadic<MO_Buffer>:$signalBuffers,
     MO_Chain:$inChain,
-    DefaultValuedAttr<I64Attr, "0">:$group_size
+    DefaultValuedAttr<I64Attr, "0">:$group_size,
+    DefaultValuedAttr<BoolAttr, "false">:$slice_rows
   );
   let results = (outs
     Variadic<MO_Tensor>:$outputs,
@@ -5270,8 +5278,8 @@ def MO_AllGatherOp : MO_DistributedOp<"distributed.allgather", [
   );
 
   let assemblyFormat = [{
-    `(` operands `)` (` ` `[` `group_size` `=` $group_size^ `]`)? attr-dict `:`
-    functional-type(operands, results)
+    `(` operands `)` `` custom<AllGatherAttrs>($group_size, $slice_rows)
+    attr-dict `:` functional-type(operands, results)
   }];
 }
 

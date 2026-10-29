@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics -I=%S/inputs %s
+# RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics -I%S/inputs %s
 
 # Error paths for dotted-name imports: diagnostics must render the dotted
 # component names, and structural errors must fire for dotted segments just as

@@ -34,3 +34,9 @@ from max._driver.max_license.device_context_hal._nvidia_cuda_hal import *
 from max._driver.max_license.device_context_hal._nvidia_cuda_hal import (
     _CUstream_st,
 )
+from max._driver.max_license.device_context_hal._amdgpu_hip_hal import (
+    HIP,
+    HIP_MODULE,
+    hipDevice_t,
+    hipStream_t,
+)

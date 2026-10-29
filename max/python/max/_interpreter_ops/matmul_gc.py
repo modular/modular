@@ -129,8 +129,10 @@ class _MatmulFamily(gc_compile.GCFamilySpec):
     name = "matmul"
 
     def build_module(self) -> Module:
-        """Build the full batched matmul module: every ``_COMPILATION_TARGETS``
-        slot (CPU + all accelerators, all dtypes) in one module.
+        """Build the full batched matmul module.
+
+        Covers every ``_COMPILATION_TARGETS`` slot (CPU and all accelerators,
+        all dtypes) in one module.
 
         Host-ELF and cubins both embed self-contained in the exported MEF, so
         one force-load populates every device class at once. Shared by the
@@ -144,8 +146,10 @@ class _MatmulFamily(gc_compile.GCFamilySpec):
     def build_module_for_device(
         self, device: Device, module: Module | None = None
     ) -> Module:
-        """Build the matmul module for a single device slot: every dtype
-        target on *device* (matched by label + id), and nothing else.
+        """Build the matmul module for a single device slot.
+
+        Every dtype target on *device* (matched by label + id), and nothing
+        else.
 
         Per-slot counterpart of :meth:`build_module`. The warm producer
         exports one MEF per slot so the warm is device-count-independent: a

@@ -37,16 +37,16 @@ from collections.abc import Callable, Iterable
 
 from max.dtype import DType
 from max.graph import DeviceRef, ShardingStrategy, TensorValue, Weight, ops
-from max.nn.attention import MHAMaskVariant
-from max.nn.kernels import (
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kernels import (
     flash_attention_ragged,
     rope_split_store_ragged,
 )
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.layer import Module, Shardable
-from max.nn.linear import Linear
-from max.nn.quant_config import QuantConfig
-from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.legacy.layer import Module, Shardable
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
 
 # The lane permutation halves both the rotated and pass-through blocks,
 # and each half must hold whole (cos, sin) pairs.
@@ -203,6 +203,7 @@ class LagunaAttention(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """The attention's sharding strategy, or ``None``."""
         return self._sharding_strategy
 
     @sharding_strategy.setter
@@ -224,6 +225,7 @@ class LagunaAttention(Module, Shardable):
         self._sharding_strategy = strategy
 
     def shard(self, devices: Iterable[DeviceRef]) -> list[LagunaAttention]:
+        """Returns one replica per device, sharded as the strategy says."""
         if not self._sharding_strategy:
             raise ValueError(
                 "LagunaAttention layer cannot be sharded because no "

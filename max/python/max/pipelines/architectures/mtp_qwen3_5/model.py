@@ -23,7 +23,7 @@ from dataclasses import replace
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParamInterface, KVCacheParams
+from max.nn.legacy.kv_cache import KVCacheParamInterface, KVCacheParams
 from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.interfaces.pipeline_model import (
     ModelLoadContext,
@@ -51,8 +51,10 @@ class MTPQwen3_5DraftArchConfig(Qwen3_5Config):
         *,
         allow_kv_head_replication: bool = False,
     ) -> KVCacheParams:
-        """Returns a one-layer view of the target's attention cache, for the
-        one decoder layer the head has."""
+        """Returns a one-layer view of the target's cache.
+
+        The head has one decoder layer.
+        """
         del allow_kv_head_replication
         attn = Qwen3_5Config._attn_kv_params(
             huggingface_config=huggingface_config,
@@ -67,12 +69,11 @@ class MTPQwen3_5DraftArchConfig(Qwen3_5Config):
     def build_module(
         cls, context: ModelLoadContext
     ) -> tuple[Qwen3_5MTP, Qwen3_5Config]:
-        """Builds the MTP head from the target's checkpoint, which
-        ``context`` names.
+        """Builds the MTP head from the target's checkpoint.
 
-        The head's config is its target's, finalized against the head's
-        weights. It embeds and projects through the target's embedding and
-        head, so spec decoding shares those onto it.
+        ``context`` names it. The head's config is its target's, finalized
+        against the head's weights. It embeds and projects through the
+        target's embedding and head, so spec decoding shares those onto it.
 
         Raises:
             ValueError: If the checkpoint ships no MTP head, or one with

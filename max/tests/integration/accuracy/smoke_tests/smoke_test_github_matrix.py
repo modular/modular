@@ -50,6 +50,9 @@ PRIVATE = {"PRIVATE"}
 # model runs only on manual dispatch. VARIANT marks a `<hf-repo>__<variant>` key
 # that runs a recipe from MODEL_RECIPES in smoke_test.py; PRIVATE marks one
 # whose recipe ships with a private arch and resolves from private hw_recipes.
+# Mach runs every entry on the same HW as MAX. Do not add Mach-only HW tags to
+# hide a model Mach cannot serve on some HW yet: let that job fail. A red smoke
+# test is the forcing function to implement it or to drop the model.
 #
 # To add a model, trigger the smoke test with it first:
 # https://github.com/modularml/modular/actions/workflows/serveSmokeTest.yaml
@@ -80,12 +83,13 @@ MODELS: Mapping[str, set[str]] = {
     "google/gemma-4-31B-it": NIGHTLY | _1xB200 | _1xMI355,
     "google/gemma-4-31B-it__cascade": NIGHTLY | VARIANT | _1xB200,
     "google/gemma-4-31B-it__modulev3": VARIANT | _1xB200 | _1xMI355,
+    "google/gemma-4-31B-it__rust_tiered_kvconnector": VARIANT | _1xB200 | _1xMI355,
     "google/gemma-4-31B-it__tuned": NIGHTLY | VARIANT | _1xB200,
     "meta-llama/Llama-3.1-8B-Instruct": _1xB200 | _1xMI355,
     "meta-llama/Llama-3.1-8B-Instruct__dflash": VARIANT | _1xB200 | _1xMI355,  # TODO(SERVOPT-1168)
     "meta-llama/Llama-3.1-8B-Instruct__eagle": VARIANT | _1xB200 | _1xMI355,  # TODO(SERVOPT-1168)
     "meta-llama/Llama-3.1-8B-Instruct__modulev3": VARIANT | _1xB200 | _1xMI355,
-    "meta-llama/Llama-3.1-8B-Instruct__rust_tiered_kvconnector": VARIANT | _1xB200,
+    "meta-llama/Llama-3.1-8B-Instruct__rust_tiered_kvconnector": VARIANT | _1xB200 | _1xMI355,
     "meta-models/Muse-Glimmer-30B": NIGHTLY | _1xB200,
     "microsoft/Phi-3.5-mini-instruct": _1xB200 | _1xMI355,
     "microsoft/Phi-3.5-mini-instruct__modulev3": VARIANT | _1xB200 | _1xMI355,
@@ -96,6 +100,7 @@ MODELS: Mapping[str, set[str]] = {
     "mistralai/Mistral-Small-3.1-24B-Instruct-2503": _1xB200 | _1xMI355,
     "modularai/Llama-3.1-405B-Instruct-autofp8": _4xMI355 | _8xB200,
     "modularai/MiniMax-M3-MXFP6": NIGHTLY | _4xMI355 | _8xMI355,
+    "moonshotai/Kimi-K3": NIGHTLY | _8xMI355,
     "nvidia/DeepSeek-V3.1-NVFP4": _8xB200,
     "nvidia/DeepSeek-V3.1-NVFP4__fp8kv": VARIANT | _8xB200,
     "nvidia/DeepSeek-V3.1-NVFP4__mtp": VARIANT | _8xB200,
@@ -128,6 +133,7 @@ MODELS: Mapping[str, set[str]] = {
     "Qwen/Qwen3.5-9B": _1xB200,
     "Qwen/Qwen3.6-27B": _1xB200,
     "Qwen/Qwen3.8-27B": NIGHTLY | _1xB200 | _1xMI355 | _2xB200 | _2xMI355,
+    "Qwen/Qwen3.8-27B__rust_tiered_kvconnector": VARIANT | _1xB200 | _1xMI355,
     "RadixArk/GLM-5.3-NVFP4__mtp_tpep": NIGHTLY | VARIANT | _8xB200,
     "RadixArk/Qwen3.8-27B-NVFP4": NIGHTLY | _1xB200,
     "RadixArk/Qwen3.8-27B-NVFP4__dflash2": NIGHTLY | VARIANT | _1xB200,
@@ -174,8 +180,8 @@ def excluded(framework: str, gpu: str, model: str) -> bool:
     A model only runs on the HW listed for it in ``MODELS``.
     """
     tags = MODELS.get(model, set())
-    # Variants run MAX recipes; vLLM, SGLang and Mach have no equivalent.
-    if "VARIANT" in tags and framework in {"vllm", "sglang", "mach-ci"}:
+    # Variants run MAX recipes; vLLM and SGLang have no equivalent.
+    if "VARIANT" in tags and framework in {"vllm", "sglang"}:
         return True
     return gpu not in tags
 

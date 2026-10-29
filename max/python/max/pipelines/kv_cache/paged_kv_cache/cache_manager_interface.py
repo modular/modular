@@ -25,14 +25,14 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
 from max.driver import Buffer
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     BatchCharacteristics,
     KVCacheInputs,
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
 )
-from max.nn.kv_cache.cache_params import KVCacheBufferInterface
-from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache.cache_params import KVCacheBufferInterface
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import (
     BlockCount,
@@ -40,6 +40,7 @@ from max.pipelines.kv_cache.kv_connector import (
     KVTransfer,
 )
 
+from ..checkpoint import Checkpointer, CheckpointerFactory
 from ._common import PrefixCacheHits
 
 
@@ -119,6 +120,16 @@ class PagedKVCacheManagerInterface(ABC):
         never defers a lookup reads ``False``.
         """
         return False
+
+    def active_length_after_alloc(self, ctx: TextContext) -> int:
+        """Returns how many tokens the request's next deferred ``alloc`` leaves.
+
+        Takes nothing for the request, so a caller can check it against a
+        budget before ``alloc`` changes it. A manager that never defers a
+        lookup or rolls back a failed onload reads the request's active
+        length, which its reuse only shrinks.
+        """
+        return ctx.tokens.active_length
 
     def hand_back_lookup(self, ctx: TextContext) -> bool:
         """Hands back the request's lookup without loading from it.
@@ -243,6 +254,22 @@ class PagedKVCacheManagerInterface(ABC):
         Zero when no group of this cache needs the alignment.
         """
         return 0
+
+    def populate_checkpointer(
+        self, factory: CheckpointerFactory
+    ) -> CheckpointerFactory:
+        """Populates ``factory`` with the queries this cache answers.
+
+        Disables it by default, since this cache does not persist checkpoints.
+
+        Returns:
+            ``factory``, for chaining.
+        """
+        return factory.disabled()
+
+    def with_checkpointer(self, checkpointer: Checkpointer) -> None:
+        """Sets the checkpointer that decides where this cache checkpoints."""
+        del checkpointer
 
     @property
     @abstractmethod

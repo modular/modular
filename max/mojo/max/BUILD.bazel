@@ -21,6 +21,14 @@ mojo_library(
     ],
 )
 
+filegroup(
+    name = "mojodoc_json",
+    srcs = [":max.docs"],
+    output_group = "mojodoc_json",
+    tags = ["manual"],
+    visibility = ["//max/docs/site/scripts:__pkg__"],
+)
+
 pkg_files(
     name = "docs",
     srcs = [":max.docs"],

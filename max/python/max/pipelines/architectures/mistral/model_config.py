@@ -20,8 +20,8 @@ from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import KVCacheParams, MHAKVCacheParams
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheParams, MHAKVCacheParams
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
@@ -72,6 +72,7 @@ class MistralConfig(
     quantization_encoding: SupportedEncoding | None = None
 
     def get_max_seq_len(self) -> int:
+        """The maximum sequence length the config allows."""
         return self.max_seq_len
 
     @override
@@ -90,6 +91,9 @@ class MistralConfig(
 
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
+            model_config: The MAX Engine model configuration; defaults to
+                ``pipeline_config.model``.
+            max_seq_len: The sequence length the cache was sized for.
 
         Returns:
             An initialized MistralConfig instance.
@@ -114,6 +118,7 @@ class MistralConfig(
         *,
         max_seq_len: int,
     ) -> Self:
+        """Builds the config from the pipeline and HF configs."""
         kv_cache_config = pipeline_config.model.kv_cache
         quantization_encoding = _select_quantization_encoding(
             pipeline_config.model, cls.DEFAULT_ENCODING

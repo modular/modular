@@ -19,7 +19,7 @@ from typing import Any, cast
 import numpy as np
 import pytest
 from max.graph import DeviceRef
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.deepseekV3 import deepseekV3
 
 

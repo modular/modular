@@ -11,9 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Provides a high-level interface for interacting with LLMs built from MAX
-pipelines.
-"""
+"""Offline batch inference for models built with MAX pipelines."""
 
 from __future__ import annotations
 

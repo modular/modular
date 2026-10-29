@@ -19,6 +19,8 @@
 //! objects are now handles on a `(cache, bid)` pair
 //! (`max._kv_core.LittleKVCacheBlock`).
 
+use std::collections::BTreeMap;
+
 use crate::pool::free_list::{FreeLinks, Linked};
 
 /// One cache's page. Its `bid` is the page index into that cache's view of the
@@ -64,6 +66,9 @@ pub struct HugeBlock {
     /// Zero is what parks the block, so the bytes are up for grabs.
     pub num_referenced: usize,
     pub free: FreeLinks,
+    /// `little_block_type`'s free pages in here, by the stamp that orders
+    /// them on a [`crate::pool::free_list::FreeQueue`].
+    pub pages: BTreeMap<u64, usize>,
 }
 
 impl Linked for HugeBlock {

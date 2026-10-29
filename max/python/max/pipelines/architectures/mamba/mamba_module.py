@@ -22,14 +22,14 @@ from __future__ import annotations
 import math
 from typing import cast as typing_cast
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.embedding import Embedding
-from max.experimental.nn.linear import Linear
-from max.experimental.nn.norm import RMSNorm, rms_norm
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.nn.embedding import Embedding
+from max.nn.linear import Linear
+from max.nn.norm import RMSNorm, rms_norm
+from max.nn.sequential import ModuleList
+from max.tensor import Tensor
 
 from .functional_ops import (
     causal_conv1d,
@@ -61,6 +61,7 @@ class MambaSSMModule(Module[[Tensor], Tensor]):
     D: Tensor
 
     def forward(self, x: Tensor) -> Tensor:
+        """Rejects eager use: call :meth:`prefill` or :meth:`step`."""
         raise NotImplementedError("Use prefill() or step() directly")
 
     def __init__(self, config: MambaConfig, layer_idx: int) -> None:
@@ -272,6 +273,7 @@ class MambaLayer(Module[[Tensor], Tensor]):
     mixer: MambaSSMModule
 
     def forward(self, x: Tensor) -> Tensor:
+        """Rejects eager use: call :meth:`prefill` or :meth:`step`."""
         raise NotImplementedError("Use via MambaPrefill or MambaStep")
 
     def __init__(self, config: MambaConfig, layer_idx: int) -> None:
@@ -288,6 +290,7 @@ class MambaBase(Module[[Tensor, Tensor], tuple[Tensor, ...]]):
     norm: RMSNorm
 
     def forward(self, tokens: Tensor, aux: Tensor) -> tuple[Tensor, ...]:
+        """Rejects eager use: call :meth:`prefill` or :meth:`step`."""
         raise NotImplementedError("Use MambaPrefill or MambaStep")
 
     def __init__(self, config: MambaConfig) -> None:
@@ -342,6 +345,7 @@ class MambaPrefill(MambaBase):
     def forward(
         self, tokens: Tensor, input_row_offsets: Tensor
     ) -> tuple[Tensor, ...]:
+        """Runs the prefill graph over the prompt tokens."""
         h = self.embedding(tokens)
 
         all_states: list[Tensor] = []
@@ -377,6 +381,7 @@ class MambaStep(MambaBase):
     def forward(
         self, tokens: Tensor, *layer_states: Tensor
     ) -> tuple[Tensor, ...]:
+        """Runs one decode step, advancing each layer's state."""
         num_layers = self._num_layers
         conv_states = [layer_states[2 * i] for i in range(num_layers)]
         ssm_states = [layer_states[2 * i + 1] for i in range(num_layers)]

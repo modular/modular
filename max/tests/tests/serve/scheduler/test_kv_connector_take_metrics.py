@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache.connectors.null_connector import NullConnector
 
 
@@ -73,6 +73,35 @@ def test_kv_cache_metrics_add_folds_the_dkv_settle_fields() -> None:
     # two halts up are still one flag, not a count of them
     assert (halted + halted).dkv_owner_releases_halted == 1
     assert KVCacheMetrics().dkv_settle_queue_oldest_age_ms == 0.0
+
+
+def test_kv_cache_metrics_add_sums_the_dkv_orphan_fields() -> None:
+    """The orphan queue's outcome counts and its depth each sum."""
+    first = KVCacheMetrics(
+        dkv_orphan_cleanups_reissued=1,
+        dkv_orphan_cleanups_abandoned=2,
+        dkv_orphan_cleanups_dropped=3,
+        dkv_orphan_cleanups_refused=4,
+        dkv_orphan_cleanups_expired=5,
+        dkv_orphan_queue_depth=6,
+    )
+    second = KVCacheMetrics(
+        dkv_orphan_cleanups_reissued=10,
+        dkv_orphan_cleanups_abandoned=20,
+        dkv_orphan_cleanups_dropped=30,
+        dkv_orphan_cleanups_refused=40,
+        dkv_orphan_cleanups_expired=50,
+        dkv_orphan_queue_depth=60,
+    )
+
+    total = first + second
+
+    assert total.dkv_orphan_cleanups_reissued == 11
+    assert total.dkv_orphan_cleanups_abandoned == 22
+    assert total.dkv_orphan_cleanups_dropped == 33
+    assert total.dkv_orphan_cleanups_refused == 44
+    assert total.dkv_orphan_cleanups_expired == 55
+    assert total.dkv_orphan_queue_depth == 66
 
 
 def test_kv_cache_metrics_add_sums_tier_attribution_fields() -> None:

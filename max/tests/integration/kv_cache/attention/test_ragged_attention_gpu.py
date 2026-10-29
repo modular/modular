@@ -30,13 +30,13 @@ from max.graph import (
     TensorType,
     TensorValue,
 )
-from max.nn.attention import MHAMaskVariant
-from max.nn.kernels import (
+from max.nn.legacy.attention import MHAMaskVariant
+from max.nn.legacy.kernels import (
     cross_attention_ragged,
     flash_attention_gpu,
     flash_attention_ragged_gpu,
 )
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     MHAKVCacheParams,
     PagedCacheValues,
     packed_page_stride,

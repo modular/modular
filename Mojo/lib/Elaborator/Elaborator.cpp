@@ -505,9 +505,9 @@ void Elaborator::finalizeInstance(ImplNode *node) {
 // Elaborator::getConcreteFunction
 //===----------------------------------------------------------------------===//
 
-ErrorTreeOr<FuncOp> Elaborator::getConcreteFunction(ImplNode *parent,
-                                                    Location loc,
-                                                    SymbolConstantAttr symbol) {
+ErrorTreeOr<FuncOp>
+Elaborator::getConcreteFunction(ImplNode *parent, Location loc,
+                                FuncSymbolGenerator symbol) {
   StringAttr name = cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr();
   auto gen = oldSymTab.lookup<GeneratorOpInterface>(name);
   // If this doesn't reference anything in the existing module, then it must
@@ -620,7 +620,8 @@ ErrorTreeOr<Attribute> Elaborator::concretizeSymbolsWithin(Attribute value,
         // Ignore parametric constants.
         if (!cst.getType().getInputParamTypes().empty())
           return {cst, WalkResult::advance()};
-        ErrorTreeOr<FuncOp> func = getConcreteFunction(parent, loc, cst);
+        ErrorTreeOr<FuncOp> func =
+            getConcreteFunction(parent, loc, extractFuncSymbolGenerator(cst));
         if (func.isError()) {
           error = func.takeError();
           return {cst, WalkResult::interrupt()};
@@ -688,7 +689,7 @@ ElaborationState Elaborator::processParamConstantOp(ImplNode *parent, OpT op) {
 
 std::pair<ElaborationState, ImplNode *>
 Elaborator::instantiateGeneratorReference(
-    ImplNode *parent, Operation *user, SymbolConstantAttr calleeSymbol,
+    ImplNode *parent, Operation *user, FuncSymbolGenerator calleeSymbol,
     ParameterExprArrayAttr &inputParamKey, GeneratorOpInterface &gen,
     function_ref<bool(ParamNode *)> shouldWait) {
   // Lookup the callee.
@@ -774,11 +775,11 @@ Elaborator::collectConcreteImplementations(Location loc, ImplNode *parent,
 
 ElaborationState
 Elaborator::processGeneratorUser(GeneratorUserOpInterface user,
-                                 SymbolConstantAttr calleeSymbol,
+                                 FuncSymbolGenerator calleeSymbol,
                                  ImplNode *parent) {
   // Not all operations can verify their callee type, if for instance, it is a
   // generic type. Verify here as a fallback.
-  if (!calleeSymbol.getType().getInputParamTypes().empty()) {
+  if (!calleeSymbol || !calleeSymbol.isFullyBound()) {
     parent->setToError(
         ErrorTree(user.getLoc(), "cannot reference parametric function"));
     return ElaborationState::error();
@@ -833,7 +834,8 @@ Elaborator::processGeneratorUser(GeneratorUserOpInterface user,
   // symbol reference immediately.
   IRRewriter b{OpBuilder(user)};
   auto newCallee =
-      SymbolConstantAttr::get(concreteSymName, calleeSymbol.getType());
+      FuncSymbolGenerator::get(FlatSymbolRefAttr::get(concreteSymName),
+                               calleeSymbol.getInstantiatedType(), {});
   user.concretizeCallee(b, newCallee);
   return ElaborationState::advance();
 }
@@ -893,7 +895,7 @@ ElaborationState Elaborator::processCallOp(ImplNode *parent,
   Attribute symbol;
   HANDLE_EVALUATOR_CONC(symbol, parent, call.getLoc(), call.getCallee());
   return processGeneratorUser(
-      call, extractSymbolConstantAttr(cast<TypedAttr>(symbol)), parent);
+      call, extractFuncSymbolGenerator(cast<TypedAttr>(symbol)), parent);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1211,7 +1213,7 @@ ElaborationState Elaborator::processComptimeForOp(ImplNode *parent,
                           type);
 
   // Concretize the paramfor_has_next generator function.
-  auto hasNextSymbol = extractSymbolConstantAttr(cast<TypedAttr>(hasNext));
+  auto hasNextSymbol = extractFuncSymbolGenerator(cast<TypedAttr>(hasNext));
   if (!hasNextSymbol) {
     parent->setToError(ErrorTree(op.getLoc(),
                                  "INTERNAL ERROR: paramfor_has_next should "
@@ -1229,7 +1231,7 @@ ElaborationState Elaborator::processComptimeForOp(ImplNode *parent,
 
   // Concretize the sequence generator function.
   auto getNextIterSymbol =
-      extractSymbolConstantAttr(cast<TypedAttr>(getNextIter));
+      extractFuncSymbolGenerator(cast<TypedAttr>(getNextIter));
   if (!getNextIterSymbol) {
     parent->setToError(
         ErrorTree(op.getLoc(), "INTERNAL ERROR: paramfor_get_next_iter should "
@@ -2037,7 +2039,7 @@ ErrorTreeOrSuccess Elaborator::bundleCompileOffloadOp(CompileOffloadOp op,
     replacer.addReplacement(
         [&](SymbolConstantAttr ref)
             -> std::optional<std::pair<Attribute, WalkResult>> {
-          if (ref != symbol)
+          if (ref.getSymbol() != symbol.getSymbol())
             exportedSymbols.insert(
                 {ref.getSymbol().getRootReference(), ExportKind::NotExported});
           return std::nullopt;
@@ -2045,7 +2047,7 @@ ErrorTreeOrSuccess Elaborator::bundleCompileOffloadOp(CompileOffloadOp op,
     replacer.addReplacement(
         [&](FuncSymbolAttr ref)
             -> std::optional<std::pair<Attribute, WalkResult>> {
-          if (ref != symbol)
+          if (ref.getSymbol() != symbol.getSymbol())
             exportedSymbols.insert(
                 {ref.getSymbol().getRootReference(), ExportKind::NotExported});
           return std::nullopt;
@@ -2071,7 +2073,7 @@ ErrorTreeOrSuccess Elaborator::bundleCompileOffloadOp(CompileOffloadOp op,
           Attribute newGenRef = replacer.replace(genRef);
           return std::make_pair(newGenRef, WalkResult::skip());
         });
-    symbol = cast<SymbolConstantAttr>(replacer.replace(symbol));
+    symbol = cast<TypedAttr>(replacer.replace(TypedAttr(symbol)));
 
     // The replacer above reaches the offload function's parameters only, so a
     // struct referenced solely by `opaque_plugin` would never be exported.
@@ -2090,8 +2092,9 @@ ErrorTreeOrSuccess Elaborator::bundleCompileOffloadOp(CompileOffloadOp op,
       sourceName = StringAttr::get(ctx, *srcName);
 
     auto pair = iter->second.insert(
-        {symbol, OffloadInfo::KernelInfo{
-                     name, offloadInfo.numKernels, {}, sourceName}});
+        {symbol.getInstantiatedFuncSymbol(),
+         OffloadInfo::KernelInfo{
+             name, offloadInfo.numKernels, {}, sourceName}});
 
     if (pair.second)
       offloadInfo.numKernels += 1;
@@ -2138,11 +2141,10 @@ ElaborationState Elaborator::processCompileOffload(ImplNode *parent,
       parent->setToError(thunkCallee->takeError());
       return ElaborationState::error();
     }
-    SymbolConstantAttr calleeSym = thunkCallee->takeValue();
+    FuncSymbolGenerator calleeSym = thunkCallee->takeValue();
     if (!calleeSym)
       return ElaborationState::skipNode();
-    symbol = calleeSym;
-    op.setFuncAttr(symbol);
+    op.setFuncAttr(calleeSym);
   }
 
   compileOffloadOps.modify([&](auto &set) { set.insert(op); });

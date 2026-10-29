@@ -21,7 +21,6 @@ from typing import Any, Generic, overload
 
 from max import tree
 from max.dtype import DType
-from max.experimental.tensor import Tensor
 from max.graph import (
     BufferType,
     BufferValue,
@@ -30,12 +29,13 @@ from max.graph import (
     TensorValue,
     Value,
 )
-from max.nn.comm import Signals
-from max.nn.kv_cache import (
+from max.nn.legacy.comm import Signals
+from max.nn.legacy.kv_cache import (
     KVCacheInputs,
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
 )
+from max.tensor import Tensor
 from typing_extensions import TypeVar
 
 from ._tensor_compat import as_graph_values, as_tensors
@@ -87,9 +87,13 @@ class SpecDecodeInputTypeSpec:
     trace_owns_signal_buffers: bool = False
     """Declare no signal-buffer inputs, whatever the flags above say.
 
-    A graph traced by :meth:`~max.experimental.nn.Module.compile` appends its
+    A graph traced by :meth:`~max.nn.Module.compile` appends its
     own after every declared input, so declaring them here too would leave
     two sets."""
+    signal_buffer_index: int | None = None
+    """Where the trace inserts its signal buffers, under
+    ``trace_owns_signal_buffers``, for an engine that binds them there.
+    ``None`` appends them."""
     enable_sampled_draft_proposal: bool = False
     """Declare the ``draft_probs_full`` input: the distribution the draft
     sampled its token from, which the acceptance test's residual subtracts and

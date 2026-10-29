@@ -13,7 +13,7 @@
 """Compiled tests on real GPUs -- inherits all logic from _compiled."""
 
 from max.driver import Accelerator
-from max.experimental.sharding import DeviceMesh
+from max.tensor.sharding import DeviceMesh
 
 from module._compiled import CompiledTests
 

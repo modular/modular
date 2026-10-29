@@ -17,7 +17,7 @@
 # Output:
 #   [Dim(4), Dim(8)]
 
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 x = Tensor.ones([4, 8])  # (batch=4, features=8)
 scale = Tensor([1.0, 2.0, 3.0, 4.0])  # (batch=4,)

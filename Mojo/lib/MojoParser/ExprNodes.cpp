@@ -1952,14 +1952,21 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   // context; our support here is just about whether the indices are static.
   StringRef staticGetterName =
       isSubscript ? "__getitem_param__" : "__getattr_param__";
+
+  StringRef dynamicGetterName = isSubscript ? "__getitem__" : "__getattr__";
+  StringRef dynamicSetterName = isSubscript ? "__setitem__" : "__setattr__";
   LookupResult staticGetters = emitter.shared.lookupAndResolveDecl(
       staticGetterName, node->getLoc(), baseType,
       /*searchParentScopes=*/false);
   if (staticGetters.isSuccess()) {
     // The indices may have dynamic values in them that can't be emitted in a
-    // parameter context, but could still be emitted to a __getitem__. If the
-    // type has a __getitem__ then we have to decide what path to use.
-    if (emitter.shared.typeHasMember(baseType, "__getitem__", node->getLoc())) {
+    // parameter context, but could still be emitted to a dynamic getter or
+    // setter. If the type has either a dynamic getter or setter then we have to
+    // decide what path to use.
+    if (emitter.shared.typeHasMember(baseType, dynamicGetterName,
+                                     node->getLoc()) ||
+        emitter.shared.typeHasMember(baseType, dynamicSetterName,
+                                     node->getLoc())) {
       // Check if the indices are all static.
       bool anyDynamic = false;
       size_t numEmitted = 0;
@@ -1997,15 +2004,13 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
   }
 
   // Look up the getter and setter candidate list on the self type.
-  StringRef getterName = isSubscript ? "__getitem__" : "__getattr__";
   OverloadSet getterSet = OverloadSet::lookup(emitter.getDeclScope(), baseType,
-                                              getterName, node, syntax);
+                                              dynamicGetterName, node, syntax);
   if (getterSet.isErroneous())
     return {}; // Ignore already emitted errors.
 
-  StringRef setterName = isSubscript ? "__setitem__" : "__setattr__";
   OverloadSet setterSet = OverloadSet::lookup(emitter.getDeclScope(), baseType,
-                                              setterName, node, syntax);
+                                              dynamicSetterName, node, syntax);
   if (setterSet.isErroneous())
     return {}; // Ignore already emitted errors.
 
@@ -2017,8 +2022,8 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
 
   if (!getterSet) {
     auto diag = emitter.emitError(node->getLoc())
-                << baseType << " has '" << setterName << "' but no '"
-                << getterName << "' method" << node->getRange();
+                << baseType << " has '" << dynamicSetterName << "' but no '"
+                << dynamicGetterName << "' method" << node->getRange();
     diag.attachNote(node->getLoc())
         << "used in an expression here" << node->getRange();
     return {};
@@ -2088,7 +2093,7 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
     // Can't use the self argument as the new value.
     if (argNo == 0) {
       auto diag = emitter.emitError(setterSet.fnDecls.front()->getLoc())
-                  << setterName
+                  << dynamicSetterName
                   << " must take at least one argument for the value to set"
                   << node->getRange();
       diag.attachNote(node->getLoc())

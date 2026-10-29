@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Request scheduling and batching for the serving loop."""
+
 from __future__ import annotations
 
 import contextlib
@@ -85,6 +88,7 @@ def load_scheduler(
     memory_plan: MemoryPlan | None,
     kernel_capture: KernelCapture | None = None,
 ) -> Scheduler:
+    """Returns the scheduler that matches the kind of pipeline it is given."""
     request_queue = worker_queues.request_queue
     response_queue = worker_queues.response_queue
     cancel_queue = worker_queues.cancel_queue

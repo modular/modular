@@ -169,5 +169,6 @@ def resolve_missing_py_reference(
 
 
 def setup(app: Sphinx) -> None:
+    """Connects the handlers that qualify and resolve typing references."""
     app.connect("doctree-read", qualify_typing_xrefs)
     app.connect("missing-reference", resolve_missing_py_reference)

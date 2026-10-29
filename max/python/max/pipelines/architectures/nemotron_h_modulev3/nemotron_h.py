@@ -21,28 +21,28 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, cast
 
+from max import functional as F
 from max import tree
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module, as_subgraph
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.nn.embedding import Embedding
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.sharding import DeviceMapping, NamedMapping
-from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorValue
-from max.nn.kv_cache import (
+from max.nn import Module, as_subgraph
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.embedding import Embedding
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
     MHAKVCacheParams,
     RecurrentLeafInputs,
     RecurrentStateInputsPerDevice,
 )
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.norm import RMSNorm
+from max.nn.sequential import ModuleList
 from max.pipelines.lib import ModuleV3Outputs
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, NamedMapping
 
 from .layers.attention import NemotronHAttention
 from .layers.mamba2 import (
@@ -105,6 +105,7 @@ class NemotronHBlock(Module[..., Tensor]):
         self.capture_replay = capture_replay
 
     def forward(self, h: Tensor, *mixer_args: object) -> Any:
+        """Runs the block's mixer over ``h``."""
         # Row-parallel mixers leave partial sums; reduce before the residual add.
         if self.capture_replay:
             # A Mamba block that hands back the inputs of its state updates,
@@ -313,6 +314,7 @@ class NemotronH(Module[..., ModuleV3Outputs]):
         input_row_offsets: Tensor,
         *kv_inputs: Tensor,
     ) -> ModuleV3Outputs:
+        """Runs the decoder stack over the tokens."""
         if self.return_logits == ReturnLogits.VARIABLE:
             # Only `verify` builds the variable-logits range, from a host
             # count. This graph's count would land on the device, which

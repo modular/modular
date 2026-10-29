@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Qwen2.5-VL vision tower."""
 
 from __future__ import annotations
 
@@ -36,11 +37,11 @@ from max.graph import (
     ops,
 )
 from max.graph import Module as GraphModule
-from max.nn.comm import Allreduce, Signals
-from max.nn.layer import LayerList, Module, Shardable
-from max.nn.linear import MLP, Linear
-from max.nn.norm import RMSNorm
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.comm import Allreduce, Signals
+from max.nn.legacy.layer import LayerList, Module, Shardable
+from max.nn.legacy.linear import MLP, Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.quant_config import QuantConfig
 
 from ..model_config import VisionConfig
 from .vision_attention import DistributedVisionWindowAttention
@@ -145,6 +146,7 @@ class VisionPatchEmbed(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the patch embedding is split across devices."""
         return self._sharding_strategy
 
     @sharding_strategy.setter
@@ -158,6 +160,7 @@ class VisionPatchEmbed(Module, Shardable):
         self._sharding_strategy = strategy
 
     def shard(self, devices: Iterable[DeviceRef]) -> list[VisionPatchEmbed]:
+        """Splits the patch embedding across ``devices``."""
         if not self.sharding_strategy:
             raise ValueError(
                 "VisionPatchEmbed layer cannot be sharded because no sharding strategy was provided."
@@ -184,7 +187,7 @@ class VisionPatchEmbed(Module, Shardable):
 class VisionRotaryEmbedding(Module):
     """Rotary embedding layer for the qwen2 vision model.
 
-    Differences compared to `max.nn.RotaryEmbedding`:
+    Differences compared to `max.nn.legacy.RotaryEmbedding`:
 
     - In _compute_inv_freqs, the head dimension (n) is divided by 2.
     - inv_freqs is cached instead of freqs.
@@ -230,14 +233,21 @@ class VisionRotaryEmbedding(Module):
         max_grid_size: TensorValue,
         seq_len: Dim,
     ) -> tuple[TensorValue, TensorValue]:
-        """Generates rotary position embeddings for a maximum sequence length of max_grid_size
-        reordered by window_index. window_index is the indices of patches in the order they are
-        fed to WindowAttention.
+        """Builds the rotary position embeddings for ``max_grid_size``.
+
+        They come back reordered by ``window_index``, the patch indices in
+        the order ``WindowAttention`` receives them.
 
         Args:
-            max_grid_size: max value in spatial dimensions in the grid of image and video patches.
-                It represents the max no. of patches in an image or a frame. Used as the max positional embedding needed.
-            seq_len: total number of patches in the sequence of images and videos. Its also pixel_values.shape[0].
+            rot_pos_ids: The (h, w) rotary ids of every patch.
+            window_index: The patch indices in windowed order.
+            spatial_merge_unit: Number of patches one merged token spans.
+            max_grid_size: max value in spatial dimensions in the grid of
+                image and video patches. It represents the max no. of patches
+                in an image or a frame. Used as the max positional embedding
+                needed.
+            seq_len: total number of patches in the sequence of images and
+                videos. Its also pixel_values.shape[0].
         """
         # Generate rot_embs assuming max number of patches.
         t = ops.range(
@@ -279,6 +289,7 @@ class VisionRotaryEmbedding(Module):
         self,
         x: TensorValue,
     ) -> TensorValue:
+        """The rotary embeddings are built by the caller, so nothing to run."""
         raise NotImplementedError
 
 
@@ -363,6 +374,7 @@ class VisionBlock(Module):
         max_seqlen: Sequence[TensorValue],
         signal_buffers: list[BufferValue],
     ) -> list[TensorValue]:
+        """Runs the block's windowed attention, then its MLP."""
         # Norm 1
         norm1_outs = [
             norm(x) for norm, x in zip(self.norm1_shards, xs, strict=True)
@@ -409,9 +421,10 @@ class VisionBlock(Module):
 
 
 class PatchMerger(Module, Shardable):
-    """Group spatially adjacent sets of four patch features then concatenate and
-    pass through a two-layer multi-layer perceptron (MLP) to project them into a
-    dimension that aligns with the text embeddings used in the LLM.
+    """Projects groups of spatially adjacent patches into the text width.
+
+    The features of each group are concatenated and run through a two-layer
+    MLP, so the tower's output lines up with the decoder's embeddings.
     """
 
     def __init__(
@@ -459,6 +472,7 @@ class PatchMerger(Module, Shardable):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the merger's weights are split across devices."""
         return self.linear1.sharding_strategy
 
     @sharding_strategy.setter
@@ -487,6 +501,7 @@ class PatchMerger(Module, Shardable):
             )
 
     def shard(self, devices: Iterable[DeviceRef]) -> list[PatchMerger]:
+        """Splits the merger's weights across ``devices``."""
         # Shard underlying weights
         norm_weight_shards = self.norm.weight.shard(devices)
         linear1_shards = self.linear1.shard(devices)
@@ -512,6 +527,7 @@ class PatchMerger(Module, Shardable):
     def __call__(
         self, x: TensorValue, signal_buffers: Sequence[BufferValue]
     ) -> TensorValue:
+        """Merges groups of patches and projects them into the text width."""
         # Apply RMSNorm and reshape for MLP input
         x = self.norm(x)
         x = x.rebind(
@@ -532,36 +548,21 @@ class PatchMerger(Module, Shardable):
 
 
 class VisionTransformer(Module):
-    """The bare Qwen2.5VL Vision Transformer (a redesigned Vision Transformer (ViT))
-    outputting raw hidden-states without any specific head on top.
+    """The Qwen2.5-VL vision tower, before any head.
 
-    Its incorporates Window Attention to address the quadratic computational complexity
-    associated with processing images of varying sizes at native resolution. This module
-    uses only 4 full attention layers and the rest are windowed to reduces computational
-    overhead while maintaining native resolution. Window Attention cost scales
-    linearly with the number of patches rather than quadratically.
+    Window attention keeps the cost linear in the number of patches, which
+    is what lets the tower read an image at native resolution.
+    ``config.fullatt_block_indexes`` names the layers that attend over the
+    whole image; every other layer attends within a window.
 
-    For positional encoding, it adopts 2D Rotary Positional Embedding (RoPE). For videos,
-    MRoPE aligns time IDs with absolute time along the temporal dimension to capture the
-    pace of events and precise moment localization. Two consecutive frames are grouped
-    together, significantly reducing the number of tokens.
+    Positional encoding is 2D rotary. For video, MRoPE aligns the temporal
+    ids with absolute time, and two consecutive frames are grouped together
+    to cut the token count.
 
-    This is difference between this module and the original ViT proposed with Llava is:
-    - FFN
-    - SwiGLU activation
-    - RMSNorm for normalization
-    - window-based attention
-
-    This module consumes processed images that are split into patches with a stride of 14,
-    generating a set of image features (embeddings), one for each patch.
-
-    To address the efficiency challenges posed by long sequences of image features,
-    it groups spatially adjacent sets of four patch features, then concatenate them
-    and pass through a two-layer (MLP) that projects the merged features into a space
-    compatible with the language model's embeddings. This is instead of directly using
-    the raw patch embeds.
-    This spatial merging operation reduces the spatial dimensions of the output,
-    and is controlled by the spatial_merge_size parameter.
+    The tower splits an image into patches with a stride of 14 and emits one
+    feature per patch. Groups of four spatially adjacent features are then
+    concatenated and projected through a two-layer MLP, which shrinks the
+    spatial dimensions by ``spatial_merge_size``.
     """
 
     def __init__(
@@ -633,8 +634,7 @@ class VisionTransformer(Module):
         self.merger_allreduce = Allreduce(num_accelerators=len(self.devices))
 
     def input_tree(self) -> OrderedDict[str, object]:
-        """Names the vision graph's inputs, keyed by :meth:`__call__`'s
-        arguments.
+        """Names the vision graph's inputs, keyed by :meth:`__call__`'s arguments.
 
         Each argument takes one input per device. ``vision_seq_len`` is the
         number of patches in all images and videos in the batch.
@@ -677,8 +677,7 @@ class VisionTransformer(Module):
         custom_extensions: Iterable[Path] = (),
         is_device_graph: bool = False,
     ) -> Graph:
-        """Traces the vision graph, whose inputs are :meth:`input_tree`'s
-        leaves.
+        """Traces the vision graph, whose inputs are :meth:`input_tree`'s leaves.
 
         Args:
             *input_types: The graph's input types, the leaves of
@@ -744,7 +743,8 @@ class VisionTransformer(Module):
                 seq_len depends on the spatial dims of the image or video and second dim of x for Qwen2.5VL is 1176.
                 Qwen2.5VL processor that handles multiple images of different shapes by flattening all dims and returning
                 a 2D tensor of all patches in all images + a grid_thw representing the temporal and spatial coords of patches.
-            rotary_pos_ids: Buffer of shape (seq_len, 2) generated by data_processing.mrope_pos_ids_3d(grid_thw, spatial_merge_size).
+            rot_pos_ids: Buffer of shape (seq_len, 2) generated by
+                data_processing.mrope_pos_ids_3d(grid_thw, spatial_merge_size).
             window_index:  1D TensorValue generated by data_processing.get_window_index(grid_thw, window_size, spatial_merge_size, patch_size, spatial_merge_unit).
             max_grid_size: max value in spatial dimensions in the grid of image and video patches.
                 It represents the max no. of patches in an image or a frame. Used as the max positional embedding needed.

@@ -29,9 +29,7 @@ from std.collections.set import Set
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import B200
 from std.itertools.itertools import product
-from std.utils.coord import Coord, DynamicCoord, coord, coord_to_index_list
 from layout.tensor_core import get_mma_shape
-from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 from std.sys import size_of
 from std.math import align_down, align_up, ceildiv
@@ -207,30 +205,33 @@ struct OutputPipelineConfig(Copyable, Equatable, TrivialRegisterPassable):
 
 def _compute_block_tile_shape[
     a_type: DType
-](mma_shape: Coord, cta_group: Int) -> Coord[Int, Int, Int]:
+](mma_shape: Tuple[Int, Int, Int], cta_group: Int) -> Tuple[Int, Int, Int]:
     """Compute block tile shape from MMA shape and CTA group."""
-    return Coord[Int, Int, Int](
-        Int(mma_shape[0]) // cta_group,
-        Int(mma_shape[1]) // cta_group,
+    return (
+        mma_shape[0] // cta_group,
+        mma_shape[1] // cta_group,
         128 // size_of[a_type](),
     )
 
 
 def _compute_output_tile_shape(
-    c_type: DType, mma_shape: Coord, cta_group: Int, AB_swapped: Bool
-) -> Coord[Int, Int]:
+    c_type: DType,
+    mma_shape: Tuple[Int, Int, Int],
+    cta_group: Int,
+    AB_swapped: Bool,
+) -> Tuple[Int, Int]:
     """Compute output tile shape based on MMA config."""
     # If MMA_M is 256, each of the pair ctas has the entire MMA_N.
     # If MMA_M is 128, each of the pair ctas has 1/2 of MMA_N.
     # If cta_group=1, the cta has the entire MMA_N.
 
     # MMA_M=128/256 cta_group=2 all use 128 rows in output tile.
-    var output_tile_m = 128 if cta_group == 2 else Int(mma_shape[0])
+    var output_tile_m = 128 if cta_group == 2 else mma_shape[0]
 
     if c_type == .bfloat16:
-        var c_tile_n = Int(mma_shape[1]) if (
-            Int(mma_shape[0]) == 256 or cta_group == 1
-        ) else (Int(mma_shape[1]) // 2)
+        var c_tile_n = mma_shape[1] if (
+            mma_shape[0] == 256 or cta_group == 1
+        ) else (mma_shape[1] // 2)
         var output_tile_n = 8
         # For AB_swapped, c_swizzle is picked independently of output_tile_n
         # (see _compute_swizzle_modes). This in turn limits the chosen TMA
@@ -241,31 +242,34 @@ def _compute_output_tile_shape(
             output_tile_n = 32
         elif c_tile_n % 16 == 0:
             output_tile_n = 16
-        return Coord[Int, Int](
-            output_tile_n, output_tile_m
-        ) if AB_swapped else Coord[Int, Int](output_tile_m, output_tile_n)
+        return (output_tile_n, output_tile_m) if AB_swapped else (
+            output_tile_m,
+            output_tile_n,
+        )
     elif c_type == .float32:
-        var c_tile_n = Int(mma_shape[1]) if (
-            Int(mma_shape[0]) == 256 or cta_group == 1
-        ) else (Int(mma_shape[1]) // 2)
+        var c_tile_n = mma_shape[1] if (
+            mma_shape[0] == 256 or cta_group == 1
+        ) else (mma_shape[1] // 2)
         var output_tile_n = 8
         if c_tile_n % 32 == 0 and not AB_swapped:
             output_tile_n = 32
         elif c_tile_n % 16 == 0:
             output_tile_n = 16
-        return Coord[Int, Int](
-            output_tile_n, output_tile_m
-        ) if AB_swapped else Coord[Int, Int](output_tile_m, output_tile_n)
+        return (output_tile_n, output_tile_m) if AB_swapped else (
+            output_tile_m,
+            output_tile_n,
+        )
     else:  # FP8 output tile shape
         var output_tile_n = 16  # no swizzle for fp8 output dtype
-        return Coord[Int, Int](
-            output_tile_n, output_tile_m
-        ) if AB_swapped else Coord[Int, Int](output_tile_m, output_tile_n)
+        return (output_tile_n, output_tile_m) if AB_swapped else (
+            output_tile_m,
+            output_tile_n,
+        )
 
 
 def _compute_swizzle_modes(
     c_type: DType,
-    output_tile_shape: Coord,
+    output_tile_shape: Tuple[Int, Int],
     AB_swapped: Bool,
     is_gmm: Bool = False,
 ) -> Tuple[TensorMapSwizzle, TensorMapSwizzle, TensorMapSwizzle]:
@@ -318,9 +322,9 @@ def _compute_epi_load_swizzle[
 def _maximize_pipeline_stages[
     a_type: DType, b_type: DType, c_type: DType
 ](
-    block_tile_shape: Coord,
-    mma_shape: Coord,
-    output_tile_shape: Coord,
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    output_tile_shape: Tuple[Int, Int],
     num_output_stages: Int,
     num_clc_pipeline_stages: Int,
     num_accum_pipeline_stages: Int,
@@ -415,14 +419,14 @@ def _write_common_config[
 ](
     mut writer: W,
     cta_group: Int,
-    mma_shape: Coord,
-    cluster_shape: Coord,
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
     num_pipeline_stages: Int,
     k_group_size: Int,
     num_clc_pipeline_stages: Int,
     num_accum_pipeline_stages: Int,
     num_output_stages: Int,
-    output_tile_shape: Coord,
+    output_tile_shape: Tuple[Int, Int],
     AB_swapped: Bool,
     a_swizzle: TensorMapSwizzle,
     b_swizzle: TensorMapSwizzle,
@@ -501,14 +505,14 @@ def _get_common_config_string[
     transpose_b: Bool,
 ](
     cta_group: Int,
-    mma_shape: Coord,
-    cluster_shape: Coord,
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
     num_pipeline_stages: Int,
     k_group_size: Int,
     num_clc_pipeline_stages: Int,
     num_accum_pipeline_stages: Int,
     num_output_stages: Int,
-    output_tile_shape: Coord,
+    output_tile_shape: Tuple[Int, Int],
     AB_swapped: Bool,
     a_swizzle: TensorMapSwizzle,
     b_swizzle: TensorMapSwizzle,
@@ -578,9 +582,9 @@ def _get_common_config_string[
 def _maximize_tma_epi_pipeline_stages[
     a_type: DType, b_type: DType, c_type: DType
 ](
-    block_tile_shape: Coord,
-    mma_shape: Coord,
-    output_tile_shape: Coord,
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    output_tile_shape: Tuple[Int, Int],
     num_output_stages: Int,
     num_clc_pipeline_stages: Int,
     num_accum_pipeline_stages: Int,
@@ -606,7 +610,7 @@ struct MatmulConfig[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = True,
-](Copyable, Equatable, Hashable, TrivialRegisterPassable, Writable):
+](Equatable, Hashable, ImplicitlyCopyable, RegisterPassable, Writable):
     """Static configuration of GPU matmul.
 
     Parameters:
@@ -621,8 +625,8 @@ struct MatmulConfig[
 
     # Mandatory parameters
     var cta_group: Int
-    var mma_shape: Coord[Int, Int, Int]
-    var cluster_shape: Coord[Int, Int, Int]
+    var mma_shape: Tuple[Int, Int, Int]
+    var cluster_shape: Tuple[Int, Int, Int]
     var AB_swapped: Bool
     var block_swizzle_size: Int
     var raster_order: RasterOrder
@@ -631,13 +635,13 @@ struct MatmulConfig[
     comptime accum_type = get_accum_type[Self.a_type]()
 
     # Has default values or derivable from mandatory parameters
-    var block_tile_shape: Coord[Int, Int, Int]
+    var block_tile_shape: Tuple[Int, Int, Int]
     var num_split_k: Int
     var num_pipeline_stages: Int
     var num_clc_pipeline_stages: Int
     var num_accum_pipeline_stages: Int
     var num_output_stages: Int
-    var output_tile_shape: Coord[Int, Int]
+    var output_tile_shape: Tuple[Int, Int]
     var a_swizzle: TensorMapSwizzle
     var b_swizzle: TensorMapSwizzle
     var c_swizzle: TensorMapSwizzle
@@ -656,8 +660,10 @@ struct MatmulConfig[
         out self,
         *,
         cta_group: Int = 2,
-        mma_shape: Coord = get_mma_shape[Self.a_type, Self.accum_type](),
-        cluster_shape: Coord = coord[2, 1, 1],
+        mma_shape: Tuple[Int, Int, Int] = get_mma_shape[
+            Self.a_type, Self.accum_type
+        ](),
+        cluster_shape: Tuple[Int, Int, Int] = (2, 1, 1),
         AB_swapped: Bool = False,
         num_split_k: Int = 1,
         block_swizzle_size: Int = 0,
@@ -673,7 +679,7 @@ struct MatmulConfig[
         use_tma_epilogue_load: Bool = False,
         num_tma_epilogue_pipeline_stages: Optional[Int] = None,
         epilogue_is_1d: Bool = False,
-        output_tile_shape: Optional[Coord[Int, Int]] = None,
+        output_tile_shape: Optional[Tuple[Int, Int]] = None,
         c_swizzle: Optional[TensorMapSwizzle] = None,
     ):
         comptime assert Self.a_type == Self.b_type
@@ -682,16 +688,8 @@ struct MatmulConfig[
         ), "float32 input only supports float32 output"
 
         self.cta_group = cta_group
-        self.mma_shape = (
-            Int(mma_shape[0]),
-            Int(mma_shape[1]),
-            Int(mma_shape[2]),
-        )
-        self.cluster_shape = (
-            Int(cluster_shape[0]),
-            Int(cluster_shape[1]),
-            Int(cluster_shape[2]),
-        )
+        self.mma_shape = mma_shape
+        self.cluster_shape = cluster_shape
         self.AB_swapped = AB_swapped
         self.block_swizzle_size = block_swizzle_size
         self.raster_order = raster_order
@@ -703,13 +701,10 @@ struct MatmulConfig[
         self.epilogue_is_1d = epilogue_is_1d
 
         self.block_tile_shape = _compute_block_tile_shape[Self.a_type](
-            (Int(mma_shape[0]), Int(mma_shape[1]), Int(mma_shape[2])), cta_group
+            mma_shape, cta_group
         )
         self.output_tile_shape = _compute_output_tile_shape(
-            Self.c_type,
-            (Int(mma_shape[0]), Int(mma_shape[1]), Int(mma_shape[2])),
-            cta_group,
-            AB_swapped,
+            Self.c_type, mma_shape, cta_group, AB_swapped
         )
 
         self.num_clc_pipeline_stages = num_clc_pipeline_stages
@@ -808,9 +803,7 @@ struct MatmulConfig[
         # applied last so the default derivations (block_tile_shape, A/B
         # swizzles) are unaffected.
         if case .Some(output_tile_shape) = output_tile_shape:
-            self.output_tile_shape = Coord[Int, Int](
-                Int(output_tile_shape[0]), Int(output_tile_shape[1])
-            )
+            self.output_tile_shape = output_tile_shape
         if case .Some(c_swizzle) = c_swizzle:
             self.c_swizzle = c_swizzle
 
@@ -821,11 +814,7 @@ struct MatmulConfig[
             Self.b_type, Self.a_type, Self.c_type, Self.transpose_b
         ](
             cta_group=self.cta_group,
-            mma_shape=(
-                self.mma_shape[0],
-                self.mma_shape[1],
-                self.mma_shape[2],
-            ),
+            mma_shape=self.mma_shape,
             cluster_shape=self.cluster_shape,
             AB_swapped=self.AB_swapped,
             num_pipeline_stages=self.num_pipeline_stages,
@@ -912,24 +901,20 @@ struct MatmulConfig[
         """
         return (
             self.cta_group == other.cta_group
-            and coord_to_index_list(self.mma_shape)
-            == coord_to_index_list(other.mma_shape)
-            and coord_to_index_list(self.cluster_shape)
-            == coord_to_index_list(other.cluster_shape)
+            and self.mma_shape == other.mma_shape
+            and self.cluster_shape == other.cluster_shape
             and self.AB_swapped == other.AB_swapped
             and self.block_swizzle_size == other.block_swizzle_size
             and self.raster_order == other.raster_order
             and self.register_based_epilogue == other.register_based_epilogue
-            and coord_to_index_list(self.block_tile_shape)
-            == coord_to_index_list(other.block_tile_shape)
+            and self.block_tile_shape == other.block_tile_shape
             and self.num_split_k == other.num_split_k
             and self.num_pipeline_stages == other.num_pipeline_stages
             and self.num_clc_pipeline_stages == other.num_clc_pipeline_stages
             and self.num_accum_pipeline_stages
             == other.num_accum_pipeline_stages
             and self.num_output_stages == other.num_output_stages
-            and coord_to_index_list(self.output_tile_shape)
-            == coord_to_index_list(other.output_tile_shape)
+            and self.output_tile_shape == other.output_tile_shape
             and self.a_swizzle == other.a_swizzle
             and self.b_swizzle == other.b_swizzle
             and self.c_swizzle == other.c_swizzle
@@ -964,19 +949,19 @@ struct MatmulConfig[
             hasher: The hasher instance.
         """
         self.cta_group.__hash__(hasher)
-        coord_to_index_list(self.mma_shape).__hash__(hasher)
-        coord_to_index_list(self.cluster_shape).__hash__(hasher)
+        self.mma_shape.__hash__(hasher)
+        self.cluster_shape.__hash__(hasher)
         self.AB_swapped.__hash__(hasher)
         self.block_swizzle_size.__hash__(hasher)
         self.raster_order.__hash__(hasher)
         self.register_based_epilogue.__hash__(hasher)
-        coord_to_index_list(self.block_tile_shape).__hash__(hasher)
+        self.block_tile_shape.__hash__(hasher)
         self.num_split_k.__hash__(hasher)
         self.num_pipeline_stages.__hash__(hasher)
         self.num_clc_pipeline_stages.__hash__(hasher)
         self.num_accum_pipeline_stages.__hash__(hasher)
         self.num_output_stages.__hash__(hasher)
-        coord_to_index_list(self.output_tile_shape).__hash__(hasher)
+        self.output_tile_shape.__hash__(hasher)
         self.a_swizzle.__hash__(hasher)
         self.b_swizzle.__hash__(hasher)
         self.c_swizzle.__hash__(hasher)
@@ -1313,7 +1298,7 @@ struct BlockScaledMatmulConfig[
     sfa_dtype: DType,
     sfb_dtype: DType,
     transpose_b: Bool = True,
-](Copyable, Equatable, Hashable, TrivialRegisterPassable, Writable):
+](Equatable, Hashable, ImplicitlyCopyable, RegisterPassable, Writable):
     """Static configuration of GPU matmul.
 
     Parameters:
@@ -1332,8 +1317,8 @@ struct BlockScaledMatmulConfig[
 
     # Mandatory parameters
     var cta_group: Int
-    var mma_shape: Coord[Int, Int, Int]
-    var cluster_shape: Coord[Int, Int, Int]
+    var mma_shape: Tuple[Int, Int, Int]
+    var cluster_shape: Tuple[Int, Int, Int]
     var AB_swapped: Bool
     var block_swizzle_size: Int
     var raster_order: RasterOrder
@@ -1344,13 +1329,13 @@ struct BlockScaledMatmulConfig[
     comptime sf_block_atom_size = SF_ATOM_M[0] * SF_ATOM_M[1] * SF_ATOM_K
 
     # Has default values or derivable from mandatory parameters
-    var block_tile_shape: Coord[Int, Int, Int]
+    var block_tile_shape: Tuple[Int, Int, Int]
     var num_split_k: Int
     var num_pipeline_stages: Int
     var num_clc_pipeline_stages: Int
     var num_accum_pipeline_stages: Int
     var num_output_stages: Int
-    var output_tile_shape: Coord[Int, Int]
+    var output_tile_shape: Tuple[Int, Int]
     var a_swizzle: TensorMapSwizzle
     var b_swizzle: TensorMapSwizzle
     var c_swizzle: TensorMapSwizzle
@@ -1374,8 +1359,10 @@ struct BlockScaledMatmulConfig[
         *,
         scaling_kind: UMMAKind,
         cta_group: Int = 2,
-        mma_shape: Coord = get_mma_shape[Self.a_type, Self.accum_type](),
-        cluster_shape: Coord = coord[2, 1, 1],
+        mma_shape: Tuple[Int, Int, Int] = get_mma_shape[
+            Self.a_type, Self.accum_type
+        ](),
+        cluster_shape: Tuple[Int, Int, Int] = (2, 1, 1),
         AB_swapped: Bool = False,
         num_split_k: Int = 1,
         block_swizzle_size: Int = 0,
@@ -1405,16 +1392,8 @@ struct BlockScaledMatmulConfig[
 
         self.cta_group = cta_group
         self.is_small_bn = is_small_bn
-        self.mma_shape = (
-            Int(mma_shape[0]),
-            Int(mma_shape[1]),
-            Int(mma_shape[2]),
-        )
-        self.cluster_shape = (
-            Int(cluster_shape[0]),
-            Int(cluster_shape[1]),
-            Int(cluster_shape[2]),
-        )
+        self.mma_shape = mma_shape
+        self.cluster_shape = cluster_shape
         self.AB_swapped = AB_swapped
         self.block_swizzle_size = block_swizzle_size
         self.raster_order = raster_order
@@ -1422,13 +1401,10 @@ struct BlockScaledMatmulConfig[
         self.register_based_epilogue = register_based_epilogue
 
         self.block_tile_shape = _compute_block_tile_shape[Self.a_type](
-            (Int(mma_shape[0]), Int(mma_shape[1]), Int(mma_shape[2])), cta_group
+            mma_shape, cta_group
         )
         self.output_tile_shape = _compute_output_tile_shape(
-            Self.c_type,
-            (Int(mma_shape[0]), Int(mma_shape[1]), Int(mma_shape[2])),
-            cta_group,
-            AB_swapped,
+            Self.c_type, mma_shape, cta_group, AB_swapped
         )
 
         self.gemm_kind = gemm_kind
@@ -1563,11 +1539,7 @@ struct BlockScaledMatmulConfig[
             Self.transpose_b,
         ](
             cta_group=self.cta_group,
-            mma_shape=(
-                self.mma_shape[0],
-                self.mma_shape[1],
-                self.mma_shape[2],
-            ),
+            mma_shape=self.mma_shape,
             cluster_shape=self.cluster_shape,
             AB_swapped=self.AB_swapped,
             num_pipeline_stages=self.num_pipeline_stages,
@@ -1664,24 +1636,20 @@ struct BlockScaledMatmulConfig[
         """
         return (
             self.cta_group == other.cta_group
-            and coord_to_index_list(self.mma_shape)
-            == coord_to_index_list(other.mma_shape)
-            and coord_to_index_list(self.cluster_shape)
-            == coord_to_index_list(other.cluster_shape)
+            and self.mma_shape == other.mma_shape
+            and self.cluster_shape == other.cluster_shape
             and self.AB_swapped == other.AB_swapped
             and self.block_swizzle_size == other.block_swizzle_size
             and self.raster_order == other.raster_order
             and self.register_based_epilogue == other.register_based_epilogue
-            and coord_to_index_list(self.block_tile_shape)
-            == coord_to_index_list(other.block_tile_shape)
+            and self.block_tile_shape == other.block_tile_shape
             and self.num_split_k == other.num_split_k
             and self.num_pipeline_stages == other.num_pipeline_stages
             and self.num_clc_pipeline_stages == other.num_clc_pipeline_stages
             and self.num_accum_pipeline_stages
             == other.num_accum_pipeline_stages
             and self.num_output_stages == other.num_output_stages
-            and coord_to_index_list(self.output_tile_shape)
-            == coord_to_index_list(other.output_tile_shape)
+            and self.output_tile_shape == other.output_tile_shape
             and self.a_swizzle == other.a_swizzle
             and self.b_swizzle == other.b_swizzle
             and self.c_swizzle == other.c_swizzle
@@ -1717,19 +1685,19 @@ struct BlockScaledMatmulConfig[
             hasher: The hasher instance.
         """
         self.cta_group.__hash__(hasher)
-        coord_to_index_list(self.mma_shape).__hash__(hasher)
-        coord_to_index_list(self.cluster_shape).__hash__(hasher)
+        self.mma_shape.__hash__(hasher)
+        self.cluster_shape.__hash__(hasher)
         self.AB_swapped.__hash__(hasher)
         self.block_swizzle_size.__hash__(hasher)
         self.raster_order.__hash__(hasher)
         self.register_based_epilogue.__hash__(hasher)
-        coord_to_index_list(self.block_tile_shape).__hash__(hasher)
+        self.block_tile_shape.__hash__(hasher)
         self.num_split_k.__hash__(hasher)
         self.num_pipeline_stages.__hash__(hasher)
         self.num_clc_pipeline_stages.__hash__(hasher)
         self.num_accum_pipeline_stages.__hash__(hasher)
         self.num_output_stages.__hash__(hasher)
-        coord_to_index_list(self.output_tile_shape).__hash__(hasher)
+        self.output_tile_shape.__hash__(hasher)
         self.a_swizzle.__hash__(hasher)
         self.b_swizzle.__hash__(hasher)
         self.c_swizzle.__hash__(hasher)
@@ -2018,12 +1986,12 @@ def default_matmul_config_bf16_fp8[
     comptime MMA_K = 32 // size_of[a_type]()
     comptime BK = TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]()
 
-    comptime block_tile_shape = coord[128, 128, BK]
-    comptime umma_shape = coord[
-        Int(block_tile_shape[0]) * cta_group,
-        Int(block_tile_shape[1]) * cta_group,
+    comptime block_tile_shape = (128, 128, BK)
+    comptime umma_shape = (
+        block_tile_shape[0] * cta_group,
+        block_tile_shape[1] * cta_group,
         MMA_K,
-    ]
+    )
 
     return MatmulConfig[a_type, b_type, c_type, transpose_b](
         mma_shape=(

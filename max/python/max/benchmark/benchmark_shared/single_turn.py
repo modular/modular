@@ -123,6 +123,7 @@ def build_single_turn_request_input(
     run_prefix_len: int = 0,
     disable_ignore_eos: bool = False,
 ) -> BaseRequestFuncInput:
+    """Builds the request input for one sampled request."""
     request_model_id = model_id if lora_id is None else lora_id
     if benchmark_task == "text-generation":
         max_tokens = min(
@@ -174,9 +175,9 @@ async def get_request(
     burstiness: float = 1.0,
     benchmark_should_end_time: int | None = None,
 ) -> AsyncGenerator[SampledRequest, None]:
-    """
-    Asynchronously generates requests at a specified rate
-    with OPTIONAL burstiness.
+    """Asynchronously generates requests at a specified rate.
+
+    Burstiness is OPTIONAL.
 
     Args:
         input_requests:
@@ -194,8 +195,9 @@ async def get_request(
         timing_data:
             Dictionary where timing data will be collected with keys:
             - 'intervals': List of actual time intervals between requests
+        benchmark_should_end_time:
+            A ``perf_counter_ns()`` deadline; generation stops once it passes.
     """
-
     # Calculate scale parameter theta to maintain the desired request_rate.
     assert burstiness > 0, (
         f"A positive burstiness factor is expected, but given {burstiness}."
@@ -500,6 +502,7 @@ async def run_single_test_prompt(
     run_prefix: str | None = None,
     run_prefix_len: int = 0,
 ) -> BaseRequestFuncOutput:
+    """Runs one test prompt through the request driver."""
     if isinstance(samples, ChatSamples):
         test_question = samples.chat_sessions[0].messages[0]
         test_answer = samples.chat_sessions[0].messages[1]

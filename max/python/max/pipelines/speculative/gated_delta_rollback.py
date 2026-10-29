@@ -39,11 +39,11 @@ engine supplies both for the live leaves and the ring alike.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Protocol
 
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, Dim, TensorValue, ops
-from max.nn.state_space import (
-    GatedDeltaReplayInputs,
+from max.nn.legacy.state_space import (
     gated_delta_conv1d_verify_fwd,
     gated_delta_state_fold,
 )
@@ -51,11 +51,30 @@ from max.nn.state_space import (
 from .ragged_token_merger import _shape_to_scalar
 
 __all__ = [
+    "ConvReplayInputs",
     "accepted_lengths",
     "accepted_row_plan",
     "fold_state_pools",
     "replay_conv_pools",
 ]
+
+
+class ConvReplayInputs(Protocol):
+    """What the conv replay reads from one layer's captured verify inputs.
+
+    Any linear-attention layer that runs ``gated_delta_conv1d_fwd`` captures
+    these, whatever its recurrence.
+    """
+
+    @property
+    def qkv_window(self) -> TensorValue | None:
+        """The verify's copy of its conv input, or ``None`` outside a verify."""
+        ...
+
+    @property
+    def conv_weight(self) -> TensorValue:
+        """``[conv_dim, kernel_size]`` float32 depthwise weights."""
+        ...
 
 
 def accepted_lengths(
@@ -167,7 +186,7 @@ def accepted_row_plan(
 
 
 def replay_conv_pools(
-    captures: Sequence[Sequence[GatedDeltaReplayInputs]],
+    captures: Sequence[Sequence[ConvReplayInputs]],
     live_conv_pools: Sequence[BufferValue],
     conv_row_ids: Sequence[TensorValue],
     row_indices: TensorValue,

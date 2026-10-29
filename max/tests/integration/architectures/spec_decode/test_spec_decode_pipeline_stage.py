@@ -52,6 +52,7 @@ def _config(
             huggingface_config=SimpleNamespace(architectures=[draft])
         ),
         model=SimpleNamespace(pipeline_stage=stage),
+        runtime=SimpleNamespace(prefer_module_v3=False),
     )
 
 

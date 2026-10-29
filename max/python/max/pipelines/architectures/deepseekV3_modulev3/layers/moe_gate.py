@@ -10,18 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """DeepSeek-V3 Mixture of Experts gate (ModuleV3)."""
 
 from __future__ import annotations
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn.common_layers.functional_kernels import (
+from max.nn.common_layers.functional_kernels import (
     moe_router_group_limited,
 )
-from max.experimental.nn.common_layers.moe import MoEGate
-from max.experimental.tensor import Tensor
+from max.nn.common_layers.moe import MoEGate
+from max.tensor import Tensor
 
 
 class DeepseekV3TopKRouter(MoEGate):
@@ -44,19 +43,20 @@ class DeepseekV3TopKRouter(MoEGate):
         norm_topk_prob: bool,
         correction_bias_dtype: DType | None,
     ) -> None:
-        """
+        """Stores the router dimensions and routing parameters.
+
         Args:
-            hidden_dim: Dimension of the hidden state.
-            num_experts: Number of routed experts.
-            num_experts_per_token: Top-k experts to select per token.
-            routed_scaling_factor: Scaling factor applied to expert weights.
-            scoring_func: Score function for the router. Only "sigmoid" is
-                supported.
-            topk_method: Top-k routing method. Only "noaux_tc" is supported.
-            n_group: Number of expert groups.
-            topk_group: Number of expert groups selected per token.
-            norm_topk_prob: Whether to normalize the top-k probabilities.
-            correction_bias_dtype: Data type of the correction bias.
+        hidden_dim: Dimension of the hidden state.
+        num_experts: Number of routed experts.
+        num_experts_per_token: Top-k experts to select per token.
+        routed_scaling_factor: Scaling factor applied to expert weights.
+        scoring_func: Score function for the router. Only "sigmoid" is
+            supported.
+        topk_method: Top-k routing method. Only "noaux_tc" is supported.
+        n_group: Number of expert groups.
+        topk_group: Number of expert groups selected per token.
+        norm_topk_prob: Whether to normalize the top-k probabilities.
+        correction_bias_dtype: Data type of the correction bias.
         """
         super().__init__(
             hidden_dim=hidden_dim,

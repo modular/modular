@@ -37,7 +37,6 @@ from max.gpu.host.info import B200
 from layout import TileTensor, coord, flatten_leading
 from structured_kernels.tile_types import create_tma_tile
 
-from std.utils.coord import DynamicCoord
 from std.utils.static_tuple import StaticTuple
 
 from ..structured_kernels.config import MatmulConfig
@@ -261,7 +260,7 @@ def grouped_matmul_dynamic_scaled_fp8_1d2d[
         num_active_experts: Number of active experts.
         ctx: Device context for kernel launch.
     """
-    comptime umma_shape: DynamicCoord[.int, 3] = (64, 64, 32)
+    comptime umma_shape = (64, 64, 32)
     # A-scales: 1 x BM floats per pipeline stage
     comptime BM = Int(umma_shape[0])  # cta_group=1
     comptime a_scales_smem_per_stage = BM * size_of[DType.float32]()

@@ -33,17 +33,17 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     fused_qk_ragged_rope,
     store_k_cache_ragged,
     store_v_cache_ragged,
 )
-from max.nn.kv_cache import PagedCacheValues
-from max.nn.layer import LayerList, Module, Shardable
-from max.nn.linear import Linear
-from max.nn.norm import RMSNorm
-from max.nn.rotary_embedding import RotaryEmbedding
-from max.nn.transformer.transformer import forward_sharded_layers
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.legacy.layer import LayerList, Module, Shardable
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import RMSNorm
+from max.nn.legacy.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.transformer.transformer import forward_sharded_layers
 from typing_extensions import Self
 
 from .model_config import DFlashMiMoV2Config

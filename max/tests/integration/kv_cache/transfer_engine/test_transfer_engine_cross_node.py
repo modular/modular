@@ -53,7 +53,7 @@ from max.driver import Accelerator
 from max.driver import __version__ as max_version
 from max.driver.buffer import Buffer
 from max.dtype import DType
-from max.nn.kv_cache.cache_params import KVCacheMemory
+from max.nn.legacy.kv_cache.cache_params import KVCacheMemory
 from max.pipelines.kv_cache import (
     KVTransferEngine,
     KVTransferEngineMetadata,

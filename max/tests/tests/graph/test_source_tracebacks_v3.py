@@ -16,13 +16,13 @@
 from collections.abc import Iterator
 
 import pytest
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.tensor import Tensor
 from max.graph import TensorType
+from max.nn import Module
+from max.tensor import Tensor
 
 
 @pytest.fixture

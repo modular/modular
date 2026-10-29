@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Maps OLMo3 checkpoint names onto the MAX tree."""
 
 from __future__ import annotations
 
@@ -34,11 +35,12 @@ def convert_safetensor_state_dict(
 
     Args:
         state_dict: Dictionary of weight tensors
+        huggingface_config: The HuggingFace model configuration.
+        pipeline_config: The MAX pipeline configuration.
 
     Returns:
         Dictionary of converted weight data
     """
-
     new_state_dict: dict[str, WeightData] = {}
 
     for weight_name, value in state_dict.items():

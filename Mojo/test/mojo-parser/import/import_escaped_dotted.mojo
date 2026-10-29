@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics -I=%S/inputs %s
+# RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics -I%S/inputs %s
 
 # Packages and modules whose names contain periods are importable via escaped
 # identifiers. Each split imports through a different path shape and invokes a

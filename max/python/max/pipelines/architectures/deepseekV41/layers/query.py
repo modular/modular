@@ -18,11 +18,11 @@ from typing import NamedTuple
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
-from max.nn.kernels import _is_sm10x_gpu, rms_norm_quantize_mxfp8_q_kv
-from max.nn.layer import Module
-from max.nn.linear import Linear
-from max.nn.norm.rms_norm import RMSNorm
-from max.nn.quant_config import QuantConfig, QuantFormat
+from max.nn.legacy.kernels import _is_sm10x_gpu, rms_norm_quantize_mxfp8_q_kv
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm.rms_norm import RMSNorm
+from max.nn.legacy.quant_config import QuantConfig, QuantFormat
 
 from .csa2 import WindowStore, norm_quantize_q_store_kv
 from .hyper_connection import Mxfp8Rows
@@ -68,6 +68,14 @@ class DeepseekV41Query(Module):
         """Initializes the projections.
 
         Args:
+            hidden_size: Width of the hidden states ``fused_wqa_wkv`` reads.
+            q_lora_rank: Width of the low-rank query.
+            head_dim: Width of one query head, and of the raw KV
+                projection.
+            local_num_heads: Heads this device projects.
+            eps: RMSNorm epsilon for ``q_norm``.
+            dtype: The projections' dtype.
+            device: The device the weights live on.
             quant_config: An MXFP8 config makes both projections
                 ``float8_e4m3fn`` with block scales; ``None`` keeps them
                 in ``dtype``.
@@ -141,8 +149,7 @@ class DeepseekV41Query(Module):
         )
 
     def reads_mxfp8(self) -> bool:
-        """Whether :meth:`call_fused` applies and can take its input in
-        MXFP8."""
+        """Whether :meth:`call_fused` applies and can take its input in MXFP8."""
         quant_config = self.fused_wqa_wkv.quant_config
         return (
             self.can_fuse_norm_quant()
@@ -240,8 +247,11 @@ class DeepseekV41Query(Module):
         kv_norm: RMSNorm,
         x_mxfp8: Mxfp8Rows | None = None,
     ) -> tuple[TensorValue, TensorValue, TensorValue]:
-        """Returns the ``[T, q_lora_rank + head_dim]`` projection of ``x``, or
-        of ``x_mxfp8`` when given, and both norms' bf16 weights."""
+        """Returns the fused Q/KV projection and both norms' bf16 weights.
+
+        The projection is ``[T, q_lora_rank + head_dim]``, computed from ``x``
+        or, when given, ``x_mxfp8``.
+        """
         assert self.q_norm.eps == kv_norm.eps
         projected = ops.reshape(
             mxfp8_linear(self.fused_wqa_wkv, x)
@@ -264,8 +274,11 @@ class DeepseekV41Query(Module):
         freqs_cis: TensorValue,
         rope: bool,
     ) -> TensorValue:
-        """Returns the local heads of the quantized ``[T, ...]`` ``qr``,
-        rotated when ``rope``."""
+        """Returns the local heads of the quantized ``qr``.
+
+        ``qr`` is the ``[T, ...]`` projection; the heads are rotated when
+        ``rope``.
+        """
         return ops.reshape(
             mxfp8_linear_rope_tail(
                 self.wq_b, qr, freqs_cis, self.head_dim, qr_scales

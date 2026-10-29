@@ -17,7 +17,7 @@ from std.benchmark import *
 from max.gpu.host import DeviceContext
 from std.memory import alloc, dealloc
 from nn.gather_scatter import _atomic_reduce, scatter_elements
-from extensibility import DynamicTensor
+from layout import Coord, TileTensor, row_major
 
 from std.utils.index import Index
 
@@ -45,8 +45,8 @@ def bench_scatter(mut bencher: Bencher, spec: ScatterSpec) raises:
         {length = input_shape.flattened_length()}
     ).into_managed()
     rand(data_alloc.unsafe_span())
-    var data_tensor = DynamicTensor[.float32, 2](
-        data_alloc.unsafe_ptr(), input_shape
+    var data_tensor = TileTensor(
+        data_alloc.unsafe_ptr(), row_major(Coord(input_shape))
     )
 
     var indices_alloc = alloc[Int32](
@@ -57,23 +57,23 @@ def bench_scatter(mut bencher: Bencher, spec: ScatterSpec) raises:
         index_rand_min,
         index_rand_max,
     )
-    var indices_tensor = DynamicTensor[.int32, 2](
-        indices_alloc.unsafe_ptr(), indices_shape
+    var indices_tensor = TileTensor(
+        indices_alloc.unsafe_ptr(), row_major(Coord(indices_shape))
     )
 
     var updates_alloc = alloc[Float32](
         {length = indices_shape.flattened_length()}
     ).into_managed()
     rand(updates_alloc.unsafe_span())
-    var updates_tensor = DynamicTensor[.float32, 2](
-        updates_alloc.unsafe_ptr(), indices_shape
+    var updates_tensor = TileTensor(
+        updates_alloc.unsafe_ptr(), row_major(Coord(indices_shape))
     )
 
     var output_alloc = alloc[Float32](
         {length = input_shape.flattened_length()}
     ).into_managed()
-    var output_tensor = DynamicTensor[.float32, 2](
-        output_alloc.unsafe_ptr(), input_shape
+    var output_tensor = TileTensor(
+        output_alloc.unsafe_ptr(), row_major(Coord(input_shape))
     )
 
     @inline(.always)

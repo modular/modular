@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """Configuration for Flint."""
 
 from __future__ import annotations
@@ -21,8 +20,8 @@ from typing import ClassVar
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import MultiKVCacheParams
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.kv_cache import MultiKVCacheParams
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import (
@@ -265,6 +264,7 @@ class FlintConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
     @staticmethod
     def get_head_dim(huggingface_config: AutoConfig) -> int:
+        """The checkpoint's ``head_dim``, or the hidden size per head."""
         return getattr(
             huggingface_config,
             "head_dim",
@@ -274,4 +274,5 @@ class FlintConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """The checkpoint's hidden layer count."""
         return huggingface_config.num_hidden_layers

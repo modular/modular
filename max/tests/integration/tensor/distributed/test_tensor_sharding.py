@@ -27,13 +27,13 @@ from __future__ import annotations
 import pytest
 from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.experimental.sharding import (
+from max.tensor import Tensor
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Replicated,
     Sharded,
 )
-from max.experimental.tensor import Tensor
 
 # ── Inline mesh helpers (no conftest dependency) ──────────────────────
 

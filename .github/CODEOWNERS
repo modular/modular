@@ -45,6 +45,7 @@
 /bazel/public-patches/rules_pycross_versions.patch @modular/sdlc
 /bazel/public-patches/rules_python_revert.patch @modular/sdlc
 /bazel/public-patches/rules_python_wheel.patch @modular/sdlc
+/bazel/public-patches/rules_rust_pyo3_no_rustfmt_aspect.patch @modular/sdlc
 /bazel/public-patches/tomlplusplus-visibility.patch @modular/sdlc
 /bazel/public-patches/torch-cuda-deps.patch @modular/sdlc
 /bazel/public-patches/with_cfg_visibility.patch @modular/sdlc
@@ -171,6 +172,8 @@
 /max/python/max/engine/ @modular/driver
 /max/python/max/_entrypoints/ @modular/max-sdk
 /max/python/max/experimental/ @modular/max-sdk
+/max/python/max/functional/ @modular/max-sdk
+/max/python/max/tensor/ @modular/max-sdk
 /max/python/max/experimental/cascade/ @modular/max-serve @modular/max-sdk
 /max/python/max/graph/ @modular/max-sdk
 /max/python/max/mlir/ @modular/max-sdk
@@ -231,6 +234,7 @@
 /max/tests/tests/test_interpreter.py @modular/max-sdk
 /max/tests/tests/test_interpreter_ops.py @modular/max-sdk
 /max/tests/tests/test_interpreter_ops_gpu.py @modular/max-sdk
+/max/tests/tests/test_nn_legacy_deprecation.py @modular/max-sdk
 /max/tests/tests/test_passes.py @modular/max-sdk
 /max/tests/tests/test_session_read.py @modular/max-sdk
 /max/tests/tests/test_support.py @modular/max-sdk

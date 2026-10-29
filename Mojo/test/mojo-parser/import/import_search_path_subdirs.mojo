@@ -19,7 +19,7 @@
 # RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics \
 # RUN:   -mojo-search-paths=%S/inputs/subdir_search_root %s
 # RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics \
-# RUN:   -I=%S/inputs/subdir_search_root %s 2>&1
+# RUN:   -I%S/inputs/subdir_search_root %s 2>&1
 
 # A module in a plain directory nested below a search path should not resolve
 # as a top-level name.

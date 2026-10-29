@@ -6,13 +6,13 @@ description: Load a checkpoint into a MAX model by writing a weight adapter that
 Most model architectures need a weight adapter. Write a weight adapter to
 convert checkpoint weights (most often published on Hugging Face) into the
 format expected by your MAX
-[`Module`](/api/python/generated/max.experimental.nn.Module/). Then, integrate
+[`Module`](/api/python/generated/max.nn.Module/). Then, integrate
 the weight adapter into the [model pipeline](/develop/pipelines/).
 
 :::note
 
 This page assumes you know the `Module` class from
-[`max.experimental.nn`](/api/python/experimental.nn/) before writing a weight
+[`max.nn`](/api/python/nn/) before writing a weight
 adapter. To learn more, see
 [Neural network modules](/develop/pipelines/#neural-network-modules).
 
@@ -67,12 +67,12 @@ entire weight loading flow:
    `_init_distributed_runtime()`.
 9. `graph_specs()` constructs your `Module` with `_instantiate_module()` inside
    an
-   [`F.lazy()`](/api/python/experimental.functional/#max.experimental.functional.lazy)
+   [`F.lazy()`](/api/python/functional/#max.functional.lazy)
    block, which defers tensor realization.
 10. `compile_and_init_graphs()` traces and compiles each graph through
-    [`Module.stage()`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.stage),
+    [`Module.stage()`](/api/python/generated/max.nn.Module/#max.nn.Module.stage),
     which
-    [`compile()`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.compile)
+    [`compile()`](/api/python/generated/max.nn.Module/#max.nn.Module.compile)
     wraps. Each parameter of the `Module` takes the state dictionary entry with
     the same name.
 
@@ -136,10 +136,11 @@ During serving, MAX finds and merges shards for you.
 
 ### Inspect the module parameters
 
-Each parameter name is the attribute path from the root `Module` to the
-parameter tensor, joined with dots. To list them, construct your `Module` inside
-an `F.lazy()` block and iterate over its
-[`parameters`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.parameters)
+Each parameter name is the
+[attribute path](/develop/modules/#walk-a-modules-parameters) from the root
+`Module` to the parameter tensor, joined with dots. To list them, construct your
+`Module` inside an `F.lazy()` block and iterate over its
+[`parameters`](/api/python/generated/max.nn.Module/#max.nn.Module.parameters)
 property:
 
 <!-- invisible-code-block: python
@@ -150,8 +151,8 @@ MyModel = Llama3
 
 ```python
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import default_dtype
+from max import functional as F
+from max.tensor import default_dtype
 
 # Construct the root module the way your _instantiate_module() does.
 with F.lazy(), default_dtype(DType.bfloat16):
@@ -164,7 +165,7 @@ for name, param in model.parameters:
 
 `F.lazy()` defers tensor realization, so constructing the module doesn't
 materialize its initial parameter values.
-[`default_dtype()`](/api/python/generated/max.experimental.tensor.default_dtype/)
+[`default_dtype()`](/api/python/generated/max.tensor.default_dtype/)
 sets the dtype for parameters that don't declare one, as `load_model()` does
 with the model config's `dtype`.
 
@@ -298,12 +299,11 @@ out[max_name] = data
 ```
 
 Perform tensor-level dtype casts in the weight adapter. A cast that depends on
-the model config belongs in your pipeline model's `_prepare_state_dict()`
-hook, which receives the state dictionary and the config. Defer layer-level
-encoding decisions to
-[`QuantFormat`](/api/python/generated/max.nn.QuantFormat/) and
-[`QuantConfig`](/api/python/generated/max.nn.QuantConfig/), which configure
-the quantized layers in the module.
+the model config belongs in your pipeline model's `_prepare_state_dict()` hook,
+which receives the state dictionary and the config. Defer layer-level encoding
+decisions to [`QuantFormat`](/api/python/generated/max.nn.legacy.QuantFormat/)
+and [`QuantConfig`](/api/python/generated/max.nn.legacy.QuantConfig/), which
+configure the quantized layers in the module.
 
 ## Weights the module does not use
 
@@ -395,7 +395,7 @@ parameter, so an `lm_head.weight` entry in the checkpoint matches nothing.
 
 :::note
 
-[`Module.load_state_dict()`](/api/python/generated/max.experimental.nn.Module/#max.experimental.nn.Module.load_state_dict)
+[`Module.load_state_dict()`](/api/python/generated/max.nn.Module/#max.nn.Module.load_state_dict)
 loads values into an eager module outside the pipeline. With its default
 `strict=True`, it raises a `ValueError` for entries that match no parameter.
 With `strict=False`, it ignores those entries. It raises a `KeyError` for a
@@ -513,8 +513,8 @@ MyModel = Llama3
 from pathlib import Path
 
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import default_dtype
+from max import functional as F
+from max.tensor import default_dtype
 from max.graph.weights import load_weights
 from transformers import AutoConfig
 

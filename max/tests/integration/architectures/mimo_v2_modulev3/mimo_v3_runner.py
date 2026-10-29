@@ -35,41 +35,58 @@ from pathlib import Path
 
 import numpy as np
 import numpy.typing as npt
+from max import functional as F
 from max import tree
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental import compilation
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import default_device, default_dtype
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights
-from max.nn.kv_cache import (
-    MHAKVCacheParams,
-    MultiKVCacheParams,
-)
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, MultiKVCacheParams
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import MiMoV2
 from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
-    FULL,
-    SLIDING,
     MiMoV2Config,
-    attention_head_dim,
-    layer_types,
 )
 from max.pipelines.architectures.mimo_v2_modulev3.weight_adapters import (
     convert_safetensor_state_dict,
 )
 from max.pipelines.context import TextContext, TokenBuffer
+from max.pipelines.kv_cache import KVCacheConfig
 from max.pipelines.kv_cache.paged_kv_cache.jenga_cache_manager import (
     JengaKVCacheManager,
 )
+from max.pipelines.lib import MAXModelConfig, ModelManifest, PipelineConfig
 from max.pipelines.lib.interfaces.batch_processor import (
     modulev3_ragged_kv_symbolic_inputs,
 )
 from max.pipelines.modeling.types import RequestID
+from max.pipelines.speculative import SpeculativeConfig
+from max.tensor import compilation, default_device, default_dtype
+from max.tensor.sharding import DeviceMesh
 from transformers.configuration_utils import PretrainedConfig
+
+SCHEDULES = {"chunked": (96, 4), "long_chunk": (160, 4), "verify": (8, 0)}
+"""The tests' teacher-forced schedules, each a :meth:`Runner.teacher_forced`
+``(chunk, decode)``. ``chunked`` prefills 96-token chunks, with and without
+cached keys, then decodes a token at a time; ``long_chunk`` prefills chunks
+longer than the 128-key sliding window, so the window's edge falls inside
+one chunk; ``verify`` runs 8-token steps over the growing cache, the shape
+of a DFlash verify step, which takes the split cache's decode tile."""
+
+
+def pipeline_config(
+    speculative: SpeculativeConfig | None = None,
+) -> PipelineConfig:
+    """Returns a pipeline config holding what ``construct_kv_params`` reads:
+    ``speculative``, and a default main model (one data-parallel replica).
+
+    Built without validation, so it names no checkpoint.
+    """
+    return PipelineConfig.model_construct(
+        models=ModelManifest({"main": MAXModelConfig()}),
+        speculative=speculative,
+    )
 
 
 def kv_params(
@@ -77,34 +94,18 @@ def kv_params(
 ) -> MultiKVCacheParams:
     """Returns the ``{sliding_attention, full_attention}`` KV tree.
 
-    Shared with the V2 runner's ``kv_params`` (the checkpoint format does not
-    differ between the ports), written here against this package's config
-    helpers.
+    Built by the model config, as serving builds it, so the tests run the
+    cache geometry the model serves with. Prefix caching is off and nothing
+    is speculative: the teacher-forced loop replays its prompts.
     """
-    groups = layer_types(hf)
-
-    def group(
-        n_kv_heads: int, num_layers: int, window: int | None
-    ) -> MHAKVCacheParams:
-        return MHAKVCacheParams(
-            dtype=DType.bfloat16,
-            n_kv_heads=n_kv_heads,
-            head_dim=attention_head_dim(hf),
-            num_layers=num_layers,
-            devices=devices,
-            page_size=page_size,
-            window_size=window,
-        )
-
-    return MultiKVCacheParams.from_params(
-        {
-            SLIDING: group(
-                hf.swa_num_key_value_heads,
-                groups.count(SLIDING),
-                hf.sliding_window,
-            ),
-            FULL: group(hf.num_key_value_heads, groups.count(FULL), None),
-        }
+    return MiMoV2Config.construct_kv_params(
+        hf,
+        pipeline_config(),
+        devices,
+        KVCacheConfig(
+            kv_cache_page_size=page_size, enable_prefix_caching=False
+        ),
+        DType.bfloat16,
     )
 
 
@@ -198,12 +199,19 @@ class Runner:
             max_batch_size=16,
             max_seq_len=max_seq_len,
         )
+        self.kv_blocks: list[tuple[tuple[int, ...], bool]] = []
+        """Each cache input's ``kv_blocks`` shape, and whether it is marked
+        split, in tree order, as the last forward received them."""
 
     def _execute(self, batch: list[TextContext]) -> npt.NDArray[np.float32]:
         for ctx in batch:
             self.kv.alloc(ctx)
         sizes = [ctx.tokens.active_length for ctx in batch]
         kv_inputs = self.kv.runtime_inputs([batch])
+        self.kv_blocks = [
+            (tuple(leaf.kv_blocks.shape), leaf.split_head_dims is not None)
+            for leaf in tree.leaves(kv_inputs, leaf=KVCacheInputsPerDevice)
+        ]
         offsets = Buffer.from_numpy(
             np.cumsum([0] + sizes).astype(np.uint32)
         ).to(self.devices[0])

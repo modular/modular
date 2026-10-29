@@ -18,6 +18,7 @@
 #include "Mojo/MojoTooling/ParserDriver.h"
 #include "Mojo/MojoTooling/PublicASTDecl.h"
 #include "Mojo/ToolCommon/CompilationOptions.h"
+#include "Mojo/ToolCommon/FrontendOptions.h"
 #include "Support/Driver/DiagnosticFormat.h"
 
 #include "mlir/IR/MLIRContext.h"
@@ -30,10 +31,13 @@ using namespace M::KGEN;
 
 bool M::generateMojoDocJSON(const std::filesystem::path &resolvedPath,
                             mlir::MLIRContext &context,
-                            const DocGenConfig &config, llvm::raw_ostream &os) {
+                            const FrontendOptions &frontendOptions,
+                            llvm::ArrayRef<std::string> includePaths,
+                            DiagnosticFormat diagnosticFormat,
+                            llvm::raw_ostream &os) {
   llvm::SourceMgr sourceManager;
-  sourceManager.setDiagHandler(getDiagHandler(config.diagnosticFormat));
-  sourceManager.setIncludeDirs(config.includePaths);
+  sourceManager.setDiagHandler(getDiagHandler(diagnosticFormat));
+  sourceManager.setIncludeDirs(includePaths);
 
   // Add a sentinel buffer as the "main file" so that diagnostics emitted for
   // decls without valid source locations (e.g., from bytecode packages) have a
@@ -42,16 +46,8 @@ bool M::generateMojoDocJSON(const std::filesystem::path &resolvedPath,
                                    llvm::SMLoc());
 
   CompilationOptions compilationOptions;
-  compilationOptions.warningsAsErrors = config.warningsAsErrors;
-  compilationOptions.ignoredDeprecations =
-      llvm::to_vector_of<std::string>(config.ignoredDeprecations);
-  LIT::ParserConfig parserConfig(&context, compilationOptions);
-  parserConfig.diagnoseMissingDocStrings = config.diagnoseMissingDocStrings;
-  parserConfig.maxNotesPerDiagnostic = config.maxNotesPerDiagnostic;
-  parserConfig.stripFilePrefix = config.stripFilePrefix;
-  parserConfig.docsBasePath = config.docsBasePath;
-
-  MojoParserContext parserContext(sourceManager, parserConfig);
+  MojoParserContext parserContext(sourceManager, &context, compilationOptions,
+                                  frontendOptions);
   LIT::ASTDecl *moduleDecl = parserContext.parseFileOrPackage(resolvedPath);
   if (!moduleDecl || parserContext.wasErrorEmitted())
     return false;

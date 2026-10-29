@@ -1965,25 +1965,26 @@ def KGEN_FuncPtrBitcastAttr : KGEN_ExprAttr<"FuncPtrBitcast", "func_ptr_bitcast"
   let description = [{
     The `#kgen.func_ptr_bitcast` attribute is the compile-time analogue of a
     `pop.pointer.bitcast` applied to a function pointer. It wraps a
-    `SymbolConstantAttr` -- which keeps the callee's true, declared signature --
-    and re-presents it under a different `FuncTypeGeneratorType`.
+    `FuncSymbolAttr` -- which keeps the callee's true, declared signature -- and
+    re-presents it under a different `FuncTypeGeneratorType`.
 
     Example:
 
     ```mlir
-    #kgen.func_ptr_bitcast<#kgen.symbol.constant<@bar> : !kgen.generator<(i64) -> none>>
+    #kgen.func_ptr_bitcast<#kgen.func.symbol<@bar> : !kgen.func<(i64) -> none>>
       : !kgen.generator<(...) -> none>
     ```
   }];
 
   let parameters = (ins
-    "SymbolConstantAttr":$callee,
+    "FuncSymbolAttr":$callee,
+    // TODO: this should really be a bare FuncType.
     AttributeSelfTypeParameter<"", "FuncTypeGeneratorType">:$type
   );
 
   let builders = [
     AttrBuilderWithInferredContext<(ins
-        "SymbolConstantAttr":$callee, "FuncTypeGeneratorType":$type), [{
+        "FuncSymbolAttr":$callee, "FuncTypeGeneratorType":$type), [{
       return get(type.getContext(), callee, type);
     }]>,
   ];
@@ -1992,13 +1993,8 @@ def KGEN_FuncPtrBitcastAttr : KGEN_ExprAttr<"FuncPtrBitcast", "func_ptr_bitcast"
   let genVerifyDecl = 1;
 
   let extraClassDeclaration = [{
-    /// Get the wrapped reference at its true (deep) signature.
-    SymbolConstantAttr getSymbolConstant() const { return getCallee(); }
-
-    SymbolRefAttr getSymbol() const { return getSymbolConstant().getSymbol(); }
-    ArrayRef<TypedAttr> getParamValues() const {
-      return getSymbolConstant().getParamValues();
-    }
+    SymbolRefAttr getSymbol() const;
+    ArrayRef<TypedAttr> getParamValues() const;
   }];
 }
 
@@ -2801,7 +2797,8 @@ def KGEN_ClosureSymbolAttr : KGENAttr<"ClosureSymbol", "closure.symbol",
 //===----------------------------------------------------------------------===//
 
 def KGEN_FuncSymbolAttr : KGEN_ExprAttr<"FuncSymbol", "func.symbol",
-    [DeclareAttrInterfaceMethods<DeclRefAttrInterface>]> {
+    [CallableSymbolAttrInterface,
+     DeclareAttrInterfaceMethods<DeclRefAttrInterface>]> {
   let summary = "a kgen.func reference";
   let description = [{
     This is a value of FuncType, which refers to a func, the `type` must

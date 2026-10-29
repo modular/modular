@@ -14,6 +14,7 @@
 #include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/DeclResolver.h"
+#include "Mojo/MojoParser/ModuleCache.h"
 #include "Mojo/MojoParser/SharedState.h"
 
 #include "AsyncRT/Runtime/CPUDevice.h"
@@ -313,18 +314,34 @@ importMojoImpl(ContextRef context, StringRef moduleIdentifier,
 
   // Resolve everything within the main input module.
   sharedState.declResolver->resolveAllReferencedFrom(moduleDecl);
-  sharedState.declResolver->eraseUnparsedDecls();
+
+  if (!sharedState.isIncrParsingEnabled()) {
+    // Sweep everything the lazy parse left behind.
+    sharedState.declResolver->eraseUnparsedDecls();
+  }
 
   // Finalize the imported bytecode now that we've resolved everything. This
   // will drop bytecode operations that never got referenced.
   if (failed(sharedState.finalizeImportedBytecodeModules()))
     return {nullptr, nullptr};
 
-  // We fail either if we have a non-recoverable parse error, or if we emitted
-  // an error and then recovered.  In either case, the IR will not be valid and
-  // the caller should not verify it.
+  // We fail either if we have a non-recoverable parse error, or if we
+  // emitted an error and then recovered.  In either case, the IR will not be
+  // valid and the caller should not verify it. This must also precede the
+  // cache write below: erroneous IR must never reach the cache.
   if (sharedState.diags.isErrorEmitted())
     return {nullptr, nullptr};
+
+  if (sharedState.isIncrParsingEnabled()) {
+    // The write happens before the unparsed-decl sweep: the placeholders are
+    // exactly what gets marked for source resume, and cached sections must
+    // keep them to reconstruct name lookup when served.
+    writeIncrParsingCache(sharedState, *module, moduleDecl);
+
+    // Erase unparsed decls now that the cache has been written.
+    sharedState.declResolver->eraseUnparsedDecls();
+    eraseIncrParsingCacheResumeAttrs(*module);
+  }
 
 #ifndef MODULAR_PRODUCTION
   // Make sure the parse module has no other structural problems detected by
@@ -388,11 +405,11 @@ importMojoFileImpl(ContextRef context, SourceMgr &sourceMgr,
       });
 }
 
-std::pair<OwningOpRef<ModuleOp>, PackageOp>
-LIT::importMojoPackage(ContextRef context, StringRef path,
-                       StringRef packageName, llvm::SourceMgr &sourceMgr,
-                       ParserConfig &config, mlir::TimingScope &ts,
-                       SmallVectorImpl<std::string> *includedFiles) {
+std::pair<OwningOpRef<ModuleOp>, PackageOp> LIT::importMojoPackage(
+    ContextRef context, StringRef path, StringRef packageName,
+    llvm::SourceMgr &sourceMgr, MLIRContext *mlirContext,
+    const CompilationOptions &options, const FrontendOptions &frontendOptions,
+    mlir::TimingScope &ts, SmallVectorImpl<std::string> *includedFiles) {
   // Emit an error if the path doesn't actually correspond with a package.
   if (!Filesystem::isMojoSourcePackagePath(path.str())) {
     sourceMgr.PrintMessage({}, llvm::SourceMgr::DK_Error,
@@ -400,7 +417,7 @@ LIT::importMojoPackage(ContextRef context, StringRef path,
                                "' does not correspond to a package");
     return {};
   }
-  SharedState sharedState(sourceMgr, config);
+  SharedState sharedState(sourceMgr, mlirContext, options, frontendOptions);
   DebugInfo::DIBuilder::ScopeGuard fileGuard;
 
   auto [module, packageDecl] = importMojoImpl(
@@ -434,11 +451,11 @@ LIT::importMojoPackage(ContextRef context, StringRef path,
   return {std::move(module), cast<PackageASTDecl>(packageDecl)->getOp()};
 }
 
-OwningOpRef<mlir::ModuleOp>
-LIT::importMojoFile(ContextRef context, llvm::SourceMgr &sourceMgr,
-                    ParserConfig &config, mlir::TimingScope &ts,
-                    SmallVectorImpl<std::string> *includedFiles) {
-  SharedState sharedState(sourceMgr, config);
+OwningOpRef<mlir::ModuleOp> LIT::importMojoFile(
+    ContextRef context, llvm::SourceMgr &sourceMgr, MLIRContext *mlirContext,
+    const CompilationOptions &options, const FrontendOptions &frontendOptions,
+    mlir::TimingScope &ts, SmallVectorImpl<std::string> *includedFiles) {
+  SharedState sharedState(sourceMgr, mlirContext, options, frontendOptions);
   auto [module, topLevelDecl] =
       importMojoFileImpl(context, sourceMgr, sharedState, ts, includedFiles);
   return std::move(module);

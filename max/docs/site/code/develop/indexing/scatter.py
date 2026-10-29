@@ -17,9 +17,9 @@
 # Output:
 #   [Dim(8), Dim(64)]
 
-import max.experimental.functional as F
+import max.functional as F
 from max.dtype import DType
-from max.experimental.tensor import Tensor
+from max.tensor import Tensor
 
 hidden = Tensor.zeros((8, 64))
 expert_out = Tensor.ones((4, 64))

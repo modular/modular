@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Turns Qwen3-VL-MoE pixel values into the vision graph's inputs."""
 
 from __future__ import annotations
 
@@ -49,7 +50,6 @@ def get_rope_index(
     t frames of (1,h,w) conceptually (as in repeat_interleave + set t=1), making the
     temporal RoPE index effectively 0 for all vision tokens.
     """
-
     # Prepare attention mask
     total_input_ids = input_ids
     if attention_mask is None:
@@ -211,9 +211,11 @@ def get_bilinear_interpolation_weights_and_indices(
     grid_thw: npt.NDArray[np.integer[Any]],
     num_grid_per_side: int,
 ) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.float32]]:
-    """Calculate the bilinear interpolation weights and indices from the offsets
-    of patches in the original pixel values.
-    Converted the original implementation from torch to numpy. Original implementation from:
+    """Builds the bilinear interpolation weights and indices for the patches.
+
+    The offsets of each patch in the original pixel values select four
+    neighbours. This is a NumPy port of the torch implementation in vLLM:
+
     https://github.com/vllm-project/vllm/blob/9fce7bee745230d61c60ad467966790553b0ba48/vllm/model_executor/models/qwen3_vl.py#L444
 
     Returns a tuple (indices, weights).
@@ -282,8 +284,10 @@ def get_seqlens(
     npt.NDArray[np.uint32],
     np.uint32,
 ]:
-    """Generate attention masks for visual tokens using seq_length and cu_seqlens.
-    cu_seqlens is used for all blocks in Qwen3VL to implement full attention.
+    """Builds the attention masks for the visual tokens.
+
+    Every Qwen3-VL block reads ``cu_seqlens`` for full attention, so the
+    mask covers the whole sequence rather than a window.
 
     Args:
         grid_thw: number of patches in spatial and temporal dims in images. Shape = [n_images, 3], dtype=int32

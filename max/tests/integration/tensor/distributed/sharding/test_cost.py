@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for :mod:`max.experimental.sharding.cost`."""
+"""Tests for :mod:`max.tensor.sharding.cost`."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ import math
 import pytest
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental.sharding import (
+from max.tensor.sharding import (
     AxisAssignment,
     DeviceMapping,
     DeviceMesh,
@@ -32,16 +32,16 @@ from max.experimental.sharding import (
     match_operand_placement,
     replicated_rows,
 )
-from max.experimental.sharding._auto_reshard import pick_reshard_action
-from max.experimental.sharding.action import Action
-from max.experimental.sharding.cost import (
+from max.tensor.sharding._auto_reshard import pick_reshard_action
+from max.tensor.sharding.action import Action
+from max.tensor.sharding.cost import (
     P,
     R,
     feasible_rows_at_axis,
     tensor_byte_count,
     transition_cost,
 )
-from max.experimental.sharding.placements import Placement
+from max.tensor.sharding.placements import Placement
 
 
 def mesh_1d(n: int) -> DeviceMesh:

@@ -274,7 +274,7 @@ namespace {
 class LITModuleResolver {
 public:
   explicit LITModuleResolver(mlir::MLIRContext *ctx)
-      : config(ctx, options), sharedState(sourceMgr, config) {}
+      : sharedState(sourceMgr, ctx, options, KGEN::FrontendOptions()) {}
 
   /// Resolve `moduleName` to the path of its precompiled binary package.
   ErrorOr<std::string> resolveBinaryPackagePath(llvm::StringRef moduleName) {
@@ -298,10 +298,9 @@ public:
   KGEN::LIT::SharedState &getSharedState() { return sharedState; }
 
 private:
-  // Order matters: `config` refers to `options`, `sharedState` to both.
+  // Order matters: `sharedState` refers to `sourceMgr` and `options`.
   llvm::SourceMgr sourceMgr;
   KGEN::CompilationOptions options;
-  KGEN::LIT::ParserConfig config;
   KGEN::LIT::SharedState sharedState;
 };
 

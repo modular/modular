@@ -13,9 +13,9 @@
 
 include "Debug/DebugDescription.td"
 include "Support/Driver/CommonOptions.td"
-include "../Common/CompilationOptions.td"
+include "../Common/BackendOptions.td"
 include "../Common/DiagnosticOptions.td"
-include "../Common/TargetOptions.td"
+include "../Common/TargetQueryOptions.td"
 include "../Common/StandaloneDebugOptions.td"
 
 

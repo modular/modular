@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Configuration for the text generation scheduler."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

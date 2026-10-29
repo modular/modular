@@ -26,7 +26,7 @@ from typing import cast
 
 import numpy as np
 import pytest
-from max.nn.kv_cache import KVCacheGroupId, PagedKVLeafRegion
+from max.nn.legacy.kv_cache import KVCacheGroupId, PagedKVLeafRegion
 from max.pipelines.context import TextContext, TokenBuffer
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import BlockManager
 from max.pipelines.kv_cache.paged_kv_cache.block_utils import (

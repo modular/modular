@@ -1,0 +1,38 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+# 4x B200 recipe for DeepSeek-V4.1-Flash NVFP4: data parallel across all four
+# GPUs with expert-parallel MoE and the checkpoint's DSpark draft head. Mirrors
+# the production engine flags, without host/disk KV offload.
+model:
+  model_path: nvidia/DeepSeek-V4.1-Flash-NVFP4
+  huggingface_model_revision: 3431dde3247c13b5957f682b1e3c6fcae2566079
+  huggingface_weight_revision: 3431dde3247c13b5957f682b1e3c6fcae2566079
+  device_specs: [0, 1, 2, 3]
+  data_parallel_degree: 4
+  quantization_encoding: float4_e2m1fnx2
+  max_length: 1048576
+
+speculative:
+  speculative_method: dspark
+  num_speculative_tokens: 5
+  draft_proposal: sampled
+
+runtime:
+  ep_size: 4
+  # Per data-parallel replica. The memory planner needs it when device graph
+  # capture is on.
+  max_batch_size: 16
+  max_batch_input_tokens: 8192
+  enable_chunked_prefill: true
+  device_graph_capture: true
+  enable_spec_decode_mixed_batches: true

@@ -51,7 +51,7 @@ def _timed_func(context: DeviceContext) raises:
 
 def test_timing() raises:
     var ctx = create_test_device_context()
-    print("Running test_timing(" + ctx.name() + "):")
+    print("Running test_timing(" + ctx.device().get_name() + "):")
 
     # Measure the time to run the function 100 times.
     var elapsed_time = ctx.execution_time(_timed_func, 100)

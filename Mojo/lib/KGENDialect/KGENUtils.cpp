@@ -33,6 +33,7 @@
 #include "Support/Preprocessor.h"
 #include "Support/STLExtras.h"
 #include "mlir/Interfaces/FunctionImplementation.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 
@@ -42,6 +43,76 @@ using namespace KGEN;
 //===----------------------------------------------------------------------===//
 // Parameter Type and Value Printing and Parsing
 //===----------------------------------------------------------------------===//
+
+// Placeholder framing for `DedupContext`. Control characters cannot occur in
+// printed parameter text: string payloads are escaped by both printers.
+static constexpr char kDedupDef = '\x01';
+static constexpr char kDedupRef = '\x02';
+static constexpr char kDedupEnd = '\x03';
+
+std::string DedupContext::mark(const void *key, bool &isRepeat) {
+  auto [it, inserted] = ids.try_emplace(key, referenced.size());
+  isRepeat = !inserted;
+  if (inserted)
+    referenced.push_back(false);
+  else
+    referenced[it->second] = true;
+  return (Twine(isRepeat ? kDedupRef : kDedupDef) + Twine(it->second) +
+          Twine(kDedupEnd))
+      .str();
+}
+
+std::string DedupContext::finalize(StringRef raw, char labelPrefix) {
+  finalized = true;
+  // No placeholders were emitted, so `raw` contains none and is returned
+  // verbatim. This also keeps stray control bytes in identifiers (which
+  // `mark` never emits) from being misread as placeholders.
+  if (ids.empty())
+    return std::string(raw);
+  // Labels are numbered by first appearance among referenced definitions.
+  DenseMap<unsigned, unsigned> labelForId;
+  std::string result;
+  result.reserve(raw.size());
+  while (!raw.empty()) {
+    size_t pos = raw.find_first_of(StringRef("\x01\x02", 2));
+    if (pos == StringRef::npos) {
+      result += raw;
+      break;
+    }
+    result += raw.take_front(pos);
+    char kind = raw[pos];
+    raw = raw.drop_front(pos + 1);
+    // A placeholder is `<digits>\x03`. If the bytes don't form one, this is a
+    // stray control byte in an identifier, not a mark: copy it through.
+    size_t end = raw.find(kDedupEnd);
+    unsigned id = 0;
+    // getAsInteger returns true on failure.
+    bool wellFormed = end != StringRef::npos && end != 0 &&
+                      !raw.take_front(end).getAsInteger(10, id) &&
+                      id < referenced.size();
+    if (!wellFormed) {
+      result += kind;
+      continue;
+    }
+    raw = raw.drop_front(end + 1);
+
+    if (kind == kDedupDef) {
+      if (!referenced[id])
+        continue;
+      unsigned label = labelForId.size();
+      labelForId[id] = label;
+      result += labelPrefix;
+      result += std::to_string(label);
+      result += ' ';
+    } else {
+      auto it = labelForId.find(id);
+      assert(it != labelForId.end() && "dedup reference before definition");
+      result += labelPrefix;
+      result += std::to_string(it->second);
+    }
+  }
+  return result;
+}
 
 std::string KGEN::getParamAsString(Attribute value) {
   SmallVector<char, 128> result;
@@ -61,16 +132,23 @@ StringAttr KGEN::getParamTypeAsString(TypedAttr value) {
   std::string str;
   llvm::raw_string_ostream os(str);
   StreamAsmPrinter p(os);
-  printColonTypeParamValue(p, value);
-  return StringAttr::get(value.getContext(), str);
+  // Dedup repeated subexpressions so that a shared DAG of parameter
+  // expressions (e.g. a chain of comptime aliases) prints in linear rather
+  // than exponential time. The result is a display string, not parsed back.
+  // Use an `e` label prefix rather than a backtick: these strings feed
+  // SourceNameAttr, whose encoding treats a backtick as a string delimiter.
+  KGENParamPrinter printer = KGENParamPrinter::createManglePrinter();
+  printer.printColonTypeParamValue(p, value);
+  return StringAttr::get(value.getContext(), printer.finalize(str, 'e'));
 }
 
 StringAttr KGEN::getTypeAsString(Type type) {
   std::string str;
   llvm::raw_string_ostream os(str);
   StreamAsmPrinter p(os);
-  printKGENType(p, type);
-  return StringAttr::get(type.getContext(), str);
+  KGENParamPrinter printer = KGENParamPrinter::createManglePrinter();
+  printer.printKGENType(p, type);
+  return StringAttr::get(type.getContext(), printer.finalize(str, 'e'));
 }
 
 /// Parse a parameter of type kgen.string.
@@ -278,7 +356,7 @@ void KGEN::printKGENType(raw_ostream &os, Type type) {
   printKGENType(p, type);
 }
 
-void KGEN::printKGENType(AsmPrinter &p, Type type) {
+void KGENParamPrinter::printKGENType(AsmPrinter &p, Type type) {
   // Always print an alias if available.
   if (succeeded(p.printAlias(type)))
     return;
@@ -289,6 +367,12 @@ void KGEN::printKGENType(AsmPrinter &p, Type type) {
   assert(dialect && "cannot print KGEN type without KGEN dialect");
   if (auto it = dialect->typePrintFns.find(type.getTypeID());
       it != dialect->typePrintFns.end()) {
+    // TODO(MOCO-5077): these free-function printers (and the `p << type`
+    // fallback below) do not carry `dedup`, so a comptime-alias chain nested
+    // inside such a type re-expands without labels instead of printing
+    // linearly. Upgrade trigger: thread the printer (or its DedupContext)
+    // through TypePrintFn and the MLIR type printer so nested type params
+    // dedup too.
     it->second(p, type);
   } else if (auto signature = dyn_cast<FuncType>(type)) {
     printFuncType(p, signature);
@@ -297,6 +381,10 @@ void KGEN::printKGENType(AsmPrinter &p, Type type) {
   } else {
     p << type;
   }
+}
+
+void KGEN::printKGENType(AsmPrinter &p, Type type) {
+  KGENParamPrinter::createDiagnosticPrinter().printKGENType(p, type);
 }
 
 static OptionalParseResult parseOptionalColonType(AsmParser &parser,
@@ -326,7 +414,8 @@ ParseResult KGEN::parseColonTypeOrIndex(AsmParser &parser, Type &type) {
 }
 
 /// print `: <type>` or elide it entirely if type is an `index` type.
-void KGEN::printColonTypeOrDefault(AsmPrinter &p, Type type, Type defaultType) {
+void KGENParamPrinter::printColonTypeOrDefault(AsmPrinter &p, Type type,
+                                               Type defaultType) {
   // Index type is the default so it doesn't print.
   if (type == defaultType)
     return;
@@ -334,13 +423,22 @@ void KGEN::printColonTypeOrDefault(AsmPrinter &p, Type type, Type defaultType) {
   printKGENType(p, type);
 }
 
+void KGEN::printColonTypeOrDefault(AsmPrinter &p, Type type, Type defaultType) {
+  KGENParamPrinter::createDiagnosticPrinter().printColonTypeOrDefault(
+      p, type, defaultType);
+}
+
 /// print `: <type>` or elide it entirely if type is an `index` type.
+void KGENParamPrinter::printColonTypeOrIndex(AsmPrinter &p, Type type) {
+  printColonTypeOrDefault(p, type, IndexType::get(type.getContext()));
+}
+
 void KGEN::printColonTypeOrIndex(AsmPrinter &p, Type type) {
-  return printColonTypeOrDefault(p, type, IndexType::get(type.getContext()));
+  KGENParamPrinter::createDiagnosticPrinter().printColonTypeOrIndex(p, type);
 }
 
 /// print `:<type> ` or elide it entirely if type is an `index` type.
-static void printColonTypeOrIndexPrefix(AsmPrinter &p, Type type) {
+void KGENParamPrinter::printColonTypeOrIndexPrefix(AsmPrinter &p, Type type) {
   // Index type is the default so it doesn't print.
   if (type.isIndex())
     return;
@@ -369,13 +467,17 @@ ParseResult KGEN::parseDTypeParamValue(AsmParser &p, TypedAttr &value) {
   return parseParamValue(p, value, DTypeType::get(p.getContext()));
 }
 
-void KGEN::printTypeParamValue(AsmPrinter &p, TypedAttr value) {
+void KGENParamPrinter::printTypeParamValue(AsmPrinter &p, TypedAttr value) {
   if (!isa<TypeType>(value.getType())) {
     p << ':';
     printKGENType(p, value.getType());
     p << ' ';
   }
   printParamValue(p, value);
+}
+
+void KGEN::printTypeParamValue(AsmPrinter &p, TypedAttr value) {
+  KGENParamPrinter::createDiagnosticPrinter().printTypeParamValue(p, value);
 }
 
 ParseResult KGEN::parseTypeParamValue(AsmParser &p, TypedAttr &value) {
@@ -404,6 +506,10 @@ ParseResult KGEN::parseParamType(AsmParser &p, Type &type) {
 }
 
 void KGEN::printParamType(AsmPrinter &p, Type type) {
+  KGENParamPrinter::createDiagnosticPrinter().printParamType(p, type);
+}
+
+void KGENParamPrinter::printParamType(AsmPrinter &p, Type type) {
   // A "ParamType" is either:
   // 1. An actual mlir Type,
   // 2. A type-value in the type domain (i.e. wrapped with ParamType), or
@@ -424,13 +530,22 @@ ParseResult KGEN::parseParamTypes(AsmParser &p, SmallVectorImpl<Type> &types) {
       [&] { return parseParamType(p, types.emplace_back()); });
 }
 
-void KGEN::printParamTypes(AsmPrinter &p, ArrayRef<Type> types) {
+void KGENParamPrinter::printParamTypes(AsmPrinter &p, ArrayRef<Type> types) {
   llvm::interleaveComma(types, p, [&](Type type) { printParamType(p, type); });
 }
 
-void KGEN::printTypeParamValues(AsmPrinter &p, ArrayRef<TypedAttr> values) {
+void KGEN::printParamTypes(AsmPrinter &p, ArrayRef<Type> types) {
+  KGENParamPrinter::createDiagnosticPrinter().printParamTypes(p, types);
+}
+
+void KGENParamPrinter::printTypeParamValues(AsmPrinter &p,
+                                            ArrayRef<TypedAttr> values) {
   llvm::interleaveComma(
       values, p, [&](TypedAttr value) { printTypeParamValue(p, value); });
+}
+
+void KGEN::printTypeParamValues(AsmPrinter &p, ArrayRef<TypedAttr> values) {
+  KGENParamPrinter::createDiagnosticPrinter().printTypeParamValues(p, values);
 }
 
 ParseResult KGEN::parseTypeParamValues(AsmParser &p,
@@ -614,9 +729,15 @@ ParseResult KGEN::parseColonTypeParamValue(AsmParser &p, TypedAttr &value) {
   return success();
 }
 
-void KGEN::printColonTypeParamValue(AsmPrinter &p, TypedAttr value) {
+void KGENParamPrinter::printColonTypeParamValue(AsmPrinter &p,
+                                                TypedAttr value) {
   printColonTypeOrIndexPrefix(p, value.getType());
   printParamValue(p, value);
+}
+
+void KGEN::printColonTypeParamValue(AsmPrinter &p, TypedAttr value) {
+  KGENParamPrinter::createDiagnosticPrinter().printColonTypeParamValue(p,
+                                                                       value);
 }
 
 ParseResult KGEN::parseWitnessEntry(AsmParser &p, StringAttr &name,
@@ -885,6 +1006,13 @@ ParseResult KGEN::parseBindParams(AsmParser &p, TypedAttr &generator,
 void KGEN::printBindParams(AsmPrinter &p, TypedAttr generator,
                            ArrayRef<TypedAttr> paramValues,
                            DenseBoolArrayAttr discharged) {
+  KGENParamPrinter::createDiagnosticPrinter().printBindParams(
+      p, generator, paramValues, discharged);
+}
+
+void KGENParamPrinter::printBindParams(AsmPrinter &p, TypedAttr generator,
+                                       ArrayRef<TypedAttr> paramValues,
+                                       DenseBoolArrayAttr discharged) {
   printColonTypeParamValue(p, generator);
   auto genType = sugarCast<GeneratorType>(generator.getType());
   ParameterEvaluator evaluator;
@@ -1395,8 +1523,8 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
   return p.parseAttribute(value, type);
 }
 
-static void printOperatorOperands(AsmPrinter &p, POC opcode,
-                                  ArrayRef<TypedAttr> operands) {
+void KGENParamPrinter::printOperatorOperands(AsmPrinter &p, POC opcode,
+                                             ArrayRef<TypedAttr> operands) {
   // If the elements are not index type, print the type explicitly.
   if (llvm::is_contained({POC::EQ, POC::LT, POC::LE, POC::Rebind}, opcode))
     printColonTypeOrIndexPrefix(p, operands[0].getType());
@@ -1409,16 +1537,6 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
     break;
 
   case POC::Apply:
-    // Print the signature operand with a type. Print all other operands without
-    // types.
-    printColonTypeOrIndexPrefix(p, operands.front().getType());
-    printParamValue(p, operands.front());
-    for (TypedAttr operand : operands.drop_front()) {
-      p << ", ";
-      printParamValue(p, operand);
-    }
-    break;
-
   case POC::ApplyResultSlot:
     // Print the signature operand with a type. Print all other operands without
     // types.
@@ -1500,14 +1618,39 @@ void KGEN::printAsMojoStringLiteral(StringRef name, raw_ostream &out) {
   }
 }
 
+bool KGEN::isNonTrivialParamAttr(Attribute value) {
+  auto *dialect = value.getContext()->getLoadedDialect<KGENDialect>();
+  return dialect && dialect->isNonTrivialParamAttr(value);
+}
+
 void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
+  KGENParamPrinter::createDiagnosticPrinter().printParamValue(p, value, type);
+}
+
+void KGENParamPrinter::printParamValue(AsmPrinter &p, TypedAttr value,
+                                       Type type) {
   // Use an alias for this attribute if available.
   if (succeeded(p.printAlias(value)))
     return;
 
+  // Attributes are uniqued, so a shared subexpression is a shared pointer.
+  // Labeling repeats keeps printing linear in the number of distinct
+  // subexpressions rather than exponential in DAG depth.
+  if (dedup && isNonTrivialParamAttr(value)) {
+    bool isRepeat = false;
+    p << dedup->mark(value.getAsOpaquePointer(), isRepeat);
+    if (isRepeat)
+      return;
+  }
+
+  printParamValueImpl(p, value, type);
+}
+
+void KGENParamPrinter::printParamValueImpl(AsmPrinter &p, TypedAttr value,
+                                           Type type) {
   // If the attribute's type provides a pretty printing hook, try to use it.
   if (auto typeItf = dyn_cast<ParameterTypeInterface>(value.getType()))
-    if (succeeded(typeItf.printValue(p, value)))
+    if (succeeded(typeItf.printValue(p, value, *this)))
       return;
 
   if (isa<UnknownAttr>(value)) {
@@ -1706,6 +1849,11 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
     p << ")";
     return;
   }
+
+  if (dedup)
+    if (auto paramAttr = dyn_cast<ParameterAttr>(value))
+      if (succeeded(paramAttr.printDisplayValue(p, *this)))
+        return;
 
   p.printAttributeWithoutType(value);
 }
@@ -2160,6 +2308,10 @@ ParseResult KGEN::parseGenerator(AsmParser &p, Type &generator) {
 }
 
 void KGEN::printGenerator(AsmPrinter &p, GeneratorType generator) {
+  KGENParamPrinter::createDiagnosticPrinter().printGenerator(p, generator);
+}
+
+void KGENParamPrinter::printGenerator(AsmPrinter &p, GeneratorType generator) {
   if (PogListAttr metadata = generator.getParamListAttrs()) {
     metadata.printGenerator(p, generator);
     return;
@@ -2420,6 +2572,11 @@ void KGEN::printParameterValues(OpAsmPrinter &p, Operation *op,
 }
 
 void KGEN::printParameterValues(AsmPrinter &p, ArrayRef<TypedAttr> values) {
+  KGENParamPrinter::createDiagnosticPrinter().printParameterValues(p, values);
+}
+
+void KGENParamPrinter::printParameterValues(AsmPrinter &p,
+                                            ArrayRef<TypedAttr> values) {
   if (values.empty())
     return;
   p << '<';

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# DOC: Mojo/docs/site/reference/cheat-sheets/basics.mdx
 """Tests for the Mojo "Basics" cheat-sheet card.
 
 The module docstring itself exercises the Comments & docstrings panel.

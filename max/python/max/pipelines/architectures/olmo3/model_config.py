@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""OLMo3 configuration."""
 
 from __future__ import annotations
 
@@ -19,8 +20,8 @@ from typing import ClassVar
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn import ReturnLogits, YarnScalingParams
-from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
+from max.nn.legacy import ReturnLogits, YarnScalingParams
+from max.nn.legacy.kv_cache import KVCacheParamInterface, MultiKVCacheParams
 from max.pipelines.architectures.gpt_oss.hybrid_kv_params_util import (
     hybrid_swa_full_kv_params,
 )
@@ -208,6 +209,9 @@ class Olmo3Config(
 
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
+            model_config: The MAX Engine model configuration; defaults to
+                ``pipeline_config.model``.
+            max_seq_len: The sequence length the cache was sized for.
 
         Returns:
             An initialized Olmo3Config instance.

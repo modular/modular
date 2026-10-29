@@ -24,7 +24,7 @@ from __future__ import annotations
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import MHAKVCacheParams
+from max.nn.legacy.kv_cache import MHAKVCacheParams
 from max.pipelines.lib.interfaces.pipeline_model import UnifiedSpecDecodeInputs
 from max.pipelines.speculative.spec_input_types import (
     SpecDecodeInputTypeSpec,

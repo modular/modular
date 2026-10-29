@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Qwen3-VL-MoE pipeline model."""
 
 from __future__ import annotations
 
@@ -28,9 +29,9 @@ from max.graph.weights import (
     Weights,
     WeightsAdapter,
 )
-from max.nn.kv_cache import KVCacheInputs
-from max.nn.layer import Module
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheInputs
+from max.nn.legacy.layer import Module
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     KVCacheConfig,

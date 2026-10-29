@@ -282,8 +282,10 @@ def _split_device_count(signature: str) -> tuple[int, str]:
 
 
 def write_warm_stamp() -> bool:
-    """Records a batched warm for this context. Returns False if the cache dir
-    can't be located (the warm is then unadoptable; caller should surface it).
+    """Records a batched warm for this context.
+
+    Returns False if the cache dir can't be located (the warm is then
+    unadoptable; caller should surface it).
 
     Written via a temp file and rename, because concurrent
     ``MAX_EAGER_OP_PRECOMPILE=1`` processes race here.
@@ -349,8 +351,7 @@ def warm_store() -> engine.MefStore | None:
 
 
 def provisioned() -> bool:
-    """Returns whether this process can get its eager op models without
-    compiling.
+    """Returns whether this process can skip compiling its eager op models.
 
     True when a build-time warm store is named, or a compatible warm stamp is
     present — the single definition of "warmed", shared by the import-time
@@ -360,8 +361,10 @@ def provisioned() -> bool:
 
 
 def adopted_from_store(family: str) -> bool:
-    """Whether ``family`` loaded its models from the warm store this process,
-    rather than a cold or lazy compile."""
+    """Returns whether ``family`` adopted its models from the warm store.
+
+    Otherwise the family was compiled cold or lazily in this process.
+    """
     cache = _REGISTRY.get(family)
     return cache.store_adopted if cache is not None else False
 
@@ -390,8 +393,7 @@ def session_for(device: Device) -> engine.InferenceSession:
 
 
 class GCFamilySpec(Protocol):
-    """Immutable per-family strategy: how one ``*_gc.py`` builds/sweeps its
-    models.
+    """Immutable per-family strategy for building and sweeping models.
 
     Each ``*_gc.py`` provides a concrete class implementing this Protocol
     (such as ``matmul_gc._MatmulFamily``); registered once via
@@ -540,9 +542,10 @@ class GCOpFamily:
         *,
         unsupported_reason: Callable[[], str | None] | None = None,
     ) -> engine.Model:
-        """Shared lazy-dispatch skeleton every family's ``*_model`` function
-        wraps: cache hit, optional support-guard, then a locked adopt, the
-        cold-start policy check, and a per-target compile.
+        """Runs the lazy-dispatch skeleton every family's ``*_model`` wraps.
+
+        The skeleton is cache hit, optional support-guard, then a locked
+        adopt, the cold-start policy check, and a per-target compile.
 
         The policy check runs after adoption, not before: refusing ahead of
         adoption would leave a warmed machine unable to serve any eager op.

@@ -50,8 +50,11 @@ import torch  # type: ignore[import-not-found]
 from max.driver import DLPackArray
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.kv_cache import MHAKVCacheParams
-from max.nn.rotary_embedding import YarnRotaryEmbedding, YarnScalingParams
+from max.nn.legacy.kv_cache import MHAKVCacheParams
+from max.nn.legacy.rotary_embedding import (
+    YarnRotaryEmbedding,
+    YarnScalingParams,
+)
 from max.pipelines.architectures.gpt_oss.layers.attention import GptOssAttention
 from transformers.models.gpt_oss.configuration_gpt_oss import GptOssConfig
 from transformers.models.gpt_oss.modeling_gpt_oss import (
@@ -69,6 +72,8 @@ from testbed.registry import register_harness
 
 @dataclass
 class GptOssAttentionStaticParams(AttentionStaticParams):
+    """Static parameters for the GPT-OSS attention harness."""
+
     has_bias: bool = True
     layer_type: str = "full_attention"
     local_window_size: int = 128
@@ -93,10 +98,12 @@ class GptOssAttentionHarness(
 
     @staticmethod
     def static_params_type() -> type:
+        """Returns the static parameters type for the GPT-OSS harness."""
         return GptOssAttentionStaticParams
 
     @property
     def name(self) -> str:
+        """Returns the harness name, suffixed with ``sliding`` or ``full``."""
         layer_type = self.static_params.layer_type
         suffix = "sliding" if layer_type == "sliding_attention" else "full"
         return f"gpt_oss_attention_{suffix}"
@@ -112,6 +119,7 @@ class GptOssAttentionHarness(
         )
 
     def build_graph(self) -> tuple[Graph, dict[str, DLPackArray]]:
+        """Builds the GPT-OSS attention graph with its paged KV cache inputs."""
         p = self.static_params
         hidden_size = p.hidden_size
         n_heads = p.n_heads
@@ -236,6 +244,7 @@ class GptOssAttentionHarness(
     def torch_reference_layer(
         self, device: str = "cuda"
     ) -> tuple[HFGptOssAttention, dict[str, Any]]:
+        """Returns the torch attention layer and the weights mapped for it."""
         p = self.static_params
         if p.layer_type == "sliding_attention":
             raise NotImplementedError(
@@ -290,6 +299,7 @@ class GptOssAttentionHarness(
         dynamic_params: AttentionDynamicParams,
         device: str = "cuda",
     ) -> list[Any]:
+        """Converts MAX execute args into torch inputs for the reference."""
         p = self.static_params
         seq_len = dynamic_params.seq_len
         ctx_len = dynamic_params.ctx_len

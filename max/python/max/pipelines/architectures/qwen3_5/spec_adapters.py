@@ -51,15 +51,18 @@ from max.graph import (
     TensorType,
     TensorValue,
 )
-from max.nn.kv_cache import (
+from max.nn.legacy.kv_cache import (
     RecurrentLeafInputs,
     RecurrentStateInputsPerDevice,
     RecurrentStateRegion,
     recurrent_leaf,
 )
-from max.nn.state_space import GatedDeltaReplayInputs, verify_width_operand
-from max.nn.transformer import ReturnHiddenStates
-from max.nn.transformer.transformer import (
+from max.nn.legacy.state_space import (
+    GatedDeltaReplayInputs,
+    verify_width_operand,
+)
+from max.nn.legacy.transformer import ReturnHiddenStates
+from max.nn.legacy.transformer.transformer import (
     captures_by_device,
     fuse_captured_hidden_states,
 )
@@ -484,11 +487,9 @@ def check(speculative: SpeculativeConfig, structured_output: bool) -> None:
             "Speculative Qwen3.5 needs the constrained-decoding bitmask input:"
             " this checkpoint's lm_head has live padding rows past"
             " sampleable_vocab_size and the in-graph acceptance sampler"
-            " excludes them only through that mask. Exporting a MEF with"
-            " mach/tools/gen-mef turns it on by default and"
-            " --no-sampler-grammar turns it off; elsewhere it follows"
+            " excludes them only through that mask. Turn it on with"
             " --enable-structured-output (or a tool parser that implies"
-            " it)."
+            " it), or leave it on when exporting the graph."
         )
 
 

@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_test")
+load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -11,17 +11,38 @@ modular_py_test(
     srcs = ["test_spec_decode_architecture.py"],
     ignore_extra_deps = [
         "//max/python/max/pipelines",
-        # Resolve the Llama target and its EAGLE and DFlash drafts by name.
+        # Resolve the targets and their drafts by name.
         "//max/python/max/pipelines/architectures/dflash_llama3",
+        "//max/python/max/pipelines/architectures/dflash_mimo_v2",
+        "//max/python/max/pipelines/architectures/dflash_mimo_v2_modulev3",
         "//max/python/max/pipelines/architectures/eagle_llama3",
+        "//max/python/max/pipelines/architectures/gemma4",
+        "//max/python/max/pipelines/architectures/gemma4_assistant",
+        "//max/python/max/pipelines/architectures/gemma4_assistant_modulev3",
+        "//max/python/max/pipelines/architectures/gemma4_modulev3",
+        "//max/python/max/pipelines/architectures/inkling",
         "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
+        "//max/python/max/pipelines/architectures/mtp_inkling",
     ],
     deps = [
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures/dflash_llama3",
+        "//max/python/max/pipelines/architectures/dflash_mimo_v2",
+        "//max/python/max/pipelines/architectures/dflash_mimo_v2_modulev3",
         "//max/python/max/pipelines/architectures/eagle_llama3",
+        "//max/python/max/pipelines/architectures/gemma4",
+        "//max/python/max/pipelines/architectures/gemma4_assistant",
+        "//max/python/max/pipelines/architectures/gemma4_assistant_modulev3",
+        "//max/python/max/pipelines/architectures/gemma4_modulev3",
+        "//max/python/max/pipelines/architectures/inkling",
         "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
+        "//max/python/max/pipelines/architectures/mtp_inkling",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
     ],
 )
 
@@ -31,7 +52,7 @@ modular_py_test(
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/lib",
     ],
 )
@@ -82,5 +103,18 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/llama3",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/speculative",
+    ],
+)
+
+modular_py_test(
+    name = "test_spec_decode_replay",
+    srcs = ["test_spec_decode_replay.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
     ],
 )

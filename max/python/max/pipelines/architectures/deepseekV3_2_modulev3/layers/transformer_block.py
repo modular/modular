@@ -18,20 +18,20 @@ import functools
 import os
 from typing import Any
 
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.multi_latent_attention import (
+from max import functional as F
+from max.nn import Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.multi_latent_attention import (
     MLAPrefillMetadata,
 )
-from max.experimental.nn.common_layers.quant_linear import (
+from max.nn.common_layers.quant_linear import (
     QuantizedMLP,
     tensor_parallel_mlp,
 )
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.tensor import Tensor
-from max.nn.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.quant_config import QuantFormat
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
+from max.nn.legacy.quant_config import QuantFormat
+from max.nn.norm import RMSNorm
+from max.tensor import Tensor
 
 from ...deepseekV3_modulev3.layers.moe_gate import DeepseekV3TopKRouter
 from ...deepseekV3_modulev3.layers.transformer_block import (

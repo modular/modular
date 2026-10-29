@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Decode-side request scheduling."""
+
 from __future__ import annotations
 
 import logging
@@ -122,12 +125,12 @@ class _YieldGapStamps:
 
 @dataclass
 class PendingDecodeRequest:
-    """Decode-side state for a request between admission and TG (or its
-    cancellation), spanning both ``DecodeRequestPhase`` values.
+    """Decode-side state for a request from admission to TG or cancellation.
 
-    ``phase_entered_at`` is reset on every phase transition, so TTL sweeps
-    always measure time in the *current* phase rather than a stale
-    prior-phase timestamp.
+    Spans both ``DecodeRequestPhase`` values.
+
+    ``phase_entered_at`` is reset on every phase transition, so TTL sweeps always
+    measure time in the *current* phase rather than a stale prior-phase timestamp.
     """
 
     context: TextContext
@@ -155,6 +158,8 @@ class PendingDecodeRequest:
 
 
 class DecodeScheduler(Scheduler):
+    """Schedules the decode side of text generation."""
+
     def __init__(
         self,
         pipeline: Pipeline[
@@ -375,6 +380,7 @@ class DecodeScheduler(Scheduler):
     def handle_transfer_engine_response(
         self, message: KVTransferEngineMetadata
     ) -> None:
+        """Connects the transfer engine named by the response."""
         logger.debug(f"connecting to remote transfer engine: {message.name}")
         self.transfer_engine.connect(message)
 
@@ -483,7 +489,7 @@ class DecodeScheduler(Scheduler):
             )
             # Decode-local postprocessing before the result leaves this
             # process. Does not cover the subsequent API-process hop -- see
-            # maxserve.response_queue_time for the tail end of that on the
+            # max.response_queue_time for the tail end of that on the
             # API side.
             METRICS.di_decode_postprocess_time(
                 (time.monotonic() - postprocess_start) * 1000
@@ -496,8 +502,9 @@ class DecodeScheduler(Scheduler):
     def handle_prefill_progress_ping(
         self, message: PrefillProgressPing
     ) -> None:
-        """Handles a ping-back from prefill, timestamped on decode's own
-        clock so every derived interval is a same-clock diff.
+        """Handles a ping-back from prefill, timestamped on decode's own clock.
+
+        Every derived interval is then a same-clock diff.
         """
         pending = self.requests.get(message.id)
         if pending is None:
@@ -532,7 +539,7 @@ class DecodeScheduler(Scheduler):
             data: The context containing the request data
             dst_idxs: The destination block indices for the request, keyed
                 by leaf id
-            replica_idx: The replica the request is on for Decode
+            dst_replica_idx: The decode replica the request is sent from.
 
         Raises:
             zmq.ZMQError: If there is an error sending on the socket
@@ -760,16 +767,16 @@ class DecodeScheduler(Scheduler):
             )
 
     def _evict_expired_requests(self) -> None:
-        """Evict requests stuck in their current phase past
-        ``decode_request_ttl_s``, so the stall watchdog does not have to
-        kill the engine: ``AWAITING_PREFILL`` past TTL means
-        ``PrefillResponse`` never arrived; ``TRANSFERRING`` past TTL means
-        the NIXL transfer never completed.
+        """Evicts requests stuck in a phase past ``decode_request_ttl_s``.
+
+        The stall watchdog then does not have to kill the engine: ``AWAITING_PREFILL``
+        past TTL means ``PrefillResponse`` never arrived; ``TRANSFERRING`` past TTL
+        means the NIXL transfer never completed.
 
         Each evicted request releases its KV cache blocks and decrements
-        ``prefill_reqs_per_replica``. Unless already cancelled (where a
-        cancelled result and prefill cancel already happened), it also
-        surfaces a cancelled result and cancels prefill.
+        ``prefill_reqs_per_replica``. Unless already cancelled (where a cancelled
+        result and prefill cancel already happened), it also surfaces a cancelled
+        result and cancels prefill.
         """
         ttl_s = self.scheduler_config.decode_request_ttl_s
         if ttl_s is None:
@@ -831,8 +838,10 @@ class DecodeScheduler(Scheduler):
     def _send_cancel_to_prefill(
         self, req_id: RequestID, context: TextContext
     ) -> None:
-        """Best-effort cancel to prefill so a late ``PrefillResponse`` does
-        not arrive against released decode-side memory."""
+        """Sends a best-effort cancel to prefill.
+
+        A late ``PrefillResponse`` must not arrive against released decode-side memory.
+        """
         if context.target_endpoint is None:
             logger.warning(
                 "Evicted request %s has no target_endpoint; skipping"
@@ -845,15 +854,14 @@ class DecodeScheduler(Scheduler):
         )
 
     def check_for_completed_transfers(self) -> None:
-        """Settles requests once every write still targeting their blocks
-        has landed: the admission-time onload always, and -- once a
-        ``PrefillResponse`` arrives -- prefill's own KV transfer too.
-        Ready requests join a TG batch, or, if cancelled, release their
-        blocks.
+        """Settles requests once every write targeting their blocks has landed.
 
-        Must run after ``_handle_cancelled_requests`` within the same
-        iteration, so a same-tick cancellation is already flagged on its
-        record before this checks it.
+        The admission-time onload always counts, and -- once a ``PrefillResponse``
+        arrives -- prefill's own KV transfer too. Ready requests join a TG batch, or,
+        if cancelled, release their blocks.
+
+        Must run after ``_handle_cancelled_requests`` within the same iteration, so a
+        same-tick cancellation is already flagged on its record before this checks it.
         """
         now = time.monotonic()
         if ttft_join_enabled():
@@ -897,9 +905,11 @@ class DecodeScheduler(Scheduler):
             )
 
     def _inflight_kv_transfer_count(self, replica_idx: int) -> int:
-        """Count of in-flight decode requests on this replica, regardless
-        of phase. Scoped to replica_idx: a reservation on a different
-        replica's device pool can't free blocks on this one."""
+        """Count of in-flight decode requests on this replica, regardless of phase.
+
+        Scoped to replica_idx: a reservation on a different replica's device pool can't
+        free blocks on this one.
+        """
         return sum(
             1
             for pending in self.requests.values()
@@ -1134,6 +1144,7 @@ def load_decode_scheduler(
     settings: Settings,
     memory_plan: MemoryPlan | None,
 ) -> DecodeScheduler:
+    """Builds a decode scheduler from the pipeline and memory plan."""
     # Create Scheduler Config.
     scheduler_config = TokenGenerationSchedulerConfig.from_pipeline_config(
         pipeline_config, pipeline.max_batch_size, memory_plan

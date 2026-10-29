@@ -12,7 +12,7 @@ modular_py_library(
         # Provided transitively by the parent //max/python/max/pipelines/kv_cache
         # target. Declaring them here would create a circular dependency
         # since kv_cache depends on this package.
-        "max.nn",
+        "max.nn.legacy",
         "max._core",
         "max.driver",
         "max.profiler",

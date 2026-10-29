@@ -22,6 +22,11 @@ from max.algorithm.functional import elementwise
 from max.gpu import block_idx, thread_idx
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_gpu
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from layout import TensorEngine, TensorLayout, TileTensor
 from nn._ragged_utils import get_batch_from_row_offsets
 
@@ -95,8 +100,6 @@ def apply_penalties_to_logits[
         var batch_id = get_batch_from_row_offsets(
             frequency_offsets, Int(idx[0])
         )
-        var token = Int(compressed_frequency_data[idx[0], 0])
-
         var repetition_penalty_val = repetition_penalty[batch_id][0]
         var presence_penalty_val = presence_penalty[batch_id][0]
         var frequency_penalty_val = frequency_penalty[batch_id][0]
@@ -104,6 +107,18 @@ def apply_penalties_to_logits[
             isfinite(presence_penalty_val) and isfinite(frequency_penalty_val),
             "frequency/presence penalty must be finite",
         )
+        # A row with the API's defaults leaves every logit unchanged, and
+        # this kernel is a random gather and scatter over the vocabulary:
+        # skip the row before it pays for them.
+        if (
+            repetition_penalty_val == 1.0
+            and presence_penalty_val == 0.0
+            and frequency_penalty_val == 0.0
+        ):
+            return
+        # The entry's token is only needed past the skip: a row with the
+        # API's defaults never reads it.
+        var token = Int(compressed_frequency_data[idx[0], 0])
         # skip padding tokens
         if token >= 0:
             var count = compressed_frequency_data[idx[0], 1][0].cast[
@@ -189,10 +204,21 @@ def apply_masked_penalties_to_logits[
     ](idx: Coord) {var}:
         comptime assert idx.rank == 1, "apply_masked_penalties_fn: rank 1"
 
+        var row = get_batch_from_row_offsets(frequency_offsets, Int(idx[0]))
+        var frequency_penalty_val = frequency_penalty[row][0]
+        var presence_penalty_val = presence_penalty[row][0]
+        # A row with the API's defaults leaves every logit unchanged -- it
+        # subtracts `0 * count + 0`, the identity on every value the checks
+        # below let through -- and this kernel is a packed-mask read plus a
+        # random gather and scatter over the vocabulary: skip the row before
+        # it pays for them.
+        if frequency_penalty_val == 0.0 and presence_penalty_val == 0.0:
+            return
+        # The entry's token is only needed past the skip: a row with the
+        # API's defaults never reads it.
         var token = Int(compressed_frequency_data[idx[0], 0])
         if token < 0:
             return
-        var row = get_batch_from_row_offsets(frequency_offsets, Int(idx[0]))
         var word = packed[row, token >> 5][0]
         if ((word >> Int32(token & 31)) & 1) == 0:
             return
@@ -201,8 +227,8 @@ def apply_masked_penalties_to_logits[
             return
         var count = compressed_frequency_data[idx[0], 1][0].cast[logit_type]()
         logit -= (
-            frequency_penalty[row][0].cast[logit_type]() * count
-            + presence_penalty[row][0].cast[logit_type]()
+            frequency_penalty_val.cast[logit_type]() * count
+            + presence_penalty_val.cast[logit_type]()
         )
         logits[row, token] = logit
 
@@ -291,39 +317,51 @@ def update_frequency_data_kernel[
     var tid = thread_idx.x
     var batch_id = block_idx.x
 
-    var tok_start = Int(frequency_offsets.load[width=1]((batch_id,)))
-    var tok_end = Int(frequency_offsets.load[width=1]((batch_id + 1,)))
-    var new_token = new_tokens.load[width=1]((batch_id,)).cast[.int32]()
+    with PDL():
+        var tok_start = Int(frequency_offsets.load[width=1]((batch_id,)))
+        var tok_end = Int(frequency_offsets.load[width=1]((batch_id + 1,)))
+        var new_token = new_tokens.load[width=1]((batch_id,)).cast[.int32]()
 
-    var num_scans = ceildiv(tok_end - tok_start, block_size * simd_width)
+        var num_scans = ceildiv(tok_end - tok_start, block_size * simd_width)
 
-    # search if the new token is already in the frequency data
-    for scan_idx in range(num_scans):
-        var tok_idx = tok_start + ((tid + scan_idx * block_size) * simd_width)
+        # Search for the new token in the frequency data. Accumulate match and
+        # padding candidates over the whole row, then reduce once, so a wide row
+        # pays for two block collectives total instead of two per chunk.
+        var target_token_idx = Int32.MIN_FINITE
+        var padding_token_idx = Int32.MAX_FINITE
+        for scan_idx in range(num_scans):
+            var tok_idx = tok_start + (
+                (tid + scan_idx * block_size) * simd_width
+            )
 
-        var val = SIMD[.int32, simd_width](0)
+            var val = SIMD[.int32, simd_width](0)
 
-        comptime for i in range(simd_width):
-            if tok_idx + i < tok_end:
-                val[i] = compressed_frequency_data[tok_idx + i, 0][0]
-            else:
-                val[i] = Int32.MAX_FINITE
+            comptime for i in range(simd_width):
+                if tok_idx + i < tok_end:
+                    val[i] = compressed_frequency_data[tok_idx + i, 0][0]
+                else:
+                    val[i] = Int32.MAX_FINITE
 
-        var if_found = val.eq(new_token).select(
-            iota[.int32, simd_width](Int32(tok_idx)),
-            SIMD[.int32, simd_width](Int32.MIN_FINITE),
+            var if_found = val.eq(new_token).select(
+                iota[.int32, simd_width](Int32(tok_idx)),
+                SIMD[.int32, simd_width](Int32.MIN_FINITE),
+            )
+            var first_padding_idx = val.eq(PADDING_TOKEN).select(
+                iota[.int32, simd_width](Int32(tok_idx)),
+                SIMD[.int32, simd_width](Int32.MAX_FINITE),
+            )
+
+            target_token_idx = max(target_token_idx, if_found.reduce_max())
+            padding_token_idx = min(
+                padding_token_idx, first_padding_idx.reduce_min()
+            )
+
+        target_token_idx = block.max[block_size=block_size, broadcast=True](
+            target_token_idx
         )
-        var first_padding_idx = val.eq(PADDING_TOKEN).select(
-            iota[.int32, simd_width](Int32(tok_idx)),
-            SIMD[.int32, simd_width](Int32.MAX_FINITE),
+        padding_token_idx = block.min[block_size=block_size, broadcast=True](
+            padding_token_idx
         )
-
-        var target_token_idx = block.max[block_size=block_size, broadcast=True](
-            if_found.reduce_max()
-        )
-        var padding_token_idx = block.min[
-            block_size=block_size, broadcast=True
-        ](first_padding_idx.reduce_min())
 
         if target_token_idx != Int32.MIN_FINITE:
             # we found the target token, update the frequency data
@@ -403,6 +441,7 @@ def update_frequency_data[
             new_tokens.as_imm(),
             grid_dim=new_tokens.dim[0](),
             block_dim=block_size,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
     else:

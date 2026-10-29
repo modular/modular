@@ -19,6 +19,11 @@ from std.memory.alloc import Layout as AllocLayout
 from std.sys.info import align_of, simd_width_of
 from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.primitives.warp import shuffle_xor
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.host.info import is_cpu, is_gpu
@@ -64,7 +69,13 @@ from nn.normalization import _rms_norm_impl, _rms_norm_warp_tiling_subkernel
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from std.utils.numerics import get_accum_type
 
-from extensibility import InputTensor
+from extensibility import (
+    Input,
+    InputTensor,
+    MutableInput,
+    Tensor,
+    TileTensorable,
+)
 from extensibility import (
     _MutableInputTensor as MutableInputTensor,
 )
@@ -570,52 +581,62 @@ def _fused_qk_rms_norm_ragged_paged_gpu[
     var idx = tid * simd_width
     var vec_data = SIMD[accum_type, simd_width](0)
     var gamma_val = SIMD[dtype, simd_width](0)
-    if idx < _num_cols:
-        if is_k:
-            var batch_idx, token_idx = get_batch_and_token_idx_from_row_offsets(
-                input_row_offsets, global_token_idx
-            )
-            var cache_token_idx = token_idx + k_cache.cache_length(batch_idx)
-            vec_data = k_cache.load[width=simd_width](
-                bs=batch_idx,
-                tok_idx=cache_token_idx,
-                head_idx=head_idx,
-                head_dim_idx=idx,
-            ).cast[accum_type]()
-            gamma_val = k_gamma.load[width=simd_width]((idx,))
-        else:
-            vec_data = q_proj.load[width=simd_width](
-                (global_token_idx, head_idx, idx)
-            ).cast[accum_type]()
-            gamma_val = q_gamma.load[width=simd_width]((idx,))
 
-    var norm_val = _rms_norm_warp_tiling_subkernel[
-        warps_per_block, multiply_before_cast
-    ](
-        combined_row,
-        idx,
-        vec_data,
-        gamma_val,
-        epsilon,
-        weight_offset_accum,
-        _num_cols,
-    )
+    with PDL():
+        if idx < _num_cols:
+            if is_k:
+                var batch_idx, token_idx = (
+                    get_batch_and_token_idx_from_row_offsets(
+                        input_row_offsets, global_token_idx
+                    )
+                )
+                var cache_token_idx = token_idx + k_cache.cache_length(
+                    batch_idx
+                )
+                vec_data = k_cache.load[width=simd_width](
+                    bs=batch_idx,
+                    tok_idx=cache_token_idx,
+                    head_idx=head_idx,
+                    head_dim_idx=idx,
+                ).cast[accum_type]()
+                gamma_val = k_gamma.load[width=simd_width]((idx,))
+            else:
+                vec_data = q_proj.load[width=simd_width](
+                    (global_token_idx, head_idx, idx)
+                ).cast[accum_type]()
+                gamma_val = q_gamma.load[width=simd_width]((idx,))
 
-    if idx < _num_cols:
-        if is_k:
-            var batch_idx, token_idx = get_batch_and_token_idx_from_row_offsets(
-                input_row_offsets, global_token_idx
-            )
-            var cache_token_idx = token_idx + k_cache.cache_length(batch_idx)
-            k_cache.store(
-                bs=batch_idx,
-                tok_idx=cache_token_idx,
-                head_idx=head_idx,
-                head_dim_idx=idx,
-                val=norm_val.cast[cache_t.dtype](),
-            )
-        else:
-            q_output.store((global_token_idx, head_idx, idx), norm_val)
+        var norm_val = _rms_norm_warp_tiling_subkernel[
+            warps_per_block, multiply_before_cast
+        ](
+            combined_row,
+            idx,
+            vec_data,
+            gamma_val,
+            epsilon,
+            weight_offset_accum,
+            _num_cols,
+        )
+
+        if idx < _num_cols:
+            if is_k:
+                var batch_idx, token_idx = (
+                    get_batch_and_token_idx_from_row_offsets(
+                        input_row_offsets, global_token_idx
+                    )
+                )
+                var cache_token_idx = token_idx + k_cache.cache_length(
+                    batch_idx
+                )
+                k_cache.store(
+                    bs=batch_idx,
+                    tok_idx=cache_token_idx,
+                    head_idx=head_idx,
+                    head_dim_idx=idx,
+                    val=norm_val.cast[cache_t.dtype](),
+                )
+            else:
+                q_output.store((global_token_idx, head_idx, idx), norm_val)
 
 
 def fused_qk_rms_norm_ragged_paged[
@@ -754,6 +775,7 @@ def fused_qk_rms_norm_ragged_paged[
             Int32(cols),
             grid_dim=rows,
             block_dim=block_dim_value,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
 
@@ -1075,28 +1097,29 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
     else:
         global_token_idx, head_idx = divmod(combined_row, _q_num_heads)
 
-    _fused_qk_rms_norm_rope_process_row[
-        simd_width,
-        warps_per_block,
-        multiply_before_cast,
-        interleaved,
-        has_nope_prefix,
-        rope_dim,
-    ](
-        is_k,
-        global_token_idx,
-        head_idx,
-        q_output,
-        k_cache,
-        q_gamma,
-        k_gamma,
-        freqs_cis,
-        epsilon,
-        Scalar[dtype](weight_offset),
-        q_input_fn,
-        input_row_offsets,
-        _num_cols,
-    )
+    with PDL():
+        _fused_qk_rms_norm_rope_process_row[
+            simd_width,
+            warps_per_block,
+            multiply_before_cast,
+            interleaved,
+            has_nope_prefix,
+            rope_dim,
+        ](
+            is_k,
+            global_token_idx,
+            head_idx,
+            q_output,
+            k_cache,
+            q_gamma,
+            k_gamma,
+            freqs_cis,
+            epsilon,
+            Scalar[dtype](weight_offset),
+            q_input_fn,
+            input_row_offsets,
+            _num_cols,
+        )
 
 
 @inline(.always)
@@ -1293,6 +1316,7 @@ def fused_qk_rms_norm_rope_ragged_paged[
             host_args=(q_input_fn,),
             grid_dim=rows,
             block_dim=block_dim_value,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
 
@@ -1420,72 +1444,75 @@ def _fused_dual_qk_rms_norm_rope_ragged_paged_gpu[
     var k_main_rows = tsl * k_main_heads
     var main_end = q_main_rows + k_main_rows
 
-    if combined_row < main_end:
-        var is_k = combined_row >= q_main_rows
-        var global_token_idx: Int
-        var head_idx: Int
-        if is_k:
-            var k_row = combined_row - q_main_rows
-            global_token_idx, head_idx = divmod(k_row, k_main_heads)
-        else:
-            global_token_idx, head_idx = divmod(combined_row, q_main_num_heads)
+    with PDL():
+        if combined_row < main_end:
+            var is_k = combined_row >= q_main_rows
+            var global_token_idx: Int
+            var head_idx: Int
+            if is_k:
+                var k_row = combined_row - q_main_rows
+                global_token_idx, head_idx = divmod(k_row, k_main_heads)
+            else:
+                global_token_idx, head_idx = divmod(
+                    combined_row, q_main_num_heads
+                )
 
-        _fused_qk_rms_norm_rope_process_row[
-            simd_width,
-            warps_per_block,
-            multiply_before_cast,
-            interleaved,
-            has_nope_prefix,
-            rope_dim,
-        ](
-            is_k,
-            global_token_idx,
-            head_idx,
-            q_main_output,
-            main_k_cache,
-            q_main_gamma,
-            k_main_gamma,
-            freqs_cis,
-            main_epsilon,
-            Scalar[dtype](weight_offset),
-            main_q_input_fn,
-            input_row_offsets,
-            num_cols,
-        )
-    else:
-        var idx_row = combined_row - main_end
-        var q_index_rows = tsl * q_index_num_heads
-        var is_k = idx_row >= q_index_rows
-        var global_token_idx: Int
-        var head_idx: Int
-        if is_k:
-            var k_row = idx_row - q_index_rows
-            global_token_idx, head_idx = divmod(k_row, k_index_heads)
+            _fused_qk_rms_norm_rope_process_row[
+                simd_width,
+                warps_per_block,
+                multiply_before_cast,
+                interleaved,
+                has_nope_prefix,
+                rope_dim,
+            ](
+                is_k,
+                global_token_idx,
+                head_idx,
+                q_main_output,
+                main_k_cache,
+                q_main_gamma,
+                k_main_gamma,
+                freqs_cis,
+                main_epsilon,
+                Scalar[dtype](weight_offset),
+                main_q_input_fn,
+                input_row_offsets,
+                num_cols,
+            )
         else:
-            global_token_idx, head_idx = divmod(idx_row, q_index_num_heads)
+            var idx_row = combined_row - main_end
+            var q_index_rows = tsl * q_index_num_heads
+            var is_k = idx_row >= q_index_rows
+            var global_token_idx: Int
+            var head_idx: Int
+            if is_k:
+                var k_row = idx_row - q_index_rows
+                global_token_idx, head_idx = divmod(k_row, k_index_heads)
+            else:
+                global_token_idx, head_idx = divmod(idx_row, q_index_num_heads)
 
-        _fused_qk_rms_norm_rope_process_row[
-            simd_width,
-            warps_per_block,
-            multiply_before_cast,
-            interleaved,
-            has_nope_prefix,
-            rope_dim,
-        ](
-            is_k,
-            global_token_idx,
-            head_idx,
-            q_index_output,
-            index_k_cache,
-            q_index_gamma,
-            k_index_gamma,
-            freqs_cis,
-            index_epsilon,
-            Scalar[dtype](weight_offset),
-            index_q_input_fn,
-            input_row_offsets,
-            num_cols,
-        )
+            _fused_qk_rms_norm_rope_process_row[
+                simd_width,
+                warps_per_block,
+                multiply_before_cast,
+                interleaved,
+                has_nope_prefix,
+                rope_dim,
+            ](
+                is_k,
+                global_token_idx,
+                head_idx,
+                q_index_output,
+                index_k_cache,
+                q_index_gamma,
+                k_index_gamma,
+                freqs_cis,
+                index_epsilon,
+                Scalar[dtype](weight_offset),
+                index_q_input_fn,
+                input_row_offsets,
+                num_cols,
+            )
 
 
 @inline(.always)
@@ -1760,6 +1787,7 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
             host_args=(main_q_input_fn, index_q_input_fn),
             grid_dim=rows,
             block_dim=block_dim_value,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
 
@@ -2143,37 +2171,117 @@ def fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged_gpu[
     var q_index_heads = Int(q_index_num_heads_dev)
 
     var q_main_rows = tsl * q_main_heads
-    if row < q_main_rows:
-        var token, head = divmod(row, q_main_heads)
-        _fused_qk_rms_norm_rope_process_row[
-            simd_width,
-            warps_per_block,
-            multiply_before_cast,
-            interleaved,
-            has_nope_prefix,
-            rope_dim,
-            q_only=True,
-        ](
-            False,
-            token,
-            head,
-            q_main_output,
-            main_k_cache,
-            q_main_gamma,
-            k_main_gamma,
-            freqs_cis,
-            main_epsilon,
-            w_off,
-            q_main_input_fn,
-            input_row_offsets,
-            head_dim,
-        )
-        return
-    row -= q_main_rows
 
-    var kv_main_rows = tsl * k_main_heads
-    if row < kv_main_rows:
-        var token, head = divmod(row, k_main_heads)
+    with PDL():
+        if row < q_main_rows:
+            var token, head = divmod(row, q_main_heads)
+            _fused_qk_rms_norm_rope_process_row[
+                simd_width,
+                warps_per_block,
+                multiply_before_cast,
+                interleaved,
+                has_nope_prefix,
+                rope_dim,
+                q_only=True,
+            ](
+                False,
+                token,
+                head,
+                q_main_output,
+                main_k_cache,
+                q_main_gamma,
+                k_main_gamma,
+                freqs_cis,
+                main_epsilon,
+                w_off,
+                q_main_input_fn,
+                input_row_offsets,
+                head_dim,
+            )
+            return
+        row -= q_main_rows
+
+        var kv_main_rows = tsl * k_main_heads
+        if row < kv_main_rows:
+            var token, head = divmod(row, k_main_heads)
+            nvfp4_kv_write_row[
+                head_dim,
+                simd_width,
+                warps_per_block,
+                multiply_before_cast,
+                interleaved,
+                has_nope_prefix,
+                rope_dim,
+            ](
+                True,
+                token,
+                head,
+                main_k_cache,
+                k_main_gamma,
+                freqs_cis,
+                main_epsilon,
+                w_off,
+                k_main_input_fn,
+                input_row_offsets,
+            )
+            return
+        row -= kv_main_rows
+
+        if row < kv_main_rows:
+            var token, head = divmod(row, k_main_heads)
+            nvfp4_kv_write_row[
+                head_dim,
+                simd_width,
+                warps_per_block,
+                multiply_before_cast,
+                interleaved,
+                has_nope_prefix,
+                rope_dim,
+            ](
+                False,
+                token,
+                head,
+                main_v_cache,
+                k_main_gamma,
+                freqs_cis,
+                main_epsilon,
+                w_off,
+                v_main_input_fn,
+                input_row_offsets,
+            )
+            return
+        row -= kv_main_rows
+
+        var q_index_rows = tsl * q_index_heads
+        if row < q_index_rows:
+            var token, head = divmod(row, q_index_heads)
+            _fused_qk_rms_norm_rope_process_row[
+                simd_width,
+                warps_per_block,
+                multiply_before_cast,
+                interleaved,
+                has_nope_prefix,
+                rope_dim,
+                q_only=True,
+            ](
+                False,
+                token,
+                head,
+                q_index_output,
+                index_k_cache,
+                q_index_gamma,
+                k_index_gamma,
+                freqs_cis,
+                index_epsilon,
+                w_off,
+                q_index_input_fn,
+                input_row_offsets,
+                head_dim,
+            )
+            return
+        row -= q_index_rows
+
+        var token, head = divmod(row, k_index_heads)
         nvfp4_kv_write_row[
             head_dim,
             simd_width,
@@ -2186,92 +2294,14 @@ def fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged_gpu[
             True,
             token,
             head,
-            main_k_cache,
-            k_main_gamma,
-            freqs_cis,
-            main_epsilon,
-            w_off,
-            k_main_input_fn,
-            input_row_offsets,
-        )
-        return
-    row -= kv_main_rows
-
-    if row < kv_main_rows:
-        var token, head = divmod(row, k_main_heads)
-        nvfp4_kv_write_row[
-            head_dim,
-            simd_width,
-            warps_per_block,
-            multiply_before_cast,
-            interleaved,
-            has_nope_prefix,
-            rope_dim,
-        ](
-            False,
-            token,
-            head,
-            main_v_cache,
-            k_main_gamma,
-            freqs_cis,
-            main_epsilon,
-            w_off,
-            v_main_input_fn,
-            input_row_offsets,
-        )
-        return
-    row -= kv_main_rows
-
-    var q_index_rows = tsl * q_index_heads
-    if row < q_index_rows:
-        var token, head = divmod(row, q_index_heads)
-        _fused_qk_rms_norm_rope_process_row[
-            simd_width,
-            warps_per_block,
-            multiply_before_cast,
-            interleaved,
-            has_nope_prefix,
-            rope_dim,
-            q_only=True,
-        ](
-            False,
-            token,
-            head,
-            q_index_output,
             index_k_cache,
-            q_index_gamma,
             k_index_gamma,
             freqs_cis,
             index_epsilon,
             w_off,
-            q_index_input_fn,
+            k_index_input_fn,
             input_row_offsets,
-            head_dim,
         )
-        return
-    row -= q_index_rows
-
-    var token, head = divmod(row, k_index_heads)
-    nvfp4_kv_write_row[
-        head_dim,
-        simd_width,
-        warps_per_block,
-        multiply_before_cast,
-        interleaved,
-        has_nope_prefix,
-        rope_dim,
-    ](
-        True,
-        token,
-        head,
-        index_k_cache,
-        k_index_gamma,
-        freqs_cis,
-        index_epsilon,
-        w_off,
-        k_index_input_fn,
-        input_row_offsets,
-    )
 
 
 @inline(.always)
@@ -2532,6 +2562,7 @@ def fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged[
             ),
             grid_dim=rows,
             block_dim=warp_size * warps_per_block,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
 
@@ -2845,245 +2876,28 @@ def rms_norm_value_cache_ragged_paged[
 
 
 # ===-----------------------------------------------------------------------===#
-# Print KV Cache
-# ===-----------------------------------------------------------------------===#
-
-
-# HACK: `cache` is a view into `kv_collection`'s `blocks`, so the two arguments
-# share the collection's mutable `blocks_origin`. `_print_cache` only ever READS
-# them (it prints), but the exclusivity checker can't prove that and rejects
-# passing both. Disabling the nested-origin exclusivity check is safe here
-# because this is a read-only debug helper, and it lets the (non-enqueued) print
-# wrappers stay origin-generic (`...`) instead of pinning their args to
-# any-origin.
-@__unsafe_nested_origins_read_only
-def _print_cache[
-    collection_t: KVCollectionT,
-    *,
-](
-    cache: collection_t.CacheType,
-    kv_collection: collection_t,
-    valid_lengths: TileTensor[mut=False, .uint32, ...],
-    is_print_compact: Bool,
-) raises -> None:
-    """Prints a cache buffer, abbreviating output with ellipses."""
-    comptime kv_params = collection_t.CacheType.kv_params
-
-    # Only abbreviate output when `is_print_compact` is set.
-    var num_to_print: Int = 7 if is_print_compact else Int.MAX
-    for b_idx in range(Int(valid_lengths.dim[0]())):
-        var total_cache_length = Int(
-            valid_lengths[b_idx] + UInt32(cache.cache_length(b_idx))
-        )
-        for t_idx in range(min(num_to_print, total_cache_length)):
-            for h in range(kv_params.num_heads):
-                for hd in range(
-                    min(
-                        num_to_print,
-                        kv_params.head_size,
-                    )
-                ):
-                    print(
-                        cache.load[width=1](
-                            b_idx,
-                            h,
-                            t_idx,
-                            hd,
-                        ),
-                        end=", ",
-                    )
-                if kv_params.head_size > num_to_print:
-                    print("...", end=", ")
-            if total_cache_length > num_to_print:
-                print("\n...", end=",")
-            print()
-
-
-def print_kv_cache_paged_generic_cpu[
-    target: StaticString,
-    dtype: DType,
-    kv_params: KVCacheStaticParams,
-    page_size: Int,
-](
-    valid_lengths: TileTensor[mut=False, .uint32, ...],
-    kv_collection: PagedKVCacheCollection[
-        dtype,
-        kv_params,
-        page_size,
-        ...,
-    ],
-    layer_idx: UInt32,
-    is_print_compact: Bool,
-    context: DeviceContext,
-) raises:
-    var k_cache = kv_collection.get_key_cache(Int(layer_idx))
-    var v_cache = kv_collection.get_value_cache(Int(layer_idx))
-
-    print("K:")
-    _print_cache[type_of(kv_collection)](
-        k_cache,
-        kv_collection,
-        valid_lengths,
-        is_print_compact,
-    )
-
-    print("V:")
-    _print_cache[type_of(kv_collection)](
-        v_cache,
-        kv_collection,
-        valid_lengths,
-        is_print_compact,
-    )
-
-
-def _device_view[
-    dtype: DType
-](ctx: DeviceContext, tensor: TileTensor[dtype, ...]) -> DeviceBuffer[dtype]:
-    # The pointer-pair `enqueue_copy` is device to device, which some drivers
-    # reject for a pageable host destination.
-    return tensor.to_device_buffer(ctx)
-
-
-def print_kv_cache_paged_generic_gpu[
-    target: StaticString,
-    dtype: DType,
-    kv_params: KVCacheStaticParams,
-    page_size: Int,
-](
-    valid_lengths: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
-    kv_collection: PagedKVCacheCollection[
-        dtype,
-        kv_params,
-        page_size,
-        ...,
-    ],
-    layer_idx: UInt32,
-    is_print_compact: Bool,
-    context: DeviceContext,
-) raises:
-    var dev_ctx = context
-
-    var n_blocks = kv_collection.blocks.num_elements()
-    var blocks_alloc = alloc(
-        AllocLayout[Scalar[dtype]](length=n_blocks)
-    ).into_managed()
-    var blocks_ptr: MutPointer[
-        Scalar[dtype], origin_of(blocks_alloc)
-    ] = blocks_alloc.unsafe_ptr()
-    dev_ctx.enqueue_copy(
-        blocks_ptr, _device_view(dev_ctx, kv_collection.blocks)
-    )
-    var blocks_host = type_of(kv_collection.blocks).OriginCastType[_](
-        ptr=blocks_ptr,
-        layout=kv_collection.blocks.layout,
-    )
-
-    var n_cache_lengths = kv_collection.cache_lengths.num_elements()
-    var cache_lengths_alloc = alloc(
-        AllocLayout[UInt32](length=n_cache_lengths)
-    ).into_managed()
-    var cache_lengths_ptr: MutPointer[
-        UInt32, origin_of(cache_lengths_alloc)
-    ] = cache_lengths_alloc.unsafe_ptr()
-    dev_ctx.enqueue_copy(
-        cache_lengths_ptr,
-        _device_view(dev_ctx, kv_collection.cache_lengths),
-    )
-    var cache_lengths_host = type_of(
-        kv_collection.cache_lengths
-    ).OriginCastType[mut=False, _](
-        ptr=cache_lengths_ptr,
-        layout=kv_collection.cache_lengths.layout,
-    )
-
-    var n_lookup_table = kv_collection.lookup_table.num_elements()
-    var lookup_table_alloc = alloc(
-        AllocLayout[UInt32](length=n_lookup_table)
-    ).into_managed()
-    var lookup_table_ptr: MutPointer[
-        UInt32, origin_of(lookup_table_alloc)
-    ] = lookup_table_alloc.unsafe_ptr()
-    dev_ctx.enqueue_copy(
-        lookup_table_ptr,
-        _device_view(dev_ctx, kv_collection.lookup_table),
-    )
-    var lookup_table_host = type_of(kv_collection.lookup_table).OriginCastType[
-        mut=False, _
-    ](
-        ptr=lookup_table_ptr,
-        layout=kv_collection.lookup_table.layout,
-    )
-
-    # The host copies are `TileTensor`s (from `OriginCastType`), so this picks
-    # the `TileTensor` constructor, whose `scales` default is a bare `None`
-    # that cannot pin `scales_origin`. Thread the copies' origins explicitly
-    # and pin `scales_origin` to the no-scales default; binding only the
-    # leading params leaves the trailing ones to inference, which cannot
-    # recover the origin of an absent `scales` argument.
-    var host_kv_collection = PagedKVCacheCollection[
-        dtype,
-        kv_params,
-        page_size,
-        blocks_host.origin,
-        cache_lengths_host.origin,
-        lookup_table_host.origin,
-        MutUntrackedOrigin,
-    ](
-        blocks_host,
-        cache_lengths_host,
-        lookup_table_host,
-        kv_collection.max_seq_length,
-        kv_collection.max_cache_length,
-    )
-    var valid_lengths_host_alloc = alloc(
-        AllocLayout[UInt32](length=valid_lengths.num_elements())
-    ).into_managed()
-    var valid_lengths_host_ptr: MutPointer[
-        UInt32, origin_of(valid_lengths_host_alloc)
-    ] = valid_lengths_host_alloc.unsafe_ptr()
-    var valid_lengths_host = TileTensor(
-        valid_lengths_host_ptr, valid_lengths.layout
-    )
-    dev_ctx.enqueue_copy(
-        valid_lengths_host_ptr,
-        _device_view(dev_ctx, valid_lengths),
-    )
-
-    var k_cache = host_kv_collection.get_key_cache(Int(layer_idx))
-    var v_cache = host_kv_collection.get_value_cache(Int(layer_idx))
-
-    # Bring host buffers in sync with device buffers.
-    dev_ctx.synchronize()
-
-    print("K:")
-    _print_cache[type_of(host_kv_collection)](
-        k_cache,
-        host_kv_collection,
-        valid_lengths_host,
-        is_print_compact,
-    )
-
-    print("V:")
-    _print_cache[type_of(host_kv_collection)](
-        v_cache,
-        host_kv_collection,
-        valid_lengths_host,
-        is_print_compact,
-    )
-
-    dealloc(blocks_alloc^)
-    dealloc(cache_lengths_alloc^)
-    dealloc(lookup_table_alloc^)
-    dealloc(valid_lengths_host_alloc^)
-
-
-# ===-----------------------------------------------------------------------===#
 # KV Collection Constructors (Ctor)
 # ===-----------------------------------------------------------------------===#
 
 
+def _paged_cache_static_params(
+    num_heads: Int, head_size: Int, num_planes: Int, v_head_size: Int
+) -> KVCacheStaticParams:
+    """The static params of an unscaled paged cache's blocks.
+
+    One plane is an MLA latent unless `v_head_size` says the rows pack a key
+    and a value; the blocks alone cannot tell the two apart.
+    """
+    if v_head_size > 0:
+        return KVCacheStaticParams(
+            num_heads, head_size, v_head_size=v_head_size
+        )
+    return KVCacheStaticParams(num_heads, head_size, num_planes == 1)
+
+
 def generic_get_paged_cache[
     dtype: DType,
+    v_head_size: Int = -1,
 ](
     blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
     page_stride: InputTensor[dtype=.int64, rank=1, ...],
@@ -3093,10 +2907,11 @@ def generic_get_paged_cache[
     max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
     out result: PagedKVCacheCollection[
         dtype,
-        KVCacheStaticParams(
+        _paged_cache_static_params(
             Int(blocks.static_spec.shape_tuple[4]),
             Int(blocks.static_spec.shape_tuple[5]),
-            Int(blocks.static_spec.shape_tuple[1]) == 1,
+            Int(blocks.static_spec.shape_tuple[1]),
+            v_head_size,
         ),
         Int(blocks.static_spec.shape_tuple[3]),
         # MOGG boundary: the device buffers are owned by the graph runtime
@@ -3113,13 +2928,19 @@ def generic_get_paged_cache[
         "a uint8 KV cache is packed NVFP4 and needs its scales: build it with"
         " generic_get_paged_cache_with_scales, from an op that reads NVFP4"
     )
+    comptime num_planes = Int(blocks.static_spec.shape_tuple[1])
+    comptime assert (
+        v_head_size <= 0 or num_planes == 1
+    ), "a split KV cache packs its key and value into one plane"
     comptime page_size = Int(blocks.static_spec.shape_tuple[3])
-    comptime head_dim = Int(blocks.static_spec.shape_tuple[5])
-    comptime num_heads = Int(blocks.static_spec.shape_tuple[4])
-    comptime is_mla = Int(blocks.static_spec.shape_tuple[1]) == 1
     return generic_get_paged_cache[
         dtype,
-        KVCacheStaticParams(num_heads, head_dim, is_mla),
+        _paged_cache_static_params(
+            Int(blocks.static_spec.shape_tuple[4]),
+            Int(blocks.static_spec.shape_tuple[5]),
+            num_planes,
+            v_head_size,
+        ),
         page_size,
     ](
         blocks.to_tile_tensor().as_unsafe_any_origin(),
@@ -3128,6 +2949,112 @@ def generic_get_paged_cache[
         lookup_table.to_tile_tensor().as_imm().as_unsafe_any_origin(),
         max_prompt_length.to_tile_tensor().as_imm().as_unsafe_any_origin(),
         max_cache_length.to_tile_tensor().as_imm().as_unsafe_any_origin(),
+    )
+
+
+def generic_get_paged_cache[
+    v_head_size: Int = -1,
+](
+    blocks: TileTensor[mut=True, address_space=.GENERIC, ...],
+    page_stride: TileTensor[
+        mut=False, DType.int64, address_space=.GENERIC, ...
+    ],
+    cache_lengths: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    lookup_table: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    max_prompt_length: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    max_cache_length: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    out result: PagedKVCacheCollection[
+        blocks.dtype,
+        _paged_cache_static_params(
+            blocks.static_shape[4],
+            blocks.static_shape[5],
+            blocks.static_shape[1],
+            v_head_size,
+        ),
+        blocks.static_shape[3],
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutUntrackedOrigin,
+    ],
+):
+    """Builds a paged KV cache collection from projected tiles of any
+    storage.
+
+    The blocks' static shape supplies the cache's head count, head size, page
+    size and MLA layout.
+
+    Parameters:
+        v_head_size: The value head size of a split cache, whose single plane
+            packs each key and value row; -1 otherwise.
+
+    Args:
+        blocks: KV values `[num_blocks, kv_dim, num_layers, page_size,
+            num_heads, head_size]`.
+        page_stride: Page-to-page distance for `blocks`, in elements.
+        cache_lengths: Cache lengths per request.
+        lookup_table: Page lookup table `[batch_size, max_pages]`.
+        max_prompt_length: Max prompt length, `[1]`.
+        max_cache_length: Max cache length, `[1]`.
+
+    Returns:
+        The collection over `blocks`.
+    """
+    comptime assert blocks.rank == 6
+    comptime dtype = blocks.dtype
+    comptime assert dtype != DType.uint8, (
+        "a uint8 KV cache is packed NVFP4 and needs its scales: build it with"
+        " generic_get_paged_cache_with_scales, from an op that reads NVFP4"
+    )
+    comptime assert (
+        v_head_size <= 0 or blocks.static_shape[1] == 1
+    ), "a split KV cache packs its key and value into one plane"
+    # The collection holds pointer-backed tiles, so rebuild each one over its
+    # tile's data; a non-pointer storage policy aborts here at run time.
+    # The device buffers are owned by the graph runtime and kept alive
+    # externally, so the views carry the untracked any-origins.
+    return generic_get_paged_cache[
+        dtype,
+        _paged_cache_static_params(
+            blocks.static_shape[4],
+            blocks.static_shape[5],
+            blocks.static_shape[1],
+            v_head_size,
+        ),
+        blocks.static_shape[3],
+    ](
+        TileTensor(
+            ptr=blocks.ptr.unsafe_origin_cast[MutAnyOrigin](),
+            layout=blocks.layout,
+        ),
+        TileTensor(
+            ptr=page_stride.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+            layout=page_stride.layout,
+        ),
+        TileTensor(
+            ptr=cache_lengths.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+            layout=cache_lengths.layout,
+        ),
+        TileTensor(
+            ptr=lookup_table.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+            layout=lookup_table.layout,
+        ),
+        TileTensor(
+            ptr=max_prompt_length.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+            layout=max_prompt_length.layout,
+        ),
+        TileTensor(
+            ptr=max_cache_length.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+            layout=max_cache_length.layout,
+        ),
     )
 
 
@@ -3248,6 +3175,150 @@ def generic_get_paged_cache_with_scales[
         scales.to_tile_tensor().as_unsafe_any_origin(),
         scales_page_stride.to_tile_tensor().as_imm().as_unsafe_any_origin(),
         scales_lookup_table.to_tile_tensor().as_imm().as_unsafe_any_origin(),
+    )
+
+
+def generic_get_paged_cache_with_scales(
+    blocks: TileTensor[mut=True, address_space=.GENERIC, ...],
+    page_stride: TileTensor[
+        mut=False, DType.int64, address_space=.GENERIC, ...
+    ],
+    cache_lengths: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    lookup_table: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    max_prompt_length: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    max_cache_length: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    scales: TileTensor[mut=True, address_space=.GENERIC, ...],
+    scales_page_stride: TileTensor[
+        mut=False, DType.int64, address_space=.GENERIC, ...
+    ],
+    scales_lookup_table: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    out result: PagedKVCacheCollection[
+        blocks.dtype,
+        KVCacheStaticParams(
+            blocks.static_shape[4],
+            blocks.static_shape[5],
+            blocks.static_shape[1] == 1,
+            _scaled_cache_fp8_tail_size[blocks.dtype, scales.dtype](
+                blocks.static_shape[5],
+                scales.static_shape[5],
+            ),
+        ),
+        blocks.static_shape[3],
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+        scale_dtype_=scales.dtype,
+        quantization_granularity_=_scaled_cache_granularity[
+            blocks.dtype, scales.dtype
+        ](
+            blocks.static_shape[5],
+            scales.static_shape[5],
+        ),
+    ],
+):
+    """Builds a scaled paged KV cache collection from projected tiles of any
+    storage.
+
+    The operands come in the order `flatten_without_attention_dispatch_metadata`
+    emits for quantized cache params. The blocks' static shape supplies the
+    cache's head count, head size, page size and MLA layout. The quantization
+    granularity is the values' row width over the scales' row width, in value
+    elements. A packed NVFP4 row may end in FP8 bytes that carry no scales.
+
+    Args:
+        blocks: KV values `[num_blocks, kv_dim, num_layers, page_size,
+            num_heads, head_size]`.
+        page_stride: Page-to-page distance for `blocks`, in elements.
+        cache_lengths: Cache lengths per request.
+        lookup_table: Page lookup table `[batch_size, max_pages]`.
+        max_prompt_length: Max prompt length, `[1]`.
+        max_cache_length: Max cache length, `[1]`.
+        scales: Scales, the shape of `blocks` with the last dimension
+            `head_size / granularity`.
+        scales_page_stride: Page-to-page distance for `scales`.
+        scales_lookup_table: Page lookup table of the scales.
+
+    Returns:
+        The collection over the values and their scales.
+    """
+    comptime assert blocks.rank == 6
+    comptime assert scales.rank == 6
+    comptime dtype = blocks.dtype
+    comptime scale_dtype = scales.dtype
+    comptime head_size = blocks.static_shape[5]
+    comptime scales_per_row = scales.static_shape[5]
+    comptime kv_params = KVCacheStaticParams(
+        blocks.static_shape[4],
+        head_size,
+        blocks.static_shape[1] == 1,
+        _scaled_cache_fp8_tail_size[dtype, scale_dtype](
+            head_size, scales_per_row
+        ),
+    )
+    comptime granularity = _scaled_cache_granularity[dtype, scale_dtype](
+        head_size, scales_per_row
+    )
+    comptime assert (
+        granularity * scales_per_row + kv_params.fp8_tail_size == head_size
+    ), "the scales row must evenly divide the values row"
+    # The collection holds pointer-backed tiles, so rebuild each one over its
+    # tile's data; a non-pointer storage policy aborts here at run time.
+    # The device buffers are owned by the graph runtime and kept alive
+    # externally, so the views carry the untracked any-origins.
+    return generic_get_paged_cache_with_scales[
+        dtype,
+        scale_dtype,
+        kv_params,
+        blocks.static_shape[3],
+        granularity,
+    ](
+        TileTensor(
+            ptr=blocks.ptr.unsafe_origin_cast[MutAnyOrigin](),
+            layout=blocks.layout,
+        ),
+        TileTensor(
+            ptr=page_stride.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+            layout=page_stride.layout,
+        ),
+        TileTensor(
+            ptr=cache_lengths.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+            layout=cache_lengths.layout,
+        ),
+        TileTensor(
+            ptr=lookup_table.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+            layout=lookup_table.layout,
+        ),
+        TileTensor(
+            ptr=max_prompt_length.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+            layout=max_prompt_length.layout,
+        ),
+        TileTensor(
+            ptr=max_cache_length.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+            layout=max_cache_length.layout,
+        ),
+        TileTensor(
+            ptr=scales.ptr.unsafe_origin_cast[MutAnyOrigin](),
+            layout=scales.layout,
+        ),
+        TileTensor(
+            ptr=scales_page_stride.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+            layout=scales_page_stride.layout,
+        ),
+        TileTensor(
+            ptr=scales_lookup_table.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
+            layout=scales_lookup_table.layout,
+        ),
     )
 
 

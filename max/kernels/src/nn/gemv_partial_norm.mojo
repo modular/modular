@@ -558,7 +558,7 @@ def _gemv_partial_norm_fused[
         tile_n=tile_n,
         num_threads=num_threads,
         enable_trace=enable_trace,
-        pdl_level=pdl_level,
+        pdl_level=PDLLevel.ON,
     ]
     ctx.enqueue_function[kernel](
         normed_output,
@@ -575,7 +575,7 @@ def _gemv_partial_norm_fused[
         Int32(num_normed_blocks),
         grid_dim=(1, num_blocks),
         block_dim=num_threads,
-        attributes=pdl_launch_attributes(pdl_level),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
 

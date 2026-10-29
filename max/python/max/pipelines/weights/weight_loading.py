@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Pipeline-side helpers for loading weights into experimental Modules.
 
-The framework (``max.experimental.nn``) exposes auto-casting as an explicit
+The framework (``max.nn``) exposes auto-casting as an explicit
 ``auto_cast`` argument. Pipelines that want to defer the decision to a
 deployment-time env var route through these helpers so the framework stays
 env-agnostic.

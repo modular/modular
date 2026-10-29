@@ -20,7 +20,7 @@ from unittest.mock import Mock
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache import MLAKVCacheParams, MultiKVCacheParams
+from max.nn.legacy.kv_cache import MLAKVCacheParams, MultiKVCacheParams
 from max.pipelines.architectures.glm5_1.model_config import (
     Glm5_1Config as Glm5_1GraphConfig,
 )

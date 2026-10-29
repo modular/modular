@@ -38,7 +38,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, ShardingStrategy, TensorValue
-from max.nn.layer import Module
+from max.nn.legacy.layer import Module
 from max.pipelines.architectures.glm5_next.layers.kimi_delta_attention import (
     KimiDeltaAttention,
 )
@@ -147,7 +147,7 @@ def _shard_shapes(
     A sharded weight's shape is the shape of the value its sharding strategy
     produces, so reading it needs a graph to produce that value in -- and a
     fresh graph per member, because the layer's projections all carry
-    :class:`~max.nn.Linear`'s default weight name and only the module tree's FQN
+    :class:`~max.nn.legacy.Linear`'s default weight name and only the module tree's FQN
     walk tells them apart. Two of them in one graph collide by name.
     """
     with Graph(f"KdaShardShape_{member}", input_types=[]):

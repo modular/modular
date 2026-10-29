@@ -58,6 +58,7 @@
 #include <chrono>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <stddef.h>
 #include <string>
@@ -723,6 +724,40 @@ public:
   /// Check if this graph has a baseline launch trace.
   bool hasBaselineLaunchTrace() const { return hasBaselineLaunchTrace_; }
 
+  /// A process-unique id for this captured graph, assigned at capture. Names
+  /// the graph in profiler traces: several devices' graphs share one replay
+  /// key, but each has its own id.
+  uint64_t profilerId() const { return profilerId_; }
+
+  /// The profiler manifest: JSON mapping each captured operation to the op
+  /// span that enqueued it, plus the ops enqueued during the capture. Built on
+  /// first call, since most processes never profile. Empty for graphs not
+  /// captured from a stream.
+  const std::string &profilerManifest() const;
+
+  /// An op pushed during a capture, kept for the profiler manifest.
+  struct CapturedOp {
+    uint64_t opSeq;
+    uint64_t parentSeq;
+    uint64_t thread;
+    std::string label;
+  };
+  /// A capture's ops in sequence order, shared by every graph it produced.
+  using CapturedOpTable = std::vector<CapturedOp>;
+
+  /// Copy what the profiler manifests of `graphs`, the graphs of the capture
+  /// that just ended, need from the capture-label log before it is dropped:
+  /// the ops pushed on their enqueuing threads with sequence numbers in
+  /// [minOpSeq, maxOpSeq], and any op an operation was enqueued under that
+  /// began before the capture.
+  static std::shared_ptr<const CapturedOpTable>
+  collectCapturedOps(ArrayRef<DeviceGraphRef> graphs, uint64_t minOpSeq,
+                     uint64_t maxOpSeq);
+
+  /// Keep the capture's op table for the profiler manifest and assign
+  /// profilerId().
+  void recordProfilerManifest(std::shared_ptr<const CapturedOpTable> ops);
+
   /// Get the capture stream for this graph.
   const DeviceStream *captureStream() const {
     return captureStream_.getPointer();
@@ -785,6 +820,12 @@ private:
   DeviceStreamRef captureStream_;
   bool hasBaselineLaunchTrace_ = false;
   std::vector<KernelLaunchMetadata> baselineLaunchTrace_;
+  std::string buildProfilerManifest() const;
+
+  uint64_t profilerId_ = 0;
+  std::shared_ptr<const CapturedOpTable> capturedOps_;
+  mutable std::once_flag profilerManifestOnce_;
+  mutable std::string profilerManifest_;
 
   /// Outputs recorded on the builder whose stable backing memory must outlive
   /// this graph; transferred in by `DeviceGraphBuilder::instantiate()`.
@@ -1163,7 +1204,8 @@ public:
   // Moves the cached free memory of every `selectStream` view that no caller
   // holds back to the device memory pool, so an allocation miss can retry.
   // Memory those views allocated during a graph capture stays with them.
-  // Blocks until each such view's stream is idle. Returns whether any view was
+  // Blocks until each such view's stream is idle, then gates the move on the
+  // work queued so far on the base stream. Returns whether any view was
   // flushed. The caller must not hold the memory manager lock.
   virtual bool flushIdleStreamViews();
 
@@ -1180,6 +1222,10 @@ public:
 
   virtual ErrorOr<DeviceEventRef> enqueueEvent() = 0;
   virtual ErrorOrSuccess enqueueEvent(const DeviceEvent &event) = 0;
+  // Records an event on the base stream of a `selectStream` view. Returns a
+  // null ref on a context that is its own base.
+  virtual ErrorOr<DeviceEventRef> enqueueBaseStreamEvent();
+  virtual bool isBaseStreamCapturing() const;
 
   /// Creates a device event. Defaults to a not-supported error; backends with
   /// an event model override this.

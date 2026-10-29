@@ -28,13 +28,13 @@ from typing import Any, ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.comm.ep import EPConfig
-from max.nn.kv_cache import (
+from max.nn.legacy.comm.ep import EPConfig
+from max.nn.legacy.kv_cache import (
     KVCacheParams,
     KVCacheQuantizationConfig,
     MultiKVCacheParams,
 )
-from max.nn.rotary_embedding import Llama3RopeScalingParams
+from max.nn.legacy.rotary_embedding import Llama3RopeScalingParams
 from max.pipelines.architectures.gpt_oss.hybrid_kv_params_util import (
     hybrid_swa_full_kv_params,
 )
@@ -518,6 +518,9 @@ class LagunaConfig(Llama3Config):
 
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
+            model_config: The MAX Engine model configuration; defaults to
+                ``pipeline_config.model``.
+            max_seq_len: The sequence length the cache was sized for.
 
         Returns:
             An initialized LagunaConfig instance.
@@ -550,6 +553,7 @@ class LagunaConfig(Llama3Config):
             pipeline_config: The MAX Engine pipeline configuration.
             huggingface_config: The HuggingFace model configuration.
             model_config: The MAX Engine model configuration.
+            max_seq_len: The sequence length the cache was sized for.
 
         Returns:
             An initialized LagunaConfig instance.

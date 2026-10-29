@@ -20,14 +20,14 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.linear import Linear
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
+from max.nn import Module
+from max.nn.linear import Linear
+from max.nn.norm import RMSNorm
+from max.nn.sequential import ModuleList
+from max.tensor import Tensor
 
 from ...inkling.layers.vision import plan_folds
 from ...inkling.model_config import InklingVisionConfig
@@ -38,9 +38,12 @@ _NORM_EPS = 1e-6
 
 
 def fold_timespace_to_depth(x: Tensor, t_fold: int, hw_fold: int) -> Tensor:
-    """Merges a ``t_fold x hw_fold x hw_fold`` neighborhood of
+    """Merges a spatial neighborhood into the channel dimension.
+
+    Folds a ``t_fold x hw_fold x hw_fold`` neighborhood of
     ``[patches, t, h, w, c]`` into the channels, ordered frame, row, column,
-    channel."""
+    channel.
+    """
     if t_fold == 1 and hw_fold == 1:
         return x
     patches = x.shape[0]
@@ -83,6 +86,13 @@ class InklingVisionModel(Module[[Tensor], Tensor]):
         image_mean: Sequence[float],
         image_std: Sequence[float],
     ) -> None:
+        """Stores the vision config and builds the patch-merging projections.
+
+        Quantizes the image mean and standard deviation to tuples, plans the
+        fold schedule, and builds one bias-free ``Linear`` per fold, an
+        ``RMSNorm`` between consecutive folds, and a final norm when the config
+        asks for one.
+        """
         self.config = config
         self.dtype = dtype
         self.image_mean = tuple(image_mean)
@@ -108,11 +118,12 @@ class InklingVisionModel(Module[[Tensor], Tensor]):
         )
 
     def normalize(self, pixels: Tensor) -> Tensor:
-        """Raw pixels ``[patches, patch, patch, channels]`` to the tower's
-        input frames ``[patches, temporal_patch_size, patch, patch, channels]``.
+        """Reshapes raw pixels to the tower's input frames.
 
-        Normalizes in float32 in the reference's order, then repeats the one
-        image frame across the temporal axis.
+        Takes ``[patches, patch, patch, channels]`` and returns
+        ``[patches, temporal_patch_size, patch, patch, channels]``. Normalizes
+        in float32 in the reference's order, then repeats the one image frame
+        across the temporal axis.
         """
         f32 = DType.float32
         device = pixels.device
@@ -131,6 +142,7 @@ class InklingVisionModel(Module[[Tensor], Tensor]):
         )
 
     def forward(self, patches: Tensor) -> Tensor:
+        """Encodes patches into one decoder-width token each."""
         x = self.normalize(patches)
         for index, (t_fold, hw_fold, _) in enumerate(self.folds):
             x = fold_timespace_to_depth(x, t_fold, hw_fold)

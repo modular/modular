@@ -14,7 +14,7 @@
 
 Staged on virtual B200s over the tiny fixture at TP2 and TP4 and never
 compiled. Attention runs inline, once per device, so every layer of a fused
-attention type is one op site per device.
+attention type is one op site per device, each writing the split cache.
 """
 
 from __future__ import annotations
@@ -24,18 +24,16 @@ from pathlib import Path
 
 import pytest
 import tiny_fixture
+from max import functional as F
 from max.driver import (
     Accelerator,
     set_virtual_device_api,
     set_virtual_device_count,
     set_virtual_device_target_arch,
 )
-from max.experimental import functional as F
-from max.experimental.sharding import DeviceMesh
-from max.experimental.tensor import default_device, default_dtype
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.mimo_v2_modulev3.mimo_v2 import MiMoV2
 from max.pipelines.architectures.mimo_v2_modulev3.model_config import (
     MiMoV2Config,
@@ -46,6 +44,8 @@ from max.pipelines.architectures.mimo_v2_modulev3.weight_adapters import (
 from max.pipelines.lib.interfaces.batch_processor import (
     modulev3_ragged_kv_symbolic_inputs,
 )
+from max.tensor import default_device, default_dtype
+from max.tensor.sharding import DeviceMesh
 from mimo_v3_runner import kv_params
 from transformers.configuration_utils import PretrainedConfig
 
@@ -97,6 +97,7 @@ def test_fused_qkv_sites(
     with F.lazy(), default_device(mesh), default_dtype(config.dtype):
         staged, _registry = model.stage(*inputs, weights=adapted)
         text = str(staged)
-    assert text.count(FUSED_QKV) == n_devices * (
-        SLIDING_LAYERS * sliding + FULL_LAYERS * full
-    )
+    sites = n_devices * (SLIDING_LAYERS * sliding + FULL_LAYERS * full)
+    assert text.count(FUSED_QKV) == sites
+    # Every site writes the split cache's packed rows, not padded planes.
+    assert text.count("split_cache = true") == sites

@@ -10,18 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """DeepSeek-V2 Transformer block (ModuleV3)."""
 
 from __future__ import annotations
 
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.multi_latent_attention import (
+from max.nn import Module
+from max.nn.common_layers.multi_latent_attention import (
     LatentAttentionWithRope,
 )
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.tensor import Tensor
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.legacy.kv_cache import PagedCacheValues
+from max.nn.norm import RMSNorm
+from max.tensor import Tensor
 
 
 class DeepseekV2TransformerBlock(Module[..., Tensor]):
@@ -49,6 +48,7 @@ class DeepseekV2TransformerBlock(Module[..., Tensor]):
         input_row_offsets: Tensor,
         freqs_cis: Tensor,
     ) -> Tensor:
+        """Runs one decoder block over ``x``."""
         residual = x
         norm_x = self.input_layernorm(x)
         attn_out = self.self_attn(

@@ -120,6 +120,8 @@ public:
 
   /// Returns the number of devices available that support `api`.
   static int numberOfDevices(StringRef api);
+  /// Unlike legacy, skips devices whose plugin lacks the peer extension.
+  static ErrorOrSuccess enableAllPeerAccess();
 
   /// Creates a device handle for device `id` of `api`.
   static ErrorOr<DeviceRef> create(StringRef api, int id = 0);
@@ -325,6 +327,9 @@ public:
   /// into `dst`, enqueued on `dst`'s context.
   ErrorOrSuccess copyTo(DeviceBuffer &dst, size_t srcByteOffset,
                         size_t srcByteSize);
+
+  /// Copies `byteSize()` bytes from host memory at `src`.
+  ErrorOrSuccess copyFrom(const void *src);
 
   /// Either do a blocking synchronize or set up events with an external
   /// stream. The HAL backend does not support external streams, so passing
@@ -581,6 +586,14 @@ public:
   /// The HAL backend never creates instances, so this is unreachable.
   DeviceContext &context() const;
 
+  /// Profiler identity and manifest, as on the legacy DeviceGraph. Unreachable
+  /// at runtime, since no instance exists; empty so replay tracing is a no-op.
+  uint64_t profilerId() const { return 0; }
+  const std::string &profilerManifest() const {
+    static const std::string empty;
+    return empty;
+  }
+
 private:
   llvm::SmallVector<DeviceBufferRef> inputs_;
   llvm::SmallVector<AsyncRT::AnyAsyncValueRef> outputs_;
@@ -697,6 +710,19 @@ public:
     }
     return success();
   }
+
+  // `crossStreamSync` orders the copy against `src`'s stream both ways. The
+  // graph compiler passes false because it orders its streams itself.
+  inline ErrorOrSuccess enqueueCopyDeviceToDevice(DeviceBuffer &dst,
+                                                  DeviceBuffer &src,
+                                                  bool crossStreamSync = true) {
+    return enqueueCopyDeviceToDevice(dst, src, 0, dst.byteSize(),
+                                     crossStreamSync);
+  }
+  ErrorOrSuccess enqueueCopyDeviceToDevice(DeviceBuffer &dst, DeviceBuffer &src,
+                                           size_t srcByteOffset,
+                                           size_t srcByteSize,
+                                           bool crossStreamSync = true);
 
   ErrorOrSuccess enqueueCopyFromDevice(void *dst, const void *src,
                                        size_t byteSize);

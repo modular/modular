@@ -10,26 +10,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Pixtral language model."""
 
 from __future__ import annotations
 
+from max import functional as F
 from max import tree
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.attention import AttentionWithRope
-from max.experimental.nn.common_layers.mlp import MLP
-from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.experimental.nn.embedding import Embedding
-from max.experimental.nn.linear import Linear
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
-from max.nn.kv_cache import (
+from max.nn import Module
+from max.nn.common_layers.attention import AttentionWithRope
+from max.nn.common_layers.mlp import MLP
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.embedding import Embedding
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     KVCacheParams,
 )
+from max.nn.linear import Linear
+from max.nn.norm import RMSNorm
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
+from max.tensor import Tensor
 
 from ..llama3_modulev3.layers.transformer_block import LlamaTransformerBlock
 from .llava.llava_decoder import Transformer
@@ -188,6 +189,7 @@ class PixtralLanguage(Module[..., tuple[Tensor, ...]]):
         image_token_indices: Tensor,
         *variadic_args: Tensor,
     ) -> tuple[Tensor, ...]:
+        """Runs the language model over the tokens and image embeddings."""
         assert self.kv_params is not None
         kv_inputs = iter(x._graph_value for x in variadic_args)
         symbolic_inputs = self.kv_params.unflatten_kv_inputs(kv_inputs)

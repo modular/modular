@@ -15,7 +15,7 @@
 # Pass this script a directory name with .py files to generate
 # a corresponding directory of .rst files. For example:
 #   cd max/python
-#   bash docs/build-rsts.sh max/nn
+#   bash docs/build-rsts.sh max/nn/legacy
 # There are some things this script does not currently do:
 #   - Specify a `slug` front-matter for pages like attention/attention.rst
 #   - List the `code_link` names on the index.rst file

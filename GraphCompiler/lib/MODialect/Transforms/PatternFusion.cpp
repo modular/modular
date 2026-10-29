@@ -86,16 +86,19 @@ struct PatternFusionPass : public impl::PatternFusionBase<PatternFusionPass> {
         debugMHAPattern.getValue(),
     };
 
+    MO::DeviceInfoMapping deviceInfoMapping(
+        graphOp->getParentOfType<mlir::ModuleOp>());
+
     RewritePatternSet patterns{ctx};
-    MO::populateFusionPatterns(patterns, cache, targetDeviceRef, mhaOpts);
+    // Register SwiGLU before the split-to-slice lowering below.
+    MO::populateFusionPatterns(patterns, cache, targetDeviceRef, mhaOpts,
+                               deviceInfoMapping);
 
     if (failed(applyPatternsGreedily(graphOp, std::move(patterns))))
       return signalPassFailure();
 
     // Lower splits that survived fusion back to slices.
     {
-      MO::DeviceInfoMapping deviceInfoMapping(
-          graphOp->getParentOfType<mlir::ModuleOp>());
       RewritePatternSet splitToSlicePatterns{ctx};
       splitToSlicePatterns.add<SplitToSlicePattern<>>(ctx);
       MO::populateFusionMatmulAddPatterns(deviceInfoMapping,

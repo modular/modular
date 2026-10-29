@@ -30,7 +30,7 @@ modular_py_library(
     imports = ["."],
     deps = [
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/lib",
         requirement("transformers"),
     ],

@@ -24,8 +24,6 @@ from nn.attention.mha_mask import (
 )
 from std.testing import assert_almost_equal, assert_equal
 
-from std.utils.index import Index
-
 
 def build_ChunkedCausalMask[
     local_window_size: Int, mask_type: DType
@@ -314,60 +312,62 @@ def test_mask_status() raises:
     var mask = ChunkedCausalMask[local_window_size=4]()
 
     assert_equal(
-        mask.status(UInt32(0), Index(0, 0), Index(4, 4)),
+        mask.status(UInt32(0), (Int(0), Int(0)), (Int(4), Int(4))),
         TileMaskStatus.PARTIAL_MASK,
     )
     assert_equal(
-        mask.status(UInt32(0), Index(4, 4), Index(4, 4)),
+        mask.status(UInt32(0), (Int(4), Int(4)), (Int(4), Int(4))),
         TileMaskStatus.PARTIAL_MASK,
     )
     assert_equal(
-        mask.status(UInt32(0), Index(2, 2), Index(4, 4)),
+        mask.status(UInt32(0), (Int(2), Int(2)), (Int(4), Int(4))),
         TileMaskStatus.PARTIAL_MASK,
     )
     assert_equal(
-        mask.status(UInt32(0), Index(0, 2), Index(4, 4)),
+        mask.status(UInt32(0), (Int(0), Int(2)), (Int(4), Int(4))),
         TileMaskStatus.PARTIAL_MASK,
     )
     assert_equal(
-        mask.status(UInt32(0), Index(2, 0), Index(4, 4)),
+        mask.status(UInt32(0), (Int(2), Int(0)), (Int(4), Int(4))),
         TileMaskStatus.PARTIAL_MASK,
     )
 
     assert_equal(
-        mask.status(UInt32(0), Index(0, 4), Index(4, 4)),
+        mask.status(UInt32(0), (Int(0), Int(4)), (Int(4), Int(4))),
         TileMaskStatus.FULL_MASK,
     )
     assert_equal(
-        mask.status(UInt32(0), Index(4, 0), Index(4, 4)),
+        mask.status(UInt32(0), (Int(4), Int(0)), (Int(4), Int(4))),
         TileMaskStatus.FULL_MASK,
     )
 
     # cases where tile_size >> local_window_size
     assert_equal(
-        mask.status(UInt32(0), Index(100, 0), Index(128, 128)),
+        mask.status(UInt32(0), (Int(100), Int(0)), (Int(128), Int(128))),
         TileMaskStatus.PARTIAL_MASK,
     )
     assert_equal(
-        mask.status(UInt32(0), Index(0, 0), Index(100, 100)),
+        mask.status(UInt32(0), (Int(0), Int(0)), (Int(100), Int(100))),
         TileMaskStatus.PARTIAL_MASK,
     )
     assert_equal(
-        mask.status(UInt32(0), Index(50, 0), Index(100, 100)),
+        mask.status(UInt32(0), (Int(50), Int(0)), (Int(100), Int(100))),
         TileMaskStatus.PARTIAL_MASK,
     )
 
     var bigger_mask = ChunkedCausalMask[local_window_size=256]()
     assert_equal(
-        bigger_mask.status(UInt32(0), Index(256, 256), Index(128, 128)),
+        bigger_mask.status(
+            UInt32(0), (Int(256), Int(256)), (Int(128), Int(128))
+        ),
         TileMaskStatus.PARTIAL_MASK,
     )
     assert_equal(
-        bigger_mask.status(UInt32(0), Index(128, 0), Index(128, 128)),
+        bigger_mask.status(UInt32(0), (Int(128), Int(0)), (Int(128), Int(128))),
         TileMaskStatus.NO_MASK,
     )
     assert_equal(
-        bigger_mask.status(UInt32(0), Index(256, 0), Index(128, 128)),
+        bigger_mask.status(UInt32(0), (Int(256), Int(0)), (Int(128), Int(128))),
         TileMaskStatus.FULL_MASK,
     )
 
@@ -389,29 +389,31 @@ def test_mask_apply() raises:
 
     # first two dims should be arbitrary, we pass in junk just to help confirm.
     assert_equal(
-        mask.mask(Index(0, 0, 0, 0), score_vec),
+        mask.mask((Int(0), Int(0), Int(0), Int(0)), score_vec),
         SIMD_T(1.0, MASK_VALUE, MASK_VALUE, MASK_VALUE),
     )
-    assert_equal(mask.mask(Index(10, 0, 4, 8), score_vec), inf_vec)
     assert_equal(
-        mask.mask(Index(2, 10, 8, 8), score_vec),
+        mask.mask((Int(10), Int(0), Int(4), Int(8)), score_vec), inf_vec
+    )
+    assert_equal(
+        mask.mask((Int(2), Int(10), Int(8), Int(8)), score_vec),
         SIMD_T(1.0, MASK_VALUE, MASK_VALUE, MASK_VALUE),
     )
 
     assert_equal(
-        mask.mask(Index(0, 4, 8, 10), score_vec),
+        mask.mask((Int(0), Int(4), Int(8), Int(10)), score_vec),
         inf_vec,
     )
     assert_equal(
-        mask.mask(Index(4, 0, 13, 10), score_vec),
+        mask.mask((Int(4), Int(0), Int(13), Int(10)), score_vec),
         SIMD_T(MASK_VALUE, MASK_VALUE, 3.0, 4.0),
     )
     assert_equal(
-        mask.mask(Index(4, 0, 12, 10), score_vec),
+        mask.mask((Int(4), Int(0), Int(12), Int(10)), score_vec),
         SIMD_T(MASK_VALUE, MASK_VALUE, 3.0, MASK_VALUE),
     )
     assert_equal(
-        mask.mask(Index(1000, 1000, 14, 12), score_vec),
+        mask.mask((Int(1000), Int(1000), Int(14), Int(12)), score_vec),
         SIMD_T(1.0, 2.0, 3.0, MASK_VALUE),
     )
 

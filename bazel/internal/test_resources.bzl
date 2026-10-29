@@ -358,12 +358,6 @@ TEST_RESOURCES = {
             "memory": 2448,
         },
     },
-    "//max/tests/integration/kv_cache:test_print_kv_cache": {
-        "default": {
-            "cpu": 2,
-            "memory": 13339,
-        },
-    },
     "//max/tests/integration/kv_cache:test_rms_norm_key_cache": {
         "default": {
             "cpu": 2,

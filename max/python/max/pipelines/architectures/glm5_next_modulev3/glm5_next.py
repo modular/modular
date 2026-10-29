@@ -20,26 +20,24 @@ GLM's collapse is not learned, unlike DeepSeek-V4's.
 
 from __future__ import annotations
 
+from max import functional as F
 from max import tree
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module, as_subgraph
-from max.experimental.nn.common_layers.embedding import VocabParallelEmbedding
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.linear import ColumnParallelLinear
-from max.experimental.nn.common_layers.mesh_axis import TP
-from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.sharding import DeviceMapping, NamedMapping
-from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorValue
-from max.nn.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.kv_cache import (
+from max.nn import Module, as_subgraph
+from max.nn.common_layers.embedding import VocabParallelEmbedding
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.linear import ColumnParallelLinear
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
+from max.nn.legacy.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
     RecurrentStateInputsPerDevice,
 )
+from max.nn.sequential import ModuleList
 from max.pipelines.architectures.glm5_next.model_config import SPARSE_ATTENTION
 from max.pipelines.architectures.glm5_next.state_cache import (
     CONV_LEAF_ID,
@@ -51,6 +49,8 @@ from max.pipelines.architectures.glm5_next.state_cache import (
     TAIL_RING_LEAF_ID,
 )
 from max.pipelines.lib import ModuleV3Outputs
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, NamedMapping
 
 from ..deepseekV3_2_modulev3.deepseekV3_2 import project_to_logits
 from ..deepseekV3_2_modulev3.layers.rms_norm import MultiplyBeforeCastRMSNorm
@@ -254,6 +254,7 @@ class Glm5Next(Module[..., ModuleV3Outputs]):
         input_row_offsets: Tensor,
         *variadic_args: Tensor,
     ) -> ModuleV3Outputs:
+        """Runs the language graph over tokens."""
         del return_n_logits
         mesh = self.config.mesh
         assert mesh is not None

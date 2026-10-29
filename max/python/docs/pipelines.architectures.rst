@@ -31,8 +31,10 @@ family.
    pipelines.architectures.dflash_mimo_v2
    pipelines.architectures.diffusion_gemma
    pipelines.architectures.dspark_deepseekV4
+   pipelines.architectures.dspark_deepseekV41
    pipelines.architectures.dspark_draft
    pipelines.architectures.dspark_gemma4
+   pipelines.architectures.dspark_qwen3
    pipelines.architectures.eagle3_deepseekV3
    pipelines.architectures.eagle_llama3
    pipelines.architectures.flint
@@ -63,6 +65,7 @@ family.
    pipelines.architectures.mistral3
    pipelines.architectures.mpnet
    pipelines.architectures.mtp_deepseekV3
+   pipelines.architectures.mtp_glm5_next
    pipelines.architectures.mtp_inkling
    pipelines.architectures.mtp_qwen3_5
    pipelines.architectures.muse_glimmer
@@ -81,8 +84,6 @@ family.
    pipelines.architectures.qwen_image
    pipelines.architectures.qwen_image_edit
    pipelines.architectures.step3p5
-   pipelines.architectures.unified_dspark_deepseekV41
-   pipelines.architectures.unified_dspark_nemotron_h
    pipelines.architectures.unified_mtp_glm5_2
    pipelines.architectures.wan
 
@@ -104,8 +105,10 @@ Text generation
    ~max.pipelines.architectures.dflash_mimo_v2
    ~max.pipelines.architectures.diffusion_gemma
    ~max.pipelines.architectures.dspark_deepseekV4
+   ~max.pipelines.architectures.dspark_deepseekV41
    ~max.pipelines.architectures.dspark_draft
    ~max.pipelines.architectures.dspark_gemma4
+   ~max.pipelines.architectures.dspark_qwen3
    ~max.pipelines.architectures.eagle3_deepseekV3
    ~max.pipelines.architectures.eagle_llama3
    ~max.pipelines.architectures.flint
@@ -132,6 +135,7 @@ Text generation
    ~max.pipelines.architectures.mistral
    ~max.pipelines.architectures.mistral3
    ~max.pipelines.architectures.mtp_deepseekV3
+   ~max.pipelines.architectures.mtp_glm5_next
    ~max.pipelines.architectures.mtp_inkling
    ~max.pipelines.architectures.mtp_qwen3_5
    ~max.pipelines.architectures.muse_glimmer
@@ -147,8 +151,6 @@ Text generation
    ~max.pipelines.architectures.qwen3_5
    ~max.pipelines.architectures.qwen3vl_moe
    ~max.pipelines.architectures.step3p5
-   ~max.pipelines.architectures.unified_dspark_deepseekV41
-   ~max.pipelines.architectures.unified_dspark_nemotron_h
    ~max.pipelines.architectures.unified_mtp_glm5_2
 
 Embeddings

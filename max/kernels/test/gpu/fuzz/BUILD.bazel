@@ -1,5 +1,5 @@
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
-load("//bazel:api.bzl", "modular_py_binary", "mojo_test")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_test", "mojo_test")
 load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
 package(default_visibility = ["//max:consumers"])
@@ -1270,4 +1270,45 @@ modular_py_binary(
     ),
     main = "fuzz.py",
     tags = ["manual"],
+)
+
+build_test(
+    name = "fuzz_build_test_multi_gpu",
+    tags = ["gpu"],
+    targets = [":fuzz_allgather_rows_slice.mojo.test"],
+)
+
+mojo_test(
+    name = "fuzz_allgather_rows_slice.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_allgather_rows_slice.mojo",
+    ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {"test.resources:gpu-memory": "3"},
+    main = "fuzz_allgather_rows_slice.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:has_multi_gpu",
+    ],
+    deps = [
+        "//max:comm",
+        "//max:layout",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+modular_py_test(
+    name = "test_fuzz",
+    srcs = [
+        "fuzz.py",
+        "test_fuzz.py",
+    ],
+    imports = ["."],
 )

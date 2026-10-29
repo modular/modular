@@ -18,22 +18,24 @@ from __future__ import annotations
 import re
 from unittest.mock import MagicMock
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn.common_layers.quant_linear import (
+from max.graph import Graph
+from max.nn import Linear
+from max.nn.common_layers.quant_linear import (
     QuantizedLinear,
     QuantizedMLP,
+    QuantizedQKVLinear,
 )
-from max.experimental.nn.common_layers.quant_tensor import (
+from max.nn.common_layers.quant_tensor import (
     FP8BlockTensor,
     MXFP8Quantizer,
     MXFP8Tensor,
     NVFP4Tensor,
     NVFP4TensorQuantizer,
 )
-from max.experimental.tensor import Tensor, default_dtype
-from max.graph import Graph
-from max.nn.quant_config import QuantConfig
+from max.nn.legacy.quant_config import QuantConfig
+from max.tensor import Tensor, default_dtype
 
 # Dimensions are multiples of the 128x128 weight block so the FP8 scale grid
 # divides evenly and stays easy to reason about.
@@ -499,4 +501,72 @@ def test_linear_mxfp8_fake_quant_forward(
         ]
 
     assert list(out.shape) == [_SEQ_LEN, _FFN_DIM]
+    assert out.dtype == DType.bfloat16
+
+
+def test_bf16_mlp_fuses_fake_quant_gate_and_up(
+    mock_accelerator: MagicMock, sm100_arch: None
+) -> None:
+    """Gate and up fake-quant, then one matmul under a shared global amax."""
+    del sm100_arch
+    device = mock_accelerator()
+    with F.lazy(), default_dtype(DType.bfloat16):
+        layer = QuantizedMLP(_HIDDEN_DIM, _FFN_DIM, bias=True).to(device)
+        gate_weight = layer.gate_proj.weight
+        up_weight = layer.up_proj.weight
+        assert isinstance(gate_weight, Tensor)
+        assert isinstance(up_weight, Tensor)
+        layer.gate_proj.weight = NVFP4TensorQuantizer(gate_weight)
+        layer.up_proj.weight = NVFP4TensorQuantizer(up_weight)
+        x = Tensor.zeros(
+            [_SEQ_LEN, _HIDDEN_DIM], dtype=DType.bfloat16, device=device
+        )
+        out = layer(x)
+        gate_weight = layer.gate_proj.weight
+        up_weight = layer.up_proj.weight
+
+    assert isinstance(gate_weight, NVFP4TensorQuantizer)
+    assert isinstance(up_weight, NVFP4TensorQuantizer)
+    assert gate_weight._pinned_amax is up_weight._pinned_amax
+    assert list(out.shape) == [_SEQ_LEN, _HIDDEN_DIM]
+    assert out.dtype == DType.bfloat16
+
+
+def test_qkv_fuses_fake_quant_projections(
+    mock_accelerator: MagicMock, sm100_arch: None
+) -> None:
+    """Q, K, and V fake-quant, then one matmul under a shared global amax."""
+    del sm100_arch
+    device = mock_accelerator()
+    with F.lazy(), default_dtype(DType.bfloat16):
+        proj = QuantizedQKVLinear(_HIDDEN_DIM, _HIDDEN_DIM, _HIDDEN_DIM).to(
+            device
+        )
+        for name in ("q_proj", "k_proj", "v_proj"):
+            linear = getattr(proj, name)
+            assert isinstance(linear, Linear)
+            weight = linear.weight
+            assert isinstance(weight, Tensor)
+            wrapped = QuantizedLinear(
+                int(linear.in_dim),
+                int(linear.out_dim),
+                bias=isinstance(linear.bias, Tensor),
+            )
+            wrapped.weight = NVFP4TensorQuantizer(weight)
+            setattr(proj, name, wrapped)
+        x = Tensor.zeros(
+            [_SEQ_LEN, _HIDDEN_DIM], dtype=DType.bfloat16, device=device
+        )
+        out = proj(x)
+        q_weight = proj.q_proj.weight
+        k_weight = proj.k_proj.weight
+        v_weight = proj.v_proj.weight
+
+    assert isinstance(q_weight, NVFP4TensorQuantizer)
+    assert isinstance(k_weight, NVFP4TensorQuantizer)
+    assert isinstance(v_weight, NVFP4TensorQuantizer)
+    assert (
+        q_weight._pinned_amax is k_weight._pinned_amax is v_weight._pinned_amax
+    )
+    assert list(out.shape) == [_SEQ_LEN, 3 * _HIDDEN_DIM]
     assert out.dtype == DType.bfloat16

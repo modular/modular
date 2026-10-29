@@ -37,17 +37,20 @@ M_driver_event::create(M_driver_context &ctx, M_driver_event_flags_t flags) {
       return tl::unexpected(M_DRIVER_STATUS_OUT_OF_MEMORY);
     }
     event->sharedEvent = std::move(shared);
-  } else {
-    NS::SharedPtr<MTL::Event> plain =
-        NS::TransferPtr(ctx.device->mDevice->newEvent());
-    if (!plain) {
-      delete event;
-      return tl::unexpected(M_DRIVER_STATUS_OUT_OF_MEMORY);
-    }
-    event->deviceEvent = std::move(plain);
   }
-
+  event->device = ctx.device->mDevice;
   return event;
+}
+
+bool M_driver_event::ensureDeviceEvent() {
+  std::lock_guard<std::mutex> lock(mutex);
+  if (sharedEvent || deviceEvent)
+    return true;
+  NS::SharedPtr<MTL::Event> plain = NS::TransferPtr(device->newEvent());
+  if (!plain)
+    return false;
+  deviceEvent = plain;
+  return true;
 }
 
 M_driver_status_t M_driver_event::destroy(M_driver_context &ctx,

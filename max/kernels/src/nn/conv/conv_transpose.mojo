@@ -1666,11 +1666,11 @@ def conv_transposed_cpu[
             output,
             input,
             packed_filter,
-            stride,
-            dilation,
-            pad_d,
-            pad_h,
-            pad_w,
+            Coord(stride),
+            Coord(dilation),
+            Coord(pad_d),
+            Coord(pad_h),
+            Coord(pad_w),
             1,
         )
 

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Gemma3 configuration on ModuleV3."""
 
 from __future__ import annotations
 
@@ -17,13 +18,12 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 from max.dtype import DType
-from max.experimental.sharding import DeviceMesh
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
-from max.nn.quant_config import QuantConfig
-from max.nn.rotary_embedding import LinearScalingParams
-from max.nn.transformer import ReturnLogits
+from max.nn.legacy.kv_cache import KVCacheParamInterface, MultiKVCacheParams
+from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.rotary_embedding import LinearScalingParams
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.architectures.gpt_oss.hybrid_kv_params_util import (
     hybrid_swa_full_kv_params,
 )
@@ -42,6 +42,7 @@ from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
 )
+from max.tensor.sharding import DeviceMesh
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
@@ -250,6 +251,7 @@ class Gemma3Config(
         Args:
             pipeline_config: The MAX Engine pipeline configuration.
             huggingface_config: The HuggingFace model configuration object.
+            max_seq_len: The most tokens the model accepts in one sequence.
 
         Returns:
             An initialized :obj:`Gemma3Config` instance.

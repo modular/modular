@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Tests registry wiring for DeepSeek-V4.1-Flash.
 
-The target architecture resolves by name. The unified DSpark speculator is
-not an architecture of its own: it is indexed against its target and reached
-through ``select_speculator``, as the registry resolves a speculative pair.
+The target architecture resolves by name. Under ``--speculative-method
+dspark`` it pairs with the DSpark stages its checkpoint ships, as the
+registry resolves a speculative pair.
 """
 
 from __future__ import annotations
@@ -27,11 +27,11 @@ from max.pipelines.architectures.deepseekV41.model_config import (
     DeepseekV41Config,
     dspark_draft_width,
 )
-from max.pipelines.architectures.unified_dspark_deepseekV41 import (
-    UnifiedDSparkDeepseekV41BatchProcessor,
-    UnifiedDSparkDeepseekV41Model,
+from max.pipelines.lib.arch_lookup import ARCH_LOOKUP
+from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
+    _SpecDecodeVisionCachePipelineModel,
+    spec_decode_architecture,
 )
-from max.pipelines.lib.arch_lookup import select_speculator
 from max.pipelines.lib.reasoning import get_parser_cls
 
 
@@ -48,24 +48,22 @@ def test_deepseekV41_arch_registered() -> None:
     assert get_parser_cls(arch.reasoning_parser) is not None
 
 
-def test_unified_dspark_deepseekV41_speculator_registered() -> None:
-    speculator = select_speculator("DeepseekV41ForCausalLM", "dspark", None)
-    assert speculator is not None
-    assert speculator.name == "UnifiedDSparkDeepseekV41ForCausalLM"
-    assert speculator.pipeline_model is UnifiedDSparkDeepseekV41Model
-    assert speculator.batching is UnifiedDSparkDeepseekV41BatchProcessor
+def test_dspark_pairs_with_the_stages_the_checkpoint_ships() -> None:
+    draft = ARCH_LOOKUP.find("DSparkDeepseekV41DraftModel")
+    assert draft is not None
     assert (
-        speculator.weight_adapters[WeightsFormat.safetensors]
+        draft.weight_adapters[WeightsFormat.safetensors]
         is weight_adapters.convert_dspark_safetensor_state_dict
     )
-    assert speculator.supports_device_graph_capture is True
 
-    derived = speculator.derive()
-    assert derived.pipeline_model is UnifiedDSparkDeepseekV41Model
-    assert derived.supports_device_graph_capture is True
-    # Inherited from the base, so `--speculative-method dspark` resolves
-    # num_speculative_tokens to the checkpoint's block size.
-    assert derived.checkpoint_draft_width is dspark_draft_width
+    paired = spec_decode_architecture("DeepseekV41ForCausalLM", "dspark", None)
+    assert paired is not None
+    assert paired.name == "DeepseekV41ForCausalLM+dspark"
+    # Its images go through the pipeline's vision cache.
+    assert paired.pipeline_model is _SpecDecodeVisionCachePipelineModel
+    assert paired.supports_device_graph_capture is True
+    # So `--speculative-method dspark` resolves num_speculative_tokens to the
+    # checkpoint's block size.
+    assert paired.checkpoint_draft_width is dspark_draft_width
     # Mixed prefill and decode steps verify the decode rows' drafts.
-    assert speculator.supports_spec_decode_mixed_batches is True
-    assert derived.supports_spec_decode_mixed_batches is True
+    assert paired.supports_spec_decode_mixed_batches is True

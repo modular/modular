@@ -2678,8 +2678,8 @@ struct MultiDeviceContext:
         x: InputTensor[dtype=dtype, ...],
         dev_ctxs: DeviceContextArray[2],
     ) raises:
-        print("dev_ctx0.id() =", dev_ctxs[0].id())
-        print("dev_ctx1.id() =", dev_ctxs[1].id())
+        print("dev_ctx0.device().id =", dev_ctxs[0].device().id)
+        print("dev_ctx1.device().id =", dev_ctxs[1].device().id)
         dev_ctxs[0].synchronize()
         dev_ctxs[1].synchronize()
 
@@ -2712,7 +2712,7 @@ struct VariadicDeviceContext:
         dev_ctxs: DeviceContextArray,
     ) raises:
         for i in range(len(dev_ctxs)):
-            print("dev_ctxs[", i, "].id() =", dev_ctxs[i].id())
+            print("dev_ctxs[", i, "].id() =", dev_ctxs[i].device().id)
             dev_ctxs[i].synchronize()
 
 
@@ -3037,6 +3037,31 @@ struct KernelWithDefaultParameter:
         print("rank_derived_from_other =", rank_derived_from_other)
         print("rank_derived_from_derived =", rank_derived_from_derived)
         x.store((0,), Int32(0))
+
+
+# A struct parameter plus trait arguments: the trait arguments add implicit
+# origin declarations to the fn-level params that the merged struct + fn param
+# list does not carry, so finding the fn-level defaults must skip them.
+@extensibility.register("trait_kernel_with_struct_param_default")
+struct TraitKernelWithStructParamDefault[negate: Bool]:
+    @staticmethod
+    def execute[
+        required: Int,
+        defaulted: Int = -1,
+    ](z: Some[Output & TileTensorable], x: Some[Input & TileTensorable]):
+        print("negate =", Self.negate)
+        print("required =", required)
+        print("defaulted =", defaulted)
+        var zt = z.to_tile_tensor()
+        var xt = x.to_tile_tensor[type_of(z).dtype]()
+        var n = Int(x.shape().product())
+        var zf = zt.reshape(row_major(n))
+        var xf = xt.reshape(row_major(n))
+        for i in range(n):
+            var v = xf.load((i,))
+            comptime if Self.negate:
+                v = -v
+            zf.store((i,), v)
 
 
 @extensibility.register("unique-parameters")
@@ -3570,6 +3595,15 @@ struct MapLowerOnePlainOutput:
         target: StaticString,
     ](res: OutputTensor, a: InputTensor, ctx: DeviceContext,) raises:
         pass
+
+
+@extensibility.register("map_lower_generic_context")
+struct MapLowerGenericContext:
+    @staticmethod
+    def execute(
+        res: OutputTensor, a: InputTensor, ctx: DeviceContext.Generic
+    ) raises:
+        comptime assert type_of(ctx).target.is_cpu()
 
 
 @extensibility.register("map_lower_no_context")

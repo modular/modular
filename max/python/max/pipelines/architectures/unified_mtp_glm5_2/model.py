@@ -24,9 +24,9 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Graph
 from max.graph.weights import WeightData
-from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.comm.ep import EPCommInitializer, EPConfig
+from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import UnifiedSpecDecodeInputs
 from max.pipelines.lib.graph_specs import GraphRole
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
@@ -83,6 +83,7 @@ class UnifiedMTPGlm5_2Inputs(UnifiedSpecDecodeInputs, DeepseekV3Inputs):
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
+        """The step's buffers, plus the speculative decode tail's."""
         return super().buffers + self._spec_decode_tail_buffers(
             include_in_thinking_phase=True,
         )

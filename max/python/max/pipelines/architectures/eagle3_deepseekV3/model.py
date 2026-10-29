@@ -28,8 +28,8 @@ from typing import Any, TypeVar
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, load_weights, weights_format
-from max.nn.kv_cache import KVCacheParams
-from max.nn.transformer import ReturnHiddenStates
+from max.nn.legacy.kv_cache import KVCacheParams
+from max.nn.legacy.transformer import ReturnHiddenStates
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.arch_lookup import ARCH_LOOKUP
 from max.pipelines.lib.interfaces.arch_config import (
@@ -136,8 +136,10 @@ class Eagle3DeepseekV3DraftArchConfig(ArchConfigWithBoundedMaxSeqLen):
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
-        """Returns a one-layer view of the target's cache, for the one
-        decoder layer the head has."""
+        """Returns a one-layer view of the target's cache.
+
+        The head has one decoder layer.
+        """
         del huggingface_config
         target = DeepseekV3Config.construct_kv_params(
             pipeline_config.model.huggingface_config.get_text_config(),
@@ -293,8 +295,7 @@ def _draft_state_dict(context: ModelLoadContext) -> dict[str, WeightData]:
 
 
 def _loaded(draft: _HeadT, state_dict: dict[str, WeightData]) -> _HeadT:
-    """Loads a head, which inherits its target's ``lm_head`` if it ships
-    none."""
+    """Loads a head, which inherits its target's ``lm_head`` if it ships none."""
     draft.has_own_lm_head = "lm_head.weight" in state_dict
     draft.load_state_dict(state_dict, weight_alignment=1, strict=False)
     validate_draft_state_dict(
@@ -340,8 +341,10 @@ def _target_config(context: ModelLoadContext) -> DeepseekV3Config:
 def _default_aux_layer_ids(
     num_target_layers: int, fc_input_multiplier: int, offset: int
 ) -> list[int]:
-    """Picks ``fc_input_multiplier`` aux capture layer IDs spread across
-    a target with ``num_target_layers`` layers.
+    """Picks the aux capture layer IDs from the target's depth.
+
+    ``fc_input_multiplier`` of them are spread across a target with
+    ``num_target_layers`` layers.
 
     vLLM's ``SupportsEagle3.get_eagle3_default_aux_hidden_state_layers``
     default (``(2, num_layers // 2, num_layers - 3)`` for 3-way), read as

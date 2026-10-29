@@ -134,6 +134,7 @@ class Glm5NextVideoProcessor(Glm5NextPatchifier):
     def from_processor_config(
         cls, config: Mapping[str, Any], **overrides: Any
     ) -> Self:
+        """Builds the processor from one config section."""
         section = config.get(cls.CONFIG_SECTION, config)
         defaults = cls()
         overrides.setdefault("fps", section.get("fps", defaults.fps))

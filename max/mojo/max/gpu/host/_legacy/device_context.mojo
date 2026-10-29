@@ -91,7 +91,7 @@ from ._device_context_metal import (
 )
 
 from .. import _launch_args
-from .._launch_args import DeviceFunctionWrapper, _IdentityWrapper
+from .._launch_args import DeviceFunctionWrapper, _IdentityWrapper, DenseArgs
 
 from ._device_context_extras import *
 
@@ -268,7 +268,7 @@ def _raise_call_error(
         "' on device ",
         device_context.api(),
         ":",
-        device_context.id(),
+        device_context.device().id,
         " with error '",
         err_msg,
         "'",
@@ -2364,7 +2364,7 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
     @inline(.always)
     def __init__(
         out self,
-        # FIXME(MSTDL-3258): DeviceContext target type erasure.
+        # FIXME(MSTDL-3258): DeviceContext target type erasure
         ctx: DeviceContext.Generic,
     ) raises:
         """Retrieves the stream associated with the given device context.
@@ -2930,6 +2930,7 @@ def _max_dynamic_shared_bytes_for_load[
 def _enqueue_packed_checked[
     # TODO(MOCO-5073): Remove once nested autoparameterization is supported
     dense_args_origin: ImmOrigin,
+    dense_args_sizes_origin: MutOrigin,
     //,
 ](
     ctx: Some[_FunctionEnqueuer],
@@ -2938,7 +2939,7 @@ def _enqueue_packed_checked[
     device_context: DeviceContext,
     func_name: StaticString,
     dense_args_addrs: MutPointer[ImmOpaquePointer[dense_args_origin], _],
-    dense_args_sizes: Optional[Pointer[UInt64, MutUntrackedOrigin]],
+    dense_args_sizes: Optional[Pointer[UInt64, dense_args_sizes_origin]],
     num_args: Int,
     grid_dim: Dim,
     block_dim: Dim,
@@ -3428,21 +3429,15 @@ struct DeviceFunction[
         # A kernel may take no arguments; keep the buffers non-empty.
         comptime num_slots = max(num_args, 1)
 
-        var dense_args_addrs = unsafe_stack_allocation[
-            # TODO(MSTDL-1904): Remove mut cast; verify treated as immutable.
-            num_slots,
-            OpaquePointer[args.origin],
-        ]()
-        var dense_args_sizes = unsafe_stack_allocation[num_slots, UInt64]()
+        var dense_args = DenseArgs[args.origin, num_slots]()
 
         comptime for i in range(num_args):
-            # TODO(MSTDL-1904): Validate the safety of this.
-            dense_args_addrs[unsafe_offset=i] = Pointer(
-                to=args[i]
-            ).unsafe_bitcast[NoneType]()
+            dense_args.addrs.unsafe_get(i) = Pointer(to=args[i]).unsafe_bitcast[
+                NoneType
+            ]()
 
         comptime for i in range(num_args):
-            dense_args_sizes[unsafe_offset=i] = UInt64(size_of[Ts[i]]())
+            dense_args.sizes.unsafe_get(i) = UInt64(size_of[Ts[i]]())
 
         if case .Some(cluster_dim) = cluster_dim:
             attributes.append(LaunchAttribute.from_cluster_dim(cluster_dim))
@@ -3455,8 +3450,8 @@ struct DeviceFunction[
                 ctx,
                 func_handle=self._handle,
                 device_context=self._context.assert_default_target(),
-                dense_args_addrs=dense_args_addrs,
-                dense_args_sizes=dense_args_sizes,
+                dense_args_addrs=dense_args.addrs.unsafe_ptr(),
+                dense_args_sizes=dense_args.sizes.unsafe_ptr(),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
                 shared_mem_bytes=shared_mem_bytes.or_else(0),
@@ -3473,8 +3468,8 @@ struct DeviceFunction[
                 func_handle=self._handle,
                 device_context=self._context.assert_default_target(),
                 func_name=func_name,
-                dense_args_addrs=dense_args_addrs,
-                dense_args_sizes=Optional(dense_args_sizes),
+                dense_args_addrs=dense_args.addrs.unsafe_ptr(),
+                dense_args_sizes=Optional(dense_args.sizes.unsafe_ptr()),
                 num_args=num_args,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
@@ -3669,7 +3664,9 @@ struct DeviceFunction[
                 device_context=self._context.assert_default_target(),
                 func_name=func_name,
                 dense_args_addrs=dense_args_addrs.unsafe_ptr(),
-                dense_args_sizes=None,
+                dense_args_sizes=Optional[
+                    Pointer[UInt64, MutUntrackedOrigin]
+                ](),
                 num_args=num_translated_args,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
@@ -3962,12 +3959,10 @@ struct DeviceExternalFunction[
 
         comptime num_args = Ts.length
 
-        var dense_args_addrs = Array[OpaquePointer[ImmutAnyOrigin], num_args](
-            uninitialized=True
-        )
+        var dense_args = DenseArgs[ImmutAnyOrigin, num_args]()
 
         comptime for i in range(num_args):
-            dense_args_addrs[i] = (
+            dense_args.addrs.unsafe_get(i) = (
                 Pointer(to=args[i])
                 .unsafe_bitcast[NoneType]()
                 .as_unsafe_any_origin()
@@ -3987,18 +3982,16 @@ struct DeviceExternalFunction[
         comptime if Self.target.is_apple_gpu():
             # Metal takes the launch payload via `args[0]`; see
             # `MetalDeviceContext::enqueueFunctionExecDirect`.
-            var dense_args_sizes = Array[UInt64, num_args](fill=0)
-
             comptime for i in range(num_args):
-                dense_args_sizes[i] = UInt64(size_of[Ts[i]]())
+                dense_args.sizes.unsafe_get(i) = UInt64(size_of[Ts[i]]())
 
             # TODO(GEX-3761): Unchecked path — no argument is encoded as a
             # device pointer, so this launch marks no used buffers resident.
             var dense_args_is_device_ptr = Array[Bool, num_args](fill=False)
 
             var metal_args = MetalEnqueueFunctionArgs(
-                dense_args_addrs.unsafe_ptr(),
-                dense_args_sizes.unsafe_ptr(),
+                dense_args.addrs.unsafe_ptr(),
+                dense_args.sizes.unsafe_ptr(),
                 dense_args_is_device_ptr.unsafe_ptr(),
                 None,
                 Int32(0),
@@ -4035,7 +4028,7 @@ struct DeviceExternalFunction[
                 shared_mem_bytes.or_else(0),
                 attributes.unsafe_ptr(),
                 len(attributes),
-                dense_args_addrs.unsafe_ptr(),
+                dense_args.addrs.unsafe_ptr(),
                 UInt32(num_args),
                 no_arg_sizes,
             ),
@@ -4503,35 +4496,25 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    def name(self) -> String:
-        """Returns the device name, an ASCII string identifying this device,
-        defined by the native device API.
+    def device(ref self) -> Device[Self.target, ImmOrigin(origin_of(self))]:
+        """Returns a view of the device this context runs on.
 
-        This method queries the underlying GPU device for its name, which typically
-        includes the model and other identifying information. This can be useful for
-        logging, debugging, or making runtime decisions based on the specific GPU hardware.
+        Returns:
+            A `Device` that borrows this context.
+        """
+        return {Pointer(to=self).as_imm()}
+
+    @deprecated("Use `DeviceContext.device().get_name()` instead.")
+    def name(self) -> String:
+        """Returns the device name, defined by the native device API.
 
         Returns:
             A string containing the device name.
-
-        Example:
-
-        ```mojo
-        from max.gpu.host import DeviceContext
-
-        var ctx = DeviceContext()
-        print("Running on device:", ctx.name())
-        ```
         """
-        # const char *AsyncRT_DeviceContext_deviceName(const DeviceContext *ctx)
-        var name_ptr = external_call[
-            "AsyncRT_DeviceContext_deviceName",
-            _CString[],
-            _DeviceContextPtr[mut=True],
-        ](
-            self._handle,
-        )
-        return _string_from_owned_charptr(name_ptr)
+        try:
+            return self.device().get_name()
+        except e:
+            abort(String(e))
 
     def api(self) -> String:
         """Returns the name of the API used to program the device.
@@ -6502,23 +6485,10 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         )
         return Int(value)
 
+    @deprecated("Use `DeviceContext.device().get_attribute()` instead.")
     @inline(.always)
     def get_attribute(self, attr: DeviceAttribute) raises -> Int:
         """Returns the specified attribute for this device.
-
-        Use the aliases defined by
-        [DeviceAttribute](/api/mojo/max/gpu/host/device_attribute/DeviceAttribute/)
-        to specify attributes. For example:
-
-        ```mojo
-        from max.gpu.host import DeviceAttribute, DeviceContext
-
-        def main() raises:
-            var ctx = DeviceContext()
-            var attr = DeviceAttribute.MAX_BLOCKS_PER_MULTIPROCESSOR
-            var max_blocks = ctx.get_attribute(attr)
-            print(max_blocks)
-        ```
 
         Args:
             attr: The device attribute to query.
@@ -6529,20 +6499,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        var value: c_int = 0
-        # const char * AsyncRT_DeviceContext_getAttribute(int *result, const DeviceContext *ctx, int attr)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceContext_getAttribute",
-                _CString[],
-            ](
-                Pointer(to=value),
-                self._handle,
-                c_int(attr._value),
-            ),
-            location=call_location(),
-        )
-        return Int(value)
+        return self.device().get_attribute(attr)
 
     @inline(.always)
     def is_compatible(self) -> Bool:
@@ -6580,37 +6537,18 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         except:
             return False
 
+    @deprecated("Use `DeviceContext.device().id` instead.")
     @inline(.always)
     def id(self) raises -> Int64:
         """Returns the ID associated with this device.
-
-        This method retrieves the unique identifier for the current device.
-        Device IDs are used to distinguish between multiple devices in a system
-        and are often needed for multi-GPU programming.
 
         Returns:
             The unique device ID as an Int64.
 
         Raises:
             If there's an error retrieving the device ID.
-
-        Example:
-
-        ```mojo
-        from max.gpu.host import DeviceContext
-
-        var ctx = DeviceContext()
-        try:
-            var device_id = ctx.id()
-            print("Using device with ID:", device_id)
-        except:
-            print("Failed to get device ID")
-        ```
         """
-        # int64_t AsyncRT_DeviceContext_id(const DeviceContext *ctx)
-        return external_call[
-            "AsyncRT_DeviceContext_id", Int64, _DeviceContextPtr[mut=True]
-        ](self._handle)
+        return self.device().id
 
     @doc_hidden
     @inline(.always)
@@ -6642,29 +6580,19 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         )
         return Int(compute_capability)
 
+    @deprecated("Use `DeviceContext.device().get_arch()` instead.")
     @doc_hidden
     @inline(.always)
     def arch_name(self) raises -> String:
         """Returns the architecture name of this device.
 
-        This internal method retrieves the architecture name of AMD GPUs.
-
         Returns:
-            The compute capability as a string (e.g., `gfx942` for `MI300`).
+            The architecture name, such as `gfx942`.
 
         Raises:
-            If there's an error retrieving the compute capability.
-
-        Notes:
-
-        This is a private method intended for internal use only.
+            If there's an error retrieving the architecture name.
         """
-        var arch_name = StaticString()
-        external_call[
-            "AsyncRT_DeviceContext_archName",
-            NoneType,
-        ](Pointer(to=arch_name), self._handle)
-        return String(arch_name)
+        return self.device().get_arch()
 
     @inline(.always)
     def get_memory_info(self) raises -> Tuple[c_size_t, c_size_t]:
@@ -6715,14 +6643,12 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
 
         return (free, total)
 
+    @deprecated(
+        "Use `DeviceContext.device().can_access_peer(peer.device())` instead."
+    )
     @inline(.always)
     def can_access(self, peer: DeviceContext) raises -> Bool:
         """Returns True if this device can access the identified peer device.
-
-        This method checks whether the current device can directly access memory on
-        the specified peer device. Peer-to-peer access allows for direct memory transfers
-        between devices without going through host memory, which can significantly
-        improve performance in multi-GPU scenarios.
 
         Args:
             peer: The peer device to check for accessibility.
@@ -6732,41 +6658,8 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
 
         Raises:
             If there's an error checking peer access capability.
-
-        Example:
-
-        ```mojo
-        from max.gpu.host import DeviceContext
-        var ctx1 = DeviceContext(0)  # First GPU
-        var ctx2 = DeviceContext(1)  # Second GPU
-
-        try:
-            if ctx1.can_access(ctx2):
-                print("Direct peer access is possible")
-                ctx1.enable_peer_access(ctx2)
-            else:
-                print("Direct peer access is not supported")
-        except:
-            print("Failed to check peer access capability")
-        ```
         """
-        var result: Bool = False
-        # const char *AsyncRT_DeviceContext_canAccess(bool *result, const DeviceContext *ctx, const DeviceContext *peer)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceContext_canAccess",
-                _CString[],
-                Pointer[Bool, origin_of(result)],
-                _DeviceContextPtr[mut=True],
-                _DeviceContextPtr[mut=True],
-            ](
-                Pointer(to=result),
-                self._handle,
-                peer._handle,
-            ),
-            location=call_location(),
-        )
-        return result
+        return self.device().can_access_peer(peer.device())
 
     @inline(.always)
     def enable_peer_access(self, peer: DeviceContext) raises:
@@ -6786,7 +6679,8 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
 
         Notes:
 
-        - It's recommended to call `can_access()` first to check if peer access is possible.
+        - It's recommended to call `Device.can_access_peer()` first to check if
+          peer access is possible.
         - Peer access is not always symmetric; you may need to enable access in both directions.
 
         Example:
@@ -6798,12 +6692,12 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         var ctx2 = DeviceContext(1)  # Second GPU
 
         try:
-            if ctx1.can_access(ctx2):
+            if ctx1.device().can_access_peer(ctx2.device()):
                 ctx1.enable_peer_access(ctx2)
                 print("Peer access enabled from device 0 to device 1")
 
                 # For bidirectional access
-                if ctx2.can_access(ctx1):
+                if ctx2.device().can_access_peer(ctx1.device()):
                     ctx2.enable_peer_access(ctx1)
                     print("Peer access enabled from device 1 to device 0")
             else:
@@ -6852,13 +6746,11 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         )
         return result
 
+    @deprecated("Use `DeviceContext.device().is_host_unified()` instead.")
     @inline(.always)
     def is_host_unified(self) raises -> Bool:
         """Returns True if this device and the host share one physical memory
         pool.
-
-        Reports hardware topology, so it does not predict whether
-        `DeviceBuffer.unsafe_host_ptr()` succeeds for any particular buffer.
 
         Returns:
             True if device and host memory are one physical pool.
@@ -6866,21 +6758,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
         Raises:
             If there's an error querying the device.
         """
-        var result: Bool = False
-        # const char *AsyncRT_DeviceContext_isHostUnified(bool *result, const DeviceContext *ctx)
-        _checked(
-            external_call[
-                "AsyncRT_DeviceContext_isHostUnified",
-                _CString[],
-                Pointer[Bool, origin_of(result)],
-                _DeviceContextPtr[mut=True],
-            ](
-                Pointer(to=result),
-                self._handle,
-            ),
-            location=call_location(),
-        )
-        return result
+        return self.device().is_host_unified()
 
     @staticmethod
     @inline(.always)
@@ -6998,6 +6876,214 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
                 _CString[],
                 Pointer[Bool, origin_of(result)],
             ](Pointer(to=result)),
+            location=call_location(),
+        )
+        return result
+
+
+struct Device[target: CompilationTarget, origin: ImmOrigin](
+    TrivialRegisterPassable
+):
+    """A view of the accelerator device behind a `DeviceContext`.
+
+    Groups the queries that describe the hardware itself, as opposed to the
+    context's allocations or the stream's queued work. The method names match
+    the neo-driver `Device` API. Get one from `DeviceContext.device()`; the view
+    is valid for as long as that context is.
+
+    Parameters:
+        target: The compilation target of the owning context.
+        origin: The origin of the owning context.
+
+    Example:
+
+    ```mojo
+    from max.gpu.host import DeviceAttribute, DeviceContext
+
+    def main() raises:
+        var ctx = DeviceContext()
+        var device = ctx.device()
+        print("Device", device.id, "is", device.get_name())
+        print(device.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT))
+    ```
+    """
+
+    var _ctx: Pointer[DeviceContextBase[Self.target], Self.origin]
+
+    var id: Int64
+    """The ID of this device among the devices of its API, as passed to the
+    `DeviceContext` constructor."""
+
+    @doc_hidden
+    def __init__(
+        out self, ctx: Pointer[DeviceContextBase[Self.target], Self.origin]
+    ):
+        self._ctx = ctx
+        # int64_t AsyncRT_DeviceContext_id(const DeviceContext *ctx)
+        self.id = external_call[
+            "AsyncRT_DeviceContext_id", Int64, _DeviceContextPtr[mut=True]
+        ](ctx[]._handle)
+
+    def get_name(self) raises -> String:
+        """Returns the device name, as reported by the native device API.
+
+        Returns:
+            A string identifying the device, such as `NVIDIA B200`.
+
+        Raises:
+            If the device name cannot be queried.
+        """
+        # const char *AsyncRT_DeviceContext_deviceName(const DeviceContext *ctx)
+        var name_ptr = external_call[
+            "AsyncRT_DeviceContext_deviceName",
+            _CString[],
+            _DeviceContextPtr[mut=True],
+        ](self._ctx[]._handle)
+        return _string_from_owned_charptr(name_ptr)
+
+    def get_attribute(self, attr: DeviceAttribute) raises -> Int:
+        """Returns the specified attribute for this device.
+
+        Use the aliases defined by
+        [DeviceAttribute](/api/mojo/max/gpu/host/device_attribute/DeviceAttribute/)
+        to specify attributes. For example:
+
+        ```mojo
+        from max.gpu.host import DeviceAttribute, DeviceContext
+
+        def main() raises:
+            var ctx = DeviceContext()
+            var attr = DeviceAttribute.MAX_BLOCKS_PER_MULTIPROCESSOR
+            print(ctx.device().get_attribute(attr))
+        ```
+
+        Args:
+            attr: The device attribute to query.
+
+        Returns:
+            The value of `attr` on this device.
+
+        Raises:
+            If the attribute cannot be queried.
+        """
+        var value: c_int = 0
+        # const char * AsyncRT_DeviceContext_getAttribute(int *result, const DeviceContext *ctx, int attr)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_getAttribute",
+                _CString[],
+            ](
+                Pointer(to=value),
+                self._ctx[]._handle,
+                c_int(attr._value),
+            ),
+            location=call_location(),
+        )
+        return Int(value)
+
+    def is_host_unified(self) raises -> Bool:
+        """Returns True if this device and the host share one physical memory
+        pool.
+
+        Reports hardware topology, so it does not predict whether
+        `DeviceBuffer.unsafe_host_ptr()` succeeds for any particular buffer.
+
+        Returns:
+            True if device and host memory are one physical pool.
+
+        Raises:
+            If the device cannot be queried.
+        """
+        var result: Bool = False
+        # const char *AsyncRT_DeviceContext_isHostUnified(bool *result, const DeviceContext *ctx)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_isHostUnified",
+                _CString[],
+                Pointer[Bool, origin_of(result)],
+                _DeviceContextPtr[mut=True],
+            ](
+                Pointer(to=result),
+                self._ctx[]._handle,
+            ),
+            location=call_location(),
+        )
+        return result
+
+    def get_arch(self) raises -> String:
+        """Returns the compilation target architecture of this device.
+
+        Returns:
+            The architecture name, such as `sm_100a` or `gfx942`.
+
+        Raises:
+            If the device does not report an architecture.
+        """
+        var arch_name = StaticString()
+        # The export reports a failed query as an empty name.
+        external_call[
+            "AsyncRT_DeviceContext_archName",
+            NoneType,
+        ](Pointer(to=arch_name), self._ctx[]._handle)
+        if not arch_name:
+            raise Error(
+                t"device {self.id} does not report a compilation target"
+                t" architecture"
+            )
+        return String(arch_name)
+
+    def can_access_peer[
+        peer_target: CompilationTarget, peer_origin: ImmOrigin, //
+    ](self, peer: Device[peer_target, peer_origin]) raises -> Bool:
+        """Returns True if this device can directly access memory on `peer`.
+
+        Peer access lets kernels on this device read and write the peer's
+        memory without staging through the host. Enable it with
+        `DeviceContext.enable_peer_access()`.
+
+        Example:
+
+        ```mojo
+        from max.gpu.host import DeviceContext
+
+        def main() raises:
+            var ctx0 = DeviceContext(0)
+            var ctx1 = DeviceContext(1)
+            if ctx0.device().can_access_peer(ctx1.device()):
+                ctx0.enable_peer_access(ctx1)
+        ```
+
+        Parameters:
+            peer_target: The compilation target of the peer's context.
+            peer_origin: The origin of the peer's context.
+
+        Args:
+            peer: The device to check access to.
+
+        Returns:
+            False for a peer on another API; otherwise the native API's
+            answer.
+
+        Raises:
+            If the peer access query fails.
+        """
+        # `CUDADevice::canAccess()` assumes the peer is a CUDA device.
+        if self._ctx[].api() != peer._ctx[].api():
+            return False
+        var result: Bool = False
+        # const char *AsyncRT_DeviceContext_canAccess(bool *result, const DeviceContext *ctx, const DeviceContext *peer)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceContext_canAccess",
+                _CString[],
+                Pointer[Bool, origin_of(result)],
+                _DeviceContextPtr[mut=True],
+                _DeviceContextPtr[mut=True],
+            ](
+                Pointer(to=result),
+                self._ctx[]._handle,
+                peer._ctx[]._handle,
+            ),
             location=call_location(),
         )
         return result

@@ -43,7 +43,7 @@ from layout import (
 )
 from layout.layout import *
 from layout.tensor_core import get_mma_shape
-from std.utils.coord import Coord, DynamicCoord
+from std.utils.coord import Coord
 from std.logger import Logger
 from std.memory import unsafe_stack_allocation
 from std.utils import Index, IndexList
@@ -53,7 +53,8 @@ from ...gemv import (
     gemm_mma_cpasync,
     gemv_gpu,
     gemv_gpu_dispatch,
-    is_minimax_router_gemm,
+    _amd_small_m_gemv_route,
+    _is_amd_small_m_gemv,
 )
 from ...utils import (
     ElementwiseComputeFn,
@@ -543,7 +544,7 @@ def enqueue_matmul_kernel_naive[
 
 def _amdgpu_get_mma_shape[
     dtype: DType, transpose_b: Bool
-]() -> DynamicCoord[.int, 3]:
+]() -> Tuple[Int, Int, Int]:
     comptime if transpose_b and _accelerator_arch() == "amdgpu:gfx950":
         comptime if dtype.is_half_float():
             return (16, 16, 32)
@@ -610,11 +611,11 @@ def _amdgpu_matmul_config_from_block_shape[
             if smem_a + smem_b <= 32 * 1024:
                 block_k *= 2
 
-    var block_tile_shape = Index(block_m, block_n, block_k)
+    var block_tile_shape = (block_m, block_n, block_k)
     var warp_tile_shape = block_tile_shape
 
     # Warp partition block_m and block_n.
-    for i in reversed(range(2)):
+    comptime for i in reversed(range(2)):
         if (
             block_tile_shape[i] >= 32
             and block_tile_shape[i] % 32 == 0
@@ -624,16 +625,8 @@ def _amdgpu_matmul_config_from_block_shape[
             num_warps *= 2
 
     return MatmulConfig[a_type, b_type, c_type, transpose_b](
-        block_tile_shape=(
-            Int(block_tile_shape[0]),
-            Int(block_tile_shape[1]),
-            Int(block_tile_shape[2]),
-        ),
-        warp_tile_shape=(
-            Int(warp_tile_shape[0]),
-            Int(warp_tile_shape[1]),
-            Int(warp_tile_shape[2]),
-        ),
+        block_tile_shape=block_tile_shape,
+        warp_tile_shape=warp_tile_shape,
         mma_shape=_amdgpu_get_mma_shape[a_type, transpose_b](),
         num_pipeline_stages=1,
         num_warp_k_partitions=num_warp_k_partitions,
@@ -859,7 +852,7 @@ def _matmul_gpu_impl[
     logger.info("---- MATMUL GPU execution started ----")
     logger.info("MxNxK: ", m, "x", n, "x", k, sep="")
     logger.info("Data types: A=", a_type, " B=", b_type, " C=", c_type)
-    logger.info("Device: ", ctx.name())
+    logger.info("Device: ", ctx.device().get_name())
     logger.info(
         "Transpose B: ",
         transpose_b,
@@ -1180,11 +1173,13 @@ def _matmul_gpu_impl[
 
                 comptime if (
                     transpose_b
-                    and is_minimax_router_gemm[
+                    and _is_amd_small_m_gemv[
                         c_type, a_type, b_type, static_N, static_K
                     ]()
                 ):
-                    if m <= 16:
+                    if _amd_small_m_gemv_route[
+                        c_type, a_type, b_type, static_N, static_K
+                    ](m)[0] and (m != 1 or not has_compute_fn):
                         comptime if has_epilogue_fn:
                             return gemv_gpu_dispatch[
                                 transpose_b=True,
@@ -2297,11 +2292,7 @@ def _multistage_gemm_amd[
         comptime std_config = MatmulConfig[a_type, b_type, c_type, True](
             block_tile_shape=config.block_tile_shape,
             warp_tile_shape=config.warp_tile_shape,
-            mma_shape=(
-                config.mma_shape[0],
-                config.mma_shape[1],
-                config.mma_shape[2],
-            ),
+            mma_shape=config.mma_shape,
             num_pipeline_stages=config.num_pipeline_stages,
         )
 
@@ -2322,11 +2313,7 @@ def _multistage_gemm_amd[
         comptime bf16_config = MatmulConfig[a_type, b_type, c_type, True](
             block_tile_shape=config.block_tile_shape,
             warp_tile_shape=config.warp_tile_shape,
-            mma_shape=(
-                config.mma_shape[0],
-                config.mma_shape[1],
-                config.mma_shape[2],
-            ),
+            mma_shape=config.mma_shape,
             num_pipeline_stages=config.num_pipeline_stages,
             num_warp_k_partitions=config.num_warp_k_partitions,
         )

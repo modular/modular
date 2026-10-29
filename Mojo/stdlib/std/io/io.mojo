@@ -215,10 +215,10 @@ def _printf[
         fmt, *types
     ]:
         _printf_emit(*args, file=file)
-    elif not is_gpu():
-        _printf_cpu[fmt](*args, file=file)
     elif case .Some(_emit) = CurrentPlugin.print_emit_fn:
-        # The hook takes a formatted byte buffer and there is no printf
+        # Checked before the host path so an accelerator that is not a GPU
+        # still prints through its plugin rather than through a libc it may not
+        # have. The hook takes a formatted byte buffer and there is no printf
         # formatter on device, so the arguments are dropped and only `fmt` is
         # written.
         var buffer = _FixedWriteBuffer()
@@ -227,6 +227,8 @@ def _printf[
 
         # FIXME: The origin param of `_emit` should be inferred from `cstr`.
         _emit[origin_of(buffer).unsafe_mut_cast[False]()](cstr, file)
+    elif not is_gpu():
+        _printf_cpu[fmt](*args, file=file)
     else:
         CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()

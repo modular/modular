@@ -18,13 +18,13 @@ from collections.abc import Sequence
 
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, Dim, DimLike, TensorValue, ops
-from max.nn.kernels import (
+from max.nn.legacy.kernels import (
     eagle_prefill_shift_tokens,
     inplace_memcpy,
     wait_host_value_with_dep,
 )
-from max.nn.sampling.penalties import LogitPenalties
-from max.nn.sampling.rejection_sampler import AcceptanceSampler
+from max.nn.legacy.sampling.penalties import LogitPenalties
+from max.nn.legacy.sampling.rejection_sampler import AcceptanceSampler
 
 from .ragged_token_merger import (
     RaggedTokenMerger,
