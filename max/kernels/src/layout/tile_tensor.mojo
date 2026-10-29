@@ -1030,10 +1030,10 @@ struct TileTensor[
 
         ```mojo
         from layout import TileTensor, row_major
-        from layout.owned_tensor import GPUTensor
+        from layout.owned_tensor import OwnedGPUTensor
 
         def kernel():
-            var owned = GPUTensor[.float32, .SHARED](row_major[4, 8]())
+            var owned = OwnedGPUTensor[.float32, .SHARED](row_major[4, 8]())
             var tile = TileTensor(owned)
             tile[1, 2] = 7.0
         ```

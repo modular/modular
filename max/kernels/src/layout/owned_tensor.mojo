@@ -17,8 +17,8 @@ engine.
 owner: it allocates its storage on construction and hands out `TileTensor`
 views whose origin is tied to it. An `OwnedTensorEngine` decides what the
 storage is and which `TensorEngine` its views use, so one `OwnedTensor` type
-covers several kinds of memory. `GPUEngine` is the shared-memory engine, and
-`GPUTensor` names an `OwnedTensor` that uses it.
+covers several kinds of memory. `OwnedGPUEngine` is the shared-memory engine,
+and `OwnedGPUTensor` names an `OwnedTensor` that uses it.
 """
 
 from layout import TensorLayout, row_major
@@ -113,10 +113,10 @@ struct OwnedTensor[
 
     ```mojo
     from layout import TileTensor, row_major
-    from layout.owned_tensor import GPUTensor
+    from layout.owned_tensor import OwnedGPUTensor
 
     def kernel():
-        var owned = GPUTensor[.float32, .SHARED](row_major[4, 8]())
+        var owned = OwnedGPUTensor[.float32, .SHARED](row_major[4, 8]())
         var tile = TileTensor(owned)
         tile[1, 2] = 7.0
     ```
@@ -262,7 +262,7 @@ struct OwnedGPUEngine(OwnedTensorEngine):
 comptime OwnedGPUTensor[
     dtype: DType, address_space: AddressSpace, LayoutType: TensorLayout
 ] = OwnedTensor[dtype, address_space, LayoutType, Engine=OwnedGPUEngine]
-"""Names an `OwnedTensor` whose storage comes from `GPUEngine`.
+"""Names an `OwnedTensor` whose storage comes from `OwnedGPUEngine`.
 
 Parameters:
     dtype: The element data type of the tensor.

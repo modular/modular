@@ -10,10 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for `OwnedTensor` backed by `GPUEngine` shared-memory storage.
+"""Tests for `OwnedTensor` backed by `OwnedGPUEngine` shared-memory storage.
 
-`GPUStorage` gets its buffer from `stack_allocation`, which only outlives the
-constructor in shared memory, so every check runs inside a kernel.
+`OwnedGPUStorage` gets its buffer from `stack_allocation`, which only outlives
+the constructor in shared memory, so every check runs inside a kernel.
 """
 
 from layout import Coord, Idx, TensorLayout, TileTensor, col_major, row_major
