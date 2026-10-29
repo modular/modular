@@ -15,10 +15,13 @@
 
 import os
 import sys
+from collections import defaultdict
+from collections.abc import Collection, Iterable, Mapping
 from typing import Any
 
 import tomllib  # type: ignore
 from package import Package
+from pip_platform import ALL_PLATFORMS
 from template import TEMPLATE
 
 _TORCH_PACKAGES = {
@@ -27,6 +30,27 @@ _TORCH_PACKAGES = {
     "torchvision",
     "triton",  # pytorch-triton-rocm was renamed to triton
 }
+
+# Must match DEFAULT_PYTHON_VERSION in common.MODULE.bazel.
+_DEFAULT_PYTHON_VERSION = "3.13"
+
+# Packages that only targets on the default Python version use, along with
+# everything reachable only through them. Their wheels are built per Python
+# version and an unconfigured `bazel query` fetches every select() branch, so
+# other versions get no branch at all. Most of the savings is in torch, cutlass
+# and the vllm/sglang kernels.
+_DEFAULT_PYTHON_VERSION_ONLY = _TORCH_PACKAGES | {
+    "flashinfer-python",
+    "nvidia-cutlass-dsl",
+    "sglang",
+    "vllm",
+}
+
+_DEFAULT_PYTHON_VERSION_PLATFORMS = frozenset(
+    platform
+    for platform in ALL_PLATFORMS
+    if platform.python_version == _DEFAULT_PYTHON_VERSION
+)
 
 # Force the @multiple label, mainly for adding extra constraints to targets
 _FORCE_MULTIPLE = {
@@ -141,6 +165,46 @@ def _get_direct_deps(data: dict) -> set[str]:  # type: ignore[type-arg]
     return direct_deps
 
 
+def _reachable(
+    starts: Iterable[str],
+    graph: Mapping[str, set[str]],
+    blocked: Collection[str] = (),
+) -> set[str]:
+    seen: set[str] = set()
+    stack = [name for name in starts if name not in blocked]
+    while stack:
+        name = stack.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        stack.extend(dep for dep in graph[name] if dep not in blocked)
+    return seen
+
+
+def _default_python_version_only(
+    data: Mapping[str, Any],
+    direct_deps: set[str],
+    roots: set[str],
+) -> set[str]:
+    """Returns the roots and every package reachable only through them."""
+    graph: dict[str, set[str]] = defaultdict(set)
+    for package in data["package"]:
+        name = package["name"]
+        graph[name].update(
+            dep["name"] for dep in package.get("dependencies", [])
+        )
+        for deps in package.get("optional-dependencies", {}).values():
+            graph[name].update(
+                dep["name"]
+                for dep in deps
+                if (name, dep["name"]) not in _SKIP_OPTIONAL_DEPS
+            )
+
+    everything = _reachable(direct_deps, graph)
+    shared = _reachable(direct_deps - roots, graph, blocked=roots)
+    return everything - shared
+
+
 def _main(uv_lock: str, output_path: str) -> None:
     with open(uv_lock, "rb") as f:
         data = tomllib.load(f)
@@ -177,8 +241,20 @@ def _main(uv_lock: str, output_path: str) -> None:
             print(f"  {package}")
         sys.exit(1)
 
+    direct_deps = _get_direct_deps(data)
+    default_python_version_only = _default_python_version_only(
+        data, direct_deps, _DEFAULT_PYTHON_VERSION_ONLY
+    )
+
     packages = [
-        Package(package, all_versions, _SKIP_OPTIONAL_DEPS)
+        Package(
+            package,
+            all_versions,
+            _SKIP_OPTIONAL_DEPS,
+            _DEFAULT_PYTHON_VERSION_PLATFORMS
+            if package["name"] in default_python_version_only
+            else ALL_PLATFORMS,
+        )
         for package in data["package"]
         if not _should_ignore(package, cpu_versions)
     ]
@@ -190,7 +266,6 @@ def _main(uv_lock: str, output_path: str) -> None:
         targets += pkg
         all_downloads |= downloads
 
-    direct_deps = _get_direct_deps(data)
     output = TEMPLATE.format(
         pins="\n".join(
             f'    "{name}": "{name}@{target}",'
