@@ -1,0 +1,168 @@
+load(
+    "//bazel:api.bzl",
+    "modular_py_library",
+    "modular_py_test",
+    "requirement",
+)
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+# The shared config/data helpers every suite below imports. A library
+# (not a src of each test) so one target owns the file.
+modular_py_library(
+    name = "dspark_test_support",
+    testonly = True,
+    srcs = ["dspark_test_support.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/lib",
+        requirement("torch"),
+    ],
+)
+
+# DSpark (the V4.1 MTP speculative decode) on the ModuleV3 line: the
+# config, weight-adapter and spec-adapter CPU gates. The drafter's fp8/MXFP4
+# kernels are GPU-only, so their suite runs as a separate *_gpu.py target
+# that runs on remote-b200.
+modular_py_test(
+    name = "tests",
+    size = "large",
+    timeout = "long",
+    srcs = [
+        "test_dspark_serving.py",
+        "test_dspark_spec_adapters.py",
+        "test_dspark_weight_adapter.py",
+        "test_model_config.py",
+    ],
+    data = ["//max/tests/integration/architectures/deepseekV41_modulev3/testdata"],
+    env = {
+        # The default composite executor background-compiles every eager
+        # graph, and the MLIR CPU compile of the drafter's E8M0 scale
+        # constants asserts (APInt extractBits, LLVM APInt.cpp:480), taking
+        # down the whole compile pool. The interpreter materializes them
+        # fine, so run interpret-first and compile only on refusal like
+        # the other CPU eager suites.
+        "MAX_EAGER_EXECUTOR": "fallback-internal",
+    },
+    ignore_extra_deps = [
+        # Eager interpreter ops: without them every op falls back to the
+        # compiled path (a full compile per test; the mhc_router tests
+        # carry the same dep for the same reason). Never imported.
+        "//max/python/max/_interpreter_ops",
+    ],
+    imports = ["."],
+    # Every case realizes its own eager graph (each test opens its own
+    # realization context, so no fixture can carry the cost), and the
+    # suite ran past the 900 s long timeout in CI -- 908 s wall with all
+    # 34 cases passing. Shard it, like the module_v3 suites, so each
+    # shard's cases stay well inside the budget.
+    per_test_shard_count = {
+        "test_dspark_spec_adapters.py": 4,
+    },
+    deps = [
+        ":dspark_test_support",
+        "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
+        # test_model_config.py builds the real HF shim
+        # (hf_config_shims.DeepseekV41HFConfig) like arch:test_hf_config_shim.
+        "//max/python/max/pipelines/architectures",
+        # test_dspark_weight_adapter.py checks the drafter's UE8M0 records
+        # against the V2 arch's shared E4M3/E8M0 decoders.
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/architectures/dspark_deepseekV41_modulev3",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/sampling",
+        "//max/python/max/pipelines/speculative",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# The DP4 context store stages its graph on virtual SM100 devices, per
+# rank over the replicas' own rows (graph build only, no execution; the
+# virtual devices need the x86 Linux NVPTX target).
+#   ./bazelw test --config=remote-intel \
+#     //max/tests/integration/architectures/deepseekV41_modulev3/dspark:test_dspark_dp4_graph
+modular_py_test(
+    name = "test_dspark_dp4_graph",
+    size = "large",
+    srcs = ["test_dspark_dp4_graph.py"],
+    data = ["//max/tests/integration/architectures/deepseekV41_modulev3/testdata"],
+    imports = ["."],
+    target_compatible_with = select({
+        # No NVPTX target for the staged sm_100a virtual devices.
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":dspark_test_support",
+        "//max/python/max:tensor",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# The stage forward executed on a real B200
+# against the numpy reference: the context store, the window, the block's
+# own records and the trunk's CSA2 attention.
+#   ./bazelw test --config=remote-b200 \
+#     //max/tests/integration/architectures/deepseekV41_modulev3/dspark:test_dspark_forward_gpu
+modular_py_test(
+    name = "test_dspark_forward_gpu",
+    size = "large",
+    srcs = [
+        "test_dspark_forward_gpu.py",
+    ],
+    data = ["//max/tests/integration/architectures/deepseekV41_modulev3/testdata"],
+    # Interpret-first like the CPU suite: the default composite executor
+    # also background-compiles the eager E8M0 scale constants on the CPU,
+    # which asserts in LLVM's APInt and takes the compile pool down.
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
+    exec_properties = {"test.resources:gpu-memory": "4"},
+    gpu_constraints = ["//:b200_gpu"],
+    ignore_extra_deps = [
+        # Runtime-only eager-executor dep, same as `tests`; never imported.
+        "//max/python/max/_interpreter_ops",
+    ],
+    imports = ["."],
+    tags = ["gpu"],
+    deps = [
+        ":dspark_test_support",
+        "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration/test_common:simple_kv_cache",
+        requirement("ml-dtypes"),
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)

@@ -66,12 +66,13 @@ def _resolver_config(
     return config
 
 
-def test_published_checkpoint_resolves_the_trunk() -> None:
+def test_published_checkpoint_resolves_trunk_and_draft_stages() -> None:
     """The registered checkpoint's real mapping: 43 ratio rows, 40 layers.
 
     The published ``config.json`` carries three trailing DSpark draft rows
     past the 40 trunk layers; ``resolve`` must accept it, resolve the trunk
-    only, and reproduce the checkpoint's attention plan exactly.
+    and the three draft stages, and reproduce the checkpoint's attention
+    plan exactly.
     """
     # Registers the AutoConfig shim for the model_type the bazel-pinned
     # transformers does not know natively.
@@ -94,8 +95,14 @@ def test_published_checkpoint_resolves_the_trunk() -> None:
         **DeepseekV41Config.resolve_text_fields(text),
     )
     rows = resolve(config)
-    assert [row.layer_id for row in rows] == list(range(40))
-    assert [row.compress_ratio for row in rows] == [0, 0] + [2] * 18 + [1] * 20
+    assert [row.layer_id for row in rows] == list(range(43))
+    assert [row.compress_ratio for row in rows] == (
+        [0, 0] + [2] * 18 + [1] * 20 + [0, 0, 0]
+    )
+    # The rows past the trunk are the drafter's stages: SWA-only windows.
+    assert [row.side for row in rows[40:]] == ["drafter"] * 3
+    assert [row.swa_only for row in rows[40:]] == [True] * 3
+    assert [row.dspark_stage for row in rows] == [None] * 40 + [0, 1, 2]
     # The four KV owners, and only they, run a full attention pass.
     assert [row.layer_id for row in rows if row.attention_mode == "Full"] == [
         2,
@@ -147,21 +154,48 @@ def test_published_checkpoint_resolves_the_trunk() -> None:
     assert block_group(interface_config, 24) == "reindex_r1"
 
 
+def test_the_ratio_list_drives_the_resolved_rows() -> None:
+    """``resolve`` yields one row per ratio entry, stages included.
+
+    The stage count is not a separate knob: the trailing entries past
+    ``num_hidden_layers`` resolve as DSpark stages, so the resolver stays
+    correct if DSpark ever changes its stage count.
+    """
+    config = _resolver_config(4, [0, 2, 2, 2, 0, 0, 0], [1, 2], [1, 2, 3], 2)
+    rows = resolve(config)
+    assert [row.layer_id for row in rows] == list(range(7))
+    assert [row.compress_ratio for row in rows] == [0, 2, 2, 2, 0, 0, 0]
+    assert [row.side for row in rows] == ["encoder"] * 2 + ["decoder"] * 2 + [
+        "drafter"
+    ] * 3
+    assert [row.dspark_stage for row in rows] == [None] * 4 + [0, 1, 2]
+
+
+def test_a_bad_draft_row_fails_the_drafter_not_the_trunk() -> None:
+    """A stage row the drafter cannot run is refused only where it is read.
+
+    A DSpark stage is window-only, so the drafter refuses any other ratio;
+    a plain trunk boot resolves its own rows and never reads the stage rows.
+    """
+    config = _resolver_config(4, [0, 2, 2, 2, 7], [1, 2], [1, 2, 3], 2)
+    with pytest.raises(ValueError, match="window-only"):
+        resolve(config)
+    rows = resolve(config, include_drafter=False)
+    assert [row.layer_id for row in rows] == [0, 1, 2, 3]
+
+
 def test_short_ratio_list_is_rejected() -> None:
+    """A ratio list short of the trunk would else resolve a partial trunk.
+
+    The KV leaf specs size the cache for ``num_hidden_layers`` plus the
+    draft stages, so nothing downstream would catch the missing rows.
+    """
     config = _resolver_config(4, [0, 2], [1], [1], 1)
     with pytest.raises(ValueError, match="one entry per trunk layer"):
         resolve(config)
 
 
-def test_trailing_draft_rows_are_ignored() -> None:
-    """Rows past the trunk are draft metadata the text trunk never runs."""
-    config = _resolver_config(4, [0, 2, 2, 2, 7, 7, 7], [1, 2], [1, 2, 3], 2)
-    rows = resolve(config)
-    assert [row.layer_id for row in rows] == [0, 1, 2, 3]
-    assert [row.compress_ratio for row in rows] == [0, 2, 2, 2]
-
-
-def test_owner_beyond_the_trunk_is_rejected() -> None:
+def test_owner_beyond_the_ratio_rows_is_rejected() -> None:
     config = _resolver_config(4, [0, 2, 2, 2, 0], [2, 5], [2, 5], 2)
     with pytest.raises(ValueError, match="sorted unique trunk"):
         resolve(config)

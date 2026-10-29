@@ -32,8 +32,6 @@ from max.pipelines.architectures.deepseekV41_modulev3.layers.mxfp8_linear import
 )
 from max.tensor import Tensor
 
-_AMAX_FLOOR = 1e-4
-
 
 def _stage(group_rows: int, groups: int, rows: int) -> None:
     """Stages ``grouped_dense_op`` over an E4M3/E8M0 leaf, without raising."""
@@ -46,7 +44,7 @@ def _stage(group_rows: int, groups: int, rows: int) -> None:
         scale = Tensor.zeros(
             [rows // 32, k // 32], dtype=DType.float8_e8m0fnu, device=x.device
         )
-        out = grouped_dense_op(x, weight, scale, group_rows, _AMAX_FLOOR)
+        out = grouped_dense_op(x, weight, scale, group_rows)
         assert out.dtype == DType.bfloat16
 
 

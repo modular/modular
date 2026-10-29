@@ -29,7 +29,9 @@ import abi_contract
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType
+from max.nn.legacy.kv_cache import MLAKVCacheParams
 from max.pipelines.architectures.deepseekV41_modulev3.interface import (
+    STATE_RING_ROWS,
     V41Config,
     build_kv_params,
     extra_inputs,
@@ -180,6 +182,39 @@ def test_build_kv_params_rejects_other_page_sizes() -> None:
     wrong_page = KVCacheConfig(kv_cache_page_size=64)
     with pytest.raises(ValueError, match="page size of 128"):
         build_kv_params(config, wrong_page, [DeviceRef.GPU(0)])
+
+
+def test_build_kv_params_plans_draft_rows_on_every_leaf() -> None:
+    """A speculative config sizes every leaf's pool for the draft rows."""
+    config = V41Config.from_hf(abi_contract.hf_config("full"))
+    params = build_kv_params(
+        config,
+        kv_cache_config(),
+        [DeviceRef.CPU()],
+        speculative_method="dspark",
+        num_draft_tokens=5,
+    )
+    for child in params.children.values():
+        assert child.num_draft_tokens == 5
+        assert child.speculative_method == "dspark"
+    # The speculative width plans the pool, never the leaf geometry: the
+    # state ring keeps the fixed depth both boot modes share.
+    state = params.children["c2a_state"]
+    assert isinstance(state, MLAKVCacheParams)
+    assert state.slots_per_page == STATE_RING_ROWS
+
+
+def test_build_kv_params_refuses_a_depth_beyond_the_ring() -> None:
+    """A verify depth deeper than the ring's fixed rows corrupts it."""
+    config = V41Config.from_hf(abi_contract.hf_config("full"))
+    with pytest.raises(ValueError, match="compressor-state ring"):
+        build_kv_params(
+            config,
+            kv_cache_config(),
+            [DeviceRef.CPU()],
+            speculative_method="dspark",
+            num_draft_tokens=9,
+        )
 
 
 def test_window_leaf_counts_dspark_stages_not_taps() -> None:

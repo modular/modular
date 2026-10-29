@@ -84,6 +84,7 @@ _TARGET_ADAPTERS: Mapping[str, str] = {
     "DeepseekV3ForCausalLM": ".deepseekV3.spec_adapters",
     "DeepseekV4ForCausalLM": ".deepseekV4.spec_adapters",
     "DeepseekV41ForCausalLM": ".deepseekV41.spec_adapters",
+    "DeepseekV41ForCausalLM_ModuleV3": ".deepseekV41_modulev3.spec_adapters",
     "Gemma4ForConditionalGeneration": ".gemma4.spec_adapters",
     "Gemma4ForConditionalGeneration_ModuleV3": ".gemma4_modulev3.spec_adapters",
     "Gemma4UnifiedForConditionalGeneration": ".gemma4.spec_adapters",

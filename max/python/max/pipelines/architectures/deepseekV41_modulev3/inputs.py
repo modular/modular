@@ -65,6 +65,11 @@ class DeepseekV41Inputs(ModelInputs):
     input_row_offsets_i64: Buffer | None = field(default=None, kw_only=True)
     """CPU int64 replica of ``input_row_offsets``, the split's row bounds."""
 
+    signal_buffers: list[Buffer] = field(default_factory=list, kw_only=True)
+    """The pipeline's signal buffers, which a DSpark pairing's graph takes
+    after its other inputs. The trunk's own compiled callable appends its
+    own, so :attr:`buffers` leaves them out."""
+
     def __post_init__(self) -> None:
         if (self.data_parallel_splits is None) != (
             self.input_row_offsets_i64 is None

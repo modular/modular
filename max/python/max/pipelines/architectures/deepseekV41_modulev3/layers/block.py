@@ -38,7 +38,7 @@ from ..layer_resolver import LayerInfo
 from .attention import Attention, RaggedRows
 from .compressor import Compressor
 from .indexer import Indexer
-from .mhc import claim_replicated, mhc_shifted_post_pre
+from .mhc import mhc_fused_post_pre
 from .moe import RoutedExperts, StackedSharedExpert
 from .norm import RMSNorm
 from .rope import RopeParams
@@ -417,7 +417,7 @@ class DecoderLayer(Module[..., Any]):
         self.plan = layer_plan(config, layer)
         self.hc_mult = config.hc_mult
         # The mHC gate RMS shares the checkpoint's ``rms_norm_eps`` with
-        # the norms; ``mhc_shifted_post_pre`` would otherwise default it.
+        # the norms; the fused step would otherwise default it.
         self.norm_eps = config.rms_norm_eps
         self.mesh = mesh
         self.data_parallel = data_parallel
@@ -629,42 +629,34 @@ class DecoderLayer(Module[..., Any]):
         # Write the previous layer's feed-forward output back onto the
         # stream and start the attention site, collapsing with the
         # carried ``pre_mix``.
-        stream, post, comb, pre, x = mhc_shifted_post_pre(
+        stream, post, comb, pre, x = mhc_fused_post_pre(
             stream,
             y,
             post,
-            comb.reshape([stream.shape[0], self.hc_mult, self.hc_mult]),
+            comb,
+            pre_mix,
             self.hc_attn_fn,
             self.hc_attn_scale,
             self.hc_attn_base,
-            self.hc_mult,
-            pre_mix=pre_mix,
+            self.attn_norm,
             norm_eps=self.norm_eps,
         )
-        post = claim_replicated(post, stream)
-        comb = claim_replicated(comb, stream)
-        pre = claim_replicated(pre, stream)
-        y, produced = self._attention(self.attn_norm(x), s)
+        y, produced = self._attention(x, s)
         # Write the attention output back and start the feed-forward
         # site, collapsing with the attention site's ``pre``.
-        stream, post, comb, pre, x = mhc_shifted_post_pre(
+        stream, post, comb, pre, x = mhc_fused_post_pre(
             stream,
             y,
             post,
-            comb.reshape([stream.shape[0], self.hc_mult, self.hc_mult]),
+            comb,
+            pre,
             self.hc_ffn_fn,
             self.hc_ffn_scale,
             self.hc_ffn_base,
-            self.hc_mult,
-            pre_mix=pre,
+            self.ffn_norm,
             norm_eps=self.norm_eps,
         )
-        post = claim_replicated(post, stream)
-        comb = claim_replicated(comb, stream)
-        pre = claim_replicated(pre, stream)
-        y = self.ffn(
-            self.ffn_norm(x), s.image_token_mask, comm_buffers, total_rows
-        )
+        y = self.ffn(x, s.image_token_mask, comm_buffers, total_rows)
         return stream, pre, y, post, comb, produced
 
 

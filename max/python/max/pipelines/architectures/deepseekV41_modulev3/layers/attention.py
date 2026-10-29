@@ -26,7 +26,14 @@ from typing import TYPE_CHECKING
 import numpy as np
 from max import functional as F
 from max.dtype import DType
-from max.graph import BufferValue, DeviceRef, Dim, TensorValue, ops
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    Dim,
+    TensorType,
+    TensorValue,
+    ops,
+)
 from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.legacy.kv_cache import KVCacheInputsPerDevice
@@ -42,6 +49,7 @@ from ...deepseekV41.layers.attention import (
     prefill_rows_bound,
 )
 from ...deepseekV41.layers.csa2 import (
+    INDEX_WIDTH,
     MAX_COMPRESSED,
     PREFILL_ROWS,
     WINDOW_ENTRIES,
@@ -49,10 +57,13 @@ from ...deepseekV41.layers.csa2 import (
     leaf_slots,
     records_per_page,
     store_window_kv,
-    window_entries,
 )
 from ..layer_resolver import LayerInfo
-from .mxfp8_linear import MXFP8Linear, grouped_dense_op
+from .mxfp8_linear import (
+    MXFP8Linear,
+    block_diagonal_woa_supported,
+    grouped_dense_op,
+)
 from .norm import RMSNorm
 from .rope import RopeParams, apply_rope_tail, rope_for_layer
 
@@ -101,7 +112,69 @@ def _placed_leaf_slots(
 
 
 _leaf_slots_op = F.functional(_placed_leaf_slots)
-_window_entries_op = F.functional(window_entries)
+
+
+def _csa2_index_list(
+    positions: TensorValue,
+    requests: TensorValue,
+    valid_from: TensorValue,
+    swa: KVCacheInputsPerDevice[TensorValue, BufferValue],
+    layer_swa: TensorValue,
+    selected: TensorValue | None,
+    comp: KVCacheInputsPerDevice[TensorValue, BufferValue] | None,
+    layer_comp: TensorValue,
+    ratio: int,
+) -> TensorValue:
+    """Each query's ``[T, 640]`` absolute-slot list, built in one launch.
+
+    Main's ``mo.csa2.index_list`` (V2's ``index_list``, whose layer
+    arguments are baked constants): the window slots of positions
+    ``p, p - 1, ..., p - 127`` first, then the compressed slots of the
+    selected groups, ``-1`` for none. A position below 0 or ``valid_from``
+    and a negative selection name ``-1``, so the caller masks padded rows
+    through ``positions`` and ``selected``. ``selected`` holds the raw
+    positions of the groups' closing tokens, which the op floor-divides by
+    ``ratio``; ``None`` is a window-only list.
+    """
+    window_blocks = swa.kv_blocks
+    values = [
+        ops.cast(positions, DType.int32),
+        ops.cast(requests, DType.int32),
+        ops.cast(valid_from, DType.int32),
+        ops.cast(swa.lookup_table, DType.uint32),
+    ]
+    layers = [ops.cast(layer_swa, DType.uint32)]
+    parameters: dict[str, bool | int | float | str | DType] = {
+        "window_page": records_per_page(window_blocks),
+        "window_layers": int(window_blocks.shape[2]),
+        "has_floor": True,
+    }
+    name = "mo.csa2.index_list.window_only"
+    if selected is not None:
+        assert comp is not None
+        name = "mo.csa2.index_list"
+        parameters["comp_page"] = records_per_page(comp.kv_blocks)
+        parameters["comp_layers"] = int(comp.kv_blocks.shape[2])
+        parameters["ratio"] = ratio
+        values += [
+            ops.cast(comp.lookup_table, DType.uint32),
+            ops.cast(selected, DType.int32),
+        ]
+        layers.append(ops.cast(layer_comp, DType.uint32))
+    return ops.custom(
+        name,
+        device=positions.device,
+        values=[*values, *layers],
+        out_types=[
+            TensorType(
+                DType.int32, [positions.shape[0], INDEX_WIDTH], positions.device
+            )
+        ],
+        parameters=parameters,
+    )[0].tensor
+
+
+_index_list_op = F.functional(_csa2_index_list)
 _store_window_op = F.functional(store_window_kv)
 _csa2_attend_op = F.functional(csa2_attention)
 
@@ -244,33 +317,6 @@ def window_store_slots(
     return _leaf_slots_op(swa, rows.bid, entries, layer_swa)
 
 
-def window_list(
-    swa: PagedCacheValues,
-    rows: RaggedRows,
-    swa_begin: Tensor,
-    layer_swa: Tensor,
-) -> Tensor:
-    """Each row's ``[T, 128]`` window slots, padded rows fully masked.
-
-    ``leaf_slots`` gathers the lookup table at the entry's page, so a
-    padded row's unmasked entries could name a page past its request's
-    allocation and gather out of bounds before the attention runs.
-    The padded rows' whole window list drops to ``-1``; their
-    attention output is discarded by the trunk anyway. The request
-    axis is one per row (``[T, 1]``): ``leaf_slots`` broadcasts it
-    straight to the entries' shape, and a flat ``[T]`` axis can
-    silently cross-broadcast at ``T == 128``.
-    """
-    live = live_rows(rows.offsets, rows.positions.shape[0])
-    entries = _window_entries_op(rows.positions, rows.bid, swa_begin)
-    entries = F.where(
-        F.unsqueeze(live, -1),
-        entries,
-        F.constant(-1, DType.int32, rows.positions.mapping),
-    )
-    return _leaf_slots_op(swa, F.unsqueeze(rows.bid, -1), entries, layer_swa)
-
-
 def ragged_rows(
     row_offsets: Tensor, cache_lengths: Tensor, total: int | Dim
 ) -> RaggedRows:
@@ -321,7 +367,7 @@ def position_rope_table(
     return F.concat([F.cos(angles), F.sin(angles)], axis=-1)
 
 
-class _GroupedWoA(Module[[Tensor], Tensor]):
+class _GroupedWoA(Module[..., Tensor]):
     """``wo_a``: FP8 weight and compact E8M0 scales, grouped per output rows.
 
     ``[T, g * d] -> [T, g * r]``, group ``j`` applying rows ``j * r`` onward.
@@ -336,15 +382,20 @@ class _GroupedWoA(Module[[Tensor], Tensor]):
     def __init__(self, out_dim: int, in_dim: int, group_rank: int) -> None:
         super().__init__()
         self.group_rank = group_rank
-        self.amax_floor = 1e-4
         self.weight = Tensor.zeros([out_dim, in_dim], dtype=DType.float8_e4m3fn)
         self.scale = Tensor.zeros(
             [out_dim // 32, in_dim // 32], dtype=DType.float8_e8m0fnu
         )
 
-    def forward(self, o: Tensor) -> Tensor:
+    def forward(
+        self, o: Tensor, rope: tuple[Tensor, int] | None = None
+    ) -> Tensor:
         return grouped_dense_op(
-            o, self.weight, self.scale, self.group_rank, self.amax_floor
+            o,
+            self.weight,
+            self.scale,
+            self.group_rank,
+            rope=rope,
         )
 
 
@@ -463,8 +514,8 @@ class Attention(Module[..., Tensor]):
     def _q_path(self, q_a: Tensor, cos_sin: Tensor) -> Tensor:
         """``wq_b(q_norm(q_a))`` reshaped to heads, RoPE on the tail."""
         qr = self.q_norm(q_a)
-        q = F.reshape(self.wq_b(qr), [-1, self.n_heads, self.head_dim])
-        return apply_rope_tail(q, cos_sin, self.rope_head_dim)
+        q = self.wq_b.forward_rope_tail(qr, cos_sin, self.head_dim)
+        return F.reshape(q, [-1, self.n_heads, self.head_dim])
 
     def _use_prefill(
         self,
@@ -521,63 +572,69 @@ class Attention(Module[..., Tensor]):
         """Each row's ``[T, 640]`` absolute-slot list.
 
         The window slots of positions ``p, p - 1, ..., p - 127`` come
-        first (``-1`` below the request's ``swa_begin`` floor, and
-        whole rows of ``-1`` for padded capture rows), then the
-        compressed slots of the selected entries. ``comp_indices`` holds
-        entry (group) ids, ascending, ``-1``-padded -- the indexer's
-        one contract -- passed straight to the leaf-slot map with no
-        second ratio conversion: an entry id *is* its group id at
-        either ratio, and ``leaf_slots`` maps it to
-        ``block * slots + entry % slots`` once.
+        first (``-1`` below the request's ``swa_begin`` floor), then the
+        compressed slots of the selected entries. Padded capture rows drop
+        to ``-1`` entirely, so no list can gather a foreign page.
+        ``comp_indices`` holds entry (group) ids, ascending, ``-1``-padded
+        -- the indexer's one contract; the op takes the closing token's
+        position and floor-divides it back to the group, so an entry maps to
+        ``entry * ratio + ratio - 1``.
         """
-        total = rows.positions.shape[0]
-        window = window_list(swa, rows, swa_begin, layer_swa)
+        live = live_rows(rows.offsets, rows.positions.shape[0])
         none = F.constant(-1, DType.int32, rows.positions.mapping)
-        if comp is None or comp_indices is None:
-            return F.concat(
-                [
-                    window,
-                    F.broadcast_to(none, [total, MAX_COMPRESSED]),
-                ],
-                axis=-1,
+        positions = F.where(live, rows.positions, none)
+        selected = None
+        if comp is not None and comp_indices is not None:
+            ratio = self.compress_ratio
+            selected = F.where(
+                F.unsqueeze(live, -1) & (comp_indices >= 0),
+                comp_indices * ratio + (ratio - 1),
+                none,
             )
-        # The selection's own contract pads padded rows to ``-1`` (the
-        # indexer neutralizes them); mask here too so a selection that
-        # does not can never gather a foreign page. The request axis is
-        # one per row (``[T, 1]``) for the same reason as the window
-        # list: a flat ``[T]`` axis can silently cross-broadcast at
-        # ``T == 128``.
-        live = live_rows(rows.offsets, total)
-        comp_indices = F.where(
-            F.unsqueeze(live, -1),
-            comp_indices,
-            F.constant(-1, DType.int32, rows.positions.mapping),
+        return _index_list_op(
+            positions,
+            rows.bid,
+            swa_begin,
+            swa,
+            layer_swa,
+            selected,
+            comp,
+            layer_comp,
+            self.compress_ratio,
         )
-        comp_slots = _leaf_slots_op(
-            comp, F.unsqueeze(rows.bid, -1), comp_indices, layer_comp
-        )
-        lists = [window, comp_slots]
-        pad = MAX_COMPRESSED - int(comp_indices.shape[-1])
-        if pad:
-            lists.append(F.broadcast_to(none, [total, pad]))
-        return F.concat(lists, axis=-1)
 
-    def _output_projection(self, o: Tensor) -> Tensor:
+    def _folds_inverse_rope(self, o: Tensor) -> bool:
+        """Whether ``wo_a`` can take ``o`` un-rotated and rotate it back.
+
+        The fold rides the block-diagonal launch, which a shard running a
+        single group (TP8) never takes.
+        """
+        tp = 1 if self.data_parallel else self.mesh.num_devices
+        return self.o_groups // tp >= 2 and block_diagonal_woa_supported(
+            o.mesh.devices[0],
+            self.n_heads * self.head_dim // self.o_groups,
+            self.o_lora_rank,
+        )
+
+    def _output_projection(
+        self, o: Tensor, rope: tuple[Tensor, int] | None = None
+    ) -> Tensor:
         """``[T, heads, head_dim]`` -> ``[T, hidden]``: the grouped path.
 
-        The inverse rotation runs as an explicit chain first (the
-        MXFP8 API has no fused rope-quantize kwargs). ``wo_a`` then
-        quantizes the rotated rows like every dense FP8 site and
-        projects each group on its own rows through the grouped MXFP8
-        op -- one block-diagonal launch on SM100, whose sharding rule
-        pairs each rank's K-slice with its weight shard; ``wo_b``
-        quantizes its own input. Row-parallel partial sums: one
-        all-reduce completes it. Under data parallelism the projection
-        is whole per rank and its output carries the rows' own
-        placement -- nothing to reduce.
+        ``rope`` -- ``(cos_sin, head_dim)`` -- carries the inverse rotation
+        into the ``wo_a`` quantize: ``o`` then arrives un-rotated and one
+        launch rotates each head's tail and quantizes every group.
+        Otherwise the caller rotated first and ``wo_a`` quantizes the
+        rotated rows like every dense FP8 site. ``wo_a`` projects each group
+        on its own rows through the grouped MXFP8 op -- one block-diagonal
+        launch on SM100, whose sharding rule pairs each rank's K-slice with
+        its weight shard; ``wo_b`` quantizes its own input. Row-parallel
+        partial sums: one all-reduce completes it. Under data parallelism
+        the projection is whole per rank and its output carries the rows'
+        own placement -- nothing to reduce.
         """
         flat = o.reshape([o.shape[0], self.n_heads * self.head_dim])
-        grouped = self.wo_a(flat)
+        grouped = self.wo_a(flat, rope)
         out = self.wo_b(grouped)
         if out.is_distributed and any(
             isinstance(p, Partial) for p in out.placements
@@ -695,6 +752,10 @@ class Attention(Module[..., Tensor]):
         # before anything reshapes it (a TP decode would otherwise
         # treat the local head count as global and mix rows).
         o = o.rebind_mapping(q.mapping)
-        o = apply_rope_tail(o, cos_sin, self.rope_head_dim, inverse=True)
+        rope = None
+        if self._folds_inverse_rope(o):
+            rope = (cos_sin, self.head_dim)
+        else:
+            o = apply_rope_tail(o, cos_sin, self.rope_head_dim, inverse=True)
         flat = F.reshape(o, [-1, self.n_heads * self.head_dim])
-        return self._output_projection(flat)
+        return self._output_projection(flat, rope)

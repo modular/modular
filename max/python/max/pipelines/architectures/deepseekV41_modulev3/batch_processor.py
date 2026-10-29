@@ -40,6 +40,7 @@ from max.pipelines.lib.utils import compute_data_parallel_splits
 
 from .inputs import DeepseekV41Inputs, v41_config
 from .interface import extra_input_names, extra_inputs
+from .model_config import DeepseekV41Config
 
 # Engram hashes the 4-gram ending at each token, so a chunk needs the three
 # tokens before it.
@@ -67,7 +68,14 @@ class DeepseekV41BatchProcessor(
     ) -> None:
         super().__init__(config, runtime)
         self._v41 = v41_config(runtime.pipeline_config.model.huggingface_config)
+        # A DSpark pairing's trunk pinned its tables as it built, and its
+        # graph takes the extras a verify reads; serving the trunk alone
+        # binds the tables after the load.
         self._engram_static: dict[str, Buffer] = {}
+        self._verifies = False
+        if isinstance(config, DeepseekV41Config):
+            self._engram_static = dict(config.engram_static_inputs)
+            self._verifies = bool(config.dspark_trailing_inputs)
         self._dp_degree = runtime.pipeline_config.model.data_parallel_degree
         self._ep_comm_initializer: EPCommInitializer | None = None
 
@@ -131,10 +139,15 @@ class DeepseekV41BatchProcessor(
         self,
         context_batch: Sequence[TextContext],
         row_offsets: np.ndarray,
+        return_n_logits: int = 1,
     ) -> tuple[Buffer, ...]:
         device0 = self.runtime.devices[0]
         batch = len(context_batch)
-        total_seq_len = int(row_offsets[-1])
+        mask_rows = int(row_offsets[-1])
+        if self._verifies:
+            # A verify gates every merged row: the prompt's, then each
+            # request's ``return_n_logits - 1`` drafts.
+            mask_rows += batch * max(return_n_logits - 1, 0)
         per_request: dict[str, np.ndarray] = {
             # No request resumes yet: the window starts at the beginning of
             # every request and nothing is below the write floor. A request
@@ -144,7 +157,7 @@ class DeepseekV41BatchProcessor(
             "swa_begin": np.zeros(batch, np.int32),
             "global_write_floor": np.zeros(batch, np.int32),
             # Text only: no position is an image token.
-            "image_token_mask": np.zeros(total_seq_len, np.uint8),
+            "image_token_mask": np.zeros(mask_rows, np.uint8),
             "engram_lookback": engram_lookback_token_ids(
                 [ctx.tokens.all for ctx in context_batch],
                 [ctx.tokens.processed_length for ctx in context_batch],
@@ -223,8 +236,9 @@ class DeepseekV41BatchProcessor(
                 np.array([return_n_logits], dtype=np.int64)
             ),
             kv_cache_inputs=kv_cache_inputs,
-            extras=self._extras(context_batch, offsets_np),
+            extras=self._extras(context_batch, offsets_np, return_n_logits),
             ep_inputs=self._ep_inputs(),
             data_parallel_splits=data_parallel_splits,
             input_row_offsets_i64=input_row_offsets_i64,
+            signal_buffers=list(self.runtime.signal_buffers),
         )

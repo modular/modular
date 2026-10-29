@@ -12,16 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 """GPU execution tests for the V4.1 MXFP8 dense projection.
 
-These run the binding itself -- ``MXFP8Linear.forward``'s
-activation-quantize -> scale-interleave -> ``dynamic_block_scaled_matmul``
-chain -- on a real device, against an independent oracle that
-dequantizes both operands with the QAT recipe (per-32-block amax
-floored at 1e-4, UE8M0 ceil scale, E4M3 codes) and matmuls in float32.
+These run the binding itself -- ``MXFP8Linear.forward``'s fused
+quantize and cluster split-K matmul, and ``forward_rope_tail``'s RoPE
+epilogue -- on a real device, against an independent oracle that
+dequantizes both operands with the QAT recipe the composed chain it
+replaced implemented (per-32-block amax floored at 1e-4, UE8M0 ceil
+scale, E4M3 codes) and matmuls in float32.
 """
 
 from __future__ import annotations
 
 import numpy as np
+import pytest
 import torch
 from max.driver import Accelerator
 from max.dtype import DType
@@ -104,15 +106,30 @@ def _out(t: Tensor) -> np.ndarray:
     return t.cast(DType.float32).to_numpy()
 
 
-def test_dense_matches_dequantized_reference() -> None:
-    """``MXFP8Linear.forward`` on a partial final scale block (padding trim).
+def _check(out: np.ndarray, want: np.ndarray, atol: float = 2e-2) -> None:
+    abs_err = np.abs(out - want)
+    rel_err = abs_err / np.maximum(np.abs(want), 1e-2)
+    print(
+        f"[receipt] max abs err {abs_err.max():.4g}, "
+        f"max rel err {rel_err.max():.4g}"
+    )
+    np.testing.assert_allclose(out, want, rtol=2e-2, atol=atol)
 
-    in_dim 512, out_dim 160: the checkpoint's final 32-row scale block is
-    partial, so the path pads the weight, runs the block-scaled matmul and
-    trims back -- all on device.
-    """
+
+@pytest.mark.parametrize(
+    ("in_dim", "out_dim", "tokens"),
+    [
+        # A partial last 128-row tile of the weight scales.
+        (512, 160, 17),
+        # The wqa_wkv shape at a decode batch, where split-K applies.
+        (4096, 1536, 12),
+    ],
+)
+def test_dense_matches_dequantized_reference(
+    in_dim: int, out_dim: int, tokens: int
+) -> None:
+    """``MXFP8Linear.forward`` against the dequantized oracle."""
     rng = np.random.default_rng(21)
-    in_dim, out_dim, tokens = 512, 160, 17
     x = (rng.standard_normal((tokens, in_dim)) * 2.0).astype(np.float32)
     codes = _weight_codes(out_dim, in_dim, rng)
     scale = _scale_values((out_dim + 31) // 32, in_dim // 32, rng)
@@ -124,5 +141,80 @@ def test_dense_matches_dequantized_reference() -> None:
 
     a = _act_dequant(_round_bf16(x))
     w = _weight_dequant(codes, scale)
-    want = a.astype(np.float32) @ w.T
-    np.testing.assert_allclose(out, want, rtol=2e-2, atol=2e-2)
+    _check(out, a.astype(np.float32) @ w.T)
+
+
+def _rope_tail(heads: np.ndarray, cos_sin: np.ndarray) -> np.ndarray:
+    """Rotates each head's trailing ``2 * cos_sin.shape[1]`` dims in float32."""
+    tokens, n_heads, head_dim = heads.shape
+    rope_dim = cos_sin.shape[1] * 2
+    pairs = heads[..., head_dim - rope_dim :].reshape(
+        tokens, n_heads, rope_dim // 2, 2
+    )
+    cos = cos_sin[:, None, :, 0]
+    sin = cos_sin[:, None, :, 1]
+    rotated = np.stack(
+        [
+            pairs[..., 0] * cos - pairs[..., 1] * sin,
+            pairs[..., 0] * sin + pairs[..., 1] * cos,
+        ],
+        axis=-1,
+    ).reshape(tokens, n_heads, rope_dim)
+    return np.concatenate([heads[..., : head_dim - rope_dim], rotated], axis=-1)
+
+
+def test_rope_tail_matches_matmul_then_rotation() -> None:
+    """``forward_rope_tail`` equals the dense projection, then the rotation.
+
+    The oracle is the composed path: the bf16-rounded product, rotated in
+    float32 and rounded again. Rotated pairs cancel, so the absolute
+    tolerance is two bf16 ulps of the largest product, not a relative one.
+    """
+    rng = np.random.default_rng(34)
+    in_dim, heads, head_dim, rope_dim, tokens = 1024, 4, 512, 64, 12
+    out_dim = heads * head_dim
+    x = (rng.standard_normal((tokens, in_dim)) * 2.0).astype(np.float32)
+    codes = _weight_codes(out_dim, in_dim, rng)
+    scale = _scale_values(out_dim // 32, in_dim // 32, rng)
+    angles = rng.uniform(-3.0, 3.0, (tokens, rope_dim // 2))
+    cos_sin = np.stack([np.cos(angles), np.sin(angles)], axis=-1).astype(
+        np.float32
+    )
+
+    linear = MXFP8Linear(in_dim, out_dim)
+    linear.weight = _fp8(codes)
+    linear.scale = _e8m0(scale)
+    cos_sin_gpu = Tensor.from_dlpack(cos_sin).to(Accelerator())
+    out = _out(linear.forward_rope_tail(_bf16(x), cos_sin_gpu, head_dim))
+
+    a = _act_dequant(_round_bf16(x))
+    product = _round_bf16(a @ _weight_dequant(codes, scale).T).reshape(
+        tokens, heads, head_dim
+    )
+    want = _round_bf16(_rope_tail(product, cos_sin)).reshape(tokens, out_dim)
+    _check(out, want, atol=2.0**-7 * float(np.abs(product).max()))
+
+
+def test_swiglu_down_matches_composed_swiglu_then_dense() -> None:
+    """``forward_swiglu`` equals the clamped SwiGLU, rounded to bf16, then the
+    dense projection -- the shared expert's ``w2`` path before the fusion.
+
+    Inputs reach past the clamp limit, so both clamps are live.
+    """
+    rng = np.random.default_rng(55)
+    tokens, inter, hidden, limit = 12, 512, 1024, 10.0
+    gate_up = _round_bf16(
+        (rng.standard_normal((tokens, 2 * inter)) * 8.0).astype(np.float32)
+    )
+    codes = _weight_codes(hidden, inter, rng)
+    scale = _scale_values(hidden // 32, inter // 32, rng)
+
+    linear = MXFP8Linear(inter, hidden)
+    linear.weight = _fp8(codes)
+    linear.scale = _e8m0(scale)
+    out = _out(linear.forward_swiglu(_bf16(gate_up), limit))
+
+    gate = np.minimum(gate_up[:, :inter], limit)
+    up = np.clip(gate_up[:, inter:], -limit, limit)
+    activated = _round_bf16(gate / (1.0 + np.exp(-gate)) * up)
+    _check(out, _act_dequant(activated) @ _weight_dequant(codes, scale).T)

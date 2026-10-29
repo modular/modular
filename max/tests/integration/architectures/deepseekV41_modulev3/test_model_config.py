@@ -21,6 +21,7 @@ from unittest.mock import Mock
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
+from max.nn.legacy.kv_cache import MLAKVCacheParams
 from max.pipelines.architectures.deepseekV41_modulev3.interface import (
     PAGE_SIZE,
     V41Config,
@@ -29,7 +30,10 @@ from max.pipelines.architectures.deepseekV41_modulev3.model_config import (
     DeepseekV41Config,
 )
 from max.pipelines.lib import KVCacheConfig
-from max.pipelines.speculative.config import SpeculativeConfig
+from max.pipelines.speculative.config import (
+    SpeculativeConfig,
+    SpeculativeMethod,
+)
 
 
 def _text_config(**overrides: Any) -> dict[str, Any]:
@@ -111,28 +115,23 @@ def test_resolve_text_fields() -> None:
     assert fields["index_head_dim"] == 128
 
 
-def _mock_pipeline_config(*, speculative: object = None) -> Mock:
-    """A stand-in for the fields ``construct_kv_params`` reads."""
-    pipeline_config = Mock()
-    pipeline_config.model = Mock(data_parallel_degree=1)
-    pipeline_config.speculative = speculative
-    return pipeline_config
-
-
-def _construct_kv_params(speculative: object) -> None:
+def _construct_kv_params(speculative: Any) -> Any:
     """Runs ``construct_kv_params`` under the given speculative config.
 
     The interface's ``from_hf`` requires the candidate block count like
     the published checkpoint does, while the shared fixture omits it to
     pin the trunk view's own default of zero.
     """
+    pipeline_config = Mock()
+    pipeline_config.model = Mock(data_parallel_degree=1)
+    pipeline_config.speculative = speculative
     huggingface_config = Mock()
     huggingface_config.to_dict.return_value = {
         "text_config": _text_config(candidate_topk_blocks=2)
     }
-    DeepseekV41Config.construct_kv_params(
+    return DeepseekV41Config.construct_kv_params(
         huggingface_config=huggingface_config,
-        pipeline_config=_mock_pipeline_config(speculative=speculative),
+        pipeline_config=pipeline_config,
         devices=[DeviceRef.CPU()],
         kv_cache_config=KVCacheConfig(kv_cache_page_size=PAGE_SIZE),
         cache_dtype=DType.bfloat16,
@@ -145,20 +144,53 @@ def test_construct_kv_params_without_a_speculative_method() -> None:
     _construct_kv_params(speculative=SpeculativeConfig())
 
 
-def test_construct_kv_params_rejects_a_speculative_method() -> None:
-    """Refuses a named speculative method until the trunk runs DSpark.
+def test_construct_kv_params_sizes_the_pool_for_a_speculative_method() -> None:
+    """A speculative config sizes every leaf's pool for the draft rows.
 
-    The trunk's speculative path lands with the DSpark model and engine
-    PRs, so a speculative config would build a graph whose verify step
-    nothing feeds; the config fails at startup instead of serving a
-    target that cannot verify.
+    The V2 pattern: the method and width resolve before the KV cache is
+    sized and reach every leaf's params, so the pool reserves each
+    request's draft blocks, while the leaf geometry itself stays the
+    fixed-ring shape both spec and non-spec boots share.
     """
-    speculative = SpeculativeConfig(
-        speculative_method="dspark",
-        num_speculative_tokens=5,
+    params = _construct_kv_params(
+        SpeculativeConfig(speculative_method="dspark", num_speculative_tokens=5)
     )
-    with pytest.raises(ValueError, match="speculative decoding with dspark"):
-        _construct_kv_params(speculative=speculative)
+    for child in params.children.values():
+        assert child.num_draft_tokens == 5
+        assert child.speculative_method == "dspark"
+    # The state ring stays at its fixed depth, spec config or not.
+    state = params.children["c2a_state"]
+    assert isinstance(state, MLAKVCacheParams)
+    assert state.slots_per_page == 8
+
+
+def test_construct_kv_params_needs_a_resolved_draft_width() -> None:
+    """A named method without a resolved width cannot size the pool.
+
+    The draft width sizes the per-request blocks and the state ring's
+    depth check, so an unset width fails here rather than sizing a
+    draft-free pool for a speculative run.
+    """
+    speculative = SpeculativeConfig(speculative_method="dspark")
+    assert speculative.num_speculative_tokens is None
+    with pytest.raises(
+        ValueError, match="resolved before the KV cache is sized"
+    ):
+        _construct_kv_params(speculative)
+
+
+@pytest.mark.parametrize("method", ["mtp", "eagle", "dflash"])
+def test_construct_kv_params_refuses_non_dspark_methods(
+    method: SpeculativeMethod,
+) -> None:
+    """DSpark is the trunk's only draft pairing, so every other method
+    fails at startup rather than booting a plain trunk with draft-sized
+    pages."""
+    speculative = SpeculativeConfig(
+        speculative_method=method, num_speculative_tokens=3
+    )
+    with pytest.raises(ValueError, match="speculates only with dspark"):
+        _construct_kv_params(speculative)
 
 
 def test_v41_config_from_hf_reads_the_nested_text_config() -> None:

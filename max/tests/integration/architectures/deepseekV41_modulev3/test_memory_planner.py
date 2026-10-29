@@ -38,6 +38,7 @@ from typing import Any
 from unittest.mock import MagicMock, Mock
 
 import numpy as np
+import pytest
 from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -64,6 +65,7 @@ from max.pipelines.architectures.deepseekV41_modulev3.model_config import (
 from max.pipelines.kv_cache import kv_cache_memory_size
 from max.pipelines.lib import KVCacheConfig
 from max.pipelines.lib.memory_estimation import MemoryEstimator
+from max.pipelines.speculative.config import SpeculativeConfig
 from runtime_config import text_config
 
 _HF_CONFIG = {"text_config": vars(text_config())}
@@ -303,6 +305,43 @@ def test_dp4_sidecar_scratch_reserves_the_ep_buffers() -> None:
     assert comm > 0
     assert pool > 0
     assert with_ep - without_ep == comm + pool
+
+
+def _with_dspark(config: Mock, max_batch_size: int | None) -> Mock:
+    config.speculative = SpeculativeConfig(
+        speculative_method="dspark", num_speculative_tokens=5
+    )
+    config.runtime.max_batch_size = max_batch_size
+    return config
+
+
+def test_dspark_ep_budget_counts_the_draft_rows() -> None:
+    """A verify step adds each request's drafts to the rows it dispatches.
+
+    The scheduler's token budget counts only the active tokens, so the
+    dispatch buffers hold ``max_batch_size * num_speculative_tokens`` rows
+    beyond it, and the planner's EP reserve sizes from the same config.
+    """
+    text = text_config()
+    plain = _pipeline_config(dp=4, ep_size=4, n_devices=4)
+    dspark = _with_dspark(
+        _pipeline_config(dp=4, ep_size=4, n_devices=4), max_batch_size=8
+    )
+    assert build_ep_config(plain, text, 4).max_tokens_per_rank == 512
+    assert build_ep_config(dspark, text, 4).max_tokens_per_rank == 512 + 8 * 5
+    planner = _planner()
+    assert planner.forward_scratch_bytes_per_device(
+        dspark
+    ) > planner.forward_scratch_bytes_per_device(plain)
+
+
+def test_dspark_ep_needs_max_batch_size() -> None:
+    """Without ``max_batch_size`` the draft rows are unbounded."""
+    config = _with_dspark(
+        _pipeline_config(dp=4, ep_size=4, n_devices=4), max_batch_size=None
+    )
+    with pytest.raises(ValueError, match="needs max_batch_size"):
+        build_ep_config(config, text_config(), 4)
 
 
 def test_unwired_shapes_add_no_ep_reserve() -> None:

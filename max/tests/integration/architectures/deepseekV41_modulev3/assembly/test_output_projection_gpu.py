@@ -45,6 +45,8 @@ from max.pipelines.architectures.deepseekV41_modulev3.layers.mhc import (
 from max.pipelines.architectures.deepseekV41_modulev3.layers.norm import RMSNorm
 from max.pipelines.architectures.deepseekV41_modulev3.layers.rope import (
     RopeParams,
+    V41RotaryEmbedding,
+    apply_rope_tail,
 )
 from max.pipelines.architectures.deepseekV41_modulev3.model_config import (
     DeepseekV41Config,
@@ -55,7 +57,9 @@ from max.tensor.sharding import DeviceMapping, DeviceMesh, Sharded
 from runtime_config import text_config
 
 
-class _Projection(Module[[Tensor], Tensor]):
+class _AttentionOutput(Module[..., object]):
+    """An attention block built for its output projection alone."""
+
     def __init__(self, mesh: DeviceMesh) -> None:
         super().__init__()
         text = text_config()
@@ -86,6 +90,8 @@ class _Projection(Module[[Tensor], Tensor]):
             rope=RopeParams(64, 32.0, 1.0, 4096),
         )
 
+
+class _Projection(_AttentionOutput):
     def forward(self, values: Tensor) -> Tensor:
         values = F.distributed_broadcast(values, self.mesh)
         values = values.to(DeviceMapping(self.mesh, (Sharded(1),)))
@@ -93,23 +99,40 @@ class _Projection(Module[[Tensor], Tensor]):
         return output.local_shards[0].cast(DType.float32)
 
 
+class _FoldedProjection(_AttentionOutput):
+    """The projection twice: rotation folded into ``wo_a``'s quantize, and
+    rotated first by the chain."""
+
+    def forward(self, values: Tensor, cos_sin: Tensor) -> tuple[Tensor, Tensor]:
+        values = F.distributed_broadcast(values, self.mesh)
+        cos_sin = F.distributed_broadcast(cos_sin, self.mesh)
+        values = values.to(DeviceMapping(self.mesh, (Sharded(1),)))
+        folded = self.attn._output_projection(values, (cos_sin, 512))
+        chain = self.attn._output_projection(
+            apply_rope_tail(values, cos_sin, 64, inverse=True)
+        )
+        return (
+            folded.local_shards[0].cast(DType.float32),
+            chain.local_shards[0].cast(DType.float32),
+        )
+
+
 def _buffer(raw: np.ndarray, dtype: DType) -> Buffer:
     return Buffer.from_numpy(np.ascontiguousarray(raw)).view(dtype)
 
 
-@pytest.fixture(scope="module", params=[1, 2], ids=["tp1", "tp2"])
-def projection(
-    request: pytest.FixtureRequest,
-) -> tuple[Callable[..., Any], int]:
+def _mesh(degree: int) -> DeviceMesh:
     assert accelerator_count() >= 2, (
         "This target requires two distinct visible GPUs"
     )
-    degree = int(request.param)
-    mesh = DeviceMesh(
+    return DeviceMesh(
         tuple(Accelerator(i) for i in range(degree)), (degree,), ("tp",)
     )
-    with F.lazy():
-        module = _Projection(mesh)
+
+
+def _weights(
+    module: Module[..., object], dense_woa: bool = False
+) -> dict[str, Buffer]:
     weights: dict[str, Buffer] = {}
     for name, parameter in module.parameters:
         shape = tuple(int(dim) for dim in parameter.shape)
@@ -130,6 +153,14 @@ def projection(
             woa[group * 128 + row, (row * 37 + group * 11) % 4096] = np.uint8(
                 0xB8 if row % 2 else 0x38
             )
+    if dense_woa:
+        # Every column of every group is read, so a wrong rotation anywhere
+        # in a head's tail moves the output (finite codes only).
+        rng = np.random.default_rng(0)
+        woa = (
+            rng.integers(0, 0x70, woa.shape)
+            | (rng.integers(0, 2, woa.shape) << 7)
+        ).astype(np.uint8)
     weights["attn.wo_a.weight"] = _buffer(woa, DType.float8_e4m3fn)
     weights["attn.wo_a.scale"] = _buffer(
         np.full((8 * 128 // 32, 4096 // 32), 127, np.uint8),
@@ -141,11 +172,32 @@ def projection(
     weights["attn.wo_b.scale"] = _buffer(
         np.full((2, 8 * 128 // 32), 127, np.uint8), DType.float8_e8m0fnu
     )
+    return weights
+
+
+@pytest.fixture(scope="module", params=[1, 2], ids=["tp1", "tp2"])
+def projection(
+    request: pytest.FixtureRequest,
+) -> tuple[Callable[..., Any], int]:
+    degree = int(request.param)
+    with F.lazy():
+        module = _Projection(_mesh(degree))
     run = module.compile(
         TensorType(DType.bfloat16, ["rows", 64, 512], DeviceRef.GPU(0)),
-        weights=weights,
+        weights=_weights(module),
     )
     return run, degree
+
+
+@pytest.fixture(scope="module", params=[1, 2], ids=["tp1", "tp2"])
+def folded_projection(request: pytest.FixtureRequest) -> Callable[..., Any]:
+    with F.lazy():
+        module = _FoldedProjection(_mesh(int(request.param)))
+    return module.compile(
+        TensorType(DType.bfloat16, ["rows", 64, 512], DeviceRef.GPU(0)),
+        TensorType(DType.float32, ["rows", 32, 2], DeviceRef.GPU(0)),
+        weights=_weights(module, dense_woa=True),
+    )
 
 
 @pytest.mark.parametrize("rows", [1, 17])
@@ -176,6 +228,31 @@ def test_output_projection_tp(
     np.testing.assert_array_equal(actual.to_numpy(), expected)
 
 
+@pytest.mark.parametrize("rows", [1, 17])
+def test_folded_inverse_rope_matches_rotate_first(
+    folded_projection: Callable[..., Any], rows: int
+) -> None:
+    """The rope-quantize fold reads what the chain's rotated rows quantize to."""
+    rng = np.random.default_rng(rows)
+    values = rng.standard_normal((rows, 64, 512)).astype(np.float32)
+    values_bf16 = _buffer(
+        (values.view(np.uint32) >> 16).astype(np.uint16), DType.bfloat16
+    )
+    inv_freqs = V41RotaryEmbedding(
+        RopeParams(64, 32.0, 1.0, 4096), 10000.0, 1.0
+    ).inv_freqs()
+    angles = np.outer(np.arange(rows, dtype=np.float32) * 97, inv_freqs)
+    cos_sin = np.stack([np.cos(angles), np.sin(angles)], axis=-1)
+    folded, chain = folded_projection(
+        Tensor.from_dlpack(values_bf16).to(Accelerator(0)),
+        Tensor.from_dlpack(
+            _buffer(cos_sin.astype(np.float32), DType.float32)
+        ).to(Accelerator(0)),
+    )
+    assert np.any(chain.to_numpy() != 0)
+    np.testing.assert_array_equal(folded.to_numpy(), chain.to_numpy())
+
+
 class _PassFFN(Module[..., Tensor]):
     """The boundary's feed-forward stand-in: passes its rows through.
 
@@ -195,6 +272,10 @@ class _PassFFN(Module[..., Tensor]):
         return x
 
 
+# The fused mHC boundary needs a hidden width in whole 1024s.
+_BOUNDARY_HIDDEN = 1024
+
+
 class _Boundary(Module[[Tensor], tuple[Tensor, Tensor, Tensor]]):
     def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
         super().__init__()
@@ -203,10 +284,10 @@ class _Boundary(Module[[Tensor], tuple[Tensor, Tensor, Tensor]]):
         layer.hc_mult = 4
         layer.norm_eps = 1e-20
         layer.plan = LayerPlan((), {}, "")
-        layer.attn_norm = RMSNorm(64)
-        layer.ffn_norm = RMSNorm(64)
+        layer.attn_norm = RMSNorm(_BOUNDARY_HIDDEN)
+        layer.ffn_norm = RMSNorm(_BOUNDARY_HIDDEN)
         layer.ffn_norm.weight = F.full(
-            [64], 2.0, dtype=DType.bfloat16, device=Accelerator(0)
+            [_BOUNDARY_HIDDEN], 2.0, dtype=DType.bfloat16, device=Accelerator(0)
         )
         monkeypatch.setattr(layer, "ffn", _PassFFN(), raising=False)
         monkeypatch.setattr(layer, "_attention", lambda x, site: (x, []))
@@ -214,7 +295,7 @@ class _Boundary(Module[[Tensor], tuple[Tensor, Tensor, Tensor]]):
             setattr(
                 layer,
                 f"hc_{role}_fn",
-                Tensor.zeros([24, 256], dtype=DType.float32),
+                Tensor.zeros([24, 4 * _BOUNDARY_HIDDEN], dtype=DType.float32),
             )
             setattr(
                 layer,
@@ -260,10 +341,14 @@ def test_compiled_decoder_boundary_normalizes_ffn(
     with default_device(Accelerator(0)):
         module = _Boundary(monkeypatch)
     run = module.compile(
-        TensorType(DType.bfloat16, ["rows", 4, 64], DeviceRef.GPU(0))
+        TensorType(
+            DType.bfloat16, ["rows", 4, _BOUNDARY_HIDDEN], DeviceRef.GPU(0)
+        )
     )
     values = (
-        np.random.default_rng(73).normal(size=(3, 4, 64)).astype(np.float32)
+        np.random.default_rng(73)
+        .normal(size=(3, 4, _BOUNDARY_HIDDEN))
+        .astype(np.float32)
     )
     bits = values.view(np.uint32)
     bits = ((bits + 0x7FFF + ((bits >> 16) & 1)) >> 16).astype(np.uint16)

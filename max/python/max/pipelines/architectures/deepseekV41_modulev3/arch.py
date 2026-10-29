@@ -63,4 +63,7 @@ deepseekV41_modulev3_arch = SupportedArchitecture(
     memory_planner=DeepseekV41MemoryPlanner,
     reasoning_parser="deepseekv4",
     tool_parser="deepseekv41",
+    checkpoint_drafts={"dspark": "DSparkDeepseekV41DraftModel"},
+    # The serving engine boots the fused graph by this name.
+    spec_decode_graph_names={"dspark": "UnifiedDSparkDeepseekV41ModuleV3"},
 )

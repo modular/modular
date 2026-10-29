@@ -32,8 +32,9 @@ from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any, ClassVar
 
+from max.driver import Buffer
 from max.dtype import DType
-from max.graph import DeviceRef
+from max.graph import DeviceRef, TensorType
 from max.nn.legacy.kv_cache import KVCacheParamInterface
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
@@ -47,10 +48,75 @@ from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
 )
+from max.pipelines.speculative.config import SpeculativeMethod
 from transformers import AutoConfig
 from typing_extensions import Self, override
 
 from . import interface
+
+# DSpark draft stages when the checkpoint config does not say.
+_DEFAULT_DSPARK_STAGES = 3
+
+
+def num_dspark_stages(text_config: Any) -> int:
+    """The number of DSpark draft stages the checkpoint declares.
+
+    Checkpoint configs name the count either ``n_mtp_layers`` or
+    ``num_nextn_predict_layers``. Zero is a meaningful declaration (a
+    checkpoint with no drafter), so only a missing field falls through
+    to the default.
+    """
+    n_mtp_layers = getattr(text_config, "n_mtp_layers", None)
+    if n_mtp_layers is not None:
+        return n_mtp_layers
+    num_nextn_layers = getattr(text_config, "num_nextn_predict_layers", None)
+    if num_nextn_layers is not None:
+        return num_nextn_layers
+    return _DEFAULT_DSPARK_STAGES
+
+
+def dspark_expert_counts(text_config: Any) -> tuple[int, int]:
+    """The drafter MoE's (routed experts, experts per token).
+
+    Read as the V2 port reads them: 0 or absent falls back to the trunk's
+    count, and the top-k key appears under either
+    ``dspark_num_experts_per_tok`` or ``dspark_n_activated_experts``.
+    """
+    routed = getattr(text_config, "dspark_n_routed_experts", 0) or int(
+        text_config.n_routed_experts
+    )
+    top_k = (
+        getattr(text_config, "dspark_num_experts_per_tok", 0)
+        or getattr(text_config, "dspark_n_activated_experts", 0)
+        or int(text_config.num_experts_per_tok)
+    )
+    return int(routed), int(top_k)
+
+
+def dspark_draft_width(
+    speculative: Any,
+    target_huggingface_config: Any,
+    draft_huggingface_config: Any,
+) -> int:
+    """The DSpark draft width: the checkpoint's ``dspark_block_size``.
+
+    The KV cache reserves room for this many draft tokens per step.
+
+    Raises:
+        ValueError: If a different ``num_speculative_tokens`` is requested.
+    """
+    del draft_huggingface_config
+    text_config = DeepseekV41Config.get_text_config(target_huggingface_config)
+    block_size = int(getattr(text_config, "dspark_block_size", 5))
+    requested = speculative.num_speculative_tokens
+    if requested is not None and requested != block_size:
+        raise ValueError(
+            "DeepSeek-V4.1 DSpark drafts exactly dspark_block_size="
+            f"{block_size} tokens per step (the block size the checkpoint "
+            "was trained with); got "
+            f"num_speculative_tokens={requested}"
+        )
+    return block_size
 
 
 @dataclass(kw_only=True)
@@ -133,6 +199,31 @@ class DeepseekV41Config(ArchConfigWithKVCache):
     # only coincide on the published checkpoint.
     dspark_target_layer_ids: list[int] = field(default_factory=list)
 
+    # DSpark draft stage count, resolved from ``n_mtp_layers`` /
+    # ``num_nextn_predict_layers``. Declared independent of
+    # ``dspark_target_layer_ids``: the checkpoint names both, and only the
+    # drafter's build asserts they agree.
+    num_dspark_layers: int = 3
+    # Token id filling the non-anchor draft-block slots; no safe default.
+    dspark_noise_token_id: int | None = None
+    # Tokens per draft block, anchor included; also the number of
+    # speculative tokens per step (:func:`dspark_draft_width`).
+    dspark_block_size: int = 5
+    # Width of the Markov head's bigram embedding (``markov_head.embed``).
+    dspark_markov_rank: int = 256
+    # The drafter MoE's expert counts; 0/absent falls back to the trunk's.
+    dspark_n_routed_experts: int = 128
+    dspark_num_experts_per_tok: int = 3
+
+    # What a DSpark pairing's batching and graph take beside the weights,
+    # which the trunk's ``build_module`` sets: the pinned Engram tables and
+    # token map by input name, and the trunk's extras the fused graph takes
+    # past the canonical tail.
+    engram_static_inputs: dict[str, Buffer] = field(default_factory=dict)
+    dspark_trailing_inputs: list[tuple[str, TensorType]] = field(
+        default_factory=list
+    )
+
     # Sparse indexer top-k, one global constant (not per-layer).
     index_topk: int | None = None
     # Indexer geometry (``text_config``): the MXFP4 index-key width and
@@ -156,6 +247,20 @@ class DeepseekV41Config(ArchConfigWithKVCache):
     def get_max_seq_len(self) -> int:
         """The maximum sequence length the config allows."""
         return self.max_seq_len
+
+    @property
+    def target_layer_ids(self) -> list[int]:
+        """Returns the trunk layers whose states the DSpark stages read.
+
+        A speculative pairing reads them off its draft's config.
+        """
+        return self.dspark_target_layer_ids
+
+    @property
+    def mask_token_id(self) -> int:
+        """The token that fills the DSpark block past its anchor."""
+        assert self.dspark_noise_token_id is not None
+        return self.dspark_noise_token_id
 
     @staticmethod
     def get_text_config(huggingface_config: Any) -> Any:
@@ -197,32 +302,43 @@ class DeepseekV41Config(ArchConfigWithKVCache):
         to nested dicts), so the live ``PretrainedConfig`` is normalized
         with ``to_dict`` first.
 
+        A speculative configuration resolves to its method and draft width
+        the way the V2 pipeline's ``kv_leaves.construct_kv_params`` does,
+        so every leaf's pool params plan for the draft rows a verify step
+        appends.
+
         Raises:
-            ValueError: If ``pipeline_config`` names a speculative decoding
-                method. The compressor-state ring is sized for a verify
-                step without drafts, which a speculative verify would wrap
-                and corrupt, so the config is refused at startup until
-                DSpark sizing lands.
+            ValueError: If the speculative method is anything but DSpark,
+                the only pairing this trunk has, or DSpark is named without
+                its ``num_speculative_tokens`` resolved: the draft width
+                sizes the pool's per-request blocks and the state ring's
+                depth check, so it cannot stay unset.
         """
         del cache_dtype
-        speculative_config = pipeline_config.speculative
-        if (
-            speculative_config is not None
-            and speculative_config.speculative_method is not None
-        ):
-            raise ValueError(
-                "DeepSeek-V4.1 (ModuleV3) does not support speculative "
-                f"decoding with {speculative_config.speculative_method} "
-                "yet: the KV cache's compressor-state ring is sized for a "
-                "verify step without drafts. The DSpark-sized ring lands "
-                "with the DSpark support."
-            )
+        speculative_method: SpeculativeMethod | None = None
+        num_draft_tokens = 0
+        if pipeline_config.speculative:
+            speculative_method = pipeline_config.speculative.speculative_method
+            if speculative_method not in (None, "dspark"):
+                raise ValueError(
+                    "DeepSeek-V4.1 (ModuleV3) speculates only with dspark, "
+                    f"not {speculative_method}."
+                )
+            drafts = pipeline_config.speculative.num_speculative_tokens
+            if speculative_method is not None and drafts is None:
+                raise ValueError(
+                    f"{speculative_method} needs num_speculative_tokens "
+                    "resolved before the KV cache is sized."
+                )
+            num_draft_tokens = drafts or 0
         config = huggingface_config.to_dict()
         return interface.build_kv_params(
             config=interface.V41Config.from_hf(config),
             kv_cache_config=kv_cache_config,
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
+            speculative_method=speculative_method,
+            num_draft_tokens=num_draft_tokens,
         )
 
     @classmethod
@@ -283,6 +399,21 @@ class DeepseekV41Config(ArchConfigWithKVCache):
             dspark_target_layer_ids=list(
                 getattr(text_config, "dspark_target_layer_ids", [])
             ),
+            num_dspark_layers=num_dspark_stages(text_config),
+            dspark_noise_token_id=(
+                None
+                if (
+                    noise := getattr(text_config, "dspark_noise_token_id", None)
+                )
+                is None
+                else int(noise)
+            ),
+            dspark_block_size=int(getattr(text_config, "dspark_block_size", 5)),
+            dspark_markov_rank=int(
+                getattr(text_config, "dspark_markov_rank", 256)
+            ),
+            dspark_n_routed_experts=dspark_expert_counts(text_config)[0],
+            dspark_num_experts_per_tok=dspark_expert_counts(text_config)[1],
             index_topk=text_config.index_topk,
             index_n_heads=text_config.index_n_heads,
             index_head_dim=text_config.index_head_dim,

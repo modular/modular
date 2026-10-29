@@ -35,7 +35,7 @@ from max.tensor.sharding import DeviceMapping, DeviceMesh, Partial
 from max.tensor.sharding.action import PerShard
 
 from . import nvfp4_ops
-from .mxfp8_linear import MXFP8Linear, gate_up_op
+from .mxfp8_linear import MXFP8Linear
 
 
 class _NVFP4Linear(Module[[Tensor], Tensor]):
@@ -354,7 +354,6 @@ class SharedExpert(Module[[Tensor], Tensor]):
         moe_dim: Intermediate width.
         mesh: Mesh for S0 w1/w3 and S1 w2; defaults to the context.
         swiglu_limit: Asymmetric clamp limit from training.
-        amax_floor: Activation amax floor for all three dense projections.
         data_parallel: Whether the mesh is the replica axis, so the rank
             runs the whole expert on its own rows.
     """
@@ -370,7 +369,6 @@ class SharedExpert(Module[[Tensor], Tensor]):
         *,
         mesh: DeviceMesh | None = None,
         swiglu_limit: float | None = 10.0,
-        amax_floor: float = 1e-4,
         data_parallel: bool = False,
     ) -> None:
         super().__init__()
@@ -381,9 +379,9 @@ class SharedExpert(Module[[Tensor], Tensor]):
         # is the identity: a split expert would return 1/N of its sum. The
         # weights stay whole and nothing reduces.
         self.data_parallel = data_parallel
-        w1 = MXFP8Linear(hidden_dim, moe_dim, amax_floor=amax_floor)
-        w3 = MXFP8Linear(hidden_dim, moe_dim, amax_floor=amax_floor)
-        w2 = MXFP8Linear(moe_dim, hidden_dim, amax_floor=amax_floor)
+        w1 = MXFP8Linear(hidden_dim, moe_dim)
+        w3 = MXFP8Linear(hidden_dim, moe_dim)
+        w2 = MXFP8Linear(moe_dim, hidden_dim)
         if not data_parallel:
             w1 = w1.shard(0, mesh)
             w3 = w3.shard(0, mesh)
@@ -431,7 +429,6 @@ class StackedSharedExpert(Module[[Tensor], Tensor]):
         moe_dim: Intermediate width.
         mesh: Mesh for S0 w13 and S1 w2; defaults to the context.
         swiglu_limit: Asymmetric clamp limit from training.
-        amax_floor: Activation amax floor for both dense projections.
     """
 
     w13: MXFP8Linear
@@ -444,7 +441,6 @@ class StackedSharedExpert(Module[[Tensor], Tensor]):
         *,
         mesh: DeviceMesh | None = None,
         swiglu_limit: float | None = 10.0,
-        amax_floor: float = 1e-4,
         data_parallel: bool = False,
     ) -> None:
         super().__init__()
@@ -453,8 +449,8 @@ class StackedSharedExpert(Module[[Tensor], Tensor]):
         # Under data parallelism the rank runs the whole expert on its own
         # rows: the weights stay whole and nothing reduces.
         self.data_parallel = data_parallel
-        w13 = MXFP8Linear(hidden_dim, 2 * moe_dim, amax_floor=amax_floor)
-        w2 = MXFP8Linear(moe_dim, hidden_dim, amax_floor=amax_floor)
+        w13 = MXFP8Linear(hidden_dim, 2 * moe_dim)
+        w2 = MXFP8Linear(moe_dim, hidden_dim)
         if not data_parallel:
             w13 = w13.shard(0, mesh)
             w2 = w2.shard(1, mesh)
@@ -469,11 +465,7 @@ class StackedSharedExpert(Module[[Tensor], Tensor]):
 
     def partial(self, x: Tensor) -> Tensor:
         """Returns each rank's unreduced float32 shared output (``Partial``)."""
-        gate, up = gate_up_op(self.w13(x))
-        activated = nvfp4_ops.swiglu(gate, up, self.swiglu_limit).cast(
-            DType.bfloat16
-        )
-        partial = self.w2(activated)
+        partial = self.w2.forward_swiglu(self.w13(x), self.swiglu_limit)
         # The generic cast cannot carry Partial and would reduce in bf16.
         partial = F.call_on_mesh(
             F.cast, partial.mesh, out_specs=partial.mapping

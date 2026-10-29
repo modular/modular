@@ -47,10 +47,11 @@ from max.pipelines.architectures.deepseekV41_modulev3.interface import (
     extra_inputs,
 )
 from max.pipelines.architectures.deepseekV41_modulev3.layers.mhc import (
-    mhc_shifted_post_pre,
+    mhc_fused_post_pre,
 )
 from max.pipelines.architectures.deepseekV41_modulev3.model import (
     DeepseekV41Model,
+    serving_token_map,
 )
 from max.pipelines.architectures.deepseekV41_modulev3.model_config import (
     DeepseekV41Config,
@@ -269,7 +270,7 @@ def test_serving_token_map_uses_the_configured_revision(
     # digest, so the loader stops at the digest check -- after resolving
     # the tokenizer the way serving does.
     with pytest.raises(ValueError, match="sha256"):
-        model._serving_token_map(config)
+        serving_token_map(model.pipeline_config, config)
     recorder.assert_called_once_with(
         str(tmp_path),
         revision="recorded-model-revision",
@@ -518,7 +519,7 @@ def test_trunk_gates_read_the_checkpoint_norm_eps(
 ) -> None:
     """Every mHC gate boundary uses the checkpoint's ``rms_norm_eps``.
 
-    ``mhc_shifted_post_pre`` defaults ``norm_eps`` to ``1e-20``; a
+    ``mhc_fused_post_pre`` defaults ``norm_eps`` to ``1e-20``; a
     checkpoint revision with a different ``config.json`` epsilon must move
     the gates with the norms and the Engram gate, not leave them behind.
     """
@@ -536,10 +537,10 @@ def test_trunk_gates_read_the_checkpoint_norm_eps(
         max_seq_len=256,
         **DeepseekV41Config.resolve_text_fields(text),
     )
-    boundaries = Mock(wraps=mhc_shifted_post_pre)
+    boundaries = Mock(wraps=mhc_fused_post_pre)
     monkeypatch.setattr(
         "max.pipelines.architectures.deepseekV41_modulev3.layers.block"
-        ".mhc_shifted_post_pre",
+        ".mhc_fused_post_pre",
         boundaries,
     )
     with F.lazy():
@@ -584,6 +585,7 @@ def _processor(monkeypatch: pytest.MonkeyPatch) -> DeepseekV41BatchProcessor:
     processor = object.__new__(DeepseekV41BatchProcessor)
     processor._v41 = V41Config.from_hf({"text_config": vars(text_config())})
     processor._engram_static = {}
+    processor._verifies = False
     monkeypatch.setattr(
         processor, "runtime", SimpleNamespace(devices=[CPU()]), raising=False
     )

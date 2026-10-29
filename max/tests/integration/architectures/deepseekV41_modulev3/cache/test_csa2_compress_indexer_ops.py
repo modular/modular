@@ -24,9 +24,10 @@ decode, the smallest forwards that exercise every ratio-2 path: closed
 pairs pool on their closing rows -- per-channel softmax over the pair's
 scores weighting its KV rows, one RMSNorm, one bf16 cast, checked against
 a float64 oracle -- rows that close no pair stay zero, the prefill's last
-two raw rows save into the state ring, and the decode at position 5 pools
-its straddled pair against the row the ring saved at position 4 (the
-source carry), then saves its own row over the ring's other slot.
+two raw rows save into the state ring at their positions' slots, and the
+decode at position 5 pools its straddled pair against the row the ring
+saved at position 4 (the source carry), then saves its own row at its
+position's slot.
 
 The indexer case stores four one-hot keys through the real k-store and
 selects top-1 with two queries. One-hot keys make the MXFP4 quantization
@@ -59,6 +60,7 @@ from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.legacy.kv_cache import KVCacheParams
 from max.pipelines.architectures.deepseekV41_modulev3.interface import (
     PAGE_SIZE,
+    STATE_RING_ROWS,
     V41Config,
     build_kv_params,
 )
@@ -212,10 +214,9 @@ def test_compress_pools_each_token() -> None:
 def test_compress_paged_pools_pairs_and_carries_the_ring() -> None:
     """Ratio 2: pair pooling, the ring save, and the straddled carry."""
     state_shape = _shape("c2a_state")
-    # The ring is sized for the production draft count the interface
-    # freezes, so its slot count never moves when decoding turns
-    # speculative.
-    assert state_shape[2] == 8 and state_shape[4] == 2 * HEAD, state_shape
+    assert state_shape[2] == STATE_RING_ROWS and state_shape[4] == 2 * HEAD, (
+        state_shape
+    )
     rng = np.random.default_rng(29)
     state_blocks = _dev(np.zeros((1, *state_shape), dtype=np.float32))
     state = _leaf(
@@ -262,9 +263,9 @@ def test_compress_paged_pools_pairs_and_carries_the_ring() -> None:
     np.testing.assert_allclose(latent, want, rtol=2.0**-7, atol=2.0**-7)
     assert not latent[[0, 2, 4]].any(), "rows that close no pair are zero"
 
-    # The ring save: the prefill's last two raw rows at their positions'
+    # The ring save: the prefill's last two raw rows, at their positions'
     # slots -- position 4 in slot 4, position 3 in slot 3.
-    ring = state_blocks.to_numpy().reshape(-1, 2 * HEAD)
+    ring = state_blocks.to_numpy().reshape(STATE_RING_ROWS, 2 * HEAD)
     np.testing.assert_array_equal(ring[4], pre[4])
     np.testing.assert_array_equal(ring[3], pre[3])
 
@@ -281,7 +282,7 @@ def test_compress_paged_pools_pairs_and_carries_the_ring() -> None:
         weight.astype(np.float64),
     )
     np.testing.assert_allclose(latent[0], want, rtol=2.0**-7, atol=2.0**-7)
-    ring = state_blocks.to_numpy().reshape(-1, 2 * HEAD)
+    ring = state_blocks.to_numpy().reshape(STATE_RING_ROWS, 2 * HEAD)
     np.testing.assert_array_equal(ring[5], dec[0])
     np.testing.assert_array_equal(ring[4], pre[4])
 

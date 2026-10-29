@@ -183,6 +183,7 @@ def test_ratio2_state_is_a_scratch_ring() -> None:
     state = specs["c2a_state"]
     assert state.dtype == DType.float32
     assert state.row_bytes == 2 * 512
+    assert state.ring_rows == STATE_RING_ROWS
     assert state.slots_per_page == STATE_RING_ROWS
     assert state.stride_alignment == STATE_STRIDE_ALIGNMENT
     built = _params()["c2a_state"]
@@ -190,6 +191,8 @@ def test_ratio2_state_is_a_scratch_ring() -> None:
     assert built.dtype == DType.float32
     assert built.head_dim == 2 * 512
     assert built.window_size is None
+    assert built.slots_per_page == STATE_RING_ROWS
+    assert STATE_RING_ROWS >= 5 + 2
 
 
 def test_only_the_csa2_leaves_stay_packed() -> None:

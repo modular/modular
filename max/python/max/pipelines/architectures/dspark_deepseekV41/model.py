@@ -31,22 +31,25 @@ from max.pipelines.lib.interfaces.arch_config import (
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 from transformers import AutoConfig
+from typing_extensions import Self
 
 from ..deepseekV41.dspark_drafter import DeepseekV41DSparkDrafter
 from ..deepseekV41.model_config import DeepseekV41Config
 
 __all__ = [
     "DSparkDeepseekV41DraftArchConfig",
+    "DSparkDeepseekV41DraftArchConfigBase",
     "DSparkDeepseekV41DraftConfig",
 ]
 
 
 @dataclass
-class DSparkDeepseekV41DraftArchConfig(ArchConfigWithBoundedMaxSeqLen):
+class DSparkDeepseekV41DraftArchConfigBase(ArchConfigWithBoundedMaxSeqLen):
     """The draft architecture's config: its sequence bound, and no KV leaf.
 
     The stages' windows are layers of the trunk's window leaf, which the
-    trunk's own KV params already size.
+    trunk's own KV params already size. Each API's subclass builds the
+    stages' module.
     """
 
     max_seq_len: int
@@ -58,7 +61,7 @@ class DSparkDeepseekV41DraftArchConfig(ArchConfigWithBoundedMaxSeqLen):
         model_config: MAXModelConfig | None = None,
         *,
         max_seq_len: int,
-    ) -> DSparkDeepseekV41DraftArchConfig:
+    ) -> Self:
         """Records the sequence length the pipeline resolved."""
         del pipeline_config, model_config
         return cls(max_seq_len=max_seq_len)
@@ -75,6 +78,11 @@ class DSparkDeepseekV41DraftArchConfig(ArchConfigWithBoundedMaxSeqLen):
         """Returns ``None``: the stages read and write the trunk's leaves."""
         del huggingface_config, pipeline_config, devices
         del kv_cache_config, cache_dtype
+
+
+@dataclass
+class DSparkDeepseekV41DraftArchConfig(DSparkDeepseekV41DraftArchConfigBase):
+    """The graph-API stages' config, which builds their module."""
 
     @classmethod
     def build_module(

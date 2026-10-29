@@ -106,6 +106,7 @@ modular_py_test(
         ":abi_contract",
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
         "//max/python/max/pipelines/lib",
     ],
@@ -149,6 +150,7 @@ modular_py_test(
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/speculative",
@@ -170,6 +172,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
         "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
         "//max/tests/integration/architectures/deepseekV41_modulev3/assembly:runtime_config",
         requirement("numpy"),
     ],

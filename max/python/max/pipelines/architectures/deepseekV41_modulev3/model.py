@@ -16,11 +16,12 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
+from max import functional as F
 from max.driver import Buffer, Device, Usage, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -56,9 +57,12 @@ from max.pipelines.lib import (
     ModuleV3PipelineModelWithKVCache,
     PipelineConfig,
 )
+from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
+from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.support.host_memory import available_host_memory, host_memory_limit
 from max.support.human_readable_formatter import to_human_readable_bytes
+from max.tensor import default_device, default_dtype
 from max.tensor.sharding import DeviceMesh
 from transformers import AutoTokenizer
 from typing_extensions import override
@@ -68,12 +72,14 @@ if TYPE_CHECKING:
 
 from .batch_processor import DeepseekV41BatchProcessor
 from .deepseekV41 import DeepseekV41
+from .inputs import v41_config
+from .interface import extra_inputs
 from .layers.engram_token_map import (
     check_map_digest,
     compressed_token_map_array,
 )
 from .model_config import DeepseekV41Config
-from .weight_adapters import AdapterResult, EngramTable
+from .weight_adapters import AdapterResult, EngramTable, engram_embed_tables
 
 logger = logging.getLogger("max.pipelines")
 _TABLE_WEIGHT_COLS = 256
@@ -242,10 +248,28 @@ def build_ep_config(
     ``input_scale``, the same scale the tensor-parallel path quantizes
     with) and vLLM's dispatch cost (about 2.9 KB per routed row). The
     combine returns bf16, as vLLM's does.
+
+    Raises:
+        ValueError: If DSpark is on without ``max_batch_size``, which
+            bounds the draft rows the dispatch buffers must also hold.
     """
     runtime = pipeline_config.runtime
     ep_size = runtime.ep_size
     dp = pipeline_config.model.data_parallel_degree
+    rows = runtime.max_batch_input_tokens
+    speculative = pipeline_config.speculative
+    if speculative is not None and speculative.speculative_method == "dspark":
+        # Verification runs each request's drafts beside its active tokens,
+        # and the scheduler's token budget counts only the active tokens.
+        if runtime.max_batch_size is None:
+            raise ValueError(
+                "DeepSeek-V4.1 DSpark with expert parallelism needs "
+                "max_batch_size, which bounds the draft rows a verification "
+                "step adds to max_batch_input_tokens"
+            )
+        rows += runtime.max_batch_size * (
+            speculative.num_speculative_tokens or 0
+        )
     n_layers = int(text.num_hidden_layers)
     # The routed experts' storage quantization, which the dispatch
     # token format and the fused SwiGLU kernel read: modelopt NVFP4
@@ -276,7 +300,7 @@ def build_ep_config(
         top_k=int(text.num_experts_per_tok),
         n_experts=text.n_routed_experts,
         max_tokens_per_rank=calculate_ep_max_tokens_per_rank(
-            max_batch_input_tokens=runtime.max_batch_input_tokens,
+            max_batch_input_tokens=rows,
             ep_size=ep_size,
             data_parallel_degree=dp,
             use_allreduce=False,
@@ -287,6 +311,178 @@ def build_ep_config(
         fused_shared_expert=False,
         use_allreduce=False,
     )
+
+
+def validate_engram_tables(
+    tables: Sequence[EngramTable], config: DeepseekV41Config
+) -> None:
+    """Checks the adapter's tables against the ABI's own table extents.
+
+    Pure check, no allocation: it runs before the tokenizer is loaded and
+    before any table is pinned, so a wrong handoff costs nothing.
+
+    Args:
+        tables: The adapter's tables, in ``engram_layer_ids`` order.
+        config: The frozen interface view, whose ``engram_num_embeddings``
+            is the ABI's per-ordinal row count.
+
+    Raises:
+        ValueError: If the adapter handed over a different number of tables
+            than the ABI declares, or any table's row count differs from
+            the ABI's extent for its ordinal.
+    """
+    want = tuple(int(rows) for rows in config.engram_num_embeddings)
+    if len(tables) != len(want):
+        raise ValueError(
+            f"the weight adapter handed over {len(tables)} Engram tables, "
+            f"but the DeepSeek-V4.1 ABI declares {len(want)} for layers "
+            f"{list(config.engram_layer_ids)}"
+        )
+    for ordinal, table in enumerate(tables):
+        if int(table.rows) != want[ordinal]:
+            raise ValueError(
+                f"engram_table_{ordinal}_weight is [{int(table.rows)}, "
+                f"{_TABLE_WEIGHT_COLS}], but the ABI declares "
+                f"[{want[ordinal]}, {_TABLE_WEIGHT_COLS}] for layer "
+                f"{table.layer}"
+            )
+
+
+def serving_token_map(
+    pipeline_config: PipelineConfig, config: DeepseekV41Config
+) -> np.ndarray:
+    """The serving tokenizer's compressed-id map, digest-checked.
+
+    N-grams hash compressed ids, so a wrong map silently hashes
+    unrelated tokens alike -- the placeholder it replaces was all zeros.
+    The map is built from the checkpoint's own tokenizer at the
+    configured model revision -- the same revision the pipeline
+    resolves the config, weights and tokenizer files at, so serving
+    from a hub repo id works without any pre-seeded snapshot -- and
+    checked against the recorded sha256, so a ``tokenizers`` Unicode
+    bump or a swapped checkpoint fails here instead of serving
+    meaningless Engram output. The model binds the array once as the
+    ``engram_token_map`` graph input the engine feeds at boot; the
+    trunk's Engram layers also read it as a constructor constant, so
+    the input and the constant carry the same bytes.
+
+    Args:
+        pipeline_config: The pipeline whose checkpoint names the
+            tokenizer.
+        config: The frozen interface view, whose ``vocab_size`` sizes
+            the map.
+
+    Returns:
+        The map as int32 ``[vocab_size]``, in tokenizer id order.
+
+    Raises:
+        ValueError: If the tokenizer's vocabulary is not the model's
+            size, or the map's sha256 is not the recorded digest.
+    """
+    model = pipeline_config.model
+    tokenizer = AutoTokenizer.from_pretrained(
+        model.model_path,
+        revision=model.huggingface_model_revision,
+        trust_remote_code=model.trust_remote_code,
+    )
+    token_map = compressed_token_map_array(tokenizer)
+    if len(token_map) != config.vocab_size:
+        raise ValueError(
+            f"the {model.model_path} tokenizer holds {len(token_map)} "
+            "ids, but the DeepSeek-V4.1 Engram token map is "
+            f"[{config.vocab_size}]"
+        )
+    digest = check_map_digest(token_map)
+    logger.info(
+        "DeepSeek-V4.1 Engram token map sha256 %s (from %s)",
+        digest,
+        model.model_path,
+    )
+    return token_map
+
+
+def engram_static_inputs(
+    tables: Sequence[EngramTable], token_map: np.ndarray, device: Device
+) -> dict[str, Buffer]:
+    """Pins the Engram tables and stages the token map, by ABI input name.
+
+    Pinned against ``device``, the pipeline's first.
+    """
+    static: dict[str, Buffer] = {}
+    for ordinal, table in enumerate(tables):
+        weight_name, scale_name = table.table_names(ordinal)
+        static[weight_name] = _pinned_table(
+            device,
+            weight_name,
+            table.rows,
+            256,
+            table.weight_codes,
+            DType.float8_e4m3fn,
+        )
+        static[scale_name] = _pinned_table(
+            device,
+            scale_name,
+            table.rows,
+            8,
+            table.scale_codes,
+            DType.float8_e8m0fnu,
+        )
+    # The engine feeds the token map through the ABI's ``engram_token_map``
+    # input; the trunk's Engram layers also read it as a constructor
+    # constant, so the input and the constant carry the same bytes.
+    static["engram_token_map"] = Buffer.from_numpy(token_map).to(device)
+    return static
+
+
+def check_parallel_layout(pipeline_config: PipelineConfig) -> None:
+    """Raises unless the pipeline asks for a layout this trunk wires.
+
+    Raises:
+        ValueError: If more than one device serves other than data-parallel
+            attention with expert-parallel MoE over all of them, if
+            ``ep_size`` isn't the device count, or if expert parallelism
+            runs without chunked prefill.
+    """
+    ep_size = pipeline_config.runtime.ep_size
+    dp = pipeline_config.model.data_parallel_degree
+    # The arch registration lets every multi-GPU layout through, but this
+    # trunk wires exactly one: DP attention with EP over all the devices.
+    # Everything else -- plain tensor parallelism included -- dies deep in
+    # graph staging, so refuse it before the graphs compile, naming the
+    # layout that works. The config's ``device_specs`` is read rather than
+    # a model's devices: an EP1 build (a graph-contract recorder can stage
+    # the model without ``__init__``) never touches the device list.
+    n_devices = len(pipeline_config.model.device_specs)
+    if n_devices > 1 and (dp != n_devices or ep_size != n_devices):
+        raise ValueError(
+            f"DeepSeek-V4.1 serves {n_devices} devices only as "
+            "data-parallel attention with expert-parallel MoE: pass "
+            f"--data-parallel-degree {n_devices} --ep-size "
+            f"{n_devices} (got data_parallel_degree={dp}, "
+            f"ep_size={ep_size}). Plain tensor parallelism is not "
+            "wired for this trunk."
+        )
+    if ep_size <= 1:
+        return
+    if ep_size != n_devices:
+        # Reachable on a single device with ep_size > 1: the check above
+        # already refused every multi-device mismatch.
+        raise ValueError(
+            f"ep_size={ep_size} must equal the device count "
+            f"({n_devices}) on the single-node DP-attention shape."
+        )
+    if not pipeline_config.runtime.enable_chunked_prefill:
+        # The dispatch/combine buffers are sized to max_tokens_per_rank
+        # (max_batch_input_tokens on this P2P single-node shape), which the
+        # batch constructor treats as a soft limit: with chunking off it
+        # admits an oversized prompt whole, and the dispatch overflows the
+        # fixed buffers.
+        raise ValueError(
+            "DeepSeek-V4.1 expert parallelism requires chunked prefill: "
+            "the EP dispatch buffers are sized to "
+            "max_batch_input_tokens, which without chunking is a soft "
+            "limit a longer prompt exceeds."
+        )
 
 
 class DeepseekV41Model(
@@ -360,49 +556,10 @@ class DeepseekV41Model(
         self._ep_batch_manager: EPBatchManager | None = None
         self.ep_comm_initializer: EPCommInitializer | None = None
 
-        ep_size = self.pipeline_config.runtime.ep_size
-        dp = self.pipeline_config.model.data_parallel_degree
-        # The arch registration lets every multi-GPU layout through, but
-        # this trunk wires exactly one: DP attention with EP over all the
-        # devices. Everything else -- plain tensor parallelism included --
-        # dies deep in graph staging, so refuse it here, before the graphs
-        # compile (the checkpoint has already loaded at this point),
-        # naming the layout that works. The config's ``device_specs`` is
-        # read rather than ``self.devices``: an EP1 build (a
-        # graph-contract recorder can stage the model without
-        # ``__init__``) never touches the device list.
-        n_devices = len(self.pipeline_config.model.device_specs)
-        if n_devices > 1 and (dp != n_devices or ep_size != n_devices):
-            raise ValueError(
-                f"DeepSeek-V4.1 serves {n_devices} devices only as "
-                "data-parallel attention with expert-parallel MoE: pass "
-                f"--data-parallel-degree {n_devices} --ep-size "
-                f"{n_devices} (got data_parallel_degree={dp}, "
-                f"ep_size={ep_size}). Plain tensor parallelism is not "
-                "wired for this trunk."
-            )
-        if ep_size <= 1:
+        check_parallel_layout(self.pipeline_config)
+        if self.pipeline_config.runtime.ep_size <= 1:
             return
         n_devices = len(self.devices)
-        if ep_size != n_devices:
-            # Reachable on a single device with ep_size > 1: the pre-check
-            # above already refused every multi-device mismatch.
-            raise ValueError(
-                f"ep_size={ep_size} must equal the device count "
-                f"({n_devices}) on the single-node DP-attention shape."
-            )
-        if not self.pipeline_config.runtime.enable_chunked_prefill:
-            # The dispatch/combine buffers are sized to
-            # max_tokens_per_rank (max_batch_input_tokens on this P2P
-            # single-node shape), which the batch constructor treats as a
-            # soft limit: with chunking off it admits an oversized prompt
-            # whole, and the dispatch overflows the fixed buffers.
-            raise ValueError(
-                "DeepSeek-V4.1 expert parallelism requires chunked prefill: "
-                "the EP dispatch buffers are sized to "
-                "max_batch_input_tokens, which without chunking is a soft "
-                "limit a longer prompt exceeds."
-            )
         # DeepseekV41Config is mutable; the EP config lives on the batch
         # manager the rest of the runtime already reads (graph_specs
         # included).
@@ -454,6 +611,92 @@ class DeepseekV41Model(
             )
         return specs
 
+    @classmethod
+    def build_module(
+        cls, context: ModelLoadContext
+    ) -> tuple[DeepseekV41, DeepseekV41Config]:
+        """Builds the trunk for a DSpark pairing, without its weights.
+
+        The module compiles with the weights :meth:`checkpoint_weights`
+        returns. Its Engram tables are pinned here and reach the pairing's
+        batching on the config, as the graph inputs they are, with the
+        trunk's extras the graph takes past the canonical tail. The
+        pairing's verify gathers the logit rows it scores and taps the
+        layers the DSpark stages read, so the trunk keeps the next-token
+        outputs that data parallelism allows.
+
+        Raises:
+            ValueError: If ``target_layer_ids`` names other layers than the
+                DSpark stages read, or the layout isn't one this trunk
+                wires (:func:`check_parallel_layout`).
+        """
+        pipeline_config = context.pipeline_config
+        check_parallel_layout(pipeline_config)
+        config = DeepseekV41Config.initialize(
+            pipeline_config, max_seq_len=context.max_seq_len
+        )
+        layers = list(context.target_layer_ids)
+        if layers and layers != config.dspark_target_layer_ids:
+            raise ValueError(
+                "DeepSeek-V4.1 collects the states at its"
+                f" dspark_target_layer_ids {config.dspark_target_layer_ids};"
+                f" got target_layer_ids {layers}."
+            )
+        if context.kv_params is not None:
+            assert isinstance(context.kv_params, MultiKVCacheParams)
+            config.kv_params = context.kv_params
+        assert isinstance(config.kv_params, MultiKVCacheParams)
+        devices = [ref.to_device() for ref in config.devices]
+        dp = pipeline_config.model.data_parallel_degree
+        tables = engram_embed_tables(context.weights, config.engram_layer_ids)
+        validate_engram_tables(tables, config)
+        token_map = serving_token_map(pipeline_config, config)
+        config.engram_static_inputs = engram_static_inputs(
+            tables, token_map, devices[0]
+        )
+        config.dspark_trailing_inputs = extra_inputs(
+            v41_config(pipeline_config.model.huggingface_config),
+            config.devices,
+            dp,
+            verify_rows=True,
+        )
+        ep_batch_manager: EPBatchManager | None = None
+        if pipeline_config.runtime.ep_size > 1:
+            ep_config = build_ep_config(pipeline_config, config, len(devices))
+            context.start_ep(ep_config)
+            ep_batch_manager = EPBatchManager(ep_config)
+        axis = "dp" if dp > 1 else "tp"
+        mesh = DeviceMesh(tuple(devices), (len(devices),), (axis,))
+        with F.lazy(), default_dtype(DType.bfloat16), default_device(mesh):
+            module = DeepseekV41(
+                config,
+                config.kv_params,
+                mesh,
+                text_config=DeepseekV41Config.get_text_config(
+                    pipeline_config.model.huggingface_config
+                ),
+                token_map=token_map,
+                data_parallel_degree=dp,
+                ep_batch_manager=ep_batch_manager,
+            )
+        return module, config
+
+    @classmethod
+    def checkpoint_weights(
+        cls, context: ModelLoadContext, config: DeepseekV41Config
+    ) -> dict[str, Any]:
+        """Returns the weights the built trunk compiles with.
+
+        The Engram tables the adapter hands back beside them are not
+        weights: :meth:`build_module` pinned them as graph inputs.
+        """
+        del config
+        return dict(
+            parse_state_dict_from_weights(
+                context.pipeline_config, context.weights, context.adapter
+            )
+        )
+
     def _load_state_dict(self) -> dict[str, Any]:
         result = super()._load_state_dict()
         if not isinstance(result, AdapterResult):
@@ -474,8 +717,8 @@ class DeepseekV41Model(
         )
         config.return_logits = self.return_logits
         config.return_hidden_states = self.return_hidden_states
-        self._validate_engram_tables(config)
-        self._token_map = self._serving_token_map(config)
+        validate_engram_tables(self._engram_tables, config)
+        self._token_map = serving_token_map(self.pipeline_config, config)
         return config
 
     def _module_default_dtype(
@@ -517,122 +760,15 @@ class DeepseekV41Model(
     def _bind_engram_static_inputs(self) -> None:
         """Pins the adapter's table views and hands them to the processor.
 
-        Pinned against the pipeline's first device, and once every table
-        lives in page-locked memory the adapter's views are dropped: the
-        loader never keeps a second copy of a table that reaches tens of
-        gigabytes.
+        Once every table lives in page-locked memory the adapter's views
+        are dropped: the loader never keeps a second copy of a table that
+        reaches tens of gigabytes.
         """
         processor = self.batch_processor
         assert isinstance(processor, DeepseekV41BatchProcessor)
-        pin_device = self.devices[0]
-        static: dict[str, Buffer] = {}
-        for ordinal, table in enumerate(self._engram_tables):
-            weight_name, scale_name = table.table_names(ordinal)
-            static[weight_name] = _pinned_table(
-                pin_device,
-                weight_name,
-                table.rows,
-                256,
-                table.weight_codes,
-                DType.float8_e4m3fn,
+        processor.bind_engram(
+            engram_static_inputs(
+                self._engram_tables, self._token_map, self.devices[0]
             )
-            static[scale_name] = _pinned_table(
-                pin_device,
-                scale_name,
-                table.rows,
-                8,
-                table.scale_codes,
-                DType.float8_e8m0fnu,
-            )
-        # The pinned buffers -- and the processor's own reference to them --
-        # are the only copies now: dropping the checkpoint views releases a
-        # second full mapping of every table for the model's lifetime.
+        )
         self._engram_tables = []
-        # The engine feeds the token map through the ABI's
-        # ``engram_token_map`` input; the trunk's Engram layers also read
-        # it as a constructor constant, so the input and the constant
-        # carry the same bytes.
-        static["engram_token_map"] = Buffer.from_numpy(self._token_map).to(
-            self.devices[0]
-        )
-        processor.bind_engram(static)
-
-    def _validate_engram_tables(self, config: DeepseekV41Config) -> None:
-        """Checks the adapter's tables against the ABI's own table extents.
-
-        Pure check, no allocation: it runs before the tokenizer is loaded and
-        before any table is pinned, so a wrong handoff costs nothing.
-
-        Args:
-            config: The frozen interface view, whose ``engram_num_embeddings``
-                is the ABI's per-ordinal row count.
-
-        Raises:
-            ValueError: If the adapter handed over a different number of tables
-                than the ABI declares, or any table's row count differs from
-                the ABI's extent for its ordinal.
-        """
-        want = tuple(int(rows) for rows in config.engram_num_embeddings)
-        tables = self._engram_tables
-        if len(tables) != len(want):
-            raise ValueError(
-                f"the weight adapter handed over {len(tables)} Engram tables, "
-                f"but the DeepSeek-V4.1 ABI declares {len(want)} for layers "
-                f"{list(config.engram_layer_ids)}"
-            )
-        for ordinal, table in enumerate(tables):
-            if int(table.rows) != want[ordinal]:
-                raise ValueError(
-                    f"engram_table_{ordinal}_weight is [{int(table.rows)}, "
-                    f"{_TABLE_WEIGHT_COLS}], but the ABI declares "
-                    f"[{want[ordinal]}, {_TABLE_WEIGHT_COLS}] for layer "
-                    f"{table.layer}"
-                )
-
-    def _serving_token_map(self, config: DeepseekV41Config) -> np.ndarray:
-        """The serving tokenizer's compressed-id map, digest-checked.
-
-        N-grams hash compressed ids, so a wrong map silently hashes
-        unrelated tokens alike -- the placeholder it replaces was all zeros.
-        The map is built from the checkpoint's own tokenizer at the
-        configured model revision -- the same revision the pipeline
-        resolves the config, weights and tokenizer files at, so serving
-        from a hub repo id works without any pre-seeded snapshot -- and
-        checked against the recorded sha256, so a ``tokenizers`` Unicode
-        bump or a swapped checkpoint fails here instead of serving
-        meaningless Engram output. The model binds the array once as the
-        ``engram_token_map`` graph input the engine feeds at boot; the
-        trunk's Engram layers also read it as a constructor constant, so
-        the input and the constant carry the same bytes.
-
-        Args:
-            config: The frozen interface view, whose ``vocab_size`` sizes
-                the map.
-
-        Returns:
-            The map as int32 ``[vocab_size]``, in tokenizer id order.
-
-        Raises:
-            ValueError: If the tokenizer's vocabulary is not the model's
-                size, or the map's sha256 is not the recorded digest.
-        """
-        model = self.pipeline_config.model
-        tokenizer = AutoTokenizer.from_pretrained(
-            model.model_path,
-            revision=model.huggingface_model_revision,
-            trust_remote_code=model.trust_remote_code,
-        )
-        token_map = compressed_token_map_array(tokenizer)
-        if len(token_map) != config.vocab_size:
-            raise ValueError(
-                f"the {model.model_path} tokenizer holds {len(token_map)} "
-                "ids, but the DeepSeek-V4.1 Engram token map is "
-                f"[{config.vocab_size}]"
-            )
-        digest = check_map_digest(token_map)
-        logger.info(
-            "DeepSeek-V4.1 Engram token map sha256 %s (from %s)",
-            digest,
-            model.model_path,
-        )
-        return token_map

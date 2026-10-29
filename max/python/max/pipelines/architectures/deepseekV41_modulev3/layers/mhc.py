@@ -24,23 +24,29 @@ These are pure functions: the layer holds the checkpoint parameters
 every tensor. The three ``pre_mix`` states are distinct (see
 :class:`_PreMixOmitted` and :func:`mhc_shifted_post_pre`).
 
-The gate coefficients run through the graph ``hyper_connection_gates`` op
-(``mo.hyper_connection.gates``); there is no fused mega/all-reduce step
-here -- a tensor-parallel caller reduces its sublayer partials with the
-ordinary all-reduce and then feeds the whole ``y`` to
-:func:`mhc_shifted_post_pre`.
+Each boundary between two sublayers is main's one-kernel ``mo.mega_mhc``
+step (:func:`mhc_fused_post_pre`); the composed :func:`mhc_post` and
+:func:`mhc_pre` remain for the trunk's first site, the Engram sites and
+the tap capture. A tensor-parallel caller reduces its sublayer partials
+with the ordinary all-reduce and then feeds the whole ``y`` to the step.
 """
 
 from __future__ import annotations
 
 from max import functional as F
 from max.dtype import DType
-from max.graph import Dim
+from max.graph import BufferType, Dim, TensorType, TensorValue, ops
 from max.nn.common_layers.functional_kernels import (
     hyper_connection_gates,
 )
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping
+
+from .norm import RMSNorm
+
+# Arrival counters one fused step keeps between calls (V2's
+# ``hyper_connection._MEGA_MHC_COUNTERS``).
+_MEGA_MHC_COUNTERS = 1136
 
 
 class _PreMixOmitted:
@@ -239,79 +245,147 @@ def mhc_pre(
     return post, comb, pre, collapsed
 
 
-def mhc_shifted_post_pre(
+def _mega_post_pre(
+    sublayer_out: TensorValue,
+    stream: TensorValue,
+    post_mix: TensorValue,
+    comb_mix: TensorValue,
+    pre_mix: TensorValue,
+    hc_fn: TensorValue,
+    hc_scale: TensorValue,
+    hc_base: TensorValue,
+    norm_weight: TensorValue,
+    norm_eps: float,
+    hc_eps: float,
+    sinkhorn_iters: int,
+    rms_eps: float,
+) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue, TensorValue]:
+    """Runs ``mo.mega_mhc``, as V2's ``fused_hc_step`` does."""
+    device = stream.device
+    hc_mult, hidden = int(stream.shape[1]), int(stream.shape[2])
+    rows = stream.shape[0]
+    counters = ops.buffer_create(
+        BufferType(DType.uint64, [_MEGA_MHC_COUNTERS], device=device),
+        init_value=0,
+    )
+    results = ops.inplace_custom(
+        "mo.mega_mhc",
+        device=device,
+        values=[
+            ops.cast(sublayer_out, DType.bfloat16),
+            stream,
+            post_mix,
+            ops.reshape(comb_mix, [rows, hc_mult * hc_mult]),
+            pre_mix,
+            ops.cast(hc_fn, DType.float32),
+            ops.cast(hc_scale, DType.float32),
+            ops.cast(hc_base, DType.float32),
+            ops.cast(norm_weight, DType.bfloat16),
+            counters,
+        ],
+        out_types=[
+            TensorType(DType.bfloat16, [rows, hc_mult, hidden], device),
+            TensorType(DType.float32, [rows, hc_mult], device),
+            TensorType(DType.float32, [rows, hc_mult], device),
+            TensorType(DType.float32, [rows, hc_mult * hc_mult], device),
+            TensorType(DType.bfloat16, [rows, hidden], device),
+        ],
+        parameters={
+            "hidden": hidden,
+            "shifted": True,
+            "hc_norm_eps": norm_eps,
+            "hc_pre_eps": hc_eps,
+            "hc_post_scale": 2.0,
+            "sinkhorn_eps": hc_eps,
+            "sinkhorn_iters": sinkhorn_iters,
+            "rms_norm_eps": rms_eps,
+        },
+    )
+    streams, new_pre, new_post, new_comb, normed = (r.tensor for r in results)
+    return (
+        streams,
+        new_pre,
+        new_post,
+        ops.reshape(new_comb, [rows, hc_mult, hc_mult]),
+        normed,
+    )
+
+
+_mega_post_pre_op = F.functional(_mega_post_pre)
+
+
+def mhc_fused_post_pre(
     stream: Tensor,
     sublayer_out: Tensor,
     post_mix: Tensor,
     comb_mix: Tensor,
+    pre_mix: Tensor,
     hc_fn: Tensor,
     hc_scale: Tensor,
     hc_base: Tensor,
-    hc_mult: int,
-    pre_mix: Tensor | _PreMixOmitted | None = _PRE_MIX_OMITTED,
+    norm: RMSNorm,
     norm_eps: float = 1e-20,
     hc_eps: float = 1e-6,
     sinkhorn_iters: int = 20,
 ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
-    """One mHC boundary: finish the previous site, start this one.
+    """One mHC boundary in one kernel: finish the previous site, start this one.
 
     The previous site's output ``y`` (``sublayer_out``) is written back onto
-    the stream with the previous site's ``post`` and ``comb`` *first*; this
-    site's ``pre``/``post``/``comb`` and the collapse then both read the
-    post-updated stream -- the same order as the reference's
-    ``Block.forward``. This is :func:`mhc_post` followed by
-    :func:`mhc_pre`.
-
-    Do not use it when Engram runs at this layer: Engram must see the
-    post-updated stream and the gates must see the Engram-injected one, so
-    the caller composes :func:`mhc_post`, the Engram injection, and
-    :func:`mhc_pre` instead. Injecting into ``stream`` before this call
-    would mix the injection through the previous ``comb``.
+    the stream with the previous site's ``post`` and ``comb``; this site's
+    ``pre``/``post``/``comb`` gates and the collapse with the carried
+    ``pre_mix`` both read the post-updated stream, and ``norm`` normalizes
+    the collapse. This is :func:`mhc_post`, :func:`mhc_pre` and the
+    sublayer's input norm as V2's ``mo.mega_mhc`` fuses them: the gate
+    projection runs in TF32. The Engram sites and the trunk's first site
+    keep the composed pair, since each must touch the stream between the
+    write-back and the gates.
 
     Args:
         stream: The parallel streams *before* the previous site's
-            write-back, ``[rows, hc_mult, hidden]``.
+            write-back, bf16 ``[rows, hc_mult, hidden]``; ``hc_mult`` is 4
+            and ``hidden`` a multiple of 1024.
         sublayer_out: The previous site's output, ``[rows, hidden]``.
         post_mix: The previous site's ``post``, float32 ``[rows, hc_mult]``.
         comb_mix: The previous site's ``comb``, float32 ``[rows, hc_mult,
-            hc_mult]``.
+            hc_mult]`` or its row-major ``[rows, hc_mult * hc_mult]``.
+        pre_mix: The collapse weights carried from the previous site,
+            float32 ``[rows, hc_mult]``.
         hc_fn: See :func:`mhc_pre`.
         hc_scale: See :func:`mhc_pre`.
         hc_base: See :func:`mhc_pre`.
-        hc_mult: The number of parallel streams.
-        pre_mix: The collapse weights; see :func:`mhc_pre` for the three
-            states.
+        norm: This sublayer's input norm.
         norm_eps: See :func:`mhc_pre`.
         hc_eps: See :func:`mhc_pre`.
         sinkhorn_iters: See :func:`mhc_pre`.
 
     Returns:
-        A tuple ``(stream_next, post, comb, pre, collapsed)``:
-
-        - ``stream_next``: the post-updated stream, ``[rows, hc_mult,
-          hidden]``, in ``stream``'s dtype; the one whose coefficients are
-          ``post``/``comb``/``pre``.
-        - ``post`` / ``comb``: this site's write-back coefficients, for the
-          caller to feed the next boundary.
-        - ``pre``: this site's collapse weights, float32 ``[rows, hc_mult]``
-          -- the *next* site's ``pre_mix``, and what the final collapse
-          consumes at the trunk's last layer.
-        - ``collapsed``: this site's sublayer input, ``[rows, hidden]``, in
-          ``stream``'s dtype, for the caller to normalize.
+        ``(stream_next, post, comb, pre, normed)``: the post-updated streams,
+        this site's write-back coefficients (``comb`` as ``[rows, hc_mult,
+        hc_mult]``) and collapse weights ``pre``, and the normalized
+        sublayer input ``[rows, hidden]``.
     """
-    stream_next = mhc_post(sublayer_out, stream, post_mix, comb_mix, hc_mult)
-    post, comb, pre, collapsed = mhc_pre(
-        stream_next,
+    stream_next, pre, post, comb, normed = _mega_post_pre_op(
+        sublayer_out,
+        stream,
+        post_mix,
+        comb_mix,
+        pre_mix,
         hc_fn,
         hc_scale,
         hc_base,
-        hc_mult,
-        pre_mix,
+        norm.weight,
         norm_eps,
         hc_eps,
         sinkhorn_iters,
+        norm.eps,
     )
-    return stream_next, post, comb, pre, collapsed
+    return (
+        claim_replicated(stream_next, stream),
+        claim_replicated(post, stream),
+        claim_replicated(comb, stream),
+        claim_replicated(pre, stream),
+        claim_replicated(normed, stream),
+    )
 
 
 def mhc_post(

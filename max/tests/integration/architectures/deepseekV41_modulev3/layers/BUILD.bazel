@@ -17,7 +17,6 @@ modular_eager_py_test(
     srcs = [
         "test_attention_rows.py",
         "test_compressor.py",
-        "test_engram_gate.py",
         "test_engram_hash.py",
         "test_engram_token_map.py",
         "test_indexer.py",
@@ -83,10 +82,13 @@ modular_eager_py_test(
     name = "layers_gpu_tests",
     size = "large",
     srcs = [
+        "test_engram_gate_gpu.py",
         "test_engram_gather_gpu.py",
+        "test_mhc_fused_gpu.py",
         "test_mhc_gates_gpu.py",
         "test_mxfp8_dense_gpu.py",
         "test_nvfp4_routed_gpu.py",
+        "test_router_gpu.py",
     ],
     env = {
         # These tests execute the layers' real fused/graph ops (fp8 casts,

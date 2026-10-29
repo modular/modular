@@ -22,7 +22,7 @@ layers ``engram_layer_ids`` (1 and 14 in the real checkpoint):
    (codes ``[T,6144]`` e4m3, scales ``[ceil(T/128),48,32,4,4]`` e8m0);
 2. ``wkv`` (an MXFP8 GEMM) projects the row to per-copy keys plus a
    shared value;
-3. the signed-sqrt gate (:meth:`Engram._gate`) folds the value into all
+3. the signed-sqrt gate (:func:`engram_gate`) folds the value into all
    ``hc_mult`` hyper-connection stream copies of ``hidden``.
 
 No kernel or wrapper is duplicated here: the hash, gather and operand
@@ -75,11 +75,6 @@ from max.tensor import Tensor
 from max.tensor.sharding import DeviceMesh
 
 from .mhc import claim_replicated
-
-# The clamp that keeps sqrt's input finite even when the gather wrote a
-# zero row (dead tokens, invalid ids, out-of-table hashes): 0 * anything is 0,
-# but the gate must still see +sqrt(1e-6) there, never NaN.
-_GATE_CLAMP = 1e-6
 
 # Codes are 24 heads x 256 dims of FP8; scales one E8M0 byte per 32-element
 # block, in the kernel's flattened SM100 atom layout per 128-token row group.
@@ -180,6 +175,68 @@ def _select_ordinal(
 _select_ordinal_op = F.functional(_select_ordinal)
 _interleave_op = F.functional(block_scales_interleave)
 _gemm_op = F.functional(dynamic_block_scaled_matmul)
+
+
+def _gate(
+    hidden: TensorValue,
+    kv: TensorValue,
+    q_weight: TensorValue,
+    k_weight: TensorValue,
+    alive: TensorValue,
+    epsilon: float,
+) -> TensorValue:
+    """Runs main's ``mo.engram.gate_masked`` kernel, as V2's ``Engram`` does."""
+    return ops.custom(
+        "mo.engram.gate_masked",
+        device=hidden.device,
+        values=[hidden, kv, q_weight, k_weight, alive],
+        out_types=[hidden.type],
+        parameters={"epsilon": epsilon},
+    )[0].tensor
+
+
+_gate_op = F.functional(_gate)
+
+
+def engram_gate(
+    hidden: Tensor,
+    kv: Tensor,
+    q_weight: Tensor,
+    k_weight: Tensor,
+    dead_mask: Tensor,
+    epsilon: float,
+) -> Tensor:
+    """The signed-sqrt gate: folds ``kv`` into every stream copy.
+
+    For copy ``c`` with ``h = hidden[t, c]`` and its key ``key``::
+
+        x = sum(h * q[c] * k[c] * key) * rms(h) * rms(key) / sqrt(hidden)
+        gate = sigmoid(sign(x) * sqrt(max(|x|, 1e-6)))
+        out = h + gate * value
+
+    where ``rms(v) = rsqrt(mean(v * v) + epsilon)``, ``x >= 0`` takes the
+    positive branch at ``x == 0``, and a dead position's gate is forced to
+    zero. One fused kernel computes it in float32 from the bf16 inputs; it
+    supports ``hidden_size`` 5120 and ``hc_mult`` 4.
+
+    Args:
+        hidden: ``[T, hc_mult, hidden_size]``, all mHC stream copies at the
+            injection point (after the previous layer's post write-back,
+            before this layer's gates).
+        kv: ``[T, (hc_mult + 1) * hidden_size]`` bf16: one key per copy,
+            then the shared value.
+        q_weight: ``[hc_mult, hidden_size]`` bf16.
+        k_weight: ``[hc_mult, hidden_size]`` bf16.
+        dead_mask: Uint8 ``[T]``, 1 for dead or image positions (the kernel
+            takes the complement, alive, as a bool).
+        epsilon: The RMS epsilon.
+
+    Returns:
+        ``[T, hc_mult, hidden_size]`` in ``hidden``'s dtype.
+    """
+    alive = F.logical_not(dead_mask.cast(DType.bool))
+    gated = _gate_op(hidden, kv, q_weight, k_weight, alive, epsilon)
+    return claim_replicated(gated, hidden)
 
 
 class _WkvWeight(Module[..., None]):
@@ -382,75 +439,6 @@ class Engram(Module[..., list[Tensor]]):
         # The GEMM wrapper has no sharding rule either.
         return claim_replicated(kv, codes)
 
-    def _gate(self, hidden: Tensor, kv: Tensor, dead_mask: Tensor) -> Tensor:
-        """The signed-sqrt gate: folds ``kv`` into every stream copy.
-
-        Transcribed from the Engram contract, with the polarity flip the
-        V3 ABI needs: ``image_token_mask`` is u8 with **1 = dead**, while
-        the reference's mask was bool with True = alive:
-
-        * ``key``: ``kv``'s first ``hc_mult * hidden`` columns, reshaped
-          ``[T,hc,hidden]`` in f32; ``value``: the shared last ``hidden``.
-        * ``weight = q_weight * k_weight``, both cast f32 first, then
-          multiplied (an elementwise Hadamard, not a matmul).
-        * ``dot[t,h] = sum(hidden*weight*key, -1) * rsqrt(mean(hidden^2,-1)
-          + eps) * rsqrt(mean(key^2,-1) + eps) * hidden**-0.5``, normalized
-          per (token, copy) -- never jointly over copies.
-        * ``mag = sqrt(max(|dot|, 1e-6))``; the clamp keeps dead tokens'
-          zero rows finite (they hash to zero codes, so ``dot == 0``).
-        * ``gate = sigmoid(dot < 0 ? -mag : +mag)`` -- the ``< 0``
-          comparison, not ``sign``, so ``dot == 0`` takes the ``>= 0``
-          branch.
-        * Dead/image positions force the gate to 0; their rows are zeros by
-          construction, but the explicit mask is load-bearing.
-        * ``out = hidden + gate * value`` broadcast over copies, cast back
-          to ``hidden``'s dtype.
-
-        Args:
-            hidden: ``[T, hc_mult, hidden_size]``, all mHC stream copies at
-                the injection point (after the previous layer's post
-                write-back, before this layer's gates).
-            kv: ``[T, (hc_mult+1)*hidden_size]`` in bf16.
-            dead_mask: Uint8 ``[T]``, 1 for dead/image positions.
-
-        Returns:
-            ``[T, hc_mult, hidden_size]`` in ``hidden``'s dtype.
-        """
-        hidden_size, hc = self.hidden_size, self.hc_mult
-        total = kv.shape[0]
-
-        key, value = kv.split([hc * hidden_size, hidden_size], axis=-1)
-        key = key.reshape([total, hc, hidden_size]).cast(DType.float32)
-        value = value.cast(DType.float32)
-        hidden32 = hidden.cast(DType.float32)
-        weight = self.q_weight.cast(DType.float32) * self.k_weight.cast(
-            DType.float32
-        )
-
-        # ops.sum/ops.mean keep the reduced axis; squeeze it back.
-        dot = F.sum(hidden32 * F.unsqueeze(weight, 0) * key, axis=-1).squeeze(
-            -1
-        )
-        hidden_rms = F.rsqrt(
-            F.mean(hidden32 * hidden32, axis=-1).squeeze(-1) + self.rms_norm_eps
-        )
-        key_rms = F.rsqrt(
-            F.mean(key * key, axis=-1).squeeze(-1) + self.rms_norm_eps
-        )
-        dot = dot * hidden_rms * key_rms * (float(hidden_size) ** -0.5)
-
-        mag = F.sqrt(F.elementwise_max(F.abs(dot), _GATE_CLAMP))
-        gate = F.sigmoid(F.where(dot < 0, -mag, mag))
-        # 1 - dead: a live position keeps its gate, a dead one is zeroed.
-        # (Multiplicative zeroing, not a where: sigmoid is finite, and a
-        # logical complement avoids scalar-constant placement entirely.)
-        alive = F.unsqueeze(
-            F.cast(F.logical_not(dead_mask.cast(DType.bool)), DType.float32),
-            -1,
-        )  # [T,1]: 1 live, 0 dead
-        out = hidden32 + F.unsqueeze(gate * alive, -1) * F.unsqueeze(value, 1)
-        return out.cast(hidden.dtype)
-
     def forward(
         self,
         carry: list[Tensor],
@@ -509,4 +497,13 @@ class Engram(Module[..., list[Tensor]]):
             dead_mask,
         )
         kv = self._project(codes, scales)
-        return [self._gate(hidden, kv, dead_mask)]
+        return [
+            engram_gate(
+                hidden,
+                kv,
+                self.q_weight,
+                self.k_weight,
+                dead_mask,
+                self.rms_norm_eps,
+            )
+        ]

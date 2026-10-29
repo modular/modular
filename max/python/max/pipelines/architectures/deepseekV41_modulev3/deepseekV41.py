@@ -54,6 +54,82 @@ from .layers.norm import RMSNorm
 from .layers.rope import RopeParams
 from .model_config import DeepseekV41Config
 
+__all__ = ["Batch", "DeepseekV41", "validate_dspark_taps"]
+
+
+def validate_dspark_taps(config: DeepseekV41Config) -> tuple[int, ...]:
+    """The tap layer ids to capture, asserted legal for this trunk.
+
+    The ``mtp.*`` weights were trained against exactly
+    ``dspark_target_layer_ids``'s entering streams, so any other choice is a
+    different drafter, never a setting. A tap must be a trunk layer, appear
+    once, and sit outside ``engram_layer_ids`` -- an Engram layer's tap
+    would have to follow the Engram step, which happens inside the block.
+
+    Returns:
+        The tap ids, in ``dspark_target_layer_ids`` order.
+
+    Raises:
+        ValueError: On a repeated, non-trunk, or Engram tap id.
+    """
+    taps = tuple(config.dspark_target_layer_ids)
+    if len(set(taps)) != len(taps):
+        raise ValueError(f"repeated tap layer ids: {list(taps)}")
+    trunk = set(range(config.num_hidden_layers))
+    if not set(taps) <= trunk:
+        raise ValueError(
+            f"tap layer ids {sorted(set(taps) - trunk)} are not trunk layers"
+        )
+    engram = set(config.engram_layer_ids)
+    for tap in taps:
+        if tap in engram:
+            raise ValueError(
+                f"tap layer {tap} is an Engram layer (its tap would have "
+                "to follow the Engram step, which happens inside the block)"
+            )
+    return taps
+
+
+def _hc_mean(stream: Tensor) -> Tensor:
+    """Averages ``[rows, hc, hidden]`` over the copies, accumulating f32.
+
+    The drafter's ``main_proj`` was trained on the hc-mean of the entering
+    stream, never on copy 0 (the V4 precedent's trap: taking copy 0 gives
+    the right shape and the wrong numbers).
+    """
+    return F.squeeze(F.mean(stream.cast(DType.float32), axis=1), 1).cast(
+        stream.dtype
+    )
+
+
+def _capture_tap(
+    y: Tensor, stream: Tensor, post: Tensor, comb: Tensor, hc_mult: int
+) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+    """One tap layer's capture: ``(tap, stream, y, post, comb)``.
+
+    The stream entering a layer is deferred here: ``y`` (the previous
+    layer's feed-forward output) is still unwritten, described by ``post``
+    and ``comb``. The drafter's tap is the *written-back* stream, so the
+    pending boundary is materialized first -- the same ``mhc_post`` the
+    Engram path performs -- the tap is the hc-mean of that, and the
+    write-back is reset to identity so the layer body's own boundary does
+    not write ``y`` in a second time.
+
+    Returns:
+        ``(tap, materialized_stream, y, post, comb)`` where the last three
+        are the identity write-back of the materialized stream.
+    """
+    stream = mhc_post(
+        y,
+        stream,
+        post,
+        comb.reshape([stream.shape[0], hc_mult, hc_mult]),
+        hc_mult,
+    )
+    tap = _hc_mean(stream)
+    reset_y, reset_post, reset_comb = mhc_identity_writeback(stream)
+    return tap, stream, reset_y, reset_post, reset_comb
+
 
 def _split_replicated_batch(
     t: Tensor,
@@ -199,6 +275,12 @@ class Batch:
     buffers the MoE dispatch/combine reads, and the ``tokens_full`` /
     ``row_offsets_full`` pair keeps the pre-split replicated batch the
     vocab-parallel embedding reads before the split.
+
+    ``draft_width`` is the step's draft rows appended per request, ``None``
+    without a spec decoder. Nothing on the current trunk reads it: its
+    reader is the decoder-narrowing keep cap, which the bounded-replay
+    change adds so a verify step's placeholder rows cannot crowd real
+    rows out of the stored window.
     """
 
     tokens: Tensor
@@ -215,6 +297,17 @@ class Batch:
     row_offsets_full: Tensor | None = None
     data_parallel_splits: Tensor | None = None
     input_row_offsets_i64: Tensor | None = None
+    draft_width: Tensor | None = None
+
+    @property
+    def row_offsets(self) -> Tensor:
+        """The staged rows' ragged offsets, ``[batch + 1]``."""
+        return self.rows.offsets
+
+    @property
+    def positions(self) -> Tensor:
+        """Each staged row's absolute position, ``[rows]``."""
+        return self.rows.positions
 
 
 class DeepseekV41(Module[..., ModuleV3Outputs]):
@@ -285,7 +378,10 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
                 tp_axis=_dp_axis_name(mesh) if self.dp > 1 else None,
             )
             layers = []
-            for info in resolve(config):
+            # The resolver also resolves the DSpark stages past the trunk
+            # (their rows share the SWA leaf); the trunk runs its own
+            # layers only.
+            for info in resolve(config, include_drafter=False):
                 engram = None
                 if info.layer_id in config.engram_layer_ids:
                     engram = Engram(
@@ -337,13 +433,15 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
         data_parallel_splits: Tensor | None = None,
         input_row_offsets_i64: Tensor | None = None,
         comm_buffers: EPCommBuffers | None = None,
+        draft_width: Tensor | None = None,
     ) -> Batch:
         """Stages already-split inputs onto the mesh, as a :class:`Batch`.
 
         ``forward`` unflattens the graph's variadic tail into per-leaf
-        caches and named extras and lands here; a spec-decode target
-        adapter that starts from the driver's per-leaf caches can call
-        this directly, so the two paths cannot drift apart.
+        caches and named extras and lands here; the DSpark target adapter
+        (:mod:`.spec_adapters`) starts from the
+        driver's per-leaf caches instead and calls this directly, so the
+        two paths cannot drift apart.
 
         Under data parallelism (``self.dp > 1``) the DP split inputs are
         required and every per-row/per-request field comes out per rank.
@@ -448,6 +546,7 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
             row_offsets_full=(offsets_full if self.dp > 1 else None),
             data_parallel_splits=data_parallel_splits,
             input_row_offsets_i64=input_row_offsets_i64,
+            draft_width=draft_width,
         )
 
     def embed_stream(self, b: Batch) -> tuple[Tensor, Tensor]:
@@ -497,12 +596,18 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
         return stream, pre
 
     def _run_trunk(
-        self, b: Batch, stream: Tensor, pre: Tensor
-    ) -> tuple[Tensor, Tensor]:
-        """Every layer over the staged batch.
+        self,
+        b: Batch,
+        stream: Tensor,
+        pre: Tensor,
+        tap_set: tuple[int, ...],
+    ) -> tuple[Tensor, Tensor, dict[int, Tensor] | None]:
+        """Every layer over the staged batch, optionally capturing taps.
 
         Returns:
-            The written-back stream with its carried ``pre``.
+            ``(stream, pre, taps)``: the written-back stream with its
+            carried ``pre``, and the captured taps keyed by layer id,
+            ``None`` when ``tap_set`` is empty.
         """
         rows = b.rows
         offsets = rows.offsets
@@ -518,6 +623,7 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
             )
         )
         y, post, comb = mhc_identity_writeback(stream)
+        taps: dict[int, Tensor] | None = {} if tap_set else None
         hc = self.config.hc_mult
         selection: dict[str, Tensor] = {}
         for layer in self.layers:
@@ -558,6 +664,11 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
                     query_start_loc=tied_offsets,
                 )
                 y, post, comb = mhc_identity_writeback(stream)
+            if taps is not None and layer.layer_id in tap_set:
+                tap, stream, y, post, comb = _capture_tap(
+                    y, stream, post, comb, hc
+                )
+                taps[layer.layer_id] = tap
             routed = {
                 "reuse_r2": selection.get("top_k_r2"),
                 "reindex_r1": selection.get("pool"),
@@ -588,7 +699,32 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
         stream = mhc_post(
             y, stream, post, comb.reshape([stream.shape[0], hc, hc]), hc
         )
-        return stream, pre
+        return stream, pre, taps
+
+    def run_trunk_with_taps(
+        self, b: Batch, stream: Tensor, pre: Tensor
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        """:meth:`_run_trunk`, also returning the DSpark taps.
+
+        Returns:
+            ``(stream, pre, taps)`` with ``taps`` the hc-mean of the stream
+            entering each layer of ``dspark_target_layer_ids``,
+            concatenated in that order: ``[rows, hidden * n_taps]``.
+        """
+        tap_ids = validate_dspark_taps(self.config)
+        stream, pre, taps = self._run_trunk(b, stream, pre, tap_ids)
+        assert taps is not None
+        # The trunk captures in layer order; ``main_proj`` was trained on
+        # the configured order.
+        return stream, pre, F.concat([taps[i] for i in tap_ids], axis=-1)
+
+    def hidden_states(self, stream: Tensor, pre: Tensor) -> Tensor:
+        """The final collapse, normalized: the rows the LM head consumes."""
+        return self.norm(mhc_final_collapse(stream, pre))
+
+    def logits_all_rows(self, hidden: Tensor) -> Tensor:
+        """The LM head over whole hidden rows, gathered across the mesh."""
+        return self._compute_logits(hidden)
 
     @staticmethod
     def _gather_last_tokens(h: Tensor, row_offsets: Tensor) -> Tensor:
@@ -666,7 +802,7 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
             comm_buffers=comm_buffers,
         )
         stream, pre = self.embed_stream(b)
-        stream, pre = self._run_trunk(b, stream, pre)
+        stream, pre, _ = self._run_trunk(b, stream, pre, ())
         hidden = mhc_final_collapse(stream, pre)
         return self._outputs(hidden, b.rows.offsets, return_n_logits)
 

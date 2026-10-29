@@ -163,6 +163,7 @@ def test_prepare_inputs_flattens_replica_batches_at_dp() -> None:
     """
     processor = _batch_processor(dp=2)
     processor.runtime.devices = [CPU()]
+    processor.runtime.signal_buffers = []
     # The static tail of the ABI (the token map) is fed from whatever the
     # model bound; this test binds it directly instead.
     processor.bind_engram(

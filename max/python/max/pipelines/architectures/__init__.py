@@ -144,6 +144,11 @@ def register_all_models() -> None:
             "dspark_deepseekV41_draft_arch",
         ),
         _LazyArch(
+            "DSparkDeepseekV41DraftModel_ModuleV3",
+            ".dspark_deepseekV41_modulev3",
+            "dspark_deepseekV41_modulev3_draft_arch",
+        ),
+        _LazyArch(
             "DSparkDraftModel", ".dspark_draft", "dspark_speculators_draft_arch"
         ),
         _LazyArch(

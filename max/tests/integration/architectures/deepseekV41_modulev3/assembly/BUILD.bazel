@@ -9,8 +9,7 @@ package(default_visibility = [
 
 # Capture-padding regressions: padded decode rows must neither store
 # into the paged caches (window store, ratio-2 ring save) nor gather
-# past their request's pages, and a 128-row window list keeps its
-# requests distinct.
+# past their request's pages.
 modular_eager_py_test(
     name = "test_capture_padding",
     srcs = ["test_capture_padding.py"],
@@ -104,6 +103,25 @@ modular_eager_py_test(
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
         "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+# The attention index list (main's mo.csa2.index_list) against the leaf-slot
+# formula, at T == 128 with a padded tail.
+modular_eager_py_test(
+    name = "test_index_list_gpu",
+    size = "large",
+    srcs = ["test_index_list_gpu.py"],
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
+    gpu_constraints = ["//:b200_gpu"],
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
         requirement("numpy"),
     ],
 )

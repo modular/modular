@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 import math
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, NamedTuple
 
 from max.graph import DeviceRef
 from max.nn.legacy.comm.ep import EPConfig
@@ -35,7 +35,11 @@ from .inputs import v41_config
 from .interface import V41Config, extra_inputs
 from .layers.index_ops import INDEXER_SCORES_BUDGET_BYTES
 from .model import build_ep_config
-from .model_config import DeepseekV41Config
+from .model_config import (
+    DeepseekV41Config,
+    dspark_expert_counts,
+    num_dspark_stages,
+)
 
 logger = logging.getLogger("max.pipelines")
 
@@ -229,7 +233,13 @@ class DeepseekV41MemoryPlanner(PagedMemoryPlanner):
     """
 
     def estimate_weights_size(self, pipeline_config: Any) -> int:
-        """Weights on device: the checkpoint minus the host-resident Engram tables."""
+        """Weights on device: the checkpoint minus the host-resident Engram tables.
+
+        A DSpark pairing loads the drafter beside the trunk, so it adds what
+        :func:`dspark_extra_weight_bytes` says the checkpoint size leaves
+        out; without it the plan sizes the KV pool into memory the
+        drafter's replicas already hold.
+        """
         config = v41_config(pipeline_config.model.huggingface_config)
         size = super().estimate_weights_size(pipeline_config)
         text = DeepseekV41Config.get_text_config(
@@ -244,7 +254,18 @@ class DeepseekV41MemoryPlanner(PagedMemoryPlanner):
         expansion = int(text.num_hidden_layers) * (
             woa_elements - woa_elements // (32 * 32)
         )
-        return max(size - engram_table_bytes(config) + expansion, 0)
+        size = max(size - engram_table_bytes(config) + expansion, 0)
+        speculative = pipeline_config.speculative
+        if (
+            speculative is not None
+            and speculative.speculative_method == "dspark"
+        ):
+            size += dspark_extra_weight_bytes(
+                text,
+                len(pipeline_config.model.device_specs),
+                pipeline_config.model.data_parallel_degree > 1,
+            )
+        return size
 
     def estimate_activation_memory(
         self, pipeline_config: Any, huggingface_config: Any
@@ -333,3 +354,114 @@ class DeepseekV41MemoryPlanner(PagedMemoryPlanner):
             + ep_buffers
             + ep_pool
         )
+
+
+class DSparkParameter(NamedTuple):
+    """One drafter parameter's bytes, as stored and as resident."""
+
+    name: str
+    stored: int
+    """Bytes in the checkpoint."""
+    resident: int
+    """Bytes of one whole copy on device."""
+    split: bool
+    """Whether tensor parallelism splits it over the mesh rather than
+    replicating it."""
+
+
+def _mxfp8_bytes(n: int, k: int) -> int:
+    """An MXFP8 ``[n, k]`` projection: e4m3 codes, one E8M0 per 32x32 block."""
+    return n * k + -(-n // 32) * (k // 32)
+
+
+def dspark_parameters(
+    text: Any,
+) -> tuple[list[DSparkParameter], list[DSparkParameter]]:
+    """The drafter's parameters: ``(per stage, once)``.
+
+    Layouts follow the checkpoint and ``weight_adapters``: dense MXFP8
+    projections keep compact 32x32-block scales, the four
+    ``_DSPARK_HOST_DEQUANT`` projections load as bf16, and the routed
+    experts are MXFP4 with an E8M0 per 32 elements. Under tensor
+    parallelism ``layers/dspark.py`` splits ``attn_sink``, ``wq_b``,
+    ``wo_a`` and ``wo_b`` and ``layers/moe.py`` the shared expert; the
+    rest replicates, the routed experts included
+    (``layers/dspark_moe.py``). The tensors the loader drops
+    (``gate.bias_vl``, the confidence head by default) are left out.
+    """
+    hidden = int(text.hidden_size)
+    inter = int(text.moe_intermediate_size)
+    heads = int(text.num_attention_heads)
+    head_dim = int(text.head_dim)
+    q_lora = int(text.q_lora_rank)
+    o_groups = int(text.o_groups)
+    o_rows = o_groups * int(text.o_lora_rank)
+    hc = int(text.hc_mult)
+    mix = (2 + hc) * hc
+    vocab = int(text.vocab_size)
+    markov = int(getattr(text, "dspark_markov_rank", 256))
+    n_taps = len(text.dspark_target_layer_ids)
+    n_experts, _ = dspark_expert_counts(text)
+
+    def plain(name: str, nbytes: int, split: bool = False) -> DSparkParameter:
+        return DSparkParameter(name, nbytes, nbytes, split)
+
+    def mxfp8(name: str, n: int, k: int, split: bool) -> DSparkParameter:
+        return plain(name, _mxfp8_bytes(n, k), split)
+
+    def dequantized(name: str, n: int, k: int, split: bool) -> DSparkParameter:
+        return DSparkParameter(name, _mxfp8_bytes(n, k), 2 * n * k, split)
+
+    stage = [
+        plain("attn.attn_sink", heads * 4, split=True),
+        plain("attn.q_norm", q_lora * 2),
+        plain("attn.kv_norm", head_dim * 2),
+        dequantized("attn.wq_a", q_lora, hidden, split=False),
+        dequantized("attn.wq_b", heads * head_dim, q_lora, split=True),
+        dequantized("attn.wkv", head_dim, hidden, split=False),
+        dequantized(
+            "attn.wo_a", o_rows, heads * head_dim // o_groups, split=True
+        ),
+        mxfp8("attn.wo_b", hidden, o_rows, split=True),
+        plain("attn_norm", hidden * 2),
+        plain("ffn_norm", hidden * 2),
+        plain("hc_mixes", 2 * (mix * hc * hidden + mix + 3) * 4),
+        plain("ffn.gate", n_experts * (hidden * 2 + 4)),
+        # gate_up [E, 2I, H/2] and down [E, H, I/2] uint8 with an E8M0 per
+        # 32 elements: 3*I*H elements at 17/32 bytes apiece.
+        plain("ffn.experts", n_experts * 3 * inter * hidden * 17 // 32),
+        mxfp8("ffn.shared_experts.w1", inter, hidden, split=True),
+        mxfp8("ffn.shared_experts.w2", hidden, inter, split=True),
+        mxfp8("ffn.shared_experts.w3", inter, hidden, split=True),
+    ]
+    once = [
+        mxfp8("main_proj", hidden, hidden * n_taps, split=False),
+        plain("main_norm", hidden * 2),
+        plain("norm", hidden * 2),
+        plain("markov_head.embed", vocab * markov * 2),
+        plain("markov_head.head", vocab * markov * 2),
+    ]
+    return stage, once
+
+
+def dspark_extra_weight_bytes(
+    text: Any, n_devices: int, data_parallel: bool
+) -> int:
+    """Device bytes the DSpark drafter holds beyond its checkpoint bytes.
+
+    The checkpoint size counts each drafter tensor once, as stored. On
+    device a split tensor holds one whole copy over the mesh and a
+    replicated one ``n_devices``; under data parallelism every tensor
+    replicates (TP1 per rank). Each parameter of :func:`dspark_parameters`
+    adds its resident copies less its stored bytes.
+    """
+
+    def extra(parameters: list[DSparkParameter]) -> int:
+        return sum(
+            (1 if p.split and not data_parallel else n_devices) * p.resident
+            - p.stored
+            for p in parameters
+        )
+
+    stage, once = dspark_parameters(text)
+    return num_dspark_stages(text) * extra(stage) + extra(once)

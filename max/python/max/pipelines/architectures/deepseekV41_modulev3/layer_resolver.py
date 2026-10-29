@@ -23,6 +23,10 @@ leaves, the KV cache memory planner, the weight adapter, and norms/RoPE all
 consume this resolver's output; call it once at config-resolution time and
 thread the result through as plain data, rather than recomputing these rules
 ad hoc at each call site.
+
+This module also owns :func:`block_group`, the shared-subgraph body a layer
+runs. The resolver yields one row per trunk layer plus one per DSpark draft
+stage.
 """
 
 from __future__ import annotations
@@ -41,9 +45,14 @@ _VLLM_LAYER_TYPES = {0: "swaonly", 1: "c1a", 2: "c2a"}
 
 @dataclass
 class LayerInfo:
-    """One trunk layer (``layer_id`` 0..``num_hidden_layers - 1``)."""
+    """Describes one trunk layer or DSpark stage.
+
+    A trunk layer has ``layer_id`` 0..``num_hidden_layers - 1``. A DSpark
+    stage has ``layer_id >= num_hidden_layers`` and ``dspark_stage`` 0/1/2.
+    """
 
     layer_id: int
+    dspark_stage: int | None
     compress_ratio: int
     vllm_layer_type: str
     attention_mode: str
@@ -164,12 +173,15 @@ def _rope_regime(
     return regime, theta, factor
 
 
-def _validate_layer_mapping(config: DeepseekV41Config) -> None:
+def _validate_layer_mapping(
+    config: DeepseekV41Config, include_drafter: bool
+) -> None:
     """TokenSpeed's ``v41_layer_mapping`` validity rules, as early asserts.
 
     Ported in full from ``tokenspeed``'s
-    ``layers/attention/deepseek_v41_geometry.py:158-200``: owners/sources
-    sorted, unique and within the trunk; owners a subset of index sources
+    ``layers/attention/deepseek_v41_geometry.py:158-200``: ratios at
+    least one per trunk layer; owners/sources
+    sorted, unique and in range; owners a subset of index sources
     with the candidate source among them; ratios in {0, 1, 2}; every
     compressed layer resolving an owner and index source at-or-below itself
     with a matching ratio; SWA-only layers never owning; and every Reindex
@@ -178,9 +190,20 @@ def _validate_layer_mapping(config: DeepseekV41Config) -> None:
     does -- combinations the production rules disallow (an owner on an
     SWA-only layer, a KV owner that is not an index source) are exercised
     through :func:`_attention_mode` directly instead.
+
+    The rules cover the trunk rows only. With ``include_drafter`` the
+    trailing DSpark rows must each be window-only (ratio 0), the one shape a
+    stage resolves to; without it they are never read, so a plain trunk
+    boot does not depend on rows only the drafter uses.
     """
     ratios = tuple(config.compress_ratios)
+    n = len(ratios)
     trunk = config.num_hidden_layers
+    if n < trunk:
+        raise ValueError(
+            f"V4.1 compress_ratios must hold one entry per trunk layer "
+            f"({config.num_hidden_layers}), got {n}"
+        )
     owners = tuple(config.kv_source_layer_ids)
     sources = tuple(config.index_source_layer_ids)
     candidate_source = config.candidate_source_layer_id
@@ -227,25 +250,32 @@ def _validate_layer_mapping(config: DeepseekV41Config) -> None:
             raise ValueError(
                 "Reindex must use the candidate source's KV address domain"
             )
+    if include_drafter:
+        for stage, ratio in enumerate(ratios[trunk:]):
+            if ratio != 0:
+                raise ValueError(
+                    f"V4.1 DSpark stage {stage} must be window-only "
+                    f"(compress ratio 0), got {ratio}"
+                )
 
 
-def resolve(config: DeepseekV41Config) -> list[LayerInfo]:
-    """Resolves one :class:`LayerInfo` per trunk layer.
+def resolve(
+    config: DeepseekV41Config, include_drafter: bool = True
+) -> list[LayerInfo]:
+    """Resolves one :class:`LayerInfo` per trunk layer plus DSpark stage.
 
-    The published checkpoint's ``compress_ratios`` holds one row per
-    trunk layer plus trailing DSpark draft rows the text trunk never runs
-    (43 rows for a 40-layer trunk), so at least ``num_hidden_layers``
-    entries are required and the rows past the trunk are ignored here
-    rather than silently re-interpreted.
+    ``config.compress_ratios`` has one entry per layer id (trunk layers
+    followed by DSpark stages); this iterates it directly rather than
+    taking a separate stage count, so it stays correct if DSpark ever
+    changes its stage count -- but at least ``num_hidden_layers``
+    entries are required, so a truncated list is a loud error rather
+    than a partial trunk. DSpark stages resolve with
+    ``side="drafter"`` and ratio 0 (SWA-only window attention).
+
+    ``include_drafter=False`` resolves the trunk rows alone, for a model
+    that never builds the drafter.
     """
-    _validate_layer_mapping(config)
-    trunk = config.num_hidden_layers
-    ratios = tuple(config.compress_ratios)
-    if len(ratios) < trunk:
-        raise ValueError(
-            f"V4.1 compress_ratios must hold one entry per trunk layer "
-            f"({trunk}), got {len(ratios)}"
-        )
+    _validate_layer_mapping(config, include_drafter)
 
     # The plan's own convention, not a vLLM config field: the encoder/decoder
     # split coincides with the last KV-source layer for this checkpoint. Kept
@@ -257,7 +287,10 @@ def resolve(config: DeepseekV41Config) -> list[LayerInfo]:
     engram_layer_ids = set(config.engram_layer_ids)
 
     rows: list[LayerInfo] = []
-    for layer_id, compress_ratio in enumerate(ratios[:trunk]):
+    ratios = list(config.compress_ratios)
+    if not include_drafter:
+        ratios = ratios[: config.num_hidden_layers]
+    for layer_id, compress_ratio in enumerate(ratios):
         (
             is_kv_source,
             is_index_source,
@@ -269,11 +302,17 @@ def resolve(config: DeepseekV41Config) -> list[LayerInfo]:
             config, compress_ratio
         )
 
-        side = "encoder" if layer_id < decoder_start else "decoder"
+        if layer_id < config.num_hidden_layers:
+            side = "encoder" if layer_id < decoder_start else "decoder"
+            dspark_stage = None
+        else:
+            side = "drafter"
+            dspark_stage = layer_id - config.num_hidden_layers
 
         rows.append(
             LayerInfo(
                 layer_id=layer_id,
+                dspark_stage=dspark_stage,
                 compress_ratio=compress_ratio,
                 vllm_layer_type=_VLLM_LAYER_TYPES[compress_ratio],
                 attention_mode=_attention_mode(

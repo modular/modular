@@ -37,6 +37,9 @@ from max.nn.legacy.kv_cache import (
     MultiKVCacheParams,
 )
 from max.pipelines.lib import KVCacheConfig
+from max.pipelines.speculative.config import SpeculativeMethod
+
+from ..deepseekV41.kv_leaves import state_ring_rows
 
 ExpertForm = Literal["per_expert", "stacked"]
 
@@ -706,13 +709,14 @@ def kv_leaf_specs(config: V41Config) -> list[KVLeafSpec]:
                 packed_format=PACKED_NVFP4,
             )
         )
-        if ratio == 2:
-            # The ratio-2 compressor's open pair state is a per-request
-            # scratch ring (#105708): one block a request, never published,
-            # one row per ring slot holding the pair's float32 KV row then
-            # its score row. The registered ``mo.csa.compress.paged`` op
-            # writes and carries it, and the ring keeps ``STATE_RING_ROWS``
-            # slots so the ABI never moves when the draft count lands.
+        if ratio > 1:
+            # Ratio 1 compresses each token alone, so no partial group
+            # carries over between forwards. At ratio 2 the open half of a
+            # pair does, and a prefix hit lands on a closed pair, so the
+            # state is a per-request scratch ring holding a token's raw
+            # float32 KV row then its score row. The ring rides at
+            # DSpark's verify depth whether or not a spec decoder runs
+            # (:data:`STATE_RING_ROWS`).
             specs.append(
                 KVLeafSpec(
                     "c2a_state",
@@ -746,6 +750,8 @@ def build_kv_params(
     kv_cache_config: KVCacheConfig,
     devices: Sequence[DeviceRef],
     data_parallel_degree: int = 1,
+    speculative_method: SpeculativeMethod | None = None,
+    num_draft_tokens: int = 0,
 ) -> MultiKVCacheParams:
     """Builds one ``MultiKVCacheParams`` with a leaf per :func:`kv_leaf_specs` entry.
 
@@ -766,16 +772,12 @@ def build_kv_params(
     ``replica_0_batch_size`` — the tensor-parallel shape, where all devices
     do hold the same rows.
 
-    Args:
-        config: The interface config the leaf geometry derives from.
-        kv_cache_config: The pool settings that flow through
-            ``kv_cache_config.to_params`` untouched.
-        devices: The devices the cache leaves live on.
-        data_parallel_degree: The number of data-parallel replicas; 1
-            keeps the tensor-parallel row dim naming.
-
-    Returns:
-        The params tree holding one child per leaf spec.
+    A speculative configuration reaches every leaf through
+    ``kv_cache_config.to_params``, so the pool reserves each request's
+    draft rows; the leaf geometry itself is fixed (the ring rides at
+    :data:`STATE_RING_ROWS` whatever the draft width, so the exported
+    graph's inputs do not vary with the serving configuration), and the
+    requested verify depth is checked against that ring here.
 
     Raises:
         ValueError: If ``kv_cache_config``'s page size is not
@@ -783,12 +785,23 @@ def build_kv_params(
             128-token pages and the same page size also drives allocation
             outside these params, so a mismatched config is rejected rather
             than silently overridden.
+        ValueError: If ``state_ring_rows(num_draft_tokens)`` exceeds
+            :data:`STATE_RING_ROWS`: a verify step would wrap the
+            compressor state and corrupt it, so the config is refused at
+            startup instead.
     """
     if kv_cache_config.kv_cache_page_size != PAGE_SIZE:
         raise ValueError(
             "DeepSeek-V4.1 requires a KV cache page size of "
             f"{PAGE_SIZE}, got {kv_cache_config.kv_cache_page_size}. Set "
             f"--kv-cache-page-size {PAGE_SIZE}."
+        )
+    ring_rows = state_ring_rows(num_draft_tokens)
+    if ring_rows > STATE_RING_ROWS:
+        raise ValueError(
+            f"{speculative_method} drafts {num_draft_tokens} tokens per "
+            f"step, which needs a {ring_rows}-row compressor-state ring; "
+            f"this interface's ring holds {STATE_RING_ROWS} rows."
         )
     children: dict[str, KVCacheParams] = {}
     for spec in kv_leaf_specs(config):
@@ -807,7 +820,9 @@ def build_kv_params(
             slots_per_page=spec.slots_per_page,
             window_size=spec.window_size,
             stride_alignment=spec.stride_alignment,
-            scratch=spec.scratch,
+            scratch=spec.ring_rows is not None,
+            speculative_method=speculative_method,
+            num_draft_tokens=num_draft_tokens,
         )
     return MultiKVCacheParams.from_params(children)
 
@@ -821,6 +836,8 @@ def extra_inputs(
     config: V41Config,
     device_refs: Sequence[DeviceRef],
     data_parallel_degree: int = 1,
+    *,
+    verify_rows: bool = False,
 ) -> list[tuple[str, TensorType]]:
     """Returns the forward inputs after the KV leaves, in graph order.
 
@@ -839,6 +856,10 @@ def extra_inputs(
             name their rows after the first.
         data_parallel_degree: The number of data-parallel replicas; above
             1 the per-request fields take a global-row dim of their own.
+        verify_rows: Whether the inputs feed a speculative verify, whose
+            ``image_token_mask`` gates every row of the merged window, the
+            prompt's and each request's drafts, under the dim the block
+            driver's merge names them by.
 
     Returns:
         The ``(name, tensor type)`` pairs, in the order the forward reads
@@ -853,7 +874,14 @@ def extra_inputs(
     extras = [
         ("swa_begin", TensorType(i32, [batch_rows], gpu0)),
         ("global_write_floor", TensorType(i32, [batch_rows], gpu0)),
-        ("image_token_mask", TensorType(u8, ["total_seq_len"], gpu0)),
+        (
+            "image_token_mask",
+            TensorType(
+                u8,
+                ["merged_seq_len" if verify_rows else "total_seq_len"],
+                gpu0,
+            ),
+        ),
         (
             "engram_lookback",
             TensorType(i32, [batch_rows, _NUM_LAST_TOKEN_LOOKBACK], gpu0),

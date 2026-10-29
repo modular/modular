@@ -24,11 +24,9 @@ regressions pin that the padded rows can neither write nor gather:
    launches over the physical row count and skips only negative slots,
    so an unmasked padded row could write through its synthesized
    position onto a page its request does not own.
-3. The attention window list names each row's request one per row
-   (``[T, 1]``) and masks padded rows entirely: at exactly ``T == 128``
-   a flat request axis cross-broadcasts against the 128-column list,
-   and an unmasked padded row gathers pages past its request's
-   allocation.
+3. The owner index-key store's lookup-table gather stays in bounds.
+   (The attention index list's own padded-row masking runs main's kernel
+   and is pinned in ``test_index_list_gpu.py``.)
 """
 
 from __future__ import annotations
@@ -39,7 +37,6 @@ from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.pipelines.architectures.deepseekV41_modulev3.layers.attention import (
     RaggedRows,
     live_rows,
-    window_list,
     window_store_slots,
 )
 from max.pipelines.architectures.deepseekV41_modulev3.layers.compressor import (
@@ -164,65 +161,6 @@ def test_window_store_slots_mask_padded_rows() -> None:
     live_slot = (0 * 4 + layer) * _SLOTS + 127 % _SLOTS
     expected = np.array([live_slot] + [-1] * 8, dtype=np.int32)
     np.testing.assert_array_equal(got, expected)
-
-
-def test_window_list_keeps_requests_distinct_at_t128() -> None:
-    """Two requests, ``T == 128``: each row's window stays in its own
-    request's blocks, and the padded tail is fully ``-1``.
-
-    At exactly 128 rows a flat request axis cross-broadcasts against
-    the 128-column window list, so this test fails against the flat
-    form: request 1's rows would read request 0's (or mixed) blocks.
-    """
-    total = 128
-    offsets = np.array([0, 60, 120], dtype=np.uint32)
-    lengths = np.array([60, 60], dtype=np.int32)
-    # Request 0 runs positions 0..59, request 1 runs 192..251 (both
-    # inside the two pages each request owns), and the last eight rows
-    # are padding pinned to request 1.
-    positions = np.concatenate(
-        [
-            np.arange(60, dtype=np.int32),
-            192 + np.arange(60, dtype=np.int32),
-            252 + np.arange(8, dtype=np.int32),
-        ]
-    )
-    rows = _rows(offsets, positions, lengths)
-    assert rows.bid.shape[0] == total
-    leaf = _leaf(blocks=4, layers=2, slots=_SLOTS, pages=2, requests=2)
-    layer = 1
-    got = window_list(
-        leaf,
-        rows,
-        _t32(np.zeros(2, dtype=np.int32)),
-        _t32(np.array([layer])),
-    ).to_numpy()
-
-    # Identity LUT: request 0 owns physical blocks 0..1, request 1
-    # blocks 2..3. Every expected slot derives from the leaf-slot
-    # formula -- ``(block * layers + layer) * slots + local`` with
-    # ``block = request * pages + entry // slots`` and
-    # ``local = entry % slots`` -- never from hand-written interval
-    # constants (with layers=2 and layer=1, block 2 occupies
-    # [640, 768) and block 3 [896, 1024)).
-    def slot(req: int, entry: int) -> int:
-        block = req * 2 + entry // _SLOTS
-        return (block * 2 + layer) * _SLOTS + entry % _SLOTS
-
-    for r in range(120):
-        row = got[r]
-        pos = int(positions[r])
-        for k in range(_SLOTS):
-            entry = pos - k
-            if r < 60:
-                if entry >= 0:
-                    assert row[k] == slot(0, entry), (r, k)
-                else:
-                    assert row[k] == -1, (r, k)
-            else:
-                assert row[k] == slot(1, entry), (r, k)
-    # The padded tail names nothing at all.
-    assert (got[120:] == -1).all()
 
 
 def test_index_key_store_slots_mask_padded_rows() -> None:

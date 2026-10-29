@@ -22,7 +22,7 @@ scales.
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -34,7 +34,10 @@ from max.graph.weights import WeightData, Weights
 
 from ..deepseekV41.weight_adapters import (
     as_uint8,
+    bfloat16_to_float32,
+    dequantize_fp8_blocks,
     resolve_quantization_info,
+    with_dtype,
 )
 from .model_config import DeepseekV41Config
 
@@ -628,6 +631,23 @@ def _engram_tables(
     return tables
 
 
+def engram_embed_tables(
+    weights: Weights, engram_layer_ids: Sequence[int]
+) -> list[EngramTable]:
+    """Reads only the checkpoint's Engram embed tables, as zero-copy views.
+
+    For a loader that binds the tables apart from the module's weights.
+    """
+    return _engram_tables(
+        {
+            name: value.data()
+            for name, value in weights.items()
+            if _ENGRAM_EMBED.match(name) is not None
+        },
+        tuple(engram_layer_ids),
+    )
+
+
 def convert_weight_data(
     state_dict: Mapping[str, WeightData],
     *,
@@ -801,4 +821,278 @@ def convert_safetensor_state_dict(
         has_vision=has_vision,
         engram_layer_ids=engram_layer_ids,
         n_devices=n_devices,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# The DSpark drafter's weights (mtp.* -> the drafter's parameter tree)
+# --------------------------------------------------------------------------- #
+
+# The trunk's allow-list skips ``mtp.*`` because the trunk tree never holds
+# them; the drafter tree this section maps is their consumer. Names, dtypes
+# and shapes follow the checkpoint (2,401 mtp tensors, 27 patterns).
+DSPARK_CHECKPOINT_PREFIX = _MTP_PREFIX
+DSPARK_MODULE_PREFIX = "dspark"
+"""The model attribute holding the drafter, so the prefix of its names."""
+
+_DSPARK_STAGE_TENSOR = re.compile(r"^mtp\.(?P<stage>\d+)\.(?P<rest>.+)$")
+_DSPARK_EXPERT_TENSOR = re.compile(
+    r"^(?P<stage>mtp\.\d+)\.ffn\.experts\.(?P<expert>\d+)\."
+    r"w(?P<proj>[123])\.(?P<kind>weight|scale)$"
+)
+# The attention projections the drafter runs on bf16 host-dequantized
+# weights: the reference's MAX_QUANTIZED excludes them from activation
+# quantization, so the checkpoint's e4m3-plus-compact-e8m0 pairs become
+# plain bf16 GEMM operands at load time.
+_DSPARK_HOST_DEQUANT = ("wq_a", "wq_b", "wkv", "wo_a")
+
+
+def _stack_dspark_experts(
+    state_dict: Mapping[str, WeightData], prefix: str
+) -> dict[str, WeightData]:
+    """Stacks one stage's per-expert MXFP4 tensors for the grouped kernels.
+
+    ``_PackedExpertWeights`` reads ``[E, N, K/2]`` uint8 weights and
+    ``[E, N, K/32]`` e8m0 scales stacked by expert id -- exactly this
+    stacking, with ``gate_up_proj`` holding ``w1``'s rows ahead of
+    ``w3``'s (the SwiGLU's gate is ``w1``'s output).
+
+    Args:
+        state_dict: The stage's whole ``mtp.*`` mapping.
+        prefix: ``mtp.{stage}.ffn.experts``.
+
+    Returns:
+        ``gate_up_proj.weight/.weight_scale`` and ``down_proj.weight/
+        .weight_scale`` keyed by their tree-relative names.
+
+    Raises:
+        ValueError: If expert ids are not dense ``0..E-1`` or an expert is
+            missing one of its six tensors.
+    """
+    experts: dict[int, dict[str, str]] = {}
+    for name in state_dict:
+        match = _DSPARK_EXPERT_TENSOR.match(name)
+        if match is None or f"{match['stage']}.ffn.experts" != prefix:
+            continue
+        experts.setdefault(int(match["expert"]), {})[
+            f"w{match['proj']}.{match['kind']}"
+        ] = name
+    ids = sorted(experts)
+    if not ids or ids != list(range(len(ids))):
+        raise ValueError(f"{prefix}: expert ids are not dense: {ids}")
+
+    parts: list[dict[str, np.ndarray]] = []
+    for e in ids:
+        held = experts[e]
+        expected = {
+            f"w{proj}.{kind}"
+            for proj in (1, 2, 3)
+            for kind in ("weight", "scale")
+        }
+        if set(held) != expected:
+            raise ValueError(
+                f"{prefix}.{e}: expected {sorted(expected)}, got {sorted(held)}"
+            )
+        parts.append(
+            {key: as_uint8(state_dict[name].data) for key, name in held.items()}
+        )
+    return {
+        "gate_up_proj.weight": with_dtype(
+            np.stack(
+                [
+                    np.concatenate(
+                        [part["w1.weight"], part["w3.weight"]], axis=0
+                    )
+                    for part in parts
+                ]
+            ),
+            DType.uint8,
+            f"{DSPARK_MODULE_PREFIX}.{prefix}.gate_up_proj.weight",
+        ),
+        "gate_up_proj.weight_scale": with_dtype(
+            np.stack(
+                [
+                    np.concatenate([part["w1.scale"], part["w3.scale"]], axis=0)
+                    for part in parts
+                ]
+            ),
+            DType.float8_e8m0fnu,
+            f"{DSPARK_MODULE_PREFIX}.{prefix}.gate_up_proj.weight_scale",
+        ),
+        "down_proj.weight": with_dtype(
+            np.stack([part["w2.weight"] for part in parts]),
+            DType.uint8,
+            f"{DSPARK_MODULE_PREFIX}.{prefix}.down_proj.weight",
+        ),
+        "down_proj.weight_scale": with_dtype(
+            np.stack([part["w2.scale"] for part in parts]),
+            DType.float8_e8m0fnu,
+            f"{DSPARK_MODULE_PREFIX}.{prefix}.down_proj.weight_scale",
+        ),
+    }
+
+
+def rewire_dspark_state_dict(
+    state_dict: Mapping[str, WeightData],
+    *,
+    last_stage: int,
+    load_confidence_head: bool = False,
+) -> dict[str, WeightData]:
+    """Maps ``mtp.{i}.*`` tensors onto the DSpark drafter's parameter tree.
+
+    The drafter's tree keeps the trunk's shapes (no query-projection
+    fusing, no shared-expert ``gate_up`` fusion), so the mapping is renames
+    plus three real transforms: the four unquantized attention projections
+    are host-dequantized to bf16, the per-expert MXFP4 tensors are stacked
+    into the grouped kernels' packed layout, and the compact e8m0 scales
+    the tree keeps are relabeled to ``float8_e8m0fnu``. ``gate.bias_vl``
+    drops (the drafter routes text only); the confidence head's
+    projection drops by default -- the reference never runs adaptive
+    verification -- and ``load_confidence_head`` loads and
+    widens it instead, where a missing tensor fails loud rather than
+    silently skipping the head.
+
+    Args:
+        state_dict: Only ``mtp.*`` tensors, as loaded from the checkpoint.
+        last_stage: The last stage's index (``num_dspark_layers - 1``).
+        load_confidence_head: Load ``confidence_head.proj.weight`` widened
+            to float32 (the module holds it that way) instead of dropping.
+
+    Returns:
+        The drafter's weights keyed by tree path under ``dspark.``.
+
+    Raises:
+        ValueError: On a tensor outside ``mtp.{i}.*``, a missing partner
+            (a dequant weight without its scale, a hoisted tensor under
+            the wrong stage), non-dense expert ids, a requested-but-missing
+            confidence head, or any input name the mapping does not consume.
+    """
+    stages: set[int] = set()
+    for name in state_dict:
+        match = _DSPARK_STAGE_TENSOR.match(name)
+        if match is None:
+            raise ValueError(f"{name}: not a DSpark stage (mtp.*) tensor")
+        stages.add(int(match["stage"]))
+
+    out: dict[str, WeightData] = {}
+    consumed: set[str] = set()
+
+    def take(name: str) -> WeightData:
+        if name not in state_dict:
+            raise ValueError(f"{name}: missing from the DSpark stages")
+        consumed.add(name)
+        return state_dict[name]
+
+    def put(name: str, data: WeightData) -> None:
+        if name in out:
+            raise ValueError(f"{name}: produced twice")
+        out[name] = data
+
+    def keep_scale(prefix: str, target: str) -> None:
+        put(target, _relabel_e8m0(take(prefix)))
+
+    d = DSPARK_MODULE_PREFIX
+    for stage in sorted(stages):
+        s, p = f"{d}.stages.{stage}", f"mtp.{stage}"
+        put(f"{s}.attn.attn_sink", take(f"{p}.attn.attn_sink"))
+        put(f"{s}.attn.q_norm.weight", take(f"{p}.attn.q_norm.weight"))
+        put(f"{s}.attn.kv_norm.weight", take(f"{p}.attn.kv_norm.weight"))
+        for proj in _DSPARK_HOST_DEQUANT:
+            put(
+                f"{s}.attn.{proj}.weight",
+                dequantize_fp8_blocks(
+                    take(f"{p}.attn.{proj}.weight"),
+                    take(f"{p}.attn.{proj}.scale"),
+                    f"{s}.attn.{proj}.weight",
+                ),
+            )
+        put(f"{s}.attn.wo_b.weight", take(f"{p}.attn.wo_b.weight"))
+        keep_scale(f"{p}.attn.wo_b.scale", f"{s}.attn.wo_b.scale")
+        put(f"{s}.attn_norm.weight", take(f"{p}.attn_norm.weight"))
+        put(f"{s}.ffn_norm.weight", take(f"{p}.ffn_norm.weight"))
+        for site in ("attn", "ffn"):
+            for leaf in ("fn", "base", "scale"):
+                put(f"{s}.hc_{site}_{leaf}", take(f"{p}.hc_{site}_{leaf}"))
+        put(f"{s}.ffn.gate.weight", take(f"{p}.ffn.gate.weight"))
+        put(f"{s}.ffn.gate.bias", take(f"{p}.ffn.gate.bias"))
+        if f"{p}.ffn.gate.bias_vl" in state_dict:
+            consumed.add(f"{p}.ffn.gate.bias_vl")
+        for proj in ("w1", "w2", "w3"):
+            put(
+                f"{s}.ffn.shared_experts.{proj}.weight",
+                take(f"{p}.ffn.shared_experts.{proj}.weight"),
+            )
+            keep_scale(
+                f"{p}.ffn.shared_experts.{proj}.scale",
+                f"{s}.ffn.shared_experts.{proj}.scale",
+            )
+        for name, data in _stack_dspark_experts(
+            state_dict, f"{p}.ffn.experts"
+        ).items():
+            put(f"{s}.ffn.experts.{name}", data)
+        for name in state_dict:
+            match = _DSPARK_EXPERT_TENSOR.match(name)
+            if match is not None and match["stage"] == p:
+                consumed.add(name)
+
+    put(f"{d}.main_proj.weight", take("mtp.0.main_proj.weight"))
+    keep_scale("mtp.0.main_proj.scale", f"{d}.main_proj.scale")
+    put(f"{d}.main_norm.weight", take("mtp.0.main_norm.weight"))
+    put(f"{d}.norm.weight", take(f"mtp.{last_stage}.norm.weight"))
+    put(
+        f"{d}.markov_head.embed.weight",
+        take(f"mtp.{last_stage}.markov_head.embed.weight"),
+    )
+    put(
+        f"{d}.markov_head.head.weight",
+        take(f"mtp.{last_stage}.markov_head.head.weight"),
+    )
+    confidence = f"mtp.{last_stage}.confidence_head.proj.weight"
+    if load_confidence_head:
+        put(
+            f"{d}.confidence_head.proj.weight",
+            bfloat16_to_float32(take(confidence), confidence),
+        )
+    elif confidence in state_dict:
+        consumed.add(confidence)
+
+    leftover = sorted(set(state_dict) - consumed)
+    if leftover:
+        raise ValueError(f"unconsumed DSpark tensors: {leftover}")
+    return out
+
+
+def convert_dspark_state_dict(
+    state_dict: Mapping[str, Weights],
+    *,
+    num_stages: int,
+    load_confidence_head: bool = False,
+) -> dict[str, WeightData]:
+    """The drafter-facing entry point: ``mtp.*`` in, drafter tree out.
+
+    The DSpark stages live in the target checkpoint itself (the trunk
+    loader skips the prefix), so the serving wrapper passes the same
+    mapping here and reads out the drafter's half.
+
+    Args:
+        state_dict: The checkpoint's weights (mtp.* picked out here).
+        num_stages: The stage count from the config
+            (``num_dspark_layers``); the last stage owns the final norm
+            and both heads.
+        load_confidence_head: See :func:`rewire_dspark_state_dict`.
+
+    Raises:
+        ValueError: If the checkpoint holds no ``mtp.*`` tensors at all.
+    """
+    loaded = {
+        name: value.data()
+        for name, value in sorted(state_dict.items())
+        if name.startswith(DSPARK_CHECKPOINT_PREFIX)
+    }
+    if not loaded:
+        raise ValueError("the checkpoint holds no mtp.* DSpark tensors")
+    return rewire_dspark_state_dict(
+        loaded,
+        last_stage=num_stages - 1,
+        load_confidence_head=load_confidence_head,
     )
