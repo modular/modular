@@ -89,8 +89,8 @@ def demote_all_headings(file_path: str) -> None:
 
 
 def _default_nightly_changelog_path() -> Path:
-    """Path to ``nightly-changelog.md`` next to this script (source tree or runfiles)."""
-    return Path(__file__).resolve().parent / "nightly-changelog.md"
+    # The changelog stays in the site root, one directory above this script.
+    return Path(__file__).resolve().parent.parent / "nightly-changelog.md"
 
 
 def write_nightly_release_md(
@@ -138,9 +138,12 @@ def write_nightly_release_md(
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Usage: python3 write-nightly-release.py <output-nightly.md>")
         print(
-            "  Reads nightly-changelog.md next to this script; "
+            "Usage: python3 Mojo/docs/site/scripts/write-nightly-release.py "
+            "<output-nightly.md>"
+        )
+        print(
+            "  Reads nightly-changelog.md from the docs site root; "
             "writes the processed release page to <output-nightly.md>."
         )
         sys.exit(1)

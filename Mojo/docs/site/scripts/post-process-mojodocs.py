@@ -47,7 +47,10 @@ def replace_relative_paths(docs_path: str, file_path: str) -> None:
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Usage: python3 post-process-mojodocs.py <directory>")
+        print(
+            "Usage: python3 Mojo/docs/site/scripts/post-process-mojodocs.py "
+            "<directory>"
+        )
         sys.exit(1)
 
     replace_relative_paths(sys.argv[1], "/docs/std")

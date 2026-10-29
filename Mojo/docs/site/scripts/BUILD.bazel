@@ -18,3 +18,18 @@ modular_py_test(
     # Runfiles for importlib; not a static import (pydeps would flag unused).
     deps = [":report-code-coverage"],
 )
+
+modular_py_binary(
+    name = "post-process-mojodocs",
+    srcs = ["post-process-mojodocs.py"],
+    tags = ["manual"],
+    visibility = ["//Mojo/docs/site:__pkg__"],
+)
+
+modular_py_binary(
+    name = "write-nightly-release",
+    srcs = ["write-nightly-release.py"],
+    data = ["//Mojo/docs/site:nightly-changelog"],
+    tags = ["manual"],
+    visibility = ["//Mojo/docs/site:__pkg__"],
+)

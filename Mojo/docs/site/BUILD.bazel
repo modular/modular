@@ -1,6 +1,6 @@
 load("@rules_multirun//:defs.bzl", "multirun")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//bazel:api.bzl", "install_docs", "modular_py_binary", "pkg_filegroup", "pkg_files", "strip_prefix")
+load("//bazel:api.bzl", "install_docs", "pkg_filegroup", "pkg_files", "strip_prefix")
 
 # gazelle:default_visibility //visibility:private
 
@@ -83,20 +83,20 @@ genrule(
   mkdir -p mojosite_unpack
   tar -xf $(location :mojosite_docs) -C mojosite_unpack
   chmod -R +w mojosite_unpack
-  $(location :post-process-mojodocs) mojosite_unpack
+  $(location //Mojo/docs/site/scripts:post-process-mojodocs) mojosite_unpack
   ( cd mojosite_unpack && tar -cf ../$@ . )
   """,
     tags = ["manual"],
-    tools = [":post-process-mojodocs"],
+    tools = ["//Mojo/docs/site/scripts:post-process-mojodocs"],
 )
 
 # releases.tar = static pages under releases/ (stripped prefix) plus generated nightly.md.
 genrule(
     name = "mojosite_releases_nightly_gen",
     outs = ["nightly.md"],
-    cmd = "$(location :write-nightly-release) $@",
+    cmd = "$(location //Mojo/docs/site/scripts:write-nightly-release) $@",
     tags = ["manual"],
-    tools = [":write-nightly-release"],
+    tools = ["//Mojo/docs/site/scripts:write-nightly-release"],
 )
 
 pkg_files(
@@ -152,8 +152,6 @@ pkg_files(
             "code/**",
             "docs_root/**",
             "nightly-changelog.md",
-            "post-process-mojodocs.py",
-            "write-nightly-release.py",
             "releases/**",
             "scripts/**",
         ],
@@ -228,21 +226,11 @@ pkg_tar(
     tags = ["manual"],
 )
 
-modular_py_binary(
-    name = "post-process-mojodocs",
-    srcs = [
-        ":post-process-mojodocs.py",
-    ],
-    tags = ["manual"],
-)
-
-modular_py_binary(
-    name = "write-nightly-release",
-    srcs = [
-        ":write-nightly-release.py",
-    ],
-    data = ["nightly-changelog.md"],
-    tags = ["manual"],
+# scripts/write-nightly-release.py reads this file from the site root.
+filegroup(
+    name = "nightly-changelog",
+    srcs = ["nightly-changelog.md"],
+    visibility = ["//Mojo/docs/site/scripts:__pkg__"],
 )
 
 alias(
