@@ -725,12 +725,14 @@ class BlockScaledStrategy:
         """Runs the whole MoE FFN in one op on AMD gfx950.
 
         That is the one-launch MegaFFN in the decode band, the prefill GEMMs
-        above
-        ``prefill_band_m``, else the same two kernels as
-        :meth:`grouped_matmul_swiglu_quant` then :meth:`grouped_matmul`.
+        above ``prefill_band_m``, else the chain it replaces. At MXFP8 that is
+        :meth:`grouped_matmul_swiglu_quant` then :meth:`grouped_matmul`; at
+        MXFP4 :meth:`grouped_matmul`, :meth:`fused_silu_quantize`, then
+        :meth:`grouped_matmul`.
 
         Args:
-            gate_up_weight: The sigma-permuted gate/up weight.
+            gate_up_weight: The gate/up weight: sigma-permuted at MXFP8,
+                split ``[gate | up]`` at MXFP4.
             gate_up_scales: Its preshuffled E8M0 scales.
             down_weight: The down weight.
             down_scales: Its preshuffled E8M0 scales.

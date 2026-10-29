@@ -33,6 +33,7 @@ _CPU_ONLY_TESTS = [
 # Tests with their own targets due to special configurations
 _SEPARATE_TARGET_TESTS = [
     "test_mega_ffn_amd_gpu.py",
+    "test_mega_ffn_amd_mxfp4_gpu.py",
     "test_buffer_create_init.py",
     "test_buffer_create_init_gpu.py",
     "test_debug_config.py",
@@ -337,6 +338,38 @@ modular_py_test(
     srcs = [
         "conftest.py",
         "test_mega_ffn_amd_gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    gpu_constraints = ["//:mi355_gpu"],
+    # MI355-only: the op's MegaFFN is the gfx950 decode kernel.
+    precompile_mefs = True,
+    tags = [
+        # Persistent MegaFFN grids that share a GPU can block each other's dispatch.
+        "exclusive-if-local",
+        "gpu",
+    ],
+    # Needs mo.grouped.ffn.block.scaled.amd, registered only by the
+    # closed-source kernels.
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        requirement("hypothesis"),
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "mega_ffn_amd_mxfp4_tests",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_mega_ffn_amd_mxfp4_gpu.py",
     ],
     exec_properties = {
         "test.resources:gpu-memory": "4",

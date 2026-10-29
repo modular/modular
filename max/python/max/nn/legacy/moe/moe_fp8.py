@@ -274,25 +274,42 @@ class MoEQuantized(MoE):
         )
 
     def _can_fuse_mega_ffn_amd(self) -> bool:
-        """Whether the gfx950 MXFP8 MoE FFN runs as one op.
+        """Whether the gfx950 MXFP8 or MXFP4 MoE FFN runs as one op.
 
-        That is the one-launch MegaFFN at decode, the two-kernel chain
-        otherwise.
+        That is the one-launch MegaFFN at decode, the chain otherwise.
 
         Runs wherever it can: for the expert shapes it is validated on
-        (MiniMax M3: hidden 6144, expert width 3072), where it matches the
-        chain bit for bit and is never slower at decode. It takes exactly the layout the fused SwiGLU+MXFP8 epilogue does, plus a
-        single-node EP batch manager (the A-scales must arrive in the
-        dispatch's slot layout, and ``estimated_total_m`` counts only this
-        node's tokens, so it bounds no remote node's rows; the kernel traps
-        past its row bound).
+        (MiniMax M3: hidden 6144, expert width 3072, at MXFP8 and MXFP4),
+        where it matches the chain bit for bit. MXFP8 takes exactly the
+        layout the fused SwiGLU+MXFP8 epilogue does; MXFP4 the split gate/up
+        its chain reads. Both need a single-node EP batch manager (the
+        A-scales must arrive in the dispatch's slot layout, and
+        ``estimated_total_m`` counts only this node's tokens, so it bounds no
+        remote node's rows; the kernel traps past its row bound).
         """
         if (self.hidden_dim, self.moe_dim) != (6144, 3072):
             return False
         return (
             self._ep_batch_manager is not None
             and self._ep_batch_manager.config.n_nodes == 1
-            and self._can_fuse_swiglu_mxfp8()
+            and (self._can_fuse_swiglu_mxfp8() or self._is_mxfp4_amd_split())
+        )
+
+    def _is_mxfp4_amd_split(self) -> bool:
+        """Whether this is MXFP4 on gfx950 with a split gate/up.
+
+        That is the layout preb's MXFP4 chain (and the MXFP4 MegaFFN) reads.
+        An interleaved gate_up has no such reader, so it takes the path that
+        raises.
+        """
+        return (
+            self.activation.gated_activation_fn is None
+            and self.quant_config is not None
+            and self.quant_config.is_mxfp4
+            and not self.interleaved_gate_up
+            and not self._uses_fused_swiglu_layout()
+            and accelerator_count() > 0
+            and accelerator_architecture_name() == "gfx950"
         )
 
     def _can_fuse_swiglu_nvfp4(self) -> bool:
@@ -591,6 +608,7 @@ class MoEQuantized(MoE):
                             int(self.gate_up_proj.shape[0]),
                             mega_max_rows,
                             int(expert_inputs[0].shape[0]),
+                            grids=2 if self._is_mxfp4_amd_split() else 1,
                         )
                     ],
                     device=x.device,

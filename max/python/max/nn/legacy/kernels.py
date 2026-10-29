@@ -8541,15 +8541,15 @@ def grouped_dynamic_block_scaled_matmul_amd_swiglu_quant(
 
 
 def amd_mega_ffn_workspace_words(
-    num_experts: int, max_rows: int, dispatch_rows: int
+    num_experts: int, max_rows: int, dispatch_rows: int, grids: int = 1
 ) -> int:
     """Returns the u32 words of an AMD MegaFFN persistent workspace.
 
-    One padded counter slot per possible 16-row block (each expert adds at
-    most one partial block) and per workgroup of the launch (one per CU, at
-    most 1024), plus the two parity ticket words; then the prefill
-    MegaFFN's region, laid out the same way with a slot per 128-row block
-    of the dispatch buffer (``mega_prefill_region_words`` in
+    For each decode launch grid, one padded counter slot per possible 16-row
+    block (each expert adds at most one partial block) and per workgroup of
+    the launch (at most 1024), plus the two parity ticket words; then the
+    prefill MegaFFN's region, laid out the same way with a slot per 128-row
+    block of the dispatch buffer (``mega_prefill_region_words`` in
     ``mega_ffn_amd_prefill.mojo``).
 
     Args:
@@ -8558,6 +8558,8 @@ def amd_mega_ffn_workspace_words(
             band.
         dispatch_rows: Rows of the dispatch buffer the FFN reads, its
             capacity at prefill.
+        grids: The decode launch grids the op uses, each on its own counter
+            region: 1 at MXFP8, 2 at MXFP4.
 
     Returns:
         The workspace length in ``uint32`` words.
@@ -8565,7 +8567,11 @@ def amd_mega_ffn_workspace_words(
     pad = 32  # u32 words of a counter slot: mega_ffn_amd_decode.PAD
     blocks = num_experts + -(-max_rows // 16)
     prefill_blocks = num_experts + -(-dispatch_rows // 128)
-    return max(blocks, 1024) * pad + max(prefill_blocks, 1024) * pad + 4
+    return (
+        grids * (max(blocks, 1024) * pad + 2)
+        + max(prefill_blocks, 1024) * pad
+        + 2
+    )
 
 
 def grouped_ffn_block_scaled_amd(
@@ -8589,20 +8595,26 @@ def grouped_ffn_block_scaled_amd(
     prefill_mega: bool = True,
     activation: GatedActivation | None = None,
 ) -> TensorValue:
-    """Runs an MXFP8 MoE FFN on AMD gfx950: gate/up, activation, down.
+    """Runs an MXFP8 or MXFP4 MoE FFN on AMD gfx950.
 
-    In its band it is the one-launch MegaFFN; otherwise it runs the
-    same two kernels as
+    The FFN is gate/up, activation, down. In its band it is the one-launch MegaFFN; otherwise it runs the chain
+    it replaces, bit for bit either way. At MXFP8 that is
     :func:`grouped_dynamic_block_scaled_matmul_amd_swiglu_quant` followed by
-    :func:`grouped_dynamic_block_scaled_matmul_amd`, bit for bit either way.
+    :func:`grouped_dynamic_block_scaled_matmul_amd`; at MXFP4 (``uint8``
+    operands) it is :func:`grouped_dynamic_block_scaled_matmul_amd` into
+    bf16, the ``ep.fused_silu.mxfp4`` kernel, then
+    :func:`grouped_dynamic_block_scaled_matmul_amd`.
 
     Args:
-        hidden_states: MXFP8 rows grouped by expert, ``[total_tokens, H]``.
-        gate_up_weight: Preshuffled, sigma-permuted gate/up weight,
-            ``[num_experts, 2 * I, H]``.
+        hidden_states: Rows grouped by expert, ``[total_tokens, H]`` MXFP8
+            or ``[total_tokens, H / 2]`` packed MXFP4.
+        gate_up_weight: Preshuffled gate/up weight, ``[num_experts, 2 * I,
+            H]`` sigma-permuted at MXFP8, or ``[num_experts, 2 * I, H / 2]``
+            split ``[gate | up]`` at MXFP4.
         a_scales: The rows' E8M0 scales in the per-expert slot layout.
         gate_up_scales: Preshuffled gate/up weight scales.
-        down_weight: Preshuffled down weight, ``[num_experts, H, I]``.
+        down_weight: Preshuffled down weight, ``[num_experts, H, I]``
+            (``I / 2`` bytes at MXFP4).
         down_scales: Preshuffled down weight scales.
         expert_start_indices: Where each expert's rows start.
         expert_ids: The expert ID for each slot.
@@ -8610,7 +8622,8 @@ def grouped_ffn_block_scaled_amd(
             num_active_experts]``.
         workspace: The persistent MegaFFN counter buffer: minted once per
             call site with ``ops.buffer_create(..., init_value=0)``, sized by
-            :func:`amd_mega_ffn_workspace_words`, never zeroed again.
+            :func:`amd_mega_ffn_workspace_words` (``grids=2`` at MXFP4),
+            never zeroed again.
         estimated_total_m: Row-count estimate that picks the regime.
         scales_max_padded_m: Per-expert slot stride of the scales.
         decode_grid_m_cap: Decode-band gate; 0 disables the MegaFFN.
@@ -8633,13 +8646,22 @@ def grouped_ffn_block_scaled_amd(
             "the AMD MoE FFN reads slot-layout scales; scales_max_padded_m"
             f" must be positive but got {scales_max_padded_m}"
         )
+    if hidden_states.dtype not in (DType.float8_e4m3fn, DType.uint8):
+        raise TypeError(
+            "hidden_states must be float8_e4m3fn (MXFP8) or uint8 (MXFP4)"
+            f" but got {hidden_states.dtype}"
+        )
     for name, t in (
-        ("hidden_states", hidden_states),
         ("gate_up_weight", gate_up_weight),
         ("down_weight", down_weight),
     ):
-        if t.dtype != DType.float8_e4m3fn:
-            raise TypeError(f"{name} must be float8_e4m3fn but got {t.dtype}")
+        if t.dtype != hidden_states.dtype:
+            raise TypeError(
+                f"{name} must be {hidden_states.dtype}, as hidden_states,"
+                f" but got {t.dtype}"
+            )
+    # MXFP4 packs two elements a byte along K
+    elems_per_byte = 2 if hidden_states.dtype == DType.uint8 else 1
     max_num_tokens_arg = ops.constant(
         scales_max_padded_m,
         dtype=expert_usage_stats_host.dtype,
@@ -8690,7 +8712,7 @@ def grouped_ffn_block_scaled_amd(
             # outputs so the memory planner owns them, as for the two-op
             # chain. Unused by callers.
             TensorType(
-                dtype=DType.float8_e4m3fn,
+                dtype=hidden_states.dtype,
                 shape=[hidden_states.shape[0], down_weight.shape[2]],
                 device=hidden_states.device,
             ),
@@ -8698,7 +8720,7 @@ def grouped_ffn_block_scaled_amd(
                 dtype=DType.float8_e8m0fnu,
                 shape=[
                     Dim(int(gate_up_weight.shape[0])) * scales_max_padded_m,
-                    ceildiv(down_weight.shape[2], Dim(32)),
+                    ceildiv(down_weight.shape[2] * elems_per_byte, Dim(32)),
                 ],
                 device=hidden_states.device,
             ),

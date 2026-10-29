@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import replace
 
 import pytest
 import torch
@@ -411,6 +412,32 @@ def _build_ep_moe(
     return moe, ep_config
 
 
+def _lower_ep_moe(
+    moe: MoEQuantized, n_devices: int, hidden_dim: int, name: str
+) -> Graph:
+    """Builds the EP MoE's graph across `n_devices`, with no weights loaded."""
+    # no weights are loaded: name them as loading would
+    for weight_name, weight in moe.raw_state_dict().items():
+        weight.name = weight_name
+    devices_ref = [DeviceRef.GPU(i) for i in range(n_devices)]
+    moe.sharding_strategy = ShardingStrategy.expert_parallel(n_devices)
+    moe_shards = moe.shard(devices_ref)
+    with Graph(
+        name,
+        input_types=[
+            *(
+                TensorType(DType.bfloat16, (f"input_len_{i}", hidden_dim), d)
+                for i, d in enumerate(devices_ref)
+            ),
+            *moe.ep_batch_manager.input_types(),
+        ],
+    ) as graph:
+        moe.ep_batch_manager.fetch_buffers(graph.inputs[n_devices:])
+        xs = [x.tensor for x in graph.inputs[:n_devices]]
+        graph.output(*forward_moe_sharded_layers(moe_shards, xs))
+    return graph
+
+
 @pytest.mark.skipif(
     accelerator_api() != "hip",
     reason="The MX EP A-scale dispatch fold is AMD-only",
@@ -454,9 +481,11 @@ def test_ep_moe_mxfp8_mega_ffn_default_amd(
     build."""
     sized: list[int] = []
 
-    def workspace_words(experts: int, max_rows: int, rows: int) -> int:
+    def workspace_words(
+        experts: int, max_rows: int, rows: int, grids: int = 1
+    ) -> int:
         sized.append(rows)
-        return amd_mega_ffn_workspace_words(experts, max_rows, rows)
+        return amd_mega_ffn_workspace_words(experts, max_rows, rows, grids)
 
     monkeypatch.setattr(
         moe_fp8, "amd_mega_ffn_workspace_words", workspace_words
@@ -472,26 +501,32 @@ def test_ep_moe_mxfp8_mega_ffn_default_amd(
         hidden_dim=hidden_dim,
         moe_dim=3072,
     )
-    # no weights are loaded: name them as loading would
-    for name, weight in moe.raw_state_dict().items():
-        weight.name = name
-    devices_ref = [DeviceRef.GPU(i) for i in range(n_devices)]
-    moe.sharding_strategy = ShardingStrategy.expert_parallel(n_devices)
-    moe_shards = moe.shard(devices_ref)
-    with Graph(
-        "EPMoE_MXFP8_MegaFFN",
-        input_types=[
-            *(
-                TensorType(DType.bfloat16, (f"input_len_{i}", hidden_dim), d)
-                for i, d in enumerate(devices_ref)
-            ),
-            *moe.ep_batch_manager.input_types(),
-        ],
-    ) as graph:
-        moe.ep_batch_manager.fetch_buffers(graph.inputs[n_devices:])
-        xs = [x.tensor for x in graph.inputs[:n_devices]]
-        graph.output(*forward_moe_sharded_layers(moe_shards, xs))
+    graph = _lower_ep_moe(moe, n_devices, hidden_dim, "EPMoE_MXFP8_MegaFFN")
     assert "mo.grouped.ffn.block.scaled.amd" in str(graph)
     capacity = ep_config.get_max_recv_tokens() + ep_config.max_tokens_per_rank
     assert NUM_EXPERTS // n_devices + 1 + capacity // 128 > 4096
     assert sized and set(sized) == {capacity}
+
+
+@pytest.mark.skipif(
+    accelerator_api() != "hip", reason="The AMD MoE FFN op is gfx950-only"
+)
+def test_ep_moe_mxfp4_interleaved_gate_up_raises_amd() -> None:
+    """At MiniMax M3's expert shapes an MXFP4 EP MoE with an interleaved
+    gate_up has no AMD reader (the MXFP4 MegaFFN and its chain read split
+    gate/up), so it raises at graph build rather than pairing the wrong
+    columns."""
+    n_devices = 2
+    hidden_dim = 6144
+    moe, _ = _build_ep_moe(
+        replace(
+            _mx_quant_config(QuantFormat.MXFP4), can_use_fused_swiglu=False
+        ),
+        n_devices,
+        128,
+        hidden_dim=hidden_dim,
+        moe_dim=3072,
+    )
+    moe.interleaved_gate_up = True
+    with pytest.raises(ValueError, match="interleaved gate_up"):
+        _lower_ep_moe(moe, n_devices, hidden_dim, "EPMoE_MXFP4_Interleaved")
