@@ -2,9 +2,15 @@ load("//bazel:api.bzl", "modular_py_library", "requirement")
 
 package(default_visibility = ["//max:consumers"])
 
+filegroup(
+    name = "recipe_configs",
+    srcs = glob(["**/recipes/**/*.yaml"]),
+)
+
 modular_py_library(
     name = "mimo_v2_modulev3",
     srcs = glob(["**/*.py"]),
+    data = [":recipe_configs"],
     # The experimental namespace re-exports these through
     # //max/python/max/nn, which static import analysis cannot
     # follow.
