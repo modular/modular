@@ -44,10 +44,15 @@ from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.pipelines.weights import HuggingFaceRepo
 from max.tensor import default_dtype
 
+from ..lfm3.model_config import Lfm3Config
 from ..lfm3_vl.lfm3_vl import Lfm3VlLanguage
 from ..lfm3_vl.model import Lfm3MediaModel, Lfm3VlInputs
 from .lfm3_audio import Lfm3AudioTower, Lfm3SpeechLanguage
-from .model_config import CODEC_SUBFOLDER, Lfm3AudioConfig
+from .model_config import (
+    CODEC_SUBFOLDER,
+    Lfm3AudioConfig,
+    Lfm3AudioEncoderConfig,
+)
 from .speech import (
     Lfm3CodecDecoder,
     Lfm3DepthDecoder,
@@ -133,14 +138,17 @@ def pack_clips(
 
 
 def audio_tower_spec(
-    config: Lfm3AudioConfig, state_dict: dict[str, Any], device: Device
+    config: Lfm3Config,
+    encoder: Lfm3AudioEncoderConfig,
+    state_dict: dict[str, Any],
+    device: Device,
 ) -> GraphSpec:
     """Returns the graph of the speech encoder and projector.
 
     Its inputs are the ones :func:`pack_clips` packs.
     """
     with F.lazy(), default_dtype(config.dtype):
-        tower = Lfm3AudioTower(config)
+        tower = Lfm3AudioTower(encoder, config.hidden_size)
         tower.to(device)
     ref = DeviceRef.from_device(device)
 
@@ -156,7 +164,7 @@ def audio_tower_spec(
             taps("rows_2", 9),
             taps("rows_3", 9),
             TensorType(DType.int32, ["num_tokens"], device=ref),
-            taps("num_tokens", config.encoder.sliding_window),
+            taps("num_tokens", encoder.sliding_window),
         ],
         weights=state_dict,
     )
@@ -271,7 +279,7 @@ class Lfm3SpeechModel(Lfm3MediaModel[_SpeechConfigT]):
         assert isinstance(inputs, Lfm3VlInputs)
         device = self.devices[0]
         c = self._config.speech.num_codebooks
-        inputs.speech = (
+        inputs.extras = (
             Buffer.zeros(shape=[0, c], dtype=DType.int32).to(device),
             Buffer.zeros(shape=[0], dtype=DType.int32).to(device),
         )
@@ -302,7 +310,9 @@ class Lfm3AudioModel(Lfm3SpeechModel[Lfm3AudioConfig]):
     def _vision_spec(
         self, model_config: Lfm3AudioConfig, state_dict: dict[str, Any]
     ) -> GraphSpec:
-        return audio_tower_spec(model_config, state_dict, self.devices[0])
+        return audio_tower_spec(
+            model_config, model_config.encoder, state_dict, self.devices[0]
+        )
 
     def pack_vision_inputs(
         self,

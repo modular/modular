@@ -245,6 +245,44 @@ class Lfm3VlTokenizer(TextAndVisionTokenizer):
             frames += item_frames
         return "".join(expanded), frames
 
+    def _in_prompt_order(
+        self, ids: npt.NDArray[np.int64], media: Media
+    ) -> list[Frame]:
+        """Returns the frames of a token-id prompt with expanded placeholders.
+
+        Each item claims its kind's next run of placeholders.
+        """
+        queues = {
+            self.delegate.convert_tokens_to_ids(token): iter(items)
+            for token, items in media.items()
+        }
+        frames: list[Frame] = []
+        i = 0
+        while i < len(ids):
+            token = int(ids[i])
+            if (queue := queues.get(token)) is None:
+                i += 1
+                continue
+            if (item := next(queue, None)) is None:
+                raise ValueError(
+                    "The prompt has media placeholders the request's media "
+                    "don't fill."
+                )
+            frames += item[1]
+            # A video's runs have text between them.
+            remaining = sum(n for *_, n in item[1])
+            while remaining and i < len(ids):
+                remaining -= int(ids[i]) == token
+                i += 1
+            if remaining:
+                raise ValueError(
+                    "The prompt has fewer media placeholders than the "
+                    "request's media need."
+                )
+        if any(next(queue, None) is not None for queue in queues.values()):
+            raise ValueError("The request has media its prompt doesn't place.")
+        return frames
+
     async def new_context(
         self, request: TextGenerationRequest
     ) -> TextAndVisionContext:
@@ -276,15 +314,11 @@ class Lfm3VlTokenizer(TextAndVisionTokenizer):
                 ),
                 dtype=np.int64,
             )
-        elif any(media.values()):
-            raise ValueError(
-                "A prompt given as token ids can't carry media. Send the "
-                "media with messages instead."
-            )
         else:
             encoded = checked_token_ids(prompt, self._token_id_bound).astype(
                 np.int64
             )
+            frames = self._in_prompt_order(encoded, media)
         if self.max_length and len(encoded) > self.max_length:
             raise PromptTooLongError(len(encoded), self.max_length)
 

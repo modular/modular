@@ -157,8 +157,13 @@ class Lfm3TextModel(Module[..., Tensor]):
         conv_pool: Tensor,
         conv_rows: Tensor,
         input_row_offsets: Tensor,
+        segment_ids: Tensor | None = None,
     ) -> Tensor:
-        """Returns the pre-norm hidden states of the embedded tokens ``h``."""
+        """Returns the pre-norm hidden states of the embedded tokens ``h``.
+
+        ``segment_ids`` sets the full attention layers' mask (see
+        :class:`Lfm3Attention`); the other layers stay causal.
+        """
         query_start_loc = F.cast(input_row_offsets, DType.int32)
         # Jenga zeroes a request's state rows before its first forward, so
         # every request resumes from and updates its rows.
@@ -181,13 +186,19 @@ class Lfm3TextModel(Module[..., Tensor]):
                     query_start_loc,
                     has_initial_state,
                 )
-            else:
-                h = call(
-                    h,
-                    kv[layer_type],
-                    F.constant(index, DType.uint32, device=CPU()),
-                    input_row_offsets,
-                )
+                continue
+            segments = (
+                [segment_ids]
+                if segment_ids is not None and layer_type == FULL_ATTENTION
+                else []
+            )
+            h = call(
+                h,
+                kv[layer_type],
+                F.constant(index, DType.uint32, device=CPU()),
+                input_row_offsets,
+                *segments,
+            )
         return h
 
 

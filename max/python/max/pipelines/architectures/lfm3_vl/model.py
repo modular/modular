@@ -60,8 +60,8 @@ from .model_config import Lfm3VlConfig
 class Lfm3VlInputs(Llama3Inputs):
     """The decoder inputs, with the image embeddings after the row offsets."""
 
-    speech: tuple[Buffer, ...] = ()
-    """A speaking model's frame codes and their placeholder indices."""
+    extras: tuple[Buffer, ...] = ()
+    """What a subclass's language graph reads after the media inputs."""
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
@@ -71,7 +71,7 @@ class Lfm3VlInputs(Llama3Inputs):
             *base[:3],
             *self.vision_embeddings,
             *self.vision_scatter_indices,
-            *self.speech,
+            *self.extras,
             *base[3:],
         )
 

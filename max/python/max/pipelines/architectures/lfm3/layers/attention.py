@@ -22,6 +22,8 @@ from max.dtype import DType
 from max.nn import Linear, Module
 from max.nn.common_layers.functional_kernels import (
     flash_attention_ragged,
+    flash_attention_ragged_gpu,
+    rope_ragged,
     rope_split_store_ragged,
 )
 from max.nn.common_layers.kv_cache import PagedCacheValues
@@ -114,8 +116,14 @@ class Lfm3Attention(Module[..., Tensor]):
         kv_collection: PagedCacheValues,
         layer_idx: Tensor,
         input_row_offsets: Tensor,
+        segment_ids: Tensor | None = None,
     ) -> Tensor:
-        """Attends over the paged cache."""
+        """Attends over the paged cache, optionally within segments.
+
+        ``segment_ids`` holds each token's int32 group over a whole-prompt
+        prefill: a token of group -1 sees and is seen by every token, and any
+        other sees its own group.
+        """
         projections = (self.q_proj, self.k_proj, self.v_proj, self.gate_proj)
         q, k, v, gate = (
             x @ F.concat([p.weight for p in projections], axis=0).T
@@ -141,20 +149,38 @@ class Lfm3Attention(Module[..., Tensor]):
             interleaved=False,
             q_out_dtype=self.kv_params.dtype,
         ).rebind_mapping(qkv.mapping)
-        out = flash_attention_ragged(
-            self.kv_params,
-            input=q.reshape([-1, self.num_heads, self.head_dim]),
-            kv_collection=kv_collection,
-            layer_idx=layer_idx,
-            input_row_offsets=input_row_offsets,
-            mask_variant=(
-                MHAMaskVariant.CAUSAL_MASK
-                if self.sliding_window is None
-                else MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK
-            ),
-            scale=1 / math.sqrt(self.head_dim),
-            local_window_size=self.sliding_window or -1,
-            output_dtype=x.dtype,
-        ).rebind_mapping(q.mapping)
+        if segment_ids is not None:
+            out = flash_attention_ragged_gpu(
+                q.reshape([-1, self.num_heads, self.head_dim]),
+                rope_ragged(
+                    k,
+                    input_row_offsets,
+                    kv_collection.cache_lengths,
+                    self.rope.freqs_cis,
+                    interleaved=False,
+                ).rebind_mapping(k.mapping),
+                v.reshape([-1, self.num_kv_heads, self.head_dim]),
+                input_row_offsets=input_row_offsets,
+                max_seq_len=kv_collection.max_prompt_length,
+                mask_variant=MHAMaskVariant.NULL_MASK,
+                scale=1 / math.sqrt(self.head_dim),
+                segment_ids=segment_ids,
+            ).rebind_mapping(q.mapping)
+        else:
+            out = flash_attention_ragged(
+                self.kv_params,
+                input=q.reshape([-1, self.num_heads, self.head_dim]),
+                kv_collection=kv_collection,
+                layer_idx=layer_idx,
+                input_row_offsets=input_row_offsets,
+                mask_variant=(
+                    MHAMaskVariant.CAUSAL_MASK
+                    if self.sliding_window is None
+                    else MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK
+                ),
+                scale=1 / math.sqrt(self.head_dim),
+                local_window_size=self.sliding_window or -1,
+                output_dtype=x.dtype,
+            ).rebind_mapping(q.mapping)
         out = out * F.sigmoid(gate).reshape([-1, self.num_heads, 1])
         return self.o_proj(out.reshape([-1, self.num_heads * self.head_dim]))

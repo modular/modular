@@ -284,13 +284,10 @@ class Lfm3AudioEncoder(Module[..., Tensor]):
 class Lfm3AudioProjector(Module[[Tensor], Tensor]):
     """LayerNorm, then a GELU MLP into the decoder's width."""
 
-    def __init__(self, config: Lfm3AudioConfig) -> None:
-        encoder_hidden = config.encoder.hidden_size
+    def __init__(self, encoder_hidden: int, hidden_size: int) -> None:
         self.layer_norm = LayerNorm(encoder_hidden, keep_dtype=False)
-        self.linear_1 = Linear(encoder_hidden, config.hidden_size, bias=True)
-        self.linear_2 = Linear(
-            config.hidden_size, config.hidden_size, bias=True
-        )
+        self.linear_1 = Linear(encoder_hidden, hidden_size, bias=True)
+        self.linear_2 = Linear(hidden_size, hidden_size, bias=True)
 
     def forward(self, x: Tensor) -> Tensor:
         """Projects encoder rows into the decoder's embedding space."""
@@ -300,9 +297,13 @@ class Lfm3AudioProjector(Module[[Tensor], Tensor]):
 class Lfm3AudioTower(Module[..., Tensor]):
     """The speech encoder and the projector, compiled as one graph."""
 
-    def __init__(self, config: Lfm3AudioConfig) -> None:
-        self.encoder = Lfm3AudioEncoder(config.encoder)
-        self.audio_projector = Lfm3AudioProjector(config)
+    def __init__(
+        self, encoder: Lfm3AudioEncoderConfig, hidden_size: int
+    ) -> None:
+        self.encoder = Lfm3AudioEncoder(encoder)
+        self.audio_projector = Lfm3AudioProjector(
+            encoder.hidden_size, hidden_size
+        )
 
     def forward(self, *inputs: Tensor) -> Tensor:
         """Encodes and projects audio features for the decoder."""

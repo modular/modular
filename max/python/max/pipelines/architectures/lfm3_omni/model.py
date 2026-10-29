@@ -34,6 +34,7 @@ from ..lfm3_audio.model import (
     audio_tower_spec,
     pack_clips,
 )
+from ..lfm3_audio.model_config import Lfm3AudioEncoderConfig
 from ..lfm3_vl.model import Lfm3VlModel, Lfm3VlVisionInputs
 from ..lfm3_vl.model_config import Lfm3VlConfig
 from .model_config import Lfm3OmniConfig
@@ -58,15 +59,17 @@ def _of_kind(selection: Selection, clips: bool) -> Selection:
     ]
 
 
-class Lfm3OmniModel(Lfm3SpeechModel[Lfm3OmniConfig], Lfm3VlModel):
-    """The LFM3-Omni pipeline model.
+class Lfm3ListenerModel(Lfm3VlModel):
+    """A vision model that also hears when :attr:`audio_encoder` is set.
 
-    Frames and clips each run through their own tower, and their rows reach
-    the language graph in placeholder order.
+    Frames and clips each run through their own tower, and their rows reach the
+    language graph in placeholder order.
     """
 
-    model_config_cls: ClassVar[type[Any]] = Lfm3OmniConfig
-    _config: Lfm3OmniConfig
+    @property
+    def audio_encoder(self) -> Lfm3AudioEncoderConfig | None:
+        """The audio encoder's config, if the model takes audio."""
+        raise NotImplementedError
 
     def _load_state_dict(self) -> dict[str, WeightData]:
         state = super()._load_state_dict()
@@ -78,18 +81,19 @@ class Lfm3OmniModel(Lfm3SpeechModel[Lfm3OmniConfig], Lfm3VlModel):
                 audio[name.replace("conv.conv.weight", "conv.conv")] = (
                     weight.data()
                 )
-            elif name.startswith("codebook_embedding."):
-                self._language_weights_dict[name] = weight.data()
         self._audio_weights_dict = audio
         return {**state, **audio}
 
     def graph_specs(self, model_config: Lfm3VlConfig) -> dict[str, GraphSpec]:
-        """Returns the vision, audio and language graph specs."""
-        assert isinstance(model_config, Lfm3OmniConfig)
+        """Returns the graph specs, with the audio graph if the model hears."""
         specs = super().graph_specs(model_config)
-        specs[_AUDIO] = audio_tower_spec(
-            model_config, self._audio_weights_dict, self.devices[0]
-        )
+        if (encoder := self.audio_encoder) is not None:
+            specs[_AUDIO] = audio_tower_spec(
+                model_config,
+                encoder,
+                self._audio_weights_dict,
+                self.devices[0],
+            )
         return specs
 
     def pack_vision_inputs(
@@ -102,10 +106,11 @@ class Lfm3OmniModel(Lfm3SpeechModel[Lfm3OmniConfig], Lfm3VlModel):
             for _, items in _of_kind(selection, True)
             for item in items
         ]
-        if frames is None and not clips:
-            return None
-        window = self._config.encoder.sliding_window
-        return frames, pack_clips(clips, window, devices[0]) if clips else None
+        if not clips:
+            return None if frames is None else (frames, None)
+        if (encoder := self.audio_encoder) is None:
+            raise ValueError("This model doesn't take audio.")
+        return frames, pack_clips(clips, encoder.sliding_window, devices[0])
 
     def vision_execute(
         self,
@@ -154,3 +159,28 @@ class Lfm3OmniModel(Lfm3SpeechModel[Lfm3OmniConfig], Lfm3VlModel):
             start += n
             taken[kind] += n
         return VisionEncodeResult(embeddings=[out])
+
+
+class Lfm3OmniModel(Lfm3SpeechModel[Lfm3OmniConfig], Lfm3ListenerModel):
+    """LFM3-Omni: a listening vision model that speaks."""
+
+    model_config_cls: ClassVar[type[Any]] = Lfm3OmniConfig
+    _config: Lfm3OmniConfig
+
+    @property
+    def audio_encoder(self) -> Lfm3AudioEncoderConfig:
+        """The speech encoder's config."""
+        return self._config.encoder
+
+    def graph_specs(self, model_config: Lfm3VlConfig) -> dict[str, GraphSpec]:
+        """Returns the vision, audio and language graph specs."""
+        assert isinstance(model_config, Lfm3OmniConfig)
+        return super().graph_specs(model_config)
+
+    def _load_state_dict(self) -> dict[str, WeightData]:
+        state = super()._load_state_dict()
+        for name, weight in self.weights.items():
+            name = name.removeprefix("model.")
+            if name.startswith("codebook_embedding."):
+                self._language_weights_dict[name] = weight.data()
+        return state
