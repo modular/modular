@@ -19,13 +19,13 @@ from . import (
     _BaseAmdExecutionConfig,
     _AmdExecutionConfigDelegator,
 )
-from .. import (
+from max.gpu.host import (
     ExecutionConfig,
     BlockExecutionConfig,
     GridBlockExecutionConfig,
     NearComputeGeneralPurposeScratchpadExecutionConfig,
-    ConstantMemoryMappingExecutionConfig,
 )
+from .. import ConstantMemoryMappingExecutionConfig
 
 
 struct RDNA2ExecutionConfiguration(

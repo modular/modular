@@ -17,14 +17,13 @@ launch-attribute mechanism, so this package adds no vendor-specific capability
 traits on top of the base traits in `..`.
 """
 
-from .. import (
+from max.gpu.host import (
     ExecutionConfig,
     BlockExecutionConfig,
-    ConstantMemoryMappingExecutionConfig,
-    ExecutionConfig,
     GridBlockExecutionConfig,
     NearComputeGeneralPurposeScratchpadExecutionConfig,
 )
+from .. import ConstantMemoryMappingExecutionConfig
 from std.collections.type_dict import TypeDict
 from max.gpu.host import ConstantMemoryMapping, Dim
 

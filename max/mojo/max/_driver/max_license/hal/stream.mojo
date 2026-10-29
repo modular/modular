@@ -27,7 +27,7 @@ from std.memory import (
     MaybeUninit,
 )
 from std.memory.arc_pointer import WeakPointer
-from .execution_config import GridBlockExecutionConfig
+from max.gpu.host import GridBlockExecutionConfig
 
 
 @fieldwise_init

@@ -19,13 +19,13 @@ from . import (
     _BaseAmdExecutionConfig,
     _AmdExecutionConfigDelegator,
 )
-from .. import (
+from max.gpu.host import (
     ExecutionConfig,
     BlockExecutionConfig,
     GridBlockExecutionConfig,
     NearComputeGeneralPurposeScratchpadExecutionConfig,
-    ConstantMemoryMappingExecutionConfig,
 )
+from .. import ConstantMemoryMappingExecutionConfig
 
 
 # Polaris10/Polaris11 (gfx803) share their LLVM compiler target with GCN3

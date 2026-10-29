@@ -33,10 +33,12 @@ from std.memory import (
     MaybeUninit,
 )
 from std.memory.arc_pointer import WeakPointer
-from .execution_config import (
+from max.gpu.host import (
+    ClusterExecutionConfig,
     GridBlockExecutionConfig,
     NearComputeGeneralPurposeScratchpadExecutionConfig,
 )
+from max.gpu.host import LaunchAttribute
 
 
 @fieldwise_init
@@ -211,6 +213,47 @@ struct Queue[device_spec: DeviceSpec](Deinitable, Movable):
             near_compute_scratchpad_usage <= 0xFFFFFFFF,
             "near compute scratchpad usage must fit in 32 bits",
         )
+
+        # A 1x1x1 cluster, the vendor configurations' default, emits no
+        # attribute so that targets without cluster launch accept it.
+        comptime if conforms_to(ExecutionConfigType, ClusterExecutionConfig):
+            var cluster_dim = execution_config.get_cluster_dim()
+            if (
+                cluster_dim.x() != 1
+                or cluster_dim.y() != 1
+                or cluster_dim.z() != 1
+            ):
+                var all_attributes = List[LaunchAttribute](
+                    capacity=Int(num_attributes) + 1
+                )
+                if case .Some(caller_attributes) = attributes:
+                    var src = caller_attributes.unsafe_bitcast[
+                        LaunchAttribute
+                    ]()
+                    for i in range(Int(num_attributes)):
+                        all_attributes.append(src[unsafe_offset=i])
+                all_attributes.append(
+                    LaunchAttribute.from_cluster_dim(cluster_dim)
+                )
+                self._raw[].execute_function(
+                    self._handle,
+                    func,
+                    grid,
+                    block,
+                    args,
+                    arg_sizes,
+                    num_args,
+                    shared_mem_bytes=UInt32(near_compute_scratchpad_usage),
+                    attributes=OptionalReg(
+                        all_attributes.unsafe_ptr()
+                        .unsafe_bitcast[NoneType]()
+                        .unsafe_origin_cast[MutUntrackedOrigin]()
+                    ),
+                    num_attributes=UInt32(len(all_attributes)),
+                )
+                # Keep attributes alive until the plugin has read them.
+                _ = all_attributes^
+                return
 
         self._raw[].execute_function(
             self._handle,

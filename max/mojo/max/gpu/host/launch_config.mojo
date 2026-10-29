@@ -20,7 +20,8 @@ compile rather than raising at run time.
 
 A `DeviceContext` publishes `ExecutionConfigType`, the configuration type
 with every capability its target supports, so generic code can check for a
-capability with `conforms_to` before using it.
+capability with `conforms_to` before using it. The HAL `DeviceContext`
+accepts the same configuration types.
 
 ```mojo
 from max.gpu.host import ClusterLaunchConfig, DeviceContext, Dim

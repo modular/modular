@@ -19,14 +19,14 @@ from . import (
     _BaseCudaExecutionConfig,
     _BaseCudaExecutionConfiguration,
 )
-from .. import (
+from max.gpu.host import (
     ExecutionConfig,
     BlockExecutionConfig,
     GridBlockExecutionConfig,
     ClusterExecutionConfig,
     NearComputeGeneralPurposeScratchpadExecutionConfig,
-    ConstantMemoryMappingExecutionConfig,
 )
+from .. import ConstantMemoryMappingExecutionConfig
 
 
 # Blackwell datacenter (B100/B200/B300) is compute capability 10.0, well past
@@ -49,7 +49,7 @@ struct BlackwellDatacenterExecutionConfiguration(
     NVIDIA Blackwell datacenter GPUs."""
 
     var _base: _BaseCudaExecutionConfiguration
-    var cluster_dim: Optional[Dim]
+    var cluster_dim: Dim
 
     def __init__(
         out self,
@@ -64,7 +64,7 @@ struct BlackwellDatacenterExecutionConfiguration(
         self = Self(
             block_dim=block_dim,
             grid_dim=grid_dim,
-            cluster_dim=None,
+            cluster_dim=Dim(1, 1, 1),
             shared_mem_bytes=shared_mem_bytes,
             attributes=attributes^,
             constant_memory=constant_memory^,
@@ -75,7 +75,7 @@ struct BlackwellDatacenterExecutionConfiguration(
         *,
         var block_dim: Dim,
         var grid_dim: Dim,
-        var cluster_dim: Optional[Dim],
+        var cluster_dim: Dim,
         var shared_mem_bytes: Int = 0,
         var attributes: List[LaunchAttribute] = [],
         var constant_memory: List[ConstantMemoryMapping] = [],
@@ -101,11 +101,11 @@ struct BlackwellDatacenterExecutionConfiguration(
         """
         return Pointer(to=self._base).unsafe_origin_cast[o]()[]
 
-    def __init__(out self, *, cluster_dim: Optional[Dim]):
+    def __init__(out self, *, cluster_dim: Dim):
         """Initializes the execution config with the given grid, block, and cluster dimensions.
 
         Args:
-            cluster_dim: The cluster dimensions as a `Dim` value, or `None` to unset.
+            cluster_dim: The cluster dimensions as a `Dim` value.
         """
         self = Self(
             grid_dim=Dim(1, 1, 1),
@@ -114,18 +114,18 @@ struct BlackwellDatacenterExecutionConfiguration(
             shared_mem_bytes=0,
         )
 
-    def get_cluster_dim(self) -> Optional[Dim]:
+    def get_cluster_dim(self) -> Dim:
         """Gets the cluster dimensions for the kernel launch.
 
         Returns:
-            The cluster dimensions as a `Dim` value, or `None` if unset.
+            The cluster dimensions as a `Dim` value.
         """
         return self.cluster_dim
 
-    def set_cluster_dim(mut self, var cluster_dim: Optional[Dim]):
+    def set_cluster_dim(mut self, var cluster_dim: Dim):
         """Sets the cluster dimensions for the kernel launch.
 
         Args:
-            cluster_dim: The cluster dimensions as a `Dim` value, or `None` to unset.
+            cluster_dim: The cluster dimensions as a `Dim` value.
         """
         self.cluster_dim = cluster_dim

@@ -13,7 +13,7 @@
 """Placeholder configuration to start to prototype the API with."""
 
 from max.gpu.host import Dim
-from . import (
+from max.gpu.host import (
     ExecutionConfig,
     BlockExecutionConfig,
     GridBlockExecutionConfig,

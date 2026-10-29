@@ -18,13 +18,13 @@ from . import (
     _BaseMetalExecutionConfig,
     _MetalExecutionConfigDelegator,
 )
-from .. import (
+from max.gpu.host import (
     ExecutionConfig,
     BlockExecutionConfig,
     GridBlockExecutionConfig,
     NearComputeGeneralPurposeScratchpadExecutionConfig,
-    ConstantMemoryMappingExecutionConfig,
 )
+from .. import ConstantMemoryMappingExecutionConfig
 
 
 struct M6ExecutionConfiguration(

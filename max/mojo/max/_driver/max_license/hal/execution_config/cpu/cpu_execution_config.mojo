@@ -12,9 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import BitSet
-from .. import (
+from max.gpu.host import (
     ExecutionConfig,
     NearComputeGeneralPurposeScratchpadExecutionConfig,
+)
+from .. import (
     CoresExecutionConfig,
     ParticularCoresExecutionConfig,
     ThreadsPerCoreExecutionConfig,

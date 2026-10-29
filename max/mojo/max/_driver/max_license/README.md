@@ -248,18 +248,19 @@ The following **proposed** example launches a kernel on whatever device it's
 compiled for:
 
 ```mojo
-var config: ctx.ExecutionConfigType
-
 # No vendor appears here; a new GPU-like backend can just work.
 comptime if conforms_to(ctx.ExecutionConfigType, GridBlockExecutionConfig):
-    config = ctx.ExecutionConfigType(grid_dim=(4, 1, 1), block_dim=(1024, 1, 1))
+    # `GridBlockLaunchConfig` from `max.gpu.host` is the portable config.
+    var config = GridBlockLaunchConfig(
+        grid_dim=(4, 1, 1), block_dim=(1024, 1, 1)
+    )
+    queue.execute[vec_add](config, dev_a, dev_b, dev_c, size)
 # Asking only for cores covers CPUs and NPUs.
 elif conforms_to(ctx.ExecutionConfigType, CoresExecutionConfig):
-    config = ctx.ExecutionConfigType(num_cores=num_cores)
+    var config = ctx.ExecutionConfigType(num_cores=num_cores)
+    queue.execute[vec_add](config^, dev_a, dev_b, dev_c, size)
 else:
     comptime assert False, "no launch configuration for this device"
-
-queue.execute[vec_add](config^, dev_a, dev_b, dev_c, size)
 ```
 
 ## Vendor API

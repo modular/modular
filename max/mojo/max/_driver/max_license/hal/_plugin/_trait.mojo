@@ -16,7 +16,7 @@ from std._plugin.selector import Plugin
 from std.sys.info import CompilationTarget
 
 from .._machine import DeviceRef
-from ..execution_config import ExecutionConfig
+from max.gpu.host import ExecutionConfig
 from ..execution_config.cpu import CPUExecutionConfiguration
 from ..extensions.traits import DefaultHALExtensions, HALExtensions
 

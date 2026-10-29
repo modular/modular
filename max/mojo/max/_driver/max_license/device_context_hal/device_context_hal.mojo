@@ -68,13 +68,15 @@ from ..hal import (
 from ..hal._machine import DeviceSpec
 from ..hal.event import EVENT_FLAG_CPU_VISIBLE
 from ..hal.extensions.traits import SupportsPeerAccessV1
-from ..hal.execution_config import (
+from max.gpu.host import (
     ExecutionConfig,
     BlockExecutionConfig,
     GridBlockExecutionConfig,
     NearComputeGeneralPurposeScratchpadExecutionConfig,
-    GPUExecutionConfiguration,
     ClusterExecutionConfig,
+)
+from ..hal.execution_config import (
+    GPUExecutionConfiguration,
     LaunchAttributeHolderExecutionConfig,
     ConstantMemoryMappingExecutionConfig,
 )

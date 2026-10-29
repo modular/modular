@@ -13,14 +13,13 @@
 """HAL Execution Config traits and structs for AMD products.
 """
 
-from .. import (
+from max.gpu.host import (
     ExecutionConfig,
     BlockExecutionConfig,
-    ConstantMemoryMappingExecutionConfig,
-    ExecutionConfig,
     GridBlockExecutionConfig,
     NearComputeGeneralPurposeScratchpadExecutionConfig,
 )
+from .. import ConstantMemoryMappingExecutionConfig
 from std.collections.type_dict import TypeDict
 from max.gpu.host import ConstantMemoryMapping, Dim
 

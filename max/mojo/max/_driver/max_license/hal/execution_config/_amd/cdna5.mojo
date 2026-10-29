@@ -19,19 +19,18 @@ from . import (
     _BaseAmdExecutionConfig,
     _AmdExecutionConfigDelegator,
 )
-from .. import (
+from max.gpu.host import (
     ExecutionConfig,
     BlockExecutionConfig,
     GridBlockExecutionConfig,
-    ClusterExecutionConfig,
     NearComputeGeneralPurposeScratchpadExecutionConfig,
-    ConstantMemoryMappingExecutionConfig,
 )
+from .. import ConstantMemoryMappingExecutionConfig
 
 
+# No clusters: `Target/lib/HIP/M_driver_queue.cpp` rejects launch attributes.
 struct CDNA5ExecutionConfiguration(
     BlockExecutionConfig,
-    ClusterExecutionConfig,
     ConstantMemoryMappingExecutionConfig,
     Copyable,
     ExecutionConfig,
@@ -45,25 +44,6 @@ struct CDNA5ExecutionConfiguration(
     CDNA5 GPUs."""
 
     var _base: _BaseAmdExecutionConfiguration
-    var cluster_dim: Optional[Dim]
-
-    def __init__(
-        out self,
-        *,
-        var block_dim: Dim,
-        var grid_dim: Dim,
-        var cluster_dim: Optional[Dim] = Optional[Dim](Dim(1, 1, 1)),
-        var shared_mem_bytes: Int = 0,
-        var constant_memory: List[ConstantMemoryMapping] = [],
-    ):
-        """The 'all members' constructor with reasonable defaults set."""
-        self._base = _BaseAmdExecutionConfiguration(
-            block_dim=block_dim,
-            grid_dim=grid_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            constant_memory=constant_memory^,
-        )
-        self.cluster_dim = cluster_dim
 
     def __init__(
         out self,
@@ -80,7 +60,6 @@ struct CDNA5ExecutionConfiguration(
             shared_mem_bytes=shared_mem_bytes,
             constant_memory=constant_memory^,
         )
-        self.cluster_dim = Optional[Dim](Dim(1, 1, 1))
 
     def _get_inner_config[
         o: Origin
@@ -92,32 +71,3 @@ struct CDNA5ExecutionConfiguration(
             The inner `_BaseAmdExecutionConfiguration`.
         """
         return Pointer(to=self._base).unsafe_origin_cast[o]()[]
-
-    def __init__(out self, *, cluster_dim: Optional[Dim]):
-        """Initializes the execution config with the given cluster dimensions.
-
-        Args:
-            cluster_dim: The cluster dimensions as a `Dim` value, or `None` to unset.
-        """
-        self = Self(
-            grid_dim=Dim(1, 1, 1),
-            block_dim=Dim(1, 1, 1),
-            cluster_dim=cluster_dim,
-            shared_mem_bytes=0,
-        )
-
-    def get_cluster_dim(self) -> Optional[Dim]:
-        """Gets the cluster dimensions for the kernel launch.
-
-        Returns:
-            The cluster dimensions as a `Dim` value, or `None` if unset.
-        """
-        return self.cluster_dim
-
-    def set_cluster_dim(mut self, var cluster_dim: Optional[Dim]):
-        """Sets the cluster dimensions for the kernel launch.
-
-        Args:
-            cluster_dim: The cluster dimensions as a `Dim` value, or `None` to unset.
-        """
-        self.cluster_dim = cluster_dim
