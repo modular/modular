@@ -3832,10 +3832,13 @@ def generic_fused_qk_rope_bshd_paged_ragged[
                 input_row_offsets,
                 kv_collection,
                 freqs_cis,
-                TileTensor(
-                    position_ids.ptr.as_unsafe_any_origin(),
-                    position_ids.layout,
-                ).as_imm(),
+                rebind[
+                    TileTensor[
+                        .uint32,
+                        type_of(position_ids).LayoutType,
+                        ImmutAnyOrigin,
+                    ]
+                ](position_ids.reshape(position_ids.layout)),
                 layer_idx,
                 output,
                 context,

@@ -3031,30 +3031,46 @@ def generic_get_paged_cache[
         ),
         blocks.static_shape[3],
     ](
-        TileTensor(
-            ptr=blocks.ptr.unsafe_origin_cast[MutAnyOrigin](),
-            layout=blocks.layout,
-        ),
-        TileTensor(
-            ptr=page_stride.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
-            layout=page_stride.layout,
-        ),
-        TileTensor(
-            ptr=cache_lengths.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
-            layout=cache_lengths.layout,
-        ),
-        TileTensor(
-            ptr=lookup_table.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
-            layout=lookup_table.layout,
-        ),
-        TileTensor(
-            ptr=max_prompt_length.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
-            layout=max_prompt_length.layout,
-        ),
-        TileTensor(
-            ptr=max_cache_length.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
-            layout=max_cache_length.layout,
-        ),
+        rebind[
+            TileTensor[
+                type_of(blocks).dtype, type_of(blocks).LayoutType, MutAnyOrigin
+            ]
+        ](blocks.reshape(blocks.layout)),
+        rebind[
+            TileTensor[
+                type_of(page_stride).dtype,
+                type_of(page_stride).LayoutType,
+                ImmutAnyOrigin,
+            ]
+        ](page_stride.reshape(page_stride.layout)),
+        rebind[
+            TileTensor[
+                type_of(cache_lengths).dtype,
+                type_of(cache_lengths).LayoutType,
+                ImmutAnyOrigin,
+            ]
+        ](cache_lengths.reshape(cache_lengths.layout)),
+        rebind[
+            TileTensor[
+                type_of(lookup_table).dtype,
+                type_of(lookup_table).LayoutType,
+                ImmutAnyOrigin,
+            ]
+        ](lookup_table.reshape(lookup_table.layout)),
+        rebind[
+            TileTensor[
+                type_of(max_prompt_length).dtype,
+                type_of(max_prompt_length).LayoutType,
+                ImmutAnyOrigin,
+            ]
+        ](max_prompt_length.reshape(max_prompt_length.layout)),
+        rebind[
+            TileTensor[
+                type_of(max_cache_length).dtype,
+                type_of(max_cache_length).LayoutType,
+                ImmutAnyOrigin,
+            ]
+        ](max_cache_length.reshape(max_cache_length.layout)),
     )
 
 
@@ -3283,42 +3299,65 @@ def generic_get_paged_cache_with_scales(
         blocks.static_shape[3],
         granularity,
     ](
-        TileTensor(
-            ptr=blocks.ptr.unsafe_origin_cast[MutAnyOrigin](),
-            layout=blocks.layout,
-        ),
-        TileTensor(
-            ptr=page_stride.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
-            layout=page_stride.layout,
-        ),
-        TileTensor(
-            ptr=cache_lengths.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
-            layout=cache_lengths.layout,
-        ),
-        TileTensor(
-            ptr=lookup_table.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
-            layout=lookup_table.layout,
-        ),
-        TileTensor(
-            ptr=max_prompt_length.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
-            layout=max_prompt_length.layout,
-        ),
-        TileTensor(
-            ptr=max_cache_length.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
-            layout=max_cache_length.layout,
-        ),
-        TileTensor(
-            ptr=scales.ptr.unsafe_origin_cast[MutAnyOrigin](),
-            layout=scales.layout,
-        ),
-        TileTensor(
-            ptr=scales_page_stride.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
-            layout=scales_page_stride.layout,
-        ),
-        TileTensor(
-            ptr=scales_lookup_table.ptr.unsafe_origin_cast[ImmutAnyOrigin](),
-            layout=scales_lookup_table.layout,
-        ),
+        rebind[
+            TileTensor[
+                type_of(blocks).dtype, type_of(blocks).LayoutType, MutAnyOrigin
+            ]
+        ](blocks.reshape(blocks.layout)),
+        rebind[
+            TileTensor[
+                type_of(page_stride).dtype,
+                type_of(page_stride).LayoutType,
+                ImmutAnyOrigin,
+            ]
+        ](page_stride.reshape(page_stride.layout)),
+        rebind[
+            TileTensor[
+                type_of(cache_lengths).dtype,
+                type_of(cache_lengths).LayoutType,
+                ImmutAnyOrigin,
+            ]
+        ](cache_lengths.reshape(cache_lengths.layout)),
+        rebind[
+            TileTensor[
+                type_of(lookup_table).dtype,
+                type_of(lookup_table).LayoutType,
+                ImmutAnyOrigin,
+            ]
+        ](lookup_table.reshape(lookup_table.layout)),
+        rebind[
+            TileTensor[
+                type_of(max_prompt_length).dtype,
+                type_of(max_prompt_length).LayoutType,
+                ImmutAnyOrigin,
+            ]
+        ](max_prompt_length.reshape(max_prompt_length.layout)),
+        rebind[
+            TileTensor[
+                type_of(max_cache_length).dtype,
+                type_of(max_cache_length).LayoutType,
+                ImmutAnyOrigin,
+            ]
+        ](max_cache_length.reshape(max_cache_length.layout)),
+        rebind[
+            TileTensor[
+                type_of(scales).dtype, type_of(scales).LayoutType, MutAnyOrigin
+            ]
+        ](scales.reshape(scales.layout)),
+        rebind[
+            TileTensor[
+                type_of(scales_page_stride).dtype,
+                type_of(scales_page_stride).LayoutType,
+                ImmutAnyOrigin,
+            ]
+        ](scales_page_stride.reshape(scales_page_stride.layout)),
+        rebind[
+            TileTensor[
+                type_of(scales_lookup_table).dtype,
+                type_of(scales_lookup_table).LayoutType,
+                ImmutAnyOrigin,
+            ]
+        ](scales_lookup_table.reshape(scales_lookup_table.layout)),
     )
 
 

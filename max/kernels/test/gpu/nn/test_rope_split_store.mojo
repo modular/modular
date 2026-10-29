@@ -752,10 +752,9 @@ def execute_test_with_position_ids[
         row_major(total_length, Idx[num_q_heads], Idx[head_dim]),
     )
 
-    var pos_ids_immut = TileTensor(
-        pos_ids_tile._storage.as_unsafe_any_origin(),
-        pos_ids_tile.layout,
-    ).as_imm()
+    var pos_ids_immut = rebind[
+        TileTensor[.uint32, type_of(pos_ids_tile).LayoutType, ImmutAnyOrigin]
+    ](pos_ids_tile.reshape(pos_ids_tile.layout))
     fused_qk_rope_ragged[
         unfused_kv_collection.CacheType,
         interleaved=interleaved,

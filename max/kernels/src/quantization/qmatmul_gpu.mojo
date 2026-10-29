@@ -2279,8 +2279,13 @@ def gpu_qint4_repack_Q4_0[
 
     var smem_usage: Int = BN * 2 * group_bytes
 
-    var b = TileTensor(b_tt.ptr, b_tt.layout)
-    var b_packed = TileTensor(b_packed_tt.ptr, b_packed_tt.layout)
+    var b = rebind[
+        TileTensor[.uint8, type_of(b_tt).LayoutType, ImmutAnyOrigin]
+    ](b_tt.reshape(b_tt.layout))
+    var b_packed = rebind[
+        TileTensor[.uint8, type_of(b_packed_tt).LayoutType, MutAnyOrigin]
+    ](b_packed_tt.reshape(b_packed_tt.layout))
+
     comptime repack = repack_Q4_0_for_sm8x[
         b.LayoutType, b_packed.LayoutType, DType.bfloat16
     ]
@@ -2322,8 +2327,13 @@ def gpu_qint4_repack_GPTQ[
     Raises:
         An error if the input tensors are not rank-2, the target is not a GPU, or the input and output dimensions are mismatched.
     """
-    var b = TileTensor(b_tt.ptr, b_tt.layout)
-    var b_packed = TileTensor(b_packed_tt.ptr, b_packed_tt.layout)
+    var b = rebind[
+        TileTensor[.uint8, type_of(b_tt).LayoutType, ImmutAnyOrigin]
+    ](b_tt.reshape(b_tt.layout))
+    var b_packed = rebind[
+        TileTensor[.uint8, type_of(b_packed_tt).LayoutType, MutAnyOrigin]
+    ](b_packed_tt.reshape(b_packed_tt.layout))
+
     comptime assert b.rank == 2
     comptime assert b_packed.rank == 2
     comptime assert is_gpu[target](), "unsupported target"
