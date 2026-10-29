@@ -13,12 +13,12 @@
 
 include "Precompile/PrecompileDescription.td"
 
+include "Common/IncrParsingOptions.td"
 include "Common/BitcodeOptions.td"
 include "Common/DiagnosticFormatOptions.td"
 include "Common/DiagnosticOptions.td"
 include "Common/FixItOptions.td"
 include "Common/IncludeOptions.td"
-include "Common/IncrParsingOptions.td"
 include "Support/Driver/CommonOptions.td"
 
 //===----------------------------------------------------------------------===//
@@ -27,7 +27,7 @@ include "Support/Driver/CommonOptions.td"
 
 def OutputOptionGroup : OptionGroup<"Output options">, Index<0>;
 
-defm o : CommandOption<["-"], "o", OutputOptionGroup, Index<0>,
+defm o : CommandOption<["-"], "o", OutputOptionGroup,
   MetaVarName<"PATH">, HelpText<
     "Sets the path and filename for the output package. The filename must end "
     "with `.mojoc` or `.mojopkg`. The filename given here defines the "

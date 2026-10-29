@@ -24,7 +24,7 @@ include "Common/Marshalling.td"
 
 defm incr_parsing_cache_file : CommandOptionHidden<["--", "-"],
   "experimental-incr-parsing",
-  CompilationOptionGroup, Index<23>, MetaVarName<"PATH">,
+  CompilationOptionGroup, MetaVarName<"PATH">,
   HelpText<"Experimental incremental parsing backed by a module cache at "
            "the given path. The main source file is always parsed; imported "
            "modules whose sources are unchanged are served from the cache "

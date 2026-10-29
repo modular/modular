@@ -22,14 +22,14 @@
 include "Common/DiagnosticOptions.td"
 
 def fixit : Flag<["--", "-"],
-  "experimental-fixit">, Group<DiagnosticOptionGroup>, Index<8>,
+  "experimental-fixit">, Group<DiagnosticOptionGroup>,
   HelpText<"Automatically apply fix-its to the code, and rerun the command "
            "again after the fix-its are applied. WARNING: this feature is "
            "highly experimental and may result in irreversible data loss.">,
   MarshallingInfoFlag<DriverOpts<"applyFixIts">>;
 
 defm export_fixit : CommandOption<["--", "-"], "experimental-export-fixit",
-  DiagnosticOptionGroup, Index<9>, MetaVarName<"YAML_FILE">,
+  DiagnosticOptionGroup, MetaVarName<"YAML_FILE">,
   HelpText<"Export fix-its to a YAML file in clang-tidy format instead of "
            "applying them directly. The file can be applied using "
            "'clang-apply-replacements'. WARNING: this feature is highly "

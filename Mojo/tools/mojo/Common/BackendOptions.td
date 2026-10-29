@@ -21,7 +21,6 @@
 #ifndef KGEN_TOOLS_MOJO_COMMON_BACKENDOPTIONS_TD
 #define KGEN_TOOLS_MOJO_COMMON_BACKENDOPTIONS_TD
 
-include "Common/BitcodeOptions.td"
 include "Common/CompilationOptions.td"
 
 //===----------------------------------------------------------------------===//
@@ -29,7 +28,7 @@ include "Common/CompilationOptions.td"
 //===----------------------------------------------------------------------===//
 
 def mlir_timing: Flag<["--", "-"], "mlir-timing">,
-  Group<CompilationOptionGroup>, Index<18>, Flags<[HelpHidden]>,
+  Group<CompilationOptionGroup>, Flags<[HelpHidden]>,
   HelpText<
     "Times each MLIR pass and analysis, printing a report to stderr when "
     "compilation finishes, which for `mojo run` is before the program starts. "
@@ -38,8 +37,18 @@ def mlir_timing: Flag<["--", "-"], "mlir-timing">,
     "`MODULAR_CACHE_DIR` at an empty directory to time a whole pipeline.">,
   MarshallingInfoFlag<DriverOpts<"mlirTiming">>;
 
+defm mlir_timing_display: CommandOptionHidden<["--", "-"],
+  "mlir-timing-display",
+  CompilationOptionGroup, MetaVarName<"MODE">,
+  HelpText<
+    "How `--mlir-timing` groups its report. `tree` (the default) nests "
+    "timings by pipeline structure; `list` aggregates per pass name, sorted "
+    "by total time. The `list` mode merges the passes of all pipelines, so it "
+    "cannot show the time of one offload target on its own.">>,
+  MarshallingInfoString<DriverOpts<"mlirTimingDisplay">>;
+
 def llvm_timing: Flag<["--", "-"], "llvm-timing">,
-  Group<CompilationOptionGroup>, Index<20>, Flags<[HelpHidden]>,
+  Group<CompilationOptionGroup>, Flags<[HelpHidden]>,
   HelpText<
     "Measures the time of each LLVM pass and analysis. Writes the LLVM report "
     "to stderr when the compilation is complete. The timers of LLVM are "
@@ -54,18 +63,8 @@ def llvm_timing: Flag<["--", "-"], "llvm-timing">,
     "each `compile_offload` target together.">,
   MarshallingInfoFlag<DriverOpts<"llvmTiming">>;
 
-defm mlir_timing_display: CommandOptionHidden<["--", "-"],
-  "mlir-timing-display",
-  CompilationOptionGroup, Index<19>, MetaVarName<"MODE">,
-  HelpText<
-    "How `--mlir-timing` groups its report. `tree` (the default) nests "
-    "timings by pipeline structure; `list` aggregates per pass name, sorted "
-    "by total time. The `list` mode merges the passes of all pipelines, so it "
-    "cannot show the time of one offload target on its own.">>,
-  MarshallingInfoString<DriverOpts<"mlirTimingDisplay">>;
-
 def timing_json: Flag<["--", "-"], "timing-json">,
-  Group<CompilationOptionGroup>, Index<21>, Flags<[HelpHidden]>,
+  Group<CompilationOptionGroup>, Flags<[HelpHidden]>,
   HelpText<
     "Writes the timing that `--mlir-timing` and `--llvm-timing` collect as "
     "one JSON object rather than as text. The object holds a `mlir` member "
@@ -77,7 +76,7 @@ def timing_json: Flag<["--", "-"], "timing-json">,
   MarshallingInfoFlag<DriverOpts<"timingJSON">>;
 
 defm timing_file: CommandOptionHidden<["--", "-"], "timing-file",
-  CompilationOptionGroup, Index<22>, MetaVarName<"FILE">,
+  CompilationOptionGroup, MetaVarName<"FILE">,
   HelpText<
     "Writes the timing reports to FILE rather than to stderr. The reports are "
     "text, or JSON with `--timing-json`.">>,
@@ -90,14 +89,17 @@ defm timing_file: CommandOptionHidden<["--", "-"], "timing-file",
 def LinkOptionGroup : OptionGroup<"Linker options">, Index<15>;
 
 defm Xlinker : CommandOption<["-"], "Xlinker",
-  LinkOptionGroup, Index<1>, MetaVarName<"ARG">,
+  LinkOptionGroup, MetaVarName<"ARG">,
   HelpText<"Pass ARG to the linker.">>;
 
 defm lld_path : CommandOption<["--", "-"], "lld-path",
-  LinkOptionGroup, Index<2>, MetaVarName<"PATH">,
+  LinkOptionGroup, MetaVarName<"PATH">,
   HelpText<"Overrides the path to the `lld` linker used when linking. Takes "
            "precedence over the `MODULAR_MOJO_MAX_LLD_PATH` environment "
            "variable and the `mojo-max.lld_path` configuration value.">>,
   MarshallingInfoString<DriverOpts<"lldPath">>;
+
+include "Common/IncrParsingOptions.td"
+include "Common/BitcodeOptions.td"
 
 #endif // KGEN_TOOLS_MOJO_COMMON_BACKENDOPTIONS_TD

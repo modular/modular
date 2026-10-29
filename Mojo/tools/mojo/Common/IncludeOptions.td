@@ -24,7 +24,7 @@ include "Support/Driver/DriverCommand.td"
 
 def CompilationOptionGroup : OptionGroup<"Compilation options">, Index<5>;
 
-def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<3>,
+def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>,
   MetaVarName<"PATH">,
   HelpText<"Appends the given path to the list of directories to search for "
            "imported Mojo files.">,

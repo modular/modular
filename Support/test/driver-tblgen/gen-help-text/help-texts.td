@@ -24,10 +24,10 @@ def : CommandDescription<
 def FirstOptionGroup : OptionGroup<"First Options">, Index<0>;
 
 def shown : Flag<["--"], "shown">, Group<FirstOptionGroup>,
-  Index<1>, HelpText<"Appears in both help texts.">;
+  HelpText<"Appears in both help texts.">;
 
 def hidden : Flag<["--"], "hidden">, Group<FirstOptionGroup>,
-  Index<2>, Flags<[HelpHidden]>, HelpText<"Appears in the hidden help text only.">;
+  Flags<[HelpHidden]>, HelpText<"Appears in the hidden help text only.">;
 
 // CHECK:      namespace {
 // CHECK-NEXT: namespace options {

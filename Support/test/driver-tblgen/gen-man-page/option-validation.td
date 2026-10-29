@@ -25,20 +25,20 @@ def FunOptionGroup : OptionGroup<"Fun Options">;
 
 // CHECK: error: help text for option 'chute' should not be empty
 // CHECK: error: option 'chute' takes a value, but does not define a metavar name for that value
+// CHECK: error: option 'chute' has an index, but options and aliases are listed in the order they are defined
 def chute : Separate<["-"], "chute">, Group<FunOptionGroup>, Index<0>;
 
 // CHECK: error: help text for option 'ladder' should begin with a capital letter
 // CHECK: error: help text for option 'ladder' should end with a period or quotation mark
 // CHECK: error: option 'ladder' metavar name should not be empty
-defm ladder : CommandOption<["--"], "ladder", FunOptionGroup, Index<1>,
+defm ladder : CommandOption<["--"], "ladder", FunOptionGroup,
   MetaVarName<"">, HelpText<"the ladder to use">>;
-def stool : Flag<["--"], "stool">, Group<FunOptionGroup>, Index<2>,
+def stool : Flag<["--"], "stool">, Group<FunOptionGroup>,
   HelpText<"Whether to use a stool.">;
-// CHECK: error: alias 's' has no index
-def s : Joined<["-"], "s">, Group<FunOptionGroup>, Alias<stool>;
+// CHECK: error: option 's' has an index, but options and aliases are listed in the order they are defined
+def s : Joined<["-"], "s">, Group<FunOptionGroup>, Alias<stool>, Index<0>;
 
 // CHECK: error: option 'slide' metavar name should be uppercase
-// CHECK: error: option 'slide' has no index
 def slide : JoinedOrSeparate<["--", "-"], "slide">, Group<FunOptionGroup>,
   HelpText<"The slide to use.">, MetaVarName<"path">;
 
@@ -46,11 +46,11 @@ def slide : JoinedOrSeparate<["--", "-"], "slide">, Group<FunOptionGroup>,
 
 def HappyOptionGroup : OptionGroup<"Happy Options">, Flags<[HelpHidden]>;
 // CHECK: error: option group 'Happy Options' is already hidden, marking its option 'smile' as hidden is redundant
-def smile : Flag<["-"], "smile">, Group<HappyOptionGroup>, Index<0>,
+def smile : Flag<["-"], "smile">, Group<HappyOptionGroup>,
   Flags<[HelpHidden]>, HelpText<"Sometimes it's all you can do.">;
 
 def VoiceOptionGroup : OptionGroup<"Voice Options">;
-def whisper : Flag<["-"], "whisper">, Group<VoiceOptionGroup>, Index<0>,
+def whisper : Flag<["-"], "whisper">, Group<VoiceOptionGroup>,
   Flags<[HelpHidden]>, HelpText<"Use an inside voice.">;
 
 // CHECK: error: publicly documented group 'Voice Options' has no publicly documented options

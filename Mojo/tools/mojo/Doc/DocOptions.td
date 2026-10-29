@@ -24,13 +24,13 @@ include "Support/Driver/CommonOptions.td"
 
 def OutputOptionGroup : OptionGroup<"Output options">, Index<0>;
 
-defm o : CommandOption<["-"], "o", OutputOptionGroup, Index<0>,
+defm o : CommandOption<["-"], "o", OutputOptionGroup,
   MetaVarName<"PATH">,
   HelpText<"Sets the path and filename for the JSON output. If not provided, "
            "output is written to stdout.">>;
 
 defm docs_base_path : CommandOption<["--", "-"], "docs-base-path",
-  OutputOptionGroup, Index<1>, MetaVarName<"PATH">,
+  OutputOptionGroup, MetaVarName<"PATH">,
   HelpText<"Sets the path prefix for generated documentation links.">>,
   MarshallingInfoString<FrontendOpts<"docsBasePath">>;
 
@@ -39,6 +39,6 @@ defm docs_base_path : CommandOption<["--", "-"], "docs-base-path",
 //===----------------------------------------------------------------------===//
 
 def validate_doc_strings : Flag<["--", "-"], "validate-doc-strings">,
-  Group<DiagnosticOptionGroup>, Index<15>,
+  Group<DiagnosticOptionGroup>,
   Flags<[HelpHidden]>,
   HelpText<"Deprecated: use -Werror instead. Treat doc string warnings as errors.">;

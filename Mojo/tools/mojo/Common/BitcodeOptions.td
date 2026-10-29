@@ -23,7 +23,7 @@ include "Common/IncludeOptions.td"
 include "Common/Marshalling.td"
 
 defm bitcode_libs : CommandOptionHidden<["--", "-"], "bitcode-libs",
-  CompilationOptionGroup, Index<24>, MetaVarName<"LIBS">,
+  CompilationOptionGroup, MetaVarName<"LIBS">,
   HelpText<
     "External bitcode libraries to link into the generated LLVM IR."
   >>,

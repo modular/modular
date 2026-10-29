@@ -23,7 +23,7 @@ include "Common/Marshalling.td"
 include "Support/Driver/CommonOptions.td"
 
 defm diagnostic_format : CommandOption<["--", "-"], "diagnostic-format",
-  CommonOptionGroup, Index<0>, MetaVarName<"FORMAT">,
+  CommonOptionGroup, MetaVarName<"FORMAT">,
   HelpText<"The format in which diagnostics and error messages are printed. "
            "Must be one of \"text\" or \"json\" (\"text\" is the default).">>,
   MarshallingInfoChoice<DriverState<"diagnosticFormat">, ["text", "json"],

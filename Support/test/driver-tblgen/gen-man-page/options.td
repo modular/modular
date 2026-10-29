@@ -49,30 +49,30 @@ def : CommandDescription<
 // CHECK: .SS "First Options"
 def FirstOptionGroup : OptionGroup<"First Options">, Index<0>;
 
-// Note that the following options have different indices than their source
-// order. We test here that they appear in ascending index order.
-// CHECK: \fB\-bar\fR, \fB\-\-baz\fR, \fB\-\-bazzer\fR, \fB\-\-bazzest\fR
+// Options and their aliases appear in the order they are defined, which is not
+// the order of their names.
+// CHECK: \fB\-bar\fR, \fB\-\-bazzest\fR, \fB\-\-baz\fR, \fB\-\-bazzer\fR
 // CHECK-NEXT: .RS 4
 // CHECK-NEXT: Turns on bar support.
 // CHECK-NEXT: .RE
 // CHECK-NEXT: .sp
+def bar : Flag<["-"], "bar">, Group<FirstOptionGroup>,
+  HelpText<"Turns on bar support.">;
+def : Flag<["--"], "bazzest">, Group<FirstOptionGroup>, Alias<bar>;
+def : Flag<["--"], "baz">, Group<FirstOptionGroup>, Alias<bar>;
+def : Flag<["--"], "bazzer">, Group<FirstOptionGroup>, Alias<bar>;
+
 // CHECK: \fB\-\-foo\fR \fIFOO\fR, \fB\-F\fR\fIALSO\-FOO\fR, \fB\-F1\fR (\fIFOO\fR=\fI1\fR)
 // CHECK-NEXT: .RS 4
 // CHECK-NEXT: Takes a foo and does something with it.
 // CHECK-NEXT: .RE
 // CHECK-NEXT: .sp
-defm foo : CommandOption<["--", "-"], "foo", FirstOptionGroup, Index<1>,
+defm foo : CommandOption<["--", "-"], "foo", FirstOptionGroup,
   MetaVarName<"FOO">, HelpText<"Takes a foo and does something with it.">>;
-def : Joined<["-"], "F">, Group<FirstOptionGroup>, Index<1>,
+def : Joined<["-"], "F">, Group<FirstOptionGroup>,
   MetaVarName<"ALSO-FOO">, Alias<foo>;
-def : Joined<["-"], "F1">, Group<FirstOptionGroup>, Index<2>,
+def : Joined<["-"], "F1">, Group<FirstOptionGroup>,
   Alias<foo>, AliasArgs<["1"]>;
-
-def bar : Flag<["-"], "bar">, Group<FirstOptionGroup>, Index<0>,
-  HelpText<"Turns on bar support.">;
-def : Flag<["--"], "bazzest">, Group<FirstOptionGroup>, Index<2>, Alias<bar>;
-def : Flag<["--"], "baz">, Group<FirstOptionGroup>, Index<0>, Alias<bar>;
-def : Flag<["--"], "bazzer">, Group<FirstOptionGroup>, Index<1>, Alias<bar>;
 
 // Values do not make their way into man output.
 // CHECK: \fB\-\-valued\fR \fIVALUE\fR
@@ -81,7 +81,7 @@ def : Flag<["--"], "bazzer">, Group<FirstOptionGroup>, Index<1>, Alias<bar>;
 // CHECK-NEXT: .RE
 // CHECK-NEXT: .sp
 defm valued : CommandOptionWithValues<["--", "-"], "valued", FirstOptionGroup,
-  Index<3>, MetaVarName<"VALUE">, HelpText<"Values example.">, Values<"a,b,c">>;
+  MetaVarName<"VALUE">, HelpText<"Values example.">, Values<"a,b,c">>;
 
 // CHECK: .SS "Second Options"
 // CHECK-NEXT: Another \-\- potentially less useful \-\- set of options.
@@ -94,7 +94,7 @@ def SecondOptionGroup : OptionGroup<"Second Options">, Index<1>,
 // CHECK-NEXT: Specify the "I", as in "igloo."
 // CHECK-NEXT: .RE
 // CHECK-NEXT: .sp
-def : Joined<["-"], "I">, Group<SecondOptionGroup>, Index<0>,
+def : Joined<["-"], "I">, Group<SecondOptionGroup>,
   HelpText<"Specify the \"I\", as in \"igloo.\"">, MetaVarName<"IGLOO">;
 
 // Hidden option groups don't appear in manual pages.
@@ -102,5 +102,5 @@ def : Joined<["-"], "I">, Group<SecondOptionGroup>, Index<0>,
 // CHECK-NOT: blong
 def ThirdOptionGroup : OptionGroup<"Third Options">, Index<2>,
   Flags<[HelpHidden]>;
-def : Flag<["--"], "blong">, Group<ThirdOptionGroup>, Index<0>,
+def : Flag<["--"], "blong">, Group<ThirdOptionGroup>,
   HelpText<"Blongs.">;

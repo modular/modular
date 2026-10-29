@@ -26,24 +26,24 @@ include "Common/TargetOptions.td"
 //===----------------------------------------------------------------------===//
 
 def print_effective_target : Flag<["--"], "print-effective-target">,
-  Group<TargetOptionGroup>, Index<12>,
+  Group<TargetOptionGroup>,
   HelpText<"Print the effective target configuration after absorbing all "
            "command-line flags and exit.">,
   MarshallingInfoFlag<DriverOpts<"printEffectiveTarget">>;
 
 def print_supported_targets : Flag<["--"], "print-supported-targets">,
-  Group<TargetOptionGroup>, Index<13>,
+  Group<TargetOptionGroup>,
   HelpText<"Print all available target names and exit.">,
   MarshallingInfoFlag<DriverOpts<"printSupportedTargets">>;
 
 def print_supported_cpus : Flag<["--"], "print-supported-cpus">,
-  Group<TargetOptionGroup>, Index<14>,
+  Group<TargetOptionGroup>,
   HelpText<"Print valid CPU names for the specified target and exit. "
            "Requires --target-triple.">,
   MarshallingInfoFlag<DriverOpts<"printSupportedCpus">>;
 
 def print_supported_accelerators : Flag<["--"], "print-supported-accelerators">,
-  Group<TargetOptionGroup>, Index<15>,
+  Group<TargetOptionGroup>,
   HelpText<"Print all supported GPU and accelerator architectures and exit.">,
   MarshallingInfoFlag<DriverOpts<"printSupportedAccelerators">>;
 

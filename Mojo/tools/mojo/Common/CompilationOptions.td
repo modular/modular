@@ -22,7 +22,6 @@
 #define KGEN_TOOLS_MOJO_COMMON_COMPILATIONOPTIONS_TD
 
 include "Common/IncludeOptions.td"
-include "Common/IncrParsingOptions.td"
 include "Common/Marshalling.td"
 include "Support/Driver/DriverCommand.td"
 
@@ -31,7 +30,7 @@ include "Support/Driver/DriverCommand.td"
 //===----------------------------------------------------------------------===//
 
 defm optimization_level : CommandOption<["--", "-"], "optimization-level",
-  CompilationOptionGroup, Index<0>, MetaVarName<"LEVEL">,
+  CompilationOptionGroup, MetaVarName<"LEVEL">,
   HelpText<
     "Sets the level of optimization to use at compilation. The value must be "
     "a number between 0 and 3. The default is 3."
@@ -39,23 +38,11 @@ defm optimization_level : CommandOption<["--", "-"], "optimization-level",
   MarshallingInfoCustom<CompilationOpts<"optimizationLevel">,
                         "normalizeOptimizationLevel">;
 def : JoinedOrSeparate<["-"], "O">, Group<CompilationOptionGroup>,
-  Index<1>, Alias<optimization_level>;
+  Alias<optimization_level>;
 def : Flag<["--", "-"], "no-optimization">, Group<CompilationOptionGroup>,
-  Index<2>, Alias<optimization_level>, AliasArgs<["0"]>;
+  Alias<optimization_level>, AliasArgs<["0"]>;
 
-defm fp_mode : CommandOption<["--", "-"], "fp-mode",
-  CompilationOptionGroup, Index<17>, MetaVarName<"MODE">,
-  HelpText<
-    "Controls floating-point behavior as a comma-separated list of "
-    "`feature=value` items (may be given more than once). The only feature is "
-    "`contract`, one of `fast` (default) or `off`. `contract=fast` is like "
-    "Clang's `-ffp-contract=fast`: it fuses `a + b*c` into an FMA across "
-    "statements and breaking strict IEEE compliance. "
-    "`contract=off` disables contraction."
-  >>,
-  MarshallingInfoCustom<CompilationOpts<"fpMode">, "normalizeFpMode">;
-
-def D : JoinedOrSeparate<["-"], "D">, Group<CompilationOptionGroup>, Index<4>,
+def D : JoinedOrSeparate<["-"], "D">, Group<CompilationOptionGroup>,
   MetaVarName<"KEY=VALUE">,
   HelpText<"Defines a named value that can be used from within the Mojo source "
            "file being executed. For example, `-Dfoo=42` defines a name `foo` "
@@ -64,7 +51,7 @@ def D : JoinedOrSeparate<["-"], "D">, Group<CompilationOptionGroup>, Index<4>,
   MarshallingInfoStringVector<DriverOpts<"defines">>;
 
 defm debug_level : CommandOption<["--", "-"], "debug-level",
-  CompilationOptionGroup, Index<5>, MetaVarName<"LEVEL">,
+  CompilationOptionGroup, MetaVarName<"LEVEL">,
   HelpText<
     "Sets the level of debug info to use at compilation. The value must be one "
     "of: `none`, `line-tables`, or `full`. Default is `none`, except when "
@@ -76,20 +63,20 @@ defm debug_level : CommandOption<["--", "-"], "debug-level",
                         ["none", "line-tables", "full"],
                         ["kNoDebug", "kLineTablesOnly", "kFullDebugInfo"]>;
 
-def : Flag<["-"], "g">, Group<CompilationOptionGroup>, Index<6>,
+def : Flag<["-"], "g">, Group<CompilationOptionGroup>,
   Alias<debug_level>, AliasArgs<["full"]>;
 
-def : Flag<["-"], "g0">, Group<CompilationOptionGroup>, Index<7>,
+def : Flag<["-"], "g0">, Group<CompilationOptionGroup>,
   Alias<debug_level>, AliasArgs<["none"]>;
 
-def : Flag<["-"], "g1">, Group<CompilationOptionGroup>, Index<8>,
+def : Flag<["-"], "g1">, Group<CompilationOptionGroup>,
   Alias<debug_level>, AliasArgs<["line-tables"]>;
 
-def : Flag<["-"], "g2">, Group<CompilationOptionGroup>, Index<9>,
+def : Flag<["-"], "g2">, Group<CompilationOptionGroup>,
   Alias<debug_level>, AliasArgs<["full"]>;
 
 defm num_threads : CommandOption<["--", "-"], "num-threads",
-  CompilationOptionGroup, Index<10>, MetaVarName<"NUM">,
+  CompilationOptionGroup, MetaVarName<"NUM">,
   HelpText<
     "Sets the maximum number of threads to use for compilation. "
     "The default is 0 (use all available threads)."
@@ -97,11 +84,11 @@ defm num_threads : CommandOption<["--", "-"], "num-threads",
   MarshallingInfoInt<CompilationOpts<"numThreads">, "0", "size_t">;
 
 def : JoinedOrSeparate<["-"], "j">, Group<CompilationOptionGroup>,
-  Index<11>, Alias<num_threads>;
+  Alias<num_threads>;
 
 defm loop_unrolling_warn_threshold: CommandOptionHidden<["--", "-"],
   "loop-unrolling-warn-threshold",
-  CompilationOptionGroup, Index<12>, MetaVarName<"LUWT">,
+  CompilationOptionGroup, MetaVarName<"LUWT">,
   HelpText<"Sets loop unrolling factor warning threshold, "
            "default is 1024, set to 0 to disable the warning.">>,
   MarshallingInfoInt<CompilationOpts<"loopUnrollingWarnThreshold">, "1024",
@@ -109,7 +96,7 @@ defm loop_unrolling_warn_threshold: CommandOptionHidden<["--", "-"],
 
 defm elaboration_error_limit: CommandOptionHidden<["--", "-"],
   "elaboration-error-limit",
-  CompilationOptionGroup, Index<13>, MetaVarName<"ELABERRORLIMIT">,
+  CompilationOptionGroup, MetaVarName<"ELABERRORLIMIT">,
   HelpText<
     "Sets limit to number of produced errors during elaboration "
     "before stop emitting diagnostics. The default is 20, and "
@@ -118,7 +105,7 @@ defm elaboration_error_limit: CommandOptionHidden<["--", "-"],
 
 def elaboration_error_include_prelude: Flag<["--", "-"],
   "elaboration-error-include-prelude">,
-  Group<CompilationOptionGroup>, Index<14>,
+  Group<CompilationOptionGroup>,
   HelpText<
     "Show elaboration error with locations in mojo startup modules "
     "(prelude).">,
@@ -126,7 +113,7 @@ def elaboration_error_include_prelude: Flag<["--", "-"],
 
 defm elaboration_error_verbose: CommandOptionHidden<["--", "-"],
   "elaboration-error-verbose",
-  CompilationOptionGroup, Index<15>, MetaVarName<"ELABERRORVERBOSE">,
+  CompilationOptionGroup, MetaVarName<"ELABERRORVERBOSE">,
   HelpText<
     "Controls how parameter values are displayed as part of "
     "elaboration errors when function instantiation fails. "
@@ -142,12 +129,24 @@ defm elaboration_error_verbose: CommandOptionHidden<["--", "-"],
 
 defm elaboration_max_depth: CommandOptionHidden<["--", "-"],
   "elaboration-max-depth",
-  CompilationOptionGroup, Index<16>, MetaVarName<"ELABMAXDEPTH">,
+  CompilationOptionGroup, MetaVarName<"ELABMAXDEPTH">,
   HelpText<
       "The maximum elaborator instantiation depth. Default is "
       "std::numeric_limits<unsigned>::max(). Elaborator errors out if "
       "the depth of compile time recursion exceeds this value.">>,
   MarshallingInfoInt<CompilationOpts<"elaborationMaxDepth">>;
+
+defm fp_mode : CommandOption<["--", "-"], "fp-mode",
+  CompilationOptionGroup, MetaVarName<"MODE">,
+  HelpText<
+    "Controls floating-point behavior as a comma-separated list of "
+    "`feature=value` items (may be given more than once). The only feature is "
+    "`contract`, one of `fast` (default) or `off`. `contract=fast` is like "
+    "Clang's `-ffp-contract=fast`: it fuses `a + b*c` into an FMA across "
+    "statements and breaking strict IEEE compliance. "
+    "`contract=off` disables contraction."
+  >>,
+  MarshallingInfoCustom<CompilationOpts<"fpMode">, "normalizeFpMode">;
 
 //===----------------------------------------------------------------------===//
 // Experimental Compilation Options
@@ -157,7 +156,7 @@ def ExperimentalCompilationOptionGroup :
   OptionGroup<"Experimental compilation options">, Index<16>;
 
 defm sanitize : CommandOption<["--", "-"], "sanitize",
-  ExperimentalCompilationOptionGroup, Index<1>, MetaVarName<"CHECK">,
+  ExperimentalCompilationOptionGroup, MetaVarName<"CHECK">,
   HelpText<
     "Turns on runtime checks. The following values are supported: `address` "
     "(detects memory issues), and `thread` (detects multi-threading issues)."
@@ -165,7 +164,7 @@ defm sanitize : CommandOption<["--", "-"], "sanitize",
   MarshallingInfoCustom<CompilationOpts<"sanitizers">, "normalizeSanitizer">;
 
 def shared_libasan : Flag<["--", "-"], "shared-libasan">,
-  Group<ExperimentalCompilationOptionGroup>, Index<2>,
+  Group<ExperimentalCompilationOptionGroup>,
   HelpText<
     "Dynamically link the address sanitizer runtime. Requires address "
     "sanitization turned on with `--sanitize` option."
@@ -173,7 +172,7 @@ def shared_libasan : Flag<["--", "-"], "shared-libasan">,
   MarshallingInfoFlag<CompilationOpts<"sharedLibasan">>;
 
 defm external_libasan : CommandOptionHidden<["--", "-"], "external-libasan",
-  ExperimentalCompilationOptionGroup, Index<3>, MetaVarName<"FILE">,
+  ExperimentalCompilationOptionGroup, MetaVarName<"FILE">,
   HelpText<
     "Uses the provided file as libasan instead of the default provided by "
     "the system. This file must provide a compatible interface as libasan, "
@@ -182,7 +181,7 @@ defm external_libasan : CommandOptionHidden<["--", "-"], "external-libasan",
   MarshallingInfoString<CompilationOpts<"externalLibasan">>;
 
 defm debug_info_language : CommandOption<["--", "-"], "debug-info-language",
-  ExperimentalCompilationOptionGroup, Index<5>, MetaVarName<"LANGUAGE">,
+  ExperimentalCompilationOptionGroup, MetaVarName<"LANGUAGE">,
   HelpText<
     "Sets the language to emit as part of the debug info. The supported "
     "languages are: `Mojo`, and `C`. `Mojo` is the default. `C` is useful to "
