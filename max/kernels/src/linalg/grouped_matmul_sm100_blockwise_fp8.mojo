@@ -259,15 +259,9 @@ def matmul_sm100_grouped_blockwise_scaled_fp8_1d2d_kernel[
     comptime A_SCALING_BLOCK = K // a_scales_k
     comptime assert (
         BK == B_SCALING_BLOCK_K == B_SCALING_BLOCK_N == A_SCALING_BLOCK
-    ), (
-        "Only support SCALING SIZE of 128! got:"
-        + String(BK)
-        + " "
-        + String(B_SCALING_BLOCK_K)
-        + " "
-        + String(B_SCALING_BLOCK_N)
-        + " "
-        + String(A_SCALING_BLOCK)
+    ), String(
+        t"Only support SCALING SIZE of 128! got:{BK} {B_SCALING_BLOCK_K} "
+        t"{B_SCALING_BLOCK_N} {A_SCALING_BLOCK}"
     )
 
     comptime a_smem_layout = tile_layout_k_major_typed[
@@ -2103,11 +2097,9 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     comptime MMA_K = config.mma_shape[2]
 
     comptime assert BK == 128, "Only support BK = 128"
-    comptime assert MMA_N <= BK or gcd(MMA_N, BK) == MMA_N - BK, (
-        "MMA_N <= BK or gcd(MMA_N, BK) == MMA_N - BK. MMA_N="
-        + String(MMA_N)
-        + ", GCD="
-        + String(gcd(MMA_N, BK))
+    comptime assert MMA_N <= BK or gcd(MMA_N, BK) == MMA_N - BK, String(
+        t"MMA_N <= BK or gcd(MMA_N, BK) == MMA_N - BK. MMA_N={MMA_N}, GCD="
+        t"{gcd(MMA_N, BK)}"
     )
 
     comptime num_m_mmas = BM // (config.mma_shape[0] // config.cta_group)
@@ -2692,8 +2684,8 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         config.cluster_shape[0] == 1
         and config.cluster_shape[1] == 1
         and config.cluster_shape[2] == 1
-    ), "Only support cluster_shape == (1, 1, 1). Got " + String(
-        config.cluster_shape
+    ), String(
+        t"Only support cluster_shape == (1, 1, 1). Got {config.cluster_shape}"
     )
     comptime assert transpose_b, "Only support transposed B"
 
@@ -3041,8 +3033,8 @@ def grouped_matmul_dynamic_scaled_fp8[
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         get_static_string[
             "grouped_matmul_dynamic_scaled_fp8_",
-            String(a_type) + "x" + String(b_type) + "_to_" + String(c_type),
-            "_scales_" + String(a_scales_type),
+            String(t"{a_type}x{b_type}_to_{c_type}"),
+            String(t"_scales_{a_scales_type}"),
         ](),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(ctx),

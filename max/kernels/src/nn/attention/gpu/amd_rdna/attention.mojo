@@ -143,7 +143,7 @@ def _mask_apply_rdna[
                     )
                     p_reg_vectorized[mma_id, 0][j] = mask.mask(
                         (
-                            Int(block_idx.z),
+                            block_idx.z,
                             Int(q_head_idx),
                             Int(score_seq_with_start_pos),
                             Int(score_key_with_cache_start_pos),

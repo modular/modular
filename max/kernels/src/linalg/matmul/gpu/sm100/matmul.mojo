@@ -309,14 +309,8 @@ def stsm_helper[
     # the dst row offset.
     comptime stride0 = dst.static_stride[0]
     comptime stride1 = dst.static_stride[1]
-    comptime assert stride1 == 1, (
-        "stride1 must be 1. Got: "
-        + String(stride1)
-        + " for strides ("
-        + String(stride0)
-        + ", "
-        + String(stride1)
-        + ")"
+    comptime assert stride1 == 1, String(
+        t"stride1 must be 1. Got: {stride1} for strides ({stride0}, {stride1})"
     )
     comptime shape0 = dst.static_shape[
         1

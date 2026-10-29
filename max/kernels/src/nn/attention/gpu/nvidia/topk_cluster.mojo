@@ -372,7 +372,7 @@ def _ctopk_hist_reduce[
     (`_ctopk_gather_threshold`, or `_ctopk_hist_gather` at 2 and 3 ranks).
     """
     cluster_sync()
-    var tx = Int(thread_idx.x)
+    var tx = thread_idx.x
     comptime kLocal = ceildiv(nbins, CS)
     var b = kLocal * Int(block_rank_in_cluster()) + tx
     if tx < kLocal and b < nbins:
@@ -488,7 +488,7 @@ def _ctopk_hist_gather[
     The caller must have passed a cluster barrier after every rank finished
     binning `hist`, and no rank may write `hist` again: it is round 0's own.
     """
-    var tx = Int(thread_idx.x)
+    var tx = thread_idx.x
     var v = UInt32(0)
     var pre = UInt32(0)
     comptime for p in range(CS):
@@ -912,7 +912,7 @@ def _ctopk_tma_stream[
     `cand` is the candidate scatter (`_ctopk_scatter_group`), its bin floor
     in `slo`.
     """
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     comptime step = UInt32(_CTOPK_BLOCK * scan_items)
     comptime stage_elems = _ctopk_tma_stage_elems[in_dtype]()
     comptime align_u = _elems_per_16b[in_dtype]()
@@ -1832,8 +1832,8 @@ def _topk_cluster_impl[
     threshold is cut first-come, and nothing about the arrangement within a
     class is promised.
     """
-    var tid = Int(thread_idx.x)
-    var row = Int(block_idx.x)
+    var tid = thread_idx.x
+    var row = block_idx.x
     var rank = Int(block_rank_in_cluster())
 
     # One dynamic shared-memory block, carved by the offsets above. Everything
@@ -2549,7 +2549,7 @@ def _topk_cluster_bounded_kernel[
     further than the padded row's end.
     """
     with PDL():
-        var bound, sink = row_bounds.row(Int(block_idx.x), out_idxs)
+        var bound, sink = row_bounds.row(block_idx.x, out_idxs)
         _topk_cluster_impl[in_dtype, CS, TMA, RB.Sink](
             in_scores, sink, Int(N), Int(K), min(Int(N), max(0, bound))
         )

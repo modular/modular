@@ -3262,10 +3262,9 @@ struct Grouped1D1DMatmulKernel[
             "fused SwiGLU+quant requires BM % 32 == 0 (one whole SF block"
             " per warp slice post-SwiGLU)"
         )
-        comptime assert threads_per_row == 4, (
-            "fused SwiGLU+quant expects threads_per_row=4 (FragmentCoords);"
-            " got "
-            + String(threads_per_row)
+        comptime assert threads_per_row == 4, String(
+            t"fused SwiGLU+quant expects threads_per_row=4 "
+            t"(FragmentCoords); got {threads_per_row}"
         )
         comptime assert (
             Self.config.AB_swapped

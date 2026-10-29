@@ -1346,10 +1346,10 @@ def _reducescatter_plan[
     comptime if tensor_rank == 1:
         if output_layout.product() != expected_numel:
             raise Error(
-                "output buffer has "
-                + String(output_layout.product())
-                + " elements, expected "
-                + String(expected_numel)
+                String(
+                    t"output buffer has {output_layout.product()} elements, "
+                    t"expected {expected_numel}"
+                )
             )
     else:
         comptime assert (
@@ -1367,15 +1367,10 @@ def _reducescatter_plan[
         var out_cols = Int(output_layout.shape[1]())
         if out_rows != expected_rows or out_cols != expected_cols:
             raise Error(
-                "output buffer shape ("
-                + String(out_rows)
-                + ", "
-                + String(out_cols)
-                + "), expected ("
-                + String(expected_rows)
-                + ", "
-                + String(expected_cols)
-                + ")"
+                String(
+                    t"output buffer shape ({out_rows}, {out_cols}), expected ("
+                    t"{expected_rows}, {expected_cols})"
+                )
             )
 
     # AMD P2P reduce-scatter is PCIe-fabric-bound: ~128 blocks saturate it

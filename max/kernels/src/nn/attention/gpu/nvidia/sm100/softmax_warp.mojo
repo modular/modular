@@ -160,8 +160,8 @@ def fa4_scale_write_output[
     comptime o_sw_blocks = align_up(ov_depth, o_sw_K) // o_sw_K
     comptime batched = tma_bpo > 0
     comptime if batched:
-        comptime assert (
-            tma_bpo == (o_sw_blocks + 1) // 2
+        comptime assert tma_bpo == ceildiv(
+            o_sw_blocks, 2
         ), "batched scale_write expects a half-depth (ceil(blocks/2)) box."
 
     var e = elect()
@@ -219,7 +219,7 @@ def fa4_scale_write_output[
     # smem and kick off its TMA, then write the second half (which overlaps the
     # first TMA's copy) and kick off its TMA. The two halves touch disjoint
     # smem blocks, so there is no read/write hazard.
-    comptime half_blocks = (o_sw_blocks + 1) // 2
+    comptime half_blocks = ceildiv(o_sw_blocks, 2)
     write_blocks[0, half_blocks]()
     named_barrier[Int32(WARPGROUP_SIZE)](Int32(warp_group_idx))
     if local_warp_idx == 0:
@@ -358,8 +358,8 @@ def fa4_lse_combine_write[
     comptime batched = tma_bpo > 0
     comptime if batched:
         comptime assert chunks_per_blk == 1 and not cross_wg
-        comptime assert (
-            tma_bpo == (o_sw_blocks + 1) // 2
+        comptime assert tma_bpo == ceildiv(
+            o_sw_blocks, 2
         ), "batched combine expects a half-depth (ceil(iters/2)) box."
         comptime assert (
             wg_j_offset == 0 or wg_j_offset == tma_bpo
@@ -5300,7 +5300,7 @@ def fa4_softmax[
             o_blk_cols > o_chunk_cols
             and config.ov_depth % (2 * o_blk_cols) != 0
         )
-        comptime iters_per_wg0 = (iters_total + 1) // 2
+        comptime iters_per_wg0 = ceildiv(iters_total, 2)
         comptime iters_per_wg1 = iters_total // 2
         # In 1Q both WGs write the same Q rows; no per-WG gmem-row
         # offset (the depth column j drives the gmem position). Workspace

@@ -138,18 +138,17 @@ def generic_fused_qkv_matmul_kv_cache_bshd_paged[
                         "valid_lengths",
                         coord_to_index_list(valid_lengths.layout.shape_coord()),
                     ),
-                    "layer_idx=" + String(layer_idx),
-                    "num_heads=" + String(kv_collection.kv_params.num_heads),
-                    "head_size=" + String(kv_collection.kv_params.head_size),
+                    String(t"layer_idx={layer_idx}"),
+                    String(t"num_heads={kv_collection.kv_params.num_heads}"),
+                    String(t"head_size={kv_collection.kv_params.head_size}"),
                 ]
             )
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "mo.fused_qkv_matmul.padded.paged.nhead_"
-        + String(kv_collection.kv_params.num_heads)
-        + ".hdim_"
-        + String(kv_collection.kv_params.head_size),
+        String(
+            t"mo.fused_qkv_matmul.padded.paged.nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
+        ),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(ctx),
     ):
@@ -415,10 +414,10 @@ def generic_flash_attention_kv_cache_padded[
                         "valid_lengths",
                         coord_to_index_list(valid_lengths.layout.shape_coord()),
                     ),
-                    "scale=" + String(scale),
-                    "layer_idx=" + String(layer_idx),
-                    "num_heads=" + String(collection_t.kv_params.num_heads),
-                    "head_size=" + String(collection_t.kv_params.head_size),
+                    String(t"scale={scale}"),
+                    String(t"layer_idx={layer_idx}"),
+                    String(t"num_heads={collection_t.kv_params.num_heads}"),
+                    String(t"head_size={collection_t.kv_params.head_size}"),
                 ]
             )
         )
@@ -428,10 +427,9 @@ def generic_flash_attention_kv_cache_padded[
         + collection_t.name_str
         + "."
         + mask_str
-        + ".nhead_"
-        + String(collection_t.kv_params.num_heads)
-        + ".hdim_"
-        + String(collection_t.kv_params.head_size),
+        + String(
+            t".nhead_{collection_t.kv_params.num_heads}.hdim_{collection_t.kv_params.head_size}"
+        ),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
@@ -703,23 +701,16 @@ def fused_qk_rms_norm_ragged_paged[
 
     @inline(.always)
     def description_fn() {imm} -> String:
-        return (
-            trace_arg(
-                "q_proj", coord_to_index_list(q_proj.layout.shape_coord())
-            )
-            + ";layer_idx="
-            + String(layer_idx)
-            + ";num_heads="
-            + String(params.num_heads)
-            + ";head_size="
-            + String(params.head_size)
+        return trace_arg(
+            "q_proj", coord_to_index_list(q_proj.layout.shape_coord())
+        ) + String(
+            t";layer_idx={layer_idx};num_heads={params.num_heads};head_size={params.head_size}"
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "fused_qk_rms_norm_ragged_paged_nhead_"
-        + String(params.num_heads)
-        + ".hdim_"
-        + String(params.head_size),
+        String(
+            t"fused_qk_rms_norm_ragged_paged_nhead_{params.num_heads}.hdim_{params.head_size}"
+        ),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
@@ -1227,27 +1218,16 @@ def fused_qk_rms_norm_rope_ragged_paged[
 
     @inline(.always)
     def description_fn() {imm} -> String:
-        return (
-            trace_arg(
-                "q_output", coord_to_index_list(q_output.layout.shape_coord())
-            )
-            + ";layer_idx="
-            + String(layer_idx)
-            + ";num_heads="
-            + String(params.num_heads)
-            + ";head_size="
-            + String(params.head_size)
-            + ";rope_dim="
-            + String(rope_dim)
+        return trace_arg(
+            "q_output", coord_to_index_list(q_output.layout.shape_coord())
+        ) + String(
+            t";layer_idx={layer_idx};num_heads={params.num_heads};head_size={params.head_size};rope_dim={rope_dim}"
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "fused_qk_rms_norm_rope_ragged_paged_nhead_"
-        + String(params.num_heads)
-        + ".hdim_"
-        + String(params.head_size)
-        + ".rope_"
-        + String(rope_dim),
+        String(
+            t"fused_qk_rms_norm_rope_ragged_paged_nhead_{params.num_heads}.hdim_{params.head_size}.rope_{rope_dim}"
+        ),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
@@ -1677,30 +1657,17 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
 
     @inline(.always)
     def description_fn() {imm} -> String:
-        return (
-            trace_arg(
-                "q_main_output",
-                coord_to_index_list(q_main_output.layout.shape_coord()),
-            )
-            + ";layer_idx="
-            + String(layer_idx)
-            + ";main_num_heads="
-            + String(main_params.num_heads)
-            + ";index_num_heads="
-            + String(index_params.num_heads)
-            + ";head_size="
-            + String(main_params.head_size)
-            + ";rope_dim="
-            + String(rope_dim)
+        return trace_arg(
+            "q_main_output",
+            coord_to_index_list(q_main_output.layout.shape_coord()),
+        ) + String(
+            t";layer_idx={layer_idx};main_num_heads={main_params.num_heads};index_num_heads={index_params.num_heads};head_size={main_params.head_size};rope_dim={rope_dim}"
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "fused_dual_qk_rms_norm_rope_ragged_paged_nhead_"
-        + String(main_params.num_heads)
-        + ".hdim_"
-        + String(main_params.head_size)
-        + ".rope_"
-        + String(rope_dim),
+        String(
+            t"fused_dual_qk_rms_norm_rope_ragged_paged_nhead_{main_params.num_heads}.hdim_{main_params.head_size}.rope_{rope_dim}"
+        ),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
@@ -2450,30 +2417,17 @@ def fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged[
 
     @inline(.always)
     def description_fn() {imm} -> String:
-        return (
-            trace_arg(
-                "q_main_output",
-                coord_to_index_list(q_main_output.layout.shape_coord()),
-            )
-            + ";layer_idx="
-            + String(layer_idx)
-            + ";main_num_heads="
-            + String(main_collection_t.kv_params.num_heads)
-            + ";index_num_heads="
-            + String(index_collection_t.kv_params.num_heads)
-            + ";head_dim="
-            + String(head_dim)
-            + ";rope_dim="
-            + String(rope_dim)
+        return trace_arg(
+            "q_main_output",
+            coord_to_index_list(q_main_output.layout.shape_coord()),
+        ) + String(
+            t";layer_idx={layer_idx};main_num_heads={main_collection_t.kv_params.num_heads};index_num_heads={index_collection_t.kv_params.num_heads};head_dim={head_dim};rope_dim={rope_dim}"
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged_nhead_"
-        + String(main_collection_t.kv_params.num_heads)
-        + ".hdim_"
-        + String(head_dim)
-        + ".rope_"
-        + String(rope_dim),
+        String(
+            t"fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged_nhead_{main_collection_t.kv_params.num_heads}.hdim_{head_dim}.rope_{rope_dim}"
+        ),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(context),
     ):
@@ -2642,10 +2596,8 @@ def rms_norm_kv_cache_ragged_paged[
     def key_cache_input_fn[
         width: Int, alignment: Int
     ](idx: Coord) {var k_cache, var input_row_offsets} -> SIMD[dtype, width]:
-        comptime assert (
-            idx.rank == rank
-        ), "rms_norm_key_cache input lambda index should have rank " + String(
-            rank
+        comptime assert idx.rank == rank, String(
+            t"rms_norm_key_cache input lambda index should have rank {rank}"
         )
 
         var global_token_idx = Int(idx[0])
@@ -2678,10 +2630,8 @@ def rms_norm_kv_cache_ragged_paged[
     ](idx: Coord, val: SIMD[dtype, width]) {
         var k_cache, var input_row_offsets
     } -> None:
-        comptime assert (
-            idx.rank == rank
-        ), "rms_norm_key_cache output lambda index should have rank " + String(
-            rank
+        comptime assert idx.rank == rank, String(
+            t"rms_norm_key_cache output lambda index should have rank {rank}"
         )
 
         var global_token_idx = Int(idx[0])
@@ -2709,10 +2659,9 @@ def rms_norm_kv_cache_ragged_paged[
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "rms_norm_kv_cache_ragged_paged_nhead_"
-        + String(kv_collection.kv_params.num_heads)
-        + ".hdim_"
-        + String(kv_collection.kv_params.head_size),
+        String(
+            t"rms_norm_kv_cache_ragged_paged_nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
+        ),
         task_id=get_safe_task_id(context),
     ):
         _rms_norm_impl[
@@ -2788,9 +2737,8 @@ def rms_norm_value_cache_ragged_paged[
     def value_cache_input_fn[
         width: Int, alignment: Int
     ](idx: Coord) {var v_cache, var input_row_offsets} -> SIMD[dtype, width]:
-        comptime assert idx.rank == rank, (
-            "rms_norm_value_cache input lambda index should have rank "
-            + String(rank)
+        comptime assert idx.rank == rank, String(
+            t"rms_norm_value_cache input lambda index should have rank {rank}"
         )
 
         var global_token_idx = Int(idx[0])
@@ -2823,9 +2771,8 @@ def rms_norm_value_cache_ragged_paged[
     ](idx: Coord, val: SIMD[dtype, width]) {
         var v_cache, var input_row_offsets
     } -> None:
-        comptime assert idx.rank == rank, (
-            "rms_norm_value_cache output lambda index should have rank "
-            + String(rank)
+        comptime assert idx.rank == rank, String(
+            t"rms_norm_value_cache output lambda index should have rank {rank}"
         )
 
         var global_token_idx = Int(idx[0])
@@ -2853,10 +2800,9 @@ def rms_norm_value_cache_ragged_paged[
         )
 
     with Trace[TraceLevel.OP, target=target](
-        "rms_norm_value_cache_ragged_paged_nhead_"
-        + String(kv_collection.kv_params.num_heads)
-        + ".hdim_"
-        + String(kv_collection.kv_params.head_size),
+        String(
+            t"rms_norm_value_cache_ragged_paged_nhead_{kv_collection.kv_params.num_heads}.hdim_{kv_collection.kv_params.head_size}"
+        ),
         task_id=get_safe_task_id(context),
     ):
         _rms_norm_impl[

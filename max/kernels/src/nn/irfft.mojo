@@ -116,9 +116,10 @@ def _get_fft_plan[
 
     if work_size > workspace_size:
         raise Error(
-            "Need "
-            + String(work_size // 1024 // 1024)
-            + " MB of buffer allocated for cuFFT."
+            String(
+                t"Need {work_size // 1024 // 1024} MB of buffer allocated for"
+                t" cuFFT."
+            )
         )
 
     check_error(cufftSetWorkArea(plan, work_space_ptr))
@@ -173,10 +174,10 @@ def _irfft[
     var output_shape = coord_to_index_list(output.layout.shape_coord())
     if output_shape[axis] != output_size:
         raise Error(
-            "Output shape mismatch: got "
-            + String(output_shape[axis])
-            + " expected "
-            + String(output_size)
+            String(
+                t"Output shape mismatch: got {output_shape[axis]} expected"
+                t" {output_size}"
+            )
         )
 
     # Calculate batch size.

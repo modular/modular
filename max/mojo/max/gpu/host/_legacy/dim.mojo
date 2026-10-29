@@ -141,8 +141,8 @@ struct Dim(TrivialRegisterPassable, Writable):
         Returns:
             The value of the dimension at the given index.
         """
-        assert idx >= 0 and idx < 3, "dimension index out of range: " + String(
-            idx
+        assert idx >= 0 and idx < 3, String(
+            t"dimension index out of range: {idx}"
         )
         if idx == 0:
             return Int(self._value[0])

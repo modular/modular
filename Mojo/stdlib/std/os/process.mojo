@@ -304,7 +304,7 @@ struct Process:
         else:
             # An error occurred.
             var err = get_errno()
-            raise Error("waitpid failed with errno " + String(err))
+            raise Error(String(t"waitpid failed with errno {err}"))
 
     def hangup(mut self) -> Bool:
         """Send the Hang up signal to the managed child process.

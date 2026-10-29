@@ -781,8 +781,10 @@ def compute_mla_dispatch_scalars_runtime(
             sm_count,
         )
     raise Error(
-        "Unsupported MLA num_heads for direct dispatch metadata binding: "
-        + String(num_heads)
+        String(
+            t"Unsupported MLA num_heads for direct dispatch metadata binding: "
+            t"{num_heads}"
+        )
     )
 
 

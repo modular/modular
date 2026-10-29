@@ -275,9 +275,9 @@ def _fp8_index_body[
         dtype
     ](), "MXFP4 runs on the warp-specialized kernel only"
     comptime MMA_N = N_TOKENS * num_heads
-    comptime assert (
-        MMA_N == 128
-    ), "MMA_N must pack to 128 (N_TOKENS * num_heads); got " + String(MMA_N)
+    comptime assert MMA_N == 128, String(
+        t"MMA_N must pack to 128 (N_TOKENS * num_heads); got {MMA_N}"
+    )
     comptime AT = DType.float32
     comptime SW = _INDEX_SWIZZLE
     comptime NTHREADS = _NTHREADS
@@ -285,9 +285,9 @@ def _fp8_index_body[
         "the epilogue drains one TMEM lane per thread, so BM_key must equal the"
         " consumer thread count"
     )
-    comptime assert (
-        MMA_N % epilogue_chunk == 0
-    ), "epilogue_chunk must divide MMA_N; got " + String(epilogue_chunk)
+    comptime assert MMA_N % epilogue_chunk == 0, String(
+        t"epilogue_chunk must divide MMA_N; got {epilogue_chunk}"
+    )
     comptime assert epilogue_chunk <= 64, (
         "a tcgen05.ld wider than 64 needs 64+ consecutive destination registers"
         " and trips ptxas C7602"
@@ -1474,10 +1474,8 @@ def mxfp4_index_score_sm100[
     # 128-column stages already fill at 2 CTAs/SM. A 3-token tile (96
     # columns) leaves them room, so it is the only tile. Every shape takes
     # the warp-specialized kernel, as FP8 does at this head count.
-    comptime assert (
-        num_heads == 32
-    ), "the MXFP4 indexer scorer is built for 32 heads; got " + String(
-        num_heads
+    comptime assert num_heads == 32, String(
+        t"the MXFP4 indexer scorer is built for 32 heads; got {num_heads}"
     )
     comptime assert _k_tile_fits_pages[
         _BM_KEY, KOperand.page_size, pool_row_tokens, split_pages=True

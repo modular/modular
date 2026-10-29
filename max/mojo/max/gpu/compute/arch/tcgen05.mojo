@@ -203,7 +203,7 @@ def tcgen05_ld[
         (repeat * bits * datapaths) // (32 * 32),
     )
 
-    comptime shape_str = String(datapaths) + "x" + String(bits)
+    comptime shape_str = String(t"{datapaths}x{bits}")
     comptime num_str = String(repeat)
     comptime pack_str = ".pack::16b" if pack else ""
     comptime constraints_str = (
@@ -212,7 +212,7 @@ def tcgen05_ld[
     comptime output_args_str = "{" + _str_iota[
         width, prefix="$", sep=","
     ]() + "}"
-    comptime addr_str = "[$" + String(width) + "]"
+    comptime addr_str = String(t"[${width}]")
 
     @inline(.nodebug)
     def call_ld_intrinsic[
@@ -372,13 +372,13 @@ def tcgen05_st[
         " * m) // (32 * 32)."
     )
 
-    comptime shape_str = String(datapaths) + "x" + String(bits)
+    comptime shape_str = String(t"{datapaths}x{bits}")
     comptime num_str = String(repeat)
     comptime pack_str = ".unpack::16b" if pack else ""
     comptime constraints_str = (
         _get_nvtx_register_constraint[dtype]() + ","
     ) * Int(width) + "r"
-    comptime addr_str = "[$" + String(Int(width)) + "]"
+    comptime addr_str = String(t"[${Int(width)}]")
     comptime input_args_str = "{" + _str_iota[
         Int(width), prefix="$", sep=","
     ]() + "}"

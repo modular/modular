@@ -252,24 +252,14 @@ __extension SM100MLA:
         comptime assert Self.KRopeType.dtype == config.rope_gmem_dtype
         comptime assert Self.KVLUTType.dtype == config.rope_mma_dtype
         comptime assert Self.MMA_M == 64 or Self.MMA_M == 128
-        comptime assert Self.config.supported(), (
-            "\nqk_depth = "
-            + String(Self.config.qk_depth)
-            + "\nBN = "
-            + String(Self.config.BN)
-            + "\nnum_kv_stages = "
-            + String(Self.config.num_kv_stages)
-            + "\ntmem_used = "
-            + String(Self.config.tmem_used)
-            + "\nsmem_used = "
-            + String(Self.config.smem_used)
-            + "\n% smem_used = "
-            + String(
-                Float64(Self.config.smem_used)
-                / Float64(Self.config.sm100_smem_carveout)
-            )
-            + "\nsmem_total = "
-            + String(Self.config.sm100_smem_carveout)
+        comptime assert Self.config.supported(), String(
+            t"\nqk_depth = {Self.config.qk_depth}\nBN ="
+            t" {Self.config.BN}\nnum_kv_stages ="
+            t" {Self.config.num_kv_stages}\ntmem_used ="
+            t" {Self.config.tmem_used}\nsmem_used = {Self.config.smem_used}\n%"
+            t" smem_used ="
+            t" {Float64(Self.config.smem_used) / Float64(Self.config.sm100_smem_carveout)}\nsmem_total"
+            t" = {Self.config.sm100_smem_carveout}"
         )
         comptime assert (
             not Self.SchedulerType.may_advance

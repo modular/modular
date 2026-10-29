@@ -3145,7 +3145,7 @@ def _preshuffle_a_scale_4d_kernel[
     preshuffled once at load time), so this has to run once per matmul call.
     Pad rows (`mn >= M`) get zero, matching the CPU version's zero-fill.
     """
-    var idx = Int(global_idx.x)
+    var idx = global_idx.x
     var total = Int(padded_M) * K_SCALES
     if idx >= total:
         return

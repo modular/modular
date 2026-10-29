@@ -172,7 +172,7 @@ struct NamedBarrierSemaphore[
         comptime assert is_nvidia_gpu(), "target must be cuda"
         comptime assert (
             Self.id_offset + Self.max_num_barriers < MaxHardwareBarriers
-        ), "max number of barriers is " + String(MaxHardwareBarriers)
+        ), String(t"max number of barriers is {MaxHardwareBarriers}")
         self._lock = lock
         self._wait_thread = thread_id <= 0
         self._state = -1

@@ -2538,7 +2538,7 @@ def mla_decoding_single_batch[
                         comptime if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
                                 (
-                                    Int(block_idx.z),
+                                    block_idx.z,
                                     Int(score_head_idx),
                                     Int(score_row_with_start_pos),
                                     Int(score_col),
@@ -4276,8 +4276,8 @@ def mla_prefill_single_batch[
                         comptime if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
                                 (
-                                    Int(block_idx.z),
-                                    Int(block_idx.y),
+                                    block_idx.z,
+                                    block_idx.y,
                                     Int(score_row_with_start_pos),
                                     Int(score_col_with_cache_start_pos),
                                 ),

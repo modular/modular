@@ -441,9 +441,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         # The launcher sizes grid.x to the head tiles. Stating it lets the
         # compiler fold `block_idx.x * BM` instead of keeping a 64-bit copy
         # live from kernel entry to the output store, which spilled.
-        assume(
-            Int(block_idx.x) < ceildiv(Self.config.num_q_heads, Self.config.BM)
-        )
+        assume(block_idx.x < ceildiv(Self.config.num_q_heads, Self.config.BM))
 
         comptime num_reg_softmax = 192
         comptime num_reg_correction = 184
@@ -1281,7 +1279,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         var sf_smem = kv_stage_ptr.unsafe_bitcast[UInt8]().unsafe_offset(
             Self.nvfp4_sf_offset
         )
-        var lane = Int(thread_idx.x) & 31
+        var lane = thread_idx.x & 31
         var half = lane % 2
         comptime RP = Self.config.BN_QK // 16
         comptime for rp in range(RP):

@@ -961,8 +961,8 @@ def naive_block_scaled_matmul_kernel[
     comptime K_STEPS = 2 if is_fp4 else 1
     var K = Int(a.dim[1]()) * K_STEPS
 
-    var row_idx = Int(global_idx.x)
-    var col_idx = Int(global_idx.y)
+    var row_idx = global_idx.x
+    var col_idx = global_idx.y
 
     if row_idx >= M or col_idx >= N:
         return
@@ -2884,7 +2884,7 @@ def block_scaled_matmul_with_epilogue[
         get_static_string[
             "block_scaled_matmul_with_epilogue_",
             String("nvfp4_" if a_type == .uint8 else "mxfp8_"),
-            String(SF_VECTOR_SIZE) + String("_sfvs"),
+            String(t"{SF_VECTOR_SIZE}_sfvs"),
         ](),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(ctx),
@@ -3225,7 +3225,7 @@ def block_scaled_matmul[
         get_static_string[
             "block_scaled_matmul_",
             String("nvfp4_" if a_type == .uint8 else "mxfp8_"),
-            String(SF_VECTOR_SIZE) + String("_sfvs"),
+            String(t"{SF_VECTOR_SIZE}_sfvs"),
             _trace_description if _trace_description else "",
         ](),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),

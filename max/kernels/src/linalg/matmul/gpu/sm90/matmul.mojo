@@ -879,13 +879,11 @@ def _get_c_smem_layout[
 
     comptime assert available_smem_size > (
         pipeline_smem_size + (WG_BM * MIN_WG_BN * size_of[c_type]())
-    ), (
-        "There is not enough SMEM to fit the pipeline yet alone the"
-        " output tile!"
-        + " available_smem_size: "
-        + String(available_smem_size)
-        + " pipeline_smem_size + WG_BM * MIN_WG_BN * size_of[c_type](): "
-        + String(pipeline_smem_size + WG_BM * MIN_WG_BN * size_of[c_type]())
+    ), String(
+        t"There is not enough SMEM to fit the pipeline yet alone the output"
+        t" tile! available_smem_size: {available_smem_size} "
+        t"pipeline_smem_size + WG_BM * MIN_WG_BN * size_of[c_type](): "
+        t"{pipeline_smem_size + WG_BM * MIN_WG_BN * size_of[c_type]()}"
     )
 
     def _get_max_wg_bn() -> Int:

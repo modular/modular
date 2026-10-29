@@ -424,7 +424,7 @@ def _fa4_splitk_combine_kernel[
                 smem_warp[d] = acc[j]
 
     barrier()
-    for d in range(Int(thread_idx.x), ov_depth, _COMBINE_WARPS * WARP_SIZE):
+    for d in range(thread_idx.x, ov_depth, _COMBINE_WARPS * WARP_SIZE):
         var total = Scalar[_ACC](0)
         comptime for w in range(_COMBINE_WARPS):
             total += smem[w * ov_depth + d]

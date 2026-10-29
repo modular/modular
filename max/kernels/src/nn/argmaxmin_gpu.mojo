@@ -505,7 +505,7 @@ def argmax_with_bias_gpu[
                 [
                     trace_arg("logits", shape, dtype),
                     trace_arg("bias", bias_shape, bias_dtype),
-                    "position=" + String(position),
+                    String(t"position={position}"),
                 ]
             )
         )

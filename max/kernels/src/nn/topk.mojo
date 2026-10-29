@@ -298,9 +298,9 @@ def top_k[
             Span(
                 [
                     trace_arg("input", input_shape, dtype),
-                    "max_k=" + String(max_k),
-                    "axis=" + String(axis),
-                    "largest=" + String(largest),
+                    String(t"max_k={max_k}"),
+                    String(t"axis={axis}"),
+                    String(t"largest={largest}"),
                 ]
             )
         )
@@ -573,7 +573,7 @@ def fused_token_sampling_cpu[
             Span(
                 [
                     trace_arg("input", input_shape, dtype),
-                    "max_k=" + String(max_k),
+                    String(t"max_k={max_k}"),
                 ]
             )
         )
@@ -2079,9 +2079,9 @@ def topk_gpu[
             Span(
                 [
                     trace_arg("input", orig_in_shape, dtype),
-                    "max_k=" + String(max_k),
-                    "sampling=" + String(sampling),
-                    "largest=" + String(largest),
+                    String(t"max_k={max_k}"),
+                    String(t"sampling={sampling}"),
+                    String(t"largest={largest}"),
                 ]
             )
         )
@@ -2433,8 +2433,8 @@ def fused_token_sampling_gpu[
             Span(
                 [
                     trace_arg("input", input_shape, dtype),
-                    "max_k=" + String(max_k),
-                    "min_top_p=" + String(min_top_p),
+                    String(t"max_k={max_k}"),
+                    String(t"min_top_p={min_top_p}"),
                 ]
             )
         )

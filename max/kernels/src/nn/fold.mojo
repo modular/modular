@@ -88,11 +88,11 @@ def fold[
 
     if num_blocks != Scalar[input.linear_idx_type](expected_blocks):
         raise Error(
-            "Input tensor must have the same number of blocks ("
-            + String(num_blocks)
-            + ") as the expected number of blocks ("
-            + String(expected_blocks)
-            + ")."
+            String(
+                t"Input tensor must have the same number of blocks"
+                t" ({num_blocks}) as the expected number of blocks"
+                t" ({expected_blocks})."
+            )
         )
 
     var kernel_w = kernel_size[1]

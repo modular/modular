@@ -6035,10 +6035,9 @@ struct EPCombineKernel[
         # `_align` is in bytes; stores take an alignment in elements.
         comptime store_align = _align // size_of[Scalar[output_type]]()
 
-        comptime assert (
-            Self.msg_bytes % byte_simd_width == 0
-        ), "EP combine_async: message size must be divisible by " + String(
-            byte_simd_width
+        comptime assert Self.msg_bytes % byte_simd_width == 0, String(
+            t"EP combine_async: message size must be divisible by"
+            t" {byte_simd_width}"
         )
 
         var sm_id = reduce_sm_id

@@ -752,7 +752,7 @@ def stsm_helper[
     # the dst row offset.
     comptime stride0 = dst.static_stride[0]
     comptime stride1 = dst.static_stride[1]
-    comptime assert stride1 == 1, "stride1 must be 1. Got: " + String(stride1)
+    comptime assert stride1 == 1, String(t"stride1 must be 1. Got: {stride1}")
     comptime shape0 = dst.static_shape[
         1
     ] if not transpose_c else dst.static_shape[0]
@@ -1185,12 +1185,9 @@ def multi_stage_store_C[
             comptime assert (
                 transpose_c
             ), "Unaligned handling only supports transpose_c"
-            comptime assert MMA_M == 256 or cta_group == 1, (
-                "Unaligned handling only supports MMA_M == 256 or cta_group =="
-                " 1. Got "
-                + String(MMA_M)
-                + " and "
-                + String(cta_group)
+            comptime assert MMA_M == 256 or cta_group == 1, String(
+                t"Unaligned handling only supports MMA_M == 256 or "
+                t"cta_group == 1. Got {MMA_M} and {cta_group}"
             )
 
             comptime chunkM = st_matrix_swizzle.bytes() // size_of[c_type]()
@@ -1200,10 +1197,9 @@ def multi_stage_store_C[
                 chunk_num, stageN, vec_chunkM
             )
             comptime thread_num = num_output_warps * WARP_SIZE
-            comptime assert logical_c_layout.size() % thread_num == 0, (
-                "logical_c_layout.size() must be a multiple of thread_num. Got "
-                + String(logical_c_layout.size())
-                + "."
+            comptime assert logical_c_layout.size() % thread_num == 0, String(
+                t"logical_c_layout.size() must be a multiple of thread_num."
+                t" Got {logical_c_layout.size()}."
             )
             comptime value_shape = logical_c_layout.size() // thread_num
             comptime cN = c_static_N
@@ -1297,10 +1293,8 @@ def zero_output[
     var ptr = c_ptr.unsafe_offset(Int(coord[1]) * c_stride).unsafe_offset(
         Int(coord[0])
     )
-    comptime assert thread_num * simd_size >= output_N, (
-        "output_N must be less than thread_num * simd_size. Got "
-        + String(output_N)
-        + "."
+    comptime assert thread_num * simd_size >= output_N, String(
+        t"output_N must be less than thread_num * simd_size. Got {output_N}."
     )
     comptime row_thread_num = UInt32(output_N // simd_size)
     var row_boundary = (UInt32(c_N) - coord[0]) // UInt32(simd_size)
@@ -2419,9 +2413,9 @@ def _grouped_matmul_sm100_persistent[
         a_plane_splits=a_plane_splits,
     ]
 
-    comptime assert (
-        cluster_shape[1] == 1
-    ), "cluster_shape[1] must be 1. Got " + String(cluster_shape[1])
+    comptime assert cluster_shape[1] == 1, String(
+        t"cluster_shape[1] must be 1. Got {cluster_shape[1]}"
+    )
 
     var grid_dim = (
         B200.sm_count,

@@ -19,7 +19,7 @@ iteration strategies used by prefill and decode kernels.
 """
 
 from std.utils import StaticTuple
-from std.math import align_down, iota, ceildiv
+from std.math import align_down, ceildiv, clamp, iota
 from std.sys import is_nvidia_gpu, llvm_intrinsic
 from std.memory import bitcast
 from layout import (
@@ -934,7 +934,7 @@ struct ChunkedMask[local_window_size: Int](MHAMask, TrivialRegisterPassable):
 
     @staticmethod
     def name() -> String:
-        return "ChunkedMask[" + String(Self.local_window_size) + "]"
+        return String(t"ChunkedMask[{Self.local_window_size}]")
 
     @inline(.always)
     def mask[
@@ -1159,9 +1159,9 @@ struct ChunkedMask[local_window_size: Int](MHAMask, TrivialRegisterPassable):
         comptime W: Int32 = Int32(Self.local_window_size)
         var c_q: Int32 = align_down(score_row, W)
 
-        var lo: Int32 = max(min(c_q - col_start, Int32(32)), Int32(0))
-        var hi: Int32 = max(min(c_q + W - col_start, Int32(32)), Int32(0))
-        var n_oob: Int32 = max(min(num_keys - col_start, Int32(32)), Int32(0))
+        var lo: Int32 = clamp(c_q - col_start, Int32(0), Int32(32))
+        var hi: Int32 = clamp(c_q + W - col_start, Int32(0), Int32(32))
+        var n_oob: Int32 = clamp(num_keys - col_start, Int32(0), Int32(32))
 
         var high_mask: UInt32 = (
             (UInt32(1) << UInt32(hi)) - UInt32(1)
@@ -1230,7 +1230,7 @@ struct SlidingWindowCausalMask[window_size: Int](
 
     @staticmethod
     def name() -> String:
-        return "SlidingWindowCausalMask[" + String(Self.window_size) + "]"
+        return String(t"SlidingWindowCausalMask[{Self.window_size}]")
 
     @inline(.always)
     def mask[
@@ -1522,7 +1522,7 @@ struct SlidingWindowNonCausalMask[window_size: Int](
 
     @staticmethod
     def name() -> String:
-        return "SlidingWindowNonCausalMask[" + String(Self.window_size) + "]"
+        return String(t"SlidingWindowNonCausalMask[{Self.window_size}]")
 
     @inline(.always)
     def mask[
@@ -3178,8 +3178,8 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
                 )
                 var nm_lo = max(l_nm[0], r_nm[0])
                 var nm_hi = min(l_nm[1], r_nm[1])
-                nm_lo = min(max(nm_lo, cs_col), ce_col)
-                nm_hi = min(max(nm_hi, nm_lo), ce_col)
+                nm_lo = clamp(nm_lo, cs_col, ce_col)
+                nm_hi = clamp(nm_hi, nm_lo, ce_col)
                 return {
                     (nm_lo - cs_col) // UInt32(BN),
                     (nm_hi - cs_col) // UInt32(BN),
@@ -3389,7 +3389,7 @@ struct RelativeLogitsMask[
 
     @staticmethod
     def name() -> String:
-        return "RelativeLogitsMask[" + String(Self.window_size) + "]"
+        return String(t"RelativeLogitsMask[{Self.window_size}]")
 
     def __init__(
         out self,

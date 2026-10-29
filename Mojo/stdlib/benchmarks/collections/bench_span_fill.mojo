@@ -81,13 +81,13 @@ def main() raises:
     var m = Bench(BenchConfig(min_runtime_secs=0.01, max_iters=10_000_000))
     comptime for size in SIZES:
         m.bench_function(
-            bench_span_fill[size], BenchId("span_fill/" + String(size))
+            bench_span_fill[size], BenchId(String(t"span_fill/{size}"))
         )
         m.bench_function(
-            bench_unsafe_memset[size], BenchId("unsafe_memset/" + String(size))
+            bench_unsafe_memset[size], BenchId(String(t"unsafe_memset/{size}"))
         )
         m.bench_function(
             bench_span_fill_elementwise[size],
-            BenchId("span_fill_elementwise/" + String(size)),
+            BenchId(String(t"span_fill_elementwise/{size}")),
         )
     m.dump_report()

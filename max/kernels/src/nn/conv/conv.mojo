@@ -3575,7 +3575,7 @@ def conv_nhwc_direct[
                 trace_arg(
                     "output", coord_to_index_list(output.layout.shape_coord())
                 ),
-                "group=" + String(num_groups),
+                String(t"group={num_groups}"),
                 "stride=" + "x".join([stride]),
                 "padding_h=" + "x".join([pad_h]),
                 "padding_w=" + "x".join([pad_w]),
@@ -3976,7 +3976,7 @@ def _get_cudnn_meta(
         The cuDNN metadata.
     """
     # Key the cuDNN metadata cache on the device ID.
-    var cache_key = "CUDA_CUDNN_META_CACHE" + String(ctx.device().id)
+    var cache_key = String(t"CUDA_CUDNN_META_CACHE{ctx.device().id}")
 
     # Get or create the per-device cache dictionary.
     var ptr_meta = _get_global_or_null(cache_key)
@@ -4105,8 +4105,8 @@ struct CachedCuDNNMetaNHWCFull(ImplicitlyCopyable):
 def _get_cached_cudnn_meta_nhwc_full(
     ctx: DeviceContext,
 ) raises -> MutPointer[CachedCuDNNMetaNHWCFull, AnyOrigin[mut=True]]:
-    var cache_key = "CUDA_CUDNN_CACHED_META_NHWC_FULL_" + String(
-        ctx.device().id
+    var cache_key = String(
+        t"CUDA_CUDNN_CACHED_META_NHWC_FULL_{ctx.device().id}"
     )
 
     var ptr_meta = _get_global_or_null(cache_key)

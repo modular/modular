@@ -580,18 +580,11 @@ struct TransientScheduler[
 
     @staticmethod
     def get_type_name() -> String:
-        return (
-            "TransientScheduler[tile_shape = "
-            + String(Self.tile_shape)
-            + ", num_heads = "
-            + String(Self.num_heads)
-            + ", flip_prompt_idx = "
-            + String(Self.flip_prompt_idx)
-            + ", pair_cta = "
-            + String(Self.pair_cta)
-            + ", splitk_partitions = "
-            + String(Self.splitk_partitions)
-            + "]"
+        return String(
+            t"TransientScheduler[tile_shape = {Self.tile_shape}, num_heads "
+            t"= {Self.num_heads}, flip_prompt_idx = "
+            t"{Self.flip_prompt_idx}, pair_cta = {Self.pair_cta}, "
+            t"splitk_partitions = {Self.splitk_partitions}]"
         )
 
     @inline(.always)
@@ -768,16 +761,10 @@ struct TileScheduler[
 
     @staticmethod
     def get_type_name() -> String:
-        return (
-            "TileScheduler[tile_shape = "
-            + String(Self.tile_shape)
-            + ", num_heads = "
-            + String(Self.num_heads)
-            + ", num_ctas = "
-            + String(Self.num_ctas)
-            + ", schedule = "
-            + String(Self.schedule._value)
-            + "]"
+        return String(
+            t"TileScheduler[tile_shape = {Self.tile_shape}, num_heads = "
+            t"{Self.num_heads}, num_ctas = {Self.num_ctas}, schedule = "
+            t"{Self.schedule._value}]"
         )
 
     @inline(.always)

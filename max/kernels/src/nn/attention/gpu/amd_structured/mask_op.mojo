@@ -336,7 +336,7 @@ struct MaskTileOp[
                             )
                             frag[j] = mask.mask(
                                 (
-                                    Int(block_idx.z),
+                                    block_idx.z,
                                     Int(q_head_idx),
                                     Int(score_row_with_start_pos),
                                     Int(

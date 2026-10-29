@@ -3996,9 +3996,11 @@ def persistent_topk_block[
     else:
         if row_bounds:
             raise Error(
-                "row_bounds is not supported on the streaming top-k path;"
-                " use persistent_topk_block_split for N > "
-                + String(PERSISTENT_TOPK_MAX_N)
+                String(
+                    t"row_bounds is not supported on the streaming top-k path;"
+                    t" use persistent_topk_block_split for N >"
+                    t" {PERSISTENT_TOPK_MAX_N}"
+                )
             )
         ctx.enqueue_function[_streaming_topk_kernel[in_dtype]](
             in_scores,

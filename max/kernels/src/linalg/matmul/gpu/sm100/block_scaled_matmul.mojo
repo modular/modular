@@ -1816,10 +1816,9 @@ def _create_tma_and_launch[
         ceildiv(K, BK) % config.k_group_size == 0
     ), "K iterations must be a multiple of k_group_size"
 
-    comptime assert K % 16 == 0, (
-        "Due to TMA limitations, K must be a multiple of 16 elements"
-        + " but got K = "
-        + String(K)
+    comptime assert K % 16 == 0, String(
+        t"Due to TMA limitations, K must be a multiple of 16 elements but "
+        t"got K = {K}"
     )
 
     # K counts elements. Under W4A8 the weights stay nibble-packed in global
@@ -1840,10 +1839,9 @@ def _create_tma_and_launch[
     # NONE or 128B (the box check follows the descriptors). The descriptor
     # helper only `debug_assert`s the extent, which compiles out by default.
     comptime if a_packed_fp4 or b_packed_fp4:
-        comptime assert K % 128 == 0, (
-            "packed FP4 requires K to be a multiple of 128 elements but got"
-            " K = "
-            + String(K)
+        comptime assert K % 128 == 0, String(
+            t"packed FP4 requires K to be a multiple of 128 elements but "
+            t"got K = {K}"
         )
         comptime packed_swizzle = (
             config.a_swizzle if a_packed_fp4 else config.b_swizzle

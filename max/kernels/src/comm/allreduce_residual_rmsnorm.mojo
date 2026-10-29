@@ -914,25 +914,17 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
     comptime if has_residual:
         _min_buf += _rows_per_rank * cols * size_of[in_dtype]()
     comptime if quantize:
-        assert _out_scratch % size_of[scales_dtype]() == 0, (
-            String("2-stage: output scratch (")
-            + String(_out_scratch)
-            + " B) must be a multiple of sizeof(scales_dtype) for scale pointer"
-            + " alignment; rank_sigs[i] must be >= "
-            + String(_min_buf)
-            + " bytes"
+        assert _out_scratch % size_of[scales_dtype]() == 0, String(
+            t"2-stage: output scratch ({_out_scratch} B) must be a"
+            t" multiple of sizeof(scales_dtype) for scale pointer"
+            t" alignment; rank_sigs[i] must be >= {_min_buf} bytes"
         )
     comptime if has_residual:
-        assert (_out_scratch + _scale_scratch) % simd_width == 0, (
-            String("2-stage: residual scratch offset (output=")
-            + String(_out_scratch)
-            + " B + scales_padded="
-            + String(_scale_scratch)
-            + " B = "
-            + String(_out_scratch + _scale_scratch)
-            + " B) must be a multiple of simd_width ("
-            + String(simd_width)
-            + " B) for SIMD residual stores"
+        assert (_out_scratch + _scale_scratch) % simd_width == 0, String(
+            t"2-stage: residual scratch offset (output={_out_scratch} B +"
+            t" scales_padded={_scale_scratch} B = "
+            t"{_out_scratch + _scale_scratch} B) must be a multiple of"
+            t" simd_width ({simd_width} B) for SIMD residual stores"
         )
 
     # Provide evidence that flat_rank >= 2 for output.store((..., ...)).
@@ -1005,9 +997,9 @@ def _rms_norm_rows[
 ):
     comptime accum_type = get_accum_type[dtype]()
     comptime stride = threads_per_block * simd_width
-    var first_col = Int(thread_idx.x) * simd_width
+    var first_col = thread_idx.x * simd_width
 
-    for row in range(Int(block_idx.x), rows, Int(grid_dim.x)):
+    for row in range(block_idx.x, rows, grid_dim.x):
         var row_in = input.unsafe_offset(row * cols)
         var thread_m2 = Scalar[accum_type](0)
         for col in range(first_col, cols, stride):
@@ -1633,11 +1625,10 @@ def _dispatch_fused_kernel[
     else:
         comptime max_cols = warp_size * sw2 * max_warps_per_block
         raise Error(
-            "allreduce_rmsnorm: cols ("
-            + String(cols)
-            + ") exceeds max supported ("
-            + String(max_cols)
-            + ") for warp-tiling kernel"
+            String(
+                t"allreduce_rmsnorm: cols ({cols}) exceeds max supported ("
+                t"{max_cols}) for warp-tiling kernel"
+            )
         )
 
 

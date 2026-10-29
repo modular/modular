@@ -1485,11 +1485,10 @@ def _rms_norm_impl[
     # Note: we only support reduction along the last dimension
     if Int(gamma.dim[0]()) != reduce_dim_size:
         raise Error(
-            "Gamma size "
-            + String(gamma.dim[0]())
-            + " does not match dimension of reduction "
-            + String(reduce_dim_size)
-            + "."
+            String(
+                t"Gamma size {gamma.dim[0]()} does not match dimension of"
+                t" reduction {reduce_dim_size}."
+            )
         )
 
     if Int(shape.product()) == 0:
@@ -2524,10 +2523,10 @@ def group_norm_gpu[
     comptime simd_width = simd_width_of[dtype, target=ctx.target]()
     if num_cols < OutputLinearIdxType(simd_width):
         raise Error(
-            "group_norm_gpu requires num_cols >= simd_width; got num_cols="
-            + String(num_cols)
-            + " and simd_width="
-            + String(simd_width)
+            String(
+                t"group_norm_gpu requires num_cols >= simd_width; got"
+                t" num_cols={num_cols} and simd_width={simd_width}"
+            )
         )
 
     comptime warp_size = ctx.default_device_info.warp_size

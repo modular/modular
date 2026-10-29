@@ -3347,8 +3347,8 @@ def mha_single_batch[
                         comptime if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
                                 (
-                                    Int(block_idx.z),
-                                    Int(block_idx.y),
+                                    block_idx.z,
+                                    block_idx.y,
                                     Int(score_row_with_start_pos),
                                     Int(score_col),
                                 ),
@@ -4022,8 +4022,8 @@ def mha_single_batch_pipelined[
                         comptime if masked:
                             p_reg_vec2[mma_id, i] = mask.mask(
                                 (
-                                    Int(block_idx.z),
-                                    Int(block_idx.y),
+                                    block_idx.z,
+                                    block_idx.y,
                                     Int(score_row_with_start_pos),
                                     Int(score_col),
                                 ),
@@ -4668,7 +4668,7 @@ def scale_and_mask_helper[
 
                 p_reg_tile[n_mma, i + i_group * simd_width] = mask.mask(
                     (
-                        Int(block_idx.z),
+                        block_idx.z,
                         Int(q_head_idx),
                         Int(score_row),
                         Int(score_col),
@@ -5925,11 +5925,9 @@ def mha_splitk_reduce[
     # we only reduce over a warp so limit number of warps to 1
     var _batch_size = Int(batch_size)
     var _num_partitions = Int(num_partitions)
-    comptime assert num_threads == WARP_SIZE, (
-        "num_threads: "
-        + String(num_threads)
-        + " should be equal to the warp_size:"
-        + String(WARP_SIZE)
+    comptime assert num_threads == WARP_SIZE, String(
+        t"num_threads: {num_threads} should be equal to the "
+        t"warp_size:{WARP_SIZE}"
     )
     assert (
         block_dim.x == WARP_SIZE

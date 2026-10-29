@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import erfc, inf, isinf, isnan, nan
+from std.math import align_up, erfc, inf, isinf, isnan, nan
 from std.sys import bit_width_of, simd_width_of
 
 from max.algorithm.functional import elementwise
@@ -159,7 +159,7 @@ def test_erfc_f64_hard_cases() raises:
             6.10057131957997e-05,
         ]
         var n = len(inputs)
-        var padded = (n + pack_size - 1) // pack_size * pack_size
+        var padded = align_up(n, pack_size)
         var in_device = ctx.enqueue_create_buffer[dtype](padded)
         var out_device = ctx.enqueue_create_buffer[dtype](padded)
         with in_device.map_to_host() as in_host:

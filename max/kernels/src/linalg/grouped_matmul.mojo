@@ -817,7 +817,7 @@ def grouped_matmul[
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         get_static_string[
             "grouped_matmul_",
-            String(a_type) + "x" + String(b_type) + "_to_" + String(c_type),
+            String(t"{a_type}x{b_type}_to_{c_type}"),
             "_has_epilogue" if has_epilogue_fn or has_compute_fn else "",
         ](),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
@@ -1486,7 +1486,7 @@ def grouped_matmul_rowwise_dynamic_scaled_fp8[
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         get_static_string[
             "grouped_matmul_rowwise_dynamic_scaled_fp8_",
-            String(a_type) + "x" + String(b_type) + "_to_" + String(c_type),
+            String(t"{a_type}x{b_type}_to_{c_type}"),
         ](),
         task_id=get_safe_task_id(ctx),
     ):
@@ -1558,7 +1558,7 @@ def grouped_matmul_vendor[
     with Trace[TraceLevel.OP, target=StaticString("gpu")](
         get_static_string[
             "grouped_matmul_vendor_",
-            String(a_type) + "x" + String(b_type) + "_to_" + String(c_type),
+            String(t"{a_type}x{b_type}_to_{c_type}"),
         ](),
         Trace[TraceLevel.OP]._get_detail_str(vendor_description_fn),
         task_id=get_safe_task_id(ctx),

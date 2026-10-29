@@ -1423,9 +1423,7 @@ def single_group_router_kernel[
     # next power of two.
     comptime sum_lanes = next_power_of_two(n_experts_per_tok)
 
-    var token_idx = Int(block_idx.x) * (num_threads // WARP_SIZE) + Int(
-        warp_id()
-    )
+    var token_idx = block_idx.x * (num_threads // WARP_SIZE) + Int(warp_id())
     var lane = Int(lane_id())
 
     # Dependents read the routing only after their own wait, so releasing

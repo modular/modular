@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import acosh, asinh, exp, inf, isinf, isnan, nan
+from std.math import acosh, align_up, asinh, exp, inf, isinf, isnan, nan
 from std.math.math import _call_libm, _log_accurate
 from std.memory import bitcast
 from std.sys import bit_width_of, simd_width_of
@@ -316,7 +316,7 @@ def _check_hard_cases[
     correctly rounded results (mpmath), to within 1 ulp on GPU and host."""
     comptime pack_size = simd_width_of[dtype, target=ctx.target]()
     var n = len(inputs)
-    var padded = (n + pack_size - 1) // pack_size * pack_size
+    var padded = align_up(n, pack_size)
     var in_device = ctx.enqueue_create_buffer[dtype](padded)
     var out_device = ctx.enqueue_create_buffer[dtype](padded)
     with in_device.map_to_host() as in_host:
@@ -385,7 +385,7 @@ def _check_log_subnormals[
 ) raises where dtype.is_floating_point():
     comptime pack_size = 4
     var n = len(inputs)
-    var padded = (n + pack_size - 1) // pack_size * pack_size
+    var padded = align_up(n, pack_size)
     var in_device = ctx.enqueue_create_buffer[dtype](padded)
     var out_device = ctx.enqueue_create_buffer[dtype](padded)
     with in_device.map_to_host() as in_host:

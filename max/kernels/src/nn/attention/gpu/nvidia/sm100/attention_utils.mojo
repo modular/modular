@@ -1358,7 +1358,7 @@ def _build_mma[
 
     # Instruction mnemonic (no predicate prefix; that is applied per-block below).
     var instr = tcgen05_mma_type + kind if ws else (
-        "tcgen05.mma.cta_group::" + String(cta_group) + "." + kind
+        String(t"tcgen05.mma.cta_group::{cta_group}.") + kind
     )
     # Non-ws zero-column mask operand; absent for ws.
     var mask = (
@@ -2644,12 +2644,11 @@ def store_global_pred[
         address_space == .GENERIC or address_space == .GLOBAL
     ), "store_global_pred emits `st.global`; the pointer must address gmem"
     comptime size = size_of[dtype]()
-    comptime assert size in (2, 4, 8), (
-        "store_global_pred handles 2-, 4- and 8-byte scalars; got a "
-        + String(size)
-        + "-byte dtype"
+    comptime assert size in (2, 4, 8), String(
+        t"store_global_pred handles 2-, 4- and 8-byte scalars; got a "
+        t"{size}-byte dtype"
     )
-    comptime bits = "b" + String(8 * size)
+    comptime bits = String(t"b{8 * size}")
     # Bitcast to the same-width unsigned integer so one `.bXX`/register-class
     # pair covers float and integer dtypes alike; `st.global.bXX` is
     # bit-preserving.

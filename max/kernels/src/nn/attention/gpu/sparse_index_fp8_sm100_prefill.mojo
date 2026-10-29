@@ -197,7 +197,7 @@ def _index_swizzle[dtype: DType, depth: Int]() -> TensorMapSwizzle:
     comptime assert row_bytes in (
         64,
         128,
-    ), "an index row must be 64 or 128 bytes; got " + String(row_bytes)
+    ), String(t"an index row must be 64 or 128 bytes; got {row_bytes}")
     if row_bytes == 64:
         return TensorMapSwizzle.SWIZZLE_64B
     return _INDEX_SWIZZLE
@@ -1299,10 +1299,9 @@ def _fp8_index_score_prefill_kernel_sm100[
     # (multiple of 16, <= 256 for KIND_F8F6F4 at cta_group=1). Note nothing
     # downstream checks that for us: `UMMAInsDescriptor.create` just encodes
     # `N >> 3` into the descriptor, so an illegal N would be emitted silently.
-    comptime assert MMA_N % 16 == 0 and MMA_N <= 256, (
-        "MMA_N (N_TOKENS * num_heads) must be a legal UMMA N -- a multiple of"
-        " 16 and at most 256; got "
-        + String(MMA_N)
+    comptime assert MMA_N % 16 == 0 and MMA_N <= 256, String(
+        t"MMA_N (N_TOKENS * num_heads) must be a legal UMMA N -- a multiple of"
+        t" 16 and at most 256; got {MMA_N}"
     )
     comptime AT = DType.float32
     # The accumulator stays f32 whatever the output is; only the final store
@@ -1371,12 +1370,9 @@ def _fp8_index_score_prefill_kernel_sm100[
     # the decorator above reads, so this is the actual lockstep invariant and
     # it holds under a residency knob. A literal here would instead FORBID the
     # forced arm, which is the one being measured.
-    comptime assert CTAS_PER_SM == CFG.ctas_per_sm, (
-        "the body's residency must match what `nvvm.minctasm` stamped; got"
-        " CTAS_PER_SM="
-        + String(CTAS_PER_SM)
-        + " vs config "
-        + String(CFG.ctas_per_sm)
+    comptime assert CTAS_PER_SM == CFG.ctas_per_sm, String(
+        t"the body's residency must match what `nvvm.minctasm` stamped; got"
+        t" CTAS_PER_SM={CTAS_PER_SM} vs config {CFG.ctas_per_sm}"
     )
     # At most 128 columns: a tile above 128 takes the whole SM and would run at
     # half the consumer warps, and the q-scale hoist (`mma_n` registers) stops
@@ -1385,11 +1381,10 @@ def _fp8_index_score_prefill_kernel_sm100[
     # uniform decode, 1.20x once entry depths are ragged), and was removed.
     # Assert the premise rather than deriving a count from it: a wider tile
     # added later must fail to BUILD here.
-    comptime assert MMA_N <= 128, (
-        "a tile above 128 columns takes the whole SM and runs at half the"
-        " consumer warps, and its q-scales no longer fit in registers. Got"
-        " MMA_N="
-        + String(MMA_N)
+    comptime assert MMA_N <= 128, String(
+        t"a tile above 128 columns takes the whole SM and runs at half the"
+        t" consumer warps, and its q-scales no longer fit in registers. Got"
+        t" MMA_N={MMA_N}"
     )
     comptime CONS_WARPS = 4
     comptime CONS_THREADS = _NUM_SOFTMAX_THREADS
@@ -1407,12 +1402,10 @@ def _fp8_index_score_prefill_kernel_sm100[
     # lead by `NSTAGE + 1 - N_S`. Two tiles of lead is the tight bound; the
     # `+ 2` carries one stage of margin, free at every depth this kernel derives
     # and still valid if that arrive ever moves after the fold.
-    comptime assert NSTAGE >= N_S + 2, (
-        "the consumer releases K slots now, so the ring must be deeper than the"
-        " MMA's lag behind the fully-started frontier (N_S = "
-        + String(N_S)
-        + ") plus two to pipeline; got NSTAGE="
-        + String(NSTAGE)
+    comptime assert NSTAGE >= N_S + 2, String(
+        t"the consumer releases K slots now, so the ring must be deeper than"
+        t" the MMA's lag behind the fully-started frontier (N_S = {N_S}) plus"
+        t" two to pipeline; got NSTAGE={NSTAGE}"
     )
     # Producer warpgroup thread roles, immediately after the consumer warps:
     # MMA, TMA, q-scale transpose, idle. The producer warpgroup is always four
@@ -1485,9 +1478,8 @@ def _fp8_index_score_prefill_kernel_sm100[
         " straddle a token boundary"
     )
     comptime Q_INTERLEAVE = _q_interleave[N_TOKENS]()
-    comptime assert _Q_INTERLEAVE_FORCE != 1 or Q_INTERLEAVE, (
-        "FP8_INDEX_Q_INTERLEAVE=1 needs a power-of-two ACCW; got ACCW="
-        + String(ACCW)
+    comptime assert _Q_INTERLEAVE_FORCE != 1 or Q_INTERLEAVE, String(
+        t"FP8_INDEX_Q_INTERLEAVE=1 needs a power-of-two ACCW; got ACCW={ACCW}"
     )
     # Interleaved, lane `L` of `acc` always holds token `L % N_TOKENS`: a group
     # starting at column `col` lands on lanes `[col % ACC_LANES, + ACCW)`.
@@ -1497,10 +1489,9 @@ def _fp8_index_score_prefill_kernel_sm100[
     # `ACC_LANES` need not be a power of two (6 at T=3), which a SIMD width
     # must be, so the accumulator is `ACC_LANES / ACCW` group-wide slices.
     comptime ACC_SLICES = ACC_LANES // ACCW
-    comptime assert ACCW % 2 == 0 and EPI_CHUNK % ACCW == 0, (
-        "the fold pairs columns into f32x2 and a group must not straddle a"
-        " `tcgen05.ld` chunk; got ACCW="
-        + String(ACCW)
+    comptime assert ACCW % 2 == 0 and EPI_CHUNK % ACCW == 0, String(
+        t"the fold pairs columns into f32x2 and a group must not straddle a"
+        t" `tcgen05.ld` chunk; got ACCW={ACCW}"
     )
 
     comptime k_elems = BM_key * depth
@@ -1578,11 +1569,9 @@ def _fp8_index_score_prefill_kernel_sm100[
     comptime CLC_FULL_OFF = QS_READY_OFF + Q_SLOTS
     comptime S_EMPTY_OFF = CLC_FULL_OFF + 1
     comptime N_MBAR = S_EMPTY_OFF + N_S
-    comptime assert N_MBAR == CFG.n_mbars, (
-        "body barrier layout disagrees with the config's `n_mbars`; got "
-        + String(N_MBAR)
-        + " vs "
-        + String(CFG.n_mbars)
+    comptime assert N_MBAR == CFG.n_mbars, String(
+        t"body barrier layout disagrees with the config's `n_mbars`; got"
+        t" {N_MBAR} vs {CFG.n_mbars}"
     )
     var k_full = mbar.unsafe_offset(K_FULL_OFF)
     var k_empty = mbar.unsafe_offset(K_EMPTY_OFF)
@@ -1665,19 +1654,14 @@ def _fp8_index_score_prefill_kernel_sm100[
     comptime SFB_COL = SFA_COL + N_S * _SF_ATOM_COLS
     comptime TMEM_USED_COLS = N_S * S_COLS + CFG.sf_cols
     comptime TMEM_COLS = UInt32(next_power_of_two(TMEM_USED_COLS))
-    comptime assert Int(TMEM_COLS) == CFG.tmem_cols, (
-        "body TMEM footprint disagrees with the config's `tmem_cols`; got "
-        + String(TMEM_COLS)
-        + " vs "
-        + String(CFG.tmem_cols)
+    comptime assert Int(TMEM_COLS) == CFG.tmem_cols, String(
+        t"body TMEM footprint disagrees with the config's `tmem_cols`; got"
+        t" {TMEM_COLS} vs {CFG.tmem_cols}"
     )
-    comptime assert Int(TMEM_COLS) * CTAS_PER_SM <= 512, (
-        "S^T stages need "
-        + String(TMEM_COLS)
-        + " TMEM columns (rounded up to a power of two from "
-        + String(TMEM_USED_COLS)
-        + "), which exceeds the SM's 512 at CTAS_PER_SM="
-        + String(CTAS_PER_SM)
+    comptime assert Int(TMEM_COLS) * CTAS_PER_SM <= 512, String(
+        t"S^T stages need {TMEM_COLS} TMEM columns (rounded up to a power of"
+        t" two from {TMEM_USED_COLS}), which exceeds the SM's 512 at"
+        t" CTAS_PER_SM={CTAS_PER_SM}"
     )
 
     # The mbarrier init above is plain per-thread stores, so it runs before the
@@ -3031,13 +3015,9 @@ def fp8_index_score_sm100_prefill[
         <= ctx.default_device_info.shared_memory_per_multiprocessor
         // CTAS_PER_SM
         - 1024
-    ), (
-        "prefill SMEM ("
-        + String(smem_bytes)
-        + " B) exceeds the budget for CTAS_PER_SM="
-        + String(CTAS_PER_SM)
-        + "; lower the K ring depth for MMA_N="
-        + String(MMA_N)
+    ), String(
+        t"prefill SMEM ({smem_bytes} B) exceeds the budget for"
+        t" CTAS_PER_SM={CTAS_PER_SM}; lower the K ring depth for MMA_N={MMA_N}"
     )
     # `max_num_keys` crosses the ABI as `Int32` and the kernel's whole key-index
     # chain is 32-bit signed, so the narrowing here is a silent truncation of a

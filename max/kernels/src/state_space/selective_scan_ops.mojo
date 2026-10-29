@@ -108,7 +108,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
 
         if dstate != 16 and dstate != 8:
             raise Error(
-                "Unsupported dstate: " + String(dstate) + ". Expected 8 or 16."
+                String(t"Unsupported dstate: {dstate}. Expected 8 or 16.")
             )
 
         # Dispatch runtime dstate to compile-time DSTATE for comptime for
@@ -373,7 +373,7 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
 
         if dstate != 16 and dstate != 8:
             raise Error(
-                "Unsupported dstate: " + String(dstate) + ". Expected 8 or 16."
+                String(t"Unsupported dstate: {dstate}. Expected 8 or 16.")
             )
 
         comptime if is_cpu[target]():
@@ -601,7 +601,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
 
         if dstate != 16 and dstate != 8:
             raise Error(
-                "Unsupported dstate: " + String(dstate) + ". Expected 8 or 16."
+                String(t"Unsupported dstate: {dstate}. Expected 8 or 16.")
             )
 
         comptime if is_cpu[target]():

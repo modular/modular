@@ -65,15 +65,13 @@ def main() raises:
     if ctx.api() == "cuda":
         print("GPUInfo(")
         print('name="' + ctx.device().get_name() + '", ')
-        print('api="' + String(ctx.api()) + '", ')
+        print(String(t'api="{ctx.api()}", '))
         print(
             'arch_name="'
             + compute_capability_to_arch_name(major, minor)
             + '", '
         )
-        print(
-            "compute=" + String(Float32(major) + (Float32(minor) / 10)) + ", "
-        )
+        print(String(t"compute={Float32(major) + (Float32(minor) / 10)}, "))
         print('version="' + arch_name + '", ')
         print(
             "sm_count="
@@ -113,11 +111,9 @@ def main() raises:
     elif ctx.api() == "hip":
         print("GPUInfo(")
         print('name="' + ctx.device().get_name() + '", ')
-        print('api="' + String(ctx.api()) + '", ')
+        print(String(t'api="{ctx.api()}", '))
         print('arch_name="' + arch_name + '", ')
-        print(
-            "compute=" + String(Float32(major) + (Float32(minor) / 10)) + ", "
-        )
+        print(String(t"compute={Float32(major) + (Float32(minor) / 10)}, "))
         print(
             "sm_count="
             + String(

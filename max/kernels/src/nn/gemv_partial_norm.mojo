@@ -516,10 +516,9 @@ def _gemv_partial_norm_fused[
     comptime assert gamma.element_size == 1
 
     var m = Int(act.dim[0]())
-    assert m == 1, (
-        "gemv_and_partial_norm fused path is GEMV-only (M=1); got M="
-        + String(m)
-        + ". Use matmul + rms_norm_gpu for M>1."
+    assert m == 1, String(
+        t"gemv_and_partial_norm fused path is GEMV-only (M=1); got M={m}. Use"
+        t" matmul + rms_norm_gpu for M>1."
     )
 
     var k = Int(act.dim[1]())

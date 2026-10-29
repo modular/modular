@@ -399,11 +399,9 @@ def fused_qk_rope_ragged[
     comptime assert freqs_cis.LayoutType._shape_types[
         1
     ].is_static_value, "Need static shape for freqs_cis"
-    comptime assert rope_dim <= q_head_size and rope_dim <= k_head_size, (
-        "rope_dim must be smaller or equal to head size, but got rope_dim = "
-        + String(rope_dim)
-        + " and head_size = "
-        + String(k_head_size)
+    comptime assert rope_dim <= q_head_size and rope_dim <= k_head_size, String(
+        t"rope_dim must be smaller or equal to head size, but got rope_dim ="
+        t" {rope_dim} and head_size = {k_head_size}"
     )
     comptime has_nope_prefix = has_nope and not interleaved
     comptime if has_nope and not interleaved:

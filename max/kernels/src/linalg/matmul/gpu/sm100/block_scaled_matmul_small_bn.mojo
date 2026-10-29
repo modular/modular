@@ -2409,10 +2409,9 @@ def _create_tma_and_launch[
         ceildiv(K, BK) % config.k_group_size == 0
     ), "K iterations must be a multiple of k_group_size"
 
-    comptime assert K % 16 == 0, (
-        "Due to TMA limitations, K must be a multiple of 16 bytes"
-        + " but got K = "
-        + String(K)
+    comptime assert K % 16 == 0, String(
+        t"Due to TMA limitations, K must be a multiple of 16 bytes but got "
+        t"K = {K}"
     )
 
     # A matrix TMA (from TileTensor)

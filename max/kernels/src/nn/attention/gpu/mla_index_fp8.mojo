@@ -298,7 +298,7 @@ def _pin_kept_block_kernel[
     `((position + 1) // ratio - 1) // block_size`; that block's maximum
     becomes `+inf` so the selection always keeps it. One thread per row.
     """
-    var row = Int(block_idx.x) * _KEEP_PASS_THREADS + Int(thread_idx.x)
+    var row = block_idx.x * _KEEP_PASS_THREADS + thread_idx.x
 
     with PDL():
         if row >= Int(rows):
@@ -322,7 +322,7 @@ def _drop_dead_kept_blocks_kernel(
 
     One thread per id slot.
     """
-    var i = Int(block_idx.x) * _KEEP_PASS_THREADS + Int(thread_idx.x)
+    var i = block_idx.x * _KEEP_PASS_THREADS + thread_idx.x
 
     with PDL():
         if i >= Int(slots):
@@ -351,12 +351,12 @@ def _expand_kept_blocks_kernel(
     top_k: Int32,
 ):
     """Sets the flag of each kept block id, one row per CTA."""
-    var row = Int(block_idx.x)
+    var row = block_idx.x
     var k = Int(top_k)
     var n = Int(num_blocks)
 
     with PDL():
-        for j in range(Int(thread_idx.x), k, _EXPAND_THREADS):
+        for j in range(thread_idx.x, k, _EXPAND_THREADS):
             var b = Int(ids[row * k + j])
             if b >= 0 and b < n:
                 keep[row * n + b] = 1

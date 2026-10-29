@@ -366,11 +366,10 @@ def _rms_norm_fused_residual_cpu_entry[
     # Note: we only support reduction along the last dimension
     if Int(gamma.dim[0]()) != Int(shape[rank - 1]):
         raise Error(
-            "Gamma size "
-            + String(gamma.dim[0]())
-            + " does not match dimension of reduction "
-            + String(shape[rank - 1].value())
-            + "."
+            String(
+                t"Gamma size {gamma.dim[0]()} does not match dimension of "
+                t"reduction {shape[rank - 1].value()}."
+            )
         )
 
     if Int(shape.product()) == 0:
@@ -843,11 +842,10 @@ def _rms_norm_fused_residual_impl[
     # Note: we only support reduction along the last dimension
     if Int(gamma.dim[0]()) != Int(shape[rank - 1]):
         raise Error(
-            "Gamma size "
-            + String(gamma.dim[0]())
-            + " does not match dimension of reduction "
-            + String(shape[rank - 1].value())
-            + "."
+            String(
+                t"Gamma size {gamma.dim[0]()} does not match dimension of "
+                t"reduction {shape[rank - 1].value()}."
+            )
         )
 
     if Int(shape.product()) == 0:

@@ -833,7 +833,7 @@ struct MLAPrefillSparseQKVFP8[
         Needs only the indices, so a producer issues it ahead of the tile's
         wait and hides its latency.
         """
-        var tid = Int(thread_idx.x) % WARPGROUP_SIZE
+        var tid = thread_idx.x % WARPGROUP_SIZE
         var row0 = 16 * (tid // WARP_SIZE) + (tid % WARP_SIZE) // 4
         var rows = SIMD[DType.int64, 2](-1)
         comptime for m in range(2):
@@ -859,7 +859,7 @@ struct MLAPrefillSparseQKVFP8[
         of chunk `qc` of the row item `i` expands, as `_dequant_k_nvfp4` maps
         its items.
         """
-        var qc0 = (Int(thread_idx.x) % WARPGROUP_SIZE) % 4
+        var qc0 = (thread_idx.x % WARPGROUP_SIZE) % 4
         var src = kv_lut.scales_raw_ptr().unsafe_bitcast[UInt16]()
         var sf = SIMD[DType.uint16, 8](0)
         comptime for m in range(2):
@@ -894,7 +894,7 @@ struct MLAPrefillSparseQKVFP8[
         comptime P_SW = make_ldmatrix_swizzle[
             FP8_TYPE, row_size=64, log2_vector_width=4
         ]()
-        var tid = Int(thread_idx.x) % WARPGROUP_SIZE
+        var tid = thread_idx.x % WARPGROUP_SIZE
         var w = tid // WARP_SIZE
         var l = tid % WARP_SIZE
         var j = l % 8
@@ -969,7 +969,7 @@ struct MLAPrefillSparseQKVFP8[
         top_k_length: UInt32,
     ) -> Int:
         """The scale-pool row of the V row this thread dequantizes."""
-        var tid = Int(thread_idx.x) % WARPGROUP_SIZE
+        var tid = thread_idx.x % WARPGROUP_SIZE
         return Self._live_scale_row(
             indices, scale_rows_base, slot0 + UInt32(tid), top_k_length
         )
@@ -1018,7 +1018,7 @@ struct MLAPrefillSparseQKVFP8[
         comptime P_SW = make_ldmatrix_swizzle[
             FP8_TYPE, row_size=64, log2_vector_width=4
         ]()
-        var row = Int(thread_idx.x) % WARPGROUP_SIZE
+        var row = thread_idx.x % WARPGROUP_SIZE
         var src = v_smem_buf.unsafe_bitcast[UInt8]().unsafe_offset(
             Self.NVFP4_V_ZONE_OFF + row * Self.NVFP4_V_ATOM_BYTES
         )

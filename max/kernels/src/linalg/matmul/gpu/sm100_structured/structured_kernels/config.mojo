@@ -833,7 +833,7 @@ struct MatmulConfig[
         )
 
     def write_to[W: Writer](self, mut writer: W):
-        writer.write("SM100_" + String(self.gemm_kind) + "_")
+        writer.write(String(t"SM100_{self.gemm_kind}_"))
         _write_common_config[W, Self.a_type, Self.c_type, Self.transpose_b](
             writer,
             self.cta_group,
@@ -1558,7 +1558,7 @@ struct BlockScaledMatmulConfig[
         )
 
     def write_to[W: Writer](self, mut writer: W):
-        writer.write("SM100_block_scaled_" + String(self.gemm_kind) + "_")
+        writer.write(String(t"SM100_block_scaled_{self.gemm_kind}_"))
         writer.write(self.scaling_kind, "_")
         writer.write("A_vec", self.vec_sf_size, "_")
         writer.write(Self.sfa_dtype, "_")
@@ -1593,8 +1593,8 @@ struct BlockScaledMatmulConfig[
         self.write_to(writer)
 
     def get_kernel_name(self) -> String:
-        var name = String("SM100_block_scaled_" + String(self.gemm_kind) + "_")
-        name += String(self.scaling_kind) + "_"
+        var name = String(t"SM100_block_scaled_{self.gemm_kind}_")
+        name += String(t"{self.scaling_kind}_")
         name += _get_common_config_string[
             Self.a_type, Self.b_type, Self.c_type, Self.transpose_b
         ](
@@ -1617,10 +1617,10 @@ struct BlockScaledMatmulConfig[
             self.register_based_epilogue,
             False,
         )
-        name += String("A_vec") + String(self.vec_sf_size) + "_"
-        name += String(_get_dtype_name(Self.sfa_dtype)) + "_"
-        name += String("B_vec") + String(self.vec_sf_size) + "_"
-        name += String(_get_dtype_name(Self.sfb_dtype)) + "_"
+        name += String(t"A_vec{self.vec_sf_size}_")
+        name += String(t"{_get_dtype_name(Self.sfa_dtype)}_")
+        name += String(t"B_vec{self.vec_sf_size}_")
+        name += String(t"{_get_dtype_name(Self.sfb_dtype)}_")
         name += String("cpasync_sfb_" if self.is_small_bn else "")
 
         return name

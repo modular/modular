@@ -287,7 +287,7 @@ def short_conv_ring[
                     )
 
     with Trace[TraceLevel.OP, target=target](
-        "short_conv_ring.channels_" + String(channels),
+        String(t"short_conv_ring.channels_{channels}"),
         task_id=get_safe_task_id(context),
     ):
         context.enqueue_function(
@@ -605,10 +605,9 @@ def fused_qk_rms_norm_short_conv_ragged_paged[
         return
 
     with Trace[TraceLevel.OP, target=target](
-        "fused_qk_rms_norm_short_conv_ragged_paged.kv_nhead_"
-        + String(params.num_heads)
-        + ".hdim_"
-        + String(head_dim),
+        String(
+            t"fused_qk_rms_norm_short_conv_ragged_paged.kv_nhead_{params.num_heads}.hdim_{head_dim}"
+        ),
         task_id=get_safe_task_id(context),
     ):
         _launch_fused_qk_rms_norm_short_conv[

@@ -316,7 +316,7 @@ struct FileHandle(Movable, Writer, _FieldNicheable):
 
         if bytes_read < 0:
             var err = get_errno()
-            raise Error("Failed to read from file: " + String(err))
+            raise Error(String(t"Failed to read from file: {err}"))
 
         return bytes_read
 
@@ -388,7 +388,7 @@ struct FileHandle(Movable, Writer, _FieldNicheable):
 
             if chunk_bytes_read < 0:
                 var err = get_errno()
-                raise Error("Failed to read from file: " + String(err))
+                raise Error(String(t"Failed to read from file: {err}"))
 
             num_read += chunk_bytes_read
 
@@ -451,7 +451,7 @@ struct FileHandle(Movable, Writer, _FieldNicheable):
 
         if pos < 0:
             var err = get_errno()
-            raise Error("Failed to seek in file: " + String(err))
+            raise Error(String(t"Failed to seek in file: {err}"))
 
         return UInt64(pos)
 
@@ -496,7 +496,7 @@ struct FileHandle(Movable, Writer, _FieldNicheable):
 
         if bytes_written < 0:
             var err = get_errno()
-            raise Error("Failed to write to file: " + String(err))
+            raise Error(String(t"Failed to write to file: {err}"))
 
         return bytes_written
 
@@ -645,7 +645,7 @@ struct FileHandle(Movable, Writer, _FieldNicheable):
 
             if bytes_written < 0:
                 var err = get_errno()
-                raise Error("Failed to write to file: " + String(err))
+                raise Error(String(t"Failed to write to file: {err}"))
 
             # write() returning 0 typically means the object cannot accept more bytes
             if bytes_written == 0:

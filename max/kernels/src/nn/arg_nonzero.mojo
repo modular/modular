@@ -312,12 +312,11 @@ def _arg_nonzero_gpu[
     for axis in range(rank):
         if actual_strides[axis] != row_major_strides[axis]:
             raise Error(
-                "arg_nonzero GPU path requires a row-major input; axis "
-                + String(axis)
-                + " has stride "
-                + String(actual_strides[axis])
-                + ", expected "
-                + String(row_major_strides[axis])
+                String(
+                    t"arg_nonzero GPU path requires a row-major input; axis "
+                    t"{axis} has stride {actual_strides[axis]}, expected "
+                    t"{row_major_strides[axis]}"
+                )
             )
 
     # One tile per block. The offsets kernel scans the tile counts in a

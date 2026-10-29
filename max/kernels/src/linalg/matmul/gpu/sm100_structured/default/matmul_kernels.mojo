@@ -2051,13 +2051,11 @@ struct BlackwellMatmulSM100Kernel[
                     comptime assert (
                         Self.config.prefetch_tiles_n
                         <= Self.num_group_pipeline_stages
-                    ), (
-                        "prefetch_tiles_n ("
-                        + String(Self.config.prefetch_tiles_n)
-                        + ") must not exceed num_group_pipeline_stages ("
-                        + String(Self.num_group_pipeline_stages)
-                        + "); Phase 1 would fill the ring before barriers can"
-                        " fire."
+                    ), String(
+                        t"prefetch_tiles_n ({Self.config.prefetch_tiles_n})"
+                        t" must not exceed num_group_pipeline_stages ("
+                        t"{Self.num_group_pipeline_stages}); Phase 1 would "
+                        t"fill the ring before barriers can fire."
                     )
                     with input_pipeline.producer() as producer:
                         for current in load_iter:

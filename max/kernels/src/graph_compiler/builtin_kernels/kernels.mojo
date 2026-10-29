@@ -1747,9 +1747,9 @@ struct Struct_rope_ragged_paged[interleaved: Bool, rope_first: Bool]:
                         ),
                         trace_arg("start_pos", start_pos.shape()),
                         trace_arg("freqs_cis", freqs_cis.shape()),
-                        "interleaved=" + String(Self.interleaved),
-                        "rope_first=" + String(Self.rope_first),
-                        "target=" + String(target),
+                        String(t"interleaved={Self.interleaved}"),
+                        String(t"rope_first={Self.rope_first}"),
+                        String(t"target={target}"),
                     ]
                 )
             )
@@ -1825,8 +1825,8 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
                         trace_arg("start_pos", start_pos.shape()),
                         trace_arg("freqs_cis", freqs_cis.shape()),
                         trace_arg("position_ids", position_ids.shape()),
-                        "interleaved=" + String(Self.interleaved),
-                        "target=" + String(target),
+                        String(t"interleaved={Self.interleaved}"),
+                        String(t"target={target}"),
                     ]
                 )
             )
@@ -3938,10 +3938,11 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
             )
         else:
             raise Error(
-                "gated_delta_conv1d_fwd: unsupported kernel_size "
-                + String(kernel_size)
-                + ". Only kernel_size=4 is currently compiled; add a new elif"
-                + " branch in kernels to support other sizes."
+                String(
+                    t"gated_delta_conv1d_fwd: unsupported kernel_size "
+                    t"{kernel_size}. Only kernel_size=4 is currently compiled; "
+                    t"add a new elif branch in kernels to support other sizes."
+                )
             )
 
 
@@ -4335,13 +4336,13 @@ struct GatedDeltaRecurrenceFwd:
             )
         else:
             raise Error(
-                "gated_delta_recurrence_fwd: unsupported"
-                + " (key_head_dim, value_head_dim) = ("
-                + String(shape.key_head_dim)
-                + ", "
-                + String(shape.value_head_dim)
-                + "). Only (128, 128) is currently compiled; add a new elif"
-                + " branch in kernels to support other sizes."
+                String(
+                    t"gated_delta_recurrence_fwd: unsupported (key_head_dim, "
+                    t"value_head_dim) = ({shape.key_head_dim}, "
+                    t"{shape.value_head_dim}). Only (128, 128) is currently "
+                    t"compiled; add a new elif branch in kernels to support "
+                    t"other sizes."
+                )
             )
 
 
@@ -4875,9 +4876,10 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
         comptime if cache_indices.rank == 2:
             if cache_indices.dim_size(0) != 1:
                 raise Error(
-                    "cache_indices must be [batch] or [1, batch], got leading"
-                    " extent "
-                    + String(cache_indices.dim_size(0))
+                    String(
+                        t"cache_indices must be [batch] or [1, batch], got"
+                        t" leading extent {cache_indices.dim_size(0)}"
+                    )
                 )
         # fp16 can overflow on the unbounded state, so only the two validated
         # storage dtypes are accepted.
@@ -5119,9 +5121,10 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                 launch[256]()
             case _:
                 raise Error(
-                    "Unsupported dstate: "
-                    + String(dstate)
-                    + ". Expected 16, 64, 128, or 256."
+                    String(
+                        t"Unsupported dstate: {dstate}. Expected 16, 64, 128, "
+                        t"or 256."
+                    )
                 )
 
 
@@ -5277,8 +5280,10 @@ struct Mamba2ReplayFold[dt_softplus: Bool = True]:
                 or ssm_rows.dim_size(0) != NUM_LAYERS
             ):
                 raise Error(
-                    "conv_rows and ssm_rows need one row per layer, "
-                    + String(NUM_LAYERS)
+                    String(
+                        t"conv_rows and ssm_rows need one row per layer, "
+                        t"{NUM_LAYERS}"
+                    )
                 )
             # Each thread moves its dstate lanes of the pool as one vector.
             if ssm_pool.strides()[3] != 1:
@@ -5420,9 +5425,10 @@ struct CausalConv1DVarlenFwd[
         comptime if cache_indices.rank == 2:
             if cache_indices.dim_size(0) != 1:
                 raise Error(
-                    "cache_indices must be [batch] or [1, batch], got leading"
-                    " extent "
-                    + String(cache_indices.dim_size(0))
+                    String(
+                        t"cache_indices must be [batch] or [1, batch], got"
+                        t" leading extent {cache_indices.dim_size(0)}"
+                    )
                 )
         comptime silu_activation = Self.activation == "silu"
 

@@ -955,11 +955,11 @@ def multistage_qgemm_kernel[
         comptime if has_epilogue_fn:
             var c_gmem_frag, _, c_frag_offset = c_gmem_warp_tile.vectorize[
                 1, simd_size
-            ]().distribute_with_offset[warp_layout](Int(thread_idx.x))
+            ]().distribute_with_offset[warp_layout](thread_idx.x)
             var c_smem_frag, _, c_smem_frag_offset = (
                 accum_smem_warp_tile.vectorize[
                     1, simd_size
-                ]().distribute_with_offset[warp_layout](Int(thread_idx.x))
+                ]().distribute_with_offset[warp_layout](thread_idx.x)
             )
             var thread_offset = c_tile_offset + c_warp_offset + c_frag_offset
             comptime num_stores_per_thread = type_of(

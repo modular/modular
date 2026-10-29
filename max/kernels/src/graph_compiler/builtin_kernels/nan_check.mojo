@@ -186,13 +186,8 @@ def nan_check_raise[
     var infs = Int(inf_count.ptr[])
     if nans > 0 or infs > 0:
         raise Error(
-            "NaN/Inf detected in '"
-            + String(label)
-            + "' ("
-            + String(type_str)
-            + "): "
-            + String(nans)
-            + " NaN, "
-            + String(infs)
-            + " Inf"
+            String(
+                t"NaN/Inf detected in '{label}' ({type_str}): {nans} NaN, "
+                t"{infs} Inf"
+            )
         )

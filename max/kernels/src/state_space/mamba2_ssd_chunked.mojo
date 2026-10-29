@@ -210,9 +210,9 @@ def ssd_chunk_cumsum[
     Grid `(slots, nheads)`, block `CHUNK` threads, one token each.
     """
     var slots = Int(slots_i)
-    var slot = Int(block_idx.x)
-    var h = Int(block_idx.y)
-    var i = Int(thread_idx.x)
+    var slot = block_idx.x
+    var h = block_idx.y
+    var i = thread_idx.x
     var length = Int(info[slots + slot])
     if length == 0:
         return
@@ -290,10 +290,10 @@ def ssd_chunk_state[
     var nheads = Int(nheads_i)
     var head_dim = Int(head_dim_i)
     var ngroups = Int(ngroups_i)
-    var slot = Int(block_idx.x)
-    var h = Int(block_idx.y)
-    var p_base = Int(block_idx.z) * TILE
-    var tid = Int(thread_idx.x)
+    var slot = block_idx.x
+    var h = block_idx.y
+    var p_base = block_idx.z * TILE
+    var tid = thread_idx.x
     var warp = tid // WARP_SIZE
     var lane = tid % WARP_SIZE
     var g = lane // QUAD
@@ -434,10 +434,10 @@ def ssd_state_passing[
     var head_dim = Int(head_dim_i)
     comptime pool_align = align_of[SIMD[state_dtype, F32_VEC]]()
     comptime U = 8
-    var h = Int(block_idx.y)
-    var b = Int(block_idx.z)
-    var tid = Int(thread_idx.x)
-    var e = (Int(block_idx.x) * NUM_THREADS + tid) * F32_VEC
+    var h = block_idx.y
+    var b = block_idx.z
+    var tid = thread_idx.x
+    var e = (block_idx.x * NUM_THREADS + tid) * F32_VEC
     var active = e < head_dim * DSTATE
     var nch = Int(info[3 * slots + batch + b])
     if nch == 0:
@@ -697,11 +697,11 @@ def ssd_chunk_output[
     var nheads = Int(nheads_i)
     var head_dim = Int(head_dim_i)
     var ngroups = Int(ngroups_i)
-    var slot = Int(block_idx.x)
-    var h = Int(block_idx.y)
-    var rt = Int(block_idx.z) % ROW_TILES
-    var p_base = (Int(block_idx.z) // ROW_TILES) * TILE
-    var tid = Int(thread_idx.x)
+    var slot = block_idx.x
+    var h = block_idx.y
+    var rt = block_idx.z % ROW_TILES
+    var p_base = (block_idx.z // ROW_TILES) * TILE
+    var tid = thread_idx.x
     var warp = tid // WARP_SIZE
     var lane = tid % WARP_SIZE
     var g = lane // QUAD

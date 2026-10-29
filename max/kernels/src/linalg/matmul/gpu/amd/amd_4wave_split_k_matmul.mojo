@@ -183,7 +183,7 @@ def _split_k_reduce_impl[
     var _total_elems = Int(total_elems)
     var _elems_per_split = Int(elems_per_split)
     var _n_dim = Int(n_dim)
-    var tid = Int(global_idx.x)
+    var tid = global_idx.x
     var stride = Int(grid_dim.x * block_dim.x)
     while tid < _total_elems:
         var acc = Float32(0.0)

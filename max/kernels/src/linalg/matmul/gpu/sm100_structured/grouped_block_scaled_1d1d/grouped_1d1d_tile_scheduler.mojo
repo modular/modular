@@ -362,11 +362,9 @@ struct GroupedWorkIterator1D1D[
         comptime assert (
             Self.cluster[1] == Self.cluster[2] == 1
         ), "Currently multicasting along non-M dimension is not supported"
-        comptime assert Self.cta_group == Self.cluster[0], (
-            "cta_group must be equal to cluster M size. Got cta_group = "
-            + String(Self.cta_group)
-            + " and cluster M size = "
-            + String(Self.cluster[0])
+        comptime assert Self.cta_group == Self.cluster[0], String(
+            t"cta_group must be equal to cluster M size. Got cta_group = "
+            t"{Self.cta_group} and cluster M size = {Self.cluster[0]}"
         )
 
         self.num_active_experts = num_active_experts

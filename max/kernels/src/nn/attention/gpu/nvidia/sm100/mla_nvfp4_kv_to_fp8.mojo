@@ -152,7 +152,7 @@ def _convert_pages_kernel[
 ):
     """Converts scratch page `block_idx.x` and records its physical block."""
     comptime page_size = cache_t.page_size_
-    var slot = Int(block_idx.x)
+    var slot = block_idx.x
     var b, page = divmod(slot, Int(pages_per_seq))
 
     with PDL():
@@ -203,7 +203,7 @@ def _remap_kernel[
     Unused slots, slots past `top_k`, and rows whose block was not converted
     become `-1`, which the FP8 kernel zero-fills.
     """
-    var i = Int(global_idx.x) * _REMAP_WIDTH
+    var i = global_idx.x * _REMAP_WIDTH
     var tok, slot = divmod(i, Int(dst_stride))
 
     with PDL():

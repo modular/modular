@@ -179,11 +179,9 @@ struct TileScheduler[
         comptime assert (
             Self.cluster[1] == Self.cluster[2] == 1
         ), "Currently multicasting along non-M dimension is not supported"
-        comptime assert Self.cta_group == Self.cluster[0], (
-            "cta_group must be equal to cluster M size. Got cta_group = "
-            + String(Self.cta_group)
-            + " and cluster M size = "
-            + String(Self.cluster[0])
+        comptime assert Self.cta_group == Self.cluster[0], String(
+            t"cta_group must be equal to cluster M size. Got cta_group = "
+            t"{Self.cta_group} and cluster M size = {Self.cluster[0]}"
         )
         comptime cluster_m_size = Self.cluster[0] * Self.tile_shape[0]
         comptime cluster_n_size = Self.cluster[1] * Self.tile_shape[1]
@@ -191,15 +189,10 @@ struct TileScheduler[
             Self.cluster[0] == 1 or Self.static_MN % cluster_m_size == 0
         ) if Self.swapAB else (
             Self.cluster[1] == 1 or Self.static_MN % cluster_n_size == 0
-        ), (
-            "Problem static non-reducing dimension must be divisible by the"
-            " corresponding cluster size. Got "
-            + String(Self.static_MN)
-            + " and cluster ("
-            + String(cluster_m_size)
-            + ", "
-            + String(cluster_n_size)
-            + ")"
+        ), String(
+            t"Problem static non-reducing dimension must be divisible by "
+            t"the corresponding cluster size. Got {Self.static_MN} and "
+            t"cluster ({cluster_m_size}, {cluster_n_size})"
         )
 
         self.num_active_experts = num_active_experts

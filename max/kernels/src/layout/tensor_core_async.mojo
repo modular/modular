@@ -293,11 +293,8 @@ def _checked_tile_shape[
 ]() -> IntTuple:
     comptime if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
         comptime k_bytes = BK * size_of[dtype]()
-        comptime assert (k_bytes % swizzle_mode.bytes()) == 0, (
-            "K dim "
-            + String(k_bytes)
-            + " doesn't match "
-            + String(swizzle_mode)
+        comptime assert (k_bytes % swizzle_mode.bytes()) == 0, String(
+            t"K dim {k_bytes} doesn't match {swizzle_mode}"
         )
         # swizzled WGMMA cannot be tiled in K if we constraint the layout to 2D.
 
@@ -750,9 +747,7 @@ def wgmma_c_layout[mma_m: Int, mma_n: Int, C: Layout]() -> List[Layout]:
         This function enforces constraints on the WGMMA dimensions and ensures the C matrix
         dimensions are compatible with the WGMMA instruction size.
     """
-    comptime err = "C = " + String(C) + ", mma_m = " + String(
-        mma_m
-    ) + ", mma_n = " + String(mma_n)
+    comptime err = String(t"C = {C}, mma_m = {mma_m}, mma_n = {mma_n}")
     comptime assert mma_m == 64, err
     comptime assert mma_n % 8 == 0, err
     comptime M = C.shape[0].value()
@@ -903,10 +898,8 @@ def _wgmma_descriptor[
     comptime stride11 = layout[1].stride[1].value()
 
     comptime if is_k_major:
-        comptime assert (
-            shape00 == 8 and shape11 % 2 == 0
-        ), "Tile shape must be ((8, _), (_, multiple of 2)), get " + String(
-            layout
+        comptime assert shape00 == 8 and shape11 % 2 == 0, String(
+            t"Tile shape must be ((8, _), (_, multiple of 2)), get {layout}"
         )
 
         # Ignore 4 LSB.
@@ -931,8 +924,8 @@ def _wgmma_descriptor[
 
 # TODO(KERN-1301): Layouts are calculated for 64x8x8 instruction
 def _output_register_size[mma_shape: Coord]() -> Int:
-    comptime assert _supported_mma_shape[mma_shape](), (
-        "WGMMA operation of shape '" + String(mma_shape) + "' is not supported"
+    comptime assert _supported_mma_shape[mma_shape](), String(
+        t"WGMMA operation of shape '{mma_shape}' is not supported"
     )
     return Int(mma_shape[0]) * Int(mma_shape[1]) // 128
 
@@ -1014,10 +1007,8 @@ struct TensorCoreAsync[
         Note:
             Fails to compile if `mma_shape` is not supported.
         """
-        comptime assert _supported_mma_shape[Self.mma_shape](), (
-            "WGMMA operation of shape '"
-            + String(Self.mma_shape)
-            + "' is not supported"
+        comptime assert _supported_mma_shape[Self.mma_shape](), String(
+            t"WGMMA operation of shape '{Self.mma_shape}' is not supported"
         )
 
     @staticmethod
@@ -1268,11 +1259,9 @@ struct TensorCoreAsync[
         comptime b_shape00 = b_canonical_layout[0].shape[0].value()
         comptime b_stride01 = b_canonical_layout[0].stride[1].value()
         comptime b_stride11 = b_canonical_layout[1].stride[1].value()
-        comptime assert Int(Self.mma_shape[1]) % b_shape00 == 0, (
-            "b_shape00 = "
-            + String(b_shape00)
-            + ", Int(mma_shape[1]) = "
-            + String(Int(Self.mma_shape[1]))
+        comptime assert Int(Self.mma_shape[1]) % b_shape00 == 0, String(
+            t"b_shape00 = {b_shape00}, Int(mma_shape[1]) = "
+            t"{Int(Self.mma_shape[1])}"
         )
         # fmt: off
         comptime b_n_stride = b_stride01 * (Int(Self.mma_shape[1]) // b_shape00) * size_of[Self.b_type]()
@@ -1289,7 +1278,7 @@ struct TensorCoreAsync[
 
         comptime assert b_n_stride > 0 or (
             b_n_stride == 0 and num_n_mmas == 1
-        ), "b_smem_layout = " + String(b_smem_layout)
+        ), String(t"b_smem_layout = {b_smem_layout}")
 
         # Vectorize each wgmma's fragment size.
         comptime a_frag_size = Int(Self.mma_shape[0]) * Int(

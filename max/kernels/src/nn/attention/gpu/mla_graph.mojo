@@ -1959,13 +1959,13 @@ def mla_decode_branch_fp8[
         var num_batches = Int(input_row_offsets.dim(0)) - 1
         if seq_len != num_batches:
             raise Error(
-                "AMD sparse MLA decode only supports one query token per"
-                " sequence (S=1 decode); got "
-                + String(seq_len)
-                + " query tokens across "
-                + String(num_batches)
-                + " sequences. Multi-token decode (MTP / speculative-"
-                "decode verify, S>1) is not implemented on this path."
+                String(
+                    t"AMD sparse MLA decode only supports one query token per"
+                    t" sequence (S=1 decode); got {seq_len} query tokens across"
+                    t" {num_batches} sequences. Multi-token decode (MTP /"
+                    t" speculative-decode verify, S>1) is not implemented on"
+                    t" this path."
+                )
             )
 
     # Stage Q in the FP8 cache dtype where the kernel consumes it natively:

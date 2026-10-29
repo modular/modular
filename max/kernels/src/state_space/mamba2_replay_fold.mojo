@@ -427,9 +427,9 @@ def mamba2_replay_fold_launch[
                 launch[DSTATE, 4]()
             case _:
                 raise Error(
-                    "Unsupported conv width: "
-                    + String(width)
-                    + ". Expected 2, 3 or 4."
+                    String(
+                        t"Unsupported conv width: {width}. Expected 2, 3 or 4."
+                    )
                 )
 
     match dstate:
@@ -443,7 +443,8 @@ def mamba2_replay_fold_launch[
             with_width[256]()
         case _:
             raise Error(
-                "Unsupported dstate: "
-                + String(dstate)
-                + ". Expected 16, 64, 128, or 256."
+                String(
+                    t"Unsupported dstate: {dstate}. Expected 16, 64, 128, or "
+                    t"256."
+                )
             )

@@ -17,7 +17,7 @@ each activation compiles to its own specialization. `get_swiglu_activation`
 builds one from a name and its f32 scalar constants.
 """
 
-from std.math import exp, recip, tanh
+from std.math import clamp, exp, recip, tanh
 
 
 comptime swiglu_activation_type = def(Float32, Float32) thin -> Float32
@@ -51,7 +51,7 @@ def swiglu[limit: Float32](gate: Float32, up: Float32) -> Float32:
     var u = up
     comptime if limit != 0.0:
         g = min(g, limit)
-        u = max(min(u, limit), -limit)
+        u = clamp(u, -limit, limit)
     return g * recip(Float32(1.0) + exp(-g)) * u
 
 
@@ -76,7 +76,7 @@ def swigluoai[
         The activated value.
     """
     var g = min(gate, limit)
-    var u = max(min(up, limit), -limit)
+    var u = clamp(up, -limit, limit)
     # `g` is unbounded below. Scaling it by its sigmoid first keeps a huge
     # negative `g` at `g * 0`; `(u + 1) * g` first overflows to -inf, and
     # -inf * 0 is NaN.

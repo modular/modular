@@ -221,12 +221,12 @@ def mha_sm90_dispatch[
     ) if decoding else config
     comptime BM = new_config.block_m()
     comptime BK = new_config.padded_depth
-    comptime assert BM % 64 == 0, "SM90 requires BM%64==0, but BM==" + String(
-        BM
+    comptime assert BM % 64 == 0, String(
+        t"SM90 requires BM%64==0, but BM=={BM}"
     )
-    comptime assert (
-        BK % 64 == 0
-    ), "H100 requires BK%64==0 as it uses 128B swizzles, but BK==" + String(BK)
+    comptime assert BK % 64 == 0, String(
+        t"H100 requires BK%64==0 as it uses 128B swizzles, but BK=={BK}"
+    )
     comptime BN = new_config.block_n()
     # we add smem use for SharedMemBarrier synchronization
     # add the number of producer threads (i.e. 1 WARP_GROUP_SIZE)

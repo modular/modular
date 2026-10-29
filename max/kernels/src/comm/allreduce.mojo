@@ -1432,11 +1432,11 @@ def _allreduce_lamport_p2p[
         )
     if num_bytes > Lamport.MAX_SMALL_MESSAGE_BYTES:
         raise Error(
-            "Lamport allreduce message exceeds reserved workspace ("
-            + String(num_bytes)
-            + " > "
-            + String(Lamport.MAX_SMALL_MESSAGE_BYTES)
-            + " bytes); route to the 1-stage path"
+            String(
+                t"Lamport allreduce message exceeds reserved workspace ("
+                t"{num_bytes} > {Lamport.MAX_SMALL_MESSAGE_BYTES} bytes); route"
+                t" to the 1-stage path"
+            )
         )
 
     # Flatten through the engine so the view keeps whatever indirection the
@@ -1962,10 +1962,11 @@ def allreduce[
 
     if dispatch_config.num_blocks > MAX_NUM_BLOCKS_UPPER_BOUND:
         raise Error(
-            "expected allreduce num_blocks less than upper bound: "
-            + String(MAX_NUM_BLOCKS_UPPER_BOUND)
-            + " but got: "
-            + String(dispatch_config.num_blocks)
+            String(
+                t"expected allreduce num_blocks less than upper bound: "
+                t"{MAX_NUM_BLOCKS_UPPER_BOUND} but got: "
+                t"{dispatch_config.num_blocks}"
+            )
         )
 
     # Check P2P availability. The non-P2P fallback assumes a full-world,

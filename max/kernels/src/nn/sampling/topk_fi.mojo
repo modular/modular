@@ -454,7 +454,7 @@ def topk_mask_logits[
             Span(
                 [
                     trace_arg("logits", shape, dtype),
-                    "top_k_val=" + String(top_k_val),
+                    String(t"top_k_val={top_k_val}"),
                 ]
             )
         )
@@ -1211,7 +1211,7 @@ def topk_sampling_from_prob[
             Span(
                 [
                     trace_arg("probs", shape, dtype),
-                    "top_k_val=" + String(top_k_val),
+                    String(t"top_k_val={top_k_val}"),
                 ]
             )
         )
@@ -2789,8 +2789,8 @@ def topk_topp_sampling_from_prob[
             Span(
                 [
                     trace_arg("probs", shape, dtype),
-                    "top_k_val=" + String(top_k_val),
-                    "top_p_val=" + String(top_p_val),
+                    String(t"top_k_val={top_k_val}"),
+                    String(t"top_p_val={top_p_val}"),
                 ]
             )
         )
@@ -3269,7 +3269,7 @@ def topk_softmax_sample[
             Span(
                 [
                     trace_arg("logits", shape, dtype),
-                    "top_k_val=" + String(top_k_val),
+                    String(t"top_k_val={top_k_val}"),
                 ]
             )
         )
@@ -3683,7 +3683,7 @@ def topk_topp_masked_probs[
             Span(
                 [
                     trace_arg("logits", shape, dtype),
-                    "top_k=" + String(top_k_val),
+                    String(t"top_k={top_k_val}"),
                 ]
             )
         )

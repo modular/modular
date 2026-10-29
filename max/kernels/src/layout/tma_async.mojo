@@ -2624,9 +2624,10 @@ struct TMATensorTile[
         var desc_ptr = smem_tma_descriptor_ptr.unsafe_bitcast[UInt64]()
 
         comptime if only_update_dim_0:
-            comptime temp = "tensormap.replace.tile.global_dim.shared::cta.b1024.b32 [$0], " + String(
-                tensor_rank - 1
-            ) + ", $1;"
+            comptime temp = String(
+                t"tensormap.replace.tile.global_dim.shared::cta.b1024.b32 "
+                t"[$0], {tensor_rank - 1}, $1;"
+            )
             inlined_assembly[
                 temp,
                 NoneType,
@@ -2637,9 +2638,10 @@ struct TMATensorTile[
         else:
             # Replace dimensions
             comptime for i in range(tensor_rank):
-                comptime temp = "tensormap.replace.tile.global_dim.shared::cta.b1024.b32 [$0], " + String(
-                    i
-                ) + ", $1;"
+                comptime temp = String(
+                    t"tensormap.replace.tile.global_dim.shared::cta.b1024.b32"
+                    t" [$0], {i}, $1;"
+                )
                 inlined_assembly[
                     temp,
                     NoneType,
@@ -2650,9 +2652,10 @@ struct TMATensorTile[
             # Replace strides - note: stride for innermost dimension is implicitly 1
             # For CUDA versions >= 12.5, we use the full stride value. Note that this is not true for all CUDA versions and strides should be left shifted by 4 for CUDA versions < 12.5
             comptime for i in range(1, tensor_rank):
-                comptime temp = "tensormap.replace.tile.global_stride.shared::cta.b1024.b64 [$0], " + String(
-                    i - 1
-                ) + ", $1;"
+                comptime temp = String(
+                    t"tensormap.replace.tile.global_stride.shared::cta.b1024"
+                    t".b64 [$0], {i - 1}, $1;"
+                )
                 inlined_assembly[
                     temp,
                     NoneType,
@@ -2703,9 +2706,10 @@ struct TMATensorTile[
 
         # Replace dimensions
 
-        comptime temp = "tensormap.replace.tile.global_dim.shared::cta.b1024.b32 [$0], " + String(
-            tensor_rank - dim_idx - 1
-        ) + ", $1;"
+        comptime temp = String(
+            t"tensormap.replace.tile.global_dim.shared::cta.b1024.b32 [$0], "
+            t"{tensor_rank - dim_idx - 1}, $1;"
+        )
         inlined_assembly[
             temp,
             NoneType,
@@ -2719,9 +2723,10 @@ struct TMATensorTile[
             assert (
                 dim_stride is not None
             ), " dim_stride must be provided if dim_idx > 0"
-            comptime temp = "tensormap.replace.tile.global_stride.shared::cta.b1024.b64 [$0], " + String(
-                tensor_rank - dim_idx - 1
-            ) + ", $1;"
+            comptime temp = String(
+                t"tensormap.replace.tile.global_stride.shared::cta.b1024.b64"
+                t" [$0], {tensor_rank - dim_idx - 1}, $1;"
+            )
             inlined_assembly[
                 temp,
                 NoneType,
@@ -2781,12 +2786,9 @@ def create_tma_tile[
     ]()
 
     comptime if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
-        comptime assert swizzle_rows_bytes <= swizzle_mode.bytes(), (
-            "Current swizzle bytes is "
-            + String(swizzle_rows_bytes)
-            + " which exceeds "
-            + String(swizzle_mode.bytes())
-            + "B swizzle requirement."
+        comptime assert swizzle_rows_bytes <= swizzle_mode.bytes(), String(
+            t"Current swizzle bytes is {swizzle_rows_bytes} which exceeds "
+            t"{swizzle_mode.bytes()}B swizzle requirement."
         )
 
     return create_tma_descriptor[tensor.dtype, swizzle_mode=swizzle_mode](
@@ -3088,11 +3090,9 @@ def create_tensor_tile[
         comptime tile_smem_bytes = tile_shape.element_types[
             tile_shape.rank - 1
         ].static_value * (1 if unpack_fp4 else size_of[dtype]())
-        comptime assert tile_smem_bytes % swizzle_mode.bytes() == 0, (
-            String(swizzle_mode)
-            + " mode requires K dim multiple of "
-            + String(swizzle_mode.bytes())
-            + "B."
+        comptime assert tile_smem_bytes % swizzle_mode.bytes() == 0, String(
+            t"{swizzle_mode} mode requires K dim multiple of "
+            t"{swizzle_mode.bytes()}B."
         )
 
     comptime assert (
