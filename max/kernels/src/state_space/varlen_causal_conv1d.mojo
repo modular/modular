@@ -62,8 +62,8 @@ from nn.activations import silu
 comptime PAD_SLOT_ID: Int32 = -1
 
 # Lane count of a tap vector holding a WIDTH-tap filter. WIDTH dispatches in
-# {1, 2, 3, 4} and 3 is not a valid SIMD width, so round up and zero the
-# padding lane; a padded dot product still sums to the WIDTH-tap result.
+# {1, 2, 3, 4, 7} and 3 and 7 are not valid SIMD widths, so round up and zero
+# the padding lanes; a padded dot product still sums to the WIDTH-tap result.
 comptime _TAP_LANES[WIDTH: Int] = Int(next_power_of_two(WIDTH))
 
 

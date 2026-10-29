@@ -356,9 +356,11 @@ def run_varlen_causal_conv1d_fwd_gpu[
         launch_gpu[3]()
     elif width == 4:
         launch_gpu[4]()
+    elif width == 7:
+        launch_gpu[7]()
     else:
         raise Error(
-            "Unsupported kernel width: only widths 1, 2, 3, 4 are supported"
+            "Unsupported kernel width: only widths 1, 2, 3, 4, 7 are supported"
         )
 
     # Copy GPU results back to host, the final conv_states before the CPU
@@ -546,6 +548,9 @@ def test_varlen_causal_conv1d_fwd_gpu_various_widths() raises:
     run_varlen_causal_conv1d_fwd_gpu[.float32, "none"](
         batch=2, dim=4, seq_lengths=Index(8, 8), width=4, ctx=ctx
     )
+    run_varlen_causal_conv1d_fwd_gpu[.float32, "none"](
+        batch=2, dim=4, seq_lengths=Index(8, 8), width=7, ctx=ctx
+    )
 
 
 def test_varlen_causal_conv1d_fwd_gpu_residual_decode_shape() raises:
@@ -576,13 +581,13 @@ def test_varlen_causal_conv1d_fwd_gpu_residual_prefill_shape() raises:
 def test_varlen_causal_conv1d_fwd_gpu_prefill_shapes() raises:
     """Single-sequence prefill at production-relevant lengths, spanning
     multiple tiles and exact tile boundaries (63/64/65, 255/256/257), for
-    each kernel width the models use (2, 3, 4; width 1 also dispatches but no
-    model uses it)."""
+    each kernel width the models use (2, 3, 4, 7; width 1 also dispatches but
+    no model uses it)."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
     var seqlens: List[Int] = [63, 64, 65, 255, 256, 257, 512, 4032]
-    var widths: List[Int] = [2, 3, 4]
+    var widths: List[Int] = [2, 3, 4, 7]
     for seqlen in seqlens:
         for width in widths:
             run_varlen_causal_conv1d_fwd_gpu[.float32, "none"](
@@ -669,6 +674,14 @@ def test_varlen_causal_conv1d_fwd_gpu_chunk_shorter_than_width() raises:
         dim=8,
         seq_lengths=Index(1, 1, 1),
         width=3,
+        ctx=ctx,
+        nonzero_initial_state=True,
+    )
+    run_varlen_causal_conv1d_fwd_gpu[.float32, "none"](
+        batch=3,
+        dim=8,
+        seq_lengths=Index(1, 3, 5),
+        width=7,
         ctx=ctx,
         nonzero_initial_state=True,
     )

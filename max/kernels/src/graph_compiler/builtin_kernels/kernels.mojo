@@ -5525,10 +5525,12 @@ struct CausalConv1DVarlenFwd[
                     launch_gpu[3]()
                 case 4:
                     launch_gpu[4]()
+                case 7:
+                    launch_gpu[7]()
                 case _:
                     raise Error(
-                        "Unsupported kernel width: only widths 1, 2, 3, 4 are"
-                        " supported"
+                        "Unsupported kernel width: only widths 1, 2, 3, 4, 7"
+                        " are supported"
                     )
         else:
             raise Error("Unsupported target device")

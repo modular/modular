@@ -54,7 +54,7 @@ from max.graph import (
     ops,
 )
 
-# Nemotron-H conv kernel width (widths 1-4 are compiled in the builtin).
+# Nemotron-H conv kernel width (widths 1-4 and 7 are compiled in the builtin).
 _KERNEL_SIZE = 4
 # Deliberately NOT a multiple of the kernel's BLOCK_DIM (128) so the
 # out-of-range channel guard is exercised in both layouts.
