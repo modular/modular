@@ -10,7 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The LFM3-Audio pipeline model: an audio graph and a language graph.
+"""The LFM3-Audio pipeline model.
+
+An audio graph, a language graph, and the depth and codec graphs that speak.
 
 Clips reach the language graph through the pipeline's vision encoder cache,
 as LFM3-VL's images do.
@@ -18,26 +20,43 @@ as LFM3-VL's images do.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
 from dataclasses import dataclass, fields
-from typing import Any, ClassVar
+from pathlib import Path
+from typing import Any, ClassVar, TypeVar
 
+import huggingface_hub
 import numpy as np
 import numpy.typing as npt
 from max import functional as F
 from max.driver import Buffer, Device
 from max.dtype import DType
-from max.graph import DeviceRef, TensorType
-from max.graph.weights import WeightData
-from max.pipelines.context import ImageMetadata, TextAndVisionContext
-from max.pipelines.lib import GraphSpec
+from max.graph import BufferType, DeviceRef, TensorType
+from max.graph.weights import SafetensorWeights, WeightData
+from max.nn.legacy.kv_cache import KVCacheInputs
+from max.pipelines.context import (
+    ImageMetadata,
+    TextAndVisionContext,
+)
+from max.pipelines.lib import GraphSpec, ModelInputs
 from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
+from max.pipelines.weights import HuggingFaceRepo
 from max.tensor import default_dtype
 
 from ..lfm3_vl.lfm3_vl import Lfm3VlLanguage
-from ..lfm3_vl.model import Lfm3MediaModel
-from .lfm3_audio import Lfm3AudioLanguage, Lfm3AudioTower
-from .model_config import Lfm3AudioConfig
+from ..lfm3_vl.model import Lfm3MediaModel, Lfm3VlInputs
+from .lfm3_audio import Lfm3AudioTower, Lfm3SpeechLanguage
+from .model_config import CODEC_SUBFOLDER, Lfm3AudioConfig
+from .speech import (
+    Lfm3CodecDecoder,
+    Lfm3DepthDecoder,
+    codec_decoder_weights,
+    depth_decoder_weights,
+)
+
+_DEPTH = "speech_depth"
+_CODEC = "speech_codec"
 
 _RENAMES = (
     ("encoder.lfm.lfm.", "encoder.lfm."),
@@ -143,11 +162,126 @@ def audio_tower_spec(
     )
 
 
-class Lfm3AudioModel(Lfm3MediaModel[Lfm3AudioConfig]):
+def codec_weights(repo: HuggingFaceRepo) -> SafetensorWeights:
+    """Returns the codec's weights.
+
+    A checkpoint keeps them in their own folder.
+    """
+    name = f"{CODEC_SUBFOLDER}/model.safetensors"
+    if repo.repo_type == "local":
+        path = os.path.join(repo.local_path, name)
+    else:
+        path = huggingface_hub.hf_hub_download(
+            repo.repo_id, name, revision=repo.revision
+        )
+    return SafetensorWeights([Path(path)])
+
+
+_SpeechConfigT = TypeVar("_SpeechConfigT", bound=Lfm3AudioConfig)
+
+
+class Lfm3SpeechModel(Lfm3MediaModel[_SpeechConfigT]):
+    """An LFM3 media model with the depth decoder and codec that speak.
+
+    The language graph reads each spoken frame as the sum of its codes'
+    embeddings at the frame's placeholder. The engine that serves speech
+    samples the frames with the depth decoder and decodes them with the
+    codec; this pipeline feeds the language graph no frames.
+    """
+
+    language_cls: ClassVar[type[Lfm3VlLanguage]] = Lfm3SpeechLanguage
+
+    def graph_specs(self, model_config: _SpeechConfigT) -> dict[str, GraphSpec]:
+        """Returns the graph specs, adding the depth decoder and the codec."""
+        specs = super().graph_specs(model_config)
+        device = self.devices[0]
+        ref = DeviceRef.from_device(device)
+        c = model_config.speech.num_codebooks
+        codec = model_config.codec
+        with F.lazy(), default_dtype(model_config.dtype):
+            depth = Lfm3DepthDecoder(model_config)
+            depth.to(device)
+            decoder = Lfm3CodecDecoder(codec)
+            decoder.to(device)
+        specs[_DEPTH] = GraphSpec(
+            depth,
+            type(depth).__qualname__,
+            [
+                TensorType(
+                    model_config.dtype,
+                    ["batch", model_config.hidden_size],
+                    device=ref,
+                ),
+                TensorType(DType.int32, ["frames"], device=ref),
+                TensorType(DType.int32, ["frames", c], device=ref),
+                TensorType(DType.bool, ["frames", c], device=ref),
+                TensorType(DType.int32, ["slots"], device=ref),
+                TensorType(DType.int32, ["slots", c], device=ref),
+            ],
+            weights=depth_decoder_weights(self.weights),
+        )
+        specs[_CODEC] = GraphSpec(
+            decoder,
+            type(decoder).__qualname__,
+            [
+                TensorType(
+                    DType.float32,
+                    ["frames", c * len(codec.fsq_levels)],
+                    device=ref,
+                ),
+                TensorType(DType.int32, ["rows"], device=ref),
+                TensorType(
+                    DType.int32,
+                    ["rows", codec.decoder.sliding_window],
+                    device=ref,
+                ),
+            ],
+            weights=codec_decoder_weights(
+                codec_weights(self.pipeline_config.model.huggingface_model_repo)
+            ),
+        )
+        return specs
+
+    def _language_input_types(
+        self, model_config: _SpeechConfigT
+    ) -> list[TensorType | BufferType]:
+        types = super()._language_input_types(model_config)
+        ref = DeviceRef.from_device(self.devices[0])
+        frames = [
+            TensorType(
+                DType.int32,
+                ["num_frames", model_config.speech.num_codebooks],
+                device=ref,
+            ),
+            TensorType(DType.int32, ["num_frames"], device=ref),
+        ]
+        # After the media inputs, ahead of the cache inputs.
+        return [*types[:5], *frames, *types[5:]]
+
+    def prepare_initial_token_inputs(
+        self,
+        replica_batches: Sequence[Sequence[TextAndVisionContext]],
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
+        return_n_logits: int = 1,
+    ) -> ModelInputs:
+        """Adds an empty batch of spoken frames."""
+        inputs = super().prepare_initial_token_inputs(
+            replica_batches, kv_cache_inputs, return_n_logits
+        )
+        assert isinstance(inputs, Lfm3VlInputs)
+        device = self.devices[0]
+        c = self._config.speech.num_codebooks
+        inputs.speech = (
+            Buffer.zeros(shape=[0, c], dtype=DType.int32).to(device),
+            Buffer.zeros(shape=[0], dtype=DType.int32).to(device),
+        )
+        return inputs
+
+
+class Lfm3AudioModel(Lfm3SpeechModel[Lfm3AudioConfig]):
     """LFM3-Audio: the audio graph encodes clips the language graph reads."""
 
     model_config_cls: ClassVar[type[Any]] = Lfm3AudioConfig
-    language_cls: ClassVar[type[Lfm3VlLanguage]] = Lfm3AudioLanguage
 
     def _load_state_dict(self) -> dict[str, WeightData]:
         audio: dict[str, WeightData] = {}
@@ -155,6 +289,8 @@ class Lfm3AudioModel(Lfm3MediaModel[Lfm3AudioConfig]):
         for name, weight in self.weights.items():
             if name.startswith("lfm."):
                 language[name.removeprefix("lfm.")] = weight.data()
+            elif name.startswith("codebook_embedding."):
+                language[name] = weight.data()
             elif name.startswith(("encoder.", "mlp.")):
                 for old, new in _RENAMES:
                     name = name.replace(old, new)

@@ -26,14 +26,20 @@ from collections.abc import Callable
 import numpy as np
 from max import functional as F
 from max.dtype import DType
-from max.nn import Linear, Module, ModuleList, as_subgraph
+from max.nn import Embedding, Linear, Module, ModuleList, as_subgraph
 from max.nn.norm import LayerNorm, RMSNorm
+from max.pipelines.lib import ModuleV3Outputs
+from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
 from max.tensor import Tensor
 
 from ..lfm3.lfm3 import Lfm3DecoderLayer
 from ..lfm3.model_config import CONV
 from ..lfm3_vl.lfm3_vl import Lfm3VlLanguage, _rotate
-from .model_config import Lfm3AudioConfig, Lfm3AudioEncoderConfig
+from .model_config import (
+    Lfm3AudioConfig,
+    Lfm3AudioEncoderConfig,
+    Lfm3StackConfig,
+)
 
 
 def _tap(x: Tensor, taps: Tensor, t: int) -> Tensor:
@@ -123,7 +129,7 @@ class Lfm3AudioDownsampler(Module[..., Tensor]):
 class Lfm3AudioEncoderConv(Module[..., Tensor]):
     """``out_proj(C * conv(B * x))`` with a causal depthwise convolution."""
 
-    def __init__(self, config: Lfm3AudioEncoderConfig) -> None:
+    def __init__(self, config: Lfm3StackConfig) -> None:
         hidden = config.hidden_size
         self.in_proj = Linear(hidden, 3 * hidden, bias=False)
         self.conv = Tensor.zeros([hidden, 1, config.conv_kernel_size])
@@ -145,12 +151,13 @@ class Lfm3AudioEncoderConv(Module[..., Tensor]):
 
 
 class Lfm3AudioEncoderAttention(Module[..., Tensor]):
-    """Grouped-query attention over each frame's band of past frames.
+    """Grouped-query attention over each row's band of rows.
 
-    Uses per-head q/k norms and RoPE, in plain tensor ops.
+    Uses per-head q/k norms, RoPE and LFM3's optional output gate, in plain
+    tensor ops.
     """
 
-    def __init__(self, config: Lfm3AudioEncoderConfig) -> None:
+    def __init__(self, config: Lfm3StackConfig) -> None:
         hidden = config.hidden_size
         self.num_heads = config.num_attention_heads
         self.num_kv_heads = config.num_key_value_heads
@@ -167,6 +174,8 @@ class Lfm3AudioEncoderAttention(Module[..., Tensor]):
         )
         self.q_layernorm = RMSNorm(self.head_dim, eps=config.norm_eps)
         self.k_layernorm = RMSNorm(self.head_dim, eps=config.norm_eps)
+        if config.gated_attention:
+            self.gate_proj = Linear(hidden, self.num_heads, bias=False)
 
     def forward(
         self, x: Tensor, cos: Tensor, sin: Tensor, band_taps: Tensor
@@ -191,15 +200,22 @@ class Lfm3AudioEncoderAttention(Module[..., Tensor]):
         scores = (q @ k_band.transpose(-1, -2)) * d**-0.5
         valid = (band_taps >= 0).reshape((-1, 1, 1, int(band_taps.shape[1])))
         scores = F.where(valid, scores, float("-inf"))
-        out = F.softmax(scores, axis=-1) @ v_band
-        out = F.cast(out, x.dtype).reshape((-1, self.num_heads * d))
-        return self.out_proj(out)
+        # F.softmax here gets fused into an attention kernel at head_dim 64
+        # that returns NaN under the -inf band mask.
+        weights = F.exp(scores - F.max(scores, axis=-1))
+        out = (weights / F.sum(weights, axis=-1)) @ v_band
+        out = F.cast(out, x.dtype).reshape((-1, self.num_heads, d))
+        if hasattr(self, "gate_proj"):
+            out = out * F.sigmoid(self.gate_proj(x)).reshape(
+                (-1, self.num_heads, 1)
+            )
+        return self.out_proj(out.reshape((-1, self.num_heads * d)))
 
 
 class Lfm3AudioEncoderStack(Module[..., Tensor]):
-    """The LFM2 layer stack and its final norm."""
+    """An LFM layer stack over band-indexed rows, and its final norm."""
 
-    def __init__(self, config: Lfm3AudioEncoderConfig) -> None:
+    def __init__(self, config: Lfm3StackConfig) -> None:
         self.layer_types = config.layer_types
         self.head_dim = config.hidden_size // config.num_attention_heads
         self.rope_theta = config.rope_theta
@@ -213,6 +229,7 @@ class Lfm3AudioEncoderStack(Module[..., Tensor]):
                     hidden_size=config.hidden_size,
                     intermediate_size=config.intermediate_size,
                     norm_eps=config.norm_eps,
+                    use_sandwich_norm=config.use_sandwich_norm,
                 )
                 for layer_type in self.layer_types
             ]
@@ -308,3 +325,53 @@ class Lfm3AudioLanguage(Lfm3VlLanguage):
         mask[self.suppressed_token_ids] = -np.inf
         logits = super()._logits(h)
         return logits + F.constant(mask, device=logits.device)
+
+
+class Lfm3SpeechLanguage(Lfm3AudioLanguage):
+    """The audio language tower that also reads the frames it spoke.
+
+    Each speech frame is the sum of its codes' embeddings. Returns the hidden
+    states the depth decoder samples the next frame from.
+    """
+
+    returns_hidden_states = True
+
+    def __init__(self, config: Lfm3AudioConfig) -> None:
+        super().__init__(config)
+        speech = config.speech
+        self.codebook_embedding = Embedding(
+            speech.num_codebooks * speech.codebook_size, dim=config.hidden_size
+        )
+        self.codebook_offsets = (
+            np.arange(speech.num_codebooks, dtype=np.int32)
+            * speech.codebook_size
+        )
+
+    def forward(
+        self,
+        tokens: Tensor,
+        return_n_logits: Tensor,
+        input_row_offsets: Tensor,
+        *inputs: Tensor,
+    ) -> ModuleV3Outputs:
+        """Runs the tower over the media and spoken frame inputs.
+
+        Takes the frame codes and their placeholder indices after the media
+        inputs.
+        """
+        del return_n_logits
+        media, media_indices, codes, frame_indices, *kv_inputs = inputs
+        offsets = F.constant(self.codebook_offsets, device=codes.device)
+        frames = F.sum(
+            F.cast(self.codebook_embedding(codes + offsets), DType.float32),
+            axis=1,
+        )
+        embeds = F_merge_multimodal_embeddings(
+            self.embed(tokens, media, media_indices),
+            F.cast(
+                frames.reshape((-1, int(frames.shape[-1]))),
+                self.model.embed_tokens.weight.dtype,
+            ),
+            frame_indices,
+        )
+        return self.decode(embeds, input_row_offsets, tuple(kv_inputs))

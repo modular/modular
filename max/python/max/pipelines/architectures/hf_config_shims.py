@@ -478,8 +478,9 @@ class _Lfm3AudioHFConfig(PretrainedConfig):
     The released ``config.json`` is the training export's: ``lfm`` holds the
     language model, ``encoder`` the speech encoder and ``depthformer`` the
     depth decoder. They become ``text_config``, ``audio_encoder_config`` and
-    ``depth_config``, and the special token ids default to the reference
-    config's, which the export leaves out.
+    ``depth_config``, the frame fields take the reference config's names,
+    and the special token ids default to the reference config's, which the
+    export leaves out.
     """
 
     model_type = "lfm3_audio"
@@ -518,8 +519,22 @@ class _Lfm3AudioHFConfig(PretrainedConfig):
             ("audio_start_token_id", 125_012),
             ("text_end_token_id", 125_014),
             ("mixed_start_token_id", 125_015),
+            ("num_codebooks", kwargs.pop("codebooks", 12)),
+            ("codebook_size", kwargs.pop("audio_vocab_size", 2017)),
+            ("interleaved_n_text", 6),
+            ("interleaved_n_audio", 12),
         ):
             kwargs.setdefault(name, default)
+        kwargs.setdefault("audio_eos_code", kwargs["codebook_size"] - 1)
+        num_codebooks, steps = (
+            kwargs["num_codebooks"],
+            kwargs.pop("maskgit_steps", 3),
+        )
+        kwargs.setdefault(
+            "maskgit_schedule",
+            [num_codebooks // steps] * (steps - 1)
+            + [num_codebooks - num_codebooks // steps * (steps - 1)],
+        )
         super().__init__(**kwargs)
         for k, v in kwargs.items():
             if not hasattr(self, k):

@@ -292,9 +292,18 @@ class Lfm3VlLanguage(Lfm3):
         """
         del return_n_logits
         image_embeddings, image_token_indices, *kv_inputs = inputs
-        embeds = F_merge_multimodal_embeddings(
-            self.model.embed_tokens(tokens),
-            F.cast(image_embeddings, self.model.embed_tokens.weight.dtype),
-            image_token_indices,
-        )
+        embeds = self.embed(tokens, image_embeddings, image_token_indices)
         return self.decode(embeds, input_row_offsets, tuple(kv_inputs))
+
+    def embed(
+        self, tokens: Tensor, embeddings: Tensor, indices: Tensor
+    ) -> Tensor:
+        """Returns the token embeddings with media rows written in.
+
+        Writes ``embeddings`` over the rows at ``indices``.
+        """
+        return F_merge_multimodal_embeddings(
+            self.model.embed_tokens(tokens),
+            F.cast(embeddings, self.model.embed_tokens.weight.dtype),
+            indices,
+        )

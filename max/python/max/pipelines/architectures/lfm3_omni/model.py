@@ -28,9 +28,12 @@ from max.pipelines.context import ImageMetadata, TextAndVisionContext
 from max.pipelines.lib import GraphSpec
 from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 
-from ..lfm3_audio.lfm3_audio import Lfm3AudioLanguage
-from ..lfm3_audio.model import Lfm3AudioInputs, audio_tower_spec, pack_clips
-from ..lfm3_vl.lfm3_vl import Lfm3VlLanguage
+from ..lfm3_audio.model import (
+    Lfm3AudioInputs,
+    Lfm3SpeechModel,
+    audio_tower_spec,
+    pack_clips,
+)
 from ..lfm3_vl.model import Lfm3VlModel, Lfm3VlVisionInputs
 from ..lfm3_vl.model_config import Lfm3VlConfig
 from .model_config import Lfm3OmniConfig
@@ -55,7 +58,7 @@ def _of_kind(selection: Selection, clips: bool) -> Selection:
     ]
 
 
-class Lfm3OmniModel(Lfm3VlModel):
+class Lfm3OmniModel(Lfm3SpeechModel[Lfm3OmniConfig], Lfm3VlModel):
     """The LFM3-Omni pipeline model.
 
     Frames and clips each run through their own tower, and their rows reach
@@ -63,7 +66,6 @@ class Lfm3OmniModel(Lfm3VlModel):
     """
 
     model_config_cls: ClassVar[type[Any]] = Lfm3OmniConfig
-    language_cls: ClassVar[type[Lfm3VlLanguage]] = Lfm3AudioLanguage
     _config: Lfm3OmniConfig
 
     def _load_state_dict(self) -> dict[str, WeightData]:
@@ -76,6 +78,8 @@ class Lfm3OmniModel(Lfm3VlModel):
                 audio[name.replace("conv.conv.weight", "conv.conv")] = (
                     weight.data()
                 )
+            elif name.startswith("codebook_embedding."):
+                self._language_weights_dict[name] = weight.data()
         self._audio_weights_dict = audio
         return {**state, **audio}
 

@@ -28,7 +28,7 @@ from max import functional as F
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, TensorType
+from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn.legacy.kv_cache import KVCacheInputs
 from max.nn.legacy.transformer import ReturnLogits
@@ -60,6 +60,9 @@ from .model_config import Lfm3VlConfig
 class Lfm3VlInputs(Llama3Inputs):
     """The decoder inputs, with the image embeddings after the row offsets."""
 
+    speech: tuple[Buffer, ...] = ()
+    """A speaking model's frame codes and their placeholder indices."""
+
     @property
     def buffers(self) -> tuple[Buffer, ...]:
         """The graph inputs, with the media inputs after the row offsets."""
@@ -68,6 +71,7 @@ class Lfm3VlInputs(Llama3Inputs):
             *base[:3],
             *self.vision_embeddings,
             *self.vision_scatter_indices,
+            *self.speech,
             *base[3:],
         )
 
@@ -239,13 +243,23 @@ class Lfm3MediaModel(
         return GraphSpec(
             language,
             type(language).__qualname__,
-            modulev3_gemma_multimodal_language_symbolic_inputs(
-                kv_params=self.kv_params,
-                device_ref=DeviceRef.from_device(self.devices[0]),
-                hidden_size=model_config.hidden_size,
-                embedding_dtype=model_config.dtype,
-            ),
+            self._language_input_types(model_config),
             weights=state_dict,
+        )
+
+    def _language_input_types(
+        self, model_config: _ConfigT
+    ) -> list[TensorType | BufferType]:
+        """Returns the graph inputs in :class:`Lfm3VlInputs` order.
+
+        The tokens, logit count and row offsets, the media inputs, then the
+        cache inputs.
+        """
+        return modulev3_gemma_multimodal_language_symbolic_inputs(
+            kv_params=self.kv_params,
+            device_ref=DeviceRef.from_device(self.devices[0]),
+            hidden_size=model_config.hidden_size,
+            embedding_dtype=model_config.dtype,
         )
 
     def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
@@ -265,6 +279,11 @@ class Lfm3MediaModel(
                 None
                 if outputs.logit_offsets is None
                 else outputs.logit_offsets.driver_tensor
+            ),
+            hidden_states=(
+                None
+                if outputs.hidden_states is None
+                else outputs.hidden_states.driver_tensor
             ),
         )
 

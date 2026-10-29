@@ -19,6 +19,7 @@ load under their own names.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import ClassVar
 
 from max import functional as F
 from max import tree
@@ -193,6 +194,10 @@ class Lfm3TextModel(Module[..., Tensor]):
 class Lfm3(Module[..., ModuleV3Outputs]):
     """LFM3 for causal language modeling, with tied embeddings."""
 
+    returns_hidden_states: ClassVar[bool] = False
+    """Whether :meth:`decode` also returns each sequence's normed last hidden
+    state."""
+
     def __init__(self, config: Lfm3Config) -> None:
         self.kv_params = config.kv_params
         self.return_logits = config.return_logits
@@ -253,6 +258,11 @@ class Lfm3(Module[..., ModuleV3Outputs]):
         kv, conv_pool, conv_rows = self.unpack_kv(kv_inputs, embeds.mapping)
         h = self.model(embeds, kv, conv_pool, conv_rows, input_row_offsets)
         last = F.gather(h, input_row_offsets[1:] - 1, axis=0)
+        hidden_states = (
+            self.model.embedding_norm(last)
+            if self.returns_hidden_states
+            else None
+        )
         if self.return_logits == ReturnLogits.ALL:
             logits = self._logits(h)
             return ModuleV3Outputs(
@@ -261,5 +271,8 @@ class Lfm3(Module[..., ModuleV3Outputs]):
                 ),
                 logits=logits,
                 logit_offsets=input_row_offsets,
+                hidden_states=hidden_states,
             )
-        return ModuleV3Outputs(next_token_logits=self._logits(last))
+        return ModuleV3Outputs(
+            next_token_logits=self._logits(last), hidden_states=hidden_states
+        )
