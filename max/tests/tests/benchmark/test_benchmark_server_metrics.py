@@ -1323,6 +1323,30 @@ mach_batch_size_count{batch_type="decode"} 1.0
             )
         assert "mach_batch_execution_time_milliseconds" in str(excinfo.value)
 
+    @pytest.mark.parametrize(
+        "gauge", ["mach_pipeline_held_seats", "max_pipeline_held_seats"]
+    )
+    @patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")
+    def test_pipeline_engine_without_batch_metrics_does_not_raise(
+        self, mock_fetch: MagicMock, gauge: str
+    ) -> None:
+        """A Mach PP prefill runs the pipeline loop, which records no batch
+        histograms; its scrape is still the engine's, so it must pass."""
+        mock_fetch.return_value = f"""
+# TYPE {gauge} gauge
+{gauge} 0.0
+# TYPE mach_request_count counter
+mach_request_count_total 12.0
+"""
+
+        result = collect_benchmark_metrics(
+            urls={"prefill": "http://prefill:9090/metrics"},
+            backend="mach",
+            base_url="http://localhost:8091",
+            verify_required_metrics=True,
+        )
+        assert "prefill" in result
+
     @patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")
     def test_missing_optional_metric_does_not_raise(
         self, mock_fetch: MagicMock

@@ -29,6 +29,7 @@ from .backend_metric_names import (
     BATCH_METRIC_NAMES,
     BATCH_TYPE_LABELS,
     BatchPhase,
+    EngineFamily,
     MetricAvailability,
     engine_family,
     metric_name_candidates,
@@ -498,6 +499,19 @@ def collect_benchmark_metrics(
     return results
 
 
+# Only Mach's pipeline driver sets this gauge.
+_MACH_PIPELINE_ENGINE_GAUGE = "mach_pipeline_held_seats"
+
+
+def _is_mach_pipeline_engine(parsed: ParsedMetrics) -> bool:
+    """Returns whether the scrape came from a Mach pipeline-parallel engine."""
+    return any(
+        key == name or key.startswith(f"{name}{{")
+        for name in metric_name_candidates(_MACH_PIPELINE_ENGINE_GAUGE)
+        for key in parsed.gauges
+    )
+
+
 def verify_always_emitted_metrics(
     backend: Backend, parsed: ParsedMetrics, metrics_url: str
 ) -> None:
@@ -508,7 +522,9 @@ def verify_always_emitted_metrics(
     ``mach_batch_size`` and every executed batch records
     ``mach_batch_execution_time_milliseconds``. Optional families (the
     spec-decode histograms when speculative decoding is off) and metrics
-    declared unavailable never fail a run.
+    declared unavailable never fail a run. A Mach pipeline-parallel engine
+    (a PP prefill in disaggregated serving) runs its own loop that records
+    neither batch histogram, so its scrape is accepted without them.
 
     Args:
         backend: Backend the metrics were scraped from.
@@ -520,6 +536,8 @@ def verify_always_emitted_metrics(
             from a successful scrape (usually a wrong-endpoint problem).
     """
     family = engine_family(backend)
+    if family is EngineFamily.MACH and _is_mach_pipeline_engine(parsed):
+        return
     missing: list[str] = []
     for per_family in BATCH_METRIC_NAMES.values():
         spec = per_family[family]
