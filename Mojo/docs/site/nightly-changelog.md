@@ -90,6 +90,8 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Added `normpath()` to `std.os.path`, matching Python's `os.path.normpath()`.
+
 - `Tuple` element types no longer need to be `Movable`. A `Tuple` is now
   `Movable` only when all of its elements are.
   `Tuple` has a new `init_with` initializer, which constructs each element in
