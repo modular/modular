@@ -575,8 +575,8 @@ def parse_spec_decode_metrics(
       Serve, ``mach_spec_decode_acceptance_rate_per_position`` on mach
       (per-position acceptance-rate observations, 0--100).
     - Histogram ``maxserve_spec_decode_avg_acceptance_length`` on MAX Serve,
-      ``mach_spec_decode_avg_acceptance_length`` on mach (batch mean
-      acceptance length in tokens).
+      ``mach_spec_decode_avg_acceptance_length`` on mach (batch mean accepted
+      drafts per verification, without the bonus token).
 
     Args:
         raw_text: Raw Prometheus text-format payload.

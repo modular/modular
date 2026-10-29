@@ -1367,7 +1367,8 @@ class SpecDecodeMetrics:
       computed via deltas.
     - MAX-style histogram (``maxserve_spec_decode_avg_acceptance_length``):
       ``avg_acceptance_length_sum`` / ``avg_acceptance_length_count`` track
-      observations of per-batch average acceptance length (tokens).
+      observations of accepted drafts per verification, without the bonus
+      token that a verify step also commits.
 
     A backend may populate either group; missing values default to 0/empty.
     """
@@ -1415,7 +1416,12 @@ class SpecDecodeStats:
     acceptance_rate: float | None = None
     """Percentage of draft tokens accepted."""
     acceptance_length: float | None = None
-    """Average number of tokens accepted per draft (including verified token)."""
+    """Tokens committed per verify step, averaged over the window.
+
+    Counts the bonus token for every backend: the vLLM-style counters include
+    it in ``1 + accepted / drafts``, and the MAX-style histogram, which
+    records accepted drafts per verification, gets one added.
+    """
     per_position_acceptance_rates: list[float] = field(default_factory=list)
     """Acceptance rate at each draft position as a fraction (0-1).
 
@@ -1463,7 +1469,8 @@ def calculate_spec_decode_stats(
     **acceptance_rate** (0--100, matching the printed benchmark column) is the
     count-weighted mean of per-position acceptance-rate observations pooled
     across positions. **acceptance_length** can additionally be taken from the
-    ``maxserve_spec_decode_avg_acceptance_length`` histogram delta mean.
+    ``maxserve_spec_decode_avg_acceptance_length`` histogram delta mean plus
+    the bonus token, matching the vLLM-style definition.
 
     Args:
         metrics_before: Snapshot taken before the benchmark window.
@@ -1527,7 +1534,9 @@ def calculate_spec_decode_stats(
     )
     acceptance_length_from_max_hist: float | None = None
     if al_count_delta > 0:
-        acceptance_length_from_max_hist = al_sum_delta / al_count_delta
+        # The histogram records accepted drafts per verification; a verify
+        # step commits one bonus token on top of them.
+        acceptance_length_from_max_hist = 1 + al_sum_delta / al_count_delta
 
     has_aggregates = delta_draft_tokens > 0
     if (

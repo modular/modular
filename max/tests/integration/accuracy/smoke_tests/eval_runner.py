@@ -304,7 +304,8 @@ def get_spec_decode_acceptance_totals(
     metrics_url: str,
 ) -> tuple[float, float] | None:
     """Reads the cumulative (sum, count) of the spec-decode acceptance-length
-    histogram from Prometheus."""
+    histogram from Prometheus. The histogram observes accepted drafts per
+    verification; callers add the bonus token."""
     try:
         r = requests.get(metrics_url, timeout=(5, 30))
         r.raise_for_status()
@@ -338,7 +339,11 @@ def _spec_decode_acceptance_length_delta(
 ) -> float | None:
     """Computes the windowed acceptance length from two cumulative
     (sum, count) snapshots, or None if either snapshot is missing or the
-    count didn't advance (guards the division)."""
+    count didn't advance (guards the division).
+
+    The histogram observes accepted drafts per verification, so the result
+    adds the bonus token and counts tokens committed per verify step, as the
+    benchmark reports for every backend."""
     if before is None or after is None:
         return None
     sum_before, count_before = before
@@ -346,7 +351,7 @@ def _spec_decode_acceptance_length_delta(
     count_delta = count_after - count_before
     if count_delta <= 0:
         return None
-    return (sum_after - sum_before) / count_delta
+    return 1 + (sum_after - sum_before) / count_delta
 
 
 def parse_eval_results(loc: Path) -> tuple[EvalResults, EvalSamples]:

@@ -679,19 +679,23 @@ maxserve_spec_decode_avg_acceptance_length_count 5
 def test_calculate_spec_decode_stats_from_maxserve_avg_length_histogram_only() -> (
     None
 ):
-    """Acceptance length is derived from the avg-acceptance-length histogram delta."""
+    """Acceptance length adds the bonus token to the histogram delta mean.
+
+    The histogram records accepted drafts per verification, so a window mean
+    of 3.0 drafts is reported as 4.0 tokens committed per step.
+    """
     before = SpecDecodeMetrics(
-        avg_acceptance_length_sum=10.0, avg_acceptance_length_count=2.0
+        avg_acceptance_length_sum=9.0, avg_acceptance_length_count=3.0
     )
     after = SpecDecodeMetrics(
-        avg_acceptance_length_sum=30.0, avg_acceptance_length_count=5.0
+        avg_acceptance_length_sum=15.0, avg_acceptance_length_count=5.0
     )
 
     stats = calculate_spec_decode_stats(before, after)
 
     assert stats is not None
     assert stats.acceptance_rate is None
-    assert stats.acceptance_length == pytest.approx((30.0 - 10.0) / (5.0 - 2.0))
+    assert stats.acceptance_length == pytest.approx(4.0)
 
 
 def test_calculate_spec_decode_stats_matches_vllm_math() -> None:
@@ -1215,7 +1219,8 @@ class TestMachSpecDecode:
         # (13500-6000)/100=75%, normalized to fractions.
         assert stats.per_position_acceptance_rates == pytest.approx([0.9, 0.75])
         assert stats.acceptance_rate == pytest.approx(82.5)
-        assert stats.acceptance_length == pytest.approx(5.0)
+        # Histogram delta mean 5.0 accepted drafts plus the bonus token.
+        assert stats.acceptance_length == pytest.approx(6.0)
 
 
 @patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")

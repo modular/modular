@@ -16,6 +16,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 from smoke_tests.eval_runner import (
+    _spec_decode_acceptance_length_delta,
     get_num_tokens_generated,
     get_spec_decode_acceptance_totals,
 )
@@ -45,3 +46,16 @@ def test_acceptance_prefers_current_without_adding_aliases() -> None:
             12,
             3,
         )
+
+
+def test_acceptance_length_delta_adds_bonus_token() -> None:
+    """The histogram observes accepted drafts per verification, so a delta
+    mean of 3.0 drafts is 4.0 tokens committed per verify step."""
+    assert _spec_decode_acceptance_length_delta(
+        (3.0, 1.0), (12.0, 4.0)
+    ) == pytest.approx(4.0)
+
+
+def test_acceptance_length_delta_guards_missing_and_flat_counts() -> None:
+    assert _spec_decode_acceptance_length_delta(None, (12.0, 4.0)) is None
+    assert _spec_decode_acceptance_length_delta((3.0, 1.0), (3.0, 1.0)) is None
