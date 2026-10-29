@@ -23,8 +23,11 @@ from layout import (
     UNKNOWN_VALUE,
 )
 from layout.tile_layout import Layout as TileLayout, blocked_product
-from layout.tile_tensor import _SubscriptArgs, _subscript_static_offset
-from std.builtin.builtin_slice import ContiguousSlice
+from layout.tile_tensor import (
+    _IndexOrSlice,
+    _IndexOrSliceLike,
+    _subscript_static_offset,
+)
 from layout.swizzle import Swizzle
 from layout.tensor_engine import TensorOps
 from std.math import exp
@@ -1367,17 +1370,109 @@ def test_subscript_static_index() raises:
     # values with their static strides; runtime indices contribute nothing.
     comptime L = type_of(row_major[2, 3, 4]())
     comptime StaticArgs = TypeList.of[
-        Trait=AnyType, ComptimeInt[1], ContiguousSlice, ComptimeInt[3]
+        Trait=_IndexOrSliceLike,
+        _IndexOrSlice[1],
+        _IndexOrSlice[kept=True],
+        _IndexOrSlice[3],
     ]()
-    comptime assert (
-        _subscript_static_offset[_SubscriptArgs[StaticArgs](), L]() == 15
-    )
+    comptime assert _subscript_static_offset[StaticArgs, L]() == 15
     comptime RuntimeArgs = TypeList.of[
-        Trait=AnyType, Int, ContiguousSlice, ContiguousSlice
+        Trait=_IndexOrSliceLike,
+        _IndexOrSlice[],
+        _IndexOrSlice[kept=True],
+        _IndexOrSlice[kept=True],
     ]()
-    comptime assert (
-        _subscript_static_offset[_SubscriptArgs[RuntimeArgs](), L]() == 0
+    comptime assert _subscript_static_offset[RuntimeArgs, L]() == 0
+
+
+def _sum_plane_heads(t: TileTensor[mut=False, DType.int32, ...]) -> Int32:
+    """Indexes with the tensor's own `Scalar` extent type, as generic
+    batched kernels do."""
+    var total = Int32(0)
+    for batch in range(t.dim(0)):
+        total += t[batch, :, :][0, 0][0]
+    return total
+
+
+def test_subscript_generic_scalar_index() raises:
+    """Test a subscript whose index dtype is generic."""
+    var data = Array[Int32, 24](fill_with=lambda (i: Int) -> Int32: Int32(i))
+    assert_equal(
+        _sum_plane_heads(TileTensor(data, row_major[2, 3, 4]())), Int32(12)
     )
+
+
+def test_subscript_static_slice() raises:
+    """Test that a slice with `Idx` bounds keeps a static extent and offset."""
+    var data = Array[Int32, 24](fill_with=lambda (i: Int) -> Int32: Int32(i))
+
+    var tensor = TileTensor(data, row_major[2, 3, 4]())
+
+    # Rows 1 and 2 of plane 1. The row extent is static; `:` stays runtime.
+    var rows = tensor[Idx[1], Idx[1] : Idx[3], :]
+    comptime Rows = type_of(rows).LayoutType
+    comptime assert Rows.static_shape[0] == 2
+    comptime assert Rows.static_shape[1] == -1
+    comptime assert Rows.static_stride[0] == 4
+    comptime assert Rows.static_stride[1] == 1
+    for r in range(2):
+        for c in range(4):
+            assert_equal(rows[r, c], Int32(12 + (r + 1) * 4 + c))
+
+    # A runtime `Scalar` index fixes its axis like an `Int`.
+    var plane = UInt32(1)
+    var by_scalar = tensor[plane, Idx[0] : Idx[2], :]
+    comptime assert type_of(by_scalar).LayoutType.static_shape[0] == 2
+    assert_equal(by_scalar[1, 3], Int32(12 + 4 + 3))
+
+    # Mixed with a runtime index and a runtime slice.
+    var batch = 1
+    var cols = tensor[batch, 0:3, Idx[1] : Idx[3]]
+    comptime Cols = type_of(cols).LayoutType
+    comptime assert Cols.static_shape[0] == -1
+    comptime assert Cols.static_shape[1] == 2
+    assert_equal(cols.layout.shape[0]().value(), 3)
+    for r in range(3):
+        for c in range(2):
+            assert_equal(cols[r, c], Int32(12 + r * 4 + 1 + c))
+
+    # Half-open: `Idx[a]:` runs to the parent's extent, and `:Idx[b]` starts
+    # at 0. Both extents are static on a static parent.
+    var tail = tensor[Idx[1], Idx[1] :, :]
+    comptime assert type_of(tail).LayoutType.static_shape[0] == 2
+    assert_equal(tail[0, 0], Int32(12 + 4))
+    assert_equal(tail[1, 3], Int32(12 + 8 + 3))
+    var head = tensor[Idx[1], : Idx[2], :]
+    comptime assert type_of(head).LayoutType.static_shape[0] == 2
+    assert_equal(head[1, 3], Int32(12 + 4 + 3))
+
+    # On a runtime parent extent only `:Idx[b]` knows its extent statically.
+    var dynamic = tensor.make_dynamic[DType.int64]()
+    var dynamic_tail = dynamic[Idx[1], Idx[1] :, :]
+    comptime assert type_of(dynamic_tail).LayoutType.static_shape[0] == -1
+    assert_equal(dynamic_tail.layout.shape[0]().value(), 2)
+    assert_equal(dynamic_tail[1, 3], Int32(12 + 8 + 3))
+    var dynamic_head = dynamic[Idx[1], : Idx[2], :]
+    comptime assert type_of(dynamic_head).LayoutType.static_shape[0] == 2
+    assert_equal(dynamic_head[1, 3], Int32(12 + 4 + 3))
+
+    # A static slice start on a static stride folds into the offset's
+    # compile-time share, like an `Idx` index.
+    comptime L = type_of(row_major[2, 3, 4]())
+    comptime Args = TypeList.of[
+        Trait=_IndexOrSliceLike,
+        _IndexOrSlice[1],
+        _IndexOrSlice[kept=True, start_index=1, end_index=3],
+        _IndexOrSlice[kept=True],
+    ]()
+    comptime assert _subscript_static_offset[Args, L]() == 16
+    comptime OpenEnd = TypeList.of[
+        Trait=_IndexOrSliceLike,
+        _IndexOrSlice[1],
+        _IndexOrSlice[kept=True, start_index=2],
+        _IndexOrSlice[kept=True],
+    ]()
+    comptime assert _subscript_static_offset[OpenEnd, L]() == 20
 
 
 def test_select_3d_to_1d() raises:
