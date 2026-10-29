@@ -19,6 +19,7 @@ family.
    :hidden:
 
    pipelines.architectures.bert
+   pipelines.architectures.d1
    pipelines.architectures.deepseekV2
    pipelines.architectures.deepseekV3
    pipelines.architectures.deepseekV3_2
@@ -97,6 +98,7 @@ Text generation
 .. autosummary::
    :nosignatures:
 
+   ~max.pipelines.architectures.d1
    ~max.pipelines.architectures.deepseekV2
    ~max.pipelines.architectures.deepseekV3
    ~max.pipelines.architectures.deepseekV3_2

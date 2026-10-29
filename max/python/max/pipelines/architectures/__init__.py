@@ -81,6 +81,7 @@ def register_all_models() -> None:
 
     lazy_architectures = [
         _LazyArch("BertModel", ".bert", "bert_arch"),
+        _LazyArch("D1Model", ".d1", "d1_arch"),
         _LazyArch("DeepseekV2ForCausalLM", ".deepseekV2", "deepseekV2_arch"),
         _LazyArch(
             "DeepseekV2ForCausalLM_ModuleV3",

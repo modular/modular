@@ -4,6 +4,7 @@ ALL_ARCHITECTURES = [
     "//max/python/max/pipelines/architectures/autoencoders",
     "//max/python/max/pipelines/architectures/autoencoders_modulev3",
     "//max/python/max/pipelines/architectures/bert",
+    "//max/python/max/pipelines/architectures/d1",
     "//max/python/max/pipelines/architectures/deepseekV2",
     "//max/python/max/pipelines/architectures/deepseekV2_modulev3",
     "//max/python/max/pipelines/architectures/deepseekV3",
