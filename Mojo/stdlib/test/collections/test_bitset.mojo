@@ -14,6 +14,7 @@
 from std.collections import BitSet
 
 from std.testing import (
+    _assert_aborts,
     assert_equal,
     assert_false,
     assert_not_equal,
@@ -211,6 +212,59 @@ def test_bitset_bounds() raises:
     bs.set(31)
     assert_true(bs.test(0), msg="Bit 0 should be set")
     assert_true(bs.test(31), msg="Bit 31 should be set")
+
+
+def test_bitset_negative_index_set_does_not_corrupt_neighbor() raises:
+    var first = BitSet[128]()
+    var second = BitSet[128]()
+
+    def trigger() raises {mut first, mut second} -> None:
+        second.set(-1)
+
+    _assert_aborts(
+        trigger,
+        contains="BitSet index out of bounds when set bit",
+    )
+    assert_false(
+        first.test(127),
+        msg="set(-1) on a neighboring BitSet must not corrupt this one",
+    )
+
+
+def test_bitset_negative_index_clear_aborts() raises:
+    var bs = BitSet[128]()
+
+    def trigger() raises {mut bs} -> None:
+        bs.clear(-1)
+
+    _assert_aborts(
+        trigger,
+        contains="BitSet index out of bounds when clearing bit",
+    )
+
+
+def test_bitset_negative_index_toggle_aborts() raises:
+    var bs = BitSet[128]()
+
+    def trigger() raises {mut bs} -> None:
+        bs.toggle(-1)
+
+    _assert_aborts(
+        trigger,
+        contains="BitSet index out of bounds when toggling bit",
+    )
+
+
+def test_bitset_negative_index_test_aborts() raises:
+    var bs = BitSet[128]()
+
+    def trigger() raises {mut bs} -> None:
+        _ = bs.test(-1)
+
+    _assert_aborts(
+        trigger,
+        contains="BitSet index out of bounds when testing bit",
+    )
 
 
 def test_bitset_str_repr() raises:

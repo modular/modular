@@ -89,13 +89,14 @@ def _check_index_bounds[operation_name: StaticString](idx: Int, max_size: Int):
         max_size: The maximum size of the BitSet.
     """
     debug_assert(
-        idx < max_size,
+        idx >= 0 and idx < max_size,
         "BitSet index out of bounds when ",
         operation_name,
         " bit: ",
         idx,
-        " >= ",
+        " is outside valid range [0, ",
         max_size,
+        ")",
     )
 
 
