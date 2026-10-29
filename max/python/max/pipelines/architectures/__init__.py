@@ -302,6 +302,9 @@ def register_all_models() -> None:
             ".lfm3_audio",
             "lfm3_audio_arch",
         ),
+        _LazyArch(
+            "Lfm3OmniForConditionalGeneration", ".lfm3_omni", "lfm3_omni_arch"
+        ),
         _LazyArch("Lfm3VlForConditionalGeneration", ".lfm3_vl", "lfm3_vl_arch"),
         _LazyArch("LlamaForCausalLM", ".llama3", "llama_arch"),
         _LazyArch(

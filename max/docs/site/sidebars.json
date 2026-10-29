@@ -533,6 +533,7 @@
                 "api/python/pipelines.architectures.lfm2",
                 "api/python/pipelines.architectures.lfm3",
                 "api/python/pipelines.architectures.lfm3_audio",
+                "api/python/pipelines.architectures.lfm3_omni",
                 "api/python/pipelines.architectures.lfm3_vl",
                 "api/python/pipelines.architectures.llama3",
                 "api/python/pipelines.architectures.llama4",

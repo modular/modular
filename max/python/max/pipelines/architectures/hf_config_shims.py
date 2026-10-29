@@ -441,9 +441,13 @@ AutoConfig.register("lfm3_vl", _Lfm3VlHFConfig, exist_ok=True)
 
 
 class _Lfm3AudioEncoderHFConfig(_Lfm3HFConfig):
-    """The LFM3-Audio speech encoder's config.
+    """The LFM3 speech encoder's config.
 
     Its LFM2 stack is ``text_config``.
+
+    The LFM3-Audio export names the downsampler's widths ``dim_in``,
+    ``dim_conv`` and ``dim_out``, which become LFM3-Omni's ``num_mel_bins``,
+    ``conv_channels`` and ``hidden_size``.
     """
 
     model_type = "lfm3_audio_encoder"
@@ -454,6 +458,13 @@ class _Lfm3AudioEncoderHFConfig(_Lfm3HFConfig):
         text_config: dict[str, Any] | _Lfm3HFConfig | None = None,
         **kwargs: Any,
     ) -> None:
+        for old, new in (
+            ("dim_in", "num_mel_bins"),
+            ("dim_conv", "conv_channels"),
+            ("dim_out", "hidden_size"),
+        ):
+            if old in kwargs:
+                kwargs[new] = kwargs.pop(old)
         text_config = kwargs.pop("lfm", text_config)
         if not isinstance(text_config, _Lfm3HFConfig):
             text_config = _Lfm3HFConfig(**(text_config or {}))
@@ -516,6 +527,33 @@ class _Lfm3AudioHFConfig(PretrainedConfig):
 
 
 AutoConfig.register("lfm3_audio", _Lfm3AudioHFConfig, exist_ok=True)
+
+
+class _Lfm3OmniHFConfig(_Lfm3AudioHFConfig):
+    """Local config class for LiquidAI LFM3-Omni.
+
+    Handles ``model_type: lfm3_omni``: LFM3-Audio's config plus LFM3-VL's
+    ``vision_config``.
+    """
+
+    model_type = "lfm3_omni"
+    sub_configs = {
+        **_Lfm3AudioHFConfig.sub_configs,
+        "vision_config": _Lfm3VlVisionHFConfig,
+    }
+
+    def __init__(
+        self,
+        vision_config: dict[str, Any] | _Lfm3VlVisionHFConfig | None = None,
+        **kwargs: Any,
+    ) -> None:
+        if not isinstance(vision_config, _Lfm3VlVisionHFConfig):
+            vision_config = _Lfm3VlVisionHFConfig(**(vision_config or {}))
+        self.vision_config = vision_config
+        super().__init__(**kwargs)
+
+
+AutoConfig.register("lfm3_omni", _Lfm3OmniHFConfig, exist_ok=True)
 
 
 class _KimiK3SubHFConfig(PretrainedConfig):

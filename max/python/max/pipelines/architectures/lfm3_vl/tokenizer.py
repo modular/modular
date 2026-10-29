@@ -50,6 +50,7 @@ from max.pipelines.modeling.types import TextGenerationRequest
 from max.support.image import hash_image
 from PIL import Image
 from transformers import AutoTokenizer
+from transformers.utils import cached_file
 
 from ..qwen3vl_moe.nn.data_processing import QWEN3VL_MAX_PIXELS
 from ..qwen3vl_moe.nn.video_processing import (
@@ -127,6 +128,24 @@ class Lfm3VlTokenizer(TextAndVisionTokenizer):
             self.patch_size = vision.patch_size
             self.temporal_patch_size = vision.temporal_patch_size
             self.merge_size = vision.spatial_merge_size
+            processor = {}
+            try:
+                path = cached_file(
+                    model_path, "processor_config.json", revision=revision
+                )
+            except OSError:
+                path = None
+            if path:
+                with open(path) as f:
+                    processor = json.load(f)
+            size = processor.get("image_processor", {}).get("size", {})
+            self.min_pixels = int(size.get("shortest_edge", 65536))
+            self.max_pixels = int(size.get("longest_edge", QWEN3VL_MAX_PIXELS))
+            self.max_frames = int(
+                processor.get("video_processor", {}).get(
+                    "max_frames", QWEN3VL_VIDEO_MAX_FRAMES
+                )
+            )
 
     def _as_frame(
         self, pixels: npt.NDArray[np.float32], h: int, w: int
@@ -144,6 +163,8 @@ class Lfm3VlTokenizer(TextAndVisionTokenizer):
                 patch_size=self.patch_size,
                 temporal_patch_size=self.temporal_patch_size,
                 merge_size=self.merge_size,
+                min_pixels=self.min_pixels,
+                max_pixels=self.max_pixels,
             )
             frames.append(self._as_frame(pixels, h, w))
         return frames
@@ -153,7 +174,7 @@ class Lfm3VlTokenizer(TextAndVisionTokenizer):
     ) -> list[list[tuple[npt.NDArray[np.float32], float]]]:
         clips = []
         for video in videos:
-            max_frames = QWEN3VL_VIDEO_MAX_FRAMES
+            max_frames = self.max_frames
             if max_decoded_bytes is not None:
                 validate_video(video, max_decoded_bytes)
                 max_frames = min(
@@ -187,7 +208,7 @@ class Lfm3VlTokenizer(TextAndVisionTokenizer):
         media: Media = {IMAGE_TOKEN: [], VIDEO_TOKEN: []}
         for frame, raw in zip(images, request.images, strict=True):
             n = frame.shape[0] * frame.shape[1]
-            frame_hash = hash_image(raw, QWEN3VL_MAX_PIXELS)
+            frame_hash = hash_image(raw, self.max_pixels)
             media[IMAGE_TOKEN].append(
                 (IMAGE_TOKEN * n, [(frame, frame_hash, n)])
             )

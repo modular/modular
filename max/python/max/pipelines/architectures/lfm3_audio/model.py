@@ -113,6 +113,36 @@ def pack_clips(
     )
 
 
+def audio_tower_spec(
+    config: Lfm3AudioConfig, state_dict: dict[str, Any], device: Device
+) -> GraphSpec:
+    """Returns the graph of the speech encoder and projector.
+
+    Its inputs are the ones :func:`pack_clips` packs.
+    """
+    with F.lazy(), default_dtype(config.dtype):
+        tower = Lfm3AudioTower(config)
+        tower.to(device)
+    ref = DeviceRef.from_device(device)
+
+    def taps(rows: str, width: int) -> TensorType:
+        return TensorType(DType.int32, [rows, width], device=ref)
+
+    return GraphSpec(
+        tower,
+        type(tower).__qualname__,
+        [
+            TensorType(DType.float32, ["rows_0", 1], device=ref),
+            taps("rows_1", 9),
+            taps("rows_2", 9),
+            taps("rows_3", 9),
+            TensorType(DType.int32, ["num_tokens"], device=ref),
+            taps("num_tokens", config.encoder.sliding_window),
+        ],
+        weights=state_dict,
+    )
+
+
 class Lfm3AudioModel(Lfm3MediaModel[Lfm3AudioConfig]):
     """LFM3-Audio: the audio graph encodes clips the language graph reads."""
 
@@ -136,28 +166,7 @@ class Lfm3AudioModel(Lfm3MediaModel[Lfm3AudioConfig]):
     def _vision_spec(
         self, model_config: Lfm3AudioConfig, state_dict: dict[str, Any]
     ) -> GraphSpec:
-        with F.lazy(), default_dtype(model_config.dtype):
-            tower = Lfm3AudioTower(model_config)
-            tower.to(self.devices[0])
-        device = DeviceRef.from_device(self.devices[0])
-        window = model_config.encoder.sliding_window
-
-        def taps(rows: str, width: int) -> TensorType:
-            return TensorType(DType.int32, [rows, width], device=device)
-
-        return GraphSpec(
-            tower,
-            type(tower).__qualname__,
-            [
-                TensorType(DType.float32, ["rows_0", 1], device=device),
-                taps("rows_1", 9),
-                taps("rows_2", 9),
-                taps("rows_3", 9),
-                TensorType(DType.int32, ["num_tokens"], device=device),
-                taps("num_tokens", window),
-            ],
-            weights=state_dict,
-        )
+        return audio_tower_spec(model_config, state_dict, self.devices[0])
 
     def pack_vision_inputs(
         self,

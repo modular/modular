@@ -284,7 +284,7 @@ class Lfm3VlModel(Lfm3MediaModel[Lfm3VlConfig]):
                 language["model." + name.removeprefix("language_model.")] = (
                     weight.data()
                 )
-            else:
+            elif name.startswith(("vision_tower.", "multi_modal_projector.")):
                 name = name.replace("spatial_conv.weight", "spatial_conv")
                 vision[name] = weight.data()
         self._vision_weights_dict = vision

@@ -54,9 +54,9 @@ class Lfm3AudioEncoderConfig:
             multiple = lfm2.block_multiple_of
             intermediate = multiple * -(intermediate // -multiple)
         return cls(
-            num_mel_bins=encoder.dim_in,
-            conv_channels=encoder.dim_conv,
-            hidden_size=encoder.dim_out,
+            num_mel_bins=encoder.num_mel_bins,
+            conv_channels=encoder.conv_channels,
+            hidden_size=encoder.hidden_size,
             intermediate_size=intermediate,
             layer_types=list(lfm2.layer_types),
             num_attention_heads=lfm2.num_attention_heads,

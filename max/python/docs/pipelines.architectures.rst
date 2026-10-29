@@ -57,6 +57,7 @@ family.
    pipelines.architectures.lfm2
    pipelines.architectures.lfm3
    pipelines.architectures.lfm3_audio
+   pipelines.architectures.lfm3_omni
    pipelines.architectures.lfm3_vl
    pipelines.architectures.llama3
    pipelines.architectures.llama4
@@ -132,6 +133,7 @@ Text generation
    ~max.pipelines.architectures.lfm2
    ~max.pipelines.architectures.lfm3
    ~max.pipelines.architectures.lfm3_audio
+   ~max.pipelines.architectures.lfm3_omni
    ~max.pipelines.architectures.lfm3_vl
    ~max.pipelines.architectures.llama3
    ~max.pipelines.architectures.llama4
