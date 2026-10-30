@@ -600,14 +600,17 @@ struct SM100MHA2Q[
         comptime if MHA_PDL_LEVEL > PDLLevel.OFF:
             wait_on_dependent_grids()
             # `do_partition` (workspace/unfused split-K) feeds a SEPARATE
-            # combine consumer that reads `o_partial`/`lse_partial` only AFTER
-            # this grid's egress store. A prologue launch-dependents would
-            # release that consumer's `wait_on_dependent_grids()` at our START
-            # (before the store) -> stale read. Suppress it for `do_partition`;
-            # the combine's `wait` then releases on this grid's COMPLETION
-            # (which orders after the store). Every other config (writes its
-            # final output directly, no split-K combine) keeps the prologue
-            # launch-dependents unchanged.
+            # combine consumer that reads `o_partial`/`lse_partial` after this
+            # grid's egress store. Releasing it from the prologue would be
+            # correct (its `wait_on_dependent_grids()` still blocks until this
+            # grid has completed, whatever it triggered), but it measured
+            # slower for small-batch decode on B200 (Llama-3 GQA shapes, up to
+            # +6.8% on a 16-head, batch-4 chain; cause not investigated). So
+            # the combine launches once this grid finishes. An earlier
+            # attempt that added a second, terminal trigger on top of the
+            # prologue one reported CUDA_ERROR_ILLEGAL_INSTRUCTION. Every
+            # other config (writes its final output directly, no split-K
+            # combine) keeps the prologue launch-dependents unchanged.
             comptime if not Self.PartitionType.do_partition:
                 launch_dependent_grids()
 

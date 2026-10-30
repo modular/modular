@@ -73,25 +73,31 @@ parameter:
 
 Target hardware family: NVIDIA SM100 (B200 / B300).
 
-PDL (Item 4): this kernel is a Programmatic Dependent Launch *consumer* of the
-attention producer. It calls `wait_on_dependent_grids()` (all threads of its
-block, before the `rh >= RH` guard) and launches with
-`pdl_launch_attributes(MHA_PDL_LEVEL)`. The attention producer does NOT emit a
-terminal `launch_dependent_grids()` for the `do_partition` config (it suppresses
-its prologue trigger instead, see kernel.mojo); this `wait` therefore releases on
-the producer's grid *completion*, which orders after the workspace egress store.
-That completion-based release (rather than a post-store terminal trigger) is
-deliberate: a legal trigger must be issued by ALL threads of the CTA
-(`grid_controls.mojo:105`), but the attention kernel's warp-specialized invalid-tile
-early returns leave no divergence-free post-store convergence point, so a terminal
-trigger would require restructuring the verified control flow. The PROGRAMMATIC_
-STREAM_SERIALIZATION attribute still co-schedules this combine so its launch +
-prologue overlap attention's tail (measured 1.06-1.13x on P=148 combine-heavy
-shapes). With `-D MHA_PDL=false` all of this is comptime-pruned back to plain
-stream ordering. (An earlier attempt -- a post-store terminal trigger at prologue
-AND terminal -- double-issued `launch_dependent_grids()` and tripped
-CUDA_ERROR_ILLEGAL_INSTRUCTION; the current design issues no producer trigger for
-this config at all.)
+PDL: this kernel is a Programmatic Dependent Launch *consumer* of the
+attention producer and a *producer* for the o-proj matmul behind it. It calls
+`wait_on_dependent_grids()` (all threads of its block, before the `rh >= RH`
+guard) and launches with `pdl_launch_attributes(MHA_PDL_LEVEL)`. It also
+releases its own dependents on entry, before that wait.
+
+Releasing early is safe because `griddepcontrol.wait` blocks until the whole
+prerequisite grid has COMPLETED and its memory is visible, not until it has
+triggered (PTX ISA, `griddepcontrol`). A trigger only decides when the
+successor is scheduled, so the o-proj GEMM may become resident, and prefetch
+its weights, while this kernel is still running, yet cannot read `output`
+before this grid has finished writing it.
+
+The attention producer does NOT release this kernel from its prologue for the
+`do_partition` config (kernel.mojo), so it only triggers implicitly, when each
+of its CTAs exits. The combine therefore cannot start before the last attention
+CTA has exited, and none of attention's compute overlaps it. That is a measured
+choice, not a correctness requirement: a prologue release is as safe as the one
+in this kernel, but it made small-batch decode slower (see kernel.mojo). The
+PROGRAMMATIC_STREAM_SERIALIZATION attribute is still needed: it lets the
+combine's launch and prologue overlap the attention grid's completion drain
+after its last CTA exits, instead of starting only after that drain (an earlier
+measurement, not repeated by this change, gave 1.06-1.13x on P=148
+combine-heavy shapes). With `-D MHA_PDL=false` all of this is comptime-pruned
+back to plain stream ordering.
 """
 
 from std.math import ceildiv, exp2, log2, max, min
@@ -100,6 +106,7 @@ from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.primitives.grid_controls import (
     PDLLevel,
+    launch_dependent_grids,
     pdl_launch_attributes,
     wait_on_dependent_grids,
 )
@@ -191,15 +198,16 @@ def _fa4_splitk_combine_kernel[
     # bf16 op lowers to a misaligned 4-byte sub-store) or with a tail (72, 80)
     # fall to a correct lane-strided scalar path.
 
-    # PDL (consumer/acquire). Issued by ALL threads of the block (one warp,
-    # `WARP_SIZE`) uniformly, BEFORE the `rh >= RH` guard, per the primitive
-    # contract ("must be called by all threads in a thread block"). Blocks
-    # until the attention producer signals — for the `do_partition` config that
-    # producer suppresses its prologue launch-dependents (kernel.mojo), so this
-    # `wait` releases on the producer's COMPLETION, by which point the egress
-    # store to `o_partial`/`lse_partial` has landed. With `MHA_PDL=false` this
-    # is comptime-pruned and the combine runs under plain stream ordering.
+    # PDL. Issued by ALL threads of the block (`_COMBINE_WARPS` warps)
+    # uniformly, BEFORE the `rh >= RH` guard, per the primitive contract
+    # ("must be called by all threads in a thread block"). Release the
+    # dependents (the o-proj GEMM) first: its own `wait` still blocks until
+    # this grid has completed, so this cannot expose a half-written `output`.
+    # Then wait for the attention producer, whose `o_partial`/`lse_partial`
+    # stores have landed once its grid completes. With `MHA_PDL=false` this is
+    # comptime-pruned and the combine runs under plain stream ordering.
     comptime if MHA_PDL_LEVEL > PDLLevel.OFF:
+        launch_dependent_grids()
         wait_on_dependent_grids()
 
     var rh: Int = block_idx.x

@@ -436,6 +436,11 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    # SM100 FA4 workspace split-K combine under PDL. B200-only.
+    "attention/test_fa4_splitk_combine_pdl.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     # SM100 FA4 warp-specialized BM=32 (MMA_M=32) end-to-end: first live
     # elaboration of the packed-TMEM KV-ring + two-level combine datapath, driven
     # by the short-prompt (max_prompt_len<=32) WS dispatch route. B200-only.
