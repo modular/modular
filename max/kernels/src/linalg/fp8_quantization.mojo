@@ -220,7 +220,7 @@ def quantize_tensor_dynamic_scaled_fp8[
     //,
     group_size_or_per_token: Int,
     num_cols: Int,
-    pdl_level: PDLLevel = PDLLevel.ON,
+    pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](
     input_fn: InputFnType,
     scaled_output: TileTensor[mut=True, out_dtype, ...],
@@ -246,7 +246,7 @@ def quantize_tensor_dynamic_scaled_fp8[
         num_cols: Number of columns in the input; the hidden
             dimension size.
         pdl_level: Programmatic dependent launch level for the
-            kernels (defaults to `PDLLevel.ON`).
+            kernels (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`).
 
     Args:
         input_fn: Callable that loads input tiles for a given
@@ -315,6 +315,7 @@ def quantize_tensor_dynamic_scaled_fp8[
                 num_threads=num_threads,
                 group_size=group_size,
                 simd_width=simd_width,
+                pdl_level=pdl_level,
             ](
                 wrap,
                 scales.address_space_cast[.GENERIC](),
@@ -332,6 +333,7 @@ def quantize_tensor_dynamic_scaled_fp8[
                 out_type=out_dtype,
                 num_threads=num_threads,
                 num_groups=num_cols // group_size,
+                pdl_level=pdl_level,
             ](
                 scales.address_space_cast[.GENERIC](),
                 scale_ub.cast[scales_dtype](),
@@ -349,6 +351,7 @@ def quantize_tensor_dynamic_scaled_fp8[
                 num_threads=num_threads,
                 group_size=group_size,
                 simd_width=simd_width,
+                pdl_level=pdl_level,
             ](
                 wrap,
                 scaled_output.address_space_cast[.GENERIC](),
@@ -366,6 +369,7 @@ def quantize_tensor_dynamic_scaled_fp8[
                 num_threads=num_threads,
                 group_size=group_size,
                 simd_width=simd_width,
+                pdl_level=pdl_level,
             ](
                 wrap,
                 scaled_output.address_space_cast[.GENERIC](),
@@ -398,7 +402,7 @@ def quantize_dynamic_scaled_fp8[
     //,
     group_size_or_per_token: Int,
     num_cols: Int,
-    pdl_level: PDLLevel = PDLLevel.ON,
+    pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
     row_bounded: Bool = False,
 ](
     input_fn: InputFnType,
@@ -422,6 +426,16 @@ def quantize_dynamic_scaled_fp8[
     rows and the kernel grid-strides over `[0, row_limit)` instead of covering
     all `num_rows`. Rows at or past that count keep whatever the output and
     scales buffers already held.
+
+    `pdl_level` picks when the kernel releases its dependents. The kernel
+    always waits for the predecessor grid before it reads anything a
+    predecessor wrote, including `row_limit`. At the default
+    `PDLLevel.OVERLAP_AT_BEGINNING` it releases dependents right after that
+    wait, so a PDL-aware consumer can run its predecessor-independent setup
+    while the quantizer runs; `PDLLevel.ON` releases them when the kernel
+    exits, and `PDLLevel.OFF` launches without PDL. A dependent's own wait
+    still blocks until this grid has completed, so every level is safe for a
+    consumer that waits before reading the outputs.
     """
     comptime assert scaled_output.rank == 2, "expected rank-2 output"
     comptime assert scales.rank == 2, "expected rank-2 scales"
@@ -497,6 +511,7 @@ def quantize_dynamic_scaled_fp8[
                 group_size=group_size,
                 simd_width=simd_width,
                 row_bounded=row_bounded,
+                pdl_level=pdl_level,
             ](
                 wrap,
                 scaled_output.address_space_cast[.GENERIC](),
@@ -571,6 +586,7 @@ struct _QuantizeFp8Kernel[
     num_threads: Int,
     group_size: Int,
     simd_width: Int,
+    pdl_level: PDLLevel,
     row_bounded: Bool = False,
 ](ImplicitlyCopyable, RegisterPassable, def() -> None):
     var input_fn: Self.InputFnType
@@ -661,13 +677,16 @@ struct _QuantizeFp8Kernel[
         var row_in_block = warp_id() * groups_per_warp + lane // lanes_per_group
         var col = group_idx * Self.group_size + lane_in_group * Self.simd_width
 
-        var row_end = self.num_rows
-        comptime if Self.row_bounded:
-            # Clamp the device-side count rather than trust it, as in the
-            # block-per-group path.
-            row_end = min(Int(self.row_limit.value()[]), Int(output.dim[0]()))
+        with PDL[Self.pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
+            var row_end = self.num_rows
+            comptime if Self.row_bounded:
+                # Clamp the device-side count rather than trust it, as in the
+                # block-per-group path. An earlier grid writes it, so it is
+                # read only once the PDL wait has returned.
+                row_end = min(
+                    Int(self.row_limit.value()[]), Int(output.dim[0]())
+                )
 
-        with PDL():
             for tile in range(
                 block_idx.x * rows_per_block,
                 row_end,
@@ -736,19 +755,23 @@ struct _QuantizeFp8Kernel[
         # count and the `block.max` barrier below stays convergent. Unbounded
         # launches keep one row per block, exactly as before.
         var row_start = block_idx.x
-        var row_end: Int
-        var row_step: Int
-        comptime if Self.row_bounded:
-            # The count comes from device memory, so clamp it rather than
-            # trust it: a malformed prefix sum would otherwise write past the
-            # end of both output buffers.
-            row_end = min(Int(self.row_limit.value()[]), Int(output.dim[0]()))
-            row_step = grid_dim.x
-        else:
-            row_end = row_start + 1
-            row_step = 1
 
-        with PDL():
+        with PDL[Self.pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
+            var row_end: Int
+            var row_step: Int
+            comptime if Self.row_bounded:
+                # The count comes from device memory, so clamp it rather than
+                # trust it: a malformed prefix sum would otherwise write past
+                # the end of both output buffers. An earlier grid writes it, so
+                # it is read only once the PDL wait has returned.
+                row_end = min(
+                    Int(self.row_limit.value()[]), Int(output.dim[0]())
+                )
+                row_step = grid_dim.x
+            else:
+                row_end = row_start + 1
+                row_step = 1
+
             for row in range(row_start, row_end, row_step):
                 var input_vec = SIMD[accum_type, Self.simd_width](0)
                 var thread_max = Scalar[accum_type](0)
@@ -813,6 +836,7 @@ struct _ComputeScalesFp8Kernel[
     num_threads: Int,
     group_size: Int,
     simd_width: Int,
+    pdl_level: PDLLevel,
 ](ImplicitlyCopyable, RegisterPassable, def() -> None):
     var input_fn: Self.InputFnType
     var scales: TileTensor[
@@ -864,7 +888,7 @@ struct _ComputeScalesFp8Kernel[
         var row = block_idx.x
         var group_idx = block_idx.y
 
-        with PDL():
+        with PDL[Self.pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
             for i in range(
                 Int(tid), Self.group_size // Self.simd_width, Self.num_threads
             ):
@@ -896,6 +920,7 @@ struct _ReducePerTensorScaleFp8Kernel[
     out_type: DType,
     num_threads: Int,
     num_groups: Int,
+    pdl_level: PDLLevel,
 ](ImplicitlyCopyable, RegisterPassable, def() -> None):
     var scales: TileTensor[
         mut=True,
@@ -928,7 +953,7 @@ struct _ReducePerTensorScaleFp8Kernel[
         var num_rows = Int(self.num_rows_dev)
         var tid = thread_idx.x
 
-        with PDL():
+        with PDL[Self.pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
             var thread_max = Scalar[Self.scales_type](0)
             comptime for g in range(Self.num_groups):
                 for r in range(tid, num_rows, Self.num_threads):
@@ -971,6 +996,7 @@ struct _QuantizeFp8KernelPerTensor[
     num_threads: Int,
     group_size: Int,
     simd_width: Int,
+    pdl_level: PDLLevel,
 ](ImplicitlyCopyable, RegisterPassable, def() -> None):
     var input_fn: Self.InputFnType
     var output: TileTensor[
@@ -1013,7 +1039,7 @@ struct _QuantizeFp8KernelPerTensor[
         var row = block_idx.x
         var group_idx = block_idx.y
 
-        with PDL():
+        with PDL[Self.pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
             # The same guarded reciprocal compute_dynamic_fp8_scale uses, so a
             # near-zero tensor quantizes to fp8 zero instead of 0 * Inf.
             var scale_factor_recip = guarded_inv_scale(
@@ -1045,7 +1071,7 @@ def batched_quantize_dynamic_scaled_fp8[
     //,
     group_size_or_per_token: Int,
     num_cols: Int,
-    pdl_level: PDLLevel = PDLLevel.ON,
+    pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](
     input_fn: InputFnType,
     scaled_output: TileTensor[mut=True, out_dtype, ...],
@@ -1056,7 +1082,13 @@ def batched_quantize_dynamic_scaled_fp8[
     batch_size: Int,
 ) raises:
     """TileTensor primary implementation of batched dynamic scaled FP8
-    quantization."""
+    quantization.
+
+    `pdl_level` picks when the kernel releases its dependents, as in
+    `quantize_dynamic_scaled_fp8`: right after the wait for the predecessor
+    grid at the default `PDLLevel.OVERLAP_AT_BEGINNING`, at kernel exit for
+    `PDLLevel.ON`.
+    """
     comptime assert scaled_output.rank == 3, "expected rank-3 output"
     comptime assert scales.rank == 3, "expected rank-3 scales"
 
@@ -1099,6 +1131,7 @@ def batched_quantize_dynamic_scaled_fp8[
         num_threads=num_threads,
         group_size=group_size,
         simd_width=simd_width,
+        pdl_level=pdl_level,
     ](
         wrap,
         scaled_output.address_space_cast[.GENERIC](),
@@ -1132,6 +1165,7 @@ struct _BatchedQuantizeFp8Kernel[
     num_threads: Int,
     group_size: Int,
     simd_width: Int,
+    pdl_level: PDLLevel,
 ](ImplicitlyCopyable, RegisterPassable, def() -> None):
     var input_fn: Self.InputFnType
     var output: TileTensor[
@@ -1176,7 +1210,7 @@ struct _BatchedQuantizeFp8Kernel[
         var group_idx = block_idx.y
         var batch_idx = block_idx.z
 
-        with PDL():
+        with PDL[Self.pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
             for i in range(
                 tid, Self.group_size // Self.simd_width, Self.num_threads
             ):
