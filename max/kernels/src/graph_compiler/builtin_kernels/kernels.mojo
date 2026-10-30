@@ -2745,24 +2745,21 @@ struct Struct_mhc_pre:
     @inline(.always)
     @staticmethod
     def execute[
-        dtype: DType,
-        fn_dtype: DType,
-        //,
         hc_mult: Int,
         hidden_size: Int,
         hc_sinkhorn_iters: Int,
         has_norm: Bool,
         target: StaticString,
     ](
-        post: OutputTensor[dtype=.float32, rank=2, ...],
-        comb: OutputTensor[dtype=.float32, rank=3, ...],
-        collapsed: OutputTensor[dtype=dtype, rank=2, ...],
-        pre: OutputTensor[dtype=.float32, rank=2, ...],
-        streams: InputTensor[dtype=dtype, rank=3, ...],
-        hc_fn: InputTensor[dtype=fn_dtype, rank=2, ...],
-        base: InputTensor[dtype=.float32, rank=1, ...],
-        scale: InputTensor[dtype=.float32, rank=1, ...],
-        gamma: InputTensor[dtype=dtype, rank=1, ...],
+        post: Some[Output & Tensor],
+        comb: Some[Output & Tensor],
+        collapsed: Some[Output & Tensor],
+        pre: Some[Output & Tensor],
+        streams: Some[Input & Tensor],
+        hc_fn: Some[Input & Tensor],
+        base: Some[Input & Tensor],
+        scale: Some[Input & Tensor],
+        gamma: Some[Input & Tensor],
         rms_eps: Float32,
         hc_eps: Float32,
         norm_eps: Float32,
@@ -2773,6 +2770,25 @@ struct Struct_mhc_pre:
         comptime assert (
             _accelerator_arch() == "amdgpu:gfx950"
         ), "mo.mhc.pre requires gfx950"
+        comptime assert conforms_to(type_of(post), TileTensorable)
+        comptime assert conforms_to(type_of(comb), TileTensorable)
+        comptime assert conforms_to(type_of(collapsed), TileTensorable)
+        comptime assert conforms_to(type_of(pre), TileTensorable)
+        comptime assert conforms_to(type_of(streams), TileTensorable)
+        comptime assert conforms_to(type_of(hc_fn), TileTensorable)
+        comptime assert conforms_to(type_of(base), TileTensorable)
+        comptime assert conforms_to(type_of(scale), TileTensorable)
+        comptime assert conforms_to(type_of(gamma), TileTensorable)
+        comptime dtype = type_of(collapsed).dtype
+        comptime assert type_of(post).rank == 2
+        comptime assert type_of(comb).rank == 3
+        comptime assert type_of(collapsed).rank == 2
+        comptime assert type_of(pre).rank == 2
+        comptime assert type_of(streams).rank == 3
+        comptime assert type_of(hc_fn).rank == 2
+        comptime assert type_of(base).rank == 1
+        comptime assert type_of(scale).rank == 1
+        comptime assert type_of(gamma).rank == 1
         mhc_pre[
             hc_mult=hc_mult,
             hidden_size=hidden_size,
@@ -2780,15 +2796,15 @@ struct Struct_mhc_pre:
             has_norm=has_norm,
             target=target,
         ](
-            post.to_tile_tensor[.int64](),
-            comb.to_tile_tensor[.int64](),
-            collapsed.to_tile_tensor[.int64](),
-            pre.to_tile_tensor[.int64](),
-            streams.to_tile_tensor[.int64]().as_imm(),
-            hc_fn.to_tile_tensor[.int64]().as_imm(),
-            base.to_tile_tensor[.int64]().as_imm(),
-            scale.to_tile_tensor[.int64]().as_imm(),
-            gamma.to_tile_tensor[.int64]().as_imm(),
+            post.to_tile_tensor[.float32](),
+            comb.to_tile_tensor[.float32](),
+            collapsed.to_tile_tensor(),
+            pre.to_tile_tensor[.float32](),
+            streams.to_tile_tensor[dtype]().as_imm(),
+            hc_fn.to_tile_tensor().as_imm(),
+            base.to_tile_tensor[.float32]().as_imm(),
+            scale.to_tile_tensor[.float32]().as_imm(),
+            gamma.to_tile_tensor[dtype]().as_imm(),
             rms_eps,
             hc_eps,
             norm_eps,
