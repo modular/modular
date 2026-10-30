@@ -148,26 +148,14 @@ def _check_router(
             var idx = Int(actual_idx[kbase + j])
             if idx < 0 or idx >= N_EXPERTS:
                 print(
-                    "FUZZ_NUMERIC_FAIL kind=range token=",
-                    t,
-                    "slot=",
-                    j,
-                    "idx=",
-                    idx,
+                    t"FUZZ_NUMERIC_FAIL kind=range token= {t} slot= {j} idx="
+                    t" {idx}"
                 )
                 return False
             if biased[idx] < threshold - tol:
                 print(
-                    "FUZZ_NUMERIC_FAIL kind=topk token=",
-                    t,
-                    "slot=",
-                    j,
-                    "idx=",
-                    idx,
-                    "biased=",
-                    biased[idx],
-                    "kth_largest=",
-                    threshold,
+                    t"FUZZ_NUMERIC_FAIL kind=topk token= {t} slot= {j} idx="
+                    t" {idx} biased= {biased[idx]} kth_largest= {threshold}"
                 )
                 return False
 
@@ -189,14 +177,8 @@ def _check_router(
             var got = actual_w[kbase + j].cast[.float64]()
             if abs(got - w) > 1e-2 + 1e-2 * abs(w):
                 print(
-                    "FUZZ_NUMERIC_FAIL kind=weight token=",
-                    t,
-                    "slot=",
-                    j,
-                    "got=",
-                    got,
-                    "expected=",
-                    w,
+                    t"FUZZ_NUMERIC_FAIL kind=weight token= {t} slot= {j} got="
+                    t" {got} expected= {w}"
                 )
                 return False
     return True
@@ -216,12 +198,8 @@ def _check_index_contract(actual_idx: Span[Int32, _], num_tokens: Int) -> Bool:
             var idx = Int(actual_idx[t * TOPK + j])
             if idx < 0 or idx >= N_EXPERTS:
                 print(
-                    "FUZZ_CONTRACT_FAIL kind=range token=",
-                    t,
-                    "slot=",
-                    j,
-                    "idx=",
-                    idx,
+                    t"FUZZ_CONTRACT_FAIL kind=range token= {t} slot= {j} idx="
+                    t" {idx}"
                 )
                 return False
             for j2 in range(j + 1, TOPK):
@@ -320,12 +298,8 @@ def main() raises:
         var specs = gen_specs(the_budget)
         for i in range(len(specs)):
             print(
-                "FUZZ_SPEC idx=",
-                i,
-                "num_tokens=",
-                specs[i].num_tokens,
-                "dist=",
-                specs[i].dist,
+                t"FUZZ_SPEC idx= {i} num_tokens= {specs[i].num_tokens} dist="
+                t" {specs[i].dist}"
             )
         return
 
@@ -339,15 +313,8 @@ def main() raises:
         return
 
     print(
-        "=== fuzz_moe_router seed=",
-        the_seed,
-        "budget=",
-        the_budget,
-        "n_experts=",
-        N_EXPERTS,
-        "topk=",
-        TOPK,
-        "===",
+        t"=== fuzz_moe_router seed= {the_seed} budget= {the_budget} n_experts="
+        t" {N_EXPERTS} topk= {TOPK} ==="
     )
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:

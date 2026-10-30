@@ -568,12 +568,8 @@ def main() raises:
         var specs = gen_specs(the_budget)
         for i in range(len(specs)):
             print(
-                "FUZZ_SPEC idx=",
-                i,
-                "num_active_experts=",
-                specs[i].num_active_experts,
-                "tok_seed=",
-                specs[i].tok_seed,
+                t"FUZZ_SPEC idx= {i} num_active_experts="
+                t" {specs[i].num_active_experts} tok_seed= {specs[i].tok_seed}"
             )
         return
 
@@ -581,16 +577,8 @@ def main() raises:
         var nae = flag_int(args, "--num_active_experts", 3)
         var ts = flag_int(args, "--tok_seed", 1)
         print(
-            "FUZZ_SINGLE num_active_experts=",
-            nae,
-            "tok_seed=",
-            ts,
-            "N=",
-            N,
-            "K=",
-            K,
-            "num_experts=",
-            num_experts,
+            t"FUZZ_SINGLE num_active_experts= {nae} tok_seed= {ts} N= {N} K="
+            t" {K} num_experts= {num_experts}"
         )
         with DeviceContext() as ctx:
             if rerun > 0:
@@ -601,17 +589,8 @@ def main() raises:
         return
 
     print(
-        "=== fuzz_grouped_matmul_sm100_w4a8 seed=",
-        the_seed,
-        "budget=",
-        the_budget,
-        "N=",
-        N,
-        "K=",
-        K,
-        "num_experts=",
-        num_experts,
-        "===",
+        t"=== fuzz_grouped_matmul_sm100_w4a8 seed= {the_seed} budget="
+        t" {the_budget} N= {N} K= {K} num_experts= {num_experts} ==="
     )
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:

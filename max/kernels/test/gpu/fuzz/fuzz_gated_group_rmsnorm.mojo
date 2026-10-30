@@ -220,20 +220,10 @@ def main() raises:
         var specs = gen_specs(the_budget)
         for i in range(len(specs)):
             print(
-                "FUZZ_SPEC idx=",
-                i,
-                "rows=",
-                specs[i].rows,
-                "num_groups=",
-                specs[i].num_groups,
-                "gate_pad=",
-                specs[i].gate_pad,
-                "gate_off=",
-                specs[i].gate_off,
-                "data_seed=",
-                specs[i].data_seed,
-                "dist=",
-                specs[i].dist,
+                t"FUZZ_SPEC idx= {i} rows= {specs[i].rows} num_groups="
+                t" {specs[i].num_groups} gate_pad="
+                t" {specs[i].gate_pad} gate_off= {specs[i].gate_off} data_seed="
+                t" {specs[i].data_seed} dist= {specs[i].dist}"
             )
         return
 
@@ -253,11 +243,8 @@ def main() raises:
         return
 
     print(
-        "=== fuzz_gated_group_rmsnorm seed=",
-        the_seed,
-        "budget=",
-        the_budget,
-        "===",
+        t"=== fuzz_gated_group_rmsnorm seed= {the_seed} budget="
+        t" {the_budget} ==="
     )
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:

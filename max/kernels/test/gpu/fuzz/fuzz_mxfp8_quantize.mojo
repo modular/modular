@@ -190,12 +190,8 @@ def _check_roundtrip(
         var rate = Float64(mismatch) / Float64(total)
         if rate > 0.005:
             print(
-                "FUZZ_NUMERIC_FAIL kind=roundtrip mismatch=",
-                mismatch,
-                "total=",
-                total,
-                "rate=",
-                rate,
+                t"FUZZ_NUMERIC_FAIL kind=roundtrip mismatch= {mismatch} total="
+                t" {total} rate= {rate}"
             )
             return False
     return True
@@ -330,33 +326,21 @@ def main() raises:
     if mode == "list-specs":
         var specs = gen_specs(the_budget)
         for i in range(len(specs)):
-            print(
-                "FUZZ_SPEC idx=",
-                i,
-                "m=",
-                specs[i].m,
-                "dist=",
-                specs[i].dist,
-            )
+            print(t"FUZZ_SPEC idx= {i} m= {specs[i].m} dist= {specs[i].dist}")
         return
 
     if mode == "single":
         var m = flag_int(args, "--m", 999)
         var dist = flag_int(args, "--dist", 3)
-        print("FUZZ_SINGLE m=", m, "N=", N, "dist=", dist)
+        print(t"FUZZ_SINGLE m= {m} N= {N} dist= {dist}")
         with DeviceContext() as ctx:
             run_one_case(ctx, CaseSpec(m, dist), check, contract)
         print("FUZZ_RESULT verdict=PASS")
         return
 
     print(
-        "=== fuzz_mxfp8_quantize seed=",
-        the_seed,
-        "budget=",
-        the_budget,
-        "N=",
-        N,
-        "===",
+        t"=== fuzz_mxfp8_quantize seed= {the_seed} budget= {the_budget} N="
+        t" {N} ==="
     )
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:

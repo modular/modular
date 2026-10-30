@@ -576,14 +576,8 @@ def run_batch_variance_negctl_case(ctx: DeviceContext, spec: CaseSpec) raises:
         NEG_BS_HI, NEG_NUM_KEYS, ctx
     )
     print(
-        "FUZZ_NEGCTL num_keys=",
-        NEG_NUM_KEYS,
-        "np(bs=1)=",
-        np_lo,
-        "np(bs=",
-        NEG_BS_HI,
-        ")=",
-        np_hi,
+        t"FUZZ_NEGCTL num_keys= {NEG_NUM_KEYS} np(bs=1)= {np_lo} np(bs="
+        t" {NEG_BS_HI} )= {np_hi}"
     )
     if np_lo == np_hi:
         raise Error(
@@ -644,14 +638,8 @@ def main() raises:
         var specs = gen_specs(the_budget, safe=False)
         for i in range(len(specs)):
             print(
-                "FUZZ_SPEC idx=",
-                i,
-                "seq_len=",
-                specs[i].seq_len,
-                "num_keys=",
-                specs[i].num_keys,
-                "valid_length=",
-                specs[i].valid_length,
+                t"FUZZ_SPEC idx= {i} seq_len= {specs[i].seq_len} num_keys="
+                t" {specs[i].num_keys} valid_length= {specs[i].valid_length}"
             )
         return
 
@@ -661,7 +649,7 @@ def main() raises:
         var sl = flag_int(args, "--seq_len", 1)
         var nk = flag_int(args, "--num_keys", 16)
         var vl = flag_int(args, "--valid_length", 8)
-        print("FUZZ_SINGLE seq_len=", sl, "num_keys=", nk, "valid_length=", vl)
+        print(t"FUZZ_SINGLE seq_len= {sl} num_keys= {nk} valid_length= {vl}")
         with DeviceContext() as ctx:
             if batch_negctl:
                 run_batch_variance_negctl_case(ctx, CaseSpec(sl, nk, vl))
@@ -678,13 +666,8 @@ def main() raises:
 
     # Default: in-process standalone fuzz over the SAFE space.
     print(
-        "=== fuzz_mha_causal seed=",
-        the_seed,
-        "budget=",
-        the_budget,
-        "depth=",
-        depth,
-        "(in-process, safe space) ===",
+        t"=== fuzz_mha_causal seed= {the_seed} budget= {the_budget} depth="
+        t" {depth} (in-process, safe space) ==="
     )
     var specs = gen_specs(the_budget, safe=True)
     with DeviceContext() as ctx:

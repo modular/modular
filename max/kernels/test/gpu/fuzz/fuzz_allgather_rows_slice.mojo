@@ -215,14 +215,8 @@ def run_one_case(contexts: List[DeviceContext], spec: CaseSpec) raises:
                         wanted = ~wanted
                     if actual[unsafe_offset=k] != wanted:
                         print(
-                            "FUZZ_NUMERIC_FAIL destination=",
-                            d,
-                            "source=",
-                            source,
-                            "element=",
-                            k,
-                            "iteration=",
-                            iteration,
+                            t"FUZZ_NUMERIC_FAIL destination= {d} source="
+                            t" {source} element= {k} iteration= {iteration}"
                         )
                         raise Error("sliced allgather changed the source bytes")
     _ = inputs

@@ -668,24 +668,13 @@ def main() raises:
         var specs = gen_specs(the_budget)
         for i in range(len(specs)):
             print(
-                "FUZZ_SPEC idx=",
-                i,
-                "batch_size=",
-                specs[i].batch_size,
-                "max_cache_len=",
-                specs[i].max_cache_len,
-                "min_cache_len=",
-                specs[i].min_cache_len,
-                "seq_len=",
-                specs[i].seq_len,
-                "pattern=",
-                specs[i].pattern,
-                "ragged_q=",
-                specs[i].ragged_q,
-                "seed=",
-                specs[i].seed,
-                "dist=",
-                specs[i].dist,
+                t"FUZZ_SPEC idx= {i} batch_size="
+                t" {specs[i].batch_size} max_cache_len="
+                t" {specs[i].max_cache_len} min_cache_len="
+                t" {specs[i].min_cache_len} seq_len="
+                t" {specs[i].seq_len} pattern= {specs[i].pattern} ragged_q="
+                t" {specs[i].ragged_q} seed= {specs[i].seed} dist="
+                t" {specs[i].dist}"
             )
         return
 
@@ -708,15 +697,8 @@ def main() raises:
 
     # Default: standalone in-process fuzz.
     print(
-        "=== fuzz_fused_qk_rms_norm num_q_heads=",
-        num_q_heads,
-        "num_kv_heads=",
-        num_kv_heads,
-        "seed=",
-        the_seed,
-        "budget=",
-        the_budget,
-        "===",
+        t"=== fuzz_fused_qk_rms_norm num_q_heads= {num_q_heads} num_kv_heads="
+        t" {num_kv_heads} seed= {the_seed} budget= {the_budget} ==="
     )
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:

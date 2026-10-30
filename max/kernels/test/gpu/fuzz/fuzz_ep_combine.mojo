@@ -416,26 +416,16 @@ def main() raises:
 
     if mode == "single":
         var dist = flag_int(args, "--dist", SI_ROW_OOB)
-        print("FUZZ_SINGLE dist=", dist, "(", si_dist_name(dist), ")")
+        print(t"FUZZ_SINGLE dist= {dist} ( {si_dist_name(dist)} )")
         with DeviceContext() as ctx:
             run_one_case(ctx, CaseSpec(dist))
         print("FUZZ_RESULT verdict=PASS")
         return
 
     print(
-        "=== fuzz_ep_combine seed=",
-        the_seed,
-        "budget=",
-        the_budget,
-        "hidden_size=",
-        hidden_size,
-        "top_k=",
-        top_k,
-        "n_experts=",
-        n_experts,
-        "n_tokens_per_rank=",
-        n_tokens_per_rank,
-        "===",
+        t"=== fuzz_ep_combine seed= {the_seed} budget="
+        t" {the_budget} hidden_size= {hidden_size} top_k= {top_k} n_experts="
+        t" {n_experts} n_tokens_per_rank= {n_tokens_per_rank} ==="
     )
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:

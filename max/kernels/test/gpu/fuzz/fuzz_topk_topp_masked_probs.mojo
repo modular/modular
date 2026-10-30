@@ -228,12 +228,8 @@ def _check_row(
     # threshold at all.
     if max_zeroed > min_kept * (1.0 + VALUE_SLACK):
         print(
-            "FUZZ_CONTRACT_FAIL row=",
-            row,
-            "max_zeroed=",
-            max_zeroed,
-            "min_kept=",
-            min_kept,
+            t"FUZZ_CONTRACT_FAIL row= {row} max_zeroed= {max_zeroed} min_kept="
+            t" {min_kept}"
         )
         raise Error("zeroed token outweighs a kept token")
 
@@ -241,22 +237,14 @@ def _check_row(
     var kept_above = _above(sorted_e, prefix, min_kept * (1.0 + VALUE_SLACK))
     if kept_above[0] >= k_eff:
         print(
-            "FUZZ_CONTRACT_FAIL row=",
-            row,
-            "count_above_kept=",
-            kept_above[0],
-            "k_eff=",
-            k_eff,
+            t"FUZZ_CONTRACT_FAIL row= {row} count_above_kept="
+            t" {kept_above[0]} k_eff= {k_eff}"
         )
         raise Error("kept token violates the top-k constraint")
     if kept_above[1] > p_eff * (1.0 + MASS_SLACK):
         print(
-            "FUZZ_CONTRACT_FAIL row=",
-            row,
-            "mass_above_kept=",
-            kept_above[1],
-            "p_eff=",
-            p_eff,
+            t"FUZZ_CONTRACT_FAIL row= {row} mass_above_kept="
+            t" {kept_above[1]} p_eff= {p_eff}"
         )
         raise Error("kept token violates the top-p constraint")
 
@@ -271,18 +259,9 @@ def _check_row(
         var mass_ok = zeroed_above[1] > p_eff * (1.0 - MASS_SLACK)
         if not count_ok and not mass_ok:
             print(
-                "FUZZ_CONTRACT_FAIL row=",
-                row,
-                "max_zeroed=",
-                max_zeroed,
-                "count_above=",
-                zeroed_above[0],
-                "mass_above=",
-                zeroed_above[1],
-                "k_eff=",
-                k_eff,
-                "p_eff=",
-                p_eff,
+                t"FUZZ_CONTRACT_FAIL row= {row} max_zeroed="
+                t" {max_zeroed} count_above= {zeroed_above[0]} mass_above="
+                t" {zeroed_above[1]} k_eff= {k_eff} p_eff= {p_eff}"
             )
             raise Error("zeroed token satisfies the accept predicate")
 
@@ -394,20 +373,9 @@ def main() raises:
         var specs = gen_specs(the_budget)
         for i in range(len(specs)):
             print(
-                "FUZZ_SPEC idx=",
-                i,
-                "rows=",
-                specs[i].rows,
-                "d=",
-                specs[i].d,
-                "k=",
-                specs[i].k,
-                "top_p_milli=",
-                specs[i].top_p_milli,
-                "temp_milli=",
-                specs[i].temp_milli,
-                "dist=",
-                specs[i].dist,
+                t"FUZZ_SPEC idx= {i} rows= {specs[i].rows} d= {specs[i].d} k="
+                t" {specs[i].k} top_p_milli= {specs[i].top_p_milli} temp_milli="
+                t" {specs[i].temp_milli} dist= {specs[i].dist}"
             )
         return
 
@@ -426,11 +394,8 @@ def main() raises:
         return
 
     print(
-        "=== fuzz_topk_topp_masked_probs seed=",
-        the_seed,
-        "budget=",
-        the_budget,
-        "===",
+        t"=== fuzz_topk_topp_masked_probs seed= {the_seed} budget="
+        t" {the_budget} ==="
     )
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:

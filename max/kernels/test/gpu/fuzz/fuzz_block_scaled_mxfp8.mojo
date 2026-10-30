@@ -280,26 +280,15 @@ def main() raises:
 
     if mode == "single":
         var m = flag_int(args, "--m", 1000)
-        print("FUZZ_SINGLE m=", m, "N=", N, "K=", K, "mma_n=", mma_n)
+        print(t"FUZZ_SINGLE m= {m} N= {N} K= {K} mma_n= {mma_n}")
         with DeviceContext() as ctx:
             run_one_case(ctx, CaseSpec(m), check)
         print("FUZZ_RESULT verdict=PASS")
         return
 
     print(
-        "=== fuzz_block_scaled_mxfp8 seed=",
-        the_seed,
-        "budget=",
-        the_budget,
-        "N=",
-        N,
-        "K=",
-        K,
-        "mma_n=",
-        mma_n,
-        "cta_group=",
-        cta_group,
-        "===",
+        t"=== fuzz_block_scaled_mxfp8 seed= {the_seed} budget= {the_budget} N="
+        t" {N} K= {K} mma_n= {mma_n} cta_group= {cta_group} ==="
     )
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:

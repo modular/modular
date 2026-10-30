@@ -224,12 +224,8 @@ def _check_row(
         for i in range(d):
             if dist_row[i] != 0:
                 print(
-                    "FUZZ_CONTRACT_FAIL row=",
-                    row,
-                    "degenerate dist idx=",
-                    i,
-                    "value=",
-                    dist_row[i],
+                    t"FUZZ_CONTRACT_FAIL row= {row} degenerate dist idx="
+                    t" {i} value= {dist_row[i]}"
                 )
                 raise Error("degenerate row must emit a zero distribution")
         return
@@ -251,12 +247,8 @@ def _check_row(
     # The invariant spec decode reads `q` back through.
     if dist_row[token] <= 0:
         print(
-            "FUZZ_CONTRACT_FAIL row=",
-            row,
-            "token=",
-            token,
-            "token_prob=",
-            dist_row[token],
+            t"FUZZ_CONTRACT_FAIL row= {row} token= {token} token_prob="
+            t" {dist_row[token]}"
         )
         raise Error("sampled token has no mass in the emitted distribution")
 
@@ -289,34 +281,22 @@ def _check_row(
 
     if max_zeroed > min_kept * (1.0 + VALUE_SLACK):
         print(
-            "FUZZ_CONTRACT_FAIL row=",
-            row,
-            "max_zeroed=",
-            max_zeroed,
-            "min_kept=",
-            min_kept,
+            t"FUZZ_CONTRACT_FAIL row= {row} max_zeroed= {max_zeroed} min_kept="
+            t" {min_kept}"
         )
         raise Error("zeroed token outweighs a kept token")
 
     var kept_above = _above(sorted_e, prefix, min_kept * (1.0 + VALUE_SLACK))
     if kept_above[0] >= k_eff:
         print(
-            "FUZZ_CONTRACT_FAIL row=",
-            row,
-            "count_above_kept=",
-            kept_above[0],
-            "k_eff=",
-            k_eff,
+            t"FUZZ_CONTRACT_FAIL row= {row} count_above_kept="
+            t" {kept_above[0]} k_eff= {k_eff}"
         )
         raise Error("kept token violates the top-k constraint")
     if kept_above[1] > p_eff * (1.0 + MASS_SLACK):
         print(
-            "FUZZ_CONTRACT_FAIL row=",
-            row,
-            "mass_above_kept=",
-            kept_above[1],
-            "p_eff=",
-            p_eff,
+            t"FUZZ_CONTRACT_FAIL row= {row} mass_above_kept="
+            t" {kept_above[1]} p_eff= {p_eff}"
         )
         raise Error("kept token violates the top-p constraint")
 
@@ -328,18 +308,9 @@ def _check_row(
         var mass_ok = zeroed_above[1] > p_eff * (1.0 - MASS_SLACK)
         if not count_ok and not mass_ok:
             print(
-                "FUZZ_CONTRACT_FAIL row=",
-                row,
-                "max_zeroed=",
-                max_zeroed,
-                "count_above=",
-                zeroed_above[0],
-                "mass_above=",
-                zeroed_above[1],
-                "k_eff=",
-                k_eff,
-                "p_eff=",
-                p_eff,
+                t"FUZZ_CONTRACT_FAIL row= {row} max_zeroed="
+                t" {max_zeroed} count_above= {zeroed_above[0]} mass_above="
+                t" {zeroed_above[1]} k_eff= {k_eff} p_eff= {p_eff}"
             )
             raise Error("zeroed token satisfies the accept predicate")
 
@@ -435,7 +406,7 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec, check: Bool) raises:
     for r in range(rows):
         var tok = Int(tokens_host[r])
         if tok < 0 or tok >= d:
-            print("FUZZ_CONTRACT_FAIL row=", r, "token=", tok, "d=", d)
+            print(t"FUZZ_CONTRACT_FAIL row= {r} token= {tok} d= {d}")
             raise Error("sampled token id out of range [0, d)")
 
     if check:
@@ -494,14 +465,10 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec, check: Bool) raises:
             var tb = Int(tokens2_host[r])
             if dist_host[r * d + tb] <= 0:
                 print(
-                    "FUZZ_CONTRACT_FAIL row=",
-                    r,
-                    "single_block_token=",
-                    tb,
-                    "its_emitted_mass=",
-                    Float64(dist_host[r * d + tb]),
-                    "cluster_token=",
-                    Int(tokens_host[r]),
+                    t"FUZZ_CONTRACT_FAIL row= {r} single_block_token="
+                    t" {tb} its_emitted_mass="
+                    t" {Float64(dist_host[r * d + tb])} cluster_token="
+                    t" {Int(tokens_host[r])}"
                 )
                 raise Error(
                     "emit_dist=False sampled outside the emitted nucleus"
@@ -530,24 +497,11 @@ def main() raises:
         var specs = gen_specs(the_budget)
         for i in range(len(specs)):
             print(
-                "FUZZ_SPEC idx=",
-                i,
-                "rows=",
-                specs[i].rows,
-                "d=",
-                specs[i].d,
-                "k=",
-                specs[i].k,
-                "top_p_milli=",
-                specs[i].top_p_milli,
-                "temp_milli=",
-                specs[i].temp_milli,
-                "min_p_milli=",
-                specs[i].min_p_milli,
-                "dist=",
-                specs[i].dist,
-                "seed=",
-                specs[i].seed,
+                t"FUZZ_SPEC idx= {i} rows= {specs[i].rows} d= {specs[i].d} k="
+                t" {specs[i].k} top_p_milli= {specs[i].top_p_milli} temp_milli="
+                t" {specs[i].temp_milli} min_p_milli="
+                t" {specs[i].min_p_milli} dist= {specs[i].dist} seed="
+                t" {specs[i].seed}"
             )
         return
 
@@ -570,11 +524,8 @@ def main() raises:
         return
 
     print(
-        "=== fuzz_topk_topp_sampling_dist seed=",
-        the_seed,
-        "budget=",
-        the_budget,
-        "===",
+        t"=== fuzz_topk_topp_sampling_dist seed= {the_seed} budget="
+        t" {the_budget} ==="
     )
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:
