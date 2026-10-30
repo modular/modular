@@ -23,7 +23,8 @@ requires per-K-iteration scaling in CUDA cores:
     result = accum  # write to SMEM → GMEM
 """
 
-from std.math import gcd
+from std.collections import Array
+from std.math import ceildiv, gcd
 from std.math.uutils import umod, ufloordiv
 
 from max.gpu import WARP_SIZE, lane_id, warp_id as get_warp_id
@@ -287,47 +288,52 @@ struct BlockwiseFP8Accumulator[
         var bm = work_tile_coord[0]
         var bn = work_tile_coord[1]
 
-        # B-scale index calculation when MMA_N != BK(128)
-        var b_scale_idx0 = 0
-        var b_scale_next_n = 0
-        var b_scale_0: Scalar[Self.accum_type]
-        var b_scale_1: Scalar[Self.accum_type]
-
         # B-scale N-direction block size is independent of the kernel's
         # K-tile size; defaults to BK but can be smaller when the matmul
         # spans multiple finer-grained scale blocks per MMA tile.
         comptime NScaleBlock = Self.n_scale_granularity
+
+        # An MMA tile starts at a multiple of gcd(MMA_N, NScaleBlock), so it
+        # can touch up to this many scale blocks. This is not limited to two:
+        # a 256-wide tile over 64-wide scales spans four, which is why the
+        # dispatcher may pick MMA_N independently of n_scale_granularity. A
+        # nonzero in-block offset (e.g. MMA_N=192, NScaleBlock=128) is only
+        # covered by the tests that pass such a config explicitly.
+        comptime num_b_scales = ceildiv(
+            Self.MMA_N + NScaleBlock - gcd(Self.MMA_N, NScaleBlock),
+            NScaleBlock,
+        )
+        # Scale i applies from tile column b_scale_start[i] on; MMA_N marks a
+        # block that starts past the end of N.
+        var b_scale_vals = Array[Scalar[Self.accum_type], num_b_scales](
+            fill=0.0
+        )
+        var b_scale_start = Array[Int, num_b_scales](fill=Self.MMA_N)
+        var b_scale_idx0 = bn
+
         comptime if Self.MMA_N != NScaleBlock:
             comptime assert Self.stageN <= gcd(Self.MMA_N, NScaleBlock) and (
                 gcd(Self.MMA_N, NScaleBlock) % Self.stageN == 0
             ), "gcd(MMA_N, n_scale_granularity) must be divisible by stageN"
 
             var global_bn_start = bn * Self.MMA_N
-            var begin_n = min(
-                Int32(NScaleBlock) - Int32(umod(global_bn_start, NScaleBlock)),
-                Int32(Self.MMA_N),
-            )
-            var end_n = min(N - Int32(global_bn_start), Int32(Self.MMA_N))
+            var end_n = min(Int(N) - global_bn_start, Self.MMA_N)
+            b_scale_idx0 = Int(ufloordiv(global_bn_start, NScaleBlock))
+            var offset_in_block = Int(umod(global_bn_start, NScaleBlock))
 
-            b_scale_idx0 = ufloordiv(global_bn_start, NScaleBlock)
-            b_scale_next_n = Int(begin_n) if begin_n < end_n else Self.MMA_N
+            comptime for i in range(1, num_b_scales):
+                var start = i * NScaleBlock - offset_in_block
+                if start < end_n:
+                    b_scale_start[i] = start
+                    b_scale_vals[i] = rebind[Scalar[Self.accum_type]](
+                        b_scales.load((b_scale_idx0 + i, k_iter)).cast[
+                            Self.accum_type
+                        ]()
+                    )
 
-            b_scale_0 = rebind[Scalar[Self.accum_type]](
-                b_scales.load((b_scale_idx0, k_iter)).cast[Self.accum_type]()
-            )
-            if b_scale_next_n < Self.MMA_N:
-                b_scale_1 = rebind[Scalar[Self.accum_type]](
-                    b_scales.load((b_scale_idx0 + 1, k_iter)).cast[
-                        Self.accum_type
-                    ]()
-                )
-            else:
-                b_scale_1 = 0.0
-        else:
-            b_scale_0 = rebind[Scalar[Self.accum_type]](
-                b_scales.load((bn, k_iter)).cast[Self.accum_type]()
-            )
-            b_scale_1 = 0.0
+        b_scale_vals[0] = rebind[Scalar[Self.accum_type]](
+            b_scales.load((b_scale_idx0, k_iter)).cast[Self.accum_type]()
+        )
 
         var warp_id = get_warp_id()
 
@@ -346,6 +352,11 @@ struct BlockwiseFP8Accumulator[
         else:
             staged_c_row = UInt32(umod(warp_id, 2) * WARP_SIZE)
             staged_c_col = Self.BN * ufloordiv(warp_id, 2)
+            # The b_scale_start sentinel (MMA_N) relies on every column this
+            # warp visits staying below MMA_N.
+            comptime assert (
+                Self.BN + Self.num_stages * Self.stageN <= Self.MMA_N
+            ), "staged columns must stay inside the MMA tile"
 
         # Thread coordinate within fragment
         comptime threads_per_row = Self.stageN // Self.repeats // load_width
@@ -398,15 +409,11 @@ struct BlockwiseFP8Accumulator[
             var frags = Self.Fragments.load[repeat=Self.repeats](tmem_addr)
             Self.Fragments.wait_load()
 
-            var b_scale: Scalar[Self.accum_type]
+            var b_scale = b_scale_vals[0]
 
-            comptime if Self.MMA_N != Self.n_scale_granularity:
-                b_scale = (
-                    b_scale_0 if (stage * Self.stageN + staged_c_col)
-                    < b_scale_next_n else b_scale_1
-                )
-            else:
-                b_scale = b_scale_0
+            comptime for i in range(1, num_b_scales):
+                if stage * Self.stageN + staged_c_col >= b_scale_start[i]:
+                    b_scale = b_scale_vals[i]
 
             comptime for ld_iter in range(Self.repeats):
                 comptime for j in range(Self.fragment_size // 2):

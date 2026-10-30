@@ -305,6 +305,7 @@ _B200_TESTS = [
     "test_matmul_sm100_structured_quick.mojo",
     "test_matmul_sm100_blockwise_fp8.mojo",
     "test_matmul_sm100_blockwise_fp8_pdl.mojo",
+    "test_matmul_sm100_blockwise_fp8_nscale64.mojo",
     "test_matmul_sm100_1sm_blockwise_fp8_part_a.mojo",
     "test_matmul_sm100_1sm_blockwise_fp8_part_b.mojo",
     "test_matmul_sm100_2sm_blockwise_fp8_part_a.mojo",
