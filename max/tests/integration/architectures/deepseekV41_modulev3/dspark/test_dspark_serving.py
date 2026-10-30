@@ -85,6 +85,10 @@ from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
 from max.pipelines.sampling import SamplingConfig
 from max.pipelines.speculative import spec_adapters as registry
 from max.pipelines.speculative.config import SpeculativeConfig
+from max.pipelines.speculative.spec_input_types import (
+    SpecDecodeInputTypeSpec,
+    spec_decode_tail_input_types,
+)
 
 BLOCK = 5
 """The checkpoint's draft block width, also the spec-decode step width."""
@@ -306,6 +310,48 @@ def test_the_modulev3_trunk_has_its_own_target_adapter() -> None:
     extra = registry.extra(TARGET, "dspark", config, trailing)
     assert list(extra) == names
     assert all(extra[n] is v for n, v in zip(names, trailing, strict=True))
+
+
+def test_the_modulev3_trunk_serves_stochastic_acceptance_and_grammar() -> None:
+    """Sampling and grammar are the block driver's, not the trunk's, so the
+    trunk's adapter refuses neither and the engine's contract can mirror the
+    tail: the seven sampling inputs, then the bitmask triple, ahead of the
+    trunk's extras."""
+    for use_greedy_acceptance in (False, True):
+        speculative = SpeculativeConfig(
+            speculative_method="dspark",
+            num_speculative_tokens=BLOCK,
+            use_greedy_acceptance=use_greedy_acceptance,
+        )
+        for structured_output in (False, True):
+            registry.check(TARGET, speculative, structured_output)
+
+    device = DeviceRef.CPU()
+    plain = spec_decode_tail_input_types(
+        SpecDecodeInputTypeSpec(devices=[device], distributed=False), device
+    )
+    grammar = spec_decode_tail_input_types(
+        SpecDecodeInputTypeSpec(
+            devices=[device], distributed=False, enable_structured_output=True
+        ),
+        device,
+    )
+    # draft_tokens, seed, temperature, top_k, max_k, top_p, min_top_p.
+    assert len(plain) == 7
+    assert grammar[:7] == plain
+    pinned, wait, scratch = grammar[7:]
+    assert (pinned.dtype, pinned.device) == (DType.int32, DeviceRef.CPU())
+    assert [str(dim) for dim in pinned.shape] == [
+        "batch_size",
+        "num_bitmask_positions",
+        "packed_vocab_size",
+    ]
+    assert (wait.dtype, wait.device) == (DType.int64, DeviceRef.CPU())
+    assert [int(d) for d in wait.shape] == [2]
+    assert scratch.dtype == DType.int32
+    assert [str(dim) for dim in scratch.shape] == [
+        str(dim) for dim in pinned.shape
+    ]
 
 
 def test_prepare_stages_the_extras_in_the_declared_order() -> None:
