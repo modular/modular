@@ -28,6 +28,7 @@ modular_py_library(
         "torch",
     ],
     deps = [
+        "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",

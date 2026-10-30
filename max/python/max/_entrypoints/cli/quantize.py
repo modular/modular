@@ -16,14 +16,21 @@ import asyncio
 import contextlib
 import dataclasses
 import functools
+import json
 import logging
 import re
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import requests
 from max import tree
 from max.nn import Linear, Module
+from max.nn._weight_utils import (
+    _ExternalWeight,
+    name_weights,
+    shard_checkpoint,
+)
 from max.nn.common_layers.linear import QKVLinear
 from max.nn.common_layers.mlp import MLP
 from max.nn.common_layers.quant_linear import (
@@ -31,10 +38,9 @@ from max.nn.common_layers.quant_linear import (
     QuantizedMLP,
     QuantizedQKVLinear,
 )
+from max.nn.common_layers.quant_tensor import NVFP4TensorQuantizer
 from max.nn.legacy.quant_config import QuantConfig, WeightSource
-from max.pipelines import (
-    PIPELINE_REGISTRY,
-)
+from max.pipelines import PIPELINE_REGISTRY, TextGenerationPipelineInterface
 from max.pipelines.context import (
     SamplingParams,
 )
@@ -48,8 +54,19 @@ from max.pipelines.logging_utils import log_basic_config
 from max.pipelines.modeling.types import (
     Pipeline,
 )
+from max.pipelines.weights.checkpoint_files import (
+    _host_tensor,
+    _SavedTensor,
+    _write_shards,
+    copy_auxiliary_files,
+    write_quantization_config,
+)
+from max.pipelines.weights.fp4_quantization import (
+    FP4Format,
+    nvfp4_quantization_config,
+)
 from max.profiler import OneShotCapture, Tracer
-from max.tensor import Tensor
+from max.tensor import Tensor, compilation
 
 from .generate import stream_text_to_console
 from .metrics import TextGenerationMetrics
@@ -146,6 +163,143 @@ def insert_quantized_linears(
     logger.info(f"Quantizing {count} weight tensors.")
 
 
+def _checkpoint_weight_name(
+    path: str, source_of: Mapping[str, str], raw_keys: set[str]
+) -> str | None:
+    """Maps a module weight path back to the checkpoint tensor it came from.
+
+    A quantized weight is transparent in the module tree, so the quantizer's
+    path is the projection (``down_proj``) and the checkpoint key is
+    ``down_proj.weight``.
+    """
+    candidates = (
+        (path,) if path.endswith(".weight") else (f"{path}.weight", path)
+    )
+    for candidate in candidates:
+        source = source_of.get(candidate)
+        if source in raw_keys:
+            return source
+        if candidate in raw_keys:
+            return candidate
+    return None
+
+
+def _source_names(state_dict: Mapping[str, Any]) -> dict[str, str]:
+    """Maps an adapted state-dict key to the checkpoint key it was loaded as."""
+    names: dict[str, str] = {}
+    for key, value in state_dict.items():
+        source = getattr(value, "name", None)
+        names[key] = source if isinstance(source, str) and source else key
+    return names
+
+
+def _entries(
+    path: str, leaves: Mapping[str, Tensor]
+) -> list[tuple[str, _SavedTensor]]:
+    """Packed weight and the three scale tensors, under ``path``."""
+    stem = path.removesuffix(".weight")
+    return [
+        (path, _host_tensor(leaves["weight"])),
+        (f"{path}_scale", _host_tensor(leaves["weight_scale"])),
+        (f"{path}_scale_2", _host_tensor(leaves["weight_scale_2"])),
+        (f"{stem}.input_scale", _host_tensor(leaves["input_scale"])),
+    ]
+
+
+def _materialize_quantizers(
+    module: Module[..., Any], state_dict: Mapping[str, Any]
+) -> dict[str, dict[str, Tensor]]:
+    """Runs the quantizers and returns packed weights and scales.
+
+    The generate trace's quant tensors are graph values with no host bytes,
+    so this graph produces the buffers that get written.
+    """
+    declared = tree.map(_ExternalWeight.like, module, leaf=Tensor, shared=True)
+    name_weights(declared)
+    registry = shard_checkpoint(declared, state_dict)
+
+    def export_quants() -> dict[str, dict[str, Tensor]]:
+        exported: dict[str, dict[str, Tensor]] = {}
+        for path, quantizer in tree.nodes(
+            declared, NVFP4TensorQuantizer
+        ).items():
+            quantized = quantizer.quant_tensor
+            exported[path] = {
+                "weight": quantized.weight,
+                "weight_scale": quantized.weight_scale,
+                "weight_scale_2": quantized.weight_scale_2,
+                "input_scale": quantized.input_scale,
+            }
+        return exported
+
+    # ``compile`` returns a function of input types. This graph takes none.
+    compiled = compilation.compile(export_quants, weights=registry)()
+    return compiled()
+
+
+def export_quantized_checkpoint(model: Any, dest: Path) -> None:
+    """Writes a new sharded checkpoint from the quantizers on ``model``.
+
+    Quantized tensors and the weights left beside them are written under
+    the source checkpoint's names. Sidecars are copied and the index
+    describes the new files.
+    """
+    module = model.nn_module
+    if not isinstance(module, Module):
+        raise TypeError(
+            f"{type(module).__name__} is not a ModuleV3 module, so its "
+            "quantizers cannot be exported"
+        )
+    loaded = model._load_state_dict()
+    source_of = _source_names(loaded)
+    raw_keys = {name for name, _ in model.weights.items()}
+    state_dict = loaded
+    prepare = getattr(model, "_prepare_state_dict", None)
+    if prepare is not None:
+        state_dict = prepare(state_dict, model._create_model_config(state_dict))
+    ready = _materialize_quantizers(module, state_dict)
+
+    saved: list[tuple[str, _SavedTensor]] = []
+    claimed: set[str] = set()
+    for path, leaves in ready.items():
+        weight_name = _checkpoint_weight_name(path, source_of, raw_keys)
+        if weight_name is None:
+            raise ValueError(
+                f"cannot write {path}: no source checkpoint tensor "
+                "has that name"
+            )
+        if weight_name in claimed:
+            raise ValueError(
+                f"{path} and another quantized weight both come from "
+                f"{weight_name}"
+            )
+        claimed.add(weight_name)
+        saved.extend(_entries(weight_name, leaves))
+    for name, weight in model.weights.items():
+        if name in claimed:
+            continue
+        saved.append((name, _host_tensor(weight.data())))
+
+    src = Path(model.pipeline_config.model.resolved_weight_paths()[0]).parent
+    dest.mkdir(parents=True, exist_ok=True)
+    _write_shards(dest, saved)
+    if ready:
+        config_path = src / "config.json"
+        config = (
+            json.loads(config_path.read_text()) if config_path.exists() else {}
+        )
+        ignored = list(
+            config.get("quantization_config", {}).get("ignored_layers", [])
+        )
+        write_quantization_config(
+            src, dest, nvfp4_quantization_config(FP4Format.NVFP4, ignored)
+        )
+    elif (src / "config.json").is_file():
+        (dest / "config.json").write_text((src / "config.json").read_text())
+    copy_auxiliary_files(src, dest)
+    logger.info("Exported %d quantized weights to %s", len(ready), dest)
+
+
 #: The config each ``--quantization-format`` value selects.
 #:
 #: ``source`` is set here rather than by the caller: the command exists to
@@ -212,6 +366,7 @@ def _single_graph_quantizing_model(
             insert_quantized_linears(
                 nn_model, targets, quant_config, verbose=verbose
             )
+            self.nn_module = nn_model
             return nn_model
 
     return QuantizingPipelineModel
@@ -247,6 +402,7 @@ def _multi_graph_quantizing_model(
             insert_quantized_linears(
                 language, targets, quant_config, verbose=verbose
             )
+            self.nn_module = language
             return spec
 
     return QuantizingPipelineModel
@@ -303,6 +459,7 @@ def quantize_pipeline(
     num_warmups: int = 0,
     profile: bool = False,
     profile_top_n: int = 15,
+    export_path: Path | None = None,
 ) -> None:
     quant_config = on_the_fly_config(quantization_format)
     pipeline_config = PipelineConfig.from_args(pipeline_args)
@@ -371,3 +528,6 @@ def quantize_pipeline(
     finally:
         if capture is not None:
             capture.end_and_finalize()
+    if export_path is not None:
+        assert isinstance(pipeline, TextGenerationPipelineInterface)
+        export_quantized_checkpoint(pipeline._pipeline_model, export_path)

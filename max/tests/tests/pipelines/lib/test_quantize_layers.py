@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import pytest
 from max import functional as F
+from max import tree
 from max._entrypoints.cli.quantize import (
+    _checkpoint_weight_name,
     insert_quantized_linears,
     on_the_fly_config,
     quant_formats,
@@ -148,6 +150,46 @@ def test_insert_verbose_prints_the_patched_module(
         )
 
     assert "QuantizedLinear" in capsys.readouterr().out
+
+
+def test_quantizer_path_omits_the_weight_segment() -> None:
+    """The packed weight is transparent, so the quantizer's path has no ``.weight``."""
+
+    class Holder(Module[[Tensor], Tensor]):
+        def __init__(self) -> None:
+            super().__init__()
+            self.down_proj = QuantizedLinear(
+                32, 64, bias=False, quant_config=on_the_fly_config("nvfp4")
+            )
+
+        def forward(self, x: Tensor) -> Tensor:
+            return x
+
+    with F.lazy():
+        module = Holder()
+    assert list(tree.nodes(module, NVFP4TensorQuantizer)) == ["down_proj"]
+
+
+def test_checkpoint_weight_name_maps_the_transparent_quantizer_path() -> None:
+    """Export writes the source key, not the adapted module path."""
+    source = "model.layers.0.mlp.down_proj.weight"
+    adapted = "language_model.layers.0.mlp.down_proj.weight"
+    assert (
+        _checkpoint_weight_name(
+            "language_model.layers.0.mlp.down_proj",
+            {adapted: source},
+            {source},
+        )
+        == source
+    )
+    assert (
+        _checkpoint_weight_name(
+            "language_model.layers.0.mlp.down_proj",
+            {adapted: "not-a-checkpoint-key"},
+            {source},
+        )
+        is None
+    )
 
 
 def test_insert_rejects_half_of_a_fused_group() -> None:

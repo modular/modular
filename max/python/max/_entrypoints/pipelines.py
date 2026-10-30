@@ -855,6 +855,12 @@ def cli_pipeline(
     help="Print the patched module before the quantizer count.",
 )
 @click.option(
+    "--export-path",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help="After generation, write an NVFP4 checkpoint to this directory.",
+)
+@click.option(
     "--prompt",
     type=str,
     default="I believe the meaning of life is",
@@ -911,6 +917,7 @@ def quantize(
     targets: list[str],
     quantization_format: str,
     verbose: bool,
+    export_path: Path | None,
     prompt: str,
     image_url: list[str],
     num_warmups: int,
@@ -933,10 +940,10 @@ def quantize(
     seed: int,
     **config_kwargs: Any,
 ) -> None:
-    """Quantize the specified model.
+    """Quantize the specified model and run text generation.
 
-    This command runs text generation using the loaded model, optionally
-    accepting image inputs for multimodal models.
+    If ``--export-path`` is set, write an NVFP4 checkpoint afterwards from
+    the same module the generate graph ran.
     """
     from max._entrypoints.cli.quantize import quantize_pipeline
     from max.pipelines.context import SamplingParams, SamplingParamsInput
@@ -987,6 +994,7 @@ def quantize(
         num_warmups=num_warmups,
         profile=profile,
         profile_top_n=profile_top_n,
+        export_path=export_path,
     )
 
 
