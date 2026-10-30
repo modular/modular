@@ -120,124 +120,24 @@ CommandLineFunc::executeAndPrint(KGEN::CompiledFunc &compiledFunc) const {
   return Error("unhandled signature: " + signature);
 }
 
-bool CommandLineFuncParser::parse(llvm::cl::Option &o, StringRef argName,
-                                  StringRef argValue, CommandLineFunc &val) {
+CommandLineFunc CommandLineFunc::parse(StringRef value) {
   // Match a function name and signature, of the form: `name:signature`. This
   // check also ensures that "name" supports '::' tokens, which may be used for
   // scope signifiers.
   static llvm::Regex funcAndSignatureMatcher("(.*[^:]):([^:].*)");
 
   // Check if the value contains the name and signature.
+  CommandLineFunc func;
   SmallVector<StringRef> matches;
-  if (funcAndSignatureMatcher.match(argValue, &matches)) {
-    val.name = matches[1];
-    val.signature = matches.back();
-    return false;
+  if (funcAndSignatureMatcher.match(value, &matches)) {
+    func.name = matches[1];
+    func.signature = matches.back();
+    return func;
   }
 
   // Otherwise, if we don't have a signature, the value is the name.
-  val.name = argValue;
-  return false;
-}
-
-llvm::ArrayRef<KGENCLOptionsParser::CommandInfo>
-KGENCLOptionsParser::commands() {
-  static constexpr CommandInfo kCommands[] = {
-      {"elaborate", "Elaborate the input."},
-      {"elaborate=use-parametric-interpreter",
-       "Elaborate the input with the parametric interpreter."},
-      {"elaborate=no-use-parametric-interpreter",
-       "Elaborate the input but don't use the parametric interpreter."},
-      {"emit",
-       "Emit funcs as the given kind of output file (default: object). The "
-       "accepted kinds are listed in the EMISSION KINDS section below."},
-      {"execute", "Execute funcs."},
-      {"lsp",
-       "Process the input as the language server does: lazy parse + check "
-       "pipeline, printing the checked IR to stdout and reporting "
-       "diagnostics on stderr."},
-      {"lsp=no-dump",
-       "Same as -lsp, but skips printing the checked IR to stdout. "
-       "Diagnostics on stderr and the exit status are unaffected; only "
-       "useful when a caller checks for crashes/diagnostics and never reads "
-       "stdout, since serializing the IR is not free."},
-      {"precompile",
-       "Precompile the Mojo package directory given as the input. Writes a "
-       "`.mojoc` file, or prints the package with -S."},
-  };
-  return kCommands;
-}
-
-void KGENCLOptionsParser::getExtraOptionNames(
-    llvm::SmallVectorImpl<StringRef> &names) {
-  for (const CommandInfo &info : commands())
-    names.push_back(info.name);
-  for (const std::string &spelling : emitSpellings)
-    names.push_back(spelling);
-}
-
-size_t KGENCLOptionsParser::getOptionWidth(const llvm::cl::Option &o) const {
-  size_t width = 0;
-  for (const CommandInfo &info : commands())
-    width = std::max(width, info.name.size() + 8);
-  return width;
-}
-
-void KGENCLOptionsParser::printOptionInfo(const llvm::cl::Option &o,
-                                          size_t globalWidth) const {
-  if (!o.HelpStr.empty())
-    llvm::outs() << "  " << o.HelpStr << '\n';
-  for (const CommandInfo &info : commands()) {
-    llvm::outs() << "      --" << info.name;
-    llvm::cl::Option::printHelpStr(info.description, globalWidth,
-                                   info.name.size() + 8);
-  }
-}
-
-bool KGENCLOptionsParser::parse(llvm::cl::Option &o, StringRef argName,
-                                StringRef argValue, std::string &val) {
-  if (argName == "elaborate") {
-    if (argValue == "no-use-parametric-interpreter" ||
-        argValue == "use-parametric-interpreter")
-      val = ("elaborate=" + argValue).str();
-    else
-      val = "elaborate";
-
-    return false;
-  }
-  if (argName == "emit") {
-    // Any kind is recorded; the tool validates it after parsing, against
-    // its emission kinds and the target's traits.
-    emissionKind = argValue.empty() ? stringifyEmitAs(EmitAs::OBJECT).str()
-                                    : argValue.str();
-    val = "emit=" + emissionKind;
-    return false;
-  }
-
-  if (argName == "execute") {
-    val = "execute";
-    return false;
-  }
-
-  if (argName == "lsp") {
-    if (argValue == "no-dump")
-      val = "lsp=no-dump";
-    else if (argValue.empty())
-      val = "lsp";
-    else
-      return o.error("unsupported 'lsp' option value '" + argValue + "'");
-
-    return false;
-  }
-
-  if (argName == "precompile") {
-    if (!argValue.empty())
-      return o.error("unsupported 'precompile' option value '" + argValue +
-                     "'");
-    val = "precompile";
-    return false;
-  }
-  return o.error("unsupported option '" + argName + "'");
+  func.name = value;
+  return func;
 }
 
 llvm::ManagedStatic<KGENPassCLOptions::PassOptions>

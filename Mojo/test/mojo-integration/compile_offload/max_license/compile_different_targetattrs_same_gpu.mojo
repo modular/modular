@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: kgen -elaborate -kgen-debug-only=kgen-compiler %s -o /dev/null 2>&1 | FileCheck %s
+# RUN: kgen -elaborate -mllvm -kgen-debug-only=kgen-compiler %s -o /dev/null 2>&1 | FileCheck %s
 
 # `target_attrs` is part of the offload group key, so one generator offloaded
 # twice with different launch metadata must compile in two sliced modules, each

@@ -169,7 +169,7 @@ ErrorOrSuccess M::parseTargetOptions(const TargetArgs &targetArgs,
     // get the target info.
     targetOr = getTargetInfoFor(
         &ctx, compilationOptions.targetTriple, compilationOptions.targetCpu,
-        compilationOptions.targetFeatures, /*tuneCpu=*/"",
+        compilationOptions.targetFeatures, /*tuneCpu=*/mTune,
         /*acceleratorArch=*/compilationOptions.targetAccelerator,
         compilationOptions.relocModel, compilationOptions.targetAbi);
   }
