@@ -18,6 +18,7 @@ from std.testing import (
     assert_raises,
     assert_true,
 )
+from std.testing._ffi import CStruct
 from test_utils.cabi_check import (
     AbiConstant,
     AbiTypedef,
@@ -48,6 +49,21 @@ struct ProbeNested:
 struct ProbeWide:
     var seconds: Int64
     var flags: UInt64
+
+
+@__annotation("unrelated")
+@__annotation(CStruct(rename="probe_c"))
+struct RenamedProbe:
+    var alpha: Int32
+
+
+struct ProbeNestedRenamed:
+    var inner: RenamedProbe
+
+
+@__annotation(CStruct(skip_fields=True))
+struct OpaqueProbe:
+    var alpha: Int32
 
 
 def test_preamble() raises:
@@ -115,6 +131,39 @@ def test_struct_checks_64_bit_fields() raises:
             "MOJO_CHECK_CABI_FIELD(ProbeWide, struct ProbeWide, flags)\n"
             "MOJO_CHECK_CABI_FIELD_UINT64(ProbeWide, struct ProbeWide, flags)"
         ),
+    )
+
+
+def test_struct_checks_rename() raises:
+    assert_equal(
+        struct_checks[RenamedProbe](),
+        (
+            "MOJO_CHECK_CABI_LAYOUT(probe_c, struct probe_c)\n"
+            "MOJO_CHECK_CABI_FIELD(probe_c, struct probe_c, alpha)\n"
+            "MOJO_CHECK_CABI_FIELD_TYPE(probe_c, struct probe_c, alpha,"
+            " int32_t *ptr)"
+        ),
+    )
+
+
+def test_struct_checks_nested_renamed_struct_field() raises:
+    assert_equal(
+        struct_checks[ProbeNestedRenamed](),
+        (
+            "MOJO_CHECK_CABI_LAYOUT(ProbeNestedRenamed, struct"
+            " ProbeNestedRenamed)\n"
+            "MOJO_CHECK_CABI_FIELD(ProbeNestedRenamed, struct"
+            " ProbeNestedRenamed, inner)\n"
+            "MOJO_CHECK_CABI_FIELD_TYPE(ProbeNestedRenamed, struct"
+            " ProbeNestedRenamed, inner, struct probe_c *ptr)"
+        ),
+    )
+
+
+def test_struct_checks_skip_fields() raises:
+    assert_equal(
+        struct_checks[OpaqueProbe](),
+        "MOJO_CHECK_CABI_LAYOUT(OpaqueProbe, struct OpaqueProbe)",
     )
 
 
