@@ -55,7 +55,7 @@ SEQ_LEN = 6
 
 
 def _latent_moe_layer(
-    tp_size: int, dtype: DType, seed: int
+    tp_size: int, dtype: DType, seed: int, hidden: int = HIDDEN
 ) -> tuple[KimiK3LatentMoE, np.ndarray]:
     """A latent-MoE layer over seeded random weights, plus its input.
 
@@ -77,19 +77,19 @@ def _latent_moe_layer(
     def arr(*shape: int) -> np.ndarray:
         return (rng.standard_normal(shape) * 0.02).astype(np.float32)
 
-    gate_weight_np = arr(num_experts, HIDDEN)
+    gate_weight_np = arr(num_experts, hidden)
     bias_np = np.zeros(num_experts, dtype=np.float32)
-    down_proj_np = arr(latent, HIDDEN)
-    up_proj_np = arr(HIDDEN, latent)
+    down_proj_np = arr(latent, hidden)
+    up_proj_np = arr(hidden, latent)
     norm_np = np.ones(latent, dtype=np.float32)
     experts_gate_up_np = arr(num_experts, 2 * moe_inter, latent)
     experts_down_np = arr(num_experts, latent, moe_inter)
-    shared_gate_up_np = arr(2 * shared_inter, HIDDEN)
-    shared_down_np = arr(HIDDEN, shared_inter)
-    x_np = rng.standard_normal((SEQ_LEN, HIDDEN)).astype(np.float32)
+    shared_gate_up_np = arr(2 * shared_inter, hidden)
+    shared_down_np = arr(hidden, shared_inter)
+    x_np = rng.standard_normal((SEQ_LEN, hidden)).astype(np.float32)
 
     layer = KimiK3LatentMoE(
-        hidden_size=HIDDEN,
+        hidden_size=hidden,
         latent_size=latent,
         moe_intermediate_size=moe_inter,
         shared_intermediate_size=shared_inter,
@@ -187,17 +187,27 @@ def test_dense_mlp_rejects_width_not_divisible_by_tp() -> None:
 @pytest.mark.compile_on_gpu(
     "mo.moe.single.group.router is staged as an undeclared custom op the interpreter can't bind"
 )
-def test_latent_moe_tp2_matches_tp1() -> None:
+@pytest.mark.parametrize(
+    ("dtype", "hidden"),
+    # The bf16 case's hidden width is a whole fused router-GEMV K tile (512
+    # on gfx950), so the gate runs the fused mixed GEMV under the TP mesh
+    # the production router opts into on AMD.
+    [(DType.float32, HIDDEN), (DType.bfloat16, 512)],
+    ids=["fp32", "bf16_fused_gate"],
+)
+def test_latent_moe_tp2_matches_tp1(dtype: DType, hidden: int) -> None:
     with default_device(Accelerator(0)):
-        layer1, x_np = _latent_moe_layer(1, DType.float32, seed=1)
-        x1 = Tensor(x_np, dtype=DType.float32)
+        layer1, x_np = _latent_moe_layer(
+            1, DType.float32, seed=1, hidden=hidden
+        )
+        x1 = Tensor(x_np, dtype=DType.float32).cast(dtype)
         out1 = layer1(x1).to_numpy()
 
     mesh = _tp2_mesh()
     with default_device(mesh):
-        layer2, _ = _latent_moe_layer(2, DType.float32, seed=1)
+        layer2, _ = _latent_moe_layer(2, DType.float32, seed=1, hidden=hidden)
         layer2 = tensor_parallel_latent_moe(layer2, mesh)
-        x2 = Tensor(x_np, dtype=DType.float32)
+        x2 = Tensor(x_np, dtype=DType.float32).cast(dtype)
         # This layer reduces internally, so the caller does not allreduce.
         out2 = layer2(x2).to_numpy()
 

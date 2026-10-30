@@ -38,7 +38,10 @@ from max.pipelines.architectures.kimi_k3_modulev3.layers.moe_latent import (
 )
 from max.tensor import Tensor, default_device
 
-_HIDDEN = 64
+# A whole fused router-GEMV K tile (512 on gfx950), so the gate runs the
+# fused mixed GEMV the K3 router opts into on AMD rather than the shrunk
+# shapes' cast + matmul fallback.
+_HIDDEN = 512
 _LATENT = 128
 _MOE_INTERMEDIATE = 128
 _NUM_SHARED_EXPERTS = 2

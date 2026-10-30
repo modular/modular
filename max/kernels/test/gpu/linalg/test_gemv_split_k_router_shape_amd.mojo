@@ -272,9 +272,414 @@ def _run_case[
     print("PASS")
 
 
+comptime WK_SENTINEL = Float32(-12345.0)
+comptime WK_GUARD_ELEMS = 8
+
+
+def _run_wide_k_case[M: Int, tile_m: Int](ctx: DeviceContext) raises:
+    """Checks the `act_wide_k` mixed bf16-activation x fp32-weight GEMV at
+    the wide router-gate shape (each lane owns 8 consecutive K, so a bf16
+    row is one 16 B load per K-block and the row folds a SIMD accumulator
+    once after the K loop).
+
+    The M one-row launches use the same wide K map, so the per-row summation
+    order matches and the full launch must agree bit-exactly with them; the
+    fp64 oracle stays independent of the kernel's fp32 arithmetic. The signed
+    activation and weight data exercise cancellation, the sentinel catches
+    OOB stores, and the partial last M block exercises the clamped row loads
+    and the dead-row accumulator fold.
+    """
+    comptime N = 896
+    comptime K = 7168
+    comptime num_threads = 128
+    comptime tile_n = 1
+    print(
+        "== gemv_split_k act_wide_k M=",
+        M,
+        "tm=",
+        tile_m,
+        "N=",
+        N,
+        "K=",
+        K,
+    )
+
+    comptime c_elems = M * N + WK_GUARD_ELEMS
+    var a_host = ctx.enqueue_create_host_buffer[.bfloat16](M * K)
+    var b_host = ctx.enqueue_create_host_buffer[.float32](N * K)
+    var c_host = ctx.enqueue_create_host_buffer[.float32](c_elems)
+    var c_rowwise_host = ctx.enqueue_create_host_buffer[.float32](c_elems)
+    var c_expected = ctx.enqueue_create_host_buffer[.float32](c_elems)
+
+    for i in range(M * K):
+        a_host[i] = random_float64(min=-1.0, max=1.0).cast[.bfloat16]()
+    randn(b_host.unsafe_ptr(), N * K)
+    _ = TileTensor(c_host, row_major(c_elems)).fill(WK_SENTINEL)
+    _ = TileTensor(c_rowwise_host, row_major(c_elems)).fill(WK_SENTINEL)
+    _ = TileTensor(c_expected, row_major(c_elems)).fill(WK_SENTINEL)
+
+    var a_dev = ctx.enqueue_create_buffer[.bfloat16](M * K)
+    var b_dev = ctx.enqueue_create_buffer[.float32](N * K)
+    var c_dev = ctx.enqueue_create_buffer[.float32](c_elems)
+    var c_rowwise_dev = ctx.enqueue_create_buffer[.float32](c_elems)
+    ctx.enqueue_copy(a_dev, a_host)
+    ctx.enqueue_copy(b_dev, b_host)
+    ctx.enqueue_copy(c_dev, c_host)
+    ctx.enqueue_copy(c_rowwise_dev, c_rowwise_host)
+
+    var a_tt = TileTensor(a_dev, row_major(M, Idx[K])).as_imm()
+    var b_tt = TileTensor(b_dev, row_major(Idx[N], Idx[K])).as_imm()
+    var c_tt = TileTensor(c_dev, row_major(M, Idx[N]))
+
+    comptime kernel_full = gemv_split_k[
+        .float32,
+        .bfloat16,
+        .float32,
+        type_of(c_tt).LayoutType,
+        type_of(a_tt).LayoutType,
+        type_of(b_tt).LayoutType,
+        type_of(c_tt).Engine,
+        type_of(a_tt).Engine,
+        type_of(b_tt).Engine,
+        simd_width=4,
+        tile_m=tile_m,
+        tile_n=tile_n,
+        num_threads=num_threads,
+        unroll_factor=2,
+        weight_non_temporal=False,
+        check_bounds_m=tile_m > 1,
+        check_bounds_n=False,
+        small_m_static_k=True,
+        small_m_k_chunk=1,
+        expert_major_grid=True,
+        act_wide_k=True,
+    ]
+    ctx.enqueue_function[kernel_full](
+        c_tt,
+        a_tt,
+        b_tt,
+        Int32(M),
+        Int32(N),
+        Int32(K),
+        grid_dim=(ceildiv(N, tile_n), ceildiv(M, tile_m)),
+        block_dim=num_threads,
+    )
+
+    # M independent one-row launches of the same wide kernel: the per-row K
+    # map and summation order are tile_m-independent, so the full launch
+    # must agree bit-exactly.
+    var a_rows = TileTensor(a_dev, row_major(M, K)).as_imm()
+    var c_rows = TileTensor(c_rowwise_dev, row_major(M, N))
+    var a_row0_tt = a_rows.tile[1, K](0, 0)
+    var c_row0_tt = c_rows.tile[1, N](0, 0)
+    comptime kernel_row = gemv_split_k[
+        .float32,
+        .bfloat16,
+        .float32,
+        type_of(c_row0_tt).LayoutType,
+        type_of(a_row0_tt).LayoutType,
+        type_of(b_tt).LayoutType,
+        type_of(c_row0_tt).Engine,
+        type_of(a_row0_tt).Engine,
+        type_of(b_tt).Engine,
+        simd_width=4,
+        tile_m=1,
+        tile_n=tile_n,
+        num_threads=num_threads,
+        unroll_factor=2,
+        weight_non_temporal=False,
+        check_bounds_m=False,
+        check_bounds_n=False,
+        small_m_static_k=True,
+        small_m_k_chunk=1,
+        expert_major_grid=True,
+        act_wide_k=True,
+    ]
+    # Only their types were needed, to bind `kernel_row` above.
+    _ = a_row0_tt
+    _ = c_row0_tt
+    for row in range(M):
+        var a_row_tt = a_rows.tile[1, K](row, 0)
+        var c_row_tt = c_rows.tile[1, N](row, 0)
+        ctx.enqueue_function[kernel_row](
+            c_row_tt,
+            a_row_tt,
+            b_tt,
+            Int32(1),
+            Int32(N),
+            Int32(K),
+            grid_dim=(ceildiv(N, tile_n), 1),
+            block_dim=num_threads,
+        )
+
+    ctx.enqueue_copy(c_host, c_dev)
+    ctx.enqueue_copy(c_rowwise_host, c_rowwise_dev)
+    ctx.synchronize()
+
+    # DRIV-199: keep device buffers alive past synchronize.
+    _ = a_dev^
+    _ = b_dev^
+    _ = c_dev^
+    _ = c_rowwise_dev^
+
+    comptime f32_roundoff = 1.1920928955078125e-7
+    comptime reference_error_factor = 4.0
+    var a_host_tt = TileTensor(a_host, row_major(M, Idx[K]))
+    var b_host_tt = TileTensor(b_host, row_major(Idx[N], Idx[K]))
+    var c_host_tt = TileTensor(c_host, row_major(M, Idx[N]))
+    var c_expected_tt = TileTensor(c_expected, row_major(M, Idx[N]))
+    for m in range(M):
+        for n in range(N):
+            var acc = Float64(0)
+            var sum_abs = Float64(0)
+            for kk in range(K):
+                var product = (
+                    a_host_tt[m, kk].cast[.float64]()
+                    * b_host_tt[n, kk].cast[.float64]()
+                )
+                acc += product
+                sum_abs += abs(product)
+            c_expected_tt[m, n] = acc.cast[.float32]()
+            var error = abs(c_host_tt[m, n].cast[.float64]() - acc)
+            assert_true(
+                error
+                <= reference_error_factor * Float64(K) * f32_roundoff * sum_abs,
+                msg=String("wide-k reference error at ", m, ",", n),
+            )
+
+    assert_almost_equal(
+        c_host.unsafe_ptr(),
+        c_expected.unsafe_ptr(),
+        num_elements=c_elems,
+        atol=1e-3,
+        rtol=1e-2,
+    )
+
+    # Bit-exact against the one-row launches, sentinel-exact on the guard.
+    for i in range(c_elems):
+        assert_equal(
+            c_host[i],
+            c_rowwise_host[i],
+            "wide-k output disagrees with the one-row reference at "
+            + String(i),
+        )
+        if i >= M * N:
+            assert_equal(
+                c_host[i],
+                WK_SENTINEL,
+                "wide-k launch wrote a guarded output element " + String(i),
+            )
+
+    print("PASS")
+
+
 def _check_bf16_route[N: Int, K: Int, c_type: DType](expected: Bool) raises:
     var route = _amd_small_m_gemv_route[c_type, .bfloat16, .bfloat16, N, K](8)
     assert_equal(route[0], expected)
+
+
+# Pre-written into the padded output buffer; elements the kernel must not
+# touch still hold it afterwards.
+comptime EM_SENTINEL = Float32(-12345.0)
+comptime EM_GUARD_ELEMS = 8
+
+
+def _run_expert_major_case[
+    M: Int, tile_m: Int, chunk: Int
+](ctx: DeviceContext,) raises:
+    """Checks the expert-major (`expert_major_grid=True`) `gemv_split_k`
+    decode at the wide router-gate shape.
+
+    The full-M launch reads block x as the weight-row tile and block y as
+    the M tile (grid `(N, ceildiv(M, tile_m))`); the per-row reference
+    launches run the same expert-major kernel on a single M block (grid
+    `(N, 1)`), where the decode degenerates to the plain one-row walk, so
+    bit-exact agreement between them proves the full launch's swapped
+    block decode addressed the same (row, weight-row) pairs. The fp64
+    oracle catches wrong math, and the sentinel catches OOB stores.
+    """
+    comptime N = 896
+    comptime K = 7168
+    comptime num_threads = 128
+    comptime tile_n = 1
+    print(
+        "== gemv_split_k expert-major M=",
+        M,
+        "tm=",
+        tile_m,
+        "N=",
+        N,
+        "K=",
+        K,
+    )
+
+    comptime c_elems = M * N + EM_GUARD_ELEMS
+    var a_host = ctx.enqueue_create_host_buffer[.float32](M * K)
+    var b_host = ctx.enqueue_create_host_buffer[.float32](N * K)
+    var c_host = ctx.enqueue_create_host_buffer[.float32](c_elems)
+    var c_rowwise_host = ctx.enqueue_create_host_buffer[.float32](c_elems)
+    var c_expected = ctx.enqueue_create_host_buffer[.float32](c_elems)
+
+    for i in range(M * K):
+        a_host[i] = random_float64(min=-1.0, max=1.0).cast[.float32]()
+    randn(b_host.unsafe_ptr(), N * K)
+    _ = TileTensor(c_host, row_major(c_elems)).fill(EM_SENTINEL)
+    _ = TileTensor(c_rowwise_host, row_major(c_elems)).fill(EM_SENTINEL)
+    _ = TileTensor(c_expected, row_major(c_elems)).fill(EM_SENTINEL)
+
+    var a_dev = ctx.enqueue_create_buffer[.float32](M * K)
+    var b_dev = ctx.enqueue_create_buffer[.float32](N * K)
+    var c_dev = ctx.enqueue_create_buffer[.float32](c_elems)
+    var c_rowwise_dev = ctx.enqueue_create_buffer[.float32](c_elems)
+    ctx.enqueue_copy(a_dev, a_host)
+    ctx.enqueue_copy(b_dev, b_host)
+    ctx.enqueue_copy(c_dev, c_host)
+    ctx.enqueue_copy(c_rowwise_dev, c_rowwise_host)
+
+    var a_tt = TileTensor(a_dev, row_major(M, Idx[K])).as_imm()
+    var b_tt = TileTensor(b_dev, row_major(Idx[N], Idx[K])).as_imm()
+    var c_tt = TileTensor(c_dev, row_major(M, Idx[N]))
+
+    comptime kernel_full = gemv_split_k[
+        .float32,
+        .float32,
+        .float32,
+        type_of(c_tt).LayoutType,
+        type_of(a_tt).LayoutType,
+        type_of(b_tt).LayoutType,
+        type_of(c_tt).Engine,
+        type_of(a_tt).Engine,
+        type_of(b_tt).Engine,
+        simd_width=4,
+        tile_m=tile_m,
+        tile_n=tile_n,
+        num_threads=num_threads,
+        unroll_factor=2,
+        weight_non_temporal=False,
+        check_bounds_m=tile_m > 1,
+        check_bounds_n=False,
+        small_m_static_k=True,
+        small_m_k_chunk=chunk,
+        expert_major_grid=True,
+    ]
+    ctx.enqueue_function[kernel_full](
+        c_tt,
+        a_tt,
+        b_tt,
+        Int32(M),
+        Int32(N),
+        Int32(K),
+        grid_dim=(ceildiv(N, tile_n), ceildiv(M, tile_m)),
+        block_dim=num_threads,
+    )
+
+    # M independent one-row launches of the same kernel with the one-M-tile
+    # grid; the per-row reduction order is identical, so the full launch
+    # must agree bit-exactly. The kernel type binds from the tile views'
+    # layouts (the full tensors' index types differ).
+    var a_rows = TileTensor(a_dev, row_major(M, K)).as_imm()
+    var c_rows = TileTensor(c_rowwise_dev, row_major(M, N))
+    var a_row0_tt = a_rows.tile[1, K](0, 0)
+    var c_row0_tt = c_rows.tile[1, N](0, 0)
+    comptime kernel_row = gemv_split_k[
+        .float32,
+        .float32,
+        .float32,
+        type_of(c_row0_tt).LayoutType,
+        type_of(a_row0_tt).LayoutType,
+        type_of(b_tt).LayoutType,
+        type_of(c_row0_tt).Engine,
+        type_of(a_row0_tt).Engine,
+        type_of(b_tt).Engine,
+        simd_width=4,
+        tile_m=1,
+        tile_n=tile_n,
+        num_threads=num_threads,
+        unroll_factor=2,
+        weight_non_temporal=False,
+        check_bounds_m=False,
+        check_bounds_n=False,
+        small_m_static_k=True,
+        expert_major_grid=True,
+    ]
+    # Only their types were needed, to bind `kernel_row` above.
+    _ = a_row0_tt
+    _ = c_row0_tt
+    for row in range(M):
+        var a_row_tt = a_rows.tile[1, K](row, 0)
+        var c_row_tt = c_rows.tile[1, N](row, 0)
+        ctx.enqueue_function[kernel_row](
+            c_row_tt,
+            a_row_tt,
+            b_tt,
+            Int32(1),
+            Int32(N),
+            Int32(K),
+            grid_dim=(ceildiv(N, tile_n), 1),
+            block_dim=num_threads,
+        )
+
+    ctx.enqueue_copy(c_host, c_dev)
+    ctx.enqueue_copy(c_rowwise_host, c_rowwise_dev)
+    ctx.synchronize()
+
+    # DRIV-199: keep device buffers alive past synchronize.
+    _ = a_dev^
+    _ = b_dev^
+    _ = c_dev^
+    _ = c_rowwise_dev^
+
+    comptime f32_roundoff = 1.1920928955078125e-7
+    comptime reference_error_factor = 4.0
+    var a_host_tt = TileTensor(a_host, row_major(M, Idx[K]))
+    var b_host_tt = TileTensor(b_host, row_major(Idx[N], Idx[K]))
+    var c_host_tt = TileTensor(c_host, row_major(M, Idx[N]))
+    var c_expected_tt = TileTensor(c_expected, row_major(M, Idx[N]))
+    for m in range(M):
+        for n in range(N):
+            var acc = Float64(0)
+            var sum_abs = Float64(0)
+            for kk in range(K):
+                var product = (
+                    a_host_tt[m, kk].cast[.float64]()
+                    * b_host_tt[n, kk].cast[.float64]()
+                )
+                acc += product
+                sum_abs += abs(product)
+            c_expected_tt[m, n] = acc.cast[.float32]()
+            var error = abs(c_host_tt[m, n].cast[.float64]() - acc)
+            assert_true(
+                error
+                <= reference_error_factor * Float64(K) * f32_roundoff * sum_abs,
+                msg=String("reference error at ", m, ",", n),
+            )
+
+    assert_almost_equal(
+        c_host.unsafe_ptr(),
+        c_expected.unsafe_ptr(),
+        num_elements=c_elems,
+        atol=1e-3,
+        rtol=1e-2,
+    )
+
+    # Bit-exact: the K partition and reduction order match, so only the
+    # block decode differs between the two launch orders.
+    for i in range(c_elems):
+        assert_equal(
+            c_host[i],
+            c_rowwise_host[i],
+            "expert-major output disagrees with the one-row reference at "
+            + String(i),
+        )
+        if i >= M * N:
+            assert_equal(
+                c_host[i],
+                EM_SENTINEL,
+                "expert-major launch wrote a guarded output element "
+                + String(i),
+            )
+
+    print("PASS")
 
 
 def main() raises:
@@ -333,6 +738,22 @@ def main() raises:
     with DeviceContext() as ctx:
         # The N=896 cells check direct GEMV even though dispatch uses tiled GEMM.
         _run_case[1, 896, 7168, True](ctx)
+        # Expert-major grid: block x walks the weight rows. One full-block
+        # and one partial-last-block M per band tile_m (2, 4, 8); each is
+        # checked against the fp64 oracle, bit-exact one-row launches, and
+        # the output sentinel.
+        _run_expert_major_case[3, 2, 2](ctx)
+        _run_expert_major_case[6, 2, 2](ctx)
+        _run_expert_major_case[7, 4, 2](ctx)
+        _run_expert_major_case[12, 4, 2](ctx)
+        _run_expert_major_case[13, 8, 1](ctx)
+        _run_expert_major_case[16, 8, 1](ctx)
+        # act_wide_k: 8 consecutive K per lane, SIMD accumulator, partial
+        # last M block at M=3 (tm2) and M=5 (tm4).
+        _run_wide_k_case[2, 2](ctx)
+        _run_wide_k_case[3, 2](ctx)
+        _run_wide_k_case[5, 4](ctx)
+        _run_wide_k_case[16, 8](ctx)
         _run_case[2, 896, 7168, True](ctx)
         _run_case[3, 896, 7168, True](ctx)
         _run_case[5, 896, 7168, True](ctx)

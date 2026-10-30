@@ -2836,14 +2836,20 @@ struct Struct_router_gate_mixed_gemv:
       falls back to the baseline chain — cast `a` to fp32, then an ordinary
       fp32 matmul against the fp32 `b` (two launches, matching baseline).
 
-    Because bf16->fp32 widening is lossless, every route is numerically
-    equivalent to casting `a` to fp32 first and running the fp32 GEMM. On SM100
-    the baseline's fp32 matmul switches to TF32 tensor cores above `M = 64`, so
-    the fused GEMV's IEEE-fp32 result there is the more precise of the two.
+    Because bf16->fp32 widening is lossless, every route is fp32 arithmetic
+    over exactly the widened bf16 values: at the same launch config the fused
+    GEMV is bit-identical to the fp32 `gemv_split_k` over a pre-cast
+    activation. The MI355X decode bands with `act_wide_k` reorder the K
+    summation (each lane folds 8 consecutive K through a SIMD accumulator),
+    so those bands match the fp32 GEMV only to fp32 rounding, not
+    bit-for-bit. On SM100 the baseline's fp32 matmul switches to TF32 tensor
+    cores above `M = 64`, so the fused GEMV's IEEE-fp32 result there is the
+    more precise of the two.
 
-    This is not part of generic matmul/GEMV dispatch. The MiniMax-M3 router emits
-    this explicit graph op on MI355X and SM100; other architectures retain the
-    standard router path.
+    This is not part of generic matmul/GEMV dispatch. The MiniMax-M3 router
+    emits this explicit graph op on MI355X and SM100, and the Kimi K3 router
+    on gfx950 (MI355X); other architectures retain the standard router
+    path.
 
     `N` (expert count) and `K` (hidden size) are read from the weight `b`'s
     static `[N, K]` layout at compile time — the op carries no redundant `N`/`K`
