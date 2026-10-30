@@ -14,7 +14,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 from typing import ClassVar
 
 from max.dtype import DType
@@ -37,6 +38,7 @@ from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithPermissiveMaxSeqLen,
     ArchConfigWithStoredKVParams,
+    ModelOutputConfig,
 )
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
@@ -358,32 +360,39 @@ class Gemma3Config(
     def finalize(
         self,
         huggingface_config: AutoConfig,
-        state_dict: dict[str, WeightData],
-        return_logits: ReturnLogits,
+        state_dict: Mapping[str, WeightData],
+        outputs: ModelOutputConfig,
+        *,
         quant_config: QuantConfig | None = None,
-    ) -> None:
-        """Define parameters that can't be determined just from the pipeline config.
-
-        This method sets fields that require introspection of the model weights
-        (state_dict), such as tie_word_embeddings and quant_config.
+    ) -> Self:
+        """Returns the config completed with checkpoint and output requirements.
 
         Args:
-            huggingface_config: The HuggingFace model configuration object.
-            state_dict: The model's state dictionary containing weights.
-            return_logits: Whether to return the last token, all tokens or a
-                variable number of logits.
-            quant_config: Scaled quantization configuration (optional).
+            huggingface_config: The checkpoint's model configuration, or a
+                multimodal checkpoint's configuration with a ``text_config``.
+            state_dict: The adapted checkpoint weights.
+            outputs: The outputs the pipeline requires.
+            quant_config: The quantization configuration, when a parent
+                config parsed it.
+
+        Returns:
+            A copy of this config with the checkpoint-dependent fields set.
         """
+        huggingface_config = getattr(
+            huggingface_config, "text_config", huggingface_config
+        )
         # When tie_word_embeddings=True, the embedding weights are shared with
         # the output weights.
         tie_word_embeddings = (
             getattr(huggingface_config, "tie_word_embeddings", False)
             or "language_model.lm_head.weight" not in state_dict
         )
-
-        self.tie_word_embeddings = tie_word_embeddings
-        self.quant_config = quant_config
-        self.return_logits = return_logits
+        return replace(
+            self,
+            tie_word_embeddings=tie_word_embeddings,
+            quant_config=quant_config,
+            return_logits=outputs.return_logits,
+        )
 
 
 _HIDDEN_ACTIVATION_MAP = {

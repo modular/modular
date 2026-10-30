@@ -38,6 +38,7 @@ from max.nn.legacy.kv_cache import KVCacheParams
 from max.nn.legacy.kv_cache.cache_params import (
     KVCacheParamInterface,
 )
+from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.kv_cache.config import (
     KVCacheConfig,
     cache_dtype_for_encoding,
@@ -56,6 +57,24 @@ from typing_extensions import Self, override
 if TYPE_CHECKING:
     from max.pipelines.lib.config import PipelineConfig
     from max.pipelines.lib.config.model_config import MAXModelConfig
+
+
+@dataclass(frozen=True)
+class ModelOutputConfig:
+    """The outputs a pipeline requires from the modules it builds.
+
+    An architecture's ``finalize`` reads this to decide which logits and
+    hidden states its decoder returns.
+    """
+
+    return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
+    """The logits the decoder must produce."""
+
+    return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
+    """The hidden states the decoder must produce."""
+
+    target_layer_ids: tuple[int, ...] | None = None
+    """The target layers a speculative draft reads, when selected."""
 
 
 @runtime_checkable

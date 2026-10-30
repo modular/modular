@@ -41,6 +41,7 @@ from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
     ArchVLConfigWithTextSubconfig,
+    ModelOutputConfig,
 )
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
@@ -381,9 +382,9 @@ class Gemma3ForConditionalGenerationConfig(
         hf_text_config = getattr(huggingface_config, "text_config", None)
         if hf_text_config is None:
             raise ValueError("text_config not found in huggingface_config")
-        self.text_config.finalize(
+        self.text_config = self.text_config.finalize(
             huggingface_config=hf_text_config,
             state_dict=state_dict,
-            return_logits=return_logits,
+            outputs=ModelOutputConfig(return_logits=return_logits),
             quant_config=quant_config,
         )

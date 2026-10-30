@@ -24,6 +24,7 @@ from max.pipelines.lib import (
     ModelOutputs,
     ModuleV3PipelineModelWithKVCache,
 )
+from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from max.tensor import default_device
 from max.tensor.sharding import DeviceMesh
@@ -75,12 +76,11 @@ class Gemma3Model(
         model_config = Gemma3Config.initialize_from_config(
             self.pipeline_config, text_config, max_seq_len=self.max_seq_len
         )
-        model_config.finalize(
+        return model_config.finalize(
             huggingface_config=text_config,
             state_dict=state_dict,
-            return_logits=self.return_logits,
+            outputs=ModelOutputConfig(return_logits=self.return_logits),
         )
-        return model_config
 
     def _instantiate_module(self, model_config: Any) -> Any:
         n_devices = len(self.devices)
