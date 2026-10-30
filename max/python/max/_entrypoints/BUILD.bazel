@@ -19,7 +19,6 @@ modular_py_library(
         # Leaving these two alone for now, occasionally they are silently used by things.
         # TODO: Likely these should be pushed closer to where they specifically are used.
         requirement("gguf"),  # Needed for loading gguf files
-        requirement("sentencepiece"),  # Very few select models use this
     ],
     deps = [
         "//max/python/max:tensor",
@@ -49,7 +48,6 @@ modular_py_library(
         requirement("pydantic"),
         requirement("pydantic-core"),
         requirement("requests"),
-        requirement("sentencepiece"),
         requirement("sse-starlette"),
         requirement("typing-extensions"),
         requirement("tqdm"),

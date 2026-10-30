@@ -82,7 +82,6 @@ dependencies = [
   "respx",
   "ruamel.yaml",
   "safetensors",
-  "sentencepiece",
   "setuptools",
   "slack-sdk",
   "tiktoken",

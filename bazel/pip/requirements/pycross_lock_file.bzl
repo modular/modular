@@ -142,7 +142,6 @@ PINS = {
     "safetensors": "safetensors@0.6.2",
     "schema": "schema@0.7.5",
     "scipy": "scipy@multiple",
-    "sentencepiece": "sentencepiece@0.2.1",
     "setuptools": "setuptools@80.9.0",
     "sglang": "sglang@multiple",
     "simpy": "simpy@4.1.1",

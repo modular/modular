@@ -55,10 +55,6 @@ from .builtin_structural_tag import (
 from .structural_tag import StructuralTag, StructuralTagItem
 
 try:
-    import sentencepiece
-except ImportError:
-    sentencepiece = None
-try:
     import tiktoken
 except ImportError:
     tiktoken = None
@@ -108,25 +104,6 @@ def _is_byte_level_tokenizer(tokenizer: PreTrainedTokenizerBase) -> bool:
         return False
     new_tokens = tokenizer.convert_ids_to_tokens(new_ids)
     return new_tokens[0] == "Ġ"
-
-
-def _is_sentencepiece_tokenizer(tokenizer: PreTrainedTokenizerBase) -> bool:
-    if sentencepiece is None:
-        return False
-    has_sp_model_attr = hasattr(tokenizer, "sp_model") and isinstance(
-        tokenizer.sp_model, sentencepiece.SentencePieceProcessor
-    )
-    has_nested_sp_model_attr = (
-        hasattr(tokenizer, "tokenizer")
-        and hasattr(tokenizer.tokenizer, "sp_model")
-        and isinstance(
-            tokenizer.tokenizer.sp_model, sentencepiece.SentencePieceProcessor
-        )
-    ) or (
-        hasattr(tokenizer, "tok")
-        and isinstance(tokenizer.tok, sentencepiece.SentencePieceProcessor)
-    )
-    return has_sp_model_attr or has_nested_sp_model_attr
 
 
 class TokenizerInfo:
@@ -250,39 +227,6 @@ class TokenizerInfo:
                 vocab_size=vocab_size,
                 stop_token_ids=stop_token_ids,
                 add_prefix_space=False,
-                special_token_ids=special_token_ids,
-            )
-
-        if _is_sentencepiece_tokenizer(tokenizer):
-            sp_model = (
-                getattr(tokenizer, "sp_model", None)
-                or getattr(
-                    getattr(tokenizer, "tokenizer", None), "sp_model", None
-                )
-                or getattr(tokenizer, "tok", None)
-            )
-            assert sp_model is not None
-            if stop_token_ids is None:
-                eos = getattr(tokenizer, "eos_token_id", None)
-                if eos is not None:
-                    stop_token_ids = [eos]
-                else:
-                    sp_eos = sp_model.eos_id()
-                    if sp_eos != -1:
-                        stop_token_ids = [sp_eos]
-                    else:
-                        warnings.warn(_NO_STOP_TOKEN_WARNING)
-            vocab_type = (
-                VocabType.BYTE_FALLBACK
-                if "<0x0A>" in vocab_dict
-                else VocabType.RAW
-            )
-            return TokenizerInfo(
-                encoded_vocab,
-                vocab_type=vocab_type,
-                vocab_size=vocab_size,
-                stop_token_ids=stop_token_ids,
-                add_prefix_space=True,
                 special_token_ids=special_token_ids,
             )
 
