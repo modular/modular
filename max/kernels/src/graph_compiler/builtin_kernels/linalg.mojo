@@ -1222,8 +1222,10 @@ struct Struct_grouped_matmul_rowwise_dynamic_scaled_fp8:
 
     Serves rowwise (per-output-channel) weight scales + per-token (colwise)
     dynamic activation scales - the compressed-tensors FP8 layout used by
-    e.g. ``RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic``. Targets
-    NVIDIA SM100 (B200) with a correctness-first naive grouped kernel.
+    e.g. ``RedHatAI/Llama-4-Scout-17B-16E-Instruct-FP8-dynamic``. On NVIDIA
+    SM100 (B200) with a bf16 output it runs the persistent tensor-core grouped
+    GEMM and applies the scales in its epilogue; other cases use a naive
+    CUDA-core kernel.
     """
 
     @inline(.always)
@@ -1266,6 +1268,7 @@ struct Struct_grouped_matmul_rowwise_dynamic_scaled_fp8:
         grouped_matmul_rowwise_dynamic_scaled_fp8[
             transpose_b=True,
             target=target,
+            pdl_level=PDLLevel.ON,
         ](
             c.to_tile_tensor(),
             a.to_tile_tensor(),
