@@ -239,3 +239,29 @@ kgen.generator @scc_user() {
   kgen.param.constant = <apply(:() -> index @r<3>)>
   hlcf.return
 }
+
+// -----
+
+// `@outer` is walked before its caller, so its body is folded before the apply
+// in `@caller` sets its inlined form. That form must still have the nested
+// apply of `@leaf` folded.
+
+// CHECK-LABEL: kgen.generator @leaf
+kgen.generator @leaf() -> index {
+  %0 = kgen.param.constant: index = <7>
+  hlcf.return %0 : index
+}
+
+// CHECK-LABEL: kgen.generator @outer() -> index attributes {inlinedForm = 7 : index}
+kgen.generator @outer() -> index {
+  // CHECK-NEXT: kgen.param.constant = <7>
+  %0 = kgen.param.constant: index = <apply(:() -> index @leaf)>
+  hlcf.return %0 : index
+}
+
+// CHECK-LABEL: kgen.generator @caller
+kgen.generator @caller() {
+  // CHECK-NEXT: kgen.param.constant = <7>
+  kgen.param.constant = <apply(:() -> index @outer)>
+  hlcf.return
+}
