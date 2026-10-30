@@ -49,7 +49,7 @@ def test_tma_cache_hint_matches_createpolicy(ctx: DeviceContext) raises:
         _tma_cache_hint[CacheEviction.EVICT_UNCHANGED](),
     ]
     for i in range(4):
-        print("policy", i, "createpolicy", hex(host[i]), "hint", hex(want[i]))
+        print(t"policy {i} createpolicy {hex(host[i])} hint {hex(want[i])}")
     for i in range(4):
         assert_equal(host[i], UInt64(want[i]))
     host.unsafe_free()

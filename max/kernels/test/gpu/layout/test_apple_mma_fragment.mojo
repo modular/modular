@@ -102,14 +102,7 @@ def _verify_fragments(
             var expected = Float32(r * _N + c)
             var got = out_ptr[base + j]
             if got != expected:
-                print(
-                    "FAIL: tid",
-                    tid,
-                    "lo[" + String(j) + "]",
-                    got,
-                    "!=",
-                    expected,
-                )
+                print(t"FAIL: tid {tid} lo[{j}] {got} != {expected}")
                 pass_ = False
 
         for j in range(4):
@@ -118,14 +111,7 @@ def _verify_fragments(
             var expected = Float32(r * _N + c)
             var got = out_ptr[base + 4 + j]
             if got != expected:
-                print(
-                    "FAIL: tid",
-                    tid,
-                    "hi[" + String(j) + "]",
-                    got,
-                    "!=",
-                    expected,
-                )
+                print(t"FAIL: tid {tid} hi[{j}] {got} != {expected}")
                 pass_ = False
     return pass_
 
@@ -437,14 +423,8 @@ def _check_matmul_result[
             var got = d_ptr[i * N + j]
             if abs(got - expected) > tol:
                 print(
-                    "FAIL:",
-                    name,
-                    "index",
-                    i * N + j,
-                    "got",
-                    got,
-                    "expected",
-                    expected,
+                    t"FAIL: {name} index {i * N + j} got {got} expected"
+                    t" {expected}"
                 )
                 pass_ = False
     return pass_
@@ -614,12 +594,7 @@ def test_mma_i8_k32(ctx: DeviceContext) raises:
             var got = d_host[i * N + j]
             if got != acc:
                 print(
-                    "FAIL: i8 K=32 index",
-                    i * N + j,
-                    "got",
-                    got,
-                    "expected",
-                    acc,
+                    t"FAIL: i8 K=32 index {i * N + j} got {got} expected {acc}"
                 )
                 pass_ = False
 
@@ -690,14 +665,7 @@ def test_parent_stride(ctx: DeviceContext) raises:
                 acc += av * bv
             var got = d_ptr[i * _N + j]
             if abs(got - acc) > 0.01:
-                print(
-                    "FAIL: index",
-                    i * _N + j,
-                    "got",
-                    got,
-                    "expected",
-                    acc,
-                )
+                print(t"FAIL: index {i * _N + j} got {got} expected {acc}")
                 pass_ = False
 
     if pass_:
@@ -744,14 +712,7 @@ def test_zero_accum(ctx: DeviceContext) raises:
     var pass_ = True
     for i in range(_NUM_ELEMENTS):
         if abs(d1_ptr[i] - d2_ptr[i]) > 0.001:
-            print(
-                "FAIL: index",
-                i,
-                "d1",
-                d1_ptr[i],
-                "d2",
-                d2_ptr[i],
-            )
+            print(t"FAIL: index {i} d1 {d1_ptr[i]} d2 {d2_ptr[i]}")
             pass_ = False
 
     if pass_:
@@ -881,14 +842,7 @@ def test_bounded_mma(ctx: DeviceContext) raises:
                 acc += av * bv
             var got = d_ptr[i * _N + j]
             if abs(got - acc) > 0.01:
-                print(
-                    "FAIL: index",
-                    i * _N + j,
-                    "got",
-                    got,
-                    "expected",
-                    acc,
-                )
+                print(t"FAIL: index {i * _N + j} got {got} expected {acc}")
                 pass_ = False
 
     if pass_:
@@ -968,12 +922,8 @@ def test_store_bounded(ctx: DeviceContext) raises:
                 var got = d_ptr[i * _N + j]
                 if abs(got - acc) > 0.01:
                     print(
-                        "FAIL: in-bounds index",
-                        i * _N + j,
-                        "got",
-                        got,
-                        "expected",
-                        acc,
+                        t"FAIL: in-bounds index {i * _N + j} got {got} expected"
+                        t" {acc}"
                     )
                     pass_ = False
             else:
@@ -981,11 +931,7 @@ def test_store_bounded(ctx: DeviceContext) raises:
                 var got = d_ptr[i * _N + j]
                 if got != Float32(-1.0):
                     print(
-                        "FAIL: OOB index",
-                        i * _N + j,
-                        "got",
-                        got,
-                        "expected -1.0",
+                        t"FAIL: OOB index {i * _N + j} got {got} expected -1.0"
                     )
                     pass_ = False
 

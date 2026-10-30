@@ -187,14 +187,8 @@ def run_matmul(ctx: DeviceContext) raises:
             var val = c_host[i, j]
             if val != Float32(K):
                 print(
-                    "Fail at index = [",
-                    i,
-                    ",",
-                    j,
-                    "] the value is",
-                    val,
-                    "the golden value is",
-                    K,
+                    t"Fail at index = [ {i} , {j} ] the value is {val} the"
+                    t" golden value is {K}"
                 )
                 failed = True
 

@@ -165,16 +165,9 @@ def test_nvfp4_quant_near_zero[
                     num_nonfinite += 1
 
     print(
-        "near-zero NVFP4 quant: M=",
-        M,
-        "N=",
-        N,
-        "tensor_sf=",
-        tensor_sf,
-        "-> non-finite decoded values =",
-        num_nonfinite,
-        ", non-finite stored scales =",
-        num_nonfinite_scales,
+        t"near-zero NVFP4 quant: M= {M} N= {N} tensor_sf= {tensor_sf} ->"
+        t" non-finite decoded values = {num_nonfinite} , non-finite stored"
+        t" scales = {num_nonfinite_scales}"
     )
     assert_equal(num_nonfinite, 0)
     assert_equal(num_nonfinite_scales, 0)

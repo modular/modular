@@ -193,12 +193,8 @@ def _read_write_to_tensors[
         )
         var acceptableErr = abs(data_matrix[i] * rtol) + atol
         print(
-            "fake-quantized:",
-            out_data_matrix[i],
-            " vs original:",
-            data_matrix[i],
-            " -- rel-diff: ",
-            localRDiff,
+            t"fake-quantized: {out_data_matrix[i]}  vs original:"
+            t" {data_matrix[i]}  -- rel-diff:  {localRDiff}"
         )
         allClose = allClose and (localRDiff <= acceptableErr)
     return allClose

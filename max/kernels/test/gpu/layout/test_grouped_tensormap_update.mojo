@@ -403,16 +403,8 @@ def test_grouped_tensormap_update[
                 if actual_a != expected_a:
                     if errors < 5:
                         print(
-                            "Group",
-                            g,
-                            "A mismatch at (",
-                            m,
-                            ",",
-                            n,
-                            "): expected",
-                            expected_a,
-                            "got",
-                            actual_a,
+                            t"Group {g} A mismatch at ( {m} , {n} ): expected"
+                            t" {expected_a} got {actual_a}"
                         )
                     errors += 1
 
@@ -421,16 +413,8 @@ def test_grouped_tensormap_update[
                 if actual_b != expected_b:
                     if errors < 5:
                         print(
-                            "Group",
-                            g,
-                            "B mismatch at (",
-                            m,
-                            ",",
-                            n,
-                            "): expected",
-                            expected_b,
-                            "got",
-                            actual_b,
+                            t"Group {g} B mismatch at ( {m} , {n} ): expected"
+                            t" {expected_b} got {actual_b}"
                         )
                     errors += 1
 

@@ -874,12 +874,8 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
         ):
             if mismatches_no_sinks < 3:
                 print(
-                    "No-sinks mismatch at",
-                    i,
-                    ":",
-                    output_no_sinks[coord],
-                    "vs",
-                    ref_output_no_sinks[coord],
+                    t"No-sinks mismatch at {i} : {output_no_sinks[coord]} vs"
+                    t" {ref_output_no_sinks[coord]}"
                 )
             mismatches_no_sinks += 1
 
@@ -938,12 +934,9 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
         ):
             if mismatches_with_sinks < 3:
                 print(
-                    "With-sinks mismatch at",
-                    i,
-                    ":",
-                    output_with_sinks[coord],
-                    "vs",
-                    ref_output_with_sinks[coord],
+                    t"With-sinks mismatch at {i} :"
+                    t" {output_with_sinks[coord]} vs"
+                    t" {ref_output_with_sinks[coord]}"
                 )
             mismatches_with_sinks += 1
 

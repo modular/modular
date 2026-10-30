@@ -130,12 +130,8 @@ def wgmma_e4m3_e4m3_f32[
     transpose_b: Bool = False,
     a_reg: Bool = False,
 ](ctx: DeviceContext) raises:
-    print(
-        "== wgmma_e4m3_e4m3_f32_64xNx16(N, r/s) => ",
-        N,
-        ", r" if a_reg else ", s",
-        sep="",
-    )
+    var operand = ", r" if a_reg else ", s"
+    print(t"== wgmma_e4m3_e4m3_f32_64xNx16(N, r/s) => {N}{operand}")
 
     comptime a_shape = row_major[M, K]()
     comptime b_shape = row_major[

@@ -225,12 +225,8 @@ def wgmma_kernel_ss[
 def wgmma_bf16_bf16_f32[
     M: Int, N: Int, K: Int, transpose_b: Bool = False, a_reg: Bool = False
 ](ctx: DeviceContext) raises:
-    print(
-        "== wgmma_bf16_bf16_f32_64xNx16(N, r/s) => ",
-        N,
-        ", r" if a_reg else ", s",
-        sep="",
-    )
+    var operand = ", r" if a_reg else ", s"
+    print(t"== wgmma_bf16_bf16_f32_64xNx16(N, r/s) => {N}{operand}")
 
     var a = HostDeviceTileTensor[.bfloat16, type_of(row_major[M, K]())](
         row_major[M, K](), ctx

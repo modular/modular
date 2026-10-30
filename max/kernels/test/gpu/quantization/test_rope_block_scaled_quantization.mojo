@@ -216,16 +216,8 @@ def test_rope_quantize_matches_unfused[
                 rotated_bytes += 1
     assert_true(rotated_bytes > 0, "the RoPE columns came out unrotated")
     print(
-        "fused matches unfused:",
-        out_dtype,
-        "M =",
-        m,
-        "heads =",
-        heads,
-        "head_dim =",
-        head_dim,
-        "inverse =",
-        inverse,
+        t"fused matches unfused: {out_dtype} M = {m} heads = {heads} head_dim ="
+        t" {head_dim} inverse = {inverse}"
     )
 
 

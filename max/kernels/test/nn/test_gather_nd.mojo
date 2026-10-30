@@ -92,14 +92,9 @@ def main():
             DeviceContext(api="cpu"),
         )
         print(
-            "Output buffer:",
-            output_data_buffer[0, 0],
-            ",",
-            output_data_buffer[0, 1],
-            ",",
-            output_data_buffer[1, 0],
-            ",",
-            output_data_buffer[1, 1],
+            t"Output buffer: {output_data_buffer[0, 0]} ,"
+            t" {output_data_buffer[0, 1]} , {output_data_buffer[1, 0]} ,"
+            t" {output_data_buffer[1, 1]}"
         )
 
     def test_gather_nd_eg3() raises:
@@ -137,14 +132,9 @@ def main():
             DeviceContext(api="cpu"),
         )
         print(
-            "Output buffer:",
-            output_data_buffer[0, 0],
-            ",",
-            output_data_buffer[0, 1],
-            ",",
-            output_data_buffer[1, 0],
-            ",",
-            output_data_buffer[1, 1],
+            t"Output buffer: {output_data_buffer[0, 0]} ,"
+            t" {output_data_buffer[0, 1]} , {output_data_buffer[1, 0]} ,"
+            t" {output_data_buffer[1, 1]}"
         )
 
     def test_gather_nd_eg4() raises:
@@ -184,14 +174,9 @@ def main():
             DeviceContext(api="cpu"),
         )
         print(
-            "Output buffer:",
-            output_data_buffer[0, 0, 0],
-            ",",
-            output_data_buffer[0, 0, 1],
-            ",",
-            output_data_buffer[1, 0, 0],
-            ",",
-            output_data_buffer[1, 0, 1],
+            t"Output buffer: {output_data_buffer[0, 0, 0]} ,"
+            t" {output_data_buffer[0, 0, 1]} , {output_data_buffer[1, 0, 0]} ,"
+            t" {output_data_buffer[1, 0, 1]}"
         )
 
     def test_gather_nd_eg5() raises:
@@ -226,14 +211,9 @@ def main():
             DeviceContext(api="cpu"),
         )
         print(
-            "Output buffer:",
-            output_data_buffer[0, 0],
-            ",",
-            output_data_buffer[0, 1],
-            ",",
-            output_data_buffer[1, 0],
-            ",",
-            output_data_buffer[1, 1],
+            t"Output buffer: {output_data_buffer[0, 0]} ,"
+            t" {output_data_buffer[0, 1]} , {output_data_buffer[1, 0]} ,"
+            t" {output_data_buffer[1, 1]}"
         )
 
     def test_gather_nd_eg6() raises:
@@ -277,18 +257,10 @@ def main():
             DeviceContext(api="cpu"),
         )
         print(
-            "Output buffer:",
-            output_data_buffer[0, 0, 0],
-            ",",
-            output_data_buffer[0, 1, 0],
-            ",",
-            output_data_buffer[0, 2, 0],
-            ",",
-            output_data_buffer[1, 0, 0],
-            ",",
-            output_data_buffer[1, 1, 0],
-            ",",
-            output_data_buffer[1, 2, 0],
+            t"Output buffer: {output_data_buffer[0, 0, 0]} ,"
+            t" {output_data_buffer[0, 1, 0]} , {output_data_buffer[0, 2, 0]} ,"
+            t" {output_data_buffer[1, 0, 0]} , {output_data_buffer[1, 1, 0]} ,"
+            t" {output_data_buffer[1, 2, 0]}"
         )
 
     def test_gather_nd_eg7() raises:
@@ -324,22 +296,14 @@ def main():
         )
 
         print(
-            "Output buffer:",
-            output_data_buffer[0, 0, 0, 0],
-            ",",
-            output_data_buffer[0, 0, 0, 1],
-            ",",
-            output_data_buffer[0, 0, 1, 0],
-            ",",
-            output_data_buffer[0, 0, 1, 1],
-            ",",
-            output_data_buffer[1, 0, 0, 0],
-            ",",
-            output_data_buffer[1, 0, 0, 1],
-            ",",
-            output_data_buffer[1, 0, 1, 0],
-            ",",
-            output_data_buffer[1, 0, 1, 1],
+            t"Output buffer: {output_data_buffer[0, 0, 0, 0]} ,"
+            t" {output_data_buffer[0, 0, 0, 1]} ,"
+            t" {output_data_buffer[0, 0, 1, 0]} ,"
+            t" {output_data_buffer[0, 0, 1, 1]} ,"
+            t" {output_data_buffer[1, 0, 0, 0]} ,"
+            t" {output_data_buffer[1, 0, 0, 1]} ,"
+            t" {output_data_buffer[1, 0, 1, 0]} ,"
+            t" {output_data_buffer[1, 0, 1, 1]}"
         )
 
     def test_gather_nd_eg8() raises:
@@ -377,18 +341,10 @@ def main():
             DeviceContext(api="cpu"),
         )
         print(
-            "Output buffer:",
-            output_data_buffer[0, 0],
-            ",",
-            output_data_buffer[0, 1],
-            ",",
-            output_data_buffer[0, 2],
-            ",",
-            output_data_buffer[1, 0],
-            ",",
-            output_data_buffer[1, 1],
-            ",",
-            output_data_buffer[1, 2],
+            t"Output buffer: {output_data_buffer[0, 0]} ,"
+            t" {output_data_buffer[0, 1]} , {output_data_buffer[0, 2]} ,"
+            t" {output_data_buffer[1, 0]} , {output_data_buffer[1, 1]} ,"
+            t" {output_data_buffer[1, 2]}"
         )
 
     try:

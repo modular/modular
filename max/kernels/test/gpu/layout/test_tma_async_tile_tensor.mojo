@@ -278,12 +278,8 @@ def test_tma_store_rank[
         )
 
     print(
-        "TMA store passed: rank=",
-        rank,
-        " k_major=",
-        k_major,
-        " generic=",
-        generic,
+        t"TMA store passed: rank= {rank}  k_major= {k_major}  generic="
+        t" {generic}"
     )
 
 

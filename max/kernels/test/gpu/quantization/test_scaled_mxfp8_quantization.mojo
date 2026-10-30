@@ -133,19 +133,10 @@ def test_dynamic_mxfp8_quant[
                 if (1 - mismatch_rate) < 0.999:
                     raise Error("Too many mismatches!")
                 print(
-                    "M = ",
-                    m,
-                    "N = ",
-                    n,
-                    "SF_VECTOR_SIZE = ",
-                    SF_VECTOR_SIZE,
-                    "in_dtype = ",
-                    in_dtype,
-                    "scales_dtype = ",
-                    scales_dtype,
-                    "mismatch percentage = ",
-                    mismatch_rate * 100.0,
-                    "%",
+                    t"M =  {m} N =  {n} SF_VECTOR_SIZE = "
+                    t" {SF_VECTOR_SIZE} in_dtype =  {in_dtype} scales_dtype = "
+                    t" {scales_dtype} mismatch percentage = "
+                    t" {mismatch_rate * 100.0} %"
                 )
 
 
@@ -216,22 +207,10 @@ def test_dynamic_mxfp8_quant_degenerate_blocks(
             var output_tensor_host = TileTensor(out_host, input_layout)
             var scales_tensor_host = TileTensor(scales_host, scales_layout)
             print(
-                "M =",
-                m,
-                "e8m0 scale byte: zero block",
-                bitcast[DType.uint8](
-                    get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
-                        scales_tensor_host.as_unsafe_any_origin(), 0, 64
-                    )
-                ),
-                "tiny block",
-                bitcast[DType.uint8](
-                    get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
-                        scales_tensor_host.as_unsafe_any_origin(),
-                        0,
-                        tiny_block * SF_VECTOR_SIZE,
-                    )
-                ),
+                t"M = {m} e8m0 scale byte: zero block"
+                t" {bitcast[DType.uint8]( get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE]( scales_tensor_host.as_unsafe_any_origin(), 0, 64 ) )} tiny"
+                t" block"
+                t" {bitcast[DType.uint8]( get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE]( scales_tensor_host.as_unsafe_any_origin(), 0, tiny_block * SF_VECTOR_SIZE, ) )}"
             )
             for row in range(m):
                 for col in range(N):
@@ -244,12 +223,8 @@ def test_dynamic_mxfp8_quant_degenerate_blocks(
                     )
                     if isnan(dequantized):
                         print(
-                            "row",
-                            row,
-                            "col",
-                            col,
-                            "scale byte",
-                            bitcast[DType.uint8](fp8_sf),
+                            t"row {row} col {col} scale byte"
+                            t" {bitcast[DType.uint8](fp8_sf)}"
                         )
                         raise Error("NaN dequantized value for an MXFP8 block")
                     var block = col // SF_VECTOR_SIZE
@@ -343,12 +318,12 @@ def test_mxfp8_async_matches_sync[
     with out_sync.map_to_host() as a, out_async.map_to_host() as b:
         for i in range(len(a)):
             if a[i] != b[i]:
-                print("M =", m, "N =", N, "output byte", i, a[i], "vs", b[i])
+                print(t"M = {m} N = {N} output byte {i} {a[i]} vs {b[i]}")
                 raise Error("async MXFP8 output differs from the sync kernel")
     with sf_sync.map_to_host() as a, sf_async.map_to_host() as b:
         for i in range(len(a)):
             if a[i] != b[i]:
-                print("M =", m, "N =", N, "scale byte", i, a[i], "vs", b[i])
+                print(t"M = {m} N = {N} scale byte {i} {a[i]} vs {b[i]}")
                 raise Error("async MXFP8 scales differ from the sync kernel")
     print("async matches sync: M =", m, "N =", N)
 

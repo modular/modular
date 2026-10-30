@@ -453,13 +453,8 @@ def test_quantized[
         var sectime = nstime * 1e-9
         var TFlop = 2.0 * Float64(M) * Float64(N) * Float64(K) * 1e-12
         print(
-            "Transpose B ",
-            "True",
-            nrun,
-            " runs avg(s)",
-            sectime,
-            "TFlops/s",
-            TFlop / sectime,
+            t"Transpose B  True {nrun}  runs avg(s) {sectime} TFlops/s"
+            t" {TFlop / sectime}"
         )
 
     comptime if use_ragged_epilogue:

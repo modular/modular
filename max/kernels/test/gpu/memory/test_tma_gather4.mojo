@@ -334,13 +334,8 @@ def test_raw_smoke[
 ](ctx: DeviceContext) raises:
     """Single gather4 via raw intrinsic -- minimal smoke test."""
     print(
-        "== test_raw_smoke [",
-        dtype,
-        ", row_width=",
-        row_width,
-        ", num_tokens=",
-        num_tokens,
-        "]",
+        t"== test_raw_smoke [ {dtype} , row_width= {row_width} , num_tokens="
+        t" {num_tokens} ]"
     )
 
     var num_elems = num_tokens * row_width
@@ -543,23 +538,13 @@ def _run_paged_gather4_test[
 
     comptime if use_mha_operand:
         print(
-            "  PASSED: all",
-            topk,
-            "rows from KVCacheMHAOperand (",
-            topk // 4,
-            "iterations, page_size=",
-            page_size,
-            ") match",
+            t"  PASSED: all {topk} rows from KVCacheMHAOperand ("
+            t" {topk // 4} iterations, page_size= {page_size} ) match"
         )
     else:
         print(
-            "  PASSED: all",
-            topk,
-            "rows from PagedKVCache (",
-            topk // 4,
-            "iterations, page_size=",
-            page_size,
-            ") match",
+            t"  PASSED: all {topk} rows from PagedKVCache ("
+            t" {topk // 4} iterations, page_size= {page_size} ) match"
         )
 
     _ = d_indices
@@ -715,11 +700,8 @@ def test_continuous_kv_cache[
         topk,
     )
     print(
-        "  PASSED: all",
-        topk,
-        "rows from ContinuousBatchingKVCache (",
-        topk // 4,
-        "iterations) match",
+        t"  PASSED: all {topk} rows from ContinuousBatchingKVCache ("
+        t" {topk // 4} iterations) match"
     )
 
     _ = d_indices
@@ -736,15 +718,8 @@ def test_device_buffer_overload[
     comptime assert topk % 4 == 0, "topk must be divisible by 4"
 
     print(
-        "== test_device_buffer_overload [",
-        dtype,
-        ", row_width=",
-        row_width,
-        ", num_tokens=",
-        num_tokens,
-        ", topk=",
-        topk,
-        "]",
+        t"== test_device_buffer_overload [ {dtype} , row_width= {row_width} ,"
+        t" num_tokens= {num_tokens} , topk= {topk} ]"
     )
 
     var num_elems = num_tokens * row_width
@@ -934,15 +909,8 @@ def test_wide_gather4_device_buffer[
     comptime assert topk % 4 == 0, "topk must be divisible by 4"
 
     print(
-        "== test_wide_gather4_device_buffer [",
-        dtype,
-        ", tile_width=",
-        tile_width,
-        ", num_tokens=",
-        num_tokens,
-        ", topk=",
-        topk,
-        "]",
+        t"== test_wide_gather4_device_buffer [ {dtype} , tile_width="
+        t" {tile_width} , num_tokens= {num_tokens} , topk= {topk} ]"
     )
 
     var num_elems = num_tokens * tile_width
@@ -1030,11 +998,7 @@ def test_wide_gather4_paged_kv[
     comptime tile_width = num_heads * head_size
 
     print(
-        "== test_wide_gather4_paged_kv [",
-        dtype,
-        ", tile_width=",
-        tile_width,
-        "]",
+        t"== test_wide_gather4_paged_kv [ {dtype} , tile_width= {tile_width} ]"
     )
 
     # Build the 6D blocks tensor.
@@ -1170,11 +1134,8 @@ def test_wide_gather4_continuous_kv[
     comptime tile_width = num_heads * head_size
 
     print(
-        "== test_wide_gather4_continuous_kv [",
-        dtype,
-        ", tile_width=",
-        tile_width,
-        "]",
+        t"== test_wide_gather4_continuous_kv [ {dtype} , tile_width="
+        t" {tile_width} ]"
     )
 
     # Build the 6D blocks tensor.
@@ -1308,11 +1269,8 @@ def test_wide_gather4_mha_operand[
     comptime tile_width = num_heads * head_size
 
     print(
-        "== test_wide_gather4_mha_operand [",
-        dtype,
-        ", tile_width=",
-        tile_width,
-        "]",
+        t"== test_wide_gather4_mha_operand [ {dtype} , tile_width="
+        t" {tile_width} ]"
     )
 
     # Build the 6D blocks tensor.
@@ -1462,21 +1420,10 @@ def test_non_divisible_width[
     comptime padded_row_width = num_col_groups * box_width
 
     print(
-        "== test_non_divisible_width [",
-        dtype,
-        ", tile_width=",
-        tile_width,
-        ", box_width=",
-        box_width,
-        ", num_col_groups=",
-        num_col_groups,
-        ", padded_row_width=",
-        padded_row_width,
-        ", num_tokens=",
-        num_tokens,
-        ", topk=",
-        topk,
-        "]",
+        t"== test_non_divisible_width [ {dtype} , tile_width= {tile_width} ,"
+        t" box_width= {box_width} , num_col_groups= {num_col_groups} ,"
+        t" padded_row_width= {padded_row_width} , num_tokens= {num_tokens} ,"
+        t" topk= {topk} ]"
     )
 
     # Build gather indices.
@@ -1553,13 +1500,8 @@ def test_non_divisible_width[
             )
 
     print(
-        "  PASSED: all",
-        topk,
-        "rows verified (",
-        num_col_groups,
-        "col groups, last group zero-fills",
-        padded_row_width - tile_width,
-        "elements)",
+        t"  PASSED: all {topk} rows verified ( {num_col_groups} col groups,"
+        t" last group zero-fills {padded_row_width - tile_width} elements)"
     )
 
     _ = d_data
@@ -1632,15 +1574,8 @@ def test_gather4_tile_api[
     comptime total_smem_bytes = smem_bytes + metadata_bytes
 
     print(
-        "== test_gather4_tile_api [",
-        dtype,
-        ", bn=",
-        bn,
-        ", cols=",
-        cols,
-        ", total_tokens=",
-        total_tokens,
-        "]",
+        t"== test_gather4_tile_api [ {dtype} , bn= {bn} , cols= {cols} ,"
+        t" total_tokens= {total_tokens} ]"
     )
 
     # ---- Allocate full K buffer [total_tokens, cols] ----
@@ -1718,14 +1653,8 @@ def test_gather4_tile_api[
                     mismatches += 1
                     if mismatches <= 5:
                         print(
-                            "  MISMATCH r=",
-                            r,
-                            " c=",
-                            c,
-                            " got=",
-                            got,
-                            " expected=",
-                            expected,
+                            t"  MISMATCH r= {r}  c= {c}  got= {got}  expected="
+                            t" {expected}"
                         )
 
     if mismatches > 0:
@@ -1775,15 +1704,8 @@ def test_gather4_tile_api_paged[
     comptime paged_stride = kv_dim * num_layers * page_size
 
     print(
-        "== test_gather4_tile_api_paged [",
-        dtype,
-        ", row_width=",
-        row_width,
-        ", topk=",
-        topk,
-        ", page_size=",
-        page_size,
-        "]",
+        t"== test_gather4_tile_api_paged [ {dtype} , row_width= {row_width} ,"
+        t" topk= {topk} , page_size= {page_size} ]"
     )
 
     # ---- Build the 6D blocks tensor ----
@@ -1909,14 +1831,8 @@ def test_gather4_tile_api_paged[
                     mismatches += 1
                     if mismatches <= 5:
                         print(
-                            "  MISMATCH r=",
-                            r,
-                            " c=",
-                            c,
-                            " got=",
-                            got,
-                            " expected=",
-                            expected,
+                            t"  MISMATCH r= {r}  c= {c}  got= {got}  expected="
+                            t" {expected}"
                         )
 
     if mismatches > 0:

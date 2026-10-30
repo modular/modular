@@ -123,13 +123,7 @@ def test_mask[
                     print(mask_ends[i], end="")
                 print("]")
                 print("q_row num_keys kv_row =", q_row, end, kv_row)
-                print(
-                    "mask_status, ref_mask = ",
-                    mask_status,
-                    ", ",
-                    ref_mask,
-                    sep="",
-                )
+                print(t"mask_status, ref_mask = {mask_status}, {ref_mask}")
             assert_equal(mask_status, ref_mask)
             kv_row += UInt32(BN)
     if kv_row < end:

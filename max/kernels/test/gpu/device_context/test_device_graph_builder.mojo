@@ -1749,9 +1749,9 @@ def test_create_collective_two_graphs(ctx: DeviceContext) raises:
 
 def test_create_collective_stable_slots(ctx: DeviceContext) raises:
     print(
-        "Test DeviceGraph.create_collective installs one cache-owned stable"
-        " slot table on every builder, shared across the collective's graphs"
-        " and across rebuilds with the same identity."
+        t"Test DeviceGraph.create_collective installs one cache-owned stable"
+        t" slot table on every builder, shared across the collective's graphs"
+        t" and across rebuilds with the same identity."
     )
     comptime length = 64
 

@@ -268,15 +268,7 @@ def test_tma_block_reduce[
         var total_time = ctx.execution_time(kernel_launch, num_iters)
         var avg_time_ms = Float64(total_time) / Float64(num_iters) * 1e6
 
-        print(
-            "  Average kernel time for:",
-            rows,
-            "x",
-            cols,
-            ":",
-            avg_time_ms,
-            "ms",
-        )
+        print(t"  Average kernel time for: {rows} x {cols} : {avg_time_ms} ms")
     else:
         # Single run for correctness testing.
         kernel_launch(ctx)

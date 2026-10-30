@@ -102,7 +102,7 @@ def run_mma_test[
         var got = Float32(d_host[i])
         var expected = Float32(a_host[i])
         if abs(got - expected) > tol:
-            print("FAIL", name + ": index", i, "got", got, "expected", expected)
+            print(t"FAIL {name + ": index"} {i} got {got} expected {expected}")
             pass_ = False
 
     if pass_:
@@ -170,7 +170,7 @@ def run_mma_test_strided(ctx: DeviceContext) raises:
         var expected = Float32(i)
         if d_host[i] != expected:
             print(
-                "FAIL strided: index", i, "got", d_host[i], "expected", expected
+                t"FAIL strided: index {i} got {d_host[i]} expected {expected}"
             )
             pass_ = False
 
@@ -233,9 +233,7 @@ def _check_transpose(
             var idx = i * _N + j
             var got = d[idx]
             if got != acc:
-                print(
-                    "FAIL", name + ": index", idx, "got", got, "expected", acc
-                )
+                print(t"FAIL {name + ": index"} {idx} got {got} expected {acc}")
                 pass_ = False
     return pass_
 

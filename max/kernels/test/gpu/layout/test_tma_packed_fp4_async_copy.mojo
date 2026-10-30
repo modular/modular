@@ -135,15 +135,8 @@ def test_packed_fp4_load[
     ]()
 
     print(
-        "test_packed_fp4_load rows=",
-        rows,
-        " k_elems=",
-        k_elems,
-        " tile_rows=",
-        tile_rows,
-        " swizzle=",
-        swizzle_mode,
-        sep="",
+        t"test_packed_fp4_load"
+        t" rows={rows} k_elems={k_elems} tile_rows={tile_rows} swizzle={swizzle_mode}"
     )
 
     var src_host = ctx.enqueue_create_host_buffer[.uint8](rows * k_bytes)

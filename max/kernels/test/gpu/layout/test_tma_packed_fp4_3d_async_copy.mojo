@@ -140,17 +140,8 @@ def test_packed_fp4_load_3d[
     ]()
 
     print(
-        "test_packed_fp4_load_3d batch=",
-        batch,
-        " rows=",
-        rows,
-        " k_elems=",
-        k_elems,
-        " tile_rows=",
-        tile_rows,
-        " swizzle=",
-        swizzle_mode,
-        sep="",
+        t"test_packed_fp4_load_3d"
+        t" batch={batch} rows={rows} k_elems={k_elems} tile_rows={tile_rows} swizzle={swizzle_mode}"
     )
 
     comptime num_bytes = batch * rows * k_bytes

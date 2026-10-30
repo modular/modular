@@ -192,11 +192,8 @@ def test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
         )
     )
     print(
-        "Using block size ",
-        optimal_block_size,
-        " with ",
-        optimal_blocks,
-        " max blocks per SM",
+        t"Using block size  {optimal_block_size}  with  {optimal_blocks}  max"
+        t" blocks per SM"
     )
 
     # Launch the kernel

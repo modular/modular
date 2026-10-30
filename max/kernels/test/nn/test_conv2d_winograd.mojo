@@ -167,7 +167,7 @@ def outputs_are_close[
                 atol=1e-6,  # absolute error tolerance
                 rtol=1e-6,  # relative error tolerance
             ):
-                print("Mismatch at position (", i, ",", j, ")")
+                print(t"Mismatch at position ( {i} , {j} )")
                 print("Naive:", output_naive[i, j])
                 print("Winograd:", output_winograd[i, j])
                 print("Difference:", output_naive[i, j] - output_winograd[i, j])

@@ -116,16 +116,7 @@ def test_is_sorted_descending[
                 var cur = buf_flat.load[width=1]((offset + i,))
                 var nxt = buf_flat.load[width=1]((offset + i + 1,))
                 if cur < nxt:
-                    print(
-                        "[",
-                        batch_id,
-                        "][",
-                        i,
-                        "]: ",
-                        cur,
-                        " < ",
-                        nxt,
-                    )
+                    print(t"[ {batch_id} ][ {i} ]:  {cur}  <  {nxt}")
                     sorted_flag[batch_id] = False
                     break
 
@@ -145,21 +136,14 @@ def test_is_sorted_descending[
 
 
 def print_test_case(test_case: TestCase):
+    var kind = "Top-P" if test_case.is_top_p else "Min-P"
     print(
-        "==== Running",
-        "Top-P" if test_case.is_top_p else "Min-P",
-        ", dtype=",
-        test_case.dtype,
-        ", out_idx_type=",
-        test_case.out_idx_type,
-        "sampling with batch_size=",
-        test_case.batch_size,
-        ", vocab_size=",
-        test_case.vocab_size,
-        ", temperature=",
-        test_case.temperature,
-        ", p_threshold=",
-        test_case.p_threshold,
+        t"==== Running {kind} ,"
+        t" dtype= {test_case.dtype} , out_idx_type="
+        t" {test_case.out_idx_type} sampling with batch_size="
+        t" {test_case.batch_size} , vocab_size= {test_case.vocab_size} ,"
+        t" temperature= {test_case.temperature} , p_threshold="
+        t" {test_case.p_threshold}"
     )
 
 

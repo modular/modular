@@ -95,7 +95,7 @@ def run_mma_test[
         var got = Float32(d_host[i])
         var expected = Float32(a_host[i])
         if abs(got - expected) > tol:
-            print("FAIL", name + ": index", i, "got", got, "expected", expected)
+            print(t"FAIL {name + ": index"} {i} got {got} expected {expected}")
             pass_ = False
 
     if pass_:
@@ -155,12 +155,8 @@ def run_mma_test_strided(ctx: DeviceContext) raises:
             var expected = Float32(i * _N + j)
             if abs(got - expected) > 0.00001:
                 print(
-                    "FAIL test_strided: index",
-                    i * _N + j,
-                    "got",
-                    got,
-                    "expected",
-                    expected,
+                    t"FAIL test_strided: index {i * _N + j} got {got} expected"
+                    t" {expected}"
                 )
                 pass_ = False
     if pass_:
@@ -201,13 +197,7 @@ def run_mma_matmul_test[
                 ref_val += _a_val(i, k) * _b_val(k, j)
             var got = Float32(d_host[i * _N + j])
             if abs(got - Float32(ref_val)) > tol:
-                print(
-                    "FAIL",
-                    name + ": [" + String(i) + "," + String(j) + "] got",
-                    got,
-                    "expected",
-                    ref_val,
-                )
+                print(t"FAIL {name}: [{i},{j}] got {got} expected {ref_val}")
                 pass_ = False
 
     if pass_:

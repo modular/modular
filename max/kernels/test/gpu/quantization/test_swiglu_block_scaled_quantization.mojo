@@ -154,14 +154,14 @@ def test_swiglu_quantize_matches_unfused[
     with out_ref.map_to_host() as a, out_fused.map_to_host() as b:
         for i in range(len(a)):
             if a[i] != b[i]:
-                print("M =", m, "N =", N, "output byte", i, a[i], "vs", b[i])
+                print(t"M = {m} N = {N} output byte {i} {a[i]} vs {b[i]}")
                 raise Error("fused output differs from the unfused path")
     with sf_ref.map_to_host() as a, sf_fused.map_to_host() as b:
         for i in range(len(a)):
             if a[i] != b[i]:
-                print("M =", m, "N =", N, "scale byte", i, a[i], "vs", b[i])
+                print(t"M = {m} N = {N} scale byte {i} {a[i]} vs {b[i]}")
                 raise Error("fused scales differ from the unfused path")
-    print("fused matches unfused:", out_dtype, "M =", m, "N =", N)
+    print(t"fused matches unfused: {out_dtype} M = {m} N = {N}")
 
 
 def test_swiglu_quantize_rejects_unpacked_fp4_output(

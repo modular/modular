@@ -191,14 +191,9 @@ def test[
             print("Input shape NHWC: ", Index(N, H, W, C))
             print("filter shape RSCF: ", Index(R, S, C, F))
             print(
-                "Failed at",
-                Index(n, ho, wo, f),
-                "expected",
-                expected,
-                "actual",
-                actual,
-                "rerr",
-                abs(actual - expected) / abs(expected + 1e-10),
+                t"Failed at {Index(n, ho, wo, f)} expected {expected} actual"
+                t" {actual} rerr"
+                t" {abs(actual - expected) / abs(expected + 1e-10)}"
             )
             return
 

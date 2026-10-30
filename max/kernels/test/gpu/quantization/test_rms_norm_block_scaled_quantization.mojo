@@ -259,19 +259,9 @@ def test_matches_unfused[
             kv_bad * 500 <= m * kv_cols, String("M = ", m, ", kv elements")
         )
     print(
-        "fused matches unfused:",
-        "M =",
-        m,
-        "q_cols =",
-        q_cols,
-        "kv_cols =",
-        kv_cols,
-        "exact =",
-        exact,
-        "mismatches q/scales/kv =",
-        q_bad,
-        sf_bad,
-        kv_bad,
+        t"fused matches unfused: M = {m} q_cols = {q_cols} kv_cols ="
+        t" {kv_cols} exact = {exact} mismatches q/scales/kv ="
+        t" {q_bad} {sf_bad} {kv_bad}"
     )
 
 

@@ -152,7 +152,7 @@ def run_matmul(ctx: DeviceContext) raises:
 
     for i in range(10):
         for j in range(10):
-            print("at index = [", i, ",", j, "]the value is", c_host[i, j])
+            print(t"at index = [ {i} , {j} ]the value is {c_host[i, j]}")
 
 
 def main() raises:
