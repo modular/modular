@@ -494,29 +494,14 @@ static SmallVector<TypedAttr> getCaptureBindings(StructDeclOp structDeclOp) {
   return bindings;
 }
 
-static SymbolConstantAttr
-buildSymbol(FnOp impl, ArrayRef<ParamDeclAttr> structLevelParams) {
-  MLIRContext *ctx = impl.getContext();
-  SymbolRefAttr implSymbol = getFullyResolvedSymbolRef(
-      cast<mlir::SymbolOpInterface>(impl.getOperation()));
-  // Build symbol by binding struct level parameters and explicit parameters.
-  FuncTypeGeneratorType baseSigGen = impl.getFuncTypeGenerator();
-  SmallVector<TypedAttr> params;
-  llvm::append_range(
-      params, llvm::map_range(structLevelParams, [](ParamDeclAttr param) {
-        return ParamDeclRefAttr::get(param);
-      }));
-  mlir::AttrTypeReplacer replacer;
-  replacer.addReplacement([&](ParamDeclRefAttr reference) -> TypedAttr {
-    return UnboundAttr::get(reference.getType());
-  });
-  for (auto param : impl.getInputParams().drop_back(
-           impl.getFuncTypeGenerator().getNumImplicitOriginDecls()))
-    params.push_back(
-        cast<TypedAttr>(replacer.replace(ParamDeclRefAttr::get(param))));
-  SymbolConstantAttr symbolConstant =
-      SymbolConstantAttr::get(ctx, implSymbol, params, baseSigGen);
-  return symbolConstant;
+static FuncSymbolGenerator
+buildSymbol(ParameterEvaluationContext &evalCtx, FnOp impl,
+            ArrayRef<ParamDeclAttr> structLevelParams) {
+  SmallVector<TypedAttr> bindings;
+  for (ParamDeclAttr param : structLevelParams)
+    bindings.push_back(ParamDeclRefAttr::get(param));
+  return impl.getBoundSymbolRef(
+      evalCtx, ParameterExprArrayAttr::get(impl.getContext(), bindings));
 }
 
 static size_t explicitParamCount(FnOp fn) {
@@ -603,7 +588,8 @@ static FnOp emitStorageCallWitness(
     return paramRef;
   });
 
-  TypedAttr calleeSymbol = buildSymbol(promotedCall, structOp.getInputParams());
+  TypedAttr calleeSymbol = buildSymbol(shared.getEvaluationContext(),
+                                       promotedCall, structOp.getInputParams());
   SmallVector<TypedAttr> paramArgs;
   for (ParamDeclAttr param : callParameters.drop_front(extraAux)) {
     Type paramType = cast<Type>(aliasReplacer.replace(param.getType()));
@@ -756,9 +742,10 @@ void ClosureEmitter::addTrivialClosureLifecycle(
     witnessDecl.resolvedness = DeclResolvedness::body;
     Block &block = witnessTable.getBody().emplaceBlock();
     b.setInsertionPointToStart(&block);
-    SymbolConstantAttr symbolConstant = buildSymbol(impl, declOp.getParams());
+    FuncSymbolGenerator symbol =
+        buildSymbol(shared.getEvaluationContext(), impl, declOp.getParams());
     WitnessOp::create(b, parent.getWitnessName(), /*sym_visibility=*/nullptr,
-                      symbolConstant);
+                      symbol);
   };
 
   // The constructor is a no-op: the struct carries only compile-time
@@ -888,7 +875,8 @@ ClosureEmitter::getInflatedClosureForFnSymbol(IREmitter &emitter, SMLoc loc,
         };
         addConformanceTable(
             structDecl, callParent,
-            {{"__call__", buildSymbol(callMethod, structParams)}});
+            {{"__call__", buildSymbol(shared.getEvaluationContext(), callMethod,
+                                      structParams)}});
 
         addStorageConformanceToDevicePassable(structDecl, {}, extName);
         return declOp;
@@ -1957,7 +1945,8 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
     assert(it != methodImpls.end() &&
            "non-marker closure method missing an implementation");
 
-    TypedAttr symbol = buildSymbol(it->second, structOp.getInputParams());
+    TypedAttr symbol = buildSymbol(shared.getEvaluationContext(), it->second,
+                                   structOp.getInputParams());
     WitnessOp::create(builder, closureParent.getWitnessName(),
                       /*sym_visibility=*/nullptr, symbol);
   };
@@ -2816,8 +2805,8 @@ void ClosureEmitter::addConformanceToDevicePassable(
 
   for (Operation &member : trait.getFields().getOps()) {
     if (auto function = dyn_cast<FnOp>(member)) {
-      FailureOr<SymbolConstantAttr> witness =
-          [&]() -> FailureOr<SymbolConstantAttr> {
+      FailureOr<FuncSymbolGenerator> witness =
+          [&]() -> FailureOr<FuncSymbolGenerator> {
         if (function.getSourceName() == kIsDeviceTypeConvertible)
           return populators.isConvertible(function);
         if (function.getSourceName() == kIsImplicitlyEncodableTo)
@@ -2875,7 +2864,7 @@ void ClosureEmitter::addStorageConformanceToDevicePassable(
 
   TypedAttr deviceTypeValue;
   auto populateIsConvertible =
-      [&](FnOp function) -> FailureOr<SymbolConstantAttr> {
+      [&](FnOp function) -> FailureOr<FuncSymbolGenerator> {
     auto [implementation, parameters, result] = pushBackTraitFunctionImpl(
         function.getFullSignature(), structDecl, /*synthetic=*/true,
         function.getSourceNameAttr(), function.getSpecialFunctionKind(),
@@ -2884,10 +2873,11 @@ void ClosureEmitter::addStorageConformanceToDevicePassable(
         pushFnDebugScope(shared, implementation);
     emitIsConvertibleToDeviceTypeBody(implementation, parameters, b,
                                       deviceTypeValue);
-    return buildSymbol(implementation, structDeclOp.getInputParams());
+    return buildSymbol(shared.getEvaluationContext(), implementation,
+                       structDeclOp.getInputParams());
   };
   auto populateIsEncodable =
-      [&](FnOp function) -> FailureOr<SymbolConstantAttr> {
+      [&](FnOp function) -> FailureOr<FuncSymbolGenerator> {
     auto [implementation, parameters, result] = pushBackTraitFunctionImpl(
         function.getFullSignature(), structDecl,
         /*synthetic=*/true, function.getSymNameAttr(),
@@ -2896,10 +2886,11 @@ void ClosureEmitter::addStorageConformanceToDevicePassable(
     DebugInfo::DIBuilder::ScopeGuard diScopeGuard =
         pushFnDebugScope(shared, implementation);
     cloneTraitDefaultBody(implementation, function, structDecl);
-    return buildSymbol(implementation, structDeclOp.getInputParams());
+    return buildSymbol(shared.getEvaluationContext(), implementation,
+                       structDeclOp.getInputParams());
   };
   auto populateToDeviceType =
-      [&](FnOp function) -> FailureOr<SymbolConstantAttr> {
+      [&](FnOp function) -> FailureOr<FuncSymbolGenerator> {
     auto [toDevice, params, result] = pushBackTraitFunctionImpl(
         function.getFullSignature(), structDecl, /*synthetic=*/true,
         function.getSourceNameAttr(), function.getSpecialFunctionKind(),
@@ -2940,9 +2931,10 @@ void ClosureEmitter::addStorageConformanceToDevicePassable(
         KGEN::ParamConstantOp::create(b, KGEN::NoneAttr::get(b.getContext()));
     IREmitter::emitNormalReturn(b, noneAttr);
 
-    return buildSymbol(toDevice, structDeclOp.getInputParams());
+    return buildSymbol(shared.getEvaluationContext(), toDevice,
+                       structDeclOp.getInputParams());
   };
-  auto populateTypeName = [&](FnOp function) -> FailureOr<SymbolConstantAttr> {
+  auto populateTypeName = [&](FnOp function) -> FailureOr<FuncSymbolGenerator> {
     auto [implementation, _, result] = pushBackTraitFunctionImpl(
         function.getFullSignature(), structDecl, /*synthetic=*/true,
         function.getSourceNameAttr(), function.getSpecialFunctionKind(),
@@ -2951,7 +2943,8 @@ void ClosureEmitter::addStorageConformanceToDevicePassable(
         pushFnDebugScope(shared, implementation);
     auto closureName = StringAttr::get(name, StringType::get(ctx));
     populateDevicePassableTypeName(implementation, structDecl, closureName);
-    return buildSymbol(implementation, structDeclOp.getInputParams());
+    return buildSymbol(shared.getEvaluationContext(), implementation,
+                       structDeclOp.getInputParams());
   };
   auto populateDeviceType = [&]() {
     deviceTypeValue = TypeParamAttr::get(

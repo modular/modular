@@ -192,10 +192,10 @@ private:
                             StringAttr fnName, SpecialFunctionKind specialFnID,
                             InlineLevel inlineLevel);
   struct DevicePassablePopulators {
-    llvm::function_ref<FailureOr<SymbolConstantAttr>(FnOp)> isConvertible;
-    llvm::function_ref<FailureOr<SymbolConstantAttr>(FnOp)> isEncodable;
-    llvm::function_ref<FailureOr<SymbolConstantAttr>(FnOp)> toDeviceType;
-    llvm::function_ref<FailureOr<SymbolConstantAttr>(FnOp)> typeName;
+    llvm::function_ref<FailureOr<FuncSymbolGenerator>(FnOp)> isConvertible;
+    llvm::function_ref<FailureOr<FuncSymbolGenerator>(FnOp)> isEncodable;
+    llvm::function_ref<FailureOr<FuncSymbolGenerator>(FnOp)> toDeviceType;
+    llvm::function_ref<FailureOr<FuncSymbolGenerator>(FnOp)> typeName;
     llvm::function_ref<TypedAttr()> deviceType;
   };
   /// Add DevicePassable conformance using callbacks that populate each

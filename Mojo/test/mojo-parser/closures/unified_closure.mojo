@@ -52,9 +52,9 @@
 # S0: lit.fn @"my_closure{{.*}}"[mut {{.*}}](%{{.*}}: !lit.ref<!storage{{.*}}, mut {{.*}}> imm_mem, |, %y: {{.*}}) -> {{.*}}
 # S0: lit.fn @"__init__(move:{{.*}}::my_closure::__storage$)"
 # S0: lit.fn @"__deinit__({{.*}}::my_closure::__storage$)"
-# S0: kgen.witness "__call__" : {{.*}} = #kgen.symbol.constant<@{{.*}}::@"{{.*}}::my_closure::__storage"::@"__call__{{.*}}"
-# S0: kgen.witness "__init__(move:$0$)" : {{.*}} = #kgen.symbol.constant<@{{.*}}::@"{{.*}}::my_closure::__storage"::@"__init__(move:
-# S0: kgen.witness "__deinit__{{.*}}" : {{.*}} = #kgen.symbol.constant<@{{.*}}::@"{{.*}}::my_closure::__storage"::@"__deinit__(
+# S0: kgen.witness "__call__" : {{.*}} = @{{.*}}::@"{{.*}}::my_closure::__storage"::@"__call__{{.*}}"
+# S0: kgen.witness "__init__(move:$0$)" : {{.*}} = @{{.*}}::@"{{.*}}::my_closure::__storage"::@"__init__(move:
+# S0: kgen.witness "__deinit__{{.*}}" : {{.*}} = @{{.*}}::@"{{.*}}::my_closure::__storage"::@"__deinit__(
 # S0-NOT: lit.struct.decl @"extension${{.*}}"
 
 
@@ -129,7 +129,7 @@ def s3_make_closure(x: Int, mem: String) -> Int:
 # S4-SAME: :param_list<type> [#kgen.quote<!lit.ref<!String, mut *(0,1)>>, #kgen.quote<!lit.ref<!String, imm *[0,1]>>], :type #kgen.quote<none>
 # S4-SAME: >) attributes {{{.*}}synthetic}
 # S4: kgen.conformance @"##__mojo_closure__##"<:param_list<type> [#kgen.quote<origin<true>>
-# S4-DAG: kgen.witness "__call__" : {{.*}} = #kgen.symbol.constant<@{{.*}}::@"{{.*}}::mutate::__storage"::@"__call__{{.*}}"
+# S4-DAG: kgen.witness "__call__" : {{.*}} = @{{.*}}::@"{{.*}}::mutate::__storage"::@"__call__{{.*}}"
 # S4-NOT: lit.struct.decl @"extension$
 
 
@@ -243,11 +243,11 @@ def nested[
 # S11-DAG: lit.struct.decl @"closure$s11_bindIt(::SIMD[DType.int, 1],::SIMD[DType.int, 1],::String)::myclosure::__storage"
 # S11-DAG: kgen.conformance @{{.*}}::@AnyType {
 # S11-DAG: kgen.conformance @{{.*}}::@Deinitable {
-# S11-DAG: kgen.witness "__deinit__{{.*}}" : {{.*}} = #kgen.symbol.constant<@{{.*}}::@"closure$s11_bindIt{{.*}}::myclosure::__storage"::@"__deinit__
+# S11-DAG: kgen.witness "__deinit__{{.*}}" : {{.*}} = @{{.*}}::@"closure$s11_bindIt{{.*}}::myclosure::__storage"::@"__deinit__
 # S11-DAG: kgen.conformance @{{.*}}::@Movable {
-# S11-DAG: kgen.witness "__init__(move:$0$)" : {{.*}} = #kgen.symbol.constant<@{{.*}}::@"closure$s11_bindIt{{.*}}::myclosure::__storage"::@"__init__(move:
+# S11-DAG: kgen.witness "__init__(move:$0$)" : {{.*}} = @{{.*}}::@"closure$s11_bindIt{{.*}}::myclosure::__storage"::@"__init__(move:
 # S11-DAG: kgen.conformance @"##__mojo_closure__##"<{{.*}}<"", pos, not_vararg>, <"z", pos_or_kw, not_vararg>]>>> {
-# S11-DAG: kgen.witness "__call__" : {{.*}} = #kgen.symbol.constant<@{{.*}}::@"closure$s11_bindIt{{.*}}::myclosure::__storage"::@"__call__
+# S11-DAG: kgen.witness "__call__" : {{.*}} = @{{.*}}::@"closure$s11_bindIt{{.*}}::myclosure::__storage"::@"__call__
 
 
 def s11_bindIt(x: Int, y: Int, mem: String) -> Int:
@@ -260,7 +260,7 @@ def s11_bindIt(x: Int, y: Int, mem: String) -> Int:
 # S12: lit.struct.decl @"closure$s12_bindIt({{.*}})::myclosure::__storage"
 # S12: kgen.witness "__call__{{.*}}" : !lit.generator<<"my_param": !AnyType>
 # S12-SAME: [1](!lit.ref<{{.*}}, mut *[0,0]> imm_mem, |, "z": !Int{{.*}}) -> !kgen.none>
-# S12-SAME: = #kgen.symbol.constant<@{{.*}}::@"closure$s12_bindIt({{.*}})::myclosure::__storage"::@"__call__{{.*}}"
+# S12-SAME: = @{{.*}}::@"closure$s12_bindIt({{.*}})::myclosure::__storage"::@"__call__{{.*}}"
 
 # S12-DAG: lit.file_module
 
@@ -288,7 +288,7 @@ def nonemptyOriginSet(mut byRefMut: String):
 # COM: still holds.
 # S14-DAG: lit.struct.decl @"closure$s14_bindIt{{.*}}::myclosure::__storage"
 # S14-DAG: kgen.conformance @"##__mojo_closure__##"<{{.*}}<"", pos, not_vararg>, <"x", pos_or_kw, not_vararg>]>>> {
-# S14-DAG: kgen.witness "__call__" : {{.*}} = #kgen.symbol.constant<@{{.*}}::@"closure$s14_bindIt{{.*}}::myclosure::__storage"::@"__call__$trait
+# S14-DAG: kgen.witness "__call__" : {{.*}} = @{{.*}}::@"closure$s14_bindIt{{.*}}::myclosure::__storage"::@"__call__$trait
 # S14-DAG: lit.fn @"s14_takeIt{{.*}}"<C: trait<@"##__mojo_closure__##"{{.*}}<"", pos, not_vararg>, <"", pos, not_vararg>]>>
 
 
@@ -309,7 +309,7 @@ def s14_bindIt(z: Int, mem: String):
 # COM: part of a `Copyable & ...` composition.
 # S15-DAG: lit.struct.decl @"closure$s15_bindIt{{.*}}::myclosure::__storage"
 # S15-DAG: kgen.conformance @"##__mojo_closure__##"<{{.*}}<"", pos, not_vararg>, <"x", pos_or_kw, not_vararg>]>>> {
-# S15-DAG: kgen.witness "__call__" : {{.*}} = #kgen.symbol.constant<@{{.*}}::@"closure$s15_bindIt{{.*}}::myclosure::__storage"::@"__call__$trait
+# S15-DAG: kgen.witness "__call__" : {{.*}} = @{{.*}}::@"closure$s15_bindIt{{.*}}::myclosure::__storage"::@"__call__$trait
 # S15-DAG: lit.fn @"s15_takeIt{{.*}}"<C: trait<@"##__mojo_closure__##"{{.*}}<"", pos, not_vararg>, <"y", pos_or_kw, not_vararg>]>>
 
 
@@ -330,7 +330,7 @@ def s15_bindIt(z: Int, mem: String):
 # COM: The witness keeps the closure's own names; the caller's binding renames.
 # S17-DAG: lit.struct.decl @"closure$s17_bindIt{{.*}}::myclosure::__storage"
 # S17-DAG: kgen.conformance @"##__mojo_closure__##"<{{.*}}<"", pos, not_vararg>, <"b", pos_or_kw, not_vararg>]>>> {
-# S17-DAG: kgen.witness "__call__" : !lit.generator<<"a": !Int{{[0-9]*}}>{{.*}}, "b": !Int{{[0-9]*}}) -> {{.*}} = #kgen.symbol.constant<@{{.*}}::@"closure$s17_bindIt{{.*}}::myclosure::__storage"::@"__call__$trait
+# S17-DAG: kgen.witness "__call__" : !lit.generator<<"a": !Int{{[0-9]*}}>{{.*}}, "b": !Int{{[0-9]*}}) -> {{.*}} = @{{.*}}::@"closure$s17_bindIt{{.*}}::myclosure::__storage"::@"__call__$trait
 # S17-DAG: lit.fn @"s17_takeIt{{.*}}"<C: trait<@"##__mojo_closure__##"{{.*}}<"", pos, not_vararg>, <"y", pos_or_kw, not_vararg>]>>
 
 
