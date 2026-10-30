@@ -492,19 +492,9 @@ def execute_dual_cache_fused[
                 iq_mm += 1
             iq_maxdiff = max(iq_maxdiff, abs(a - b))
     print(
-        "Q out: ",
-        q_mm,
-        " over-tol / ",
-        total_length * q_dim,
-        ", max_abs_diff=",
-        q_maxdiff,
-        "  IndexQ out: ",
-        iq_mm,
-        " over-tol / ",
-        total_length * iq_dim,
-        ", max_abs_diff=",
-        iq_maxdiff,
-        sep="",
+        t"Q out: {q_mm} over-tol / {total_length * q_dim},"
+        t" max_abs_diff={q_maxdiff}  IndexQ out: {iq_mm} over-tol /"
+        t" {total_length * iq_dim}, max_abs_diff={iq_maxdiff}"
     )
     assert_equal(q_mm, 0)
     assert_equal(iq_mm, 0)
@@ -537,22 +527,12 @@ def execute_dual_cache_fused[
         index_max_diff = max(index_max_diff, abs(a - b))
 
     print(
-        "main cache: ",
-        main_mismatches,
-        " over-tol / ",
-        main_n,
-        " slots, max_abs_diff=",
-        main_max_diff,
-        sep="",
+        t"main cache: {main_mismatches} over-tol / {main_n} slots,"
+        t" max_abs_diff={main_max_diff}"
     )
     print(
-        "index cache: ",
-        index_mismatches,
-        " over-tol / ",
-        index_n,
-        " slots, max_abs_diff=",
-        index_max_diff,
-        sep="",
+        t"index cache: {index_mismatches} over-tol / {index_n} slots,"
+        t" max_abs_diff={index_max_diff}"
     )
 
     assert_equal(main_mismatches, 0)

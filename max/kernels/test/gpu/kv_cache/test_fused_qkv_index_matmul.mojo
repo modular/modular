@@ -449,56 +449,20 @@ def execute_dual_cache_fused_bf16[
             index_max_rel = max(index_max_rel, d / abs(b))
 
     print(
-        "  Q      : ",
-        q_mism,
-        "/",
-        total_length * q_dim,
-        " differ, ",
-        q_viol,
-        " beyond tol, max_abs=",
-        q_max_abs,
-        " max_rel=",
-        q_max_rel,
-        sep="",
+        t"  Q      : {q_mism}/{total_length * q_dim} differ, {q_viol} beyond"
+        t" tol, max_abs={q_max_abs} max_rel={q_max_rel}"
     )
     print(
-        "  IndexQ : ",
-        iq_mism,
-        "/",
-        total_length * iq_dim,
-        " differ, ",
-        iq_viol,
-        " beyond tol, max_abs=",
-        iq_max_abs,
-        " max_rel=",
-        iq_max_rel,
-        sep="",
+        t"  IndexQ : {iq_mism}/{total_length * iq_dim} differ, {iq_viol} beyond"
+        t" tol, max_abs={iq_max_abs} max_rel={iq_max_rel}"
     )
     print(
-        "  mainKV : ",
-        main_mism,
-        "/",
-        main_n,
-        " differ, ",
-        main_viol,
-        " beyond tol, max_abs=",
-        main_max_abs,
-        " max_rel=",
-        main_max_rel,
-        sep="",
+        t"  mainKV : {main_mism}/{main_n} differ, {main_viol} beyond tol,"
+        t" max_abs={main_max_abs} max_rel={main_max_rel}"
     )
     print(
-        "  indexK : ",
-        index_mism,
-        "/",
-        index_n,
-        " differ, ",
-        index_viol,
-        " beyond tol, max_abs=",
-        index_max_abs,
-        " max_rel=",
-        index_max_rel,
-        sep="",
+        t"  indexK : {index_mism}/{index_n} differ, {index_viol} beyond tol,"
+        t" max_abs={index_max_abs} max_rel={index_max_rel}"
     )
 
     # The accuracy check: no element may exceed |a-b| <= atol + rtol*|ref|.

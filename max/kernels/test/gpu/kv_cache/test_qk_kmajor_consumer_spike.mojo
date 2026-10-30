@@ -301,18 +301,8 @@ def run_qk_consumer[
     comptime block_dim = 128
 
     print(
-        "qk_kmajor_consumer pagedense="
-        + String(use_pagedense)
-        + " MNK="
-        + String(M)
-        + "x"
-        + String(N)
-        + "x"
-        + String(K)
-        + " gran="
-        + String(gran)
-        + " num_chunks(BK/gran)="
-        + String(K // gran)
+        t"qk_kmajor_consumer"
+        t" pagedense={use_pagedense} MNK={M}x{N}x{K} gran={gran} num_chunks(BK/gran)={K // gran}"
     )
 
     var q = HostDeviceTileTensor[ab_type](row_major[M, K](), ctx)
@@ -426,14 +416,8 @@ def run_qk_consumer[
             except e:
                 if mismatches < 8:
                     print(
-                        "  MISMATCH ["
-                        + String(m)
-                        + ","
-                        + String(n)
-                        + "] got="
-                        + String(o_host[m, n])
-                        + " ref="
-                        + String(o_host_ref[m, n])
+                        t"  MISMATCH [{m},{n}]"
+                        t" got={o_host[m, n]} ref={o_host_ref[m, n]}"
                     )
                 mismatches += 1
     if mismatches == 0:

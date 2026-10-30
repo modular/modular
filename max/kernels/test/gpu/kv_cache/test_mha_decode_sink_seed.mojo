@@ -49,16 +49,9 @@ def test_decode_with_sink[
     comptime group = num_q_heads // kv_params.num_heads
 
     print(
-        "decode sink: heads=",
-        num_q_heads,
-        "kv_heads=",
-        kv_params.num_heads,
-        "head_size=",
-        head_size,
-        "cache_len=",
-        cache_len,
-        "sink_logit=",
-        sink_logit,
+        t"decode sink: heads= {num_q_heads} kv_heads="
+        t" {kv_params.num_heads} head_size= {head_size} cache_len="
+        t" {cache_len} sink_logit= {sink_logit}"
     )
 
     var total_length = 1

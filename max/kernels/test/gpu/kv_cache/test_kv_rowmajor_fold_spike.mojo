@@ -326,34 +326,12 @@ def run_spike[
     comptime atom_rows_per_page = page_size // CM
 
     print(
-        "run_spike: via_builder=",
-        via_builder,
-        " via_issue_site=",
-        via_issue_site,
-        " dtype=",
-        dtype,
-        " num_heads=",
-        num_heads,
-        " head_size=",
-        head_size,
-        " BN=",
-        BN,
-        " page_size=",
-        page_size,
-        " head_idx=",
-        head_idx,
-        " gran=",
-        gran,
-        " CM=",
-        CM,
-        " num_chunks=",
-        num_chunks,
-        " num_atom_rows=",
-        num_atom_rows,
-        " pages_per_iter=",
-        pages_per_iter,
-        " atom_rows_per_page=",
-        atom_rows_per_page,
+        t"run_spike: via_builder= {via_builder}  via_issue_site="
+        t" {via_issue_site}  dtype= {dtype}  num_heads= {num_heads}  head_size="
+        t" {head_size}  BN= {BN}  page_size= {page_size}  head_idx= {head_idx} "
+        t" gran= {gran}  CM= {CM}  num_chunks= {num_chunks}  num_atom_rows="
+        t" {num_atom_rows}  pages_per_iter= {pages_per_iter} "
+        t" atom_rows_per_page= {atom_rows_per_page}"
     )
     comptime assert pages_per_iter >= 1
     comptime assert (
@@ -504,18 +482,8 @@ def run_spike[
         rem = rem % per_chunk
         var rr, g = divmod(rem, gran)
         print(
-            "  first-mismatch decode (chunk-inner): page=",
-            page,
-            " atom_row=",
-            atom_row,
-            " chunk=",
-            chunk,
-            " rr=",
-            rr,
-            " g=",
-            g,
-            " ref=",
-            "(see device)",
+            t"  first-mismatch decode (chunk-inner): page= {page}  atom_row="
+            t" {atom_row}  chunk= {chunk}  rr= {rr}  g= {g}  ref= (see device)"
         )
 
     assert_equal(Int(mismatch_host[0]), 0)

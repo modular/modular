@@ -427,12 +427,8 @@ def execute_flash_attention_suite[
 
             # GQA group=16 (405B TP=8 shape)
             print(
-                "TG",
-                bs,
-                type,
-                "q_heads//kv_heads = 16//1",
-                "cache_sizes=",
-                tg_cache_sizes,
+                t"TG {bs} {type} q_heads//kv_heads = 16//1 cache_sizes="
+                t" {tg_cache_sizes}"
             )
             execute_ragged_flash_attention[
                 16,
@@ -473,14 +469,8 @@ def main() raises:
         # Stress test paged decode with many seeds
         var fail_count = 0
         print(
-            "Paged Decode Stress [num_q_heads=",
-            num_q_heads,
-            ", num_heads=",
-            kv_num_heads,
-            ", depth=",
-            head_size_val,
-            "]:",
-            sep="",
+            t"Paged Decode Stress [num_q_heads={num_q_heads},"
+            t" num_heads={kv_num_heads}, depth={head_size_val}]:"
         )
         for s in range(20):
             seed(s)
@@ -520,12 +510,7 @@ def main() raises:
         comptime for ws_idx in range(len(sliding_windows)):
             comptime window_size = sliding_windows[ws_idx]
             seed(42 + window_size)
-            print(
-                "Sliding-window suite [window_size=",
-                window_size,
-                "]:",
-                sep="",
-            )
+            print(t"Sliding-window suite [window_size={window_size}]:")
             execute_flash_attention_suite[
                 num_q_heads,
                 KVCacheStaticParams(

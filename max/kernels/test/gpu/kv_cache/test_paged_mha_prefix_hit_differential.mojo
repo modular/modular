@@ -306,17 +306,8 @@ def test_prefill_prefix_hit[
     assert_true(P % PAGE_SIZE == 0, "P must be page-aligned")
     comptime head_kv = num_q_heads // group
     print(
-        "  [Layer B prefill] L=",
-        L,
-        " P=",
-        P,
-        " head_q=",
-        num_q_heads,
-        " head_kv=",
-        head_kv,
-        " group=",
-        group,
-        sep="",
+        t"  [Layer B prefill]"
+        t" L={L} P={P} head_q={num_q_heads} head_kv={head_kv} group={group}"
     )
 
     var row_w = num_q_heads * head_dim
@@ -373,17 +364,8 @@ def test_prefill_prefix_hit[
                     if first_bad < 0:
                         first_bad = a
                         print(
-                            "    DIVERGE prefill abs_pos=",
-                            a,
-                            " h=",
-                            h,
-                            " d=",
-                            d,
-                            " COLD=",
-                            c,
-                            " HIT=",
-                            hh,
-                            sep="",
+                            t"    DIVERGE prefill"
+                            t" abs_pos={a} h={h} d={d} COLD={c} HIT={hh}"
                         )
     assert_equal(
         mismatches,
@@ -398,7 +380,7 @@ def test_prefill_prefix_hit[
             ") -> prefix-hit / cache_length handling bug",
         ),
     )
-    print("    prefill O MATCHES (max_abs=", max_abs, ")", sep="")
+    print(t"    prefill O MATCHES (max_abs={max_abs})")
     _ = cold_q
     _ = hit_q
     _ = kv_rand
@@ -425,19 +407,8 @@ def test_decode_page_layout[
     var total_keys = cache_length + 1  # decode: 1 new token + the prefix
     var num_pages = ceildiv(total_keys, PAGE_SIZE)
     print(
-        "  [Layer D decode page-layout] cache_length=",
-        cache_length,
-        " total_keys=",
-        total_keys,
-        " num_pages=",
-        num_pages,
-        " head_q=",
-        num_q_heads,
-        " head_kv=",
-        head_kv,
-        " group=",
-        group,
-        sep="",
+        t"  [Layer D decode page-layout]"
+        t" cache_length={cache_length} total_keys={total_keys} num_pages={num_pages} head_q={num_q_heads} head_kv={head_kv} group={group}"
     )
 
     var row_w = num_q_heads * head_dim
@@ -496,13 +467,8 @@ def test_decode_page_layout[
             if first_bad < 0:
                 first_bad = i
                 print(
-                    "    DIVERGE decode i=",
-                    i,
-                    " identity=",
-                    o_cold[i],
-                    " reversed=",
-                    o_hit[i],
-                    sep="",
+                    t"    DIVERGE decode"
+                    t" i={i} identity={o_cold[i]} reversed={o_hit[i]}"
                 )
     assert_equal(
         mismatches,
@@ -552,21 +518,8 @@ def test_prefill_partial_block_nan_canary[
     var num_pages = ceildiv(L, PAGE_SIZE)
     var phys_tokens = num_pages * PAGE_SIZE
     print(
-        "  [Layer E partial-block] L=",
-        L,
-        " P=",
-        P,
-        " tail=[",
-        L,
-        ",",
-        phys_tokens,
-        ") head_q=",
-        num_q_heads,
-        " group=",
-        group,
-        " garbage_tail=",
-        garbage_tail,
-        sep="",
+        t"  [Layer E partial-block] L={L} P={P} tail=[{L},{phys_tokens})"
+        t" head_q={num_q_heads} group={group} garbage_tail={garbage_tail}"
     )
 
     var row_w = num_q_heads * head_dim
@@ -637,30 +590,12 @@ def test_prefill_partial_block_nan_canary[
                     if first_bad < 0:
                         first_bad = a
                         print(
-                            "    DIVERGE partial abs_pos=",
-                            a,
-                            " h=",
-                            h,
-                            " d=",
-                            d,
-                            " COLD=",
-                            c,
-                            " HIT=",
-                            hh,
-                            sep="",
+                            t"    DIVERGE partial"
+                            t" abs_pos={a} h={h} d={d} COLD={c} HIT={hh}"
                         )
     print(
-        "    partial-block O: max_abs=",
-        max_abs,
-        " last_row(pos ",
-        L - 1,
-        ")_max_abs=",
-        last_row_max,
-        " nan_agree=",
-        nan_agree,
-        " nan_solo=",
-        nan_solo,
-        sep="",
+        t"    partial-block O: max_abs={max_abs} last_row(pos"
+        t" {L - 1})_max_abs={last_row_max} nan_agree={nan_agree} nan_solo={nan_solo}"
     )
     # Loud characterization signal: invariance holds (nan_solo==0), but the
     # kernel produced a NaN at EVERY overlapping output element -- it reads the
@@ -672,12 +607,8 @@ def test_prefill_partial_block_nan_canary[
     var overlap = (L - P) * num_q_heads * head_dim
     if nan_solo == 0 and nan_agree == overlap and overlap > 0:
         print(
-            "    NOTE symmetric-NaN-leak: ",
-            nan_agree,
-            "/",
-            overlap,
-            " outputs NaN in BOTH configs (invariant, but tail NaN not masked)",
-            sep="",
+            t"    NOTE symmetric-NaN-leak: {nan_agree}/{overlap} outputs NaN in"
+            t" BOTH configs (invariant, but tail NaN not masked)"
         )
     assert_equal(
         mismatches,
