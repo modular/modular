@@ -83,6 +83,7 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_grouped_matmul_small_k.mojo": ["//:b200_gpu"],
+    "test_grouped_matmul_pdl.mojo": ["//:b200_gpu"],
     "test_grouped_matmul_rowwise_scaled_fp8.mojo": select({
         # FIXME: MOCO-4405 — Metal compile exceeds the 900s ceiling since the
         # union byte-array lowering change (#91813).
@@ -411,6 +412,7 @@ _GPU_MEMORY = {
     "test_grouped_block_scaled_gemm_nvfp4_execution.mojo": "1.5",
     "test_grouped_matmul.mojo": "8",
     "test_grouped_matmul_nvfp4_dispatch.mojo": "1.5",
+    "test_grouped_matmul_pdl.mojo": "4",
     # The M3-shape dispatch cases hold two N=K=6144 expert weight copies.
     "test_swiglu_epilogue_amd.mojo": "1",
     "test_grouped_matmul_sm100_block_fp4.mojo": "1.5",

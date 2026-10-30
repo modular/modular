@@ -1553,8 +1553,10 @@ def blackwell_tma_umma_warp_specialized_kernel[
             CUDA-core fallback (defaults to `type_of(row_major[1, 1]())`).
         pdl_level: Programmatic dependent launch level; above `PDLLevel.OFF`
             the kernel waits for the predecessor grid immediately before
-            reading `expert_usage_stats` and releases dependent grids at the
-            end of the body (defaults to `PDLLevel()`, which is off).
+            reading `expert_usage_stats`. `PDLLevel.OVERLAP_AT_BEGINNING`
+            releases dependent grids after the TMEM allocation, any other
+            level at the end of the body (defaults to `PDLLevel()`, which is
+            off).
 
     Args:
         expert_usage_stats: Pointer to per-expert usage stats; index 1 holds
@@ -1763,7 +1765,10 @@ def blackwell_tma_umma_warp_specialized_kernel[
     # predecessor grid is still finishing. `expert_usage_stats` is written by
     # the MoE index kernel that precedes us, so the wait goes immediately
     # before its first read -- after the TMA descriptor prefetch and the
-    # mbarrier/cluster setup, and before any global load.
+    # mbarrier/cluster setup, and before any global load. `b_offsets` is also
+    # written by the predecessor, so the scheduler reads it with plain loads
+    # under PDL: ptxas hoists an invariant `ld.global.nc` of `b_offsets[0]`
+    # above the wait.
     comptime if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
 
@@ -1785,6 +1790,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
             block_tile_shape[2],
         ),
         swapAB=transpose_c,
+        invariant_offsets=pdl_level == PDLLevel.OFF,
     ](num_active_experts, b_offsets_tensor)
 
     var work_info = scheduler.fetch_next_work()
@@ -1893,6 +1899,18 @@ def blackwell_tma_umma_warp_specialized_kernel[
         syncwarp()
         # non blocking, arrives and proceeds
         named_barrier_arrive[Int32(MMA_THREADS + EPILOGUE_THREADS)](1)
+
+        # The allocation stays below `wait_on_dependent_grids()`: a CTA that
+        # holds the SM's TMEM while it waits can deadlock against a
+        # predecessor CTA that released this grid before its own allocation
+        # and is still resident on the same SM. Releasing dependents here
+        # only decides when they are scheduled; their own wait still blocks
+        # until this grid has completed. A dependent launches only after every
+        # CTA of this grid has released it, so none is left unscheduled behind
+        # it, and each CTA already holds its TMEM, so a dependent that
+        # allocates TMEM before its own wait cannot starve this grid of it.
+        comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
+            launch_dependent_grids()
 
         var tmem_addr = ptr_tmem_addr[0]
 
@@ -2065,7 +2083,10 @@ def blackwell_tma_umma_warp_specialized_kernel[
     # Release the grids that depend on this one: every store has been issued by
     # the epilogue role above, and a dependent's own `wait_on_dependent_grids`
     # still blocks until this grid has completed and its stores are visible.
-    comptime if pdl_level > PDLLevel.OFF:
+    # (`OVERLAP_AT_BEGINNING` released them earlier, after the TMEM allocation.)
+    comptime if pdl_level > PDLLevel.OFF and (
+        pdl_level != PDLLevel.OVERLAP_AT_BEGINNING
+    ):
         launch_dependent_grids()
 
 
