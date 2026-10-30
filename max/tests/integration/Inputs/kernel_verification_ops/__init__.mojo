@@ -52,6 +52,17 @@ def my_add_shape(
     raise "NotImplemented"
 
 
+@extensibility.register("my_add_cpu_api", type="cpu", api="cpu")
+struct MyAddCpuApi:
+    @staticmethod
+    def execute(
+        output: OutputTensor,
+        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+        y: InputTensor[dtype=output.dtype, rank=output.rank, ...],
+    ):
+        output[0] = x[0] + y[0]
+
+
 @extensibility.register("op_with_device_context")
 struct OpWidthDeviceContext:
     @staticmethod

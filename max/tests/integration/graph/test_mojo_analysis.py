@@ -90,6 +90,31 @@ def test_my_add_valid(
     session.load(graph)
 
 
+def test_api_scoped_kernel_valid(
+    session: InferenceSession, kernel_verification_ops_path: Path
+) -> None:
+    # `ops.custom` verifies against a registry built over the kernel library
+    # alone; the device's `api` comes from the graph's device info mapping.
+    tensor_type = TensorType(DType.float32, [64], device=DeviceRef.CPU())
+    graph = Graph(
+        "test_api_scoped_kernel_valid",
+        input_types=[tensor_type, tensor_type],
+        output_types=[tensor_type],
+    )
+    with graph:
+        graph._import_kernels([kernel_verification_ops_path])
+        graph.output(
+            ops.custom(
+                "my_add_cpu_api",
+                device=DeviceRef.CPU(),
+                values=[graph.inputs[0], graph.inputs[1]],
+                out_types=[tensor_type],
+            )[0]
+        )
+
+    session.load(graph)
+
+
 def test_my_add_invalid_inputs_count(
     kernel_verification_ops_path: Path,
 ) -> None:

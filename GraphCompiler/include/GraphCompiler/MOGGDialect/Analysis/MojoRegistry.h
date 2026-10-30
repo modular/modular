@@ -70,6 +70,11 @@ public:
   ErrorOr<KernelDeclOp> getResolvedKernel(llvm::StringRef name,
                                           DeviceRefAttr device) const;
 
+  /// Like the overload above, but matches `deviceInfo` instead of looking the
+  /// device up in this registry's `mo.device_info_mapping`.
+  ErrorOr<KernelDeclOp> getResolvedKernel(llvm::StringRef name,
+                                          DeviceInfoAttr deviceInfo) const;
+
   /// Returns the first execution device of `op`, or the host device if none.
   static DeviceRefAttr getDeviceRefForOp(mlir::Operation *op);
 
