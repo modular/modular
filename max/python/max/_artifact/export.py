@@ -32,6 +32,7 @@ from max.nn.legacy.kv_cache import (
     RecurrentStateParams,
 )
 from max.pipelines.kv_cache import PagedKVCacheManagerInterface
+from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.lib.graph_specs import GraphRole, compile_roles_separately
 from max.pipelines.lib.interfaces import PipelineModelWithKVCache
@@ -40,6 +41,7 @@ from max.pipelines.lib.pipeline_variants.text_generation import (
     TextGenerationPipelineInterface,
 )
 from max.pipelines.lib.registry import PIPELINE_REGISTRY
+from max.pipelines.weights.hf_utils import HuggingFaceRepo
 from max.tensor.compilation import CompiledCallable
 from max.tensor.sharding import BufferLayout, TensorLayout
 
@@ -49,6 +51,7 @@ from .engine_config import (
     EngineSamplingConfig,
     EngineSpeculativeConfig,
 )
+from .format_spec import FormatSpec
 from .kv_cache import (
     KVCache,
     KVCacheLayout,
@@ -343,17 +346,41 @@ def _quantization(params: KVCacheParams) -> KVCacheQuantization | None:
     )
 
 
+def checkpoint_format_spec(
+    arch: SupportedArchitecture | None, repo: HuggingFaceRepo
+) -> Path | None:
+    """Returns the FormatSpec document the architecture names for a checkpoint.
+
+    Args:
+        arch: The pipeline's architecture.
+        repo: The checkpoint.
+
+    Returns:
+        The document's path, or ``None`` when the architecture names none.
+    """
+    if arch is None or arch.format_spec is None:
+        return None
+    if callable(arch.format_spec):
+        return arch.format_spec(repo)
+    return arch.format_spec
+
+
 def export_pipeline(
-    pipeline_config: PipelineConfig, path: str | os.PathLike[str]
+    pipeline_config: PipelineConfig,
+    path: str | os.PathLike[str],
+    format_spec: Path | None = None,
 ) -> Path:
     """Builds the pipeline for a config and writes it as a ``.m`` artifact.
 
     Builds the pipeline the same way serving does, so the artifact holds the
-    graphs a served pipeline compiles and the settings it is built with.
+    graphs a served pipeline compiles, the settings it is built with, and
+    the FormatSpec document of the checkpoint it serves.
 
     Args:
         pipeline_config: The pipeline's configuration.
         path: Where to write the artifact. ``.m`` is appended unless present.
+        format_spec: The FormatSpec document to store, in place of the one
+            the architecture names for the checkpoint.
 
     Returns:
         The path of the written artifact.
@@ -395,9 +422,17 @@ def export_pipeline(
         if isinstance(pipeline, SupportsKVManager)
         else None
     )
+    if format_spec is None:
+        format_spec = checkpoint_format_spec(
+            PIPELINE_REGISTRY.architecture_for_config(pipeline_config, task),
+            pipeline_config.model.huggingface_model_repo,
+        )
     written = serialize(
         ModelArtifact(
             model=model,
+            format_spec=(
+                FormatSpec(format_spec) if format_spec is not None else None
+            ),
             engine_config=engine_config,
             kv_cache=kv_cache,
             batch_processor=dims,

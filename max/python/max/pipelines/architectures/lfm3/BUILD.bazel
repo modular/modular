@@ -5,6 +5,7 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "lfm3",
     srcs = glob(["**/*.py"]),
+    data = ["formatspec.json"],
     deps = [
         requirement("transformers"),
         requirement("typing-extensions"),
@@ -22,4 +23,9 @@ modular_py_library(
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
     ],
+)
+
+exports_files(
+    ["formatspec.json"],
+    visibility = ["//formatspec:__subpackages__"],
 )

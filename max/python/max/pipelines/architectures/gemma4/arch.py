@@ -13,6 +13,7 @@
 """Registers Gemma 4 with the pipeline registry."""
 
 import dataclasses
+from pathlib import Path
 
 from max.experimental.cascade.pipelines.common_textgen import (
     CommonTextGenPipeline,
@@ -57,6 +58,7 @@ gemma4_arch = SupportedArchitecture(
     context_type=Gemma4Context,
     config=Gemma4ForConditionalGenerationConfig,
     tool_parser="gemma4",
+    format_spec=Path(__file__).parent / "formatspec.json",
     reasoning_parser="gemma4",
     memory_planner=Gemma4MemoryPlanner,
     cascade_pipeline_factory=CommonTextGenPipeline,

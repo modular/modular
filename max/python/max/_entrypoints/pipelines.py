@@ -1071,7 +1071,18 @@ def cli_warm_cache(target: str | None, **config_kwargs) -> None:
         " if missing. The path must not exist."
     ),
 )
-def cli_export(output: Path, **config_kwargs: Any) -> None:
+@click.option(
+    "--format-spec",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "The FormatSpec document to store in the artifact, in place of the"
+        " one the architecture names for the checkpoint."
+    ),
+)
+def cli_export(
+    output: Path, format_spec: Path | None, **config_kwargs: Any
+) -> None:
     """Build the pipeline and export it as a ``.m`` pipeline artifact.
 
     Takes the same pipeline options as ``serve`` and ``generate`` and builds
@@ -1086,7 +1097,7 @@ def cli_export(output: Path, **config_kwargs: Any) -> None:
         PipelineArgs.from_flat_kwargs(**config_kwargs)
     )
     try:
-        dest = export_pipeline(pipeline_config, output)
+        dest = export_pipeline(pipeline_config, output, format_spec)
     except ArtifactError as e:
         raise click.ClickException(str(e)) from e
     click.echo(f"Exported pipeline artifact to {dest}")

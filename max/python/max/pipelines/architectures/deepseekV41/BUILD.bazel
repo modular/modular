@@ -10,7 +10,10 @@ filegroup(
 modular_py_library(
     name = "deepseekV41",
     srcs = glob(["**/*.py"]),
-    data = [":recipe_configs"],
+    data = [
+        "formatspec.json",
+        ":recipe_configs",
+    ],
     # tokenizers is a transitive dependency of transformers but doesn't have
     # an unversioned bazel alias, so we need to ignore its unresolved imports
     # (used for Engram token normalization).
@@ -41,4 +44,9 @@ modular_py_library(
         "//max/python/max/profiler",
         "//max/python/max/support",
     ],
+)
+
+exports_files(
+    ["formatspec.json"],
+    visibility = ["//formatspec:__subpackages__"],
 )

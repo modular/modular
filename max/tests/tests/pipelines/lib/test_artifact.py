@@ -39,6 +39,7 @@ from max._artifact.engine_config import (
     EngineSamplingConfig,
     EngineSpeculativeConfig,
 )
+from max._artifact.format_spec import FormatSpec
 from max._artifact.kv_cache import (
     KVCacheLayout,
     KVPoolLeaf,
@@ -455,6 +456,7 @@ def test_component_types() -> None:
     assert ModelArtifact.component_types() == {
         **dict.fromkeys(ModelArtifact.component_slots()),
         "model": PipelineModules,
+        "format_spec": FormatSpec,
         "batch_processor": BatchProcessorDims,
         "engine_config": EngineConfig,
         "kv_cache": KVCacheLayout,
@@ -462,6 +464,7 @@ def test_component_types() -> None:
     assert FakeArtifact.component_types() == {
         **dict.fromkeys(ModelArtifact.component_slots()),
         "model": PipelineModules,
+        "format_spec": FormatSpec,
         "batch_processor": BatchProcessorDims,
         "engine_config": EngineConfig,
         "kv_cache": KVCacheLayout,
@@ -721,3 +724,24 @@ def test_malformed_kv_cache_rejected(
     _rewrite_sections(dest, sections)
     with pytest.raises(ArtifactError, match="component 'kv_cache'"):
         deserialize(dest)
+
+
+def test_format_spec_stored_unchanged(tmp_path: Path) -> None:
+    document = tmp_path / "spec.json"
+    document.write_text('{"format": "formatspec.spec", "spec_version": 1}\n')
+    dest = serialize(
+        ModelArtifact(format_spec=FormatSpec(document)), tmp_path / "a"
+    )
+    sections = json.loads((dest / "artifact.json").read_text())
+    assert sections["format_spec"] == {
+        "document": {"$file": "format_spec.json"}
+    }
+    assert (dest / "format_spec.json").read_bytes() == document.read_bytes()
+    assert deserialize(dest).format_spec == FormatSpec(
+        dest / "format_spec.json"
+    )
+
+
+def test_format_spec_document_must_be_a_file() -> None:
+    with pytest.raises(ArtifactError, match=r"format_spec\.document"):
+        FormatSpec.__deserialize__({"document": "spec.json"})

@@ -23,15 +23,36 @@ attention, experts NVFP4 in layers 1-39 and BF16 in layers 40-47), each on a
 single B200.
 """
 
+from pathlib import Path
+
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.lib.tokenizer import ReasoningTextTokenizer
 from max.pipelines.modeling.types import PipelineTask
+from max.pipelines.weights.hf_utils import HuggingFaceRepo
 
 from . import weight_adapters
 from .model import LagunaModel
 from .model_config import LagunaConfig
+
+
+def laguna_format_spec(repo: HuggingFaceRepo) -> Path | None:
+    """Returns the FormatSpec document of a Laguna checkpoint.
+
+    Args:
+        repo: The checkpoint.
+
+    Returns:
+        Laguna S-2.1's document, or ``None`` for the other checkpoints, which no
+        document describes yet.
+    """
+    return (
+        Path(__file__).parent / "formatspec.json"
+        if "laguna-s-2.1" in repo.repo_id.lower()
+        else None
+    )
+
 
 laguna_arch = SupportedArchitecture(
     name="LagunaForCausalLM",
@@ -57,4 +78,5 @@ laguna_arch = SupportedArchitecture(
     multi_gpu_supported=False,
     reasoning_parser="laguna",
     tool_parser="laguna",
+    format_spec=laguna_format_spec,
 )

@@ -34,6 +34,7 @@ from max._artifact.engine_config import (
 from max._artifact.export import (
     SupportsCompiledModules,
     batch_processor_dims,
+    checkpoint_format_spec,
     pipeline_engine_config,
     pipeline_kv_cache,
     pipeline_modules,
@@ -66,6 +67,7 @@ from max.nn.legacy.kv_cache import (
     RecurrentStateRegion,
 )
 from max.nn.legacy.transformer import DecoderOutputs, ReturnLogits
+from max.pipelines import lib as pipelines_lib
 from max.pipelines.lib import (
     GraphRole,
     GraphSpec,
@@ -231,6 +233,41 @@ def test_no_roles_are_refused() -> None:
 def _fake(**attrs: object) -> Any:
     """Stands in for an object that exposes only ``attrs``."""
     return SimpleNamespace(**attrs)
+
+
+def test_checkpoint_format_spec_is_the_architectures_document() -> None:
+    repo = _fake(repo_id="org/model")
+    assert checkpoint_format_spec(None, repo) is None
+    assert checkpoint_format_spec(_fake(format_spec=None), repo) is None
+    document = Path("spec.json")
+    assert checkpoint_format_spec(_fake(format_spec=document), repo) == document
+
+
+def test_checkpoint_format_spec_is_picked_per_checkpoint() -> None:
+    document = Path("spec.json")
+    arch = _fake(
+        format_spec=lambda repo: document if repo.repo_id == "org/new" else None
+    )
+    assert checkpoint_format_spec(arch, _fake(repo_id="org/new")) == document
+    assert checkpoint_format_spec(arch, _fake(repo_id="org/old")) is None
+
+
+@pytest.mark.parametrize(
+    "architecture",
+    [
+        "deepseekV41",
+        "gemma4",
+        "glm5_1",
+        "laguna",
+        "lfm3",
+        "mimo_v2",
+        "muse_glimmer",
+        "qwen3_5",
+    ],
+)
+def test_shipped_format_specs_are_packaged(architecture: str) -> None:
+    architectures = Path(pipelines_lib.__file__).parent.parent / "architectures"
+    assert (architectures / architecture / "formatspec.json").is_file()
 
 
 def test_batch_processor_dims_bound_a_bound_decoders_per_step_dims() -> None:

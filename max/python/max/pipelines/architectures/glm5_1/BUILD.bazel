@@ -10,7 +10,10 @@ filegroup(
 modular_py_library(
     name = "glm5_1",
     srcs = glob(["**/*.py"]),
-    data = [":recipe_configs"],
+    data = [
+        "formatspec.json",
+        ":recipe_configs",
+    ],
     ignore_extra_deps = [
         # Hooks added for convenience for when we want to print the model layers
         "//max/python/max/nn/legacy/hooks",
@@ -27,5 +30,11 @@ modular_py_library(
         "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/weights",
     ],
+)
+
+exports_files(
+    ["formatspec.json"],
+    visibility = ["//formatspec:__subpackages__"],
 )

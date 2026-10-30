@@ -12,12 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for ``max export``."""
 
+import hashlib
 import json
 import os
 from pathlib import Path
 
 from click.testing import CliRunner
 from max._artifact.batch_processor import BatchProcessorDims
+from max._artifact.format_spec import FormatSpec
 from max._artifact.serialization import deserialize
 from max._entrypoints import pipelines
 
@@ -53,6 +55,7 @@ def test_export_writes_the_graphs_by_role(tmp_path: Path) -> None:
     assert f"Exported pipeline artifact to {dest}" in result.output
 
     sections = json.loads((dest / "artifact.json").read_text())
+    assert "format_spec" not in sections
     section = sections["model"]
     assert set(section) == {"decoder", "sampler"}
     assert section["decoder"]["mef"] == {"$file": "decoder/model.mef"}
@@ -91,6 +94,33 @@ def test_export_names_the_decoder_inputs_and_bounds_each_step(
     }
     assert dims["replica_0_batch_size"] == 1
     assert deserialize(dest).batch_processor == BatchProcessorDims(dims)
+
+
+def test_export_stores_the_format_spec_it_is_given(tmp_path: Path) -> None:
+    document = tmp_path / "spec.json"
+    document.write_text('{"format": "formatspec.spec", "spec_version": 1}\n')
+    result = CliRunner().invoke(
+        pipelines.main,
+        [*_export_args(tmp_path / "spec"), "--format-spec", str(document)],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+    dest = tmp_path / "spec.m"
+
+    sections = json.loads((dest / "artifact.json").read_text())
+    assert sections["format_spec"] == {
+        "document": {"$file": "format_spec.json"}
+    }
+    stored = (dest / "format_spec.json").read_bytes()
+    assert stored == document.read_bytes()
+    metadata = json.loads((dest / "metadata.json").read_text())
+    assert (
+        metadata["files"]["format_spec.json"]
+        == hashlib.sha256(stored).hexdigest()
+    )
+    assert deserialize(dest).format_spec == FormatSpec(
+        dest / "format_spec.json"
+    )
 
 
 def test_export_refuses_an_existing_output(tmp_path: Path) -> None:

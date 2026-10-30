@@ -15,6 +15,7 @@
 import dataclasses
 
 from max.graph.weights import WeightsFormat
+from max.pipelines.architectures.gemma4.arch import gemma4_arch
 from max.pipelines.architectures.gemma4.context import Gemma4Context
 from max.pipelines.architectures.gemma4.memory_planner import (
     Gemma4MemoryPlanner,
@@ -54,6 +55,7 @@ gemma4_modulev3_arch = SupportedArchitecture(
     },
     config=Gemma4ForConditionalGenerationConfig,
     tool_parser="gemma4",
+    format_spec=gemma4_arch.format_spec,
     reasoning_parser="gemma4",
     batching=Gemma4ModuleV3BatchProcessor,
     memory_planner=Gemma4MemoryPlanner,

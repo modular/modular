@@ -5,6 +5,7 @@ package(default_visibility = ["//max:consumers"])
 modular_py_library(
     name = "mimo_v2",
     srcs = glob(["**/*.py"]),
+    data = ["formatspec.json"],
     deps = [
         requirement("huggingface-hub"),
         requirement("transformers"),
@@ -23,4 +24,9 @@ modular_py_library(
         "//max/python/max/pipelines/speculative",
         "//max/python/max/pipelines/weights",
     ],
+)
+
+exports_files(
+    ["formatspec.json"],
+    visibility = ["//formatspec:__subpackages__"],
 )

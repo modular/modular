@@ -49,6 +49,15 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_format_spec",
+    srcs = ["test_format_spec.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/glm5_1",
+        "//max/python/max/pipelines/weights",
+    ],
+)
+
+modular_py_test(
     name = "test_memory_planner",
     srcs = ["test_memory_planner.py"],
     tags = ["skip-external-ci"],
@@ -123,6 +132,7 @@ modular_py_test(
         ["**/test_*.py"],
         exclude = [
             "test_chat_template.py",
+            "test_format_spec.py",
             "test_memory_planner.py",
             "test_modulev3_nvfp4_kv.py",
             "test_tokenizer.py",

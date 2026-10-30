@@ -17,6 +17,7 @@ tokenizer, and reasoning and tool parsers; only the model is reimplemented.
 """
 
 from max.graph.weights import WeightsFormat
+from max.pipelines.architectures.laguna.arch import laguna_format_spec
 from max.pipelines.architectures.laguna.model_config import LagunaConfig
 from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportedArchitecture
@@ -48,4 +49,5 @@ laguna_modulev3_arch = SupportedArchitecture(
     multi_gpu_supported=False,
     reasoning_parser="laguna",
     tool_parser="laguna",
+    format_spec=laguna_format_spec,
 )

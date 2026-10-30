@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
@@ -37,4 +39,5 @@ lfm3_arch = SupportedArchitecture(
     batching=Lfm3Model.batch_processor_cls,
     memory_planner=PagedMemoryPlanner,
     checkpoints_recurrent_state=True,
+    format_spec=Path(__file__).parent / "formatspec.json",
 )

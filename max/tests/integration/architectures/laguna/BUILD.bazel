@@ -38,6 +38,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/gemma4",
         "//max/python/max/pipelines/architectures/laguna",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/weights",
         requirement("numpy"),
         requirement("torch"),
         requirement("transformers"),

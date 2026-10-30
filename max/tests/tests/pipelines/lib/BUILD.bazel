@@ -117,6 +117,17 @@ modular_py_test(
 modular_py_test(
     name = "test_export",
     srcs = ["test_export.py"],
+    # The architectures ship the FormatSpec documents the test finds.
+    ignore_extra_deps = [
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/gemma4",
+        "//max/python/max/pipelines/architectures/glm5_1",
+        "//max/python/max/pipelines/architectures/laguna",
+        "//max/python/max/pipelines/architectures/lfm3",
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/python/max/pipelines/architectures/muse_glimmer",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+    ],
     deps = [
         "//max/python/max:tensor",
         "//max/python/max/_artifact",
@@ -127,6 +138,14 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/gemma4",
+        "//max/python/max/pipelines/architectures/glm5_1",
+        "//max/python/max/pipelines/architectures/laguna",
+        "//max/python/max/pipelines/architectures/lfm3",
+        "//max/python/max/pipelines/architectures/mimo_v2",
+        "//max/python/max/pipelines/architectures/muse_glimmer",
+        "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/sampling",
         "//max/python/max/pipelines/speculative",

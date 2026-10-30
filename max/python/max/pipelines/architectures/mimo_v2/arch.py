@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Registers MiMoV2 with the pipeline registry."""
 
+from pathlib import Path
+
 from max.graph.weights import WeightsFormat
 from max.pipelines.architectures.gpt_oss.batch_processor import (
     GptOssBatchProcessor,
@@ -29,6 +31,7 @@ mimo_v2_arch = SupportedArchitecture(
     name="MiMoV2ForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["XiaomiMiMo/MiMo-V2.6-Flash-RL"],
+    format_spec=Path(__file__).parent / "formatspec.json",
     default_weights_format=WeightsFormat.safetensors,
     default_encoding=MiMoV2Config.DEFAULT_ENCODING,
     supported_encodings=MiMoV2Config.SUPPORTED_ENCODINGS,

@@ -27,6 +27,7 @@ import os
 import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeAlias
 
 from max.nn import Module
@@ -271,6 +272,20 @@ class SupportedArchitecture:
 
     If None, no tool parser is enabled by default and the serving layer
     falls back to its baseline parser.
+    """
+
+    format_spec: Path | Callable[[HuggingFaceRepo], Path | None] | None = None
+    """Optional FormatSpec document for this architecture's checkpoints.
+
+    The path of the JSON document describing the tool-call and reasoning
+    format a checkpoint was trained with, or a callable that takes the
+    model's :class:`HuggingFaceRepo` handle and returns that path, or
+    ``None`` when the checkpoint has none. Use the callable form when one
+    architecture serves checkpoints with different formats. ``max export``
+    copies the document into the pipeline artifact.
+
+    If None, the artifact carries no FormatSpec and tool calls are served
+    unconstrained.
     """
 
     batching: type[Any] | None = None
