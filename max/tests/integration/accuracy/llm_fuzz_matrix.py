@@ -122,6 +122,14 @@ PIPELINES: Final[list[PipelineEntry]] = [
         instance_type="bm.gpu.mi355x.8",
         timeout=90,
     ),
+    PipelineEntry(
+        pipeline="zai-org/GLM-5.3-Flash-ep-tp",
+        model_path="zai-org/GLM-5.3-Flash",
+        runner="modrunner-mi355-2x",
+        gpu_flag="--devices gpu:0,1",
+        instance_type="bm.gpu.mi355x.2",
+        timeout=120,
+    ),
     # Tiny model on CPU: a cheap end-to-end check of the fuzz harness and the
     # serve path without occupying an accelerator at all. 135M params in FP32
     # is ~540MB of weights, so there is nothing a GPU buys here. The CPU
