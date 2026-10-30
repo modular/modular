@@ -180,6 +180,7 @@ def _small_MN_gemms_impl[
                 unroll_factor=config.unroll_factor,
                 check_bounds_m=check_bounds_m,
                 check_bounds_n=check_bounds_n,
+                pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel](
                 c,
@@ -215,6 +216,7 @@ def _small_MN_gemms_impl[
                 unroll_factor=config.unroll_factor,
                 check_bounds_m=check_bounds_m,
                 check_bounds_n=check_bounds_n,
+                pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel](
                 c,
@@ -249,6 +251,7 @@ def _small_MN_gemms_impl[
                 unroll_factor=config.unroll_factor,
                 check_bounds_m=check_bounds_m,
                 check_bounds_n=check_bounds_n,
+                pdl_level=pdl_level,
             ]
             ctx.enqueue_function[kernel](
                 c,

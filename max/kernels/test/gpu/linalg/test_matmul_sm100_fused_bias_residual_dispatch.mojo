@@ -29,13 +29,22 @@
 #
 # The residual is applied as a TMA-epilogue load on the native path (cases 1, 4)
 # and as an elementwise (store) epilogue on every fallback.
+#
+# `run_pdl_case` repeats representative cases of each branch with programmatic
+# dependent launch on, directly behind a producer grid that writes A and the
+# residual, with no host sync in between (see its docstring).
 
+from max.gpu import global_idx
 from max.gpu.host import DeviceContext, DeviceBuffer
+from max.gpu.primitives.grid_controls import PDLLevel, launch_dependent_grids
 from std.memory import alloc
 from std.memory.alloc import unsafe_alloc
-from internal_utils import assert_almost_equal
+from internal_utils import Table, assert_almost_equal
+from std.math import ceildiv, nan
+from std.sys.intrinsics import llvm_intrinsic
 from std.random import rand
 from layout import (
+    Coord,
     RowMajorLayout,
     TileTensor,
     row_major,
@@ -46,6 +55,11 @@ from linalg.matmul.gpu.sm100_structured.default.dispatch_fused_bias_residual imp
 )
 from linalg.matmul.gpu.sm100_structured.default.dispatch import (
     matmul_dispatch_sm100,
+)
+from linalg.gemv import GEMVAlgorithm
+from linalg.matmul.gpu.sm100_structured.default.tuning_configs import (
+    TuningConfigSmallMNGemms,
+    _get_tuning_list_small_MN_gemms_bf16,
 )
 from linalg.matmul.vendor.matmul import matmul as matmul_vendor
 
@@ -278,6 +292,329 @@ def run_case[
     _ = c_dev^
     _ = c_ref_dev^
     _ = resid_dev^
+
+
+@always_inline
+def _pdl_val(idx: Int, salt: Int, seed: Int) -> Float32:
+    var z = UInt64(idx) * 0x9E3779B97F4A7C15 + UInt64(seed * 4 + salt)
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EB
+    z = z ^ (z >> 31)
+    return Float32(Int(z >> 40) % 2048 - 1024) / 1024.0
+
+
+def _pdl_producer_kernel[
+    dtype: DType
+](
+    a: MutPointer[Scalar[dtype], MutAnyOrigin],
+    resid: MutPointer[Scalar[dtype], MutAnyOrigin],
+    a_len: Int32,
+    resid_len: Int32,
+    seed: Int32,
+    delay_us: Int32,
+):
+    """Writes A and the residual late, after releasing the dependent grid.
+
+    The early `launch_dependent_grids` makes the dependent GEMM's CTAs
+    resident while this grid sleeps for `delay_us` of wall clock (as
+    `slow_producer` in `test_gemv_pdl_race.mojo` does), so the only thing
+    standing between the GEMM and a stale A / residual read is its own
+    `wait_on_dependent_grids`.
+    """
+    launch_dependent_grids()
+    var i = global_idx.x
+    # nanosleep takes nanoseconds and caps at about 1 ms per call.
+    var remaining = Int(delay_us)
+    while remaining > 0:
+        llvm_intrinsic["llvm.nvvm.nanosleep", NoneType](Int32(1_000_000))
+        remaining -= 1000
+
+    if i < Int(a_len):
+        a[i] = _pdl_val(i, 0, Int(seed)).cast[dtype]()
+    if i < Int(resid_len):
+        resid[i] = (2.0 * _pdl_val(i, 1, Int(seed))).cast[dtype]()
+
+
+def _run_fused[
+    N: Int, K: Int, epilogue_is_1d: Bool, level: PDLLevel
+](
+    ctx: DeviceContext,
+    M: Int,
+    mut c_dev: DeviceBuffer[DType.bfloat16],
+    a_dev: DeviceBuffer[DType.bfloat16],
+    b_dev: DeviceBuffer[DType.bfloat16],
+    resid_dev: DeviceBuffer[DType.bfloat16],
+) raises:
+    var c_tt = TileTensor(c_dev, row_major(Int64(M), Idx[N]))
+    var a_tt = TileTensor(a_dev, row_major(Int64(M), Idx[K]))
+    var b_tt = TileTensor(b_dev, row_major(Idx[N], Idx[K]))
+    var epi_m = 1 if epilogue_is_1d else M
+    fused_bias_residual_matmul_dispatch_sm100[
+        transpose_b=True,
+        pdl_level=level,
+        has_epilogue_tensor=True,
+        epilogue_is_1d=epilogue_is_1d,
+    ](
+        c_tt,
+        a_tt.as_imm(),
+        b_tt.as_imm(),
+        _make_epilogue(resid_dev, epi_m, N),
+        ctx,
+    )
+
+
+def run_pdl_case[
+    N: Int,
+    K: Int,
+    epilogue_is_1d: Bool,
+    pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
+](ctx: DeviceContext, M: Int, label: String) raises:
+    """Checks the fused dispatch behind a producer grid with PDL on.
+
+    Every iteration enqueues a producer grid that writes a fresh A and
+    residual, then the fused matmul with `pdl_level`, with no host sync
+    between them, so the GEMM's wait is the only ordering. The output must
+    match a `PDLLevel.OFF` run of the same dispatch on the same inputs bit
+    for bit. A `ctx.synchronize()` between launches (as `run_case` does)
+    would hide a missing or misplaced wait.
+    """
+    comptime bf16 = DType.bfloat16
+    comptime iters = 3
+    print("[pdl case]", label, ":: MNK=(", M, N, K, ")")
+
+    var resid_size = N if epilogue_is_1d else M * N
+
+    var b_host_ptr = unsafe_alloc[Scalar[bf16]](N * K)
+    rand(b_host_ptr, N * K, min=-1.0, max=1.0)
+    var b_dev = ctx.enqueue_create_buffer[bf16](N * K)
+    ctx.enqueue_copy(b_dev, b_host_ptr)
+
+    var a_devs = List[DeviceBuffer[bf16]]()
+    var resid_devs = List[DeviceBuffer[bf16]]()
+    var c_pdl_devs = List[DeviceBuffer[bf16]]()
+    var c_ref_devs = List[DeviceBuffer[bf16]]()
+    for _ in range(iters):
+        a_devs.append(ctx.enqueue_create_buffer[bf16](M * K))
+        resid_devs.append(ctx.enqueue_create_buffer[bf16](resid_size))
+        c_pdl_devs.append(ctx.enqueue_create_buffer[bf16](M * N))
+        c_ref_devs.append(ctx.enqueue_create_buffer[bf16](M * N))
+        # Poison so a skipped or partial store cannot match the reference.
+        c_pdl_devs[len(c_pdl_devs) - 1].enqueue_fill(nan[bf16]())
+        c_ref_devs[len(c_ref_devs) - 1].enqueue_fill(nan[bf16]())
+    ctx.synchronize()
+
+    for i in range(iters):
+        ctx.enqueue_function[_pdl_producer_kernel[bf16]](
+            a_devs[i],
+            resid_devs[i],
+            Int32(M * K),
+            Int32(resid_size),
+            Int32(7 * i + 1),
+            Int32(1000),
+            grid_dim=ceildiv(max(M * K, resid_size), 256),
+            block_dim=256,
+        )
+        _run_fused[N, K, epilogue_is_1d, pdl_level](
+            ctx, M, c_pdl_devs[i], a_devs[i], b_dev, resid_devs[i]
+        )
+    ctx.synchronize()
+
+    for i in range(iters):
+        _run_fused[N, K, epilogue_is_1d, PDLLevel.OFF](
+            ctx, M, c_ref_devs[i], a_devs[i], b_dev, resid_devs[i]
+        )
+    ctx.synchronize()
+
+    var pdl_host = unsafe_alloc[Scalar[bf16]](M * N)
+    var ref_host = unsafe_alloc[Scalar[bf16]](M * N)
+    for i in range(iters):
+        ctx.enqueue_copy(pdl_host, c_pdl_devs[i])
+        ctx.enqueue_copy(ref_host, c_ref_devs[i])
+        ctx.synchronize()
+        var bad = 0
+        for j in range(M * N):
+            if pdl_host[j] != ref_host[j]:
+                bad += 1
+        if bad != 0:
+            raise Error(
+                label,
+                ": PDL output differs from the PDL-off output in ",
+                bad,
+                " of ",
+                M * N,
+                " elements (iteration ",
+                i,
+                ")",
+            )
+    print("    PASS")
+
+    pdl_host.unsafe_free()
+    ref_host.unsafe_free()
+    b_host_ptr.unsafe_free()
+
+
+comptime PLAIN = 0
+comptime STORE_CLOSURE = 1
+comptime FUSED_RESIDUAL = 2
+
+
+def _run_small_mn[
+    N: Int, K: Int, variant: Int, level: PDLLevel
+](
+    ctx: DeviceContext,
+    M: Int,
+    mut out_dev: DeviceBuffer[DType.bfloat16],
+    mut scratch_dev: DeviceBuffer[DType.bfloat16],
+    a_dev: DeviceBuffer[DType.bfloat16],
+    b_dev: DeviceBuffer[DType.bfloat16],
+    resid_dev: DeviceBuffer[DType.bfloat16],
+) raises:
+    """Runs one of the three small-MN split-K GEMV instantiations: plain,
+    store epilogue (`matmul_dispatch_sm100` with a store closure), or compute
+    epilogue (the fused dispatcher with a 2D residual)."""
+    var a_tt = TileTensor(a_dev, row_major(M, Idx[K]))
+    var b_tt = TileTensor(b_dev, row_major(Idx[N], Idx[K]))
+    comptime if variant == STORE_CLOSURE:
+        # The kernel hands every value to the closure and leaves `c` alone.
+        var c_tt = TileTensor(scratch_dev, row_major(M, Idx[N]))
+        var d = TileTensor(out_dev, row_major(M, Idx[N]))
+
+        def store[
+            dtype: DType, width: SIMDLength, *, alignment: Int
+        ](idx: Coord, val: SIMD[dtype, width]) {var d}:
+            comptime assert idx.rank == 2, "the epilogue contract is rank 2"
+            d.store(idx, val.cast[DType.bfloat16]())
+
+        matmul_dispatch_sm100[transpose_b=True, pdl_level=level](
+            c_tt, a_tt.as_imm(), b_tt.as_imm(), store, ctx
+        )
+    elif variant == FUSED_RESIDUAL:
+        var c_tt = TileTensor(out_dev, row_major(M, Idx[N]))
+        fused_bias_residual_matmul_dispatch_sm100[
+            transpose_b=True,
+            pdl_level=level,
+            has_epilogue_tensor=True,
+            epilogue_is_1d=False,
+        ](
+            c_tt,
+            a_tt.as_imm(),
+            b_tt.as_imm(),
+            _make_epilogue(resid_dev, M, N),
+            ctx,
+        )
+    else:
+        var c_tt = TileTensor(out_dev, row_major(M, Idx[N]))
+        matmul_dispatch_sm100[transpose_b=True, pdl_level=level](
+            c_tt, a_tt.as_imm(), b_tt.as_imm(), ctx
+        )
+
+
+def run_pdl_small_mn_case[
+    N: Int, K: Int, variant: Int
+](ctx: DeviceContext, M: Int, label: String) raises:
+    """`run_pdl_case` for each small-MN split-K GEMV instantiation.
+
+    A PDL-off run on the same inputs is the reference; a producer grid writes
+    A (and the residual) late and there is no host sync before the matmul.
+    B stays a constant weight, as the split-K GEMV's pre-wait weight prefetch
+    requires.
+    """
+    comptime bf16 = DType.bfloat16
+    comptime iters = 3
+    print("[pdl small-MN case]", label, ":: MNK=(", M, N, K, ")")
+
+    # Guard the routing: a retuned table that moves this shape off the split-K
+    # GEMV would leave the cases below exercising a kernel that already waited.
+    comptime small_mn_table = Table(
+        _get_tuning_list_small_MN_gemms_bf16(), "small_MN_gemms_configs"
+    )
+    comptime small_mn_configs = small_mn_table.find(
+        rule=lambda (x: TuningConfigSmallMNGemms) -> Bool: x.K == K and x.N == N
+    )
+    var routed_to_split_k = False
+    comptime for config in small_mn_configs:
+        if (
+            M >= config.M
+            and M < config.M_end
+            and config.kernel_kind == GEMVAlgorithm.GemvSplitK
+        ):
+            routed_to_split_k = True
+    if not routed_to_split_k:
+        raise Error(
+            label,
+            (
+                ": (M, N, K) no longer dispatches to the small-MN split-K GEMV;"
+                " retarget this case"
+            ),
+        )
+
+    var b_host_ptr = unsafe_alloc[Scalar[bf16]](N * K)
+    rand(b_host_ptr, N * K, min=-1.0, max=1.0)
+    var scratch = ctx.enqueue_create_buffer[bf16](M * N)
+
+    var a_devs = List[DeviceBuffer[bf16]]()
+    var b_devs = List[DeviceBuffer[bf16]]()
+    var resid_devs = List[DeviceBuffer[bf16]]()
+    var out_pdl = List[DeviceBuffer[bf16]]()
+    var out_ref = List[DeviceBuffer[bf16]]()
+    for _ in range(iters):
+        a_devs.append(ctx.enqueue_create_buffer[bf16](M * K))
+        b_devs.append(ctx.enqueue_create_buffer[bf16](N * K))
+        resid_devs.append(ctx.enqueue_create_buffer[bf16](M * N))
+        out_pdl.append(ctx.enqueue_create_buffer[bf16](M * N))
+        out_ref.append(ctx.enqueue_create_buffer[bf16](M * N))
+        ctx.enqueue_copy(b_devs[len(b_devs) - 1], b_host_ptr)
+        out_pdl[len(out_pdl) - 1].enqueue_fill(nan[bf16]())
+        out_ref[len(out_ref) - 1].enqueue_fill(nan[bf16]())
+    ctx.synchronize()
+
+    for i in range(iters):
+        ctx.enqueue_function[_pdl_producer_kernel[bf16]](
+            a_devs[i],
+            resid_devs[i],
+            Int32(M * K),
+            Int32(M * N),
+            Int32(7 * i + 1),
+            Int32(1000),
+            grid_dim=ceildiv(M * K, 256),
+            block_dim=256,
+        )
+        _run_small_mn[N, K, variant, PDLLevel.OVERLAP_AT_BEGINNING](
+            ctx, M, out_pdl[i], scratch, a_devs[i], b_devs[i], resid_devs[i]
+        )
+    ctx.synchronize()
+    for i in range(iters):
+        _run_small_mn[N, K, variant, PDLLevel.OFF](
+            ctx, M, out_ref[i], scratch, a_devs[i], b_devs[i], resid_devs[i]
+        )
+    ctx.synchronize()
+
+    var pdl_host = unsafe_alloc[Scalar[bf16]](M * N)
+    var ref_host = unsafe_alloc[Scalar[bf16]](M * N)
+    for i in range(iters):
+        ctx.enqueue_copy(pdl_host, out_pdl[i])
+        ctx.enqueue_copy(ref_host, out_ref[i])
+        ctx.synchronize()
+        var bad = 0
+        for j in range(M * N):
+            if pdl_host[j] != ref_host[j]:
+                bad += 1
+        if bad != 0:
+            raise Error(
+                label,
+                ": PDL output differs from the PDL-off output in ",
+                bad,
+                " of ",
+                M * N,
+                " elements (iteration ",
+                i,
+                ")",
+            )
+    print("    PASS")
+
+    pdl_host.unsafe_free()
+    ref_host.unsafe_free()
+    b_host_ptr.unsafe_free()
 
 
 def main() raises:
@@ -527,5 +864,38 @@ def main() raises:
             epilogue_is_1d=False,
             vendor_reference=True,
         ](ctx, 256, "12-lowperf-cublas-2D")
+
+        # --- PDL on, behind a producer grid, no host sync -------------------
+        # One case per branch of the dispatch: native TMA epilogue (2D and 1D,
+        # large / small / ragged M), GEMV, small-MN split-K and cpasync, the
+        # SM100-GEMV shape and N==1 GEMV. Vendor BLAS takes no PDL level, so it is
+        # not repeated here.
+        run_pdl_case[2048, 1024, False](ctx, 512, "pdl-native-2D")
+        run_pdl_case[2048, 1024, True](ctx, 512, "pdl-native-1Dbias")
+        run_pdl_case[2048, 1024, False](ctx, 8, "pdl-smallM-native-2D")
+        run_pdl_case[2048, 1024, False](ctx, 37, "pdl-ragged-native-2D")
+        run_pdl_case[2048, 1024, False, PDLLevel.ON](ctx, 512, "pdl-on-native")
+        run_pdl_case[2048, 1024, False](ctx, 1, "pdl-gemv-2D")
+        run_pdl_case[2048, 1024, True](ctx, 1, "pdl-gemv-1Dbias")
+        run_pdl_case[12288, 1536, False](ctx, 1, "pdl-sm100gemv-2D")
+        run_pdl_case[1, 1024, False](ctx, 512, "pdl-n1-gemv-2D")
+        run_pdl_case[384, 7168, False](ctx, 8, "pdl-smallMN-splitk-2D")
+        run_pdl_case[384, 7168, True](ctx, 8, "pdl-smallMN-splitk-1Dbias")
+        run_pdl_small_mn_case[384, 7168, PLAIN](ctx, 3, "pdl-smallMN-plain-m3")
+        run_pdl_small_mn_case[384, 7168, PLAIN](ctx, 8, "pdl-smallMN-plain-m8")
+        run_pdl_small_mn_case[384, 7168, STORE_CLOSURE](
+            ctx, 3, "pdl-smallMN-store-m3"
+        )
+        run_pdl_small_mn_case[384, 7168, STORE_CLOSURE](
+            ctx, 8, "pdl-smallMN-store-m8"
+        )
+        run_pdl_small_mn_case[384, 7168, FUSED_RESIDUAL](
+            ctx, 3, "pdl-smallMN-compute-m3"
+        )
+        run_pdl_small_mn_case[384, 7168, FUSED_RESIDUAL](
+            ctx, 8, "pdl-smallMN-compute-m8"
+        )
+        run_pdl_case[384, 7168, False](ctx, 28, "pdl-smallMN-cpasync-2D")
+        run_pdl_case[384, 7168, True](ctx, 28, "pdl-smallMN-cpasync-1Dbias")
 
         print("\n=== ALL CASES PASSED ===\n")
