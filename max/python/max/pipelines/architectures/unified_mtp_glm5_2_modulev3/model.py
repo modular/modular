@@ -26,6 +26,7 @@ from max.engine import InferenceSession, Model
 from max.nn.legacy.comm import Signals
 from max.nn.legacy.comm.ep import EPBatchManager
 from max.nn.legacy.kv_cache import MultiKVCacheParams
+from max.pipelines.lib.graph_specs import GraphRole
 from max.profiler import traced
 from max.tensor import default_device, default_dtype
 from max.tensor.compilation import CompiledCallable
@@ -104,6 +105,7 @@ class UnifiedMTPGlm5_2ModuleV3Model(UnifiedMTPGlm5_2Model):
             },
         )
         self.state_dict = dict(self._compiled.weights)
+        self.compiled_modules = {GraphRole.SPEC_DECODER: self._compiled}
         model = self._compiled.engine_model
         self._wire_batch_processor(model, model_config)
         return model

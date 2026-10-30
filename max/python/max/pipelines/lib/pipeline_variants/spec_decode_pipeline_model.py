@@ -2270,6 +2270,7 @@ class _SpecDecodeModuleV3PipelineModel(SpecDecodePipelineModel):
         config.input_spec = call.driver.input_spec
         self.export_input_types = call.input_types
         self.export_contract = call.export_contract
+        self.compiled_modules = {GraphRole.SPEC_DECODER: compiled}
         model = compiled.engine_model
         self._wire_batch_processor(model, config)
         return model
