@@ -293,6 +293,10 @@ private:
   /// multi-versioning, and finalize and verify the function, unless an error
   /// has occurred.
   void completeImplNodeProcessing(ImplNode *inode);
+  /// Complete the members of an SCC whose intra-SCC edges were removed by
+  /// diagnoseAndBreakRecursion. Errors are propagated across the whole SCC
+  /// before any member completes.
+  void completeSCCProcessing(ArrayRef<ParamNode *> nodes);
   /// Process a worklist of ops. Returns error if processing the scope resulted
   /// in an error, returns `skipFrame` if the processing of the current scope
   /// scope should be pre-empted with a new scope, returns `skipNode` if

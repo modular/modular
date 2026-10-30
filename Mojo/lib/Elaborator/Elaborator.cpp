@@ -1519,16 +1519,6 @@ void Elaborator::completeImplNodeProcessing(ImplNode *inode) {
         break;
     }
 
-    // Check intra-SCC edges that were removed to break the cycle. Any callee
-    // that errored during the first pass needs to propagate its error here.
-    for (auto [loc, genNode] : inode->sccRemovedDeps) {
-      if (inode->error)
-        break;
-      if (failed(collectConcreteImplementations(loc, inode, genNode)))
-        break;
-    }
-    inode->sccRemovedDeps.clear();
-
     if (!inode->error)
       finalizeInstance(inode);
   }
@@ -1538,6 +1528,45 @@ void Elaborator::completeImplNodeProcessing(ImplNode *inode) {
   g.numWorkItems.fetch_add(p->state.markDone());
   p->emplace();
   signalWorklist();
+}
+
+void Elaborator::completeSCCProcessing(ArrayRef<ParamNode *> nodes) {
+  // Every member of the SCC reaches every other member, so an error in any of
+  // them, including one from a callee outside the SCC, fails all of them.
+  SmallVector<ImplNode *> members;
+  for (ParamNode *node : nodes)
+    if (!node->getIsError())
+      members.push_back(&node->impl);
+
+  // Check the dependencies that leave the SCC.
+  for (ImplNode *inode : members) {
+    while (!inode->error && !inode->dependencies.empty()) {
+      auto [loc, genNode] = inode->dependencies.back();
+      inode->dependencies.pop_back();
+      (void)collectConcreteImplementations(loc, inode, genNode);
+    }
+  }
+
+  // Propagate errors along the intra-SCC edges removed to break the cycle until
+  // nothing changes.
+  for (bool changed = true; changed;) {
+    changed = false;
+    for (ImplNode *inode : members) {
+      if (inode->error)
+        continue;
+      for (auto [loc, genNode] : inode->sccRemovedDeps) {
+        if (failed(collectConcreteImplementations(loc, inode, genNode))) {
+          changed = true;
+          break;
+        }
+      }
+    }
+  }
+
+  for (ParamNode *node : nodes) {
+    node->impl.sccRemovedDeps.clear();
+    completeImplNodeProcessing(&node->impl);
+  }
 }
 
 void Elaborator::processImplNodeTask(ImplNode *inode) {
@@ -2625,14 +2654,12 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
     }
 
     // When all of them are done as individual nodes, they will reset their
-    // dependency counter to 1 and wait for all chains to complete. Then
-    // sccRemovedDeps on each node is checked to propagate any errors from
-    // callees that errored during the first pass.
+    // dependency counter to 1 and wait for all chains to complete. Then the
+    // SCC's errors are settled together before any member completes.
     AsyncRT::andThenAsyncMoving(sccChains,
                                 [this, nodes = sccNodes.takeVector()](
                                     MutableArrayRef<AnyAsyncValueRef>) {
-                                  for (ParamNode *node : nodes)
-                                    completeImplNodeProcessing(&node->impl);
+                                  completeSCCProcessing(nodes);
                                 });
   }
 
