@@ -28,6 +28,7 @@ from .memory_planner import Gemma4MemoryPlanner
 from .model import Gemma3_MultiModalModel
 from .model_config import Gemma4ForConditionalGenerationConfig
 from .tokenizer import Gemma4Tokenizer
+from .weight_adapters import gemma4_weight_rules
 
 example_repo_ids = [
     # it = Instruction tuned (recommended).
@@ -49,6 +50,8 @@ gemma4_arch = SupportedArchitecture(
     task=PipelineTask.TEXT_GENERATION,
     tokenizer=Gemma4Tokenizer,
     default_weights_format=WeightsFormat.safetensors,
+    weight_rules=gemma4_weight_rules,
+    use_weight_rules=True,
     multi_gpu_supported=True,
     input_modalities={
         InputModality.TEXT,

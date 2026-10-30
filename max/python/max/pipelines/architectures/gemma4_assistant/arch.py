@@ -14,13 +14,13 @@
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.lib import SupportedArchitecture, WeightTransform
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from ..gemma4.tokenizer import Gemma4Tokenizer
 from .model import Gemma4AssistantDraftArchConfig
 from .model_config import Gemma4AssistantConfig
-from .weight_adapters import convert_safetensor_state_dict
+from .weight_adapters import GEMMA4_ASSISTANT_WEIGHT_RULES
 
 # Gemma 4's assistant drafts for an MTP target. It has no
 # pipeline model of its own.
@@ -37,7 +37,9 @@ gemma4_assistant_arch = SupportedArchitecture(
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
     weight_adapters={
-        WeightsFormat.safetensors: convert_safetensor_state_dict,
+        WeightsFormat.safetensors: WeightTransform(
+            GEMMA4_ASSISTANT_WEIGHT_RULES
+        ),
     },
     task=PipelineTask.TEXT_GENERATION,
     multi_gpu_supported=True,

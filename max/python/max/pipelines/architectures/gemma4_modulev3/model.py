@@ -34,16 +34,20 @@ from max.pipelines.architectures.gemma4.model_config import (
     Gemma4ForConditionalGenerationConfig,
 )
 from max.pipelines.architectures.gemma4.weight_adapters import (
-    convert_safetensor_language_state_dict,
+    gemma4_weight_entry,
 )
 from max.pipelines.context import ImageMetadata
 from max.pipelines.lib import (
+    CheckpointRole,
+    GraphRole,
     GraphSpec,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     ModuleV3MultiGraphPipelineModelWithKVCache,
     PipelineConfig,
+    WeightEntry,
+    apply_weight_entries,
 )
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
@@ -58,10 +62,6 @@ from .batch_processor import Gemma4ModuleV3BatchProcessor
 from .gemma4 import Gemma4, Gemma4TextModel
 from .inputs import Gemma4Inputs
 from .vision_model.vision_model import Gemma4VisionModel
-from .weight_adapters import (
-    convert_language_state_dict_for_module,
-    convert_vision_state_dict_for_module,
-)
 
 
 def _to_buffer(t: Tensor) -> Buffer:
@@ -148,11 +148,18 @@ class Gemma4Model(
 
     def _load_state_dict(self) -> dict[str, Any]:
         weights_dict = dict(self.weights.items())
-        self._language_weights_dict = convert_language_state_dict_for_module(
-            weights_dict
+        entry = gemma4_weight_entry(self.adapter)
+        # The full model nests the language model under ``language_model.``.
+        self.weight_naming = {
+            GraphRole.DECODER: (entry.with_prefix("language_model."),),
+            GraphRole.VISION: (entry,),
+        }
+        checkpoints = {CheckpointRole.TARGET: weights_dict}
+        self._language_weights_dict = apply_weight_entries(
+            self.weight_naming[GraphRole.DECODER], checkpoints
         )
-        self._vision_weights_dict = convert_vision_state_dict_for_module(
-            weights_dict
+        self._vision_weights_dict = apply_weight_entries(
+            self.weight_naming[GraphRole.VISION], checkpoints
         )
         return {k: v.data() for k, v in weights_dict.items()}
 
@@ -162,9 +169,9 @@ class Gemma4Model(
     ) -> tuple[Gemma4TextModel, Gemma4ForConditionalGenerationConfig]:
         """Builds the language model, without its vision tower.
 
-        The module holds no weights: it compiles with those
-        :meth:`checkpoint_weights` returns. A caller that sized the cache
-        passes its KV params.
+        The module holds no weights: it compiles with the weights
+        :meth:`weight_entries` names. A caller that sized the cache passes its
+        KV params.
         """
         config = cls._finalized_config(
             context.pipeline_config,
@@ -188,18 +195,18 @@ class Gemma4Model(
         return module, config
 
     @classmethod
-    def checkpoint_weights(
+    def weight_entries(
         cls,
         context: ModelLoadContext,
         config: Gemma4ForConditionalGenerationConfig,
-    ) -> dict[str, Any]:
-        """Returns the language weights the built module compiles with."""
+    ) -> list[WeightEntry]:
+        """Returns the entry that names the built language model's weights.
+
+        Its rules name the whole checkpoint, and the module binds the
+        language weights.
+        """
         del config
-        return dict(
-            convert_safetensor_language_state_dict(
-                dict(context.weights.items())
-            )
-        )
+        return [gemma4_weight_entry(context.adapter)]
 
     @classmethod
     def build_vision_graph(
@@ -218,10 +225,9 @@ class Gemma4Model(
             max_seq_len=context.max_seq_len,
             return_logits=context.return_logits,
         )
+        vision_weights = gemma4_weight_entry(context.adapter).transform(weights)
         spec = cls._vision_tower_spec(
-            config,
-            convert_vision_state_dict_for_module(weights),
-            config.devices[0].to_device(),
+            config, vision_weights, config.devices[0].to_device()
         )
         if spec is None:
             raise ValueError("This Gemma 4 checkpoint has no vision tower.")

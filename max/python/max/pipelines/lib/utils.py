@@ -32,6 +32,8 @@ from max.nn._compilation_timer import (  # noqa: F401
 )
 from transformers import AutoConfig
 
+from .weight_transform import WeightTransform
+
 # Break circular import by importing PipelineConfig under TYPE_CHECKING.
 if TYPE_CHECKING:
     from max.pipelines.lib.config import MAXModelConfig, PipelineConfig
@@ -147,6 +149,8 @@ def parse_state_dict_from_weights(
     A draft's checkpoint passes its own ``model_config``, which an adapter
     that reads the encoding takes in place of the target's.
     """
+    if isinstance(adapter, WeightTransform):
+        return adapter(dict(weights.items()))
     if adapter:
         if hf_config is None:
             hf_config = pipeline_config.model.huggingface_config

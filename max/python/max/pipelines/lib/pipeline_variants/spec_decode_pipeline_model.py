@@ -123,6 +123,11 @@ from ..pipeline_parallel import PipelinedModel
 from ..pipeline_stage import PipelineStage
 from ..utils import CompilationTimer
 from ..vision_encoder_cache import SupportsVisionEncoding, VisionEncodeResult
+from ..weight_transform import (
+    CheckpointRole,
+    WeightEntry,
+    apply_weight_entries,
+)
 
 if TYPE_CHECKING:
     from ..config import KVCacheConfig, MAXModelConfig, PipelineConfig
@@ -471,6 +476,17 @@ def _module_builder(arch: SupportedArchitecture) -> Any:
     none.
     """
     return arch.pipeline_model or arch.config
+
+
+def _weight_entries(
+    builder: Any, context: ModelLoadContext, config: Any
+) -> list[WeightEntry]:
+    """Returns the entries that name ``builder``'s module's weights.
+
+    Empty for a builder whose naming isn't rules yet.
+    """
+    weight_entries = getattr(builder, "weight_entries", None)
+    return [] if weight_entries is None else weight_entries(context, config)
 
 
 def _config_cls(arch: SupportedArchitecture) -> type[Any]:
@@ -1655,22 +1671,41 @@ class SpecDecodePipelineModel(
         # The planner sized the cache from this config before finalizing.
         config.target = target_config
         self.ep_comm_initializer = ep.initializer
+        # Each module's entries go under its name in the fused graph. A module
+        # whose naming isn't rules yet compiles with its checkpoint_weights,
+        # and leaves the graph unnamed.
+        entries: list[WeightEntry] = []
         weights: dict[str, Any] = {}
-        if isinstance(target, ModuleV3):
-            for name, builder, ctx, module_config in (
-                (
-                    "target",
-                    _module_builder(pairing.target),
-                    target_context,
-                    target_config,
-                ),
-                ("draft", draft_builder, draft_context, draft_config),
-            ):
+        named = True
+        for name, builder, ctx, module_config in (
+            (
+                "target",
+                _module_builder(pairing.target),
+                target_context,
+                target_config,
+            ),
+            ("draft", draft_builder, draft_context, draft_config),
+        ):
+            module_entries = _weight_entries(builder, ctx, module_config)
+            entries += (
+                entry.with_prefix(f"{name}.") for entry in module_entries
+            )
+            named = named and bool(module_entries)
+            if isinstance(target, ModuleV3) and not module_entries:
                 checkpoint = builder.checkpoint_weights(ctx, module_config)
                 weights.update(
                     (f"{name}.{key}", value)
                     for key, value in checkpoint.items()
                 )
+        if isinstance(target, ModuleV3) and entries:
+            checkpoints = {
+                CheckpointRole.TARGET: dict(target_context.weights.items()),
+                CheckpointRole.DRAFT: dict(draft_context.weights.items()),
+            }
+            weights.update(apply_weight_entries(entries, checkpoints))
+        self.weight_naming = (
+            {GraphRole.SPEC_DECODER: tuple(entries)} if named else {}
+        )
         return _Modules(
             target, target_config, draft, draft_config, hidden_states, weights
         )
@@ -2133,10 +2168,10 @@ class _SpecDecodeVisionPipelineModel(SpecDecodePipelineModel):
         model = super().load_model(session)
         if self.pipeline_config.model.pipeline_stage is not None:
             return model
+        target = _pipeline_model(self.pairing.target)
+        context = ModelLoadContext.from_pipeline_model(self)
         with CompilationTimer("vision model") as timer:
-            graph, weights_registry = _pipeline_model(
-                self.pairing.target
-            ).build_vision_graph(ModelLoadContext.from_pipeline_model(self))
+            graph, weights_registry = target.build_vision_graph(context)
             timer.mark_build_complete()
             compiled = session.compile_reusing_mefs(graph)
             self.vision_model = session.init(
@@ -2148,6 +2183,15 @@ class _SpecDecodeVisionPipelineModel(SpecDecodePipelineModel):
                 graph, compiled, self.vision_model
             ),
         }
+        # The target's rules name its whole checkpoint, vision tower included.
+        vision_entries = _weight_entries(
+            target, context, self.arch_config_as(SpecDecodeArchConfig).target
+        )
+        if vision_entries:
+            self.weight_naming = {
+                **self.weight_naming,
+                GraphRole.VISION: tuple(vision_entries),
+            }
         self._batching.bind_vision_encoder(self.vision_model, session)
         return model
 

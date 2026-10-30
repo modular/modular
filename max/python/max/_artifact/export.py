@@ -41,6 +41,7 @@ from max.pipelines.lib.pipeline_variants.text_generation import (
     TextGenerationPipelineInterface,
 )
 from max.pipelines.lib.registry import PIPELINE_REGISTRY
+from max.pipelines.lib.weight_transform import WeightEntry, WeightNaming
 from max.pipelines.weights.hf_utils import HuggingFaceRepo
 from max.tensor.compilation import CompiledCallable
 from max.tensor.sharding import BufferLayout, TensorLayout
@@ -91,6 +92,20 @@ class SupportsKVManager(Protocol):
     @property
     def kv_manager(self) -> PagedKVCacheManagerInterface:
         """The manager of the pipeline's KV cache."""
+        ...
+
+
+@runtime_checkable
+class SupportsWeightNaming(Protocol):
+    """A pipeline whose graphs' weights may be named by rules.
+
+    The text-generation pipelines expose their model's
+    :class:`~max.pipelines.lib.WeightEntry` lists this way.
+    """
+
+    @property
+    def weight_naming(self) -> Mapping[str, Sequence[WeightEntry]]:
+        """The entries that name each graph's weights, by role."""
         ...
 
 
@@ -373,8 +388,9 @@ def export_pipeline(
     """Builds the pipeline for a config and writes it as a ``.m`` artifact.
 
     Builds the pipeline the same way serving does, so the artifact holds the
-    graphs a served pipeline compiles, the settings it is built with, and
-    the FormatSpec document of the checkpoint it serves.
+    graphs a served pipeline compiles, the settings it is built with, the
+    FormatSpec document of the checkpoint it serves, and the entries that
+    name each graph's weights if its naming is rules.
 
     Args:
         pipeline_config: The pipeline's configuration.
@@ -427,6 +443,15 @@ def export_pipeline(
             PIPELINE_REGISTRY.architecture_for_config(pipeline_config, task),
             pipeline_config.model.huggingface_model_repo,
         )
+    naming = (
+        pipeline.weight_naming
+        if isinstance(pipeline, SupportsWeightNaming)
+        else {}
+    )
+    # Only the graphs the artifact holds are named.
+    named_graphs = {
+        role: entries for role, entries in naming.items() if role in model.roles
+    }
     written = serialize(
         ModelArtifact(
             model=model,
@@ -436,6 +461,7 @@ def export_pipeline(
             engine_config=engine_config,
             kv_cache=kv_cache,
             batch_processor=dims,
+            weight_loader=WeightNaming(named_graphs) if named_graphs else None,
         ),
         dest,
     )

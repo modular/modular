@@ -41,6 +41,7 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModelWithKVCache,
+    WeightEntry,
 )
 from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
@@ -61,10 +62,7 @@ from .context import Gemma4Context
 from .gemma4 import Gemma4TextModel, language_input_tree
 from .model_config import Gemma4ForConditionalGenerationConfig
 from .vision_model.vision_model import Gemma4VisionModel
-from .weight_adapters import (
-    convert_safetensor_language_state_dict,
-    convert_safetensor_vision_state_dict,
-)
+from .weight_adapters import adapt_gemma4_checkpoint, gemma4_weight_entry
 
 logger = logging.getLogger("max.pipelines")
 
@@ -188,8 +186,9 @@ class Gemma3_MultiModalModel(
         kv_cache_config: Configuration settings for the Key-Value cache
             (:obj:`max.pipelines.max_config.KVCacheConfig`).
         weights: The model weights (:obj:`max.graph.weights.Weights`).
-        adapter: An optional adapter to modify weights before loading
-            (:obj:`max.graph.weights.WeightsAdapter`).
+        adapter: The :obj:`max.pipelines.lib.WeightTransform` built from the
+            architecture's weight rules, which maps the checkpoint onto the
+            language and vision graphs.
         return_logits: The number of top logits to return from the model
             execution.
     """
@@ -321,14 +320,15 @@ class Gemma3_MultiModalModel(
     def _load_state_dict(self) -> dict[str, Any]:
         assert self.max_batch_size, "Expected max_batch_size to be set"
 
-        # Get processed state dict for language and vision models
         weights_dict = dict(self.weights.items())
-        self._language_weights_dict = convert_safetensor_language_state_dict(
-            weights_dict
+        self._language_weights_dict, self._vision_weights_dict = (
+            adapt_gemma4_checkpoint(self.adapter, weights_dict)
         )
-        self._vision_weights_dict = convert_safetensor_vision_state_dict(
-            weights_dict
-        )
+        entry = gemma4_weight_entry(self.adapter)
+        self.weight_naming = {
+            GraphRole.DECODER: (entry,),
+            GraphRole.VISION: (entry,),
+        }
         return {k: v.data() for k, v in weights_dict.items()}
 
     @classmethod
@@ -343,8 +343,22 @@ class Gemma3_MultiModalModel(
         config = cls._finalized_config(
             context, {name: value.data() for name, value in weights.items()}
         )
-        language_weights = convert_safetensor_language_state_dict(weights)
+        language_weights, _ = adapt_gemma4_checkpoint(context.adapter, weights)
         return cls._language_module(config, language_weights), config
+
+    @classmethod
+    def weight_entries(
+        cls,
+        context: ModelLoadContext,
+        config: Gemma4ForConditionalGenerationConfig,
+    ) -> list[WeightEntry]:
+        """Returns the entry that names the built language model's weights.
+
+        Its rules name the whole checkpoint, and the model takes the
+        language weights.
+        """
+        del config
+        return [gemma4_weight_entry(context.adapter)]
 
     @classmethod
     def build_vision_graph(
@@ -361,9 +375,8 @@ class Gemma3_MultiModalModel(
         )
         if config.vision_config is None:
             raise ValueError("This Gemma 4 checkpoint has no vision tower.")
-        spec = cls._vision_spec(
-            config, convert_safetensor_vision_state_dict(weights)
-        )
+        _, vision_weights = adapt_gemma4_checkpoint(context.adapter, weights)
+        spec = cls._vision_spec(config, vision_weights)
         return spec.trace(), dict(spec.weights_registry())
 
     @classmethod

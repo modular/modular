@@ -10,12 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The vision converter keeps the calibration scalars.
+"""The vision weights keep the calibration scalars.
 
 A checkpoint whose vision config sets ``use_clipped_linears`` ships four
 per-module bounds (``input_max``, ``input_min``, ``output_max``, ``output_min``)
 beside every vision projection, hanging off a wrapper module whose real weight
-is a child named ``linear``. They are model weights, so the converter maps them
+is a child named ``linear``. They are model weights, so the rules map them
 onto the vision tower's own names like any other tensor.
 """
 
@@ -25,8 +25,10 @@ import numpy as np
 from max.driver import Buffer
 from max.graph.weights import SafetensorWeights
 from max.pipelines.architectures.gemma4.weight_adapters import (
-    convert_safetensor_vision_state_dict,
+    GEMMA4_WEIGHT_RULES,
+    adapt_gemma4_checkpoint,
 )
+from max.pipelines.lib import WeightTransform
 
 
 def _convert(keys: list[str]) -> set[str]:
@@ -37,7 +39,10 @@ def _convert(keys: list[str]) -> set[str]:
         tensors_to_file_idx={},
         _st_weight_map=dict.fromkeys(keys, placeholder),
     )
-    return set(convert_safetensor_vision_state_dict(dict(weights.items())))
+    _, vision = adapt_gemma4_checkpoint(
+        WeightTransform(GEMMA4_WEIGHT_RULES), dict(weights.items())
+    )
+    return set(vision)
 
 
 def test_vision_calibration_scalars_are_kept() -> None:

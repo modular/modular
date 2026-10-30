@@ -14,21 +14,12 @@
 
 from __future__ import annotations
 
-from max.graph.weights import WeightData, Weights
+from max.pipelines.lib import WeightRenaming, WeightRule
 
-
-def convert_safetensor_state_dict(
-    state_dict: dict[str, Weights], **unused_kwargs: object
-) -> dict[str, WeightData]:
-    """Names the assistant checkpoint's weights as its module does.
-
-    Its own embedding, which only its tied head reads, is
-    ``draft_embed_tokens``: ``embed_tokens`` is the target's.
-    """
-    converted: dict[str, WeightData] = {}
-    for name, value in state_dict.items():
-        name = name.removeprefix("model.")
-        if name.startswith("embed_tokens."):
-            name = f"draft_{name}"
-        converted[name] = value.data()
-    return converted
+GEMMA4_ASSISTANT_WEIGHT_RULES: tuple[WeightRule, ...] = (
+    # Its own embedding, which only its tied head reads: ``embed_tokens`` is
+    # the target's.
+    WeightRenaming(r"^model\.embed_tokens\.", "draft_embed_tokens."),
+    WeightRenaming(r"^model\.", ""),
+)
+"""Names the assistant checkpoint's weights as its module does."""

@@ -20,6 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.pipelines.lib import CheckpointRole, WeightEntry, WeightTransform
 from max.pipelines.lib.interfaces.pipeline_model import (
     ModelLoadContext,
 )
@@ -110,3 +111,15 @@ class Gemma4AssistantDraftArchConfig(Gemma4AssistantConfig):
             DraftAliases(always=("embed_tokens.",)),
         )
         return draft, Gemma4AssistantDraftConfig(config)
+
+    @classmethod
+    def weight_entries(
+        cls, context: ModelLoadContext, config: Gemma4AssistantDraftConfig
+    ) -> list[WeightEntry]:
+        """Returns the entry that names the assistant's weights.
+
+        They come from its own checkpoint, named by its weight transform.
+        """
+        del config
+        assert isinstance(context.adapter, WeightTransform)
+        return [WeightEntry(CheckpointRole.DRAFT, context.adapter)]

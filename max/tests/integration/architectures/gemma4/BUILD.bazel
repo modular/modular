@@ -165,6 +165,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/graph",
         "//max/python/max/pipelines/architectures/gemma4",
+        "//max/python/max/pipelines/lib",
         requirement("numpy"),
     ],
 )

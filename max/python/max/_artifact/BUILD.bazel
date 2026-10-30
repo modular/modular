@@ -19,8 +19,8 @@ modular_py_library(
 )
 
 # The writer and reader, the model component, which holds
-# max.experimental CompiledCallables, and the engine_config and kv_cache
-# components.
+# max.experimental CompiledCallables, the engine_config and kv_cache
+# components, and the max.pipelines.lib WeightTransform.
 modular_py_library(
     name = "model_artifact",
     srcs = [
@@ -38,6 +38,7 @@ modular_py_library(
         "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
+        "//max/python/max/pipelines/lib",
         requirement("huggingface-hub"),
         requirement("typing-extensions"),
     ],

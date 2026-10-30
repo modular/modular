@@ -56,6 +56,14 @@ from max._artifact.serialization import deserialize, serialize
 from max._artifact.value_types import sha256_file
 from max.driver import DeviceSpec
 from max.dtype import DType
+from max.pipelines.lib import (
+    CheckpointRole,
+    Ignore,
+    WeightEntry,
+    WeightNaming,
+    WeightRenaming,
+    WeightTransform,
+)
 from typing_extensions import Self
 
 MODEL_REVISION = "a" * 40
@@ -226,6 +234,25 @@ def test_metadata(tmp_path: Path) -> None:
     }
     sections = json.loads((dest / "artifact.json").read_text())
     assert sections == {"scratch": {"f": {"$file": "x.txt"}}}
+
+
+def test_weight_naming_round_trip(tmp_path: Path) -> None:
+    target = WeightEntry(
+        CheckpointRole.TARGET,
+        WeightTransform(
+            [
+                Ignore(r"_scale$", reason="unused"),
+                WeightRenaming(r"^model\.", ""),
+            ]
+        ),
+    )
+    naming = WeightNaming(
+        {"spec_decoder": [target.with_prefix("target.")], "vision": [target]}
+    )
+    dest = serialize(ModelArtifact(weight_loader=naming), tmp_path / "a")
+    sections = json.loads((dest / "artifact.json").read_text())
+    assert sections == {"weight_loader": naming.__serialize__()}
+    assert deserialize(dest).weight_loader == naming
 
 
 def test_existing_destination_rejected(tmp_path: Path) -> None:
@@ -460,6 +487,7 @@ def test_component_types() -> None:
         "batch_processor": BatchProcessorDims,
         "engine_config": EngineConfig,
         "kv_cache": KVCacheLayout,
+        "weight_loader": WeightNaming,
     }
     assert FakeArtifact.component_types() == {
         **dict.fromkeys(ModelArtifact.component_slots()),
@@ -468,6 +496,7 @@ def test_component_types() -> None:
         "batch_processor": BatchProcessorDims,
         "engine_config": EngineConfig,
         "kv_cache": KVCacheLayout,
+        "weight_loader": WeightNaming,
         "scratch": FakeComponent,
         "tokenizer": FakeComponent,
     }

@@ -24,10 +24,12 @@ from max.pipelines.architectures.gemma4.model_config import (
     Gemma4ForConditionalGenerationConfig,
 )
 from max.pipelines.architectures.gemma4.tokenizer import Gemma4Tokenizer
+from max.pipelines.architectures.gemma4.weight_adapters import (
+    gemma4_weight_rules,
+)
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
-from . import weight_adapters
 from .batch_processor import Gemma4ModuleV3BatchProcessor
 from .model import Gemma4Model
 
@@ -50,9 +52,8 @@ gemma4_modulev3_arch = SupportedArchitecture(
     },
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
-    weight_adapters={
-        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
-    },
+    weight_rules=gemma4_weight_rules,
+    use_weight_rules=True,
     config=Gemma4ForConditionalGenerationConfig,
     tool_parser="gemma4",
     format_spec=gemma4_arch.format_spec,

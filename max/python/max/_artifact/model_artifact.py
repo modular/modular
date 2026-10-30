@@ -19,6 +19,7 @@ import typing
 from collections.abc import Mapping
 from dataclasses import dataclass, fields
 
+from max.pipelines.lib.weight_transform import WeightNaming
 from typing_extensions import Self
 
 from .batch_processor import BatchProcessorDims
@@ -40,7 +41,7 @@ class ModelArtifact:
     engine_config: EngineConfig | None = None
     kv_cache: KVCacheLayout | None = None
     batch_processor: BatchProcessorDims | None = None
-    weight_loader: ArtifactComponent | None = None
+    weight_loader: WeightNaming | None = None
 
     @classmethod
     def component_slots(cls) -> tuple[str, ...]:

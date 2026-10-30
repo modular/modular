@@ -30,6 +30,7 @@ from typing import (
 
 import numpy as np
 import numpy.typing as npt
+from max.graph.weights import WeightsAdapter, WeightsFormat
 from max.pipelines.context import AudioContext, PixelContext, TextContext
 from max.pipelines.modeling.types import (
     EmbeddingsContext,
@@ -75,6 +76,7 @@ from .pipeline_variants.spec_decode_pipeline_model import (
 from .pipeline_variants.text_generation import TextGenerationPipeline
 from .reasoning import get_parser_cls
 from .tokenizer import TextTokenizer
+from .weight_transform import WeightTransform
 
 logger = logging.getLogger("max.pipelines")
 
@@ -102,6 +104,25 @@ class RetrievedPipeline:
     memory_plan: MemoryPlan
     """Memory plan (batch size, sequence length, and cache budgets) the
     pipeline was sized against."""
+
+
+def _weight_adapters(
+    arch: SupportedArchitecture, huggingface_config: PretrainedConfig
+) -> dict[WeightsFormat, WeightsAdapter]:
+    """Returns the adapters a pipeline loads ``arch``'s checkpoint through.
+
+    Raises:
+        ValueError: If ``arch`` sets ``use_weight_rules`` without
+            ``weight_rules``.
+    """
+    if not arch.use_weight_rules:
+        return arch.weight_adapters
+    if arch.weight_rules is None:
+        raise ValueError(
+            f"{arch.name} sets use_weight_rules but has no weight_rules"
+        )
+    transform = WeightTransform(arch.weight_rules(huggingface_config))
+    return {arch.default_weights_format: transform}
 
 
 def get_pipeline_for_task(
@@ -962,7 +983,7 @@ class PipelineRegistry:
         factory_kwargs: dict[str, Any] = {
             "pipeline_config": pipeline_config,
             "pipeline_model": arch.pipeline_model,
-            "weight_adapters": arch.weight_adapters,
+            "weight_adapters": _weight_adapters(arch, huggingface_config),
             "tokenizer": typed_tokenizer,
             "memory_plan": memory_plan,
         }

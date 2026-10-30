@@ -92,6 +92,23 @@ Tokenizers
    AudioGenerationTokenizer
    PixelGenerationTokenizer
 
+Weight transform
+----------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   Bitcast
+   CheckpointRole
+   Ignore
+   WeightEntry
+   WeightNaming
+   WeightRenaming
+   WeightRule
+   WeightTransform
+
 Utilities
 ---------
 
@@ -116,6 +133,7 @@ Functions
    :toctree: generated
    :template: autosummary/function.rst
 
+   apply_weight_entries
    build_eos_tracker_for_request
    convert_max_config_value
    deep_merge_max_configs

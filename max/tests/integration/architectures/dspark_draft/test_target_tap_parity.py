@@ -87,9 +87,11 @@ from max.pipelines.architectures.gemma4.model_config import (
     Gemma4TextConfig,
 )
 from max.pipelines.architectures.gemma4.weight_adapters import (
-    convert_safetensor_language_state_dict,
+    GEMMA4_WEIGHT_RULES,
+    adapt_gemma4_checkpoint,
 )
 from max.pipelines.kv_cache import PagedKVCacheManager
+from max.pipelines.lib import WeightTransform
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
 from transformers import AutoTokenizer
@@ -330,8 +332,8 @@ def _max_layer_output_captures(
     hidden_size = config.text_config.hidden_size
 
     weights = load_weights(sorted(snapshot_dir.glob("*.safetensors")))
-    lang_state_dict = convert_safetensor_language_state_dict(
-        dict(weights.items())
+    lang_state_dict, _ = adapt_gemma4_checkpoint(
+        WeightTransform(GEMMA4_WEIGHT_RULES), dict(weights.items())
     )
 
     kv_params = config.kv_params

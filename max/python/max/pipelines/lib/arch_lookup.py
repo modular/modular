@@ -25,7 +25,7 @@ import importlib
 import logging
 import os
 import sys
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeAlias
@@ -54,9 +54,11 @@ if TYPE_CHECKING:
     )
     from max.pipelines.speculative import SpeculativeConfig
     from max.pipelines.weights.hf_utils import HuggingFaceRepo
+    from transformers import PretrainedConfig
 
     from .config import PipelineConfig
     from .interfaces import ArchConfig
+    from .weight_transform import WeightRule
 
 logger = logging.getLogger("max.pipelines")
 
@@ -189,6 +191,20 @@ class SupportedArchitecture:
         default_factory=dict
     )
     """A dictionary of weight format adapters for converting checkpoints from different formats to the default format."""
+
+    weight_rules: Callable[[PretrainedConfig], Sequence[WeightRule]] | None = (
+        None
+    )
+    """Returns the rules that map a checkpoint in :attr:`default_weights_format`
+    onto the graph's weights, given the checkpoint's Hugging Face config.
+
+    The pipeline builds one :class:`~max.pipelines.lib.WeightTransform` from the
+    rules, loads the checkpoint through it, and exports it with the pipeline.
+    """
+
+    use_weight_rules: bool = False
+    """Whether the pipeline loads the checkpoint through :attr:`weight_rules`
+    rather than :attr:`weight_adapters`."""
 
     multi_gpu_supported: bool = False
     """Whether the architecture supports multi-GPU execution."""

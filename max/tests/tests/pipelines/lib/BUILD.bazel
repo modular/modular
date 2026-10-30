@@ -92,6 +92,7 @@ modular_py_test(
         "//max/python/max/_artifact:model_artifact",
         "//max/python/max/driver",
         "//max/python/max/dtype",
+        "//max/python/max/pipelines/lib",
         requirement("huggingface-hub"),
         requirement("typing-extensions"),
     ],

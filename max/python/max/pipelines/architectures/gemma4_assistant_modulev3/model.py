@@ -14,12 +14,10 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from max import functional as F
 from max.nn.legacy.kv_cache import KVCacheParams, MultiKVCacheParams
+from max.pipelines.lib import CheckpointRole, WeightEntry, WeightTransform
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
-from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.tensor import default_device, default_dtype
 from max.tensor.sharding import DeviceMesh
 
@@ -40,13 +38,8 @@ class Gemma4AssistantModuleV3DraftArchConfig(Gemma4AssistantConfig):
         """Builds the assistant over the target's KV params.
 
         ``context`` names them. The module holds no weights: it compiles with
-        those :meth:`checkpoint_weights` returns. It embeds through the target's
-        embedding, so spec decoding shares that onto it.
-
-
-        The module holds no weights: it compiles with those
-        :meth:`checkpoint_weights` returns. It embeds through the target's
-        embedding, so spec decoding shares that onto it.
+        the weights :meth:`weight_entries` names. It embeds through the
+        target's embedding, so spec decoding shares that onto it.
 
         Raises:
             ValueError: If the method isn't ``mtp``.
@@ -85,11 +78,13 @@ class Gemma4AssistantModuleV3DraftArchConfig(Gemma4AssistantConfig):
         return draft, Gemma4AssistantDraftConfig(config)
 
     @classmethod
-    def checkpoint_weights(
+    def weight_entries(
         cls, context: ModelLoadContext, config: Gemma4AssistantDraftConfig
-    ) -> dict[str, Any]:
-        """Returns the weights the built assistant compiles with."""
+    ) -> list[WeightEntry]:
+        """Returns the entry that names the assistant's weights.
+
+        They come from its own checkpoint, named by its weight transform.
+        """
         del config
-        return parse_state_dict_from_weights(
-            context.pipeline_config, context.weights, context.adapter
-        )
+        assert isinstance(context.adapter, WeightTransform)
+        return [WeightEntry(CheckpointRole.DRAFT, context.adapter)]

@@ -109,6 +109,17 @@ from .tokenizer import (
 )
 from .utils import CompilationTimer, upper_bounded_default
 from .vision_preprocess_cache import VisionPreprocessCache
+from .weight_transform import (
+    Bitcast,
+    CheckpointRole,
+    Ignore,
+    WeightEntry,
+    WeightNaming,
+    WeightRenaming,
+    WeightRule,
+    WeightTransform,
+    apply_weight_entries,
+)
 
 __all__ = [
     "PIPELINE_REGISTRY",
@@ -116,6 +127,8 @@ __all__ = [
     "AudioGenerationTokenizer",
     "BatchProcessor",
     "BatchProcessorRuntime",
+    "Bitcast",
+    "CheckpointRole",
     "CompilationTimer",
     "DenoisingCacheConfig",
     "DenoisingCacheSettings",
@@ -126,6 +139,7 @@ __all__ = [
     "GraphSpec",
     "HuggingFaceRepo",
     "IdentityPipelineTokenizer",
+    "Ignore",
     "KVCacheConfig",
     "KVConnectorConfig",
     "LoRAConfig",
@@ -166,7 +180,13 @@ __all__ = [
     "UnifiedEagleOutputs",
     "UnifiedSpecDecodeInputs",
     "VisionPreprocessCache",
+    "WeightEntry",
+    "WeightNaming",
     "WeightPathParser",
+    "WeightRenaming",
+    "WeightRule",
+    "WeightTransform",
+    "apply_weight_entries",
     "build_eos_tracker_for_request",
     "compile_and_init_graphs",
     "convert_max_config_value",

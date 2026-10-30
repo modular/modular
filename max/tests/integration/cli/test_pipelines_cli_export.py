@@ -66,9 +66,26 @@ def test_export_writes_the_graphs_by_role(tmp_path: Path) -> None:
     caches = sections["kv_cache"]["caches"]
     assert [(cache["name"], cache["kind"]) for cache in caches] == [("", "mha")]
     assert [leaf["leaf_id"] for leaf in caches[0]["leaves"]] == ["full_group"]
-    loaded = deserialize(dest).model
-    assert loaded is not None
-    assert set(loaded.roles) == {"decoder", "sampler"}
+    # The decoder's one entry; the sampler loads no checkpoint.
+    assert sections["weight_loader"] == {
+        "decoder": [
+            {
+                "checkpoint": "target",
+                "rules": [
+                    {
+                        "rule": "WeightRenaming",
+                        "pattern": r"^model\.",
+                        "replacement": "",
+                    }
+                ],
+            }
+        ]
+    }
+    loaded = deserialize(dest)
+    assert loaded.model is not None
+    assert set(loaded.model.roles) == {"decoder", "sampler"}
+    assert loaded.weight_loader is not None
+    assert set(loaded.weight_loader.graphs) == {"decoder"}
 
 
 def test_export_names_the_decoder_inputs_and_bounds_each_step(

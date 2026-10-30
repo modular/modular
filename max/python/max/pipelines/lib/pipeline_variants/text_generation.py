@@ -97,6 +97,7 @@ from ..interfaces import (
 from ..memory_estimation import MemoryPlan
 from ..utils import CompilationTimer
 from ..vision_encoder_cache import VideoEncoderMetrics, VisionEncoderMetrics
+from ..weight_transform import WeightEntry
 
 logger = logging.getLogger("max.pipelines")
 
@@ -173,6 +174,11 @@ class TextGenerationPipelineInterface(
     compiled_modules: Mapping[str, CompiledCallable[..., Any]]
     """The graphs this pipeline compiled, by role, for export: the model's,
     then the sampler's."""
+
+    @property
+    def weight_naming(self) -> Mapping[str, Sequence[WeightEntry]]:
+        """The entries that name each of the model's graphs' weights, by role."""
+        return self._pipeline_model.weight_naming
 
     @property
     @abstractmethod

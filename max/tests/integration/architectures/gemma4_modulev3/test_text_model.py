@@ -67,6 +67,9 @@ from max.pipelines.architectures.gemma4.model_config import (
     Gemma4TextConfig,
     Gemma4VisionConfig,
 )
+from max.pipelines.architectures.gemma4.weight_adapters import (
+    GEMMA4_WEIGHT_RULES,
+)
 from max.pipelines.architectures.gemma4_modulev3.gemma4 import Gemma4TextModel
 from max.pipelines.architectures.gemma4_modulev3.layers.attention import (
     Gemma4Attention,
@@ -74,9 +77,7 @@ from max.pipelines.architectures.gemma4_modulev3.layers.attention import (
 from max.pipelines.architectures.gemma4_modulev3.layers.transformer_block import (
     Gemma4TransformerBlock,
 )
-from max.pipelines.architectures.gemma4_modulev3.weight_adapters import (
-    convert_language_state_dict_for_module,
-)
+from max.pipelines.lib import WeightRenaming, WeightTransform
 from max.tensor import Tensor, default_dtype
 from max.tensor.sharding import DeviceMesh
 
@@ -951,7 +952,7 @@ def _small_checkpoint() -> dict[str, torch.Tensor]:
 
 
 def test_checkpoint_key_conversion_matches_module_tree() -> None:
-    """The language converter's output keys must exactly cover the module.
+    """The ModuleV3 rules' language keys must exactly cover the module.
 
     ``Module.compile(weights=...)`` silently ignores unmatched entries, so
     without this a misnamed checkpoint key would leave a parameter serving
@@ -967,7 +968,9 @@ def test_checkpoint_key_conversion_matches_module_tree() -> None:
         },
     )
     converted = set(
-        convert_language_state_dict_for_module(dict(weights.items()))
+        WeightTransform(
+            [*GEMMA4_WEIGHT_RULES, WeightRenaming.prefix("language_model.")]
+        )(dict(weights.items()))
     )
 
     config = _make_small_model_config([DeviceRef.CPU()])
@@ -976,6 +979,6 @@ def test_checkpoint_key_conversion_matches_module_tree() -> None:
         model = Gemma4TextModel(config, mesh)
 
     # The eager module tree nests the text model under ``language_model.``
-    # (see Gemma4 in gemma4.py); the converter re-adds that prefix.
+    # (see Gemma4 in gemma4.py); the decoder entry's prefix rule adds it.
     expected = {f"language_model.{name}" for name in _param_names(model)}
     assert converted == expected

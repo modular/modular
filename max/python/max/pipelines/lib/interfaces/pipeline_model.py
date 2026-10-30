@@ -61,6 +61,7 @@ from max.pipelines.lib.utils import (
     CompilationTimer,
     parse_state_dict_from_weights,
 )
+from max.pipelines.lib.weight_transform import WeightEntry
 from max.pipelines.lora import (
     LoRAManagerV3,
     LoRATargetModule,
@@ -626,6 +627,9 @@ class PipelineModel(
     compiled_modules: Mapping[str, CompiledCallable[..., Any]] = (
         MappingProxyType({})
     )
+    #: The entries that name each graph's weights, by role. Empty for a
+    #: model whose naming isn't rules, which exports no ``weight_loader``.
+    weight_naming: Mapping[str, Sequence[WeightEntry]] = MappingProxyType({})
 
     def __init__(
         self,
