@@ -56,7 +56,10 @@ def _mojo_toolchain_impl(ctx):
     runtime_env = {}
     extra_runfiles = []
     if ctx.file.driver_plugin:
-        runtime_env["MODULAR_DRIVER_PLUGINS"] = ctx.file.driver_plugin.short_path
+        plugin = ctx.file.driver_plugin.short_path
+        if ctx.attr.driver_plugin_name:
+            plugin = ctx.attr.driver_plugin_name + "@" + plugin
+        runtime_env["MODULAR_DRIVER_PLUGINS"] = plugin
         extra_runfiles.append(ctx.file.driver_plugin)
 
     return [
@@ -108,6 +111,9 @@ mojo_toolchain = rule(
             allow_single_file = True,
             cfg = "target",
             doc = "Optional driver plugin (.so) to set via MODULAR_DRIVER_PLUGINS at test runtime.",
+        ),
+        "driver_plugin_name": attr.string(
+            doc = "Optional name to register `driver_plugin` under, as `name@path` in MODULAR_DRIVER_PLUGINS. The HAL DeviceContext reports a driver's name as its API.",
         ),
         "extra_build_env": attr.label(
             mandatory = False,

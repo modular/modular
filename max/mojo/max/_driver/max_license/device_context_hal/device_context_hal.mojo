@@ -437,9 +437,7 @@ struct DeviceContextBase[target: CompilationTarget = default_accelerator()](
     `conforms_to(DeviceContext.ExecutionConfigType, ClusterExecutionConfig)`.
     """
 
-    comptime default_device_info = get_gpu_info[
-        DeviceSpec.target[Self.device_spec]()._arch()
-    ]()
+    comptime default_device_info = get_gpu_info[Self.target._arch()]()
     """`GPUInfo` object for the default accelerator."""
 
     # ===-------------------------------------------------------------------===#
