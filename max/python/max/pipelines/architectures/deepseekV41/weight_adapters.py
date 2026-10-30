@@ -238,6 +238,8 @@ def _drop_file_pages(start: int, end: int) -> None:
 
     Covers pages ``MADV_PAGEOUT`` skips (files this process cannot write).
     """
+    if sys.platform != "linux":
+        return
     i = bisect.bisect_right(_READONLY_FILE_MAPPINGS, (start, sys.maxsize))
     if not i:
         return
