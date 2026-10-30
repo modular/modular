@@ -97,6 +97,10 @@ struct RawFileDescriptor(
         """
         self = f._get_raw_fd()
 
+    @inline(.always)
+    def _raw(self) -> c_int:
+        return self._value
+
     # ===------------------------------------------------------------------===#
     # UnsafeSingleNicheable
     # ===------------------------------------------------------------------===#
@@ -285,6 +289,10 @@ struct FileDescriptor(
             reached the file.
         """
         self._value.close()
+
+    @inline(.always)
+    def _raw(self) -> c_int:
+        return self._value._raw()
 
     comptime _KgenNichedFieldName = "_value".value
 

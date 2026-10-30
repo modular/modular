@@ -21,6 +21,10 @@ mojo_cabi_test(
     platforms = ["macos"],
 )
 
+_PLATFORM_CONSTRAINTS = {
+    "test_socket_macos.mojo": ["@platforms//os:macos"],
+}
+
 [
     mojo_test(
         name = src + ".test",
@@ -29,6 +33,7 @@ mojo_cabi_test(
             "--debug-level",
             "full",
         ],
+        target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:std",
             "@mojo//:test_utils",

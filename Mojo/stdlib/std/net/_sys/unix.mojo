@@ -22,11 +22,16 @@ from std.ffi import (
     c_uint,
     external_call,
 )
-from std.sys.info import platform_map, platform_type_map
+from std.io import FileDescriptor, IOError, RawFileDescriptor
+from std.io._syscall import check
+from std.sys import size_of
+from std.sys._libc import FcntlCommands, FcntlFDFlags, close, fcntl
+from std.sys.info import CompilationTarget, platform_map, platform_type_map
 
 from .inet import SockaddrIn, SockaddrIn6
 from .linux import (
     AF_INET6 as linux_AF_INET6,
+    SOCK_CLOEXEC as linux_SOCK_CLOEXEC,
     sockaddr as linux_sockaddr,
     sockaddr_in as linux_sockaddr_in,
     sockaddr_in6 as linux_sockaddr_in6,
@@ -35,6 +40,7 @@ from .linux import (
 )
 from .macos import (
     AF_INET6 as macos_AF_INET6,
+    SO_NOSIGPIPE as macos_SO_NOSIGPIPE,
     sockaddr as macos_sockaddr,
     sockaddr_in as macos_sockaddr_in,
     sockaddr_in6 as macos_sockaddr_in6,
@@ -554,3 +560,55 @@ def socketpair(
 ) -> c_int:
     """C `socketpair(2)`: creates a pair of connected sockets."""
     return external_call["socketpair", c_int](domain, type, protocol, sv)
+
+
+def open_socket(
+    domain: c_int, type: c_int, protocol: c_int
+) raises IOError -> FileDescriptor:
+    """Opens a socket that's close-on-exec and that doesn't raise `SIGPIPE`
+    when written to after the peer closes, where the platform can set that up
+    front.
+
+    If a setup step fails after the socket opens, the socket is closed before
+    that step's error is raised.
+    """
+    comptime if CompilationTarget.is_linux():
+        # Linux suppresses `SIGPIPE` per send, with `MSG_NOSIGNAL`.
+        var fd = check(
+            socket(domain, type | linux_SOCK_CLOEXEC, protocol), "socket"
+        )
+        return FileDescriptor(unsafe_raw_fd=RawFileDescriptor(fd))
+    elif CompilationTarget.is_macos():
+        # TODO: macOS has no `SOCK_CLOEXEC`, so a process spawned between
+        # `socket()` and `fcntl()` inherits the socket. Spawning children with
+        # `POSIX_SPAWN_CLOEXEC_DEFAULT` would close that gap.
+        var c_fd = check(socket(domain, type, protocol), "socket")
+        var fd = FileDescriptor(unsafe_raw_fd=RawFileDescriptor(c_fd))
+        var on: c_int = 1
+        try:
+            _ = check(
+                fcntl(
+                    fd._raw(), FcntlCommands.F_SETFD, FcntlFDFlags.FD_CLOEXEC
+                ),
+                "fcntl",
+            )
+            _ = check(
+                setsockopt(
+                    fd._raw(),
+                    SOL_SOCKET,
+                    macos_SO_NOSIGPIPE,
+                    Pointer(to=on).unsafe_bitcast[NoneType](),
+                    socklen_t(size_of[c_int]()),
+                ),
+                "setsockopt",
+            )
+        except e:
+            # ignore an error returned from close, and re-raise the op above
+            # that failed.
+            try:
+                fd^.close()
+            finally:
+                raise e
+        return fd^
+    else:
+        CompilationTarget.unsupported_target_error[operation="open_socket"]()
