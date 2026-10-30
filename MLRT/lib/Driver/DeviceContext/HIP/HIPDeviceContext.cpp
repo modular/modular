@@ -441,6 +441,29 @@ ErrorOr<bool> HIPDevice::isHostUnified() const {
   return integrated != 0;
 }
 
+ErrorOr<Device::AllocationRange> HIPDevice::allocationRange(void *ptr) const {
+  HIP_WITH_DEV_ERR(*this);
+  hipDeviceptr_t base = nullptr;
+  size_t size = 0;
+  // The same extent UCX registers, as on CUDA, so a caller that splits
+  // registrations here lines up with what the transport exports.
+  HIP_CHECK_ERR(hipDriver().hipMemGetAddressRange(&base, &size, ptr));
+  return AllocationRange{base, size};
+}
+
+ErrorOr<std::optional<std::array<uint8_t, 16>>> HIPDevice::getUuid() const {
+  DEFINE_OR_RETURN_ERROR(const HIPDriver &, driver, HIPDriver::get());
+  if (!driver.hasDeviceGetUuid())
+    return std::optional<std::array<uint8_t, 16>>();
+
+  hipUUID uuid{};
+  HIP_CHECK_ERR(driver.hipDeviceGetUuid(&uuid, hipDevice()));
+
+  std::array<uint8_t, 16> bytes;
+  std::memcpy(bytes.data(), uuid.bytes, bytes.size());
+  return std::optional<std::array<uint8_t, 16>>(bytes);
+}
+
 ErrorOr<std::string> HIPDevice::getPciBusId() const {
   ErrorOr<const HIPDriver &> driverOrError = HIPDriver::get();
   if (driverOrError.isError())
@@ -1627,8 +1650,12 @@ ErrorOrSuccess HIPDeviceContext::memWrap(void **devPtr, void *hostPtr,
 ErrorOrSuccess HIPDeviceContext::memFree(void *ptr, Device::FreeKind kind) {
   TRACY_ZONE_SCOPED_NC("HIPDeviceContext::memFree", TRACY_COLOR_PURPLE);
 
-  HIP_WITH_CTX_ERR(*this);
+  // Ahead of the context macro, whose pending error check would skip the
+  // unregister and leave the range pinned until the process exits. The CUDA
+  // backend keeps the macro first on purpose, so its free path stays as it
+  // was before this backend gained the reorder.
   if (kind == Device::FreeKind::WRAPPED) {
+    HIP_WITH_DEV_ERR(*this);
     // `hipHostUnregister` takes the host base; `ptr` is the mapped address.
     hipPointerAttribute_t attrs{};
     HIP_CHECK_ERR(driver_.hipPointerGetAttributes(&attrs, ptr));
@@ -1638,6 +1665,7 @@ ErrorOrSuccess HIPDeviceContext::memFree(void *ptr, Device::FreeKind kind) {
     return success();
   }
 
+  HIP_WITH_CTX_ERR(*this);
   if (kind == Device::FreeKind::HOST) {
     POLL_PENDING_EVENTS(*this);
     HIP_CHECK_ERR(driver_.hipHostFree(ptr));

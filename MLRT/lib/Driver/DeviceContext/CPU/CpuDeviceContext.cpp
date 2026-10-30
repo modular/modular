@@ -530,6 +530,13 @@ ErrorOrSuccess CpuDeviceContext::enqueueWaitFor(DeviceContext &ctx) {
   TRACY_ZONE_SCOPED_NC("CpuDeviceContext::enqueueWaitFor", TRACY_COLOR_PURPLE);
   RETURN_IF_PENDING_ERROR(*this);
 
+  // Waiting for this context is already satisfied: everything queued here is
+  // ordered ahead of what this call would order. Without the guard the two
+  // `streamChainMutex` locks below take the same non-recursive mutex twice and
+  // deadlock, which is why MetalDeviceContext has the same guard.
+  if (&ctx == this)
+    return success();
+
   auto &other = static_cast<CpuDeviceContext &>(ctx);
   auto eventChain =
       AsyncRT::AsyncValueRef<AsyncRT::Chain>::allocate(*cpuDevice);

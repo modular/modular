@@ -87,6 +87,8 @@ public:
 
   ErrorOr<std::string> getPciBusId() const override;
 
+  ErrorOr<std::optional<std::array<uint8_t, 16>>> getUuid() const override;
+
   ErrorOr<bool> supportsMulticast() const override;
 
   ErrorOr<bool> isHostUnified() const override;

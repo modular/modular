@@ -86,6 +86,10 @@ public:
 
   ErrorOr<std::string> getPciBusId() const override;
 
+  ErrorOr<std::optional<std::array<uint8_t, 16>>> getUuid() const override;
+
+  ErrorOr<AllocationRange> allocationRange(void *ptr) const override;
+
   ErrorOr<bool> isHostUnified() const override;
 
   static ErrorOr<int> numberOfGPUs();

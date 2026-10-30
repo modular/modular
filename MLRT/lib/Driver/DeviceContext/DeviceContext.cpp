@@ -261,6 +261,10 @@ ErrorOr<Device::AllocationRange> Device::allocationRange(void *) const {
   return Error("allocation range queries are not supported on this device");
 }
 
+ErrorOr<std::optional<std::array<uint8_t, 16>>> Device::getUuid() const {
+  return std::optional<std::array<uint8_t, 16>>();
+}
+
 // Default VMM implementations: unsupported. Backends that support VMM (CUDA)
 // override `vmmSupported()` and these methods. The MemoryManager never calls
 // the methods below unless `vmmSupported()` returned true.
@@ -2291,7 +2295,10 @@ MODULAR_CXX_EXPORT const std::string &Device::getAcceleratorArchOrEmpty() {
   return arch;
 }
 
-ErrorOrSuccess Device::enablePeerAccess(const Device &peer) {
+// Exported so dynamically linked consumers can reach it: the Python bindings
+// have to go through the AsyncRT C bridge for the all-pairs variant, and a
+// consumer that is not Python (the driver C API) has no bridge to use.
+MODULAR_CXX_EXPORT ErrorOrSuccess Device::enablePeerAccess(const Device &peer) {
   // Call device-specific implementation.
   ErrorOrSuccess result = enablePeerAccessImpl(peer);
   // If successful, set the bitvector to indicate that the peer is accessible.
@@ -2438,7 +2445,10 @@ llvm::json::Value KernelLaunchMetadata::formatJSON() const {
   return llvm::json::Value(std::move(json));
 }
 
-ErrorOrSuccess Device::enableAllPeerAccess() {
+// Exported for the same reason as `enablePeerAccess` above: the Python
+// bindings reach the all-pairs variant through the AsyncRT C bridge, which
+// only exists for Mojo and Python.
+MODULAR_CXX_EXPORT ErrorOrSuccess Device::enableAllPeerAccess() {
   int numDevices = Device::numberOfDevices(Device::gpuAPI);
   if (numDevices <= 1)
     return success();
@@ -2464,7 +2474,7 @@ ErrorOrSuccess Device::enableAllPeerAccess() {
   return success();
 }
 
-ErrorOr<bool> Device::allPeerAccessEnabled() {
+MODULAR_CXX_EXPORT ErrorOr<bool> Device::allPeerAccessEnabled() {
   if (g_allPeerAccessEnabled.load(std::memory_order_relaxed))
     return true;
 

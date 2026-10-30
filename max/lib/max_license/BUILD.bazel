@@ -74,6 +74,10 @@ modular_shared_library(
         "//GraphCompiler:SafeTensor",
         "//Init",
         "//Kernels/lib/max_license:WeightsRegistry",
+        # The driver C API, so a consumer that loads libmax at run time
+        # resolves the M_Driver* entry points against the driver
+        # implementation this library already carries.
+        "//MLRT:Driver/CAPI",
         "//Support:Context",
         "//Support:Diagnostics",
         "//Support:Globals",

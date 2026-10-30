@@ -55,6 +55,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/SmallVectorExtras.h"
 
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <map>
@@ -211,6 +212,13 @@ public:
   virtual ErrorOr<int> getAttribute(Attribute attr) const = 0;
 
   virtual ErrorOr<std::string> getPciBusId() const = 0;
+
+  /// The device's 16 byte UUID, which identifies it across processes and
+  /// across the ordinal numbering of different APIs. An empty optional means
+  /// the backend has no UUID to give, which the base reports and which CUDA and
+  /// HIP report when the vendor driver predates the query, while an error is a
+  /// fault from a driver that does have one.
+  virtual ErrorOr<std::optional<std::array<uint8_t, 16>>> getUuid() const;
 
   virtual ErrorOr<bool> supportsMulticast() const;
 

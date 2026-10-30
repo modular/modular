@@ -35,6 +35,7 @@
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Threading.h"
+#include <cstring>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -504,6 +505,18 @@ ErrorOr<std::string> CUDADevice::getPciBusId() const {
   if (nvml.nvmlDeviceGetPciInfo_v3(nvmlDevice_, &pciInfo) != NVML::SUCCESS)
     RETURN_ERROR("NVML: Unable to get PCI info");
   return std::string(pciInfo.busId);
+}
+
+ErrorOr<std::optional<std::array<uint8_t, 16>>> CUDADevice::getUuid() const {
+  if (!cudaDriver().hasCuDeviceGetUuidV2())
+    return std::optional<std::array<uint8_t, 16>>();
+
+  CUuuid uuid{};
+  CUDA_CHECK_ERR(cudaDriver().cuDeviceGetUuid_v2(&uuid, cudaDevice()));
+
+  std::array<uint8_t, 16> bytes;
+  std::memcpy(bytes.data(), uuid.bytes, bytes.size());
+  return std::optional<std::array<uint8_t, 16>>(bytes);
 }
 
 ErrorOr<bool> CUDADevice::supportsMulticast() const {

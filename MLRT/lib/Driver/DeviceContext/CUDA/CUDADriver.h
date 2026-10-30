@@ -32,6 +32,10 @@ namespace M::Driver {
 
 using CUcontext = struct CUctx_st *;
 using CUdevice = int;
+/// The 16 byte device identity `cuDeviceGetUuid_v2` fills in.
+struct CUuuid {
+  char bytes[16];
+};
 using CUdeviceptr = void *;
 using CUfunction = struct CUfunc_st *;
 using CUmemGenericAllocationHandle = unsigned long long;
@@ -545,6 +549,10 @@ public:
   /// loaded from the driver library at initialization time. Callers should
   /// check this before invoking cuMemcpyBatchAsync directly.
   bool hasCuMemcpyBatchAsync() const { return cuMemcpyBatchAsync_ != nullptr; }
+
+  /// Returns true when cuDeviceGetUuid_v2 (CUDA 11.4+) was loaded, so a
+  /// device can report the UUID that tells MIG instances apart.
+  bool hasCuDeviceGetUuidV2() const { return cuDeviceGetUuid_v2_ != nullptr; }
 
   /// Returns true when cuGraphAddDependencies_v2 (CUDA 12.3+) was loaded, so
   /// device graphs can carry programmatic edges.

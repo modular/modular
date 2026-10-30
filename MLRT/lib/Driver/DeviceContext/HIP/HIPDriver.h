@@ -31,6 +31,10 @@ namespace M::Driver {
 
 using hipCtx_t = struct ihipCtx_t *;
 using hipDevice_t = int;
+/// The 16 byte device identity `hipDeviceGetUuid` fills in.
+struct hipUUID {
+  char bytes[16];
+};
 using hipDeviceptr_t = void *;
 using hipFunction_t = struct ihipModuleSymbol_t *;
 using hipModule_t = struct ihipModule_t *;
@@ -828,6 +832,10 @@ public:
 #undef HIP_FUNC
 
   bool hasMemcpyBatchAsync() const { return hipMemcpyBatchAsync_ != nullptr; }
+
+  /// Returns true when hipDeviceGetUuid was loaded, so a device can report a
+  /// UUID rather than failing on a ROCm that predates the query.
+  bool hasDeviceGetUuid() const { return hipDeviceGetUuid_ != nullptr; }
 
   /// Whether this driver can record a value-wait into a graph being captured.
   /// hipGraphAddBatchMemOpNode only appeared in ROCm 6.4, and the capture-info

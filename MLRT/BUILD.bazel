@@ -983,3 +983,53 @@ modular_shared_library(
         "//conditions:default": [],
     }),
 )
+
+# ---------------------------------------------------------------------------
+# Driver C API, the C interface to the driver for consumers that cannot
+# include the C++ headers.
+# ---------------------------------------------------------------------------
+
+# The interface and its implementation, compiled into whoever links it.
+#
+# Like //max/python/max/_core/max_license:DriverPython, this deliberately
+# depends on Driver/DeviceContextAPI (headers) and NOT on an implementation:
+# the device contexts it hands out must be the process's, and a statically
+# linked implementation would be a second copy of them. Consumers that need
+# the implementation at runtime link //MLRT:Driver/DeviceContext (or libmax,
+# which carries the same implementation) exactly once.
+modular_cc_library(
+    name = "Driver/CAPI",
+    srcs = ["lib/Driver/CAPI/DriverCAPI.cpp"],
+    hdrs = ["include/MLRT/Driver/CAPI/DriverCAPI.h"],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":Driver/DeviceContextAPI",
+        "//Support:Base",
+        "//Support:SymbolExport",
+    ],
+    # Nothing inside a library that carries this references the entry points,
+    # so without always linking, a shared library such as libmax drops the
+    # archive member and exports none of them.
+    alwayslink = True,
+)
+
+# The driver C API as a shared library, for consumers built outside bazel,
+# which load it together with the driver implementation it carries. In tree
+# only the exports test loads it, the way such a consumer would, and that test
+# data edge does not count for the unused targets lint, so the tag keeps the
+# lint from flagging a library built for consumers outside the tree.
+modular_shared_library(
+    name = "Driver/CAPIShim",
+    srcs = [],
+    output_name = "max_driver_capi",
+    tags = ["top-level"],
+    visibility = ["//visibility:public"],
+    # The C API comes from the library above rather than a second compile of
+    # its source, and that library is always linked, so the shim carries every
+    # entry point although nothing in it references them.
+    deps = [
+        ":Driver/CAPI",
+        ":Driver/DeviceContext",
+    ],
+)

@@ -453,8 +453,16 @@ ErrorOr<MetalDevice &> MetalDevice::get(int id) {
   if (id != 0)
     RETURN_ERROR("Apple Metal device only supports id == 0.");
 
+  // Guards the lazy creation below. `get` is reached from whichever thread
+  // asks for a device, and a consumer that does not hold the GIL -- a worker
+  // pool, or the Rust driver binding -- can enter it concurrently. Two threads
+  // would then both build a device and assign to the same counted reference,
+  // and the loser's release frees the device the winner is about to return.
+  // CUDA and HIP guard their device maps the same way.
+  static std::mutex mu;
   static RCRef<MetalDevice> metalDeviceInstance;
 
+  std::lock_guard<std::mutex> lock(mu);
   if (!metalDeviceInstance) {
     NS::SharedPtr<NS::AutoreleasePool> autoreleasePool =
         NS::TransferPtr(NS::AutoreleasePool::alloc()->init());

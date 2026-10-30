@@ -249,6 +249,12 @@ CUDA_OPT_FUNC(cuMemcpyBatchAsync, Result, void **, const void **, size_t *,
               size_t, CUmemcpyAttributes *, size_t *, size_t, size_t *,
               CUstream)
 
+// cuDeviceGetUuid_v2: introduced in CUDA 11.4. Loaded optionally so an older
+// driver still initializes and only the UUID query reports not supported. The
+// v2 entry point gives each MIG instance a UUID of its own, which the original
+// does not.
+CUDA_OPT_FUNC(cuDeviceGetUuid_v2, Result, CUuuid *, CUdevice)
+
 #ifdef CUDA_OPT_FUNC_DEFINED_LOCALLY
 #undef CUDA_OPT_FUNC
 #undef CUDA_OPT_FUNC_DEFINED_LOCALLY

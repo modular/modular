@@ -1208,3 +1208,80 @@ modular_cc_test(
         "@llvm-project//llvm:Support",
     ],
 )
+
+# Exercises the driver C API (MLRT/Driver/CAPI/DriverCAPI.h) on one device.
+# The CPU cases run everywhere, but the GPU lanes run only tagged tests, and
+# the CUDA, HIP and Metal paths this covers are what matters, so it asks for a
+# GPU like the other accelerator tests here.
+modular_cc_test(
+    name = "CAPITest",
+    size = "small",
+    srcs = [
+        "CAPITest.cpp",
+        "CAPITestHelpers.h",
+        # Compiled as C on purpose: it is the only check that the header is
+        # consumable without a C++ compiler.
+        "DriverCAPIHeaderCheck.c",
+    ],
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/CAPI",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+    ],
+)
+
+# The cases that need two accelerators, which are peer access and peer copies.
+modular_cc_test(
+    name = "CAPIPeerTest",
+    size = "small",
+    srcs = [
+        "CAPIPeerTest.cpp",
+        "CAPITestHelpers.h",
+    ],
+    gpu_constraints = ["//:has_multi_gpu"],
+    tags = ["gpu"],
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/CAPI",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+    ],
+)
+
+# Loads the shim as a consumer outside bazel would and resolves every entry
+# point the C header check names, so a library that exports nothing fails
+# here rather than in that consumer. No GPU, because nothing it calls needs
+# one.
+modular_cc_test(
+    name = "CAPIShimExportsTest",
+    size = "small",
+    srcs = ["CAPIShimExportsTest.cpp"],
+    data = [
+        "DriverCAPIHeaderCheck.c",
+        "//MLRT:Driver/CAPIShim",
+    ],
+    env = {
+        "M_DRIVER_CAPI_HEADER_CHECK": "$(rootpath DriverCAPIHeaderCheck.c)",
+        "M_DRIVER_CAPI_SHIM": "$(rootpath //MLRT:Driver/CAPIShim)",
+    },
+    deps = ["//Support:Base"],
+)
+
+# Its own binary on purpose: it races the driver's lazy device initialization,
+# which a preceding test in the same process would have already completed.
+modular_cc_test(
+    name = "CAPIConcurrencyTest",
+    size = "small",
+    srcs = ["CAPIConcurrencyTest.cpp"],
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/CAPI",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//Support:Base",
+    ],
+)
