@@ -3183,7 +3183,7 @@ struct DeviceExternalFunction(ImplicitlyCopyable, Movable):
         out self,
         ctx: DeviceContext,
         var function_name: String,
-        asm: StringSlice,
+        asm: StringSpan,
     ) raises:
         """Loads a function from raw PTX/SASS bytes.
 

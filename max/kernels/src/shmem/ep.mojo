@@ -56,7 +56,7 @@ def global_cache_insert(key: String, value: OpaquePointer[mut=True, _]):
         value: An opaque pointer to the resource to cache.
     """
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(key),
+        StringSpan(key),
         value,
     )
 

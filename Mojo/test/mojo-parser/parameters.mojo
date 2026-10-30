@@ -775,13 +775,13 @@ struct MyList[T: ImplicitlyCopyable](Movable where False):
     def __init__(out self, *values: Self.T): pass
 
 # Infer-only parameters should be bindable with keywords
-comptime ImmMyStringSlice = MyStringSlice[mut=False, ...]
-struct MyStringSlice[mut: Bool, //, origin: Origin[mut=mut]](Movable where False):  pass
+comptime ImmMyStringSpan = MyStringSpan[mut=False, ...]
+struct MyStringSpan[mut: Bool, //, origin: Origin[mut=mut]](Movable where False):  pass
 
 # This only binds to immutable things.
 # CHECK-LABEL: lit.fn @"test_imm_string_slice
-# CHECK-SAME: (%a: !lit.ref<{{.*}}MyStringSlice <:!Bool {:scalar<bool> false}
-def test_imm_string_slice(a: ImmMyStringSlice):
+# CHECK-SAME: (%a: !lit.ref<{{.*}}MyStringSpan <:!Bool {:scalar<bool> false}
+def test_imm_string_slice(a: ImmMyStringSpan):
     pass
 
 

@@ -340,7 +340,7 @@ struct DType(
         self._mlir_value = mlir_value
 
     @staticmethod
-    def _from_str(str: StringSlice) -> Optional[DType]:
+    def _from_str(str: StringSpan) -> Optional[DType]:
         """Construct a DType from a string.
 
         Args:

@@ -485,7 +485,7 @@ def _check_single_tracing_system[level: TraceLevel]():
 
 
 def _enter_bridges(
-    name: StringSlice, color: UInt32, *, record_range: Bool, push_tool: Bool
+    name: StringSpan, color: UInt32, *, record_range: Bool, push_tool: Bool
 ) -> _BridgeState:
     """Engages the runtime-gated tracing bridges for a span named `name`.
 
@@ -842,7 +842,7 @@ struct Trace[
             )
         else:
             bridges = _enter_bridges(
-                StringSlice(self._name_value[String]),
+                StringSpan(self._name_value[String]),
                 color_val,
                 record_range=record_range,
                 push_tool=push_tool,
@@ -1063,7 +1063,7 @@ struct Trace[
         """
         self.__exit__()
 
-    def _emit_op_log(self, op_name: StringSlice):
+    def _emit_op_log(self, op_name: StringSpan):
         """
         Emit a log message for op tracing to stderr.
         """

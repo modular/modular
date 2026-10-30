@@ -669,7 +669,7 @@ def get_hilbert_lut_with_cache(
 
     # store the device pointer directly in global cache
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(key_str),
+        StringSpan(key_str),
         device_ptr.unsafe_bitcast[NoneType](),
     )
 

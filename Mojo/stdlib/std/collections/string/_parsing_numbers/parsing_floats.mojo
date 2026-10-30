@@ -52,11 +52,11 @@ struct UInt128Decomposed(ImplicitlyCopyable, RegisterPassable):
         return self.high >> 63
 
 
-def strip_unused_characters(x: StringSlice[_]) -> type_of(x):
+def strip_unused_characters(x: StringSpan[_]) -> type_of(x):
     return x.strip().removeprefix("+").removesuffix("f").removesuffix("F")
 
 
-def get_sign(x: StringSlice[_]) -> Tuple[Float64, type_of(x)]:
+def get_sign(x: StringSpan[_]) -> Tuple[Float64, type_of(x)]:
     if x.startswith("-"):
         return (-1.0, x[byte=1:])
     return (1.0, x)
@@ -798,7 +798,7 @@ comptime _ascii_lower: Byte = Byte(ord("A") ^ ord("a"))
 
 
 @inline(.always)
-def _is_nan(stripped: StringSlice) -> Bool:
+def _is_nan(stripped: StringSpan) -> Bool:
     comptime `n` = Byte(ord("n"))
     comptime `a` = Byte(ord("a"))
     var ptr = stripped.as_bytes().unsafe_ptr()
@@ -810,7 +810,7 @@ def _is_nan(stripped: StringSlice) -> Bool:
 
 
 @inline(.always)
-def _is_inf(stripped: StringSlice) -> Bool:
+def _is_inf(stripped: StringSpan) -> Bool:
     comptime `i` = Byte(ord("i"))
     comptime `n` = Byte(ord("n"))
     comptime `f` = Byte(ord("f"))
@@ -937,7 +937,7 @@ def _parse_decimal_text(text: StringSpan) raises -> Float64:
     return decimal_to_float64(parts, explicit_exponent, bytes[0:mantissa_end])
 
 
-def _atof(x: StringSlice) raises -> Float64:
+def _atof(x: StringSpan) raises -> Float64:
     """Parses the given string as a floating point and returns that value.
 
     For example, `atof("2.25")` returns `2.25`.

@@ -82,7 +82,7 @@ struct _CachedFunction(Movable):
     var bundle: RuntimeBundle
 
 
-def _code_digest[origin: ImmOrigin](code: StringSlice[origin=origin]) -> UInt64:
+def _code_digest[origin: ImmOrigin](code: StringSpan[origin=origin]) -> UInt64:
     """Hashes `code`'s bytes, identifying a code image by content."""
     return hash_bytes(code.as_bytes())
 
@@ -359,7 +359,7 @@ struct Context[device_spec: DeviceSpec](Deinitable, Movable):
     def load_bundle[
         asm_origin: ImmOrigin
     ](
-        self, asm: StringSlice[origin=asm_origin]
+        self, asm: StringSpan[origin=asm_origin]
     ) raises HALError -> RuntimeBundle:
         """Loads a runtime bundle from pre-compiled binary bytes."""
         # Each plugin expects a specific file_type string. PTX text is
@@ -662,7 +662,7 @@ struct Context[device_spec: DeviceSpec](Deinitable, Movable):
         asm_origin: ImmOrigin
     ](
         mut self,
-        asm: StringSlice[origin=asm_origin],
+        asm: StringSpan[origin=asm_origin],
         name: String,
         content_key: String,
         attr_code: OptionalReg[Int32],
@@ -728,7 +728,7 @@ struct Context[device_spec: DeviceSpec](Deinitable, Movable):
         asm_origin: ImmOrigin
     ](
         mut self,
-        asm: StringSlice[origin=asm_origin],
+        asm: StringSpan[origin=asm_origin],
         name: String,
         attr_code: OptionalReg[Int32] = None,
         attr_value: Int32 = 0,

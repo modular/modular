@@ -102,7 +102,7 @@ def pack_string_res(
 ) raises -> String:
     var span = Span(unsafe_ptr=str_ptr, length=str_len)
     # We can not free the resource ptr embedded in MEF, create a copy
-    return String(StringSlice(from_utf8=span))
+    return String(StringSpan(from_utf8=span))
 
 
 # ===-----------------------------------------------------------------------===#

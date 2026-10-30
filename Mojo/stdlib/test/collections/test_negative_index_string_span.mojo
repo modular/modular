@@ -20,7 +20,7 @@
 # CHECK-LABEL: test_negative_index_string_span
 def main():
     print("== test_negative_index_string_span")
-    var s = StringSlice("abc")
+    var s = StringSpan("abc")
     var i = -1
     # CHECK: test_negative_index_string_span.mojo:26:10: Assert Error: index -1 is out of bounds, valid range is 0 to 2
     _ = s[byte=i]

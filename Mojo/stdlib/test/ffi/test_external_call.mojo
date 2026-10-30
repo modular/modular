@@ -60,7 +60,7 @@ def test_snprintf_mixed_variadic_args() raises:
     )
 
     var formatted = String(
-        StringSlice(unsafe_from_utf8=CStringSpan(unsafe_from_ptr=buf))
+        StringSpan(unsafe_from_utf8=CStringSpan(unsafe_from_ptr=buf))
     )
 
     assert_equal(formatted, "[42|mid|-7|2.50|z]")

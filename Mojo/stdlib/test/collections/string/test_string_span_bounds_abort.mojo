@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 #
 # Verifies that invalid `byte=` `ContiguousSlice` indexing (out of bounds,
-# reversed, or negative) aborts on `StringSlice` and `String` instead of
+# reversed, or negative) aborts on `StringSpan` and `String` instead of
 # silently clamping.
 #
 # ===----------------------------------------------------------------------=== #
@@ -27,19 +27,19 @@ from std.sys import get_defined_int
 
 def main() raises:
     comptime if get_defined_int["test"]() == 1:
-        var s = StringSlice("abc")
+        var s = StringSpan("abc")
         # CHECK_1: {{.*}}: Assert Error: slice end index 100 is out of bounds, valid range is 0 to 3
         _ = s[byte=0:100]
     elif get_defined_int["test"]() == 2:
-        var s = StringSlice("abc")
+        var s = StringSpan("abc")
         # CHECK_2: {{.*}}: Assert Error: slice start index 3 is greater than slice end index 1
         _ = s[byte=3:1]
     elif get_defined_int["test"]() == 3:
-        var s = StringSlice("abc")
+        var s = StringSpan("abc")
         # CHECK_3: {{.*}}: Assert Error: slice start index -1 is out of bounds, valid range is 0 to 3
         _ = s[byte= -1:]
     elif get_defined_int["test"]() == 4:
-        # Through `String`'s `byte=` accessor, which delegates to `StringSlice`.
+        # Through `String`'s `byte=` accessor, which delegates to `StringSpan`.
         var s = String("abc")
         # CHECK_4: {{.*}}: Assert Error: slice end index 100 is out of bounds, valid range is 0 to 3
         _ = s[byte=0:100]

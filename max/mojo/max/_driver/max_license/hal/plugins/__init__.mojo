@@ -208,14 +208,14 @@ comptime PluginResultCode = Int64
 
 trait HALPluginConstructable(Deinitable, TrivialRegisterPassable):
     def __init__(
-        out self, var handle: _DLHandle, so_path: StringSlice
+        out self, var handle: _DLHandle, so_path: StringSpan
     ) raises HALError:
         self = Self(handle, so_path, use_reflection=())
 
     def __init__(
         out self,
         var handle: _DLHandle,
-        so_path: StringSlice,
+        so_path: StringSpan,
         *,
         use_reflection: Tuple[],
     ) raises HALError:
@@ -272,9 +272,7 @@ struct HALFunction[
 
     var _f: OptionalReg[Self.fn_type]
 
-    def __init__(
-        out self, lib: _DLHandle, so_path: StringSlice
-    ) raises HALError:
+    def __init__(out self, lib: _DLHandle, so_path: StringSpan) raises HALError:
         comptime assert __fn_type_is_cabi[Self.fn_type](), (
             "fn_type must conform to C ABI; declare the RawPlugin field"
             ' as `def(...) thin abi("C") -> PluginResultCode`'

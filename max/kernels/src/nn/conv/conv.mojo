@@ -3989,7 +3989,7 @@ def _get_cudnn_meta(
     new_ptr_meta.unsafe_write(CuDNNConvMeta())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(cache_key),
+        StringSpan(cache_key),
         new_ptr_meta.unsafe_bitcast[NoneType](),
     )
 
@@ -4121,7 +4121,7 @@ def _get_cached_cudnn_meta_nhwc_full(
     new_ptr_meta.unsafe_write(CachedCuDNNMetaNHWCFull())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(cache_key),
+        StringSpan(cache_key),
         new_ptr_meta.unsafe_bitcast[NoneType](),
     )
 
@@ -4495,7 +4495,7 @@ def _get_cached_miopen_meta[
     new_ptr_meta.unsafe_write(CachedMIOpenMeta[conv_rank]())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(cache_key),
+        StringSpan(cache_key),
         new_ptr_meta.unsafe_bitcast[NoneType](),
     )
 
@@ -6914,7 +6914,7 @@ def _conv3d_cudnn[
             )
         )
         external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-            StringSlice(cache_key),
+            StringSpan(cache_key),
             ptr_entry.unsafe_bitcast[NoneType](),
         )
 
@@ -6992,7 +6992,7 @@ def _conv3d_cudnn[
                 )
             )
             external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-                StringSlice(cache_key),
+                StringSpan(cache_key),
                 retry_entry.unsafe_bitcast[NoneType](),
             )
 

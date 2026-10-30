@@ -128,14 +128,14 @@ struct RawFileDescriptor(
         )
         assert written == len(bytes), "expected amount of bytes not written"
 
-    def write_string(mut self, string: StringSlice):
+    def write_string(mut self, string: StringSpan):
         """
-        Write a `StringSlice` to this `RawFileDescriptor`.
+        Write a `StringSpan` to this `RawFileDescriptor`.
 
         This method is required by the `Writer` trait.
 
         Args:
-            string: The `StringSlice` to write to this `RawFileDescriptor`.
+            string: The `StringSpan` to write to this `RawFileDescriptor`.
         """
         self.write_bytes(string.as_bytes())
 

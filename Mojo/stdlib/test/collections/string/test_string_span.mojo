@@ -29,7 +29,7 @@ from test_utils import check_niches
 # Reusable testing data
 # ===----------------------------------------------------------------------=== #
 
-comptime EVERY_CODEPOINT_LENGTH_STR = StringSlice("߷കൈ🔄!")
+comptime EVERY_CODEPOINT_LENGTH_STR = StringSpan("߷കൈ🔄!")
 """A string that contains at least one of 1-, 2-, 3-, and 4-byte UTF-8
 sequences.
 
@@ -82,16 +82,16 @@ def test_string_span_layout() raises:
 
 
 def test_constructors() raises:
-    def take_string_span(b: StringSlice[_]) raises:
+    def take_string_span(b: StringSpan[_]) raises:
         comptime assert not type_of(b.as_bytes()).mut
 
     var a = "123"
     take_string_span(a)
-    take_string_span(StringSlice(a))
+    take_string_span(StringSpan(a))
 
 
 def test_string_slice_from_string_static_repr() raises:
-    """Tests special case of StringSlice from String pointing to static data."""
+    """Tests special case of StringSpan from String pointing to static data."""
 
     var is_static_string = lambda (s: String) -> Bool: (
         not s._is_inline() and not s._is_ref_counted()
@@ -101,7 +101,7 @@ def test_string_slice_from_string_static_repr() raises:
     assert_true(is_static_string(s1))
 
     # Borrowing doesn't change `s1`.
-    var str1 = StringSlice(s1)
+    var str1 = StringSpan(s1)
     assert_equal(str1, "foo")
     assert_true(is_static_string(s1))
 
@@ -231,7 +231,7 @@ def test_string_byte_span() raises:
     # ┃72┃105┃240┃159┃145┃139┃33┃ Bytes
     # ┗━━┻━━━┻━━━┻━━━┻━━━┻━━━┻━━┛
     #  0   1   2   3   4   5   6
-    var unicode_str1 = StringSlice("Hi👋!")
+    var unicode_str1 = StringSpan("Hi👋!")
 
     # Test slicing 0:{0–7}
     assert_equal(unicode_str1[byte=0:0], "")
@@ -258,7 +258,7 @@ def test_string_byte_span() raises:
     # ┃121┃111┃204┃136┃ Bytes
     # ┗━━━┻━━━┻━━━┻━━━┛
     #   0   1   2   3
-    var unicode_str2 = StringSlice("yö")
+    var unicode_str2 = StringSpan("yö")
 
     assert_equal(unicode_str2[byte=0:1], "y")
     assert_equal(unicode_str2[byte=0:2], "yo")
@@ -269,7 +269,7 @@ def test_string_byte_span() raises:
 
 
 def test_heap_string_from_string_slice() raises:
-    comptime static_str = StringSlice("Hello")
+    comptime static_str = StringSpan("Hello")
 
     comptime heap_string = String(static_str)
 
@@ -278,7 +278,7 @@ def test_heap_string_from_string_slice() raises:
 
 def test_string_substring() raises:
     var string = "Hello"
-    var str_slice = StringSlice(string)
+    var str_slice = StringSpan(string)
 
     assert_equal(str_slice.byte_length(), 5)
     assert_equal(str_slice[byte=0], "H")
@@ -331,12 +331,12 @@ def test_string_substring() raises:
 
 
 def test_slice_len() raises:
-    assert_equal(5, StringSlice("12345").byte_length())
-    assert_equal(4, StringSlice("1234").byte_length())
-    assert_equal(3, StringSlice("123").byte_length())
-    assert_equal(2, StringSlice("12").byte_length())
-    assert_equal(1, StringSlice("1").byte_length())
-    assert_equal(0, StringSlice("").byte_length())
+    assert_equal(5, StringSpan("12345").byte_length())
+    assert_equal(4, StringSpan("1234").byte_length())
+    assert_equal(3, StringSpan("123").byte_length())
+    assert_equal(2, StringSpan("12").byte_length())
+    assert_equal(1, StringSpan("1").byte_length())
+    assert_equal(0, StringSpan("").byte_length())
 
     # String length is in bytes, not codepoints.
     var s0 = "ನಮಸ್ಕಾರ"
@@ -350,11 +350,11 @@ def test_slice_len() raises:
 
 
 def test_slice_count_codepoints() raises:
-    var s0 = StringSlice("")
+    var s0 = StringSpan("")
     assert_equal(s0.byte_length(), 0)
     assert_equal(s0.count_codepoints(), 0)
 
-    var s1 = StringSlice("foo")
+    var s1 = StringSpan("foo")
     assert_equal(s1.byte_length(), 3)
     assert_equal(s1.count_codepoints(), 3)
 
@@ -364,13 +364,13 @@ def test_slice_count_codepoints() raises:
     assert_equal(s2.count_codepoints(), 5)
 
     # Just a bit of Zalgo text.
-    var s3 = StringSlice("H̵͙̖̼̬̬̲̱͊̇̅͂̍͐͌͘͜͝")
+    var s3 = StringSpan("H̵͙̖̼̬̬̲̱͊̇̅͂̍͐͌͘͜͝")
     assert_equal(s3.byte_length(), 37)
     assert_equal(s3.count_codepoints(), 19)
 
     # Character length is codepoints, not graphemes
     # This is thumbs up + a skin tone modifier codepoint.
-    var s4 = StringSlice("👍🏻")
+    var s4 = StringSpan("👍🏻")
     assert_equal(s4.byte_length(), 8)
     assert_equal(s4.count_codepoints(), 2)
     # TODO: assert_equal(s4.grapheme_count(), 1)
@@ -386,26 +386,26 @@ def test_slice_eq() raises:
 
     # eq
 
-    # FIXME: the origin of the StringSlice origin should be the data in the
+    # FIXME: the origin of the StringSpan origin should be the data in the
     # string, not the string itself.
-    # assert_true(StringSlice(str1).__eq__(str1))
-    assert_true(StringSlice(str1).__eq__(str2))
-    assert_true(StringSlice(str2).__eq__(StringSlice(str2)))
-    assert_true(StringSlice(str1).__eq__(str3))
+    # assert_true(StringSpan(str1).__eq__(str1))
+    assert_true(StringSpan(str1).__eq__(str2))
+    assert_true(StringSpan(str2).__eq__(StringSpan(str2)))
+    assert_true(StringSpan(str1).__eq__(str3))
 
     # ne
 
-    assert_true(StringSlice(str1).__ne__(str4))
-    assert_true(StringSlice(str1).__ne__(str5))
-    assert_true(StringSlice(str1).__ne__(StringSlice(str5)))
-    assert_true(StringSlice(str1).__ne__(str6))
+    assert_true(StringSpan(str1).__ne__(str4))
+    assert_true(StringSpan(str1).__ne__(str5))
+    assert_true(StringSpan(str1).__ne__(StringSpan(str5)))
+    assert_true(StringSpan(str1).__ne__(str6))
 
 
 def test_slice_bool() raises:
     var str1: String = "abc"
-    assert_true(StringSlice(str1).__bool__())
+    assert_true(StringSpan(str1).__bool__())
     var str2: String = ""
-    assert_true(not StringSlice(str2).__bool__())
+    assert_true(not StringSpan(str2).__bool__())
 
 
 comptime REPR_MAPPINGS = [
@@ -460,56 +460,56 @@ comptime REPR_MAPPINGS = [
 def test_slice_write_repr_to() raises:
     for item in materialize[REPR_MAPPINGS]():
         var string = String()
-        StringSlice.write_repr_to(item[0], string)
+        StringSpan.write_repr_to(item[0], string)
         assert_equal(string, item[1])
 
 
 def test_find() raises:
-    var haystack = StringSlice("abcdefg")
-    var haystack_with_special_chars = StringSlice("abcdefg@#$")
-    var haystack_repeated_chars = StringSlice("aaaaaaaaaaaaaaaaaaaaaaaa")
+    var haystack = StringSpan("abcdefg")
+    var haystack_with_special_chars = StringSpan("abcdefg@#$")
+    var haystack_repeated_chars = StringSpan("aaaaaaaaaaaaaaaaaaaaaaaa")
 
-    assert_equal(haystack.find(StringSlice("a")), 0)
-    assert_equal(haystack.find(StringSlice("ab")), 0)
-    assert_equal(haystack.find(StringSlice("abc")), 0)
-    assert_equal(haystack.find(StringSlice("bcd")), 1)
-    assert_equal(haystack.find(StringSlice("de")), 3)
-    assert_equal(haystack.find(StringSlice("fg")), 5)
-    assert_equal(haystack.find(StringSlice("g")), 6)
-    assert_equal(haystack.find(StringSlice("z")), -1)
-    assert_equal(haystack.find(StringSlice("zzz")), -1)
+    assert_equal(haystack.find(StringSpan("a")), 0)
+    assert_equal(haystack.find(StringSpan("ab")), 0)
+    assert_equal(haystack.find(StringSpan("abc")), 0)
+    assert_equal(haystack.find(StringSpan("bcd")), 1)
+    assert_equal(haystack.find(StringSpan("de")), 3)
+    assert_equal(haystack.find(StringSpan("fg")), 5)
+    assert_equal(haystack.find(StringSpan("g")), 6)
+    assert_equal(haystack.find(StringSpan("z")), -1)
+    assert_equal(haystack.find(StringSpan("zzz")), -1)
 
-    assert_equal(haystack.find(StringSlice("@#$")), -1)
-    assert_equal(haystack_with_special_chars.find(StringSlice("@#$")), 7)
+    assert_equal(haystack.find(StringSpan("@#$")), -1)
+    assert_equal(haystack_with_special_chars.find(StringSpan("@#$")), 7)
 
-    assert_equal(haystack_repeated_chars.find(StringSlice("aaa")), 0)
-    assert_equal(haystack_repeated_chars.find(StringSlice("AAa")), -1)
+    assert_equal(haystack_repeated_chars.find(StringSpan("aaa")), 0)
+    assert_equal(haystack_repeated_chars.find(StringSpan("AAa")), -1)
 
-    assert_equal(haystack.find(StringSlice("hijklmnopqrstuvwxyz")), -1)
+    assert_equal(haystack.find(StringSpan("hijklmnopqrstuvwxyz")), -1)
 
-    assert_equal(StringSlice(String()).find(StringSlice("abc")), -1)
+    assert_equal(StringSpan(String()).find(StringSpan("abc")), -1)
 
 
 def test_find_compile_time() raises:
-    comptime haystack = StringSlice("abcdefg")
-    comptime haystack_with_special_chars = StringSlice("abcdefg@#$")
-    comptime haystack_repeated_chars = StringSlice("aaaaaaaaaaaaaaaaaaaaaaaa")
+    comptime haystack = StringSpan("abcdefg")
+    comptime haystack_with_special_chars = StringSpan("abcdefg@#$")
+    comptime haystack_repeated_chars = StringSpan("aaaaaaaaaaaaaaaaaaaaaaaa")
 
-    comptime c1 = haystack.find(StringSlice("a"))
-    comptime c2 = haystack.find(StringSlice("ab"))
-    comptime c3 = haystack.find(StringSlice("abc"))
-    comptime c4 = haystack.find(StringSlice("bcd"))
-    comptime c5 = haystack.find(StringSlice("de"))
-    comptime c6 = haystack.find(StringSlice("fg"))
-    comptime c7 = haystack.find(StringSlice("g"))
-    comptime c8 = haystack.find(StringSlice("z"))
-    comptime c9 = haystack.find(StringSlice("zzz"))
-    comptime c10 = haystack.find(StringSlice("@#$"))
-    comptime c11 = haystack_with_special_chars.find(StringSlice("@#$"))
-    comptime c12 = haystack_repeated_chars.find(StringSlice("aaa"))
-    comptime c13 = haystack_repeated_chars.find(StringSlice("AAa"))
-    comptime c14 = haystack.find(StringSlice("hijklmnopqrstuvwxyz"))
-    comptime c15 = StringSlice(String()).find(StringSlice("abc"))
+    comptime c1 = haystack.find(StringSpan("a"))
+    comptime c2 = haystack.find(StringSpan("ab"))
+    comptime c3 = haystack.find(StringSpan("abc"))
+    comptime c4 = haystack.find(StringSpan("bcd"))
+    comptime c5 = haystack.find(StringSpan("de"))
+    comptime c6 = haystack.find(StringSpan("fg"))
+    comptime c7 = haystack.find(StringSpan("g"))
+    comptime c8 = haystack.find(StringSpan("z"))
+    comptime c9 = haystack.find(StringSpan("zzz"))
+    comptime c10 = haystack.find(StringSpan("@#$"))
+    comptime c11 = haystack_with_special_chars.find(StringSpan("@#$"))
+    comptime c12 = haystack_repeated_chars.find(StringSpan("aaa"))
+    comptime c13 = haystack_repeated_chars.find(StringSpan("AAa"))
+    comptime c14 = haystack.find(StringSpan("hijklmnopqrstuvwxyz"))
+    comptime c15 = StringSpan(String()).find(StringSpan("abc"))
 
     assert_equal(c1, 0)
     assert_equal(c2, 0)
@@ -548,21 +548,21 @@ def test_find_mstdl_2258() raises:
 
 
 def test_is_codepoint_boundary() raises:
-    var abc = StringSlice("abc")
+    var abc = StringSpan("abc")
     assert_equal(abc.byte_length(), 3)
     assert_true(abc.is_codepoint_boundary(0))
     assert_true(abc.is_codepoint_boundary(1))
     assert_true(abc.is_codepoint_boundary(2))
     assert_true(abc.is_codepoint_boundary(3))
 
-    var thumb = StringSlice("👍")
+    var thumb = StringSpan("👍")
     assert_equal(thumb.byte_length(), 4)
     assert_true(thumb.is_codepoint_boundary(0))
     assert_false(thumb.is_codepoint_boundary(1))
     assert_false(thumb.is_codepoint_boundary(2))
     assert_false(thumb.is_codepoint_boundary(3))
 
-    var empty = StringSlice("")
+    var empty = StringSpan("")
     assert_equal(empty.byte_length(), 0)
     assert_true(empty.is_codepoint_boundary(0))
     # Also tests that positions greater then the length don't raise/abort.
@@ -570,49 +570,49 @@ def test_is_codepoint_boundary() raises:
 
 
 def test_comparison_operators() raises:
-    var abc = StringSlice("abc")
-    var de = StringSlice("de")
-    var ABC = StringSlice("ABC")
-    var ab = StringSlice("ab")
-    var abcd = StringSlice("abcd")
+    var abc = StringSpan("abc")
+    var de = StringSpan("de")
+    var ABC = StringSpan("ABC")
+    var ab = StringSpan("ab")
+    var abcd = StringSpan("abcd")
 
     # Test equality and inequality
-    assert_true(StringSlice.__eq__(abc, abc))
-    assert_true(StringSlice.__eq__(abc, "abc"))
-    assert_false(StringSlice.__eq__(abc, de))
-    assert_false(StringSlice.__eq__(abc, "xyz"))
+    assert_true(StringSpan.__eq__(abc, abc))
+    assert_true(StringSpan.__eq__(abc, "abc"))
+    assert_false(StringSpan.__eq__(abc, de))
+    assert_false(StringSpan.__eq__(abc, "xyz"))
 
     # Test less than and greater than
-    assert_true(StringSlice.__lt__(abc, de))
-    assert_false(StringSlice.__lt__(de, abc))
-    assert_false(StringSlice.__lt__(abc, abc))
-    assert_true(StringSlice.__lt__(ab, abc))
-    assert_true(StringSlice.__gt__(abc, ab))
-    assert_false(StringSlice.__gt__(abc, abcd))
+    assert_true(StringSpan.__lt__(abc, de))
+    assert_false(StringSpan.__lt__(de, abc))
+    assert_false(StringSpan.__lt__(abc, abc))
+    assert_true(StringSpan.__lt__(ab, abc))
+    assert_true(StringSpan.__gt__(abc, ab))
+    assert_false(StringSpan.__gt__(abc, abcd))
 
     # Test less than or equal to and greater than or equal to
-    assert_true(StringSlice.__le__(abc, de))
-    assert_true(StringSlice.__le__(abc, abc))
-    assert_false(StringSlice.__le__(de, abc))
-    assert_true(StringSlice.__ge__(abc, abc))
-    assert_false(StringSlice.__ge__(ab, abc))
-    assert_true(StringSlice.__ge__(abcd, abc))
+    assert_true(StringSpan.__le__(abc, de))
+    assert_true(StringSpan.__le__(abc, abc))
+    assert_false(StringSpan.__le__(de, abc))
+    assert_true(StringSpan.__ge__(abc, abc))
+    assert_false(StringSpan.__ge__(ab, abc))
+    assert_true(StringSpan.__ge__(abcd, abc))
 
     # Test case sensitivity in comparison (assuming ASCII order)
-    assert_true(StringSlice.__gt__(abc, ABC))
-    assert_false(StringSlice.__le__(abc, ABC))
+    assert_true(StringSpan.__gt__(abc, ABC))
+    assert_false(StringSpan.__le__(abc, ABC))
 
     # Testing with implicit conversion
-    assert_true(StringSlice.__lt__(abc, "defgh"))
-    assert_false(StringSlice.__gt__(abc, "xyz"))
-    assert_true(StringSlice.__ge__(abc, "abc"))
-    assert_false(StringSlice.__le__(abc, "ab"))
+    assert_true(StringSpan.__lt__(abc, "defgh"))
+    assert_false(StringSpan.__gt__(abc, "xyz"))
+    assert_true(StringSpan.__ge__(abc, "abc"))
+    assert_false(StringSpan.__le__(abc, "ab"))
 
     # Test comparisons involving empty strings
-    assert_true(StringSlice.__lt__("", abc))
-    assert_false(StringSlice.__lt__(abc, ""))
-    assert_true(StringSlice.__le__("", ""))
-    assert_true(StringSlice.__ge__("", ""))
+    assert_true(StringSpan.__lt__("", abc))
+    assert_false(StringSpan.__lt__(abc, ""))
+    assert_true(StringSpan.__le__("", ""))
+    assert_true(StringSpan.__ge__("", ""))
 
 
 def test_split() raises:
@@ -640,7 +640,7 @@ def test_split() raises:
         String(unsafe_from_utf8=unicode_paragraph_sep),
     )
     var s = univ_sep_var + "hello" + univ_sep_var + "world" + univ_sep_var
-    assert_equal(StringSlice(s).split(), [StaticString("hello"), "world"])
+    assert_equal(StringSpan(s).split(), [StaticString("hello"), "world"])
 
     # should split into empty strings between separators
     assert_equal(S("1,,,3").split(","), [StaticString("1"), "", "", "3"])
@@ -788,26 +788,26 @@ def test_splitlines() raises:
 
 def test_rstrip() raises:
     # with default rstrip chars
-    var empty_string = StringSlice("")
+    var empty_string = StringSpan("")
     assert_true(empty_string.rstrip() == "")
 
-    var space_string = StringSlice(" \t\n\r\v\f  ")
+    var space_string = StringSpan(" \t\n\r\v\f  ")
     assert_true(space_string.rstrip() == "")
 
-    var str0 = StringSlice("     n ")
+    var str0 = StringSpan("     n ")
     assert_true(str0.rstrip() == "     n")
 
-    var str1 = StringSlice("string")
+    var str1 = StringSpan("string")
     assert_true(str1.rstrip() == "string")
 
-    var str2 = StringSlice("something \t\n\t\v\f")
+    var str2 = StringSpan("something \t\n\t\v\f")
     assert_true(str2.rstrip() == "something")
 
     # with custom chars for rstrip
-    var str3 = StringSlice("mississippi")
+    var str3 = StringSpan("mississippi")
     assert_true(str3.rstrip("sip") == "m")
 
-    var str4 = StringSlice("mississippimississippi \n ")
+    var str4 = StringSpan("mississippimississippi \n ")
     assert_true(str4.rstrip("sip ") == "mississippimississippi \n")
     assert_true(str4.rstrip("sip \n") == "mississippim")
 
@@ -822,26 +822,26 @@ def test_rstrip() raises:
 
 def test_lstrip() raises:
     # with default lstrip chars
-    var empty_string = StringSlice("")
+    var empty_string = StringSpan("")
     assert_true(empty_string.lstrip() == "")
 
-    var space_string = StringSlice(" \t\n\r\v\f  ")
+    var space_string = StringSpan(" \t\n\r\v\f  ")
     assert_true(space_string.lstrip() == "")
 
-    var str0 = StringSlice("     n ")
+    var str0 = StringSpan("     n ")
     assert_true(str0.lstrip() == "n ")
 
-    var str1 = StringSlice("string")
+    var str1 = StringSpan("string")
     assert_true(str1.lstrip() == "string")
 
-    var str2 = StringSlice(" \t\n\t\v\fsomething")
+    var str2 = StringSpan(" \t\n\t\v\fsomething")
     assert_true(str2.lstrip() == "something")
 
     # with custom chars for lstrip
-    var str3 = StringSlice("mississippi")
+    var str3 = StringSpan("mississippi")
     assert_true(str3.lstrip("mis") == "ppi")
 
-    var str4 = StringSlice(" \n mississippimississippi")
+    var str4 = StringSpan(" \n mississippimississippi")
     assert_true(str4.lstrip("mis ") == "\n mississippimississippi")
     assert_true(str4.lstrip("mis \n") == "ppimississippi")
 
@@ -855,44 +855,44 @@ def test_lstrip() raises:
 
 def test_strip() raises:
     # with default strip chars
-    var empty_string = StringSlice("")
+    var empty_string = StringSpan("")
     assert_true(empty_string.strip() == "")
-    comptime comp_empty_string_stripped = StringSlice("").strip()
+    comptime comp_empty_string_stripped = StringSpan("").strip()
     assert_true(comp_empty_string_stripped == "")
 
-    var space_string = StringSlice(" \t\n\r\v\f  ")
+    var space_string = StringSpan(" \t\n\r\v\f  ")
     assert_true(space_string.strip() == "")
-    comptime comp_space_string_stripped = StringSlice(" \t\n\r\v\f  ").strip()
+    comptime comp_space_string_stripped = StringSpan(" \t\n\r\v\f  ").strip()
     assert_true(comp_space_string_stripped == "")
 
-    var str0 = StringSlice("     n ")
+    var str0 = StringSpan("     n ")
     assert_true(str0.strip() == "n")
-    comptime comp_str0_stripped = StringSlice("     n ").strip()
+    comptime comp_str0_stripped = StringSpan("     n ").strip()
     assert_true(comp_str0_stripped == "n")
 
-    var str1 = StringSlice("string")
+    var str1 = StringSpan("string")
     assert_true(str1.strip() == "string")
     comptime comp_str1_stripped = ("string").strip()
     assert_true(comp_str1_stripped == "string")
 
-    var str2 = StringSlice(" \t\n\t\v\fsomething \t\n\t\v\f")
+    var str2 = StringSpan(" \t\n\t\v\fsomething \t\n\t\v\f")
     comptime comp_str2_stripped = (" \t\n\t\v\fsomething \t\n\t\v\f").strip()
     assert_true(str2.strip() == "something")
     assert_true(comp_str2_stripped == "something")
 
     # with custom strip chars
-    var str3 = StringSlice("mississippi")
+    var str3 = StringSpan("mississippi")
     assert_true(str3.strip("mips") == "")
     assert_true(str3.strip("mip") == "ssiss")
-    comptime comp_str3_stripped = StringSlice("mississippi").strip("mips")
+    comptime comp_str3_stripped = StringSpan("mississippi").strip("mips")
     assert_true(comp_str3_stripped == "")
 
-    var str4 = StringSlice(" \n mississippimississippi \n ")
+    var str4 = StringSpan(" \n mississippimississippi \n ")
     assert_true(str4.strip(" ") == "\n mississippimississippi \n")
     assert_true(str4.strip("\nmip ") == "ssissippimississ")
 
     comptime comp_str4_stripped = (
-        StringSlice(" \n mississippimississippi \n ").strip(" ")
+        StringSpan(" \n mississippimississippi \n ").strip(" ")
     )
     assert_true(comp_str4_stripped == "\n mississippimississippi \n")
 
@@ -909,9 +909,9 @@ def test_strip_mutable_chars() raises:
     # otherwise it can't alias `self` and it can't be a mutable local at all
     # once `self` is an interior slice of it.
     var chars = String("hi")
-    assert_equal(StringSlice("himojohi").lstrip(chars), "mojohi")
-    assert_equal(StringSlice("himojohi").rstrip(chars), "himojo")
-    assert_equal(StringSlice("himojohi").strip(chars), "mojo")
+    assert_equal(StringSpan("himojohi").lstrip(chars), "mojohi")
+    assert_equal(StringSpan("himojohi").rstrip(chars), "himojo")
+    assert_equal(StringSpan("himojohi").strip(chars), "mojo")
 
     var self_aliasing = StaticString("aabbaa")
     assert_equal(self_aliasing.lstrip(self_aliasing), "")
@@ -920,17 +920,17 @@ def test_strip_mutable_chars() raises:
 
 
 def test_startswith() raises:
-    var empty = StringSlice("")
+    var empty = StringSpan("")
     assert_true(empty.startswith(""))
     assert_false(empty.startswith("a"))
     assert_false(empty.startswith("ab"))
 
-    var a = StringSlice("a")
+    var a = StringSpan("a")
     assert_true(a.startswith(""))
     assert_true(a.startswith("a"))
     assert_false(a.startswith("ab"))
 
-    var ab = StringSlice("ab")
+    var ab = StringSpan("ab")
     assert_true(ab.startswith(""))
     assert_true(ab.startswith("a"))
     assert_false(ab.startswith("b"))
@@ -940,17 +940,17 @@ def test_startswith() raises:
 
 
 def test_endswith() raises:
-    var empty = StringSlice("")
+    var empty = StringSpan("")
     assert_true(empty.endswith(""))
     assert_false(empty.endswith("a"))
     assert_false(empty.endswith("ab"))
 
-    var a = StringSlice("a")
+    var a = StringSpan("a")
     assert_true(a.endswith(""))
     assert_true(a.endswith("a"))
     assert_false(a.endswith("ab"))
 
-    var ab = StringSlice("ab")
+    var ab = StringSpan("ab")
     assert_true(ab.endswith(""))
     assert_false(ab.endswith("a"))
     assert_true(ab.endswith("b"))
@@ -960,7 +960,7 @@ def test_endswith() raises:
 
 
 def test_startswith_endswith_no_match_long() raises:
-    var long = StringSlice(
+    var long = StringSpan(
         "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij"
     )
     assert_false(long.startswith("zzz"))
@@ -972,8 +972,8 @@ def test_startswith_endswith_no_match_long() raises:
     assert_true(long.startswith("abc"))
     assert_true(long.endswith("hij"))
 
-    assert_false(long.startswith(StringSlice(String(long) + "x")))
-    assert_false(long.endswith(StringSlice(String(long) + "x")))
+    assert_false(long.startswith(StringSpan(String(long) + "x")))
+    assert_false(long.endswith(StringSpan(String(long) + "x")))
 
     assert_false(long.startswith("a", start=long.byte_length()))
     assert_false(long.startswith("", start=long.byte_length() + 1))
@@ -996,7 +996,7 @@ def test_startswith_endswith_no_match_long() raises:
 
 
 def test_startswith_endswith_explicit_end() raises:
-    var s = StringSlice("hello")
+    var s = StringSpan("hello")
 
     assert_true(s.startswith("ell", start=1, end=4))
     assert_false(s.startswith("ello", start=1, end=4))
@@ -1020,77 +1020,77 @@ def test_startswith_endswith_explicit_end() raises:
 
 
 def test_mul() raises:
-    assert_equal(StringSlice("ab") * 3, "ababab")
-    assert_equal(StringSlice("ab") * 1, "ab")
-    assert_equal(StringSlice("ab") * 0, "")
-    assert_equal(StringSlice("ab") * -1, "")
-    assert_equal(StringSlice("") * 5, "")
+    assert_equal(StringSpan("ab") * 3, "ababab")
+    assert_equal(StringSpan("ab") * 1, "ab")
+    assert_equal(StringSpan("ab") * 0, "")
+    assert_equal(StringSpan("ab") * -1, "")
+    assert_equal(StringSpan("") * 5, "")
     # Multi-byte codepoints must not be split across the repetitions.
-    assert_equal(StringSlice("🔥é") * 2, "🔥é🔥é")
+    assert_equal(StringSpan("🔥é") * 2, "🔥é🔥é")
     # A result past the inline capacity exercises the heap-allocated path.
-    assert_equal(StringSlice("abcde") * 5, "abcdeabcdeabcdeabcdeabcde")
+    assert_equal(StringSpan("abcde") * 5, "abcdeabcdeabcdeabcdeabcde")
 
 
 def test_isupper() raises:
-    assert_true(StringSlice("ASDG").isupper())
-    assert_false(StringSlice("AsDG").isupper())
-    assert_true(StringSlice("ABC123").isupper())
-    assert_false(StringSlice("1!").isupper())
-    assert_true(StringSlice("É").isupper())
-    assert_false(StringSlice("é").isupper())
+    assert_true(StringSpan("ASDG").isupper())
+    assert_false(StringSpan("AsDG").isupper())
+    assert_true(StringSpan("ABC123").isupper())
+    assert_false(StringSpan("1!").isupper())
+    assert_true(StringSpan("É").isupper())
+    assert_false(StringSpan("é").isupper())
 
 
 def test_islower() raises:
-    assert_true(StringSlice("asdfg").islower())
-    assert_false(StringSlice("asdFDg").islower())
-    assert_true(StringSlice("abc123").islower())
-    assert_false(StringSlice("1!").islower())
-    assert_true(StringSlice("é").islower())
-    assert_false(StringSlice("É").islower())
+    assert_true(StringSpan("asdfg").islower())
+    assert_false(StringSpan("asdFDg").islower())
+    assert_true(StringSpan("abc123").islower())
+    assert_false(StringSpan("1!").islower())
+    assert_true(StringSpan("é").islower())
+    assert_false(StringSpan("É").islower())
 
 
 def test_lower() raises:
-    assert_equal(StringSlice("HELLO").lower(), "hello")
-    assert_equal(StringSlice("hello").lower(), "hello")
-    assert_equal(StringSlice("FoOBaR").lower(), "foobar")
+    assert_equal(StringSpan("HELLO").lower(), "hello")
+    assert_equal(StringSpan("hello").lower(), "hello")
+    assert_equal(StringSpan("FoOBaR").lower(), "foobar")
 
-    assert_equal(StringSlice("MOJO🔥").lower(), "mojo🔥")
+    assert_equal(StringSpan("MOJO🔥").lower(), "mojo🔥")
 
-    assert_equal(StringSlice("É").lower(), "é")
-    assert_equal(StringSlice("é").lower(), "é")
+    assert_equal(StringSpan("É").lower(), "é")
+    assert_equal(StringSpan("é").lower(), "é")
 
-    assert_equal(StringSlice("").lower(), "")
+    assert_equal(StringSpan("").lower(), "")
     # Deseret, whose case mappings are 4-byte sequences.
-    assert_equal(StringSlice("𐐀").lower(), "𐐨")
+    assert_equal(StringSpan("𐐀").lower(), "𐐨")
     assert_equal(EVERY_CODEPOINT_LENGTH_STR.lower(), "߷കൈ🔄!")
     # U+023A lowercases to U+2C65, one byte longer than the input.
-    assert_equal(StringSlice("Ⱥ").lower(), "ⱥ")
+    assert_equal(StringSpan("Ⱥ").lower(), "ⱥ")
 
 
 def test_upper() raises:
-    assert_equal(StringSlice("hello").upper(), "HELLO")
-    assert_equal(StringSlice("HELLO").upper(), "HELLO")
-    assert_equal(StringSlice("FoOBaR").upper(), "FOOBAR")
+    assert_equal(StringSpan("hello").upper(), "HELLO")
+    assert_equal(StringSpan("HELLO").upper(), "HELLO")
+    assert_equal(StringSpan("FoOBaR").upper(), "FOOBAR")
 
-    assert_equal(StringSlice("mojo🔥").upper(), "MOJO🔥")
+    assert_equal(StringSpan("mojo🔥").upper(), "MOJO🔥")
 
-    assert_equal(StringSlice("É").upper(), "É")
-    assert_equal(StringSlice("é").upper(), "É")
+    assert_equal(StringSpan("É").upper(), "É")
+    assert_equal(StringSpan("é").upper(), "É")
 
-    assert_equal(StringSlice("").upper(), "")
-    assert_equal(StringSlice("𐐨").upper(), "𐐀")
+    assert_equal(StringSpan("").upper(), "")
+    assert_equal(StringSpan("𐐨").upper(), "𐐀")
     assert_equal(EVERY_CODEPOINT_LENGTH_STR.upper(), "߷കൈ🔄!")
 
     # Codepoints whose uppercase form is a sequence of 2 or 3 codepoints:
     # `ß` (U+00DF) becomes "SS", and `ΐ` (U+0390) becomes the decomposed
     # sequence U+0399 U+0308 U+0301.
-    assert_equal(StringSlice("straße").upper(), "STRASSE")
+    assert_equal(StringSpan("straße").upper(), "STRASSE")
     var upper_0390 = String(
         Codepoint.from_u32(0x0399).value(),
         Codepoint.from_u32(0x0308).value(),
         Codepoint.from_u32(0x0301).value(),
     )
-    assert_equal(StringSlice("ΐ").upper(), upper_0390)
+    assert_equal(StringSpan("ΐ").upper(), upper_0390)
 
     # `ΐ` is 2 bytes but uppercases to 6, so a run of them outgrows the
     # capacity `to_uppercase` estimates from the input length.
@@ -1099,57 +1099,57 @@ def test_upper() raises:
     for _ in range(64):
         input += "ΐ"
         expected += upper_0390
-    assert_equal(StringSlice(input).upper(), expected)
+    assert_equal(StringSpan(input).upper(), expected)
 
 
 def test_is_ascii_digit() raises:
-    assert_false(StringSlice("").is_ascii_digit())
-    assert_true(StringSlice("123").is_ascii_digit())
-    assert_false(StringSlice("asdg").is_ascii_digit())
-    assert_false(StringSlice("123asdg").is_ascii_digit())
+    assert_false(StringSpan("").is_ascii_digit())
+    assert_true(StringSpan("123").is_ascii_digit())
+    assert_false(StringSpan("asdg").is_ascii_digit())
+    assert_false(StringSpan("123asdg").is_ascii_digit())
 
 
 def test_is_ascii_printable() raises:
-    assert_true(StringSlice("aasdg").is_ascii_printable())
-    assert_false(StringSlice("aa\nae").is_ascii_printable())
-    assert_false(StringSlice("aa\tae").is_ascii_printable())
+    assert_true(StringSpan("aasdg").is_ascii_printable())
+    assert_false(StringSpan("aa\nae").is_ascii_printable())
+    assert_false(StringSpan("aa\tae").is_ascii_printable())
 
 
 def test_ascii_rjust() raises:
-    assert_equal(StringSlice("hello").ascii_rjust(4), "hello")
-    assert_equal(StringSlice("hello").ascii_rjust(8), "   hello")
-    assert_equal(StringSlice("hello").ascii_rjust(8, "*"), "***hello")
+    assert_equal(StringSpan("hello").ascii_rjust(4), "hello")
+    assert_equal(StringSpan("hello").ascii_rjust(8), "   hello")
+    assert_equal(StringSpan("hello").ascii_rjust(8, "*"), "***hello")
     # Must not reach the uninitialized allocation with a non-positive size.
-    assert_equal(StringSlice("hello").ascii_rjust(5), "hello")
-    assert_equal(StringSlice("hello").ascii_rjust(-3), "hello")
-    assert_equal(StringSlice("").ascii_rjust(3, "*"), "***")
+    assert_equal(StringSpan("hello").ascii_rjust(5), "hello")
+    assert_equal(StringSpan("hello").ascii_rjust(-3), "hello")
+    assert_equal(StringSpan("").ascii_rjust(3, "*"), "***")
     # Width is in bytes, so a multi-byte subject pads by byte count.
-    assert_equal(StringSlice("🔥").ascii_rjust(6, "*"), "**🔥")
+    assert_equal(StringSpan("🔥").ascii_rjust(6, "*"), "**🔥")
     # A result past the inline capacity exercises the heap-allocated path.
     assert_equal(
-        StringSlice("y").ascii_rjust(24, "-"), "-----------------------y"
+        StringSpan("y").ascii_rjust(24, "-"), "-----------------------y"
     )
 
 
 def test_ascii_ljust() raises:
-    assert_equal(StringSlice("hello").ascii_ljust(4), "hello")
-    assert_equal(StringSlice("hello").ascii_ljust(8), "hello   ")
-    assert_equal(StringSlice("hello").ascii_ljust(8, "*"), "hello***")
-    assert_equal(StringSlice("hello").ascii_ljust(5), "hello")
-    assert_equal(StringSlice("").ascii_ljust(3, "*"), "***")
+    assert_equal(StringSpan("hello").ascii_ljust(4), "hello")
+    assert_equal(StringSpan("hello").ascii_ljust(8), "hello   ")
+    assert_equal(StringSpan("hello").ascii_ljust(8, "*"), "hello***")
+    assert_equal(StringSpan("hello").ascii_ljust(5), "hello")
+    assert_equal(StringSpan("").ascii_ljust(3, "*"), "***")
 
 
 def test_ascii_center() raises:
-    assert_equal(StringSlice("hello").ascii_center(4), "hello")
-    assert_equal(StringSlice("hello").ascii_center(8), " hello  ")
-    assert_equal(StringSlice("hello").ascii_center(8, "*"), "*hello**")
-    assert_equal(StringSlice("hello").ascii_center(5), "hello")
-    assert_equal(StringSlice("hello").ascii_center(0), "hello")
-    assert_equal(StringSlice("").ascii_center(3, "*"), "***")
+    assert_equal(StringSpan("hello").ascii_center(4), "hello")
+    assert_equal(StringSpan("hello").ascii_center(8), " hello  ")
+    assert_equal(StringSpan("hello").ascii_center(8, "*"), "*hello**")
+    assert_equal(StringSpan("hello").ascii_center(5), "hello")
+    assert_equal(StringSpan("hello").ascii_center(0), "hello")
+    assert_equal(StringSpan("").ascii_center(3, "*"), "***")
 
 
 def test_count() raises:
-    var str = StringSlice("Hello world")
+    var str = StringSpan("Hello world")
 
     assert_equal(12, str.count(""))
     assert_equal(1, str.count("Hell"))
@@ -1158,40 +1158,40 @@ def test_count() raises:
     assert_equal(1, str.count("ld"))
     assert_equal(0, str.count("universe"))
 
-    assert_equal(StringSlice("aaaaa").count("a"), 5)
-    assert_equal(StringSlice("aaaaaa").count("aa"), 3)
+    assert_equal(StringSpan("aaaaa").count("a"), 5)
+    assert_equal(StringSpan("aaaaaa").count("aa"), 3)
 
 
 def test_replace() raises:
-    assert_equal(StringSlice("").replace("", "hello world"), "")
+    assert_equal(StringSpan("").replace("", "hello world"), "")
     assert_equal(
-        StringSlice("hello").replace("", "something"),
+        StringSpan("hello").replace("", "something"),
         "somethinghsomethingesomethinglsomethinglsomethingo",
     )
-    assert_equal(StringSlice("hello world").replace("world", ""), "hello ")
+    assert_equal(StringSpan("hello world").replace("world", ""), "hello ")
     assert_equal(
-        StringSlice("hello world").replace("world", "mojo"), "hello mojo"
+        StringSpan("hello world").replace("world", "mojo"), "hello mojo"
     )
     assert_equal(
-        StringSlice("hello world hello world").replace("world", "mojo"),
+        StringSpan("hello world hello world").replace("world", "mojo"),
         "hello mojo hello mojo",
     )
     assert_equal(
-        StringSlice("this is a test").replace(
+        StringSpan("this is a test").replace(
             "this", "abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz"
         ),
         "abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz is a test",
     )
     assert_equal(
-        StringSlice("🔥").replace("", "x"),
+        StringSpan("🔥").replace("", "x"),
         "x🔥",
     )
     assert_equal(
-        StringSlice("a🔥a🔥a").replace("🔥", "x"),
+        StringSpan("a🔥a🔥a").replace("🔥", "x"),
         "axaxa",
     )
     assert_equal(
-        StringSlice("a🔥a🔥a").replace("a", "x"),
+        StringSpan("a🔥a🔥a").replace("a", "x"),
         "x🔥x🔥x",
     )
 
@@ -1209,7 +1209,7 @@ def test_join() raises:
     var s = "abc"
     assert_equal(sep.join([s, s, s, s]), "abc,abc,abc,abc")
     assert_equal(sep.join([1, 2, 3]), "1,2,3")
-    # TODO(MSTDL-2078): Continue supporting heterogenous StringSlice.join
+    # TODO(MSTDL-2078): Continue supporting heterogenous StringSpan.join
     #   arguments, somehow?
     # assert_equal(sep.join([1, "abc", 3]), "1,abc,3")
 
@@ -1243,42 +1243,42 @@ def test_merge() raises:
     var b = "hi"
 
     def cond(
-        pred: Bool, a: StringSlice, b: StringSlice
-    ) -> StringSlice[origin_of(a.origin, b.origin)]:
+        pred: Bool, a: StringSpan, b: StringSpan
+    ) -> StringSpan[origin_of(a.origin, b.origin)]:
         return a if pred else b
 
     _ = cond(True, a, b)
 
 
 def test_codepoint_indexing() raises:
-    assert_equal(StringSlice("abc")[codepoint=0], "a")
-    assert_equal(StringSlice("abc")[codepoint=2], "c")
+    assert_equal(StringSpan("abc")[codepoint=0], "a")
+    assert_equal(StringSpan("abc")[codepoint=2], "c")
     assert_equal(EVERY_CODEPOINT_LENGTH_STR[codepoint=0], "߷")
     assert_equal(EVERY_CODEPOINT_LENGTH_STR[codepoint=1], "ക")
     assert_equal(EVERY_CODEPOINT_LENGTH_STR[codepoint=2], "ൈ")
     assert_equal(EVERY_CODEPOINT_LENGTH_STR[codepoint=3], "🔄")
     assert_equal(EVERY_CODEPOINT_LENGTH_STR[codepoint=4], "!")
-    assert_equal(StringSlice("🔄🔥🔄")[codepoint=0], "🔄")
-    assert_equal(StringSlice("🔄🔥🔄")[codepoint=1], "🔥")
-    assert_equal(StringSlice("🔄🔥🔄")[codepoint=2], "🔄")
+    assert_equal(StringSpan("🔄🔥🔄")[codepoint=0], "🔄")
+    assert_equal(StringSpan("🔄🔥🔄")[codepoint=1], "🔥")
+    assert_equal(StringSpan("🔄🔥🔄")[codepoint=2], "🔄")
 
     # ASCII followed by a multi-byte codepoint: the codepoint index no
     # longer lines up with the byte index once `🙂` (4 bytes) is reached.
-    var mixed = StringSlice("ab🙂cd")
+    var mixed = StringSpan("ab🙂cd")
     assert_equal(mixed[codepoint=2], "🙂")
     assert_equal(mixed[codepoint=3], "c")
 
 
 def test_codepoint_slicing() raises:
-    assert_equal(StringSlice("abc")[codepoint=0:1], "a")
-    assert_equal(StringSlice("abc")[codepoint=2:3], "c")
+    assert_equal(StringSpan("abc")[codepoint=0:1], "a")
+    assert_equal(StringSpan("abc")[codepoint=2:3], "c")
     assert_equal(EVERY_CODEPOINT_LENGTH_STR[codepoint=0:1], "߷")
     assert_equal(EVERY_CODEPOINT_LENGTH_STR[codepoint=1:2], "ക")
     assert_equal(EVERY_CODEPOINT_LENGTH_STR[codepoint=2:3], "ൈ")
     assert_equal(EVERY_CODEPOINT_LENGTH_STR[codepoint=3:4], "🔄")
     assert_equal(EVERY_CODEPOINT_LENGTH_STR[codepoint=4:5], "!")
 
-    var elems = StringSlice("🔄🔥🔄")
+    var elems = StringSpan("🔄🔥🔄")
     assert_equal(elems[codepoint=0:1], "🔄")
     assert_equal(elems[codepoint=1:2], "🔥")
     assert_equal(elems[codepoint=2:3], "🔄")
@@ -1308,21 +1308,21 @@ def test_codepoint_slicing() raises:
 
     # ASCII followed by a multi-byte codepoint: the codepoint index no
     # longer lines up with the byte index once `🙂` (4 bytes) is reached.
-    var mixed = StringSlice("ab🙂cd")
+    var mixed = StringSpan("ab🙂cd")
     assert_equal(mixed[codepoint=2:3], "🙂")
     assert_equal(mixed[codepoint=3:4], "c")
 
 
 def test_grapheme_indexing() raises:
-    assert_equal(StringSlice("abc")[grapheme=0], "a")
-    assert_equal(StringSlice("abc")[grapheme=1], "b")
-    assert_equal(StringSlice("abc")[grapheme=2], "c")
-    assert_equal(StringSlice("🔄🔥🔄")[grapheme=0], "🔄")
-    assert_equal(StringSlice("🔄🔥🔄")[grapheme=1], "🔥")
-    assert_equal(StringSlice("🔄🔥🔄")[grapheme=2], "🔄")
-    assert_equal(StringSlice("👨‍🚀🧑‍🌾क्षि")[grapheme=0], "👨‍🚀")
-    assert_equal(StringSlice("👨‍🚀🧑‍🌾क्षि")[grapheme=1], "🧑‍🌾")
-    assert_equal(StringSlice("👨‍🚀🧑‍🌾क्षि")[grapheme=2], "क्षि")
+    assert_equal(StringSpan("abc")[grapheme=0], "a")
+    assert_equal(StringSpan("abc")[grapheme=1], "b")
+    assert_equal(StringSpan("abc")[grapheme=2], "c")
+    assert_equal(StringSpan("🔄🔥🔄")[grapheme=0], "🔄")
+    assert_equal(StringSpan("🔄🔥🔄")[grapheme=1], "🔥")
+    assert_equal(StringSpan("🔄🔥🔄")[grapheme=2], "🔄")
+    assert_equal(StringSpan("👨‍🚀🧑‍🌾क्षि")[grapheme=0], "👨‍🚀")
+    assert_equal(StringSpan("👨‍🚀🧑‍🌾क्षि")[grapheme=1], "🧑‍🌾")
+    assert_equal(StringSpan("👨‍🚀🧑‍🌾क्षि")[grapheme=2], "क्षि")
 
 
 def test_immutable_string_span_compatibility_aliases() raises:

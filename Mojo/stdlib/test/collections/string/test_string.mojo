@@ -172,7 +172,7 @@ def test_add() raises:
 
 def test_add_string_slice() raises:
     var s1 = "123"
-    var s2 = StringSlice("abc")
+    var s2 = StringSpan("abc")
     var s3 = "abc"
     assert_equal("123abc", s1 + s2)
     assert_equal("123abc", s1 + s3)
@@ -242,11 +242,11 @@ def test_ord() raises:
     comptime literal = "α"
     assert_equal(ord(literal), 945)
 
-    # Test StringSlice overload
-    assert_equal(ord(StringSlice("A")), 65)
-    assert_equal(ord(StringSlice("α")), 945)
-    assert_equal(ord(StringSlice("➿")), 10175)
-    assert_equal(ord(StringSlice("🔥")), 128293)
+    # Test StringSpan overload
+    assert_equal(ord(StringSpan("A")), 65)
+    assert_equal(ord(StringSpan("α")), 945)
+    assert_equal(ord(StringSpan("➿")), 10175)
+    assert_equal(ord(StringSpan("🔥")), 128293)
 
     # `\xhh` and `\ooo` escapes denote Unicode code points (not raw bytes),
     # so values >= 0x80 are encoded to UTF-8 and `ord` recovers the original
@@ -271,7 +271,7 @@ def test_ord_string_literal_folds() raises:
         return ord("🔥")
 
     def ord_slice() -> Int:
-        return ord(StringSlice("🔥"))
+        return ord(StringSpan("🔥"))
 
     var ascii_ir = compile_info[ord_ascii, emission_kind="llvm"]()
     assert_true("ret i64 65" in ascii_ir)
@@ -281,7 +281,7 @@ def test_ord_string_literal_folds() raises:
     assert_true("ret i64 128293" in multi_byte_ir)
     assert_false("call " in multi_byte_ir)
 
-    # Guards against the check above passing vacuously: the `StringSlice`
+    # Guards against the check above passing vacuously: the `StringSpan`
     # overload decodes at runtime.
     var slice_ir = compile_info[ord_slice, emission_kind="llvm"]()
     assert_false("ret i64 128293" in slice_ir)
@@ -767,7 +767,7 @@ def test_split() raises:
         String(unsafe_from_utf8=unicode_paragraph_sep),
     )
     var s = univ_sep_var + "hello" + univ_sep_var + "world" + univ_sep_var
-    assert_equal(StringSlice(s).split(), [StaticString("hello"), "world"])
+    assert_equal(StringSpan(s).split(), [StaticString("hello"), "world"])
 
     # should split into empty strings between separators
     assert_equal(S("1,,,3").split(","), [StaticString("1"), "", "", "3"])
@@ -1491,8 +1491,8 @@ def test_float_conversion() raises:
 
 
 def test_slice_contains() raises:
-    assert_true(StringSlice("hello world").__contains__("world"))
-    assert_false(StringSlice("hello world").__contains__("not-found"))
+    assert_true(StringSpan("hello world").__contains__("world"))
+    assert_false(StringSpan("hello world").__contains__("not-found"))
 
 
 def test_reserve() raises:
@@ -1883,12 +1883,12 @@ def test_string_zero_init() raises:
 
 
 def test_convertible_to_Python() raises:
-    check_convertible_to_python(StringSlice("Foo"), "Foo")
+    check_convertible_to_python(StringSpan("Foo"), "Foo")
     check_convertible_to_python(String("Bar"), "Bar")
     check_convertible_to_python("Baz", "Baz")
 
     # test implicit conversions
-    check_python_object(StringSlice("Foo"), "Foo")
+    check_python_object(StringSpan("Foo"), "Foo")
     check_python_object(String("Bar"), "Bar")
     check_python_object("Baz", "Baz")
 

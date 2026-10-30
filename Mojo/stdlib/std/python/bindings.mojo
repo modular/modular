@@ -1767,7 +1767,7 @@ def check_arguments_arity(
     # (`_py_kwargs_function_wrapper`, `_py_function_fastcall_wrapper`) decay to
     # `thin -> ...` C function pointers for CPython's `PyMethodDef`
     # table, which means they cannot capture any runtime state - so a
-    # runtime `func_name: StringSlice` cannot be threaded down to the
+    # runtime `func_name: StringSpan` cannot be threaded down to the
     # dispatch site. Threading it as a `comptime` parameter would force
     # `func_name` to be `comptime` on `def_function` / `def_method` /
     # `def_staticmethod`, a breaking change for thousands of callers.
@@ -1781,7 +1781,7 @@ def check_arguments_arity(
 def check_arguments_arity(
     arity: Int,
     args: PythonObject,
-    func_name: StringSlice,
+    func_name: StringSpan,
 ) raises:
     """Validate that the provided arguments match the expected function arity.
 
@@ -1834,7 +1834,7 @@ def check_arguments_arity(
 def check_arguments_arity(
     arity: Int,
     arg_count: Int,
-    func_name: StringSlice,
+    func_name: StringSpan,
 ) raises:
     """Validate that the provided argument count matches the expected arity.
 
@@ -1906,7 +1906,7 @@ def check_and_get_arg[
 def _try_convert_arg[
     T: ConvertibleFromPython
 ](
-    func_name: StringSlice, py_args: PythonObject, argidx: Int, out result: T
+    func_name: StringSpan, py_args: PythonObject, argidx: Int, out result: T
 ) raises:
     try:
         result = T(py=py_args[argidx])

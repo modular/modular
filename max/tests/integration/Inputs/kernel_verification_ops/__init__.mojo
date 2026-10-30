@@ -222,7 +222,7 @@ struct OpWithStringParameter[StringParameter: String]:
 
 
 @extensibility.register("op_with_string_slice_parameter")
-struct OpWithStringSliceParameter[StringParameter: StringSlice]:
+struct OpWithStringSpanParameter[StringParameter: StringSpan]:
     @staticmethod
     def execute(
         output: OutputTensor,
@@ -266,9 +266,9 @@ struct ExternalCubinVecAdd:
             external_func = DeviceExternalFunction(
                 gpu_ctx,
                 function_name="vec_add",  # matches extern "C" name
-                # DeviceExternalFunction takes a StringSlice, which is probably wrong.
+                # DeviceExternalFunction takes a StringSpan, which is probably wrong.
                 # The cubin is [very, very likely] invalid UTF8.
-                asm=String(StringSlice(unsafe_from_utf8=cubin_data)),
+                asm=String(StringSpan(unsafe_from_utf8=cubin_data)),
             )
 
         var length = output.dim_size(0)

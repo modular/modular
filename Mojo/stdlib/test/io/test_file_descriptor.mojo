@@ -168,7 +168,7 @@ def test_from_borrowed_duplicates_fd() raises:
             n += got
     finally:
         reader.close()
-    var text = String(StringSlice(unsafe_from_utf8=Span(buffer)[:n]))
+    var text = String(StringSpan(unsafe_from_utf8=Span(buffer)[:n]))
     assert_true(distinct)
     assert_true(owner_closed)
     assert_equal(text, "ab")

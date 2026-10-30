@@ -28,7 +28,7 @@ def parametric_tstring[A: Int, B: String]():
 
 # Test a t-string with no interpolations. Even with a static template the
 # linkage name is represented as a param.expr because it goes through
-# StringSlice construction.
+# StringSpan construction.
 
 # CHECK: lit.fn @"static_tstring()"
 # CHECK-SAME: linkageName = #kgen.linkage_name<#kgen.param.expr<data_to_str
