@@ -35,6 +35,7 @@ from extensibility import StaticTensorSpec
 from max.gpu.host import CompletionFlag, DeviceContext, DeviceContextArray
 from layout.tile_tensor import row_major
 from max.gpu.host.info import is_cpu, is_gpu, is_valid_target
+from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     ComptimeInt,
@@ -3938,6 +3939,7 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
                     qkv_input_ragged.Engine,
                     capture_input,
                     qkv_window.LayoutType,
+                    pdl_level=PDLLevel.ON,
                 ]
             ](
                 Int32(batch_size),
@@ -3953,6 +3955,7 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
                 qkv_window,
                 grid_dim=(grid_dim_tokens, grid_dim_channels),
                 block_dim=(CONV1D_BLOCK_DIM,),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
         else:
             raise Error(
@@ -4335,6 +4338,7 @@ struct GatedDeltaRecurrenceFwd:
                     slot_idx_tt.LayoutType,
                     input_row_offsets_tt.LayoutType,
                     recurrence_output_tt.Engine,
+                    pdl_level=PDLLevel.ON,
                 ]
             ](
                 Int32(shape.batch_size),
@@ -4351,6 +4355,7 @@ struct GatedDeltaRecurrenceFwd:
                 # One CTA per (batch_item, value_head).
                 grid_dim=(shape.batch_size * shape.num_value_heads,),
                 block_dim=(kVD,),
+                attributes=pdl_launch_attributes(PDLLevel.ON),
             )
         else:
             raise Error(
@@ -4593,6 +4598,7 @@ struct GatedDeltaRecurrenceVerifyRingFwd:
                             # safe assert still traps a caller that slips
                             # a longer ragged row through input_row_offsets.
                             True,
+                            pdl_level=PDLLevel.ON,
                         ]
                     ](
                         Int32(shape.batch_size),
@@ -4610,6 +4616,7 @@ struct GatedDeltaRecurrenceVerifyRingFwd:
                         ring_slot_idx_tt,
                         grid_dim=(shape.batch_size * shape.num_value_heads,),
                         block_dim=(128,),
+                        attributes=pdl_launch_attributes(PDLLevel.ON),
                     )
         if not dispatched:
             raise Error(
@@ -4786,6 +4793,7 @@ struct GatedDeltaStateFold:
                             ring_row_ids_tt.LayoutType,
                             num_accepted_tt.LayoutType,
                             recurrent_state_tt.Engine,
+                            pdl_level=PDLLevel.ON,
                         ]
                     ](
                         Int32(batch_size),
@@ -4799,6 +4807,7 @@ struct GatedDeltaStateFold:
                         num_accepted_tt,
                         grid_dim=(batch_size * num_layers * num_value_heads,),
                         block_dim=(128,),
+                        attributes=pdl_launch_attributes(PDLLevel.ON),
                     )
         if not dispatched:
             raise Error(
