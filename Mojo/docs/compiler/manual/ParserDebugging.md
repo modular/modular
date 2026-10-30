@@ -35,7 +35,7 @@ Generally, test files contain a `# RUN:` line which contains the command to add
 after `vscode-debug`, like:
 
 ```cpp
-## RUN: kgen-translate --mojo-disable-builtins -import-mojo %s | FileCheck %s
+## RUN: kgen-translate --disable-builtins -import-mojo %s | FileCheck %s
 ```
 
 To make it work in vscode, put `--vscode` after the `bd`. For example:
@@ -226,7 +226,7 @@ getting triggered by a lot of unrelated operations, another alternative is to
 aggressively reduce and simplify your test case.
 
 For example, try taking out the standard library and builtins by passing
-`kgen-translate %s --mojo-disable-builtins -import-mojo`. This might require
+`kgen-translate %s --disable-builtins -import-mojo`. This might require
 some effort, because things like `Optional`, `List`, and even `Int` won't be
 available. Look at `Mojo/test/test-packages/std/builtin/stubs.mojo` for
 inspiration on how to nicely fake those.

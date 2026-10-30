@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """This is a module doc."""
 
-# RUN: %parse-mojo-isolated %s -mojo-diagnose-missing-doc-strings -verify-diagnostics | FileCheck %s --implicit-check-not warning
+# RUN: %parse-mojo-isolated %s --diagnose-missing-doc-strings -verify-diagnostics | FileCheck %s --implicit-check-not warning
 
 from docs_package import documented_method_defined_in_init
 

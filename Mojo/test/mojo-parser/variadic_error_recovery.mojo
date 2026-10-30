@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-# RUN: %parse-mojo-isolated --mojo-disable-builtins -verify-diagnostics %s
+# RUN: %parse-mojo-isolated --disable-builtins -verify-diagnostics %s
 
 trait A:
     pass

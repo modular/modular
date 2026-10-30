@@ -16,7 +16,7 @@
 # traits appear in a composition constraint (e.g. struct S[T: A & B]() where
 # B(A)).
 
-# RUN: %parse-mojo-isolated %s --mojo-disable-builtins | FileCheck %s
+# RUN: %parse-mojo-isolated %s --disable-builtins | FileCheck %s
 
 
 trait A:

@@ -62,6 +62,10 @@ struct DriverOptions {
   bool llvmTiming = false;
   bool timingJSON = false;
   std::string timingFile;
+
+  // The time profile that `--time-trace` writes.
+  bool timeTrace = false;
+  int timeTraceGranularity = 0;
 };
 
 /// Sets the include paths of `driverOptions` as the include directories of

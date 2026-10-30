@@ -15,11 +15,11 @@
 
 # RUN: rm -rf %t.dir && mkdir -p %t.dir/empty && touch %t.dir/notes.txt
 
-# RUN: not %mojo-docs-isolated -I %S %s 2>&1 | FileCheck %s --check-prefix=UNKNOWN-FLAG
-# UNKNOWN-FLAG: error: unsupported argument '-I' with -emit-mojo-doc
+# RUN: not %mojo-docs-isolated --verify-diagnostics %s 2>&1 | FileCheck %s --check-prefix=UNKNOWN-FLAG
+# UNKNOWN-FLAG: error: unrecognized argument '--verify-diagnostics'
 
 # RUN: not %mojo-docs-isolated %s %s 2>&1 | FileCheck %s --check-prefix=TWO-INPUTS
-# TWO-INPUTS: error: -emit-mojo-doc takes a single input, got '{{.*}}mojo_doc_input_errors.mojo' and '{{.*}}mojo_doc_input_errors.mojo'
+# TWO-INPUTS: error: too many input files, cannot process both '{{.*}}mojo_doc_input_errors.mojo' and '{{.*}}mojo_doc_input_errors.mojo'
 
 # RUN: not %mojo-docs-isolated %t.dir/notes.txt 2>&1 | FileCheck %s --check-prefix=NOT-MOJO
 # RUN: not %mojo-docs-isolated %t.dir/empty 2>&1 | FileCheck %s --check-prefix=NOT-MOJO

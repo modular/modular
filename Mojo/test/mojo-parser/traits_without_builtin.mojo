@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated %s --mojo-disable-builtins | FileCheck %s
+# RUN: %parse-mojo-isolated %s --disable-builtins | FileCheck %s
 
 
 struct Int:

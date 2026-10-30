@@ -3112,7 +3112,7 @@ static LogicalResult resolvePropagatedConstraints(
 /// compiler injects into every struct's parent list when the stdlib is
 /// available (e.g., `AnyType`, `Deinitable`). These are treated
 /// as unconditionally available and never require explicit listing. The set
-/// may be empty when builtins are disabled (`--mojo-disable-builtins`).
+/// may be empty when builtins are disabled (`--disable-builtins`).
 ///
 /// Returns failure if any constraint errors were found.
 static LogicalResult buildTraitConstraintsMap(

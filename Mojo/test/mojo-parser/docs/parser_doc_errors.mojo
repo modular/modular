@@ -13,7 +13,7 @@
 
 """Tests for doc string validation diagnostics."""
 
-# RUN: %parse-mojo-isolated -o /dev/null -mojo-diagnose-missing-doc-strings -verify-diagnostics %s
+# RUN: %parse-mojo-isolated -o /dev/null --diagnose-missing-doc-strings -verify-diagnostics %s
 
 
 # expected-warning @below {{public symbol 'ArgStruct' is missing a doc string}}
