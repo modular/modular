@@ -17,6 +17,13 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    # PDL (griddepcontrol) is a compile-time no-op below SM90, where the test
+    # would only exercise stream ordering.
+    "test_rowwise_pdl_race.mojo": select({
+        "//:h100_gpu": [],
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_mha_decode_register_owners.mojo": ["//:nvidia_gpu"],
     # PDL (griddepcontrol) + llvm.nvvm.nanosleep: NVIDIA SM90+ only.
     "test_mla_index_kpool_pdl.mojo": select({
@@ -612,6 +619,7 @@ _EXTRA_DEPS = {
     "test_row_mean_of_squares.mojo": ["//max:builtin_kernels"],
     "test_row_mean_of_squares_qk.mojo": ["//max:builtin_kernels"],
     "test_rowwise_determinism.mojo": ["//max:builtin_kernels"],
+    "test_rowwise_pdl_race.mojo": ["//max:builtin_kernels"],
     "test_topk_gpu.mojo": ["//max:max_mojo"],
     "test_topk_gpu_fi.mojo": ["//max:max_mojo"],
     "test_topk_softmax_sample_topk_arr.mojo": ["//max:max_mojo"],

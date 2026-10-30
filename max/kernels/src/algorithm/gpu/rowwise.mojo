@@ -78,8 +78,6 @@ from algorithm.reduce_op import ReduceOp, Reducer
 from max.algorithm.reduction import _get_nd_indices_from_flat_index
 
 
-comptime _PDL_LEVEL = PDLLevel.ON
-
 # Kernel-name suffix of the 64-bit row-decode instantiations.
 comptime _wide_tag[wide: Bool]: StaticString = "_wide" if wide else ""
 comptime _SM_OVERPROVISION = 32
@@ -1147,7 +1145,7 @@ struct _BlockKernel[
     def __call__(self):
         var num_rows = _num_outputs_excluding_axis[Self.params.axis](self.shape)
 
-        with PDL():
+        with PDL[Self.params.pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
             var ctx = Context[Self.params].empty()
             for row_idx in range(block_idx.x, num_rows, grid_dim.x):
                 var row_coords = self.rows.coords(self.shape, row_idx)
@@ -1186,7 +1184,7 @@ struct _WarpKernel[
         comptime warps_per_block = Self.params.BLOCK_SIZE // WARP_SIZE
         var num_rows = _num_outputs_excluding_axis[Self.params.axis](self.shape)
 
-        with PDL():
+        with PDL[Self.params.pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
             var ctx = Context[Self.params].empty()
             for block_base in range(
                 block_idx.x * warps_per_block,
@@ -1249,7 +1247,7 @@ struct _TiledKernel[
         var base = (
             block_idx.x * Self.params.BLOCK_SIZE + thread_idx.x
         ) * Self.params.emit_tile_width
-        with PDL():
+        with PDL[Self.params.pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
             var ctx = Context[Self.params].empty()
             while base < num_outputs:
                 var row_coords = self.rows.coords(self.shape, base)
@@ -1309,7 +1307,7 @@ struct _SplitkKernel[
         # `row_coords` is not data-dependent — compute it before the PDL
         # wait so it overlaps with the prior grid's tail.
         var row_coords = self.rows.coords(self.shape, row_idx_)
-        with PDL():
+        with PDL[Self.params.pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
             var ctx = Context[Self.params](
                 partials_base=self.partials,
                 counters_base=self.counters,
@@ -1325,10 +1323,12 @@ struct _PointwiseSplitkKernel[
     rank: Int, params: ContextParams, Body: RowBody, wide: Bool = False
 ](ImplicitlyCopyable, RegisterPassable, def() -> None):
     """Per-element-output split-K kernel: `num_splits` blocks cooperate on
-    one row for phase `phase` of the K+1-launch schedule. No PDL and no
-    atomic counter — the launch boundary is the cross-block sync, so a
-    later phase reads the prior phase's partials directly. The body runs
-    unchanged; the `Row`'s pointwise-split-K branch reads `ctx._phase`."""
+    one row for phase `phase` of the K+1-launch schedule. No atomic counter:
+    a phase can start while the previous one still runs, so its PDL wait at
+    entry is what orders the read of the previous phase's partials, and must
+    stay. It always releases dependents at exit, whatever `pdl_level`. The
+    body runs unchanged; the `Row`'s pointwise-split-K branch reads `ctx._phase`.
+    """
 
     var body: Self.Body
     var shape: DynamicCoord[.int64, Self.rank]
@@ -1371,18 +1371,21 @@ struct _PointwiseSplitkKernel[
             return
 
         var row_coords = self.rows.coords(self.shape, row_idx_)
-        var ctx = Context[Self.params](
-            partials_base=self.partials,
-            counters_base=MutPointer[Int32, MutUntrackedOrigin](
-                unsafe_from_address=1
-            ),
-            blocks_per_row=self.num_splits,
-            block_in_row=Int32(split_),
-            row_idx=Int32(row_idx_),
-            is_last_block=False,
-            phase=self.phase,
-        )
-        self.body[Self.params](row_coords, ctx)
+        # Releases at exit: the next phase's blocks only spin on their wait,
+        # and releasing them early measured no better (B200, GEMM -> softmax).
+        with PDL():
+            var ctx = Context[Self.params](
+                partials_base=self.partials,
+                counters_base=MutPointer[Int32, MutUntrackedOrigin](
+                    unsafe_from_address=1
+                ),
+                blocks_per_row=self.num_splits,
+                block_in_row=Int32(split_),
+                row_idx=Int32(row_idx_),
+                is_last_block=False,
+                phase=self.phase,
+            )
+            self.body[Self.params](row_coords, ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1403,6 +1406,7 @@ def launch[
     num_phases: Int = 0,
     dtype_size: Int = 0,
     name: StaticString = "rowwise",
+    pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
 ](body: Body, shape: Coord, ctx: DeviceContext) raises:
     """Top-level scaffolder. Picks the tier from shape + axis,
     instantiates the matching kernel, and launches. See `_launch`.
@@ -1418,6 +1422,7 @@ def launch[
         num_phases: Per-element-output split-K opt-in.
         dtype_size: Byte size of the body's primary dtype.
         name: Operation name for the tier kernels' `@__name`.
+        pdl_level: Programmatic dependent launch level of the tier kernels.
 
     Args:
         body: The per-row computation.
@@ -1427,6 +1432,9 @@ def launch[
     Raises:
         If the underlying GPU kernel launch fails.
     """
+    comptime assert (
+        pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
+    ), "the row-wise kernels always wait at entry; NO_WAIT is unsupported"
     # The row decode's reciprocals take a 32-bit row index. A row count
     # past that leaves the fast path here, on the host: one grid-strided
     # block kernel that decodes with plain 64-bit divides, so the common
@@ -1445,6 +1453,7 @@ def launch[
                 simd_width=1,
                 target="gpu",
                 name=name,
+                pdl_level=pdl_level,
             )
             var num_blocks = min(
                 num_rows,
@@ -1457,7 +1466,7 @@ def launch[
                 ),
                 grid_dim=num_blocks,
                 block_dim=COOPERATIVE_BLOCK_SIZE,
-                attributes=pdl_launch_attributes(_PDL_LEVEL),
+                attributes=pdl_launch_attributes(pdl_level),
             )
             return
     _launch[
@@ -1471,6 +1480,7 @@ def launch[
         num_phases=num_phases,
         dtype_size=dtype_size,
         name=name,
+        pdl_level=pdl_level,
     ](body, shape, ctx)
 
 
@@ -1487,6 +1497,7 @@ def _launch[
     num_phases: Int,
     dtype_size: Int,
     name: StaticString,
+    pdl_level: PDLLevel,
 ](body: Body, shape: Coord, ctx: DeviceContext) raises:
     """Tier dispatch behind `launch`. Picks the tier from shape + axis,
     instantiates the matching kernel, and launches.
@@ -1547,6 +1558,7 @@ def _launch[
         name: Operation name interpolated into each tier kernel's
             `@__name` so a profile row identifies the op (defaults to
             `"rowwise"`).
+        pdl_level: Programmatic dependent launch level of the tier kernels.
 
     Args:
         body: The per-row computation. Receives a `Context` and the
@@ -1619,6 +1631,7 @@ def _launch[
                 simd_width=W,
                 target="gpu",
                 name=name,
+                pdl_level=pdl_level,
             )
             var num_blocks = min(
                 ceildiv(num_rows, tiled_block_size * W),
@@ -1628,7 +1641,7 @@ def _launch[
                 _TiledKernel[rank, tiled_params, Body](body, shape_dc),
                 grid_dim=num_blocks,
                 block_dim=tiled_block_size,
-                attributes=pdl_launch_attributes(_PDL_LEVEL),
+                attributes=pdl_launch_attributes(pdl_level),
             )
             return
 
@@ -1651,6 +1664,7 @@ def _launch[
                 target="gpu",
                 tier=ReduceTier.Serial,
                 name=name,
+                pdl_level=pdl_level,
             )
             var w1_num_blocks = min(
                 ceildiv(num_rows, tiled_block_size),
@@ -1660,7 +1674,7 @@ def _launch[
                 _TiledKernel[rank, w1_params, Body](body, shape_dc),
                 grid_dim=w1_num_blocks,
                 block_dim=tiled_block_size,
-                attributes=pdl_launch_attributes(_PDL_LEVEL),
+                attributes=pdl_launch_attributes(pdl_level),
             )
             return
 
@@ -1672,13 +1686,14 @@ def _launch[
             simd_width=1,
             target="gpu",
             name=name,
+            pdl_level=pdl_level,
         )
         var coop_num_blocks = min(num_rows, sm_count * _SM_OVERPROVISION)
         ctx.enqueue_function(
             _BlockKernel[rank, coop_params, Body](body, shape_dc),
             grid_dim=coop_num_blocks,
             block_dim=COOPERATIVE_BLOCK_SIZE,
-            attributes=pdl_launch_attributes(_PDL_LEVEL),
+            attributes=pdl_launch_attributes(pdl_level),
         )
         return
 
@@ -1742,6 +1757,7 @@ def _launch[
                     target="gpu",
                     num_phases=num_phases,
                     name=name,
+                    pdl_level=pdl_level,
                 )
 
                 # K+1 launches on this stream (`num_phases == K + 1`). Phase
@@ -1758,6 +1774,7 @@ def _launch[
                         ),
                         grid_dim=total_blocks,
                         block_dim=_SPLITK_BLOCK_SIZE,
+                        attributes=pdl_launch_attributes(pdl_level),
                     )
 
             # Wide tiles only when the width divides the row (so every tile
@@ -1813,12 +1830,13 @@ def _launch[
                 simd_width=sw,
                 target="gpu",
                 name=name,
+                pdl_level=pdl_level,
             )
             ctx.enqueue_function(
                 _WarpKernel[rank, warp_params, Body](body, shape_dc),
                 grid_dim=num_blocks,
                 block_dim=WARP_BLOCK_SIZE,
-                attributes=pdl_launch_attributes(_PDL_LEVEL),
+                attributes=pdl_launch_attributes(pdl_level),
             )
 
         # Clamp the per-lane SIMD width so one warp pass keeps all WARP_SIZE
@@ -1921,6 +1939,7 @@ def _launch[
                     simd_width=sw,
                     target="gpu",
                     name=name,
+                    pdl_level=pdl_level,
                 )
                 ctx.enqueue_function(
                     _SplitkKernel[rank, splitk_params, Body](
@@ -1932,7 +1951,7 @@ def _launch[
                     ),
                     grid_dim=total_blocks,
                     block_dim=_SPLITK_ROW_BLOCK_SIZE,
-                    attributes=pdl_launch_attributes(_PDL_LEVEL),
+                    attributes=pdl_launch_attributes(pdl_level),
                 )
 
             # Same two conditions as the block tier's `use_simd_full`: the width
@@ -1992,12 +2011,13 @@ def _launch[
                 simd_width=sw,
                 target="gpu",
                 name=name,
+                pdl_level=pdl_level,
             )
             ctx.enqueue_function(
                 _BlockKernel[rank, block_params, Body](body, shape_dc),
                 grid_dim=num_blocks,
                 block_dim=BS,
-                attributes=pdl_launch_attributes(_PDL_LEVEL),
+                attributes=pdl_launch_attributes(pdl_level),
             )
 
         var use_simd_full = (
@@ -2033,12 +2053,13 @@ def _launch[
                 simd_width=sw,
                 target="gpu",
                 name=name,
+                pdl_level=pdl_level,
             )
             ctx.enqueue_function(
                 _BlockKernel[rank, block_params, Body](body, shape_dc),
                 grid_dim=num_blocks,
                 block_dim=BLOCK_SIZE,
-                attributes=pdl_launch_attributes(_PDL_LEVEL),
+                attributes=pdl_launch_attributes(pdl_level),
             )
 
         unswitch(use_simd_full, dispatch)
@@ -2062,12 +2083,13 @@ def _launch[
                 simd_width=sw,
                 target="gpu",
                 name=name,
+                pdl_level=pdl_level,
             )
             ctx.enqueue_function(
                 _BlockKernel[rank, block_params, Body](body, shape_dc),
                 grid_dim=num_blocks,
                 block_dim=BS,
-                attributes=pdl_launch_attributes(_PDL_LEVEL),
+                attributes=pdl_launch_attributes(pdl_level),
             )
 
         # SIMD width only on SIMD-divisible rows so a body's `ws > 1`

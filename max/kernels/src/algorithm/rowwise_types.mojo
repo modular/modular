@@ -28,6 +28,7 @@ discriminators and split-K plumbing — are `_`-prefixed.
 """
 
 from max.gpu.host.info import is_cpu
+from max.gpu.primitives.grid_controls import PDLLevel
 from std.utils.coord import Coord, DynamicCoord
 
 
@@ -167,6 +168,14 @@ struct ContextParams(TrivialRegisterPassable):
     to `"rowwise"` when the caller doesn't provide one. Scaffolder-internal
     — a body never reads it."""
 
+    var pdl_level: PDLLevel
+    """Programmatic dependent launch level of the GPU tier kernels (NVIDIA
+    SM90+ only). `ON` waits on the predecessor grid at entry and releases the
+    dependent grids at exit; `OVERLAP_AT_BEGINNING` releases them right after
+    the wait. `NO_WAIT_OVERLAP_AT_END` is unsupported, and the per-element
+    split-K tier always releases at exit. Scaffolder-internal — a body never
+    reads it."""
+
     @inline(.always)
     def __init__(
         out self,
@@ -178,6 +187,7 @@ struct ContextParams(TrivialRegisterPassable):
         tier: ReduceTier = ReduceTier.Block,
         num_phases: Int = 0,
         name: StaticString = "rowwise",
+        pdl_level: PDLLevel = PDLLevel.OVERLAP_AT_BEGINNING,
     ):
         """Initializes a `ContextParams` from per-tier comptime values.
 
@@ -193,6 +203,7 @@ struct ContextParams(TrivialRegisterPassable):
                 (`<= 1` disables the tier).
             name: Operation name for the tier kernels' `@__name`
                 (defaults to `"rowwise"`).
+            pdl_level: PDL level of the GPU tier kernels.
         """
         debug_assert(
             not is_cpu(target) or BLOCK_SIZE == 1,
@@ -206,6 +217,7 @@ struct ContextParams(TrivialRegisterPassable):
         self.target = target
         self._num_phases = num_phases
         self.name = name
+        self.pdl_level = pdl_level
 
 
 # ===-----------------------------------------------------------------------===#
