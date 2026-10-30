@@ -665,7 +665,7 @@ static std::optional<StringRef> extractDecoratorName(TypedAttr attr) {
     return name.substr(0, name.find_first_of("(["));
   };
 
-  if (auto cst = dyn_cast<SymbolConstantAttr>(attr))
+  if (auto cst = FuncSymbolGenerator::dynCast(attr))
     return extractFromSymbolRef(cst.getSymbol());
   if (auto fnLiteral = dyn_cast<FnLiteralTypeGeneratorType>(attr.getType()))
     return extractFromSymbolRef(
@@ -676,7 +676,7 @@ static std::optional<StringRef> extractDecoratorName(TypedAttr attr) {
     if (call.getOpcode() != POC::Apply || call.getOperands().empty())
       return std::nullopt;
 
-    if (auto firstOp = dyn_cast<SymbolConstantAttr>(call.getOperands().front()))
+    if (auto firstOp = FuncSymbolGenerator::dynCast(call.getOperands().front()))
       return extractFromSymbolRef(firstOp.getSymbol());
   }
 
@@ -744,7 +744,7 @@ void Decorators::applyBodyDecorators(
     if (PValue decoVal = emitter.emitExprPValue(decorator, EC_Decorator)) {
       // DecoVal wants the symbol constant attr.
       if (auto fnLit = dyn_cast<FnLiteralTypeGeneratorType>(decoVal.getType()))
-        decoVal = PValue(fnLit.getSymbolConstantAttr());
+        decoVal = PValue(fnLit.getFuncSymbolAttr());
 
       if (failed(validateCompilerDecorator(decoVal))) {
         emitError(decorator->getLoc(), "unsupported compiler decorator")

@@ -526,6 +526,28 @@ ParametricElaborator::concretizeSymbolsWithin(Attribute value,
         }
         return {*result, WalkResult::skip()};
       });
+  replacer.addReplacement(
+      [&](GeneratorAttr gen)
+          -> std::optional<std::pair<Attribute, WalkResult>> {
+        // Ignore parametric references and non-function generators.
+        auto symbol = FuncSymbolGenerator::dynCast(gen);
+        if (!symbol || !symbol.isFullyBound())
+          return std::nullopt;
+        ErrorTreeOr<FuncOp> func = getConcreteFunction(parent, loc, symbol);
+        if (func.isError()) {
+          error = func.takeError();
+          return std::make_pair(Attribute(gen), WalkResult::interrupt());
+        }
+        if (!*func)
+          return std::make_pair(Attribute(gen), WalkResult::interrupt());
+        auto result = parent->getEvaluator().concretizeParameterExpr(
+            parent, loc, FuncSymbolGenerator::get(func.takeValue()));
+        if (result.isError()) {
+          error = result.takeError();
+          return std::make_pair(Attribute(gen), WalkResult::interrupt());
+        }
+        return std::make_pair(Attribute(*result), WalkResult::skip());
+      });
 
   if (Attribute result = replacer.replace(value)) {
     return result;
@@ -1944,6 +1966,14 @@ ParametricElaborator::bundleCompileOffloadOp(CompileOffloadOp op,
     mlir::AttrTypeReplacer replacer;
     replacer.addReplacement(
         [&](SymbolConstantAttr ref)
+            -> std::optional<std::pair<Attribute, WalkResult>> {
+          if (ref.getSymbol() != symbol.getSymbol())
+            exportedSymbols.insert(
+                {ref.getSymbol().getRootReference(), ExportKind::NotExported});
+          return std::nullopt;
+        });
+    replacer.addReplacement(
+        [&](FuncSymbolAttr ref)
             -> std::optional<std::pair<Attribute, WalkResult>> {
           if (ref.getSymbol() != symbol.getSymbol())
             exportedSymbols.insert(

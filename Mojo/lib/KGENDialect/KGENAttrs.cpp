@@ -1328,8 +1328,10 @@ TypedAttr BindParamsAttr::get(MLIRContext *context, TypedAttr generator,
   // If the generator is a GeneratorAttr, specialize it directly. A null nested
   // evaluation propagates upwards as a null result.
   if (auto genAttr = sugarDynCast<GeneratorAttr>(generator)) {
+    // TODO: We allow `FuncSymbolGenerator` without eval context since graph
+    // compiler is relying on this.
     assert(
-        evaluationContext &&
+        (evaluationContext || FuncSymbolGenerator::dynCast(generator)) &&
         "A foldable BindParamsAttr must be created with an evaluation context");
     SmallVector<TypedAttr> partialParamValues = normalizeBindParamsValues(
         cast<GeneratorType>(genAttr.getType()), paramValues);
@@ -1866,12 +1868,19 @@ FuncSymbolAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
     UnboundIdxRefRemapper() = default;
 
     Attribute tryReplace(Attribute attr, size_t depth) {
-      auto indexRef = dyn_cast<ParamIndexRefAttr>(attr);
-      if (!indexRef || indexRef.getDepth() < depth)
+      if (auto indexRef = dyn_cast<ParamIndexRefAttr>(attr)) {
+        if (indexRef.getDepth() < depth)
+          return nullptr;
+        // This is a escaped ref. bind it!
+        Type mappedType = Base::replace(indexRef.getType());
+        return ParamDeclRefAttr::get("#" + std::to_string(indexRef.getIndex()),
+                                     mappedType);
+      }
+      auto ref = dyn_cast<IndexRefAttrInterface>(attr);
+      if (!ref || ref.getDepth() <= depth)
         return nullptr;
-      // This is a escaped ref. bind it!
-      Type mappedType = Base::replace(indexRef.getType());
-      return ParamDeclRefAttr::get("#" + std::to_string(indexRef.getIndex()),
+      Type mappedType = Base::replace(cast<TypedAttr>(attr).getType());
+      return ParamDeclRefAttr::get("#origin" + std::to_string(ref.getIndex()),
                                    mappedType);
     }
     Type tryReplace(Type t, size_t) { return {}; }
@@ -1990,6 +1999,123 @@ TypedAttr GeneratorAttr::getInstantiatedValue() {
   IndexDepthAdjuster adjuster(-1);
   TypedAttr body = adjuster.replace(getBody());
   return body;
+}
+
+//===----------------------------------------------------------------------===//
+// FuncSymbolGenerator
+//===----------------------------------------------------------------------===//
+
+static bool isFuncSymbolGenerator(TypedAttr attr) {
+  auto gen = sugarDynCast<GeneratorAttr>(attr);
+  return gen && sugarIsa<FuncSymbolAttr>(gen.getBody());
+}
+
+FuncSymbolGenerator::FuncSymbolGenerator(TypedAttr attr) {
+  assert((!attr || isFuncSymbolGenerator(attr)) &&
+         "expected a GeneratorAttr wrapping a FuncSymbolAttr");
+  if (attr)
+    storage = sugarCast<GeneratorAttr>(attr);
+}
+
+FuncSymbolGenerator FuncSymbolGenerator::get(ArrayRef<Type> inputParamTypes,
+                                             FuncSymbolAttr funcSymbol,
+                                             Attribute metadata) {
+  return FuncSymbolGenerator(
+      GeneratorAttr::get(inputParamTypes, funcSymbol, metadata));
+}
+
+FuncSymbolGenerator FuncSymbolGenerator::get(SymbolRefAttr symbol,
+                                             FuncType type,
+                                             Attribute metadata) {
+  auto funcSymbol = FuncSymbolAttr::get(symbol, type, /*paramValues=*/{});
+  return get(/*inputParamTypes=*/{}, funcSymbol, metadata);
+}
+
+FuncSymbolGenerator FuncSymbolGenerator::get(FuncOp func) {
+  FuncTypeGeneratorType type = func.getFuncTypeGenerator();
+  return get(FlatSymbolRefAttr::get(func.getSymNameAttr()), type.getBody(),
+             type.getParamListAttrs());
+}
+
+// TODO: kill this after fully migrated.
+FuncSymbolGenerator FuncSymbolGenerator::get(SymbolConstantAttr symbol) {
+  FuncTypeGeneratorType type = symbol.getType();
+  ArrayRef<Type> inputParamTypes = type.getInputParamTypes();
+
+  // The body binds every parameter of the callee. A parameter the symbol leaves
+  // unbound refers to the generator's next input parameter, so specializing the
+  // generator binds it; a bound value moves one scope deeper, into the body.
+  SmallVector<TypedAttr> bodyValues;
+  IndexDepthAdjuster adjuster(1);
+  unsigned nextInput = 0;
+  auto selfRef = [&]() -> TypedAttr {
+    TypedAttr ref =
+        ParamIndexRefAttr::get(nextInput, inputParamTypes[nextInput]);
+    ++nextInput;
+    return ref;
+  };
+  if (symbol.getParamValues().empty()) {
+    while (nextInput < inputParamTypes.size())
+      bodyValues.push_back(selfRef());
+  } else {
+    for (TypedAttr value : symbol.getParamValues()) {
+      if (sugarIsa<UnboundAttr>(value)) {
+        if (nextInput == inputParamTypes.size())
+          return {};
+        bodyValues.push_back(selfRef());
+      } else {
+        bodyValues.push_back(cast<TypedAttr>(adjuster.replace(value)));
+      }
+    }
+  }
+  if (nextInput != inputParamTypes.size())
+    return {};
+  auto funcSymbol =
+      FuncSymbolAttr::get(symbol.getSymbol(), type.getBody(), bodyValues);
+  return get(type.getInputParamTypes(), funcSymbol, type.getParamListAttrs());
+}
+
+FuncSymbolGenerator FuncSymbolGenerator::dynCast(Attribute attr) {
+  auto typedAttr = dyn_cast_if_present<TypedAttr>(attr);
+  if (!typedAttr)
+    return {};
+  if (isFuncSymbolGenerator(typedAttr))
+    return FuncSymbolGenerator(typedAttr);
+  if (auto symbol = sugarDynCast<SymbolConstantAttr>(typedAttr))
+    return get(symbol);
+  return {};
+}
+
+FuncTypeGeneratorType FuncSymbolGenerator::getType() const {
+  return ::cast<FuncTypeGeneratorType>(storage.getType());
+}
+
+ArrayRef<Type> FuncSymbolGenerator::getInputParamTypes() const {
+  return storage.getInputParamTypes();
+}
+
+bool FuncSymbolGenerator::isFullyBound() { return storage.isFullyBound(); }
+
+FuncSymbolAttr FuncSymbolGenerator::getFuncSymbol() const {
+  return sugarCast<FuncSymbolAttr>(storage.getBody());
+}
+
+SymbolRefAttr FuncSymbolGenerator::getSymbol() const {
+  return getFuncSymbol().getSymbol();
+}
+
+FuncSymbolAttr FuncSymbolGenerator::getInstantiatedFuncSymbol() {
+  assert(isFullyBound() && "cannot instantiate a parameterized generator");
+  return sugarCast<FuncSymbolAttr>(storage.getInstantiatedValue());
+}
+
+FuncType FuncSymbolGenerator::getInstantiatedType() {
+  assert(isFullyBound() && "cannot instantiate a parameterized generator");
+  return getType().getInstantiatedBody();
+}
+
+ArrayRef<TypedAttr> FuncSymbolGenerator::getParamValues() {
+  return getInstantiatedFuncSymbol().getParamValues();
 }
 
 //===----------------------------------------------------------------------===//
@@ -2836,7 +2962,7 @@ LogicalResult ParamOperatorAttr::verify(
                << "'function_get_arg_types' operand paramindexref's type "
                   "should be a paramref or signature, but got: "
                << mlirType;
-    } else if (::isa<SymbolConstantAttr>(operand)) {
+    } else if (FuncSymbolGenerator::dynCast(operand)) {
       // Do nothing, is fine.
     } else {
       return emitError()
@@ -4327,8 +4453,8 @@ static TypedAttr simplifyFunctionGetArgTypes(MLIRContext *ctx,
     mlirType = typeConstAttr.getMlirType();
   } else if (auto paramIndexRef = sugarDynCast<ParamIndexRefAttr>(operand)) {
     mlirType = paramIndexRef.getType();
-  } else if (auto symConstAttr = sugarDynCast<SymbolConstantAttr>(operand)) {
-    mlirType = symConstAttr.getType();
+  } else if (auto symbol = FuncSymbolGenerator::dynCast(operand)) {
+    mlirType = symbol.getType();
   } else {
     return {};
   }

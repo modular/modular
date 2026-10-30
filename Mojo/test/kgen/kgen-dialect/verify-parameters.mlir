@@ -85,8 +85,8 @@ kgen.generator @ref_it() {
        :@Int apply(:(index) -> !lit.struct<@Int> @make, *(0,0)),
        :@List<:@Int apply(:(index) -> !lit.struct<@Int> @make, *(0,0))>
          apply(:() -> !lit.struct<@List<:@Int apply(:(index) -> !lit.struct<@Int> @make, *(1,0))>>
-                 @create<:@Int apply(:(index) -> !lit.struct<@Int> @make, *(0,0))>)>>
-    = <@buffer>
+                 @create<:@Int apply(:(index) -> !lit.struct<@Int> @make, *(1,0))>)>>
+    = <@buffer<*(0,0)>>
   hlcf.return
 }
 
@@ -100,13 +100,13 @@ kgen.generator @use() {
   // COM: Construct a scenario where a signature with an escaped index reference
   // COM: is being passed as a type parameter to a function that references it
   // COM: in its result.
-  // CHECK: rebind(:() -> !kgen.simd<*(1,0), si8> apply(:() -> !kgen.generator<() -> !kgen.simd<*(2,0), si8>> @pass_type<:type () -> !kgen.simd<*(1,0), si8>>)
+  // CHECK: rebind(:() -> !kgen.simd<*(1,0), si8> apply(:() -> !kgen.generator<() -> !kgen.simd<*(2,0), si8>> @pass_type<:type () -> !kgen.simd<*(2,0), si8>>)
   kgen.param.declare use: <
     index,
     !kgen.param<rebind(:() -> !kgen.simd<*(1,0), si8>
       apply(
         :() -> !kgen.generator<() -> !kgen.simd<*(2,0), si8>>
-          @pass_type<:type () -> !kgen.simd<*(1,0), si8>>))>
+          @pass_type<:type () -> !kgen.simd<*(2,0), si8>>))>
   >() -> () = <?>
   hlcf.return
 }
@@ -118,26 +118,10 @@ lit.struct.decl @T<a> {
 
 // CHECK-LABEL: kgen.generator @f
 kgen.generator @f<a, b: @T<a>>() -> !kgen.type {
-  // CHECK-NEXT: ref: <index, !lit.struct<@T<*(0,0)>>, <apply(:() -> !kgen.type @f<*(1,0), :!lit.struct<@T<*(1,0)>> *(1,1)>)>() -> ()>() -> () = <?>
-  kgen.param.declare ref: <index, @T<*(0,0)>, <apply(:() -> !kgen.type @f<*(1,0), :@T<*(1,0)> *(1,1)>)>() -> ()>() -> () = <?>
+  // CHECK-NEXT: ref: <index, !lit.struct<@T<*(0,0)>>, <apply(:() -> !kgen.type @f<*(2,0), :!lit.struct<@T<*(2,0)>> *(2,1)>)>() -> ()>() -> () = <?>
+  kgen.param.declare ref: <index, @T<*(0,0)>, <apply(:() -> !kgen.type @f<*(2,0), :@T<*(2,0)> *(2,1)>)>() -> ()>() -> () = <?>
 
   // CHECK-NEXT: relative: <type, <*(1,0)>(!kgen.pointer<:!kgen.param<*(1,0)> *(0,0)>) -> ()>
   kgen.param.declare relative: <type, <*(1,0)>(!kgen.pointer<:!kgen.param<*(1,0)> *(0,0)>) -> ()>() -> () = <?>
   hlcf.unreachable
-}
-
-// -----
-
-kgen.generator @f<a, b, c: array<b, index>>() {
-  hlcf.return
-}
-
-
-// COM: Partially bind a function with dependent parameters.
-
-// CHECK-LABEL: @partially_bind_dependent
-kgen.generator @partially_bind_dependent() {
-  // CHECK-NEXT: partial: <index, array<*(0,0), index>>() -> () = <@f<1, ?, :array<?, index> ?>>
-  kgen.param.declare partial: <index, array<*(0,0), index>>() -> () = <@f<1, ?, :array<?, index> ?>>
-  hlcf.return
 }

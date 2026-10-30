@@ -176,13 +176,9 @@ kgen.generator @call_param
   // CHECK: kgen.param.declare idx2 = <to_builtin(:scalar<index> mul(from_builtin(resultIndex), 3))>
   kgen.param.declare idx2 = <add(resultIndex, resultIndex, resultIndex)>
 
-  // Call a kgen.symbol.constant with unbound parameters.
-  // CHECK: kgen.call_param[(!kgen.simd<42, dt>) -> (): @calleeRemap<:dtype dt, 42>](%arg1)
-  kgen.call_param[(!kgen.simd<42, dt>) -> (): bind_params(:<dtype, index>(!kgen.simd<*(0,1), *(0,0)>)->() @calleeRemap, :dtype dt, :index 42)](%arg1)
-
   // Call a kgen.symbol.constant with parameters bound in symbol.constant.
   // CHECK: kgen.call_param[(!kgen.simd<42, dt>) -> ():
-  // CHECK-SAME: @calleeRemap<:dtype dt, 42>](%arg1)
+  // CHECK-SAME: #kgen.symbol.constant<@calleeRemap<:dtype dt, 42>>](%arg1)
   kgen.call_param[(!kgen.simd<42, dt>)->():
                       #kgen.symbol.constant<@calleeRemap<:dtype dt, 42>>]
      (%arg1)

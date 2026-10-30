@@ -1636,7 +1636,7 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands) {
           sugarDynCast<FuncLiteralTypeGeneratorType>(callee.getRValueType())) {
     // An indirect call to a function literal typed candidate becomes a direct
     // call to the literal itself.
-    auto target = calleeSig.getSymbolConstantAttr();
+    auto target = calleeSig.getFuncSymbolAttr();
     return emitIndirectCall(target, std::move(operands));
   }
 

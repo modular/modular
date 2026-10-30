@@ -129,7 +129,7 @@ def LIT_FnOp : LITOp<"fn", [
     /// parameter bindings.
     TypedAttr getBoundReference(ParameterEvaluationContext &evalContext,
                                 ParameterExprArrayAttr bindings = {});
-    SymbolConstantAttr
+    FuncSymbolGenerator
     getBoundSymbolRef(ParameterEvaluationContext &evalContext,
                       ParameterExprArrayAttr bindings = {});
 
@@ -476,8 +476,8 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     TypeAttrOf<LIT_TraitType>:$canonicalTrait,
     UnitAttr:$synthetic,
     OptionalAttr<TypeAttr>:$nonmaterializableTarget,
-    OptionalAttr<KGEN_SymbolConstantAttr>:$moveInit,
-    OptionalAttr<KGEN_SymbolConstantAttr>:$copyInit,
+    OptionalAttr<KGEN_GeneratorAttr>:$moveInit,
+    OptionalAttr<KGEN_GeneratorAttr>:$copyInit,
     // This is the error message to produce if a non-destructible type needs an
     // implicit destructor call.
     OptionalAttr<StrAttr>:$linearTypeErrorMsg,

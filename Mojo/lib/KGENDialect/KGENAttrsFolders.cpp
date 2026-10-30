@@ -533,7 +533,7 @@ FuncInterface resolveFuncDecl(TypedAttr funcValue,
                               ParameterEvaluationContext &context) {
   // Mojo function values reach reflection as `#kgen.symbol.constant<@func>`.
   // Closure literals are not yet supported.
-  auto symbol = dyn_cast<SymbolConstantAttr>(funcValue);
+  auto symbol = FuncSymbolGenerator::dynCast(funcValue);
   if (!symbol)
     return nullptr;
   return context.resolveFunctionDecl(symbol.getSymbol());

@@ -22,7 +22,7 @@ kgen.func @foo() {
   // CHECK-NEXT: kgen.param.constant: array<0, i1> = <[]> loc(#[[LOC_CALLSITE:.*]])
   %array = kgen.param.constant: array<0, i1> = <[]> loc(#loc6)
 
-  // CHECK-NEXT: co.invoke[{{.*}}: @foo_async_closure_0]() loc(#[[LOC_CALLSITE]])
+  // CHECK-NEXT: co.invoke[{{.*}}: #kgen.symbol.constant<@foo_async_closure_0>]() loc(#[[LOC_CALLSITE]])
   %0 = co.execute : !pop.array<0, i1> {
     %array_1 = kgen.param.constant: array<1, i1> = <[1]> loc(#loc7)
     hlcf.return %array : !pop.array<0, i1> loc(#loc7)

@@ -296,7 +296,7 @@ SymTabEvaluationContext::inlineApply(ParamOperatorAttr apply) {
       apply.getOpcode() != POC::ApplyResultSlot)
     return failure();
 
-  auto cst = dyn_cast<SymbolConstantAttr>(apply.getOperand(0));
+  auto cst = FuncSymbolGenerator::dynCast(apply.getOperand(0));
   if (!cst)
     return failure();
 

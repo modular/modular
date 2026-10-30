@@ -57,8 +57,8 @@ kgen.generator export @main() -> (!kgen.string, !kgen.string, !kgen.string, !kge
   // CHECK-DAG: <"params_a_1_b_2{{.*}}">
   %3 = kgen.param.constant: string = <#kgen.get_linkage_name<nvptx, #kgen.symbol.constant<@params<1, 2>> : !kgen.generator<() -> (index, index)>>>
   // CHECK-DAG: .visible .entry func_param_f_params
-  %4 = kgen.param.constant: string = <#kgen.struct.extract<#kgen.compile_assembly<nvptx, =asm, "", false, :() -> index @func_param<:<index, index>() -> (index, index) @params>>, 0>>
+  %4 = kgen.param.constant: string = <#kgen.struct.extract<#kgen.compile_assembly<nvptx, =asm, "", false, :() -> index @func_param<:<index, index>() -> (index, index) @params<*(0,0), *(0,1)>>>, 0>>
   // CHECK-DAG: <"func_param_f_params{{.*}}">
-  %5 = kgen.param.constant: string = <#kgen.get_linkage_name<nvptx, #kgen.symbol.constant<@func_param<:<index, index>() -> (index, index) @params>> : !kgen.generator<() -> index>>>
+  %5 = kgen.param.constant: string = <#kgen.get_linkage_name<nvptx, #kgen.symbol.constant<@func_param<:<index, index>() -> (index, index) @params<*(0,0), *(0,1)>>> : !kgen.generator<() -> index>>>
   hlcf.return %0, %1, %2, %3, %4, %5 : !kgen.string, !kgen.string, !kgen.string, !kgen.string, !kgen.string, !kgen.string
 }

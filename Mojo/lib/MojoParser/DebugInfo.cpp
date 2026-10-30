@@ -31,7 +31,7 @@ void SourceNames::processDecorators(Operation *op,
                                     SmallVectorImpl<SourceNameAttr> &out) {
   auto kgenDecoratorToFunctionName =
       [&](TypedAttr opDecorator) -> SourceNameAttr {
-    if (auto sym = dyn_cast_or_null<SymbolConstantAttr>(opDecorator)) {
+    if (auto sym = FuncSymbolGenerator::dynCast(opDecorator)) {
       ASTDecl *decoratorDecl =
           shared.declResolver->getDeclForFuncSymbol(sym.getSymbol());
       if (decoratorDecl)

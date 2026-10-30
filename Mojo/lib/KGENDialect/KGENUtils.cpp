@@ -2825,7 +2825,7 @@ static bool isDecorator(TypedAttr decorator,
   if (auto apply = dyn_cast<KGEN::ParamOperatorAttr>(decorator))
     decorator = apply.getOperand(0);
 
-  auto sym = dyn_cast<KGEN::SymbolConstantAttr>(decorator);
+  auto sym = KGEN::FuncSymbolGenerator::dynCast(decorator);
   if (!sym)
     return false;
   SymbolRefAttr symRef = sym.getSymbol();

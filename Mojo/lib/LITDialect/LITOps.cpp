@@ -321,7 +321,12 @@ parseCallOp(OpAsmParser &p, TypedAttr &calleeAttr,
     if (p.parseColon() ||
         parseKGENFuncTypeGenerator(p, functionType, signature))
       return failure();
-    calleeAttr = SymbolConstantAttr::get(callee, signature, paramValues);
+    if (!signature.isFullyBound())
+      return p.emitError(p.getCurrentLocation(),
+                         "expected a fully bound callee signature");
+    calleeAttr = FuncSymbolGenerator::get(
+        {}, FuncSymbolAttr::get(callee, signature.getBody(), paramValues),
+        signature.getParamListAttrs());
   }
   if (failed(parseCallOpTypes(p, operandTypes, resultTypes, calleeAttr,
                               implicitOrigins)))
@@ -333,24 +338,24 @@ static void printCallOp(OpAsmPrinter &p, Operation *op, TypedAttr calleeAttr,
                         ParameterExprArrayAttr implicitOrigins,
                         ValueRange operands, TypeRange operandTypes,
                         TypeRange resultTypes) {
-  auto symbolCst = dyn_cast<SymbolConstantAttr>(calleeAttr);
+  auto callee = FuncSymbolGenerator::dynCast(calleeAttr);
   // Optionally print the direct call syntax. Otherwise, print the parametric
   // call syntax.
-  if (symbolCst)
-    p << ' ' << symbolCst.getSymbol();
+  if (callee)
+    p << ' ' << callee.getSymbol();
   else
     printParametricCallee(p, op, calleeAttr);
   printOriginParams(p, op, implicitOrigins);
-  if (symbolCst)
-    printParameterValues(p, symbolCst.getParamValues());
+  if (callee && callee.isFullyBound())
+    printParameterValues(p, callee.getParamValues());
   p << '(';
   p.printOperands(operands);
   p << ')';
-  if (symbolCst) {
+  if (callee) {
     p << " : ";
     printSignatureValues(
         p, FunctionType::get(op->getContext(), operandTypes, resultTypes),
-        symbolCst.getType());
+        callee.getType());
   }
 }
 
@@ -409,8 +414,8 @@ LogicalResult LIT::CallOp::verify() {
 }
 
 SymbolRefAttr LIT::CallOp::getDirectCallee() {
-  if (auto symbolCst = dyn_cast<SymbolConstantAttr>(getCallee()))
-    return symbolCst.getSymbol();
+  if (auto callee = FuncSymbolGenerator::dynCast(getCallee()))
+    return callee.getSymbol();
   return {};
 }
 
@@ -682,18 +687,17 @@ TypedAttr FnOp::getBoundReference(ParameterEvaluationContext &evalContext,
   if (!bindings) // We allow null for convenience.
     bindings = ParameterExprArrayAttr::get(getContext(), {});
 
-  SymbolRefAttr symbol = getFullyResolvedSymbolRef(*this);
-  auto unboundSymbol = SymbolConstantAttr::get(symbol, getFullSignature());
-  auto resultType = cast<FuncTypeGeneratorType>(
-      BindParamsAttr::inferResultType(unboundSymbol, bindings,
-                                      /*discharged=*/{}, &evalContext));
-  return SymbolConstantAttr::get(symbol, resultType, bindings);
+  TypedAttr literal =
+      getFuncLiteralGenerator(evalContext, bindings, /*discharged=*/{});
+
+  return cast<FuncLiteralTypeGeneratorType>(literal.getType())
+      .getFuncSymbolAttr();
 }
 
-SymbolConstantAttr
+FuncSymbolGenerator
 FnOp::getBoundSymbolRef(ParameterEvaluationContext &evalContext,
                         ParameterExprArrayAttr bindings) {
-  return cast<SymbolConstantAttr>(getBoundReference(evalContext, bindings));
+  return getBoundReference(evalContext, bindings);
 }
 
 TypedAttr FnOp::getFuncLiteralGenerator(
@@ -1190,15 +1194,19 @@ void FnOp::build(OpBuilder &builder, OperationState &result, StringAttr name,
 // StructDeclOp
 //===----------------------------------------------------------------------===//
 
-static ParseResult parseSymbol(AsmParser &p, SymbolConstantAttr &symbol) {
+static ParseResult parseSymbol(AsmParser &p, GeneratorAttr &symbol) {
+  llvm::SMLoc loc = p.getCurrentLocation();
   TypedAttr value;
   if (parseColonTypeParamValue(p, value))
     return failure();
-  symbol = cast<SymbolConstantAttr>(value);
+  auto generator = FuncSymbolGenerator::dynCast(value);
+  if (!generator)
+    return p.emitError(loc, "expected a function symbol");
+  symbol = generator;
   return success();
 }
 
-static void printSymbol(AsmPrinter &p, Operation *, SymbolConstantAttr symbol) {
+static void printSymbol(AsmPrinter &p, Operation *, GeneratorAttr symbol) {
   printColonTypeParamValue(p, symbol);
 }
 

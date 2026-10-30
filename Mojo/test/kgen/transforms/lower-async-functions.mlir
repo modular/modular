@@ -1154,7 +1154,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 // RESUME FNC INIT
 // CHECK-NEXT:  [[V3:%.*]] = kgen.struct.gep [[CONT]][[[#FRAME1:]]]
-// CHECK-NEXT:  [[V4:%.*]] = kgen.create_func_ptr{{.*}}@conditional_suspoint_resume]
+// CHECK-NEXT:  [[V4:%.*]] = kgen.create_func_ptr{{.*}}#kgen.symbol.constant<@conditional_suspoint_resume>]
 // CHECK-NEXT:  [[V5:%.*]] = pop.pointer.bitcast [[V4]]
 // CHECK-NEXT:  pop.store [[V5]], [[V3]] : !kgen.pointer<pointer<none>>
 
@@ -1340,7 +1340,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 // Configure Resume
 // CHECK-NEXT: [[V3:%.*]] = kgen.struct.gep [[CONT1]][1]
-// CHECK-NEXT: [[V4:%.*]] = kgen.create_func_ptr[({{.*}}) -> (): @needsBoth_resume]()
+// CHECK-NEXT: [[V4:%.*]] = kgen.create_func_ptr[({{.*}}) -> (): #kgen.symbol.constant<@needsBoth_resume>]()
 // CHECK-NEXT: [[V5:%.*]] = pop.pointer.bitcast [[V4]]
 // CHECK-NEXT: pop.store [[V5]], [[V3]] : !kgen.pointer<pointer<none>>
 
@@ -1381,7 +1381,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 // Configure resume function.
 // CHECK-NEXT:  [[V3:%.*]] = kgen.struct.gep [[CONT]][1]
-// CHECK-NEXT:  [[V4:%.*]] = kgen.create_func_ptr[({{.*}}) -> (): @needsBoth_resume]()
+// CHECK-NEXT:  [[V4:%.*]] = kgen.create_func_ptr[({{.*}}) -> (): #kgen.symbol.constant<@needsBoth_resume>]()
 // CHECK-NEXT:  [[V5:%.*]] = pop.pointer.bitcast [[V4]]
 // CHECK-NEXT:  pop.store [[V5]], [[V3]]
 

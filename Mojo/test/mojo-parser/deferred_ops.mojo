@@ -32,7 +32,7 @@ def test1[cmp: Bool](a: Int, b: Int) raises -> Bool:
 
     comptime pred_attr = select_pred[cmp]()
 
-    # CHECK: kgen.deferred "index.cmp"(%{{.}}, %{{.*}} : !Int, !Int) {pred = #kgen.param.expr<apply, #kgen.symbol.constant<@deferred_ops::@"select_pred[::Bool](){{.*}}"<:!Bool cmp>> : !kgen.generator<!lit.generator<() -> !kgen.deferred>>> : !kgen.deferred} : i1
+    # CHECK: kgen.deferred "index.cmp"(%{{.}}, %{{.*}} : !Int, !Int) {pred = #kgen.param.expr<apply, #kgen.gen<#kgen.func.symbol<@deferred_ops::@"select_pred[::Bool](){{.*}}"<:!Bool cmp>>> : !kgen.generator<!lit.generator<() -> !kgen.deferred>>> : !kgen.deferred} : i1
     var res = __mlir_op.`index.cmp`[pred=pred_attr](a, b)
     return res
 

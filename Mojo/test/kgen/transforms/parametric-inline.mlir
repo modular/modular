@@ -346,7 +346,7 @@ kgen.generator @callee<DT: dtype>(%arg0: !kgen.scalar<DT>) -> !kgen.scalar<DT> a
 // CHECK-LABEL: kgen.generator @replace_in_signature_with_shadow
 kgen.generator @replace_in_signature_with_shadow<width>() {
   // CHECK: kgen.param.declare width0 = <width>
-  // CHECK-NEXT: kgen.param.declare fn: <index>(!kgen.simd<*(0,0), bool>) -> () = <@param_arg>
+  // CHECK-NEXT: kgen.param.declare fn: <index>(!kgen.simd<*(0,0), bool>) -> () = <@param_arg<*(0,0)>>
   // CHECK-NEXT: kgen.param.declare bound: (!kgen.simd<width0, bool>) -> ()
   // CHECK-SAME: = <bind_params(:<index>(!kgen.simd<*(0,0), bool>) -> () fn, width0)>
   kgen.call @callee<width>() : () -> ()
@@ -360,7 +360,7 @@ kgen.generator @param_arg<width>(%arg0: !kgen.simd<width, bool>) {
 
 // CHECK-LABEL: kgen.generator @callee
 kgen.generator @callee<width>() always_inline {
-  kgen.param.declare fn: <index>(!kgen.simd<*(0,0), bool>) -> () = <@param_arg>
+  kgen.param.declare fn: <index>(!kgen.simd<*(0,0), bool>) -> () = <@param_arg<*(0,0)>>
   kgen.param.declare bound: (!kgen.simd<width, bool>) -> () =
     <bind_params(:<index>(!kgen.simd<*(0,0), bool>) -> () fn, width)>
   hlcf.return

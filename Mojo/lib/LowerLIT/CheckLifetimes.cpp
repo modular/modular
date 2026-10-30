@@ -690,7 +690,7 @@ SpecialMemberInfo TypeDeclInfo::getDestructorForType(Type type, FnOp fnContext,
     auto newType =
         GeneratorType::get(info.decl.getSignature().getParamTypes(), fnType,
                            info.decl.getSignature().getParamListAttrs());
-    auto sym = cast<SymbolConstantAttr>(dtorAttr).getSymbol();
+    auto sym = FuncSymbolGenerator::dynCast(dtorAttr).getSymbol();
     return SpecialMemberInfo::available(
         SymbolConstantAttr::get(sym, newType, {}));
   };

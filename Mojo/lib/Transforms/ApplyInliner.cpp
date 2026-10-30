@@ -169,7 +169,7 @@ findRecursiveGenerators(const DenseMap<StringAttr, FunctionTrait> &traits) {
       if (op.getOpcode() != POC::Apply &&
           op.getOpcode() != POC::ApplyResultSlot)
         return;
-      auto cst = dyn_cast<SymbolConstantAttr>(op.getOperand(0));
+      auto cst = FuncSymbolGenerator::dynCast(op.getOperand(0));
       // Skip non-constant symbols; we don't follow those during inlining
       if (!cst)
         return;
@@ -261,7 +261,7 @@ void ApplyInlinerPass::runOnOperation() {
     if (apply.getOpcode() != POC::Apply &&
         apply.getOpcode() != POC::ApplyResultSlot)
       return apply;
-    auto cst = dyn_cast<SymbolConstantAttr>(apply.getOperand(0));
+    auto cst = FuncSymbolGenerator::dynCast(apply.getOperand(0));
     if (!cst)
       return apply;
     auto it =

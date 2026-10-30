@@ -79,7 +79,7 @@ void LIT::emitConstraintInconclusive(DeclResolver &resolver,
     // because it calls a function that is not always_inline("builtin").
     if (op.getOpcode() == POC::Apply) {
       auto callee = op.getOperand(0);
-      if (auto sym = dyn_cast<SymbolConstantAttr>(callee)) {
+      if (auto sym = FuncSymbolGenerator::dynCast(callee)) {
         ASTDecl *calleeDecl = resolver.getDeclForFuncSymbol(sym.getSymbol());
         diag.attachNote(*calleeDecl)
             << "cannot evaluate call to non-builtin function declared here";

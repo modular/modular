@@ -211,13 +211,13 @@ kgen.generator @parametricTypes(%arg0: !kgen.scalar<ui64>, %arg1: !kgen.simd<2, 
   hlcf.return
 }
 
-// CHECK-LABEL: kgen.func @"takeUnary,dt=f32,fn=nopExample"() {
+// CHECK-LABEL: kgen.func @"takeUnary,dt=f32,fn=nopExample<*(0,0)>"() {
 // CHECK: %simd = kgen.param.constant
 // CHECK: %0 = pop.cast %simd
 // CHECK: %1 = kgen.call @"nopExample,dt=f32"(%0) : (!kgen.scalar<f32>) -> !kgen.scalar<f32>
 // CHECK: %2 = kgen.call @"nopExample,dt=f32"(%1) : (!kgen.scalar<f32>) -> !kgen.scalar<f32>
 
-// CHECK-LABEL: kgen.func @"takeUnary,dt=si32,fn=doubleExample"()
+// CHECK-LABEL: kgen.func @"takeUnary,dt=si32,fn=doubleExample<*(0,0)>"()
 // CHECK: %simd = kgen.param.constant
 // CHECK: %0 = pop.cast %simd
 // CHECK: %1 = kgen.call @"doubleExample,dt=si32"(%0) : (!kgen.scalar<si32>) -> !kgen.scalar<si32>
@@ -260,20 +260,20 @@ kgen.generator @takeParametricBinary
 
 // CHECK-LABEL:  kgen.func @test_symbol() {
 kgen.generator @test_symbol() {
-  // CHECK: kgen.call @"takeUnary,dt=si32,fn=doubleExample"()
+  // CHECK: kgen.call @"takeUnary,dt=si32,fn=doubleExample<*(0,0)>"()
   kgen.call @takeUnary<:dtype si32,
-     :<dtype>(!kgen.scalar<*(0,0)>) -> !kgen.scalar<*(0,0)> @doubleExample>() : () -> ()
+     :<dtype>(!kgen.scalar<*(0,0)>) -> !kgen.scalar<*(0,0)> @doubleExample<:dtype *(0,0)>>() : () -> ()
 
-  // CHECK: kgen.call @"takeUnary,dt=f32,fn=nopExample"()
+  // CHECK: kgen.call @"takeUnary,dt=f32,fn=nopExample<*(0,0)>"()
   kgen.call @takeUnary<:dtype f32,
-     :<dtype>(!kgen.scalar<*(0,0)>) -> !kgen.scalar<*(0,0)> @nopExample>() : () -> ()
+     :<dtype>(!kgen.scalar<*(0,0)>) -> !kgen.scalar<*(0,0)> @nopExample<:dtype *(0,0)>>() : () -> ()
 
-  // CHECK: kgen.call @"takeParametricBinary,sz=2,dt=f32,fn=parametricAdd"()
+  // CHECK: kgen.call @"takeParametricBinary,sz=2,dt=f32,fn=parametricAdd<*(0,0), *(0,1)>"()
   kgen.call @takeParametricBinary
      <
       2,
       :dtype f32,
-      :<index, dtype>(!kgen.simd<*(0,0), *(0,1)>, !kgen.simd<*(0,0), *(0,1)>) -> !kgen.simd<*(0,0), *(0,1)> @parametricAdd
+      :<index, dtype>(!kgen.simd<*(0,0), *(0,1)>, !kgen.simd<*(0,0), *(0,1)>) -> !kgen.simd<*(0,0), *(0,1)> @parametricAdd<*(0,0), :dtype *(0,1)>
      >() : () -> ()
 
   hlcf.return
@@ -291,7 +291,7 @@ kgen.generator @parametricBinOp<ty: type>
   hlcf.return %res : !kgen.param<ty>
 }
 
-// CHECK-LABEL: kgen.func @"takeParametricBinary,dt=f32,fn=parametricBinOp"() {
+// CHECK-LABEL: kgen.func @"takeParametricBinary,dt=f32,fn=parametricBinOp<*(0,0)>"() {
 kgen.generator @takeParametricBinary
   <dt: dtype,
    fn: <type>(!kgen.param<*(0,0)>, !kgen.param<*(0,0)>) -> !kgen.param<*(0,0)>
@@ -309,9 +309,9 @@ kgen.generator @takeParametricBinary
 
 // CHECK-LABEL: kgen.func @test_paramref_type_rewrite() {
 kgen.generator @test_paramref_type_rewrite() {
-  // CHECK: kgen.call @"takeParametricBinary,dt=f32,fn=parametricBinOp"() : () -> ()
+  // CHECK: kgen.call @"takeParametricBinary,dt=f32,fn=parametricBinOp<*(0,0)>"() : () -> ()
   kgen.call @takeParametricBinary<:dtype f32,
-      :<type>(!kgen.param<*(0,0)>, !kgen.param<*(0,0)>) -> !kgen.param<*(0,0)> @parametricBinOp>() : () -> ()
+      :<type>(!kgen.param<*(0,0)>, !kgen.param<*(0,0)>) -> !kgen.param<*(0,0)> @parametricBinOp<:type *(0,0)>>() : () -> ()
 
   hlcf.return
 }
@@ -355,28 +355,6 @@ kgen.generator @sillyFn() -> index {
 kgen.generator @elaborateFnWithContextualType() -> index {
   %0 = kgen.call @takeFnContextualType<:type index, :()->index @sillyFn>() : () -> index
   hlcf.return %0 : index
-}
-
-// CHECK-LABEL: @elaborateFnWithContextualType2()
-kgen.generator @elaborateFnWithContextualType2() -> (index, index) {
-  // Show we can bind a generic signature to a concrete one.
-  kgen.param.declare boundFn: ()->index =
-    <bind_params(:<type, ()->!kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> @takeFnContextualType,
-                    :type index, :()->index @sillyFn)>
-
-  // CHECK-NEXT: %0 = kgen.call @"takeFnContextualType,ty=index,fn=sillyFn"()
-  %0 = kgen.call_param[()->index: boundFn]()
-
-  kgen.param.declare fn: <type, ()->!kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> = <@takeFnContextualType>
-
-  kgen.param.declare boundFn2: ()->index =
-    <bind_params(:<type, ()->!kgen.param<*(1,0)>>() -> !kgen.param<*(0,0)> fn,
-                    :type index, :()->index @sillyFn)>
-
-  // CHECK-NEXT: %1 = kgen.call @"takeFnContextualType,ty=index,fn=sillyFn"()
-  %1 = kgen.call_param[()->index: boundFn2]()
-
-  hlcf.return %0, %1 : index, index
 }
 
 // -----
@@ -468,43 +446,6 @@ kgen.generator @use_Itf3() {
   kgen.call @genItf3<4>() : () -> ()
   kgen.call @genItf3<2>() : () -> ()
   hlcf.return
-}
-
-// -----
-
-// CHECK-LABEL: kgen.func @"param_add,A=1,B=2"
-kgen.generator @param_add<A, B>() -> index {
-  // CHECK-NEXT: %index3 = kgen.param.constant = <3>
-  %0 = kgen.param.constant = <add(A, B)>
-  // CHECK-NEXT: hlcf.return %index3
-  hlcf.return %0 : index
-}
-
-// CHECK-LABEL: kgen.func @partial_bind_params_region
-kgen.generator @partial_bind_params_region() -> index {
-  kgen.param.declare BoundFn: <index>() -> index = <bind_params(:<index, index>() -> index @param_add, 1, ?)>
-  // CHECK-NEXT: %0 = kgen.call @"param_add,A=1,B=2"() : () -> index
-  %0 = kgen.call_param[() -> index: bind_params(:<index>() -> index BoundFn, 2)]()
-  // CHECK-NEXT: hlcf.return %0
-  hlcf.return %0 : index
-}
-
-// CHECK-LABEL: kgen.func @"param_add2,A=1,B=2,C=3"
-kgen.generator @param_add2<A, B, C>() -> index {
-  // CHECK-NEXT: %index4 = kgen.param.constant = <4>
-  %0 = kgen.param.constant = <add(sub(B, A), C)>
-  // CHECK-NEXT: hlcf.return %index4
-  hlcf.return %0 : index
-}
-
-// CHECK-LABEL: kgen.func @partial_bind_params_region_2
-kgen.generator @partial_bind_params_region_2() -> index {
-  kgen.param.declare BoundFn: <index, index>() -> index = <bind_params(:<index, index, index>() -> index @param_add2, 1, ?, ?)>
-  kgen.param.declare BoundFn2: <index>() -> index = <bind_params(:<index, index>() -> index BoundFn, ?, 3)>
-  // CHECK-NEXT: %0 = kgen.call @"param_add2,A=1,B=2,C=3"() : () -> index
-  %0 = kgen.call_param[() -> index: bind_params(:<index>() -> index BoundFn2, 2)]()
-  // CHECK-NEXT: hlcf.return %0
-  hlcf.return %0 : index
 }
 
 // -----
@@ -1000,7 +941,7 @@ kgen.generator @async_function() async {
 
 // CHECK-LABEL: kgen.func @call_it
 kgen.generator @call_it() {
-  // CHECK: co.invoke[() async -> (): #kgen.gen<#kgen.func.symbol<@async_function>>]
+  // CHECK: co.invoke[() async -> (): @async_function]
   kgen.param.declare fn: () async -> () = <@async_function>
   co.invoke[() async -> (): fn]()
   hlcf.return
@@ -1015,7 +956,7 @@ kgen.generator @async_fn() async {
 
 // CHECK-LABEL: kgen.func export @nonparametric_async_call
 kgen.generator export @nonparametric_async_call() {
-  // CHECK-NEXT: co.invoke[() async -> (): #kgen.gen<#kgen.func.symbol<@async_fn>>]
+  // CHECK-NEXT: co.invoke[() async -> (): @async_fn]
   co.invoke[() async -> (): @async_fn]()
   hlcf.return
 }
@@ -1063,10 +1004,10 @@ kgen.generator @callee<a>(%arg0: index) {
 }
 
 kgen.generator @entry(%arg0: index) {
-  // CHECK: create_func_ptr[(index) -> (): #kgen.gen<#kgen.func.symbol<@"callee,a=1">>]
+  // CHECK: create_func_ptr[(index) -> (): @"callee,a=1"]
   kgen.create_func_ptr[(index) -> (): @callee<1>]()
   kgen.param.declare fn: (index) -> () = <@callee<2>>
-  // CHECK: create_func_ptr[(index) -> (): #kgen.gen<#kgen.func.symbol<@"callee,a=2">>]
+  // CHECK: create_func_ptr[(index) -> (): @"callee,a=2"]
   kgen.create_func_ptr[(index) -> (): fn]()
   hlcf.return
 }
@@ -1118,8 +1059,8 @@ kgen.generator @foo_k<N, M>() -> !kgen.scalar<index> {
 
 // CHECK-LABEL: kgen.func @"foo,N=5"(%arg0: !kgen.scalar<index>) {
 kgen.generator @foo<N>(%arg0: !kgen.scalar<index>) {
-  kgen.param.declare k: <index>() -> !kgen.scalar<index> = <@foo_k<N, ?>>
-  // CHECK: kgen.create_func_ptr[() -> !kgen.scalar<index>: #kgen.gen<#kgen.func.symbol<@"foo_k,N=5,M=3">>]()
+  kgen.param.declare k: <index>() -> !kgen.scalar<index> = <@foo_k<N, *(0,0)>>
+  // CHECK: kgen.create_func_ptr[() -> !kgen.scalar<index>: @"foo_k,N=5,M=3"]()
   %1 = kgen.create_func_ptr[() -> !kgen.scalar<index>: bind_params(:<index>() -> !kgen.scalar<index> k, 3)]()
   hlcf.return
 }
@@ -1144,7 +1085,7 @@ kgen.generator @bat(%arg0: index) -> index {
 
 // CHECK-LABEL: kgen.func @bat_binder
 kgen.generator @bat_binder(%arg0: index) {
-  // CHECK: kgen.create_func_ptr[(index) -> index: #kgen.gen<#kgen.func.symbol<@bat>>]()
+  // CHECK: kgen.create_func_ptr[(index) -> index: @bat]()
 	%2 = kgen.create_func_ptr[(index) -> index: h]()
 	kgen.param.declare h: (index) -> index = <@bat>
 	hlcf.return
@@ -1165,7 +1106,7 @@ kgen.generator @count_ops(%arg0: !kgen.scalar<bool>) -> index {
 
 kgen.generator @cost_of<fn: (!kgen.scalar<bool>) -> index>() -> index {
   %0:8 = kgen.cost_of[(!kgen.scalar<bool>) -> index: fn]
-  // CHECK-MAIN: %loads, %stores, %additions, %comparisons, %divisions, %multiplications, %multiplyAdds, %other = kgen.cost_of[(!kgen.scalar<bool>) -> index: #kgen.gen<#kgen.func.symbol<@count_ops>>]
+  // CHECK-MAIN: %loads, %stores, %additions, %comparisons, %divisions, %multiplications, %multiplyAdds, %other = kgen.cost_of[(!kgen.scalar<bool>) -> index: @count_ops]
   hlcf.return %0#7  : index
 }
 
@@ -1185,13 +1126,13 @@ kgen.generator @pop_add(%arg1: !kgen.scalar<si32>) -> !kgen.scalar<si32> {
 
 kgen.generator
 @cost_of_pop_add<fn: (!kgen.scalar<si32>) -> !kgen.scalar<si32>>() -> index {
-  // CHECK-MAIN: %loads, %stores, %additions, %comparisons, %divisions, %multiplications, %multiplyAdds, %other = kgen.cost_of[(!kgen.scalar<si32>) -> !kgen.scalar<si32>: #kgen.gen<#kgen.func.symbol<@pop_add>>]
+  // CHECK-MAIN: %loads, %stores, %additions, %comparisons, %divisions, %multiplications, %multiplyAdds, %other = kgen.cost_of[(!kgen.scalar<si32>) -> !kgen.scalar<si32>: @pop_add]
   %0:8 = kgen.cost_of[(!kgen.scalar<si32>) -> !kgen.scalar<si32>: fn]
   hlcf.return %0#2  : index
 }
 
 kgen.generator @index_add(%arg1: index) -> index {
-  // CHECK-MAIN: %loads, %stores, %additions, %comparisons, %divisions, %multiplications, %multiplyAdds, %other = kgen.cost_of[(index) -> index: #kgen.gen<#kgen.func.symbol<@index_add>>]
+  // CHECK-MAIN: %loads, %stores, %additions, %comparisons, %divisions, %multiplications, %multiplyAdds, %other = kgen.cost_of[(index) -> index: @index_add]
   %0 = index.add %arg1, %arg1
   hlcf.return %0 : index
 }
@@ -1332,9 +1273,9 @@ kgen.generator export @get_linkage_name() {
   // CHECK-NEXT: constant: string = <"params,a=1,b=2">
   %3 = kgen.param.constant: string = <#kgen.get_linkage_name<current_target(), #kgen.symbol.constant<@params<1, 2>> : !kgen.generator<() -> (index, index)>>>
   // CHECK-NEXT: constant: struct<(string, index)> = <{ "{{.*}}func_param,f=params
-  %4 = kgen.param.constant: !kgen.struct<(string, index)> = <#kgen.compile_assembly<current_target(), =asm, "", false, :() -> index @func_param<:<index, index>() -> (index, index) @params>>>
-  // CHECK-NEXT: constant: string = <"func_param,f=params">
-  %5 = kgen.param.constant: string = <#kgen.get_linkage_name<current_target(), #kgen.symbol.constant<@func_param<:<index, index>() -> (index, index) @params>> : !kgen.generator<() -> index>>>
+  %4 = kgen.param.constant: !kgen.struct<(string, index)> = <#kgen.compile_assembly<current_target(), =asm, "", false, :() -> index @func_param<:<index, index>() -> (index, index) @params<*(0,0), *(0,1)>>>>
+  // CHECK-NEXT: constant: string = <"func_param,f=params<*(0,0), *(0,1)>">
+  %5 = kgen.param.constant: string = <#kgen.get_linkage_name<current_target(), #kgen.symbol.constant<@func_param<:<index, index>() -> (index, index) @params<*(0,0), *(0,1)>>> : !kgen.generator<() -> index>>>
   hlcf.return
 }
 
@@ -1498,8 +1439,8 @@ kgen.generator @create<T: type>(%arg0: !kgen.param<T>) -> !kgen.variant<T, i1> {
 
 // CHECK-LABEL: kgen.func export @entry
 kgen.generator export @entry() {
-  // CHECK: constant: variant<<index>() -> !kgen.simd<*(0,0), f32>, i1> = <{:<index>() -> !kgen.simd<*(0,0), f32> @func, 0}>
-  kgen.param.apply value = [(!kgen.generator<<index>() -> !kgen.simd<*(0,0), f32>>) -> !kgen.variant<<index>() -> !kgen.simd<*(0,0), f32>, i1>: @create<:type <index>() -> !kgen.simd<*(0,0), f32>>](@func)
+  // CHECK: constant: variant<<index>() -> !kgen.simd<*(0,0), f32>, i1> = <{:<index>() -> !kgen.simd<*(0,0), f32> @func<*(0,0)>, 0}>
+  kgen.param.apply value = [(!kgen.generator<<index>() -> !kgen.simd<*(0,0), f32>>) -> !kgen.variant<<index>() -> !kgen.simd<*(0,0), f32>, i1>: @create<:type <index>() -> !kgen.simd<*(0,0), f32>>](@func<*(0,0)>)
   kgen.param.constant: variant<<index>() -> !kgen.simd<*(0,0), f32>, i1> = <value>
   hlcf.return
 }
@@ -1558,7 +1499,7 @@ kgen.generator @make<x>(%arg0: !pop.array<cond(apply(:(index, index) -> !kgen.sc
 // CHECK-LABEL: kgen.func export @top
 kgen.generator export @top() {
   // CHECK-NEXT: constant: struct<()> = <{ }>
-  kgen.param.apply lifted = [(!kgen.generator<<index>(!pop.array<cond(apply(:(index, index) -> !kgen.scalar<bool> @eq, *(0,0), 0), 1, *(0,0)), index>) -> ()>) -> !kgen.struct<()>: @init<:type <index>(!pop.array<cond(apply(:(index, index) -> !kgen.scalar<bool> @eq, *(0,0), 0), 1, *(0,0)), index>) -> ()>](@make)
+  kgen.param.apply lifted = [(!kgen.generator<<index>(!pop.array<cond(apply(:(index, index) -> !kgen.scalar<bool> @eq, *(0,0), 0), 1, *(0,0)), index>) -> ()>) -> !kgen.struct<()>: @init<:type <index>(!pop.array<cond(apply(:(index, index) -> !kgen.scalar<bool> @eq, *(0,0), 0), 1, *(0,0)), index>) -> ()>](@make<*(0,0)>)
   kgen.param.constant: struct<()> = <lifted>
   hlcf.return
 }
@@ -1728,7 +1669,7 @@ kgen.generator @fn<T: type>(%arg0: !kgen.param<apply(:(!kgen.type) -> !kgen.type
 // CHECK-LABEL: kgen.func export @top
 kgen.generator export @top() {
   // COM: Just check that the parameter expression can be resolved.
-  kgen.param.declare f: <type>(!kgen.param<apply(:(!kgen.type)->!kgen.type @fwd_type, *(0,0))>) -> () = <apply(:(!kgen.generator<<type>(!kgen.param<apply(:(!kgen.type)->!kgen.type @fwd_type, *(0,0))>) -> ()>) -> !kgen.generator<<type>(!kgen.param<apply(:(!kgen.type)->!kgen.type @fwd_type, *(0,0))>) -> ()> @fwd_sig, @fn)>
+  kgen.param.declare f: <type>(!kgen.param<apply(:(!kgen.type)->!kgen.type @fwd_type, *(0,0))>) -> () = <apply(:(!kgen.generator<<type>(!kgen.param<apply(:(!kgen.type)->!kgen.type @fwd_type, *(0,0))>) -> ()>) -> !kgen.generator<<type>(!kgen.param<apply(:(!kgen.type)->!kgen.type @fwd_type, *(0,0))>) -> ()> @fwd_sig, @fn<:type *(0,0)>)>
   hlcf.return
 }
 

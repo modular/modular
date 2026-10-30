@@ -17,7 +17,6 @@
 #include "Mojo/KGENDialect/KGENDType.h"
 #include "Mojo/KGENDialect/KGENDialect.h"
 #include "Mojo/KGENDialect/KGENInterfaces.h"
-#include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/KGENParameters.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/KGENDialect/ParameterEvaluator.h"
@@ -393,7 +392,10 @@ OptionalParseResult GeneratorType::parseValue(AsmParser &p,
       ParameterExprArrayAttr paramValues;
       if (parseParameterValues(p, paramValues))
         return failure();
-      value = SymbolConstantAttr::get(symbol, sigGen, paramValues);
+      value = FuncSymbolGenerator::get(
+          getInputParamTypes(),
+          FuncSymbolAttr::get(symbol, cast<FuncType>(getBody()), paramValues),
+          getParamListAttrs());
     } else if (auto closureSymbol = dyn_cast<ClosureSymbolAttr>(attr)) {
       value = ClosureSymbolAttr::get(
           closureSymbol.getContext(), closureSymbol.getParentSymbol(),
@@ -418,12 +420,13 @@ LogicalResult GeneratorType::printValue(AsmPrinter &p, TypedAttr value,
       return success();
     }
 
-    auto symbolCst = dyn_cast<SymbolConstantAttr>(value);
-    if (!symbolCst)
+    if (sugarIsa<SymbolConstantAttr>(value))
       return failure();
-    p << symbolCst.getSymbol();
-    printer.printParameterValues(p, symbolCst.getParamValues());
-    return success();
+    if (auto funcSym = FuncSymbolGenerator::dynCast(value)) {
+      p << funcSym.getSymbol();
+      printer.printParameterValues(p, funcSym.getFuncSymbol().getParamValues());
+      return success();
+    }
   }
 
   return failure();
@@ -993,103 +996,6 @@ bool FuncTypeGeneratorType::classof(Type type) {
 }
 
 //===----------------------------------------------------------------------===//
-// FuncSymbolGenerator
-//===----------------------------------------------------------------------===//
-
-static bool isFuncSymbolGenerator(TypedAttr attr) {
-  auto gen = sugarDynCast<GeneratorAttr>(attr);
-  return gen && sugarIsa<FuncSymbolAttr>(gen.getBody());
-}
-
-FuncSymbolGenerator::FuncSymbolGenerator(TypedAttr attr) : storage(attr) {
-  assert((!attr || isFuncSymbolGenerator(attr)) &&
-         "expected a GeneratorAttr wrapping a FuncSymbolAttr");
-}
-
-FuncSymbolGenerator FuncSymbolGenerator::get(ArrayRef<Type> inputParamTypes,
-                                             FuncSymbolAttr funcSymbol,
-                                             Attribute metadata) {
-  return FuncSymbolGenerator(
-      GeneratorAttr::get(inputParamTypes, funcSymbol, metadata));
-}
-
-FuncSymbolGenerator FuncSymbolGenerator::get(SymbolRefAttr symbol,
-                                             FuncType type,
-                                             Attribute metadata) {
-  auto funcSymbol = FuncSymbolAttr::get(symbol, type, /*paramValues=*/{});
-  return get(/*inputParamTypes=*/{}, funcSymbol, metadata);
-}
-
-FuncSymbolGenerator FuncSymbolGenerator::get(FuncOp func) {
-  FuncTypeGeneratorType type = func.getFuncTypeGenerator();
-  return get(FlatSymbolRefAttr::get(func.getSymNameAttr()), type.getBody(),
-             type.getParamListAttrs());
-}
-
-FuncSymbolGenerator FuncSymbolGenerator::get(SymbolConstantAttr symbol) {
-  FuncTypeGeneratorType type = symbol.getType();
-  if (!type.isFullyBound())
-    return {};
-  IndexDepthAdjuster adjuster(1);
-  SmallVector<TypedAttr> bodyValues =
-      llvm::map_to_vector(symbol.getParamValues(), [&](TypedAttr value) {
-        return cast<TypedAttr>(adjuster.replace(value));
-      });
-  auto funcSymbol =
-      FuncSymbolAttr::get(symbol.getSymbol(), type.getBody(), bodyValues);
-  return get(/*inputParamTypes=*/{}, funcSymbol, type.getParamListAttrs());
-}
-
-FuncSymbolGenerator FuncSymbolGenerator::dynCast(Attribute attr) {
-  auto typedAttr = dyn_cast_if_present<TypedAttr>(attr);
-  if (!typedAttr)
-    return {};
-  if (isFuncSymbolGenerator(typedAttr))
-    return FuncSymbolGenerator(typedAttr);
-  if (auto symbol = dyn_cast<SymbolConstantAttr>(attr))
-    return get(symbol);
-  return {};
-}
-
-GeneratorAttr FuncSymbolGenerator::getGenerator() const {
-  return sugarCast<GeneratorAttr>(storage);
-}
-
-FuncTypeGeneratorType FuncSymbolGenerator::getType() const {
-  return ::cast<FuncTypeGeneratorType>(storage.getType());
-}
-
-ArrayRef<Type> FuncSymbolGenerator::getInputParamTypes() const {
-  return getGenerator().getInputParamTypes();
-}
-
-bool FuncSymbolGenerator::isFullyBound() const {
-  return getGenerator().isFullyBound();
-}
-
-FuncSymbolAttr FuncSymbolGenerator::getFuncSymbol() const {
-  return sugarCast<FuncSymbolAttr>(getGenerator().getBody());
-}
-
-SymbolRefAttr FuncSymbolGenerator::getSymbol() const {
-  return getFuncSymbol().getSymbol();
-}
-
-FuncSymbolAttr FuncSymbolGenerator::getInstantiatedFuncSymbol() const {
-  assert(isFullyBound() && "cannot instantiate a parameterized generator");
-  return sugarCast<FuncSymbolAttr>(getGenerator().getInstantiatedValue());
-}
-
-FuncType FuncSymbolGenerator::getInstantiatedType() const {
-  assert(isFullyBound() && "cannot instantiate a parameterized generator");
-  return getType().getInstantiatedBody();
-}
-
-ArrayRef<TypedAttr> FuncSymbolGenerator::getParamValues() const {
-  return getInstantiatedFuncSymbol().getParamValues();
-}
-
-//===----------------------------------------------------------------------===//
 // FuncLiteralTypeGeneratorType
 //===----------------------------------------------------------------------===//
 
@@ -1140,45 +1046,6 @@ FuncLiteralTypeGeneratorType::getNonLiteralGeneratorType() {
   auto directSymbol = getBody().getTargetLiteral();
   return GeneratorType::get(getInputParamTypes(), directSymbol.getType(),
                             getParamListAttrs());
-}
-
-SymbolConstantAttr FuncLiteralTypeGeneratorType::getSymbolConstantAttr() {
-  auto directSymbol = getBody().getTargetLiteral();
-  auto sig = GeneratorType::get(getInputParamTypes(), directSymbol.getType(),
-                                getParamListAttrs());
-
-  // An input parameter type may contain an expression dependent on an earlier
-  // parameter. Those dependencies are erased to `#kgen.unknown` rather than
-  // `#kgen.unbound` to appease the verifier which may fail compilation if the
-  // expression contains a symbol use that the verifier expects to be fully
-  // bound.
-  ParameterEvaluator typeEvaluator(ArrayRef<TypedAttr>{});
-  ParameterEvaluator evaluator(ArrayRef<TypedAttr>{});
-  for (auto inputType : getInputParamTypes()) {
-    Type type = typeEvaluator.replace(inputType);
-    auto paramType = dyn_cast<ParameterTypeInterface>(type);
-    if (!paramType || paramType.supportsUnknownValue())
-      typeEvaluator.appendIndexBinding(UnknownAttr::get(type));
-    else
-      typeEvaluator.appendIndexBinding(UnboundAttr::get(type));
-    evaluator.appendIndexBinding(UnboundAttr::get(type));
-  }
-
-  // A direct reference to a slot takes the slot's erased type from above.
-  // Replacing it through `evaluator` would also rewrite the reference's own
-  // type with `#kgen.unbound` bindings, which turns an applied subexpression
-  // such as `bind_params(*(0,2), *(0,0), *(0,1))` into an unapplied one.
-  SmallVector<TypedAttr> paramValues;
-  for (auto paramValue : directSymbol.getParamValues()) {
-    auto indexRef = dyn_cast<ParamIndexRefAttr>(paramValue);
-    if (indexRef && indexRef.getDepth() == 0)
-      paramValues.push_back(evaluator.getIndexBindings()[indexRef.getIndex()]);
-    else
-      paramValues.push_back(evaluator.replace(paramValue));
-  }
-
-  return SymbolConstantAttr::get(directSymbol.getSymbol(),
-                                 cast<FuncTypeGeneratorType>(sig), paramValues);
 }
 
 FuncLiteralType FuncLiteralTypeGeneratorType::getBody() {

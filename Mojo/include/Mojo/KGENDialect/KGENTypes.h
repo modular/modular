@@ -98,61 +98,6 @@ public:
 };
 
 //===----------------------------------------------------------------------===//
-// FuncSymbolGenerator
-//===----------------------------------------------------------------------===//
-
-/// A view of a `GeneratorAttr` whose body is a `FuncSymbolAttr`.
-class FuncSymbolGenerator {
-public:
-  FuncSymbolGenerator() = default;
-  /// Wraps `attr`, which must be null or a `GeneratorAttr` wrapping a
-  /// `FuncSymbolAttr`.
-  /*implicit*/ FuncSymbolGenerator(TypedAttr attr);
-
-  /// Returns a generator over `inputParamTypes` whose body is `funcSymbol`.
-  static FuncSymbolGenerator get(ArrayRef<Type> inputParamTypes,
-                                 FuncSymbolAttr funcSymbol,
-                                 Attribute metadata = {});
-
-  /// Returns a fully bound generator referencing the non-parametric function
-  /// `symbol` of type `type`.
-  static FuncSymbolGenerator get(SymbolRefAttr symbol, FuncType type,
-                                 Attribute metadata = {});
-
-  /// Returns a fully bound generator referencing `func`.
-  static FuncSymbolGenerator get(FuncOp func);
-
-  /// Converts the fully bound `symbol` to the equivalent generator.
-  static FuncSymbolGenerator get(SymbolConstantAttr symbol);
-
-  /// Wraps `attr` if it is a `GeneratorAttr` wrapping a `FuncSymbolAttr` or a
-  /// `SymbolConstantAttr`.
-  static FuncSymbolGenerator dynCast(Attribute attr);
-
-  /*implicit*/ operator TypedAttr() const { return storage; }
-  explicit operator bool() const { return static_cast<bool>(storage); }
-
-  GeneratorAttr getGenerator() const;
-  FuncTypeGeneratorType getType() const;
-  ArrayRef<Type> getInputParamTypes() const;
-  bool isFullyBound() const;
-
-  /// Returns the wrapped `FuncSymbolAttr`. Its parameter values are inside the
-  /// generator, one scope deeper than the generator itself.
-  FuncSymbolAttr getFuncSymbol() const;
-  SymbolRefAttr getSymbol() const;
-
-  /// Returns the wrapped `FuncSymbolAttr` as seen from the scope enclosing the
-  /// generator. The generator must be fully bound.
-  FuncType getInstantiatedType() const;
-  FuncSymbolAttr getInstantiatedFuncSymbol() const;
-  ArrayRef<TypedAttr> getParamValues() const;
-
-private:
-  TypedAttr storage;
-};
-
-//===----------------------------------------------------------------------===//
 // FuncLiteralTypeGeneratorType
 //===----------------------------------------------------------------------===//
 
@@ -175,9 +120,6 @@ public:
                           ParameterEvaluationContext *evaluationContext,
                           Location location);
 
-  // Unwrap the target literal from the literal type.
-  // TODO: the function will soon be deleted.
-  SymbolConstantAttr getSymbolConstantAttr();
   // Unwrap the target literal from the literal type.
   TypedAttr getFuncSymbolAttr();
   /// Return the signature of the target literal, i.e. this generator with the

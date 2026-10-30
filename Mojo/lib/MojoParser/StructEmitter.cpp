@@ -1002,7 +1002,7 @@ LogicalResult StructEmitter::populateMoveCopy(DefASTDecl &fnDecl, bool isMove) {
                               EC_SynthesizedMethod);
   }
 
-  SymbolConstantAttr ref = fn.getBoundSymbolRef(shared.getEvaluationContext());
+  GeneratorAttr ref = fn.getBoundSymbolRef(shared.getEvaluationContext());
   if (isMove)
     structDeclOp.setMoveInitAttr(ref);
   else

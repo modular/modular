@@ -12,8 +12,8 @@ lit.fn @lifetimes() {
 // CHECK-LABEL: @decls
 // CHECK-SAME: <x: dtype, y>[imm a, mut b](%ptr: !lit.ref<simd<y, x>, mut b>)
 lit.fn @decls<x: dtype, y>[imm a, mut b](%ptr: !lit.ref<simd<y, x>, mut b>) {
-  // CHECK: ref: !lit.generator<<"x": dtype, "y": index>[2]("ptr": !lit.ref<simd<*(0,1), *(0,0)>, mut *[0,1]>) -> ()> = <@decls>
-  lit.alias.decl ref: !lit.generator<<"x": dtype, "y": index>[2]("ptr": !lit.ref<simd<*(0,1), *(0,0)>, mut *[0,1]>) -> ()> = <@decls>
+  // CHECK: ref: !lit.generator<<"x": dtype, "y": index>[2]("ptr": !lit.ref<simd<*(0,1), *(0,0)>, mut *[0,1]>) -> ()> = <@decls<:dtype *(0,0), *(0,1)>>
+  lit.alias.decl ref: !lit.generator<<"x": dtype, "y": index>[2]("ptr": !lit.ref<simd<*(0,1), *(0,0)>, mut *[0,1]>) -> ()> = <@decls<:dtype *(0,0), *(0,1)>>
   hlcf.return
 }
 

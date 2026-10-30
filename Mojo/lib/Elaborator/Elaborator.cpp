@@ -631,6 +631,24 @@ ErrorTreeOr<Attribute> Elaborator::concretizeSymbolsWithin(Attribute value,
 
         return {SymbolConstantAttr::get(func.takeValue()), WalkResult::skip()};
       });
+  replacer.addReplacement(
+      [&](GeneratorAttr gen)
+          -> std::optional<std::pair<Attribute, WalkResult>> {
+        // Ignore parametric references and non-function generators.
+        auto symbol = FuncSymbolGenerator::dynCast(gen);
+        if (!symbol || !symbol.isFullyBound())
+          return std::nullopt;
+        ErrorTreeOr<FuncOp> func = getConcreteFunction(parent, loc, symbol);
+        if (func.isError()) {
+          error = func.takeError();
+          return std::make_pair(Attribute(gen), WalkResult::interrupt());
+        }
+        if (!*func)
+          return std::make_pair(Attribute(gen), WalkResult::interrupt());
+        return std::make_pair(
+            Attribute(FuncSymbolGenerator::get(func.takeValue())),
+            WalkResult::skip());
+      });
   if (Attribute result = replacer.replace(value))
     return result;
   if (error)

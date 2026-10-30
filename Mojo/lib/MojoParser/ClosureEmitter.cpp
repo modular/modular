@@ -679,21 +679,6 @@ ClosureEmitter::pushBackTraitFunctionImpl(FnTypeGeneratorType traitFnSignature,
   return {op, op.getInputParams().drop_back(synthesizedOrigins), result};
 }
 
-static SymbolConstantAttr getSymbolNoParamValues(StructDeclOp declOp,
-                                                 FnOp impl) {
-  SymbolRefAttr implSymbol = getFullyResolvedSymbolRef(
-      cast<mlir::SymbolOpInterface>(impl.getOperation()));
-  FnTypeGeneratorType baseSigGen = impl.getFuncTypeGenerator();
-  baseSigGen = FuncTypeGeneratorType::remapToFuncTypeGenerator(
-      declOp.getInputParams(),
-      FunctionType::get(baseSigGen.getContext(),
-                        baseSigGen.getBody().getArguments(),
-                        baseSigGen.getResultType()),
-      baseSigGen.getArgConventions(), baseSigGen.getFnEffects(),
-      baseSigGen.getFnMetaOriginData(), {});
-  return SymbolConstantAttr::get(implSymbol, baseSigGen, {});
-}
-
 static ConformanceOp lookupConformanceTable(StructDeclOp op,
                                             SymbolRefAttr traitSymbol) {
   for (auto conformance : op.getFields().getOps<ConformanceOp>()) {
@@ -802,14 +787,15 @@ void ClosureEmitter::addTrivialClosureLifecycle(
   auto delFnOp = structEmitter.synthesizeEmptyDtor();
   addLifecycleWitness(deinitable, delFnOp);
 
+  auto evalCtx = shared.getEvaluationContext();
   // Empty move ctor.
   auto moveFnOp = structEmitter.synthesizeEmptyMoveOrCopyInit(true);
-  declOp.setMoveInitAttr(getSymbolNoParamValues(declOp, moveFnOp));
+  declOp.setMoveInitAttr(moveFnOp.getBoundSymbolRef(evalCtx));
   addLifecycleWitness(movable, moveFnOp);
 
   // Empty copy ctor.
   auto copyFnOp = structEmitter.synthesizeEmptyMoveOrCopyInit(false);
-  declOp.setCopyInitAttr(getSymbolNoParamValues(declOp, copyFnOp));
+  declOp.setCopyInitAttr(copyFnOp.getBoundSymbolRef(evalCtx));
   addLifecycleWitness(copyable, copyFnOp);
 
   // All of these operations are trivial in all cases; the struct has no
@@ -1393,7 +1379,7 @@ static LogicalResult outlineAndPromoteOrigins(
   // Replace all interior origin occurrences and promoted origin references in a
   // single walk.
   mlir::AttrTypeReplacer originReplacer;
-  originReplacer.addReplacement([&](SymbolConstantAttr sym)
+  originReplacer.addReplacement([&](FuncSymbolAttr sym)
                                     -> std::pair<Attribute, WalkResult> {
     bool bindsOutlinedInterior = false;
     bool changed = false;
@@ -1442,9 +1428,8 @@ static LogicalResult outlineAndPromoteOrigins(
                                       OriginType::stripMutCastAndRebind(attr),
                                       promotedOriginNames);
         });
-    auto newType =
-        cast<FuncTypeGeneratorType>(symTypeReplacer.replace(sym.getType()));
-    return {SymbolConstantAttr::get(sym.getSymbol(), newType, newParamValues),
+    auto newType = cast<FuncType>(symTypeReplacer.replace(sym.getType()));
+    return {FuncSymbolAttr::get(sym.getSymbol(), newType, newParamValues),
             WalkResult::skip()};
   });
   originReplacer.addReplacement(
@@ -2613,17 +2598,35 @@ PValue ClosureEmitter::createParamClosureExtensionType(
 
   // This is the bridging thunk generated.
   auto thunkSymbol =
-      cast<SymbolConstantAttr>(ParamOperatorAttr::stripRebind(converted));
+      FuncSymbolGenerator::dynCast(ParamOperatorAttr::stripRebind(converted));
+  assert(thunkSymbol && "expected the thunk to be a function symbol");
+
+  auto getBindings = [](FuncSymbolGenerator funcGen) {
+    IndexDepthAdjuster adjuster(-1);
+    return llvm::map_to_vector(
+        funcGen.getFuncSymbol().getParamValues(),
+        [&](TypedAttr value) -> TypedAttr {
+          auto ref = sugarDynCast<ParamIndexRefAttr>(value);
+          // This is technically wrong, it is possible to have a:
+          // `#func.symbol[*(0, 0), *(0, 0)]`, and only the first one is unbound
+          // not the second one.
+          if (ref && ref.getDepth() == 0)
+            return UnboundAttr::get(adjuster.replace(ref.getType()));
+          return cast<TypedAttr>(adjuster.replace(value));
+        });
+  };
+
+  SmallVector<TypedAttr> thunkBindings = getBindings(thunkSymbol);
 
   // Collecting all the parameter
   SmallVector<TypedAttr> thunkParams;
-  for (auto param : thunkSymbol.getParamValues()) {
+  for (auto param : thunkBindings) {
     if (sugarIsa<UnboundAttr>(param))
       continue;
     thunkParams.push_back(param);
   }
 
-  assert(thunkSymbol.getParamValues().size() - thunkParams.size() ==
+  assert(thunkBindings.size() - thunkParams.size() ==
          tgtSig.getInputParamTypes().size());
 
   // The generated thunk always append an extra parameter for the function.

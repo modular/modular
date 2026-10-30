@@ -1287,7 +1287,9 @@ ComptimeForOp::parametric_interpret(ArrayRef<Attribute> operands,
     resultTypes.push_back(state.getReboundType(type));
   }
 
-  auto hasNextCall = cast<SymbolConstantAttr>(hasNext);
+  auto hasNextCall = FuncSymbolGenerator::dynCast(hasNext);
+  assert(hasNextCall && hasNextCall.isFullyBound() &&
+         "expected a bound function symbol");
   auto iter = state.currOpSideEffectState().find(this->getOperation());
   bool firstIteration =
       (iter == state.currOpSideEffectState().end() || !iter->second.iterator);
@@ -1337,7 +1339,9 @@ ComptimeForOp::parametric_interpret(ArrayRef<Attribute> operands,
     iterator =
         StoreToMemAttr::get(iterator, PointerType::get(iterator.getType()));
 
-    auto getNextCall = cast<SymbolConstantAttr>(getNext);
+    auto getNextCall = FuncSymbolGenerator::dynCast(getNext);
+    assert(getNextCall && getNextCall.isFullyBound() &&
+           "expected a bound function symbol");
     paramValues.clear();
     for (auto pv : getNextCall.getParamValues()) {
       paramValues.push_back(state.getReboundAttribute(pv));

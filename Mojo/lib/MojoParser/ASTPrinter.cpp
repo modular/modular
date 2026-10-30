@@ -72,10 +72,13 @@ static StringRef getNameFromSymbolRef(SymbolRefAttr symbol) {
 /// decoding failed.
 static std::pair<SymbolRefAttr, ArrayRef<TypedAttr>>
 tryGetSymbolNameAndParams(TypedAttr param) {
-  param = ParamOperatorAttr::stripRebind(param);
-  if (auto symbolCst = sugarDynCast<SymbolConstantAttr>(param))
-    return {symbolCst.getSymbol(), symbolCst.getParamValues()};
-  return {{}, {}};
+  auto symbol =
+      FuncSymbolGenerator::dynCast(ParamOperatorAttr::stripRebind(param));
+  if (!symbol)
+    return {{}, {}};
+  if (!symbol.isFullyBound())
+    return {symbol.getSymbol(), {}};
+  return {symbol.getSymbol(), symbol.getParamValues()};
 }
 
 /// If the value is a call to an implicit constructor of the value's type,
@@ -762,10 +765,10 @@ void ASTType::printParam(raw_ostream &os, TypedAttr param,
     return;
   }
 
-  if (auto symbolCst = dyn_cast<SymbolConstantAttr>(param)) {
-    printSymbol(os, symbolCst.getSymbol(), diagShared);
-    if (!symbolCst.getParamValues().empty())
-      printOperands(symbolCst.getParamValues(), ", ", "[", "]");
+  if (auto symbol = FuncSymbolGenerator::dynCast(param)) {
+    printSymbol(os, symbol.getSymbol(), diagShared);
+    if (symbol.isFullyBound() && !symbol.getParamValues().empty())
+      printOperands(symbol.getParamValues(), ", ", "[", "]");
     return;
   }
   if (auto refPack = dyn_cast<RefPackAttr>(param)) {

@@ -153,8 +153,6 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateGetSourceNameAttr(
     GetSourceNameAttr getSourceNameAttr) {
   /// Returns the symbol of the function `attr` references.
   auto getFuncSymbolRef = [](TypedAttr attr) -> SymbolRefAttr {
-    if (auto symbol = dyn_cast<SymbolConstantAttr>(attr))
-      return symbol.getSymbol();
     if (auto symbol = FuncSymbolGenerator::dynCast(attr))
       return symbol.getSymbol();
     if (auto literal = dyn_cast<FuncLiteralTypeGeneratorType>(attr.getType()))

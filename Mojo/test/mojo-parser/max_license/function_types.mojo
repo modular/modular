@@ -89,7 +89,7 @@ __async def specific_async(self: Int) -> Int:
 
 # CHECK-LABEL: lit.fn @"test_conversion
 def test_conversion[p: Int](x: Int):
-    # CHECK-NEXT: = <rebind(:{{.*}}[[CONVERTER1:@.*]]<:!AnyType ?, {{.*}}rebind({{.*}}generic_func{{.*}}<:!AnyType ?, :!AnyType !Int{{.*}}>
+    # CHECK-NEXT: = <rebind(:{{.*}}[[CONVERTER1:@"[^"]*"]]<:!AnyType *(0,0), {{.*}}rebind({{.*}}generic_func{{.*}}<:!AnyType *(0,0), :!AnyType !Int{{.*}}>
     comptime f1: def[X: AnyType](X, Int) thin -> X = generic_func[U=Int, ...]
 
 
@@ -167,7 +167,7 @@ def generic_func[T: AnyType, U: AnyType](x: T, y: U) -> T:
 # CHECK-LABEL: lit.fn @"test_conversion
 def test_conversion[p: Int](x: Int):
     # CHECK-NEXT: <<"X": !AnyType>[1](!lit.struct<#ParamType <:!Int p>>, !lit.ref<:!AnyType *(0,0), imm *[0,0]> imm_mem, |) -> !lit.struct<#ParamType <:!Int p>>
-    # CHECK-SAME: [[CONVERTER3:@.*]]<:!Int p, :!AnyType ?, :
+    # CHECK-SAME: [[CONVERTER3:@"[^"]*"]]<:!Int p, :!AnyType *(0,0), :
     comptime f4: def[X: AnyType](ParamType[p], X) thin -> ParamType[
         p
     ] = generic_func[ParamType[p], ...]
@@ -204,7 +204,7 @@ def generic_func[T: AnyType, U: AnyType](x: T, y: U) -> T:
 
 # CHECK-LABEL: lit.fn @"test_conversion
 def test_conversion[p: Int](x: Int):
-    # CHECK-NEXT: = <rebind(:{{.*}}[[CONVERTER0:@.*]]<:!AnyType ?, {{.*}}rebind({{.*}}generic_func{{.*}}<:!AnyType !Int{{.*}}, :!AnyType ?>
+    # CHECK-NEXT: = <rebind(:{{.*}}[[CONVERTER0:@"[^"]*"]]<:!AnyType *(0,0), {{.*}}rebind({{.*}}generic_func{{.*}}<:!AnyType !Int{{.*}}, :!AnyType *(0,0)>
     comptime f0: def[X: AnyType](Int, X) thin -> Int = generic_func[Int, ...]
 
 

@@ -168,11 +168,10 @@ static mlir::ArrayAttr computeValueParams(mlir::MLIRContext *ctx,
 
 static std::optional<mlir::SymbolRefAttr>
 getDecoratorSymbol(mlir::TypedAttr attr) {
-  if (auto sym = KGEN::sugarDynCast<KGEN::SymbolConstantAttr>(attr))
+  if (auto sym = KGEN::FuncSymbolGenerator::dynCast(attr))
     return sym.getSymbol();
   if (auto apply = KGEN::sugarDynCast<KGEN::ParamOperatorAttr>(attr)) {
-    if (auto sym =
-            KGEN::sugarDynCast<KGEN::SymbolConstantAttr>(apply.getOperand(0)))
+    if (auto sym = KGEN::FuncSymbolGenerator::dynCast(apply.getOperand(0)))
       return sym.getSymbol();
   }
   return std::nullopt;
@@ -207,9 +206,9 @@ getStringAttrFromStaticStringDecorator(mlir::TypedAttr operand) {
   auto initApply = KGEN::sugarDynCast<KGEN::ParamOperatorAttr>(operand);
   assert(initApply && initApply.getOpcode() == KGEN::POC::Apply &&
          "Expected a call to StringSpan.__init__");
-  auto callee =
-      KGEN::sugarDynCast<KGEN::SymbolConstantAttr>(initApply.getOperand(0));
-  assert(callee && callee.getParamValues().size() == 3 &&
+  auto callee = KGEN::FuncSymbolGenerator::dynCast(initApply.getOperand(0));
+  assert(callee && callee.isFullyBound() &&
+         callee.getParamValues().size() == 3 &&
          "Expected a symbol reference to StringSpan.__init__");
   return mlir::cast<mlir::StringAttr>(callee.getParamValues()[2]);
 }
@@ -221,7 +220,7 @@ getDecoratorLambdaArgument(mlir::TypedAttr decorator,
   if (!apply)
     return std::nullopt;
 
-  auto sym = KGEN::sugarDynCast<KGEN::SymbolConstantAttr>(apply.getOperand(0));
+  auto sym = KGEN::FuncSymbolGenerator::dynCast(apply.getOperand(0));
   if (!sym)
     return std::nullopt;
 

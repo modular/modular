@@ -240,12 +240,12 @@ void collectParameterFragments(TypedAttr value,
 
   // Function / generator parameters print as a bare symbol name (plus optional
   // bound params). Collect that name directly so mangling stays `fn=sillyFn`.
-  if (auto symbolCst = dyn_cast<SymbolConstantAttr>(value)) {
-    collectSymbolRef(symbolCst.getSymbol(), out);
-    if (!symbolCst.getParamValues().empty()) {
+  if (auto symbol = FuncSymbolGenerator::dynCast(value)) {
+    collectSymbolRef(symbol.getSymbol(), out);
+    if (!symbol.getFuncSymbol().getParamValues().empty()) {
       out.push_back({FragmentKind::NotEscaped, "<"});
       llvm::interleave(
-          symbolCst.getParamValues(),
+          symbol.getFuncSymbol().getParamValues(),
           [&](TypedAttr paramValue) {
             collectParameterFragments(paramValue, out);
           },

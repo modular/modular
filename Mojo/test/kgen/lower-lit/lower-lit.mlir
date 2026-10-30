@@ -246,7 +246,7 @@ lit.fn @removeGenMetadata() {
   // CHECK-NEXT: struct<() memoryOnly> = <{  }>
   kgen.param.declare test2: !lit.generator<<"t": !lit.struct<@EmptyStruct>> !lit.struct<@EmptyStruct>> = <#kgen.gen<*(0,0)>>
   // CHECK-NEXT: (index) -> () = <@empty_fn>
-  kgen.param.declare test3: !lit.generator<<"t": !lit.struct<@EmptyStruct>> ("arg0":index) -> ()> = <@empty_fn>
+  kgen.param.declare test3: !lit.generator<<"t": !lit.struct<@EmptyStruct>> ("arg0":index) -> ()> = <@empty_fn<:!lit.struct<@EmptyStruct> *(0,0)>>
   // CHECK-NEXT: <index>struct<(struct<() memoryOnly>, index)> = <#kgen.gen<{ { }, *(0,0) }>>
   kgen.param.declare test4: !lit.generator<<"x": !lit.struct<@EmptyStruct>, "y": index = 5> !kgen.struct<(!lit.struct<@EmptyStruct>, index)>> = <#kgen.gen<#kgen.struct<*(0,0), *(0,1)>>>
   hlcf.return
@@ -645,8 +645,8 @@ lit.file_module @struct_alignment {
 
   // CHECK-LABEL: kgen.generator @"struct_alignment::varDeclAligned64"
   lit.fn @varDeclAligned64() {
-    // CHECK-NEXT: pop.stack_allocation 1 x struct<(index) memoryOnly align(apply(:(!kgen.struct<(index) memoryOnly>) -> index @"struct_alignment::calculate_alignment", { 32 }))>
-    // CHECK-SAME: align apply(:(!kgen.struct<(index) memoryOnly>) -> index @"struct_alignment::calculate_alignment", { 32 }) marked
+    // CHECK-NEXT: pop.stack_allocation 1 x struct<(index) memoryOnly align(apply(:(!kgen.struct<(index) memoryOnly>) -> index #kgen.symbol.constant<@"struct_alignment::calculate_alignment">, { 32 }))>
+    // CHECK-SAME: align apply(:(!kgen.struct<(index) memoryOnly>) -> index #kgen.symbol.constant<@"struct_alignment::calculate_alignment">, { 32 }) marked
     %a = lit.var.decl "a" var : !lit.ref<!lit.struct<@struct_alignment::@AlignedStruct64<:!MyInt {value = 32}>>, mut *"life">
     hlcf.return
   }

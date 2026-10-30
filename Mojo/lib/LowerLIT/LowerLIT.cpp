@@ -216,10 +216,11 @@ void LITLowerer::lowerLITOps(FnOp func, bool &hadErrors) {
     } else if (auto loadConsume = dyn_cast<LoadConsumeOp>(op)) {
       b.replaceOpWithNewOp<RefLoadOp>(loadConsume, loadConsume.getRef());
     } else if (auto call = dyn_cast<LIT::CallOp>(op)) {
-      if (auto symbolCst = dyn_cast<SymbolConstantAttr>(call.getCallee())) {
-        b.replaceOpWithNewOp<KGEN::CallOp>(
-            call, call.getResultTypes(), FuncSymbolGenerator::get(symbolCst),
-            call.getOperands(), call.getTailKindAttr());
+      auto callee = FuncSymbolGenerator::dynCast(call.getCallee());
+      if (callee && callee.isFullyBound()) {
+        b.replaceOpWithNewOp<KGEN::CallOp>(call, call.getResultTypes(), callee,
+                                           call.getOperands(),
+                                           call.getTailKindAttr());
       } else {
         b.replaceOpWithNewOp<KGEN::CallParamOp>(
             call, call.getResultTypes(), call.getCallee(), call.getOperands(),

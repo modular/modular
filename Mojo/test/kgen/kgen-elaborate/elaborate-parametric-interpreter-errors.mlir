@@ -80,24 +80,6 @@ kgen.generator @brokenVLenAssert() {
 
 // -----
 
-// COM: Unused `kgen.param.declare` should not be ignored.
-// expected-note @below {{failed to interpret function}}
-kgen.generator @fail_if_zero<value>() -> index {
-  %0 = index.constant 0
-  // expected-note @below {{failed to interpret operation}}
-  // expected-note @below {{constraint failed: must not be zero!}}
-  kgen.param.assert <ne(value, 0)>, "must not be zero!"
-  hlcf.return %0 : index
-}
-
-kgen.generator @unused_param_declare() {
-// expected-error @below {{failed to compile-time evaluate function call}}
-  kgen.param.declare unused = <apply(:() -> index bind_params(:<index>() -> index @fail_if_zero, 0))>
-  hlcf.return
-}
-
-// -----
-
 // expected-error @below {{function instantiation failed}}
 kgen.generator @invalid_rebind(%arg0: !kgen.scalar<si32>) {
   kgen.param.declare dt: dtype = <ui32>

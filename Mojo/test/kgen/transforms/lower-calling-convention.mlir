@@ -169,7 +169,7 @@ kgen.func @byrefresult_fun(%arg0: index, %arg1: !kgen.pointer<none>) -> !kgen.sc
 
 // CHECK-LABEL: kgen.func @byrefresult_create_reg_stub
 kgen.func @byrefresult_create_reg_stub() -> !kgen.generator<(!kgen.pointer<struct<(index) memoryOnly>> imm_mem, !kgen.pointer<none>, !kgen.pointer<struct<(scalar<si32>) memoryOnly>> byref_result) -> !kgen.none> {
-  // CHECK: kgen.create_func_ptr[{{.*}}: @byrefresult_fun_reg_stub]()
+  // CHECK: kgen.create_func_ptr[{{.*}}: #kgen.symbol.constant<@byrefresult_fun_reg_stub>]()
   %0 = kgen.create_reg_stub [(index, !kgen.pointer<none>) -> !kgen.scalar<si32>: @byrefresult_fun] : <(!kgen.pointer<struct<(index) memoryOnly>> imm_mem, !kgen.pointer<none>, !kgen.pointer<struct<(scalar<si32>) memoryOnly>> byref_result) -> !kgen.none>
   hlcf.return %0 : !kgen.generator<(!kgen.pointer<struct<(index) memoryOnly>> imm_mem, !kgen.pointer<none>, !kgen.pointer<struct<(scalar<si32>) memoryOnly>> byref_result) -> !kgen.none>
 }

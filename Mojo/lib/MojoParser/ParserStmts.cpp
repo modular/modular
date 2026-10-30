@@ -3030,7 +3030,7 @@ ParseResult StmtParser::parseComptimeFor(size_t curIndent, SMLoc forLoc,
                                           emitter.deferredTypingContext);
     // Must resolved to a function literal. Extract the literal target.
     return sugarCast<FnLiteralTypeGeneratorType>(literal.getType())
-        .getSymbolConstantAttr();
+        .getFuncSymbolAttr();
   };
 
   PValue hasNext = getMutFnWrapper("paramfor_has_next");

@@ -1096,6 +1096,35 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
     }
   }
 
+  if (auto actualSym = FuncSymbolGenerator::dynCast(actualAttr)) {
+    if (auto expectedSym = FuncSymbolGenerator::dynCast(expectedAttr)) {
+      if (actualSym.getSymbol() != expectedSym.getSymbol() ||
+          actualSym.getInputParamTypes() != expectedSym.getInputParamTypes())
+        return error(MatchFailure::Unclassified{});
+      // TODO: we probably don't really need the complexity here to bind away
+      // parameter, we can just set the input depth of the state.evaluator to
+      // `paramIndexRefDepth` so that it won't confuse.
+      ParameterEvaluator actualEvaluator(shared.getParameterEvaluator());
+      ParameterEvaluator expectedEvaluator(shared.getParameterEvaluator());
+      for (Type pType : expectedSym.getInputParamTypes()) {
+        appendLocallyDefinedParam(expectedEvaluator.getReboundType(pType),
+                                  expectedEvaluator);
+        actualEvaluator.appendIndexBinding(
+            expectedEvaluator.getIndexBindings().back());
+      }
+      auto actualFn = cast<FuncSymbolAttr>(
+          actualEvaluator.getReboundAttribute(actualSym.getFuncSymbol()));
+      auto expectedFn = cast<FuncSymbolAttr>(
+          expectedEvaluator.getReboundAttribute(expectedSym.getFuncSymbol()));
+      // We are entering the generator body, increase the depth
+      llvm::SaveAndRestore depth(paramIndexRefDepth, paramIndexRefDepth + 1);
+      for (auto [act, exp] : llvm::zip_equal(actualFn.getParamValues(),
+                                             expectedFn.getParamValues()))
+        PROP(matchParams(act, exp));
+      return success();
+    }
+  }
+
   if (auto actualBind = dyn_cast<BindParamsAttr>(actualAttr)) {
     if (auto expectedBind = dyn_cast<BindParamsAttr>(expectedAttr)) {
       if (actualBind.getParamValues().size() ==

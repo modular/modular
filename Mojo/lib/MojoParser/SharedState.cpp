@@ -2736,7 +2736,7 @@ FailureOr<TypedAttr> BuiltinFunctionFolder::fold(Operation &op) {
     // Check for recursion. At this point we have only marked the callee as
     // being processed if we have already visited it in an always-inline
     // context.
-    if (auto symCst = dyn_cast<SymbolConstantAttr>(callee)) {
+    if (auto symCst = FuncSymbolGenerator::dynCast(callee)) {
       auto &resolver = shared.getDeclResolver();
       if (ASTDecl *calleeDecl =
               resolver.getDeclForFuncSymbol(symCst.getSymbol())) {
@@ -2941,7 +2941,7 @@ TypedAttr SharedState::foldInlineBuiltinFunction(ArrayRef<TypedAttr> operands,
 
   // Resolve the callee and check to verify it is a "builtin" call that is
   // eligible for parameter inlining.
-  auto symCst = dyn_cast<SymbolConstantAttr>(operands.front());
+  auto symCst = FuncSymbolGenerator::dynCast(operands.front());
   if (!symCst) {
     folder.emitError(callLoc) << "only supports direct calls";
     return {};
