@@ -52,10 +52,10 @@ def warp_scan(val: Float32) -> Float32:
 
 # ========================== TEST CODE ==========================
 def test_interblock_scan(
-    input: MutPointer[Float32, MutAnyOrigin],
-    output: MutPointer[Float32, MutAnyOrigin],
-    partial_sums: MutPointer[Float32, MutAnyOrigin],
-    flags: MutPointer[UInt32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmUntrackedOrigin],
+    output: MutPointer[Float32, MutUntrackedOrigin],
+    partial_sums: MutPointer[Float32, MutUntrackedOrigin],
+    flags: MutPointer[UInt32, MutUntrackedOrigin],
     N: UInt32,
 ):
     """Test kernel for inter-block scan.

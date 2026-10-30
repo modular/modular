@@ -41,7 +41,7 @@ def block_reduce[
     op: def(Float32, Float32) thin -> Float32
 ](
     val: Float32,
-    shared_mem: MutPointer[Float32, MutAnyOrigin, address_space=.SHARED],
+    shared_mem: MutPointer[Float32, _, address_space=.SHARED],
 ) -> Float32:
     var tid = thread_idx.x
     var smem = shared_mem
@@ -64,9 +64,9 @@ def block_reduce[
 
 
 def softmax_kernel(
-    S: MutPointer[Float32, MutAnyOrigin],
-    D: MutPointer[Float32, MutAnyOrigin],
-    P: MutPointer[Float32, MutAnyOrigin],
+    S: ImmPointer[Float32, ImmUntrackedOrigin],
+    D: MutPointer[Float32, MutUntrackedOrigin],
+    P: MutPointer[Float32, MutUntrackedOrigin],
     N_dev: Int32,
 ):
     # Int is not device-passable; widen the fixed-width arg.
@@ -104,9 +104,7 @@ def softmax_kernel(
 
     barrier()
 
-    var max_val_row = block_reduce[max_op](
-        max_val_thread, temp_store.as_unsafe_any_origin()
-    )
+    var max_val_row = block_reduce[max_op](max_val_thread, temp_store)
 
     if tid == 0:
         broadcast_slot[0] = max_val_row
@@ -122,9 +120,7 @@ def softmax_kernel(
 
     barrier()
 
-    var sum_row = block_reduce[sum_op](
-        sum_thread, temp_store.as_unsafe_any_origin()
-    )
+    var sum_row = block_reduce[sum_op](sum_thread, temp_store)
 
     if tid == 0:
         broadcast_slot[0] = sum_row

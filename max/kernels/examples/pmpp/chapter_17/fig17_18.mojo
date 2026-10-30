@@ -11,7 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from spmv_utils import CSCMatrix, generate_sparse_matrix, spmv_cpu, verify
+from spmv_utils import (
+    CSCMatrix,
+    DeviceCSCMatrix,
+    generate_sparse_matrix,
+    spmv_cpu,
+    verify,
+)
 from max.gpu import block_idx, thread_idx, block_dim
 from max.gpu.host import DeviceContext
 from std.atomic import Atomic
@@ -35,12 +41,12 @@ struct Element(Comparable, ImplicitlyCopyable):
 
 
 def spmv_csc_kernel(
-    cscMatrix: CSCMatrix,
-    x: ImmPointer[Float32, ImmutAnyOrigin],
-    y: MutPointer[Float32, MutAnyOrigin],
+    cscMatrix: DeviceCSCMatrix,
+    x: ImmPointer[Float32, ImmUntrackedOrigin],
+    y: MutPointer[Float32, MutUntrackedOrigin],
 ):
     var col = block_idx.x * block_dim.x + thread_idx.x
-    if col < cscMatrix.numCols:
+    if col < Int(cscMatrix.numCols):
         var inValue = x[col]
         var start = cscMatrix.colPtrs[col]
         var end = cscMatrix.colPtrs[col + 1]
@@ -141,9 +147,9 @@ def main() raises:
         rows,
         cols,
         numNonzeros,
-        d_colPtrs_buf.unsafe_ptr().as_unsafe_any_origin(),
-        d_rowIdxs_buf.unsafe_ptr().as_unsafe_any_origin(),
-        d_values_buf.unsafe_ptr().as_unsafe_any_origin(),
+        d_colPtrs_buf.unsafe_ptr(),
+        d_rowIdxs_buf.unsafe_ptr(),
+        d_values_buf.unsafe_ptr(),
     )
 
     var blockSize = 256

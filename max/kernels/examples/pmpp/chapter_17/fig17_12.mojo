@@ -11,7 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from spmv_utils import ELLMatrix, generate_sparse_matrix, spmv_cpu, verify
+from spmv_utils import (
+    ELLMatrix,
+    DeviceELLMatrix,
+    generate_sparse_matrix,
+    spmv_cpu,
+    verify,
+)
 from max.gpu import block_idx, thread_idx, block_dim
 from max.gpu.host import DeviceContext
 from std.math import ceildiv
@@ -19,15 +25,15 @@ from std.memory.alloc import unsafe_alloc
 
 
 def spmv_ell_kernel(
-    ellMatrix: ELLMatrix,
-    x: ImmPointer[Float32, ImmutAnyOrigin],
-    y: MutPointer[Float32, MutAnyOrigin],
+    ellMatrix: DeviceELLMatrix,
+    x: ImmPointer[Float32, ImmUntrackedOrigin],
+    y: MutPointer[Float32, MutUntrackedOrigin],
 ):
     var row = block_idx.x * block_dim.x + thread_idx.x
-    if row < ellMatrix.numRows:
+    if row < Int(ellMatrix.numRows):
         var sum: Float32 = 0.0
-        for t in range(ellMatrix.nnzPerRow):
-            var i = t * ellMatrix.numRows + row
+        for t in range(Int(ellMatrix.nnzPerRow)):
+            var i = t * Int(ellMatrix.numRows) + row
             var col = ellMatrix.colIdx[i]
             var val = ellMatrix.value[i]
             sum += x[Int(col)] * val
@@ -131,8 +137,8 @@ def main() raises:
         rows,
         cols,
         max_nnz,
-        d_colIdx_buf.unsafe_ptr().as_unsafe_any_origin(),
-        d_value_buf.unsafe_ptr().as_unsafe_any_origin(),
+        d_colIdx_buf.unsafe_ptr(),
+        d_value_buf.unsafe_ptr(),
     )
 
     var blockSize = 256

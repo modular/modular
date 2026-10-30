@@ -35,9 +35,9 @@ def grid_exclusive_scan(bits: MutPointer[UInt32, _], N: Int):
 
 
 def radix_sort_iter(
-    input: ImmPointer[UInt32, ImmutAnyOrigin],
-    output: MutPointer[UInt32, MutAnyOrigin],
-    bits: MutPointer[UInt32, MutAnyOrigin],
+    input: ImmPointer[UInt32, ImmUntrackedOrigin],
+    output: ImmPointer[UInt32, ImmUntrackedOrigin],
+    bits: MutPointer[UInt32, MutUntrackedOrigin],
     N_dev: Int32,
     iter_dev: Int32,
     block_dim_x_dev: Int32,
@@ -65,10 +65,10 @@ def radix_sort_iter(
 
 
 def radix_scatter(
-    input: ImmPointer[UInt32, ImmutAnyOrigin],
-    output: MutPointer[UInt32, MutAnyOrigin],
-    bits: MutPointer[UInt32, MutAnyOrigin],
-    scanResult: ImmPointer[UInt32, ImmutAnyOrigin],
+    input: ImmPointer[UInt32, ImmUntrackedOrigin],
+    output: MutPointer[UInt32, MutUntrackedOrigin],
+    bits: ImmPointer[UInt32, ImmUntrackedOrigin],
+    scanResult: ImmPointer[UInt32, ImmUntrackedOrigin],
     N_dev: Int32,
     iter_dev: Int32,
     block_dim_x_dev: Int32,

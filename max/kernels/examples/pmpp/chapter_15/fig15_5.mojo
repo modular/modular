@@ -24,7 +24,7 @@ def loadTile(
     lda: Int,
     maxRow: Int,
     maxCol: Int,
-    T_s: MutPointer[Float32, MutAnyOrigin, address_space=.SHARED],
+    T_s: MutPointer[Float32, _, address_space=.SHARED],
     ldas: Int,
     height: Int,
     width: Int,

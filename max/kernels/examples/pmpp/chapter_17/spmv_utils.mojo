@@ -15,25 +15,28 @@ from std.random import random_float64, seed
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
 
-struct COOMatrix(DevicePassable, TrivialRegisterPassable):
-    comptime device_type: AnyType = Self
-    var numNonzeros: Int
-    var numRows: Int
-    var numCols: Int
+comptime DeviceCOOMatrix = COOMatrix[
+    ImmUntrackedOrigin, ImmUntrackedOrigin, ImmUntrackedOrigin
+]
 
-    @__allow_legacy_any_origin_fields
-    var rowIdx: MutPointer[UInt32, MutAnyOrigin]
 
-    @__allow_legacy_any_origin_fields
-    var colIdx: MutPointer[UInt32, MutAnyOrigin]
-
-    @__allow_legacy_any_origin_fields
-    var value: MutPointer[Float32, MutAnyOrigin]
+struct COOMatrix[
+    row_idx_origin: ImmOrigin,
+    col_idx_origin: ImmOrigin,
+    value_origin: ImmOrigin,
+](DevicePassable, TrivialRegisterPassable):
+    comptime device_type: AnyType = DeviceCOOMatrix
+    var numNonzeros: Int32
+    var numRows: Int32
+    var numCols: Int32
+    var rowIdx: ImmPointer[UInt32, Self.row_idx_origin]
+    var colIdx: ImmPointer[UInt32, Self.col_idx_origin]
+    var value: ImmPointer[Float32, Self.value_origin]
 
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
-        encoder.encode(self, target)
+        encoder.encode_fields[Self.device_type](self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -44,37 +47,40 @@ struct COOMatrix(DevicePassable, TrivialRegisterPassable):
         nnz: Int,
         rows: Int,
         cols: Int,
-        r: MutPointer[UInt32, MutAnyOrigin],
-        c: MutPointer[UInt32, MutAnyOrigin],
-        v: MutPointer[Float32, MutAnyOrigin],
+        r: ImmPointer[UInt32, Self.row_idx_origin],
+        c: ImmPointer[UInt32, Self.col_idx_origin],
+        v: ImmPointer[Float32, Self.value_origin],
     ):
-        self.numNonzeros = nnz
-        self.numRows = rows
-        self.numCols = cols
+        self.numNonzeros = Int32(nnz)
+        self.numRows = Int32(rows)
+        self.numCols = Int32(cols)
         self.rowIdx = r
         self.colIdx = c
         self.value = v
 
 
-struct CSRMatrix(DevicePassable, TrivialRegisterPassable):
-    comptime device_type: AnyType = Self
-    var numRows: Int
-    var numCols: Int
-    var numNonzeros: Int
+comptime DeviceCSRMatrix = CSRMatrix[
+    ImmUntrackedOrigin, ImmUntrackedOrigin, ImmUntrackedOrigin
+]
 
-    @__allow_legacy_any_origin_fields
-    var rowPtrs: MutPointer[UInt32, MutAnyOrigin]
 
-    @__allow_legacy_any_origin_fields
-    var colIdx: MutPointer[UInt32, MutAnyOrigin]
-
-    @__allow_legacy_any_origin_fields
-    var value: MutPointer[Float32, MutAnyOrigin]
+struct CSRMatrix[
+    row_ptrs_origin: ImmOrigin,
+    col_idx_origin: ImmOrigin,
+    value_origin: ImmOrigin,
+](DevicePassable, TrivialRegisterPassable):
+    comptime device_type: AnyType = DeviceCSRMatrix
+    var numRows: Int32
+    var numCols: Int32
+    var numNonzeros: Int32
+    var rowPtrs: ImmPointer[UInt32, Self.row_ptrs_origin]
+    var colIdx: ImmPointer[UInt32, Self.col_idx_origin]
+    var value: ImmPointer[Float32, Self.value_origin]
 
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
-        encoder.encode(self, target)
+        encoder.encode_fields[Self.device_type](self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -85,34 +91,35 @@ struct CSRMatrix(DevicePassable, TrivialRegisterPassable):
         rows: Int,
         cols: Int,
         nnz: Int,
-        r: MutPointer[UInt32, MutAnyOrigin],
-        c: MutPointer[UInt32, MutAnyOrigin],
-        v: MutPointer[Float32, MutAnyOrigin],
+        r: ImmPointer[UInt32, Self.row_ptrs_origin],
+        c: ImmPointer[UInt32, Self.col_idx_origin],
+        v: ImmPointer[Float32, Self.value_origin],
     ):
-        self.numRows = rows
-        self.numCols = cols
-        self.numNonzeros = nnz
+        self.numRows = Int32(rows)
+        self.numCols = Int32(cols)
+        self.numNonzeros = Int32(nnz)
         self.rowPtrs = r
         self.colIdx = c
         self.value = v
 
 
-struct ELLMatrix(DevicePassable, TrivialRegisterPassable):
-    comptime device_type: AnyType = Self
-    var numRows: Int
-    var numCols: Int
-    var nnzPerRow: Int
+comptime DeviceELLMatrix = ELLMatrix[ImmUntrackedOrigin, ImmUntrackedOrigin]
 
-    @__allow_legacy_any_origin_fields
-    var colIdx: MutPointer[UInt32, MutAnyOrigin]
 
-    @__allow_legacy_any_origin_fields
-    var value: MutPointer[Float32, MutAnyOrigin]
+struct ELLMatrix[col_idx_origin: ImmOrigin, value_origin: ImmOrigin](
+    DevicePassable, TrivialRegisterPassable
+):
+    comptime device_type: AnyType = DeviceELLMatrix
+    var numRows: Int32
+    var numCols: Int32
+    var nnzPerRow: Int32
+    var colIdx: ImmPointer[UInt32, Self.col_idx_origin]
+    var value: ImmPointer[Float32, Self.value_origin]
 
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
-        encoder.encode(self, target)
+        encoder.encode_fields[Self.device_type](self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -123,35 +130,38 @@ struct ELLMatrix(DevicePassable, TrivialRegisterPassable):
         rows: Int,
         cols: Int,
         nnz_per_row: Int,
-        c: MutPointer[UInt32, MutAnyOrigin],
-        v: MutPointer[Float32, MutAnyOrigin],
+        c: ImmPointer[UInt32, Self.col_idx_origin],
+        v: ImmPointer[Float32, Self.value_origin],
     ):
-        self.numRows = rows
-        self.numCols = cols
-        self.nnzPerRow = nnz_per_row
+        self.numRows = Int32(rows)
+        self.numCols = Int32(cols)
+        self.nnzPerRow = Int32(nnz_per_row)
         self.colIdx = c
         self.value = v
 
 
-struct CSCMatrix(DevicePassable, TrivialRegisterPassable):
-    comptime device_type: AnyType = Self
-    var numRows: Int
-    var numCols: Int
-    var numNonzeros: Int
+comptime DeviceCSCMatrix = CSCMatrix[
+    ImmUntrackedOrigin, ImmUntrackedOrigin, ImmUntrackedOrigin
+]
 
-    @__allow_legacy_any_origin_fields
-    var colPtrs: MutPointer[UInt32, MutAnyOrigin]
 
-    @__allow_legacy_any_origin_fields
-    var rowIdxs: MutPointer[UInt32, MutAnyOrigin]
-
-    @__allow_legacy_any_origin_fields
-    var values: MutPointer[Float32, MutAnyOrigin]
+struct CSCMatrix[
+    col_ptrs_origin: ImmOrigin,
+    row_idxs_origin: ImmOrigin,
+    values_origin: ImmOrigin,
+](DevicePassable, TrivialRegisterPassable):
+    comptime device_type: AnyType = DeviceCSCMatrix
+    var numRows: Int32
+    var numCols: Int32
+    var numNonzeros: Int32
+    var colPtrs: ImmPointer[UInt32, Self.col_ptrs_origin]
+    var rowIdxs: ImmPointer[UInt32, Self.row_idxs_origin]
+    var values: ImmPointer[Float32, Self.values_origin]
 
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
-        encoder.encode(self, target)
+        encoder.encode_fields[Self.device_type](self, target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -162,13 +172,13 @@ struct CSCMatrix(DevicePassable, TrivialRegisterPassable):
         rows: Int,
         cols: Int,
         nnz: Int,
-        c: MutPointer[UInt32, MutAnyOrigin],
-        r: MutPointer[UInt32, MutAnyOrigin],
-        v: MutPointer[Float32, MutAnyOrigin],
+        c: ImmPointer[UInt32, Self.col_ptrs_origin],
+        r: ImmPointer[UInt32, Self.row_idxs_origin],
+        v: ImmPointer[Float32, Self.values_origin],
     ):
-        self.numRows = rows
-        self.numCols = cols
-        self.numNonzeros = nnz
+        self.numRows = Int32(rows)
+        self.numCols = Int32(cols)
+        self.numNonzeros = Int32(nnz)
         self.colPtrs = c
         self.rowIdxs = r
         self.values = v

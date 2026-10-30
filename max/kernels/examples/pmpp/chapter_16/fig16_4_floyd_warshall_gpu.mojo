@@ -28,7 +28,7 @@ comptime INF_DIST = Float32.MAX
 
 
 def floyd_warshall_kernel(
-    A: MutPointer[Float32, MutAnyOrigin],
+    A: MutPointer[Float32, MutUntrackedOrigin],
     num_vertices_dev: Int32,
     curr_k_dev: Int32,
 ):

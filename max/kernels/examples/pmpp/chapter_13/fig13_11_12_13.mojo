@@ -106,7 +106,7 @@ def merge_sequential(
     m: Int,
     B: Pointer[Int32, _],
     n: Int,
-    C: MutPointer[Int32, MutAnyOrigin],
+    C: MutPointer[Int32, _],
 ):
     """Sequential merge of two sorted arrays.
 
@@ -147,7 +147,7 @@ def merge_sequential_shared(
     m: Int,
     B: Pointer[Int32, _, address_space=.SHARED],
     n: Int,
-    C: MutPointer[Int32, MutAnyOrigin],
+    C: MutPointer[Int32, _],
 ):
     """Sequential merge of two sorted arrays from shared memory.
 
@@ -184,11 +184,11 @@ def merge_sequential_shared(
 
 
 def merge_tiled_kernel(
-    A: ImmPointer[Int32, ImmutAnyOrigin],
+    A: ImmPointer[Int32, ImmUntrackedOrigin],
     m_dev: Int32,
-    B: ImmPointer[Int32, ImmutAnyOrigin],
+    B: ImmPointer[Int32, ImmUntrackedOrigin],
     n_dev: Int32,
-    C: MutPointer[Int32, MutAnyOrigin],
+    C: MutPointer[Int32, MutUntrackedOrigin],
     tile_size_dev: Int32,
 ):
     """Tiled merge kernel using shared memory.

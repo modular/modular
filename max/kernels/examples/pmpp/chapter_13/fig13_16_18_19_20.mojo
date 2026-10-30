@@ -120,7 +120,7 @@ def merge_sequential_circular(
     m: Int,
     B: Pointer[Int32, _, address_space=.SHARED],
     n: Int,
-    C: MutPointer[Int32, MutAnyOrigin],
+    C: MutPointer[Int32, _],
     A_S_start: Int,
     B_S_start: Int,
     tile_size: Int,
@@ -168,11 +168,11 @@ def merge_sequential_circular(
 
 
 def merge_circular_buffer_kernel(
-    A: ImmPointer[Int32, ImmutAnyOrigin],
+    A: ImmPointer[Int32, ImmUntrackedOrigin],
     m_dev: Int32,
-    B: ImmPointer[Int32, ImmutAnyOrigin],
+    B: ImmPointer[Int32, ImmUntrackedOrigin],
     n_dev: Int32,
-    C: MutPointer[Int32, MutAnyOrigin],
+    C: MutPointer[Int32, MutUntrackedOrigin],
     tile_size_dev: Int32,
 ):
     """Figures 13.16, 13.18, 13.19, 13.20: Circular buffer merge kernel.

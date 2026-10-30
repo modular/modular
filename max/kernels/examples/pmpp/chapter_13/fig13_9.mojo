@@ -67,7 +67,7 @@ def local_subset_merge(
     m_local: Int,
     B: Pointer[Int32, _],
     n_local: Int,
-    C: MutPointer[Int32, MutAnyOrigin],
+    C: MutPointer[Int32, _],
 ):
     """Sequential merge of two sorted subarrays.
 
@@ -83,7 +83,7 @@ def local_subset_merge(
     var k = 0
     var total = m_local + n_local
 
-    for idx in range(total):
+    for _ in range(total):
         if i < m_local and (j >= n_local or A[i] <= B[j]):
             C[k] = A[i]
             k += 1
@@ -95,11 +95,11 @@ def local_subset_merge(
 
 
 def merge_basic_kernel(
-    A: ImmPointer[Int32, ImmutAnyOrigin],
+    A: ImmPointer[Int32, ImmUntrackedOrigin],
     m_dev: Int32,
-    B: ImmPointer[Int32, ImmutAnyOrigin],
+    B: ImmPointer[Int32, ImmUntrackedOrigin],
     n_dev: Int32,
-    C: MutPointer[Int32, MutAnyOrigin],
+    C: MutPointer[Int32, MutUntrackedOrigin],
     block_dim_x_dev: Int32,
     grid_dim_x_dev: Int32,
 ):

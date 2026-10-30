@@ -21,8 +21,8 @@ from std.random import random_ui64
 
 
 def sort_kernel(
-    data: MutPointer[UInt32, MutAnyOrigin],
-    hasChanged: MutPointer[UInt32, MutAnyOrigin],
+    data: MutPointer[UInt32, MutUntrackedOrigin],
+    hasChanged: MutPointer[UInt32, MutUntrackedOrigin],
     N_dev: Int32,
     isOddStep_dev: Int32,
     block_dim_x_dev: Int32,

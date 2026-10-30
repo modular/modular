@@ -59,9 +59,9 @@ def max4(a: Int, b: Int, c: Int, d: Int) -> Int:
 
 
 def sw_kernel_square(
-    sw: MutPointer[Int32, MutAnyOrigin],
-    rea: ImmPointer[UInt8, ImmutAnyOrigin],
-    ref_seq: ImmPointer[UInt8, ImmutAnyOrigin],
+    sw: MutPointer[Int32, MutUntrackedOrigin],
+    rea: ImmPointer[UInt8, ImmUntrackedOrigin],
+    ref_seq: ImmPointer[UInt8, ImmUntrackedOrigin],
     L_dev: Int32,
     d_dev: Int32,
     tile_width_dev: Int32,

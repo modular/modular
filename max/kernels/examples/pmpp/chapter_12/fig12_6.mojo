@@ -39,9 +39,9 @@ def cond(val: UInt32) -> Bool:
 
 # ========================== KERNEL CODE ==========================
 def filter_kernel(
-    input: MutPointer[UInt32, MutAnyOrigin],
-    output: MutPointer[UInt32, MutAnyOrigin],
-    output_size: MutPointer[UInt32, MutAnyOrigin],
+    input: ImmPointer[UInt32, ImmUntrackedOrigin],
+    output: MutPointer[UInt32, MutUntrackedOrigin],
+    output_size: MutPointer[UInt32, MutUntrackedOrigin],
     N: UInt32,
 ):
     """Figure 12.6: Unstable filter kernel with privatization.

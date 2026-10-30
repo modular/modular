@@ -68,9 +68,9 @@ def loadTile(
 
 
 def mm_tiled_kernel(
-    A: ImmPointer[Float32, ImmutAnyOrigin],
-    B: ImmPointer[Float32, ImmutAnyOrigin],
-    C: MutPointer[Float32, MutAnyOrigin],
+    A: ImmPointer[Float32, ImmUntrackedOrigin],
+    B: ImmPointer[Float32, ImmUntrackedOrigin],
+    C: MutPointer[Float32, MutUntrackedOrigin],
     M: UInt32,
     N: UInt32,
     K: UInt32,

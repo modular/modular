@@ -25,8 +25,8 @@ comptime SEG_SIZE = 256
 
 # ========================== KERNEL CODE ==========================
 def scan_kernel(
-    input: ImmPointer[Float32, ImmutAnyOrigin],
-    output: MutPointer[Float32, MutAnyOrigin],
+    input: ImmPointer[Float32, ImmUntrackedOrigin],
+    output: MutPointer[Float32, MutUntrackedOrigin],
     N: UInt32,
 ):
     """Kogge-Stone scan with double-buffering using shared memory.
