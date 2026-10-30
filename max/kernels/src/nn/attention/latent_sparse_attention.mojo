@@ -423,15 +423,15 @@ def _flat_row_view[
     //,
 ](
     cache: PagedKVCache[dtype, kv_params, ...],
-    row_lengths: Pointer[UInt32, MutAnyOrigin],
+    row_lengths: MutPointer[UInt32, _],
     num_rows: Int,
 ) -> PagedKVCacheCollection[
     dtype,
     kv_params,
     _VIEW_PAGE,
-    MutAnyOrigin,
-    ImmutAnyOrigin,
-    ImmutAnyOrigin,
+    type_of(cache).blocks_origin,
+    ImmOrigin(row_lengths.origin),
+    type_of(cache).lookup_table_origin,
     MutUntrackedOrigin,
 ]:
     """Views one layer of a leaf as a single-layer cache whose rows are flat.
@@ -444,17 +444,9 @@ def _flat_row_view[
     index and never reads it.
     """
     var num_pages = ceildiv(cache.num_kv_rows(), _VIEW_PAGE)
-    return PagedKVCacheCollection[
-        dtype,
-        kv_params,
-        _VIEW_PAGE,
-        MutAnyOrigin,
-        ImmutAnyOrigin,
-        ImmutAnyOrigin,
-        MutUntrackedOrigin,
-    ](
+    return {
         TileTensor(
-            rebind[Pointer[Scalar[dtype], MutAnyOrigin]](cache.blocks.ptr),
+            cache.blocks.ptr,
             row_major(
                 Int64(num_pages),
                 Idx[1],
@@ -464,12 +456,9 @@ def _flat_row_view[
                 Idx[kv_params.head_size],
             ),
         ),
+        TileTensor(row_lengths.as_imm(), row_major(Int64(num_rows))),
         TileTensor(
-            rebind[Pointer[UInt32, ImmutAnyOrigin]](row_lengths),
-            row_major(Int64(num_rows)),
-        ),
-        TileTensor(
-            rebind[Pointer[UInt32, ImmutAnyOrigin]](cache.lookup_table.ptr),
+            cache.lookup_table.ptr,
             row_major(
                 Int64(cache.lookup_table.dim[0]()),
                 Int64(cache.lookup_table.dim[1]()),
@@ -477,7 +466,7 @@ def _flat_row_view[
         ),
         UInt32(1),
         cache.max_context_length(),
-    )
+    }
 
 
 def _latent_sparse_attention_sm100[
@@ -598,8 +587,9 @@ def _latent_sparse_attention_sm100[
         indices_stride=comp_stride,
         topk_lengths=NonNullPointer[DType.int32](comp_len),
         attn_sink_ptr=NonNullPointer[DType.float32](attn_sink),
-        # Equal by the assert above; the compiler compares the two views'
-        # parameters symbolically and can't see it.
+        # Equal by the assert above up to the leaves' origins, which the
+        # compiler compares symbolically. Both leaves are arguments, so
+        # either origin outlives this call.
         extra_k=rebind[type_of(comp_view)](swa_view),
         extra_d_indices=win_rows_ptr,
         extra_indices_stride=window,

@@ -323,15 +323,6 @@ def mla_prefill_sparse_nvfp4_via_fp8[
 
     # The FP8 kernel addresses rows through the indices alone, so the scratch
     # cache borrows the NVFP4 cache's lengths and page table as filler.
-    comptime ScratchCollection = PagedKVCacheCollection[
-        DType.float8_e4m3fn,
-        KVCacheStaticParams(num_heads=1, head_size=_FP8_ROW_BYTES, is_mla=True),
-        page_size,
-        MutAnyOrigin,
-        ImmutAnyOrigin,
-        ImmutAnyOrigin,
-        MutAnyOrigin,
-    ]
     var scratch_blocks = TileTensor(
         fp8_buf.unsafe_ptr(),
         row_major(
@@ -343,7 +334,16 @@ def mla_prefill_sparse_nvfp4_via_fp8[
             Idx[_FP8_ROW_BYTES],
         ),
     )
-    var lengths_ptr = kv_cache.cache_lengths_nd().ptr.as_unsafe_any_origin()
+    var lengths_ptr = kv_cache.cache_lengths_nd().ptr
+    comptime ScratchCollection = PagedKVCacheCollection[
+        DType.float8_e4m3fn,
+        KVCacheStaticParams(num_heads=1, head_size=_FP8_ROW_BYTES, is_mla=True),
+        page_size,
+        type_of(scratch_blocks).origin,
+        type_of(lengths_ptr).origin,
+        type_of(lengths_ptr).origin,
+        MutUntrackedOrigin,
+    ]
     var scratch = ScratchCollection(
         rebind[ScratchCollection.blocks_tt_type](scratch_blocks),
         TileTensor(lengths_ptr, row_major(Int64(batch_size))),

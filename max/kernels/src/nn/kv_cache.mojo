@@ -2861,12 +2861,10 @@ def generic_get_paged_cache[
         ),
         Int(blocks.static_spec.shape_tuple[3]),
         # MOGG boundary: the device buffers are owned by the graph runtime
-        # (kept alive externally), so the views built from `unsafe_ptr()`
-        # below carry the untracked any-origins.
-        # TODO: These should probably be UntrackedOrigin.
-        MutAnyOrigin,
-        ImmutAnyOrigin,
-        ImmutAnyOrigin,
+        # (kept alive externally), so `to_tile_tensor()` views them untracked.
+        MutUntrackedOrigin,
+        ImmUntrackedOrigin,
+        ImmUntrackedOrigin,
         MutUntrackedOrigin,
     ],
 ):
@@ -2889,12 +2887,12 @@ def generic_get_paged_cache[
         ),
         page_size,
     ](
-        blocks.to_tile_tensor().as_unsafe_any_origin(),
-        page_stride.to_tile_tensor().as_imm().as_unsafe_any_origin(),
-        cache_lengths.to_tile_tensor().as_imm().as_unsafe_any_origin(),
-        lookup_table.to_tile_tensor().as_imm().as_unsafe_any_origin(),
-        max_prompt_length.to_tile_tensor().as_imm().as_unsafe_any_origin(),
-        max_cache_length.to_tile_tensor().as_imm().as_unsafe_any_origin(),
+        blocks.to_tile_tensor(),
+        page_stride.to_tile_tensor().as_imm(),
+        cache_lengths.to_tile_tensor().as_imm(),
+        lookup_table.to_tile_tensor().as_imm(),
+        max_prompt_length.to_tile_tensor().as_imm(),
+        max_cache_length.to_tile_tensor().as_imm(),
     )
 
 
@@ -2926,9 +2924,9 @@ def generic_get_paged_cache[
             v_head_size,
         ),
         blocks.static_shape[3],
-        MutAnyOrigin,
-        ImmutAnyOrigin,
-        ImmutAnyOrigin,
+        blocks.origin,
+        cache_lengths.origin,
+        lookup_table.origin,
         MutUntrackedOrigin,
     ],
 ):
@@ -2965,8 +2963,6 @@ def generic_get_paged_cache[
     ), "a split KV cache packs its key and value into one plane"
     # The collection holds pointer-backed tiles, so rebuild each one over its
     # tile's data; a non-pointer storage policy aborts here at run time.
-    # The device buffers are owned by the graph runtime and kept alive
-    # externally, so the views carry the untracked any-origins.
     return generic_get_paged_cache[
         dtype,
         _paged_cache_static_params(
@@ -2979,42 +2975,42 @@ def generic_get_paged_cache[
     ](
         rebind[
             TileTensor[
-                type_of(blocks).dtype, type_of(blocks).LayoutType, MutAnyOrigin
+                type_of(blocks).dtype, type_of(blocks).LayoutType, blocks.origin
             ]
         ](blocks.reshape(blocks.layout)),
         rebind[
             TileTensor[
                 type_of(page_stride).dtype,
                 type_of(page_stride).LayoutType,
-                ImmutAnyOrigin,
+                page_stride.origin,
             ]
         ](page_stride.reshape(page_stride.layout)),
         rebind[
             TileTensor[
                 type_of(cache_lengths).dtype,
                 type_of(cache_lengths).LayoutType,
-                ImmutAnyOrigin,
+                cache_lengths.origin,
             ]
         ](cache_lengths.reshape(cache_lengths.layout)),
         rebind[
             TileTensor[
                 type_of(lookup_table).dtype,
                 type_of(lookup_table).LayoutType,
-                ImmutAnyOrigin,
+                lookup_table.origin,
             ]
         ](lookup_table.reshape(lookup_table.layout)),
         rebind[
             TileTensor[
                 type_of(max_prompt_length).dtype,
                 type_of(max_prompt_length).LayoutType,
-                ImmutAnyOrigin,
+                max_prompt_length.origin,
             ]
         ](max_prompt_length.reshape(max_prompt_length.layout)),
         rebind[
             TileTensor[
                 type_of(max_cache_length).dtype,
                 type_of(max_cache_length).LayoutType,
-                ImmutAnyOrigin,
+                max_cache_length.origin,
             ]
         ](max_cache_length.reshape(max_cache_length.layout)),
     )
@@ -3072,10 +3068,10 @@ def generic_get_paged_cache_with_scales[
             ),
         ),
         Int(blocks.static_spec.shape_tuple[3]),
-        MutAnyOrigin,
-        ImmutAnyOrigin,
-        ImmutAnyOrigin,
-        MutAnyOrigin,
+        MutUntrackedOrigin,
+        ImmUntrackedOrigin,
+        ImmUntrackedOrigin,
+        MutUntrackedOrigin,
         scale_dtype_=scale_dtype,
         quantization_granularity_=_scaled_cache_granularity[dtype, scale_dtype](
             Int(blocks.static_spec.shape_tuple[5]),
@@ -3128,15 +3124,15 @@ def generic_get_paged_cache_with_scales[
     return generic_get_paged_cache_with_scales[
         dtype, scale_dtype, kv_params, page_size, granularity
     ](
-        blocks.to_tile_tensor().as_unsafe_any_origin(),
-        page_stride.to_tile_tensor().as_imm().as_unsafe_any_origin(),
-        cache_lengths.to_tile_tensor().as_imm().as_unsafe_any_origin(),
-        lookup_table.to_tile_tensor().as_imm().as_unsafe_any_origin(),
-        max_prompt_length.to_tile_tensor().as_imm().as_unsafe_any_origin(),
-        max_cache_length.to_tile_tensor().as_imm().as_unsafe_any_origin(),
-        scales.to_tile_tensor().as_unsafe_any_origin(),
-        scales_page_stride.to_tile_tensor().as_imm().as_unsafe_any_origin(),
-        scales_lookup_table.to_tile_tensor().as_imm().as_unsafe_any_origin(),
+        blocks.to_tile_tensor(),
+        page_stride.to_tile_tensor().as_imm(),
+        cache_lengths.to_tile_tensor().as_imm(),
+        lookup_table.to_tile_tensor().as_imm(),
+        max_prompt_length.to_tile_tensor().as_imm(),
+        max_cache_length.to_tile_tensor().as_imm(),
+        scales.to_tile_tensor(),
+        scales_page_stride.to_tile_tensor().as_imm(),
+        scales_lookup_table.to_tile_tensor().as_imm(),
     )
 
 
@@ -3162,7 +3158,11 @@ def generic_get_paged_cache_with_scales(
         mut=False, DType.int64, address_space=.GENERIC, ...
     ],
     scales_lookup_table: TileTensor[
-        mut=False, DType.uint32, address_space=.GENERIC, ...
+        mut=False,
+        DType.uint32,
+        origin=lookup_table.origin,
+        address_space=.GENERIC,
+        ...,
     ],
     out result: PagedKVCacheCollection[
         blocks.dtype,
@@ -3176,10 +3176,10 @@ def generic_get_paged_cache_with_scales(
             ),
         ),
         blocks.static_shape[3],
-        MutAnyOrigin,
-        ImmutAnyOrigin,
-        ImmutAnyOrigin,
-        MutAnyOrigin,
+        blocks.origin,
+        cache_lengths.origin,
+        lookup_table.origin,
+        scales.origin,
         scale_dtype_=scales.dtype,
         quantization_granularity_=_scaled_cache_granularity[
             blocks.dtype, scales.dtype
@@ -3236,8 +3236,6 @@ def generic_get_paged_cache_with_scales(
     ), "the scales row must evenly divide the values row"
     # The collection holds pointer-backed tiles, so rebuild each one over its
     # tile's data; a non-pointer storage policy aborts here at run time.
-    # The device buffers are owned by the graph runtime and kept alive
-    # externally, so the views carry the untracked any-origins.
     return generic_get_paged_cache_with_scales[
         dtype,
         scale_dtype,
@@ -3247,61 +3245,61 @@ def generic_get_paged_cache_with_scales(
     ](
         rebind[
             TileTensor[
-                type_of(blocks).dtype, type_of(blocks).LayoutType, MutAnyOrigin
+                type_of(blocks).dtype, type_of(blocks).LayoutType, blocks.origin
             ]
         ](blocks.reshape(blocks.layout)),
         rebind[
             TileTensor[
                 type_of(page_stride).dtype,
                 type_of(page_stride).LayoutType,
-                ImmutAnyOrigin,
+                page_stride.origin,
             ]
         ](page_stride.reshape(page_stride.layout)),
         rebind[
             TileTensor[
                 type_of(cache_lengths).dtype,
                 type_of(cache_lengths).LayoutType,
-                ImmutAnyOrigin,
+                cache_lengths.origin,
             ]
         ](cache_lengths.reshape(cache_lengths.layout)),
         rebind[
             TileTensor[
                 type_of(lookup_table).dtype,
                 type_of(lookup_table).LayoutType,
-                ImmutAnyOrigin,
+                lookup_table.origin,
             ]
         ](lookup_table.reshape(lookup_table.layout)),
         rebind[
             TileTensor[
                 type_of(max_prompt_length).dtype,
                 type_of(max_prompt_length).LayoutType,
-                ImmutAnyOrigin,
+                max_prompt_length.origin,
             ]
         ](max_prompt_length.reshape(max_prompt_length.layout)),
         rebind[
             TileTensor[
                 type_of(max_cache_length).dtype,
                 type_of(max_cache_length).LayoutType,
-                ImmutAnyOrigin,
+                max_cache_length.origin,
             ]
         ](max_cache_length.reshape(max_cache_length.layout)),
         rebind[
             TileTensor[
-                type_of(scales).dtype, type_of(scales).LayoutType, MutAnyOrigin
+                type_of(scales).dtype, type_of(scales).LayoutType, scales.origin
             ]
         ](scales.reshape(scales.layout)),
         rebind[
             TileTensor[
                 type_of(scales_page_stride).dtype,
                 type_of(scales_page_stride).LayoutType,
-                ImmutAnyOrigin,
+                scales_page_stride.origin,
             ]
         ](scales_page_stride.reshape(scales_page_stride.layout)),
         rebind[
             TileTensor[
                 type_of(scales_lookup_table).dtype,
                 type_of(scales_lookup_table).LayoutType,
-                ImmutAnyOrigin,
+                scales_lookup_table.origin,
             ]
         ](scales_lookup_table.reshape(scales_lookup_table.layout)),
     )
