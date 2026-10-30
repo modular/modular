@@ -154,6 +154,7 @@ single_version_override(
         # reverts https://github.com/bazel-contrib/rules_python/pull/3242
         "//bazel/public-patches:rules_python_revert.patch",
     ],
+    version = "1.8.5",
 )
 
 single_version_override(
