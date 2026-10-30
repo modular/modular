@@ -191,7 +191,7 @@ def _tmem_round_trip_kernel[
     )
     # Row 0 of the warp tile is this thread's view: the hardware adds the
     # thread's lane to the warp base, so the storage must stay at the base.
-    var row = warp_tile.tile[1, num_cols](Coord(Idx[0], Idx[0]))
+    var row = warp_tile[:1, :]
     var lane = Int(warp_id()) * WARP_SIZE + Int(lane_id())
     _round_trip(row, lane, output, lane)
 
@@ -218,9 +218,9 @@ def tmem_async_round_trip_kernel[
     var tile = AccumTile[NUM_COLS](
         AccumStorage(smem_addr[]), AccumLayout[NUM_COLS]
     )
-    var row = tile.tile[WARP_SIZE, NUM_COLS](
-        Coord(Int(warp_id()), Idx[0])
-    ).tile[1, NUM_COLS](Coord(Idx[0], Idx[0]))
+    var row = tile.tile[WARP_SIZE, NUM_COLS](Coord(Int(warp_id()), Idx[0]))[
+        :1, :
+    ]
     var lane = Int(warp_id()) * WARP_SIZE + Int(lane_id())
     comptime HALF = NUM_COLS // 2
 
@@ -230,16 +230,16 @@ def tmem_async_round_trip_kernel[
     # Two half-row stores, one wait.
     comptime for h in range(2):
         tmem_copy_async(
-            row.tile[1, HALF](Coord(Idx[0], Idx[h])),
-            regs.tile[1, HALF](Coord(Idx[0], Idx[h])),
+            row[:, Idx[h * HALF] : Idx[(h + 1) * HALF]],
+            regs[:, Idx[h * HALF] : Idx[(h + 1) * HALF]],
         )
     TMemEngine.wait_store()
 
     var back = stack_allocation[dtype=.float32](row_major[1, NUM_COLS]())
     comptime for h in range(2):
         tmem_copy_async(
-            back.tile[1, HALF](Coord(Idx[0], Idx[h])),
-            row.tile[1, HALF](Coord(Idx[0], Idx[h])),
+            back[:, Idx[h * HALF] : Idx[(h + 1) * HALF]],
+            row[:, Idx[h * HALF] : Idx[(h + 1) * HALF]],
         )
     TMemEngine.wait_load()
     comptime for c in range(NUM_COLS):
@@ -271,9 +271,9 @@ def tmem_budget_round_trip_kernel[
     var tile = AccumTile[WIDE_COLS](
         AccumStorage(smem_addr[]), AccumLayout[WIDE_COLS]
     )
-    var row = tile.tile[WARP_SIZE, WIDE_COLS](
-        Coord(Int(warp_id()), Idx[0])
-    ).tile[1, WIDE_COLS](Coord(Idx[0], Idx[0]))
+    var row = tile.tile[WARP_SIZE, WIDE_COLS](Coord(Int(warp_id()), Idx[0]))[
+        :1, :
+    ]
     var lane = Int(warp_id()) * WARP_SIZE + Int(lane_id())
     # Both ends of the round trip live in global memory, so the staging
     # registers of the two copies are the kernel's only wide register use.
@@ -345,7 +345,7 @@ def tmem_16x256b_load_kernel[
     var warp_tile = tile.tile[WARP_SIZE, NUM_COLS](
         Coord(Int(warp_id()), Idx[0])
     )
-    var row = warp_tile.tile[1, NUM_COLS](coord[0, 0])
+    var row = warp_tile[:1, :]
     var lane = Int(warp_id()) * WARP_SIZE + Int(lane_id())
     var regs = stack_allocation[dtype=.float32](row_major[1, NUM_COLS]())
     comptime for c in range(NUM_COLS):
@@ -355,7 +355,7 @@ def tmem_16x256b_load_kernel[
     var count: Int32 = 0
     comptime for half in range(HALVES):
         var view = tmem_16x256b(
-            warp_tile.tile[FRAG_LANES, NUM_COLS](coord[half, 0])
+            warp_tile[Idx[half * FRAG_LANES] : Idx[(half + 1) * FRAG_LANES], :]
         )
         var frag = stack_allocation[dtype=.float32](FRAG_REG_LAYOUT)
         frag.copy_from(view)
@@ -393,7 +393,7 @@ def tmem_16x256b_store_kernel[
     )
     comptime for half in range(HALVES):
         var view = tmem_16x256b(
-            warp_tile.tile[FRAG_LANES, NUM_COLS](coord[half, 0])
+            warp_tile[Idx[half * FRAG_LANES] : Idx[(half + 1) * FRAG_LANES], :]
         )
         var frag = stack_allocation[dtype=.float32](FRAG_REG_LAYOUT)
         comptime for r, i, j in product(
@@ -404,7 +404,7 @@ def tmem_16x256b_store_kernel[
             frag[cell_coord] = _expected(cell[0], cell[1])
         view.copy_from(frag)
 
-    var row = warp_tile.tile[1, NUM_COLS](coord[0, 0])
+    var row = warp_tile[:1, :]
     var back = stack_allocation[dtype=.float32](row_major[1, NUM_COLS]())
     back.copy_from(row)
     var lane = Int(warp_id()) * WARP_SIZE + Int(lane_id())

@@ -94,9 +94,9 @@ def test_layout_is_the_lane_column_grid() raises:
 
 def test_warp_tile_lands_on_quadrant_base() raises:
     var tile = AccumTile(AccumStorage(BASE_ADDR), ACCUM_LAYOUT)
-    var warp_tile = tile.tile[32, NUM_COLS](Coord(Int(2), Idx[0]))
+    var warp_tile = tile[64:96, :]
     assert_equal(warp_tile._storage.addr, _addr(BASE_LANE + 2 * 32, BASE_COL))
-    var row = warp_tile.tile[1, NUM_COLS](Coord(Idx[0], Idx[0]))
+    var row = warp_tile[:1, :]
     assert_equal(row._storage.addr, warp_tile._storage.addr)
     assert_equal(Int(row.layout(Coord(Idx[0], Idx[9]))), 9 * TMEM_NUM_LANES)
 

@@ -1460,12 +1460,12 @@ struct TMEMToSMemWriter[
                 )
                 var c_smem_warp_tile = tiled.reshape(coalesced)
 
-                var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
-                    Self.stageN, Self.data_paths
-                ](Coord(Idx[0], Idx[0]))
-                var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
-                    Self.stageN, Self.data_paths
-                ](Coord(Idx[0], Idx[1]))
+                var c_smem_warp_tile_upper = c_smem_warp_tile[
+                    :, : Idx[Self.data_paths]
+                ]
+                var c_smem_warp_tile_lower = c_smem_warp_tile[
+                    :, Idx[Self.data_paths] : Idx[2 * Self.data_paths]
+                ]
 
                 var warp_offset = warp_i * tile_width
                 store_fragment_to_smem[
@@ -1585,9 +1585,7 @@ struct TMEMToSMemWriter[
             Coord(Int(self.warp_id), Idx[0])
         )
 
-        var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
-            Self.data_paths, Self.stageN
-        ](Coord(Idx[0], Idx[0]))
+        var c_smem_warp_tile_upper = c_smem_warp_tile[: Idx[Self.data_paths], :]
         store_fragment_to_smem[
             Self.swizzle,
             Self.stageN,
@@ -1596,9 +1594,9 @@ struct TMEMToSMemWriter[
         ](upper_casted, c_smem_warp_tile_upper)
 
         comptime if is_lower_required:
-            var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
-                Self.data_paths, Self.stageN
-            ](Coord(Idx[1], Idx[0]))
+            var c_smem_warp_tile_lower = c_smem_warp_tile[
+                Idx[Self.data_paths] : Idx[2 * Self.data_paths], :
+            ]
             store_fragment_to_smem[
                 Self.swizzle,
                 Self.stageN,
@@ -1767,12 +1765,12 @@ struct SMemEpilogueWriter[
             )
             var c_smem_warp_tile = tiled.reshape(coalesced)
 
-            var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
-                Self.stageN, Self.data_paths
-            ](Coord(Idx[0], Idx[0]))
-            var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
-                Self.stageN, Self.data_paths
-            ](Coord(Idx[0], Idx[1]))
+            var c_smem_warp_tile_upper = c_smem_warp_tile[
+                :, : Idx[Self.data_paths]
+            ]
+            var c_smem_warp_tile_lower = c_smem_warp_tile[
+                :, Idx[Self.data_paths] : Idx[2 * Self.data_paths]
+            ]
 
             var warp_offset = warp_i * tile_width
             store_fragment_to_smem[
@@ -1874,16 +1872,14 @@ struct SMemEpilogueWriter[
             Coord(Int(self.warp_id), Idx[0])
         )
 
-        var c_smem_warp_tile_upper = c_smem_warp_tile.tile[
-            Self.data_paths, Self.stageN
-        ](Coord(Idx[0], Idx[0]))
+        var c_smem_warp_tile_upper = c_smem_warp_tile[: Idx[Self.data_paths], :]
         store_fragment_to_smem[
             Self.swizzle, Self.stageN, transpose_c=Self.transpose_c
         ](upper_frag, c_smem_warp_tile_upper)
 
-        var c_smem_warp_tile_lower = c_smem_warp_tile.tile[
-            Self.data_paths, Self.stageN
-        ](Coord(Idx[1], Idx[0]))
+        var c_smem_warp_tile_lower = c_smem_warp_tile[
+            Idx[Self.data_paths] : Idx[2 * Self.data_paths], :
+        ]
 
         comptime if Self.is_lower_frag_required:
             store_fragment_to_smem[

@@ -1019,13 +1019,19 @@ def multi_stage_store_C[
         tmem_copy_async(
             TileTensor(upper_frag.unsafe_ptr(), FragRegs),
             tmem_16x256b(
-                stage_tile.tile[FRAGMENT_LANES, stageN](coord[0, stage])
+                stage_tile[
+                    : Idx[FRAGMENT_LANES],
+                    Idx[stage * stageN] : Idx[(stage + 1) * stageN],
+                ]
             ),
         )
         tmem_copy_async(
             TileTensor(lower_frag.unsafe_ptr(), FragRegs),
             tmem_16x256b(
-                stage_tile.tile[FRAGMENT_LANES, stageN](coord[1, stage])
+                stage_tile[
+                    Idx[FRAGMENT_LANES] : Idx[2 * FRAGMENT_LANES],
+                    Idx[stage * stageN] : Idx[(stage + 1) * stageN],
+                ]
             ),
         )
         TMemEngine.wait_load()
