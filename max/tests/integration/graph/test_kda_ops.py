@@ -785,8 +785,8 @@ def _error_chain(exc: BaseException) -> str:
 
 
 # The AMD path is a narrower scope than the SM100 one: 128-wide heads with
-# Hk == Hv, bf16 q/k/v/output, fp32 gates and state, and the bounded "safe"
-# gate. Both pool layouts and both beta modes are covered.
+# Hk == Hv, bf16 q/k/v, a bf16 or fp32 output, fp32 gates and state, and the
+# bounded "safe" gate. Both pool layouts and both beta modes are covered.
 @pytest.mark.skipif(
     not _is_gfx950_gpu(), reason="AMD kda_chunk path is gfx950-only"
 )
@@ -1195,8 +1195,8 @@ def test_kda_chunk_wrapper_rejects_amd_unsupported() -> None:
                 gate_mode="safe",
                 use_computebound=True,
             )
-        with pytest.raises(ValueError, match="bf16 q/k/v/output"):
-            kda_chunk(*args, output_dtype=DType.float32, gate_mode="safe")
+        with pytest.raises(ValueError, match="a bf16 or fp32 output"):
+            kda_chunk(*args, output_dtype=DType.float16, gate_mode="safe")
         bf16_gate = graph.inputs[8].tensor
         with pytest.raises(ValueError, match=r"raw_gate DType\.bfloat16"):
             kda_chunk(

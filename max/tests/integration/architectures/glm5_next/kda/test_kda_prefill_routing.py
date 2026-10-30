@@ -14,8 +14,9 @@
 
 The graphs are only built, never compiled, so every accelerator is checked
 from any host with the driver queries patched. They are patched in every
-module that reads them: the layer, ModuleV3's core and the op wrapper each
-ask on their own, and an unpatched one answers for the host GPU.
+module that reads them: the layer, ModuleV3's core and the op-wrapper module
+that owns the routing helpers each ask on their own, and an unpatched one
+answers for the host GPU.
 """
 
 from __future__ import annotations
@@ -34,23 +35,22 @@ from max.nn.legacy.state_space import (
     kimi_delta,
     verify_width_operand,
 )
-from max.nn.legacy.state_space.kimi_delta import KdaGateMode
+from max.nn.legacy.state_space.kimi_delta import (
+    KdaGateMode,
+    amd_kda_chunk_workspace_bytes,
+    kda_chunk_predicate,
+    kda_chunk_workspace_bytes,
+)
 from max.pipelines.architectures.glm5_next.layers import (
     kimi_delta_attention,
 )
 from max.pipelines.architectures.glm5_next.layers.kda import KdaRing
 from max.pipelines.architectures.glm5_next.layers.kimi_delta_attention import (
     KimiDeltaAttention,
-    kda_chunk_predicate,
-)
-from max.pipelines.architectures.glm5_next.memory_planner import (
-    amd_kda_chunk_workspace_bytes,
-    kda_chunk_workspace_bytes,
 )
 from max.pipelines.architectures.glm5_next_modulev3.layers import (
     kda as modulev3_kda,
 )
-from max.pipelines.lib import PipelineRuntimeConfig
 from max.pipelines.modeling.config_enums import PipelineRole
 
 GPU = DeviceRef.GPU()
@@ -67,10 +67,9 @@ def _patch_accelerator(
 ) -> None:
     for module in (kimi_delta_attention, kimi_delta, modulev3_kda):
         monkeypatch.setattr(module, "accelerator_api", lambda: api)
-    for module in (kimi_delta_attention, kimi_delta):
-        monkeypatch.setattr(
-            module, "accelerator_architecture_name", lambda: architecture
-        )
+    monkeypatch.setattr(
+        kimi_delta, "accelerator_architecture_name", lambda: architecture
+    )
 
 
 def _qualify_weight_names(layer: Module, prefix: str = "kda") -> None:
@@ -277,9 +276,7 @@ def test_unregistered_chunk_op_stays_sequential(
 ) -> None:
     """A build without the closed-source kernels lacks ``kda_chunk``."""
     _patch_accelerator(monkeypatch, api, architecture)
-    monkeypatch.setattr(
-        kimi_delta_attention, "kda_chunk_is_registered", lambda: False
-    )
+    monkeypatch.setattr(kimi_delta, "kda_chunk_is_registered", lambda: False)
     _assert_sequential(_layer_mlir())
     _assert_sequential(_modulev3_mlir())
 
@@ -328,7 +325,7 @@ def _takes_chunk(
     num_heads: int = HEADS,
 ) -> bool:
     """Evaluates :func:`kda_chunk_predicate` on concrete counts."""
-    monkeypatch.setattr(kimi_delta_attention, "accelerator_api", lambda: api)
+    monkeypatch.setattr(kimi_delta, "accelerator_api", lambda: api)
     scalar = TensorType(DType.int64, [], device=DeviceRef.CPU())
     with Graph("kda_chunk_predicate", input_types=[scalar, scalar]) as graph:
         tokens, seqs = graph.inputs
@@ -373,15 +370,13 @@ def _reserved(
     enable_chunked_prefill: bool = True,
 ) -> int:
     return amd_kda_chunk_workspace_bytes(
-        PipelineRuntimeConfig(
-            max_batch_input_tokens=8192,
-            pipeline_role=pipeline_role,
-            enable_chunked_prefill=enable_chunked_prefill,
-        ),
         num_heads=2 * HEADS,
         head_dim=HEAD_DIM,
         lower_bound=lower_bound,
         state_dtype=state_dtype,
+        decode_only=pipeline_role == "decode_only",
+        max_batch_input_tokens=8192,
+        enable_chunked_prefill=enable_chunked_prefill,
         max_batch_size=8,
         max_length=16384,
     )

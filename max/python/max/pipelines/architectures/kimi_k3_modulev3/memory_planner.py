@@ -21,6 +21,11 @@ this port; no KDA live-state term, since it's a page of the KV cache's
 ``state`` child rather than a separate reservation; and an unconditional
 MXFP4 dequant reservation, since this port has no packed-GEMM compute path
 yet to avoid it with -- over-reserving here, never an OOM.
+
+One reservation the graph-API planner does not carry: on gfx950 the
+``kda_decode`` op runs KDA prefill through the chunk pipeline, whose launch
+allocates workspaces per call outside the planner, so
+:func:`_amd_chunk_workspace_bytes` reserves them here instead.
 """
 
 from __future__ import annotations
@@ -29,6 +34,7 @@ import logging
 from typing import Any
 
 from max.dtype import DType
+from max.nn.legacy.state_space.kimi_delta import amd_kda_chunk_workspace_bytes
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib.config import PipelineConfig
@@ -341,6 +347,46 @@ def _per_request_state_bytes(
     return num_kda * (conv + rec)
 
 
+def _amd_chunk_workspace_bytes(
+    pipeline_config: PipelineConfig,
+    text_config: Any,
+    *,
+    n_devices: int,
+    ep_size: int,
+    num_kda: int,
+    recurrent_state_dtype: DType,
+    inferred_max_batch_size: int | None,
+) -> int:
+    """GPU bytes ALL devices together hold the gfx950 chunk workspaces in.
+
+    KDA prefill runs the chunk pipeline inside the ``kda_decode`` op on
+    gfx950 -- the bounded gate, a float32 pool -- and that launch allocates
+    its workspaces per call, outside this planner. TP splits the KDA heads across devices while the pure-EP
+    mesh replicates the layers, so one device holds ``num_heads //
+    n_devices`` heads under TP and all of them under EP; the estimate this
+    feeds is compared against free memory summed over devices, so the
+    reservation is one device's bytes times the device count. Registration
+    cannot be asked here -- it reads the graph under construction -- so a
+    build without the op over-reserves, never OOMs.
+    """
+    if not num_kda:
+        return 0
+    linear_cfg = getattr(text_config, "linear_attn_config", None) or {}
+    runtime = pipeline_config.runtime
+    heads = linear_cfg.get("num_heads", 8)
+    return n_devices * amd_kda_chunk_workspace_bytes(
+        num_heads=heads // n_devices if ep_size == 1 else heads,
+        head_dim=linear_cfg.get("head_dim", 32),
+        lower_bound=linear_cfg.get("gate_lower_bound"),
+        state_dtype=recurrent_state_dtype,
+        decode_only=runtime.pipeline_role == "decode_only",
+        max_batch_input_tokens=runtime.max_batch_input_tokens,
+        enable_chunked_prefill=runtime.enable_chunked_prefill,
+        max_batch_size=(runtime.max_batch_size or inferred_max_batch_size),
+        max_length=pipeline_config.model.max_length,
+    )
+
+
 def _infer_optimal_batch_size(
     devices: list[Any],
     *,
@@ -447,6 +493,11 @@ class KimiK3ModuleV3MemoryPlanner(PagedMemoryPlanner):
     ``KimiK3MemoryPlanner``.
     """
 
+    _inferred_max_batch_size: int | None = None
+    """The batch size :meth:`infer_max_batch_size` chose, which planning does
+    not write back to ``runtime.max_batch_size`` before it asks
+    :meth:`estimate_activation_memory`."""
+
     def estimate_weights_size(self, pipeline_config: PipelineConfig) -> int:
         """Counts only the language weights this architecture loads.
 
@@ -524,7 +575,7 @@ class KimiK3ModuleV3MemoryPlanner(PagedMemoryPlanner):
             num_kda=num_kda,
         )
         weights_per_device = weights_size // n_devices if n_devices else 0
-        return _infer_optimal_batch_size(
+        inferred = _infer_optimal_batch_size(
             devices,
             weights_per_device=weights_per_device,
             device_memory_utilization=(
@@ -532,6 +583,8 @@ class KimiK3ModuleV3MemoryPlanner(PagedMemoryPlanner):
             ),
             per_request_bytes=per_request_bytes,
         )
+        self._inferred_max_batch_size = inferred
+        return inferred
 
     def estimate_activation_memory(
         self,
@@ -543,7 +596,9 @@ class KimiK3ModuleV3MemoryPlanner(PagedMemoryPlanner):
         Compared against free memory SUMMED over every device, so the total
         is what belongs here -- not one device's share. The KDA state is not
         one of these terms: it is pages of the KV pool, so the cache sizing
-        already holds it.
+        already holds it. On gfx950 the KDA
+        chunk-pipeline workspaces are activation too;
+        :func:`_amd_chunk_workspace_bytes` reserves them.
         """
         if huggingface_config is None:
             return 0
@@ -554,7 +609,7 @@ class KimiK3ModuleV3MemoryPlanner(PagedMemoryPlanner):
             model_config, _DEFAULT_ENCODING
         )
         dtype = _resolved_dtype(encoding)
-        _, num_full_attn = _layer_counts(text_config)
+        num_kda, num_full_attn = _layer_counts(text_config)
         ep_size = max(pipeline_config.runtime.ep_size, 1)
         max_seq_len = model_config.max_length or 0
         routed_expert_row_bound = _routed_expert_row_bound(
@@ -594,6 +649,19 @@ class KimiK3ModuleV3MemoryPlanner(PagedMemoryPlanner):
                 max_batch_context_length=max_batch_context_length,
                 dtype=dtype,
             )
+
+        _, recurrent_state_dtype = _declared_state_dtypes(
+            model_config.kv_cache, encoding
+        )
+        total += _amd_chunk_workspace_bytes(
+            pipeline_config,
+            text_config,
+            n_devices=n_devices,
+            ep_size=ep_size,
+            num_kda=num_kda,
+            recurrent_state_dtype=recurrent_state_dtype,
+            inferred_max_batch_size=self._inferred_max_batch_size,
+        )
 
         if total:
             logger.info(

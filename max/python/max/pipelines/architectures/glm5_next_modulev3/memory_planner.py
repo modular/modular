@@ -22,12 +22,12 @@ MoE uses them.
 from __future__ import annotations
 
 from max.driver import Device
+from max.nn.legacy.state_space.kimi_delta import amd_kda_chunk_workspace_bytes
 from max.pipelines.lib import PipelineConfig
 from transformers import AutoConfig
 from typing_extensions import override
 
 from ..deepseekV3_modulev3.memory_planner import DeepseekV3ModuleV3MemoryPlanner
-from ..glm5_next.memory_planner import amd_kda_chunk_workspace_bytes
 from .model_config import Glm5NextConfig
 
 __all__ = ["Glm5NextMemoryPlanner"]
@@ -73,19 +73,20 @@ class Glm5NextMemoryPlanner(DeepseekV3ModuleV3MemoryPlanner):
         # so are the chunk workspaces gfx950 prefill allocates per call.
         config = self._config
         assert isinstance(config, Glm5NextConfig)
+        runtime = pipeline_config.runtime
         residual_bytes = (
-            pipeline_config.runtime.max_batch_input_tokens
-            * config.activation_bytes_per_token()
+            runtime.max_batch_input_tokens * config.activation_bytes_per_token()
         )
         chunk_workspace_bytes = amd_kda_chunk_workspace_bytes(
-            pipeline_config.runtime,
             num_heads=config.linear_num_heads,
             head_dim=config.linear_head_dim,
             lower_bound=config.linear_lower_bound,
             state_dtype=config.state_pool_dtype,
+            decode_only=runtime.pipeline_role == "decode_only",
+            max_batch_input_tokens=runtime.max_batch_input_tokens,
+            enable_chunked_prefill=runtime.enable_chunked_prefill,
             max_batch_size=(
-                pipeline_config.runtime.max_batch_size
-                or self._inferred_max_batch_size
+                runtime.max_batch_size or self._inferred_max_batch_size
             ),
             max_length=pipeline_config.model.max_length,
         )

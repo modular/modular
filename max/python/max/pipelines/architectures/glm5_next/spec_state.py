@@ -50,6 +50,7 @@ from max.nn.legacy.kv_cache import (
     RecurrentStateInputsPerDevice,
 )
 from max.nn.legacy.state_space import kda_state_fold, verify_width_operand
+from max.nn.legacy.state_space.kimi_delta import STATE_LAYOUT
 from max.pipelines.speculative.gated_delta_rollback import (
     accepted_lengths,
     accepted_row_plan,
@@ -62,7 +63,7 @@ from ..deepseekV3_2.layers.indexer import KpoolTailReplayInputs
 from .glm5_next import Glm5Next
 from .layers.decoder import Glm5NextDecoderLayer
 from .layers.kda import KdaReplayInputs
-from .layers.kimi_delta_attention import STATE_LAYOUT, Glm5NextKdaSublayer
+from .layers.kimi_delta_attention import Glm5NextKdaSublayer
 from .layers.sparse_mla import Glm5NextSparseMLASublayer
 from .state_cache import (
     CONV_LEAF_ID,

@@ -52,7 +52,7 @@ from __future__ import annotations
 import functools
 from collections.abc import Iterable
 
-from max.driver import accelerator_api, accelerator_architecture_name
+from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import (
     BufferValue,
@@ -73,15 +73,14 @@ from max.nn.legacy.state_space import (
     gated_delta_conv1d_fwd,
     gated_delta_conv1d_verify_fwd,
     kda_chunk,
-    kda_chunk_is_registered,
-    kda_chunk_supports_head_dims,
     kda_decode,
     kda_verify_ring,
 )
 from max.nn.legacy.state_space.kimi_delta import (
-    KDA_GATE_LOWER_BOUND,
-    KdaGateMode,
-    KdaStateLayout,
+    STATE_LAYOUT,
+    kda_chunk_predicate,
+    kda_chunk_servable,
+    kda_gate_mode,
 )
 
 from ..model_config import Glm5NextConfig
@@ -90,148 +89,7 @@ from .kda import KdaReplayInputs, KdaRing, KdaSublayerInputs
 __all__ = [
     "Glm5NextKdaSublayer",
     "KimiDeltaAttention",
-    "amd_kda_chunk_eligible",
-    "kda_chunk_predicate",
-    "kda_chunk_servable",
-    "kda_gate_mode",
 ]
-
-STATE_LAYOUT: KdaStateLayout = "K_FIRST"
-"""Pool axis order, ``[num_rows, heads, head_dim, head_dim]``.
-
-Pinned here so both recurrence ops, the cache's declared leaves and the memory
-planner cannot disagree; it also matches the ``[num_rows, num_v_heads, key_dim,
-val_dim]`` layout Qwen3.5's recurrent state cache declares.
-"""
-
-
-_CHUNK_MIN_COMPUTE_CAPABILITY = 100
-"""Lowest NVIDIA compute capability (``sm_100`` -> 100) ``kda_chunk`` builds for."""
-
-_AMD_CHUNK_MAX_ELEMENTS = 1 << 31
-"""Largest tensor or workspace the gfx950 ``kda_chunk`` launch indexes; it
-raises past this rather than overflow its 32-bit offsets."""
-
-_CHUNK_LEN = 64
-"""Tokens per chunk of the ``kda_chunk`` recurrence."""
-
-
-def kda_chunk_servable(
-    head_dim: int, gate_mode: KdaGateMode, pool_dtype: DType
-) -> bool:
-    """Returns whether prefill can take ``kda_chunk``, not ``kda_decode``.
-
-    The op's NVIDIA kernels only instantiate on SM100+, and its AMD kernels
-    only on gfx950, where they also take only the ``"safe"`` gate and a
-    float32 pool. The AMD kernels take bf16 q/k/v and output, so callers cast
-    at the op boundary there. Builds without the closed-source kernels lack
-    the op. Anything outside that keeps the sequential recurrence for prefill.
-
-    Call this while a graph is being built: it reads that graph's kernel
-    library.
-
-    Args:
-        head_dim: Key and value head width.
-        gate_mode: The forget-gate form the layer passes the op.
-        pool_dtype: Dtype of the recurrent state pool.
-
-    Returns:
-        ``True`` when ``kda_chunk`` accepts this layer's arguments.
-    """
-    api = accelerator_api()
-    if api == "hip":
-        return (
-            amd_kda_chunk_eligible(head_dim, gate_mode, pool_dtype)
-            and kda_chunk_is_registered()
-        )
-    # TODO(KERN-3635): widen once kda_chunk compiles below SM100.
-    name = accelerator_architecture_name()
-    digits = name.removeprefix("sm_").rstrip("abcdefghijklmnopqrstuvwxyz")
-    return (
-        api == "cuda"
-        and digits.isdigit()
-        and int(digits) >= _CHUNK_MIN_COMPUTE_CAPABILITY
-        and kda_chunk_supports_head_dims(head_dim, head_dim)
-        and kda_chunk_is_registered()
-    )
-
-
-def amd_kda_chunk_eligible(
-    head_dim: int, gate_mode: KdaGateMode, pool_dtype: DType
-) -> bool:
-    """Returns whether gfx950 prefill takes ``kda_chunk``, registration aside.
-
-    The part of :func:`kda_chunk_servable` that needs no graph, so the memory
-    planner can ask it too.
-
-    Args:
-        head_dim: Key and value head width.
-        gate_mode: The forget-gate form the layer passes the op.
-        pool_dtype: Dtype of the recurrent state pool.
-
-    Returns:
-        ``True`` on a gfx950 accelerator whose AMD ``kda_chunk`` contract
-        these arguments meet.
-    """
-    return (
-        accelerator_api() == "hip"
-        and accelerator_architecture_name().startswith("gfx950")
-        and gate_mode == "safe"
-        and pool_dtype == DType.float32
-        and kda_chunk_supports_head_dims(head_dim, head_dim)
-    )
-
-
-def kda_chunk_predicate(
-    total_tokens: TensorValue,
-    batch_size: TensorValue,
-    num_heads: int,
-    head_dim: int,
-) -> TensorValue:
-    """Returns whether a batch takes the ``kda_chunk`` side of the cond.
-
-    A batch with more tokens than sequences is a prefill. On AMD it must also
-    fit the launch's 32-bit indexing, or it falls back to ``kda_decode``
-    instead of raising: the largest buffer, ``kg_t``, holds ``(T // 64 + N) *
-    64 <= T + 64 N`` rows of ``num_heads * head_dim``. That also bounds q/k/v,
-    gate and output, and the launch's stride check, because the layers pass
-    them contiguous (q/k/v are fresh bf16 casts).
-
-    Args:
-        total_tokens: Scalar token count of the batch.
-        batch_size: Scalar sequence count of the batch.
-        num_heads: KDA heads on this device.
-        head_dim: Key and value head width.
-
-    Returns:
-        A boolean scalar.
-    """
-    is_prefill = total_tokens > batch_size
-    if accelerator_api() != "hip":
-        return is_prefill
-    max_rows = _AMD_CHUNK_MAX_ELEMENTS // (num_heads * head_dim)
-    return is_prefill & (total_tokens + _CHUNK_LEN * batch_size <= max_rows)
-
-
-def kda_gate_mode(lower_bound: float | None) -> KdaGateMode:
-    """Selects the kernel's forget-gate form from the config's lower bound.
-
-    Raises:
-        ValueError: If the bound is neither absent nor the one value the
-            ``"safe"`` kernel path hard-codes. The constant lives in the
-            kernel, so a checkpoint with a different bound would run and be
-            quietly wrong.
-    """
-    if lower_bound is None:
-        return "original"
-    if lower_bound != KDA_GATE_LOWER_BOUND:
-        raise ValueError(
-            f"KDA's bounded forget gate is compiled with a lower bound of "
-            f"{KDA_GATE_LOWER_BOUND}, but this checkpoint asks for "
-            f"{lower_bound}. Thread a new compile-time axis through the kernel "
-            "rather than accepting the mismatch."
-        )
-    return "safe"
 
 
 class KimiDeltaAttention(Module, Shardable):
