@@ -407,7 +407,7 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t rootDepth) {
       result = ParamDeclRefAttr::get(declRef.getName(), declRefType);
     }
   } else if (auto indexRef = dyn_cast<ParamIndexRefAttr>(attr);
-             indexRef && indexRef.getDepth() == rootDepth) {
+             indexRef && indexRef.getDepth() == rootDepth + inputDepth) {
     assert(indexRef.getIndex() < indexBindings.size() &&
            "parameter index out of range");
     auto indexRefType = doReplace(indexRef.getType(), rootDepth);

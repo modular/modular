@@ -20,6 +20,7 @@
 
 #include "DeferredTypingContext.h"
 #include "Mojo/KGENDialect/KGENParameters.h"
+#include "Mojo/KGENDialect/ParameterEvaluator.h"
 #include "Mojo/MojoParser/Constraints.h"
 #include "Mojo/MojoParser/MojoDiags.h"
 #include "ParserEvaluationContext.h"
@@ -216,12 +217,42 @@ public:
 protected:
   friend class ParamMatcher;
 
+  /// Returns how many signature types deep inference is inside parameter
+  /// expressions, which determines which index references we match against.
+  ///
+  /// As we search for param-refs, recursively, we'll be recursing past
+  /// `FnTypeGeneratorType`s (and other `ParameterScopeTimeInterface`s),
+  /// which changes what param-ref depths we're watching for; the param-refs'
+  /// depths would be greater (have to reach further outward so to speak, past
+  /// more generator types) to reference param-decls in the
+  /// ParameterInferenceState's original scope. The input depth of
+  /// `evaluator` tracks that number, see PSTIAIRAID.
+  size_t getParamIndexRefDepth() const { return evaluator.getInputDepth(); }
+
+  /// Enters one more signature scope for the lifetime of the returned object.
+  ScopedInputDepth enterSignatureScope() {
+    return ScopedInputDepth(evaluator, getParamIndexRefDepth() + 1);
+  }
+
+  /// Returns the index of the first reference to a parameter being inferred,
+  /// looking from the current param-ref depth.
+  template <typename T>
+  std::optional<size_t> findOneReference(T value) {
+    return paramFinder.findOneReference(value, getParamIndexRefDepth());
+  }
+  template <typename T>
+  bool hasReferences(T value) {
+    return findOneReference(value).has_value();
+  }
+
   ASTDecl &declScope;
   SharedState &shared;
   ParameterEvaluator evaluator;
-  ParamIndexRefAttrFinder paramFinder;
   ArrayRef<Type> declaredParamTypes;
   PogListAttr declaredParamPogs;
+
+private:
+  ParamIndexRefAttrFinder paramFinder;
 
 public:
   OptionalDiag diag;

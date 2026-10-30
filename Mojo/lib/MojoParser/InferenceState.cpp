@@ -57,7 +57,12 @@ InferenceState::InferenceState(ASTDecl &declScope,
 void InferenceState::setInferredValue(size_t paramIdx, TypedAttr paramVal,
                                       bool isDefaulted) {
   paramVal = evaluator.getReboundAttribute(paramVal);
-  ASTType targetType = evaluator.getReboundType(declaredParamTypes[paramIdx]);
+  ASTType targetType;
+  {
+    // The decl is always at depth 0.
+    ScopedInputDepth declScope(evaluator, 0);
+    targetType = evaluator.getReboundType(declaredParamTypes[paramIdx]);
+  }
 
   // If the parameter being inferred is a type, and if the source value is
   // non-mterializable, infer to the materialized type. This ensures that things

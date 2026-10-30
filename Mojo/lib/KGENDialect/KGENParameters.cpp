@@ -492,13 +492,14 @@ static std::optional<size_t> findFirstReferenceImpl(
                             : static_cast<size_t>(hasReference);
 }
 
-std::optional<size_t>
-ParamIndexRefAttrFinder::findOneReference(TypedAttr value) {
-  return findFirstReferenceImpl(value, 0, cached);
+std::optional<size_t> ParamIndexRefAttrFinder::findOneReference(TypedAttr value,
+                                                                size_t depth) {
+  return findFirstReferenceImpl(value, depth, cached);
 }
 
-std::optional<size_t> ParamIndexRefAttrFinder::findOneReference(Type type) {
-  return findFirstReferenceImpl(type, 0, cached);
+std::optional<size_t> ParamIndexRefAttrFinder::findOneReference(Type type,
+                                                                size_t depth) {
+  return findFirstReferenceImpl(type, depth, cached);
 }
 
 //===----------------------------------------------------------------------===//

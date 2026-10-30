@@ -290,15 +290,17 @@ private:
 // value.
 class ParamIndexRefAttrFinder {
 public:
-  bool hasReferences(TypedAttr value) {
-    return findOneReference(value).has_value();
+  bool hasReferences(TypedAttr value, size_t depth = 0) {
+    return findOneReference(value, depth).has_value();
   }
-  bool hasReferences(Type type) { return findOneReference(type).has_value(); }
+  bool hasReferences(Type type, size_t depth = 0) {
+    return findOneReference(type, depth).has_value();
+  }
 
   /// This scans the specified value or type for parameter references.  It runs
   /// nullopt if there are none, or the index of the first that it encounters.
-  std::optional<size_t> findOneReference(TypedAttr value);
-  std::optional<size_t> findOneReference(Type type);
+  std::optional<size_t> findOneReference(TypedAttr value, size_t depth = 0);
+  std::optional<size_t> findOneReference(Type type, size_t depth = 0);
 
 private:
   // Depth aware cache to avoid visiting the same attr twice.

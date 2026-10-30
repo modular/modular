@@ -979,26 +979,24 @@ ParseResult KGEN::parseBindParams(AsmParser &p, TypedAttr &generator,
   // parameters are allowed to refine the types of subsequent parameters, so
   // specialize the types as we go.
   ParameterEvaluator evaluator;
-  evaluator.setInputDepth(1);
-  IndexDepthAdjuster minusOneAdjuster(/*adjustDepth=*/-1);
+  IndexDepthAdjuster plusOneAdjuster(/*adjustDepth=*/1);
   size_t numUnboundParams = 0;
   for (Type inputType : genType.getInputParamTypes()) {
     if (failed(p.parseOptionalComma()))
       break;
     Type remappedDeclType = evaluator.getReboundType(inputType);
-    Type defaultValueType = minusOneAdjuster.replace(remappedDeclType);
     Type valueType;
-    if (parseColonTypeOrDefault(p, valueType, defaultValueType) ||
+    if (parseColonTypeOrDefault(p, valueType, remappedDeclType) ||
         parseParamValue(p, paramValues.emplace_back(), valueType))
       return failure();
     TypedAttr value = paramValues.back();
     if (::isa<UnboundAttr>(value)) {
       auto residual = ParamIndexRefAttr::get(
-          /*depth=*/-1, numUnboundParams++, defaultValueType);
+          /*depth=*/0, numUnboundParams++, remappedDeclType);
       evaluator.appendIndexBinding(residual);
       continue;
     }
-    evaluator.appendIndexBinding(value);
+    evaluator.appendIndexBinding(plusOneAdjuster.replace(value));
   }
   return parseDischargedBodyConstraints(p, discharged);
 }
@@ -1016,19 +1014,17 @@ void KGENParamPrinter::printBindParams(AsmPrinter &p, TypedAttr generator,
   printColonTypeParamValue(p, generator);
   auto genType = sugarCast<GeneratorType>(generator.getType());
   ParameterEvaluator evaluator;
-  evaluator.setInputDepth(1);
-  IndexDepthAdjuster minusOneAdjuster(/*adjustDepth=*/-1);
+  IndexDepthAdjuster plusOneAdjuster(/*adjustDepth=*/1);
   size_t numUnboundParams = 0;
   for (auto [inputType, value] :
        llvm::zip(genType.getInputParamTypes(), paramValues)) {
     p << ", ";
     Type remappedDeclType = evaluator.getReboundType(inputType);
-    Type defaultValueType = minusOneAdjuster.replace(remappedDeclType);
     if (::isa<UnboundAttr>(value)) {
-      printColonTypeOrDefault(p, value.getType(), defaultValueType);
+      printColonTypeOrDefault(p, value.getType(), remappedDeclType);
       printParamValue(p, value);
       auto residual = ParamIndexRefAttr::get(
-          /*depth=*/-1, numUnboundParams++, defaultValueType);
+          /*depth=*/0, numUnboundParams++, remappedDeclType);
       evaluator.appendIndexBinding(residual);
       continue;
     }
@@ -1036,7 +1032,7 @@ void KGENParamPrinter::printBindParams(AsmPrinter &p, TypedAttr generator,
     // necessarily have the same representation as the generator input
     // parameter type when both are inferred from outer scope.
     printColonTypeParamValue(p, value);
-    evaluator.appendIndexBinding(value);
+    evaluator.appendIndexBinding(plusOneAdjuster.replace(value));
   }
   if (discharged && !discharged.empty()) {
     p << " | \"";

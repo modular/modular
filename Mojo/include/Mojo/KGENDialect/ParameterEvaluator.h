@@ -430,6 +430,24 @@ public:
   size_t inputDepth = 0;
 };
 
+/// Sets the input depth of a ParameterEvaluator for the lifetime of this
+/// object, restoring the previous depth on destruction.
+class ScopedInputDepth {
+public:
+  ScopedInputDepth(ParameterEvaluator &evaluator, size_t depth)
+      : evaluator(evaluator), savedDepth(evaluator.getInputDepth()) {
+    evaluator.setInputDepth(depth);
+  }
+  ~ScopedInputDepth() { evaluator.setInputDepth(savedDepth); }
+
+  ScopedInputDepth(const ScopedInputDepth &) = delete;
+  ScopedInputDepth &operator=(const ScopedInputDepth &) = delete;
+
+private:
+  ParameterEvaluator &evaluator;
+  size_t savedDepth;
+};
+
 //===----------------------------------------------------------------------===//
 // Helper methods involving parameter evaluation.
 //===----------------------------------------------------------------------===//

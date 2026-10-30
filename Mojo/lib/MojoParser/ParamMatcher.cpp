@@ -173,22 +173,14 @@ void ParamMatcher::FailableScope::revert() {
   matcher.failureReason.reset();
 }
 
-static void appendLocallyDefinedParam(Type paramType,
-                                      ParameterEvaluator &evaluator) {
-  auto paramIdx = evaluator.getIndexBindings().size();
-  auto name = StringAttr::get(paramType.getContext(),
-                              "#.ParamMatcher.#" + Twine(paramIdx));
-  evaluator.appendIndexBinding(ParamDeclRefAttr::get(name, paramType));
-}
-
 LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
                                                FnTypeGeneratorType expected) {
   // FIXME: "actual" ends up with parameter names sometimes, not always index
   // references. If this happens we need to convert to make this work correctly.
 
-  // See paramIndexRefDepth's comments for what this increment is for.
-  // The increment was solely for the matchFunctionTypes call, so undo it.
-  llvm::SaveAndRestore depth(paramIndexRefDepth, paramIndexRefDepth + 1);
+  // See InferenceState::getParamIndexRefDepth's comments for what this
+  // increment is for.
+  ScopedInputDepth depth = state.enterSignatureScope();
 
   // Functions with different parameterization cannot be converted between each
   // other. If the types are equal but the passing conventions are different,
@@ -201,16 +193,7 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
   if (expected.getInputParamTypes().size() < actual.getInputParamTypes().size())
     return error(MatchFailure::Unclassified{});
 
-  ParameterEvaluator actualEvaluator(shared.getParameterEvaluator());
-  ParameterEvaluator expectedEvaluator(shared.getParameterEvaluator());
-
-  // Match up and shadow the parameter defined by the FnTypeGenerator
   for (auto [idx, pType] : llvm::enumerate(expected.getInputParamTypes())) {
-    // These always exist in 'expected', install a binding for the param to make
-    // the two signature lists consistent.
-    appendLocallyDefinedParam(expectedEvaluator.getReboundType(pType),
-                              expectedEvaluator);
-
     // Ran out of params or mismatch on types.
     if (nextActualParamIdx >= actual.getInputParamTypes().size() ||
         actual.getInputParamTypes()[nextActualParamIdx] != pType) {
@@ -220,24 +203,19 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
           expected.getParamListAttrs().getPassingKind(idx) !=
               PassingKind::Implicit)
         return error(MatchFailure::Unclassified{});
-      // Make sure to put a parameter binding in even though it doesn't exist in
-      // 'actual'.
+
       continue;
     }
-
-    // If the types match and the parameter exists in 'actual', install the same
-    // binding we used for expected.
-    actualEvaluator.appendIndexBinding(
-        expectedEvaluator.getIndexBindings()[idx]);
     ++nextActualParamIdx;
   }
+
   if (nextActualParamIdx != actual.getInputParamTypes().size())
     return error(MatchFailure::Unclassified{});
 
   auto actualFnTp =
-      cast<FuncType>(actualEvaluator.getReboundType(actual.getBody()));
+      cast<FuncType>(state.evaluator.getReboundType(actual.getBody()));
   auto expectedFnTp =
-      cast<FuncType>(expectedEvaluator.getReboundType(expected.getBody()));
+      cast<FuncType>(state.evaluator.getReboundType(expected.getBody()));
 
   // Past this point we don't want to look at actual/expected anymore. They
   // don't have the parameters bound right. Clear them to avoid errors in the
@@ -478,11 +456,7 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
     // VariadicPack as well.
     auto typeListParam =
         expectedArgVariadicPackType.getVariadicPackInfo().typeListStruct;
-    auto typeListType = typeListParam.getType();
-    // We need to adjust the depth because we took it out of the function type
-    // for the expected function type.
-    typeListType = IndexDepthAdjuster(/*adjustDepth=*/-1).replace(typeListType);
-    typeListType = state.evaluator.getReboundType(typeListType);
+    auto typeListType = state.evaluator.getReboundType(typeListParam.getType());
     PROP(matchParams(LIT::getEmptyStructValue(typeListType), typeListParam));
   }
 
@@ -614,7 +588,7 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
     if (auto expected = dyn_cast<OriginType>(expectedType)) {
       // If the mutable bit is resolved, check for conversions from mut=true to
       // mut=false.
-      if (!state.paramFinder.hasReferences(expectedType)) {
+      if (!state.hasReferences(expectedType)) {
         if (!IREmitter::canZeroCostConvert(actualType, expectedType, shared,
                                            state.declScope)
                  .isTrue())
@@ -660,8 +634,9 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
   // Handle GeneratorType
   if (auto actual = dyn_cast<GeneratorType>(actualType)) {
     if (auto expected = dyn_cast<GeneratorType>(expectedType)) {
-      // See paramIndexRefDepth's comments for what this increment is for.
-      llvm::SaveAndRestore depth(paramIndexRefDepth, paramIndexRefDepth + 1);
+      // See InferenceState::getParamIndexRefDepth's comments for what this
+      // increment is for.
+      ScopedInputDepth depth = state.enterSignatureScope();
 
       if (isa<FuncType>(actual.getBody()) ||
           isa<FuncType>(expected.getBody())) {
@@ -675,19 +650,9 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
       ArrayRef<Type> actInputs = actual.getInputParamTypes();
       ArrayRef<Type> expInputs = expected.getInputParamTypes();
       if (actInputs.size() == expInputs.size()) {
-        // Match up the types of the generators, binding the to consistent
-        // values to see if the body lines up after substitution. This isn't
-        // related to the top level parameters we're trying to infer, this is
-        // relating to the parameters defined in the generator.
-        ParameterEvaluator genEvaluator(shared.getParameterEvaluator());
-        for (auto [ai, ei] : llvm::zip_equal(actInputs, expInputs)) {
+        for (auto [ai, ei] : llvm::zip_equal(actInputs, expInputs))
           PROP(matchTypes(ai, ei));
-          // Shadow the parameter defined by the generator
-          appendLocallyDefinedParam(genEvaluator.getReboundType(ai),
-                                    genEvaluator);
-        }
-        return matchTypes(genEvaluator.getReboundType(actual.getBody()),
-                          genEvaluator.getReboundType(expected.getBody()));
+        return matchTypes(actual.getBody(), expected.getBody());
       }
     }
   }
@@ -724,17 +689,11 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
         if (failed(matchFunctionTypes(fnSigActual, fnSigExpected)))
           return error(MatchFailure::Unclassified{});
 
-        if (paramIndexRefDepth) {
-          // We might be at a non-zero depth, adjust it here such that rebind
-          // below works.
-          IndexDepthAdjuster adjuster(/*adjustDepth=*/-paramIndexRefDepth);
-          expectedType = adjuster.replace(expectedType);
-        }
         // The expected trait type might be refined.
         expectedType = state.evaluator.getReboundType(expectedType);
         // If at this point, we still can not infer a concrete closure trait,
         // then it is a hard error.
-        if (auto paramIdx = state.paramFinder.findOneReference(expectedType))
+        if (auto paramIdx = state.findOneReference(expectedType))
           return error(MatchFailure::DependsOnUnresolved{*paramIdx});
       }
     }
@@ -755,12 +714,7 @@ LogicalResult ParamMatcher::matchTypes(Type actualType, Type expectedType) {
   // we may have some other parameter that needs to be inferred before this
   // type can be matched.  Report that failure so the caller can decide what
   // to do about it.
-  Type adjustedExpectedType = expectedType;
-  if (paramIndexRefDepth) {
-    IndexDepthAdjuster adjuster(/*adjustDepth=*/-paramIndexRefDepth);
-    adjustedExpectedType = adjuster.replace(expectedType);
-  }
-  if (auto paramIdx = state.paramFinder.findOneReference(adjustedExpectedType))
+  if (auto paramIdx = state.findOneReference(expectedType))
     return error(MatchFailure::DependsOnUnresolved{*paramIdx});
 
   // Otherwise we have a generalized mismatch.
@@ -840,16 +794,6 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
       // implicit convertibility.
 
       auto expectedType = getCanonicalType(expectedAttr.getType());
-      if (paramIndexRefDepth) {
-        // The match above might have inferred new value, to get a more refined
-        // type, we need to adjust the depth here.
-        //
-        // TODO: should we push it to the a new `matcher.reboundWithDepth()`,
-        // that is, every rebind should make sure the initial depth set to be
-        // paramIndexRefDepth (instead of doing this ad hoc on the callsite).
-        IndexDepthAdjuster adjuster(/*adjustDepth=*/-paramIndexRefDepth);
-        expectedType = adjuster.replace(expectedType);
-      }
       expectedAttr = state.evaluator.getReboundAttribute(expectedAttr);
       expectedType = state.evaluator.getReboundType(expectedType);
       if (IREmitter::canImplicitlyConvertToType(
@@ -888,7 +832,7 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
         }
 
         fixableByUpCast =
-            !state.paramFinder.hasReferences(targetMT) &&
+            !state.hasReferences(targetMT) &&
             llvm::all_of(toCheck, [&](TypedAttr typeExpr) {
               assert(LIT::isTypeExpr(typeExpr));
               // Try get the tightest possible metatype bound.
@@ -1000,16 +944,10 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
   // If the expected value is the parameter declaration remember the binding!
   if (auto ire = dyn_cast<ParamIndexRefAttr>(expectedAttr)) {
     // Check if this ParamIndexRefAttr is referring to a param-decl in the
-    // ParameterInferenceState's original scope. See paramIndexRefDepth's
-    // comments for more about this.
-    if (ire.getDepth() == paramIndexRefDepth) {
+    // ParameterInferenceState's original scope. See
+    // InferenceState::getParamIndexRefDepth's comments for more about this.
+    if (ire.getDepth() == state.getParamIndexRefDepth()) {
       Type expectedType = expectedAttr.getType();
-      // We are at `paramIndexRefDepth`, but all parameters have been inferred
-      // as if at level 0.  Readjust if needed.
-      if (paramIndexRefDepth) {
-        IndexDepthAdjuster adjuster(/*adjustDepth=*/-paramIndexRefDepth);
-        expectedType = adjuster.replace(expectedType);
-      }
 
       expectedType = state.evaluator.getReboundType(expectedType);
       // If the types don't agree, attempt an implicit conversion between the
@@ -1053,6 +991,10 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
       }
       return success();
     }
+    // This is not a free variable, they have to match perfectly, if we reach
+    // this point, then the inference failed.
+    if (ire.getDepth() < state.getParamIndexRefDepth())
+      return error(MatchFailure::Unclassified{});
     // If this is some parameter other than the one we're inferring, assume it
     // will work out.
     return success();
@@ -1101,23 +1043,10 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
       if (actualSym.getSymbol() != expectedSym.getSymbol() ||
           actualSym.getInputParamTypes() != expectedSym.getInputParamTypes())
         return error(MatchFailure::Unclassified{});
-      // TODO: we probably don't really need the complexity here to bind away
-      // parameter, we can just set the input depth of the state.evaluator to
-      // `paramIndexRefDepth` so that it won't confuse.
-      ParameterEvaluator actualEvaluator(shared.getParameterEvaluator());
-      ParameterEvaluator expectedEvaluator(shared.getParameterEvaluator());
-      for (Type pType : expectedSym.getInputParamTypes()) {
-        appendLocallyDefinedParam(expectedEvaluator.getReboundType(pType),
-                                  expectedEvaluator);
-        actualEvaluator.appendIndexBinding(
-            expectedEvaluator.getIndexBindings().back());
-      }
-      auto actualFn = cast<FuncSymbolAttr>(
-          actualEvaluator.getReboundAttribute(actualSym.getFuncSymbol()));
-      auto expectedFn = cast<FuncSymbolAttr>(
-          expectedEvaluator.getReboundAttribute(expectedSym.getFuncSymbol()));
+      FuncSymbolAttr actualFn = actualSym.getFuncSymbol();
+      FuncSymbolAttr expectedFn = expectedSym.getFuncSymbol();
       // We are entering the generator body, increase the depth
-      llvm::SaveAndRestore depth(paramIndexRefDepth, paramIndexRefDepth + 1);
+      ScopedInputDepth depth = state.enterSignatureScope();
       for (auto [act, exp] : llvm::zip_equal(actualFn.getParamValues(),
                                              expectedFn.getParamValues()))
         PROP(matchParams(act, exp));
@@ -1239,14 +1168,8 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
   // we may have some other parameter that needs to be inferred before this
   // value can be matched.  Report that failure so the caller can decide what
   // to do about it.
-  TypedAttr adjustedExpectedAttr = expectedAttr;
-  if (paramIndexRefDepth) {
-    IndexDepthAdjuster adjuster(/*adjustDepth=*/-paramIndexRefDepth);
-    adjustedExpectedAttr = adjuster.replace(expectedAttr);
-  }
-  if (auto paramIdx =
-          state.paramFinder.findOneReference(adjustedExpectedAttr)) {
-    assert(!isa<ParamIndexRefAttr>(adjustedExpectedAttr) &&
+  if (auto paramIdx = state.findOneReference(expectedAttr)) {
+    assert(!isa<ParamIndexRefAttr>(expectedAttr) &&
            "should have inferred this above");
     return error(MatchFailure::DependsOnUnresolved{*paramIdx});
   }
