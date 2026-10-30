@@ -15,13 +15,12 @@
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
-from max.pipelines.lib import SupportedArchitecture, TextTokenizer
+from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
 from . import weight_adapters
-from .batch_processor import Llama3ModuleV3BatchProcessor
-from .model import Llama3Model
-from .model_config import Llama3Config
+from .llama3 import Llama3Decoder
+from .model_config import Llama3DecoderConfig
 
 llama_modulev3_arch = SupportedArchitecture(
     name="LlamaForCausalLM_ModuleV3",
@@ -34,20 +33,19 @@ llama_modulev3_arch = SupportedArchitecture(
         "deepseek-ai/deepseek-coder-6.7b-instruct",
         "modularai/Llama-3.1-8B-Instruct-GGUF",
     ],
-    default_encoding=Llama3Config.DEFAULT_ENCODING,
-    supported_encodings=Llama3Config.SUPPORTED_ENCODINGS,
-    pipeline_model=Llama3Model,
+    default_encoding=Llama3DecoderConfig.DEFAULT_ENCODING,
+    supported_encodings=Llama3DecoderConfig.SUPPORTED_ENCODINGS,
+    modules={GraphRole.DECODER: Llama3Decoder},
     tokenizer=TextTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
-    multi_gpu_supported=False,
+    multi_gpu_supported=True,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
     task=PipelineTask.TEXT_GENERATION,
-    config=Llama3Config,
-    batching=Llama3ModuleV3BatchProcessor,
+    config=Llama3DecoderConfig,
     memory_planner=PagedMemoryPlanner,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,

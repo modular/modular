@@ -37,9 +37,7 @@ from max.pipelines import (
     PipelineArgs,
     PipelineConfig,
 )
-from max.pipelines.architectures.llama3_modulev3.model import (
-    Llama3Model as ModuleV3Llama3Model,
-)
+from max.pipelines.architectures.llama3_modulev3 import Llama3Decoder
 from max.pipelines.lib import (
     OverlapTextGenerationPipeline,
     TextGenerationPipeline,
@@ -47,6 +45,7 @@ from max.pipelines.lib import (
     auto_model,
     generate_local_model_path,
 )
+from max.pipelines.lib.module_registration import ModuleV3DecoderPipelineModel
 from max.pipelines.lib.registry import get_pipeline_for_task
 from max.pipelines.modeling.types import PipelineTask
 
@@ -448,7 +447,10 @@ def test_prefer_module_v3_loads_and_generates(model_path: str) -> None:
     ) as model:
         pipeline = model.pipeline
         assert isinstance(pipeline, TextGenerationPipeline)
-        assert isinstance(pipeline._pipeline_model, ModuleV3Llama3Model)
+        assert isinstance(
+            pipeline._pipeline_model, ModuleV3DecoderPipelineModel
+        )
+        assert type(pipeline._pipeline_model).decoder_cls is Llama3Decoder
         [sequence] = model.generate(
             PROMPTS[:1], max_new_tokens=NUM_NEW_TOKENS, ignore_eos=True
         ).sequences

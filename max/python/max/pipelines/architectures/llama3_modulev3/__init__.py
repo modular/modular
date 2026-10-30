@@ -14,11 +14,14 @@
 
 from .arch import llama_modulev3_arch
 from .inputs import Llama3Inputs
+from .llama3 import Llama3Decoder
 from .model import Llama3Model
-from .model_config import Llama3Config
+from .model_config import Llama3Config, Llama3DecoderConfig
 
 __all__ = [
     "Llama3Config",
+    "Llama3Decoder",
+    "Llama3DecoderConfig",
     "Llama3Inputs",
     "Llama3Model",
     "llama_modulev3_arch",
