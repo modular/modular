@@ -9922,6 +9922,46 @@ def grouped_matmul_blocked_swiglu(
     return results[0].tensor, results[1].tensor
 
 
+def moe_fp8_host_usage_stats(
+    usage_stats: TensorValue, num_rows: Dim, num_groups: Dim
+) -> TensorValue:
+    """Returns the usage stats of a MoE's FP8 grouped matmuls as a host tensor.
+
+    ``usage_stats`` must be the ``expert_usage_stats`` that
+    :func:`moe_create_indices` returned for this call, so every group is
+    active. The grouped FP8 op takes the stats as host scalars, and copying
+    device-resident ones to the host costs a device-to-host copy and a stream
+    sync per MoE layer. The SM100 persistent kernel takes its tiles from the
+    device-resident ``expert_start_indices`` and uses the host stats only as
+    its group-loop bound and to size a naive fallback launch, so there
+    ``[num_rows, num_groups]``, an upper bound on the largest group and the
+    exact group count, serve instead and nothing is copied. Everywhere else
+    the stats are returned unchanged. Do not use this for stats whose group
+    count can be below ``num_groups``.
+
+    The naive fallback sizes its grid from ``num_rows``, so on an unaligned
+    launch it would run up to ``num_groups`` times more empty blocks than the
+    real largest group needs (still correctly). The launcher takes it only
+    when the A scales' row stride is not 16-byte aligned, which
+    :func:`quantize_dynamic_scaled_float8` rules out by padding that row
+    dimension to 16 bytes. Pass only activations quantized by it.
+
+    Args:
+        usage_stats: The ``[max_tokens_per_expert, num_active_experts]``
+            tensor from :func:`moe_create_indices`.
+        num_rows: Rows of the permuted activations, ``token_expert_order``'s
+            length.
+        num_groups: The number of expert groups, ``expert_ids``'s length.
+
+    Returns:
+        A host ``uint32`` tensor of shape ``[2]`` on SM100, else
+        ``usage_stats``.
+    """
+    if usage_stats.device.is_cpu() or not _is_sm10x_gpu():
+        return usage_stats
+    return ops.cast(ops.shape_to_tensor([num_rows, num_groups]), DType.uint32)
+
+
 def grouped_dynamic_scaled_fp8_matmul(
     hidden_states: TensorValue,
     weight: TensorValue,

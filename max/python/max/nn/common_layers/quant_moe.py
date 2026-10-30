@@ -57,6 +57,7 @@ from max.tensor.sharding import (
 from typing_extensions import Self
 
 from . import quant_ops
+from .quant_kernels import moe_fp8_host_usage_stats
 from .quant_linear import QuantizedMLP, tensor_parallel_mlp
 from .quant_ops import (
     EPDispatchPayload,
@@ -328,6 +329,14 @@ class QuantizedMoE(Module[..., Tensor]):
             needs_scales_offset=needs_scales_offset,
         )
         scales_offset = scales_offset_maybe[0] if needs_scales_offset else None
+        if isinstance(gate_up, FP8BlockTensor) and isinstance(
+            down, FP8BlockTensor
+        ):
+            expert_usage_stats = moe_fp8_host_usage_stats(
+                expert_usage_stats,
+                token_expert_order.shape[0],
+                expert_ids.shape[0],
+            )
 
         permuted_states = F.gather(
             x,

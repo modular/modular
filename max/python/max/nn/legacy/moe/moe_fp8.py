@@ -25,7 +25,11 @@ from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorValue, ops
 
 from ..comm.ep.ep_kernels import fused_silu
-from ..kernels import amd_mega_ffn_workspace_words, moe_create_indices
+from ..kernels import (
+    amd_mega_ffn_workspace_words,
+    moe_create_indices,
+    moe_fp8_host_usage_stats,
+)
 from .moe import MoE
 from .quant_strategy import (
     BlockScaledStrategy,
@@ -769,6 +773,10 @@ class MoEQuantized(MoE):
             if self._uses_nvidia_block_scaled_ep_layout
             else None
         )
+        if isinstance(strategy, Fp8Strategy):
+            usage_stats = moe_fp8_host_usage_stats(
+                usage_stats, token_order.shape[0], expert_ids.shape[0]
+            )
 
         total_m = ops.shape_to_tensor(token_order.shape)[0].cast(DType.uint32)
 

@@ -236,6 +236,34 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "grouped_matmul_fp8_device_stats_tests",
+    size = "large",
+    srcs = ["test_grouped_matmul_fp8_device_stats_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
+    ignore_extra_deps = [
+        # lazy import
+        "//max/python/max/_interpreter_ops",
+    ],
+    tags = [
+        "gpu",
+    ],
+    # The SM100 persistent FP8 grouped matmul is validated on B200 only.
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/nn",
+        "//max/python/max/nn/legacy",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
     name = "grouped_matmul_silu_nvfp4_tests",
     size = "large",
     # The 256-expert case takes ~6.5 minutes to compile on an idle B200, so it

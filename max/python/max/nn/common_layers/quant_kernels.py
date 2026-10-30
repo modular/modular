@@ -58,6 +58,9 @@ from max.nn.legacy.kernels import (
     grouped_quantize_dynamic_block_scaled as _grouped_quantize_dynamic_block_scaled,
 )
 from max.nn.legacy.kernels import (
+    moe_fp8_host_usage_stats as _moe_fp8_host_usage_stats,
+)
+from max.nn.legacy.kernels import (
     quantize_dynamic_block_scaled as _quantize_dynamic_block_scaled,
 )
 from max.nn.legacy.kernels import (
@@ -380,6 +383,7 @@ def _silu_quantize_fp8(
 
 
 silu_quantize_fp8 = F.functional(_silu_quantize_fp8)
+moe_fp8_host_usage_stats = F.functional(_moe_fp8_host_usage_stats)
 
 
 def _grouped_ffn_blockwise_fp8_amd_graph(
@@ -455,6 +459,7 @@ __all__ = [
     "grouped_ffn_blockwise_fp8_amd",
     "grouped_matmul_block_scaled",
     "grouped_quantize_dynamic_block_scaled",
+    "moe_fp8_host_usage_stats",
     "preshuffle_blockwise_fp8_b",
     "quantize_dynamic_block_scaled",
     "quantize_dynamic_block_scaled_mxfp4",
