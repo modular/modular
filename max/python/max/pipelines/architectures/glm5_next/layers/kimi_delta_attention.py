@@ -49,6 +49,7 @@ comment:
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Iterable
 
 from max.driver import accelerator_api, accelerator_architecture_name
@@ -630,17 +631,32 @@ class KimiDeltaAttention(Module, Shardable):
         # next stage is a float32 gated norm.
         out_shape: list[DimLike] = [x.shape[0], heads, head_dim]
 
-        def _recurrence(chunked: bool) -> TensorValue:
-            op = kda_chunk if chunked else kda_decode
-            io_dtype = (
-                DType.bfloat16
-                if chunked and accelerator_api() == "hip"
-                else DType.float32
+        io_dtype_chunked = (
+            DType.bfloat16 if accelerator_api() == "hip" else DType.float32
+        )
+
+        def _recurrence(
+            chunked: bool,
+            qkv_io: tuple[TensorValue, TensorValue, TensorValue] | None = None,
+        ) -> TensorValue:
+            # Decode pins its `fma`s so a verify and fold over the same tokens
+            # land on its state bit for bit, which the MTP rollback tests
+            # compare. Only AMD pays for it; NVIDIA always pins.
+            op = (
+                kda_chunk
+                if chunked
+                else functools.partial(kda_decode, pin_fma=True)
             )
-            out = op(
+            io_dtype = io_dtype_chunked if chunked else DType.float32
+            q_io, k_io, v_io = qkv_io or (
                 q.cast(io_dtype),
                 k.cast(io_dtype),
                 v.cast(io_dtype),
+            )
+            out = op(
+                q_io,
+                k_io,
+                v_io,
                 raw_gate,
                 beta_logits,
                 a_log,
@@ -708,6 +724,15 @@ class KimiDeltaAttention(Module, Shardable):
             total_tokens = ops.shape_to_tensor(x.shape)[0]
             batch_size = ops.shape_to_tensor(input_row_offsets.shape)[0] - 1
             no_drafts = ops.equal(ops.shape_to_tensor(verify_width.shape)[0], 0)
+            # TODO(KERN-3879): the gfx950 bf16 casts are made outside the
+            # cond because, made inside this branch, mo-hoist-param-exprs
+            # leaves the first cast's result on the outer token dim and the
+            # graph fails to verify. Move them back once the pass is fixed.
+            qkv_io = (
+                q.cast(io_dtype_chunked),
+                k.cast(io_dtype_chunked),
+                v.cast(io_dtype_chunked),
+            )
             core_out = ops.cond(
                 ops.logical_and(
                     no_drafts,
@@ -716,7 +741,7 @@ class KimiDeltaAttention(Module, Shardable):
                     ),
                 ),
                 [TensorType(DType.float32, out_shape, device)],
-                lambda: _recurrence(chunked=True),
+                lambda: _recurrence(chunked=True, qkv_io=qkv_io),
                 _verify_recurrence,
             )[0]
         else:

@@ -65,9 +65,9 @@ modular_py_test(
     size = "large",
     srcs = ["test_state_rollback.py"],
     gpu_constraints = ["//:has_gpu"] + select({
-        "//:amd_gpu": ["@platforms//:incompatible"],
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
+        "//:mi355_gpu": [],
+        "//:nvidia_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
     }),
     precompile_mefs = True,
     tags = ["gpu"],
@@ -89,9 +89,9 @@ modular_py_test(
     size = "large",
     srcs = ["test_graph_signature.py"],
     gpu_constraints = ["//:has_gpu"] + select({
-        "//:amd_gpu": ["@platforms//:incompatible"],
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
+        "//:mi355_gpu": [],
+        "//:nvidia_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
     }),
     # The architecture registry imports it by name, so pydeps sees it as
     # unused.
@@ -121,9 +121,9 @@ modular_py_test(
     size = "large",
     srcs = ["test_kda_layer_rollback.py"],
     gpu_constraints = ["//:has_gpu"] + select({
-        "//:amd_gpu": ["@platforms//:incompatible"],
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
+        "//:mi355_gpu": [],
+        "//:nvidia_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
     }),
     precompile_mefs = True,
     tags = ["gpu"],
@@ -144,9 +144,9 @@ modular_py_test(
     size = "large",
     srcs = ["test_tail_ring_long_schedule.py"],
     gpu_constraints = ["//:has_gpu"] + select({
-        "//:amd_gpu": ["@platforms//:incompatible"],
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
+        "//:mi355_gpu": [],
+        "//:nvidia_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
     }),
     precompile_mefs = True,
     tags = ["gpu"],
@@ -167,20 +167,30 @@ modular_py_test(
     name = "test_greedy_equivalence",
     size = "enormous",
     srcs = ["test_greedy_equivalence.py"],
-    # Expert parallelism, whose MoE is capture-safe, needs NVSHMEM.
-    data = ["@nvshmem_prebuilt//:host"],
-    env = {
-        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
-    },
+    # Expert parallelism, whose MoE is capture-safe, needs NVSHMEM or
+    # rocSHMEM.
+    data = select({
+        "//:nvidia_gpu": ["@nvshmem_prebuilt//:host"],
+        "//conditions:default": [],
+    }),
+    env = select({
+        "//:nvidia_gpu": {
+            "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+        },
+        "//:amd_gpu": {
+            "MODULAR_SHMEM_LIB_DIR": "../+http_archive+rocshmem/lib",
+        },
+        "//conditions:default": {},
+    }),
     exec_properties = {
         "test.resources:gpu-1": "0",
         "test.resources:gpu-2": "0.01",
         "test.resources:gpu-memory": "60",
     },
     gpu_constraints = ["//:has_multi_gpu"] + select({
-        "//:amd_gpu": ["@platforms//:incompatible"],
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
+        "//:mi355_gpu": [],
+        "//:nvidia_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
     }),
     # The architecture registry imports it by name, so pydeps sees it as
     # unused.

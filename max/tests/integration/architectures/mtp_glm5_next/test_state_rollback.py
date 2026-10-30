@@ -275,6 +275,7 @@ def _compile_kda(
                 reference,
                 state_rows_v[layer].cast(DType.int32),
                 output_dtype=DType.float32,
+                pin_fma=True,
             )
             reference_readouts.append(reference_readout)
         graph.output(readouts[0], reference_readouts[0])

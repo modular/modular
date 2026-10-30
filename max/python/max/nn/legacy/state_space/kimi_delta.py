@@ -346,6 +346,7 @@ def _kda_recurrence(
     beta_mode: KdaBetaMode,
     state_layout: KdaStateLayout,
     use_computebound: bool = False,
+    pin_fma: bool = False,
 ) -> TensorValue:
     """Shared implementation for ``kda_decode`` and ``kda_chunk``."""
     _check_dtypes(
@@ -381,6 +382,8 @@ def _kda_recurrence(
     }
     if op_name == "kda_chunk":
         parameters["use_computebound"] = use_computebound
+    else:
+        parameters["pin_fma"] = pin_fma
     results = ops.inplace_custom(
         op_name,
         v.device,
@@ -424,6 +427,7 @@ def kda_decode(
     gate_mode: KdaGateMode = "original",
     beta_mode: KdaBetaMode = "logits",
     state_layout: KdaStateLayout = "K_FIRST",
+    pin_fma: bool = False,
 ) -> TensorValue:
     """Runs the KDA recurrence, mutating ``state_pool`` in place.
 
@@ -450,6 +454,9 @@ def kda_decode(
             selecting ``"safe"``.
         beta_mode: Whether the kernel applies the sigmoid to ``beta_logits``.
         state_layout: Pool axis order; must match how the pool was allocated.
+        pin_fma: Whether to spell every multiply-add as an explicit ``fma``,
+            so the speculative verify and fold kernels reproduce this one bit
+            for bit. Always on for NVIDIA; slower on AMD.
 
     Returns:
         ``[total_tokens, num_value_heads, value_head_dim]``.
@@ -475,6 +482,7 @@ def kda_decode(
         gate_mode=gate_mode,
         beta_mode=beta_mode,
         state_layout=state_layout,
+        pin_fma=pin_fma,
     )
 
 

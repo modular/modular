@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from max.driver import accelerator_api
+from max.driver import accelerator_api, accelerator_architecture_name
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.legacy.kv_cache import MultiKVCacheParams
@@ -93,17 +93,23 @@ class MTPGlm5NextDraftArchConfig(ArchConfigWithBoundedMaxSeqLen):
         caches, which the target's config declares when it speculates.
 
         Raises:
-            ValueError: If the accelerator is not an NVIDIA GPU. The pairing
-                has been served and tested end to end only there.
+            ValueError: If the accelerator is neither an NVIDIA GPU nor a
+                gfx950 AMD GPU, the only AMD target the KDA ops build for.
         """
         del huggingface_config, pipeline_config, devices
         del kv_cache_config, cache_dtype
-        if (api := accelerator_api()) != "cuda":
-            raise ValueError(
-                "GLM-5.3-Flash MTP runs only on NVIDIA GPUs so far, and this"
-                f" host's accelerator API is {api!r}. Serve it without"
-                " --speculative-method."
-            )
+        api = accelerator_api()
+        if api == "cuda":
+            return
+        if api == "hip" and accelerator_architecture_name().startswith(
+            "gfx950"
+        ):
+            return
+        raise ValueError(
+            "GLM-5.3-Flash MTP runs only on NVIDIA and gfx950 GPUs, and this"
+            f" host's accelerator API is {api!r}. Serve it without"
+            " --speculative-method."
+        )
 
     @classmethod
     def build_module(

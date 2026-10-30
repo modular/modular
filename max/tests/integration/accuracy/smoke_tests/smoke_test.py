@@ -127,6 +127,7 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "RadixArk/GLM-5.3-NVFP4__mtp_tpep": "max/pipelines/architectures/glm5_1/recipes/glm_5_3_nvfp4_tp_ep_8x_b200.yaml",
     "zai-org/GLM-5.3-Flash__tpep": "max/pipelines/architectures/glm5_next/recipes/glm_5_3_flash_fp8_tp_ep_8x_b200.yaml",
     "zai-org/GLM-5.3-Flash__tpep_mi355": "max/pipelines/architectures/glm5_next/recipes/glm_5_3_flash_fp8_tp_ep_2x_mi355.yaml",
+    "zai-org/GLM-5.3-Flash__mtp_tpep_mi355": "max/pipelines/architectures/glm5_next/recipes/glm_5_3_flash_fp8_mtp_tp_ep_2x_mi355.yaml",
     "zai-org/GLM-5.3-Flash__tpep_mi355_modulev3": "max/pipelines/architectures/glm5_next_modulev3/recipes/glm_5_3_flash_fp8_tp_ep_2x_mi355.yaml",
     "zai-org/GLM-5.3__fp8_tpep_mi355": "max/pipelines/architectures/glm5_1_modulev3/recipes/glm_5_3_fp8_tp_ep_8x_mi355.yaml",
     "amd/Kimi-K2.7-Code-MXFP4": "max/pipelines/architectures/kimik2_5/recipes/mxfp4_kimi_k2_7_code_8x_mi355.yaml",

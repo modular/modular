@@ -174,7 +174,8 @@ def _config(kv_params: MultiKVCacheParams) -> Glm5NextConfig:
         first_k_dense_replace=1,
         correction_bias_dtype=DType.float32,
         index_head_dim=128,
-        index_n_heads=4,
+        # The checkpoint's count; gfx950's pooled scorer takes multiples of 32.
+        index_n_heads=32,
         index_topk=64,
         indexer_types=["full"] * num_layers,
         layer_types=list(LAYER_TYPES),
