@@ -5,6 +5,8 @@ package(default_visibility = ["//max:consumers"])
 
 # TODO(GEX-3342): Metal GPU execution not supported for state_space kernels
 _EXTRA_CONSTRAINTS = {
+    # The sm100 SSD kernels (tcgen05, TMA) run on B200 only.
+    "test_mamba2_ssd_sm100.mojo": ["//:b200_gpu"],
     "test_causal_conv1d.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],

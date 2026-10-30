@@ -1410,6 +1410,26 @@ def test_mamba2_ssd_chunked() raises:
         ](8, 64, 4, 6, Index(257, 5, 1000, 64, 256), ctx, row_pad=8)
 
 
+def test_mamba2_ssd_chunked_wide_state_pass() raises:
+    """8 sequences x 64 heads reach the 4-vectors-per-thread state pass.
+
+    batch * nheads = 512 picks that specialization. With 8 heads per group a
+    B200 also takes the sm100 kernels, whose entering states are bf16; with
+    one head per group (odd) every target takes the generic kernels and fp32
+    entering states. Both mix a multi-chunk sequence, initial states and
+    skipped write-backs.
+    """
+    with DeviceContext() as ctx:
+        comptime if not ctx.target._is_sm_8x_or_newer():
+            return
+        run_mamba2_ssd[
+            DType.bfloat16, 128, -1, init_state=True, update_flags=True
+        ](64, 64, 8, 9, Index(600, 1, 257, 33, 300, 2, 128, 64), ctx)
+        run_mamba2_ssd[
+            DType.bfloat16, 128, -1, init_state=True, update_flags=True
+        ](64, 64, 64, 9, Index(600, 1, 257, 33, 300, 2, 128, 64), ctx)
+
+
 def test_mamba2_ssd_chunked_boundaries() raises:
     """Sequence lengths around the 256-token chunk size, one launch each.
 

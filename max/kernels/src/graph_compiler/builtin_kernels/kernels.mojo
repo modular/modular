@@ -4867,12 +4867,17 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
         - update_state: (batch,) bool optional/empty. A clear flag leaves
           that sequence's `ssm_pool` slot untouched (a read-only scan);
           empty writes every sequence's final state.
+        - xbc: (total_len, nheads * head_dim + 2 * ngroups * dstate) or
+          empty (of any dtype): the conv output that `x`, `B` and `C` are
+          column slices of, in that order. With it, a long prefill on B200 reads their
+          rows by TMA (`state_space.mamba2_ssd_chunked`).
     """
 
     @staticmethod
     def execute[
         dtype: DType,
         state_dtype: DType,
+        xbc_dtype: DType,
         target: StaticString,
     ](
         y: OutputTensor[dtype=dtype, rank=3, ...],
@@ -4889,6 +4894,7 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
         has_initial_state: InputTensor[dtype=.bool, rank=1, ...],
         cache_indices: FusedInputTensor[dtype=.uint32, ...],
         update_state: InputTensor[dtype=.bool, rank=1, ...],
+        xbc: InputTensor[dtype=xbc_dtype, rank=2, ...],
         ctx: DeviceContext,
     ) raises:
         comptime if cache_indices.rank == 2:
@@ -5059,6 +5065,19 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                         head_dim,
                         _ssd_chunked_min_tokens(),
                     ):
+                        # The sm100 kernels read x, B and C by TMA, so they
+                        # need the rows of the tensor those slice: the conv
+                        # output `[total_len, x | B | C]`, when the caller
+                        # passes it.
+                        var xbc_ld = xbc.strides()[0]
+                        var rows_ok = (
+                            xbc_dtype == dtype
+                            and xbc.dim_size(0) == x.dim_size(0)
+                            and xbc.dim_size(1)
+                            == nheads * head_dim + 2 * ngroups * DSTATE
+                            and xbc.strides()[1] == 1
+                        )
+                        var xbc_addr = Int(xbc.unsafe_ptr())
                         mamba2_ssd_chunked_fwd_inplace_gpu[
                             DSTATE, dt_softplus=Self.dt_softplus
                         ](
@@ -5079,6 +5098,20 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                             b_fn,
                             c_fn,
                             slot_fn,
+                            x_addr=xbc_addr if rows_ok else 0,
+                            x_ld=xbc_ld,
+                            b_addr=(
+                                xbc_addr
+                                + 2 * nheads * head_dim if rows_ok else 0
+                            ),
+                            c_addr=(
+                                xbc_addr
+                                + 2
+                                * (
+                                    nheads * head_dim + ngroups * DSTATE
+                                ) if rows_ok else 0
+                            ),
+                            bc_ld=xbc_ld,
                         )
                         return
                 comptime for mode in range(2):
@@ -5175,6 +5208,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_shape(
     has_initial_state: Some[Tensor],
     cache_indices: Some[Tensor],
     update_state: Some[Tensor],
+    xbc: Some[Tensor],
 ) -> IndexList[3]:
     """Computes the output shape for the `mamba2_ssd_chunk_scan_varlen_fwd_inplace` graph op.
 
@@ -5208,6 +5242,8 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_shape(
         update_state: Per-sequence flag of shape `(batch,)` in `bool`
             selecting whether the final state is written back; may be empty
             to write every sequence's.
+        xbc: The conv output that `x`, `B` and `C` slice, or empty; it does
+            not change the output shape.
     """
     comptime assert type_of(x).rank == 3, "x must be rank 3"
     comptime assert type_of(dt).rank == 2, "dt must be rank 2"

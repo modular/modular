@@ -88,6 +88,7 @@ def _ssd_scan(
     query_start_loc: Tensor,
     has_initial_state: Tensor,
     update_state: Tensor,
+    xbc: Tensor,
 ) -> TensorValue:
     return mamba2_ssd_chunk_scan_varlen_fwd_inplace(
         x=TensorValue(x),
@@ -102,6 +103,7 @@ def _ssd_scan(
         has_initial_state=TensorValue(has_initial_state),
         cache_indices=_layer_rows(rows, layer),
         update_state=TensorValue(update_state),
+        xbc=TensorValue(xbc),
     )
 
 
@@ -397,6 +399,7 @@ class NemotronHMamba2Mixer(
             query_start_loc,
             has_initial_state,
             update_state,
+            convolved,
         )
         y = y.rebind_mapping(NamedMapping(y.mesh, (None, TP, None)))
         y = self.norm(y.reshape([-1, self.intermediate]), gate)

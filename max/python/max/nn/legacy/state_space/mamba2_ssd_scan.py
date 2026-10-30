@@ -43,6 +43,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace(
     has_initial_state: TensorValue,
     cache_indices: TensorValue,
     update_state: TensorValue | None = None,
+    xbc: TensorValue | None = None,
 ) -> TensorValue:
     """Performs the Mamba-2 SSD chunked-scan forward.
 
@@ -89,6 +90,10 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace(
             the pool without advancing it: a speculative verify can run on the
             live state and a later replay still starts from the pre-verify
             state.
+        xbc: The ``[total_len, nheads * head_dim + 2 * ngroups * dstate]``
+            conv output that ``x``, ``B`` and ``C`` are column slices of, in
+            that order, or ``None``. With it, long prefills on B200 read
+            those rows directly with TMA.
 
     Returns:
         ``y``, the ``[total_len, nheads, head_dim]`` output (model
@@ -106,6 +111,12 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace(
             np.zeros(0, dtype=np.bool_), DType.bool, device=device
         )
 
+    if xbc is None:
+        # An empty conv output (of any dtype) means the slices' rows are
+        # not known to the op.
+        xbc = ops.constant(
+            np.zeros((0, 0), dtype=np.float32), DType.float32, device=device
+        )
     results = ops.inplace_custom(
         "mamba2_ssd_chunk_scan_varlen_fwd_inplace",
         device,
@@ -122,6 +133,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace(
             has_initial_state,
             cache_indices,
             update_state,
+            xbc,
         ],
         [y_type],
         parameters={"dt_softplus": True},
