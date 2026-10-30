@@ -231,10 +231,8 @@ LogicalResult importMojo(const State &state,
   context->loadDialect<KGENDialect>();
   ErrorOr<EnvAttr> env = compilationOptions.parseDefinesWithDefaults(
       context, options.driverOptions.defines);
-  if (env.isError()) {
-    llvm::errs() << "error: " << env.getError() << "\n";
-    return failure();
-  }
+  if (env.isError())
+    return failure(state.reportError(env.getError()));
   (*module)->setAttr(EnvAttr::getEnvAttrName(), *env);
 
   // To make sure the parser did a good thing, we run the
@@ -245,20 +243,16 @@ LogicalResult importMojo(const State &state,
   if (!options.lspMode) {
     mlir::PassManager pm(context);
     pm.addPass(createVerifyParameters());
-    if (failed(pm.run(*module))) {
-      llvm::errs() << "mojo parser created invalid IR\n";
-      return failure();
-    }
+    if (failed(pm.run(*module)))
+      return failure(state.reportError("mojo parser created invalid IR"));
   }
 
   if (!options.bytecodeOutput.empty()) {
     std::string message;
     std::unique_ptr<llvm::ToolOutputFile> out =
         mlir::openOutputFile(options.bytecodeOutput, &message);
-    if (!out) {
-      llvm::errs() << "failed to open file: " << message << "\n";
-      return failure();
-    }
+    if (!out)
+      return failure(state.reportError("failed to open file: " + message));
 
     if (failed(mlir::writeBytecodeToFile(*module, out->os())))
       return failure();

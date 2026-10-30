@@ -134,6 +134,10 @@ struct CLOptions : public CommonOptions {
   /// The driver state, which formats the errors and diagnostics.
   const State *state = nullptr;
 
+  int reportError(const Twine &message) const {
+    return state->reportError(message);
+  }
+
   std::optional<CommandLineFunc> shouldExecuteFunc(StringRef func) const {
     auto found = llvm::find_if(
         funcs, [&](const CommandLineFunc &ek) { return ek.name == func; });
@@ -226,8 +230,13 @@ bool parseForwardedCLOptions(const char *programName,
 } // namespace
 
 ErrorOrSuccess CLOptions::addInputFilesToSourceMgr(llvm::SourceMgr &mgr) {
-  if (inputFiles.empty())
-    mgr.AddNewSourceBuffer(openInputFileOrExit(), llvm::SMLoc());
+  if (inputFiles.empty()) {
+    ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> buffer =
+        openInputFile(inputFilename);
+    if (buffer.isError())
+      return buffer.takeError();
+    mgr.AddNewSourceBuffer(buffer.takeValue(), llvm::SMLoc());
+  }
 
   for (StringRef in : inputFiles) {
     std::error_code ec;
@@ -935,10 +944,9 @@ int main(int argc, char **argv) {
       emitAs = std::nullopt;
     bool isProduct = llvm::is_contained(kProductKinds, kind);
     if (!emitAs && !isProduct && !KGEN::isKnownEmissionKind(kind)) {
-      llvm::errs() << "kgen: error: unsupported 'emit' option value '" << kind
-                   << "'; see the EMISSION KINDS section of --help for the "
-                      "accepted kinds\n";
-      return EXIT_FAILURE;
+      return state.reportError(
+          "unsupported 'emit' option value '" + kind +
+          "'; see the EMISSION KINDS section of --help for the accepted kinds");
     }
     if (KGEN::isKnownEmissionKind(kind)) {
       StringRef triple = clOptions.targetArgs.triple.empty()
@@ -949,23 +957,18 @@ int main(int argc, char **argv) {
       ErrorOrSuccess err = traitsOr.isError()
                                ? ErrorOrSuccess(Error(traitsOr.getError()))
                                : (*traitsOr)->validateEmissionKind(kind);
-      if (err) {
-        llvm::errs() << "kgen: error: " << err.getError() << "\n";
-        return EXIT_FAILURE;
-      }
+      if (err)
+        return state.reportError(err.getError());
       if (!emitAs && !isProduct) {
         // A target-declared kind canonicalizes onto the EmitAs its traits
         // map it to; link products need a linker kgen does not have.
         ErrorOr<EmitAs> targetEmitAsOr = (*traitsOr)->emitAsForKind(kind);
-        if (targetEmitAsOr.isError()) {
-          llvm::errs() << "kgen: error: " << targetEmitAsOr.getError() << "\n";
-          return EXIT_FAILURE;
-        }
+        if (targetEmitAsOr.isError())
+          return state.reportError(targetEmitAsOr.getError());
         if (*targetEmitAsOr == EmitAs::OBJECT ||
             !llvm::is_contained(kEmitAsKinds, *targetEmitAsOr)) {
-          llvm::errs() << "kgen: error: emission kind '" << kind
-                       << "' is not supported by kgen\n";
-          return EXIT_FAILURE;
+          return state.reportError("emission kind '" + kind +
+                                   "' is not supported by kgen");
         }
         clOptions.cmd = ("emit=" + stringifyEmitAs(*targetEmitAsOr)).str();
       }
