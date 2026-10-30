@@ -396,7 +396,7 @@ modular_py_test(
     srcs = ["test_capture_manifest.py"],
     env = _COMMON_ENV,
     exec_properties = {
-        "test.resources:gpu-memory": "11",
+        "test.resources:gpu-memory": "7",
     },
     gpu_constraints = [
         "//:has_multi_gpu",
