@@ -14,7 +14,7 @@
 """
 
 from std.builtin.builtin_slice import ContiguousSlice
-from std.builtin.debug_assert import _assert_enabled
+from std.builtin.debug_assert import _assert_enabled, _debug_assert_fail_format
 from std.reflection import SourceLocation
 from std.sys.info import is_gpu
 from std.reflection import call_location
@@ -22,6 +22,17 @@ from std.reflection import call_location
 comptime _AssertMode[
     cpu_default: Bool
 ] = "safe" if cpu_default and not is_gpu() else "none"
+
+
+@inline(.never)
+def _check_bounds_fail(idx: Int, size: Int, location: SourceLocation):
+    _debug_assert_fail_format(
+        location,
+        "index ",
+        idx,
+        " is out of bounds, valid range is 0 to ",
+        size - 1,
+    )
 
 
 @inline(.always)
@@ -58,14 +69,13 @@ def check_bounds[
             inside a `__getitem__` method, it will show the source location where
             the incorrect index was provided.
     """
-    debug_assert[assert_mode=_AssertMode[cpu_default]](
-        UInt(index(idx)) < UInt(size),
-        "index ",
-        index(idx),
-        " is out of bounds, valid range is 0 to ",
-        size - 1,
-        location=location.or_else(call_location[inline_count=2]()),
-    )
+    comptime if _assert_enabled[_AssertMode[cpu_default], False]():
+        var i = index(idx)
+        if UInt(i) >= UInt(size):
+            # Keep both message construction and formatting off the passing path.
+            _check_bounds_fail(
+                i, size, location.or_else(call_location[inline_count=2]())
+            )
 
 
 @inline(.always)

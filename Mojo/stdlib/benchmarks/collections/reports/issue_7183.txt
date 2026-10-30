@@ -1,0 +1,69 @@
+Performance report: bounds-check diagnostic setup (#7183)
+========================================================
+
+Environment: Apple M2 Pro, macOS 26.5.1 (25F80), native arm64.
+Baseline: upstream 8ed65fc6ac15950ce62da1f8e8d50c2c7c528065.
+Compiler: built from that revision with ./bazelw; reports
+Mojo 1.3.0.dev0 (deadbeef), so the source revision identifies the build.
+The same compiler and CompilerRT were used for both standard-library versions.
+
+Change
+------
+check_bounds branches before calling a non-inlined failure helper. Diagnostic
+String descriptors are constructed in that helper; formatting remains out of
+line. Bounds checks remain enabled, including the existing warn/all/safe modes.
+
+Runtime benchmark
+-----------------
+Source: ../bench_check_bounds.mojo (relative to this report's directory).
+4096 one-byte elements, 4096 deterministic pseudo-random indices; allocation
+and index generation are outside the measured loop. The benchmark retains
+the result and compares checked indexing with an unchecked pointer control.
+
+Build each library version, using separate compiler caches:
+  MODULAR_CACHE_DIR=<fresh-dir> mojo build bench_check_bounds.mojo \
+    -I <stdlib-dir> -D ASSERT=safe -o <benchmark>
+Run each executable five times; use the median of Bench's reported met (ms).
+Convert to ns/element by multiplying by 1e6 / 4096.
+
+                              Before          After          Ratio
+Checked gather                0.81578 ns      0.31628 ns      2.579x faster
+Unchecked control             0.30907 ns      0.31024 ns      0.4% slower
+
+Checked samples (ns/element):
+  before: 0.80986, 0.81578, 0.81380, 0.81669, 0.88941
+  after:  0.31716, 0.31484, 0.31331, 0.31628, 0.31822
+Arm64 assembly before the change has four String-descriptor stores in the
+gather loop before the bounds branch; the changed loop has none.
+
+Debug-build compilation and size
+-------------------------------
+Generate one exported C-ABI function with 50 explicit calls to
+check_bounds(idx + K, size), for K=0..49, and a main that calls it with (0,100).
+Import check_bounds from std.collections. Build with -O0 -D ASSERT=all,
+separately using --emit llvm and --emit object. Each timing is the median
+of three builds, each with a distinct empty MODULAR_CACHE_DIR.
+
+                              Before          After          Change
+LLVM instructions in function 30,401          10,800          -64.5%
+Entire textual LLVM output    2,289,612 B     965,759 B       -57.8%
+Entire object file            168,704 B       81,464 B        -51.7%
+LLVM emission wall time       1.4960 s        1.2617 s        -15.7%
+Object compilation wall time  1.6307 s        1.3196 s        -19.1%
+
+Cold object build samples (s):
+  before: 1.69622, 1.61151, 1.63071
+  after:  1.33403, 1.31965, 1.31863
+
+Scope and validation
+--------------------
+Microbenchmark results describe this host and these workloads. They are not
+whole-application speedups. No GPU runtime measurements were made on this host.
+Formatting remains non-inlined, avoiding the approach rejected in PR #7188.
+Code-generation regression coverage checks all/safe/none modes and the
+cpu_default=False opt-out, including the no-inline failure helper. Existing
+abort/location tests and warn-mode continuation tests validate diagnostics.
+All 20 selected assertion, collection, and benchmark smoke test targets passed.
+./bazelw run //:format completed successfully.
+
+Assisted-by: AI
