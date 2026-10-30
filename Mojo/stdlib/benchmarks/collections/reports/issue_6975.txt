@@ -1,0 +1,69 @@
+Performance report: compile-time Array interpreter overhead (#6975)
+=================================================================
+
+Environment: Apple M2 Pro, macOS 26.5.1 (25F80), native arm64.
+Baseline: upstream 8ed65fc6ac15950ce62da1f8e8d50c2c7c528065.
+Both compilers were built with the default ./bazelw configuration and report
+Mojo 1.3.0.dev0 (deadbeef); the source revision identifies the baseline build.
+Both use the identical std.mojoc built from the baseline source revision.
+This change is independent of the bounds-check fix in #7183.
+
+Change
+------
+Cache immutable pointer attributes in a 256-entry interpreter-local table,
+keyed by numeric address and pointer type. Cache type sizes and alignments
+for the interpreter's fixed target, reusing them in struct field addressing
+and memory serialization. Both caches are cleared on interpreter reset.
+Pointer caching stores no pointee data, so reads, writes, frees, and address
+reuse continue through the existing memory model and its validity checks.
+
+Method
+------
+The benchmark generator in ../bench_array_comptime.py reproduces the issue's
+loop: initialize element i to 3*i+1, then sum the container repeatedly during
+compile-time evaluation. The SIMD control performs the same computation by
+value. Every generated source checks the expected result with comptime assert.
+
+Run against each compiler, supplying the SAME baseline library directory:
+  python bench_array_comptime.py <compiler> --import-path <baseline-stdlib> \
+    --sizes 64 --iterations 3000 --repetitions 3
+  python bench_array_comptime.py <compiler> --import-path <baseline-stdlib> \
+    --cases array --sizes 512 --iterations 100 --repetitions 3
+
+For this report, each baseline/fixed pair was alternated within each repetition
+(before/after, after/before, before/after). Each build used a distinct empty
+MODULAR_CACHE_DIR. No other builds or benchmarks ran concurrently. Measurement
+is wall time for mojo build --emit=object with default optimization/assertions;
+it includes source loading, compile-time evaluation, optimization, and codegen.
+Filesystem caches were not flushed. Reported times are medians of three runs.
+
+Workload                      Before       After        Wall-time reduction
+Array: 64 x 3000 reads        17.8670 s    14.6154 s     18.2% (1.222x faster)
+SIMD: 64 x 3000 reads          1.8711 s     1.8432 s      1.5%
+Array: 512 x 100 reads         5.5837 s     4.9522 s     11.3% (1.128x faster)
+
+All samples (seconds):
+  Array 64 before:  18.00764, 17.86703, 17.25455
+  Array 64 after:   14.76337, 14.61543, 14.12424
+  SIMD 64 before:    2.14853,  1.87111,  1.83925
+  SIMD 64 after:     1.92442,  1.83400,  1.84317
+  Array 512 before:  5.55098,  5.76036,  5.58368
+  Array 512 after:   4.95217,  4.67799,  5.28663
+
+Validation and limits
+---------------------
+Interpreter regressions cover ordinary/parametric execution and 32-bit casts.
+Array and pointer tests cover mutation through aliases, different pointer types
+at the same numeric address, more than 256 distinct element addresses, and
+repeated compile-time calls. The benchmark also passed its Bazel smoke run.
+The repository formatter and C++ formatting checks passed.
+All 15 selected interpreter/memory-error and collection/pointer test targets
+passed, including a rerun of the final aliasing regression.
+
+This is a measured reduction in the overhead reported by #6975. Array remains
+about 7.9x slower to compile than the SIMD control in the 64-element workload;
+further interpreter work is needed to close that gap. These local source-build
+microbenchmarks do not establish whole-application or nightly-release speedups.
+No runtime code-generation optimization is introduced by this change.
+
+Assisted-by: AI

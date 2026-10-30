@@ -1322,7 +1322,7 @@ ErrorOr<TypedAttr> PointerType::readFrom(int64_t addr,
     return mem.takeError();
   APInt intVal(size * CHAR_BIT, 0);
   llvm::LoadIntFromMemory(intVal, (const uint8_t *)*mem, size);
-  return PointerAttr::get(intVal.getLimitedValue(), *this);
+  return state.getPointer(intVal.getLimitedValue(), *this);
 }
 
 OptionalParseResult PointerType::parseValue(AsmParser &p,
@@ -1920,10 +1920,8 @@ ErrorOrSuccess StructType::writeTo(TypedAttr value, int64_t addr,
   int64_t offset = 0;
   if (auto sv = dyn_cast_if_present<StructAttr>(value)) {
     for (TypedAttr value : sv.getValues()) {
-      auto dl = ::cast<DataLayoutInterface>(value.getType());
       // Store each element spaced apart by padding according to its alignment.
-      std::optional<int64_t> align = dl.getTypeAlign(state.getTarget());
-      std::optional<int64_t> size = dl.getTypeSize(state.getTarget());
+      auto [size, align] = state.getTypeLayout(value.getType());
       if (!align || !size)
         return Error(kStructElemLayoutError);
       offset = llvm::alignTo(offset, *align);
@@ -1949,9 +1947,7 @@ ErrorOr<TypedAttr> StructType::readFrom(int64_t addr,
   SmallVector<TypedAttr> values;
   int64_t offset = 0;
   for (Type elType : *elementTypes) {
-    auto dl = llvm::cast<DataLayoutInterface>(elType);
-    std::optional<int64_t> align = dl.getTypeAlign(state.getTarget());
-    std::optional<int64_t> size = dl.getTypeSize(state.getTarget());
+    auto [size, align] = state.getTypeLayout(elType);
     if (!align || !size)
       return Error(kStructElemLayoutError);
     offset = llvm::alignTo(offset, *align);

@@ -19,6 +19,7 @@
 #include "Support/Compiler/ErrorTree.h"
 #include "Support/MDialect/MAttrs.h"
 #include "mlir/IR/Operation.h"
+#include <array>
 
 namespace M {
 
@@ -233,6 +234,24 @@ public:
   ErrorOr<Attribute> readAttributeFromPointer(Attribute pointer,
                                               Type elementType);
 
+  /// Intern a pointer value, retaining a bounded cache of recently used values.
+  PointerAttr getPointer(int64_t addr, Type type) {
+    auto key = std::make_pair(addr, type);
+    auto &entry =
+        pointerCache[llvm::DenseMapInfo<decltype(key)>::getHashValue(key) %
+                     pointerCache.size()];
+    if (!entry || entry.getAddr() != addr || entry.getType() != type)
+      entry = PointerAttr::get(addr, type);
+    return entry;
+  }
+
+  struct TypeLayout {
+    std::optional<int64_t> size, align;
+  };
+
+  /// Cache immutable type layouts for this interpreter's fixed target.
+  TypeLayout getTypeLayout(Type type);
+
   /// Exchange memory references for interpreter memory references upon entering
   /// the interpreter.
   ErrorOrSuccess internalizeMemory(MutableArrayRef<Attribute> args);
@@ -315,6 +334,8 @@ public:
     for (MemoryTable &table : memory)
       table.reset();
     symbols.clear();
+    pointerCache.fill({});
+    typeLayouts.clear();
   }
 
 private:
@@ -323,6 +344,12 @@ private:
 
   /// The interpreter target configuration.
   TargetInfoAttr target;
+
+  // Pointer values are immutable (not cached pointees), so writes, frees, and
+  // address reuse need no invalidation. Keep this local to the interpreter to
+  // avoid repeated MLIR uniquing for temporary pointers in comptime loops.
+  std::array<PointerAttr, 256> pointerCache{};
+  DenseMap<Type, TypeLayout> typeLayouts;
 
   //===--------------------------------------------------------------------===//
   // Interpreter Memory Model
