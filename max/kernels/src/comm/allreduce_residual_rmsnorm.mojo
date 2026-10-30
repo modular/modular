@@ -81,6 +81,12 @@ from max.gpu import (
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.primitives import block
+from max.gpu.primitives.grid_controls import (
+    PDLLevel,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+    wait_on_dependent_grids,
+)
 from layout import (
     Coord,
     Idx,
@@ -118,6 +124,43 @@ from .sync import (
 )
 
 
+# --- PDL helpers ---
+
+
+@inline(.always)
+def _pdl_wait[pdl_level: PDLLevel]():
+    """Waits for the predecessor grid and, for `OVERLAP_AT_BEGINNING`, releases
+    the dependent grid right away.
+
+    The dependent's own `wait_on_dependent_grids` blocks until this grid has
+    completed and its stores are visible, so releasing at the start only
+    decides when the dependent becomes resident. Releasing after the wait
+    keeps at most one dependent resident ahead of the running grid. Every
+    thread of the block must call it.
+    """
+    comptime if pdl_level > PDLLevel.OFF:
+        wait_on_dependent_grids()
+        comptime if pdl_level == PDLLevel.OVERLAP_AT_BEGINNING:
+            launch_dependent_grids()
+
+
+@inline(.always)
+def _pdl_release_at_end[pdl_level: PDLLevel]():
+    """Releases the dependent grid after the last global access, unless
+    `_pdl_wait` already did.
+
+    The trigger follows the barrier that retires the peers' P2P reads of this
+    GPU's input, which the next kernel may overwrite. Only the first warp spins
+    on the peers' flags inside that barrier, so the block syncs again before
+    any thread releases the dependent. Every thread of the block must call it.
+    """
+    comptime if (
+        pdl_level > PDLLevel.OFF and pdl_level != PDLLevel.OVERLAP_AT_BEGINNING
+    ):
+        barrier()
+        launch_dependent_grids()
+
+
 # --- GPU Kernel ---
 
 
@@ -148,6 +191,7 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     threads_per_block: Int,
     has_residual: Bool,
     multiply_before_cast: Bool,
+    pdl_level: PDLLevel,
     OutputFnType: ImplicitlyCopyable
     & DevicePassable
     & RegisterPassable
@@ -217,14 +261,16 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     var idx = tid * simd_width
     var is_valid = idx < _cols
 
-    # Barrier: wait for all GPUs to have their input data ready.
-    _multi_gpu_barrier[ngpus, is_start=True](
-        rank_sigs, rank_sigs[_my_rank], _my_rank
-    )
+    # Peers P2P-read the input the predecessor (the producing GEMM) writes, and
+    # the start barrier below tells them it is ready. Wait first so the barrier
+    # is never signalled before those stores land.
+    _pdl_wait[pdl_level]()
 
-    # Preload gamma weights into registers. The global memory latency is
-    # hidden behind the P2P loads below (~200+ cycles per GPU).
-    # Gamma depends only on column index — preload once, reuse across all _rows.
+    # Preload gamma weights into registers. Gamma is not guaranteed to be a
+    # checkpoint buffer: the graph can pass a computed value (for example a
+    # cast of the weight), so it is read only after the wait. Its latency hides
+    # behind the start barrier. It depends only on the column index, so it is
+    # loaded once and reused across all _rows.
     var gamma_vec = SIMD[accum_type, simd_width](0)
     if is_valid:
         gamma_vec = (
@@ -233,6 +279,11 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
             ]()
             + _weight_offset.cast[accum_type]()
         )
+
+    # Barrier: wait for all GPUs to have their input data ready.
+    _multi_gpu_barrier[ngpus, is_start=True](
+        rank_sigs, rank_sigs[_my_rank], _my_rank
+    )
 
     # Round-robin access pattern for NVLink load-balancing.
     comptime PtrType = ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]
@@ -331,6 +382,8 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
         rank_sigs, rank_sigs[_my_rank], _my_rank
     )
 
+    _pdl_release_at_end[pdl_level]()
+
 
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
@@ -359,6 +412,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     threads_per_block: Int,
     has_residual: Bool,
     multiply_before_cast: Bool,
+    pdl_level: PDLLevel,
     OutputFnType: ImplicitlyCopyable
     & DevicePassable
     & RegisterPassable
@@ -541,8 +595,14 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
         ]
     )
 
-    # Preload gamma weights into registers BEFORE start barrier.
-    # Gamma is local data — safe to load early, hides latency behind barrier.
+    # The predecessor writes the input peers P2P-read below and the residual,
+    # so wait before signalling the start barrier.
+    _pdl_wait[pdl_level]()
+
+    # Preload gamma weights into registers BEFORE the start barrier. Gamma is
+    # not guaranteed to be a checkpoint buffer: the graph can pass a computed
+    # value (for example a cast of the weight), so it is read only after the
+    # wait. Its latency hides behind the start barrier.
     var gamma_vec = SIMD[accum_type, simd_width](0)
     if is_valid:
         gamma_vec = (
@@ -719,6 +779,8 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     # the time this kernel exits. Stage 2 only reads peer scratch inside
     # the Signal buffer, which the next collective's start barrier protects.
 
+    _pdl_release_at_end[pdl_level]()
+
 
 # --- Launcher ---
 
@@ -734,6 +796,7 @@ def _allreduce_rmsnorm_fp8_launch[
     threads_per_block: Int,
     has_residual: Bool = False,
     multiply_before_cast: Bool = True,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     rows: Int,
     cols: Int,
@@ -800,6 +863,7 @@ def _allreduce_rmsnorm_fp8_launch[
         threads_per_block=threads_per_block,
         has_residual=has_residual,
         multiply_before_cast=multiply_before_cast,
+        pdl_level=pdl_level,
         OutputFnType=type_of(output_fn),
         GammaEngine=gamma.Engine,
         ScaleBufferEngine=scale_output.Engine,
@@ -820,6 +884,7 @@ def _allreduce_rmsnorm_fp8_launch[
         output_fn,
         grid_dim=grid_dim,
         block_dim=block_dim,
+        attributes=pdl_launch_attributes(pdl_level),
     )
 
 
@@ -832,6 +897,7 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
     threads_per_block: Int,
     has_residual: Bool = False,
     multiply_before_cast: Bool = True,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     rows: Int,
     cols: Int,
@@ -954,6 +1020,7 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
         threads_per_block=threads_per_block,
         has_residual=has_residual,
         multiply_before_cast=multiply_before_cast,
+        pdl_level=pdl_level,
         OutputFnType=type_of(output_fn),
         GammaEngine=gamma.Engine,
         ScaleBufferEngine=scale_output.Engine,
@@ -974,6 +1041,7 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
         output_fn,
         grid_dim=grid_dim,
         block_dim=block_dim,
+        attributes=pdl_launch_attributes(pdl_level),
     )
 
 
@@ -1069,6 +1137,7 @@ def _launch_split_allreduce_rmsnorm[
     scales_dtype: DType,
     ngpus: Int,
     multiply_before_cast: Bool,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     rows: Int,
     cols: Int,
@@ -1126,7 +1195,12 @@ def _launch_split_allreduce_rmsnorm[
     # at a multi-GPU barrier for other ranks to be enqueued.
     comptime if quantize:
         rms_norm_fused_fp8[
-            in_dtype, out_dtype, scales_dtype, 2, compile_only=True
+            in_dtype,
+            out_dtype,
+            scales_dtype,
+            2,
+            compile_only=True,
+            pdl_level=pdl_level,
         ](
             input_fn,
             shape,
@@ -1163,7 +1237,7 @@ def _launch_split_allreduce_rmsnorm[
             rc, rebind[SIMD[in_dtype, _width]](sum_f32.cast[_dtype]())
         )
 
-    allreduce[ngpus=ngpus](
+    allreduce[ngpus=ngpus, pdl_level=pdl_level](
         input_buffers,
         residual_output.layout,
         add_epilogue,
@@ -1174,7 +1248,9 @@ def _launch_split_allreduce_rmsnorm[
 
     # Step 2: RMSNorm [+ FP8] on residual_output (kernel already compiled).
     comptime if quantize:
-        rms_norm_fused_fp8[in_dtype, out_dtype, scales_dtype, 2](
+        rms_norm_fused_fp8[
+            in_dtype, out_dtype, scales_dtype, 2, pdl_level=pdl_level
+        ](
             input_fn,
             shape,
             output_2d,
@@ -1250,6 +1326,7 @@ def _dispatch_fused_kernel[
     ngpus: Int,
     has_residual: Bool = False,
     multiply_before_cast: Bool = True,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     rows: Int,
     cols: Int,
@@ -1289,6 +1366,13 @@ def _dispatch_fused_kernel[
     stage through more than `scratch_bytes` after each `Signal` header fall
     back to the 1-stage kernel.
     """
+    # The kernels and the split path always wait for the predecessor, so the
+    # no-wait level would silently mean the opposite of its name. Checked
+    # before any fallback return so every path rejects it.
+    comptime assert (
+        pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
+    ), "pdl_level must be OFF, ON or OVERLAP_AT_BEGINNING"
+
     # A step that skips speculative drafting hands every rank a zero-row
     # batch, and a zero grid is rejected by `enqueue_function`. Every rank
     # sees the same `rows`, so skipping the barrier pair strands no peer.
@@ -1306,6 +1390,7 @@ def _dispatch_fused_kernel[
                 scales_dtype,
                 ngpus,
                 multiply_before_cast,
+                pdl_level,
             ](
                 rows,
                 cols,
@@ -1556,6 +1641,7 @@ def _dispatch_fused_kernel[
             threads_per_block,
             has_residual=has_residual,
             multiply_before_cast=multiply_before_cast,
+            pdl_level=pdl_level,
         ](
             rows,
             cols,
@@ -1583,6 +1669,7 @@ def _dispatch_fused_kernel[
             threads_per_block,
             has_residual=has_residual,
             multiply_before_cast=multiply_before_cast,
+            pdl_level=pdl_level,
         ](
             rows,
             cols,
@@ -1611,6 +1698,7 @@ def _dispatch_fused_kernel[
                 scales_dtype,
                 ngpus,
                 multiply_before_cast,
+                pdl_level,
             ](
                 rows,
                 cols,
@@ -1663,6 +1751,7 @@ def allreduce_rmsnorm[
     in_engine: TensorEngine,
     //,
     multiply_before_cast: Bool = True,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     input_buffers: Array[
         TileTensor[in_dtype, in_layout, in_origin, Engine=in_engine], ngpus
@@ -1700,6 +1789,15 @@ def allreduce_rmsnorm[
             float32 before the single cast to the output dtype; False casts
             the normalized value to `in_dtype` first and applies gamma in
             `in_dtype`. False requires `out_dtype == in_dtype`.
+        pdl_level: Programmatic dependent launch level. The fused kernels
+            wait for their predecessor before they signal their peers, and
+            release the next kernel after the barrier that retires the peers'
+            reads (`ON`) or right after the wait (`OVERLAP_AT_BEGINNING`). On
+            the split path the allreduce always releases the norm at its exit,
+            and only the norm honors `OVERLAP_AT_BEGINNING`. That level
+            requires the next kernel not to write this kernel's inputs before
+            its own PDL wait, because peers may still be reading them. The
+            Lamport branch always uses PDL.
 
     Args:
         input_buffers: Per-GPU input buffers as TileTensors.
@@ -1780,6 +1878,7 @@ def allreduce_rmsnorm[
         scales_dtype,
         ngpus,
         multiply_before_cast=multiply_before_cast,
+        pdl_level=pdl_level,
     ](
         rows,
         cols,
@@ -1905,6 +2004,7 @@ def allreduce_residual_rmsnorm[
     in_engine: TensorEngine,
     //,
     multiply_before_cast: Bool = True,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     input_buffers: Array[
         TileTensor[in_dtype, in_layout, in_origin, Engine=in_engine], ngpus
@@ -1945,6 +2045,15 @@ def allreduce_residual_rmsnorm[
             float32 before the single cast to the output dtype; False casts
             the normalized value to `in_dtype` first and applies gamma in
             `in_dtype`. False requires `out_dtype == in_dtype`.
+        pdl_level: Programmatic dependent launch level. The fused kernels
+            wait for their predecessor before they signal their peers, and
+            release the next kernel after the barrier that retires the peers'
+            reads (`ON`) or right after the wait (`OVERLAP_AT_BEGINNING`). On
+            the split path the allreduce always releases the norm at its exit,
+            and only the norm honors `OVERLAP_AT_BEGINNING`. That level
+            requires the next kernel not to write this kernel's inputs before
+            its own PDL wait, because peers may still be reading them. The
+            Lamport branch always uses PDL.
 
     Args:
         input_buffers: Per-GPU input buffers as TileTensors.
@@ -2014,6 +2123,7 @@ def allreduce_residual_rmsnorm[
         ngpus,
         has_residual=True,
         multiply_before_cast=multiply_before_cast,
+        pdl_level=pdl_level,
     ](
         rows,
         cols,

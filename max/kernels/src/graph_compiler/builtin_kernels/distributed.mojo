@@ -1026,8 +1026,18 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
             # kernel code.
             var scale_ub = scales_ub[index].unsafe_ptr()[]
 
+            # The kernel waits for the producing GEMM before it signals its
+            # peers, and the next GEMM waits for this kernel to retire, so
+            # releasing that GEMM at entry lets it prefetch weights meanwhile.
+            # TODO(adakkak): only the two-rank launches were run with PDL on;
+            # lift the gate once TP=4 and TP=8 are verified.
+            comptime pdl_level = (
+                PDLLevel.OVERLAP_AT_BEGINNING if num_devices
+                <= 2 else PDLLevel.OFF
+            )
             allreduce_residual_rmsnorm[
-                multiply_before_cast=multiply_before_cast
+                multiply_before_cast=multiply_before_cast,
+                pdl_level=pdl_level,
             ](
                 in_tensors,
                 residual_buf,

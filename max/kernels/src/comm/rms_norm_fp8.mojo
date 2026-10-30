@@ -24,7 +24,11 @@ from max.gpu import WARP_SIZE, block_idx, thread_idx
 import max.gpu.primitives.warp as warp
 from max.gpu.host import DeviceContext
 from max.gpu.primitives import block
-from max.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from layout import (
     Coord,
     TensorLayout,
@@ -84,6 +88,7 @@ def rms_norm_fused_fp8[
     /,
     target: StaticString = "gpu",
     compile_only: Bool = False,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     input_fn: InputFnType,
     shape: Coord,
@@ -112,6 +117,10 @@ def rms_norm_fused_fp8[
         compile_only: If True, only compiles the kernel without executing it.
             Used to pre-compile kernels and avoid JIT compilation deadlocks
             in multi-GPU contexts.
+        pdl_level: Programmatic dependent launch level. When enabled, the
+            kernel waits for its predecessor on entry and releases its
+            dependent on exit (`ON`) or right after the wait
+            (`OVERLAP_AT_BEGINNING`).
 
     Args:
         input_fn: Function to load input values. It runs on the device, so
@@ -163,6 +172,7 @@ def rms_norm_fused_fp8[
                 scales_dtype,
                 rank,
                 compile_only=compile_only,
+                pdl_level=pdl_level,
             ](
                 input_fn,
                 shape,
@@ -188,6 +198,7 @@ def _rms_norm_fused_fp8_gpu[
     & RegisterPassable
     & def[width: Int](Coord) -> SIMD[in_dtype, width],
     compile_only: Bool = False,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     input_fn: InputFnType,
     shape: Coord,
@@ -256,6 +267,7 @@ def _rms_norm_fused_fp8_gpu[
             scales_dtype,
             use_warp_tiling=warp_tiling,
             compile_only=compile_only,
+            pdl_level=pdl_level,
         ](
             rows,
             cols,
@@ -304,6 +316,8 @@ def _rms_norm_fused_fp8_kernel_warp_tiling[
     OutputFnType: ImplicitlyCopyable
     & RegisterPassable
     & def[width: Int](Int, Int, SIMD[out_dtype, width]) -> None,
+    *,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     gamma: TileTensor[in_dtype, LayoutType, origin, Engine=Engine],
     scale_buffer: TileTensor[
@@ -356,7 +370,7 @@ def _rms_norm_fused_fp8_kernel_warp_tiling[
     var vec_data = SIMD[accum_type, simd_width](0)
     var is_valid = idx < _cols
 
-    with PDL():
+    with PDL[pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
         # Phase 1: Load input ONCE, compute mean square AND max(|gamma*x|).
         # Key insight: max(|gamma*x*norm_factor|) = max(|gamma*x|) * norm_factor
         # since norm_factor is a positive scalar. Computing both sum(x^2) and
@@ -425,6 +439,8 @@ def _rms_norm_fused_fp8_kernel_block[
     OutputFnType: ImplicitlyCopyable
     & RegisterPassable
     & def[width: Int](Int, Int, SIMD[out_dtype, width]) -> None,
+    *,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     gamma: TileTensor[in_dtype, LayoutType, origin, Engine=Engine],
     scale_buffer: TileTensor[
@@ -473,7 +489,7 @@ def _rms_norm_fused_fp8_kernel_block[
         )
         return val * gamma_accum
 
-    with PDL():
+    with PDL[pdl_level == PDLLevel.OVERLAP_AT_BEGINNING]():
         # Phase 1: Compute mean square AND max(|gamma*x|) in a single pass.
         # Key insight: max(|gamma*x*norm_factor|) = max(|gamma*x|) * norm_factor
         # since norm_factor is a positive scalar. This lets us derive both
@@ -540,6 +556,7 @@ def _rms_norm_fused_fp8_gpu_launch[
     & def[width: Int](Int, Int) -> SIMD[in_dtype, width],
     use_warp_tiling: Bool,
     compile_only: Bool = False,
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     rows: Int,
     cols: Int,
@@ -589,6 +606,7 @@ def _rms_norm_fused_fp8_gpu_launch[
             threads_per_block=threads_per_block,
             InputFnType=type_of(input_fn),
             OutputFnType=type_of(output_fn),
+            pdl_level=pdl_level,
         ]
         comptime if compile_only:
             _ = ctx.compile_function[kernel]()
@@ -603,7 +621,7 @@ def _rms_norm_fused_fp8_gpu_launch[
                 host_args=(input_fn, output_fn),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
-                attributes=pdl_launch_attributes(),
+                attributes=pdl_launch_attributes(pdl_level),
             )
     else:
         comptime kernel = _rms_norm_fused_fp8_kernel_block[
@@ -621,6 +639,7 @@ def _rms_norm_fused_fp8_gpu_launch[
             threads_per_block=threads_per_block,
             InputFnType=type_of(input_fn),
             OutputFnType=type_of(output_fn),
+            pdl_level=pdl_level,
         ]
         comptime if compile_only:
             _ = ctx.compile_function[kernel]()
@@ -635,5 +654,5 @@ def _rms_norm_fused_fp8_gpu_launch[
                 host_args=(input_fn, output_fn),
                 grid_dim=grid_dim,
                 block_dim=block_dim,
-                attributes=pdl_launch_attributes(),
+                attributes=pdl_launch_attributes(pdl_level),
             )

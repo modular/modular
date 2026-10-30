@@ -16,6 +16,7 @@
 from std.math import ceildiv, rsqrt
 from std.random import random_si64
 from std.sys import is_amd_gpu, size_of
+from std.sys.intrinsics import llvm_intrinsic
 
 from std.memory import bitcast
 
@@ -29,7 +30,20 @@ from comm.allreduce_residual_rmsnorm import (
     allreduce_rmsnorm,
 )
 from comm.sync import enable_p2p, init_signal_buffer, is_p2p_enabled
-from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
+from max.gpu import block_dim, block_idx, grid_dim, thread_idx
+from max.gpu.host import (
+    DeviceBuffer,
+    DeviceContext,
+    DeviceStream,
+    HostBuffer,
+)
+from max.gpu.primitives.grid_controls import (
+    PDLLevel,
+    _SUPPORT_PDL_LAUNCH,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+    wait_on_dependent_grids,
+)
 from layout import (
     Coord,
     Idx,
@@ -1659,6 +1673,481 @@ def test_fused_allreduce_rmsnorm_zero_rows[
         )
 
 
+# --- Test: PDL ordering ---
+
+
+def _late_writer[
+    dtype: DType
+](
+    dst: MutPointer[Scalar[dtype], MutAnyOrigin],
+    src: MutPointer[Scalar[dtype], MutAnyOrigin],
+    n: Int32,
+    res_dst: MutPointer[Scalar[dtype], MutAnyOrigin],
+    res_src: MutPointer[Scalar[dtype], MutAnyOrigin],
+    gamma_dst: MutPointer[Scalar[dtype], MutAnyOrigin],
+    gamma_src: MutPointer[Scalar[dtype], MutAnyOrigin],
+    gamma_n: Int32,
+    delay_us: Int32,
+):
+    """Releases the dependent grid at entry, spins, then writes `dst`, the
+    residual and gamma.
+
+    Releasing first lets a PDL-launched collective go resident while this
+    producer is still running. A collective that signals its peers or reads
+    `dst`, the residual or gamma before its own `wait_on_dependent_grids` sees
+    the stale data. Gamma is produced here because the graph can compute it
+    (for example a cast of the checkpoint weight) rather than pass the
+    checkpoint buffer straight through.
+    """
+    launch_dependent_grids()
+    # nanosleep takes nanoseconds and caps near 1 ms per call.
+    var spins = Int(delay_us)
+    while spins > 0:
+        llvm_intrinsic["llvm.nvvm.nanosleep", NoneType](Int32(1_000_000))
+        spins -= 1000
+    var tid = thread_idx.x + block_idx.x * block_dim.x
+    var stride = grid_dim.x * block_dim.x
+    for i in range(tid, Int(n), stride):
+        dst[i] = src[i]
+        res_dst[i] = res_src[i]
+    for i in range(tid, Int(gamma_n), stride):
+        gamma_dst[i] = gamma_src[i]
+
+
+def _early_overwrite[
+    dtype: DType
+](dst: MutPointer[Scalar[dtype], MutAnyOrigin], n: Int32):
+    """Overwrites `dst` before its own PDL wait, on purpose.
+
+    Stands in for the next kernel reusing this rank's collective input. At
+    `PDLLevel.ON` the collective releases its dependent only after the barrier
+    that retires its peers' reads of that input, so the overwrite is safe.
+    The test slows one rank's reads of its peer's input to widen the window.
+    """
+    # 16-byte stores across a large grid zero the buffer in microseconds, so a
+    # peer still reading it sees zeros instead of outrunning the overwrite.
+    comptime width = 16 // size_of[dtype]()
+    var tid = thread_idx.x + block_idx.x * block_dim.x
+    var stride = grid_dim.x * block_dim.x
+    for i in range(tid, Int(n) // width, stride):
+        dst.unsafe_store[width=width, alignment=16](
+            i * width, SIMD[dtype, width](0)
+        )
+    wait_on_dependent_grids()
+
+
+# The slow rank's peer-read traffic: HOG_ROUNDS passes over HOG_ELEMS words,
+# sized to outlast the producers' delays and to overflow the L2.
+comptime HOG_ELEMS = 128 * 1024 * 1024
+comptime HOG_ROUNDS = 16
+comptime HOG_GRID = 296
+comptime HOG_BLOCK = 512
+
+
+def _hog(
+    src: MutPointer[Scalar[DType.uint32], MutAnyOrigin],
+    sink: MutPointer[Scalar[DType.uint32], MutAnyOrigin],
+    n_vec: Int32,
+    rounds: Int32,
+):
+    """Saturates the link that reads `src` from a peer GPU.
+
+    Slows the collective on this GPU relative to its peer, so the peer
+    releases its dependent while this GPU is still reading the peer's input.
+    """
+    var tid = thread_idx.x + block_idx.x * block_dim.x
+    var stride = grid_dim.x * block_dim.x
+    var acc = SIMD[DType.uint32, 4](0)
+    for _ in range(Int(rounds)):
+        for i in range(tid, Int(n_vec), stride):
+            acc += src.unsafe_load[width=4, alignment=16, volatile=True](i * 4)
+    sink[tid] = acc.reduce_add()
+
+
+def _wait_then_copy[
+    dtype: DType
+](
+    dst: MutPointer[Scalar[dtype], MutAnyOrigin],
+    src: MutPointer[Scalar[dtype], MutAnyOrigin],
+    n: Int32,
+):
+    """Copies `src` after waiting for the PDL predecessor to finish."""
+    wait_on_dependent_grids()
+    var tid = thread_idx.x + block_idx.x * block_dim.x
+    var stride = grid_dim.x * block_dim.x
+    for i in range(tid, Int(n), stride):
+        dst[i] = src[i]
+
+
+def _copy_after_wait[
+    dtype: DType
+](
+    ctx: DeviceContext,
+    dst: DeviceBuffer[dtype],
+    src: DeviceBuffer[dtype],
+    n: Int,
+) raises:
+    ctx.enqueue_function[_wait_then_copy[dtype]](
+        dst,
+        src,
+        Int32(n),
+        grid_dim=64,
+        block_dim=256,
+        attributes=pdl_launch_attributes(PDLLevel.ON),
+    )
+
+
+def _assert_same[
+    dtype: DType
+](a: HostBuffer[dtype], b: HostBuffer[dtype], n: Int, what: String) raises:
+    for i in range(n):
+        if a[i].cast[.float32]() != b[i].cast[.float32]():
+            raise Error(
+                t"PDL changed {what} at {i}: {a[i].cast[DType.float32]()} vs"
+                t" {b[i].cast[DType.float32]()}"
+            )
+
+
+def test_pdl_ordering[
+    ngpus: Int,
+    in_dtype: DType,
+    out_dtype: DType,
+    rows: Int,
+    cols: Int,
+    pdl_level: PDLLevel,
+](list_of_ctx: List[DeviceContext]) raises:
+    """Verify PDL waits for the producer and publishes to its consumer.
+
+    A late-writing producer fills each rank's input, residual and gamma after
+    releasing the collective, and a PDL consumer copies the collective's outputs out. Both
+    must match a run without PDL bit for bit: the kernel is the same, so a
+    difference means a stale read or an early publish. At `PDLLevel.ON` a
+    dependent also overwrites each rank's input right after the release, over
+    several rounds that alternate which rank a hog kernel slows, so a release
+    that precedes the peer's last read shows up as a wrong sum.
+    """
+    comptime length = rows * cols
+    comptime quantize = out_dtype != in_dtype
+    # A premature release is a race against the slow rank's remaining reads, so
+    # one round only sometimes catches it. Small shapes are cheap to repeat;
+    # the large ones compare 16M elements per round on the host.
+    comptime rounds = (
+        32 if length <= 1024 * 1024 else 8
+    ) if pdl_level == PDLLevel.ON else 1
+
+    print(
+        "  test_pdl_ordering[",
+        ngpus,
+        ",",
+        in_dtype,
+        "->",
+        out_dtype,
+        ",",
+        rows,
+        "x",
+        cols,
+        ", pdl_level=",
+        pdl_level._level,
+        "]",
+    )
+
+    var in_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
+    var real_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
+    var residual_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
+    var residual_real_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
+    var gamma_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
+    var gamma_real_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
+    var out_dev = List[DeviceBuffer[out_dtype]](capacity=ngpus)
+    var res_out_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
+    var scales_dev = List[DeviceBuffer[.float32]](capacity=ngpus)
+    var out_cons = List[DeviceBuffer[out_dtype]](capacity=ngpus)
+    var res_out_cons = List[DeviceBuffer[in_dtype]](capacity=ngpus)
+    var scales_cons = List[DeviceBuffer[.float32]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
+    var hog_srcs = List[DeviceBuffer[.uint32]](capacity=ngpus)
+    var hog_sinks = List[DeviceBuffer[.uint32]](capacity=ngpus)
+    var hog_streams = List[DeviceStream](capacity=ngpus)
+    var scratch_bytes = ngpus * size_of[in_dtype]() * length
+
+    for i in range(ngpus):
+        var c = list_of_ctx[i]
+        hog_srcs.append(c.enqueue_create_buffer[.uint32](HOG_ELEMS))
+        c.enqueue_memset[.uint32](hog_srcs[i], 1)
+        hog_sinks.append(c.enqueue_create_buffer[.uint32](HOG_GRID * HOG_BLOCK))
+        hog_streams.append(c.create_stream())
+        in_dev.append(c.enqueue_create_buffer[in_dtype](length))
+        real_dev.append(c.enqueue_create_buffer[in_dtype](length))
+        residual_dev.append(c.enqueue_create_buffer[in_dtype](length))
+        residual_real_dev.append(c.enqueue_create_buffer[in_dtype](length))
+        gamma_dev.append(c.enqueue_create_buffer[in_dtype](cols))
+        gamma_real_dev.append(c.enqueue_create_buffer[in_dtype](cols))
+        out_dev.append(c.enqueue_create_buffer[out_dtype](length))
+        res_out_dev.append(c.enqueue_create_buffer[in_dtype](length))
+        scales_dev.append(c.enqueue_create_buffer[.float32](rows))
+        out_cons.append(c.enqueue_create_buffer[out_dtype](length))
+        res_out_cons.append(c.enqueue_create_buffer[in_dtype](length))
+        scales_cons.append(c.enqueue_create_buffer[.float32](rows))
+        signal_buffers.append(
+            c.create_buffer_sync[.uint8](size_of[Signal]() + scratch_bytes)
+        )
+
+        var h = c.enqueue_create_host_buffer[in_dtype](length)
+        for j in range(length):
+            h[j] = test_value_for_gpu_element[in_dtype](i, j)
+        c.enqueue_copy(real_dev[i], h)
+        var r = c.enqueue_create_host_buffer[in_dtype](length)
+        for j in range(length):
+            r[j] = (Float64(j % 127 + 1) / Float64(127)).cast[in_dtype]()
+        c.enqueue_copy(residual_real_dev[i], r)
+        var g = c.enqueue_create_host_buffer[in_dtype](cols)
+        for j in range(cols):
+            g[j] = (Float64(j + cols) / Float64(cols)).cast[in_dtype]()
+        c.enqueue_copy(gamma_real_dev[i], g)
+        c.synchronize()
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
+    comptime in_layout = row_major(Idx[rows], Idx[cols])
+    comptime InputTileType = type_of(
+        TileTensor(in_dev[0], in_layout).as_unsafe_any_origin().as_imm()
+    )
+    var in_tiles = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> InputTileType: TileTensor(
+            in_dev[i], in_layout
+        )
+        .as_unsafe_any_origin()
+        .as_imm()
+    )
+    var scale_ub = Float32(1.0)
+    comptime if quantize:
+        scale_ub = max_finite[out_dtype]().cast[.float32]()
+
+    # Pass 0 runs without PDL on settled inputs. Pass 1 warms the PDL kernel
+    # instance: the first launch of an instance loads its module and so
+    # arrives late enough to hide an ordering bug. Pass 2 runs with PDL behind
+    # a late producer and a PDL consumer.
+    var ref_out = List[HostBuffer[out_dtype]](capacity=ngpus)
+    var ref_res_out = List[HostBuffer[in_dtype]](capacity=ngpus)
+    var ref_scales = List[HostBuffer[.float32]](capacity=ngpus)
+    var pdl_out = List[HostBuffer[out_dtype]](capacity=ngpus * rounds)
+    var pdl_res_out = List[HostBuffer[in_dtype]](capacity=ngpus * rounds)
+    var pdl_scales = List[HostBuffer[.float32]](capacity=ngpus * rounds)
+
+    # Load the helper kernels on every device up front. A module load issued
+    # while a peer's collective is spinning at its barrier would block the
+    # host and deadlock the launch.
+    for i in range(ngpus):
+        var c = list_of_ctx[i]
+        c.enqueue_function[_late_writer[in_dtype]](
+            in_dev[i],
+            real_dev[i],
+            Int32(0),
+            residual_dev[i],
+            residual_real_dev[i],
+            gamma_dev[i],
+            gamma_real_dev[i],
+            Int32(0),
+            Int32(0),
+            grid_dim=1,
+            block_dim=32,
+        )
+        c.enqueue_function[_early_overwrite[in_dtype]](
+            in_dev[i], Int32(0), grid_dim=1, block_dim=32
+        )
+        _copy_after_wait(c, out_cons[i], out_dev[i], 0)
+        _copy_after_wait(c, res_out_cons[i], res_out_dev[i], 0)
+        _copy_after_wait(c, scales_cons[i], scales_dev[i], 0)
+        c.synchronize()
+        hog_streams[i].enqueue_function(
+            c.compile_function[_hog](),
+            hog_srcs[(i + 1) % ngpus],
+            hog_sinks[i],
+            Int32(0),
+            Int32(0),
+            grid_dim=1,
+            block_dim=32,
+        )
+        hog_streams[i].synchronize()
+
+    for pass_idx in range(2 + rounds):
+        var is_pdl_pass = pass_idx >= 2
+        for i in range(ngpus):
+            init_signal_buffer(signal_buffers[i], list_of_ctx[i])
+            list_of_ctx[i].enqueue_memset[out_dtype](out_dev[i], 0)
+            list_of_ctx[i].enqueue_memset[in_dtype](res_out_dev[i], 0)
+            list_of_ctx[i].enqueue_memset[.float32](scales_dev[i], 0)
+            if not is_pdl_pass:
+                list_of_ctx[i].enqueue_copy(in_dev[i], real_dev[i])
+                list_of_ctx[i].enqueue_copy(
+                    residual_dev[i], residual_real_dev[i]
+                )
+                list_of_ctx[i].enqueue_copy(gamma_dev[i], gamma_real_dev[i])
+            else:
+                # Stale inputs, residual and gamma: a premature read uses
+                # wrong data.
+                list_of_ctx[i].enqueue_memset[in_dtype](in_dev[i], 0)
+                list_of_ctx[i].enqueue_memset[in_dtype](residual_dev[i], 0)
+                list_of_ctx[i].enqueue_memset[in_dtype](gamma_dev[i], 0)
+            list_of_ctx[i].synchronize()
+
+        comptime if pdl_level == PDLLevel.ON:
+            if is_pdl_pass:
+                # Alternate the rank whose reads of its peer's input slow down.
+                var slow = (pass_idx - 2) % ngpus
+                hog_streams[slow].enqueue_function(
+                    list_of_ctx[slow].compile_function[_hog](),
+                    hog_srcs[(slow + 1) % ngpus],
+                    hog_sinks[slow],
+                    Int32(HOG_ELEMS // 4),
+                    Int32(HOG_ROUNDS),
+                    grid_dim=HOG_GRID,
+                    block_dim=HOG_BLOCK,
+                )
+
+        group_start()
+        for i in range(ngpus):
+            var c = list_of_ctx[i]
+            if is_pdl_pass:
+                # Staggered delays so the ranks reach the barrier at
+                # different times.
+                c.enqueue_function[_late_writer[in_dtype]](
+                    in_dev[i],
+                    real_dev[i],
+                    Int32(length),
+                    residual_dev[i],
+                    residual_real_dev[i],
+                    gamma_dev[i],
+                    gamma_real_dev[i],
+                    Int32(cols),
+                    Int32(2000 + 1000 * i),
+                    grid_dim=64,
+                    block_dim=256,
+                )
+            var out_tile = TileTensor(
+                out_dev[i], row_major(Idx[rows], Idx[cols])
+            )
+            var res_out_tile = TileTensor(
+                res_out_dev[i], row_major(Idx[rows], Idx[cols])
+            )
+            var residual_tile = TileTensor(
+                residual_dev[i], row_major(Idx[rows], Idx[cols])
+            )
+            var scales_tile = TileTensor(
+                scales_dev[i], row_major(Idx[rows], Idx[1])
+            )
+            var gamma_tensor = TileTensor(gamma_dev[i], row_major(cols))
+            if pass_idx == 0:
+                allreduce_residual_rmsnorm(
+                    in_tiles,
+                    residual_tile.as_imm(),
+                    out_tile,
+                    res_out_tile,
+                    gamma_tensor,
+                    Float32(1e-5),
+                    Scalar[in_dtype](0.0),
+                    scale_ub,
+                    scales_tile,
+                    rank_sigs,
+                    c,
+                    my_rank=i,
+                )
+            else:
+                allreduce_residual_rmsnorm[pdl_level=pdl_level](
+                    in_tiles,
+                    residual_tile.as_imm(),
+                    out_tile,
+                    res_out_tile,
+                    gamma_tensor,
+                    Float32(1e-5),
+                    Scalar[in_dtype](0.0),
+                    scale_ub,
+                    scales_tile,
+                    rank_sigs,
+                    c,
+                    my_rank=i,
+                )
+                if is_pdl_pass:
+                    comptime if pdl_level == PDLLevel.ON:
+                        # The release follows the barrier that retires the
+                        # peers' reads, so reusing the input right away must
+                        # not corrupt a peer's result.
+                        c.enqueue_function[_early_overwrite[in_dtype]](
+                            in_dev[i],
+                            Int32(length),
+                            grid_dim=592,
+                            block_dim=256,
+                            attributes=pdl_launch_attributes(PDLLevel.ON),
+                        )
+                    _copy_after_wait(c, out_cons[i], out_dev[i], length)
+                    _copy_after_wait(c, res_out_cons[i], res_out_dev[i], length)
+                    comptime if quantize:
+                        _copy_after_wait(c, scales_cons[i], scales_dev[i], rows)
+        group_end()
+
+        for i in range(ngpus):
+            hog_streams[i].synchronize()
+
+        if pass_idx == 1:
+            for i in range(ngpus):
+                list_of_ctx[i].synchronize()
+            continue
+
+        for i in range(ngpus):
+            var c = list_of_ctx[i]
+            var o = c.enqueue_create_host_buffer[out_dtype](length)
+            var ro = c.enqueue_create_host_buffer[in_dtype](length)
+            var sc = c.enqueue_create_host_buffer[.float32](rows)
+            if pass_idx == 0:
+                c.enqueue_copy(o, out_dev[i])
+                c.enqueue_copy(ro, res_out_dev[i])
+                c.enqueue_copy(sc, scales_dev[i])
+            else:
+                c.enqueue_copy(o, out_cons[i])
+                c.enqueue_copy(ro, res_out_cons[i])
+                c.enqueue_copy(sc, scales_cons[i])
+            c.synchronize()
+            if pass_idx == 0:
+                ref_out.append(o^)
+                ref_res_out.append(ro^)
+                ref_scales.append(sc^)
+            else:
+                pdl_out.append(o^)
+                pdl_res_out.append(ro^)
+                pdl_scales.append(sc^)
+
+    for r in range(rounds):
+        for i in range(ngpus):
+            var k = r * ngpus + i
+            _assert_same(ref_out[i], pdl_out[k], length, "output")
+            _assert_same(
+                ref_res_out[i], pdl_res_out[k], length, "residual output"
+            )
+            comptime if quantize:
+                _assert_same(ref_scales[i], pdl_scales[k], rows, "scales")
+
+    _ = signal_buffers^
+    _ = in_dev^
+    _ = real_dev^
+    _ = residual_dev^
+    _ = residual_real_dev^
+    _ = gamma_dev^
+    _ = gamma_real_dev^
+    _ = out_dev^
+    _ = res_out_dev^
+    _ = scales_dev^
+    _ = out_cons^
+    _ = res_out_cons^
+    _ = scales_cons^
+    _ = hog_srcs^
+    _ = hog_sinks^
+    _ = hog_streams^
+
+    print("    PASS")
+
+
 def main() raises:
     var num_devices = DeviceContext.number_of_devices()
     assert_true(num_devices >= 2, "need at least 2 GPUs")
@@ -1860,6 +2349,59 @@ def main() raises:
         test_fused_allreduce_rmsnorm_zero_rows[num_gpus, DType.bfloat16, 4096](
             list_of_ctx
         )
+
+        comptime if not is_amd_gpu() and _SUPPORT_PDL_LAUNCH:
+            print(
+                "\n=== fused_allreduce_residual_rmsnorm PDL ordering (",
+                num_gpus,
+                "GPUs) ===",
+            )
+            # 1-stage, fused 2-stage (up to four ranks) and the split path,
+            # each with the release at the end and at the start.
+            comptime for lvl in range(2):
+                comptime pdl_level = (
+                    PDLLevel.ON if lvl == 0 else PDLLevel.OVERLAP_AT_BEGINNING
+                )
+                test_pdl_ordering[
+                    num_gpus,
+                    DType.bfloat16,
+                    out_fp8_dtype,
+                    4,
+                    4096,
+                    pdl_level,
+                ](list_of_ctx)
+                test_pdl_ordering[
+                    num_gpus,
+                    DType.bfloat16,
+                    out_fp8_dtype,
+                    64,
+                    8192,
+                    pdl_level,
+                ](list_of_ctx)
+                test_pdl_ordering[
+                    num_gpus,
+                    DType.bfloat16,
+                    out_fp8_dtype,
+                    2048,
+                    8192,
+                    pdl_level,
+                ](list_of_ctx)
+                test_pdl_ordering[
+                    num_gpus,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    17,
+                    16384,
+                    pdl_level,
+                ](list_of_ctx)
+                test_pdl_ordering[
+                    num_gpus,
+                    DType.bfloat16,
+                    DType.bfloat16,
+                    2048,
+                    8192,
+                    pdl_level,
+                ](list_of_ctx)
 
         print(
             "\n=== fused_allreduce_residual_rmsnorm without scratch (",
