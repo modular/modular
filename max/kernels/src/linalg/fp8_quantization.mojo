@@ -2263,6 +2263,46 @@ def _amd_blockwise_tiled_ok[
     )
 
 
+def _one_wave_mma_n(static_n: Int, max_mma_n: Int) -> Int:
+    """Picks `MMA_N` for the one-CTA-per-tile `M <= 64` config.
+
+    Returns the narrowest of 64, 128, 192 and 256 (at most `max_mma_n`) for
+    which one CTA per `MMA_N` columns fits in one wave of B200 SMs, since a
+    second, mostly empty wave costs a full wave of latency. When none fits it
+    returns the widest candidate, `min(256, max_mma_n)`.
+
+    Args:
+        static_n: Compile-time N of the output.
+        max_mma_n: Widest allowed `MMA_N`; the caller passes twice the B-scale
+            block width, so 128 for 64-wide scales and 256 for 128-wide ones.
+
+    Returns:
+        The `MMA_N` to use.
+    """
+    var mma_n = 64
+    while (
+        mma_n < min(256, max_mma_n) and ceildiv(static_n, mma_n) > B200.sm_count
+    ):
+        mma_n += 64
+    return min(mma_n, max_mma_n)
+
+
+def _pair_fits_wave(static_n: Int) -> Bool:
+    """Whether the 128-wide 2-CTA pair config of `64 < M <= 128` fits one wave.
+
+    The pair launches `2 * ceildiv(static_n, 128)` CTAs, so it fits while that
+    is at most the SM count. An unknown N (`static_n <= 0`) keeps the pair.
+
+    Args:
+        static_n: Compile-time N of the output, or a non-positive value if it
+            is dynamic.
+
+    Returns:
+        True to use the 2-CTA pair, False for one CTA per tile.
+    """
+    return static_n <= 0 or ceildiv(static_n, 128) <= B200.sm_count // 2
+
+
 def blockwise_scaled_fp8_with_epilogue[
     c_type: DType,
     a_type: DType,
@@ -2308,8 +2348,10 @@ def blockwise_scaled_fp8_with_epilogue[
     ):
         comptime N_G = scales_granularity_mnk[1]
         comptime MMA_K = 32
-        # MMA_N must be <= 2 * n_scale_granularity because the accumulator
-        # only loads 2 b_scales per MMA tile.
+        # The M <= 64 MMA_N below is capped at 2 * N_G, the range this tuning
+        # covered. That cap is not a correctness bound: the accumulator loads
+        # every B-scale block a tile spans (`num_b_scales` in
+        # `blockwise_fp8_accumulator.mojo`).
         #
         # B200 tuning (mm-sm100 campaign, CUDA-graph replays): MMA_N=128
         # beats the previous 192-wide tile at every measured shape —
@@ -2321,17 +2363,23 @@ def blockwise_scaled_fp8_with_epilogue[
         # the 2-CTA pair (N=2304: 35.5 us at cta_group=2 vs 49.4 at 1)
         # because one CTA per tile strand fewer SMs; the crossover is
         # ceildiv(N, 128) >= num_SMs/4 (36 N-tiles at N=4608, B200).
-        # Three M-regimes, from the fp8vllm campaign's full
-        # bench_matmul.yaml sweep (78 cells, CUDA-graph replays, every
+        # Four M-regimes. The M > 128 rows are from the fp8vllm campaign's
+        # full bench_matmul.yaml sweep (78 cells, CUDA-graph replays, every
         # cell bit-identical to the previous config on the campaign's
         # exact inputs — the tile choice changes no output bit):
         #
-        #   M <= 128   the grid is row-starved (one M-tile covering few
-        #              rows), so the 2-CTA MMA pair with a doubled
-        #              MMA_N is the fastest arm: (M=8, N=16384, K=2048)
-        #              12.4 us vs 20.5 at cta_group=1/MMA_N=128,
-        #              (M=8, N=16384, K=6656) 28.7 vs 57.4,
-        #              (M=8, N=13312, K=16384) 55.5 vs 96.9.
+        #   M <= 64    one CTA per MMA_N columns with a 64-row MMA tile
+        #              (cta_group=1, no cluster). MMA_N is the narrowest of
+        #              64/128/192/256 whose N grid fits in one wave of
+        #              SMs, so N <= 9472 uses 64 and N <= 18944 uses 128.
+        #              (M=64, N=7168, K=16384) 30.8 us vs 54.3 for the
+        #              256-wide 2-CTA pair this replaced, (N=5120,
+        #              K=12288) 23.4 vs 45.9, (N=2048, K=6144) 13.7 vs 16.2.
+        #   M <= 128   a 128-row tile: the 2-CTA pair at MMA_N=128 while
+        #              its 2 * ceildiv(N, 128) CTAs fit in one wave
+        #              (N <= 9472), else one CTA per tile (cta_group=1, no
+        #              cluster). (M=128, N=7168, K=16384) 38.5 us vs 55.0,
+        #              (N=36864, K=7168) 58.7 vs 66.3.
         #   M <= 512   the previous N-width rule is optimal: cta_group=1
         #              for wide N (ceildiv(N,128) >= sm_count/4),
         #              cta_group=2 for narrow N (N=2304: 35 us vs 49).
@@ -2339,20 +2387,35 @@ def blockwise_scaled_fp8_with_epilogue[
         #              grid is tall: (M=2048, N=2304, K=16384) 98 us vs
         #              130 at cta_group=2, (M=8192) 385 vs 516; tiny-N
         #              shapes (ceildiv(N,128) < 8) keep the pair.
+        #
+        # The M <= 128 rows were re-swept on B200 for 128-wide scales (FP8
+        # quantize -> GEMM chains in a CUDA graph, B L2-cold, M = 1..128,
+        # ~40 DeepSeek-V3, Qwen3 and GLM linear shapes), again with
+        # bit-identical outputs. Without a static N the grid size is unknown
+        # and both M <= 128 branches keep the 128-wide pair.
         comptime static_N = c.static_shape[1]
         comptime n_tiles = ceildiv(static_N, 128) if static_N > 0 else 0
         comptime wide_N = n_tiles >= B200.sm_count // 4
         comptime cluster_shape = (2, 1, 1)
-        # M <= 128 (runtime branch below): 2-CTA pair, wide MMA_N when
-        # the N grid is wide.
+        comptime pair_fits_wave = _pair_fits_wave(static_N)
+        # 64 < M <= 128 (runtime branch below).
         comptime small_m_config = MatmulConfig[
             a_type, b_type, c_type, transpose_b
         ](
-            cluster_shape=cluster_shape,
-            mma_shape=(128, 256 if wide_N else 128, MMA_K),
-            cta_group=2,
+            cluster_shape=(2 if pair_fits_wave else 1, 1, 1),
+            mma_shape=(128, 128, MMA_K),
+            cta_group=2 if pair_fits_wave else 1,
             gemm_kind=GEMMKind.BLOCK_SCALED_1D2D_FP8,
         )
+        # M <= 64 (runtime branch below).
+        comptime tiny_m_config = MatmulConfig[
+            a_type, b_type, c_type, transpose_b
+        ](
+            cluster_shape=(1, 1, 1),
+            mma_shape=(64, _one_wave_mma_n(static_N, 2 * N_G), MMA_K),
+            cta_group=1,
+            gemm_kind=GEMMKind.BLOCK_SCALED_1D2D_FP8,
+        ) if static_N > 0 else small_m_config
         # 128 < M <= 512: the previous N-width rule.
         comptime mid_m_config = MatmulConfig[
             a_type, b_type, c_type, transpose_b
@@ -2371,6 +2434,7 @@ def blockwise_scaled_fp8_with_epilogue[
             cta_group=1 if n_tiles >= 8 else 2,
             gemm_kind=GEMMKind.BLOCK_SCALED_1D2D_FP8,
         )
+        comptime tiny_m_max = 64
         comptime small_m_max = 128
         comptime mid_m_max = 512
 
@@ -2385,7 +2449,16 @@ def blockwise_scaled_fp8_with_epilogue[
                 var c_val = c.load[simd_width](idx)
                 epilogue_fn[c_type, simd_width, alignment=alignment](idx, c_val)
 
-            if m <= small_m_max:
+            if m <= tiny_m_max:
+                blockwise_fp8_matmul[
+                    transpose_b=transpose_b,
+                    a_scales_type=a_scales_type,
+                    b_scales_type=b_scales_type,
+                    config=tiny_m_config,
+                    n_scale_granularity=scales_granularity_mnk[1],
+                    pdl_level=pdl_level,
+                ](c, a, b, a_scales, b_scales, ctx)
+            elif m <= small_m_max:
                 blockwise_fp8_matmul[
                     transpose_b=transpose_b,
                     a_scales_type=a_scales_type,
@@ -2419,7 +2492,16 @@ def blockwise_scaled_fp8_with_epilogue[
             ](value_epilogue_wrapper, Coord(m, n), ctx)
         else:
             var m_runtime = Int(c.dim[0]())
-            if m_runtime <= small_m_max:
+            if m_runtime <= tiny_m_max:
+                blockwise_fp8_matmul[
+                    transpose_b=transpose_b,
+                    a_scales_type=a_scales_type,
+                    b_scales_type=b_scales_type,
+                    config=tiny_m_config,
+                    n_scale_granularity=scales_granularity_mnk[1],
+                    pdl_level=pdl_level,
+                ](c, a, b, a_scales, b_scales, ctx)
+            elif m_runtime <= small_m_max:
                 blockwise_fp8_matmul[
                     transpose_b=transpose_b,
                     a_scales_type=a_scales_type,

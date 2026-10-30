@@ -24,8 +24,8 @@ adversarially:
   its dependents before its stores are visible is caught the same way.
 
 The PDL-on chain must be bit-identical to the PDL-off matmul on the same
-inputs, since PDL reorders loads and never arithmetic. M covers the three
-tile-selection regimes of the dispatcher (<= 128, <= 512, larger) and values
+inputs, since PDL reorders loads and never arithmetic. M covers the four
+tile-selection regimes of the dispatcher (<= 64, <= 128, <= 512, larger) and values
 that are not tile multiples; N = 576 leaves a partial N tile and K = 2048 /
 7168 exercise short and long main loops.
 """
@@ -231,7 +231,12 @@ def run_k[K: Int](ctx: DeviceContext) raises:
     # M <= 512 and above; the ragged values leave partial M tiles.
     run_case[576, K](ctx, 4, 20)
     run_case[576, K](ctx, 36, 20)
+    run_case[576, K](ctx, 100, 20)
     run_case[576, K](ctx, 132, 20)
+    # Wide N: the M <= 64 tile is 128 wide and 65..128 rows use one CTA per
+    # tile instead of the 2-CTA pair.
+    run_case[9600, K](ctx, 36, 20)
+    run_case[9600, K](ctx, 100, 20)
     run_case[576, K](ctx, 516, 20)
     run_case[1536, K](ctx, 36, 20)
     run_case[1536, K](ctx, 516, 20)
