@@ -468,12 +468,6 @@ TEST_RESOURCES = {
             "memory": 935,
         },
     },
-    "//max/tests/integration/architectures/whisper:whisper": {
-        "default": {
-            "cpu": 2,
-            "memory": 935,
-        },
-    },
     "//max/tests/integration/accuracy:test_compare_tensors": {
         "default": {
             "memory": 2370,
