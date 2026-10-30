@@ -42,9 +42,11 @@ def test_load_a[
     dtype: DType,
     layout: TensorLayout,
     inst_shape: DynamicCoord[.int, 3],
+    a_origin: MutOrigin,
+    a_lane_origin: MutOrigin,
 ](
-    a: TileTensor[dtype, layout, MutAnyOrigin],
-    a_lane: TileTensor[dtype, type_of(row_major[WARP_SIZE]()), MutAnyOrigin],
+    a: TileTensor[dtype, layout, a_origin],
+    a_lane: TileTensor[dtype, type_of(row_major[WARP_SIZE]()), a_lane_origin],
 ):
     comptime assert type_of(a).LayoutType.all_dims_known
     var mma = TensorCore[dst_dtype, dtype, inst_shape, False]()
@@ -60,9 +62,11 @@ def test_load_b[
     layout: TensorLayout,
     inst_shape: DynamicCoord[.int, 3],
     transpose_b: Bool,
+    b_origin: MutOrigin,
+    b_lane_origin: MutOrigin,
 ](
-    b: TileTensor[dtype, layout, MutAnyOrigin],
-    b_lane: TileTensor[dtype, type_of(row_major[WARP_SIZE]()), MutAnyOrigin],
+    b: TileTensor[dtype, layout, b_origin],
+    b_lane: TileTensor[dtype, type_of(row_major[WARP_SIZE]()), b_lane_origin],
 ):
     comptime assert type_of(b).LayoutType.all_dims_known
     var mma = TensorCore[dst_dtype, dtype, inst_shape, transpose_b]()
@@ -78,9 +82,11 @@ def test_load_c[
     layout: TensorLayout,
     c_lane_layout: TensorLayout,
     inst_shape: DynamicCoord[.int, 3],
+    c_origin: MutOrigin,
+    c_lane_origin: MutOrigin,
 ](
-    c: TileTensor[dst_dtype, layout, MutAnyOrigin],
-    c_lane: TileTensor[dst_dtype, c_lane_layout, MutAnyOrigin],
+    c: TileTensor[dst_dtype, layout, c_origin],
+    c_lane: TileTensor[dst_dtype, c_lane_layout, c_lane_origin],
 ):
     comptime assert type_of(c).LayoutType.all_dims_known
     var mma = TensorCore[dst_dtype, dtype, inst_shape, False]()
@@ -96,7 +102,8 @@ def test_store_d[
     dtype: DType,
     layout: TensorLayout,
     inst_shape: DynamicCoord[.int, 3],
-](d: TileTensor[dst_dtype, layout, MutAnyOrigin]):
+    d_origin: MutOrigin,
+](d: TileTensor[dst_dtype, layout, d_origin]):
     comptime assert type_of(d).LayoutType.all_dims_known
     var mma = TensorCore[dst_dtype, dtype, inst_shape, False]()
     var src = stack_allocation[dst_dtype, address_space=.LOCAL](
@@ -113,11 +120,15 @@ def test_mma_op[
     layout_c: TensorLayout,
     inst_shape: DynamicCoord[.int, 3],
     transpose_b: Bool,
+    a_origin: MutOrigin,
+    b_origin: MutOrigin,
+    c_origin: MutOrigin,
+    d_origin: MutOrigin,
 ](
-    a: TileTensor[dtype, layout_a, MutAnyOrigin],
-    b: TileTensor[dtype, layout_b, MutAnyOrigin],
-    c: TileTensor[dst_dtype, layout_c, MutAnyOrigin],
-    d: TileTensor[dst_dtype, layout_c, MutAnyOrigin],
+    a: TileTensor[dtype, layout_a, a_origin],
+    b: TileTensor[dtype, layout_b, b_origin],
+    c: TileTensor[dst_dtype, layout_c, c_origin],
+    d: TileTensor[dst_dtype, layout_c, d_origin],
 ):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, transpose_b]()
     comptime assert type_of(a).LayoutType.all_dims_known
@@ -241,10 +252,21 @@ def test_load_and_mma_and_multiply_operands[
     ctx.enqueue_copy(c_device, c_host.ptr)
 
     comptime kernel_load_a = test_load_a[
-        dst_dtype, dtype, type_of(a_dev).LayoutType, shape
+        dst_dtype,
+        dtype,
+        type_of(a_dev).LayoutType,
+        shape,
+        a_origin=a_dev.origin,
+        a_lane_origin=a_lane_dev.origin,
     ]
     comptime kernel_load_b = test_load_b[
-        dst_dtype, dtype, type_of(b_dev).LayoutType, shape, transpose_b
+        dst_dtype,
+        dtype,
+        type_of(b_dev).LayoutType,
+        shape,
+        transpose_b,
+        b_origin=b_dev.origin,
+        b_lane_origin=b_lane_dev.origin,
     ]
     comptime kernel_load_c = test_load_c[
         dst_dtype,
@@ -252,34 +274,40 @@ def test_load_and_mma_and_multiply_operands[
         type_of(c_dev).LayoutType,
         type_of(c_lane_dev).LayoutType,
         shape,
+        c_origin=c_dev.origin,
+        c_lane_origin=c_lane_dev.origin,
     ]
     comptime kernel_store_d = test_store_d[
-        dst_dtype, dtype, type_of(d_dev).LayoutType, shape
+        dst_dtype,
+        dtype,
+        type_of(d_dev).LayoutType,
+        shape,
+        d_origin=d_dev.origin,
     ]
 
     ctx.enqueue_function[kernel_load_a](
-        a_dev.as_unsafe_any_origin(),
-        a_lane_dev.as_unsafe_any_origin(),
+        a_dev,
+        a_lane_dev,
         grid_dim=(1, 1),
         block_dim=(warp_size),
     )
 
     ctx.enqueue_function[kernel_load_b](
-        b_dev.as_unsafe_any_origin(),
-        b_lane_dev.as_unsafe_any_origin(),
+        b_dev,
+        b_lane_dev,
         grid_dim=(1, 1),
         block_dim=(warp_size),
     )
 
     ctx.enqueue_function[kernel_load_c](
-        c_dev.as_unsafe_any_origin(),
-        c_lane_dev.as_unsafe_any_origin(),
+        c_dev,
+        c_lane_dev,
         grid_dim=(1, 1),
         block_dim=(warp_size),
     )
 
     ctx.enqueue_function[kernel_store_d](
-        d_dev.as_unsafe_any_origin(), grid_dim=(1, 1), block_dim=(warp_size)
+        d_dev, grid_dim=(1, 1), block_dim=(warp_size)
     )
 
     comptime kernel = test_mma_op[
@@ -290,13 +318,17 @@ def test_load_and_mma_and_multiply_operands[
         type_of(c_dev).LayoutType,
         shape,
         transpose_b,
+        a_origin=a_dev.origin,
+        b_origin=b_dev.origin,
+        c_origin=c_dev.origin,
+        d_origin=d_dev_mma.origin,
     ]
 
     ctx.enqueue_function[kernel](
-        a_dev.as_unsafe_any_origin(),
-        b_dev.as_unsafe_any_origin(),
-        c_dev.as_unsafe_any_origin(),
-        d_dev_mma.as_unsafe_any_origin(),
+        a_dev,
+        b_dev,
+        c_dev,
+        d_dev_mma,
         grid_dim=(1, 1),
         block_dim=(warp_size),
     )

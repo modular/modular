@@ -49,8 +49,9 @@ def tma_swizzle_multicast_load_kernel[
     desc_shape: Coord,
     CLUSTER_M: Int,
     CLUSTER_N: Int,
+    dst_origin: MutOrigin,
 ](
-    dst: TileTensor[dtype, type_of(layout), MutAnyOrigin],
+    dst: TileTensor[dtype, type_of(layout), dst_origin],
     tma_tile: TMATensorTile[dtype, subcluster_tile_shape, desc_shape],
 ):
     comptime cluster_tileM = type_of(cluster_tile_layout).static_shape[0]
@@ -175,6 +176,7 @@ def test_tma_multicast_swizzle[
         desc_shape=type_of(tma_tensor).desc_shape,
         CLUSTER_M=CLUSTER_M,
         CLUSTER_N=CLUSTER_N,
+        dst_origin=origin_of(dst),
     ]
     ctx.enqueue_function[kernel](
         dst.device_tensor(),

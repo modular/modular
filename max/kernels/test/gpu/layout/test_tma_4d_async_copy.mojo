@@ -41,6 +41,7 @@ def test_tma_4d_load_kernel[
     desc_shape: Coord,
     smem_layout: Layout,
     grid_dim1: Int,
+    dst_origin: MutOrigin,
 ](
     dst: TileTensor[
         dtype,
@@ -49,7 +50,7 @@ def test_tma_4d_load_kernel[
                 dst_layout.shape[0].value(), dst_layout.shape[1].value()
             ]()
         ),
-        MutAnyOrigin,
+        dst_origin,
     ],
     tma_tile: TMATensorTile[dtype, cta_tile_shape, desc_shape],
 ):
@@ -187,9 +188,10 @@ def test_tma_4d_load_row_major[
         type_of(tma_tensor).desc_shape,  # desc_tile
         smem_tile_layout,  # smem layout
         grid_dim1=src_dim1 // cta_tile_dim1,
+        dst_origin=origin_of(dst),
     ]
     ctx.enqueue_function[kernel](
-        dst.device_tensor().as_unsafe_any_origin(),
+        dst.device_tensor(),
         tma_tensor,
         grid_dim=(
             src_dim3 // cta_tile_dim3,

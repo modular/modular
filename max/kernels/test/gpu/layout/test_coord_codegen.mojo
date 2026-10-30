@@ -17,7 +17,7 @@ from layout import Coord, Idx
 from std.testing import assert_true
 
 
-def kernel(v: Int, ptr: MutPointer[Int32, MutAnyOrigin]):
+def kernel[ptr_origin: MutOrigin](v: Int, ptr: MutPointer[Int32, ptr_origin]):
     """Kernel that uses MixedTuple with both compile-time and runtime indices.
 
     Args:
@@ -31,7 +31,8 @@ def kernel(v: Int, ptr: MutPointer[Int32, MutAnyOrigin]):
 
 def test_coord_codegen_memory() raises:
     var amd_asm = _compile_code[
-        kernel, target=get_gpu_target["amdgpu:gfx942"]()
+        kernel[ptr_origin=MutUntrackedOrigin],
+        target=get_gpu_target["amdgpu:gfx942"](),
     ]().asm
 
     assert_true("buffer_load_dword" not in amd_asm)
@@ -39,7 +40,7 @@ def test_coord_codegen_memory() raises:
     assert_true("v_mov_b32_e32 v1, s0" in amd_asm)
 
     var nvidia_asm = _compile_code[
-        kernel, target=get_gpu_target["sm_80"]()
+        kernel[ptr_origin=MutUntrackedOrigin], target=get_gpu_target["sm_80"]()
     ]().asm
 
     assert_true("ld.local" not in nvidia_asm)

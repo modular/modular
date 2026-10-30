@@ -47,17 +47,23 @@ def test_codegen_memory[
     assert_true("ld.local" not in nvidia_asm and "st.local" not in nvidia_asm)
 
 
-def kernel_mixed_dimensions(x: Int, ptr: MutPointer[Int32, MutAnyOrigin]):
+def kernel_mixed_dimensions[
+    ptr_origin: MutOrigin
+](x: Int, ptr: MutPointer[Int32, ptr_origin]):
     # Create layout with mixed compile-time and runtime dimensions
     var layout = Layout(shape=(Idx[8], x), stride=(x, Idx[1]))
     ptr[0] = Int32(layout(Coord(Idx[0], x - 1)))
 
 
-def kernel_thread_idx(ptr: MutPointer[Int32, MutAnyOrigin]):
+def kernel_thread_idx[
+    ptr_origin: MutOrigin
+](ptr: MutPointer[Int32, ptr_origin]):
     comptime layout = Layout(shape=(Idx[8], Idx[2]), stride=(Idx[1], Idx[1]))
     ptr[0] = Int32(layout(Coord(thread_idx.x, thread_idx.y)))
 
 
 def main() raises:
-    test_codegen_memory[kernel_mixed_dimensions]()
-    test_codegen_memory[kernel_thread_idx]()
+    test_codegen_memory[
+        kernel_mixed_dimensions[ptr_origin=MutUntrackedOrigin]
+    ]()
+    test_codegen_memory[kernel_thread_idx[ptr_origin=MutUntrackedOrigin]]()

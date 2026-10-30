@@ -107,10 +107,10 @@ comptime AccumLayout[num_cols: Int] = TileLayout(
 comptime AccumTile[num_cols: Int] = TileTensor[
     .float32,
     type_of(AccumLayout[num_cols]),
-    MutAnyOrigin,
+    MutUntrackedOrigin,
     Engine=TMemEngine,
 ]
-comptime AccumStorage = TMemStorage[.float32, MutAnyOrigin]
+comptime AccumStorage = TMemStorage[.float32, MutUntrackedOrigin]
 
 # This thread's view of its warp's quadrant: one lane, every column.
 comptime ROW_LAYOUT = TileLayout(
@@ -120,7 +120,7 @@ comptime ROW_LAYOUT = TileLayout(
 comptime RowTile = TileTensor[
     .float32,
     type_of(ROW_LAYOUT),
-    MutAnyOrigin,
+    MutUntrackedOrigin,
     Engine=TMemEngine,
 ]
 
@@ -133,7 +133,7 @@ comptime M64_LAYOUT = TileLayout(
 comptime M64Tile = TileTensor[
     .float32,
     type_of(M64_LAYOUT),
-    MutAnyOrigin,
+    MutUntrackedOrigin,
     Engine=TMemEngine,
 ]
 
@@ -148,14 +148,15 @@ def _expected(lane: Int, col: Int) -> Float32:
 @inline(.always)
 def _round_trip(
     row: TileTensor[
+        mut=True,
         .float32,
         _,
-        MutAnyOrigin,
+        _,
         Engine=TMemEngine,
         ...,
     ],
     tag: Int,
-    output: MutPointer[Float32, MutAnyOrigin],
+    output: MutPointer[Float32, _],
     out_row: Int,
 ):
     """Copies a `tag`-stamped register row into `row`, copies it back out and
@@ -173,8 +174,8 @@ def _round_trip(
 
 
 def _tmem_round_trip_kernel[
-    num_cols: Int
-](output: MutPointer[Float32, MutAnyOrigin]):
+    num_cols: Int, output_origin: MutOrigin
+](output: MutPointer[Float32, output_origin]):
     var smem_addr = unsafe_stack_allocation[
         1, DType.uint32, address_space=.SHARED
     ]()
@@ -200,11 +201,13 @@ def _tmem_round_trip_kernel[
         tcgen05_dealloc[1](smem_addr[], UInt32(num_cols))
 
 
-comptime tmem_round_trip_kernel = _tmem_round_trip_kernel[NUM_COLS]
-comptime tmem_wide_round_trip_kernel = _tmem_round_trip_kernel[WIDE_COLS]
+comptime tmem_round_trip_kernel = _tmem_round_trip_kernel[NUM_COLS, ...]
+comptime tmem_wide_round_trip_kernel = _tmem_round_trip_kernel[WIDE_COLS, ...]
 
 
-def tmem_async_round_trip_kernel(output: MutPointer[Float32, MutAnyOrigin]):
+def tmem_async_round_trip_kernel[
+    output_origin: MutOrigin
+](output: MutPointer[Float32, output_origin]):
     var smem_addr = unsafe_stack_allocation[
         1, DType.uint32, address_space=.SHARED
     ]()
@@ -252,9 +255,11 @@ def tmem_async_round_trip_kernel(output: MutPointer[Float32, MutAnyOrigin]):
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(NUM_LANES))
 )
 @__llvm_metadata(`nvvm.minctasm`=SIMDLength(BUDGET_MIN_BLOCKS))
-def tmem_budget_round_trip_kernel(
-    input: MutPointer[Float32, MutAnyOrigin],
-    output: MutPointer[Float32, MutAnyOrigin],
+def tmem_budget_round_trip_kernel[
+    input_origin: MutOrigin, output_origin: MutOrigin
+](
+    input: MutPointer[Float32, input_origin],
+    output: MutPointer[Float32, output_origin],
 ):
     var smem_addr = unsafe_stack_allocation[
         1, DType.uint32, address_space=.SHARED
@@ -287,7 +292,9 @@ def tmem_budget_round_trip_kernel(
         tcgen05_dealloc[1](smem_addr[], UInt32(WIDE_COLS))
 
 
-def tmem_m64_round_trip_kernel(output: MutPointer[Float32, MutAnyOrigin]):
+def tmem_m64_round_trip_kernel[
+    output_origin: MutOrigin
+](output: MutPointer[Float32, output_origin]):
     var smem_addr = unsafe_stack_allocation[
         1, DType.uint32, address_space=.SHARED
     ]()
@@ -321,7 +328,9 @@ comptime HALVES = 2
 comptime FRAG_LANES = WARP_SIZE // HALVES
 
 
-def tmem_16x256b_load_kernel(mismatches: MutPointer[Int32, MutAnyOrigin]):
+def tmem_16x256b_load_kernel[
+    mismatches_origin: MutOrigin
+](mismatches: MutPointer[Int32, mismatches_origin]):
     """Writes rows, reads both halves through `tmem_16x256b`, and counts the
     registers that disagree with the cell `tmem_cell` names."""
     var smem_addr = unsafe_stack_allocation[
@@ -365,7 +374,9 @@ def tmem_16x256b_load_kernel(mismatches: MutPointer[Int32, MutAnyOrigin]):
         tcgen05_dealloc[1](smem_addr[], UInt32(NUM_COLS))
 
 
-def tmem_16x256b_store_kernel(output: MutPointer[Float32, MutAnyOrigin]):
+def tmem_16x256b_store_kernel[
+    output_origin: MutOrigin
+](output: MutPointer[Float32, output_origin]):
     """Fills both halves through `tmem_16x256b` from the cells `tmem_cell`
     names, reads the rows back, and writes `output[lane * NUM_COLS + col]`."""
     var smem_addr = unsafe_stack_allocation[
@@ -408,7 +419,8 @@ def tmem_16x256b_store_kernel(output: MutPointer[Float32, MutAnyOrigin]):
 def test_codegen_batches_one_instruction_per_direction() raises:
     print("== test_codegen_batches_one_instruction_per_direction")
     var asm = _compile_code[
-        tmem_round_trip_kernel, target=get_gpu_target["sm_100a"]()
+        tmem_round_trip_kernel[output_origin=MutUntrackedOrigin],
+        target=get_gpu_target["sm_100a"](),
     ]().asm
     # 32 columns fit one `x32` instruction, and each copy waits exactly once.
     assert_equal(asm.count("tcgen05.st.sync.aligned.32x32b.x32.b32"), 1)
@@ -421,7 +433,8 @@ def test_codegen_batches_one_instruction_per_direction() raises:
 def test_codegen_async_copies_share_one_wait() raises:
     print("== test_codegen_async_copies_share_one_wait")
     var asm = _compile_code[
-        tmem_async_round_trip_kernel, target=get_gpu_target["sm_100a"]()
+        tmem_async_round_trip_kernel[output_origin=MutUntrackedOrigin],
+        target=get_gpu_target["sm_100a"](),
     ]().asm
     assert_equal(asm.count("tcgen05.st.sync.aligned.32x32b.x16.b32"), 2)
     assert_equal(asm.count("tcgen05.wait::st.sync.aligned;"), 1)
@@ -432,7 +445,8 @@ def test_codegen_async_copies_share_one_wait() raises:
 def test_codegen_wide_row_caps_registers_per_instruction() raises:
     print("== test_codegen_wide_row_caps_registers_per_instruction")
     var asm = _compile_code[
-        tmem_wide_round_trip_kernel, target=get_gpu_target["sm_100a"]()
+        tmem_wide_round_trip_kernel[output_origin=MutUntrackedOrigin],
+        target=get_gpu_target["sm_100a"](),
     ]().asm
     # A 128-column row is two 64-column slices, each with its own wait; a
     # single `x128` would need 128 consecutive registers (ptxas C7602).
@@ -444,12 +458,17 @@ def test_codegen_wide_row_caps_registers_per_instruction() raises:
 
 
 def _check_round_trip[
-    kernel: def(MutPointer[Float32, MutAnyOrigin]) thin, num_cols: Int
+    kernel: def[output_origin: MutOrigin](
+        MutPointer[Float32, output_origin]
+    ) thin,
+    num_cols: Int,
 ](ctx: DeviceContext) raises:
     comptime num_elements = NUM_LANES * num_cols
     var buf = ctx.enqueue_create_buffer[.float32](num_elements)
     buf.enqueue_fill(Float32(-1))
-    ctx.enqueue_function[kernel](buf, grid_dim=1, block_dim=NUM_LANES)
+    ctx.enqueue_function[kernel[origin_of(buf)]](
+        buf, grid_dim=1, block_dim=NUM_LANES
+    )
     var host = ctx.enqueue_create_host_buffer[.float32](num_elements)
     ctx.enqueue_copy(host, buf)
     ctx.synchronize()
@@ -479,7 +498,11 @@ def test_wide_round_trip_all_lanes(ctx: DeviceContext) raises:
 
 def test_budget_round_trip_does_not_spill(ctx: DeviceContext) raises:
     print("== test_budget_round_trip_does_not_spill")
-    var func = ctx.compile_function[tmem_budget_round_trip_kernel]()
+    var func = ctx.compile_function[
+        tmem_budget_round_trip_kernel[
+            input_origin=MutUntrackedOrigin, output_origin=MutUntrackedOrigin
+        ]
+    ]()
     # The budget only means something if `ptxas` honored the launch bounds.
     assert_true(func.get_attribute(Attribute.NUM_REGS) <= BUDGET_REGS)
     assert_equal(func.get_attribute(Attribute.LOCAL_SIZE_BYTES), 0)
@@ -511,9 +534,9 @@ def test_m64_round_trip(ctx: DeviceContext) raises:
     comptime warp_size = ctx.default_device_info.warp_size
     var buf = ctx.enqueue_create_buffer[.float32](NUM_ELEMENTS)
     buf.enqueue_fill(Float32(-1))
-    ctx.enqueue_function[tmem_m64_round_trip_kernel](
-        buf, grid_dim=1, block_dim=NUM_LANES
-    )
+    ctx.enqueue_function[
+        tmem_m64_round_trip_kernel[output_origin=origin_of(buf)]
+    ](buf, grid_dim=1, block_dim=NUM_LANES)
     var host = ctx.enqueue_create_host_buffer[.float32](NUM_ELEMENTS)
     ctx.enqueue_copy(host, buf)
     ctx.synchronize()
@@ -534,11 +557,13 @@ def test_codegen_fragment_copies_are_one_16x256b_instruction() raises:
     print("== test_codegen_fragment_copies_are_one_16x256b_instruction")
     # 32 columns are 4 repeats of 256 bits, so each half is one instruction.
     var ld_asm = _compile_code[
-        tmem_16x256b_load_kernel, target=get_gpu_target["sm_100a"]()
+        tmem_16x256b_load_kernel[mismatches_origin=MutUntrackedOrigin],
+        target=get_gpu_target["sm_100a"](),
     ]().asm
     assert_equal(ld_asm.count("tcgen05.ld.sync.aligned.16x256b.x4.b32"), 2)
     var st_asm = _compile_code[
-        tmem_16x256b_store_kernel, target=get_gpu_target["sm_100a"]()
+        tmem_16x256b_store_kernel[output_origin=MutUntrackedOrigin],
+        target=get_gpu_target["sm_100a"](),
     ]().asm
     assert_equal(st_asm.count("tcgen05.st.sync.aligned.16x256b.x4.b32"), 2)
 
@@ -547,9 +572,9 @@ def test_fragment_load_matches_rows(ctx: DeviceContext) raises:
     print("== test_fragment_load_matches_rows")
     var buf = ctx.enqueue_create_buffer[.int32](NUM_LANES)
     buf.enqueue_fill(Int32(-1))
-    ctx.enqueue_function[tmem_16x256b_load_kernel](
-        buf, grid_dim=1, block_dim=NUM_LANES
-    )
+    ctx.enqueue_function[
+        tmem_16x256b_load_kernel[mismatches_origin=origin_of(buf)]
+    ](buf, grid_dim=1, block_dim=NUM_LANES)
     var host = ctx.enqueue_create_host_buffer[.int32](NUM_LANES)
     ctx.enqueue_copy(host, buf)
     ctx.synchronize()

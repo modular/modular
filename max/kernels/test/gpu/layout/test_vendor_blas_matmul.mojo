@@ -72,18 +72,8 @@ def test_matmul[
         c_device_ref,
         row_major(M, N),
     )
-    var a_immut_tt = TileTensor(
-        ImmPointer[Scalar[input_type], ImmutAnyOrigin](
-            unsafe_from_address=Int(a_device.unsafe_ptr())
-        ),
-        row_major(M, K),
-    )
-    var b_immut_tt = TileTensor(
-        ImmPointer[Scalar[input_type], ImmutAnyOrigin](
-            unsafe_from_address=Int(b_device.unsafe_ptr())
-        ),
-        row_major(N, K),
-    )
+    var a_immut_tt = TileTensor(a_device, row_major(M, K)).as_imm()
+    var b_immut_tt = TileTensor(b_device, row_major(N, K)).as_imm()
 
     # Run naive matmul.
     comptime BLOCK_DIM = 16

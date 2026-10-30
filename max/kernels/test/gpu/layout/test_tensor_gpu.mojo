@@ -32,11 +32,13 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext) raises:
 
     var check_state = True
 
-    def copy_to_sram_test_kernel(
+    def copy_to_sram_test_kernel[
+        dram_tensor_origin: ImmOrigin, flag_origin: MutOrigin
+    ](
         dram_tensor: TileTensor[
-            .float32, type_of(tensor_layout), ImmutAnyOrigin
+            .float32, type_of(tensor_layout), dram_tensor_origin
         ],
-        flag: MutPointer[Scalar[.bool], MutAnyOrigin],
+        flag: MutPointer[Scalar[.bool], flag_origin],
     ):
         var dram_tile = dram_tensor.tile[4, 4](0, block_idx.x)
         var sram_tensor = stack_allocation[.float32, address_space=.SHARED](
@@ -54,13 +56,16 @@ def test_copy_dram_to_sram_async(ctx: DeviceContext) raises:
                 if sram_tensor[r, c] != Float32(r * 16 + col_offset + c):
                     flag[] = False
 
-    comptime kernel = copy_to_sram_test_kernel
+    comptime kernel = copy_to_sram_test_kernel[
+        dram_tensor_origin=origin_of(tensor),
+        flag_origin=origin_of(check_state),
+    ]
     var ptr = Pointer(to=check_state).unsafe_bitcast[Scalar[.bool]]()
     ctx.enqueue_function[kernel](
         tensor.device_tensor().as_imm(),
         DeviceBuffer[.bool](
             ctx,
-            rebind[MutPointer[Scalar[.bool], MutAnyOrigin]](ptr),
+            ptr,
             1,
             owning=False,
         ),

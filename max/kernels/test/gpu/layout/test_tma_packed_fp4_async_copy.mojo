@@ -63,8 +63,9 @@ def packed_fp4_load_kernel[
     tile_rows: Int,
     tile_shape: Coord,
     desc_shape: Coord,
+    dst_origin: MutOrigin,
 ](
-    dst: TileTensor[DType.uint8, DstLayout, MutAnyOrigin],
+    dst: TileTensor[DType.uint8, DstLayout, dst_origin],
     tma_tile: TMATensorTile[DType.uint8, tile_shape, desc_shape],
 ):
     """Loads one padded FP4 tile and copies the raw shared-memory bytes out.
@@ -168,9 +169,10 @@ def test_packed_fp4_load[
         tile_rows,
         type_of(tma_tensor).tile_shape,
         type_of(tma_tensor).desc_shape,
+        dst_origin=origin_of(dst_device),
     ]
     ctx.enqueue_function[kernel](
-        TileTensor(dst_device, dst_layout).as_unsafe_any_origin(),
+        TileTensor(dst_device, dst_layout),
         tma_tensor,
         grid_dim=(num_k_tiles, rows_roundup // tile_rows),
         block_dim=(128),

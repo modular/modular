@@ -52,9 +52,11 @@ comptime _BLOCK_DIM = 4
 comptime _SENTINEL = Float32(-7)
 
 
-def async_kernel(
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+def async_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[Float32, src_origin],
+    dst_ptr: MutPointer[Float32, dst_origin],
 ):
     comptime thread_layout = row_major(Idx[2], Idx[2])
 
@@ -75,9 +77,11 @@ def async_kernel(
     copy_sram_to_dram[thread_layout](dst, smem)
 
 
-def async_swizzled_kernel(
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+def async_swizzled_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[Float32, src_origin],
+    dst_ptr: MutPointer[Float32, dst_origin],
 ):
     """The SMEM -> DRAM read must undo the same swizzle the async write
     applied, so a roundtrip match proves the swizzled destination indices
@@ -104,9 +108,11 @@ def async_swizzled_kernel(
     copy_sram_to_dram[thread_layout, swizzle=swizzle](dst, smem)
 
 
-def async_vectorized_kernel(
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+def async_vectorized_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[Float32, src_origin],
+    dst_ptr: MutPointer[Float32, dst_origin],
 ):
     """Each thread copies one 16-byte (4 x float32) vector."""
     comptime thread_layout = row_major(Idx[4], Idx[1])
@@ -130,10 +136,7 @@ def async_vectorized_kernel(
 
 def _async_masked_kernel[
     fill: Fill
-](
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
-):
+](src_ptr: MutPointer[Float32, _], dst_ptr: MutPointer[Float32, _],):
     """Bound the copy to the first two rows and let `fill` decide what happens
     to the rest.
 
@@ -173,23 +176,29 @@ def _async_masked_kernel[
     copy_sram_to_dram[thread_layout](dst, smem)
 
 
-def async_masked_no_fill_kernel(
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+def async_masked_no_fill_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[Float32, src_origin],
+    dst_ptr: MutPointer[Float32, dst_origin],
 ):
     _async_masked_kernel[Fill.NONE](src_ptr, dst_ptr)
 
 
-def async_masked_zero_fill_kernel(
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+def async_masked_zero_fill_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[Float32, src_origin],
+    dst_ptr: MutPointer[Float32, dst_origin],
 ):
     _async_masked_kernel[Fill.ZERO](src_ptr, dst_ptr)
 
 
-def async_masked_nan_fill_kernel(
-    src_ptr: MutPointer[Float32, MutAnyOrigin],
-    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+def async_masked_nan_fill_kernel[
+    src_origin: MutOrigin, dst_origin: MutOrigin
+](
+    src_ptr: MutPointer[Float32, src_origin],
+    dst_ptr: MutPointer[Float32, dst_origin],
 ):
     """`Fill.NAN` needs 16-byte elements, so each thread carries one
     4 x float32 vector rather than a 2x2 fragment."""
@@ -223,9 +232,9 @@ def async_masked_nan_fill_kernel(
 
 
 def _run[
-    kernel_fn: def(
-        MutPointer[Float32, MutAnyOrigin],
-        MutPointer[Float32, MutAnyOrigin],
+    kernel_fn: def[src_origin: MutOrigin, dst_origin: MutOrigin](
+        MutPointer[Float32, src_origin],
+        MutPointer[Float32, dst_origin],
     ) thin -> None,
 ](
     name: String,
@@ -243,7 +252,7 @@ def _run[
     var dst_dev = ctx.enqueue_create_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(src_dev, src_host)
 
-    ctx.enqueue_function[kernel_fn](
+    ctx.enqueue_function[kernel_fn[origin_of(src_dev), origin_of(dst_dev)]](
         src_dev, dst_dev, grid_dim=(1), block_dim=(_BLOCK_DIM)
     )
 

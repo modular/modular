@@ -32,7 +32,8 @@ def test_runtime_and_compile_time_dim_and_stride[
 ](m: MType, k: KType) raises:
     var shape = Coord(k, m)
     var tensor = TileTensor(
-        MutPointer[Float32, MutAnyOrigin].unsafe_dangling(), row_major(shape)
+        MutPointer[Float32, MutUntrackedOrigin].unsafe_dangling(),
+        row_major(shape),
     )
 
     var K = Int(k)
@@ -57,7 +58,7 @@ def test_nested_layout_shape() raises:
     comptime smem_layout = blocked_product(base_layout, tiler_layout)
 
     var tensor = TileTensor(
-        MutPointer[Float32, MutAnyOrigin].unsafe_dangling(), smem_layout
+        MutPointer[Float32, MutUntrackedOrigin].unsafe_dangling(), smem_layout
     )
 
     # Shape should be (64, 128) because:
@@ -78,7 +79,7 @@ def test_nested_layout_shape() raises:
     # Test case 2: Ensure non-nested layouts still work (regression test)
     comptime simple_layout = row_major[16, 32]()
     var simple_tensor = TileTensor(
-        MutPointer[Float32, MutAnyOrigin].unsafe_dangling(), simple_layout
+        MutPointer[Float32, MutUntrackedOrigin].unsafe_dangling(), simple_layout
     )
     comptime simple_shape0 = simple_tensor.static_shape[0]
     comptime simple_shape1 = simple_tensor.static_shape[1]

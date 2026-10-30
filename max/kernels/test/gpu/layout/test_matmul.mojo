@@ -34,7 +34,7 @@ comptime run_gemm_kernel_type = def(
     ctx: DeviceContext,
     a: TileTensor,
     b: TileTensor,
-    c: TileTensor,
+    c: TileTensor[mut=True, ...],
 ) thin raises -> None
 
 
@@ -132,9 +132,9 @@ struct test_matmul[
         gemm(
             m,
             ctx,
-            a.as_imm().as_unsafe_any_origin(),
-            b.as_imm().as_unsafe_any_origin(),
-            c.as_unsafe_any_origin(),
+            a.as_imm(),
+            b.as_imm(),
+            c,
         )
 
         with self.c_device_buffer_ref.map_to_host() as c_host_ref:

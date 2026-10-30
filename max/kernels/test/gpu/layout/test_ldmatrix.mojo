@@ -30,10 +30,14 @@ from std.testing import assert_almost_equal
 from std.utils.numerics import get_accum_type
 
 
-def test_ldmatrix_fp32(
-    c_ptr: MutPointer[Float32, MutAnyOrigin],
-    a_ptr: ImmPointer[Float32, ImmutAnyOrigin],
-    b_ptr: ImmPointer[Float32, ImmutAnyOrigin],
+def test_ldmatrix_fp32[
+    c_origin: MutOrigin,
+    a_origin: ImmOrigin,
+    b_origin: ImmOrigin,
+](
+    c_ptr: MutPointer[Float32, c_origin],
+    a_ptr: ImmPointer[Float32, a_origin],
+    b_ptr: ImmPointer[Float32, b_origin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
@@ -84,11 +88,15 @@ def test_ldmatrix_fp32(
 
 
 def test_ldmatrix_transposed[
-    input_type: DType, output_type: DType
+    input_type: DType,
+    output_type: DType,
+    c_origin: MutOrigin,
+    a_origin: ImmOrigin,
+    b_origin: ImmOrigin,
 ](
-    c_ptr: MutPointer[Scalar[output_type], MutAnyOrigin],
-    a_ptr: ImmPointer[Scalar[input_type], ImmutAnyOrigin],
-    b_ptr: ImmPointer[Scalar[input_type], ImmutAnyOrigin],
+    c_ptr: MutPointer[Scalar[output_type], c_origin],
+    a_ptr: ImmPointer[Scalar[input_type], a_origin],
+    b_ptr: ImmPointer[Scalar[input_type], b_origin],
 ):
     comptime accum_type = get_accum_type[input_type]()
     comptime mma_shape = get_mma_shape[input_type, accum_type]()
@@ -179,7 +187,13 @@ def check_ldmatrix_transposed_bf16[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    comptime kernel_type = test_ldmatrix_transposed[input_type, output_type]
+    comptime kernel_type = test_ldmatrix_transposed[
+        input_type,
+        output_type,
+        c_origin=origin_of(c_device),
+        a_origin=origin_of(a_device),
+        b_origin=origin_of(b_device),
+    ]
     ctx.enqueue_function[kernel_type](
         c_device,
         a_device,
@@ -191,25 +205,12 @@ def check_ldmatrix_transposed_bf16[
     ctx.enqueue_copy(c_host, c_device)
 
     # Create TileTensors for the naive kernel.
-    # a/b are constructed as immutable to match the ImmutAnyOrigin
-    # parameters that matmul_kernel_naive expects (enqueue_function
-    # requires exact type matches).
     var c_ref_tt = TileTensor(
         c_device_ref,
         row_major(M, N),
     )
-    var a_tt = TileTensor(
-        ImmPointer[Scalar[input_type], ImmutAnyOrigin](
-            unsafe_from_address=Int(a_device.unsafe_ptr())
-        ),
-        row_major(M, K),
-    )
-    var b_tt = TileTensor(
-        ImmPointer[Scalar[input_type], ImmutAnyOrigin](
-            unsafe_from_address=Int(b_device.unsafe_ptr())
-        ),
-        row_major(K, N),
-    )
+    var a_tt = TileTensor(a_device, row_major(M, K)).as_imm()
+    var b_tt = TileTensor(b_device, row_major(K, N)).as_imm()
 
     # Run naive matmul.
     comptime BLOCK_DIM = 16
@@ -288,7 +289,11 @@ def check_ldmatrix(
     comptime MMA_N = 8
     comptime MMA_K = 8
 
-    comptime kernel_type = test_ldmatrix_fp32
+    comptime kernel_type = test_ldmatrix_fp32[
+        c_origin=origin_of(c_device),
+        a_origin=origin_of(a_device),
+        b_origin=origin_of(b_device),
+    ]
     ctx.enqueue_function[kernel_type](
         c_device,
         a_device,
@@ -305,25 +310,12 @@ def check_ldmatrix(
     ctx.enqueue_copy(c_host, c_device)
 
     # Create TileTensors for the naive kernel.
-    # a/b are constructed as immutable to match the ImmutAnyOrigin
-    # parameters that matmul_kernel_naive expects (enqueue_function
-    # requires exact type matches).
     var c_ref_tt = TileTensor(
         c_device_ref,
         row_major(M, N),
     )
-    var a_tt = TileTensor(
-        ImmPointer[Float32, ImmutAnyOrigin](
-            unsafe_from_address=Int(a_device.unsafe_ptr())
-        ),
-        row_major(M, K),
-    )
-    var b_tt = TileTensor(
-        ImmPointer[Float32, ImmutAnyOrigin](
-            unsafe_from_address=Int(b_device.unsafe_ptr())
-        ),
-        row_major(K, N),
-    )
+    var a_tt = TileTensor(a_device, row_major(M, K)).as_imm()
+    var b_tt = TileTensor(b_device, row_major(K, N)).as_imm()
 
     # Run naive matmul.
     comptime BLOCK_DIM = 16

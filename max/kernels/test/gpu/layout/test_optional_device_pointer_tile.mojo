@@ -40,17 +40,17 @@ from std.testing import assert_equal
 
 comptime _N = 8
 
-# Origin-erased so the host-constructed tile's type matches the kernel
-# parameter after `as_unsafe_any_origin()`.
-comptime _Tile[LayoutType: TensorLayout] = TileTensor[
+comptime _Tile[LayoutType: TensorLayout, origin: MutOrigin] = TileTensor[
     .float32,
     LayoutType,
-    UnsafeAnyOrigin[mut=True],
+    origin,
     Engine=DevicePointerEngine[element_width=1],
 ]
 
 
-def _fill_ramp[LayoutType: TensorLayout](tile: _Tile[LayoutType]):
+def _fill_ramp[
+    LayoutType: TensorLayout, origin: MutOrigin
+](tile: _Tile[LayoutType, origin]):
     var count = Int(tile.dim[0]())
     var flat = tile.reshape(row_major(count))
     for i in range(count):
@@ -58,8 +58,8 @@ def _fill_ramp[LayoutType: TensorLayout](tile: _Tile[LayoutType]):
 
 
 def optional_reg_kernel[
-    LayoutType: TensorLayout
-](tile: OptionalReg[_Tile[LayoutType]]):
+    LayoutType: TensorLayout, tile_origin: MutOrigin
+](tile: OptionalReg[_Tile[LayoutType, tile_origin]]):
     if global_idx.x != 0:
         return
     if case .Some(tile) = tile:
@@ -67,8 +67,8 @@ def optional_reg_kernel[
 
 
 def optional_kernel[
-    LayoutType: TensorLayout
-](tile: Optional[_Tile[LayoutType]]):
+    LayoutType: TensorLayout, tile_origin: MutOrigin
+](tile: Optional[_Tile[LayoutType, tile_origin]]):
     if global_idx.x != 0:
         return
     if case .Some(tile) = tile:
@@ -91,11 +91,11 @@ def test_optional_reg_argument(ctx: DeviceContext, engaged: Bool) raises:
     buf.enqueue_fill(Float32(-1))
     var n = _N
     var tile = TileTensor(buf.device_ptr(), row_major(n))
-    comptime Arg = OptionalReg[_Tile[tile.LayoutType]]
-    var arg = Arg(tile.as_unsafe_any_origin()) if engaged else Arg()
-    ctx.enqueue_function[optional_reg_kernel[tile.LayoutType]](
-        arg, grid_dim=1, block_dim=1
-    )
+    comptime Arg = OptionalReg[_Tile[tile.LayoutType, tile.origin]]
+    var arg = Arg(tile) if engaged else Arg()
+    ctx.enqueue_function[
+        optional_reg_kernel[tile.LayoutType, tile_origin=tile.origin]
+    ](arg, grid_dim=1, block_dim=1)
     _check(ctx, buf, engaged)
 
 
@@ -105,11 +105,11 @@ def test_optional_argument(ctx: DeviceContext, engaged: Bool) raises:
     buf.enqueue_fill(Float32(-1))
     var n = _N
     var tile = TileTensor(buf.device_ptr(), row_major(n))
-    comptime Arg = Optional[_Tile[tile.LayoutType]]
-    var arg = Arg(tile.as_unsafe_any_origin()) if engaged else Arg()
-    ctx.enqueue_function[optional_kernel[tile.LayoutType]](
-        arg, grid_dim=1, block_dim=1
-    )
+    comptime Arg = Optional[_Tile[tile.LayoutType, tile.origin]]
+    var arg = Arg(tile) if engaged else Arg()
+    ctx.enqueue_function[
+        optional_kernel[tile.LayoutType, tile_origin=tile.origin]
+    ](arg, grid_dim=1, block_dim=1)
     _check(ctx, buf, engaged)
 
 
@@ -119,8 +119,8 @@ def test_optional_reg_capture(ctx: DeviceContext, engaged: Bool) raises:
     buf.enqueue_fill(Float32(-1))
     var n = _N
     var tile = TileTensor(buf.device_ptr(), row_major(n))
-    comptime Arg = OptionalReg[_Tile[tile.LayoutType]]
-    var arg = Arg(tile.as_unsafe_any_origin()) if engaged else Arg()
+    comptime Arg = OptionalReg[_Tile[tile.LayoutType, tile.origin]]
+    var arg = Arg(tile) if engaged else Arg()
 
     # The capture is encoded through `encode_closure_state`, which dispatches
     # to `OptionalReg._to_device_type` like a direct argument.
@@ -132,9 +132,9 @@ def test_optional_reg_capture(ctx: DeviceContext, engaged: Bool) raises:
     _check(ctx, buf, engaged)
 
 
-def optional_pointer_kernel(
-    ptr: Optional[MutPointer[Float32, MutAnyOrigin]], n: Int32
-):
+def optional_pointer_kernel[
+    ptr_origin: MutOrigin
+](ptr: Optional[MutPointer[Float32, ptr_origin]], n: Int32):
     if global_idx.x != 0:
         return
     if case .Some(p) = ptr:
@@ -150,7 +150,7 @@ def test_optional_device_buffer_argument(
     buf.enqueue_fill(Float32(-1))
     comptime Arg = Optional[DeviceBuffer[.float32]]
     var arg = Arg(buf) if engaged else Arg()
-    ctx.enqueue_function[optional_pointer_kernel](
+    ctx.enqueue_function[optional_pointer_kernel[ptr_origin=origin_of(buf)]](
         arg, Int32(_N), grid_dim=1, block_dim=1
     )
     _check(ctx, buf, engaged)

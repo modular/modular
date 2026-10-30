@@ -40,7 +40,9 @@ comptime _COLS = 8
 comptime _NUM_ELEMENTS = _ROWS * _COLS
 
 
-def reverse_through_shared_kernel(output: Pointer[Float32, MutAnyOrigin]):
+def reverse_through_shared_kernel[
+    output_origin: MutOrigin
+](output: MutPointer[Float32, output_origin]):
     var owned = OwnedGPUTensor[.float32, .SHARED](row_major[_ROWS, _COLS]())
     var flat = TileTensor(owned).reshape(row_major[_NUM_ELEMENTS]())
 
@@ -52,7 +54,9 @@ def reverse_through_shared_kernel(output: Pointer[Float32, MutAnyOrigin]):
     output.unsafe_store(tid, flat[_NUM_ELEMENTS - 1 - tid][0])
 
 
-def two_tensors_kernel(output: Pointer[Float32, MutAnyOrigin]):
+def two_tensors_kernel[
+    output_origin: MutOrigin
+](output: MutPointer[Float32, output_origin]):
     # Same type and layout, so both `stack_allocation` calls instantiate
     # identically; each must still get its own shared buffer.
     var first = OwnedGPUTensor[.float32, .SHARED](row_major[_ROWS, _COLS]())
@@ -71,7 +75,9 @@ def two_tensors_kernel(output: Pointer[Float32, MutAnyOrigin]):
     )
 
 
-def storage_view_kernel(output: Pointer[Float32, MutAnyOrigin]):
+def storage_view_kernel[
+    output_origin: MutOrigin
+](output: MutPointer[Float32, output_origin]):
     var owned = OwnedGPUTensor[.float32, .SHARED](row_major[_ROWS, _COLS]())
     var view = OwnedGPUEngine.get_storage_view[result_origin=origin_of(owned)](
         owned._storage
@@ -90,7 +96,9 @@ def storage_view_kernel(output: Pointer[Float32, MutAnyOrigin]):
     output.unsafe_store(4, Float32(Int(tile.dim[1]())))
 
 
-def tile_type_and_layout_kernel(output: Pointer[Float32, MutAnyOrigin]):
+def tile_type_and_layout_kernel[
+    output_origin: MutOrigin
+](output: MutPointer[Float32, output_origin]):
     var owned = OwnedGPUTensor[.float32, .SHARED](col_major[_ROWS, _COLS]())
     var tile = TileTensor(owned)
     comptime assert (
@@ -109,7 +117,9 @@ def tile_type_and_layout_kernel(output: Pointer[Float32, MutAnyOrigin]):
     output.unsafe_store(3, Float32(Int(tile.dynamic_stride(1))))
 
 
-def col_major_indexing_kernel(output: Pointer[Float32, MutAnyOrigin]):
+def col_major_indexing_kernel[
+    output_origin: MutOrigin
+](output: MutPointer[Float32, output_origin]):
     var owned = OwnedGPUTensor[.float32, .SHARED](col_major[_ROWS, _COLS]())
     var tile = TileTensor(owned)
 
@@ -121,7 +131,9 @@ def col_major_indexing_kernel(output: Pointer[Float32, MutAnyOrigin]):
     output.unsafe_store(tid, tile.unsafe_ptr().unsafe_load(tid))
 
 
-def implicit_conversion_kernel(output: Pointer[Float32, MutAnyOrigin]):
+def implicit_conversion_kernel[
+    output_origin: MutOrigin
+](output: MutPointer[Float32, output_origin]):
     var owned = OwnedGPUTensor[.float32, .SHARED](row_major[_ROWS, _COLS]())
     var implicit_tile: TileTensor[
         .float32,
@@ -133,7 +145,9 @@ def implicit_conversion_kernel(output: Pointer[Float32, MutAnyOrigin]):
     output.unsafe_store(0, TileTensor(owned)[1, 2][0])
 
 
-def subscript_kernel(output: Pointer[Float32, MutAnyOrigin]):
+def subscript_kernel[
+    output_origin: MutOrigin
+](output: MutPointer[Float32, output_origin]):
     var owned = OwnedGPUTensor[.float32, .SHARED](row_major[_ROWS, _COLS]())
     var tid = Int(thread_idx.x)
     TileTensor(owned)[tid // _COLS, tid % _COLS] = Float32(tid)
@@ -194,7 +208,9 @@ struct _PairedGPUEngine(OwnedTensorEngine):
         )
 
 
-def view_engine_kernel(output: Pointer[Float32, MutAnyOrigin]):
+def view_engine_kernel[
+    output_origin: MutOrigin
+](output: MutPointer[Float32, output_origin]):
     # Vectorized engines index in scalars, so strides are scaled by `_WIDTH`,
     # as `TileTensor.vectorize` does.
     var layout = Layout(
@@ -222,9 +238,9 @@ def test_shared_storage_is_visible_across_threads(ctx: DeviceContext) raises:
     var buf = ctx.enqueue_create_buffer[.float32](_NUM_ELEMENTS)
     buf.enqueue_fill(Float32(-1))
 
-    ctx.enqueue_function[reverse_through_shared_kernel](
-        buf.unsafe_ptr(), grid_dim=1, block_dim=_NUM_ELEMENTS
-    )
+    ctx.enqueue_function[
+        reverse_through_shared_kernel[output_origin=origin_of(buf)]
+    ](buf.unsafe_ptr(), grid_dim=1, block_dim=_NUM_ELEMENTS)
 
     var host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(host, buf)
@@ -240,7 +256,7 @@ def test_two_tensors_get_distinct_storage(ctx: DeviceContext) raises:
     var buf = ctx.enqueue_create_buffer[.float32](count)
     buf.enqueue_fill(Float32(-1))
 
-    ctx.enqueue_function[two_tensors_kernel](
+    ctx.enqueue_function[two_tensors_kernel[output_origin=origin_of(buf)]](
         buf.unsafe_ptr(), grid_dim=1, block_dim=_NUM_ELEMENTS
     )
 
@@ -260,7 +276,7 @@ def test_storage_view_aliases_tile_tensor(ctx: DeviceContext) raises:
     var buf = ctx.enqueue_create_buffer[.float32](5)
     buf.enqueue_fill(Float32(-1))
 
-    ctx.enqueue_function[storage_view_kernel](
+    ctx.enqueue_function[storage_view_kernel[output_origin=origin_of(buf)]](
         buf.unsafe_ptr(), grid_dim=1, block_dim=1
     )
 
@@ -280,9 +296,9 @@ def test_tile_keeps_owner_type_and_layout(ctx: DeviceContext) raises:
     var buf = ctx.enqueue_create_buffer[.float32](4)
     buf.enqueue_fill(Float32(-1))
 
-    ctx.enqueue_function[tile_type_and_layout_kernel](
-        buf.unsafe_ptr(), grid_dim=1, block_dim=1
-    )
+    ctx.enqueue_function[
+        tile_type_and_layout_kernel[output_origin=origin_of(buf)]
+    ](buf.unsafe_ptr(), grid_dim=1, block_dim=1)
 
     var host = ctx.enqueue_create_host_buffer[.float32](4)
     ctx.enqueue_copy(host, buf)
@@ -299,9 +315,9 @@ def test_tile_indexes_through_owner_layout(ctx: DeviceContext) raises:
     var buf = ctx.enqueue_create_buffer[.float32](_NUM_ELEMENTS)
     buf.enqueue_fill(Float32(-1))
 
-    ctx.enqueue_function[col_major_indexing_kernel](
-        buf.unsafe_ptr(), grid_dim=1, block_dim=_NUM_ELEMENTS
-    )
+    ctx.enqueue_function[
+        col_major_indexing_kernel[output_origin=origin_of(buf)]
+    ](buf.unsafe_ptr(), grid_dim=1, block_dim=_NUM_ELEMENTS)
 
     var host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(host, buf)
@@ -318,9 +334,9 @@ def test_implicit_conversion_aliases_owner(ctx: DeviceContext) raises:
     var buf = ctx.enqueue_create_buffer[.float32](1)
     buf.enqueue_fill(Float32(-1))
 
-    ctx.enqueue_function[implicit_conversion_kernel](
-        buf.unsafe_ptr(), grid_dim=1, block_dim=1
-    )
+    ctx.enqueue_function[
+        implicit_conversion_kernel[output_origin=origin_of(buf)]
+    ](buf.unsafe_ptr(), grid_dim=1, block_dim=1)
 
     var host = ctx.enqueue_create_host_buffer[.float32](1)
     ctx.enqueue_copy(host, buf)
@@ -335,7 +351,7 @@ def test_tile_uses_owner_view_engine(ctx: DeviceContext) raises:
     var buf = ctx.enqueue_create_buffer[.float32](count)
     buf.enqueue_fill(Float32(-1))
 
-    ctx.enqueue_function[view_engine_kernel](
+    ctx.enqueue_function[view_engine_kernel[output_origin=origin_of(buf)]](
         buf.unsafe_ptr(), grid_dim=1, block_dim=1
     )
 
@@ -354,7 +370,7 @@ def test_subscript_returns_tile_views(ctx: DeviceContext) raises:
     var buf = ctx.enqueue_create_buffer[.float32](10)
     buf.enqueue_fill(Float32(-1))
 
-    ctx.enqueue_function[subscript_kernel](
+    ctx.enqueue_function[subscript_kernel[output_origin=origin_of(buf)]](
         buf.unsafe_ptr(), grid_dim=1, block_dim=_NUM_ELEMENTS
     )
 

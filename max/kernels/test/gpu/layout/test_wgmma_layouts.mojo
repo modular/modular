@@ -54,10 +54,13 @@ def wgmma_tf32_tf32_f32_kernel[
     WMMA_K: Int,
     a_smem_layout: ASmemLayout,
     b_smem_layout: BSmemLayout,
+    a_gmem_origin: MutOrigin,
+    b_gmem_origin: MutOrigin,
+    result_c_origin: MutOrigin,
 ](
-    a_gmem: TileTensor[.float32, type_of(row_major[M, K]()), MutAnyOrigin],
-    b_gmem: TileTensor[.float32, type_of(row_major[K, N]()), MutAnyOrigin],
-    result_c: TileTensor[.float32, type_of(row_major[M, N]()), MutAnyOrigin],
+    a_gmem: TileTensor[.float32, type_of(row_major[M, K]()), a_gmem_origin],
+    b_gmem: TileTensor[.float32, type_of(row_major[K, N]()), b_gmem_origin],
+    result_c: TileTensor[.float32, type_of(row_major[M, N]()), result_c_origin],
 ):
     comptime assert ASmemLayout.all_dims_known
     comptime assert BSmemLayout.all_dims_known
@@ -221,14 +224,17 @@ def wgmma_tf32_tf32_f32_64x8x8(ctx: DeviceContext) raises:
         8,
         a_smem_layout,
         b_smem_layout,
+        a_gmem_origin=origin_of(lhs),
+        b_gmem_origin=origin_of(rhs),
+        result_c_origin=origin_of(res),
     ]
 
     lhs.to_device()
     rhs.to_device()
     ctx.enqueue_function[kernel](
-        lhs.device_tensor().as_unsafe_any_origin(),
-        rhs.device_tensor().as_unsafe_any_origin(),
-        res.device_tensor().as_unsafe_any_origin(),
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        res.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
@@ -350,13 +356,16 @@ def wgmma_tf32_tf32_f32_64x8x8_inst_64x8x16(ctx: DeviceContext) raises:
         8,
         a_smem_layout,
         b_smem_layout,
+        a_gmem_origin=origin_of(lhs),
+        b_gmem_origin=origin_of(rhs),
+        result_c_origin=origin_of(res),
     ]
     lhs.to_device()
     rhs.to_device()
     ctx.enqueue_function[kernel](
-        lhs.device_tensor().as_unsafe_any_origin(),
-        rhs.device_tensor().as_unsafe_any_origin(),
-        res.device_tensor().as_unsafe_any_origin(),
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        res.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
@@ -380,10 +389,13 @@ def wgmma_bf16_bf16_f32_kernel[
     WMMA_K: Int,
     a_smem_layout: ASmemLayout,
     b_smem_layout: BSmemLayout,
+    a_gmem_origin: MutOrigin,
+    b_gmem_origin: MutOrigin,
+    result_c_origin: MutOrigin,
 ](
-    a_gmem: TileTensor[.bfloat16, type_of(row_major[M, K]()), MutAnyOrigin],
-    b_gmem: TileTensor[.bfloat16, type_of(col_major[N, K]()), MutAnyOrigin],
-    result_c: TileTensor[.float32, type_of(row_major[M, N]()), MutAnyOrigin],
+    a_gmem: TileTensor[.bfloat16, type_of(row_major[M, K]()), a_gmem_origin],
+    b_gmem: TileTensor[.bfloat16, type_of(col_major[N, K]()), b_gmem_origin],
+    result_c: TileTensor[.float32, type_of(row_major[M, N]()), result_c_origin],
 ):
     comptime assert ASmemLayout.all_dims_known
     comptime assert BSmemLayout.all_dims_known
@@ -545,14 +557,17 @@ def wgmma_bf16_bf16_f32_64x8x16(ctx: DeviceContext) raises:
         16,
         a_smem_layout,
         b_smem_layout,
+        a_gmem_origin=origin_of(lhs),
+        b_gmem_origin=origin_of(rhs),
+        result_c_origin=origin_of(res),
     ]
 
     lhs.to_device()
     rhs.to_device()
     ctx.enqueue_function[kernel](
-        lhs.device_tensor().as_unsafe_any_origin(),
-        rhs.device_tensor().as_unsafe_any_origin(),
-        res.device_tensor().as_unsafe_any_origin(),
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        res.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
@@ -666,14 +681,17 @@ def wgmma_bf16_bf16_f32_64x8x16_inst_64x8x32(ctx: DeviceContext) raises:
         16,
         a_smem_layout,
         b_smem_layout,
+        a_gmem_origin=origin_of(lhs),
+        b_gmem_origin=origin_of(rhs),
+        result_c_origin=origin_of(res),
     ]
 
     lhs.to_device()
     rhs.to_device()
     ctx.enqueue_function[kernel](
-        lhs.device_tensor().as_unsafe_any_origin(),
-        rhs.device_tensor().as_unsafe_any_origin(),
-        res.device_tensor().as_unsafe_any_origin(),
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        res.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
@@ -697,10 +715,13 @@ def wgmma_f16_f16_f32_kernel[
     WMMA_K: Int,
     a_smem_layout: ASmemLayout,
     b_smem_layout: BSmemLayout,
+    a_gmem_origin: MutOrigin,
+    b_gmem_origin: MutOrigin,
+    result_c_origin: MutOrigin,
 ](
-    a_gmem: TileTensor[.float16, type_of(row_major[M, K]()), MutAnyOrigin],
-    b_gmem: TileTensor[.float16, type_of(col_major[N, K]()), MutAnyOrigin],
-    result_c: TileTensor[.float32, type_of(row_major[M, N]()), MutAnyOrigin],
+    a_gmem: TileTensor[.float16, type_of(row_major[M, K]()), a_gmem_origin],
+    b_gmem: TileTensor[.float16, type_of(col_major[N, K]()), b_gmem_origin],
+    result_c: TileTensor[.float32, type_of(row_major[M, N]()), result_c_origin],
 ):
     comptime assert ASmemLayout.all_dims_known
     comptime assert BSmemLayout.all_dims_known
@@ -862,14 +883,17 @@ def wgmma_f16_f16_f32_64x8x16(ctx: DeviceContext) raises:
         16,
         a_smem_layout,
         b_smem_layout,
+        a_gmem_origin=origin_of(lhs),
+        b_gmem_origin=origin_of(rhs),
+        result_c_origin=origin_of(res),
     ]
 
     lhs.to_device()
     rhs.to_device()
     ctx.enqueue_function[kernel](
-        lhs.device_tensor().as_unsafe_any_origin(),
-        rhs.device_tensor().as_unsafe_any_origin(),
-        res.device_tensor().as_unsafe_any_origin(),
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        res.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
@@ -983,14 +1007,17 @@ def wgmma_f16_f16_f32_64x8x16_inst_64x8x32(ctx: DeviceContext) raises:
         16,
         a_smem_layout,
         b_smem_layout,
+        a_gmem_origin=origin_of(lhs),
+        b_gmem_origin=origin_of(rhs),
+        result_c_origin=origin_of(res),
     ]
 
     lhs.to_device()
     rhs.to_device()
     ctx.enqueue_function[kernel](
-        lhs.device_tensor().as_unsafe_any_origin(),
-        rhs.device_tensor().as_unsafe_any_origin(),
-        res.device_tensor().as_unsafe_any_origin(),
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        res.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
@@ -1014,10 +1041,13 @@ def wgmma_f16_f16_f16_kernel[
     WMMA_K: Int,
     a_smem_layout: ASmemLayout,
     b_smem_layout: BSmemLayout,
+    a_gmem_origin: MutOrigin,
+    b_gmem_origin: MutOrigin,
+    result_c_origin: MutOrigin,
 ](
-    a_gmem: TileTensor[.float16, type_of(row_major[M, K]()), MutAnyOrigin],
-    b_gmem: TileTensor[.float16, type_of(row_major[K, N]()), MutAnyOrigin],
-    result_c: TileTensor[.float16, type_of(row_major[M, N]()), MutAnyOrigin],
+    a_gmem: TileTensor[.float16, type_of(row_major[M, K]()), a_gmem_origin],
+    b_gmem: TileTensor[.float16, type_of(row_major[K, N]()), b_gmem_origin],
+    result_c: TileTensor[.float16, type_of(row_major[M, N]()), result_c_origin],
 ):
     comptime assert ASmemLayout.all_dims_known
     comptime assert BSmemLayout.all_dims_known
@@ -1183,14 +1213,17 @@ def wgmma_f16_f16_f16_64x8x16(ctx: DeviceContext) raises:
         16,
         a_smem_layout,
         b_smem_layout,
+        a_gmem_origin=origin_of(lhs),
+        b_gmem_origin=origin_of(rhs),
+        result_c_origin=origin_of(res),
     ]
 
     lhs.to_device()
     rhs.to_device()
     ctx.enqueue_function[kernel](
-        lhs.device_tensor().as_unsafe_any_origin(),
-        rhs.device_tensor().as_unsafe_any_origin(),
-        res.device_tensor().as_unsafe_any_origin(),
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        res.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
@@ -1307,13 +1340,16 @@ def wgmma_f16_f16_f16_64x8x16_inst_64x8x32(ctx: DeviceContext) raises:
         16,
         a_smem_layout,
         b_smem_layout,
+        a_gmem_origin=origin_of(lhs),
+        b_gmem_origin=origin_of(rhs),
+        result_c_origin=origin_of(res),
     ]
     lhs.to_device()
     rhs.to_device()
     ctx.enqueue_function[kernel](
-        lhs.device_tensor().as_unsafe_any_origin(),
-        rhs.device_tensor().as_unsafe_any_origin(),
-        res.device_tensor().as_unsafe_any_origin(),
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        res.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )
@@ -1340,11 +1376,14 @@ def wgmma_kernel[
     WMMA_K: Int,
     a_smem_layout: ASmemLayout,
     b_smem_layout: BSmemLayout,
+    a_gmem_origin: MutOrigin,
+    b_gmem_origin: MutOrigin,
+    c_gmem_origin: MutOrigin,
     transpose_b: Bool = False,
 ](
-    a_gmem: TileTensor[a_type, type_of(a_layout), MutAnyOrigin],
-    b_gmem: TileTensor[b_type, type_of(b_layout), MutAnyOrigin],
-    c_gmem: TileTensor[c_type, type_of(c_layout), MutAnyOrigin],
+    a_gmem: TileTensor[a_type, type_of(a_layout), a_gmem_origin],
+    b_gmem: TileTensor[b_type, type_of(b_layout), b_gmem_origin],
+    c_gmem: TileTensor[c_type, type_of(c_layout), c_gmem_origin],
 ):
     comptime assert ASmemLayout.all_dims_known
     comptime assert BSmemLayout.all_dims_known
@@ -1515,13 +1554,16 @@ def wgmma_bf16_bf16_f32_64x8x16_transb_64x8x32(ctx: DeviceContext) raises:
         a_smem_layout,
         b_smem_layout,
         transpose_b=True,
+        a_gmem_origin=origin_of(lhs),
+        b_gmem_origin=origin_of(rhs),
+        c_gmem_origin=origin_of(res),
     ]
     lhs.to_device()
     rhs.to_device()
     ctx.enqueue_function[kernel](
-        lhs.device_tensor().as_unsafe_any_origin(),
-        rhs.device_tensor().as_unsafe_any_origin(),
-        res.device_tensor().as_unsafe_any_origin(),
+        lhs.device_tensor(),
+        rhs.device_tensor(),
+        res.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(128),
     )

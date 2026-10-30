@@ -45,11 +45,15 @@ def _b_val(i: Int, j: Int) -> Int:
 
 
 def mma_kernel[
-    a_dtype: DType, b_dtype: DType
+    a_dtype: DType,
+    b_dtype: DType,
+    a_origin: MutOrigin,
+    b_origin: MutOrigin,
+    d_origin: MutOrigin,
 ](
-    a_ptr: MutPointer[Scalar[a_dtype], MutAnyOrigin],
-    b_ptr: MutPointer[Scalar[b_dtype], MutAnyOrigin],
-    d_ptr: MutPointer[Float32, MutAnyOrigin],
+    a_ptr: MutPointer[Scalar[a_dtype], a_origin],
+    b_ptr: MutPointer[Scalar[b_dtype], b_origin],
+    d_ptr: MutPointer[Float32, d_origin],
 ):
     var a_frag = apple_mma_load_8x8[a_dtype](a_ptr, _N)
     var b_frag = apple_mma_load_8x8[b_dtype](b_ptr, _N)
@@ -82,9 +86,15 @@ def run_mma_test[
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    ctx.enqueue_function[mma_kernel[a_dtype, b_dtype]](
-        a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE)
-    )
+    ctx.enqueue_function[
+        mma_kernel[
+            a_dtype,
+            b_dtype,
+            a_origin=origin_of(a_dev),
+            b_origin=origin_of(b_dev),
+            d_origin=origin_of(d_dev),
+        ]
+    ](a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE))
 
     var d_host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(d_host, d_dev)
@@ -102,10 +112,12 @@ def run_mma_test[
         print("PASS")
 
 
-def mma_strided_kernel(
-    a_ptr: MutPointer[Float32, MutAnyOrigin],
-    b_ptr: MutPointer[Float32, MutAnyOrigin],
-    d_ptr: MutPointer[Float32, MutAnyOrigin],
+def mma_strided_kernel[
+    a_origin: MutOrigin, b_origin: MutOrigin, d_origin: MutOrigin
+](
+    a_ptr: MutPointer[Float32, a_origin],
+    b_ptr: MutPointer[Float32, b_origin],
+    d_ptr: MutPointer[Float32, d_origin],
 ):
     var a_frag = apple_mma_load_8x8[.float32](a_ptr, _N * 2, col_stride=2)
     var b_frag = apple_mma_load_8x8[.float32](b_ptr, _N * 2, col_stride=2)
@@ -140,9 +152,13 @@ def run_mma_test_strided(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    ctx.enqueue_function[mma_strided_kernel](
-        a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE)
-    )
+    ctx.enqueue_function[
+        mma_strided_kernel[
+            a_origin=origin_of(a_dev),
+            b_origin=origin_of(b_dev),
+            d_origin=origin_of(d_dev),
+        ]
+    ](a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE))
 
     var d_host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(d_host, d_dev)
@@ -181,9 +197,15 @@ def run_mma_matmul_test[
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    ctx.enqueue_function[mma_kernel[a_dtype, b_dtype]](
-        a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE)
-    )
+    ctx.enqueue_function[
+        mma_kernel[
+            a_dtype,
+            b_dtype,
+            a_origin=origin_of(a_dev),
+            b_origin=origin_of(b_dev),
+            d_origin=origin_of(d_dev),
+        ]
+    ](a_dev, b_dev, d_dev, grid_dim=(1), block_dim=(WARP_SIZE))
 
     var d_host = ctx.enqueue_create_host_buffer[.float32](_NUM_ELEMENTS)
     ctx.enqueue_copy(d_host, d_dev)

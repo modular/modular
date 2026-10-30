@@ -32,10 +32,13 @@ def mma_layout_tc[
     layout_c: TensorLayout,
     layout_a: TensorLayout,
     layout_b: TensorLayout,
+    mat_c_origin: MutOrigin,
+    mat_a_origin: MutOrigin,
+    mat_b_origin: MutOrigin,
 ](
-    mat_c: TileTensor[out_type, layout_c, MutAnyOrigin],
-    mat_a: TileTensor[in_type, layout_a, MutAnyOrigin],
-    mat_b: TileTensor[in_type, layout_b, MutAnyOrigin],
+    mat_c: TileTensor[out_type, layout_c, mat_c_origin],
+    mat_a: TileTensor[in_type, layout_a, mat_a_origin],
+    mat_b: TileTensor[in_type, layout_b, mat_b_origin],
 ):
     var tc = TensorCore[out_type, in_type, shape]()
     var a = tc.load_a(mat_a)
@@ -50,10 +53,13 @@ def matmul_naive[
     layout_c: TensorLayout,
     layout_a: TensorLayout,
     layout_b: TensorLayout,
+    mat_c_origin: MutOrigin,
+    mat_a_origin: MutOrigin,
+    mat_b_origin: MutOrigin,
 ](
-    mat_c: TileTensor[out_type, layout_c, MutAnyOrigin],
-    mat_a: TileTensor[in_type, layout_a, MutAnyOrigin],
-    mat_b: TileTensor[in_type, layout_b, MutAnyOrigin],
+    mat_c: TileTensor[out_type, layout_c, mat_c_origin],
+    mat_a: TileTensor[in_type, layout_a, mat_a_origin],
+    mat_b: TileTensor[in_type, layout_b, mat_b_origin],
 ):
     comptime assert mat_c.rank == mat_c.flat_rank == 2
     var x = global_idx.x
@@ -137,11 +143,14 @@ def test_layout_mma[
         type_of(layout_c),
         type_of(layout_a),
         type_of(layout_b),
+        mat_c_origin=origin_of(mat_c),
+        mat_a_origin=origin_of(mat_a),
+        mat_b_origin=origin_of(mat_b),
     ]
     ctx.enqueue_function[kernel](
-        mat_c.device_tensor().as_unsafe_any_origin(),
-        mat_a.device_tensor().as_unsafe_any_origin(),
-        mat_b.device_tensor().as_unsafe_any_origin(),
+        mat_c.device_tensor(),
+        mat_a.device_tensor(),
+        mat_b.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(ctx.default_device_info.warp_size),
     )
@@ -155,11 +164,14 @@ def test_layout_mma[
         type_of(layout_c),
         type_of(layout_a),
         type_of(layout_b),
+        mat_c_origin=origin_of(mat_c_n),
+        mat_a_origin=origin_of(mat_a_n),
+        mat_b_origin=origin_of(mat_b_n),
     ]
     ctx.enqueue_function[naive_func](
-        mat_c_n.device_tensor().as_unsafe_any_origin(),
-        mat_a_n.device_tensor().as_unsafe_any_origin(),
-        mat_b_n.device_tensor().as_unsafe_any_origin(),
+        mat_c_n.device_tensor(),
+        mat_a_n.device_tensor(),
+        mat_b_n.device_tensor(),
         grid_dim=(ceildiv(M, warps_per_block), ceildiv(N, warps_per_block)),
         block_dim=(warps_per_block, warps_per_block),
     )
@@ -184,10 +196,13 @@ def c_fragment_kernel[
     shape: DynamicCoord[.int, 3],
     MatrixLayout: TensorLayout,
     FragmentLayout: TensorLayout,
+    c_origin: ImmOrigin,
+    d_origin: MutOrigin,
+    loaded_origin: MutOrigin,
 ](
-    c: TileTensor[dtype, MatrixLayout, ImmutAnyOrigin],
-    d: TileTensor[dtype, MatrixLayout, MutAnyOrigin],
-    loaded: TileTensor[dtype, FragmentLayout, MutAnyOrigin],
+    c: TileTensor[dtype, MatrixLayout, c_origin],
+    d: TileTensor[dtype, MatrixLayout, d_origin],
+    loaded: TileTensor[dtype, FragmentLayout, loaded_origin],
 ):
     comptime assert loaded.rank == loaded.flat_rank == 2
     var tc = TensorCore[
@@ -245,12 +260,18 @@ def test_c_fragment_layout[
         d.device_tensor().unsafe_ptr().unsafe_offset(guard), matrix_layout
     )
     comptime kernel = c_fragment_kernel[
-        dtype, shape, type_of(matrix_layout), type_of(fragment_layout)
+        dtype,
+        shape,
+        type_of(matrix_layout),
+        type_of(fragment_layout),
+        c_origin=c_view.origin,
+        d_origin=d_view.origin,
+        loaded_origin=origin_of(loaded),
     ]
     ctx.enqueue_function[kernel](
-        c_view.as_imm().as_unsafe_any_origin(),
-        d_view.as_unsafe_any_origin(),
-        loaded.device_tensor().as_unsafe_any_origin(),
+        c_view.as_imm(),
+        d_view,
+        loaded.device_tensor(),
         grid_dim=1,
         block_dim=warp_size,
     )
@@ -295,9 +316,11 @@ def input_fragment_kernel[
     shape: DynamicCoord[.int, 3],
     InputLayout: TensorLayout,
     FragmentLayout: TensorLayout,
+    source_origin: ImmOrigin,
+    loaded_origin: MutOrigin,
 ](
-    source: TileTensor[dtype, InputLayout, ImmutAnyOrigin],
-    loaded: TileTensor[dtype, FragmentLayout, MutAnyOrigin],
+    source: TileTensor[dtype, InputLayout, source_origin],
+    loaded: TileTensor[dtype, FragmentLayout, loaded_origin],
 ):
     comptime assert loaded.rank == loaded.flat_rank == 3
     comptime assert shape[0] == shape[1]
@@ -342,7 +365,12 @@ def test_input_fragment_layout[
         source.device_tensor().unsafe_ptr().unsafe_offset(guard), matrix_layout
     )
     comptime kernel = input_fragment_kernel[
-        dtype, shape, type_of(matrix_layout), type_of(fragment_layout)
+        dtype,
+        shape,
+        type_of(matrix_layout),
+        type_of(fragment_layout),
+        source_origin=source_view.origin,
+        loaded_origin=origin_of(loaded),
     ]
     # Base-eight digits keep every coordinate distinguishable even in FP8.
     comptime tag_count = 4 if dtype.is_float8() else 2
@@ -362,8 +390,8 @@ def test_input_fragment_layout[
         _ = loaded.host_tensor().fill(nan[dtype]())
         loaded.to_device()
         ctx.enqueue_function[kernel](
-            source_view.as_imm().as_unsafe_any_origin(),
-            loaded.device_tensor().as_unsafe_any_origin(),
+            source_view.as_imm(),
+            loaded.device_tensor(),
             grid_dim=1,
             block_dim=warp_size,
         )

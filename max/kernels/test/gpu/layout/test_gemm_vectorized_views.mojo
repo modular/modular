@@ -61,9 +61,9 @@ def test_views[
     b.to_device()
     c.to_device()
 
-    var a_device = a.device_tensor().as_imm().as_unsafe_any_origin()
-    var b_device = b.device_tensor().as_imm().as_unsafe_any_origin()
-    var c_device = c.device_tensor().as_unsafe_any_origin()
+    var a_device = a.device_tensor().as_imm()
+    var b_device = b.device_tensor().as_imm()
+    var c_device = c.device_tensor()
     comptime if use_tensor_cores:
         comptime MMA_N = 8 if ctx.target.is_nvidia_gpu() else 16
         comptime MMA_K = 8 if ctx.target.is_nvidia_gpu() else 4
@@ -80,6 +80,9 @@ def test_views[
             16,
             MMA_N,
             MMA_K,
+            A_origin=a_device.origin,
+            B_origin=b_device.origin,
+            C_origin=c_device.origin,
         ]
         ctx.enqueue_function[kernel](
             a_device,
@@ -100,6 +103,9 @@ def test_views[
             8,
             8,
             256,
+            a_origin=a_device.origin,
+            b_origin=b_device.origin,
+            c_origin=c_device.origin,
         ]
         ctx.enqueue_function[kernel](
             a_device,

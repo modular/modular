@@ -35,8 +35,13 @@ def c_value(row: Int, col: Int) -> Float32:
 
 
 def bulk_tile_kernel[
-    MG: Int, NG: Int, IM: Int, IN: Int, output_layout: TensorLayout
-](output: TileTensor[.float32, output_layout, MutAnyOrigin],):
+    MG: Int,
+    NG: Int,
+    IM: Int,
+    IN: Int,
+    output_layout: TensorLayout,
+    output_origin: MutOrigin,
+](output: TileTensor[.float32, output_layout, output_origin],):
     comptime IK = 16
     comptime KG = 3
     var tc = TensorCore[.float32, .float16, (IM, IN, IK)]()
@@ -117,9 +122,16 @@ def test_bulk_tile[
     _ = output.host_tensor().fill(-999)
     output.to_device()
     ctx.enqueue_function[
-        bulk_tile_kernel[MG, NG, IM, IN, type_of(output_layout)]
+        bulk_tile_kernel[
+            MG,
+            NG,
+            IM,
+            IN,
+            type_of(output_layout),
+            output_origin=origin_of(output),
+        ]
     ](
-        output.device_tensor().as_unsafe_any_origin(),
+        output.device_tensor(),
         grid_dim=1,
         block_dim=ctx.default_device_info.warp_size,
     )

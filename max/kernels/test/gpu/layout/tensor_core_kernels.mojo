@@ -38,10 +38,12 @@ def mma_load_and_multiply[
     lhs_layout: TensorLayout,
     rhs_layout: TensorLayout,
     inst_shape: DynamicCoord[.int, 3],
+    lhs_origin: MutOrigin,
+    rhs_origin: MutOrigin,
     transpose_b: Bool = False,
 ](
-    lhs: TileTensor[dtype, lhs_layout, MutAnyOrigin],
-    rhs: TileTensor[dtype, rhs_layout, MutAnyOrigin],
+    lhs: TileTensor[dtype, lhs_layout, lhs_origin],
+    rhs: TileTensor[dtype, rhs_layout, rhs_origin],
 ):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, transpose_b]()
     var a_reg_tile = mma.load_a(lhs)
@@ -148,7 +150,8 @@ def mma_write_operand_kernel[
     dtype: DType,
     layout: TensorLayout,
     inst_shape: DynamicCoord[.int, 3],
-](output: TileTensor[dst_dtype, layout, MutAnyOrigin]):
+    output_origin: MutOrigin,
+](output: TileTensor[dst_dtype, layout, output_origin]):
     var mma = TensorCore[dst_dtype, dtype, inst_shape]()
     var thread_reg_tile = stack_allocation[dst_dtype, address_space=.LOCAL](
         mma.c_fragment_layout
@@ -187,14 +190,16 @@ def test_load_and_mma_and_multiply_operands[
         type_of(lhs_layout),
         type_of(rhs_layout),
         shape,
-        transpose_b,
+        lhs_origin=origin_of(lhs),
+        rhs_origin=origin_of(rhs),
+        transpose_b=transpose_b,
     ]
 
     lhs.to_device()
     rhs.to_device()
     ctx.enqueue_function[mma_load_and_print_kernel_fn](
-        lhs.device_tensor().as_unsafe_any_origin(),
-        rhs.device_tensor().as_unsafe_any_origin(),
+        lhs.device_tensor(),
+        rhs.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(ctx.default_device_info.warp_size),
     )
@@ -213,10 +218,10 @@ def test_write_res_operand[
     _ = dst.host_tensor().fill(0)
     dst.to_device()
     comptime mma_load_and_print_kernel_fn = mma_write_operand_kernel[
-        dst_dtype, dtype, type_of(layout), shape
+        dst_dtype, dtype, type_of(layout), shape, output_origin=origin_of(dst)
     ]
     ctx.enqueue_function[mma_load_and_print_kernel_fn](
-        dst.device_tensor().as_unsafe_any_origin(),
+        dst.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(ctx.default_device_info.warp_size),
     )
@@ -253,10 +258,12 @@ def mma_load_and_print_operands_kernel_ldmatrix[
     lhs_layout: TensorLayout,
     rhs_layout: TensorLayout,
     inst_shape: DynamicCoord[.int, 3],
+    lhs_origin: MutOrigin,
+    rhs_origin: MutOrigin,
     transpose_b: Bool = False,
 ](
-    lhs: TileTensor[dtype, lhs_layout, MutAnyOrigin],
-    rhs: TileTensor[dtype, rhs_layout, MutAnyOrigin],
+    lhs: TileTensor[dtype, lhs_layout, lhs_origin],
+    rhs: TileTensor[dtype, rhs_layout, rhs_origin],
 ) where (lhs_layout.all_dims_known and rhs_layout.all_dims_known):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, transpose_b]()
     var a_smem = stack_allocation[dtype, address_space=.SHARED](lhs.layout)
@@ -361,13 +368,15 @@ def test_load_operands_ldmatrix[
         type_of(lhs_layout),
         type_of(rhs_layout),
         shape,
-        transpose_b,
+        lhs_origin=origin_of(lhs),
+        rhs_origin=origin_of(rhs),
+        transpose_b=transpose_b,
     ]
     lhs.to_device()
     rhs.to_device()
     ctx.enqueue_function[mma_load_and_print_kernel_fn](
-        lhs.device_tensor().as_unsafe_any_origin(),
-        rhs.device_tensor().as_unsafe_any_origin(),
+        lhs.device_tensor(),
+        rhs.device_tensor(),
         grid_dim=(1, 1),
         block_dim=(ctx.default_device_info.warp_size),
     )

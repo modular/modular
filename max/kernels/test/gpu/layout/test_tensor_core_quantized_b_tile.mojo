@@ -44,8 +44,11 @@ def scale_value(row: Int, lane: Int) -> BFloat16:
 
 
 def quantized_b_kernel[
-    packed_dtype: DType, NF: Int, output_layout: TensorLayout
-](output: TileTensor[.bfloat16, output_layout, MutAnyOrigin],):
+    packed_dtype: DType,
+    NF: Int,
+    output_layout: TensorLayout,
+    output_origin: MutOrigin,
+](output: TileTensor[.bfloat16, output_layout, output_origin],):
     comptime assert output.rank == output.flat_rank == 4
     var source = stack_allocation[packed_dtype, address_space=.SHARED](
         row_major[1, 388]()
@@ -93,8 +96,12 @@ def test_quantized_b[packed_dtype: DType, NF: Int](ctx: DeviceContext) raises:
     var output = HostDeviceTileTensor[.bfloat16](layout, ctx)
     _ = output.host_tensor().fill(-32)
     output.to_device()
-    ctx.enqueue_function[quantized_b_kernel[packed_dtype, NF, type_of(layout)]](
-        output.device_tensor().as_unsafe_any_origin(),
+    ctx.enqueue_function[
+        quantized_b_kernel[
+            packed_dtype, NF, type_of(layout), output_origin=origin_of(output)
+        ]
+    ](
+        output.device_tensor(),
         grid_dim=1,
         block_dim=warp_size,
     )

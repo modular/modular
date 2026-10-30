@@ -41,8 +41,9 @@ def test_tma_mcast_load_kernel[
     thread_layout: MixedLayout,
     CLUSTER_M: UInt32,
     CLUSTER_N: UInt32,
+    dst_origin: MutOrigin,
 ](
-    dst: TileTensor[dtype, type_of(layout), MutAnyOrigin],
+    dst: TileTensor[dtype, type_of(layout), dst_origin],
     tma_tile: TMATensorTile[dtype, tile_shape],
 ):
     comptime tileM = Int(tile_shape.element_types[0].static_value)
@@ -142,6 +143,7 @@ def test_tma_multicast_load_row_major[
         __thread_layout,  # thread layout
         UInt32(CLUSTER_M),
         UInt32(CLUSTER_N),
+        dst_origin=origin_of(dst),
     ]
 
     ctx.enqueue_function[kernel](
@@ -179,8 +181,9 @@ def test_tma_sliced_multicast_load_kernel[
     CLUSTER_M: UInt32,
     CLUSTER_N: UInt32,
     tma_tile_shape: Coord,
+    dst_origin: MutOrigin,
 ](
-    dst: TileTensor[dtype, type_of(layout), MutAnyOrigin],
+    dst: TileTensor[dtype, type_of(layout), dst_origin],
     tma_tile: TMATensorTile[dtype, tma_tile_shape],
 ):
     comptime tileM = type_of(tile_layout).static_shape[0]
@@ -276,7 +279,8 @@ def test_tma_sliced_multicast_load_row_major[
         row_major[tileM, tileN](),
         UInt32(CLUSTER_M),
         UInt32(CLUSTER_N),
-        type_of(tma_tensor).tile_shape,  # tma tile shape
+        type_of(tma_tensor).tile_shape,  # tma tile shape,
+        dst_origin=origin_of(dst),
     ]
 
     ctx.enqueue_function[kernel](
