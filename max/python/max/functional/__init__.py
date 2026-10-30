@@ -60,6 +60,7 @@ from max.tensor.tensor import Tensor
 from .collective_ops import (
     allgather,
     allgather_rms_norm,
+    allreduce_rms_norm,
     allreduce_sum,
     distributed_broadcast,
     reduce_scatter,
@@ -215,6 +216,7 @@ __all__ = [
     "add",
     "allgather",
     "allgather_rms_norm",
+    "allreduce_rms_norm",
     "allreduce_sum",
     "arange",
     "argmax",

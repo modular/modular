@@ -35,7 +35,7 @@ from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
     interleave_for_tp,
 )
 from max.tensor import Tensor, default_device
-from max.tensor.sharding import DeviceMesh
+from max.tensor.sharding import DeviceMesh, TensorLayout
 
 
 def _rel_error(a: np.ndarray, b: np.ndarray) -> float:
@@ -48,6 +48,79 @@ def _tp2_mesh() -> DeviceMesh:
         mesh_shape=(2,),
         axis_names=("tp",),
     )
+
+
+HIDDEN = 32
+SEQ_LEN = 6
+
+
+def _latent_moe_layer(
+    tp_size: int, dtype: DType, seed: int
+) -> tuple[KimiK3LatentMoE, np.ndarray]:
+    """A latent-MoE layer over seeded random weights, plus its input.
+
+    The same ``seed`` regenerates identical weights for every ``tp_size``,
+    so layers built for different tensor-parallel sizes stay comparable.
+    """
+    latent = 24
+    moe_inter = 16
+    # Kernel-valid: the MoE router kernel needs num_threads == num_experts
+    # to be a whole number of warps.
+    num_experts = 64
+    top_k = 4
+    shared_inter = moe_inter
+    beta, linear_beta = 1.5, 1.5
+    eps = 1e-5
+
+    rng = np.random.default_rng(seed)
+
+    def arr(*shape: int) -> np.ndarray:
+        return (rng.standard_normal(shape) * 0.02).astype(np.float32)
+
+    gate_weight_np = arr(num_experts, HIDDEN)
+    bias_np = np.zeros(num_experts, dtype=np.float32)
+    down_proj_np = arr(latent, HIDDEN)
+    up_proj_np = arr(HIDDEN, latent)
+    norm_np = np.ones(latent, dtype=np.float32)
+    experts_gate_up_np = arr(num_experts, 2 * moe_inter, latent)
+    experts_down_np = arr(num_experts, latent, moe_inter)
+    shared_gate_up_np = arr(2 * shared_inter, HIDDEN)
+    shared_down_np = arr(HIDDEN, shared_inter)
+    x_np = rng.standard_normal((SEQ_LEN, HIDDEN)).astype(np.float32)
+
+    layer = KimiK3LatentMoE(
+        hidden_size=HIDDEN,
+        latent_size=latent,
+        moe_intermediate_size=moe_inter,
+        shared_intermediate_size=shared_inter,
+        num_experts=num_experts,
+        num_experts_per_token=top_k,
+        beta=beta,
+        linear_beta=linear_beta,
+        rms_norm_eps=eps,
+        routed_scaling_factor=1.0,
+        num_expert_group=1,
+        topk_group=1,
+        moe_renormalize=True,
+    )
+    layer.gate.gate_score.weight = Tensor(gate_weight_np, dtype=DType.float32)
+    layer.gate.e_score_correction_bias = Tensor(bias_np, dtype=DType.float32)
+    layer.routed_expert_down_proj.weight = Tensor(down_proj_np).cast(dtype)
+    layer.routed_expert_up_proj.weight = Tensor(up_proj_np).cast(dtype)
+    layer.routed_expert_norm.weight = Tensor(norm_np).cast(dtype)
+    # The TP layer takes the per-rank interleave the weight adapter
+    # writes; with one rank it is the plain concatenation.
+    layer.experts_gate_up_proj = Tensor(
+        interleave_for_tp(
+            np.split(experts_gate_up_np, 2, axis=1), tp_size, axis=1
+        )
+    ).cast(dtype)
+    layer.experts_down_proj = Tensor(experts_down_np).cast(dtype)
+    layer.shared_experts.gate_up_proj.weight = Tensor(
+        interleave_for_tp(np.split(shared_gate_up_np, 2), tp_size)
+    ).cast(dtype)
+    layer.shared_experts.down_proj.weight = Tensor(shared_down_np).cast(dtype)
+    return layer, x_np
 
 
 @pytest.mark.parametrize(
@@ -115,92 +188,52 @@ def test_dense_mlp_rejects_width_not_divisible_by_tp() -> None:
     "mo.moe.single.group.router is staged as an undeclared custom op the interpreter can't bind"
 )
 def test_latent_moe_tp2_matches_tp1() -> None:
-    hidden = 32
-    latent = 24
-    moe_inter = 16
-    # Kernel-valid: the MoE router kernel needs num_threads == num_experts
-    # to be a whole number of warps.
-    num_experts = 64
-    top_k = 4
-    shared_inter = moe_inter
-    beta, linear_beta = 1.5, 1.5
-    eps = 1e-5
-    seq_len = 6
-
-    rng = np.random.default_rng(1)
-
-    def arr(*shape: int) -> np.ndarray:
-        return (rng.standard_normal(shape) * 0.02).astype(np.float32)
-
-    gate_weight_np = arr(num_experts, hidden)
-    bias_np = np.zeros(num_experts, dtype=np.float32)
-    down_proj_np = arr(latent, hidden)
-    up_proj_np = arr(hidden, latent)
-    norm_np = np.ones(latent, dtype=np.float32)
-    experts_gate_up_np = arr(num_experts, 2 * moe_inter, latent)
-    experts_down_np = arr(num_experts, latent, moe_inter)
-    shared_gate_up_np = arr(2 * shared_inter, hidden)
-    shared_down_np = arr(hidden, shared_inter)
-    x_np = rng.standard_normal((seq_len, hidden)).astype(np.float32)
-
-    def build(tp_size: int) -> KimiK3LatentMoE:
-        layer = KimiK3LatentMoE(
-            hidden_size=hidden,
-            latent_size=latent,
-            moe_intermediate_size=moe_inter,
-            shared_intermediate_size=shared_inter,
-            num_experts=num_experts,
-            num_experts_per_token=top_k,
-            beta=beta,
-            linear_beta=linear_beta,
-            rms_norm_eps=eps,
-            routed_scaling_factor=1.0,
-            num_expert_group=1,
-            topk_group=1,
-            moe_renormalize=True,
-        )
-        layer.gate.gate_score.weight = Tensor(
-            gate_weight_np, dtype=DType.float32
-        )
-        layer.gate.e_score_correction_bias = Tensor(
-            bias_np, dtype=DType.float32
-        )
-        layer.routed_expert_down_proj.weight = Tensor(
-            down_proj_np, dtype=DType.float32
-        )
-        layer.routed_expert_up_proj.weight = Tensor(
-            up_proj_np, dtype=DType.float32
-        )
-        layer.routed_expert_norm.weight = Tensor(norm_np, dtype=DType.float32)
-        # The TP layer takes the per-rank interleave the weight adapter
-        # writes; with one rank it is the plain concatenation.
-        layer.experts_gate_up_proj = Tensor(
-            interleave_for_tp(
-                np.split(experts_gate_up_np, 2, axis=1), tp_size, axis=1
-            ),
-            dtype=DType.float32,
-        )
-        layer.experts_down_proj = Tensor(experts_down_np, dtype=DType.float32)
-        layer.shared_experts.gate_up_proj.weight = Tensor(
-            interleave_for_tp(np.split(shared_gate_up_np, 2), tp_size),
-            dtype=DType.float32,
-        )
-        layer.shared_experts.down_proj.weight = Tensor(
-            shared_down_np, dtype=DType.float32
-        )
-        return layer
-
     with default_device(Accelerator(0)):
-        layer1 = build(1)
+        layer1, x_np = _latent_moe_layer(1, DType.float32, seed=1)
         x1 = Tensor(x_np, dtype=DType.float32)
         out1 = layer1(x1).to_numpy()
 
     mesh = _tp2_mesh()
     with default_device(mesh):
-        layer2 = tensor_parallel_latent_moe(build(2), mesh)
+        layer2, _ = _latent_moe_layer(2, DType.float32, seed=1)
+        layer2 = tensor_parallel_latent_moe(layer2, mesh)
         x2 = Tensor(x_np, dtype=DType.float32)
         # This layer reduces internally, so the caller does not allreduce.
         out2 = layer2(x2).to_numpy()
 
     err = _rel_error(out2, out1)
     assert err < 1e-4, f"latent MoE TP=2 vs TP=1 diverges: rel_error={err}"
+
+
+def test_tp_latent_moe_graph_fuses_allreduce_with_routed_expert_norm() -> None:
+    """The TP graph stages the fused collective, not allreduce + a norm.
+
+    The numerical TP tests run float32, where the functional falls back to
+    allreduce + rms_norm, so they pass whether or not the fusion fires. This
+    stages the layer at TP=2 in bfloat16 -- the production dtype -- through
+    ``Module.stage``, the tracing half of production's ``Module.compile``,
+    which threads the mesh's signal buffers in as graph inputs: the routed
+    branch must be one ``mo.composite.distributed.allreduce_rms_norm`` with
+    no standalone ``mo.reduce.rms_norm`` left on the latent. The shared
+    branch keeps its plain allreduce.
+    """
+    mesh = _tp2_mesh()
+    # Weights live on the mesh, replicated or sharded, the way production
+    # loads them, so stage() allocates the mesh's signal buffers and the
+    # collective takes its fused path. The helper casts its float32 numpy
+    # arrays to bfloat16 eagerly (a graph constant would reject the dtype
+    # it has to convert).
+    with default_device(mesh):
+        layer, _ = _latent_moe_layer(2, DType.bfloat16, seed=4)
+        layer = tensor_parallel_latent_moe(layer, mesh)
+        staged, _weights = layer.stage(
+            TensorLayout(DType.bfloat16, [SEQ_LEN, HIDDEN], mesh)
+        )
+
+    ir = str(staged)
+    assert "mo.composite.distributed.allreduce_rms_norm" in ir
+    assert "mo.reduce.rms_norm" not in ir, (
+        "the routed-expert norm must ride the allreduce, not run standalone"
+    )
+    # Only the shared branch keeps a plain allreduce.
+    assert ir.count("mo.distributed.allreduce.sum") == 1

@@ -1224,6 +1224,25 @@ def _2stage_scratch_bytes[
     return num_bytes
 
 
+def _fused_kernel_tiles_cols[
+    in_dtype: DType
+](cols: Int, ctx: DeviceContext) -> Bool:
+    """Whether the fused kernels' warp-tiling dispatch can handle `cols`.
+
+    Depends on shape only, so every rank agrees; `_dispatch_ar_norm` uses it
+    to route untileable widths to the two-launch fallback.
+    """
+    comptime warp_size = ctx.default_device_info.warp_size
+    comptime max_warps_per_block = (
+        ctx.default_device_info.max_thread_block_size // warp_size
+    )
+    comptime sw1 = simd_width_of[in_dtype, target=ctx.target]()
+    comptime sw2 = sw1 * 2
+    return cols <= (warp_size * sw1 * max_warps_per_block) or (
+        cols <= (warp_size * sw2 * max_warps_per_block) and cols % sw2 == 0
+    )
+
+
 def _dispatch_fused_kernel[
     in_dtype: DType,
     out_dtype: DType,
@@ -1612,17 +1631,7 @@ def _dispatch_fused_kernel[
 
     # Warp-tiling: each thread handles simd_width elements. Wider simd for
     # larger column counts.
-    if cols <= (warp_size * sw1 * max_warps_per_block):
-        if use_2stage:
-            launch_2stage[sw1]()
-        else:
-            launch_1stage[sw1]()
-    elif cols <= (warp_size * sw2 * max_warps_per_block) and cols % sw2 == 0:
-        if use_2stage:
-            launch_2stage[sw2]()
-        else:
-            launch_1stage[sw2]()
-    else:
+    if not _fused_kernel_tiles_cols[in_dtype](cols, ctx):
         comptime max_cols = warp_size * sw2 * max_warps_per_block
         raise Error(
             String(
@@ -1630,6 +1639,15 @@ def _dispatch_fused_kernel[
                 t"{max_cols}) for warp-tiling kernel"
             )
         )
+    if cols <= (warp_size * sw1 * max_warps_per_block):
+        if use_2stage:
+            launch_2stage[sw1]()
+        else:
+            launch_1stage[sw1]()
+    elif use_2stage:
+        launch_2stage[sw2]()
+    else:
+        launch_1stage[sw2]()
 
 
 # --- Public API ---
@@ -1657,6 +1675,8 @@ def allreduce_rmsnorm[
     scale_output: TileTensor[mut=True, scales_dtype, ...],
     rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
     ctx: DeviceContext,
+    my_rank: Optional[Int] = None,
+    scratch_bytes: Optional[Int] = None,
 ) raises:
     """Fused allreduce + RMSNorm with optional FP8 quantization.
 
@@ -1693,6 +1713,12 @@ def allreduce_rmsnorm[
             written, when not quantizing).
         rank_sigs: Per-GPU signal pointers for synchronization.
         ctx: Device context for this GPU.
+        my_rank: This GPU's index in `input_buffers` and `rank_sigs`.
+            Defaults to `ctx.device().id`, which is right only when device
+            ordinals match list positions.
+        scratch_bytes: Bytes after each `Signal` header that kernels may
+            stage through. Paths that need more take the 1-stage kernel.
+            None means the caller sized it for every path.
 
     Note:
         Both kernels finish all P2P reads of the input buffers before they
@@ -1723,6 +1749,12 @@ def allreduce_rmsnorm[
 
     if not is_p2p_enabled():
         raise Error("allreduce_rmsnorm requires P2P access between GPUs")
+
+    var rank = my_rank.or_else(Int(ctx.device().id))
+    if not 0 <= rank < ngpus:
+        raise Error(
+            t"allreduce_rmsnorm: my_rank ({rank}) must be in [0, {ngpus})"
+        )
 
     # Compute rows/cols from TileTensor dims.
     var in_num_elems = input_buffers[0].num_elements()
@@ -1759,10 +1791,108 @@ def allreduce_rmsnorm[
         scale_ub,
         scale_output_1d,
         rank_sigs,
-        Int(ctx.device().id),
-        Int.MAX,
+        rank,
+        scratch_bytes.or_else(Int.MAX),
         ctx,
     )
+
+
+# Cols the fuse threshold was measured at (MI355, 8 GPUs, bf16); a different
+# width maps the byte threshold to a different row count, so recalibrate
+# before trusting the crossover there.
+comptime AR_NORM_CALIBRATED_COLS = 3584
+
+# `[rows, cols]` bf16 bytes at/below which `_dispatch_ar_norm` fuses: the
+# measured MI355 8-GPU crossover at 3584 cols, where the fused kernel wins
+# through 512 rows and loses from 768. A perf cut, not correctness -- above
+# it the fabric-saturated plain allreduce beats the norm-in-epilogue, so the
+# dispatch hands off to a standalone allreduce + norm.
+comptime AR_NORM_FUSE_THRESHOLD = (
+    512 * AR_NORM_CALIBRATED_COLS * size_of[DType.bfloat16]()
+)
+
+
+def _dispatch_ar_norm[
+    in_dtype: DType,
+    ngpus: Int,
+    in_layout: TensorLayout,
+    in_origin: Origin,
+    in_engine: TensorEngine,
+    TwoLaunchFnType: def() raises -> None,
+    //,
+    multiply_before_cast: Bool = True,
+](
+    input_buffers: Array[
+        TileTensor[in_dtype, in_layout, in_origin, Engine=in_engine], ngpus
+    ],
+    normed_out: TileTensor[mut=True, in_dtype, ...],
+    sum_out: TileTensor[mut=True, in_dtype, ...],
+    gamma: TileTensor[in_dtype, ...],
+    epsilon: Float32,
+    weight_offset: Scalar[in_dtype],
+    rank_sigs: Array[MutPointer[Signal, MutAnyOrigin], ngpus],
+    ctx: DeviceContext,
+    two_launch: TwoLaunchFnType,
+    my_rank: Optional[Int] = None,
+    scratch_bytes: Optional[Int] = None,
+) raises:
+    """Runtime-select the fused allreduce+norm vs a two-launch fallback.
+
+    Fuses while the full `[rows, cols]` payload fits `AR_NORM_FUSE_THRESHOLD`;
+    above it, hand off to `two_launch` (a standalone allreduce into `sum_out`
+    followed by a separate norm), caller-supplied so `comm` stays free of
+    `nn`. Nothing is calibrated off-AMD, so those targets always take
+    `two_launch`, as does any host without P2P access: the fused kernels
+    read their peers' inputs directly, while the plain allreduce falls back
+    to staged copies.
+
+    Widths the fused kernels cannot warp-tile also take `two_launch`. The
+    gate reads only `rows` and `cols`, which are identical on every rank
+    (an allreduce needs same-shaped operands): the two arms issue different
+    barriers on shared `rank_sigs`, so a per-rank disagreement would
+    deadlock. `sum_out` is written by `two_launch` only.
+    """
+    comptime assert (
+        in_dtype == .bfloat16
+    ), "_dispatch_ar_norm fuse threshold is bf16-calibrated (bf16 in/out only)"
+
+    # The fused kernels read their peers' inputs directly; without P2P the
+    # plain allreduce falls back to staged copies, so run the two-launch
+    # fallback instead of the fused arm's hard P2P requirement.
+    # `is_p2p_enabled` is a process-wide property, so every rank takes the
+    # same arm.
+    if not is_p2p_enabled():
+        two_launch()
+        return
+
+    comptime threshold = (
+        AR_NORM_FUSE_THRESHOLD if ctx.target.is_amd_gpu() else Int(0)
+    )
+
+    var payload_bytes = input_buffers[0].num_elements() * size_of[in_dtype]()
+    comptime last_dim_idx = in_layout.rank - 1
+    var cols = Int(input_buffers[0].dim[last_dim_idx]())
+    if payload_bytes <= threshold and _fused_kernel_tiles_cols[in_dtype](
+        cols, ctx
+    ):
+        # in == out dtype, so the kernel skips its FP8 epilogue and never
+        # touches the scale operand; `sum_out` (unwritten on this arm)
+        # doubles as the dummy.
+        allreduce_rmsnorm[multiply_before_cast=multiply_before_cast](
+            input_buffers,
+            normed_out,
+            gamma,
+            epsilon,
+            weight_offset,
+            Float32(0.0),
+            sum_out,
+            rank_sigs,
+            ctx,
+            my_rank=my_rank,
+            scratch_bytes=scratch_bytes,
+        )
+    else:
+        two_launch()
 
 
 def allreduce_residual_rmsnorm[

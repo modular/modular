@@ -69,6 +69,7 @@ from .allgather_rms_norm import (
     allgather_rms_norm_quant_mxfp6,
     allgather_rms_norm_quant_mxfp8,
 )
+from .allreduce_rms_norm import allreduce_rms_norm
 from .argsort import argsort
 from .band_part import band_part
 from .bottom_k import bottom_k

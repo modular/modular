@@ -169,6 +169,14 @@ This version is still a work in progress.
 - Added `max.driver.Buffer.memset(value)` to fill a contiguous buffer or
   slice in place with a byte value, without allocating a source buffer.
 
+- Added `ops.allreduce_rms_norm` and `max.functional.allreduce_rms_norm`, a
+  fused allreduce + RMSNorm collective for bfloat16 2-D tensors: every device
+  ends up with the RMS norm of the summed tensor, computed in one launch. The
+  norm runs on the unrounded float32 sum, so it is not bit-identical to
+  `allreduce_sum` followed by `rms_norm`, which reads the sum rounded back to
+  bfloat16. The `max.functional` form falls back to that two-launch path for
+  inputs that are not 2-D bfloat16 and for meshes without signal buffers.
+
 - Added the `ops.CoordinateTransformMode` and `ops.RoundMode` enums.
   `ops.resize_linear`, `ops.resize_nearest`, and their `max.functional`
   counterparts take them for `coordinate_transform_mode` and

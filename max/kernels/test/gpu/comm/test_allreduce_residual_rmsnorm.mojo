@@ -568,6 +568,197 @@ def test_fused_allreduce_rmsnorm_noquant[
     print("    PASS")
 
 
+# --- Test: no-residual fused allreduce + RMSNorm at the latent-MoE shape ---
+
+
+@inline(.always)
+def _latent_moe_test_value[dtype: DType](salt: Int, idx: Int) -> Scalar[dtype]:
+    """Signed per-`salt` value on a 2^-7 grid in [-2, 2], exact in bf16.
+
+    A spatial hash of (salt, idx): two salts at the same index give different
+    values with overwhelming probability, so dropping or duplicating one
+    rank's contribution moves the allreduce sum. The 2^-7 grid also keeps the
+    kernel's float32 peer sum exact (ngpus <= 8 addends sum to <= 12
+    significant bits), so a float64 host reference sees the same sum the
+    kernel normalizes.
+    """
+    var h = (salt * 73856093) ^ (idx * 19349663)
+    return (Float64(h % 513 - 256) / 128.0).cast[dtype]()
+
+
+def test_fused_allreduce_rmsnorm_noquant_latent[
+    ngpus: Int,
+    dtype: DType,
+    multiply_before_cast: Bool,
+](list_of_ctx: List[DeviceContext], rows: Int, cols: Int,) raises:
+    """Verify the no-residual no-quant fused kernel at the latent-MoE shape.
+
+    K3's TP latent-MoE reduces bf16 `[M, 3584]` partials (decode M = 1..8,
+    prefill rows in the hundreds) and normalizes with `ops.rms_norm`
+    semantics: eps 1e-5, weight_offset 0, and either gamma cast order.
+    Inputs and gamma are signed, the inputs distinct per rank, and the host
+    reference normalizes the exact peer sum in float64, matching the
+    kernel's float32-sum-before-norm contract (see `_latent_moe_test_value`).
+    """
+    var length = rows * cols
+
+    print(
+        "  test_fused_allreduce_rmsnorm_noquant_latent[",
+        ngpus,
+        ",",
+        dtype,
+        ",",
+        rows,
+        "x",
+        cols,
+        ", multiply_before_cast=",
+        multiply_before_cast,
+        "]",
+    )
+
+    # --- Setup: per-GPU input buffers ---
+    var in_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
+    var host_bufs = List[HostBuffer[dtype]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
+    var temp_bytes = ngpus * size_of[dtype]() * length
+
+    for i in range(ngpus):
+        in_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](length))
+        var h = list_of_ctx[i].enqueue_create_host_buffer[dtype](length)
+        for j in range(length):
+            h[j] = _latent_moe_test_value[dtype](i, j)
+        list_of_ctx[i].enqueue_copy(in_dev[i], h)
+        host_bufs.append(h^)
+
+        signal_buffers.append(
+            list_of_ctx[i].create_buffer_sync[.uint8](
+                size_of[Signal]() + temp_bytes
+            )
+        )
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
+
+    var in_layout = row_major(rows, cols)
+    comptime InputTileType = type_of(
+        TileTensor(in_dev[0], in_layout).as_unsafe_any_origin().as_imm()
+    )
+    var in_tiles = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> InputTileType: TileTensor(
+            in_dev[i], in_layout
+        )
+        .as_unsafe_any_origin()
+        .as_imm()
+    )
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    # --- Shared params ---
+    var ctx = list_of_ctx[0]
+    var gamma_host = ctx.enqueue_create_host_buffer[dtype](cols)
+    for i in range(cols):
+        gamma_host[i] = _latent_moe_test_value[dtype](ngpus, i)
+    var gamma_dev = ctx.enqueue_create_buffer[dtype](cols)
+    ctx.enqueue_copy(gamma_dev, gamma_host)
+
+    var gamma_tensor = TileTensor(gamma_dev, row_major(cols))
+    var epsilon = Float32(1e-5)
+    var weight_offset = Scalar[dtype](0.0)
+
+    # --- Host reference: exact float64 peer sum, RMSNorm per cast order ---
+    var ref_sum = ctx.enqueue_create_host_buffer[.float64](length)
+    for i in range(length):
+        var s = Float64(0)
+        for g in range(ngpus):
+            s += host_bufs[g][i].cast[.float64]()
+        ref_sum[i] = s
+
+    var ref_out_host = ctx.enqueue_create_host_buffer[dtype](length)
+    var ref_other_host = ctx.enqueue_create_host_buffer[dtype](length)
+    for r in range(rows):
+        var m2 = Float64(0)
+        for c in range(cols):
+            var s = ref_sum[r * cols + c]
+            m2 += s * s
+        var norm = rsqrt(m2 / Float64(cols) + epsilon.cast[.float64]())
+        for c in range(cols):
+            var x = ref_sum[r * cols + c] * norm
+            comptime if multiply_before_cast:
+                # Gamma applied in the reduction dtype, one cast at the end.
+                ref_out_host[r * cols + c] = (
+                    x * gamma_host[c].cast[.float64]()
+                ).cast[dtype]()
+                ref_other_host[r * cols + c] = x.cast[dtype]() * gamma_host[c]
+            else:
+                # `ops.rms_norm` default: the normalized value is cast to
+                # `dtype` first and gamma is applied in `dtype`. weight_offset
+                # is 0, so the kernel's gamma register round-trips to gamma
+                # exactly.
+                ref_out_host[r * cols + c] = x.cast[dtype]() * gamma_host[c]
+                ref_other_host[r * cols + c] = (
+                    x * gamma_host[c].cast[.float64]()
+                ).cast[dtype]()
+
+    # --- Fused kernel path (out_dtype == in_dtype → no quantization) ---
+    for i in range(ngpus):
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    var fused_out_dev = ctx.enqueue_create_buffer[dtype](length)
+    # Scale buffer + scale_ub are ignored on the no-quant path; pass a dummy.
+    var dummy_scales_dev = ctx.enqueue_create_buffer[.float32](rows)
+
+    var fused_out_tile = TileTensor(fused_out_dev, row_major(rows, cols))
+    var dummy_scales_tile = TileTensor(dummy_scales_dev, row_major(rows, 1))
+    var scale_ub = Float32(1.0)
+
+    group_start()
+
+    comptime for i in range(ngpus):
+        allreduce_rmsnorm[multiply_before_cast=multiply_before_cast](
+            in_tiles,
+            fused_out_tile,
+            gamma_tensor,
+            epsilon,
+            weight_offset,
+            scale_ub,
+            dummy_scales_tile,
+            rank_sigs,
+            list_of_ctx[i],
+        )
+    group_end()
+
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    # --- Verify the output honors the selected cast order ---
+    var fused_out_host = ctx.enqueue_create_host_buffer[dtype](length)
+    ctx.enqueue_copy(fused_out_host, fused_out_dev)
+    ctx.synchronize()
+
+    _assert_cast_order[dtype, multiply_before_cast](
+        ref_out_host.unsafe_ptr(),
+        ref_other_host.unsafe_ptr(),
+        fused_out_host.unsafe_ptr(),
+        length,
+    )
+
+    # Cleanup.
+    _ = host_bufs^
+    _ = signal_buffers^
+    _ = in_dev^
+    _ = gamma_dev^
+    _ = fused_out_dev^
+    _ = dummy_scales_dev^
+
+    print("    PASS")
+
+
 # --- Test: fully fused allreduce + residual add + RMSNorm + FP8 ---
 
 
@@ -1570,6 +1761,25 @@ def main() raises:
         test_fused_allreduce_rmsnorm_noquant[
             num_gpus, DType.bfloat16, 17, 16384
         ](list_of_ctx)
+
+        print(
+            "\n=== fused_allreduce_rmsnorm (no-quant bf16, latent shape, ",
+            num_gpus,
+            "GPUs) ===",
+        )
+        # K3's TP latent-MoE: bf16 [M, 3584] partials, eps 1e-5, signed
+        # per-rank-distinct inputs, fp64 reference, both gamma cast orders.
+        # rows 1..8 are the decode batch sizes (<= 7 KB per rank at 8 GPUs,
+        # so the latency paths take them); rows=192 pushes per-rank bytes to
+        # 168 KB, past the 80 KB 2-stage crossover at 8 GPUs.
+        comptime latent_cols = 3584
+        for rows in [1, 2, 4, 8, 192]:
+            test_fused_allreduce_rmsnorm_noquant_latent[
+                num_gpus, DType.bfloat16, True
+            ](list_of_ctx, rows, latent_cols)
+            test_fused_allreduce_rmsnorm_noquant_latent[
+                num_gpus, DType.bfloat16, False
+            ](list_of_ctx, rows, latent_cols)
 
         print(
             "\n=== fused_allreduce_residual_rmsnorm_fp8 (",

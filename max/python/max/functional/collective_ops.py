@@ -26,6 +26,7 @@ from collections.abc import Callable, Sequence
 
 from max import _validation_hooks
 from max.driver import Accelerator, Device
+from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, TensorValue, ops
 from max.graph.dim import Dim, StaticDim
 from max.graph.ops.slice_tensor import SliceIndex
@@ -386,6 +387,148 @@ def reduce_scatter_rms_norm(
     with ensure_context():
         return call_on_mesh(run, mesh, (0,), out_specs=[sharded, sharded])(
             t, gamma, _signal_buffers(mesh)
+        )
+
+
+def allreduce_rms_norm(
+    t: Tensor,
+    gamma: Tensor,
+    epsilon: float,
+    weight_offset: float = 0.0,
+    multiply_before_cast: bool = False,
+    mesh_axis: int | str | Sequence[int | str] = 0,
+) -> Tensor:
+    """All-reduces a Partial tensor and RMS-normalizes the sum in one launch.
+
+    Fuses :func:`allreduce_sum` over every device of a one-dimensional mesh
+    with an RMS norm of the reduced rows, in one collective launch (see
+    :func:`max.graph.ops.allreduce_rms_norm`). The norm runs on the exact
+    float32 peer sum, so it is not bit-identical to :func:`allreduce_sum`
+    followed by :func:`max.graph.ops.rms_norm`, which reads the sum rounded
+    back to bfloat16.
+
+    Falls back to that two-launch form when the fused kernel cannot run:
+    without signal buffers (single-device and simulated meshes), or when the
+    input is not a 2-D bfloat16 tensor (the fused kernel is bfloat16-only).
+
+    Args:
+        t: A ``[rows, cols]`` tensor that is
+            :class:`~max.tensor.sharding.Partial` on a one-dimensional
+            mesh.
+        gamma: The norm weight, replicated on the mesh of ``t``.
+        epsilon: The norm epsilon.
+        weight_offset: A constant added to ``gamma``.
+        multiply_before_cast: The norm's gamma cast order; see
+            :func:`max.graph.ops.rms_norm`.
+        mesh_axis: The mesh axis or axes to reduce along, by index or name.
+            Must resolve to the only axis of a one-dimensional mesh.
+
+    Returns:
+        The normed sum, :class:`~max.tensor.sharding.Replicated` on the mesh.
+    """
+    mesh = t.mesh
+    axes = [
+        mesh._resolve_axis(axis)
+        for axis in (
+            (mesh_axis,) if isinstance(mesh_axis, (int, str)) else mesh_axis
+        )
+    ]
+    if (
+        mesh.ndim != 1
+        or axes != [0]
+        or not isinstance(t.placements[0], Partial)
+    ):
+        raise ValueError(
+            "allreduce_rms_norm needs a Partial tensor on a one-dimensional "
+            f"mesh, reducing its only axis. Got: {t.mapping}, "
+            f"mesh_axis={mesh_axis!r}."
+        )
+
+    replicated = DeviceMapping(mesh, (Replicated(),))
+
+    # The fused kernel is bfloat16, 2-D only; anything else keeps the
+    # unfused allreduce + norm chain rather than failing at build time or
+    # dropping to the home-device add in the no-signal path below.
+    if t.dtype != DType.bfloat16 or t.rank != 2:
+        summed = allreduce_sum(t, mesh_axis=mesh_axis)
+
+        def norm(shard: Tensor, gamma_shard: Tensor) -> TensorValue:
+            value = TensorValue(shard)
+            gamma_value = TensorValue(gamma_shard)
+            return ops.rms_norm(
+                value,
+                gamma_value
+                if gamma_value.device == value.device
+                else gamma_value.to(value.device),
+                epsilon,
+                weight_offset,
+                multiply_before_cast,
+            )
+
+        # What :func:`max.functional.rms_norm` stages for a Replicated input,
+        # inlined here because ``spmd_ops`` imports this module, so the
+        # functional binding itself would be a circular import.
+        with ensure_context():
+            return call_on_mesh(norm, mesh, out_specs=replicated)(summed, gamma)
+
+    def run(
+        shards: list[Tensor],
+        gammas: list[Tensor] | Tensor,
+        signal_buffers: list[BufferValue] | None,
+    ) -> list[TensorValue]:
+        # A gamma that is not distributed reaches the group whole, not as
+        # one shard per device; the ops below take one entry per device.
+        if not isinstance(gammas, list):
+            gammas = [gammas] * len(shards)
+        values = [TensorValue(shard) for shard in shards]
+        if signal_buffers is not None:
+            # The op reads gammas[i] on device i, so a gamma that reached
+            # the group whole needs a copy on every device (the no-signal
+            # path below moves it to the sum's home device instead).
+            gamma_values = [TensorValue(g) for g in gammas]
+            local_gammas = [
+                g if g.device == v.device else g.to(v.device)
+                for g, v in zip(gamma_values, values, strict=True)
+            ]
+            # The op also returns the raw sum, written only by the
+            # two-launch arm, so callers cannot rely on it and it is
+            # dropped here.
+            normed, _summed = ops.allreduce_rms_norm(
+                shards,
+                signal_buffers,
+                local_gammas,
+                epsilon,
+                weight_offset=weight_offset,
+                multiply_before_cast=multiply_before_cast,
+            )
+            return normed
+        # No signal buffers (single-device and simulated meshes): reduce on
+        # the first device and transfer the norm back out. The norm reads
+        # gamma on the device the sum lives on.
+        home = values[0].device
+        total = functools.reduce(
+            ops.add,
+            [v if v.device == home else v.to(home) for v in values],
+        )
+        gamma = TensorValue(gammas[0])
+        normed_home = ops.rms_norm(
+            total,
+            gamma if gamma.device == home else gamma.to(home),
+            epsilon,
+            weight_offset,
+            multiply_before_cast,
+        )
+        return [
+            normed_home if v.device == home else normed_home.to(v.device)
+            for v in values
+        ]
+
+    with ensure_context():
+        # A single device exchanges nothing, so it allocates no signal
+        # buffers and takes the no-signal path above.
+        signal_buffers = _signal_buffers(mesh) if mesh.num_devices > 1 else None
+        return call_on_mesh(run, mesh, (0,), out_specs=replicated)(
+            t, gamma, signal_buffers
         )
 
 

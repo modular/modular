@@ -497,8 +497,20 @@ class KimiK3LatentMoE(Module[..., Tensor]):
         mesh = self.experts_gate_up_proj.mesh
         sharded = TP in mesh.axis_names and mesh.axis_size(TP) > 1
         if sharded:
-            combined = F.allreduce_sum(combined, mesh_axis=TP)
-        normed = self.routed_expert_norm(combined)
+            # The norm rides the allreduce in one collective launch. The
+            # attributes mirror `routed_expert_norm` exactly:
+            # `RMSNorm.forward` is `ops.rms_norm` with its defaults
+            # (weight_offset 0.0, multiply_before_cast False).
+            normed = F.allreduce_rms_norm(
+                combined,
+                self.routed_expert_norm.weight,
+                self.routed_expert_norm.eps,
+                weight_offset=0.0,
+                multiply_before_cast=False,
+                mesh_axis=TP,
+            )
+        else:
+            normed = self.routed_expert_norm(combined)
         routed = self.routed_expert_up_proj(normed)
 
         # The shared branch reads the ORIGINAL full-width input, not the

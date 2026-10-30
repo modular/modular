@@ -31,7 +31,10 @@ from comm.allgather import allgather, allgather_rows_slice
 from comm.allreduce import allreduce
 
 from comm.allreduce_lamport_rmsnorm import lamport_allreduce_rmsnorm
-from comm.allreduce_residual_rmsnorm import allreduce_residual_rmsnorm
+from comm.allreduce_residual_rmsnorm import (
+    _dispatch_ar_norm,
+    allreduce_residual_rmsnorm,
+)
 from comm.allgather_rmsnorm import _dispatch_ag_norm, _dispatch_ag_norm_quant
 from linalg.block_scaled_quantization import (
     quantize_mx_amd,
@@ -1043,6 +1046,237 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
 
         _launch_device_collective[num_devices](
             launch_fused_allreduce, dev_ctxs.copy()
+        )
+
+
+@extensibility.register("mo.composite.distributed.allreduce_rms_norm")
+struct DistributedAllReduceRMSNorm:
+    """Registers the `mo.composite.distributed.allreduce_rms_norm` graph op with the graph compiler.
+    """
+
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        _trace_name: StaticString,
+        epsilon: Float32,
+        weight_offset: Float32,
+        multiply_before_cast: Bool = False,
+    ](
+        outputs_normed: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
+        outputs_summed: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
+        inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
+        signal_buffers: MutableInputVariadicTensors[
+            dtype=DType.uint8, rank=1, ...
+        ],
+        gammas: InputVariadicTensors[dtype=dtype, rank=1, ...],
+        dev_ctxs_input: DeviceContextArray,
+    ) raises:
+        """Fused allreduce sum + RMSNorm (bf16 in/out, no quantization).
+
+        Sum-reduces `inputs` (one `[rows, cols]` tensor per device) across
+        devices and RMSNorm-normalizes the exact f32 peer sum in the same
+        launch, writing the normed rows to `outputs_normed`. Above the fuse
+        threshold, on non-AMD targets and without P2P access, the dispatch
+        falls back to a standalone allreduce into `outputs_summed` plus a
+        separate norm; only that arm writes `outputs_summed`.
+
+        Parameters:
+            dtype: Element type of the input, output and gamma tensors.
+            rank: Tensor rank of the inputs and outputs.
+            target: Target device string for tracing.
+            _trace_name: Trace name for profiling.
+            epsilon: RMSNorm epsilon, shared by every device.
+            weight_offset: Gamma offset, shared by every device.
+            multiply_before_cast: The norm's gamma cast order, matching
+                `ops.rms_norm`.
+
+        Args:
+            outputs_normed: Per-device normed output (same shape as `inputs`).
+            outputs_summed: Per-device raw reduced sum, written by the
+                two-launch arm only.
+            inputs: Per-device inputs to reduce.
+            signal_buffers: Per-device synchronization buffers.
+            gammas: Per-device RMSNorm gamma weights (in_dtype, length cols).
+            dev_ctxs_input: Device contexts for participating GPUs.
+
+        Limitations:
+            - The fused arm requires P2P access between the participating
+              GPUs; without it the op runs the standalone allreduce + norm,
+              whose allreduce falls back to staged peer copies.
+            - The kernel stages the 2-stage path's scratch behind each
+              `Signal` header; a short buffer routes to the 1-stage kernel.
+        """
+        comptime num_devices = inputs.size
+        comptime assert signal_buffers.size == num_devices, (
+            "expected allreduce inputs and signal buffers to have"
+            " the same number of elements"
+        )
+
+        # The kernel picks a path that fits the scratch behind the Signal
+        # header, so only the header itself is required here.
+        _check_signal_buffer_size(signal_buffers[0].size(), 0)
+        var scratch_bytes = signal_buffers[0].size() - size_of[Signal]()
+
+        # Marshal input tensors into TileTensors.
+        comptime InputTensorType = type_of(
+            inputs[0].to_tile_tensor[.int64]().as_imm()
+        )
+        var in_tensors = Array[InputTensorType, inputs.size](uninitialized=True)
+
+        # Marshal signal buffers.
+        var rank_sigs = Array[_, num_devices](
+            fill_with_unrolled=lambda [i: Int]() -> Pointer[
+                Signal, MutAnyOrigin
+            ]: (
+                signal_buffers[i]
+                ._ptr.unsafe_bitcast[Signal]()
+                .as_unsafe_any_origin()
+            )
+        )
+
+        comptime for i in range(inputs.size):
+            in_tensors[i] = rebind[InputTensorType](
+                inputs[i].to_tile_tensor[.int64]().as_imm()
+            )
+
+        @inline(.always)
+        def launch_fused_allreduce_norm[
+            index: Int
+        ]() raises {
+            imm in_tensors,
+            imm rank_sigs,
+            imm dev_ctxs_input,
+            imm gammas,
+            imm outputs_normed,
+            imm outputs_summed,
+            imm scratch_bytes,
+        }:
+            var normed_buf = outputs_normed[index].to_tile_tensor[.int64]()
+            var sum_buf = outputs_summed[index].to_tile_tensor[.int64]()
+            var gamma_tensor = gammas[index].to_tile_tensor[.int64]()
+
+            # Two-launch fallback (above the fuse threshold, where the
+            # fabric-saturated plain allreduce wins): allreduce into
+            # `sum_buf`, then `rms_norm_gpu` into `normed_buf`, matching the
+            # unfused chain including the attribute's cast order.
+            @inline(.always)
+            def two_launch() raises {imm}:
+                comptime if get_defined_bool["MODULAR_USE_VENDOR_CCL", False]():
+                    logger.info("Executing: Vendor CCL")
+
+                    # _get_global_comms has a check-then-create race: two
+                    # threads seeing null simultaneously would both call
+                    # ncclCommInitAll and leak one set of communicators.
+                    # Only device 0 initializes; others spin-wait.
+                    comptime if index == 0:
+                        vendor_ccl.init_comms(num_devices)
+                    else:
+                        vendor_ccl.wait_for_comms(num_devices)
+
+                    # Writes this device's reduced sum into `sum_buf`. It
+                    # runs on the device, so it copies the buffer.
+                    @inline(.always)
+                    def output_lambda[
+                        _dtype: DType,
+                        _width: SIMDLength,
+                        *,
+                        alignment: Int,
+                    ](coords: Coord, val: SIMD[_dtype, _width]) {
+                        var sum_buf
+                    } -> None:
+                        sum_buf.store[alignment=alignment](
+                            coords, rebind[SIMD[dtype, _width]](val)
+                        )
+
+                    vendor_ccl.allreduce[ngpus=num_devices](
+                        in_tensors,
+                        row_major(sum_buf.layout.shape_coord()),
+                        output_lambda,
+                        rank_sigs,
+                        dev_ctxs_input[index],
+                    )
+                else:
+                    # The standalone allreduce's 2-stage path stages
+                    # payload/num_devices bytes behind each Signal header with
+                    # no internal check; the plain op's registration enforces
+                    # that sizing, so match it here. The fused arm needs no
+                    # such check: it picks a kernel that fits the scratch.
+                    # This runs inside the concurrent per-device launch, so it
+                    # must stay rank-identical (it reads only the shared shape
+                    # and signal-buffer size): a raise on one rank alone would
+                    # strand its peers at the barrier.
+                    _check_signal_buffer_size(
+                        size_of[Signal]() + scratch_bytes,
+                        _partitioned_scratch_requirement[num_devices, dtype](
+                            sum_buf.num_elements()
+                        ),
+                    )
+                    allreduce[ngpus=num_devices](
+                        in_tensors,
+                        sum_buf,
+                        rank_sigs,
+                        dev_ctxs_input[index],
+                        my_rank=index,
+                    )
+
+                # The `{var}` copies are REQUIRED: run by the `rms_norm_gpu`
+                # device kernel, a local `var` (`sum_buf`/`normed_buf`)
+                # captured by reference is not carried to the device -> the
+                # closure reads a garbage host-stack pointer and corrupts
+                # device memory.
+                @inline(.always)
+                def norm_input_fn[
+                    width: Int
+                ](coords: Coord) {var sum_buf} -> SIMD[dtype, width]:
+                    return sum_buf.load[
+                        width=width, alignment=align_of[dtype]()
+                    ](coords)
+
+                @inline(.always)
+                def norm_output_fn[
+                    width: SIMDLength, alignment: Int
+                ](coords: Coord, val: SIMD[dtype, width]) {
+                    var normed_buf
+                } -> None:
+                    normed_buf.store[alignment=alignment](coords, val)
+
+                rms_norm_gpu[
+                    rank,
+                    epsilon=epsilon,
+                    weight_offset=weight_offset,
+                    multiply_before_cast=multiply_before_cast,
+                ](
+                    norm_input_fn,
+                    norm_output_fn,
+                    sum_buf.layout.shape_coord(),
+                    gamma_tensor,
+                    dev_ctxs_input[index],
+                )
+
+            # The vendor CCL build always reduces through the vendor
+            # allreduce, as `mo.distributed.allreduce.sum` does.
+            comptime if get_defined_bool["MODULAR_USE_VENDOR_CCL", False]():
+                two_launch()
+                return
+
+            _dispatch_ar_norm[multiply_before_cast=multiply_before_cast](
+                in_tensors,
+                normed_buf,
+                sum_buf,
+                gamma_tensor,
+                epsilon,
+                weight_offset.cast[dtype](),
+                rank_sigs,
+                dev_ctxs_input[index],
+                two_launch,
+                my_rank=index,
+                scratch_bytes=scratch_bytes,
+            )
+
+        _launch_device_collective[num_devices](
+            launch_fused_allreduce_norm, dev_ctxs_input.copy()
         )
 
 

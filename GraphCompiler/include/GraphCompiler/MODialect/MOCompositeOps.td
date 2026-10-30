@@ -824,6 +824,58 @@ def MOComposite_DistributedAllGatherRMSNormQuantMXFP6Op : MO_DistributedOp<"comp
   }];
 }
 
+//===----------------------------------------------------------------------===//
+// DistributedAllReduceRMSNormOp
+//===----------------------------------------------------------------------===//
+
+def MOComposite_DistributedAllReduceRMSNormOp : MO_DistributedOp<"composite.distributed.allreduce_rms_norm", [
+  MO_MultiDevice,
+  MO_CompositeOpTrait
+]> {
+  string cppNamespace = MODialect.cppNamespace # "::Composite";
+  let summary = "Fused AllreduceSum + RMSNorm across N devices for a single device.";
+  let description = [{
+    Sum-reduces same-shaped per-device inputs and RMSNorm-normalizes the
+    reduced rows in the same launch, so the peer sum never takes a
+    global-memory round-trip through the collective's output. The norm runs
+    on the unrounded float32 sum, so it is not bit-identical to a standalone
+    allreduce (which rounds the sum to the input dtype) followed by a norm.
+
+    `multiply_before_cast` is the norm's gamma cast order, matching
+    `mo.reduce.rms_norm`. bf16 in/out only; no residual and no quantization.
+    `gamma` is one operand per device, but every device must pass the same
+    replicated weight: the 2-stage dispatch arm normalizes each row shard
+    on its owner rank, so a gamma that differed per device would leak the
+    owner's into the other devices' outputs.
+
+    The op is shape-dispatched: small payloads take the fused kernel, and
+    large ones (where the fabric-bound plain allreduce wins) fall back to a
+    standalone allreduce into `summed` followed by a separate norm. Only
+    that arm writes `summed`; the fused arm's peer sum never materializes,
+    so callers that need the raw sum must use `allreduce.sum` instead.
+  }];
+  let arguments = (ins
+    Variadic<MO_Tensor>:$inputs,
+    Variadic<MO_Buffer>:$signalBuffers,
+    Variadic<MO_Tensor>:$gamma,
+    MO_Chain:$inChain,
+    MO_F32ScalarAttr:$epsilon,
+    MO_F32ScalarAttr:$weight_offset,
+    BoolAttr:$multiply_before_cast
+  );
+  let results = (outs
+    Variadic<MO_Tensor>:$output,
+    Variadic<MO_Tensor>:$summed,
+    MO_Chain:$outChain
+  );
+  let assemblyFormat = [{
+    `(` operands `)`
+    `{` `epsilon` `=` $epsilon `,` `weight_offset` `=` $weight_offset `,`
+    `multiply_before_cast` `=` $multiply_before_cast `}`
+    attr-dict `:` functional-type(operands, results)
+  }];
+}
+
 // Grouped-matmul MoE FFN composite ops (NVFP4 expert-parallel path)
 //===----------------------------------------------------------------------===//
 //
