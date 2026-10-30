@@ -567,9 +567,10 @@ impl TieredConnector {
         }
         let mut disk_pins = disk_pins.into_iter();
 
+        // The H2D moves only each block's units, not its host row's padding.
         let h2d_bytes: u64 = hits
             .iter()
-            .map(|hit| self.bytes_per_leaf[hit.hash.leaf_idx] as u64)
+            .map(|hit| self.engine.logical_row_bytes(hit.hash.leaf_idx) as u64)
             .sum();
         self.metrics
             .h2d_bytes
@@ -690,7 +691,7 @@ impl TieredConnector {
 
         let d2h_bytes: u64 = plan
             .iter()
-            .map(|hit| self.bytes_per_leaf[hit.hash.leaf_idx] as u64)
+            .map(|hit| self.engine.logical_row_bytes(hit.hash.leaf_idx) as u64)
             .sum();
         self.metrics
             .d2h_bytes

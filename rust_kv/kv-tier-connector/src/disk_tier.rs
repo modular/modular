@@ -23,7 +23,9 @@
 //! blocking file I/O off the connector's lanes; each op reads/writes the
 //! *pinned host buffer* bytes directly (the caller passes the host address of
 //! the block's row), so a disk read lands straight into the page an H2D will
-//! copy. An in-memory LRU index bounds disk usage; it starts cold (see
+//! copy. A slot is the whole host row, so with direct I/O, where MAX pads
+//! every row to a multiple of [`DIRECT_IO_ALIGN`], it carries that padding
+//! too. An in-memory LRU index bounds disk usage; it starts cold (see
 //! [`DiskTier::shutdown`] for why there is no warm-start). Evicting a block
 //! punches its slot out of the file, so the bytes on disk track the index
 //! rather than each leaf's high-water mark.
@@ -75,8 +77,8 @@ const PRIO_WRITE: u8 = 2;
 // fallback, so `probe_direct_io` rejects an unsupported filesystem or staging
 // region up front.
 //
-// `O_DIRECT` and the alignment bound are declared here rather than taken from
-// `libc`, to avoid a new dependency.
+// `O_DIRECT` and the alignment bound are declared here; `libc` is used only
+// for `statx`, whose struct is not worth restating (see `dio_align`).
 #[cfg(all(target_os = "linux", target_pointer_width = "64"))]
 pub mod page_cache {
     use std::{
@@ -125,6 +127,8 @@ pub fn is_direct_io_aligned(ptr: usize, len: usize) -> bool {
 
 /// Checks that every leaf's block size can take direct I/O: a positive
 /// multiple of [`DIRECT_IO_ALIGN`], since a block's length is its leaf's row.
+/// The caller pads each host row to that multiple before building the tier,
+/// so this only guards the contract.
 ///
 /// # Errors
 ///
@@ -136,8 +140,8 @@ pub fn check_direct_io_leaf_sizes(bytes_per_leaf: &[usize]) -> Result<()> {
         .find(|(_, bytes)| **bytes == 0 || **bytes % DIRECT_IO_ALIGN != 0)
     {
         return Err(ConnectorError::Config(format!(
-            "use_disk_direct_io requires every leaf's block size to be a \
-             positive multiple of {DIRECT_IO_ALIGN} bytes; leaf {idx} is \
+            "use_disk_direct_io needs every leaf's host row padded to a \
+             positive multiple of {DIRECT_IO_ALIGN} bytes; leaf {idx}'s is \
              {bytes} bytes"
         )));
     }
@@ -613,8 +617,8 @@ impl DiskTier {
     /// # Errors
     ///
     /// Returns a config error if another disk tier holds `cache_dir`, if its
-    /// filesystem cannot punch holes, or if a leaf's size cannot take direct
-    /// I/O.
+    /// filesystem cannot punch holes, or if a leaf's row was not padded for
+    /// direct I/O.
     pub fn new(
         cache_dir: &str,
         bytes_per_leaf: &[usize],
@@ -627,10 +631,10 @@ impl DiskTier {
             .map_err(|e| ConnectorError::Config(format!("create cache dir: {e}")))?;
         if direct_io {
             // O_DIRECT requires the buffer address, length and file offset to
-            // be aligned to the device's logical block size. A block's length
-            // is its leaf's row, and its offset a whole number of rows. The
-            // staging region's base alignment is checked by the caller's
-            // probe, which sees the actual addresses.
+            // be aligned. A block's length is its leaf's host row, which the
+            // caller pads to DIRECT_IO_ALIGN, and its offset a whole number of
+            // rows. The staging region's base alignment is checked by the
+            // caller's probe, which sees the actual addresses.
             check_direct_io_leaf_sizes(bytes_per_leaf)?;
         }
         let dir_lock = lock_cache_dir(cache_dir)?;
@@ -946,10 +950,102 @@ fn transfer_direct(ctx: &str, len: usize, mut op: impl FnMut(usize) -> io::Resul
     }
 }
 
+/// What `statx(STATX_DIOALIGN)` reports direct I/O on a file needs: the file
+/// offset and length alignment, and the buffer address alignment.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DioAlign {
+    pub offset: u32,
+    pub mem: u32,
+}
+
+/// Asks the kernel what direct I/O on `path` needs. `Ok(None)` when it does
+/// not say: before Linux 6.1, or a filesystem that does not report it.
+#[cfg(target_os = "linux")]
+fn dio_align(path: &Path) -> io::Result<Option<DioAlign>> {
+    use std::{ffi::CString, os::unix::ffi::OsStrExt};
+
+    let c_path = CString::new(path.as_os_str().as_bytes())
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    // SAFETY: an all-zero `statx` is a valid value of the plain-data struct.
+    let mut stx: libc::statx = unsafe { std::mem::zeroed() };
+    // SAFETY: `c_path` is NUL-terminated and `stx` a live, exclusively
+    // borrowed struct for the kernel to fill.
+    let rc = unsafe {
+        libc::statx(
+            libc::AT_FDCWD,
+            c_path.as_ptr(),
+            0,
+            libc::STATX_DIOALIGN,
+            &raw mut stx,
+        )
+    };
+    if rc != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(
+        (stx.stx_mask & libc::STATX_DIOALIGN != 0).then_some(DioAlign {
+            offset: stx.stx_dio_offset_align,
+            mem: stx.stx_dio_mem_align,
+        }),
+    )
+}
+
+#[cfg(not(target_os = "linux"))]
+fn dio_align(_path: &Path) -> io::Result<Option<DioAlign>> {
+    Ok(None)
+}
+
+/// Checks what the filesystem under `cache_dir` reports direct I/O needs
+/// against what the tier provides: rows, offsets and staging all aligned to
+/// [`DIRECT_IO_ALIGN`].
+///
+/// Rows are padded to `DIRECT_IO_ALIGN` even where the filesystem would take
+/// less (often 512 bytes). ext4 and XFS serialize a direct write that is not
+/// aligned to their 4 KiB block on the file's inode lock, and a hole punch that
+/// is not block-aligned zeroes its edges through the page cache, and every
+/// leaf's slots live in one file that many workers write and punch. A
+/// filesystem that reports nothing is left to the write and read the probe
+/// makes next.
+fn check_dio_align(cache_dir: &Path, reported: Option<DioAlign>) -> Result<()> {
+    let Some(DioAlign { offset, mem }) = reported else {
+        tracing::info!(
+            "kv disk tier: statx reports no direct-I/O alignment for {}; rows are \
+             padded to {DIRECT_IO_ALIGN} bytes and the probe decides",
+            cache_dir.display()
+        );
+        return Ok(());
+    };
+    if offset == 0 {
+        return Err(ConnectorError::Config(format!(
+            "use_disk_direct_io: the filesystem under {} does not support direct \
+             I/O (statx reports no direct-I/O alignment). tmpfs and some \
+             network/overlay filesystems reject it",
+            cache_dir.display()
+        )));
+    }
+    let needed = offset.max(mem) as usize;
+    if needed > DIRECT_IO_ALIGN {
+        return Err(ConnectorError::Config(format!(
+            "use_disk_direct_io: the filesystem under {} needs {offset}-byte \
+             offsets and {mem}-byte buffers for direct I/O, but rows and staging \
+             are only aligned to {DIRECT_IO_ALIGN} bytes",
+            cache_dir.display()
+        )));
+    }
+    tracing::info!(
+        "kv disk tier: direct I/O under {} needs {offset}-byte offsets and \
+         {mem}-byte buffers; rows are padded to {DIRECT_IO_ALIGN} bytes",
+        cache_dir.display()
+    );
+    Ok(())
+}
+
 /// Proves the disk tier's direct I/O works end to end before the connector
 /// starts serving, returning `Err` naming what failed.
 ///
-/// Runs one real O_DIRECT write + fsync + rename + read through `probe_buf`
+/// First checks what `statx(STATX_DIOALIGN)` reports the filesystem needs
+/// (see `check_dio_align`), then runs one real O_DIRECT write + fsync +
+/// rename + read through `probe_buf`
 /// (a `DIRECT_IO_ALIGN`-byte window into the *actual* staging memory, so a
 /// staging region that cannot take direct I/O -- driver-allocated GTT memory
 /// on AMD rejects it with EFAULT -- is caught here, at startup, rather than
@@ -1002,6 +1098,14 @@ pub unsafe fn probe_direct_io_at(
     // buffer.
     std::fs::write(&probe_path, vec![!pattern; DIRECT_IO_ALIGN])
         .map_err(|e| ConnectorError::Config(format!("direct-I/O probe setup: {e}")))?;
+    // statx needs a regular file: a directory reports no direct-I/O alignment.
+    let reported = dio_align(&probe_path).map_err(|e| {
+        ConnectorError::Config(format!(
+            "use_disk_direct_io: statx(STATX_DIOALIGN) on {}: {e}",
+            probe_path.display()
+        ))
+    })?;
+    check_dio_align(cache_dir, reported)?;
     // Errors here -- not `fatal`: this runs at construction, where the
     // connector reports config errors to its caller instead of killing the
     // process.
@@ -1583,6 +1687,47 @@ mod tests {
             .expect("an unaligned leaf must be rejected");
         assert!(err.to_string().contains("use_disk_direct_io"));
         drop(std::fs::remove_dir_all(&dir));
+    }
+
+    #[test]
+    fn dio_alignment_up_to_the_row_padding_is_accepted() {
+        let dir = Path::new("/kv");
+        check_dio_align(dir, None).expect("an unreported alignment is left to the probe");
+        for (offset, mem) in [(512, 4), (512, 512), (4096, 4096), (4096, 512), (1, 1)] {
+            let result = check_dio_align(dir, Some(DioAlign { offset, mem }));
+            assert!(result.is_ok(), "offset {offset} mem {mem}: {result:?}");
+        }
+    }
+
+    #[test]
+    fn dio_alignment_the_rows_cannot_meet_is_refused() {
+        let dir = Path::new("/kv");
+        let err = check_dio_align(dir, Some(DioAlign { offset: 0, mem: 0 }))
+            .expect_err("a zero offset alignment means no direct I/O")
+            .to_string();
+        assert!(err.contains("does not support direct I/O"), "{err}");
+        for (offset, mem) in [(8192, 512), (512, 8192)] {
+            let err = check_dio_align(dir, Some(DioAlign { offset, mem }))
+                .expect_err("above the row padding")
+                .to_string();
+            assert!(err.contains(&format!("{offset}-byte offsets")), "{err}");
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn dio_align_reads_a_real_file() {
+        let dir = tmpdir("dioalign");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = Path::new(&dir).join("f");
+        std::fs::write(&path, [0u8; 16]).unwrap();
+        // Any answer is valid; the call itself must not fail on a regular
+        // file, and a reported alignment is a power of two.
+        if let Some(DioAlign { offset, mem }) = dio_align(&path).unwrap() {
+            assert!(offset == 0 || offset.is_power_of_two(), "{offset}");
+            assert!(mem == 0 || mem.is_power_of_two(), "{mem}");
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
