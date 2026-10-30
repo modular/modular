@@ -139,6 +139,8 @@ from state_space.mamba2_ssd_scan import (
     mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split,
+    ssd_scan_tile_channels,
+    ssd_scan_tile_split,
 )
 from state_space.varlen_causal_conv1d import (
     causal_conv1d_varlen_fwd_cpu,
@@ -5019,11 +5021,10 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                 # replay (5 rows) from 56.4 to 42.0 us. On MI355X split8 is
                 # within 20% of the best split for batch-64 decode and
                 # 8 x 512 prefill; the wider tile is not tuned there.
-                comptime WIDE = DSTATE == 128 and ctx.target.is_nvidia_gpu()
-                comptime DSTATE_SPLIT = 16 if WIDE else 8
-                comptime CH_PER_THREAD = 4 if WIDE else 1
-                comptime ROWS = 128 // DSTATE_SPLIT
-                comptime CH_PER_BLOCK = ROWS * CH_PER_THREAD
+                #
+                # Single-token decode reads no B/C row twice, so its tile is
+                # tuned apart. `ssd_scan_tile_split` holds both choices,
+                # shared with the benchmark.
                 # The staged long-sequence path costs decode registers and
                 # shared memory, so only a launch with a multi-token sequence
                 # uses it.
@@ -5066,6 +5067,20 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                         return
                 comptime for mode in range(2):
                     comptime prefill = mode == 1
+                    comptime DSTATE_SPLIT = ssd_scan_tile_split(
+                        DSTATE,
+                        prefill,
+                        ctx.target.is_nvidia_gpu(),
+                        ctx.target.is_amd_gpu(),
+                    )
+                    comptime CH_PER_THREAD = ssd_scan_tile_channels(
+                        DSTATE,
+                        prefill,
+                        ctx.target.is_nvidia_gpu(),
+                        ctx.target.is_amd_gpu(),
+                    )
+                    comptime ROWS = 128 // DSTATE_SPLIT
+                    comptime CH_PER_BLOCK = ROWS * CH_PER_THREAD
                     comptime kernel = mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
                         dtype,
                         state_dtype,

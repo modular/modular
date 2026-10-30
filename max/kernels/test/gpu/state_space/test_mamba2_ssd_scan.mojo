@@ -1128,6 +1128,59 @@ def _channel_blocked_decode_shapes[
         seq_lengths=Index(1, 1, 1, 1),
         ctx=ctx,
     )
+    # The decode tiles the graph op picks: split 16 with 2 channels a thread
+    # on NVIDIA, split 32 with 4 on AMD. Both run on either vendor.
+    run_mamba2_ssd[
+        .bfloat16,
+        128,
+        16,
+        init_state=True,
+        update_flags=update_flags,
+        CH_PER_THREAD=2,
+        prefill=False,
+        check_parity=True,
+    ](
+        nheads=32,
+        head_dim=64,
+        ngroups=4,
+        max_slots=5,
+        seq_lengths=Index(1, 1, 1, 1),
+        ctx=ctx,
+    )
+    run_mamba2_ssd[
+        .bfloat16,
+        128,
+        32,
+        init_state=True,
+        update_flags=update_flags,
+        CH_PER_THREAD=4,
+        prefill=False,
+        check_parity=True,
+    ](
+        nheads=32,
+        head_dim=64,
+        ngroups=4,
+        max_slots=5,
+        seq_lengths=Index(1, 1, 1, 1),
+        ctx=ctx,
+    )
+    run_mamba2_ssd[
+        .bfloat16,
+        128,
+        32,
+        init_state=True,
+        update_flags=update_flags,
+        CH_PER_THREAD=4,
+        prefill=False,
+        check_parity=True,
+    ](
+        nheads=8,
+        head_dim=72,
+        ngroups=2,
+        max_slots=4,
+        seq_lengths=Index(1, 1, 1),
+        ctx=ctx,
+    )
 
 
 def test_mamba2_ssd_dstate_split_channel_blocked() raises:

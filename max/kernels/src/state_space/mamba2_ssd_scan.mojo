@@ -192,6 +192,37 @@ def _scatter_sum[
 # 128-thread block (production kernels.mojo and the unit test both use
 # `block_dim=(DSTATE_SPLIT, 128 // DSTATE_SPLIT, 1)`), so `.maxntid 128` is
 # exact.
+
+
+def ssd_scan_tile_split(
+    dstate: Int, prefill: Bool, nvidia: Bool, amd: Bool
+) -> Int:
+    """Returns the `DSTATE_SPLIT` the production launch picks for the
+    cooperative split kernel.
+
+    `prefill` is the staged multi-token instantiation, which also serves
+    speculative verify; single-token decode reads no B/C row twice, so its
+    tile is tuned apart.
+    """
+    if dstate == 128 and nvidia:
+        return 16
+    if dstate == 128 and amd and not prefill:
+        return 32
+    return 8
+
+
+def ssd_scan_tile_channels(
+    dstate: Int, prefill: Bool, nvidia: Bool, amd: Bool
+) -> Int:
+    """Returns the `CH_PER_THREAD` the production launch picks for the
+    cooperative split kernel; see `ssd_scan_tile_split`."""
+    if dstate == 128 and nvidia:
+        return 4 if prefill else 2
+    if dstate == 128 and amd and not prefill:
+        return 4
+    return 1
+
+
 #
 # The kernel is latency-bound, so resident CTAs matter. The floor depends on
 # the `L * CH_PER_THREAD` state elements a thread holds. At 16 (the split-8,

@@ -29,6 +29,10 @@ from std.random import rand, seed
 from std.time import perf_counter_ns
 
 from internal_utils import arg_parse
+from state_space.mamba2_ssd_scan import (
+    ssd_scan_tile_channels,
+    ssd_scan_tile_split,
+)
 from max.gpu.host import DeviceContext
 from ssd_scan_test_utils.ssd_scan import (
     SSD_BASELINE,
@@ -375,9 +379,13 @@ def _benchmark_ssd_shape(
     seq_lengths: List[Int],
     var kernel: String,
 ) raises:
-    comptime WIDE = ctx.target.is_nvidia_gpu()
-    comptime SPLIT = 16 if WIDE else 8
-    comptime CHANNELS = 4 if WIDE else 1
+    # The production tile of each mode (dstate 128).
+    comptime NV = ctx.target.is_nvidia_gpu()
+    comptime AMD = ctx.target.is_amd_gpu()
+    comptime SPLIT = ssd_scan_tile_split(128, True, NV, AMD)
+    comptime CHANNELS = ssd_scan_tile_channels(128, True, NV, AMD)
+    comptime DEC_SPLIT = ssd_scan_tile_split(128, False, NV, AMD)
+    comptime DEC_CHANNELS = ssd_scan_tile_channels(128, False, NV, AMD)
     var total_len = 0
     for i in range(len(seq_lengths)):
         total_len += seq_lengths[i]
@@ -398,8 +406,8 @@ def _benchmark_ssd_shape(
                     comptime has_prefill = mode == 1
                     if has_prefill == (total_len > batch):
                         _bench_ssd[
-                            SPLIT,
-                            CH_PER_THREAD=CHANNELS,
+                            SPLIT if has_prefill else DEC_SPLIT,
+                            CH_PER_THREAD=CHANNELS if has_prefill else DEC_CHANNELS,
                             prefill=has_prefill,
                             paired=True,
                         ](
@@ -457,8 +465,8 @@ def _benchmark_ssd_shape(
             ](nheads, head_dim, ngroups, batch + 1, seq_lengths, ctx)
         case "unstaged":
             _bench_ssd[
-                SPLIT,
-                CH_PER_THREAD=CHANNELS,
+                DEC_SPLIT,
+                CH_PER_THREAD=DEC_CHANNELS,
                 prefill=False,
             ](nheads, head_dim, ngroups, batch + 1, seq_lengths, ctx)
         case _:
