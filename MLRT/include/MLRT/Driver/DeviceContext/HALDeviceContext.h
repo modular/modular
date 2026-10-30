@@ -366,6 +366,10 @@ private:
   /// When set, runs in place of the default free (legacy semantics); the
   /// Mojo box is then released without freeing the wrapped memory.
   llvm::unique_function<void()> destructorFn_;
+  /// Set by `createBufferOwning(owning=true)`, whose Mojo box wraps the memory
+  /// non-owning: frees through the driver on destruction unless a destructor
+  /// was set or the pointer was released.
+  bool freeOnDestroy_ = false;
 };
 
 /// RAII guard that makes a context's driver context current on the calling

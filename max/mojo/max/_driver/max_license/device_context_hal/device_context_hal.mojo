@@ -256,6 +256,38 @@ def _load_gpu_driver() -> Optional[ArcPointer[Driver]]:
 comptime _GPU_DRIVER = _Global["MODULAR_HAL_GPU_DRIVER", _load_gpu_driver]
 
 
+def _accelerator_api_and_arch(device_id: Int) raises -> Tuple[String, String]:
+    """Returns the accelerator plugin's API and a device's arch.
+
+    Reads both from the process-global driver without opening a context, which
+    some plugins allow only one of per device.
+
+    Args:
+        device_id: The device to query.
+
+    Returns:
+        The device API, as `DeviceContext.api()` reports it, and the plugin's
+        arch name.
+
+    Raises:
+        If no accelerator plugin is loaded, the plugin was loaded without an
+        API name, or the plugin has no arch for the device.
+    """
+    var maybe_driver = _GPU_DRIVER.get_or_create_ptr()
+    if not maybe_driver[]:
+        raise Error("no accelerator driver plugin is loaded")
+    var driver = maybe_driver[].value()
+    var api = String(driver[].get_name()).lower()
+    # A plugin listed as a bare path, without a `name@`, is named after its
+    # file, which is no API and so no `--target-accelerator` vendor either.
+    if "/" in api or api.endswith(".so"):
+        raise Error("the accelerator plugin has no API name: ", api)
+    var device = driver[].get_device_dynamic[Optional[Int64](0)](
+        Int64(device_id)
+    )
+    return (api, device[].get_arch())
+
+
 struct _PeerState(Movable):
     """Process-wide peer-access state, as in the legacy C++ `canAccessPeer_`.
 

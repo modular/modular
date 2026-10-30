@@ -43,6 +43,7 @@ from max.gpu.host import _CString
 from max.gpu.host import DeviceAttribute
 from max._driver.max_license.device_context_hal.device_context_hal import (
     _DeviceContextScopeHAL,
+    _accelerator_api_and_arch,
 )
 from std.memory import (
     alloc,
@@ -127,6 +128,21 @@ def MojoHAL_DeviceContext_enableAllPeerAccess() abi("C") -> _CString[]:
 
 
 @export
+def MojoHAL_Device_getApiAndArch(
+    out_api: _OutPtr[Pointer[c_char, MutUntrackedOrigin]],
+    out_arch: _OutPtr[Pointer[c_char, MutUntrackedOrigin]],
+    device_id: Int32,
+) abi("C") -> _CString[]:
+    try:
+        var api_and_arch = _accelerator_api_and_arch(Int(device_id))
+        out_api[] = _alloc_cstr(api_and_arch[0])
+        out_arch[] = _alloc_cstr(api_and_arch[1])
+        return None
+    except e:
+        return _err_cstr(String(e))
+
+
+@export
 def MojoHAL_DeviceContext_create(
     out_ctx: _OutPtr[_DeviceContextBoxPtr],
     api: Pointer[mut=False, c_char, ImmUntrackedOrigin],
@@ -142,6 +158,17 @@ def MojoHAL_DeviceContext_create(
         return None
     except e:
         return _err_cstr(String(e))
+
+
+@export
+def MojoHAL_DeviceContext_copy(
+    out_ctx: _OutPtr[_DeviceContextBoxPtr],
+    ctx: _DeviceContextBoxPtr,
+) abi("C"):
+    # The copy shares `ctx`'s HAL context and default stream.
+    var boxed = alloc(Layout[DeviceContext].single())
+    boxed.unsafe_ptr().unsafe_write(ctx[])
+    out_ctx[] = boxed^.unsafe_leak()
 
 
 @export

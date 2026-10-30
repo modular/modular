@@ -41,9 +41,13 @@
 extern "C" {
 void MojoHAL_strfree(const char *s);
 int32_t MojoHAL_Device_numberOfDevices(const char *api);
+const char *MojoHAL_Device_getApiAndArch(char **out_api, char **out_arch,
+                                         int32_t device_id);
 const char *MojoHAL_DeviceContext_enableAllPeerAccess();
 const char *MojoHAL_DeviceContext_create(MojoHALContextBox **out_ctx,
                                          const char *api, int32_t device_id);
+void MojoHAL_DeviceContext_copy(MojoHALContextBox **out_ctx,
+                                MojoHALContextBox *ctx);
 void MojoHAL_DeviceContext_release(MojoHALContextBox *ctx);
 const char *MojoHAL_DeviceContext_synchronize(MojoHALContextBox *ctx);
 const char *MojoHAL_DeviceContext_createBuffer(MojoHALBufferBox **out_buf,
@@ -291,8 +295,16 @@ ErrorOr<DeviceContextRef> Device::createContext() {
         new DeviceContext(/*mojoCtx=*/nullptr, DeviceRef::copy(this)));
   MojoHALContextBox *ctx = nullptr;
   if (const char *err =
-          MojoHAL_DeviceContext_create(&ctx, apiStr_.c_str(), id_))
-    return takeError(err);
+          MojoHAL_DeviceContext_create(&ctx, apiStr_.c_str(), id_)) {
+    // Metadata-only Devices (see adoptMojoBox) have no context to fall back
+    // on.
+    if (!mojoCtx_)
+      return takeError(err);
+    // Some plugins allow one context per device, and this Device already
+    // holds it, so share that one (and its stream) instead.
+    MojoHAL_strfree(err);
+    MojoHAL_DeviceContext_copy(&ctx, mojoCtx_);
+  }
   return DeviceContextRef::take(new DeviceContext(ctx, DeviceRef::copy(this)));
 }
 
@@ -309,6 +321,26 @@ const std::string &Device::getAcceleratorArchOrEmpty() {
       return (llvm::Twine(apiToVendorPrefix(AsyncRT::getVirtualDeviceAPI())) +
               ":" + virtualArch)
           .str();
+
+    // Ask the plugin directly first: opening a Device takes a context, and a
+    // plugin that allows one per device rejects it while another is live.
+    // Unlike the fallback below, this keeps plugin APIs: a plugin backend's
+    // API is its own `--target-accelerator` vendor.
+    // TODO(DRIV-251): a Device eagerly holds a whole Mojo DeviceContext. If it
+    // opened its context lazily, this lookup and createContext's sharing
+    // wouldn't need special cases.
+    char *apiName = nullptr;
+    char *archName = nullptr;
+    if (const char *err =
+            MojoHAL_Device_getApiAndArch(&apiName, &archName, /*device_id=*/0))
+      MojoHAL_strfree(err);
+    else {
+      std::string direct =
+          (llvm::Twine(apiToVendorPrefix(apiName)) + ":" + archName).str();
+      MojoHAL_strfree(apiName);
+      MojoHAL_strfree(archName);
+      return direct;
+    }
 
     ErrorOr<DeviceRef> devOr = create(gpuAPI, 0);
     if (devOr.isError())
@@ -423,6 +455,19 @@ DeviceBuffer::~DeviceBuffer() {
       MojoHAL_DeviceBuffer_release(mojoBox_);
     return;
   }
+  if (freeOnDestroy_ && ptr_ != nullptr && byteSize_ > 0) {
+    // Claim the ownership `createBufferOwning` deferred, after dropping the
+    // non-owning view.
+    MojoHAL_DeviceBuffer_release(mojoBox_);
+    MojoHALBufferBox *owner = nullptr;
+    if (const char *err = MojoHAL_DeviceContext_createBufferOwning(
+            &owner, context_->mojoCtx_, ptr_, byteSize_, /*owning=*/true)) {
+      MojoHAL_strfree(err);
+      return;
+    }
+    MojoHAL_DeviceBuffer_release(owner);
+    return;
+  }
   switch (kind_) {
   case BoxKind::Device:
     MojoHAL_DeviceBuffer_release(mojoBox_);
@@ -460,6 +505,7 @@ void *DeviceBuffer::releasePtr() {
   if (const char *err = MojoHAL_DeviceBuffer_relinquishOwnership(mojoBox_))
     MojoHAL_strfree(err); // Cannot fail in practice (plugin-side flag flip);
                           // the legacy signature is non-failing.
+  freeOnDestroy_ = false;
   auto tmp = ptr_;
   ptr_ = nullptr;
   return tmp;
@@ -648,16 +694,22 @@ DeviceBufferRef DeviceContext::createBufferOwning(void *ptr, size_t byteSize,
                                                   bool owning) {
   if (device_->isVirtual())
     return DeviceBufferRef();
+  // A plugin-owning wrap is only valid at the base of the plugin's own
+  // allocation, but callers pass `owning` for interior or foreign pointers and
+  // then set a destructor (graph outputs, external buffers). Wrap non-owning
+  // and defer the ownership claim to destruction.
   MojoHALBufferBox *buf = nullptr;
   if (const char *err = MojoHAL_DeviceContext_createBufferOwning(
-          &buf, mojoCtx_, ptr, byteSize, owning)) {
+          &buf, mojoCtx_, ptr, byteSize, /*owning=*/false)) {
     // The replaced API returns a bare ref; surface failure as an empty ref.
     MojoHAL_strfree(err);
     return DeviceBufferRef();
   }
-  return DeviceBufferRef::take(new DeviceBuffer(
-      buf, ptr, byteSize, /*isHost=*/false, DeviceBuffer::BoxKind::Device,
-      DeviceContextRef::copy(this)));
+  auto *result = new DeviceBuffer(buf, ptr, byteSize, /*isHost=*/false,
+                                  DeviceBuffer::BoxKind::Device,
+                                  DeviceContextRef::copy(this));
+  result->freeOnDestroy_ = owning;
+  return DeviceBufferRef::take(result);
 }
 
 DeviceBufferRef
