@@ -108,19 +108,6 @@ register_toolchains(
     "@rules_rust//extensions/pyo3/toolchains:toolchain",
 )
 
-crate = use_extension("@rules_rs//rs:extensions.bzl", "crate")
-crate.from_cargo(
-    name = "rust_kv_crates",
-    cargo_lock = "//rust_kv:Cargo.lock",
-    cargo_toml = "//rust_kv:Cargo.toml",
-    platform_triples = [
-        "aarch64-apple-darwin",
-        "aarch64-unknown-linux-gnu",
-        "x86_64-unknown-linux-gnu",
-    ],
-)
-use_repo(crate, "rust_kv_crates")
-
 bazel_dep(name = "rules_mypy", version = "0.41.0", dev_dependency = True)
 
 # TODO: Move back to BCR dep when 0.41.0 is published

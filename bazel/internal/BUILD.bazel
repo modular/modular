@@ -328,8 +328,8 @@ modular_cc_library(
 # extension (//rust_kv/kv-tier-connector-pyo3).
 rust_pyo3_toolchain(
     name = "pyo3_toolchain_target",
-    pyo3 = "@rust_kv_crates//:pyo3",
-    pyo3_introspection = "@rust_kv_crates//:pyo3-introspection",
+    pyo3 = "@crates//:pyo3",
+    pyo3_introspection = "@crates//:pyo3-introspection",
     tags = [TOP_LEVEL_TAG],  # Used in MODULE.bazel
 )
 

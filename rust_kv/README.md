@@ -58,12 +58,13 @@ cd ..
 ./bazelw test //max/tests/integration/kv_cache/internal/kv_core:test_kv_core_binding
 ```
 
-Third-party crates for the Bazel build come from the `@rust_kv_crates`
-repository, generated from this workspace's `Cargo.toml`/`Cargo.lock` (see
-`MODULE.bazel` and `oss/modular/oss.MODULE.bazel`). The pyo3 crates are the one
-exception: `modular_pyo3_extension` injects pyo3 through the monorepo-wide
-`rust_pyo3_toolchain`, so their Bazel targets must not also depend on pyo3
-from `@rust_kv_crates`. In the monorepo that toolchain is bound to
-`@crates//:pyo3` (the dkv universe), so keep this workspace's pyo3 pin on the
-same minor version as `dkv/`'s; the open-source build binds it to
-`@rust_kv_crates//:pyo3`.
+Third-party crates for the Bazel build come from the `@crates` repository. In
+the monorepo it is generated from `bazel/third-party/rust/Cargo.toml`, which
+`bazel/third-party/rust/generate.py` derives from every workspace Bazel builds,
+this one included; run `python3 bazel/third-party/rust/generate.py --lock`
+after changing this workspace's dependencies. The open-source build generates
+`@crates` from this workspace's own `Cargo.toml`/`Cargo.lock` instead (see
+`oss/modular/oss.MODULE.bazel`). The pyo3 crates are the one exception:
+`modular_pyo3_extension` injects pyo3 through the `rust_pyo3_toolchain`, which
+both builds bind to `@crates//:pyo3`, so their Bazel targets must not also
+depend on pyo3 directly.

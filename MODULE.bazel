@@ -7,6 +7,22 @@ module(
 
 include("//bazel:common.MODULE.bazel")
 
+# The internal build resolves every Rust crate from one third-party manifest
+# that does not ship here, so this build resolves rust_kv's crates from
+# rust_kv's own Cargo.lock under the same repo name.
+crate = use_extension("@rules_rs//rs:extensions.bzl", "crate")
+crate.from_cargo(
+    name = "crates",
+    cargo_lock = "//rust_kv:Cargo.lock",
+    cargo_toml = "//rust_kv:Cargo.toml",
+    platform_triples = [
+        "aarch64-apple-darwin",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-unknown-linux-gnu",
+    ],
+)
+use_repo(crate, "crates")
+
 mojo_aliases = use_repo_rule("//bazel:mojo_aliases.bzl", "mojo_aliases")
 
 mojo_aliases(name = "mojo")
