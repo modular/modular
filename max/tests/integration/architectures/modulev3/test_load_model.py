@@ -36,6 +36,7 @@ from max.pipelines.architectures.gemma4.weight_adapters import (
     GEMMA4_WEIGHT_RULES,
 )
 from max.pipelines.architectures.gemma4_modulev3.model import Gemma4Model
+from max.pipelines.architectures.granite_modulev3 import granite_modulev3_arch
 from max.pipelines.architectures.llama3_modulev3.model import Llama3Model
 from max.pipelines.architectures.llama3_modulev3.weight_adapters import (
     convert_safetensor_state_dict,
@@ -58,7 +59,10 @@ from transformers import PretrainedConfig
         (Llama3Model, "meta-llama/Llama-3.1-8B-Instruct"),
         (phi3_modulev3_arch.pipeline_model, "microsoft/phi-4"),
         (OlmoModel, "allenai/OLMo-1B-hf"),
-        (Llama3Model, "ibm-granite/granite-3.1-8b-instruct"),
+        (
+            granite_modulev3_arch.pipeline_model,
+            "ibm-granite/granite-3.1-8b-instruct",
+        ),
     ],
     ids=["llama3", "phi3", "olmo", "granite"],
 )

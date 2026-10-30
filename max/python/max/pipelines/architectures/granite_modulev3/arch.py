@@ -16,15 +16,12 @@
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    TextTokenizer,
-)
+from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
 from ..llama3_modulev3 import weight_adapters
-from ..llama3_modulev3.model import Llama3Model
-from ..llama3_modulev3.model_config import Llama3Config
+from ..llama3_modulev3.llama3 import Llama3Decoder
+from ..llama3_modulev3.model_config import Llama3DecoderConfig
 
 granite_modulev3_arch = SupportedArchitecture(
     name="GraniteForCausalLM_ModuleV3",
@@ -39,14 +36,14 @@ granite_modulev3_arch = SupportedArchitecture(
         "float32",
         "bfloat16",
     },
-    pipeline_model=Llama3Model,
+    modules={GraphRole.DECODER: Llama3Decoder},
     tokenizer=TextTokenizer,
     context_type=TextContext,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
-    config=Llama3Config,
+    config=Llama3DecoderConfig,
     memory_planner=PagedMemoryPlanner,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,
