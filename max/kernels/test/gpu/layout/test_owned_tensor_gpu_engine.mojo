@@ -133,6 +133,28 @@ def implicit_conversion_kernel(output: Pointer[Float32, MutAnyOrigin]):
     output.unsafe_store(0, TileTensor(owned)[1, 2][0])
 
 
+def subscript_kernel(output: Pointer[Float32, MutAnyOrigin]):
+    var owned = OwnedGPUTensor[.float32, .SHARED](row_major[_ROWS, _COLS]())
+    var tid = Int(thread_idx.x)
+    TileTensor(owned)[tid // _COLS, tid % _COLS] = Float32(tid)
+    barrier()
+
+    if tid == 0:
+        var block = owned[1:3, 2:6]
+        comptime assert type_of(block).all_dims_known
+        comptime assert type_of(block).static_shape[0] == 2
+        comptime assert type_of(block).static_shape[1] == 4
+        for r in range(2):
+            for c in range(4):
+                output.unsafe_store(r * 4 + c, block[r, c][0])
+        output.unsafe_store(8, owned[2, :][5][0])
+
+        # The view borrows the owner's storage, so writes reach it.
+        var head = owned[:1, :]
+        head[0, 0] = Float32(99)
+        output.unsafe_store(9, TileTensor(owned)[0, 0][0])
+
+
 comptime _WIDTH = 2
 
 
@@ -327,6 +349,26 @@ def test_tile_uses_owner_view_engine(ctx: DeviceContext) raises:
         assert_equal(host[i], Float32(i))
 
 
+def test_subscript_returns_tile_views(ctx: DeviceContext) raises:
+    print("== test_subscript_returns_tile_views")
+    var buf = ctx.enqueue_create_buffer[.float32](10)
+    buf.enqueue_fill(Float32(-1))
+
+    ctx.enqueue_function[subscript_kernel](
+        buf.unsafe_ptr(), grid_dim=1, block_dim=_NUM_ELEMENTS
+    )
+
+    var host = ctx.enqueue_create_host_buffer[.float32](10)
+    ctx.enqueue_copy(host, buf)
+    ctx.synchronize()
+
+    for r in range(2):
+        for c in range(4):
+            assert_equal(host[r * 4 + c], Float32((1 + r) * _COLS + 2 + c))
+    assert_equal(host[8], Float32(2 * _COLS + 5))
+    assert_equal(host[9], Float32(99))
+
+
 def main() raises:
     with DeviceContext() as ctx:
         test_shared_storage_is_visible_across_threads(ctx)
@@ -336,3 +378,4 @@ def main() raises:
         test_tile_indexes_through_owner_layout(ctx)
         test_implicit_conversion_aliases_owner(ctx)
         test_tile_uses_owner_view_engine(ctx)
+        test_subscript_returns_tile_views(ctx)
