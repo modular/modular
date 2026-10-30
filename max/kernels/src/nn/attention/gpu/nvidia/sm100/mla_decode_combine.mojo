@@ -36,6 +36,7 @@ from max.gpu.sync import barrier, syncwarp
 from max.gpu.host import DeviceContext
 from max.gpu.primitives.grid_controls import (
     PDLLevel,
+    launch_dependent_grids,
     wait_on_dependent_grids,
     pdl_launch_attributes,
 )
@@ -50,8 +51,9 @@ from nn.attention.mha_utils import OptionalPointer, as_optional_reg
 
 # PDL for the MLA decode -> combine chain is always on: both launches attach
 # `pdl_launch_attributes(PDLLevel.ON)` unconditionally and both kernels wait on
-# their predecessors before touching their inputs. Historically this chain was
-# opt-in through the `MLA_DECODE_COMBINE_PDL` define (then: a rare
+# their predecessors before touching their inputs. They release their own
+# dependents (the W_UV batched matmul) before that wait. Historically this
+# chain was opt-in through the `MLA_DECODE_COMBINE_PDL` define (then: a rare
 # illegal-address abort at context teardown tracked with it). The define cannot
 # be set through the build anyway, because this package is precompiled and
 # `mojo precompile` takes no `-D`, so enabling it was always a source edit.
@@ -243,7 +245,17 @@ def mla_combine_kernel[
             strides used to index the split, batch, sequence, and head
             dimensions.
     """
-    # PDL: Wait for the MLA decode kernel (dependent kernel) to complete.
+    # PDL: release the grids that consume the combined output (the W_UV
+    # batched matmul) on entry, then wait for the MLA decode kernel.
+    # `launch_dependent_grids()` only lets a successor be scheduled; its own
+    # `wait_on_dependent_grids()` still blocks until this whole grid has
+    # completed and its stores are visible (PTX ISA `griddepcontrol.wait`), so
+    # releasing before `output` is written cannot expose it unwritten. The
+    # successor may now be resident while decode still runs. It cannot starve
+    # decode: this grid launches only after every decode CTA has started (decode
+    # releases on entry), and the successor launches only after every
+    # CTA of this grid has started.
+    launch_dependent_grids()
     wait_on_dependent_grids()
 
     comptime ParamsType = CombineParams[
@@ -663,7 +675,17 @@ def mla_combine_kernel_split_parallel[
             and the derived strides used to index the split, batch,
             sequence, and head dimensions.
     """
-    # PDL: Wait for the MLA decode kernel (dependent kernel) to complete.
+    # PDL: release the grids that consume the combined output (the W_UV
+    # batched matmul) on entry, then wait for the MLA decode kernel.
+    # `launch_dependent_grids()` only lets a successor be scheduled; its own
+    # `wait_on_dependent_grids()` still blocks until this whole grid has
+    # completed and its stores are visible (PTX ISA `griddepcontrol.wait`), so
+    # releasing before `output` is written cannot expose it unwritten. The
+    # successor may now be resident while decode still runs. It cannot starve
+    # decode: this grid launches only after every decode CTA has started (decode
+    # releases on entry), and the successor launches only after every
+    # CTA of this grid has started.
+    launch_dependent_grids()
     wait_on_dependent_grids()
 
     comptime NUM_WARPS = 8
