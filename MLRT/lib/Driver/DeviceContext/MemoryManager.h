@@ -229,6 +229,12 @@ public:
   // Get memory information about the memory manager
   Device::MemInfo getMemoryInfo() const;
 
+  // Return unused VMM physical backing to the driver without freeing the VA
+  // arena or waiting for device work. Leaves live and non-root-owned granules
+  // intact. Returns bytes released, or 0 when VMM is disabled. Failed releases
+  // remain pooled for a later retry; driver errors are reported to the caller.
+  ErrorOr<size_t> releaseUnusedMemory();
+
   // Test-only: acquire `mu_` and capture the OOM accounting snapshot for
   // `needed`. Production paths compute this inline under the allocation
   // lock; this exposes it so tests can assert exact tier values (available,
@@ -379,7 +385,10 @@ private:
   // safe to reclaim (see computeUnreclaimableGranules), returning their handles
   // to the free-granule pool for remapping elsewhere. Returns the number
   // reclaimed. Caller holds `mu_`.
-  size_t reclaimMappedGranules(Chunk *c, size_t count);
+  // If supplied, records the first unmap error in `firstError` instead of
+  // logging it; successful granules are still reclaimed after an error.
+  size_t reclaimMappedGranules(Chunk *c, size_t count,
+                               ErrorOrSuccess *firstError = nullptr);
   // Physical bytes currently committed under in-use allocations in the single
   // VMM arena (the unreclaimable portion of the budget). Caller holds `mu_`.
   size_t inUsePhysicalBytes() const;

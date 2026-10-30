@@ -118,6 +118,58 @@ TEST_F(MemoryManagerVMMTest, Phase0ChunkIsVmmBacked) {
   cache->clear(); // standalone manager must be cleared before destruction
 }
 
+TEST_F(MemoryManagerVMMTest, ReleaseUnusedMemoryPreservesLiveGranules) {
+  constexpr size_t page = 256 * kMiB; // target's VMM page size
+  ASSIGN_NO_ERR(DeviceRef, device, dev());
+  std::unique_ptr<MemoryManager> cache = makeCache(*device, 4 * page);
+  ASSERT_NE(cache, nullptr);
+  ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::gpuAPI));
+  MemoryManagerFreeList &root = *cache->freeList();
+  const Device::AllocMode mode = Device::AllocMode::SYNC;
+
+  ASSIGN_NO_ERR(size_t, empty, cache->releaseUnusedMemory());
+  EXPECT_EQ(empty, 0u);
+  ASSIGN_NO_ERR(void *, live, root.allocate(page / 2, mode));
+  ASSIGN_NO_ERR(void *, shared, root.allocate(page / 2, mode));
+  ASSIGN_NO_ERR(void *, unused, root.allocate(page, mode));
+  EXPECT_NO_ERR(writeAndVerify(*ctx, live, page / 2, page));
+  EXPECT_NO_ERR(root.free(shared));
+  EXPECT_NO_ERR(root.free(unused));
+
+  // The half-free granule remains mapped while the fully free one is released.
+  ASSIGN_NO_ERR(size_t, released, cache->releaseUnusedMemory());
+  EXPECT_EQ(released, page);
+  VmmOomSnapshot s = cache->oomSnapshotForTesting(0);
+  EXPECT_EQ(s.inUseGranules, 1u);
+  EXPECT_EQ(s.reclaimableGranules, 0u);
+  EXPECT_EQ(s.pooledGranules, 0u);
+  ASSIGN_NO_ERR(size_t, again, cache->releaseUnusedMemory());
+  EXPECT_EQ(again, 0u);
+
+  std::vector<uint8_t> readback(64, 0);
+  EXPECT_NO_ERR(
+      ctx->enqueueCopyFromDevice(readback.data(), live, readback.size()));
+  EXPECT_NO_ERR(ctx->synchronize());
+  EXPECT_EQ(readback, std::vector<uint8_t>(64, 0xAB));
+
+  // A released region can be backed again without resetting the arena.
+  ASSIGN_NO_ERR(void *, reused, root.allocate(page, mode));
+  EXPECT_NO_ERR(writeAndVerify(*ctx, reused, page, page));
+  EXPECT_NO_ERR(root.free(reused));
+  EXPECT_NO_ERR(root.free(live));
+  ASSIGN_NO_ERR(size_t, rest, cache->releaseUnusedMemory());
+  EXPECT_EQ(rest, 2 * page);
+  cache->clear();
+}
+
+TEST_F(MemoryManagerVMMTest, ReleaseUnusedMemoryRejectedDuringCapture) {
+  ASSIGN_NO_ERR(DeviceContextRef, ctx, DeviceContext::create(Device::gpuAPI));
+  ASSIGN_NO_ERR(DeviceStreamRef, stream, ctx->stream());
+  EXPECT_NO_ERR(stream->beginCapture());
+  EXPECT_ERR(ctx->releaseUnusedMemory());
+  ASSIGN_NO_ERR(DeviceGraphRef, graph, stream->endCapture());
+}
+
 // Phase 1 (the fix): fragment the pool into wholly-free chunks whose largest
 // contiguous block (1 GiB) is smaller than a 1.5 GiB request. With the pool
 // full and no driver backdoor (memory-manager-only mode), the only way this
@@ -223,6 +275,8 @@ TEST_F(MemoryManagerVMMTest, NoDeferredFreeRecordedDuringGraphCapture) {
     // this freelist empty.
     EXPECT_NO_ERR(cache->drainCompletedFrees());
     EXPECT_FALSE(child.empty());
+    ASSIGN_NO_ERR(size_t, released, cache->releaseUnusedMemory());
+    EXPECT_EQ(released, 0u);
   }
   cache->clear();
 }
@@ -277,10 +331,14 @@ TEST_F(MemoryManagerVMMTest, ViewFreeStaysUnreclaimableWhileBaseReadQueued) {
     EXPECT_NO_ERR(cache->drainCompletedFrees());
     EXPECT_EQ(cache->oomSnapshotForTesting(0).reclaimableGranules, 0u)
         << "defrag can remap granules the base stream has a queued read of";
+    ASSIGN_NO_ERR(size_t, pending, cache->releaseUnusedMemory());
+    EXPECT_EQ(pending, 0u);
 
     flag->signal(1);
     EXPECT_NO_ERR(base->synchronize());
     EXPECT_NO_ERR(cache->drainCompletedFrees());
+    ASSIGN_NO_ERR(size_t, completed, cache->releaseUnusedMemory());
+    EXPECT_EQ(completed, 1 * kGiB);
   }
   cache->clear();
 }

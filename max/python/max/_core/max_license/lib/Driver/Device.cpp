@@ -151,6 +151,14 @@ std::string Python::Device::getStats() const {
   return s;
 }
 
+size_t Python::Device::releaseUnusedMemory() const {
+  nb::gil_scoped_release release;
+  ErrorOr<size_t> released = ctx->releaseUnusedMemory();
+  if (released.isError())
+    throw std::runtime_error(released.getError());
+  return *released;
+}
+
 size_t Python::Device::getMaxSingleAllocSize() const {
   nb::gil_scoped_release release;
   ErrorOr<size_t> sizeOr = ctx->device().maxSingleAllocationSize();

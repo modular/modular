@@ -117,6 +117,9 @@ struct Device : public std::enable_shared_from_this<Device> {
   // Returns utilization statistics for device.
   std::string getStats() const;
 
+  /// Returns unused device memory to the driver and reports bytes released.
+  size_t releaseUnusedMemory() const;
+
   // Returns the largest single contiguous allocation the device supports.
   size_t getMaxSingleAllocSize() const;
 

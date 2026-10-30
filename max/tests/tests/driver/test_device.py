@@ -61,6 +61,10 @@ def test_cpu_free_memory_is_host_wide() -> None:
     assert abs(CPU().stats["free_memory"] - available) <= GIB
 
 
+def test_cpu_release_unused_memory() -> None:
+    assert CPU().release_unused_memory() == 0
+
+
 def test_max_single_alloc_size() -> None:
     # Default implementation returns the device's total memory; should be a
     # positive integer.

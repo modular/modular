@@ -1242,6 +1242,11 @@ public:
 
   ErrorOr<Device::MemInfo> getMemoryInfo() const;
 
+  /// Return unused VMM backing to the driver, preserving live allocations and
+  /// pending device work. Does not synchronize. Returns bytes released, or 0
+  /// when VMM is disabled. Cannot be called during graph capture.
+  ErrorOr<size_t> releaseUnusedMemory();
+
   // Context-level attribute query. Subclasses override to provide
   // context-specific values (e.g. CpuDeviceContext returns the cpuDevice's
   // parallelism level). Default returns an error for unknown attributes.

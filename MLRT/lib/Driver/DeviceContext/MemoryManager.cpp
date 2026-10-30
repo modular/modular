@@ -1858,7 +1858,36 @@ std::string dumpVmmOom(const VmmOomSnapshot &s) {
   return out;
 }
 
-size_t MemoryManager::reclaimMappedGranules(Chunk *c, size_t count) {
+ErrorOr<size_t> MemoryManager::releaseUnusedMemory() {
+  if (!vmmEnabled_)
+    return size_t{0};
+
+  RETURN_IF_ERROR(drainCompletedFrees());
+  std::lock_guard<std::mutex> lock(mu_);
+  ErrorOrSuccess firstError = success();
+  for (Chunk *c = chunks_.get(); c != nullptr; c = c->next_.get())
+    reclaimMappedGranules(c, c->granuleBacked_.size(), &firstError);
+
+  size_t released = 0;
+  size_t retained = 0;
+  for (uint64_t handle : freeGranulePool_) {
+    ErrorOrSuccess err = device().vmmRelease(handle);
+    if (err.isError()) {
+      freeGranulePool_[retained++] = handle;
+      if (!firstError.isError())
+        firstError = err.takeError();
+    } else {
+      released += pageSize_;
+    }
+  }
+  freeGranulePool_.resize(retained);
+  if (firstError.isError())
+    return firstError.takeError();
+  return released;
+}
+
+size_t MemoryManager::reclaimMappedGranules(Chunk *c, size_t count,
+                                            ErrorOrSuccess *firstError) {
   if (count == 0 || !c->vmmBacked_)
     return 0;
   llvm::BitVector unreclaimable;
@@ -1875,8 +1904,13 @@ size_t MemoryManager::reclaimMappedGranules(Chunk *c, size_t count) {
     void *pageVa = base + i * ps;
     ErrorOrSuccess e = device().vmmUnmap(pageVa, ps);
     if (e.isError()) {
-      LOG_ERR(llvm::Twine("reclaimMappedGranules vmmUnmap failed: ") +
-              e.getError());
+      if (firstError != nullptr) {
+        if (!firstError->isError())
+          *firstError = e.takeError();
+      } else {
+        LOG_ERR(llvm::Twine("reclaimMappedGranules vmmUnmap failed: ") +
+                e.getError());
+      }
       continue;
     }
     freeGranulePool_.push_back(c->vmmHandles_[i]);

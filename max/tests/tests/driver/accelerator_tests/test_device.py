@@ -11,9 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import numpy as np
 from max.driver import (
     CPU,
     Accelerator,
+    Buffer,
     accelerator_architecture_name,
 )
 from max.graph import DeviceKind, DeviceRef
@@ -85,6 +87,17 @@ def test_stats() -> None:
     assert "total_memory" in stats
     assert "graph_mem_reserved" in stats
     assert "graph_mem_used" in stats
+
+
+def test_release_unused_memory_preserves_live_buffer() -> None:
+    device = Accelerator()
+    expected = np.arange(64, dtype=np.float32)
+    live = Buffer.from_numpy(expected).to(device)
+    device.synchronize()
+    released = device.release_unused_memory()
+    assert isinstance(released, int)
+    assert released >= 0
+    np.testing.assert_array_equal(live.to(CPU()).to_numpy(), expected)
 
 
 def test_accelerator_can_access_self() -> None:

@@ -85,6 +85,85 @@ protected:
   }
 };
 
+// Exercise VMM error recovery without requiring a GPU. Only the virtual arena
+// needs host storage: the test never reads or writes the simulated backing.
+class StubVmmDevice final : public CpuDevice {
+public:
+  bool vmmSupported() const override { return true; }
+  bool vmmEnabledByDefault() const override { return true; }
+  ErrorOr<size_t> vmmGranularity() const override {
+    return size_t{1024 * 1024};
+  }
+  ErrorOr<void *> vmmAddressReserve(size_t bytes) override {
+    void *ptr = std::aligned_alloc(64, bytes);
+    if (ptr == nullptr)
+      return M::Error("failed to reserve test arena");
+    return ptr;
+  }
+  M::ErrorOrSuccess vmmAddressFree(void *ptr, size_t) override {
+    std::free(ptr);
+    return M::success();
+  }
+  ErrorOr<uint64_t> vmmCreate(size_t) override { return ++created; }
+  M::ErrorOrSuccess vmmMapAndSetAccess(void *, size_t, uint64_t) override {
+    return M::success();
+  }
+  M::ErrorOrSuccess vmmUnmap(void *, size_t) override {
+    if (failUnmap) {
+      failUnmap = false;
+      return M::Error("test unmap failure");
+    }
+    return M::success();
+  }
+  M::ErrorOrSuccess vmmRelease(uint64_t) override {
+    if (failRelease) {
+      failRelease = false;
+      return M::Error("test release failure");
+    }
+    ++released;
+    return M::success();
+  }
+
+  bool failUnmap = false;
+  bool failRelease = false;
+  uint64_t created = 0;
+  uint64_t released = 0;
+};
+
+TEST_F(MemoryManagerTest, ReleaseUnusedMemoryRetriesFailedDriverOperations) {
+  constexpr size_t page = 1024 * 1024; // target's VMM page size
+  auto device = M::RCRef<StubVmmDevice>::create();
+  Device::MemInfo info;
+  info.total = info.free = 4 * page;
+  std::unique_ptr<MemoryManager> cache(MemoryManager::onDevice(
+      *device, info, /*alignment=*/64, /*memoryLimit=*/4 * page));
+  ASSERT_TRUE(cache->isVmmEnabled());
+  ASSIGN_NO_ERR(void *, ptr,
+                cache->freeList()->allocate(2 * page, Device::AllocMode::SYNC));
+  ASSERT_EQ(device->created, 2u);
+  EXPECT_NO_ERR(cache->freeList()->free(ptr));
+
+  device->failUnmap = true;
+  EXPECT_ERR_MSG(cache->releaseUnusedMemory(), "test unmap failure");
+  EXPECT_EQ(device->released, 1u);
+  EXPECT_EQ(cache->oomSnapshotForTesting(0).reclaimableGranules, 1u);
+
+  device->failRelease = true;
+  EXPECT_ERR_MSG(cache->releaseUnusedMemory(), "test release failure");
+  EXPECT_EQ(device->released, 1u);
+  EXPECT_EQ(cache->oomSnapshotForTesting(0).pooledGranules, 1u);
+
+  // The failed handle is still owned by the manager and is retried even though
+  // there are no mapped granules left to reclaim.
+  ASSIGN_NO_ERR(size_t, released, cache->releaseUnusedMemory());
+  EXPECT_EQ(released, page);
+  EXPECT_EQ(device->released, device->created);
+  EXPECT_EQ(cache->oomSnapshotForTesting(0).pooledGranules, 0u);
+  ASSIGN_NO_ERR(size_t, again, cache->releaseUnusedMemory());
+  EXPECT_EQ(again, 0u);
+  cache->clear();
+}
+
 TEST_F(MemoryManagerTest, MemoryManagerCreation) {
   // Test creation through CPU device
   {
@@ -172,6 +251,21 @@ TEST_F(MemoryManagerTest, MemoryManagerCreation) {
     EXPECT_EQ(cache->allocationAlignment(), 64);
     EXPECT_EQ(cache->getMemoryInfo().total, 0);
   }
+}
+
+TEST_F(MemoryManagerTest, ReleaseUnusedMemoryWithoutVmmIsNoOp) {
+  CpuDeviceRef device = createTestDevice();
+  MemoryManager &cache = device->memoryManager();
+  ASSERT_FALSE(cache.isVmmEnabled());
+  ASSIGN_NO_ERR(void *, ptr,
+                cache.freeList()->allocate(1024, Device::AllocMode::SYNC));
+  const size_t allocated = cache.allocatedSize(ptr);
+  ASSIGN_NO_ERR(size_t, released, cache.releaseUnusedMemory());
+  EXPECT_EQ(released, 0u);
+  EXPECT_EQ(cache.allocatedSize(ptr), allocated);
+  EXPECT_NO_ERR(cache.freeList()->free(ptr));
+  ASSIGN_NO_ERR(size_t, releasedAfterFree, cache.releaseUnusedMemory());
+  EXPECT_EQ(releasedAfterFree, 0u);
 }
 
 TEST_F(MemoryManagerTest, AlignmentHandling) {

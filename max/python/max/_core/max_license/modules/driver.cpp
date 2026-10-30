@@ -176,6 +176,24 @@ void M::Graph::Python::bindDriverModule(nb::module_ m) {
         Returns:
             A dictionary containing device utilization statistics.
       )nbdoc")
+      .def("release_unused_memory", &Python::Device::releaseUnusedMemory,
+           R"nbdoc(
+        Returns unused device memory to the driver.
+
+        Releases reclaimable VMM granules and pooled physical handles, leaving
+        live allocations and memory still owned by streams or graphs intact.
+        Does not wait for device work. Call :meth:`synchronize` first to make
+        completed frees eligible for release.
+
+        Returns:
+            Bytes returned to the driver. Returns 0 when VMM is disabled or
+            unsupported, including on CPU and Metal. HIP requires opting into
+            VMM with ``MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM=1``.
+
+        Raises:
+            RuntimeError: If called during graph capture or a driver operation
+                fails. Some memory may have been released before an error.
+      )nbdoc")
       .def_prop_ro("max_single_alloc_size",
                    &Python::Device::getMaxSingleAllocSize,
                    "Largest single contiguous allocation, in bytes.")
