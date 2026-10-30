@@ -99,6 +99,8 @@ _EXTRA_CONSTRAINTS = {
     "test_batched_matmul_dynamic_scaled_fp8_amd_tiled_mla_layout.mojo": ["//:mi355_gpu"],
     "test_blockwise_fp8_matmul_amd_bench.mojo": ["//:mi355_gpu"],
     "test_blockwise_fp8_matmul_amd_asm.mojo": ["//:mi355_gpu"],
+    "test_blockwise_fp8_matmul_amd_large.mojo": ["//:mi355_gpu"],
+    "test_blockwise_fp8_matmul_amd_large_asm.mojo": ["//:mi355_gpu"],
     "test_blockwise_fp8_grouped_matmul_amd.mojo": ["//:mi355_gpu"],
     "test_blockwise_fp8_grouped_matmul_amd_bench.mojo": ["//:mi355_gpu"],
     "test_blockwise_fp8_grouped_matmul_amd_asm.mojo": ["//:mi355_gpu"],

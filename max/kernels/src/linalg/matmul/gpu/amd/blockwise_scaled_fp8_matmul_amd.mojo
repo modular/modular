@@ -72,6 +72,10 @@ from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 
 from .matmul_mma import MmaOp
+from .blockwise_scaled_fp8_matmul_amd_large import (
+    blockwise_scaled_fp8_matmul_amd_large,
+    blockwise_scaled_fp8_matmul_amd_large_supported,
+)
 from .amd_4wave_split_k_matmul import (
     SplitKWorkspace,
     _split_k_reduce_kernel,
@@ -747,6 +751,13 @@ def _launch_blockwise_split_k[
     _ = workspace^
 
 
+comptime LARGE_M_MIN = 65
+"""Rows from which the default configuration hands a matmul to the large-M
+kernel (`blockwise_scaled_fp8_matmul_amd_large`): just past the split-K
+decode band (`M <= 64`). Measured faster on MI355X at every M from 65 to
+16384 on the GLM-5.3 shapes and on other models' (N, K), K = 512 even."""
+
+
 def blockwise_scaled_fp8_matmul_amd[
     c_type: DType,
     a_type: DType,
@@ -764,6 +775,7 @@ def blockwise_scaled_fp8_matmul_amd[
     N_SCALE: Int = 128,
     K_SCALE: Int = 128,
     accum_type: DType = get_accum_type[c_type](),
+    large_m: Bool = True,
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a: TileTensor[mut=False, a_type, address_space=.GENERIC, ...],
@@ -793,6 +805,10 @@ def blockwise_scaled_fp8_matmul_amd[
         N_SCALE: N scale granularity (64 or 128).
         K_SCALE: K scale granularity (64 or 128).
         accum_type: Accumulation element type (`float32`).
+        large_m: With the default tile configuration, hand `M >=
+            LARGE_M_MIN` to the large-M kernel when it covers the shape and
+            the operands are dense row major. False keeps this kernel (for
+            comparisons).
 
     Args:
         c: Output `[M, N]`.
@@ -906,6 +922,47 @@ def blockwise_scaled_fp8_matmul_amd[
                 K_SCALE=K_SCALE,
                 num_splits=_sk_splits_mt,
             ](c, a, b, a_scales, b_scales, ctx)
+            return
+
+    # === Prefill regime (large M) ===
+    # The one-wave 64 x 64 tiles below leave the matrix cores mostly idle at
+    # prefill sizes; the large-M kernel takes over there. It addresses its
+    # operands as dense row-major arrays (A's scales by their row stride), so
+    # any other layout keeps this kernel. A caller-chosen tile keeps it too.
+    comptime if (
+        large_m
+        and BM == 64
+        and BN == 64
+        and BK == 128
+        and WM == 64
+        and WN == 64
+        and N_SCALE == 128
+        and K_SCALE == 128
+        and blockwise_scaled_fp8_matmul_amd_large_supported[c_type, N, K]()
+    ):
+        if (
+            M >= LARGE_M_MIN
+            and Int(c.dynamic_stride(0)) == N
+            and Int(c.dynamic_stride(1)) == 1
+            and Int(a.dynamic_stride(0)) == K
+            and Int(a.dynamic_stride(1)) == 1
+            and Int(b.dynamic_stride(0)) == K
+            and Int(b.dynamic_stride(1)) == 1
+            and Int(a_scales.dynamic_stride(0)) >= M
+            and Int(a_scales.dynamic_stride(1)) == 1
+            and Int(b_scales.dynamic_stride(0)) == K // K_SCALE
+            and Int(b_scales.dynamic_stride(1)) == 1
+        ):
+            blockwise_scaled_fp8_matmul_amd_large[N, K](
+                ctx,
+                Int(c.ptr),
+                Int(a.ptr),
+                Int(a_scales.ptr),
+                Int(b.ptr),
+                Int(b_scales.ptr),
+                M,
+                Int(a_scales.dynamic_stride(0)),
+            )
             return
 
     comptime kernel = blockwise_scaled_fp8_matmul_amd_kernel[
