@@ -414,7 +414,7 @@ def main() raises:
         print("SKIP: Apple M5 (compute_capability >= 5) required")
         return
     print("=== FUSED vs MAT vs m2d vs DENSE across M ===")
-    print("=== warmup=", WARMUP, " hot=", HOT, " best-of-", REPS, " ===")
+    print(t"=== warmup= {WARMUP}  hot= {HOT}  best-of- {REPS}  ===")
 
     print(
         "\n########## REPRESENTATIVE (half-scale FLUX.2-dev, comparable)"

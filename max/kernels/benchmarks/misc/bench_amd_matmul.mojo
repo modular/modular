@@ -556,28 +556,22 @@ def main() raises:
     var single_M = Int(arg_parse("M", -1))
     var ms = _shape_set_m_values(shape_set_id, N, single_M)
 
-    print(
-        "bench_amd_matmul: dtype=",
-        String(dtype),
-        " N=",
-        N,
-        " K=",
-        K,
-        " shape_set=",
-        _shape_set_label[shape_set_id](),
-        " kernels=[",
-        "default " if run_default else "",
-        "ping_pong " if run_ping_pong else "",
-        "4wave " if run_4wave else "",
-        "vendor " if run_vendor else "",
-        String("4wave_split_k(", num_splits, ") ") if run_4wave_split_k else "",
+    var default_label = "default " if run_default else ""
+    var ping_pong_label = "ping_pong " if run_ping_pong else ""
+    var four_wave_label = "4wave " if run_4wave else ""
+    var vendor_label = "vendor " if run_vendor else ""
+    var split_k_label = String(
+        "4wave_split_k(", num_splits, ") "
+    ) if run_4wave_split_k else ""
+    var block_label = (
         String(" bm/bn/bk=", bm_4wave, "/", bn_4wave, "/", bk_4wave) if bm_4wave
         > 0
-        or bk_4wave > 0 else "",
-        "] M sweep=",
-        len(ms),
-        " values",
-        sep="",
+        or bk_4wave > 0 else ""
+    )
+    print(
+        t"bench_amd_matmul:"
+        t" dtype={String(dtype)} N={N} K={K} shape_set={_shape_set_label[shape_set_id]()} kernels=[{default_label}{ping_pong_label}{four_wave_label}{vendor_label}{split_k_label}{block_label}]"
+        t" M sweep={len(ms)} values"
     )
 
     var m = Bench()

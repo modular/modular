@@ -89,30 +89,9 @@ def bench_conv_residual[
     comptime K_padded = ((K_real + 255) // 256) * 256
 
     print(
-        "==",
-        label,
-        " N=",
-        N_batch,
-        " H=",
-        H,
-        " W=",
-        W,
-        " C_in=",
-        C_in,
-        " C_out=",
-        C_out,
-        " RxS=",
-        R,
-        "x",
-        S,
-        " s=",
-        stride,
-        " p=",
-        pad,
-        " M_total=",
-        M_total,
-        " K=",
-        K_real,
+        t"== {label}  N= {N_batch}  H= {H}  W= {W}  C_in= {C_in}  C_out="
+        t" {C_out}  RxS= {R} x {S}  s= {stride}  p= {pad}  M_total= {M_total} "
+        t" K= {K_real}"
     )
 
     # Buffers.
@@ -293,22 +272,14 @@ def bench_conv_residual[
     comptime if _aligned:
         var nr_ratio = tflops_wrapper_off / tflops_direct
         var fused_ratio = tflops_fused / tflops_direct
-        print("  direct          ms=", ms_direct, " TFLOPS=", tflops_direct)
+        print(t"  direct          ms= {ms_direct}  TFLOPS= {tflops_direct}")
         print(
-            "  wrapper-no-res  ms=",
-            ms_wrapper_off,
-            " TFLOPS=",
-            tflops_wrapper_off,
-            " ratio_vs_direct=",
-            nr_ratio,
+            t"  wrapper-no-res  ms= {ms_wrapper_off}  TFLOPS="
+            t" {tflops_wrapper_off}  ratio_vs_direct= {nr_ratio}"
         )
         print(
-            "  wrapper-fused   ms=",
-            ms_fused,
-            " TFLOPS=",
-            tflops_fused,
-            " ratio_vs_direct=",
-            fused_ratio,
+            t"  wrapper-fused   ms= {ms_fused}  TFLOPS= {tflops_fused} "
+            t" ratio_vs_direct= {fused_ratio}"
         )
         # Flag a regression if the wrapper-off path is >2% slower than
         # direct (it should be byte-identical at asm level).
@@ -323,25 +294,16 @@ def bench_conv_residual[
         # ratio instead, which captures the residual fusion cost.
         var fused_vs_no_res = tflops_fused / tflops_wrapper_off
         print(
-            "  (K-padded: K_real=",
-            K_real,
-            " K_padded=",
-            K_padded,
-            "; no direct baseline)",
+            t"  (K-padded: K_real= {K_real}  K_padded= {K_padded} ; no direct"
+            t" baseline)"
         )
         print(
-            "  wrapper-no-res  ms=",
-            ms_wrapper_off,
-            " TFLOPS=",
-            tflops_wrapper_off,
+            t"  wrapper-no-res  ms= {ms_wrapper_off}  TFLOPS="
+            t" {tflops_wrapper_off}"
         )
         print(
-            "  wrapper-fused   ms=",
-            ms_fused,
-            " TFLOPS=",
-            tflops_fused,
-            " ratio_vs_no_res=",
-            fused_vs_no_res,
+            t"  wrapper-fused   ms= {ms_fused}  TFLOPS= {tflops_fused} "
+            t" ratio_vs_no_res= {fused_vs_no_res}"
         )
 
 

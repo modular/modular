@@ -559,19 +559,8 @@ def execute_kv_cache_ragged_flash_attention[
         # denominator, so a partially poisoned output cannot pass the ratio
         # bar by shrinking its own reference.
         print(
-            "[digest] n=",
-            output_size,
-            " nan=",
-            nan_count,
-            " inf=",
-            inf_count,
-            " rms=",
-            sqrt(sum_sq / Float64(output_size)),
-            " maxabs=",
-            max_abs,
-            " meanabs=",
-            sum_abs / Float64(output_size),
-            sep="",
+            t"[digest]"
+            t" n={output_size} nan={nan_count} inf={inf_count} rms={sqrt(sum_sq / Float64(output_size))} maxabs={max_abs} meanabs={sum_abs / Float64(output_size)}"
         )
 
         # Eight fixed, shape-derived indices. Both arms compute the same

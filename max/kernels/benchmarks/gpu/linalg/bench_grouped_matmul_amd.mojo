@@ -341,14 +341,9 @@ def bench_preb[
     )
     var b_windows = ceildiv(b_budget, align_up(b_full_bytes, simd_size))
     print(
-        "  cache_bust=",
-        cache_bust,
-        " B full=",
-        b_full_bytes // (1024 * 1024),
-        "MiB budget=",
-        b_budget // (1024 * 1024),
-        "MiB windows=",
-        b_windows,
+        t"  cache_bust= {cache_bust}  B full="
+        t" {b_full_bytes // (1024 * 1024)} MiB budget="
+        t" {b_budget // (1024 * 1024)} MiB windows= {b_windows}"
     )
     var cb_a = CacheBustingBuffer[.uint8](
         total_routes * packed_K, simd_size, ctx, cache_bust
@@ -628,7 +623,7 @@ def bench_preb[
                     worst_violation,
                 )
 
-            print("  verify PASSED (atol=", atol, " rtol=", rtol, ")")
+            print(t"  verify PASSED (atol= {atol}  rtol= {rtol} )")
             _ = result_host^
             _ = verify_b_pre_dev^
             _ = verify_sfa_natural_dev^
@@ -802,34 +797,16 @@ def main() raises:
                 )
 
     print(
-        "Config: algo=",
-        algo,
-        " lane_bytes=",
-        lane_bytes,
-        " num_experts=",
-        num_experts,
-        " num_active_experts=",
-        num_active_experts,
-        " num_shared=",
-        num_shared_experts,
-        " M=",
-        M,
-        " topk=",
-        topk,
-        " n_gpus_per_node=",
-        n_gpus_per_node,
-        " N=",
-        N,
-        " K=",
-        K,
-        " skew=",
-        skew_spec,
+        t"Config: algo= {algo}  lane_bytes= {lane_bytes}  num_experts="
+        t" {num_experts}  num_active_experts= {num_active_experts}  num_shared="
+        t" {num_shared_experts}  M= {M}  topk= {topk}  n_gpus_per_node="
+        t" {n_gpus_per_node}  N= {N}  K= {K}  skew= {skew_spec}"
     )
-    print("  target_counts(len=", len(target_counts), "):", end=" ")
+    print(t"  target_counts(len= {len(target_counts)} ):", end=" ")
     for c in target_counts:
         print(c, end=" ")
     print()
-    print("  expert_id_pool(len=", len(expert_id_pool), "):", end=" ")
+    print(t"  expert_id_pool(len= {len(expert_id_pool)} ):", end=" ")
     for e in expert_id_pool:
         print(e, end=" ")
     print()

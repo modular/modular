@@ -193,37 +193,17 @@ def bench_shape[
     var naive_tflops = flops / (naive_ms * 1e-3) / 1e12
 
     print(name)
-    print(
-        "  (a) FUSED       : ",
-        fused_ms,
-        " ms   (",
-        fused_tflops,
-        " TFLOP/s)",
-    )
-    print(
-        "  (b) MATERIALISE : ",
-        mat_ms,
-        " ms   (",
-        mat_tflops,
-        " TFLOP/s)",
-    )
-    print(
-        "  (c) NAIVE       : ",
-        naive_ms,
-        " ms   (",
-        naive_tflops,
-        " TFLOP/s)",
-    )
+    print(t"  (a) FUSED       :  {fused_ms}  ms   ( {fused_tflops}  TFLOP/s)")
+    print(t"  (b) MATERIALISE :  {mat_ms}  ms   ( {mat_tflops}  TFLOP/s)")
+    print(t"  (c) NAIVE       :  {naive_ms}  ms   ( {naive_tflops}  TFLOP/s)")
     # Ratios > 1.0 mean fused is FASTER than the comparison path.
     print(
-        "  ratio fused/naive       (naive_ms / fused_ms): ",
-        naive_ms / fused_ms,
-        "x",
+        t"  ratio fused/naive       (naive_ms / fused_ms): "
+        t" {naive_ms / fused_ms} x"
     )
     print(
-        "  ratio fused/materialise (mat_ms   / fused_ms): ",
-        mat_ms / fused_ms,
-        "x",
+        t"  ratio fused/materialise (mat_ms   / fused_ms): "
+        t" {mat_ms / fused_ms} x"
     )
 
     _ = input_dev^

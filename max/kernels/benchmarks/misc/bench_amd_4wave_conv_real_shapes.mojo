@@ -220,39 +220,10 @@ def _bench_one[
     var ratio = tflops_cv / tflops_mm
 
     print(
-        "| ",
-        label,
-        " | NHWC=",
-        N_batch,
-        "x",
-        H,
-        "x",
-        W,
-        "x",
-        C_in,
-        " | RxS=",
-        R,
-        "x",
-        S,
-        " stride=",
-        stride_h,
-        " pad=",
-        pad_h,
-        " | Cout=",
-        C_out,
-        " | M=",
-        M_total,
-        " K=",
-        K_real,
-        " | ",
-        path,
-        " | conv ",
-        tflops_cv,
-        " | mm ",
-        tflops_mm,
-        " | ",
-        ratio,
-        " |",
+        t"|  {label}  | NHWC= {N_batch} x {H} x {W} x {C_in}  | RxS= {R} x {S} "
+        t" stride= {stride_h}  pad= {pad_h}  | Cout= {C_out}  | M= {M_total} "
+        t" K= {K_real}  |  {path}  | conv  {tflops_cv}  | mm  {tflops_mm}  | "
+        t" {ratio}  |"
     )
 
     keep(output_dev.unsafe_ptr())
@@ -423,9 +394,7 @@ def main() raises:
 
     with DeviceContext() as ctx:
         print(
-            "== dtype:",
-            String(a_type),
-            "(matmul ref: structured_4wave_matmul)",
+            t"== dtype: {String(a_type)} (matmul ref: structured_4wave_matmul)"
         )
         print(
             "| Shape | NHWC | RxS,stride,pad | Cout | M, K | path | conv"

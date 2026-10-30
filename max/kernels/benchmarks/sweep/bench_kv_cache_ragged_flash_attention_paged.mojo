@@ -189,19 +189,8 @@ def _digest(
     # partially poisoned output cannot pass the ratio bar by shrinking its
     # own reference.
     print(
-        "[digest] n=",
-        n,
-        " nan=",
-        nan_count,
-        " inf=",
-        inf_count,
-        " rms=",
-        sqrt(sum_sq / Float64(n)),
-        " maxabs=",
-        max_abs,
-        " meanabs=",
-        sum_abs / Float64(n),
-        sep="",
+        t"[digest]"
+        t" n={n} nan={nan_count} inf={inf_count} rms={sqrt(sum_sq / Float64(n))} maxabs={max_abs} meanabs={sum_abs / Float64(n)}"
     )
 
     # Eight fixed, shape-derived indices, so two builds of this benchmark are

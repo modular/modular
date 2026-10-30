@@ -176,32 +176,14 @@ def bench_grouped_matmul[
     var tok_str = "[" + ", ".join(num_tokens_by_expert) + "]"
     var eid_str = "[" + ", ".join(expert_ids_input) + "]"
     print(
-        "Config: num_active_experts=",
-        num_active_experts,
-        " N=",
-        N,
-        " K=",
-        K,
-        " num_experts=",
-        num_experts,
-        sep="",
+        t"Config:"
+        t" num_active_experts={num_active_experts} N={N} K={K} num_experts={num_experts}"
     )
     print(
-        "  tokens_by_expert(len=",
-        len(num_tokens_by_expert),
-        " sum=",
-        total_num_tokens,
-        "): ",
-        tok_str,
-        sep="",
+        t"  tokens_by_expert(len={len(num_tokens_by_expert)} sum={total_num_tokens}):"
+        t" {tok_str}"
     )
-    print(
-        "  expert_ids(len=",
-        len(expert_ids_input),
-        "): ",
-        eid_str,
-        sep="",
-    )
+    print(t"  expert_ids(len={len(expert_ids_input)}): {eid_str}")
     if (
         len(num_tokens_by_expert) != num_active_experts
         or len(expert_ids_input) != num_active_experts

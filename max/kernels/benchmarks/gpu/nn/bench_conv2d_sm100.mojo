@@ -106,31 +106,10 @@ def bench_conv2d[
         filter_w,
     )
     print(
-        "Conv2D: batch=",
-        batch,
-        " in=(",
-        in_height,
-        "x",
-        in_width,
-        "x",
-        in_channels,
-        ") filter=(",
-        filter_h,
-        "x",
-        filter_w,
-        ") out=(",
-        out_height,
-        "x",
-        out_width,
-        "x",
-        out_channels,
-        ") pad=(",
-        pad_h,
-        ",",
-        pad_w,
-        ") GFLOPS=",
-        Float64(flops) / 1e9,
-        sep="",
+        t"Conv2D: batch={batch} in=({in_height}x{in_width}x{in_channels})"
+        t" filter=({filter_h}x{filter_w})"
+        t" out=({out_height}x{out_width}x{out_channels}) pad=({pad_h},{pad_w})"
+        t" GFLOPS={Float64(flops) / 1e9}"
     )
 
     # Problem shape for implicit im2col
@@ -280,29 +259,9 @@ def bench_conv2d[
 
     # Report
     var ratio = cudnn_time_ms / sm100_time_ms
-    print(
-        "  SM100 Im2col: ",
-        sm100_time_ms,
-        " ms  (",
-        sm100_tflops,
-        " TFLOPS)",
-        sep="",
-    )
-    print(
-        "  cuDNN conv2d: ",
-        cudnn_time_ms,
-        " ms  (",
-        cudnn_tflops,
-        " TFLOPS)",
-        sep="",
-    )
-    print(
-        "  Ratio: ",
-        ratio,
-        "x",
-        "  (Both include full conv with im2col)",
-        sep="",
-    )
+    print(t"  SM100 Im2col: {sm100_time_ms} ms  ({sm100_tflops} TFLOPS)")
+    print(t"  cuDNN conv2d: {cudnn_time_ms} ms  ({cudnn_tflops} TFLOPS)")
+    print(t"  Ratio: {ratio}x  (Both include full conv with im2col)")
     print("  Correctness: max_diff=", max_diff, sep="")
     print()
 
@@ -361,21 +320,8 @@ def bench_all_configs[
     )
 
     print(
-        "Conv2D: ",
-        in_height,
-        "x",
-        in_width,
-        "x",
-        in_channels,
-        " -> ",
-        out_channels,
-        "ch (",
-        filter_h,
-        "x",
-        filter_w,
-        " filter)  GFLOPS=",
-        Float64(flops) / 1e9,
-        sep="",
+        t"Conv2D: {in_height}x{in_width}x{in_channels} -> {out_channels}ch"
+        t" ({filter_h}x{filter_w} filter)  GFLOPS={Float64(flops) / 1e9}"
     )
 
     # Allocate host memory
@@ -521,33 +467,14 @@ def bench_all_configs[
 
     # Report
     print(
-        "  1-SM (cta_group=1): ",
-        time_1sm_ms,
-        " ms  (",
-        tflops_1sm,
-        " TFLOPS)  ",
-        Int(tflops_1sm / cudnn_tflops * 100),
-        "% of cuDNN",
-        sep="",
+        t"  1-SM (cta_group=1): {time_1sm_ms} ms  ({tflops_1sm} TFLOPS) "
+        t" {Int(tflops_1sm / cudnn_tflops * 100)}% of cuDNN"
     )
     print(
-        "  2-SM (cta_group=2): ",
-        time_2sm_ms,
-        " ms  (",
-        tflops_2sm,
-        " TFLOPS)  ",
-        Int(tflops_2sm / cudnn_tflops * 100),
-        "% of cuDNN",
-        sep="",
+        t"  2-SM (cta_group=2): {time_2sm_ms} ms  ({tflops_2sm} TFLOPS) "
+        t" {Int(tflops_2sm / cudnn_tflops * 100)}% of cuDNN"
     )
-    print(
-        "  cuDNN:              ",
-        cudnn_time_ms,
-        " ms  (",
-        cudnn_tflops,
-        " TFLOPS)",
-        sep="",
-    )
+    print(t"  cuDNN:              {cudnn_time_ms} ms  ({cudnn_tflops} TFLOPS)")
     print()
 
     _ = input_dev^
@@ -605,21 +532,9 @@ def bench_residual[
     )
 
     print(
-        "Conv2D+Residual: ",
-        in_height,
-        "x",
-        in_width,
-        "x",
-        in_channels,
-        " -> ",
-        out_channels,
-        "ch (",
-        filter_h,
-        "x",
-        filter_w,
-        " filter)  GFLOPS=",
-        Float64(flops) / 1e9,
-        sep="",
+        t"Conv2D+Residual: {in_height}x{in_width}x{in_channels} ->"
+        t" {out_channels}ch ({filter_h}x{filter_w} filter) "
+        t" GFLOPS={Float64(flops) / 1e9}"
     )
 
     # Allocate
@@ -710,29 +625,9 @@ def bench_residual[
 
     # Report
     var overhead_pct = (time_res_ms - time_conv_ms) / time_conv_ms * 100
-    print(
-        "  Conv only:          ",
-        time_conv_ms,
-        " ms  (",
-        tflops_conv,
-        " TFLOPS)",
-        sep="",
-    )
-    print(
-        "  Conv+Residual fused:",
-        " ",
-        time_res_ms,
-        " ms  (",
-        tflops_res,
-        " TFLOPS)",
-        sep="",
-    )
-    print(
-        "  Fusion overhead:     ",
-        overhead_pct,
-        "%",
-        sep="",
-    )
+    print(t"  Conv only:          {time_conv_ms} ms  ({tflops_conv} TFLOPS)")
+    print(t"  Conv+Residual fused: {time_res_ms} ms  ({tflops_res} TFLOPS)")
+    print(t"  Fusion overhead:     {overhead_pct}%")
     print()
 
     _ = input_dev^

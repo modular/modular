@@ -225,7 +225,7 @@ def bench_p2p(
                 assert_almost_equal(host_ptr[i], Float32(i))
             except e:
                 print("Verification failed at index", i)
-                print("Expected:", i, "Got:", host_ptr[i])
+                print(t"Expected: {i} Got: {host_ptr[i]}")
                 abort(String(e))
 
     # Parallelize verification using sync_parallelize

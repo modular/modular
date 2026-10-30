@@ -201,33 +201,13 @@ def _bench_grouped[
 
     var wbytes = Float64(num_active) * Float64(N) * Float64(K)  # fp8: 1 B/wt
     print(
-        "  ",
-        name,
-        " N=",
-        N,
-        " K=",
-        K,
-        " active=",
-        num_active,
-        " tok/exp=",
-        tokens_per_expert,
-        ":\n     naive-bf16 ",
-        nb_sec * 1e6,
-        "us (",
-        (2.0 * wbytes) / (nb_sec * 1e9),
-        "GB/s) | naive-fp8 ",
-        nf_sec * 1e6,
-        "us (",
-        wbytes / (nf_sec * 1e9),
-        "GB/s) | tiled-fp8 ",
-        tf_sec * 1e6,
-        "us (",
-        wbytes / (tf_sec * 1e9),
-        "GB/s)\n     tiled-fp8 vs naive-bf16: ",
-        nb_sec / tf_sec,
-        "x | tiled-fp8 vs naive-fp8: ",
-        nf_sec / tf_sec,
-        "x",
+        t"   {name}  N= {N}  K= {K}  active= {num_active}  tok/exp="
+        t" {tokens_per_expert} :\n     naive-bf16  {nb_sec * 1e6} us ("
+        t" {(2.0 * wbytes) / (nb_sec * 1e9)} GB/s) | naive-fp8 "
+        t" {nf_sec * 1e6} us ( {wbytes / (nf_sec * 1e9)} GB/s) | tiled-fp8 "
+        t" {tf_sec * 1e6} us ( {wbytes / (tf_sec * 1e9)} GB/s)\n     tiled-fp8"
+        t" vs naive-bf16:  {nb_sec / tf_sec} x | tiled-fp8 vs naive-fp8: "
+        t" {nf_sec / tf_sec} x"
     )
 
     _ = act_dev^

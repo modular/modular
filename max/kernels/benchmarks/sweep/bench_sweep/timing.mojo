@@ -89,15 +89,7 @@ struct PhaseTimer(Movable):
         """Prints one machine-readable `SWEEPTIME` line per phase."""
         for i in range(len(self.names)):
             print(
-                "SWEEPTIME,",
-                tag,
-                ",",
-                self.names[i],
-                ",",
-                self.counts[i],
-                ",",
-                Float64(self.totals_ns[i]) * 1e-9,
-                sep="",
+                t"SWEEPTIME,{tag},{self.names[i]},{self.counts[i]},{Float64(self.totals_ns[i]) * 1e-9}"
             )
 
     def finish(mut self, tag: String):

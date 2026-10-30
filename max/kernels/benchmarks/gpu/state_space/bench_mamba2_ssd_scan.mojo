@@ -108,17 +108,13 @@ struct SSDSampling(SSDRunObserver):
                 baseline_event.append(baseline_ns)
                 candidate_event.append(candidate_ns)
             for i in range(30):
-                print(
+                var pair_label = (
                     "SSD_AUTO_EVENT_PAIR," if grouped_mode
-                    == GROUPED_CB_AUTO else "SSD_GROUPED_EVENT_PAIR,",
-                    i,
-                    ",",
-                    "AB" if i % 2 == 0 else "BA",
-                    ",",
-                    baseline_event[i],
-                    ",",
-                    candidate_event[i],
-                    sep="",
+                    == GROUPED_CB_AUTO else "SSD_GROUPED_EVENT_PAIR,"
+                )
+                var order = "AB" if i % 2 == 0 else "BA"
+                print(
+                    t"{pair_label}{i},{order},{baseline_event[i]},{candidate_event[i]}"
                 )
             _record_samples(report, "off_event_mean", baseline_event)
             _record_samples(
@@ -167,17 +163,13 @@ struct SSDSampling(SSDRunObserver):
                 baseline_wall.append(baseline_ns)
                 candidate_wall.append(candidate_ns)
             for i in range(30):
-                print(
+                var pair_label = (
                     "SSD_AUTO_WALL_PAIR," if grouped_mode
-                    == GROUPED_CB_AUTO else "SSD_GROUPED_WALL_PAIR,",
-                    i,
-                    ",",
-                    "AB" if i % 2 == 0 else "BA",
-                    ",",
-                    baseline_wall[i],
-                    ",",
-                    candidate_wall[i],
-                    sep="",
+                    == GROUPED_CB_AUTO else "SSD_GROUPED_WALL_PAIR,"
+                )
+                var order = "AB" if i % 2 == 0 else "BA"
+                print(
+                    t"{pair_label}{i},{order},{baseline_wall[i]},{candidate_wall[i]}"
                 )
             _record_samples(report, "off_wall_mean", baseline_wall)
             _record_samples(
@@ -223,24 +215,12 @@ struct SSDSampling(SSDRunObserver):
                     candidate_times.append(candidate_ns)
                 for i in range(30):
                     print(
-                        "SSD_PAIR_SAMPLE,",
-                        i,
-                        ",",
-                        "AB" if i % 2 == 0 else "BA",
-                        ",",
-                        serial_times[i],
-                        ",",
-                        candidate_times[i],
-                        sep="",
+                        t"SSD_PAIR_SAMPLE,{i},{"AB" if i % 2 == 0 else "BA"},{serial_times[i]},{candidate_times[i]}"
                     )
                 _record_samples(report, "serial_event_mean", serial_times)
                 _record_samples(report, "chunked_event_mean", candidate_times)
                 print(
-                    "SSD_PAIR_MEDIAN_NS,serial,",
-                    _median_ns(serial_times),
-                    ",chunked_candidate,",
-                    _median_ns(candidate_times),
-                    sep="",
+                    t"SSD_PAIR_MEDIAN_NS,serial,{_median_ns(serial_times)},chunked_candidate,{_median_ns(candidate_times)}"
                 )
             else:
                 for _ in range(5):
@@ -254,7 +234,7 @@ struct SSDSampling(SSDRunObserver):
                     operation(ctx, SSD_RESET)
                     times.append(ctx.execution_time(baseline, 1))
                 for i in range(len(times)):
-                    print("SSD_SAMPLE,", i, ",", times[i], sep="")
+                    print(t"SSD_SAMPLE,{i},{times[i]}")
                 _record_samples(report, "event_mean", times)
                 print("SSD_MEDIAN_NS,", _median_ns(times), sep="")
         report.dump_report()
@@ -331,25 +311,7 @@ def _bench_ssd[
                 (b + 1) * state_size + i, is_h.unsafe_load(b * state_size + i)
             )
     print(
-        "SSD_SHAPE,nheads=",
-        nheads,
-        ",head_dim=",
-        head_dim,
-        ",groups=",
-        ngroups,
-        ",batch=",
-        batch,
-        ",tokens=",
-        total_len,
-        ",split=",
-        DSTATE_SPLIT,
-        ",channels=",
-        CH_PER_THREAD,
-        ",prefill=",
-        prefill,
-        ",lengths=",
-        seq_lengths,
-        sep="",
+        t"SSD_SHAPE,nheads={nheads},head_dim={head_dim},groups={ngroups},batch={batch},tokens={total_len},split={DSTATE_SPLIT},channels={CH_PER_THREAD},prefill={prefill},lengths={seq_lengths}"
     )
     run_ssd_gpu[
         DSTATE,

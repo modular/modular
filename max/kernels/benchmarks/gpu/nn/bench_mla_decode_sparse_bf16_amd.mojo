@@ -224,13 +224,9 @@ def _make_case(
         q_host_out[i] = v.cast[dtype]()
     var valid = _fill_indices(idx_host_out, seq_len, hole_period)
     print(
-        "# case T=",
-        seq_len,
-        " valid_slots_per_row=",
-        Float64(valid) / Float64(seq_len),
-        " of ",
-        stride,
-        sep="",
+        t"# case"
+        t" T={seq_len} valid_slots_per_row={Float64(valid) / Float64(seq_len)} of"
+        t" {stride}"
     )
     var q = ctx.enqueue_create_buffer[dtype](q_size)
     ctx.enqueue_copy(q, q_host_out)
@@ -391,23 +387,7 @@ def bench_case(ctx: DeviceContext, b: Bench, seq_len: Int, opts: Opts) raises:
     for compact_only in [False, True]:
         var us = _time(ctx, b, a, compact_only, iters, opts.warm)
         print(
-            "timing,T=",
-            seq_len,
-            ",",
-            "compact" if compact_only else "arm_total",
-            ",np=",
-            np,
-            ",iters=",
-            iters,
-            ",l2=",
-            "warm" if opts.warm else "flushed",
-            ",median_us=",
-            _pct(us, 50),
-            ",p10_us=",
-            _pct(us, 10),
-            ",p90_us=",
-            _pct(us, 90),
-            sep="",
+            t"timing,T={seq_len},{"compact" if compact_only else "arm_total"},np={np},iters={iters},l2={"warm" if opts.warm else "flushed"},median_us={_pct(us, 50)},p10_us={_pct(us, 10)},p90_us={_pct(us, 90)}"
         )
     _ = a^
     _ = q_host^
@@ -449,20 +429,11 @@ def main() raises:
     comptime if default_accelerator().is_amd_gpu():
         with DeviceContext() as ctx:
             var b = Bench(ctx)
+            var num_cus = ctx.device().get_attribute(
+                DeviceAttribute.MULTIPROCESSOR_COUNT
+            )
             print(
-                "# CUs=",
-                ctx.device().get_attribute(
-                    DeviceAttribute.MULTIPROCESSOR_COUNT
-                ),
-                " heads=",
-                num_heads,
-                " stride=",
-                stride,
-                " ctx_len=",
-                ctx_len,
-                " hole_period=",
-                opts.hole_period,
-                sep="",
+                t"# CUs={num_cus} heads={num_heads} stride={stride} ctx_len={ctx_len} hole_period={opts.hole_period}"
             )
             var ts = List[Int]()
             if opts.t != 0:

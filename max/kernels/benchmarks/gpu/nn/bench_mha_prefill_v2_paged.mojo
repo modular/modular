@@ -324,7 +324,7 @@ def main() raises:
     print("Running MhaPrefillV2 (paged K/V) benchmark with config:")
     print("  qkv_type :", qkv_type)
     print("  depth    :", depth)
-    print("  num_heads:", num_heads, " group:", group)
+    print(t"  num_heads: {num_heads}  group: {group}")
     print("  page_size:", page_size)
     print("  seq_len  :", seq_len)
     print("  batch    :", batch_size)

@@ -471,17 +471,7 @@ def run_config[
             # switches the select from its prefill arm to the prefetching
             # decode one, a different kernel and not an apples-to-apples step.
             # fmt: off
-            print(
-                "MLAIDX ", name,
-                " | max_num_keys=", max_num_keys,
-                " rows_per_chunk=", rows_per_chunk,
-                " chunks=", ceildiv(tokens, rows_per_chunk),
-                " chunk_bytes=", rows_per_chunk * row_bytes,
-                " l2_bytes=", l2_bytes,
-                " chunk_over_l2=",
-                Float64(rows_per_chunk * row_bytes) / Float64(l2_bytes),
-                " topk_fills_gpu=", rows_per_chunk >= sm_count,
-            )
+            print(t"MLAIDX  {name}  | max_num_keys= {max_num_keys}  rows_per_chunk= {rows_per_chunk}  chunks= {ceildiv(tokens, rows_per_chunk)}  chunk_bytes= {rows_per_chunk * row_bytes}  l2_bytes= {l2_bytes}  chunk_over_l2= {Float64(rows_per_chunk * row_bytes) / Float64(l2_bytes)}  topk_fills_gpu= {rows_per_chunk >= sm_count}")
             # fmt: on
 
             h.first_launch(ctx, kernel_launch)
@@ -551,10 +541,10 @@ def main() raises:
         # Read, never assumed: every budget in a sweep is stated as a fraction
         # of these two, and both differ across Blackwell parts.
         print(
-            "MLAIDXDEV l2_bytes=",
-            ctx.device().get_attribute(DeviceAttribute.L2_CACHE_SIZE),
-            " sm_count=",
-            ctx.device().get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT),
+            t"MLAIDXDEV l2_bytes="
+            t" {ctx.device().get_attribute(DeviceAttribute.L2_CACHE_SIZE)} "
+            t" sm_count="
+            t" {ctx.device().get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)}"
         )
         var rot = h.rotation()
 

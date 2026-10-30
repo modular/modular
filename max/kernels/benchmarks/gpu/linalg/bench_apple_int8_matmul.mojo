@@ -72,20 +72,7 @@ def _bench_gemm(
         if avg < best:
             best = avg
     var tops = 2.0 * Float64(m) * Float64(n) * Float64(k) / (best * 1e12)
-    print(
-        "  GEMM ",
-        label,
-        m,
-        "x",
-        n,
-        "x",
-        k,
-        ":",
-        best * 1000.0,
-        "ms",
-        tops,
-        "Tops/s",
-    )
+    print(t"  GEMM  {label} {m} x {n} x {k} : {best * 1000.0} ms {tops} Tops/s")
     _ = a^
     _ = b^
     _ = asc^
@@ -116,7 +103,7 @@ def _bench_quant(m: Int, k: Int, label: String, ctx: DeviceContext) raises:
         var avg = (perf_counter() - st) / 20.0
         if avg < best:
             best = avg
-    print("  QUANT", label, "M=", m, "K=", k, ":", best * 1000.0, "ms")
+    print(t"  QUANT {label} M= {m} K= {k} : {best * 1000.0} ms")
     _ = a^
     _ = q^
     _ = s^

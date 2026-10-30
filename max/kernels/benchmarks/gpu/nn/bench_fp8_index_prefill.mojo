@@ -568,14 +568,7 @@ def execute_fp8_index_prefill[
                         ](v)
                     )
                 ) * 0x100000001B3
-        print(
-            "#digest",
-            name,
-            ":",
-            hex(h),
-            "written=",
-            written,
-        )
+        print(t"#digest {name} : {hex(h)} written= {written}")
     elif run_benchmark:
         comptime if _is_amd:
             # The gfx950 scorer loads every 128-key tile for every token;
@@ -739,14 +732,8 @@ def execute_fp8_index_prefill[
                             checked += 1
                     row_offset += seq_lens[bs]
             print(
-                "#verify naive checked=",
-                checked,
-                "max_abs=",
-                max_abs,
-                "max_rel=",
-                max_rel,
-                "mismatched=",
-                mismatched,
+                t"#verify naive checked= {checked} max_abs= {max_abs} max_rel="
+                t" {max_rel} mismatched= {mismatched}"
             )
             if mismatched > 0:
                 raise Error("scorer differs from fp8_index_naive")
