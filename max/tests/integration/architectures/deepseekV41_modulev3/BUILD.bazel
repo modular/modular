@@ -104,6 +104,26 @@ modular_py_test(
     ],
 )
 
+modular_py_test(
+    name = "test_engram_lookback_history",
+    size = "small",
+    srcs = ["test_engram_lookback_history.py"],
+    data = ["//max/tests/integration/architectures/deepseekV41_modulev3/testdata"],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/deepseekV41_modulev3/testdata",
+    },
+    imports = ["."],
+    deps = [
+        ":abi_contract",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        "//max/python/max/pipelines/context",
+        requirement("numpy"),
+    ],
+)
+
 # The real module's declared parameters against the checkpoint census,
 # leaf for leaf in dtype and byte extent -- the property Mach's weight
 # registry checks at boot, so a host transform that writes new bytes

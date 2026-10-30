@@ -96,7 +96,9 @@ def _virtual_devices(n_devices: int) -> Iterator[None]:
         set_virtual_device_count(0)
 
 
-def _dp_text_config(replay: bool = False) -> SimpleNamespace:
+def _dp_text_config(
+    replay: bool = False, lookback_history: bool = False
+) -> SimpleNamespace:
     """The synthetic text config, plus its two Engram layers.
 
     The Engram layers make the DP graph cover the request-sliced lookback
@@ -120,12 +122,16 @@ def _dp_text_config(replay: bool = False) -> SimpleNamespace:
 
     ``replay`` exports the decoder's host-planned kept rows, which needs
     layers past the last KV source: two SWA-only layers are appended.
+    ``lookback_history`` exports the Engram window's device history (the
+    overlap mechanism).
     """
     text = text_config()
     if replay:
         text.num_hidden_layers = 4
         text.compress_ratios = [0, 1, 0, 0]
         text.decoder_replay = True
+    if lookback_history:
+        text.engram_lookback_history = True
     text.index_n_heads = 32
     text.num_attention_heads = 64
     text.hidden_size = 5120
@@ -225,10 +231,10 @@ def _dp_ep_compile_inputs(
 
 
 def _build_dp4_ep4(
-    replay: bool = False,
+    replay: bool = False, lookback_history: bool = False
 ) -> tuple[DeepseekV41, V41Config, list[TensorType | BufferType]]:
     """The DP4+EP4 module, its interface config and its compile inputs."""
-    text = _dp_text_config(replay)
+    text = _dp_text_config(replay, lookback_history)
     interface = V41Config.from_hf({"text_config": vars(text)})
     device_refs = [DeviceRef.GPU(i) for i in range(_DP)]
     kv = build_kv_params(
@@ -264,10 +270,10 @@ def _build_dp4_ep4(
     return module, interface, inputs
 
 
-def _stage_dp4_ep4(replay: bool = False) -> str:
+def _stage_dp4_ep4(replay: bool = False, lookback_history: bool = False) -> str:
     """Traces the DP4+EP4 graph and returns its staged text."""
     with _virtual_devices(_DP):
-        module, _, inputs = _build_dp4_ep4(replay)
+        module, _, inputs = _build_dp4_ep4(replay, lookback_history)
         return str(module.trace(*inputs))
 
 
@@ -335,7 +341,8 @@ def test_dp4_ep4_off_graph_takes_no_replay_input(staged_dp4_ep4: str) -> None:
 
     The digest and op census are the evidence that it is byte-for-byte that
     graph: run this test on the commit before the change and on this one and
-    the two ``graph digest`` lines must match.
+    the two ``graph digest`` lines must match. The lookback-history
+    mechanism gates the same way, so the digest also covers it.
     """
     census = Counter(re.findall(r"\b(?:mo|mogg|mgp)\.[\w.]+", staged_dp4_ep4))
     print(
@@ -345,6 +352,9 @@ def test_dp4_ep4_off_graph_takes_no_replay_input(staged_dp4_ep4: str) -> None:
         f"kinds={len(census)}",
     )
     assert "replay.kept_offsets" not in staged_dp4_ep4
+    assert "engram_lookback_ids" not in staged_dp4_ep4
+    assert "engram_lookback_source" not in staged_dp4_ep4
+    assert "engram_lookback_history" not in staged_dp4_ep4
 
 
 def test_dp4_ep4_replay_graph_stages_with_the_designed_collectives() -> None:
@@ -354,6 +364,23 @@ def test_dp4_ep4_replay_graph_stages_with_the_designed_collectives() -> None:
     # requests' share with the token split, under its own dim labels.
     assert "replay_rows" in text
     assert text.count("mo.distributed.allreduce.sum") == 1
+    assert set(re.findall(r"\bmo\.distributed\.[\w.]+", text)) == set(
+        re.findall(r"\bmo\.distributed\.[\w.]+", _stage_dp4_ep4())
+    )
+
+
+def test_dp4_ep4_lookback_history_graph_stages_the_v2_mechanism() -> None:
+    """The history export reads the window in-graph, with no new collective.
+
+    The trace runs by input type, so what the mechanism leaves in the
+    staged text is its history buffer's own dim: the read ran inside the
+    trunk (a buffer input the DP wiring has never carried before). The
+    read is device-0 compute, so the step's collective inventory is
+    exactly the default's -- an unplanned collective would lower into the
+    host waits that device-graph capture rejects.
+    """
+    text = _stage_dp4_ep4(lookback_history=True)
+    assert "engram_history_rows" in text
     assert set(re.findall(r"\bmo\.distributed\.[\w.]+", text)) == set(
         re.findall(r"\bmo\.distributed\.[\w.]+", _stage_dp4_ep4())
     )

@@ -22,7 +22,7 @@ import numpy as np
 from max import functional as F
 from max import tree
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
+from max.graph import BufferValue, DeviceRef, TensorValue, ops
 from max.nn import Module
 from max.nn.common_layers.embedding import VocabParallelEmbedding
 from max.nn.common_layers.kv_cache import PagedCacheValues
@@ -32,6 +32,9 @@ from max.nn.legacy.data_parallelism import split_batch_replicated
 from max.nn.legacy.kv_cache import KVCacheInputsPerDevice, MultiKVCacheParams
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.nn.sequential import ModuleList
+from max.pipelines.architectures.deepseekV41.engram_lookback import (
+    read_engram_lookback,
+)
 from max.pipelines.lib import ModuleV3Outputs
 from max.tensor import Tensor, default_device, default_dtype
 from max.tensor.sharding import (
@@ -556,7 +559,25 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
         image_token_mask = F.distributed_broadcast(
             extras["image_token_mask"], mesh
         )
-        lookback = F.distributed_broadcast(extras["engram_lookback"], mesh)
+        if self.interface_config.engram_lookback_history:
+            # The overlap export replaces the host window with the window
+            # plus its device history: the row the source map names reads
+            # the window the previous step recorded in-graph, because the
+            # host does not know that step's accepted drafts yet. The
+            # Engram hash reads the same int32 window either way.
+            history = extras["engram_lookback_history"].graph_values[0]
+            assert isinstance(history, BufferValue)
+            lookback = F.cast(
+                read_engram_lookback(
+                    extras["engram_lookback_ids"],
+                    extras["engram_lookback_source"],
+                    history,
+                ),
+                DType.int32,
+            )
+        else:
+            lookback = extras["engram_lookback"]
+        lookback = F.distributed_broadcast(lookback, mesh)
         lookback_dead = F.distributed_broadcast(
             extras["engram_lookback_dead"], mesh
         )

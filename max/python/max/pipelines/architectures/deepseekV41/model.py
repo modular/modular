@@ -27,7 +27,7 @@ import logging
 import math
 import os
 import time
-from collections.abc import Callable, Hashable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Protocol, runtime_checkable
@@ -114,6 +114,7 @@ from transformers import AutoTokenizer
 from . import engram_shared_host, kv_leaves, weight_adapters
 from .batch_vision_inputs import pack_uncached_images
 from .deepseekV41 import DeepseekV41, DeepseekV41Block, VisionMerge
+from .engram_lookback import EngramLookbackBatchState
 from .layers.attention import CSA2Cache
 from .layers.engram_hash import EngramLayout, engram_lookback_token_ids
 from .layers.engram_lookup import EngramLookup
@@ -1073,8 +1074,7 @@ class DeepseekV41BatchProcessor(
         self, config: DeepseekV41Config, runtime: BatchProcessorRuntime
     ) -> None:
         super().__init__(config, runtime)
-        self._prev_rows: dict[Hashable, int] = {}
-        self._engram_history: Buffer | None = None
+        self._lookback = EngramLookbackBatchState()
 
     @functools.cached_property
     def replay_min_tokens(self) -> int:
@@ -1309,32 +1309,15 @@ class DeepseekV41BatchProcessor(
         if not depth:
             return
         device0 = self.runtime.devices[0]
-        if self._engram_history is None:
-            self._engram_history = Buffer.zeros(
-                (self.runtime.max_global_batch_size, depth),
-                DType.int64,
-                device=device0,
-            )
-        if len(contexts) > self._engram_history.shape[0]:
-            raise ValueError(
-                f"{len(contexts)} requests exceed the "
-                f"{self._engram_history.shape[0]}-row Engram lookback history"
-            )
-        # A request whose previous step is still in flight starts after
-        # that step's accepted drafts, which only the device knows; the
-        # graph reads the window that step recorded. The predicate is the
-        # one the overlap pipeline realizes the cache lengths with.
-        source = Buffer(shape=(len(contexts),), dtype=DType.int64)
-        source.to_numpy()[:] = [
-            self._prev_rows.get(ctx.request_id, -1)
-            if ctx.spec_decoding_state.maybe_accepted_draft_tokens
-            and ctx.tokens.generated_length
-            else -1
-            for ctx in contexts
-        ]
-        self._prev_rows = {ctx.request_id: i for i, ctx in enumerate(contexts)}
-        inputs.engram_lookback_source = source.to(device0)
-        inputs.engram_lookback_history = self._engram_history
+        inputs.engram_lookback_history = self._lookback.ensure_history(
+            capacity=self.runtime.max_global_batch_size,
+            batch=len(contexts),
+            depth=depth,
+            device=device0,
+        )
+        inputs.engram_lookback_source = Buffer.from_numpy(
+            self._lookback.source(contexts)
+        ).to(device0)
 
     def _prepare_replay(
         self,
