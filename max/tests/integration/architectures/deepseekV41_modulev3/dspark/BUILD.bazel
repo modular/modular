@@ -4,6 +4,7 @@ load(
     "modular_py_test",
     "requirement",
 )
+load("//bazel:config.bzl", "REQUIRES_INTERNAL_KERNELS")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -106,11 +107,13 @@ modular_py_test(
     srcs = ["test_dspark_dp4_graph.py"],
     data = ["//max/tests/integration/architectures/deepseekV41_modulev3/testdata"],
     imports = ["."],
+    # The drafter's MXFP8 projections stage mo.matmul.mxfp8.cluster_splitk,
+    # registered only by the closed-source kernels.
     target_compatible_with = select({
         # No NVPTX target for the staged sm_100a virtual devices.
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
-    }),
+    }) + REQUIRES_INTERNAL_KERNELS,
     deps = [
         ":dspark_test_support",
         "//max/python/max:tensor",
