@@ -94,7 +94,10 @@ modular_py_binary(
 modular_py_binary(
     name = "scicode_eval",
     testonly = True,
-    srcs = ["scicode_eval.py"],
+    srcs = [
+        "scicode_eval.py",
+        "scicode_reference_steps.py",
+    ],
     imports = ["."],
     main = "scicode_eval.py",
     # scicode + h5py are NOT deps here: the generated code's tests run in a
