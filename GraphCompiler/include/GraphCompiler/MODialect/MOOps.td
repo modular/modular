@@ -4857,7 +4857,6 @@ def MO_BufferTransferOp : MO_DeviceAgnosticMutableOp<"buffer.transfer", [
 // mo.buffer.
 def MO_BufferCreateOp : MO_Op<"buffer.create", [
   MO_PreservedDuringKernelLowering,
-  Pure,
 ]> {
   let summary = "Creates a buffer on a specific device, optionally initialized.";
   let description = [{
@@ -4880,7 +4879,8 @@ def MO_BufferCreateOp : MO_Op<"buffer.create", [
     // Single-element elements attr of the buffer's dtype (verified).
     OptionalAttr<AnyAttr>:$initValue
   );
-  let results = (outs MO_Buffer:$result);
+
+  let results = (outs Res<MO_Buffer, "result buffer", [MemAlloc]>:$result);
 
   let assemblyFormat = [{
     (` ` `[` `initValue` `=` $initValue^ `]`)? attr-dict `:`
