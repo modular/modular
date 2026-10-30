@@ -1436,11 +1436,15 @@ class ModuleV3PipelineModelWithKVCache(
         return {
             GraphRole.DECODER: GraphSpec(
                 nn_model,
-                type(nn_model).__qualname__,
+                self._graph_name(nn_model),
                 self._get_compile_input_types(model_config),
                 weights=state_dict,
             )
         }
+
+    def _graph_name(self, nn_model: _ModuleV3[..., Any]) -> str:
+        """Returns the decoder graph's name, part of its precompiled MEF key."""
+        return type(nn_model).__qualname__
 
     def _load_decoder(
         self, session: InferenceSession

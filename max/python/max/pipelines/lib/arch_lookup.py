@@ -34,6 +34,7 @@ from max.nn import Module
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
 from .interfaces.pipeline_model import PipelineModel
+from .module_registration import module_pipeline_model
 from .pipeline_executor import PipelineExecutor
 from .tokenizer import TextTokenizer
 
@@ -146,7 +147,7 @@ class SupportedArchitecture:
     supported_encodings: set[SupportedEncoding]
     """A dictionary of supported quantization encodings."""
 
-    pipeline_model: PipelineModelType | None
+    pipeline_model: PipelineModelType | None = field(default=None, kw_only=True)
     """The model class that defines the graph structure and execution logic.
 
     Accepts either a :class:`PipelineModel` subclass (for LLM and other
@@ -155,6 +156,21 @@ class SupportedArchitecture:
     ``None`` for a draft architecture that only runs beside a target, inside
     a unified spec-decode graph: it registers for config resolution, and
     builds its module through its config class.
+
+    An architecture that registers :attr:`modules` leaves this unset, and
+    the framework builds it from the registration.
+    """
+
+    modules: Mapping[str, type[Module[..., Any]]] = field(
+        default_factory=dict, kw_only=True
+    )
+    """The module class of each role the architecture fills, keyed by
+    :class:`~max.pipelines.lib.graph_specs.GraphRole`.
+
+    The framework constructs each as ``module_cls(config)`` from the
+    finalized :attr:`config`, and its ``forward`` takes and returns the
+    role's contract from :mod:`max.pipelines.lib.role_contracts`. Only
+    ``DECODER`` is served so far.
     """
 
     task: PipelineTask
@@ -521,6 +537,14 @@ class SupportedArchitecture:
     :class:`~max.pipelines.lib.pipeline_variants.text_generation.TextGenerationPipeline`
     subclass (or compatible) selected in ``retrieve_factory``.
     """
+
+    def __post_init__(self) -> None:
+        # A derived architecture, such as a speculative pairing, keeps the
+        # pipeline model it sets.
+        if self.modules and self.pipeline_model is None:
+            self.pipeline_model = module_pipeline_model(
+                self.config, tuple(self.modules.items()), self.batching
+            )
 
     def draft_architecture(self, method: str, checkpoint_name: str) -> str:
         """Returns the registered draft architecture of a draft checkpoint.

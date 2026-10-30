@@ -18,6 +18,7 @@ modular_py_test(
             "test_reasoning.py",
             "test_graph_specs.py",
             "test_hf_dynamic_modules.py",
+            "test_module_registration.py",
             "test_structured_output_backend.py",
         ],
     ),
@@ -112,6 +113,25 @@ modular_py_test(
         "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/lib",
         requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_module_registration",
+    srcs = ["test_module_registration.py"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        requirement("numpy"),
+        requirement("transformers"),
+        requirement("typing-extensions"),
     ],
 )
 
