@@ -85,11 +85,13 @@ def consumer(
         dst[i] = src[i]
 
 
-def run_case[N: Int, K: Int](ctx: DeviceContext, m: Int, num_iters: Int) raises:
+def run_case[
+    N: Int, K: Int, n_g: Int = BLOCK
+](ctx: DeviceContext, m: Int, num_iters: Int) raises:
     comptime k_blocks = K // BLOCK
-    comptime n_blocks = ceildiv(N, BLOCK)
+    comptime n_blocks = ceildiv(N, n_g)
 
-    print(t"blockwise fp8 PDL: M={m} N={N} K={K}", sep="")
+    print(t"blockwise fp8 PDL: M={m} N={N} K={K} n_g={n_g}", sep="")
 
     var a_elems = m * K
     var c_elems = m * N
@@ -140,7 +142,7 @@ def run_case[N: Int, K: Int](ctx: DeviceContext, m: Int, num_iters: Int) raises:
         input_scale_granularity="block",
         weight_scale_granularity="block",
         m_scale_granularity=1,
-        n_scale_granularity=BLOCK,
+        n_scale_granularity=n_g,
         k_scale_granularity=BLOCK,
         transpose_b=True,
         target="gpu",
@@ -172,7 +174,7 @@ def run_case[N: Int, K: Int](ctx: DeviceContext, m: Int, num_iters: Int) raises:
             input_scale_granularity="block",
             weight_scale_granularity="block",
             m_scale_granularity=1,
-            n_scale_granularity=BLOCK,
+            n_scale_granularity=n_g,
             k_scale_granularity=BLOCK,
             transpose_b=True,
             target="gpu",
@@ -237,6 +239,12 @@ def run_k[K: Int](ctx: DeviceContext) raises:
     # tile instead of the 2-CTA pair.
     run_case[9600, K](ctx, 36, 20)
     run_case[9600, K](ctx, 100, 20)
+    # Wider M <= 64 tiles (192 at N = 24576, 256 at N = 28672) and the 64-wide
+    # scale blocks that cap that tile at two blocks (128 wide).
+    run_case[24576, K](ctx, 36, 20)
+    run_case[28672, K](ctx, 36, 20)
+    run_case[9600, K, 64](ctx, 36, 20)
+    run_case[24576, K, 64](ctx, 36, 20)
     run_case[576, K](ctx, 516, 20)
     run_case[1536, K](ctx, 36, 20)
     run_case[1536, K](ctx, 516, 20)
