@@ -76,6 +76,19 @@ InterpreterState::InterpreterState(MLIRContext *ctx, TargetInfoAttr target)
 InterpreterState::InterpreterState(TargetInfoAttr target)
     : InterpreterState(target.getContext(), target) {}
 
+std::optional<ArrayRef<int64_t>> InterpreterState::getStructElementOffsets(
+    Type type, function_ref<std::optional<SmallVector<int64_t>>()> compute) {
+  auto [it, inserted] = structElementOffsets.try_emplace(type);
+  if (inserted) {
+    std::optional<SmallVector<int64_t>> offsets = compute();
+    if (offsets)
+      it->second = std::make_unique<SmallVector<int64_t>>(std::move(*offsets));
+  }
+  if (!it->second)
+    return std::nullopt;
+  return ArrayRef<int64_t>(*it->second);
+}
+
 InterpreterState::MemoryBlob::MemoryBlob(llvm::BumpPtrAllocator &allocator,
                                          int64_t baseAddr, size_t size,
                                          size_t align, unsigned addressSpace,

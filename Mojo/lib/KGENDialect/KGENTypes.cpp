@@ -1837,6 +1837,13 @@ StructType::getElementOffsets(TargetInfoAttr target) const {
   return offsets;
 }
 
+std::optional<ArrayRef<int64_t>>
+KGEN::getInterpreterStructElementOffsets(StructType type,
+                                         InterpreterState &state) {
+  return state.getStructElementOffsets(
+      type, [&] { return type.getElementOffsets(state.getTarget()); });
+}
+
 std::optional<int64_t> StructType::getTypeSize(TargetInfoAttr target) const {
   // A struct backed by a concrete ParamListAttr has a known size.
   if (ParamListAttr attr = getVariadicIfResolved()) {
@@ -1875,28 +1882,22 @@ std::optional<int64_t> StructType::getTypeAlign(TargetInfoAttr target) const {
 
 ErrorOrSuccess StructType::writeTo(TypedAttr value, int64_t addr,
                                    InterpreterState &state) const {
-  int64_t offset = 0;
-  if (auto sv = dyn_cast_if_present<StructAttr>(value)) {
-    for (TypedAttr value : sv.getValues()) {
-      auto dl = ::cast<DataLayoutInterface>(value.getType());
-      // Store each element spaced apart by padding according to its alignment.
-      std::optional<int64_t> align = dl.getTypeAlign(state.getTarget());
-      std::optional<int64_t> size = dl.getTypeSize(state.getTarget());
-      if (!align || !size)
-        return Error(kStructElemLayoutError);
-      offset = llvm::alignTo(offset, *align);
-
-      ErrorOrSuccess result =
-          state.writeAttributeToMemory(addr + offset, value);
-      if (result.isError())
-        return result.takeError();
-      offset += *size;
-    }
-    return success();
+  StructAttr structValue = dyn_cast_if_present<StructAttr>(value);
+  if (!structValue)
+    return Error("struct not a writeable type, got " +
+                 mlir::debugString(value) + " instead");
+  std::optional<ArrayRef<int64_t>> offsets =
+      getInterpreterStructElementOffsets(*this, state);
+  if (!offsets || offsets->size() != structValue.getValues().size())
+    return Error(kStructElemLayoutError);
+  for (auto [offset, element] :
+       llvm::zip_equal(*offsets, structValue.getValues())) {
+    ErrorOrSuccess result =
+        state.writeAttributeToMemory(addr + offset, element);
+    if (result.isError())
+      return result.takeError();
   }
-
-  return Error("struct not a writeable type, got " + mlir::debugString(value) +
-               " instead");
+  return success();
 }
 
 ErrorOr<TypedAttr> StructType::readFrom(int64_t addr,
@@ -1904,21 +1905,18 @@ ErrorOr<TypedAttr> StructType::readFrom(int64_t addr,
   std::optional<SmallVector<Type>> elementTypes = getElementTypes();
   if (!elementTypes)
     return Error("cannot read from parametric struct type");
+  std::optional<ArrayRef<int64_t>> offsets =
+      getInterpreterStructElementOffsets(*this, state);
+  if (!offsets)
+    return Error(kStructElemLayoutError);
   SmallVector<TypedAttr> values;
-  int64_t offset = 0;
-  for (Type elType : *elementTypes) {
-    auto dl = llvm::cast<DataLayoutInterface>(elType);
-    std::optional<int64_t> align = dl.getTypeAlign(state.getTarget());
-    std::optional<int64_t> size = dl.getTypeSize(state.getTarget());
-    if (!align || !size)
-      return Error(kStructElemLayoutError);
-    offset = llvm::alignTo(offset, *align);
+  values.reserve(elementTypes->size());
+  for (auto [offset, elType] : llvm::zip_equal(*offsets, *elementTypes)) {
     ErrorOr<TypedAttr> value =
         state.readAttributeFromMemory(addr + offset, elType);
     if (value.isError())
       return value.takeError();
     values.push_back(value.takeValue());
-    offset += *size;
   }
   return StructAttr::get(values, *this);
 }
