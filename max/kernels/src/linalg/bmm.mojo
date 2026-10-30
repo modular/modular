@@ -1310,8 +1310,14 @@ def batched_matmul[
             (defaults to `False`; not applicable on GPU).
         target: Target hardware for the operation (defaults to `"cpu"`).
         pdl_level: Programmatic dependent launch level for the SM100 GPU
-            kernels; other targets ignore it (defaults to `PDLLevel()`,
-            which disables PDL).
+            kernels; other targets ignore it. `OVERLAP_AT_BEGINNING`
+            releases dependent grids at kernel entry, so every dependent must
+            wait before reading the output. The SM100 plain matmul may prefetch
+            its B operand ahead of that wait, because B is a weight read
+            straight from the checkpoint by contract. A value the graph
+            computes each call (a cast, concat, derived parameter or sharded
+            view) is not one, so this op's output must not feed it as B
+            (defaults to `PDLLevel()`, which disables PDL).
 
     Args:
         c_buf: Output tensor of shape `(..., m, n)`; rank must be at least
@@ -1363,8 +1369,14 @@ def batched_matmul[
             (defaults to `False`; not applicable on GPU).
         target: Target hardware for the operation (defaults to `"cpu"`).
         pdl_level: Programmatic dependent launch level for the SM100 GPU
-            kernels; other targets ignore it (defaults to `PDLLevel()`,
-            which disables PDL).
+            kernels; other targets ignore it. `OVERLAP_AT_BEGINNING`
+            releases dependent grids at kernel entry, so every dependent must
+            wait before reading the output. The SM100 plain matmul may prefetch
+            its B operand ahead of that wait, because B is a weight read
+            straight from the checkpoint by contract. A value the graph
+            computes each call (a cast, concat, derived parameter or sharded
+            view) is not one, so this op's output must not feed it as B
+            (defaults to `PDLLevel()`, which disables PDL).
 
     Args:
         c_buf: Tensor of shape `(..., m, n)` giving the output shape; rank
@@ -1421,8 +1433,14 @@ def batched_matmul[
             (defaults to `False`; not applicable on GPU).
         target: Target hardware for the operation (defaults to `"cpu"`).
         pdl_level: Programmatic dependent launch level for the SM100 GPU
-            kernels; other targets ignore it (defaults to `PDLLevel()`,
-            which disables PDL).
+            kernels; other targets ignore it. `OVERLAP_AT_BEGINNING`
+            releases dependent grids at kernel entry, so every dependent must
+            wait before reading the output. The SM100 plain matmul may prefetch
+            its B operand ahead of that wait, because B is a weight read
+            straight from the checkpoint by contract. A value the graph
+            computes each call (a cast, concat, derived parameter or sharded
+            view) is not one, so this op's output must not feed it as B
+            (defaults to `PDLLevel()`, which disables PDL).
 
     Args:
         c_buf: Output tensor of shape `(..., m, n)`; rank must be at least

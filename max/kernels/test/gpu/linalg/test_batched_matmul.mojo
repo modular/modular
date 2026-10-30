@@ -13,15 +13,22 @@
 
 
 from std.sys import simd_width_of
+from std.time import sleep
 
 import linalg.matmul.vendor.blas as vendor_blas
 from max.algorithm.functional import elementwise
+from max.gpu import barrier, block_dim, block_idx, grid_dim, thread_idx
 from max.gpu.host import DeviceBuffer, DeviceContext
-from max.gpu.primitives.grid_controls import PDLLevel
+from max.gpu.primitives.grid_controls import (
+    PDLLevel,
+    launch_dependent_grids,
+    pdl_launch_attributes,
+)
 from layout import Coord, Idx, DefaultEngine, TileTensor, row_major
 from layout.tile_layout import Layout
 from linalg.bmm import (
     _batched_matmul_gpu,
+    batched_matmul,
     _reshape_tile_tensor_with_batch_to_3d,
 )
 
@@ -451,7 +458,12 @@ def test_pdl_chain[
     pdl_level: PDLLevel, *, N: Int, K: Int
 ](ctx: DeviceContext, b: Int, m: Int) raises:
     """Checks that dependent batched matmuls launched back to back with PDL
-    produce bit-identical results to the same chain with PDL off."""
+    produce bit-identical results to the same chain with PDL off.
+
+    This is a regression guard for the whole chain, over several waves. It
+    does not by itself prove the dependency wait: the grids may simply not
+    overlap. `test_late_producer` is the ordering test.
+    """
     comptime dtype = DType.bfloat16
     comptime reps = 6
     print(t"test_pdl_chain {b} x {m} x {N} x {K}")
@@ -511,6 +523,217 @@ def test_pdl_chain[
         assert_true(nonzero > y_size // 2, "reference chain output is empty")
 
 
+def late_fill_kernel(
+    dst: MutPointer[Scalar[DType.bfloat16], MutAnyOrigin],
+    n: Int32,
+    delay_seconds: Float64,
+):
+    """Releases its dependents at entry like `OVERLAP_AT_BEGINNING`, then
+    publishes `dst` only after a delay, so a consumer that reads before
+    waiting for this grid sees the stale contents.
+
+    The release comes from `launch_dependent_grids()`; the launch itself
+    carries no PDL attribute, since that would let it start before the fills
+    that precede it.
+    """
+    launch_dependent_grids()
+    if thread_idx.x == 0:
+        sleep(delay_seconds)
+    barrier()
+    var tid = Int(thread_idx.x + block_idx.x * block_dim.x)
+    var stride = Int(grid_dim.x * block_dim.x)
+    for i in range(tid, Int(n), stride):
+        dst[i] = Scalar[DType.bfloat16](1)
+
+
+def copy_without_wait_kernel(
+    src: MutPointer[Scalar[DType.bfloat16], MutAnyOrigin],
+    dst: MutPointer[Scalar[DType.bfloat16], MutAnyOrigin],
+    n: Int32,
+):
+    """Negative control: a PDL consumer that never calls
+    `wait_on_dependent_grids`."""
+    var tid = Int(thread_idx.x + block_idx.x * block_dim.x)
+    var stride = Int(grid_dim.x * block_dim.x)
+    for i in range(tid, Int(n), stride):
+        dst[i] = src[i]
+
+
+# Long enough to dwarf the host-side cost of enqueueing the consumer, so the
+# consumer is queued behind the producer while it is still running. Each test
+# runs once with no delay first to load its kernels: a first launch compiles
+# on the host and would otherwise outlast a short delay.
+comptime _LATE_DELAY_S = 0.02
+
+
+def _negative_control_once(
+    ctx: DeviceContext, delay_seconds: Float64
+) raises -> Int:
+    comptime n = 1 << 16
+    var src = ctx.enqueue_create_buffer[DType.bfloat16](n)
+    var dst = ctx.enqueue_create_buffer[DType.bfloat16](n)
+    src.enqueue_fill(0)
+    dst.enqueue_fill(7)
+    ctx.enqueue_function[late_fill_kernel](
+        src,
+        Int32(n),
+        delay_seconds,
+        grid_dim=1,
+        block_dim=256,
+    )
+    ctx.enqueue_function[copy_without_wait_kernel](
+        src,
+        dst,
+        Int32(n),
+        grid_dim=64,
+        block_dim=256,
+        attributes=pdl_launch_attributes(PDLLevel.OVERLAP_AT_BEGINNING),
+    )
+    var host = ctx.enqueue_create_host_buffer[DType.bfloat16](n)
+    ctx.enqueue_copy(host, dst)
+    ctx.synchronize()
+    var stale = 0
+    for i in range(n):
+        if host[i] == 0:
+            stale += 1
+    return stale
+
+
+def test_pdl_negative_control(ctx: DeviceContext) raises -> Bool:
+    """Checks that the late-producer setup exposes a missing wait: a consumer
+    launched with the PDL attribute that skips the wait should read the stale
+    (zero) data while the producer sleeps.
+
+    PDL allows early scheduling but does not guarantee it, so a consumer that
+    never overlaps is an inconclusive setup, not a failure: this returns
+    False and the late-producer cases then only check results. A few
+    attempts are made before giving up.
+
+    Returns:
+        Whether the setup was seen to let an early reader see stale data.
+    """
+    print("test_pdl_negative_control")
+    _ = _negative_control_once(ctx, 0.0)
+    for _ in range(3):
+        if _negative_control_once(ctx, _LATE_DELAY_S) > 0:
+            print(
+                "test_pdl_negative_control: overlap observed for the copy"
+                " kernel control; whether the batched matmul cases below"
+                " overlap is not established"
+            )
+            return True
+    print(
+        "WARNING: the consumer that skips the wait never overlapped the"
+        " delayed producer; test_late_producer cannot detect a missing wait"
+        " on this run (inconclusive, not a failure)"
+    )
+    return False
+
+
+def _late_producer_once[
+    pdl_level: PDLLevel, *, N: Int, K: Int, late_b: Bool, via_public: Bool
+](
+    ctx: DeviceContext, b: Int, m: Int, delay_seconds: Float64, check: Bool
+) raises:
+    comptime dtype = DType.bfloat16
+    var a_size = b * m * K
+    var b_size = b * N * K
+    var c_size = b * m * N
+
+    var a = ctx.enqueue_create_buffer[dtype](a_size)
+    # In a batched matmul both operands are activations, not weights: only a
+    # plain GEMM's B is a static weight that may be read before the PDL wait.
+    # That is why B must be read after the wait here.
+    var w = ctx.enqueue_create_buffer[dtype](b_size)
+    var c = ctx.enqueue_create_buffer[dtype](c_size)
+    comptime if late_b:
+        a.enqueue_fill(1)
+        w.enqueue_fill(0)
+    else:
+        a.enqueue_fill(0)
+        w.enqueue_fill(1)
+    c.enqueue_fill(-1)
+
+    var late_size = b_size if late_b else a_size
+    ctx.enqueue_function[late_fill_kernel](
+        w if late_b else a,
+        Int32(late_size),
+        delay_seconds,
+        grid_dim=1,
+        block_dim=256,
+    )
+
+    var c_t = TileTensor(c, row_major(b, m, Idx[N]))
+    var a_t = TileTensor(a, row_major(b, m, Idx[K]))
+    var w_t = TileTensor(w, row_major(b, Idx[N], Idx[K]))
+    comptime if via_public:
+        batched_matmul[transpose_b=True, target="gpu", pdl_level=pdl_level](
+            c_t, a_t.as_imm(), w_t.as_imm(), context=ctx
+        )
+    else:
+        _batched_matmul_gpu[transpose_b=True, pdl_level=pdl_level](
+            c_t, a_t.as_imm(), w_t.as_imm(), ctx
+        )
+
+    var host = ctx.enqueue_create_host_buffer[dtype](c_size)
+    ctx.enqueue_copy(host, c)
+    ctx.synchronize()
+    if not check:
+        return
+    for i in range(c_size):
+        assert_equal(Float32(host[i]), Float32(K))
+
+
+def test_late_producer[
+    pdl_level: PDLLevel, *, N: Int, K: Int, late_b: Bool, via_public: Bool
+](ctx: DeviceContext, b: Int, m: Int) raises:
+    """Publishes one operand of a batched matmul late, from a grid that has
+    already released its dependents, and checks the matmul waited for it.
+
+    With a ones-filled A and B every output element is exactly `K`; a matmul
+    that read the late operand early would produce zeros instead.
+    `test_pdl_negative_control` shows whether this setup makes an early reader
+    see the stale data on the current run.
+    """
+    print(
+        "test_late_producer",
+        b,
+        "x",
+        m,
+        "x",
+        N,
+        "x",
+        K,
+        "late_b",
+        late_b,
+        "public",
+        via_public,
+    )
+    _late_producer_once[
+        pdl_level, N=N, K=K, late_b=late_b, via_public=via_public
+    ](ctx, b, m, 0.0, False)
+    _late_producer_once[
+        pdl_level, N=N, K=K, late_b=late_b, via_public=via_public
+    ](ctx, b, m, _LATE_DELAY_S, True)
+
+
+def test_late_producer_cases[pdl_level: PDLLevel](ctx: DeviceContext) raises:
+    # A is the late operand of the first two, B of the last two. `public`
+    # goes through the `batched_matmul` entry the graph op calls.
+    test_late_producer[
+        pdl_level, N=Int(512), K=Int(128), late_b=False, via_public=False
+    ](ctx, 16, 61)
+    test_late_producer[
+        pdl_level, N=Int(512), K=Int(128), late_b=False, via_public=True
+    ](ctx, 16, 61)
+    test_late_producer[
+        pdl_level, N=Int(128), K=Int(512), late_b=True, via_public=False
+    ](ctx, 3, 129)
+    test_late_producer[
+        pdl_level, N=Int(128), K=Int(512), late_b=True, via_public=True
+    ](ctx, 3, 129)
+
+
 def test_pdl_cases[pdl_level: PDLLevel](ctx: DeviceContext) raises:
     test_static_NK[
         .bfloat16,
@@ -541,6 +764,11 @@ def test_pdl_cases[pdl_level: PDLLevel](ctx: DeviceContext) raises:
     test_pdl_chain[pdl_level, N=Int(512), K=Int(128)](ctx, 16, 61)
     test_pdl_chain[pdl_level, N=Int(512), K=Int(128)](ctx, 16, 1)
     test_pdl_chain[pdl_level, N=Int(512), K=Int(128)](ctx, 3, 2049)
+    # Several waves of CTAs, so a dependent grid's CTAs queue behind the
+    # predecessor's; a hang here is caught by the test timeout.
+    test_pdl_chain[pdl_level, N=Int(512), K=Int(128)](ctx, 16, 1024)
+    comptime if ctx.target._has_blackwell_tcgen05():
+        test_late_producer_cases[pdl_level](ctx)
 
 
 def main() raises:
@@ -670,6 +898,11 @@ def main() raises:
                 N=Int(512),
                 K=Int(128),
             ](ctx, 22)
+
+        # Runs first so the log says whether the late-producer cases below
+        # could have caught a missing wait.
+        comptime if ctx.target._has_blackwell_tcgen05():
+            _ = test_pdl_negative_control(ctx)
 
         # PDL on the SM100 batched path (MLA absorbed projections), ragged
         # and prime M. Other targets ignore the level.
