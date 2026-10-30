@@ -36,7 +36,7 @@ def test_epilogue_fn[
 ](ctx: DeviceContext, m: Int) raises:
     """Checks that the closure-value overloads store exactly what the
     legacy path computes, passed through the closure."""
-    print(a_type, "->", c_type, m, "x", N, "x", K, config.num_k_partitions)
+    print(t"{a_type} -> {c_type} {m} x {N} x {K} {config.num_k_partitions}")
 
     var a_dev = ctx.enqueue_create_buffer[a_type](m * K)
     var b_dev = ctx.enqueue_create_buffer[a_type](N * K)
@@ -97,16 +97,8 @@ def test_compute_fn[
     """Checks that a compute closure's result is what the kernel stores
     into `c`, at the index the closure was given."""
     print(
-        "compute:",
-        a_type,
-        "->",
-        c_type,
-        m,
-        "x",
-        N,
-        "x",
-        K,
-        config.num_k_partitions,
+        t"compute: {a_type} -> {c_type} {m} x {N} x"
+        t" {K} {config.num_k_partitions}"
     )
 
     var a_dev = ctx.enqueue_create_buffer[a_type](m * K)

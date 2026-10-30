@@ -75,33 +75,10 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         raise Error("TMA expects M to be divisible by 16 bytes")
 
     print(
-        "in/out dtypes=(",
-        a_type,
-        ", ",
-        b_type,
-        ", ",
-        c_type,
-        ") ",
-        " problem shape=(",
-        M,
-        ", ",
-        N,
-        ", ",
-        K,
-        ") ",
-        "mma_shape=",
-        mma_shape,
-        " block_tile_shape=",
-        block_tile_shape,
-        " cta_group=",
-        cta_group,
-        " cluster_shape=(",
-        cluster_shape[0],
-        ", ",
-        cluster_shape[1],
-        ", ",
-        cluster_shape[2],
-        ")",
+        t"in/out dtypes=( {a_type} ,  {b_type} ,  {c_type} )   problem shape=("
+        t" {M} ,  {N} ,  {K} )  mma_shape= {mma_shape}  block_tile_shape="
+        t" {block_tile_shape}  cta_group= {cta_group}  cluster_shape=("
+        t" {cluster_shape[0]} ,  {cluster_shape[1]} ,  {cluster_shape[2]} )"
     )
 
     # Shapes

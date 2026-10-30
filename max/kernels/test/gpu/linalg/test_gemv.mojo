@@ -42,7 +42,7 @@ def run_matvec[
     accum_type: DType = .float32,
 ](M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
     print("== run_matvec kernel")
-    print("dtypes: A=", a_type, " B=", b_type, " C=", c_type)
+    print(t"dtypes: A= {a_type}  B= {b_type}  C= {c_type}")
 
     var iterations = 100
     var a_host = unsafe_alloc[Scalar[a_type]](M * K)
@@ -481,14 +481,8 @@ def run_split_k_gemm[
     ctx.synchronize()
 
     print(
-        "== run_split_k_gemm with_epilogue=",
-        with_epilogue,
-        " M=",
-        M,
-        " N=",
-        N,
-        " K=",
-        K,
+        t"== run_split_k_gemm with_epilogue= {with_epilogue}  M= {M}  N= {N} "
+        t" K= {K}"
     )
 
     # Host reference: out[m, n] = sum_k a[m, k] * w[n, k] (+ const_val with the

@@ -56,7 +56,7 @@ def test[
         K
     ), "This test currently requires static N and K."
 
-    print(m, "x", n, "x", k, "transpose_b", transpose_b)
+    print(t"{m} x {n} x {k} transpose_b {transpose_b}")
 
     var a_size = m * k
     var b_size = k * n

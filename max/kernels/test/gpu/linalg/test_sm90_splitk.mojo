@@ -116,39 +116,12 @@ def test_warp_specialize_gemm_with_multicasting[
     ) if a_type == .float8_e4m3fn else (64, BN, 16)
 
     print(
-        "wgmma_n",
-        BN,
-        a_type,
-        "x",
-        b_type,
-        "x",
-        c_type,
-        " : PROBLEM SHAPE (M,N,K): (",
-        M,
-        "x",
-        N,
-        "x",
-        K,
-        ") - ",
-        "BLOCKS SHAPE (BM,BN,BK): (",
-        BM,
-        "x",
-        BN,
-        "x",
-        BK,
-        ") - ",
-        "CLUSTER DIMS (M,N): (",
-        CLUSTER_M,
-        "x",
-        CLUSTER_N,
-        ") NUM CONSUMERS: ",
-        num_consumer,
-        " NUM PIPELINE STAGES: ",
-        num_pipeline_stages,
-        " SPLITS: ",
-        splits,
-        " MULTICAST MODE: ",
-        "PARTITIONED" if partitioned_multicast else "BROADCAST",
+        t"wgmma_n {BN} {a_type} x {b_type} x {c_type}  : PROBLEM SHAPE (M,N,K):"
+        t" ( {M} x {N} x {K} ) -  BLOCKS SHAPE (BM,BN,BK): ( {BM} x {BN} x"
+        t" {BK} ) -  CLUSTER DIMS (M,N): ( {CLUSTER_M} x {CLUSTER_N} ) NUM"
+        t" CONSUMERS:  {num_consumer}  NUM PIPELINE STAGES: "
+        t" {num_pipeline_stages}  SPLITS:  {splits}  MULTICAST MODE: "
+        t" {'PARTITIONED' if partitioned_multicast else 'BROADCAST'}"
     )
 
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](

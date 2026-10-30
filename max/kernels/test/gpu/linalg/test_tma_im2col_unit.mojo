@@ -222,28 +222,14 @@ def run_im2col_test[
     comptime K_gemm = filter_h * filter_w * in_channels
 
     print(
-        "    Input: [",
-        batch,
-        ",",
-        in_height,
-        ",",
-        in_width,
-        ",",
-        in_channels,
-        "] NHWC",
+        t"    Input: [ {batch} , {in_height} , {in_width} , {in_channels} ]"
+        t" NHWC"
     )
     print(
-        "    Filter: [",
-        out_channels,
-        ",",
-        filter_h,
-        ",",
-        filter_w,
-        ",",
-        in_channels,
-        "] KRSC",
+        t"    Filter: [ {out_channels} , {filter_h} , {filter_w} ,"
+        t" {in_channels} ] KRSC"
     )
-    print("    Output spatial: [", out_height, ",", out_width, "]")
+    print(t"    Output spatial: [ {out_height} , {out_width} ]")
     print("    GEMM: M=", M, " K=", K_gemm)
     print("    Tile: BM=", BM, " BK=", BK)
 
@@ -276,8 +262,8 @@ def run_im2col_test[
 
     # Debug: print descriptor parameters
     print("    Descriptor params:")
-    print("      lower_corner: (", lower_corner_h, ",", lower_corner_w, ")")
-    print("      upper_corner: (", upper_corner_h, ",", upper_corner_w, ")")
+    print(t"      lower_corner: ( {lower_corner_h} , {lower_corner_w} )")
+    print(t"      upper_corner: ( {upper_corner_h} , {upper_corner_w} )")
     print("      channels_per_pixel: 64 (128B swizzle / 2B bf16)")
     print("      pixels_per_column: 1")
 

@@ -67,19 +67,8 @@ def _run_one[
     comptime scale_type = DType.float32
 
     print(
-        "== test_blockwise_fp8_bk64",
-        name,
-        " problem: (M=",
-        M,
-        ", N=",
-        N,
-        ", K=",
-        K,
-        ") granularity: (1,",
-        n_g,
-        ",",
-        k_g,
-        ")",
+        t"== test_blockwise_fp8_bk64 {name}  problem: (M= {M} , N= {N} , K="
+        t" {K} ) granularity: (1, {n_g} , {k_g} )"
     )
 
     var a_size = M * K
@@ -177,14 +166,7 @@ def _run_one[
                 ndiff += 1
                 if ndiff <= 3:
                     print(
-                        "  diff @ (",
-                        mi,
-                        ",",
-                        ni,
-                        ") got=",
-                        got,
-                        " ref=",
-                        ref_val,
+                        t"  diff @ ( {mi} , {ni} ) got= {got}  ref= {ref_val}"
                     )
     if ndiff > 0:
         raise Error(

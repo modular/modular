@@ -133,16 +133,8 @@ def test_smallm_streaming[N: Int, K: Int](m: Int, ctx: DeviceContext) raises:
                 if printed < 10:
                     var row, col = divmod(i, N)
                     print(
-                        "Mismatch at (",
-                        row,
-                        ",",
-                        col,
-                        "): actual=",
-                        actual,
-                        " expected=",
-                        expected,
-                        " diff=",
-                        diff,
+                        t"Mismatch at ( {row} , {col} ): actual= {actual} "
+                        t" expected= {expected}  diff= {diff}"
                     )
                     printed += 1
                 errors += 1

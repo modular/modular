@@ -131,23 +131,9 @@ def run_case[
     # compared -- 1e-2 holds for every shape, no per-case loosening. A
     # dropped/double residual still shows as a ~residual-magnitude diff.
     print(
-        "[case]",
-        label,
-        ":: dtypes=(",
-        a_type,
-        b_type,
-        c_type,
-        ") MNK=(",
-        M,
-        N,
-        K,
-        ") static(N,K)=(",
-        static_n,
-        static_k,
-        ") 1d_bias=",
-        epilogue_is_1d,
-        " atol=",
-        atol,
+        t"[case] {label} :: dtypes=( {a_type} {b_type} {c_type} ) MNK=("
+        t" {M} {N} {K} ) static(N,K)=( {static_n} {static_k} ) 1d_bias="
+        t" {epilogue_is_1d}  atol= {atol}"
     )
 
     var a_size = M * K

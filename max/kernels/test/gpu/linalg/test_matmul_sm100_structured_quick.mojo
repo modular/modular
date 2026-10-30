@@ -73,24 +73,10 @@ def test_structured[
     var K = Int(k)
 
     print(
-        "[",
-        test_name,
-        "] M=",
-        M,
-        " N=",
-        N,
-        " K=",
-        K,
-        " cta_group=",
-        cta_group,
-        " swapAB=",
-        swapAB,
-        " split_k=",
-        num_split_k,
-        " lambda=",
-        test_lambda,
-        " reg_epi=",
-        register_based_epilogue,
+        (
+            t"[{test_name}]"
+            t" M={M} N={N} K={K} cta_group={cta_group} swapAB={swapAB} split_k={num_split_k} lambda={test_lambda} reg_epi={register_based_epilogue}"
+        ),
         sep="",
     )
 

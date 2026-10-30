@@ -228,7 +228,7 @@ def print_test_header[
 ]():
     """Print test configuration header."""
     print("=== AMD Matmul Assembly Check ===")
-    print("Data types: A=", a_type, ", B=", b_type, ", C=", c_type, sep="")
+    print(t"Data types: A={a_type}, B={b_type}, C={c_type}", sep="")
     print("Block shape: BM=", block_m, ", BN=", block_n, sep="")
 
 

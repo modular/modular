@@ -77,16 +77,8 @@ def run_pdl_race_test[
     """Run matmul with PDL, then verify output via dependent consumer kernel."""
 
     print(
-        "Testing PDL race: dtype=",
-        dtype,
-        " M=",
-        M,
-        " N=",
-        N,
-        " K=",
-        K,
-        " iters=",
-        num_iters,
+        t"Testing PDL race: dtype= {dtype}  M= {M}  N= {N}  K= {K}  iters="
+        t" {num_iters}"
     )
 
     # Allocate host buffers. Initialize A and B with 1.0 so the matmul result
@@ -182,20 +174,12 @@ def run_pdl_race_test[
 
         if error_count > 0:
             print(
-                "FAIL: iter ",
-                iter,
-                " found ",
-                error_count,
-                " mismatches out of ",
-                M * N,
+                t"FAIL: iter  {iter}  found  {error_count}  mismatches out of "
+                t" {M * N}"
             )
             print(
-                "  First error at [",
-                first_error_idx,
-                "]: got ",
-                first_error_val,
-                " expected ",
-                expected_val,
+                t"  First error at [ {first_error_idx} ]: got "
+                t" {first_error_val}  expected  {expected_val}"
             )
 
             # Print a few more errors for debugging
@@ -208,7 +192,7 @@ def run_pdl_race_test[
                 if diff < 0:
                     diff = -diff
                 if diff > 0.01:
-                    print("  [", i, "] got ", val, " expected ", expected_val)
+                    print(t"  [ {i} ] got  {val}  expected  {expected_val}")
                     printed += 1
 
             raise Error("PDL race condition detected!")

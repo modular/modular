@@ -83,21 +83,9 @@ def test_blockwise_fp8_1d2d_structured[
     ), "TMA expects total_num_tokens to be divisible by 16 bytes"
 
     print(
-        "== test_blockwise_fp8_1d2d_structured",
-        a_type,
-        "->",
-        c_type,
-        "problem: (",
-        total_num_tokens,
-        "x",
-        N,
-        "x",
-        K,
-        ")",
-        "experts:",
-        num_active_experts,
-        "/",
-        num_experts,
+        t"== test_blockwise_fp8_1d2d_structured {a_type} -> {c_type} problem: ("
+        t" {total_num_tokens} x {N} x {K} ) experts: {num_active_experts} /"
+        t" {num_experts}"
     )
 
     # Sizes

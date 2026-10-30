@@ -46,18 +46,10 @@ def run_gemm_mma_cpasync[
     reference applies either way.
     """
     print(
-        "== gemm_tc  M=",
-        gemm_m,
-        " K=",
-        gemm_k,
-        " N=",
-        gemm_n,
-        " tile_k=",
-        tile_k,
-        " swapAB=",
-        swapAB,
+        t"== gemm_tc  M= {gemm_m}  K= {gemm_k}  N= {gemm_n}  tile_k= {tile_k} "
+        t" swapAB= {swapAB}"
     )
-    print("dtypes: act=", a_type, " weight=", b_type, " out=", c_type)
+    print(t"dtypes: act= {a_type}  weight= {b_type}  out= {c_type}")
 
     var act_size = gemm_m * gemm_k
     var weight_size = gemm_n * gemm_k
@@ -158,16 +150,8 @@ def run_gemm_mma_cpasync_residual[
     the correct location even when the kernel tiles the transposed problem.
     """
     print(
-        "== gemm_tc+residual  M=",
-        gemm_m,
-        " K=",
-        gemm_k,
-        " N=",
-        gemm_n,
-        " tile_k=",
-        tile_k,
-        " swapAB=",
-        swapAB,
+        t"== gemm_tc+residual  M= {gemm_m}  K= {gemm_k}  N= {gemm_n}  tile_k="
+        t" {tile_k}  swapAB= {swapAB}"
     )
 
     var act_size = gemm_m * gemm_k
@@ -275,16 +259,8 @@ def run_gemm_mma_cpasync_epilogue_fn[
     of two scale keeps the comparison against the plain kernel exact.
     """
     print(
-        "== gemm_tc+epilogue_fn  M=",
-        gemm_m,
-        " K=",
-        gemm_k,
-        " N=",
-        gemm_n,
-        " tile_k=",
-        tile_k,
-        " swapAB=",
-        swapAB,
+        t"== gemm_tc+epilogue_fn  M= {gemm_m}  K= {gemm_k}  N= {gemm_n} "
+        t" tile_k= {tile_k}  swapAB= {swapAB}"
     )
     comptime dtype = DType.bfloat16
     var act_size = gemm_m * gemm_k

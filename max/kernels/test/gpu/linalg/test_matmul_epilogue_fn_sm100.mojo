@@ -48,20 +48,9 @@ def test_epilogue_fn[
     the kernel itself leaves `c` untouched."""
     comptime dtype = DType.bfloat16
     print(
-        "epilogue_fn: M=",
-        m,
-        " N=",
-        N,
-        " K=",
-        K,
-        " mma_shape=",
-        mma_shape,
-        " cta_group=",
-        cta_group,
-        " register_based_epilogue=",
-        register_based_epilogue,
-        " swapAB=",
-        swapAB,
+        t"epilogue_fn: M= {m}  N= {N}  K= {K}  mma_shape= {mma_shape} "
+        t" cta_group= {cta_group}  register_based_epilogue="
+        t" {register_based_epilogue}  swapAB= {swapAB}"
     )
     comptime config = MatmulConfig[dtype, dtype, dtype, True](
         cluster_shape=cluster_shape,

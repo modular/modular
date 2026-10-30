@@ -39,7 +39,7 @@ def test_dispatch_epilogue_fn[
 ](ctx: DeviceContext, m: Int) raises:
     """Checks that a store closure receives each output at its index and,
     unless the path runs the matmul into `c` first, that `c` is untouched."""
-    print("epilogue_fn:", a_type, "->", c_type, m, "x", N, "x", K)
+    print(t"epilogue_fn: {a_type} -> {c_type} {m} x {N} x {K}")
     var a_dev = ctx.enqueue_create_buffer[a_type](m * K)
     var b_dev = ctx.enqueue_create_buffer[a_type](N * K)
     var c_ref_dev = ctx.enqueue_create_buffer[c_type](m * N)

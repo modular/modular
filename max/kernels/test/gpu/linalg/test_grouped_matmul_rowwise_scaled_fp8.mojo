@@ -71,18 +71,9 @@ def test_grouped_matmul_rowwise_scaled_fp8[
         max_num_tokens_by_expert = max(max_num_tokens_by_expert, M)
 
     print(
-        "== test_grouped_matmul_rowwise_scaled_fp8",
-        a_type,
-        "->",
-        c_type,
-        "problem shape: (",
-        total_num_tokens,
-        "x",
-        N,
-        "x",
-        K,
-        ") num_active_experts:",
-        num_active_experts,
+        t"== test_grouped_matmul_rowwise_scaled_fp8 {a_type} ->"
+        t" {c_type} problem shape: ( {total_num_tokens} x {N} x {K} )"
+        t" num_active_experts: {num_active_experts}"
     )
 
     # Sizes.

@@ -86,14 +86,7 @@ def _run_case[
             or (tuned_m2m3 and ((M == 2 and N == 128) or (M == 3 and N == 288)))
         ) else 0
     )
-    print(
-        "== gemv_split_k router-gate shape M=",
-        M,
-        "N=",
-        N,
-        "K=",
-        K,
-    )
+    print(t"== gemv_split_k router-gate shape M= {M} N= {N} K= {K}")
 
     comptime b_type = a_type
     comptime simd_width = simd_width_of[a_type, target=ctx.target]()

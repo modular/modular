@@ -86,23 +86,11 @@ def test_batched_matmul_dynamic_scaled_fp8_amd_tiled[
     )
 
     print(
-        "== test_batched_matmul_dynamic_scaled_fp8_amd_tiled",
-        " B=",
-        batch_size,
-        " M=",
-        M,
-        " N=",
-        N,
-        " K=",
-        K,
-        " scale=(",
-        m_scale,
-        ",",
-        n_scale,
-        ",",
-        k_scale,
-        ") check_route=",
-        check_route,
+        (
+            t"== test_batched_matmul_dynamic_scaled_fp8_amd_tiled"
+            t" B={batch_size} M={M} N={N} K={K} scale=({m_scale},{n_scale},{k_scale})"
+            t" check_route={check_route}"
+        ),
         sep="",
     )
 
@@ -226,7 +214,7 @@ def test_batched_matmul_dynamic_scaled_fp8_amd_tiled[
         if isnan(got) or abs_diff > atol + rtol * abs_ref:
             ndiff_ref += 1
             if ndiff_ref <= 5:
-                print("  ref diff @", i, "got=", got, "ref=", ref_val)
+                print(t"  ref diff @ {i} got= {got} ref= {ref_val}")
     if ndiff_ref > 0:
         raise Error(
             "batched absorb GEMM diverged from host ref at "
@@ -249,12 +237,8 @@ def test_batched_matmul_dynamic_scaled_fp8_amd_tiled[
                 ndiff_route += 1
                 if ndiff_route <= 5:
                     print(
-                        "  route diff @",
-                        i,
-                        "dispatched=",
-                        c_disp_host[i],
-                        "naive=",
-                        c_naive_host[i],
+                        t"  route diff @ {i} dispatched="
+                        t" {c_disp_host[i]} naive= {c_naive_host[i]}"
                     )
         if ndiff_route == 0:
             raise Error(
@@ -263,11 +247,8 @@ def test_batched_matmul_dynamic_scaled_fp8_amd_tiled[
                 " NOT take the tiled AMD kernel"
             )
         print(
-            "  route-gate: dispatched != naive at",
-            ndiff_route,
-            "of",
-            c_size,
-            "positions (tiled route taken)",
+            t"  route-gate: dispatched != naive at {ndiff_route} of"
+            t" {c_size} positions (tiled route taken)"
         )
 
     # Launch-count gate: numerics pass whether or not the path batches, so only

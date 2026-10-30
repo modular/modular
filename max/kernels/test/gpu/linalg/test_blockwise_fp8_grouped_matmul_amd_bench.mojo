@@ -176,25 +176,11 @@ def bench_grouped_shape[
     var tflops_naive = flops / (med_naive * 1.0e9)
 
     print(
-        "rows=",
-        total_rows,
-        " NxK=",
-        N,
-        "x",
-        K,
-        " experts=",
-        num_active,
-        " | tiled: ",
-        med_mine,
-        " ms (",
-        tflops_mine,
-        " TFLOP/s) | naive: ",
-        med_naive,
-        " ms (",
-        tflops_naive,
-        " TFLOP/s) | speedup: ",
-        med_naive / med_mine,
-        "x",
+        (
+            t"rows={total_rows} NxK={N}x{K} experts={num_active} | tiled:"
+            t" {med_mine} ms ({tflops_mine} TFLOP/s) | naive: {med_naive} ms"
+            t" ({tflops_naive} TFLOP/s) | speedup: {med_naive / med_mine}x"
+        ),
         sep="",
     )
 

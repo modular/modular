@@ -101,27 +101,10 @@ def test_dispatch_compute_fn[
             errors += 1
             if errors <= 5:
                 print(
-                    "  MISMATCH [",
-                    i // N,
-                    ",",
-                    i % N,
-                    "]: got",
-                    c_host_ptr[i],
-                    "expected",
-                    expected,
+                    t"  MISMATCH [ {i // N} , {i % N} ]: got"
+                    t" {c_host_ptr[i]} expected {expected}"
                 )
-    print(
-        "  compute_fn",
-        a_type,
-        "M=",
-        m,
-        " N=",
-        N,
-        " K=",
-        K,
-        " errors=",
-        errors,
-    )
+    print(t"  compute_fn {a_type} M= {m}  N= {N}  K= {K}  errors= {errors}")
     assert_true(errors == 0, msg=String("COMPUTE_FN FAILED:", errors))
 
 

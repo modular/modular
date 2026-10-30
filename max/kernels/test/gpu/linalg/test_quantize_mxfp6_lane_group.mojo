@@ -181,17 +181,10 @@ def _run_case[
         ):
             scale_mm += 1
     print(
-        "  ",
-        name,
-        " width=",
-        width,
-        " (",
-        SF // width,
-        " lanes/block): ",
-        byte_mm,
-        " byte / ",
-        scale_mm,
-        " scale mismatches",
+        (
+            t"  {name} width={width} ({SF // width} lanes/block):"
+            t" {byte_mm} byte / {scale_mm} scale mismatches"
+        ),
         sep="",
     )
     assert_equal(byte_mm, 0)

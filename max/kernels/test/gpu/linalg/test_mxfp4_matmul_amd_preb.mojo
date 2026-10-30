@@ -224,24 +224,8 @@ def _test_case[
     comptime padded_M = ceildiv(M_static, 32) * 32
 
     print(
-        "  ",
-        name,
-        " M=",
-        M_static,
-        " N=",
-        N_static,
-        " K=",
-        K_static,
-        " BM=",
-        BM,
-        " BN=",
-        BN,
-        " BK_ELEMS=",
-        BK_ELEMS,
-        " WN=",
-        WN,
-        " b_prefetch=",
-        b_prefetch,
+        t"   {name}  M= {M_static}  N= {N_static}  K= {K_static}  BM= {BM}  BN="
+        t" {BN}  BK_ELEMS= {BK_ELEMS}  WN= {WN}  b_prefetch= {b_prefetch}"
     )
 
     # ---- Host buffers + random init ----

@@ -175,18 +175,8 @@ def test_mxfp6_grouped_matmul[
         max_tokens = max(max_tokens, num_tokens_by_expert[i])
 
     print(
-        "  ",
-        fmt_name,
-        " grouped matmul: num_experts=",
-        num_experts,
-        " N=",
-        N,
-        " K=",
-        K,
-        " num_active=",
-        num_active_experts,
-        " total_tokens=",
-        total_tokens,
+        t"   {fmt_name}  grouped matmul: num_experts= {num_experts}  N= {N}  K="
+        t" {K}  num_active= {num_active_experts}  total_tokens= {total_tokens}"
     )
 
     var a_host = ctx.enqueue_create_host_buffer[.uint8](total_tokens * K_BYTES)
@@ -338,16 +328,8 @@ def test_mxfp6_grouped_matmul[
         if abs(got - want) > rel_tol * Float64(mag_host[i]):
             if mismatches < 3:
                 print(
-                    "      [",
-                    i // N,
-                    ",",
-                    i % N,
-                    "] got=",
-                    got,
-                    " want=",
-                    want,
-                    " mag=",
-                    Float64(mag_host[i]),
+                    t"      [ {i // N} , {i % N} ] got= {got}  want= {want} "
+                    t" mag= {Float64(mag_host[i])}"
                 )
             mismatches += 1
 

@@ -73,37 +73,13 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     if not benchmark:
         print(
-            "in/out dtypes=(",
-            a_type,
-            ", ",
-            b_type,
-            ", ",
-            c_type,
-            ") ",
-            " problem shape=(",
-            Int(m),
-            ", ",
-            Int(n),
-            ", ",
-            Int(k),
-            ") ",
-            "mma_shape=",
-            mma_shape,
-            " block_tile_shape=",
-            block_tile_shape,
-            " cta_group=",
-            2,
-            " cluster_shape=(",
-            cluster_shape[0],
-            ", ",
-            cluster_shape[1],
-            ", ",
-            cluster_shape[2],
-            ")",
-            " swapAB=",
-            swapAB,
-            " k_group_size=",
-            k_group_size,
+            (
+                t"in/out dtypes=({a_type}, {b_type}, {c_type})  problem"
+                t" shape=({Int(m)}, {Int(n)}, {Int(k)})"
+                t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} cta_group={2} cluster_shape=({cluster_shape[0]},"
+                t" {cluster_shape[1]}, {cluster_shape[2]})"
+                t" swapAB={swapAB} k_group_size={k_group_size}"
+            ),
             sep="",
         )
 

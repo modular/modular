@@ -100,16 +100,7 @@ def _test_dispatch[
     var M = total_num_tokens
 
     print(
-        "  N=",
-        N,
-        " K=",
-        K,
-        " M=",
-        M,
-        " experts=",
-        num_active_experts,
-        "/",
-        num_experts,
+        t"  N={N} K={K} M={M} experts={num_active_experts}/{num_experts}",
         sep="",
     )
 
@@ -518,14 +509,9 @@ def _test_dispatch[
                     if c_rs_host[idx] != c_expected[idx]:
                         if mismatches < 8:
                             print(
-                                "    row-scale mismatch at row",
-                                idx // N,
-                                "col",
-                                idx % N,
-                                ":",
-                                c_rs_host[idx],
-                                "vs",
-                                c_expected[idx],
+                                t"    row-scale mismatch at row {idx // N} col"
+                                t" {idx % N} : {c_rs_host[idx]} vs"
+                                t" {c_expected[idx]}"
                             )
                         mismatches += 1
                 if mismatches != 0:

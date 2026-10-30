@@ -79,32 +79,12 @@ def test_blackwell_matmul[
     var K = Int(k)
 
     print(
-        "[SMOKE] dtypes=(",
-        a_type,
-        ", ",
-        b_type,
-        ", ",
-        c_type,
-        ") shape=(",
-        M,
-        ", ",
-        N,
-        ", ",
-        K,
-        ") mma=",
-        mma_shape,
-        " cta_group=",
-        cta_group,
-        " cluster=(",
-        cluster_shape[0],
-        ",",
-        cluster_shape[1],
-        ") swapAB=",
-        swapAB,
-        " k_group=",
-        k_group_size,
-        " split_k=",
-        num_split_k,
+        (
+            t"[SMOKE] dtypes=({a_type}, {b_type}, {c_type}) shape=({M}, {N},"
+            t" {K})"
+            t" mma={mma_shape} cta_group={cta_group} cluster=({cluster_shape[0]},{cluster_shape[1]})"
+            t" swapAB={swapAB} k_group={k_group_size} split_k={num_split_k}"
+        ),
         sep="",
     )
 

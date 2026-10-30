@@ -386,27 +386,15 @@ def run_case[
         elif abs(got - want) > rel_tol * Float64(mag_host[i]):
             if mismatches < 3:
                 print(
-                    "      [",
-                    i // N,
-                    ",",
-                    i % N,
-                    "] got=",
-                    got,
-                    " want=",
-                    want,
-                    " mag=",
-                    Float64(mag_host[i]),
+                    t"      [ {i // N} , {i % N} ] got= {got}  want= {want} "
+                    t" mag= {Float64(mag_host[i])}"
                 )
             mismatches += 1
 
     if unwritten > 0 or mismatches > 0:
         print(
-            "    FAIL ",
-            mismatches,
-            " wrong, ",
-            unwritten,
-            " unwritten, of ",
-            M * N,
+            t"    FAIL  {mismatches}  wrong,  {unwritten}  unwritten, of "
+            t" {M * N}"
         )
         return False
     if data_pattern != DATA_ZERO and not saw_nonzero:
@@ -573,27 +561,15 @@ def run_case_preb[
         elif abs(got - want) > rel_tol * Float64(mag_host[i]):
             if mismatches < 3:
                 print(
-                    "      [",
-                    i // N,
-                    ",",
-                    i % N,
-                    "] got=",
-                    got,
-                    " want=",
-                    want,
-                    " mag=",
-                    Float64(mag_host[i]),
+                    t"      [ {i // N} , {i % N} ] got= {got}  want= {want} "
+                    t" mag= {Float64(mag_host[i])}"
                 )
             mismatches += 1
 
     if unwritten > 0 or mismatches > 0:
         print(
-            "    FAIL ",
-            mismatches,
-            " wrong, ",
-            unwritten,
-            " unwritten, of ",
-            M * N,
+            t"    FAIL  {mismatches}  wrong,  {unwritten}  unwritten, of "
+            t" {M * N}"
         )
         return False
     if data_pattern != DATA_ZERO and not saw_nonzero:
@@ -613,21 +589,9 @@ def _report[
 ) raises -> Int:
     """Runs one case and returns 1 if it failed, so callers can tally."""
     print(
-        "  ",
-        "E2M3" if fmt == FP6Format.E2M3 else "E3M2",
-        M,
-        "x",
-        N,
-        "x",
-        K,
-        " splits=",
-        num_splits,
-        " out=",
-        out_dtype,
-        " data=",
-        data_pattern,
-        " scale=",
-        scale_pattern,
+        t"   {'E2M3' if fmt == FP6Format.E2M3 else 'E3M2'} {M} x {N} x {K} "
+        t" splits= {num_splits}  out= {out_dtype}  data= {data_pattern}  scale="
+        t" {scale_pattern}"
     )
     var ok = run_case[fmt, N, K, out_dtype, num_splits](
         ctx, M, data_pattern, scale_pattern
@@ -645,19 +609,9 @@ def _report_preb[
 ) raises -> Int:
     """Runs one `preshuffled_b=True` case and returns 1 if it failed."""
     print(
-        "  ",
-        "E2M3" if fmt == FP6Format.E2M3 else "E3M2",
-        M,
-        "x",
-        N,
-        "x",
-        K,
-        " preshuffled_b out=",
-        out_dtype,
-        " data=",
-        data_pattern,
-        " scale=",
-        scale_pattern,
+        t"   {'E2M3' if fmt == FP6Format.E2M3 else 'E3M2'} {M} x {N} x {K} "
+        t" preshuffled_b out= {out_dtype}  data= {data_pattern}  scale="
+        t" {scale_pattern}"
     )
     var ok = run_case_preb[fmt, N, K, out_dtype](
         ctx, M, data_pattern, scale_pattern
@@ -998,16 +952,8 @@ def test_quantizer_feeds_matmul[
         print("    FAIL quantized-input reference is all zero")
         bad += 1
     print(
-        "    ",
-        "PASS" if bad == 0 else "FAIL",
-        " quantizer->matmul ",
-        fmt_name,
-        " M=",
-        M,
-        " N=",
-        N,
-        " K=",
-        K,
+        t"     {'PASS' if bad == 0 else 'FAIL'}  quantizer->matmul "
+        t" {fmt_name}  M= {M}  N= {N}  K= {K}"
     )
 
     _ = a_bf_d^

@@ -120,16 +120,8 @@ def test_dispatch_dynamic_m[
             errors += 1
 
     print(
-        "  M=",
-        m,
-        " errors=",
-        errors,
-        "/",
-        c_size,
-        " max_abs=",
-        max_abs_err,
-        " max_rel=",
-        max_rel_err,
+        t"  M= {m}  errors= {errors} / {c_size}  max_abs= {max_abs_err} "
+        t" max_rel= {max_rel_err}"
     )
 
     assert_true(errors == 0, msg=String("FAILED:", errors, "errors"))
@@ -203,16 +195,10 @@ def test_dispatch_compute_fn[
             errors += 1
             if errors <= 5:
                 print(
-                    "  MISMATCH [",
-                    i // N,
-                    ",",
-                    i % N,
-                    "]: got",
-                    c_host_ptr[i],
-                    "expected",
-                    expected,
+                    t"  MISMATCH [ {i // N} , {i % N} ]: got"
+                    t" {c_host_ptr[i]} expected {expected}"
                 )
-    print("  compute_fn M=", m, " N=", N, " K=", K, " errors=", errors)
+    print(t"  compute_fn M= {m}  N= {N}  K= {K}  errors= {errors}")
     assert_true(errors == 0, msg=String("COMPUTE_FN FAILED:", errors))
 
 
@@ -314,14 +300,8 @@ def test_oob_diagnostic[
             if oob_writes <= 5:
                 var row, col = divmod(i, N)
                 print(
-                    "  OOB WRITE [",
-                    row,
-                    ",",
-                    col,
-                    "]: expected sentinel",
-                    sentinel,
-                    "got",
-                    val,
+                    t"  OOB WRITE [ {row} , {col} ]: expected sentinel"
+                    t" {sentinel} got {val}"
                 )
     if oob_writes > 5:
         print("  ... and", oob_writes - 5, "more OOB writes")
@@ -351,35 +331,16 @@ def test_oob_diagnostic[
             if accuracy_errors <= 5:
                 var row, col = divmod(i, N)
                 print(
-                    "  ACCURACY [",
-                    row,
-                    ",",
-                    col,
-                    "]: got",
-                    actual,
-                    "expected",
-                    expected,
-                    "abs=",
-                    abs_err,
-                    "rel=",
-                    rel_err,
+                    t"  ACCURACY [ {row} , {col} ]: got {actual} expected"
+                    t" {expected} abs= {abs_err} rel= {rel_err}"
                 )
     if accuracy_errors > 5:
         print("  ... and", accuracy_errors - 5, "more accuracy errors")
 
     print(
-        "\n    oob_writes=",
-        oob_writes,
-        "/",
-        c_alloc_size - c_valid_size,
-        " accuracy_errors=",
-        accuracy_errors,
-        "/",
-        c_valid_size,
-        " max_abs=",
-        max_abs_err,
-        " max_rel=",
-        max_rel_err,
+        t"\n    oob_writes= {oob_writes} / {c_alloc_size - c_valid_size} "
+        t" accuracy_errors= {accuracy_errors} / {c_valid_size}  max_abs="
+        t" {max_abs_err}  max_rel= {max_rel_err}"
     )
 
     assert_true(
@@ -526,14 +487,8 @@ def test_oob_epilogue[
                 oob_writes += 1
                 if oob_writes <= 5:
                     print(
-                        "  OOB WRITE [",
-                        row,
-                        ",",
-                        col,
-                        "]: expected sentinel",
-                        sentinel,
-                        "got",
-                        val,
+                        t"  OOB WRITE [ {row} , {col} ]: expected sentinel"
+                        t" {sentinel} got {val}"
                     )
     if oob_writes > 5:
         print("  ... and", oob_writes - 5, "more OOB writes")
@@ -563,36 +518,17 @@ def test_oob_epilogue[
                 accuracy_errors += 1
                 if accuracy_errors <= 5:
                     print(
-                        "  ACCURACY [",
-                        row,
-                        ",",
-                        col,
-                        "]: got",
-                        actual,
-                        "expected",
-                        expected,
-                        "abs=",
-                        abs_err,
-                        "rel=",
-                        rel_err,
+                        t"  ACCURACY [ {row} , {col} ]: got {actual} expected"
+                        t" {expected} abs= {abs_err} rel= {rel_err}"
                     )
     if accuracy_errors > 5:
         print("  ... and", accuracy_errors - 5, "more accuracy errors")
 
     var sentinel_count = alloc_M * alloc_N - M * N
     print(
-        "\n    oob_writes=",
-        oob_writes,
-        "/",
-        sentinel_count,
-        " accuracy_errors=",
-        accuracy_errors,
-        "/",
-        c_size,
-        " max_abs=",
-        max_abs_err,
-        " max_rel=",
-        max_rel_err,
+        t"\n    oob_writes= {oob_writes} / {sentinel_count}  accuracy_errors="
+        t" {accuracy_errors} / {c_size}  max_abs= {max_abs_err}  max_rel="
+        t" {max_rel_err}"
     )
 
     assert_true(
@@ -719,14 +655,8 @@ def test_oob_epilogue_dynamic_m[
             oob_writes += 1
             if oob_writes <= 3:
                 print(
-                    "  OOB [",
-                    i // N,
-                    ",",
-                    i % N,
-                    "]: sentinel",
-                    sentinel,
-                    "got",
-                    val,
+                    t"  OOB [ {i // N} , {i % N} ]: sentinel {sentinel} got"
+                    t" {val}"
                 )
 
     # Check accuracy
@@ -751,18 +681,8 @@ def test_oob_epilogue_dynamic_m[
             accuracy_errors += 1
 
     print(
-        "  M=",
-        m,
-        " oob=",
-        oob_writes,
-        " acc_err=",
-        accuracy_errors,
-        "/",
-        c_size,
-        " max_abs=",
-        max_abs_err,
-        " max_rel=",
-        max_rel_err,
+        t"  M= {m}  oob= {oob_writes}  acc_err= {accuracy_errors} / {c_size} "
+        t" max_abs= {max_abs_err}  max_rel= {max_rel_err}"
     )
 
     assert_true(oob_writes == 0, msg=String("OOB:", oob_writes))

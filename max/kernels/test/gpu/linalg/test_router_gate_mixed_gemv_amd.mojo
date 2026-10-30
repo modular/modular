@@ -59,7 +59,7 @@ def _run_case[static_N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
         ctx: The device context.
         m: Runtime row count. `m == 0` exercises the empty-launch guard.
     """
-    print("== router_gate_mixed_gemv m=", m, "N=", static_N, "K=", K)
+    print(t"== router_gate_mixed_gemv m= {m} N= {static_N} K= {K}")
 
     # Buffers stay non-empty at m == 0 so the launcher gets valid pointers,
     # which is exactly what the graph-capture warmup hands it.

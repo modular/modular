@@ -188,27 +188,9 @@ def _run_preb[
 
     comptime label = "[persistent]" if persistent else "[direct]    "
     print(
-        "  ",
-        label,
-        name,
-        " E=",
-        num_experts,
-        " N=",
-        N,
-        " K=",
-        K,
-        " active=",
-        num_active,
-        " total_tokens=",
-        total_tokens,
-        " BM=",
-        BM,
-        " BN=",
-        BN,
-        " BK_ELEMS=",
-        BK_ELEMS,
-        " WN=",
-        WN,
+        t"   {label} {name}  E= {num_experts}  N= {N}  K= {K}  active="
+        t" {num_active}  total_tokens= {total_tokens}  BM= {BM}  BN= {BN} "
+        t" BK_ELEMS= {BK_ELEMS}  WN= {WN}"
     )
 
     # Host buffers + random init.

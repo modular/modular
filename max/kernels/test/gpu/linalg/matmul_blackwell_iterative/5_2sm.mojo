@@ -709,15 +709,7 @@ def benchmark_blackwell_matmul(ctx: DeviceContext) raises:
 
     comptime for i in range(len(dic_of_shapes)):
         comptime shape = get_dic_of_shapes(i, dic_of_shapes)
-        print(
-            "Benchmarking shape: [",
-            shape[0],
-            ",",
-            shape[1],
-            ",",
-            shape[2],
-            "]",
-        )
+        print(t"Benchmarking shape: [ {shape[0]} , {shape[1]} , {shape[2]} ]")
         test_blackwell_kernel_5[
             .bfloat16,
             .bfloat16,

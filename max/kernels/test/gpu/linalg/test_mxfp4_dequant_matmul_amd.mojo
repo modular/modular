@@ -53,7 +53,7 @@ def test_mxfp4_matmul[
     comptime scale_K = ceildiv(K, 32)
     comptime fp8_type = DType.float8_e4m3fn
 
-    print("  M=", M, " N=", N, " K=", K)
+    print(t"  M= {M}  N= {N}  K= {K}")
 
     # Device buffers for MXFP4 inputs
     var a_device = ctx.enqueue_create_buffer[.bfloat16](M * K)
@@ -148,16 +148,8 @@ def test_mxfp4_matmul[
             if num_mismatches < 5:
                 var row, col = divmod(i, N)
                 print(
-                    "    MISMATCH [",
-                    row,
-                    ",",
-                    col,
-                    "]: got=",
-                    got,
-                    " expected=",
-                    expected,
-                    " rel_err=",
-                    rel_err,
+                    t"    MISMATCH [ {row} , {col} ]: got= {got}  expected="
+                    t" {expected}  rel_err= {rel_err}"
                 )
             num_mismatches += 1
 
@@ -186,7 +178,7 @@ def test_mxfp4_matmul_e2e[
     comptime scale_K = ceildiv(K, 32)
     comptime fp8_type = DType.float8_e4m3fn
 
-    print("  E2E M=", M, " N=", N, " K=", K)
+    print(t"  E2E M= {M}  N= {N}  K= {K}")
 
     var a_device = ctx.enqueue_create_buffer[.bfloat16](M * K)
     var b_packed_device = ctx.enqueue_create_buffer[.uint8](N * packed_K)
@@ -285,16 +277,8 @@ def test_mxfp4_matmul_e2e[
             if num_mismatches < 5:
                 var row, col = divmod(i, N)
                 print(
-                    "    E2E MISMATCH [",
-                    row,
-                    ",",
-                    col,
-                    "]: got=",
-                    got,
-                    " expected=",
-                    expected,
-                    " rel_err=",
-                    rel_err,
+                    t"    E2E MISMATCH [ {row} , {col} ]: got= {got}  expected="
+                    t" {expected}  rel_err= {rel_err}"
                 )
             num_mismatches += 1
 
@@ -369,14 +353,8 @@ def test_dequant_only[N: Int, K: Int](ctx: DeviceContext) raises:
             if abs(got - expected) > 0.01:
                 if mismatches < 5:
                     print(
-                        "    DEQUANT MISMATCH [",
-                        row,
-                        ",",
-                        col,
-                        "]: got=",
-                        got,
-                        " expected=",
-                        expected,
+                        t"    DEQUANT MISMATCH [ {row} , {col} ]: got= {got} "
+                        t" expected= {expected}"
                     )
                 mismatches += 1
 
@@ -393,7 +371,7 @@ def test_fp8_kernel_vs_blas[
     comptime fp8_type = DType.float8_e4m3fn
     comptime packed_K = K // 2
     comptime scale_K = ceildiv(K, 32)
-    print("  FP8 kernel-vs-BLAS: M=", M, " N=", N, " K=", K)
+    print(t"  FP8 kernel-vs-BLAS: M= {M}  N= {N}  K= {K}")
 
     # A: random BF16 activations cast to FP8
     var a_bf16 = ctx.enqueue_create_buffer[.bfloat16](M * K)
@@ -475,16 +453,8 @@ def test_fp8_kernel_vs_blas[
             if num_mismatches < 5:
                 var row, col = divmod(i, N)
                 print(
-                    "    [",
-                    row,
-                    ",",
-                    col,
-                    "]: kernel=",
-                    got,
-                    " blas=",
-                    expected,
-                    " rel_err=",
-                    rel_err,
+                    t"    [ {row} , {col} ]: kernel= {got}  blas= {expected} "
+                    t" rel_err= {rel_err}"
                 )
             num_mismatches += 1
 

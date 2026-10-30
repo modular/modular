@@ -80,31 +80,10 @@ def test_matmul_sm100_fallback[
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     print(
-        "umma_shape",
-        umma_shape,
-        a_type,
-        "x",
-        b_type,
-        "x",
-        c_type,
-        "transpose_b:",
-        transpose_b,
-        "use_epilogue:",
-        use_epilogue,
-        " : PROBLEM SHAPE (M,N,K): (",
-        Int(m),
-        "x",
-        Int(n),
-        "x",
-        Int(k),
-        ") - ",
-        "BLOCKS SHAPE (BM,BN,BK): (",
-        umma_shape[0],
-        "x",
-        umma_shape[1],
-        "x",
-        BK,
-        ")",
+        t"umma_shape {umma_shape} {a_type} x {b_type} x {c_type} transpose_b:"
+        t" {transpose_b} use_epilogue: {use_epilogue}  : PROBLEM SHAPE (M,N,K):"
+        t" ( {Int(m)} x {Int(n)} x {Int(k)} ) -  BLOCKS SHAPE (BM,BN,BK): ("
+        t" {umma_shape[0]} x {umma_shape[1]} x {BK} )"
     )
 
     @inline(.always)

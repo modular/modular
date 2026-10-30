@@ -103,25 +103,12 @@ def test_swiglu_bias[
     var H = N // 2
 
     print(
-        "  dtypes=(bf16,bf16,bf16) shape=(",
-        M,
-        ",",
-        N,
-        ",",
-        K,
-        ") mma=(",
-        config.mma_shape[0],
-        ",",
-        config.mma_shape[1],
-        ") cluster=(",
-        config.cluster_shape[0],
-        ",",
-        config.cluster_shape[1],
-        ") swizzle=",
-        config.block_swizzle_size,
-        " swap_ab=" + ("True" if config.AB_swapped else "False"),
-        " path=" + ("gmem" if config.register_swiglu else "smem_tma"),
-        " bias=True",
+        (
+            t"  dtypes=(bf16,bf16,bf16) shape=({M},{N},{K})"
+            t" mma=({config.mma_shape[0]},{config.mma_shape[1]})"
+            t" cluster=({config.cluster_shape[0]},{config.cluster_shape[1]})"
+            t" swizzle={config.block_swizzle_size}{' swap_ab=' + ('True' if config.AB_swapped else 'False')}{' path=' + ('gmem' if config.register_swiglu else 'smem_tma')} bias=True"
+        ),
         sep="",
     )
 

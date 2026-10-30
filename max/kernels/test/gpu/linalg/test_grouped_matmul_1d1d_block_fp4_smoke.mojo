@@ -60,18 +60,8 @@ def _test_grouped_1d1d_block_fp4_impl[
     comptime packed_K = K // 2
 
     print(
-        "  experts=",
-        num_active_experts,
-        "/",
-        num_experts,
-        " tokens=",
-        tokens_per_expert,
-        " N=",
-        N,
-        " K=",
-        K,
-        " mma_n=",
-        mma_n,
+        t"  experts= {num_active_experts} / {num_experts}  tokens="
+        t" {tokens_per_expert}  N= {N}  K= {K}  mma_n= {mma_n}"
     )
 
     var total_tokens = num_active_experts * tokens_per_expert
@@ -284,18 +274,8 @@ def _test_grouped_1d1d_mixed_experts[
         total_tokens += tokens_per_expert_ptr[i]
 
     print(
-        "  mixed experts=",
-        num_active_experts,
-        "/",
-        num_experts,
-        " total_tokens=",
-        total_tokens,
-        " N=",
-        N,
-        " K=",
-        K,
-        " mma_n=",
-        mma_n,
+        t"  mixed experts= {num_active_experts} / {num_experts}  total_tokens="
+        t" {total_tokens}  N= {N}  K= {K}  mma_n= {mma_n}"
     )
 
     var a_offsets_host = ctx.enqueue_create_host_buffer[.uint32](

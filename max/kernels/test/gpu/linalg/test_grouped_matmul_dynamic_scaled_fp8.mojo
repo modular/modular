@@ -60,17 +60,10 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
     comptime BLOCK_SCALE_K = 128
 
     print(
-        "== test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case",
-        "num_experts:",
-        num_experts,
-        "N:",
-        N,
-        "K:",
-        K,
-        "num_active_experts:",
-        num_active_experts,
-        "max_num_tokens_per_expert:",
-        max_num_tokens_per_expert,
+        t"== test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case num_experts:"
+        t" {num_experts} N: {N} K: {K} num_active_experts:"
+        t" {num_active_experts} max_num_tokens_per_expert:"
+        t" {max_num_tokens_per_expert}"
     )
 
     # Use minimal buffer size for efficiency since nothing will execute
@@ -257,15 +250,8 @@ def test_grouped_matmul_dynamic_scaled_fp8_nonzero_sanity[
     comptime total_tokens = num_experts * tokens_per_expert
 
     print(
-        "== test_grouped_matmul_dynamic_scaled_fp8_nonzero_sanity",
-        "num_experts:",
-        num_experts,
-        "N:",
-        N,
-        "K:",
-        K,
-        "tokens_per_expert:",
-        tokens_per_expert,
+        t"== test_grouped_matmul_dynamic_scaled_fp8_nonzero_sanity num_experts:"
+        t" {num_experts} N: {N} K: {K} tokens_per_expert: {tokens_per_expert}"
     )
 
     var a_size = total_tokens * K
@@ -432,7 +418,7 @@ def test_grouped_matmul_dynamic_scaled_fp8_nonzero_sanity[
         if isnan(got_f32) or abs_diff > atol + rtol * abs_ref:
             ndiff += 1
             if ndiff <= 5:
-                print("  diff @", i, "got=", got, "ref=", ref_val)
+                print(t"  diff @ {i} got= {got} ref= {ref_val}")
     if ndiff > 0:
         raise Error(
             "grouped blockwise-fp8 matmul diverged from host reference at "

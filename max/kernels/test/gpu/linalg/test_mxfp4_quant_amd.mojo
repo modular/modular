@@ -241,7 +241,7 @@ def test_quantize_known_scales(ctx: DeviceContext) raises:
     ) raises {imm}:
         var bits = Int(bitcast[.uint8](scales_host[blk]))
         var scale_f32 = _e8m0_to_float32(UInt8(bits))
-        print("    block", blk, ": e8m0=", bits, " scale=", scale_f32)
+        print(t"    block {blk} : e8m0= {bits}  scale= {scale_f32}")
         assert_true(
             bits == expected_e8m0,
             "block "
@@ -413,14 +413,8 @@ def test_quantize_even_mode_boundary(ctx: DeviceContext) raises:
     var max_dequanted = _dequant_element(output_host[0], True, scale_f32)
     var small_dequanted = _dequant_element(output_host[0], False, scale_f32)
     print(
-        "    scale_e8m0=",
-        scale_bits,
-        " scale=",
-        scale_f32,
-        " max_dequant=",
-        max_dequanted,
-        " small_dequant=",
-        small_dequanted,
+        t"    scale_e8m0= {scale_bits}  scale= {scale_f32}  max_dequant="
+        t" {max_dequanted}  small_dequant= {small_dequanted}"
     )
     assert_true(
         scale_bits == 125,

@@ -242,9 +242,7 @@ def test_dynamic_shapes[
     rtol: Float64 = 1e-3 if dtype == .float32 else 1e-2,
 ) raises:
     # fmt: off
-    print(
-        "test_dynamic_shapes", b, "x", m, "x", n, "x", k, "transpose_b", transpose_b,
-    )
+    print(t"test_dynamic_shapes {b} x {m} x {n} x {k} transpose_b {transpose_b}")
     # fmt: on
 
     var a_size = b * m * k
@@ -284,9 +282,7 @@ def test_static_NK[
     m: Int,
     rtol: Float64 = 1e-3 if dtype == .float32 else 1e-2,
 ) raises:
-    print(
-        "test_static_NK", b, "x", m, "x", N, "x", K, "transpose_b", transpose_b
-    )
+    print(t"test_static_NK {b} x {m} x {N} x {K} transpose_b {transpose_b}")
 
     var a_size = b * m * K
     var b_size = b * N * K
@@ -337,10 +333,7 @@ def test_static_NK_rank4[
     coordinate for a rank-4 output.
     """
     # fmt: off
-    print(
-        "test_static_NK_rank4", b0, "x", b1, "x", m, "x", N, "x", K,
-        "transpose_b", transpose_b,
-    )
+    print(t"test_static_NK_rank4 {b0} x {b1} x {m} x {N} x {K} transpose_b {transpose_b}")
     # fmt: on
 
     var batch = b0 * b1
@@ -387,7 +380,7 @@ def test_non_row_major_layout[
     This function tests bacthed matmul with non-row major inputs.
     For example, A's layout could be (B, m, K):(K, B*K, 1).
     """
-    print("test_non_row_major_layout", B, "x", m, "x", N, "x", K)
+    print(t"test_non_row_major_layout {B} x {m} x {N} x {K}")
 
     var a_size = B * m * K
     var b_size = B * N * K
@@ -461,7 +454,7 @@ def test_pdl_chain[
     produce bit-identical results to the same chain with PDL off."""
     comptime dtype = DType.bfloat16
     comptime reps = 6
-    print("test_pdl_chain", b, "x", m, "x", N, "x", K)
+    print(t"test_pdl_chain {b} x {m} x {N} x {K}")
 
     var q_size = b * m * K
     var w1_size = b * N * K

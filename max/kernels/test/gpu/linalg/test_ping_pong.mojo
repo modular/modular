@@ -108,16 +108,8 @@ def test_ping_pong_kernel_amd[
                     if printed < 10:
                         var row, col = divmod(i, N)
                         print(
-                            "Mismatch at (",
-                            row,
-                            ",",
-                            col,
-                            "): actual=",
-                            actual,
-                            " expected=",
-                            expected,
-                            " rel_err=",
-                            rel_err,
+                            t"Mismatch at ( {row} , {col} ): actual= {actual} "
+                            t" expected= {expected}  rel_err= {rel_err}"
                         )
                         printed += 1
                     errors += 1

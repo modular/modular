@@ -153,28 +153,8 @@ def test_mxfp4_matmul[
     comptime assert BN % WN == 0, "BN must be divisible by WN"
 
     print(
-        M_static,
-        "x",
-        N_static,
-        "x",
-        K_static,
-        " [BM=",
-        BM,
-        " BN=",
-        BN,
-        " BK=",
-        BK_ELEMS,
-        " WM=",
-        WM,
-        " WN=",
-        WN,
-        " MMA=",
-        MMA_M,
-        "x",
-        MMA_N,
-        "x",
-        MMA_K,
-        "]",
+        t"{M_static} x {N_static} x {K_static}  [BM= {BM}  BN= {BN}  BK="
+        t" {BK_ELEMS}  WM= {WM}  WN= {WN}  MMA= {MMA_M} x {MMA_N} x {MMA_K} ]"
     )
 
     comptime input_dtype = DType.uint8
@@ -317,22 +297,8 @@ def test_mxfp4_matmul_split_k[
     accumulation and the reduce-kernel sum/cast.
     """
     print(
-        M_static,
-        "x",
-        N_static,
-        "x",
-        K_static,
-        " [split-K num_splits=",
-        num_splits,
-        " BM=",
-        BM,
-        " BN=",
-        BN,
-        " BK=",
-        BK_ELEMS,
-        " WN=",
-        WN,
-        "]",
+        t"{M_static} x {N_static} x {K_static}  [split-K num_splits="
+        t" {num_splits}  BM= {BM}  BN= {BN}  BK= {BK_ELEMS}  WN= {WN} ]"
     )
 
     comptime input_dtype = DType.uint8

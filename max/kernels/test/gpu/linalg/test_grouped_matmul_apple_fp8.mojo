@@ -71,13 +71,10 @@ def _run_case[
     comptime K = expert_shape[1]
 
     print(
-        num_active_experts,
-        "active of",
-        num_experts,
-        "experts, (N, K) =",
-        N,
-        K,
-        " tokens:",
+        (
+            t"{num_active_experts} active of {num_experts} experts, (N, K) ="
+            t" {N} {K}  tokens:"
+        ),
         end="",
     )
     for i in range(len(num_tokens_by_expert)):

@@ -79,16 +79,8 @@ def test_nvfp4_dequant[
     )
 
     print(
-        "  rows=",
-        num_rows,
-        " cols=",
-        num_cols,
-        " dtype=",
-        out_dtype,
-        " interleaved=",
-        interleaved,
-        " tensor_sf=",
-        tensor_sf,
+        t"  rows= {num_rows}  cols= {num_cols}  dtype= {out_dtype} "
+        t" interleaved= {interleaved}  tensor_sf= {tensor_sf}"
     )
 
     comptime in_size = num_rows * packed_cols
@@ -192,14 +184,8 @@ def test_nvfp4_dequant[
             if num_mismatches < 5:
                 var row, col = divmod(i, num_cols)
                 print(
-                    "    MISMATCH [",
-                    row,
-                    ",",
-                    col,
-                    "]: got=",
-                    got,
-                    " expected=",
-                    exp,
+                    t"    MISMATCH [ {row} , {col} ]: got= {got}  expected="
+                    t" {exp}"
                 )
             num_mismatches += 1
 

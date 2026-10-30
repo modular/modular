@@ -97,16 +97,8 @@ def test_mx_dequant[
     )
 
     print(
-        "  fp8=",
-        fp8,
-        " rows=",
-        num_rows,
-        " cols=",
-        num_cols,
-        " dtype=",
-        out_dtype,
-        " interleaved=",
-        interleaved,
+        t"  fp8= {fp8}  rows= {num_rows}  cols= {num_cols}  dtype= {out_dtype} "
+        t" interleaved= {interleaved}"
     )
 
     comptime in_size = num_rows * in_cols
@@ -221,14 +213,8 @@ def test_mx_dequant[
             if num_mismatches < 5:
                 var row, col = divmod(i, num_cols)
                 print(
-                    "    MISMATCH [",
-                    row,
-                    ",",
-                    col,
-                    "]: got=",
-                    got,
-                    " expected=",
-                    exp,
+                    t"    MISMATCH [ {row} , {col} ]: got= {got}  expected="
+                    t" {exp}"
                 )
             num_mismatches += 1
 

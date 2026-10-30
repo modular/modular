@@ -51,14 +51,8 @@ def test[
     comptime K = expert_shape[1]
 
     print(
-        "Testing: experts=",
-        num_experts,
-        " N=",
-        N,
-        " K=",
-        K,
-        " active=",
-        num_active_experts,
+        t"Testing: experts= {num_experts}  N= {N}  K= {K}  active="
+        t" {num_active_experts}"
     )
 
     var total_num_tokens = 0

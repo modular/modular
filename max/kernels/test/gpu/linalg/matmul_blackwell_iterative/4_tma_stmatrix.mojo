@@ -476,8 +476,8 @@ def benchmark_blackwell_matmul(ctx: DeviceContext) raises:
     print("Benchmarking kernel_4")
     print("============================================")
     print("Shapes: [M, N, K]")
-    print("Data types: a=", a_type, ", b=", b_type, ", c=", c_type)
-    print("UMMA shape:", umma_shape[0], "x", umma_shape[1], "x", umma_shape[2])
+    print(t"Data types: a= {a_type} , b= {b_type} , c= {c_type}")
+    print(t"UMMA shape: {umma_shape[0]} x {umma_shape[1]} x {umma_shape[2]}")
     print("BK:", BK)
     print("transpose_b:", transpose_b)
     print()
@@ -486,13 +486,7 @@ def benchmark_blackwell_matmul(ctx: DeviceContext) raises:
         comptime shape = get_dict_of_shapes(i, dict_of_shapes)
         try:
             print(
-                "Benchmarking shape: [",
-                shape[0],
-                ",",
-                shape[1],
-                ",",
-                shape[2],
-                "]",
+                t"Benchmarking shape: [ {shape[0]} , {shape[1]} , {shape[2]} ]"
             )
             test_blackwell_kernel_4[
                 a_type,

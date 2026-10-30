@@ -264,25 +264,9 @@ def _test_case[
     comptime fmt_name = "E2M3" if fmt == FP6Format.E2M3 else "E3M2"
 
     print(
-        "  ",
-        fmt_name,
-        name,
-        " M=",
-        M_static,
-        " N=",
-        N_static,
-        " K=",
-        K_static,
-        " BM=",
-        BM,
-        " BN=",
-        BN,
-        " BK_ELEMS=",
-        BK_ELEMS,
-        " WN=",
-        WN,
-        " b_prefetch=",
-        b_prefetch,
+        t"   {fmt_name} {name}  M= {M_static}  N= {N_static}  K= {K_static} "
+        t" BM= {BM}  BN= {BN}  BK_ELEMS= {BK_ELEMS}  WN= {WN}  b_prefetch="
+        t" {b_prefetch}"
     )
 
     # Scale buffers stay uint8 throughout (E8M0 is byte-equivalent) so
@@ -451,16 +435,8 @@ def _test_case[
         if abs(got - want) > rel_tol * Float64(mag_h[i]):
             if mismatches < 3:
                 print(
-                    "      [",
-                    i // N_static,
-                    ",",
-                    i % N_static,
-                    "] got=",
-                    got,
-                    " want=",
-                    want,
-                    " mag=",
-                    Float64(mag_h[i]),
+                    t"      [ {i // N_static} , {i % N_static} ] got= {got} "
+                    t" want= {want}  mag= {Float64(mag_h[i])}"
                 )
             mismatches += 1
 

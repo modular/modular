@@ -34,12 +34,8 @@ def test_vendor[
     ctx: DeviceContext,
 ) raises:
     print(
-        "Testing vendor grouped matmul:",
-        num_active_experts,
-        "active of",
-        num_experts,
-        "experts of shape",
-        expert_shape,
+        t"Testing vendor grouped matmul: {num_active_experts} active of"
+        t" {num_experts} experts of shape {expert_shape}"
     )
     print("tokens:", end="")
     for i in range(len(num_tokens_by_expert)):
@@ -228,12 +224,8 @@ def test_negative_lora_id_vendor[
     ctx: DeviceContext,
 ) raises:
     print(
-        "Testing vendor negative lora_id behavior:",
-        num_active_experts,
-        "active of",
-        num_experts,
-        "experts of shape",
-        expert_shape,
+        t"Testing vendor negative lora_id behavior: {num_active_experts} active"
+        t" of {num_experts} experts of shape {expert_shape}"
     )
     print("tokens:", end="")
     for i in range(len(num_tokens_by_expert)):
@@ -361,13 +353,7 @@ def test_negative_lora_id_vendor[
         var should_be_zero = expert_id < 0
 
         print(
-            "Expert",
-            expert_idx,
-            "has id",
-            expert_id,
-            "with",
-            num_tokens,
-            "tokens",
+            t"Expert {expert_idx} has id {expert_id} with {num_tokens} tokens"
         )
 
         # Check each token for this expert

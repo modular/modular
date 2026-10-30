@@ -61,24 +61,10 @@ def test_matmul_sm100_blockwise_scaled_fp8[
     ), "TMA expects M to be divisible by 16 bytes"
 
     print(
-        "== test_sm100_blockwise_scaled_fp8_matmul",
-        a_type,
-        "problem shape: (",
-        M,
-        "x",
-        N,
-        "x",
-        K,
-        ")",
-        "block_tile_shape: (",
-        block_tile_shape[0],
-        "x",
-        block_tile_shape[1],
-        "x",
-        block_tile_shape[2],
-        ")",
-        "transpose_b:",
-        transpose_b,
+        t"== test_sm100_blockwise_scaled_fp8_matmul {a_type} problem shape: ("
+        t" {M} x {N} x {K} ) block_tile_shape: ( {block_tile_shape[0]} x"
+        t" {block_tile_shape[1]} x {block_tile_shape[2]} ) transpose_b:"
+        t" {transpose_b}"
     )
 
     assert K % BLOCK_SCALE_K == 0, "K must be divisible by BLOCK_SCALE_K"

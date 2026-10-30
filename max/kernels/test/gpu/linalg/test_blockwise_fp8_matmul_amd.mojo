@@ -60,16 +60,10 @@ def test_blockwise_fp8_matmul_amd[
     var K = Int(k)
 
     print(
-        "== test_blockwise_fp8_matmul_amd c_type=",
-        c_type,
-        " MxNxK=",
-        M,
-        "x",
-        N,
-        "x",
-        K,
-        " via_dispatch=",
-        via_dispatch,
+        (
+            t"== test_blockwise_fp8_matmul_amd"
+            t" c_type={c_type} MxNxK={M}x{N}x{K} via_dispatch={via_dispatch}"
+        ),
         sep="",
     )
 

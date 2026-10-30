@@ -40,22 +40,10 @@ def test_naive_blockwise_fp8_matmul[
     var K = Int(k)
 
     print(
-        "== test_naive_blockwise_fp8_matmul",
-        input_type,
-        "x",
-        M,
-        "x",
-        N,
-        "x",
-        K,
-        "BLOCK_SCALE_M",
-        BLOCK_SCALE_M,
-        "BLOCK_SCALE_N",
-        BLOCK_SCALE_N,
-        "BLOCK_SCALE_K",
-        BLOCK_SCALE_K,
-        "transpose_b",
-        transpose_b,
+        t"== test_naive_blockwise_fp8_matmul {input_type} x {M} x {N} x"
+        t" {K} BLOCK_SCALE_M {BLOCK_SCALE_M} BLOCK_SCALE_N"
+        t" {BLOCK_SCALE_N} BLOCK_SCALE_K {BLOCK_SCALE_K} transpose_b"
+        t" {transpose_b}"
     )
 
     var a_shape = Coord(m, k)

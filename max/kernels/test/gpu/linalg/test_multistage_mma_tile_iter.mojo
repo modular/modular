@@ -545,13 +545,8 @@ def run_global[
                     min(BM, M - by * BM),
                 )
     print(
-        "global pipeline transpose_b=",
-        transpose_b,
-        " masked_a=",
-        masked_a,
-        " M=",
-        M,
-        ": matches reference",
+        t"global pipeline transpose_b= {transpose_b}  masked_a= {masked_a}  M="
+        t" {M} : matches reference"
     )
 
 

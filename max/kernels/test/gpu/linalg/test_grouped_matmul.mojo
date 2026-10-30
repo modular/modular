@@ -373,12 +373,8 @@ def test_negative_lora_id[
     ctx: DeviceContext,
 ) raises:
     print(
-        "Testing negative lora_id behavior:",
-        num_active_experts,
-        "active of",
-        num_experts,
-        "experts of shape",
-        expert_shape,
+        t"Testing negative lora_id behavior: {num_active_experts} active of"
+        t" {num_experts} experts of shape {expert_shape}"
     )
     print("tokens:", end="")
     for i in range(len(num_tokens_by_expert)):
@@ -507,13 +503,7 @@ def test_negative_lora_id[
         var has_negative_id = expert_id == -1
 
         print(
-            "Expert",
-            expert_idx,
-            "has id",
-            expert_id,
-            "with",
-            num_tokens,
-            "tokens",
+            t"Expert {expert_idx} has id {expert_id} with {num_tokens} tokens"
         )
 
         # Check each token for this expert
@@ -576,13 +566,8 @@ def test_step3p5_moe_dims[
     comptime K = expert_shape[1]
 
     print(
-        num_active,
-        "active of",
-        num_experts,
-        "experts of shape",
-        expert_shape,
-        "total_tokens",
-        total_tokens,
+        t"{num_active} active of {num_experts} experts of shape"
+        t" {expert_shape} total_tokens {total_tokens}"
     )
 
     # ---- A (activations): [total_tokens, K] ----

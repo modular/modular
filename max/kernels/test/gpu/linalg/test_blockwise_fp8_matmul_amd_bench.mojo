@@ -149,23 +149,11 @@ def bench_shape[
     var tflops_naive = flops / (med_naive * 1.0e9)
 
     print(
-        "MxNxK=",
-        M,
-        "x",
-        N,
-        "x",
-        K,
-        " | tiled: ",
-        med_mine,
-        " ms (",
-        tflops_mine,
-        " TFLOP/s) | naive: ",
-        med_naive,
-        " ms (",
-        tflops_naive,
-        " TFLOP/s) | speedup: ",
-        med_naive / med_mine,
-        "x",
+        (
+            t"MxNxK={M}x{N}x{K} | tiled: {med_mine} ms ({tflops_mine} TFLOP/s)"
+            t" | naive: {med_naive} ms ({tflops_naive} TFLOP/s) | speedup:"
+            t" {med_naive / med_mine}x"
+        ),
         sep="",
     )
 

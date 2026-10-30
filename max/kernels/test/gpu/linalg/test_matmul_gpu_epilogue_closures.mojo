@@ -43,7 +43,7 @@ def test_epilogues[
 ](ctx: DeviceContext, m: Int) raises:
     """Checks each epilogue against the plain matmul at every output index.
     With `split_k_tuned`, the reference is the identity compute epilogue."""
-    print(dtype, m, "x", N, "x", K, "transpose_b:", transpose_b)
+    print(t"{dtype} {m} x {N} x {K} transpose_b: {transpose_b}")
     comptime b_rows = N if transpose_b else K
     comptime b_cols = K if transpose_b else N
     var a_dev = ctx.enqueue_create_buffer[dtype](m * K)

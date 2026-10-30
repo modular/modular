@@ -90,22 +90,10 @@ def test_grouped_blockwise_fp8_matmul_amd[
     var total_tokens = sum_rows + POISON
 
     print(
-        "== test_grouped_blockwise_fp8_matmul_amd c_type=",
-        c_type,
-        " num_experts=",
-        num_experts,
-        " num_active=",
-        num_active,
-        " sum_rows=",
-        sum_rows,
-        " NxK=",
-        N,
-        "x",
-        K,
-        " via_dispatch=",
-        via_dispatch,
-        " static_grid_z=",
-        static_grid_z,
+        (
+            t"== test_grouped_blockwise_fp8_matmul_amd"
+            t" c_type={c_type} num_experts={num_experts} num_active={num_active} sum_rows={sum_rows} NxK={N}x{K} via_dispatch={via_dispatch} static_grid_z={static_grid_z}"
+        ),
         sep="",
     )
 
@@ -372,12 +360,10 @@ def test_grouped_static_grid_z[
     var total_tokens = sum_rows
 
     print(
-        "== test_grouped_static_grid_z c_type=",
-        c_type,
-        " num_experts=",
-        num_experts,
-        " sum_rows=",
-        sum_rows,
+        (
+            t"== test_grouped_static_grid_z"
+            t" c_type={c_type} num_experts={num_experts} sum_rows={sum_rows}"
+        ),
         sep="",
     )
 
@@ -543,16 +529,10 @@ def test_grouped_decode_grid_m_cap_capture_safety[
     var stale_max_tokens = 8
 
     print(
-        "== test_grouped_decode_grid_m_cap_capture_safety c_type=",
-        c_type,
-        " num_experts=",
-        num_experts,
-        " sum_rows=",
-        sum_rows,
-        " true_max=",
-        true_max_tokens,
-        " stale_max=",
-        stale_max_tokens,
+        (
+            t"== test_grouped_decode_grid_m_cap_capture_safety"
+            t" c_type={c_type} num_experts={num_experts} sum_rows={sum_rows} true_max={true_max_tokens} stale_max={stale_max_tokens}"
+        ),
         sep="",
     )
 
@@ -773,20 +753,10 @@ def test_grouped_grid_y_decode_bounded_bitidentity[
     var pad_rows = prod_max_tokens + 64
 
     print(
-        "== test_grouped_grid_y_decode_bounded_bitidentity c_type=",
-        c_type,
-        " num_experts=",
-        num_experts,
-        " num_active=",
-        num_active,
-        " sum_rows=",
-        sum_rows,
-        " pad_rows=",
-        pad_rows,
-        " NxK=",
-        N,
-        "x",
-        K,
+        (
+            t"== test_grouped_grid_y_decode_bounded_bitidentity"
+            t" c_type={c_type} num_experts={num_experts} num_active={num_active} sum_rows={sum_rows} pad_rows={pad_rows} NxK={N}x{K}"
+        ),
         sep="",
     )
 
@@ -905,15 +875,10 @@ def test_grouped_grid_y_decode_bounded_bitidentity[
     var grid_y_prod = ceildiv(min(prod_max_tokens, pad_rows), BM)
     var grid_y_decode = ceildiv(min(decode_max_tokens, pad_rows), BM)
     print(
-        "   grid=(x=",
-        ceildiv(N, 64),
-        ", y=",
-        grid_y_prod,
-        "/",
-        grid_y_decode,
-        ", z=",
-        num_active,
-        ")",
+        (
+            t"   grid=(x={ceildiv(N, 64)}, y={grid_y_prod}/{grid_y_decode},"
+            t" z={num_active})"
+        ),
         sep="",
     )
     assert_equal(

@@ -71,26 +71,10 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     ), "TMA expects M to be divisible by 16 bytes"
 
     print(
-        "== test_sm100_blockwise_scaled_fp8_matmul",
-        a_type,
-        "problem shape: (",
-        bs,
-        "x",
-        M,
-        "x",
-        N,
-        "x",
-        K,
-        ")",
-        "block_tile_shape: (",
-        block_tile_shape[0],
-        "x",
-        block_tile_shape[1],
-        "x",
-        block_tile_shape[2],
-        ")",
-        "transpose_b:",
-        transpose_b,
+        t"== test_sm100_blockwise_scaled_fp8_matmul {a_type} problem shape: ("
+        t" {bs} x {M} x {N} x {K} ) block_tile_shape: ( {block_tile_shape[0]} x"
+        t" {block_tile_shape[1]} x {block_tile_shape[2]} ) transpose_b:"
+        t" {transpose_b}"
     )
 
     # K and N do not have to be multiples of BLOCK_SCALE_K — the scale grid
@@ -275,26 +259,10 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
     var M_aligned_for_scales = ((M + 3) // 4) * 4
 
     print(
-        "== test_sm100_blockwise_scaled_fp8_matmul_non_row_major_c",
-        a_type,
-        "problem shape: (",
-        bs,
-        "x",
-        M,
-        "x",
-        N,
-        "x",
-        K,
-        ")",
-        "block_tile_shape: (",
-        block_tile_shape[0],
-        "x",
-        block_tile_shape[1],
-        "x",
-        block_tile_shape[2],
-        ")",
-        "transpose_b:",
-        transpose_b,
+        t"== test_sm100_blockwise_scaled_fp8_matmul_non_row_major_c"
+        t" {a_type} problem shape: ( {bs} x {M} x {N} x {K} ) block_tile_shape:"
+        t" ( {block_tile_shape[0]} x {block_tile_shape[1]} x"
+        t" {block_tile_shape[2]} ) transpose_b: {transpose_b}"
     )
 
     assert K % BLOCK_SCALE_K == 0, "K must be divisible by BLOCK_SCALE_K"

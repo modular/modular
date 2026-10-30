@@ -89,7 +89,7 @@ def run_case[N: Int, K: Int](ctx: DeviceContext, m: Int, num_iters: Int) raises:
     comptime k_blocks = K // BLOCK
     comptime n_blocks = ceildiv(N, BLOCK)
 
-    print("blockwise fp8 PDL: M=", m, " N=", N, " K=", K, sep="")
+    print(t"blockwise fp8 PDL: M={m} N={N} K={K}", sep="")
 
     var a_elems = m * K
     var c_elems = m * N

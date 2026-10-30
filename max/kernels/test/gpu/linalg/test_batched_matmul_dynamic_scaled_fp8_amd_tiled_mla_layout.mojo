@@ -241,18 +241,10 @@ def run_case[
                     ndiff_disp += 1
                     if ndiff_disp <= 4:
                         print(
-                            "  tiled diff @ (b,m,n)=(",
-                            b,
-                            ",",
-                            m,
-                            ",",
-                            n,
-                            ") got=",
-                            got,
-                            " ref=",
-                            ref_val,
-                            " naive=",
-                            got_naive,
+                            (
+                                t"  tiled diff @ (b,m,n)=({b},{m},{n})"
+                                t" got={got} ref={ref_val} naive={got_naive}"
+                            ),
                             sep="",
                         )
                 if not (abs(got_naive - ref_val) <= tol):
@@ -279,13 +271,8 @@ def run_case[
             + " NaN)"
         )
         print(
-            "  FAILED:",
-            ndiff_disp,
-            "of",
-            c_size,
-            "positions differ (",
-            nnan_disp,
-            "NaN )",
+            t"  FAILED: {ndiff_disp} of {c_size} positions differ ("
+            t" {nnan_disp} NaN )"
         )
     else:
         print("  ok (", c_size, "positions )")

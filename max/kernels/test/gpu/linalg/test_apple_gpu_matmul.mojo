@@ -134,7 +134,7 @@ def _run_8x8_case[
     clean and ragged M/N (the kernel bounds-checks edge subtiles); K is a
     multiple of 16, matching the dispatch gate.
     """
-    print("==", name, M, "x", N, "x", K, "NT=" + String(transpose_b))
+    print(t"== {name} {M} x {N} x {K} {"NT=" + String(transpose_b)}")
     comptime BM = 64
     comptime BN = 64
     comptime NSG = 4
@@ -209,7 +209,7 @@ def _run_8x8_case[
             var got = Float32(d_host[i * N + j])
             if not _within_tol[c_type](got, exp):
                 if pass_:
-                    print("FAIL:", i, j, "got", got, "expected", exp)
+                    print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -226,7 +226,7 @@ def _run_8x8_bias_case[
     uses odd/ragged shapes to cover the epilogue at edge subtiles as well as
     the interior.
     """
-    print("==", name, M, "x", N, "x", K, "NT=" + String(transpose_b))
+    print(t"== {name} {M} x {N} x {K} {"NT=" + String(transpose_b)}")
     comptime BM = 64
     comptime BN = 64
     comptime NSG = 4
@@ -323,7 +323,7 @@ def _run_8x8_bias_case[
             var got = Float32(d_host[i * N + j])
             if not _within_tol[c_type](got, exp):
                 if pass_:
-                    print("FAIL:", i, j, "got", got, "expected", exp)
+                    print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -390,14 +390,8 @@ def test_morton_decode_2d() raises:
         var got = _MM.morton_decode_2d(UInt32(i))
         if got[0] != exp_m[i] or got[1] != exp_n[i]:
             print(
-                "FAIL: flat",
-                i,
-                "got",
-                got[0],
-                got[1],
-                "expected",
-                exp_m[i],
-                exp_n[i],
+                t"FAIL: flat {i} got {got[0]} {got[1]} expected"
+                t" {exp_m[i]} {exp_n[i]}"
             )
             pass_ = False
     if not pass_:
@@ -427,28 +421,12 @@ def test_morton_decode_2d_rect() raises:
         var m = Int(got[0])
         var n = Int(got[1])
         if m < 0 or m >= 2 or n < 0 or n >= 16:
-            print(
-                "FAIL: 2x16 flat=",
-                i,
-                "decoded m=",
-                m,
-                "n=",
-                n,
-                "out of range",
-            )
+            print(t"FAIL: 2x16 flat= {i} decoded m= {m} n= {n} out of range")
             pass_ = False
             continue
         var slot = m * 16 + n
         if seen_2x16[slot]:
-            print(
-                "FAIL: 2x16 flat=",
-                i,
-                "decoded m=",
-                m,
-                "n=",
-                n,
-                "(duplicate)",
-            )
+            print(t"FAIL: 2x16 flat= {i} decoded m= {m} n= {n} (duplicate)")
             pass_ = False
         seen_2x16[slot] = True
 
@@ -460,28 +438,12 @@ def test_morton_decode_2d_rect() raises:
         var m = Int(got[0])
         var n = Int(got[1])
         if m < 0 or m >= 16 or n < 0 or n >= 2:
-            print(
-                "FAIL: 16x2 flat=",
-                i,
-                "decoded m=",
-                m,
-                "n=",
-                n,
-                "out of range",
-            )
+            print(t"FAIL: 16x2 flat= {i} decoded m= {m} n= {n} out of range")
             pass_ = False
             continue
         var slot = m * 2 + n
         if seen_16x2[slot]:
-            print(
-                "FAIL: 16x2 flat=",
-                i,
-                "decoded m=",
-                m,
-                "n=",
-                n,
-                "(duplicate)",
-            )
+            print(t"FAIL: 16x2 flat= {i} decoded m= {m} n= {n} (duplicate)")
             pass_ = False
         seen_16x2[slot] = True
 
@@ -493,17 +455,8 @@ def test_morton_decode_2d_rect() raises:
         var got_sq = _MM.morton_decode_2d(UInt32(i))
         if got_rect[0] != got_sq[0] or got_rect[1] != got_sq[1]:
             print(
-                "FAIL: 4x4 flat=",
-                i,
-                "rect=(",
-                got_rect[0],
-                ",",
-                got_rect[1],
-                ") square=(",
-                got_sq[0],
-                ",",
-                got_sq[1],
-                ")",
+                t"FAIL: 4x4 flat= {i} rect=( {got_rect[0]} , {got_rect[1]} )"
+                t" square=( {got_sq[0]} , {got_sq[1]} )"
             )
             pass_ = False
 
@@ -513,15 +466,8 @@ def test_morton_decode_2d_rect() raises:
         var got = _MM.morton_decode_2d_rect(UInt32(i), UInt32(0), UInt32(4))
         if Int(got[0]) != 0 or Int(got[1]) != i:
             print(
-                "FAIL: 1x16 flat=",
-                i,
-                "got=(",
-                got[0],
-                ",",
-                got[1],
-                ") expected=(0,",
-                i,
-                ")",
+                t"FAIL: 1x16 flat= {i} got=( {got[0]} , {got[1]} ) expected=(0,"
+                t" {i} )"
             )
             pass_ = False
 
@@ -531,15 +477,8 @@ def test_morton_decode_2d_rect() raises:
         var got = _MM.morton_decode_2d_rect(UInt32(i), UInt32(4), UInt32(0))
         if Int(got[0]) != i or Int(got[1]) != 0:
             print(
-                "FAIL: 16x1 flat=",
-                i,
-                "got=(",
-                got[0],
-                ",",
-                got[1],
-                ") expected=(",
-                i,
-                ",0)",
+                t"FAIL: 16x1 flat= {i} got=( {got[0]} , {got[1]} ) expected=("
+                t" {i} ,0)"
             )
             pass_ = False
 
@@ -596,7 +535,7 @@ def test_kernel_single_tile_nn_fp16(ctx: DeviceContext) raises:
             )
             var got = d_host[i * N + j]
             if abs(got - exp) > Float32(0.5):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -651,7 +590,7 @@ def test_kernel_single_tile_k128_nn_fp16(ctx: DeviceContext) raises:
             )
             var got = d_host[i * N + j]
             if abs(got - exp) > Float32(1.0):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -711,7 +650,7 @@ def test_kernel_64x64x17_nn_fp16(ctx: DeviceContext) raises:
             )
             var got = d_host[i * N + j]
             if abs(got - exp) > Float32(0.5):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -766,7 +705,7 @@ def test_kernel_256x256x16_nn_fp16(ctx: DeviceContext) raises:
             )
             var got = d_host[i * N + j]
             if abs(got - exp) > Float32(0.5):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -818,9 +757,9 @@ def _run_split_k_case[
     the kernel stores. Flat 1.0 abs tolerance (inputs in [-2, 2]).
     """
     if splits > 0:
-        print("==", name, M, "x", N, "x", K, "split=", splits)
+        print(t"== {name} {M} x {N} x {K} split= {splits}")
     else:
-        print("==", name, M, "x", N, "x", K, "force_split_k")
+        print(t"== {name} {M} x {N} x {K} force_split_k")
     var b_rows = N if transpose_b else K
     var b_cols = K if transpose_b else N
 
@@ -944,7 +883,7 @@ def _check_split_k_result[
             var got = Float32(d_ptr[i * N + j])
             if abs(got - exp) > Float32(1.0):
                 if pass_:
-                    print("FAIL:", i, j, "got", got, "exp", exp)
+                    print(t"FAIL: {i} {j} got {got} exp {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -1000,7 +939,7 @@ def test_kernel_128x128x32_nt_fp16(ctx: DeviceContext) raises:
             )
             var got = d_host[i * N + j]
             if abs(got - exp) > Float32(0.5):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -1060,7 +999,7 @@ def test_kernel_ragged_100x200x33_nn_fp16(ctx: DeviceContext) raises:
             )
             var got = d_host[i * N + j]
             if abs(got - exp) > Float32(0.5):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -1126,7 +1065,7 @@ def test_kernel_ragged_100x200x32_nn_fp16(ctx: DeviceContext) raises:
             )
             var got = d_host[i * N + j]
             if abs(got - exp) > Float32(0.5):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -1193,7 +1132,7 @@ def test_kernel_ragged_100x200x32_nt_fp16(ctx: DeviceContext) raises:
             )
             var got = d_host[i * N + j]
             if abs(got - exp) > Float32(0.5):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -1259,7 +1198,7 @@ def test_kernel_M20_N80_K16_nn_fp16(ctx: DeviceContext) raises:
             )
             var got = d_host[i * N + j]
             if abs(got - exp) > Float32(0.5):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -1285,7 +1224,7 @@ def _run_partial_m_nt_case[
       region and is caught. This is the OOB-write risk the guard relaxation
       hinges on (`_bounded_store` row-gating + the `row_base >= M` early return).
     """
-    print("==", name, M, "x", N, "x", K, "NT")
+    print(t"== {name} {M} x {N} x {K} NT")
     comptime GUARD = 64  # >= the full [M, 64) partial-tile extent for any M<64.
     var rows = M + GUARD
 
@@ -1334,14 +1273,14 @@ def _run_partial_m_nt_case[
             )
             var got = d_host[i * N + j]
             if abs(got - exp) > Float32(0.5):
-                print("FAIL valid:", i, j, "got", got, "expected", exp)
+                print(t"FAIL valid: {i} {j} got {got} expected {exp}")
                 pass_ = False
     # (b) guard rows [M, rows) untouched (still the -1e30 sentinel).
     for i in range(M, rows):
         for j in range(N):
             var got = d_host[i * N + j]
             if got != Float32(-1.0e30):
-                print("FAIL guard-write: row", i, "col", j, "got", got)
+                print(t"FAIL guard-write: row {i} col {j} got {got}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -1417,7 +1356,7 @@ def test_kernel_128x128x32_nn_bf16(ctx: DeviceContext) raises:
             )
             var got = d_host[i * N + j]
             if abs(got - exp) > Float32(0.5):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -1480,7 +1419,7 @@ def test_kernel_ragged_100x200x64_nn_bf16_clamp_chain(
             )
             var got = d_host[i * N + j]
             if abs(got - exp) > Float32(0.5):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -1535,7 +1474,7 @@ def test_kernel_128x128x32_nn_fp32(ctx: DeviceContext) raises:
             )
             var got = d_host[i * N + j]
             if abs(got - exp) > Float32(0.01):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -1586,7 +1525,7 @@ def test_enqueue_helper_fp16(ctx: DeviceContext) raises:
             )
             var got = d_host[i * N + j]
             if abs(got - exp) > Float32(0.5):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -1642,7 +1581,7 @@ def test_kernel_128_nn_fp16_fp16_no_lambda(ctx: DeviceContext) raises:
             # Compare in fp32 space; tolerance allows for fp16 downcast.
             var got = Float32(d_host[i * N + j])
             if not _within_tol[.float16](got, exp):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -1697,7 +1636,7 @@ def test_kernel_128_nn_fp16_bf16_no_lambda(ctx: DeviceContext) raises:
             )
             var got = Float32(d_host[i * N + j])
             if not _within_tol[.bfloat16](got, exp):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -1803,7 +1742,7 @@ def _run_bias_epilogue_test[
                 var exp = acc + Float32(bias_host[j])
                 var got = Float32(d_host[i * N + j])
                 if not _within_tol[c_type](got, exp):
-                    print("FAIL:", i, j, "got", got, "expected", exp)
+                    print(t"FAIL: {i} {j} got {got} expected {exp}")
                     pass_ = False
             else:
                 var acc = _host_matmul_nn[in_type, in_type](
@@ -1818,7 +1757,7 @@ def _run_bias_epilogue_test[
                 var exp = acc + Float32(bias_host[j])
                 var got = Float32(d_host[i * N + j])
                 if not _within_tol[c_type](got, exp):
-                    print("FAIL:", i, j, "got", got, "expected", exp)
+                    print(t"FAIL: {i} {j} got {got} expected {exp}")
                     pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -1997,7 +1936,7 @@ def test_kernel_128_nt_fp16_fp16_relu_compose_epilogue(
             var exp = max(acc, Float32(0))
             var got = Float32(d_host[i * N + j])
             if not _within_tol[.float16](got, exp):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -2078,7 +2017,7 @@ def test_kernel_128_nt_fp16_fp16_bias_relu_compose_epilogue(
             var exp = max(acc + Float32(bias_host[j]), Float32(0))
             var got = Float32(d_host[i * N + j])
             if not _within_tol[.float16](got, exp):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -2160,7 +2099,7 @@ def test_kernel_ragged_100x100x97_nt_fp16_fp16_bias_epilogue(
             var exp = acc + Float32(bias_host[j])
             var got = Float32(d_host[i * N + j])
             if not _within_tol[.float16](got, exp):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -2217,7 +2156,7 @@ def test_kernel_64x130x64_nn_fp16_fp16_oddn(ctx: DeviceContext) raises:
             )
             var got = Float32(d_host[i * N + j])
             if not _within_tol[.float16](got, exp):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -2299,7 +2238,7 @@ def test_kernel_64x130x64_nn_fp16_fp16_oddn_bias_epilogue(
             var exp = acc + Float32(bias_host[j])
             var got = Float32(d_host[i * N + j])
             if not _within_tol[.float16](got, exp):
-                print("FAIL:", i, j, "got", got, "expected", exp)
+                print(t"FAIL: {i} {j} got {got} expected {exp}")
                 pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")
@@ -2371,7 +2310,7 @@ def _gemv_check[
             # Negated so a NaN output, which fails every comparison, fails.
             if not (abs(y - acc) <= rel * abs(acc) + Float32(1e-5) * mag):
                 if bad < 5:
-                    print("  FAIL", name, "m", i, "n", j, "got", y, "exp", acc)
+                    print(t"  FAIL {name} m {i} n {j} got {y} exp {acc}")
                 bad += 1
     for i in range(m * n, rows_alloc * n):
         if got[i] != Scalar[c_type](_GEMV_SENTINEL):
@@ -2400,7 +2339,7 @@ def _run_gemv_case[
     stores the result; the bias is subtracted before the check, which
     verifies the `(row, col)` coordinates the kernel hands the closure.
     """
-    print("==", name, "m", m, "n", N, "k", K)
+    print(t"== {name} m {m} n {N} k {K}")
     var act_h = ctx.enqueue_create_host_buffer[in_type](m * K)
     var w_h = ctx.enqueue_create_host_buffer[in_type](N * K)
     var bias_h = ctx.enqueue_create_host_buffer[.float32](N)
@@ -2574,7 +2513,7 @@ def _run_gemv_dispatch_case[
     hands the epilogue. With `sampled`, the weight gets the hash fill and the
     host reference checks every 1021st column plus the last 256.
     """
-    print("== dispatch", name, "m", m, "n", N, "k", K, "bias", bias)
+    print(t"== dispatch {name} m {m} n {N} k {K} bias {bias}")
     var act_h = ctx.enqueue_create_host_buffer[in_type](m * K)
     var w_h = ctx.enqueue_create_host_buffer[in_type](N * K)
     var bias_h = ctx.enqueue_create_host_buffer[.float32](N)

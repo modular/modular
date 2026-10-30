@@ -251,24 +251,8 @@ def _test_case[
     comptime padded_M = ceildiv(M_static, 32) * 32
 
     print(
-        "  ",
-        name,
-        " M=",
-        M_static,
-        " N=",
-        N_static,
-        " K=",
-        K_static,
-        " BM=",
-        BM,
-        " BN=",
-        BN,
-        " BK_ELEMS=",
-        BK_ELEMS,
-        " WN=",
-        WN,
-        " b_prefetch=",
-        b_prefetch,
+        t"   {name}  M= {M_static}  N= {N_static}  K= {K_static}  BM= {BM}  BN="
+        t" {BN}  BK_ELEMS= {BK_ELEMS}  WN= {WN}  b_prefetch= {b_prefetch}"
     )
 
     # ---- Host buffers + random init ----
@@ -456,16 +440,8 @@ def _test_grouped_case[
     var max_padded_M = align_up(max_tokens, 32)
 
     print(
-        "  ",
-        name,
-        " experts=",
-        num_active,
-        " total_tokens=",
-        total_tokens,
-        " N=",
-        N,
-        " K=",
-        K,
+        t"   {name}  experts= {num_active}  total_tokens= {total_tokens}  N="
+        t" {N}  K= {K}"
     )
 
     var a_h = ctx.enqueue_create_host_buffer[.uint8](total_tokens * K_BYTES)
@@ -667,18 +643,8 @@ def _probe_grouped_determinism[
     var n_elem = total_tokens * N
 
     print(
-        "  ",
-        name,
-        " etm=",
-        estimated_total_m,
-        " tokens=",
-        total_tokens,
-        " experts=",
-        num_active,
-        " N=",
-        N,
-        " K=",
-        K,
+        t"   {name}  etm= {estimated_total_m}  tokens= {total_tokens}  experts="
+        t" {num_active}  N= {N}  K= {K}"
     )
 
     var a_h = ctx.enqueue_create_host_buffer[.uint8](total_tokens * K_BYTES)
@@ -854,12 +820,8 @@ def _probe_grouped_determinism[
     # Loose absolute bound: catch a wrong-but-stable result, not fp8 rounding.
     var ref_ok = max_err <= 0.5
     print(
-        "     byte-identical:",
-        all_equal,
-        "| nans:",
-        nans,
-        "| max_err_vs_ref:",
-        max_err,
+        t"     byte-identical: {all_equal} | nans: {nans} | max_err_vs_ref:"
+        t" {max_err}"
     )
     var ok = all_equal and nans == 0 and ref_ok
     print("     PASS" if ok else "     FAIL")

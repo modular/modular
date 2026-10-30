@@ -38,7 +38,7 @@ def main() raises:
             "Running warp specialize gemm test (Note: hilbert swizzle"
             " not supported in testbed)"
         )
-        print("Test configuration: M=", M, ", N=", N, ", K=", K)
+        print(t"Test configuration: M= {M} , N= {N} , K= {K}")
 
         test_matmul_sm90[
             .bfloat16,

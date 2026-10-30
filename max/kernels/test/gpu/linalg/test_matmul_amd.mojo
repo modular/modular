@@ -481,7 +481,7 @@ def test_partial_tile[
         warp_tile_shape=(Int(WM), Int(32), Int(32)),
     )
 
-    print("=== test_partial_tile", dtype, M, "x", N, "x", K)
+    print(t"=== test_partial_tile {dtype} {M} x {N} x {K}")
 
     # A straddling warp tile writes all WM of its rows, so it reaches at most
     # WM * N elements past C's start. The operands below are integers, so the
@@ -604,7 +604,7 @@ def test_fp32_split_k[
     N: Int, K: Int, P: Int
 ](ctx: DeviceContext, m: Int) raises:
     """Split-K (P) and single-pass (1) must both match an fp32 gold ref."""
-    print("  M=", m, " N=", N, " K=", K, " P=", P, sep="")
+    print(t"  M={m} N={N} K={K} P={P}", sep="")
 
     var a_dev = ctx.enqueue_create_buffer[.float32](m * K)
     var b_dev = ctx.enqueue_create_buffer[.float32](N * K)
@@ -647,7 +647,7 @@ def test_fp32_split_k_dispatch[
 ](ctx: DeviceContext, m: Int) raises:
     """The public dispatch must route the skinny-deep fp32 shape onto the
     split-K band and match an fp32 gold reference."""
-    print("  dispatch M=", m, " N=", N, " K=", K, sep="")
+    print(t"  dispatch M={m} N={N} K={K}", sep="")
 
     var a_dev = ctx.enqueue_create_buffer[.float32](m * K)
     var b_dev = ctx.enqueue_create_buffer[.float32](N * K)

@@ -122,18 +122,9 @@ def test_4wave_matmul[
                 if printed < 10:
                     var row, col = divmod(i, N)
                     print(
-                        "Mismatch at (",
-                        row,
-                        ",",
-                        col,
-                        "): actual=",
-                        actual,
-                        " expected=",
-                        expected,
-                        " diff=",
-                        diff,
-                        " threshold=",
-                        threshold,
+                        t"Mismatch at ( {row} , {col} ): actual= {actual} "
+                        t" expected= {expected}  diff= {diff}  threshold="
+                        t" {threshold}"
                     )
                     printed += 1
                 errors += 1
@@ -148,7 +139,7 @@ def run_dtype_sweep[dtype: DType](ctx: DeviceContext, seed_value: Int) raises:
     """Run all shape cases for one dtype at the given seed."""
 
     # Parametric smoke shape (overridable via -D M= -D N= -D K=).
-    print("  Shape: M=", TEST_M, " N=", TEST_N, " K=", TEST_K, sep="")
+    print(t"  Shape: M={TEST_M} N={TEST_N} K={TEST_K}", sep="")
     test_4wave_matmul[dtype, TEST_M, TEST_N, TEST_K, enable_swizzle=False](
         ctx, seed_value
     )
@@ -183,16 +174,7 @@ def main() raises:
             # report tells us which seed reproduced it.
             var seed_value = 20260513 + rep
             if REPEAT > 1:
-                print(
-                    "--- rep ",
-                    rep,
-                    "/",
-                    REPEAT,
-                    " (seed=",
-                    seed_value,
-                    ") ---",
-                    sep="",
-                )
+                print(t"--- rep {rep}/{REPEAT} (seed={seed_value}) ---", sep="")
 
             # In-main dtype iteration (HK MHA pattern). Three separate
             # specializations compile into one binary; one BUILD target

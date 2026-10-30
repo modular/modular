@@ -148,10 +148,10 @@ def test_frag_row_reduce(ctx: DeviceContext) raises:
             exp_max = max(exp_max, v)
             exp_sum += v
         if max_host[r] != exp_max:
-            print("FAIL max row", r, "got", max_host[r], "exp", exp_max)
+            print(t"FAIL max row {r} got {max_host[r]} exp {exp_max}")
             pass_ = False
         if abs(sum_host[r] - exp_sum) > Float32(1e-3):
-            print("FAIL sum row", r, "got", sum_host[r], "exp", exp_sum)
+            print(t"FAIL sum row {r} got {sum_host[r]} exp {exp_sum}")
             pass_ = False
     if not pass_:
         raise Error("FAILED (see FAIL lines above)")

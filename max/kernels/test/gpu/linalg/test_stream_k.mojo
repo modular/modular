@@ -365,15 +365,10 @@ def matmul_stream_k[
     var locks_data = ctx.enqueue_create_buffer[.int32](total_tiles_streamk)
     ctx.enqueue_memset(locks_data, 0)
 
-    print("M=", M, ", N=", N, ", K=", K)
+    print(t"M= {M} , N= {N} , K= {K}")
     print(
-        "Total tiles=",
-        total_tiles,
-        "  (M-tiles=",
-        total_blocks_M,
-        ", N-tiles=",
-        total_blocks_N,
-        ")",
+        t"Total tiles= {total_tiles}   (M-tiles= {total_blocks_M} , N-tiles="
+        t" {total_blocks_N} )"
     )
     print("iters_per_tile=", iters_per_tile)
     print(

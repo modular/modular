@@ -322,28 +322,9 @@ def _test_swiglu_mxfp8_dispatch[
     # exercise the floored-estimate EP-decode path (S*top_k//n_gpus == 0).
     var est_m = est_m_override if est_m_override >= 0 else M
     print(
-        "  N=",
-        N,
-        " K=",
-        K,
-        " H=",
-        H,
-        " M=",
-        M,
-        " est_m=",
-        est_m,
-        " active=",
-        num_active_experts,
-        "/",
-        num_experts,
-        " match_bf16=",
-        match_bf16,
-        " clamp=",
-        clamp_activation,
-        " inplace=",
-        use_inplace,
-        " b=",
-        b_type,
+        (
+            t"  N={N} K={K} H={H} M={M} est_m={est_m} active={num_active_experts}/{num_experts} match_bf16={match_bf16} clamp={clamp_activation} inplace={use_inplace} b={b_type}"
+        ),
         sep="",
     )
 
@@ -636,18 +617,9 @@ def _test_swiglu_mxfp8_dispatch[
 
     if O_mismatch != 0 or S_mismatch != 0:
         print(
-            "    OUT mismatch =",
-            O_mismatch,
-            "/",
-            O_size,
-            " first @ idx=",
-            first_bad_O,
-            "  SF mismatch =",
-            S_mismatch,
-            "/",
-            S_size,
-            " first @ idx=",
-            first_bad_S,
+            t"    OUT mismatch = {O_mismatch} / {O_size}  first @ idx="
+            t" {first_bad_O}   SF mismatch = {S_mismatch} / {S_size}  first @"
+            t" idx= {first_bad_S}"
         )
         raise Error(
             "MXFP8 fused dispatch disagrees with non-fused reference chain"

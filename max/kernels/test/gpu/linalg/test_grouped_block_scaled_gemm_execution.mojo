@@ -182,16 +182,7 @@ def test_existing_kernel_single_group[
     This establishes that the kernel and tensor setup work correctly.
     """
     print("\n--- Testing existing kernel (single group baseline) ---")
-    print(
-        "  M=",
-        Int(m),
-        " N=",
-        Int(n),
-        " K=",
-        Int(k),
-        " cta_group=",
-        cta_group,
-    )
+    print(t"  M= {Int(m)}  N= {Int(n)}  K= {Int(k)}  cta_group= {cta_group}")
 
     comptime SF_VECTOR_SIZE = MXFP8_SF_VECTOR_SIZE
 
@@ -359,21 +350,9 @@ def test_existing_kernel_single_group[
     var avg_diff = sum_diff / Float32(c_size)
 
     if max_diff < 0.1:
-        print(
-            "  PASSED (max_diff=",
-            max_diff,
-            ", avg_diff=",
-            avg_diff,
-            ")",
-        )
+        print(t"  PASSED (max_diff= {max_diff} , avg_diff= {avg_diff} )")
     else:
-        print(
-            "  FAILED (max_diff=",
-            max_diff,
-            ", avg_diff=",
-            avg_diff,
-            ")",
-        )
+        print(t"  FAILED (max_diff= {max_diff} , avg_diff= {avg_diff} )")
         raise Error("Test failed - kernel output does not match cuBLAS")
 
 
@@ -396,16 +375,7 @@ def test_grouped_kernel_single_group[
     This tests the grouped infrastructure with trivial grouping.
     """
     print("\n--- Testing grouped kernel (single group) ---")
-    print(
-        "  M=",
-        Int(m),
-        " N=",
-        Int(n),
-        " K=",
-        Int(k),
-        " cta_group=",
-        cta_group,
-    )
+    print(t"  M= {Int(m)}  N= {Int(n)}  K= {Int(k)}  cta_group= {cta_group}")
 
     comptime SF_VECTOR_SIZE = MXFP8_SF_VECTOR_SIZE
     comptime max_groups = 1
@@ -671,21 +641,9 @@ def test_grouped_kernel_single_group[
     var avg_diff = sum_diff / Float32(c_size)
 
     if max_diff < 0.1:
-        print(
-            "  PASSED (max_diff=",
-            max_diff,
-            ", avg_diff=",
-            avg_diff,
-            ")",
-        )
+        print(t"  PASSED (max_diff= {max_diff} , avg_diff= {avg_diff} )")
     else:
-        print(
-            "  FAILED (max_diff=",
-            max_diff,
-            ", avg_diff=",
-            avg_diff,
-            ")",
-        )
+        print(t"  FAILED (max_diff= {max_diff} , avg_diff= {avg_diff} )")
         raise Error("Grouped kernel output does not match cuBLAS")
 
     # FIXME(MSTDL-2742): HostBuffer is origin incorrect.
@@ -717,16 +675,8 @@ def test_grouped_kernel_multi_group_same_ptr[
         "\n--- Testing grouped kernel (", num_groups, " groups, same ptr) ---"
     )
     print(
-        "  M=",
-        Int(m),
-        " N=",
-        Int(n),
-        " K=",
-        Int(k),
-        " num_groups=",
-        num_groups,
-        " cta_group=",
-        cta_group,
+        t"  M= {Int(m)}  N= {Int(n)}  K= {Int(k)}  num_groups= {num_groups} "
+        t" cta_group= {cta_group}"
     )
 
     # Allocate matrices (same as single-group)
@@ -982,9 +932,9 @@ def test_grouped_kernel_multi_group_same_ptr[
     var avg_diff = sum_diff / Float32(c_size)
 
     if max_diff < 0.1:
-        print("  PASSED (max_diff=", max_diff, ", avg_diff=", avg_diff, ")")
+        print(t"  PASSED (max_diff= {max_diff} , avg_diff= {avg_diff} )")
     else:
-        print("  FAILED (max_diff=", max_diff, ", avg_diff=", avg_diff, ")")
+        print(t"  FAILED (max_diff= {max_diff} , avg_diff= {avg_diff} )")
         raise Error(
             "Grouped kernel (multi-group same ptr) does not match cuBLAS"
         )
@@ -1013,16 +963,7 @@ def test_grouped_kernel_two_groups_different_ptrs[
     A, B, C, SFA, SFB tensors with different base addresses.
     """
     print("\n--- Testing grouped kernel (2 groups, different ptrs) ---")
-    print(
-        "  M=",
-        Int(m),
-        " N=",
-        Int(n),
-        " K=",
-        Int(k),
-        " cta_group=",
-        cta_group,
-    )
+    print(t"  M= {Int(m)}  N= {Int(n)}  K= {Int(k)}  cta_group= {cta_group}")
 
     comptime SF_VECTOR_SIZE = MXFP8_SF_VECTOR_SIZE
     comptime max_groups = 2

@@ -232,24 +232,13 @@ def run_case[
                 errors += 1
         if errors > 0:
             print(
-                "FAIL: ",
-                label,
-                " iter ",
-                iter,
-                ": ",
-                errors,
-                "/",
-                M * N,
-                " mismatches; first at ",
-                first_idx,
-                " got ",
-                first_val,
-                " expected ",
-                expected,
+                t"FAIL:  {label}  iter  {iter} :  {errors} / {M * N} "
+                t" mismatches; first at  {first_idx}  got  {first_val} "
+                t" expected  {expected}"
             )
             raise Error("GEMV PDL race detected in " + label)
 
-    print("PASS: ", label, " x", num_iters, " iters")
+    print(t"PASS:  {label}  x {num_iters}  iters")
 
 
 def main() raises:

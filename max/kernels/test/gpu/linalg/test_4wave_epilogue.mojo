@@ -134,18 +134,9 @@ def test_4wave_epilogue[
                 if printed < 10:
                     var row, col = divmod(i, N)
                     print(
-                        "Mismatch at (",
-                        row,
-                        ",",
-                        col,
-                        "): actual=",
-                        actual,
-                        " expected=",
-                        expected,
-                        " diff=",
-                        diff,
-                        " threshold=",
-                        threshold,
+                        t"Mismatch at ( {row} , {col} ): actual= {actual} "
+                        t" expected= {expected}  diff= {diff}  threshold="
+                        t" {threshold}"
                     )
                     printed += 1
                 errors += 1
@@ -174,7 +165,7 @@ def test_4wave_epilogue[
 
 def run_dtype_sweep[dtype: DType](ctx: DeviceContext) raises:
     """Run swizzle on/off cases for one dtype."""
-    print("  Shape: M=", TEST_M, " N=", TEST_N, " K=", TEST_K, sep="")
+    print(t"  Shape: M={TEST_M} N={TEST_N} K={TEST_K}", sep="")
     print("  no swizzle...")
     test_4wave_epilogue[dtype, TEST_M, TEST_N, TEST_K, enable_swizzle=False](
         ctx

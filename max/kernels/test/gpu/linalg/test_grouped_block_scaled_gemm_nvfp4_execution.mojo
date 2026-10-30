@@ -184,15 +184,8 @@ def test_grouped_kernel_nvfp4_single_group[
     """
     print("\n--- Testing grouped kernel with NVFP4 (single group) ---")
     print(
-        "  M=",
-        Int(m),
-        " N=",
-        Int(n),
-        " K=",
-        Int(k),
-        " (logical K, actual K/2 bytes)",
-        " cta_group=",
-        cta_group,
+        t"  M= {Int(m)}  N= {Int(n)}  K= {Int(k)}  (logical K, actual K/2"
+        t" bytes)  cta_group= {cta_group}"
     )
 
     comptime SF_VECTOR_SIZE = NVFP4_SF_VECTOR_SIZE  # 16 for NVFP4
@@ -462,21 +455,9 @@ def test_grouped_kernel_nvfp4_single_group[
     var avg_diff = sum_diff / Float32(c_size)
 
     if max_diff < 0.1:
-        print(
-            "  PASSED (max_diff=",
-            max_diff,
-            ", avg_diff=",
-            avg_diff,
-            ")",
-        )
+        print(t"  PASSED (max_diff= {max_diff} , avg_diff= {avg_diff} )")
     else:
-        print(
-            "  FAILED (max_diff=",
-            max_diff,
-            ", avg_diff=",
-            avg_diff,
-            ")",
-        )
+        print(t"  FAILED (max_diff= {max_diff} , avg_diff= {avg_diff} )")
         raise Error("Grouped kernel NVFP4 output does not match cuBLAS")
 
 
@@ -496,16 +477,7 @@ def test_grouped_kernel_nvfp4_multi_group[
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     """Test grouped kernel with NVFP4 and 2 groups using different pointers."""
     print("\n--- Testing grouped kernel NVFP4 (2 groups, different ptrs) ---")
-    print(
-        "  M=",
-        Int(m),
-        " N=",
-        Int(n),
-        " K=",
-        Int(k),
-        " cta_group=",
-        cta_group,
-    )
+    print(t"  M= {Int(m)}  N= {Int(n)}  K= {Int(k)}  cta_group= {cta_group}")
 
     comptime SF_VECTOR_SIZE = NVFP4_SF_VECTOR_SIZE
     comptime max_groups = 2

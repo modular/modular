@@ -68,24 +68,10 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
         max_num_tokens_by_expert = max(max_num_tokens_by_expert, M)
 
     print(
-        "== test_grouped_sm100_blockwise_scaled_fp8_matmul",
-        a_type,
-        "problem shape: (",
-        total_num_tokens,
-        "x",
-        N,
-        "x",
-        K,
-        ")",
-        "block_tile_shape: (",
-        block_tile_shape[0],
-        "x",
-        block_tile_shape[1],
-        "x",
-        block_tile_shape[2],
-        ")",
-        "transpose_b:",
-        transpose_b,
+        t"== test_grouped_sm100_blockwise_scaled_fp8_matmul {a_type} problem"
+        t" shape: ( {total_num_tokens} x {N} x {K} ) block_tile_shape: ("
+        t" {block_tile_shape[0]} x {block_tile_shape[1]} x"
+        t" {block_tile_shape[2]} ) transpose_b: {transpose_b}"
     )
 
     assert K % BLOCK_SCALE_K == 0, "K must be divisible by BLOCK_SCALE_K"

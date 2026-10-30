@@ -69,9 +69,7 @@ def _check[accum_width: Int, reverse: Bool](ctx: DeviceContext) raises:
     for i in range(count):
         assert_true(host[i] == Float32(-12 * logical_k))
     __ownership_keepalive(device)
-    print(
-        "mixed MFMA: accum_width=", accum_width, " reverse=", reverse, " PASS"
-    )
+    print(t"mixed MFMA: accum_width= {accum_width}  reverse= {reverse}  PASS")
 
 
 def main() raises:

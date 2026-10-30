@@ -81,16 +81,8 @@ def test_grouped_gemm_epilogue[
     """
     print("\n--- Testing grouped GEMM with epilogue ---")
     print(
-        "  M=",
-        Int(m),
-        " N=",
-        Int(n),
-        " K=",
-        Int(k),
-        " cta_group=",
-        cta_group,
-        " register_based_epilogue=",
-        register_based_epilogue,
+        t"  M= {Int(m)}  N= {Int(n)}  K= {Int(k)}  cta_group= {cta_group} "
+        t" register_based_epilogue= {register_based_epilogue}"
     )
 
     comptime SF_VECTOR_SIZE = MXFP8_SF_VECTOR_SIZE
