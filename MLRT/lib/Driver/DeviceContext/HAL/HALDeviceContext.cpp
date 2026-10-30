@@ -153,6 +153,9 @@ void MojoHAL_CompletionFlag_release(MojoHALCompletionFlagBox *flag);
 void MojoHAL_CompletionFlag_signal(void *host_ptr, uint64_t value);
 uint64_t MojoHAL_CompletionFlag_load(void *host_ptr);
 void MojoHAL_CompletionFlag_reset(void *host_ptr);
+const char *MojoHAL_DeviceStream_launchHostFunc(MojoHALStreamBox *stream,
+                                                void (*fn)(void *),
+                                                void *userData);
 const char *MojoHAL_DeviceStream_waitOnHostValue(MojoHALStreamBox *stream,
                                                  uint64_t device_addr,
                                                  uint64_t value);
@@ -954,6 +957,20 @@ ErrorOrSuccess DeviceStream::enqueueWaitOnHostValue(const CompletionFlag &flag,
     return virtualDeviceError("host-value waits");
   if (const char *err = MojoHAL_DeviceStream_waitOnHostValue(
           mojoStream_, flag.devicePtr(), value))
+    return takeError(err);
+  return {};
+}
+
+ErrorOrSuccess DeviceStream::enqueueHostFunc(void (*fn)(void *),
+                                             void *userData) const {
+  if (device_->isVirtual())
+    return virtualDeviceError("host functions");
+  // CPU and Metal plugins support host functions, but legacy rejects them
+  // there and callers rely on that.
+  if (device_->api() != Device::cudaAPI && device_->api() != Device::hipAPI)
+    return Error("enqueueHostFunc is not supported on this device");
+  if (const char *err =
+          MojoHAL_DeviceStream_launchHostFunc(mojoStream_, fn, userData))
     return takeError(err);
   return {};
 }

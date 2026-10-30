@@ -439,11 +439,8 @@ public:
   ErrorOrSuccess enqueueWaitOnHostValue(const CompletionFlag &flag,
                                         uint64_t value) const;
 
-  /// Enqueues a host callback on this stream. Like the non-CUDA legacy
-  /// implementation's backends, the HAL backend does not support it.
-  ErrorOrSuccess enqueueHostFunc(void (*fn)(void *), void *userData) const {
-    return Error("enqueueHostFunc is not supported on this device");
-  }
+  /// CUDA and HIP only, as in legacy.
+  ErrorOrSuccess enqueueHostFunc(void (*fn)(void *), void *userData) const;
 
   /// Raw device driver stream handle, to enable passing to PyTorch and
   /// similar APIs. Null if the handle cannot be queried.

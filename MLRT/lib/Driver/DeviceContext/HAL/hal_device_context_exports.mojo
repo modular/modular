@@ -1018,6 +1018,19 @@ def MojoHAL_CompletionFlag_reset(host_ptr: _RawMemoryPtr) abi("C"):
 
 
 @export
+def MojoHAL_DeviceStream_launchHostFunc(
+    stream: _DeviceStreamBoxPtr,
+    func: def(OpaquePointer[MutUntrackedOrigin]) thin -> None,
+    user_data: OpaquePointer[MutUntrackedOrigin],
+) abi("C") -> _CString[]:
+    try:
+        stream[]._stream[].enqueue_host_func(func, user_data)
+        return None
+    except e:
+        return _err_cstr(String(e))
+
+
+@export
 def MojoHAL_DeviceStream_waitOnHostValue(
     stream: _DeviceStreamBoxPtr,
     device_addr: UInt64,
