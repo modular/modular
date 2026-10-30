@@ -39,7 +39,7 @@
 #include "Support/ADT/ConcatenationTree.h"
 #include "Support/Diagnostics/FormatScopedDiagnosticHandler.h"
 #include "Support/LLVMCompilerForwardDecls.h"
-#include "mlir/Conversion/Passes.h"
+#include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Pass/PassOptions.h"
 #include "mlir/Pass/PassRegistry.h"
@@ -188,7 +188,9 @@ void M::MO::registerPasses() {
 
   mlir::registerCSEPass();
   mlir::registerCanonicalizerPass();
-  mlir::registerReconcileUnrealizedCastsPassPass();
+  // Registered by hand: mlir/Conversion/Passes.h, which declares the
+  // register*Pass functions, links every conversion and dialect in MLIR.
+  mlir::registerPass([] { return mlir::createReconcileUnrealizedCastsPass(); });
   mlir::registerSCCPPass();
   mlir::registerSymbolDCEPass();
   mlir::registerViewOpGraphPass();

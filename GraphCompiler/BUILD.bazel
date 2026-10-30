@@ -115,6 +115,7 @@ modular_cc_library(
         "//Support:Diagnostics",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:MlirOptLib",
+        "@llvm-project//mlir:ReconcileUnrealizedCasts",
     ],
 )
 
