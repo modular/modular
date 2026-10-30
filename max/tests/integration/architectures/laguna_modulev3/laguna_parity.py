@@ -44,7 +44,9 @@ from max.nn.legacy.kv_cache import (
 from max.pipelines.architectures.hf_config_shims import LagunaHFConfig
 from max.pipelines.architectures.laguna import model as graph_model
 from max.pipelines.architectures.laguna import weight_adapters as graph_adapters
-from max.pipelines.architectures.laguna_modulev3 import model as v3_model
+from max.pipelines.architectures.laguna_modulev3 import (
+    laguna_modulev3_arch,
+)
 from max.pipelines.architectures.laguna_modulev3 import (
     weight_adapters as v3_adapters,
 )
@@ -337,7 +339,7 @@ def _graph_logits(model: Any) -> torch.Tensor:
 def _v3_logits(model: Any) -> torch.Tensor:
     tokens, offsets, n_logits = _token_inputs(model.devices[0])
     outputs = model.model(
-        tokens, n_logits, offsets, *_kv_inputs(model.kv_params, PROMPT_LENS)
+        tokens, offsets, n_logits, *_kv_inputs(model.kv_params, PROMPT_LENS)
     )
     logits = outputs.next_token_logits
     return torch.from_dlpack(logits.driver_tensor).float().cpu()
@@ -353,9 +355,11 @@ def assert_logits_match(case_name: str) -> None:
             case,
         )
     )
+    v3_model = laguna_modulev3_arch.pipeline_model
+    assert isinstance(v3_model, type)
     actual = _v3_logits(
         _build(
-            v3_model.LagunaModel,
+            v3_model,
             v3_adapters.convert_safetensor_state_dict,
             case,
         )

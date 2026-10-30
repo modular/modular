@@ -23,7 +23,9 @@ from max.pipelines.architectures.laguna.arch import laguna_arch
 from max.pipelines.architectures.laguna_modulev3.arch import (
     laguna_modulev3_arch,
 )
-from max.pipelines.lib import reasoning, tool_parsing
+from max.pipelines.architectures.laguna_modulev3.laguna import Laguna
+from max.pipelines.lib import GraphRole, reasoning, tool_parsing
+from max.pipelines.lib.module_registration import ModuleV3DecoderPipelineModel
 
 
 def test_request_handling_matches_the_graph_architecture() -> None:
@@ -31,7 +33,7 @@ def test_request_handling_matches_the_graph_architecture() -> None:
     assert laguna_modulev3_arch.tool_parser == laguna_arch.tool_parser
     assert laguna_modulev3_arch.reasoning_parser == laguna_arch.reasoning_parser
     assert laguna_modulev3_arch.tokenizer is laguna_arch.tokenizer
-    assert laguna_modulev3_arch.config is laguna_arch.config
+    assert issubclass(laguna_modulev3_arch.config, laguna_arch.config)
     assert (
         laguna_modulev3_arch.supported_encodings
         == laguna_arch.supported_encodings
@@ -48,3 +50,11 @@ def test_named_parsers_are_registered() -> None:
         reasoning.get_parser_cls(laguna_modulev3_arch.reasoning_parser)
         is not None
     )
+
+
+def test_arch_registers_the_decoder_module() -> None:
+    assert laguna_modulev3_arch.modules == {GraphRole.DECODER: Laguna}
+    model = laguna_modulev3_arch.pipeline_model
+    assert isinstance(model, type)
+    assert issubclass(model, ModuleV3DecoderPipelineModel)
+    assert model.decoder_cls is Laguna

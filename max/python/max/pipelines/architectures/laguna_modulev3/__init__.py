@@ -13,11 +13,11 @@
 """Laguna mixture-of-experts architecture on ModuleV3."""
 
 from .arch import laguna_modulev3_arch
-from .inputs import LagunaInputs
-from .model import LagunaModel
+from .laguna import Laguna
+from .model_config import LagunaDecoderConfig
 
 __all__ = [
-    "LagunaInputs",
-    "LagunaModel",
+    "Laguna",
+    "LagunaDecoderConfig",
     "laguna_modulev3_arch",
 ]

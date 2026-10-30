@@ -46,7 +46,8 @@ from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
 )
 from max.pipelines.architectures.laguna.model_config import LagunaConfig
 from max.pipelines.lib import ModuleV3Outputs
-from max.tensor import Tensor
+from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
+from max.tensor import Tensor, default_dtype
 
 from .layers.norm import LagunaRMSNorm
 from .layers.rotary_embedding import (
@@ -54,6 +55,7 @@ from .layers.rotary_embedding import (
     LagunaYarnPartialRotaryEmbedding,
 )
 from .layers.transformer_block import LagunaTransformerBlock, layer_shapes
+from .model_config import LagunaDecoderConfig
 
 _ATTENTION_TYPES = ("sliding_attention", "full_attention")
 
@@ -255,35 +257,30 @@ class LagunaTextModel(Module[..., ModuleV3Outputs]):
         return ModuleV3Outputs(next_token_logits=logits.cast(DType.float32))
 
 
-class Laguna(Module[..., ModuleV3Outputs]):
-    """Top-level Laguna wrapper that unflattens the variadic KV cache inputs.
+class Laguna(Module[[DecoderInputs], DecoderOutputs]):
+    """The Laguna decoder, registered for the ``DECODER`` role.
+
+    Unflattens the KV cache inputs and delegates to
+    :class:`LagunaTextModel`. The unquantized modules build in the
+    checkpoint's own dtype: on an NVFP4 checkpoint ``config.dtype`` is the
+    packed storage dtype.
 
     Args:
         config: The finalized Laguna config.
-        kv_params: The KV cache parameters: one flat cache, or the
-            sliding/full tree when the model has sliding layers.
-        norm_dtype: Storage dtype of the checkpoint's RMSNorm gammas.
     """
 
-    def __init__(
-        self,
-        config: LagunaConfig,
-        kv_params: KVCacheParamInterface,
-        norm_dtype: DType,
-    ) -> None:
+    def __init__(self, config: LagunaDecoderConfig) -> None:
         super().__init__()
-        self.language_model = LagunaTextModel(config, norm_dtype)
-        self.kv_params = kv_params
+        with default_dtype(config.unquantized_dtype):
+            self.language_model = LagunaTextModel(
+                config, config.norm_dtype or DType.bfloat16
+            )
+        self.kv_params = config.kv_params
 
-    def forward(
-        self,
-        tokens: Tensor,
-        return_n_logits: Tensor,
-        input_row_offsets: Tensor,
-        *variadic_args: Tensor,
-    ) -> ModuleV3Outputs:
-        """Runs the model over the graph inputs."""
-        kv_inputs = iter(x._graph_value for x in variadic_args)
+    def forward(self, inputs: DecoderInputs) -> DecoderOutputs:
+        """Unflattens the KV leaves, then runs the text model."""
+        tokens = inputs.tokens
+        kv_inputs = iter(x._graph_value for x in tree.leaves(inputs.kv))
         kv_by_type: dict[str, PagedCacheValues] = {}
         if isinstance(self.kv_params, MultiKVCacheParams):
             # The tree's declaration order is the unflattening order, and a
@@ -309,5 +306,8 @@ class Laguna(Module[..., ModuleV3Outputs]):
                 per_device, tokens.mapping
             )
         return self.language_model(
-            tokens, kv_by_type, return_n_logits, input_row_offsets
+            tokens,
+            kv_by_type,
+            inputs.return_n_logits,
+            inputs.input_row_offsets,
         )
