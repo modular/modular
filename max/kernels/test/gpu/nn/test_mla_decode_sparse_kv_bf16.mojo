@@ -63,14 +63,8 @@ def run_bit_exact_vs_dense[
     var topk = num_keys  # full sparse fan-out (= cache_len + 1 token)
 
     print(
-        "BF16 sparse vs dense bit-exact: batch_size=",
-        batch_size,
-        " cache_len=",
-        cache_len,
-        " topk=",
-        topk,
-        " num_heads=",
-        num_heads,
+        t"BF16 sparse vs dense bit-exact: batch_size= {batch_size}  cache_len="
+        t" {cache_len}  topk= {topk}  num_heads= {num_heads}"
     )
 
     seed(0xC0FFEE)
@@ -306,14 +300,7 @@ def run_bit_exact_vs_dense[
         if d != s:
             mismatches += 1
             if mismatches <= 5:
-                print(
-                    "  mismatch idx=",
-                    i,
-                    " dense=",
-                    d,
-                    " sparse=",
-                    s,
-                )
+                print(t"  mismatch idx= {i}  dense= {d}  sparse= {s}")
 
     if mismatches > 0:
         print("  FAILED: ", mismatches, "bit-exact mismatches")
@@ -496,20 +483,9 @@ def run_test_sparse_kv_bf16[
     q_max_seq_len: Int = 1,
 ) raises:
     print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " cache_len:",
-        cache_len,
-        " num_heads:",
-        num_heads,
-        " topk:",
-        topk,
-        " q_max_seq_len:",
-        q_max_seq_len,
-        " causal:",
-        use_causal,
+        t"test: {name}  batch_size: {batch_size}  cache_len: {cache_len} "
+        t" num_heads: {num_heads}  topk: {topk}  q_max_seq_len:"
+        t" {q_max_seq_len}  causal: {use_causal}"
     )
 
     var num_keys = cache_len + q_max_seq_len
@@ -923,16 +899,7 @@ def run_test_sparse_kv_bf16[
                     if isnan(actual_val):
                         nan_count += 1
                         if nan_count <= 5:
-                            print(
-                                "  NaN at b=",
-                                b,
-                                " s=",
-                                s,
-                                " h=",
-                                h,
-                                " d=",
-                                d,
-                            )
+                            print(t"  NaN at b= {b}  s= {s}  h= {h}  d= {d}")
                         continue
                     var err = abs(actual_val - ref_val)
                     if err > max_err:
@@ -940,29 +907,14 @@ def run_test_sparse_kv_bf16[
                     total_checked += 1
                     if err > 1e-2:
                         print(
-                            "  large err b=",
-                            b,
-                            " s=",
-                            s,
-                            " h=",
-                            h,
-                            " d=",
-                            d,
-                            " got=",
-                            actual_val,
-                            " ref=",
-                            ref_val,
-                            " err=",
-                            err,
+                            t"  large err b= {b}  s= {s}  h= {h}  d= {d}  got="
+                            t" {actual_val}  ref= {ref_val}  err= {err}"
                         )
 
     if nan_count > 0:
         print(
-            "  FAILED: ",
-            nan_count,
-            "NaN values in output (max_err over non-NaN:",
-            max_err,
-            ")",
+            t"  FAILED:  {nan_count} NaN values in output (max_err over"
+            t" non-NaN: {max_err} )"
         )
         raise Error("NaN in kernel output")
 
@@ -982,13 +934,7 @@ def run_test_sparse_kv_bf16[
                         actual_val, ref_val, atol=atol, rtol=rtol
                     )
 
-    print(
-        "  PASSED: max_err=",
-        max_err,
-        " checked=",
-        total_checked,
-        " elements",
-    )
+    print(t"  PASSED: max_err= {max_err}  checked= {total_checked}  elements")
 
     _ = mla_args
     _ = blocks_device
@@ -1024,22 +970,11 @@ def run_test_sparse_kv_bf16_variable_topk[
         if topk_per_batch[bi] > max_topk:
             max_topk = topk_per_batch[bi]
 
-    print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-    )
+    print(t"test: {name}  batch_size: {batch_size}  num_heads: {num_heads}")
     for i in range(batch_size):
         print(
-            "  batch",
-            i,
-            ": cache_len=",
-            cache_lengths[i],
-            " topk=",
-            topk_per_batch[i],
+            t"  batch {i} : cache_len= {cache_lengths[i]}  topk="
+            t" {topk_per_batch[i]}"
         )
 
     var max_cache_len = 0
@@ -1347,16 +1282,8 @@ def run_test_sparse_kv_bf16_attn_sink[
     topk: Int,
 ) raises:
     print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " cache_len:",
-        cache_len,
-        " num_heads:",
-        num_heads,
-        " topk:",
-        topk,
+        t"test: {name}  batch_size: {batch_size}  cache_len: {cache_len} "
+        t" num_heads: {num_heads}  topk: {topk}"
     )
 
     comptime q_max_seq_len = 1
@@ -1659,26 +1586,12 @@ def run_test_sparse_kv_bf16_extra_kv[
         if extra_topk_per_batch[bi] > max_extra_topk:
             max_extra_topk = extra_topk_per_batch[bi]
 
-    print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-    )
+    print(t"test: {name}  batch_size: {batch_size}  num_heads: {num_heads}")
     for i in range(batch_size):
         print(
-            "  batch",
-            i,
-            ": cache_len=",
-            cache_lengths[i],
-            " topk=",
-            topk_per_batch[i],
-            " extra_cache_len=",
-            extra_cache_lengths[i],
-            " extra_topk=",
-            extra_topk_per_batch[i],
+            t"  batch {i} : cache_len= {cache_lengths[i]}  topk="
+            t" {topk_per_batch[i]}  extra_cache_len= {extra_cache_lengths[i]} "
+            t" extra_topk= {extra_topk_per_batch[i]}"
         )
 
     comptime kv_params = KVCacheStaticParams(
@@ -2203,26 +2116,13 @@ def run_test_sparse_kv_bf16_topk_clamping[
             eff_topk = actual_tokens
         effective_topk_list.append(eff_topk)
 
-    print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-    )
+    print(t"test: {name}  batch_size: {batch_size}  num_heads: {num_heads}")
     for i in range(batch_size):
         print(
-            "  batch",
-            i,
-            ": cache_len=",
-            cache_lengths[i],
-            " topk=",
-            topk_per_batch[i],
-            " actual_tokens=",
-            cache_lengths[i] + q_max_seq_len,
-            " effective_topk=",
-            effective_topk_list[i],
+            t"  batch {i} : cache_len= {cache_lengths[i]}  topk="
+            t" {topk_per_batch[i]}  actual_tokens="
+            t" {cache_lengths[i] + q_max_seq_len}  effective_topk="
+            t" {effective_topk_list[i]}"
         )
 
     var max_cache_len = 0
@@ -2480,11 +2380,8 @@ def run_test_sparse_kv_bf16_topk_clamping[
     )
     var num_partitions = dispatch_scalars[2]
     print(
-        "  num_partitions=",
-        num_partitions,
-        " (split-K",
-        "ACTIVE" if num_partitions > 1 else "OFF",
-        ")",
+        t"  num_partitions= {num_partitions}  (split-K"
+        t""" {"ACTIVE" if num_partitions > 1 else "OFF"} )"""
     )
 
     var indices_stride = max_topk
@@ -2533,7 +2430,7 @@ def run_test_sparse_kv_bf16_topk_clamping[
                 if isnan(actual_val):
                     nan_count += 1
                     if nan_count <= 5:
-                        print("  NaN at b=", b, " h=", h, " d=", d)
+                        print(t"  NaN at b= {b}  h= {h}  d= {d}")
                     continue
                 var err = abs(actual_val - ref_val)
                 if err > max_err:
@@ -2544,11 +2441,8 @@ def run_test_sparse_kv_bf16_topk_clamping[
 
     if nan_count > 0:
         print(
-            "  FAILED: ",
-            nan_count,
-            "NaN values in output (max_err over non-NaN:",
-            max_err,
-            ")",
+            t"  FAILED:  {nan_count} NaN values in output (max_err over"
+            t" non-NaN: {max_err} )"
         )
         raise Error("NaN in kernel output")
 

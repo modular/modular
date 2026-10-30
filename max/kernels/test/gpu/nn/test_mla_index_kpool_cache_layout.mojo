@@ -352,26 +352,11 @@ def run_case[
 
     var mean_overlap = overlap_sum / Float64(total_seq_len)
     print(
-        "  one_row_per_pool=",
-        one_row_per_pool,
-        " causal=",
-        causal,
-        " layer=",
-        layer_idx,
-        "/",
-        num_layers,
-        " page_pad=",
-        page_pad,
-        " cache_lens=",
-        cache_lens[0],
-        "... tokens=",
-        total_seq_len,
-        " pools/top_k ~",
-        (cache_lens[0] + seq_lens[0]) // KPOOL,
-        "/",
-        TOP_K,
-        " mean top-k overlap=",
-        mean_overlap,
+        t"  one_row_per_pool= {one_row_per_pool}  causal= {causal}  layer="
+        t" {layer_idx} / {num_layers}  page_pad= {page_pad}  cache_lens="
+        t" {cache_lens[0]} ... tokens= {total_seq_len}  pools/top_k ~"
+        t" {(cache_lens[0] + seq_lens[0]) // KPOOL} / {TOP_K}  mean top-k"
+        t" overlap= {mean_overlap}"
     )
     assert_true(
         mean_overlap >= MIN_MEAN_OVERLAP,

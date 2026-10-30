@@ -122,21 +122,8 @@ def execute_tail_row_test[
     var batch_size = 1
 
     print(
-        "test_mha_sm100_ws_bm32_fuse_gqa_tail_rows: mask=",
-        mask_t.name(),
-        " group=",
-        group,
-        " poison=",
-        poison,
-        " page_size=",
-        page_size,
-        " P=",
-        num_partitions,
-        " valid_length=",
-        valid_length,
-        " num_keys=",
-        num_keys,
-        sep="",
+        t"test_mha_sm100_ws_bm32_fuse_gqa_tail_rows:"
+        t" mask={mask_t.name()} group={group} poison={poison} page_size={page_size} P={num_partitions} valid_length={valid_length} num_keys={num_keys}"
     )
 
     comptime Collection = PagedKVCacheCollection[
@@ -361,16 +348,9 @@ def execute_tail_row_test[
             max_abs_diff = diff
             argmax_idx = flat
     print(
-        "  max-abs diff(fused O, naive) =",
-        max_abs_diff,
-        " at flat idx",
-        argmax_idx,
-        " nan_count=",
-        nan_count,
-        " moved_vs_zero_control=",
-        moved_count,
-        " out_hash=",
-        out_hash,
+        t"  max-abs diff(fused O, naive) = {max_abs_diff}  at flat idx"
+        t" {argmax_idx}  nan_count= {nan_count}  moved_vs_zero_control="
+        t" {moved_count}  out_hash= {out_hash}"
     )
 
     _ = q_dev^

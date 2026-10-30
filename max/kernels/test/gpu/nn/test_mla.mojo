@@ -58,25 +58,10 @@ def test[
     use_index_input: Bool = False,
 ) raises:
     print(
-        "test_mla_decoding",
-        "batch_size:",
-        batch_size,
-        "num_partitions:",
-        num_partitions.or_else(-1),
-        "seq_len:",
-        seq_len,
-        "num_keys:",
-        num_keys,
-        "qkv_type:",
-        qkv_type,
-        "output_type:",
-        output_type,
-        "depth:",
-        depth,
-        "num_heads:",
-        num_heads,
-        "group:",
-        group,
+        t"test_mla_decoding batch_size: {batch_size} num_partitions:"
+        t" {num_partitions.or_else(-1)} seq_len: {seq_len} num_keys:"
+        t" {num_keys} qkv_type: {qkv_type} output_type: {output_type} depth:"
+        t" {depth} num_heads: {num_heads} group: {group}"
     )
 
     # Query, key, value dimensions.
@@ -301,27 +286,11 @@ def test_prefill[
     output_type: DType = qkv_type,
 ](seq_len: Int, num_keys: Int, ctx: DeviceContext,) raises:
     print(
-        "test_mla_prefill",
-        "batch_size:",
-        batch_size,
-        "seq_len:",
-        seq_len,
-        "num_keys:",
-        num_keys,
-        "qkv_type:",
-        qkv_type,
-        "k_rope_type:",
-        k_rope_type,
-        "output_type:",
-        output_type,
-        "depth:",
-        depth,
-        "kv_depth:",
-        kv_depth,
-        "cache_depth:",
-        cache_depth,
-        "cache_num_heads:",
-        cache_num_heads,
+        t"test_mla_prefill batch_size: {batch_size} seq_len:"
+        t" {seq_len} num_keys: {num_keys} qkv_type: {qkv_type} k_rope_type:"
+        t" {k_rope_type} output_type: {output_type} depth: {depth} kv_depth:"
+        t" {kv_depth} cache_depth: {cache_depth} cache_num_heads:"
+        t" {cache_num_heads}"
     )
 
     comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
@@ -503,7 +472,7 @@ def test_prefill[
             / sectime
             / 1e9
         )
-        print(nrun, "runs avg: ", sectime, " ms   ", tflops, " TFLOPs")
+        print(t"{nrun} runs avg:  {sectime}  ms    {tflops}  TFLOPs")
 
     else:
         kernel_launch(ctx)

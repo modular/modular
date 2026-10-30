@@ -35,29 +35,11 @@ def test_prefill[
     use_causal_mask: Bool = True,
 ](seq_len: Int, num_keys: Int, ctx: DeviceContext,) raises:
     print(
-        "test_mla_prefill",
-        "batch_size:",
-        batch_size,
-        "seq_len:",
-        seq_len,
-        "num_keys:",
-        num_keys,
-        "qkv_type:",
-        qkv_type,
-        "k_rope_type:",
-        k_rope_type,
-        "sf_dtype:",
-        sf_dtype,
-        "depth:",
-        depth,
-        "kv_depth:",
-        kv_depth,
-        "cache_depth:",
-        cache_depth,
-        "cache_num_heads:",
-        cache_num_heads,
-        "scale_block_size:",
-        scale_block_size,
+        t"test_mla_prefill batch_size: {batch_size} seq_len:"
+        t" {seq_len} num_keys: {num_keys} qkv_type: {qkv_type} k_rope_type:"
+        t" {k_rope_type} sf_dtype: {sf_dtype} depth: {depth} kv_depth:"
+        t" {kv_depth} cache_depth: {cache_depth} cache_num_heads:"
+        t" {cache_num_heads} scale_block_size: {scale_block_size}"
     )
 
     comptime assert (

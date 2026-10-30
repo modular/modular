@@ -232,12 +232,8 @@ def test_mtp_eh_norm[
     var eps = Float64(1e-5)
 
     print(
-        "mtp_eh_norm: hidden=",
-        hidden_size,
-        " tokens=",
-        num_tokens,
-        " threads=",
-        block_threads,
+        t"mtp_eh_norm: hidden= {hidden_size}  tokens= {num_tokens}  threads="
+        t" {block_threads}"
     )
 
     var embed_h = ctx.enqueue_create_host_buffer[.bfloat16](
@@ -365,11 +361,9 @@ def test_mtp_eh_norm[
         ),
     )
     print(
-        "  matched the cast-before-multiply ordering on",
-        num_tokens * 2 * hidden_size,
-        "channels;",
-        orderings_differ,
-        "would have differed under the other ordering",
+        t"  matched the cast-before-multiply ordering on"
+        t" {num_tokens * 2 * hidden_size} channels; {orderings_differ} would"
+        t" have differed under the other ordering"
     )
 
     _ = embed_d
@@ -448,15 +442,8 @@ def bench_case[
         // ctx.default_device_info.warp_size
     )
     print(
-        "mtp_eh_norm bench: hidden ",
-        hidden_size,
-        " threads ",
-        block_threads,
-        " rounds ",
-        BENCH_ROUNDS,
-        " reps ",
-        GRAPH_REPS,
-        sep="",
+        t"mtp_eh_norm bench: hidden {hidden_size} threads"
+        t" {block_threads} rounds {BENCH_ROUNDS} reps {GRAPH_REPS}"
     )
     for num_tokens in counts:
         # Hashed values (k/8): their squares and every partial sum are exact
@@ -671,21 +658,7 @@ def bench_case[
             sep="",
         )
         print(
-            "  ",
-            hidden_size,
-            "x",
-            num_tokens,
-            " base_us=",
-            base_us,
-            " off_us=",
-            off_us,
-            " pdl_us=",
-            pdl_us,
-            " rewrite=",
-            base_us / off_us,
-            " overlap=",
-            off_us / pdl_us,
-            sep="",
+            t"  {hidden_size}x{num_tokens} base_us={base_us} off_us={off_us} pdl_us={pdl_us} rewrite={base_us / off_us} overlap={off_us / pdl_us}"
         )
         _ = embed_d
         _ = prev_d

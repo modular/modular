@@ -588,36 +588,14 @@ def _check[
                 if _mismatch(g, r):
                     num_bad += 1
         print(
-            "  [",
-            name,
-            "] batch=",
-            bi,
-            " topk_len=",
-            topk_lengths_list[bi],
-            " max_abs=",
-            b_max_abs,
-            " max_rel=",
-            b_max_rel,
+            t"  [ {name} ] batch= {bi}  topk_len= {topk_lengths_list[bi]} "
+            t" max_abs= {b_max_abs}  max_rel= {b_max_rel}"
         )
 
     print(
-        "[",
-        name,
-        "] sparse_mla=",
-        sparse_mla,
-        " overall max_abs=",
-        max_abs,
-        " max_rel=",
-        max_rel,
-        " mismatches=",
-        num_bad,
-        " / ",
-        out_size,
-        " (atol=",
-        ATOL,
-        " rtol=",
-        RTOL,
-        ")",
+        t"[ {name} ] sparse_mla= {sparse_mla}  overall max_abs= {max_abs} "
+        t" max_rel= {max_rel}  mismatches= {num_bad}  /  {out_size}  (atol="
+        t" {ATOL}  rtol= {RTOL} )"
     )
 
     # RED control for the comparison: a NaN-poisoned output must count.
@@ -1286,12 +1264,9 @@ def _check_selection_lag_end_to_end(ctx: DeviceContext) raises:
                 ):
                     bad += 1
             print(
-                "  [selection_lag] in place (np=",
-                num_partitions,
-                " topk_lengths=",
-                with_topk_lengths,
-                ") vs gather mismatches:",
-                bad,
+                t"  [selection_lag] in place (np= {num_partitions} "
+                t" topk_lengths= {with_topk_lengths} ) vs gather mismatches:"
+                t" {bad}"
             )
             assert_true(
                 bad == 0, "the in-place decode arm differs from the gather"
@@ -1788,36 +1763,14 @@ def _check_sentinel[
                 if _mismatch(g, r):
                     num_bad += 1
         print(
-            "  [",
-            name,
-            "] batch=",
-            bi,
-            " sentinel=",
-            sentinel_positions[bi],
-            " max_abs=",
-            b_max_abs,
-            " max_rel=",
-            b_max_rel,
+            t"  [ {name} ] batch= {bi}  sentinel= {sentinel_positions[bi]} "
+            t" max_abs= {b_max_abs}  max_rel= {b_max_rel}"
         )
 
     print(
-        "[",
-        name,
-        "] use_derived_valid_lengths=",
-        use_derived_valid_lengths,
-        " overall max_abs=",
-        max_abs,
-        " max_rel=",
-        max_rel,
-        " mismatches=",
-        num_bad,
-        " / ",
-        out_size,
-        " (atol=",
-        ATOL,
-        " rtol=",
-        RTOL,
-        ")",
+        t"[ {name} ] use_derived_valid_lengths= {use_derived_valid_lengths} "
+        t" overall max_abs= {max_abs}  max_rel= {max_rel}  mismatches="
+        t" {num_bad}  /  {out_size}  (atol= {ATOL}  rtol= {RTOL} )"
     )
 
     if expect_pass:
@@ -2030,14 +1983,8 @@ def _check_closed_form_lengths[
                 first_negative = i
                 break
         print(
-            "closed_form_lengths lag=",
-            selection_lag,
-            " cache_len=",
-            cache_lens[b],
-            " got=",
-            got[b],
-            " expected=",
-            expected[b],
+            t"closed_form_lengths lag= {selection_lag}  cache_len="
+            t" {cache_lens[b]}  got= {got[b]}  expected= {expected[b]}"
         )
         assert_true(
             Int(got[b]) == expected[b] and expected[b] == first_negative,

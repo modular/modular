@@ -216,18 +216,8 @@ def run_test_sparse[
     The kernel iterates over topk entries (not the full cache).
     """
     print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " cache_len:",
-        cache_len,
-        " num_heads:",
-        num_heads,
-        " topk:",
-        topk,
-        " q_max_seq_len:",
-        q_max_seq_len,
+        t"test: {name}  batch_size: {batch_size}  cache_len: {cache_len} "
+        t" num_heads: {num_heads}  topk: {topk}  q_max_seq_len: {q_max_seq_len}"
     )
 
     var num_keys = cache_len + q_max_seq_len
@@ -557,22 +547,16 @@ def run_test_sparse[
     ](batch_size, cache_len, q_max_seq_len, sm_count)
     var num_partitions = dispatch_scalars[2]
     print(
-        "  num_partitions=",
-        num_partitions,
-        " (split-K",
-        "ACTIVE" if num_partitions > 1 else "OFF",
-        ")",
+        t"  num_partitions= {num_partitions}  (split-K"
+        t""" {"ACTIVE" if num_partitions > 1 else "OFF"} )"""
     )
 
     # Indices stride = topk (number of entries per batch).
     var indices_stride = topk
 
     print(
-        "  Launching MLA decode kernel (sparse, through dispatch)...",
-        " topk=",
-        topk,
-        " num_keys=",
-        num_keys,
+        t"  Launching MLA decode kernel (sparse, through dispatch)...  topk="
+        t" {topk}  num_keys= {num_keys}"
     )
 
     flare_mla_decoding[
@@ -633,13 +617,7 @@ def run_test_sparse[
                         actual_val, ref_val, atol=atol, rtol=rtol
                     )
 
-    print(
-        "  PASSED: max_err=",
-        max_err,
-        " checked=",
-        total_checked,
-        " elements",
-    )
+    print(t"  PASSED: max_err= {max_err}  checked= {total_checked}  elements")
 
     # -----------------------------------------------------------------------
     # Cleanup
@@ -804,18 +782,9 @@ def run_test_sparse_blockscale[
     comptime scales_per_token = ceildiv(Q_DEPTH, scale_block_size)
 
     print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-        " topk:",
-        topk,
-        " scale_block_size:",
-        scale_block_size,
-        " scales_per_token:",
-        scales_per_token,
+        t"test: {name}  batch_size: {batch_size}  num_heads: {num_heads}  topk:"
+        t" {topk}  scale_block_size: {scale_block_size}  scales_per_token:"
+        t" {scales_per_token}"
     )
     for i in range(batch_size):
         print("  batch", i, ": cache_len=", cache_lengths[i])
@@ -1234,11 +1203,8 @@ def run_test_sparse_blockscale[
     ](batch_size, max_cache_len, q_max_seq_len, sm_count_bs)
     var num_partitions_bs = dispatch_scalars_bs[2]
     print(
-        "  num_partitions=",
-        num_partitions_bs,
-        " (split-K",
-        "ACTIVE" if num_partitions_bs > 1 else "OFF",
-        ")",
+        t"  num_partitions= {num_partitions_bs}  (split-K"
+        t""" {"ACTIVE" if num_partitions_bs > 1 else "OFF"} )"""
     )
 
     # Indices stride = topk (number of entries per batch).
@@ -1305,13 +1271,7 @@ def run_test_sparse_blockscale[
                     print(b, h, d, actual_val, ref_val, err)
                 assert_almost_equal(actual_val, ref_val, atol=atol, rtol=rtol)
 
-    print(
-        "  PASSED: max_err=",
-        max_err,
-        " checked=",
-        total_checked,
-        " elements",
-    )
+    print(t"  PASSED: max_err= {max_err}  checked= {total_checked}  elements")
 
     # -----------------------------------------------------------------------
     # Cleanup
@@ -1372,22 +1332,11 @@ def run_test_sparse_variable_topk[
         if topk_per_batch[bi] > max_topk:
             max_topk = topk_per_batch[bi]
 
-    print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-    )
+    print(t"test: {name}  batch_size: {batch_size}  num_heads: {num_heads}")
     for i in range(batch_size):
         print(
-            "  batch",
-            i,
-            ": cache_len=",
-            cache_lengths[i],
-            " topk=",
-            topk_per_batch[i],
+            t"  batch {i} : cache_len= {cache_lengths[i]}  topk="
+            t" {topk_per_batch[i]}"
         )
     print("  indices_stride (max topk)=", max_topk)
 
@@ -1709,11 +1658,8 @@ def run_test_sparse_variable_topk[
     ](batch_size, max_cache_len, q_max_seq_len, sm_count_vt)
     var num_partitions_vt = dispatch_scalars_vt[2]
     print(
-        "  num_partitions=",
-        num_partitions_vt,
-        " (split-K",
-        "ACTIVE" if num_partitions_vt > 1 else "OFF",
-        ")",
+        t"  num_partitions= {num_partitions_vt}  (split-K"
+        t""" {"ACTIVE" if num_partitions_vt > 1 else "OFF"} )"""
     )
 
     # indices_stride = max topk (allocation stride).
@@ -1778,13 +1724,7 @@ def run_test_sparse_variable_topk[
                     print(b, h, d, actual_val, ref_val, err)
                 assert_almost_equal(actual_val, ref_val, atol=atol, rtol=rtol)
 
-    print(
-        "  PASSED: max_err=",
-        max_err,
-        " checked=",
-        total_checked,
-        " elements",
-    )
+    print(t"  PASSED: max_err= {max_err}  checked= {total_checked}  elements")
 
     # -----------------------------------------------------------------------
     # Cleanup
@@ -1907,16 +1847,8 @@ def run_test_sparse_attn_sink[
     aggregate contribution of non-selected tokens.
     """
     print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " cache_len:",
-        cache_len,
-        " num_heads:",
-        num_heads,
-        " topk:",
-        topk,
+        t"test: {name}  batch_size: {batch_size}  cache_len: {cache_len} "
+        t" num_heads: {num_heads}  topk: {topk}"
     )
 
     comptime q_max_seq_len = 1
@@ -2197,11 +2129,8 @@ def run_test_sparse_attn_sink[
     ](batch_size, cache_len, q_max_seq_len, sm_count)
     var num_partitions = dispatch_scalars[2]
     print(
-        "  num_partitions=",
-        num_partitions,
-        " (split-K",
-        "ACTIVE" if num_partitions > 1 else "OFF",
-        ")",
+        t"  num_partitions= {num_partitions}  (split-K"
+        t""" {"ACTIVE" if num_partitions > 1 else "OFF"} )"""
     )
 
     var indices_stride = topk
@@ -2260,13 +2189,7 @@ def run_test_sparse_attn_sink[
                     print(b, h, d, actual_val, ref_val, err)
                 assert_almost_equal(actual_val, ref_val, atol=5e-2, rtol=1e-2)
 
-    print(
-        "  PASSED: max_err=",
-        max_err,
-        " checked=",
-        total_checked,
-        " elements",
-    )
+    print(t"  PASSED: max_err= {max_err}  checked= {total_checked}  elements")
 
     # Cleanup.
     _ = mla_args
@@ -2333,26 +2256,12 @@ def run_test_sparse_extra_kv[
         if extra_topk_per_batch[bi] > max_extra_topk:
             max_extra_topk = extra_topk_per_batch[bi]
 
-    print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-    )
+    print(t"test: {name}  batch_size: {batch_size}  num_heads: {num_heads}")
     for i in range(batch_size):
         print(
-            "  batch",
-            i,
-            ": cache_len=",
-            cache_lengths[i],
-            " topk=",
-            topk_per_batch[i],
-            " extra_cache_len=",
-            extra_cache_lengths[i],
-            " extra_topk=",
-            extra_topk_per_batch[i],
+            t"  batch {i} : cache_len= {cache_lengths[i]}  topk="
+            t" {topk_per_batch[i]}  extra_cache_len= {extra_cache_lengths[i]} "
+            t" extra_topk= {extra_topk_per_batch[i]}"
         )
     print("  indices_stride (max topk)=", max_topk)
     print("  extra_indices_stride (max extra topk)=", max_extra_topk)
@@ -2855,19 +2764,13 @@ def run_test_sparse_extra_kv[
     ](batch_size, max_cache_len, q_max_seq_len, sm_count_ek)
     var num_partitions_ek = dispatch_scalars_ek[2]
     print(
-        "  num_partitions=",
-        num_partitions_ek,
-        " (split-K",
-        "ACTIVE" if num_partitions_ek > 1 else "OFF",
-        ")",
+        t"  num_partitions= {num_partitions_ek}  (split-K"
+        t""" {"ACTIVE" if num_partitions_ek > 1 else "OFF"} )"""
     )
 
     print(
-        "  Launching MLA decode kernel (sparse + extra KV)...",
-        " max_topk=",
-        max_topk,
-        " max_extra_topk=",
-        max_extra_topk,
+        t"  Launching MLA decode kernel (sparse + extra KV)...  max_topk="
+        t" {max_topk}  max_extra_topk= {max_extra_topk}"
     )
 
     flare_mla_decoding[
@@ -2931,13 +2834,7 @@ def run_test_sparse_extra_kv[
                     print(b, h, d, actual_val, ref_val, err)
                 assert_almost_equal(actual_val, ref_val, atol=atol, rtol=rtol)
 
-    print(
-        "  PASSED: max_err=",
-        max_err,
-        " checked=",
-        total_checked,
-        " elements",
-    )
+    print(t"  PASSED: max_err= {max_err}  checked= {total_checked}  elements")
 
     # -----------------------------------------------------------------------
     # Cleanup
@@ -3026,26 +2923,13 @@ def run_test_sparse_topk_clamping[
             eff_topk = actual_tokens
         effective_topk_list.append(eff_topk)
 
-    print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-    )
+    print(t"test: {name}  batch_size: {batch_size}  num_heads: {num_heads}")
     for i in range(batch_size):
         print(
-            "  batch",
-            i,
-            ": cache_len=",
-            cache_lengths[i],
-            " topk=",
-            topk_per_batch[i],
-            " actual_tokens=",
-            cache_lengths[i] + q_max_seq_len,
-            " effective_topk=",
-            effective_topk_list[i],
+            t"  batch {i} : cache_len= {cache_lengths[i]}  topk="
+            t" {topk_per_batch[i]}  actual_tokens="
+            t" {cache_lengths[i] + q_max_seq_len}  effective_topk="
+            t" {effective_topk_list[i]}"
         )
     print("  indices_stride (max topk)=", max_topk)
 
@@ -3372,11 +3256,8 @@ def run_test_sparse_topk_clamping[
     ](batch_size, max_cache_len, q_max_seq_len, sm_count_tc)
     var num_partitions_tc = dispatch_scalars_tc[2]
     print(
-        "  num_partitions=",
-        num_partitions_tc,
-        " (split-K",
-        "ACTIVE" if num_partitions_tc > 1 else "OFF",
-        ")",
+        t"  num_partitions= {num_partitions_tc}  (split-K"
+        t""" {"ACTIVE" if num_partitions_tc > 1 else "OFF"} )"""
     )
 
     # indices_stride = max topk (allocation stride).
@@ -3441,13 +3322,7 @@ def run_test_sparse_topk_clamping[
                     print(b, h, d, actual_val, ref_val, err)
                 assert_almost_equal(actual_val, ref_val, atol=atol, rtol=rtol)
 
-    print(
-        "  PASSED: max_err=",
-        max_err,
-        " checked=",
-        total_checked,
-        " elements",
-    )
+    print(t"  PASSED: max_err= {max_err}  checked= {total_checked}  elements")
 
     # -----------------------------------------------------------------------
     # Cleanup

@@ -305,16 +305,10 @@ def _run[
                 num_diff += 1
         if num_diff > 0:
             runs_differing += 1
-            print("  run", r, "differs in", num_diff, "of", out_elems)
+            print(t"  run {r} differs in {num_diff} of {out_elems}")
     print(
-        "topk",
-        TOPK,
-        "tokens",
-        seq_len,
-        "runs differing from run 0:",
-        runs_differing,
-        "of",
-        NUM_RUNS - 1,
+        t"topk {TOPK} tokens {seq_len} runs differing from run 0:"
+        t" {runs_differing} of {NUM_RUNS - 1}"
     )
     assert_equal(runs_differing, 0, "output differs between identical runs")
 

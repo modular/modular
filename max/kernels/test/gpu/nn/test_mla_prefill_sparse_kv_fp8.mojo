@@ -268,20 +268,9 @@ def run_test_prefill_sparse_fp8[
     with sentinel indices can reach ~0.40).
     """
     print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " seq_len:",
-        seq_len,
-        " num_heads:",
-        num_heads,
-        " num_kv_tokens:",
-        num_kv_tokens,
-        " topk:",
-        topk,
-        " scale_block_size:",
-        scale_block_size,
+        t"test: {name}  batch_size: {batch_size}  seq_len: {seq_len} "
+        t" num_heads: {num_heads}  num_kv_tokens: {num_kv_tokens}  topk:"
+        t" {topk}  scale_block_size: {scale_block_size}"
     )
 
     var scale = Float32(1.0) / sqrt(Float32(SOFTMAX_SCALE_BASE_DIM))
@@ -742,14 +731,8 @@ def run_test_prefill_sparse_fp8[
                         inf_ref += 1
 
     print(
-        "  DIAG: max_err=",
-        max_err,
-        " max_abs_actual=",
-        max_actual,
-        " num_nonzero=",
-        num_nonzero,
-        "/",
-        total_checked,
+        t"  DIAG: max_err= {max_err}  max_abs_actual= {max_actual} "
+        t" num_nonzero= {num_nonzero} / {total_checked}"
     )
 
     # Fail hard on ANY non-finite output/reference. This is the check the
@@ -830,17 +813,9 @@ def run_test_prefill_sparse_fp8[
             + String(atol)
         )
     print(
-        "  PASSED: max_err=",
-        max_err,
-        " mean_abs_err=",
-        mean_abs_err,
-        " cosine=",
-        cosine,
-        " n_err_gt_1e-2=",
-        n_err_gt_1em2,
-        " checked=",
-        total_checked,
-        " elements",
+        t"  PASSED: max_err= {max_err}  mean_abs_err= {mean_abs_err}  cosine="
+        t" {cosine}  n_err_gt_1e-2= {n_err_gt_1em2}  checked= {total_checked} "
+        t" elements"
     )
 
     # -----------------------------------------------------------------------

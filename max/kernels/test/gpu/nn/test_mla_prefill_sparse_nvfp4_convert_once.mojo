@@ -176,20 +176,9 @@ def run_case[
         max_seq = max(max_seq, seq_lens[b])
         total_q += seq_lens[b]
     print(
-        "test:",
-        name,
-        " batch:",
-        batch_size,
-        " heads:",
-        num_heads,
-        " q_tokens:",
-        total_q,
-        " max_context:",
-        max_context,
-        " topk:",
-        topk,
-        " valid:",
-        n_valid,
+        t"test: {name}  batch: {batch_size}  heads: {num_heads}  q_tokens:"
+        t" {total_q}  max_context: {max_context}  topk: {topk}  valid:"
+        t" {n_valid}"
     )
 
     # Physical blocks: each entry's pages, a shuffled table, one null block.
@@ -464,7 +453,7 @@ def run_case[
             nonzero += 1
         if v != v or abs(v) > 1e30:
             nonfinite += 1
-    print("  mismatches:", mismatches, " of", out_size, " nonzero:", nonzero)
+    print(t"  mismatches: {mismatches}  of {out_size}  nonzero: {nonzero}")
     assert_equal(nonfinite, 0)
     assert_true(nonzero > out_size // 2, "oracle output is mostly zero")
     assert_equal(mismatches, 0)
@@ -481,14 +470,9 @@ def run_case[
             ctx.execution_time(_launch_once, perf_iters), perf_iters
         )
         print(
-            "PERF",
-            name,
-            " nvfp4_us:",
-            ref_us,
-            " convert_once_us:",
-            once_us,
-            " scratch_rows:",
-            nvfp4_prefill_scratch_rows[PAGE_SIZE](batch_size, max_context),
+            t"PERF {name}  nvfp4_us: {ref_us}  convert_once_us: {once_us} "
+            t" scratch_rows:"
+            t" {nvfp4_prefill_scratch_rows[PAGE_SIZE](batch_size, max_context)}"
         )
 
     _ = fp4_dev

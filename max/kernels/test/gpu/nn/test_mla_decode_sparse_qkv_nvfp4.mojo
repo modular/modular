@@ -212,18 +212,8 @@ def run_nvfp4_vs_fp8[
     var total_q_tokens = batch_size * q_max_seq_len
     comptime scale = Float32(0.125)
     print(
-        "test:",
-        name,
-        " batch:",
-        batch_size,
-        " heads:",
-        num_heads,
-        " topk:",
-        topk,
-        " q_len:",
-        q_max_seq_len,
-        " causal:",
-        use_causal,
+        t"test: {name}  batch: {batch_size}  heads: {num_heads}  topk: {topk} "
+        t" q_len: {q_max_seq_len}  causal: {use_causal}"
     )
 
     var max_cache_len = 0
@@ -649,12 +639,8 @@ def run_nvfp4_vs_fp8[
         if a != b:
             if mismatches < 4:
                 print(
-                    "  mismatch at",
-                    i,
-                    ": fp8 ref",
-                    out_fp8[i],
-                    " nvfp4",
-                    out_fp4[i],
+                    t"  mismatch at {i} : fp8 ref {out_fp8[i]}  nvfp4"
+                    t" {out_fp4[i]}"
                 )
             mismatches += 1
         if a != c:
@@ -666,14 +652,8 @@ def run_nvfp4_vs_fp8[
             nonfinite += 1
 
     print(
-        "  mismatches:",
-        mismatches,
-        "/",
-        out_size,
-        " canary_mismatches:",
-        canary_mismatches,
-        " nonzero:",
-        nonzero,
+        t"  mismatches: {mismatches} / {out_size}  canary_mismatches:"
+        t" {canary_mismatches}  nonzero: {nonzero}"
     )
     assert_equal(nonfinite, 0)
     assert_true(nonzero > out_size // 2, "reference output is mostly zero")
@@ -718,7 +698,7 @@ def run_nvfp4_vs_fp8[
         var fp4_ns = ctx.execution_time(_launch_fp4, perf_iters)
         var fp8_us = Float64(fp8_ns) / Float64(perf_iters) / 1000.0
         var fp4_us = Float64(fp4_ns) / Float64(perf_iters) / 1000.0
-        print("PERF", name, " fp8_us:", fp8_us, " nvfp4_us:", fp4_us)
+        print(t"PERF {name}  fp8_us: {fp8_us}  nvfp4_us: {fp4_us}")
 
     _ = mla_args
     _ = fp8_dev

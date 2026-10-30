@@ -219,7 +219,7 @@ def test_conv2d_im2col_direct[
     scale-by-2 fused elementwise lambda (the production MOGG always supplies an
     output_fn), which also exercises the 4-D NHWC coord-unpack closure.
     """
-    print("== ", name, " (with_epilogue=", with_epilogue, ") ==")
+    print(t"==  {name}  (with_epilogue= {with_epilogue} ) ==")
     comptime N = Int(input_layout.shape[0])
     comptime H = Int(input_layout.shape[1])
     comptime W = Int(input_layout.shape[2])
@@ -372,7 +372,7 @@ def test_conv2d_fused_apple[
     fused gather + OOB zero-fill reproduces the im2col matrix bit-for-bit
     (within bf16 tolerance).
     """
-    print("== FUSED ", name, " (with_epilogue=", with_epilogue, ") ==")
+    print(t"== FUSED  {name}  (with_epilogue= {with_epilogue} ) ==")
     comptime N = Int(input_layout.shape[0])
     comptime H = Int(input_layout.shape[1])
     comptime W = Int(input_layout.shape[2])

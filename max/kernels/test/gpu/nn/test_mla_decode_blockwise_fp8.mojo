@@ -96,22 +96,10 @@ def run_test_blockwise_fp8[
 
     var batch_size = len(cache_lengths)
     print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-        " q_type:",
-        q_type,
-        " kv_type:",
-        kv_type,
-        " page_size:",
-        page_size,
-        " quant_granularity:",
-        quant_granularity,
-        " scales_per_token:",
-        head_dim_gran,
+        t"test: {name}  batch_size: {batch_size}  num_heads: {num_heads} "
+        t" q_type: {q_type}  kv_type: {kv_type}  page_size: {page_size} "
+        t" quant_granularity: {quant_granularity}  scales_per_token:"
+        t" {head_dim_gran}"
     )
     for i in range(batch_size):
         print("  batch", i, ": cache_len=", cache_lengths[i])
@@ -622,14 +610,8 @@ def run_bench_blockwise_fp8[
 
     var batch_size = len(cache_lengths)
     print(
-        "bench:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-        " quant_granularity:",
-        quant_granularity,
+        t"bench: {name}  batch_size: {batch_size}  num_heads: {num_heads} "
+        t" quant_granularity: {quant_granularity}"
     )
     for i in range(batch_size):
         print("  batch", i, ": cache_len=", cache_lengths[i])
@@ -898,7 +880,7 @@ def run_bench_blockwise_fp8[
         nrun
     )
     var mstime = nstime / 1000000
-    print("  ", nrun, "runs avg", mstime, "ms")
+    print(t"   {nrun} runs avg {mstime} ms")
     print()
 
     _ = mla_args

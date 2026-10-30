@@ -221,21 +221,8 @@ def run_nvfp4_dual[
     the scales through their own reversed table, and `nonfinite` plants a +inf
     group and a NaN group in one V row."""
     print(
-        "== run_nvfp4_dual main=",
-        main_q_heads,
-        "/",
-        main_k_heads,
-        " rope_dim=",
-        rope_dim,
-        " pad=",
-        value_pad_rows,
-        "/",
-        scale_pad_rows,
-        " separate_scales_lut=",
-        separate_scales_lut,
-        " nonfinite=",
-        nonfinite,
-        sep="",
+        t"== run_nvfp4_dual"
+        t" main={main_q_heads}/{main_k_heads} rope_dim={rope_dim} pad={value_pad_rows}/{scale_pad_rows} separate_scales_lut={separate_scales_lut} nonfinite={nonfinite}"
     )
     seed(42)
     var prompt_lens: List[Int] = [17, 1, 31, 130, 3]

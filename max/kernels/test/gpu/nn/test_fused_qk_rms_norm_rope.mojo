@@ -67,16 +67,9 @@ def run_fused_qk_rms_norm_rope[
     atol: Float64 = 1e-2,
 ) raises:
     print(
-        "== run_fused_qk_rms_norm_rope dtype=",
-        dtype,
-        " head_size=",
-        head_size,
-        " rope_dim=",
-        rope_dim,
-        " num_q_heads=",
-        num_q_heads,
-        " num_k_heads=",
-        num_k_heads,
+        t"== run_fused_qk_rms_norm_rope dtype= {dtype}  head_size= {head_size} "
+        t" rope_dim= {rope_dim}  num_q_heads= {num_q_heads}  num_k_heads="
+        t" {num_k_heads}"
     )
 
     comptime kv_params = KVCacheStaticParams(
@@ -430,20 +423,9 @@ def run_fused_dual_qk_rms_norm_rope[
     exercising the two-`cache_t` instantiation the M3 sparse path needs.
     """
     print(
-        "== run_fused_dual_qk_rms_norm_rope dtype=",
-        dtype,
-        " head_size=",
-        head_size,
-        " rope_dim=",
-        rope_dim,
-        " main=",
-        main_q_heads,
-        "/",
-        main_k_heads,
-        " index=",
-        index_q_heads,
-        "/",
-        index_k_heads,
+        t"== run_fused_dual_qk_rms_norm_rope dtype= {dtype}  head_size="
+        t" {head_size}  rope_dim= {rope_dim}  main= {main_q_heads} /"
+        t" {main_k_heads}  index= {index_q_heads} / {index_k_heads}"
     )
 
     comptime main_kv_params = KVCacheStaticParams(

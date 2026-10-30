@@ -69,14 +69,8 @@ def test_kpool_compress[
         total_pools += n
 
     print(
-        "kpool_compress: head_dim=",
-        head_dim,
-        " kpool=",
-        kpool,
-        " tokens=",
-        total_tokens,
-        " pools=",
-        total_pools,
+        t"kpool_compress: head_dim= {head_dim}  kpool= {kpool}  tokens="
+        t" {total_tokens}  pools= {total_pools}"
     )
     assert_true(total_pools > 0, "test shape selects no complete pool")
 
@@ -390,12 +384,8 @@ def test_decode_writer_matches_prefill_writer[
     var pools_per_req = seq_len // kpool
     var total_pools = num_requests * pools_per_req
     print(
-        "decode-vs-prefill: requests=",
-        num_requests,
-        " seq_len=",
-        seq_len,
-        " pools=",
-        total_pools,
+        t"decode-vs-prefill: requests= {num_requests}  seq_len= {seq_len} "
+        t" pools= {total_pools}"
     )
     assert_true(total_pools > 0, "test shape closes no pool")
 
@@ -1081,14 +1071,8 @@ def test_expand_topk[
     for i in range(batch_size):
         total_seq_len += seq_lens[i]
     print(
-        "expand_topk: kpool=",
-        kpool,
-        " pool_topk=",
-        pool_topk,
-        " tail=",
-        tail_width,
-        " tokens=",
-        total_seq_len,
+        t"expand_topk: kpool= {kpool}  pool_topk= {pool_topk}  tail="
+        t" {tail_width}  tokens= {total_seq_len}"
     )
 
     var pool_host = ctx.enqueue_create_host_buffer[.int32](
@@ -1366,12 +1350,8 @@ def test_spec_step_matches_single_steps[
     var steps = seq_len // next_n
     assert_equal(steps * next_n, seq_len, "seq_len must divide by next_n")
     print(
-        "spec-vs-single: requests=",
-        num_requests,
-        " next_n=",
-        next_n,
-        " seq_len=",
-        seq_len,
+        t"spec-vs-single: requests= {num_requests}  next_n= {next_n}  seq_len="
+        t" {seq_len}"
     )
 
     var total = num_requests * seq_len
@@ -1559,7 +1539,7 @@ def test_padded_slot_leaves_no_trace[
         ctx: Device context.
     """
     comptime real = next_n - 1
-    print("padded slot: next_n=", next_n, " real=", real, " kpool=", kpool)
+    print(t"padded slot: next_n= {next_n}  real= {real}  kpool= {kpool}")
 
     var k_h = ctx.enqueue_create_host_buffer[.bfloat16](next_n * head_dim)
     var g_h = ctx.enqueue_create_host_buffer[.bfloat16](next_n * head_dim)

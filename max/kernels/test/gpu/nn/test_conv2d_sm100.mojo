@@ -96,26 +96,8 @@ def test_conv2d_implicit_im2col[
     var K = problem.gemm_k()
 
     print(
-        "[IMPLICIT IM2COL] batch=",
-        batch,
-        " in=(",
-        in_h,
-        "x",
-        in_w,
-        "x",
-        in_c,
-        ") filter=(",
-        filter_h,
-        "x",
-        filter_w,
-        ") out=(",
-        out_h,
-        "x",
-        out_w,
-        "x",
-        out_c,
-        ")",
-        sep="",
+        t"[IMPLICIT IM2COL] batch={batch} in=({in_h}x{in_w}x{in_c})"
+        t" filter=({filter_h}x{filter_w}) out=({out_h}x{out_w}x{out_c})"
     )
 
     # Sizes
@@ -274,29 +256,9 @@ def test_conv2d_1sm[
     ]()
 
     print(
-        "[1-SM MODE] batch=",
-        batch,
-        " in=(",
-        in_h,
-        "x",
-        in_w,
-        "x",
-        in_c,
-        ") filter=(",
-        filter_h,
-        "x",
-        filter_w,
-        ") out=(",
-        out_h,
-        "x",
-        out_w,
-        "x",
-        out_c,
-        ") cta_group=",
-        config.cta_group,
-        " stages=",
-        config.num_pipeline_stages,
-        sep="",
+        t"[1-SM MODE] batch={batch} in=({in_h}x{in_w}x{in_c})"
+        t" filter=({filter_h}x{filter_w}) out=({out_h}x{out_w}x{out_c})"
+        t" cta_group={config.cta_group} stages={config.num_pipeline_stages}"
     )
 
     # Sizes
@@ -440,26 +402,8 @@ def test_conv2d_epilogue_lambda[
     ].default_bf16_1sm()
 
     print(
-        "[EPILOGUE LAMBDA] batch=",
-        batch,
-        " in=(",
-        in_h,
-        "x",
-        in_w,
-        "x",
-        in_c,
-        ") filter=(",
-        filter_h,
-        "x",
-        filter_w,
-        ") out=(",
-        out_h,
-        "x",
-        out_w,
-        "x",
-        out_c,
-        ")",
-        sep="",
+        t"[EPILOGUE LAMBDA] batch={batch} in=({in_h}x{in_w}x{in_c})"
+        t" filter=({filter_h}x{filter_w}) out=({out_h}x{out_w}x{out_c})"
     )
 
     # Sizes
@@ -633,21 +577,8 @@ def test_conv2d_bias_fusion[
 
     var mode_str = "1-SM" if use_1sm else "2-SM"
     print(
-        "[CONV+BIAS ",
-        mode_str,
-        "] ",
-        in_h,
-        "x",
-        in_w,
-        "x",
-        in_c,
-        " -> ",
-        out_h,
-        "x",
-        out_w,
-        "x",
-        out_c,
-        sep="",
+        t"[CONV+BIAS {mode_str}] {in_h}x{in_w}x{in_c} ->"
+        t" {out_h}x{out_w}x{out_c}"
     )
 
     # Allocate memory
@@ -812,26 +743,8 @@ def test_conv2d_residual_api[
     comptime config = Conv2dConfig[dtype, dtype, dtype].default_bf16_1sm()
 
     print(
-        "[RESIDUAL API] batch=",
-        batch,
-        " in=(",
-        in_h,
-        "x",
-        in_w,
-        "x",
-        in_c,
-        ") filter=(",
-        filter_h,
-        "x",
-        filter_w,
-        ") out=(",
-        out_h,
-        "x",
-        out_w,
-        "x",
-        out_c,
-        ")",
-        sep="",
+        t"[RESIDUAL API] batch={batch} in=({in_h}x{in_w}x{in_c})"
+        t" filter=({filter_h}x{filter_w}) out=({out_h}x{out_w}x{out_c})"
     )
 
     # Sizes
@@ -1497,20 +1410,9 @@ def test_conv_gpu_residual_diag_no_lambda[
 
     if errors > 0:
         print(
-            "    FAILED: ",
-            errors,
-            "/",
-            out_size,
-            " errors, max_diff=",
-            max_diff,
-            " (first @ ",
-            first_err_coords,
-            ": got=",
-            first_err_got,
-            " want=",
-            first_err_expected,
-            ")",
-            sep="",
+            t"    FAILED: {errors}/{out_size} errors,"
+            t" max_diff={max_diff} (first @ {first_err_coords}:"
+            t" got={first_err_got} want={first_err_expected})"
         )
     else:
         print("    PASSED (max_diff=", max_diff, ")")
@@ -1643,20 +1545,9 @@ def test_conv_gpu_residual_with_bias[
 
     if errors > 0:
         print(
-            "    FAILED: ",
-            errors,
-            "/",
-            out_size,
-            " errors, max_diff=",
-            max_diff,
-            " (first @ ",
-            first_err_coords,
-            ": got=",
-            first_err_got,
-            " want=",
-            first_err_expected,
-            ")",
-            sep="",
+            t"    FAILED: {errors}/{out_size} errors,"
+            t" max_diff={max_diff} (first @ {first_err_coords}:"
+            t" got={first_err_got} want={first_err_expected})"
         )
     else:
         print("    PASSED (max_diff=", max_diff, ")")

@@ -432,36 +432,15 @@ def run_test_paged_prefill[
 
     comptime if diagnostic_bands:
         print(
-            "  [repro] depth(q):",
-            depth,
-            " nope_depth(Knope):",
-            nope_depth,
-            " v_depth(V/out):",
-            v_dim,
-            " num_heads:",
-            num_heads,
-            " seq_len:",
-            seq_len,
-            " num_keys:",
-            num_keys,
-            " page_size:",
-            page_size,
+            t"  [repro] depth(q): {depth}  nope_depth(Knope): {nope_depth} "
+            t" v_depth(V/out): {v_dim}  num_heads: {num_heads}  seq_len:"
+            t" {seq_len}  num_keys: {num_keys}  page_size: {page_size}"
         )
     else:
         print(
-            "test_mla_prefill_paged",
-            " batch_size:",
-            batch_size,
-            " seq_len:",
-            seq_len,
-            " num_keys:",
-            num_keys,
-            " page_size:",
-            page_size,
-            " qkv_type:",
-            qkv_type,
-            " k_rope_type:",
-            k_rope_type,
+            t"test_mla_prefill_paged  batch_size: {batch_size}  seq_len:"
+            t" {seq_len}  num_keys: {num_keys}  page_size: {page_size} "
+            t" qkv_type: {qkv_type}  k_rope_type: {k_rope_type}"
         )
 
     comptime scale = Float32(0.125)
@@ -862,29 +841,13 @@ def run_test_paged_prefill[
                             n_mismatch += 1
                             if n_mismatch <= 8:
                                 print(
-                                    "    mismatch b=",
-                                    b,
-                                    " s=",
-                                    s,
-                                    " h=",
-                                    h,
-                                    " d=",
-                                    d,
-                                    " actual=",
-                                    actual,
-                                    " expect=",
-                                    expect,
+                                    t"    mismatch b= {b}  s= {s}  h= {h}  d="
+                                    t" {d}  actual= {actual}  expect= {expect}"
                                 )
 
         print(
-            "    max_abs_err:",
-            max_abs_err,
-            " max_err[d<nope]:",
-            max_err_lo,
-            " max_err[d>=nope]:",
-            max_err_hi,
-            " n_mismatch(>atol):",
-            n_mismatch,
+            t"    max_abs_err: {max_abs_err}  max_err[d<nope]: {max_err_lo} "
+            t" max_err[d>=nope]: {max_err_hi}  n_mismatch(>atol): {n_mismatch}"
         )
 
         # Second pass: assert (raises -> non-zero exit on failure).
@@ -923,18 +886,8 @@ def run_test_paged_prefill[
                             max_abs_err = abs_err
                         if abs_err > atol:
                             print(
-                                "mismatch at b=",
-                                b,
-                                " s=",
-                                s,
-                                " h=",
-                                h,
-                                " d=",
-                                d,
-                                " actual=",
-                                actual,
-                                " expect=",
-                                expect,
+                                t"mismatch at b= {b}  s= {s}  h= {h}  d= {d} "
+                                t" actual= {actual}  expect= {expect}"
                             )
                         assert_almost_equal(
                             actual, expect, atol=atol, rtol=rtol

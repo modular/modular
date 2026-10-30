@@ -129,24 +129,9 @@ def execute_pure_fp8_decode_test[
     comptime cosine_bar = Float64(0.998) if bf16_to_fp8 else Float64(0.9997)
 
     print(
-        _label(),
-        ": ",
-        "mode=",
-        mode_name,
-        " mask=",
-        mask_name,
-        " head_dim=",
-        head_dim,
-        " group=",
-        group,
-        " n_q_heads=",
-        num_q_heads,
-        " n_kv_heads=",
-        kv_num_heads,
-        " seq_len=",
-        seq_len,
-        " num_keys=",
-        num_keys,
+        t"{_label()} :  mode= {mode_name}  mask= {mask_name}  head_dim="
+        t" {head_dim}  group= {group}  n_q_heads= {num_q_heads}  n_kv_heads="
+        t" {kv_num_heads}  seq_len= {seq_len}  num_keys= {num_keys}"
     )
 
     comptime fp8_dtype = DType.float8_e4m3fn
@@ -298,18 +283,8 @@ def execute_pure_fp8_decode_test[
                     if diff > atol + rtol * abs(expect):
                         if num_mismatches < 16:
                             print(
-                                "mismatch b=",
-                                b,
-                                "s=",
-                                s,
-                                "h=",
-                                h,
-                                "d=",
-                                d,
-                                "actual=",
-                                actual,
-                                "expect=",
-                                expect,
+                                t"mismatch b= {b} s= {s} h= {h} d= {d} actual="
+                                t" {actual} expect= {expect}"
                             )
                         num_mismatches += 1
                     dot += actual * expect
@@ -320,20 +295,10 @@ def execute_pure_fp8_decode_test[
     if aa > 0.0 and bb > 0.0:
         cos = dot / (sqrt(aa) * sqrt(bb))
     print(
-        "  num_mismatches=",
-        num_mismatches,
-        " / ",
-        num_compared,
-        " nan_actual=",
-        num_nan_actual,
-        " nan_expect=",
-        num_nan_expect,
-        " mean_abs_diff=",
-        total_abs_diff / Float64(num_compared),
-        " max_abs_diff=",
-        max_abs_diff,
-        " cosine=",
-        cos,
+        t"  num_mismatches= {num_mismatches}  /  {num_compared}  nan_actual="
+        t" {num_nan_actual}  nan_expect= {num_nan_expect}  mean_abs_diff="
+        t" {total_abs_diff / Float64(num_compared)}  max_abs_diff="
+        t" {max_abs_diff}  cosine= {cos}"
     )
     # Bar depends on the input flow: kernel-correctness (lossless inputs)
     # uses 0.9997; production-realism (lossy quantization) uses 0.998.

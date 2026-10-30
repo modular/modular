@@ -99,21 +99,9 @@ def execute_pure_fp8_test[
     comptime scale = Float32(1.0) / sqrt(Float32(head_dim))
 
     print(
-        "test_mha_sm100_qkv_fp8_d512_prefill: ",
-        "mask=",
-        mask_name,
-        " group=",
-        group,
-        " n_q_heads=",
-        num_q_heads,
-        " n_kv_heads=",
-        kv_num_heads,
-        " seq_len=",
-        seq_len,
-        " num_keys=",
-        num_keys,
-        " head_dim=",
-        head_dim,
+        t"test_mha_sm100_qkv_fp8_d512_prefill:  mask= {mask_name}  group="
+        t" {group}  n_q_heads= {num_q_heads}  n_kv_heads= {kv_num_heads} "
+        t" seq_len= {seq_len}  num_keys= {num_keys}  head_dim= {head_dim}"
     )
 
     comptime fp8_dtype = DType.float8_e4m3fn
@@ -240,18 +228,8 @@ def execute_pure_fp8_test[
                     if diff > atol + rtol * abs(expect):
                         if num_mismatches < 16:
                             print(
-                                "mismatch b=",
-                                b,
-                                "s=",
-                                s,
-                                "h=",
-                                h,
-                                "d=",
-                                d,
-                                "actual=",
-                                actual,
-                                "expect=",
-                                expect,
+                                t"mismatch b= {b} s= {s} h= {h} d= {d} actual="
+                                t" {actual} expect= {expect}"
                             )
                         num_mismatches += 1
                     dot += actual * expect
@@ -262,16 +240,9 @@ def execute_pure_fp8_test[
     if aa > 0.0 and bb > 0.0:
         cos = dot / (sqrt(aa) * sqrt(bb))
     print(
-        "  num_mismatches=",
-        num_mismatches,
-        " / ",
-        num_compared,
-        " mean_abs_diff=",
-        total_abs_diff / Float64(num_compared),
-        " max_abs_diff=",
-        max_abs_diff,
-        " cosine=",
-        cos,
+        t"  num_mismatches= {num_mismatches}  /  {num_compared}  mean_abs_diff="
+        t" {total_abs_diff / Float64(num_compared)}  max_abs_diff="
+        t" {max_abs_diff}  cosine= {cos}"
     )
     # Cosine ≥ 0.9997 is the pass/fail gate. Pure-fp8 attention vs the
     # bf16 reference clusters around 0.99978–0.99984 across all configs;

@@ -143,19 +143,7 @@ def execute_1q_sink_test[
         total_length += valid_lengths[i]
 
     print(
-        "  cell=",
-        cell_name,
-        " sink=",
-        use_sink,
-        " valid=",
-        valid_lengths[0],
-        " cache=",
-        cache_lengths[0],
-        " max_prompt_len=",
-        max_prompt_length,
-        " num_keys=",
-        max_full_context_length,
-        sep="",
+        t"  cell={cell_name} sink={use_sink} valid={valid_lengths[0]} cache={cache_lengths[0]} max_prompt_len={max_prompt_length} num_keys={max_full_context_length}"
     )
 
     comptime Collection = PagedKVCacheCollection[

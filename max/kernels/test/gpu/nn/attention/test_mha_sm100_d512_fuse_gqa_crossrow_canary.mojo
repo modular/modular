@@ -157,15 +157,8 @@ def test_d512_fuse_gqa_crossrow_canary[
     var num_keys = seq_len
     var observed = seq_len - 16  # score_row of the last BM tile, m_row=0
     print(
-        "  [d512 fuse_gqa crossrow canary] qkv_type=",
-        String(qkv_type),
-        " seq_len=",
-        seq_len,
-        " observed_row=",
-        observed,
-        " seed=",
-        rng_seed,
-        sep="",
+        t"  [d512 fuse_gqa crossrow canary]"
+        t" qkv_type={String(qkv_type)} seq_len={seq_len} observed_row={observed} seed={rng_seed}"
     )
 
     var q_clean = ctx.enqueue_create_host_buffer[qkv_type](seq_len * row_w)
@@ -219,13 +212,7 @@ def test_d512_fuse_gqa_crossrow_canary[
         if o_poison[base + i] != o_poison[base + i]:  # NaN != NaN
             any_nan = True
     print(
-        "     observed-row mismatches=",
-        mismatches,
-        "/",
-        row_w,
-        "  has_nan=",
-        any_nan,
-        sep="",
+        t"     observed-row mismatches={mismatches}/{row_w}  has_nan={any_nan}"
     )
     assert_equal(
         mismatches,

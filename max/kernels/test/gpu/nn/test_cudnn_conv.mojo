@@ -37,14 +37,8 @@ def test_conv_cudnn[
     num_groups: Int = 1,
 ](ctx: DeviceContext) raises:
     print(
-        "== test_cudnn_conv_gpu: dtype_in=",
-        input_type,
-        " dtype_filter=",
-        filter_type,
-        " dtype_out=",
-        output_type,
-        " num_groups=",
-        num_groups,
+        t"== test_cudnn_conv_gpu: dtype_in= {input_type}  dtype_filter="
+        t" {filter_type}  dtype_out= {output_type}  num_groups= {num_groups}"
     )
 
     # Extract dimensions

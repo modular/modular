@@ -101,21 +101,10 @@ def test[
     use_index_input: Bool = False,
 ) raises:
     print(
-        "test_mla_decoding",
-        "batch_size:",
-        batch_size,
-        "num_partitions:",
-        num_partitions.or_else(-1),
-        "seq_len:",
-        seq_len,
-        "num_keys:",
-        num_keys,
-        "q_type:",
-        q_type,
-        "kv_type:",
-        kv_type,
-        "mla_mask_type:",
-        mla_mask_type.value,
+        t"test_mla_decoding batch_size: {batch_size} num_partitions:"
+        t" {num_partitions.or_else(-1)} seq_len: {seq_len} num_keys:"
+        t" {num_keys} q_type: {q_type} kv_type: {kv_type} mla_mask_type:"
+        t" {mla_mask_type.value}"
     )
 
     comptime assert (

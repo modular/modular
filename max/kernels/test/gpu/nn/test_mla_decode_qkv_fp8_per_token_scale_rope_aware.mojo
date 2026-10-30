@@ -226,14 +226,7 @@ def run_test[
     var batch_size = len(cache_lengths)
     var total_q_tokens = batch_size  # seq_len=1 per batch
 
-    print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-    )
+    print(t"test: {name}  batch_size: {batch_size}  num_heads: {num_heads}")
     for i in range(batch_size):
         print("  batch", i, ": cache_len=", cache_lengths[i])
 
@@ -657,14 +650,8 @@ def run_test[
                         first_nan_h = h
                         first_nan_d = d
                         print(
-                            "  NaN at batch",
-                            b,
-                            "head",
-                            h,
-                            "depth",
-                            d,
-                            "expect",
-                            expect,
+                            t"  NaN at batch {b} head {h} depth {d} expect"
+                            t" {expect}"
                         )
                     continue
                 var abs_err = abs(actual - expect)
@@ -674,12 +661,8 @@ def run_test[
                     print(b, h, d, actual, expect)
         if nan_count > 0:
             print(
-                "  TOTAL NaNs for batch",
-                b,
-                ":",
-                nan_count,
-                "out of",
-                num_heads * V_DEPTH,
+                t"  TOTAL NaNs for batch {b} : {nan_count} out of"
+                t" {num_heads * V_DEPTH}"
             )
             print(
                 "  First NaN at h=",
@@ -773,13 +756,8 @@ def run_test_with_scales[
     var total_q_tokens = batch_size  # seq_len=1 per batch
 
     print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-        " (with non-trivial scales)",
+        t"test: {name}  batch_size: {batch_size}  num_heads: {num_heads}  (with"
+        t" non-trivial scales)"
     )
     for i in range(batch_size):
         print("  batch", i, ": cache_len=", cache_lengths[i])
@@ -1328,14 +1306,8 @@ def run_test_with_scales[
                         first_nan_h = h
                         first_nan_d = d
                         print(
-                            "  NaN at batch",
-                            b,
-                            "head",
-                            h,
-                            "depth",
-                            d,
-                            "expect",
-                            expect,
+                            t"  NaN at batch {b} head {h} depth {d} expect"
+                            t" {expect}"
                         )
                     continue
                 var abs_err = abs(actual - expect)
@@ -1345,12 +1317,8 @@ def run_test_with_scales[
                     print(b, h, d, actual, expect)
         if nan_count > 0:
             print(
-                "  TOTAL NaNs for batch",
-                b,
-                ":",
-                nan_count,
-                "out of",
-                num_heads * V_DEPTH,
+                t"  TOTAL NaNs for batch {b} : {nan_count} out of"
+                t" {num_heads * V_DEPTH}"
             )
             print(
                 "  First NaN at h=",

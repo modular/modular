@@ -152,25 +152,9 @@ def execute_ws_bm32_test[
     var T = ceildiv(num_keys, WS_BN)
 
     print(
-        "test_mha_sm100_ws_bm32: mask=",
-        mask_t.name(),
-        " depth=",
-        head_size,
-        " q_heads=",
-        num_q_heads,
-        " group=",
-        group,
-        " page_size=",
-        page_size,
-        " sink=",
-        use_sink,
-        " valid_length=",
-        valid_length,
-        " num_keys=",
-        num_keys,
-        " T(WS tiles)=",
-        T,
-        sep="",
+        t"test_mha_sm100_ws_bm32:"
+        t" mask={mask_t.name()} depth={head_size} q_heads={num_q_heads} group={group} page_size={page_size} sink={use_sink} valid_length={valid_length} num_keys={num_keys} T(WS"
+        t" tiles)={T}"
     )
 
     comptime Collection = PagedKVCacheCollection[
@@ -476,16 +460,9 @@ def execute_ws_bm32_test[
                 else:
                     blk1_max = max(blk1_max, diff)
     print(
-        "  max-abs diff(WS O, full naive) =",
-        max_abs_diff,
-        " at flat idx",
-        argmax_idx,
-        " block0=",
-        blk0_max,
-        " block1=",
-        blk1_max,
-        " nan_count=",
-        nan_count,
+        t"  max-abs diff(WS O, full naive) = {max_abs_diff}  at flat idx"
+        t" {argmax_idx}  block0= {blk0_max}  block1= {blk1_max}  nan_count="
+        t" {nan_count}"
     )
 
     _ = q_dev^

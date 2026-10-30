@@ -320,25 +320,11 @@ def test_mla_index_fp8_paged_variable_lengths[
         max_cache_len = max(max_cache_len, cache_lens[i])
 
     print(
-        "test_mla_index_fp8_paged_variable_lengths with params:",
-        "num_heads:",
-        num_heads,
-        "depth:",
-        depth,
-        "page_size:",
-        page_size,
-        "mask:",
-        mask_name,
-        "batch_size:",
-        batch_size,
-        "total_seq_len:",
-        total_seq_len,
-        "max_seq_len:",
-        max_seq_len,
-        "max_cache_len:",
-        max_cache_len,
-        "top_k:",
-        top_k,
+        t"test_mla_index_fp8_paged_variable_lengths with params: num_heads:"
+        t" {num_heads} depth: {depth} page_size: {page_size} mask:"
+        t" {mask_name} batch_size: {batch_size} total_seq_len:"
+        t" {total_seq_len} max_seq_len: {max_seq_len} max_cache_len:"
+        t" {max_cache_len} top_k: {top_k}"
     )
 
     assert (
@@ -1270,39 +1256,8 @@ struct _SelStats(Copyable, Movable):
         selected scores sit against the peak, the less any disagreement means.
         """
         print(
-            "SELGATE fold=",
-            _FOLD_DTYPE,
-            " nh=",
-            num_heads,
-            " rows=",
-            total_seq_len,
-            " top_k=",
-            top_k,
-            " exp_tail=",
-            exp_score_tail,
-            " score_max_rel=",
-            score_max_rel,
-            " slots=",
-            self.slots,
-            " below=",
-            self.below,
-            " rows_below=",
-            self.rows_below,
-            " count_mismatch=",
-            self.count_mismatch,
-            " deficit_mean=",
-            self.deficit_sum / Float64(max(self.rows, 1)),
-            " deficit_max=",
-            self.deficit_max,
-            " gap_max=",
-            self.gap_max,
-            " spread_min=",
-            self.spread_min,
-            " fp=",
-            self.fp_a,
-            ":",
-            self.fp_b,
-            sep="",
+            t"SELGATE"
+            t" fold={_FOLD_DTYPE} nh={num_heads} rows={total_seq_len} top_k={top_k} exp_tail={exp_score_tail} score_max_rel={score_max_rel} slots={self.slots} below={self.below} rows_below={self.rows_below} count_mismatch={self.count_mismatch} deficit_mean={self.deficit_sum / Float64(max(self.rows, 1))} deficit_max={self.deficit_max} gap_max={self.gap_max} spread_min={self.spread_min} fp={self.fp_a}:{self.fp_b}"
         )
         # A wall, not an expectation: the limit sits two orders of magnitude
         # above what either fold arm forfeits, so it fires only on a broken
@@ -1511,19 +1466,10 @@ def test_mla_index_frozen_metadata_equivalence[
     assert frozen_cache_len >= max_cache_len
 
     print(
-        "test_mla_index_frozen_metadata_equivalence with params:",
-        "num_heads:",
-        num_heads,
-        "mask:",
-        mask_name,
-        "batch_size:",
-        batch_size,
-        "max_cache_len:",
-        max_cache_len,
-        "frozen_cache_len:",
-        frozen_cache_len,
-        "top_k:",
-        top_k,
+        t"test_mla_index_frozen_metadata_equivalence with params: num_heads:"
+        t" {num_heads} mask: {mask_name} batch_size:"
+        t" {batch_size} max_cache_len: {max_cache_len} frozen_cache_len:"
+        t" {frozen_cache_len} top_k: {top_k}"
     )
 
     comptime kv_params = KVCacheStaticParams(
@@ -1796,27 +1742,12 @@ def test_mla_index_chunked_equivalence[
     var num_chunks = ceildiv(total_seq_len, rows_per_chunk)
 
     print(
-        "test_mla_index_chunked_equivalence with params:",
-        "num_heads:",
-        num_heads,
-        "mask:",
-        mask_name,
-        "batch_size:",
-        batch_size,
-        "total_seq_len:",
-        total_seq_len,
-        "max_seq_len:",
-        max_seq_len,
-        "max_cache_len:",
-        max_cache_len,
-        "top_k:",
-        top_k,
-        "scores_dtype:",
-        scores_dtype,
-        "rows_per_chunk:",
-        rows_per_chunk,
-        "chunks:",
-        num_chunks,
+        t"test_mla_index_chunked_equivalence with params: num_heads:"
+        t" {num_heads} mask: {mask_name} batch_size:"
+        t" {batch_size} total_seq_len: {total_seq_len} max_seq_len:"
+        t" {max_seq_len} max_cache_len: {max_cache_len} top_k:"
+        t" {top_k} scores_dtype: {scores_dtype} rows_per_chunk:"
+        t" {rows_per_chunk} chunks: {num_chunks}"
     )
 
     assert_true(

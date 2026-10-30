@@ -252,12 +252,8 @@ def test_dynamic[
         raise Error("Higher rank tensor test failed")
 
     print(
-        "✓ Rank-",
-        rank,
-        " tensor test passed (dynamic, weight_offset=",
-        weight_offset,
-        ") ",
-        shape,
+        t"✓ Rank- {rank}  tensor test passed (dynamic, weight_offset="
+        t" {weight_offset} )  {shape}"
     )
 
 

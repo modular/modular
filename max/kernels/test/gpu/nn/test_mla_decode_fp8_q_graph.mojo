@@ -475,22 +475,9 @@ def _compare[
 
     # Metrics print BEFORE the gates so they are visible on failure.
     print(
-        "FP8Q ",
-        name,
-        " n=",
-        out_size,
-        " cosine=",
-        cosine,
-        " max_abs_err=",
-        max_abs_err,
-        " mean_abs_err=",
-        mean_abs_err,
-        " rms=",
-        rms,
-        " differing=",
-        differing,
-        " nonfinite=",
-        nonfinite,
+        t"FP8Q  {name}  n= {out_size}  cosine= {cosine}  max_abs_err="
+        t" {max_abs_err}  mean_abs_err= {mean_abs_err}  rms= {rms}  differing="
+        t" {differing}  nonfinite= {nonfinite}"
     )
 
     if nonfinite != 0:
@@ -937,22 +924,9 @@ def _compare_amd_decode_stage[
     var rms = sqrt(sq_a / Float64(out_size))
 
     print(
-        "AMD_STAGE_DECODE ",
-        name,
-        " n=",
-        out_size,
-        " cosine=",
-        cosine,
-        " max_abs_err=",
-        max_abs_err,
-        " mean_abs_err=",
-        mean_abs_err,
-        " rms=",
-        rms,
-        " differing=",
-        differing,
-        " nonfinite=",
-        nonfinite,
+        t"AMD_STAGE_DECODE  {name}  n= {out_size}  cosine= {cosine} "
+        t" max_abs_err= {max_abs_err}  mean_abs_err= {mean_abs_err}  rms="
+        t" {rms}  differing= {differing}  nonfinite= {nonfinite}"
     )
 
     if nonfinite != 0:
@@ -1366,22 +1340,9 @@ def _compare_amd_prefill_stage[
     var rms = sqrt(sq_a / Float64(out_size))
 
     print(
-        "AMD_STAGE_PREFILL ",
-        name,
-        " n=",
-        out_size,
-        " cosine=",
-        cosine,
-        " max_abs_err=",
-        max_abs_err,
-        " mean_abs_err=",
-        mean_abs_err,
-        " rms=",
-        rms,
-        " differing=",
-        differing,
-        " nonfinite=",
-        nonfinite,
+        t"AMD_STAGE_PREFILL  {name}  n= {out_size}  cosine= {cosine} "
+        t" max_abs_err= {max_abs_err}  mean_abs_err= {mean_abs_err}  rms="
+        t" {rms}  differing= {differing}  nonfinite= {nonfinite}"
     )
 
     if nonfinite != 0:

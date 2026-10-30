@@ -122,13 +122,8 @@ def test_plan_gather_decompress(ctx: DeviceContext, cache_length: Int) raises:
     var num_keys = cache_length + seq_len  # not page-aligned
 
     print(
-        "=== E2E plan+gather+decompress: cache_length=",
-        cache_length,
-        " seq_len=",
-        seq_len,
-        " num_keys=",
-        num_keys,
-        " ===",
+        t"=== E2E plan+gather+decompress: cache_length= {cache_length} "
+        t" seq_len= {seq_len}  num_keys= {num_keys}  ==="
     )
     seed(0)
 
@@ -276,17 +271,11 @@ def test_plan_gather_decompress(ctx: DeviceContext, cache_length: Int) raises:
 
     var expect_buffer_length = align_up(num_keys, PAGE_SIZE)
     print(
-        "  plan: buffer_row_offsets=[",
-        buffer_row_offsets_host[0],
-        ",",
-        buffer_row_offsets_host[1],
-        "] cache_offsets=[",
-        cache_offsets_host[0],
-        "] buffer_lengths=[",
-        buffer_lengths_host[0],
-        "] (expect buffer_length=",
-        expect_buffer_length,
-        ")",
+        t"  plan: buffer_row_offsets=[ {buffer_row_offsets_host[0]} ,"
+        t" {buffer_row_offsets_host[1]} ] cache_offsets=["
+        t" {cache_offsets_host[0]} ] buffer_lengths=["
+        t" {buffer_lengths_host[0]} ] (expect buffer_length="
+        t" {expect_buffer_length} )"
     )
     if Int(buffer_row_offsets_host[0]) != 0:
         raise Error(
@@ -410,27 +399,15 @@ def test_plan_gather_decompress(ctx: DeviceContext, cache_length: Int) raises:
                 n_mismatch += 1
                 if n_mismatch <= 8:
                     print(
-                        "    mismatch r=",
-                        r,
-                        " o=",
-                        o,
-                        " actual=",
-                        actual,
-                        " expect=",
-                        expect,
+                        t"    mismatch r= {r}  o= {o}  actual= {actual} "
+                        t" expect= {expect}"
                     )
         expect_row.unsafe_free()
 
     print(
-        "  max_abs_err:",
-        max_abs_err,
-        " n_mismatch(>atol):",
-        n_mismatch,
-        " (",
-        num_keys,
-        " valid rows, ",
-        buffer_length - num_keys,
-        " zero-padding rows)",
+        t"  max_abs_err: {max_abs_err}  n_mismatch(>atol): {n_mismatch}  ("
+        t" {num_keys}  valid rows,  {buffer_length - num_keys}  zero-padding"
+        t" rows)"
     )
 
     for r in range(buffer_length):

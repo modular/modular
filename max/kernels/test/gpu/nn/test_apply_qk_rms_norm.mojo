@@ -34,14 +34,8 @@ def run_apply_qk_rms_norm_gpu[
     atol: Float64 = 1e-2,
 ) raises:
     print(
-        "== run_apply_qk_rms_norm_gpu rows=",
-        rows,
-        " q_cols=",
-        q_cols,
-        " k_cols=",
-        k_cols,
-        " in_dtype=",
-        in_dtype,
+        t"== run_apply_qk_rms_norm_gpu rows= {rows}  q_cols= {q_cols}  k_cols="
+        t" {k_cols}  in_dtype= {in_dtype}"
     )
 
     comptime out_dtype = in_dtype

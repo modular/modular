@@ -104,19 +104,9 @@ def run_test_paged_prefill_blockscale[
     batch_size: Int = 1,
 ](seq_len: Int, num_keys: Int, ctx: DeviceContext) raises:
     print(
-        "test_mla_prefill_blockscale_paged",
-        " batch_size:",
-        batch_size,
-        " seq_len:",
-        seq_len,
-        " num_keys:",
-        num_keys,
-        " page_size:",
-        page_size,
-        " qkv_type:",
-        qkv_type,
-        " k_rope_type:",
-        k_rope_type,
+        t"test_mla_prefill_blockscale_paged  batch_size: {batch_size}  seq_len:"
+        t" {seq_len}  num_keys: {num_keys}  page_size: {page_size}  qkv_type:"
+        t" {qkv_type}  k_rope_type: {k_rope_type}"
     )
 
     comptime scale = Float32(0.125)
@@ -471,18 +461,8 @@ def run_test_paged_prefill_blockscale[
                         max_abs_err = abs_err
                     if abs_err > atol:
                         print(
-                            "mismatch at b=",
-                            b,
-                            " s=",
-                            s,
-                            " h=",
-                            h,
-                            " d=",
-                            d,
-                            " actual=",
-                            actual,
-                            " expect=",
-                            expect,
+                            t"mismatch at b= {b}  s= {s}  h= {h}  d= {d} "
+                            t" actual= {actual}  expect= {expect}"
                         )
                     assert_almost_equal(actual, expect, atol=atol, rtol=rtol)
 

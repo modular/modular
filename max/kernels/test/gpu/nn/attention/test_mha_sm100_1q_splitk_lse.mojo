@@ -191,19 +191,8 @@ def execute_combine_test[
     var window_len = win_end - win_begin
 
     print(
-        "test_mha_sm100_1q_splitk_combine: mask=",
-        mask_t.name(),
-        " depth=",
-        head_size,
-        " P=",
-        P,
-        " num_keys=",
-        num_keys,
-        " T=",
-        T,
-        " sink=",
-        USE_SINK,
-        sep="",
+        t"test_mha_sm100_1q_splitk_combine:"
+        t" mask={mask_t.name()} depth={head_size} P={P} num_keys={num_keys} T={T} sink={USE_SINK}"
     )
     if not (T >= P):
         raise Error("test misconfigured: need T >= P (no empty partitions)")
@@ -465,14 +454,8 @@ def execute_combine_test[
                 else:
                     blk1_max = max(blk1_max, diff)
     print(
-        "  max-abs diff(split combined O, full naive) =",
-        max_abs_diff,
-        " at flat idx",
-        argmax_idx,
-        " block0=",
-        blk0_max,
-        " block1=",
-        blk1_max,
+        t"  max-abs diff(split combined O, full naive) = {max_abs_diff}  at"
+        t" flat idx {argmax_idx}  block0= {blk0_max}  block1= {blk1_max}"
     )
 
     _ = q_dev^

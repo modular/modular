@@ -65,20 +65,9 @@ def test[
 ) raises:
     print("test_mha_causal_mask")
     print(
-        "qkv_type:",
-        qkv_type,
-        "depth:",
-        depth,
-        "num_heads:",
-        num_heads,
-        "group:",
-        group,
-        "seq_len:",
-        seq_len,
-        "num_keys:",
-        num_keys,
-        "batch_size:",
-        batch_size,
+        t"qkv_type: {qkv_type} depth: {depth} num_heads: {num_heads} group:"
+        t" {group} seq_len: {seq_len} num_keys: {num_keys} batch_size:"
+        t" {batch_size}"
     )
     # Query, key, value dimensions.
     comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))

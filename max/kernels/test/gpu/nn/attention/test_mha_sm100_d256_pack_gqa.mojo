@@ -86,20 +86,9 @@ def execute_pack_gqa_test[
         total_length += valid_lengths[i]
 
     print(
-        "test_mha_sm100_d256_pack_gqa: mask=",
-        mask_name,
-        " group=",
-        group,
-        " n_q=",
-        num_q_heads,
-        " n_kv=",
-        kv_num_heads,
-        " bs=",
-        batch_size,
-        " max_ctx=",
-        max_ctx,
-        " max_prompt=",
-        max_prompt,
+        t"test_mha_sm100_d256_pack_gqa: mask= {mask_name}  group= {group}  n_q="
+        t" {num_q_heads}  n_kv= {kv_num_heads}  bs= {batch_size}  max_ctx="
+        t" {max_ctx}  max_prompt= {max_prompt}"
     )
 
     var q_layout = row_major(total_length, Idx[num_q_heads], Idx[head_dim])
@@ -267,7 +256,7 @@ def execute_pack_gqa_test[
                     num_compared += 1
                     if not (diff <= atol + rtol * abs(e)):
                         if num_mismatches < 16:
-                            print("mismatch bs=", bs, "s=", s, "h=", h, "d=", d)
+                            print(t"mismatch bs= {bs} s= {s} h= {h} d= {d}")
                             print("  actual=", a, "expect=", e)
                         num_mismatches += 1
                     hdot += a * e
@@ -282,22 +271,14 @@ def execute_pack_gqa_test[
                 if not (hc >= min_head_cos):
                     min_head_cos = hc
                     if hc < 0.99:
-                        print("low head cosine bs=", bs, "s=", s, "h=", h, hc)
+                        print(t"low head cosine bs= {bs} s= {s} h= {h} {hc}")
 
     var cos: Float64 = 0.0
     if aa > 0.0 and bb > 0.0:
         cos = dot / (sqrt(aa) * sqrt(bb))
     print(
-        "  mismatches=",
-        num_mismatches,
-        "/",
-        num_compared,
-        " max_abs_diff=",
-        max_abs_diff,
-        " cosine=",
-        cos,
-        " min_head_cosine=",
-        min_head_cos,
+        t"  mismatches= {num_mismatches} / {num_compared}  max_abs_diff="
+        t" {max_abs_diff}  cosine= {cos}  min_head_cosine= {min_head_cos}"
     )
     # The 0.9997 aggregate bar is the fp8-vs-bf16 convention from the
     # short-context fp8 tests. It does not hold at long context for the

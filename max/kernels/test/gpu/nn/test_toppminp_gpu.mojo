@@ -210,14 +210,8 @@ def test_is_sorted_descending[
             for i in range(vocab_size - 1):
                 if flat[offset + i] < flat[offset + i + 1]:
                     print(
-                        "[",
-                        batch_id,
-                        "][",
-                        i,
-                        "]: ",
-                        flat[offset + i],
-                        " < ",
-                        flat[offset + i + 1],
+                        t"[ {batch_id} ][ {i} ]:  {flat[offset + i]}  < "
+                        t" {flat[offset + i + 1]}"
                     )
                     sorted_flag[batch_id] = False
                     break
@@ -239,20 +233,12 @@ def test_is_sorted_descending[
 
 def print_test_case(test_case: TestCase):
     print(
-        "==== Running",
-        "Top-P" if test_case.is_top_p else "Min-P",
-        ", dtype=",
-        test_case.dtype,
-        ", out_idx_type=",
-        test_case.out_idx_type,
-        "sampling with batch_size=",
-        test_case.batch_size,
-        ", vocab_size=",
-        test_case.vocab_size,
-        ", temperature=",
-        test_case.temperature,
-        ", p_threshold=",
-        test_case.p_threshold,
+        t"""==== Running {"Top-P" if test_case.is_top_p else "Min-P"} ,"""
+        t" dtype= {test_case.dtype} , out_idx_type="
+        t" {test_case.out_idx_type} sampling with batch_size="
+        t" {test_case.batch_size} , vocab_size= {test_case.vocab_size} ,"
+        t" temperature= {test_case.temperature} , p_threshold="
+        t" {test_case.p_threshold}"
     )
 
 
@@ -431,12 +417,8 @@ def test_case_sampling(
             )
         except e:
             print(
-                "i: ",
-                i,
-                "in_logits: ",
-                in_logits_flat[i],
-                "probs_cpu_test: ",
-                probs_cpu_test_flat[i],
+                t"i:  {i} in_logits:  {in_logits_flat[i]} probs_cpu_test: "
+                t" {probs_cpu_test_flat[i]}"
             )
             raise e^
 

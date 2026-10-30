@@ -620,36 +620,16 @@ def _check[
                     if _mismatch(g, r):
                         num_bad += 1
         print(
-            "  [",
-            name,
-            "] seq=",
-            bi,
-            " cache_offset=",
-            cache_offsets_list[bi],
-            " last_topk_len=",
-            min(indices_stride, cache_offsets_list[bi] + seq_q_len),
-            " max_abs=",
-            b_max_abs,
-            " max_rel=",
-            b_max_rel,
+            t"  [ {name} ] seq= {bi}  cache_offset= {cache_offsets_list[bi]} "
+            t" last_topk_len="
+            t" {min(indices_stride, cache_offsets_list[bi] + seq_q_len)} "
+            t" max_abs= {b_max_abs}  max_rel= {b_max_rel}"
         )
 
     print(
-        "[",
-        name,
-        "] GREEN (gather) overall max_abs=",
-        max_abs,
-        " max_rel=",
-        max_rel,
-        " mismatches=",
-        num_bad,
-        " / ",
-        out_size,
-        " (atol=",
-        ATOL,
-        " rtol=",
-        RTOL,
-        ")",
+        t"[ {name} ] GREEN (gather) overall max_abs= {max_abs}  max_rel="
+        t" {max_rel}  mismatches= {num_bad}  /  {out_size}  (atol= {ATOL} "
+        t" rtol= {RTOL} )"
     )
     # RED control for the comparison: a NaN-poisoned output must count.
     got[0] = nan[.bfloat16]()
@@ -685,14 +665,8 @@ def _check[
                     red_num_bad += 1
 
     print(
-        "[",
-        name,
-        "] RED (dense) max_abs=",
-        red_max_abs,
-        " mismatches=",
-        red_num_bad,
-        " / ",
-        out_red_size,
+        t"[ {name} ] RED (dense) max_abs= {red_max_abs}  mismatches="
+        t" {red_num_bad}  /  {out_red_size}"
     )
     assert_true(
         red_num_bad > 0,

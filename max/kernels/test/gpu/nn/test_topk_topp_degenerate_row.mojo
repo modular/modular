@@ -135,7 +135,7 @@ def check_degenerate_row(
     with d_out.map_to_host() as h_out:
         for b in range(batch_size):
             var v = Int(h_out[b])
-            print("  ", name, "row", b, "kind", row_kind[b], "-> id", v)
+            print(t"   {name} row {b} kind {row_kind[b]} -> id {v}")
             assert_true(
                 v >= 0 and v < n,
                 String("sampled index out of range in ")
@@ -202,7 +202,7 @@ def check_degenerate_row_probs(
     with d_out.map_to_host() as h_out:
         for b in range(batch_size):
             var v = Int(h_out[b])
-            print("  ", name, "row", b, "kind", row_kind[b], "-> id", v)
+            print(t"   {name} row {b} kind {row_kind[b]} -> id {v}")
             assert_true(
                 v >= 0 and v < n,
                 String("sampled index out of range in ")

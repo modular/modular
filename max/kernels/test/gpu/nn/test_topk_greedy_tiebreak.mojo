@@ -89,16 +89,8 @@ def check_greedy(
         if Int(out_host[r]) == expected:
             hits += 1
     print(
-        "vocab",
-        vocab,
-        "tied",
-        String(tied),
-        "->",
-        hits,
-        "of",
-        NUM_SEEDS,
-        "seeds return",
-        expected,
+        t"vocab {vocab} tied {String(tied)} -> {hits} of {NUM_SEEDS} seeds"
+        t" return {expected}"
     )
     for r in range(NUM_SEEDS):
         assert_equal(

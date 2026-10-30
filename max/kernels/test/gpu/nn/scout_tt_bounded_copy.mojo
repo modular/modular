@@ -190,14 +190,8 @@ def main() raises:
                     if got != want:
                         if ok:
                             print(
-                                "MISMATCH r=",
-                                r,
-                                "c=",
-                                c,
-                                "got=",
-                                got,
-                                "want=",
-                                want,
+                                t"MISMATCH r= {r} c= {c} got= {got} want="
+                                t" {want}"
                             )
                         ok = False
         if ok:

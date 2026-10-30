@@ -63,20 +63,8 @@ def test_attention[
 ](seq_len: Int, num_keys: Int, ctx: DeviceContext,) raises:
     print("test_mha_chunked_causal_mask")
     print(
-        "qkv_type:",
-        qkv_type,
-        "mask_type:",
-        mask_type,
-        "depth:",
-        depth,
-        "num_heads:",
-        num_heads,
-        "group:",
-        group,
-        "seq_len:",
-        seq_len,
-        "num_keys:",
-        num_keys,
+        t"qkv_type: {qkv_type} mask_type: {mask_type} depth: {depth} num_heads:"
+        t" {num_heads} group: {group} seq_len: {seq_len} num_keys: {num_keys}"
     )
     # Query, key, value dimensions.
     comptime batch_size = 1

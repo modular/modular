@@ -615,21 +615,12 @@ def print_test_case(test_case: TestCase):
     var num_blocks_per_in_msg = "auto"
     if case .Some(num_blocks_per_input) = test_case.num_blocks_per_input:
         num_blocks_per_in_msg = String(num_blocks_per_input)
+    var name_prefix = test_case.name + " " if test_case.name else ""
     print(
-        "==== Running Top-K "
-        + (test_case.name + " " if test_case.name else "")
-        + "sampling=",
-        test_case.sampling,
-        ", N=",
-        test_case.N,
-        ", K=",
-        test_case.K,
-        ", block_size=",
-        test_case.block_size,
-        ", batch_size=",
-        test_case.batch_size,
-        ", num_blocks_per_input=",
-        num_blocks_per_in_msg,
+        t"==== Running Top-K {name_prefix}sampling= {test_case.sampling} , N="
+        t" {test_case.N} , K= {test_case.K} , block_size="
+        t" {test_case.block_size} , batch_size= {test_case.batch_size} ,"
+        t" num_blocks_per_input= {num_blocks_per_in_msg}"
     )
 
 
@@ -641,16 +632,9 @@ def print_test_case(test_case: TestCaseMultiRank):
     if case .Some(block_size) = test_case.block_size:
         block_size_msg = String(block_size)
     print(
-        "==== Running Top-K sampling=",
-        test_case.sampling,
-        ", input_shape=",
-        test_case.input_shape,
-        ", K=",
-        test_case.K,
-        ", block_size=",
-        block_size_msg,
-        ", num_blocks_per_input=",
-        num_blocks_per_in_msg,
+        t"==== Running Top-K sampling= {test_case.sampling} , input_shape="
+        t" {test_case.input_shape} , K= {test_case.K} , block_size="
+        t" {block_size_msg} , num_blocks_per_input= {num_blocks_per_in_msg}"
     )
 
 

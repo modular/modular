@@ -50,23 +50,10 @@ def test[
     use_adversarial_softmax_input: Bool = False,
 ) raises:
     print(
-        "test_flash_attention",
-        "batch_size:",
-        batch_size,
-        "num_partitions:",
-        num_partitions.or_else(-1),
-        "seq_len:",
-        seq_len,
-        "num_keys:",
-        num_keys,
-        "qkv_type:",
-        qkv_type,
-        "mask_type:",
-        mask_type,
-        "mask_rank:",
-        mask_rank,
-        "depth:",
-        depth,
+        t"test_flash_attention batch_size: {batch_size} num_partitions:"
+        t" {num_partitions.or_else(-1)} seq_len: {seq_len} num_keys:"
+        t" {num_keys} qkv_type: {qkv_type} mask_type: {mask_type} mask_rank:"
+        t" {mask_rank} depth: {depth}"
     )
 
     comptime assert mask_rank in (3, 4), "mha only support rank 3 or 4."

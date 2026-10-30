@@ -156,25 +156,9 @@ def _run[
     scale_override: Float32 = -1.0,
 ) raises:
     print(
-        "  prefill",
-        "dtype:",
-        qkv_type,
-        "depth:",
-        depth,
-        "heads:",
-        num_heads,
-        "kv_heads:",
-        kv_heads,
-        "batch:",
-        batch,
-        "seq:",
-        seq,
-        "num_keys:",
-        num_keys,
-        "mask_kind:",
-        mask_kind,
-        "sink:",
-        use_sink,
+        t"  prefill dtype: {qkv_type} depth: {depth} heads:"
+        t" {num_heads} kv_heads: {kv_heads} batch: {batch} seq: {seq} num_keys:"
+        t" {num_keys} mask_kind: {mask_kind} sink: {use_sink}"
     )
     var group = num_heads // kv_heads
     var scale = scale_override if scale_override >= Float32(0.0) else Float32(
@@ -336,23 +320,14 @@ def _run[
         # silent PASS. The OOB-V-poison bug produced exactly such NaN outputs.
         if isnan(got) or isinf(got):
             if pass_:
-                print("    FAIL idx", i, "got NaN/Inf", got, "exp", exp_v)
+                print(t"    FAIL idx {i} got NaN/Inf {got} exp {exp_v}")
             pass_ = False
             continue
         var err = abs(got - exp_v)
         max_err = max(max_err, err)
         if err > atol * (1.0 + abs(exp_v)):
             if pass_:  # print only the first few
-                print(
-                    "    FAIL idx",
-                    i,
-                    "got",
-                    got,
-                    "exp",
-                    exp_v,
-                    "err",
-                    err,
-                )
+                print(t"    FAIL idx {i} got {got} exp {exp_v} err {err}")
             pass_ = False
     if not pass_:
         raise Error("FAILED (max_err=", max_err, ")")

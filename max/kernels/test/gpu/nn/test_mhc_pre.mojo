@@ -411,32 +411,11 @@ def run_mhc_pre[
     errs.collapsed_over_atol = excess / atol
     var config = mhc_pre_launch_config(num_rows, hidden, force_k_splits)
     print(
-        "mhc_pre KS=",
-        config[1],
-        " D=",
-        hidden,
-        " fn=",
-        fn_dtype,
-        "x",
-        fn_terms,
-        " norm=",
-        has_norm,
-        " adversarial=",
-        adversarial_fn,
-        " T=",
-        num_rows,
-        " post=",
-        errs.post,
-        " comb=",
-        errs.comb,
-        " pre=",
-        errs.pre,
-        " comb_T=",
-        errs.comb_transposed,
-        " collapsed_excess/atol=",
-        errs.collapsed_over_atol,
-        " repeatable=" if repeat else "",
-        String(repeatable) if repeat else "",
+        t"mhc_pre KS= {config[1]}  D= {hidden}  fn= {fn_dtype} x {fn_terms} "
+        t" norm= {has_norm}  adversarial= {adversarial_fn}  T= {num_rows} "
+        t" post= {errs.post}  comb= {errs.comb}  pre= {errs.pre}  comb_T="
+        t" {errs.comb_transposed}  collapsed_excess/atol="
+        t""" {errs.collapsed_over_atol} {" repeatable=" if repeat else ""} {String(repeatable) if repeat else ""}"""
     )
     return errs^
 
@@ -561,7 +540,7 @@ def test_fn_split_is_exact(ctx: DeviceContext) raises:
             bad += 1
         if v_h[i].to_bits() & 0xFFFF != 0:
             low_bits += 1
-    print("hc_fn split: values=", n, " inexact=", bad, " low16 set=", low_bits)
+    print(t"hc_fn split: values= {n}  inexact= {bad}  low16 set= {low_bits}")
     assert_true(bad == 0, "hi + lo + lo2 differs from the fp32 weight")
     assert_true(low_bits > n // 2, "the split test lacks low mantissa bits")
 

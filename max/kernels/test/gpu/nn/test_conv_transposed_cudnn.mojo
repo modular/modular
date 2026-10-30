@@ -36,21 +36,9 @@ def test_conv_transposed_cudnn[
     """
 
     print(
-        "input_len=",
-        input_len,
-        ", kernel_size=",
-        kernel_len,
-        ", in_channels=",
-        in_channels,
-        ", out_channels=",
-        out_channels,
-        ", stride=",
-        stride_val,
-        ", pad=",
-        pad_val,
-        ", dilation=",
-        dilation_val,
-        ")",
+        t"input_len= {input_len} , kernel_size= {kernel_len} , in_channels="
+        t" {in_channels} , out_channels= {out_channels} , stride="
+        t" {stride_val} , pad= {pad_val} , dilation= {dilation_val} )"
     )
 
     # Shapes and sizes

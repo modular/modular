@@ -620,7 +620,7 @@ def _run_case[
                 var err = abs(got - want)
                 if not (err <= tol):
                     if score_bad < 4:
-                        print("  score", t, s, "got", got, "want", want)
+                        print(t"  score {t} {s} got {got} want {want}")
                     score_bad += 1
                 max_err = max(max_err, err / max(ref_mag[t][s], 1e-30))
             elif got != _SENTINEL:
@@ -669,27 +669,16 @@ def _run_case[
             valid += 1
         if valid != eff:
             if sel_bad < 4:
-                print("  row", t, "picked", valid, "of", eff)
+                print(t"  row {t} picked {valid} of {eff}")
             sel_bad += 1
         grade_selection_row(ref_scores[t], out, t, top_k, stats)
     if sel_bad > 0 or not stats.passed():
         failures += 1
 
     print(
-        "CASE",
-        label,
-        "rows=",
-        total_seq_len,
-        "max_rows=",
-        max_rows,
-        "score_bad=",
-        score_bad,
-        "max_rel_err=",
-        max_err,
-        "sel_bad=",
-        sel_bad,
-        "->",
-        "FAIL" if failures > 0 else "ok",
+        t"CASE {label} rows= {total_seq_len} max_rows= {max_rows} score_bad="
+        t" {score_bad} max_rel_err= {max_err} sel_bad= {sel_bad} ->"
+        t""" {"FAIL" if failures > 0 else "ok"}"""
     )
     stats.report(label)
     return failures

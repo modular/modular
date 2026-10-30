@@ -284,20 +284,9 @@ def run_test_sparse_kv_fp8[
     forced_np: Int = 0,
 ) raises:
     print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " cache_len:",
-        cache_len,
-        " num_heads:",
-        num_heads,
-        " topk:",
-        topk,
-        " q_max_seq_len:",
-        q_max_seq_len,
-        " causal:",
-        use_causal,
+        t"test: {name}  batch_size: {batch_size}  cache_len: {cache_len} "
+        t" num_heads: {num_heads}  topk: {topk}  q_max_seq_len:"
+        t" {q_max_seq_len}  causal: {use_causal}"
     )
 
     var num_keys = cache_len + q_max_seq_len
@@ -712,11 +701,8 @@ def run_test_sparse_kv_fp8[
     ](batch_size, cache_len, q_max_seq_len, sm_count)
     var num_partitions = dispatch_scalars[2]
     print(
-        "  num_partitions=",
-        num_partitions,
-        " (split-K",
-        "ACTIVE" if num_partitions > 1 else "OFF",
-        ")",
+        t"  num_partitions= {num_partitions}  (split-K"
+        t""" {"ACTIVE" if num_partitions > 1 else "OFF"} )"""
     )
 
     var indices_stride = topk
@@ -729,13 +715,8 @@ def run_test_sparse_kv_fp8[
     )
 
     print(
-        "  Launching MLA sparse KV_FP8 decode kernel...",
-        " topk=",
-        topk,
-        " num_keys=",
-        num_keys,
-        " forced_np=",
-        forced_np,
+        t"  Launching MLA sparse KV_FP8 decode kernel...  topk= {topk} "
+        t" num_keys= {num_keys}  forced_np= {forced_np}"
     )
 
     comptime if use_causal:
@@ -816,16 +797,7 @@ def run_test_sparse_kv_fp8[
                     if isnan(actual_val):
                         nan_count += 1
                         if nan_count <= 5:
-                            print(
-                                "  NaN at b=",
-                                b,
-                                " s=",
-                                s,
-                                " h=",
-                                h,
-                                " d=",
-                                d,
-                            )
+                            print(t"  NaN at b= {b}  s= {s}  h= {h}  d= {d}")
                         continue
                     var err = abs(actual_val - ref_val)
                     if err > max_err:
@@ -833,29 +805,14 @@ def run_test_sparse_kv_fp8[
                     total_checked += 1
                     if err > 1e-1:
                         print(
-                            "  large err b=",
-                            b,
-                            " s=",
-                            s,
-                            " h=",
-                            h,
-                            " d=",
-                            d,
-                            " got=",
-                            actual_val,
-                            " ref=",
-                            ref_val,
-                            " err=",
-                            err,
+                            t"  large err b= {b}  s= {s}  h= {h}  d= {d}  got="
+                            t" {actual_val}  ref= {ref_val}  err= {err}"
                         )
 
     if nan_count > 0:
         print(
-            "  FAILED: ",
-            nan_count,
-            "NaN values in output (max_err over non-NaN:",
-            max_err,
-            ")",
+            t"  FAILED:  {nan_count} NaN values in output (max_err over"
+            t" non-NaN: {max_err} )"
         )
         raise Error("NaN in kernel output")
 
@@ -878,13 +835,7 @@ def run_test_sparse_kv_fp8[
                         actual_val, ref_val, atol=atol, rtol=rtol
                     )
 
-    print(
-        "  PASSED: max_err=",
-        max_err,
-        " checked=",
-        total_checked,
-        " elements",
-    )
+    print(t"  PASSED: max_err= {max_err}  checked= {total_checked}  elements")
 
     # -----------------------------------------------------------------------
     # Cleanup
@@ -928,22 +879,11 @@ def run_test_sparse_kv_fp8_variable_topk[
         if topk_per_batch[bi] > max_topk:
             max_topk = topk_per_batch[bi]
 
-    print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-    )
+    print(t"test: {name}  batch_size: {batch_size}  num_heads: {num_heads}")
     for i in range(batch_size):
         print(
-            "  batch",
-            i,
-            ": cache_len=",
-            cache_lengths[i],
-            " topk=",
-            topk_per_batch[i],
+            t"  batch {i} : cache_len= {cache_lengths[i]}  topk="
+            t" {topk_per_batch[i]}"
         )
     print("  indices_stride (max topk)=", max_topk)
 
@@ -1203,11 +1143,8 @@ def run_test_sparse_kv_fp8_variable_topk[
     ](batch_size, max_cache_len, q_max_seq_len, sm_count)
     var num_partitions = dispatch_scalars[2]
     print(
-        "  num_partitions=",
-        num_partitions,
-        " (split-K",
-        "ACTIVE" if num_partitions > 1 else "OFF",
-        ")",
+        t"  num_partitions= {num_partitions}  (split-K"
+        t""" {"ACTIVE" if num_partitions > 1 else "OFF"} )"""
     )
 
     var indices_stride = max_topk
@@ -1294,16 +1231,8 @@ def run_test_sparse_kv_fp8_attn_sink[
     attn_sink shape is [num_heads_q] (NOT batch_size) per the MOGG fix.
     """
     print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " cache_len:",
-        cache_len,
-        " num_heads:",
-        num_heads,
-        " topk:",
-        topk,
+        t"test: {name}  batch_size: {batch_size}  cache_len: {cache_len} "
+        t" num_heads: {num_heads}  topk: {topk}"
     )
 
     comptime q_max_seq_len = 1
@@ -1547,11 +1476,8 @@ def run_test_sparse_kv_fp8_attn_sink[
     ](batch_size, cache_len, q_max_seq_len, sm_count)
     var num_partitions = dispatch_scalars[2]
     print(
-        "  num_partitions=",
-        num_partitions,
-        " (split-K",
-        "ACTIVE" if num_partitions > 1 else "OFF",
-        ")",
+        t"  num_partitions= {num_partitions}  (split-K"
+        t""" {"ACTIVE" if num_partitions > 1 else "OFF"} )"""
     )
 
     var indices_stride = topk
@@ -1647,26 +1573,12 @@ def run_test_sparse_kv_fp8_extra_kv[
         if extra_topk_per_batch[bi] > max_extra_topk:
             max_extra_topk = extra_topk_per_batch[bi]
 
-    print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-    )
+    print(t"test: {name}  batch_size: {batch_size}  num_heads: {num_heads}")
     for i in range(batch_size):
         print(
-            "  batch",
-            i,
-            ": cache_len=",
-            cache_lengths[i],
-            " topk=",
-            topk_per_batch[i],
-            " extra_cache_len=",
-            extra_cache_lengths[i],
-            " extra_topk=",
-            extra_topk_per_batch[i],
+            t"  batch {i} : cache_len= {cache_lengths[i]}  topk="
+            t" {topk_per_batch[i]}  extra_cache_len= {extra_cache_lengths[i]} "
+            t" extra_topk= {extra_topk_per_batch[i]}"
         )
 
     comptime kv_params = KVCacheStaticParams(
@@ -2105,11 +2017,8 @@ def run_test_sparse_kv_fp8_extra_kv[
     ](batch_size, max_topk + max_extra_topk, q_max_seq_len, sm_count)
     var num_partitions = dispatch_scalars[2]
     print(
-        "  num_partitions=",
-        num_partitions,
-        " (split-K",
-        "ACTIVE" if num_partitions > 1 else "OFF",
-        ")",
+        t"  num_partitions= {num_partitions}  (split-K"
+        t""" {"ACTIVE" if num_partitions > 1 else "OFF"} )"""
     )
 
     print("  Launching MLA sparse KV_FP8 (extra KV)...")
@@ -2224,26 +2133,13 @@ def run_test_sparse_kv_fp8_topk_clamping[
             eff_topk = actual_tokens
         effective_topk_list.append(eff_topk)
 
-    print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-    )
+    print(t"test: {name}  batch_size: {batch_size}  num_heads: {num_heads}")
     for i in range(batch_size):
         print(
-            "  batch",
-            i,
-            ": cache_len=",
-            cache_lengths[i],
-            " topk=",
-            topk_per_batch[i],
-            " actual_tokens=",
-            cache_lengths[i] + q_max_seq_len,
-            " effective_topk=",
-            effective_topk_list[i],
+            t"  batch {i} : cache_len= {cache_lengths[i]}  topk="
+            t" {topk_per_batch[i]}  actual_tokens="
+            t" {cache_lengths[i] + q_max_seq_len}  effective_topk="
+            t" {effective_topk_list[i]}"
         )
 
     var max_cache_len = 0
@@ -2495,11 +2391,8 @@ def run_test_sparse_kv_fp8_topk_clamping[
     ](batch_size, max_cache_len, q_max_seq_len, sm_count)
     var num_partitions = dispatch_scalars[2]
     print(
-        "  num_partitions=",
-        num_partitions,
-        " (split-K",
-        "ACTIVE" if num_partitions > 1 else "OFF",
-        ")",
+        t"  num_partitions= {num_partitions}  (split-K"
+        t""" {"ACTIVE" if num_partitions > 1 else "OFF"} )"""
     )
 
     var indices_stride = max_topk

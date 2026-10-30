@@ -132,16 +132,8 @@ def run_mhc_post[
                 if not (err <= tol):
                     bad += 1
     print(
-        "mhc_post ",
-        dtype,
-        " T=",
-        num_rows,
-        " max_abs_err=",
-        max_err,
-        " max_err/tol=",
-        max_err_over_tol,
-        " mismatches=",
-        bad,
+        t"mhc_post  {dtype}  T= {num_rows}  max_abs_err= {max_err} "
+        t" max_err/tol= {max_err_over_tol}  mismatches= {bad}"
     )
     assert_true(bad == 0, "mhc_post differs from the fp64 reference")
 

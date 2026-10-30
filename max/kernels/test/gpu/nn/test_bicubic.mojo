@@ -550,30 +550,16 @@ def test_bicubic_kernel[
                 if not is_match:
                     mismatch_count += 1
                     print(
-                        "Mismatch at [0,",
-                        c,
-                        ",",
-                        h,
-                        ",",
-                        w,
-                        "]: Actual =",
-                        actual,
-                        ", Expected =",
-                        expected,
-                        ", Diff =",
-                        abs(actual - expected),
+                        t"Mismatch at [0, {c} , {h} , {w} ]: Actual ="
+                        t" {actual} , Expected = {expected} , Diff ="
+                        t" {abs(actual - expected)}"
                     )
 
     if mismatch_count == 0:
         print(
-            (
-                "--------------------------------All values match within"
-                " tolerances (rel:"
-            ),
-            rel_tolerance * 100,
-            "%, abs:",
-            abs_tolerance,
-            ")--------------------------------",
+            t"--------------------------------All values match within"
+            t" tolerances (rel: {rel_tolerance * 100} %, abs:"
+            t" {abs_tolerance} )--------------------------------"
         )
     else:
         print(

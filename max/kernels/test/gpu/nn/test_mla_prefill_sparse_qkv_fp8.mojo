@@ -190,18 +190,8 @@ def run_test_prefill_sparse_qkv_fp8[
 ) raises:
     comptime scale_block_size = 0
     print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " seq_len:",
-        seq_len,
-        " num_heads:",
-        num_heads,
-        " num_kv_tokens:",
-        num_kv_tokens,
-        " topk:",
-        topk,
+        t"test: {name}  batch_size: {batch_size}  seq_len: {seq_len} "
+        t" num_heads: {num_heads}  num_kv_tokens: {num_kv_tokens}  topk: {topk}"
     )
 
     var scale = Float32(1.0) / sqrt(Float32(SOFTMAX_SCALE_BASE_DIM))
@@ -586,14 +576,8 @@ def run_test_prefill_sparse_qkv_fp8[
                         inf_ref += 1
 
     print(
-        "  DIAG: max_err=",
-        max_err,
-        " max_abs_actual=",
-        max_actual,
-        " num_nonzero=",
-        num_nonzero,
-        "/",
-        total_checked,
+        t"  DIAG: max_err= {max_err}  max_abs_actual= {max_actual} "
+        t" num_nonzero= {num_nonzero} / {total_checked}"
     )
 
     if nan_actual != 0 or inf_actual != 0 or nan_ref != 0 or inf_ref != 0:
@@ -652,17 +636,9 @@ def run_test_prefill_sparse_qkv_fp8[
             + String(atol)
         )
     print(
-        "  PASSED: max_err=",
-        max_err,
-        " mean_abs_err=",
-        mean_abs_err,
-        " cosine=",
-        cosine,
-        " n_err_gt_1e-2=",
-        n_err_gt_1em2,
-        " checked=",
-        total_checked,
-        " elements",
+        t"  PASSED: max_err= {max_err}  mean_abs_err= {mean_abs_err}  cosine="
+        t" {cosine}  n_err_gt_1e-2= {n_err_gt_1em2}  checked= {total_checked} "
+        t" elements"
     )
 
     _ = blocks_device
@@ -730,20 +706,9 @@ def run_nope_native_512_prefill_fp8[
     production-scale shapes below affordable.
     """
     print(
-        "NoPE native 512 prefill (QKV FP8): ",
-        name,
-        " batch_size=",
-        batch_size,
-        " seq_len=",
-        seq_len,
-        " num_kv_tokens=",
-        num_kv_tokens,
-        " num_heads=",
-        num_heads,
-        " topk=",
-        topk,
-        " valid_topk=",
-        valid_topk,
+        t"NoPE native 512 prefill (QKV FP8):  {name}  batch_size= {batch_size} "
+        t" seq_len= {seq_len}  num_kv_tokens= {num_kv_tokens}  num_heads="
+        t" {num_heads}  topk= {topk}  valid_topk= {valid_topk}"
     )
     seed(0x5EED19)
 
@@ -1094,15 +1059,11 @@ def run_nope_native_512_prefill_fp8[
             mismatches += 1
             if mismatches <= 5:
                 print(
-                    "  mismatch idx=",
-                    i,
-                    " padded576=",
-                    h576[i],
-                    " native512=",
-                    h512[i],
+                    t"  mismatch idx= {i}  padded576= {h576[i]}  native512="
+                    t" {h512[i]}"
                 )
     if mismatches > 0:
-        print("  FAILED: ", mismatches, "of", out_elems, "outputs differ")
+        print(t"  FAILED:  {mismatches} of {out_elems} outputs differ")
         raise Error("native-512 prefill QKV-FP8 does not match padded 576")
     assert_equal(mismatches, 0)
     print("  PASSED: native 512 is bit-identical to zero-padded 576")

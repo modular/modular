@@ -246,16 +246,7 @@ def _selection_case[
                     "  selection row", r, "kept", len(_kept_ids(ids, r, top_k))
                 )
             bad += 1
-    print(
-        "SELECT blocks=",
-        num_blocks,
-        "k=",
-        top_k,
-        "poison=",
-        poison,
-        "bad=",
-        bad,
-    )
+    print(t"SELECT blocks= {num_blocks} k= {top_k} poison= {poison} bad= {bad}")
     return bad
 
 
@@ -530,26 +521,10 @@ def _indexer_case[
     if sel_bad > 0:
         failures += 1
     print(
-        "CASE kpool=",
-        kpool,
-        "blocks=",
-        num_blocks,
-        "k=",
-        topk_blocks,
-        "rows=",
-        total,
-        "window=",
-        window_rows,
-        "poison=",
-        poison,
-        "min_kept=",
-        min_kept,
-        "id_bad=",
-        id_bad,
-        "sel_bad=",
-        sel_bad,
-        "->",
-        "FAIL" if failures > 0 else "ok",
+        t"CASE kpool= {kpool} blocks= {num_blocks} k= {topk_blocks} rows="
+        t" {total} window= {window_rows} poison= {poison} min_kept="
+        t" {min_kept} id_bad= {id_bad} sel_bad= {sel_bad} ->"
+        t""" {"FAIL" if failures > 0 else "ok"}"""
     )
     return failures
 

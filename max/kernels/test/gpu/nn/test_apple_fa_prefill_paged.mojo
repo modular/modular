@@ -172,23 +172,9 @@ def _run[
         max_prompt_len = max(max_prompt_len, seq_lens[i])
 
     print(
-        "  paged",
-        "dtype:",
-        qkv_type,
-        "page_size:",
-        page_size,
-        "depth:",
-        depth,
-        "q_heads:",
-        num_q_heads,
-        "kv_heads:",
-        kv_heads,
-        "batch:",
-        batch_size,
-        "total_tokens:",
-        total_length,
-        "mask_kind:",
-        mask_kind,
+        t"  paged dtype: {qkv_type} page_size: {page_size} depth:"
+        t" {depth} q_heads: {num_q_heads} kv_heads: {kv_heads} batch:"
+        t" {batch_size} total_tokens: {total_length} mask_kind: {mask_kind}"
     )
 
     # ---- ragged Q + row offsets ---------------------------------------- #
@@ -388,18 +374,8 @@ def _run[
                 if err > atol * (1.0 + abs(exp_v)):
                     if pass_:
                         print(
-                            "    FAIL t",
-                            t,
-                            "h",
-                            h,
-                            "d",
-                            d,
-                            "got",
-                            got,
-                            "exp",
-                            exp_v,
-                            "err",
-                            err,
+                            t"    FAIL t {t} h {h} d {d} got {got} exp"
+                            t" {exp_v} err {err}"
                         )
                     pass_ = False
     _ = q_managed^

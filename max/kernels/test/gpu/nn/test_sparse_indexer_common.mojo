@@ -129,16 +129,8 @@ def _run_case(
     ctx: DeviceContext,
 ) raises:
     print(
-        "  case: num_rows=",
-        num_rows,
-        " num_blocks=",
-        num_blocks,
-        " k=",
-        k,
-        " force_idx=",
-        force_idx,
-        " mode=",
-        mode,
+        t"  case: num_rows= {num_rows}  num_blocks= {num_blocks}  k= {k} "
+        t" force_idx= {force_idx}  mode= {mode}"
     )
     var n_scores = num_rows * num_blocks
     var n_out = num_rows * k
@@ -352,14 +344,8 @@ def _run_block_dim_invariance(
     would actually catch a width-dependent tiebreak.
     """
     print(
-        "  block_dim invariance: num_rows=",
-        num_rows,
-        " num_blocks=",
-        num_blocks,
-        " k=",
-        k,
-        " mode=",
-        mode,
+        t"  block_dim invariance: num_rows= {num_rows}  num_blocks="
+        t" {num_blocks}  k= {k}  mode= {mode}"
     )
     var n_scores = num_rows * num_blocks
     var scores_host = ctx.enqueue_create_host_buffer[.float32](n_scores)

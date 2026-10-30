@@ -209,13 +209,9 @@ def _make_case(
         q_host_out[i] = v.cast[dtype]()
     var valid = _fill_indices(idx_host_out, seq_len, hole_period)
     print(
-        "# case T=",
-        seq_len,
-        " valid_slots_per_row=",
-        Float64(valid) / Float64(seq_len),
-        " of ",
-        stride,
-        sep="",
+        t"# case"
+        t" T={seq_len} valid_slots_per_row={Float64(valid) / Float64(seq_len)} of"
+        t" {stride}"
     )
     var q = ctx.enqueue_create_buffer[dtype](q_size)
     ctx.enqueue_copy(q, q_host_out)
@@ -588,29 +584,7 @@ def check_correctness[
                     var got = Float64(out_tensor[t, h, d].cast[.float64]())
                     neg_max_abs = max(neg_max_abs, abs(got - ref_row[d]))
     print(
-        "correctness,",
-        label,
-        ",T=",
-        seq_len,
-        ",tokens_checked=",
-        len(tokens),
-        ",heads=",
-        num_heads,
-        ",np=",
-        np,
-        ",max_abs_err=",
-        max_abs,
-        ",max_abs_ref=",
-        max_ref,
-        ",max_rel_err_vs_row_max=",
-        max_rel,
-        ",nan=",
-        bad,
-        ",parity_max_abs=",
-        parity_max_abs,
-        ",negctl_truncate_max_abs=",
-        neg_max_abs,
-        sep="",
+        t"correctness,{label},T={seq_len},tokens_checked={len(tokens)},heads={num_heads},np={np},max_abs_err={max_abs},max_abs_ref={max_ref},max_rel_err_vs_row_max={max_rel},nan={bad},parity_max_abs={parity_max_abs},negctl_truncate_max_abs={neg_max_abs}"
     )
     assert_true(bad == 0, "nonfinite sparse MLA output")
     assert_true(max_abs < 2e-3, "sparse MLA differs from valid-row oracle")

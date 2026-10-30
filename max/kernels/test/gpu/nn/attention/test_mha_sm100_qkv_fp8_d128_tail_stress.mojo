@@ -117,25 +117,13 @@ def execute_tail_stress_test[
     var last_row_tail_mass = Float32(num_keys - 1) * p_tail_unnorm
 
     print(
-        "test_mha_sm100_qkv_fp8_d128_tail_stress: ",
-        "mask=",
-        mask_name,
-        " group=",
-        group,
-        " n_q_heads=",
-        num_q_heads,
-        " seq_len=",
-        seq_len,
-        " num_keys=",
-        num_keys,
+        t"test_mha_sm100_qkv_fp8_d128_tail_stress:  mask= {mask_name}  group="
+        t" {group}  n_q_heads= {num_q_heads}  seq_len= {seq_len}  num_keys="
+        t" {num_keys}"
     )
     print(
-        "  score_peak(log)=",
-        score_peak,
-        " P_tail(unnorm)=",
-        p_tail_unnorm,
-        " last_row_tail_mass=",
-        last_row_tail_mass,
+        t"  score_peak(log)= {score_peak}  P_tail(unnorm)= {p_tail_unnorm} "
+        t" last_row_tail_mass= {last_row_tail_mass}"
     )
 
     comptime fp8_dtype = DType.float8_e4m3fn
@@ -307,12 +295,8 @@ def execute_tail_stress_test[
     if aa > 0.0 and bb > 0.0:
         cos = dot / (sqrt(aa) * sqrt(bb))
     print(
-        "  mean_abs_diff=",
-        total_abs_diff / Float64(num_compared),
-        " max_abs_diff=",
-        max_abs_diff,
-        " cosine=",
-        cos,
+        t"  mean_abs_diff= {total_abs_diff / Float64(num_compared)} "
+        t" max_abs_diff= {max_abs_diff}  cosine= {cos}"
     )
     print(
         "  last_row(h=0) mean |ref O| =",

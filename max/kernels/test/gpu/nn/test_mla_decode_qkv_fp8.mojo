@@ -128,23 +128,10 @@ def test[
     batch_size: Int = 1,
 ](seq_len: Int, num_keys: Int, ctx: DeviceContext,) raises:
     print(
-        "test_mla_decode_qkv_fp8",
-        "batch_size:",
-        batch_size,
-        "seq_len:",
-        seq_len,
-        "num_keys:",
-        num_keys,
-        "q_type:",
-        q_type,
-        "kv_type:",
-        kv_type,
-        "output_type:",
-        output_type,
-        "num_heads:",
-        num_heads,
-        "mla_mask_type:",
-        mla_mask_type.value,
+        t"test_mla_decode_qkv_fp8 batch_size: {batch_size} seq_len:"
+        t" {seq_len} num_keys: {num_keys} q_type: {q_type} kv_type:"
+        t" {kv_type} output_type: {output_type} num_heads:"
+        t" {num_heads} mla_mask_type: {mla_mask_type.value}"
     )
 
     comptime assert (
@@ -518,17 +505,8 @@ def bench[
     )
     var ustime = nstime / 1000.0
     print(
-        "bench: bs=",
-        batch_size,
-        " num_keys=",
-        num_keys,
-        " heads=",
-        num_heads,
-        " depth=",
-        depth,
-        " =>",
-        ustime,
-        "us",
+        t"bench: bs= {batch_size}  num_keys= {num_keys}  heads= {num_heads} "
+        t" depth= {depth}  => {ustime} us"
     )
 
     _ = mla_args
@@ -648,17 +626,9 @@ def test_sw[
     batch_size: Int = 1,
 ](seq_len: Int, num_keys: Int, ctx: DeviceContext,) raises:
     print(
-        "test_mla_decode_qkv_fp8 [SlidingWindow]",
-        "W:",
-        window_size,
-        "batch_size:",
-        batch_size,
-        "seq_len:",
-        seq_len,
-        "num_keys:",
-        num_keys,
-        "num_heads:",
-        num_heads,
+        t"test_mla_decode_qkv_fp8 [SlidingWindow] W: {window_size} batch_size:"
+        t" {batch_size} seq_len: {seq_len} num_keys: {num_keys} num_heads:"
+        t" {num_heads}"
     )
 
     comptime scale = Float32(0.125)

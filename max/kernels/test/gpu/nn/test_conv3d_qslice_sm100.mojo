@@ -54,12 +54,8 @@ def test_conv3d_qslice_direct[
     final fp32→dtype cast.
     """
     print(
-        "test_conv3d_qslice_direct: with_epilogue=",
-        with_epilogue,
-        " pad_h=",
-        pad_h,
-        " pad_w=",
-        pad_w,
+        t"test_conv3d_qslice_direct: with_epilogue= {with_epilogue}  pad_h="
+        t" {pad_h}  pad_w= {pad_w}"
     )
     comptime N = Int(input_layout.shape[0])
     comptime D = Int(input_layout.shape[1])

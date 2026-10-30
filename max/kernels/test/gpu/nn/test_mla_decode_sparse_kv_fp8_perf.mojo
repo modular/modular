@@ -300,24 +300,11 @@ def bench_sparse_kv_fp8[
         Float64(ctx.execution_time(_launch, iters)) / Float64(iters) / 1000.0
     )
     print(
-        "PERF",
-        name,
-        " variant=",
-        "shared_index" if shared_index else "baseline",
-        " nqh=",
-        num_heads,
-        " q_len=",
-        q_max_seq_len,
-        " bs=",
-        batch_size,
-        " topk=",
-        topk,
-        " cache=",
-        cache_len,
-        " num_partitions=",
-        num_partitions,
-        " us_per_iter=",
-        us_per_iter,
+        t"PERF {name}  variant="
+        t""" {"shared_index" if shared_index else "baseline"}  nqh="""
+        t" {num_heads}  q_len= {q_max_seq_len}  bs= {batch_size}  topk= {topk} "
+        t" cache= {cache_len}  num_partitions= {num_partitions}  us_per_iter="
+        t" {us_per_iter}"
     )
 
     # The cache and sparse-index API expose non-owning pointers. Keep their

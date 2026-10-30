@@ -39,27 +39,11 @@ def test_prefill[
     use_causal_mask: Bool = True,
 ](seq_len: Int, num_keys: Int, ctx: DeviceContext,) raises:
     print(
-        "test_mla_prefill",
-        "batch_size:",
-        batch_size,
-        "seq_len:",
-        seq_len,
-        "num_keys:",
-        num_keys,
-        "qkv_type:",
-        qkv_type,
-        "rope_type:",
-        rope_type,
-        "output_type:",
-        output_type,
-        "depth:",
-        depth,
-        "kv_depth:",
-        kv_depth,
-        "cache_depth:",
-        cache_depth,
-        "cache_num_heads:",
-        cache_num_heads,
+        t"test_mla_prefill batch_size: {batch_size} seq_len:"
+        t" {seq_len} num_keys: {num_keys} qkv_type: {qkv_type} rope_type:"
+        t" {rope_type} output_type: {output_type} depth: {depth} kv_depth:"
+        t" {kv_depth} cache_depth: {cache_depth} cache_num_heads:"
+        t" {cache_num_heads}"
     )
 
     var q_size = batch_size * seq_len * num_heads * depth

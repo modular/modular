@@ -81,16 +81,8 @@ def run_test_paged_variable[
 ) raises:
     var batch_size = len(cache_lengths)
     print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-        " q_type:",
-        q_type,
-        " kv_type:",
-        kv_type,
+        t"test: {name}  batch_size: {batch_size}  num_heads: {num_heads} "
+        t" q_type: {q_type}  kv_type: {kv_type}"
     )
     for i in range(batch_size):
         print("  batch", i, ": cache_len=", cache_lengths[i])
@@ -518,18 +510,8 @@ def run_test_paged_variable_multiq[
     """
     var batch_size = len(cache_lengths)
     print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-        " q_type:",
-        q_type,
-        " kv_type:",
-        kv_type,
-        " q_max_seq_len:",
-        q_max_seq_len,
+        t"test: {name}  batch_size: {batch_size}  num_heads: {num_heads} "
+        t" q_type: {q_type}  kv_type: {kv_type}  q_max_seq_len: {q_max_seq_len}"
     )
     for i in range(batch_size):
         print("  batch", i, ": cache_len=", cache_lengths[i])
@@ -971,29 +953,14 @@ def run_test_paged_variable_ragged_q[
         total_q_tokens += seq_lens[i]
 
     print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-        " q_type:",
-        q_type,
-        " kv_type:",
-        kv_type,
-        " q_max_seq_len:",
-        q_max_seq_len,
-        " total_q_tokens:",
-        total_q_tokens,
+        t"test: {name}  batch_size: {batch_size}  num_heads: {num_heads} "
+        t" q_type: {q_type}  kv_type: {kv_type}  q_max_seq_len:"
+        t" {q_max_seq_len}  total_q_tokens: {total_q_tokens}"
     )
     for i in range(batch_size):
         print(
-            "  batch",
-            i,
-            ": cache_len=",
-            cache_lengths[i],
-            " q_seq_len=",
-            seq_lens[i],
+            t"  batch {i} : cache_len= {cache_lengths[i]}  q_seq_len="
+            t" {seq_lens[i]}"
         )
 
     var max_cache_len = 0
@@ -1349,18 +1316,8 @@ def run_test_paged_variable_ragged_q[
                         max_abs_err = abs_err
                     if abs_err > 1e-1:
                         print(
-                            "batch",
-                            b,
-                            "tok",
-                            s,
-                            "head",
-                            h,
-                            "dim",
-                            d,
-                            "actual",
-                            actual,
-                            "expect",
-                            expect,
+                            t"batch {b} tok {s} head {h} dim {d} actual"
+                            t" {actual} expect {expect}"
                         )
                     assert_almost_equal(actual, expect, atol=atol, rtol=rtol)
 
@@ -1414,16 +1371,8 @@ def run_bench_paged_variable[
 ](name: StringLiteral, cache_lengths: List[Int], ctx: DeviceContext,) raises:
     var batch_size = len(cache_lengths)
     print(
-        "bench:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-        " q_type:",
-        q_type,
-        " kv_type:",
-        kv_type,
+        t"bench: {name}  batch_size: {batch_size}  num_heads: {num_heads} "
+        t" q_type: {q_type}  kv_type: {kv_type}"
     )
     for i in range(batch_size):
         print("  batch", i, ": cache_len=", cache_lengths[i])
@@ -1647,7 +1596,7 @@ def run_bench_paged_variable[
         nrun
     )
     var mstime = nstime / 1000000
-    print("  ", nrun, "runs avg", mstime, "ms")
+    print(t"   {nrun} runs avg {mstime} ms")
     print()
 
     # Cleanup
@@ -1699,20 +1648,9 @@ def run_test_paged_variable_native_fp8[
 
     var batch_size = len(cache_lengths)
     print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-        " q_type:",
-        q_type,
-        " kv_type:",
-        kv_type,
-        " output_type:",
-        ref_type,
-        " num_partitions:",
-        num_partitions.value() if num_partitions else -1,
+        t"test: {name}  batch_size: {batch_size}  num_heads: {num_heads} "
+        t" q_type: {q_type}  kv_type: {kv_type}  output_type: {ref_type} "
+        t" num_partitions: {num_partitions.value() if num_partitions else -1}"
     )
     for i in range(batch_size):
         print("  batch", i, ": cache_len=", cache_lengths[i])
@@ -2164,29 +2102,14 @@ def run_test_paged_variable_ragged_q_native_fp8[
         total_q_tokens += seq_lens[i]
 
     print(
-        "test:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-        " q_type:",
-        q_type,
-        " kv_type:",
-        kv_type,
-        " q_max_seq_len:",
-        q_max_seq_len,
-        " total_q_tokens:",
-        total_q_tokens,
+        t"test: {name}  batch_size: {batch_size}  num_heads: {num_heads} "
+        t" q_type: {q_type}  kv_type: {kv_type}  q_max_seq_len:"
+        t" {q_max_seq_len}  total_q_tokens: {total_q_tokens}"
     )
     for i in range(batch_size):
         print(
-            "  batch",
-            i,
-            ": cache_len=",
-            cache_lengths[i],
-            " q_seq_len=",
-            seq_lens[i],
+            t"  batch {i} : cache_len= {cache_lengths[i]}  q_seq_len="
+            t" {seq_lens[i]}"
         )
 
     var max_cache_len = 0
@@ -2530,18 +2453,8 @@ def run_test_paged_variable_ragged_q_native_fp8[
                         max_abs_err = abs_err
                     if abs_err > 2e-1:
                         print(
-                            "batch",
-                            b,
-                            "tok",
-                            s,
-                            "head",
-                            h,
-                            "dim",
-                            d,
-                            "actual",
-                            actual,
-                            "expect",
-                            expect,
+                            t"batch {b} tok {s} head {h} dim {d} actual"
+                            t" {actual} expect {expect}"
                         )
                     assert_almost_equal(actual, expect, atol=atol, rtol=rtol)
 
@@ -2596,18 +2509,8 @@ def run_bench_paged_variable_native_fp8[
 
     var batch_size = len(cache_lengths)
     print(
-        "bench:",
-        name,
-        " batch_size:",
-        batch_size,
-        " num_heads:",
-        num_heads,
-        " q_type:",
-        q_type,
-        " kv_type:",
-        kv_type,
-        " output_type:",
-        ref_type,
+        t"bench: {name}  batch_size: {batch_size}  num_heads: {num_heads} "
+        t" q_type: {q_type}  kv_type: {kv_type}  output_type: {ref_type}"
     )
     for i in range(batch_size):
         print("  batch", i, ": cache_len=", cache_lengths[i])
@@ -2835,7 +2738,7 @@ def run_bench_paged_variable_native_fp8[
         nrun
     )
     var mstime = nstime / 1000000
-    print("  ", nrun, "runs avg", mstime, "ms")
+    print(t"   {nrun} runs avg {mstime} ms")
     print()
 
     # Cleanup

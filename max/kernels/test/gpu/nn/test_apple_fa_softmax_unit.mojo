@@ -219,7 +219,7 @@ def test_apple_fa_softmax_unit(ctx: DeviceContext) raises:
             var expected = o_ref[c] / l
             var got = out_h[r * OUT_N + c]
             if abs(got - expected) > Float32(1e-3) * (1.0 + abs(expected)):
-                print("FAIL row", r, "col", c, "got", got, "exp", expected)
+                print(t"FAIL row {r} col {c} got {got} exp {expected}")
                 pass_ = False
 
     if not pass_:

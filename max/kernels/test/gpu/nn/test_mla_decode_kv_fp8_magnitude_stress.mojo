@@ -282,24 +282,11 @@ def test[
                             max_abs_err = e
 
     print(
-        "  q=",
-        seq_len,
-        "num_heads=",
-        num_heads,
-        "num_keys=",
-        num_keys,
-        "np=",
-        num_partitions.or_else(-1),
-        "kv_stress=",
-        kv_stress,
-        "mask=",
-        mla_mask_type.value,
-        "-> kernel_nonfinite=",
-        kernel_nonfinite,
-        "ref_nonfinite=",
-        ref_nonfinite,
-        "max_abs_err=",
-        max_abs_err,
+        t"  q= {seq_len} num_heads= {num_heads} num_keys= {num_keys} np="
+        t" {num_partitions.or_else(-1)} kv_stress= {kv_stress} mask="
+        t" {mla_mask_type.value} -> kernel_nonfinite="
+        t" {kernel_nonfinite} ref_nonfinite= {ref_nonfinite} max_abs_err="
+        t" {max_abs_err}"
     )
 
     _ = mla_args
@@ -386,21 +373,15 @@ def main() raises:
             for num_keys in [1024, 3050, 4096, 65536]:
                 for kv_stress in [Float32(1.0), Float32(120.0)]:
                     print(
-                        "=== num_heads=16 num_keys=",
-                        num_keys,
-                        "kv_stress=",
-                        kv_stress,
-                        "(CAUSAL) ===",
+                        t"=== num_heads=16 num_keys= {num_keys} kv_stress="
+                        t" {kv_stress} (CAUSAL) ==="
                     )
                     grand_total += sweep_q[16, 16, MLAMaskType.CAUSAL](
                         num_keys, kv_stress, ctx
                     )
                     print(
-                        "=== num_heads=32 num_keys=",
-                        num_keys,
-                        "kv_stress=",
-                        kv_stress,
-                        "(CAUSAL) ===",
+                        t"=== num_heads=32 num_keys= {num_keys} kv_stress="
+                        t" {kv_stress} (CAUSAL) ==="
                     )
                     grand_total += sweep_q[32, 32, MLAMaskType.CAUSAL](
                         num_keys, kv_stress, ctx

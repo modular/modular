@@ -206,22 +206,9 @@ def run_nvfp4_vs_fp8[
 ) raises:
     var n_valid = topk if valid_topk < 0 else valid_topk
     print(
-        "test:",
-        name,
-        " batch:",
-        batch_size,
-        " seq:",
-        seq_len,
-        " heads:",
-        num_heads,
-        " row_depth:",
-        row_depth,
-        " kv_tokens:",
-        num_kv_tokens,
-        " topk:",
-        topk,
-        " valid:",
-        n_valid,
+        t"test: {name}  batch: {batch_size}  seq: {seq_len}  heads:"
+        t" {num_heads}  row_depth: {row_depth}  kv_tokens: {num_kv_tokens} "
+        t" topk: {topk}  valid: {n_valid}"
     )
 
     comptime rope_depth = row_depth - V_DEPTH
@@ -619,12 +606,8 @@ def run_nvfp4_vs_fp8[
         if a != b:
             if mismatches < 4:
                 print(
-                    "  mismatch at",
-                    i,
-                    ": fp8 ref",
-                    out_fp8[i],
-                    " nvfp4",
-                    out_fp4[i],
+                    t"  mismatch at {i} : fp8 ref {out_fp8[i]}  nvfp4"
+                    t" {out_fp4[i]}"
                 )
             mismatches += 1
         if a != c:
@@ -636,14 +619,8 @@ def run_nvfp4_vs_fp8[
             nonfinite += 1
 
     print(
-        "  mismatches:",
-        mismatches,
-        "/",
-        out_size,
-        " canary_mismatches:",
-        canary_mismatches,
-        " nonzero:",
-        nonzero,
+        t"  mismatches: {mismatches} / {out_size}  canary_mismatches:"
+        t" {canary_mismatches}  nonzero: {nonzero}"
     )
     assert_equal(nonfinite, 0)
     assert_true(nonzero > out_size // 2, "reference output is mostly zero")
@@ -690,7 +667,7 @@ def run_nvfp4_vs_fp8[
             / Float64(perf_iters)
             / 1000.0
         )
-        print("PERF", name, " fp8_us:", fp8_us, " nvfp4_us:", fp4_us)
+        print(t"PERF {name}  fp8_us: {fp8_us}  nvfp4_us: {fp4_us}")
 
     _ = fp8_dev
     _ = fp4_dev

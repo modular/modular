@@ -162,19 +162,11 @@ def _compare[
         if d > threshold:
             n_exceed += 1
             if n_printed < 3:
-                print("  ", label, " mismatch at i=", i, ": a=", a, " e=", e)
+                print(t"   {label}  mismatch at i= {i} : a= {a}  e= {e}")
                 n_printed += 1
     print(
-        "  ",
-        label,
-        ": max_abs=",
-        max_diff,
-        " max_rel=",
-        max_rel,
-        " n_exceed=",
-        n_exceed,
-        "/",
-        n_elems,
+        t"   {label} : max_abs= {max_diff}  max_rel= {max_rel}  n_exceed="
+        t" {n_exceed} / {n_elems}"
     )
     assert_equal(n_exceed, 0)
 
@@ -225,38 +217,10 @@ def test_conv_residual[
     comptime K_padded = ((K_real + 255) // 256) * 256
 
     print(
-        "==",
-        label,
-        " in_dtype=",
-        in_dtype,
-        " out_dtype=",
-        out_dtype,
-        " N=",
-        N,
-        " H=",
-        H,
-        " W=",
-        W,
-        " C_in=",
-        C_in,
-        " C_out=",
-        C_out,
-        " RxS=",
-        R,
-        "x",
-        S,
-        " s=",
-        stride,
-        " p=",
-        pad,
-        " beta=",
-        beta,
-        " has_residual=",
-        has_residual,
-        " K_real=",
-        K_real,
-        " K_padded=",
-        K_padded,
+        t"== {label}  in_dtype= {in_dtype}  out_dtype= {out_dtype}  N= {N}  H="
+        t" {H}  W= {W}  C_in= {C_in}  C_out= {C_out}  RxS= {R} x {S}  s="
+        t" {stride}  p= {pad}  beta= {beta}  has_residual= {has_residual} "
+        t" K_real= {K_real}  K_padded= {K_padded}"
     )
 
     var n_in = N * H * W * C_in
@@ -419,7 +383,7 @@ def run_dtype_sweep[
     """Run the four residual variants for one dtype on a naturally
     K-aligned shape (C_in=C_out=256, R=S=3 → K=2304=9×256)."""
 
-    print("-- in_dtype=", in_dtype, "  out_dtype=", out_dtype, "  --")
+    print(t"-- in_dtype= {in_dtype}   out_dtype= {out_dtype}   --")
 
     # (a) has_residual=False — plain conv early-out.
     test_conv_residual[
