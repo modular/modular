@@ -436,41 +436,61 @@ modular_cc_test(
     ],
 )
 
-modular_cc_test(
-    name = "MemoryManagerOomSideChannelTest",
-    size = "large",
-    srcs = [
-        "MemoryManagerOomSideChannelTest.cpp",
-    ],
-    env = {
-        # No budget cap: the MM budget defaults to ~90% of device free, so it
-        # keeps headroom while an untracked chunkAlloc exhausts the device.
-        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM": "True",
-        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB": "2",
-        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "True",
-        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SELF_CHECK": "True",
-        "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_LOG": "False",
-    },
-    exec_properties = {
-        # Consumes essentially all device memory (the untracked side-channel
-        # allocation), so reserve a whole GPU to keep it off shared devices.
-        "test.resources:gpu-memory": "180",
-    },
-    # As above: reserving GPU memory has to be paired with requiring a GPU, or
-    # a CPU lane schedules it and fails before the test runs.
-    gpu_constraints = ["//:has_gpu"],
-    tags = ["gpu"],
-    target_compatible_with = select({
-        "@platforms//os:macos": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
-    deps = [
-        ":TestUtils",
-        "//MLRT:Driver/DeviceContextImpl",
-        "//Support:Base",
-        "@llvm-project//llvm:Support",
-    ],
-)
+[
+    modular_cc_test(
+        name = "MemoryManagerOomSideChannel{}Test".format(suffix),
+        size = "large",
+        srcs = [
+            "MemoryManagerOomSideChannelTest.cpp",
+        ],
+        env = {
+            # No budget cap: the MM budget defaults to ~90% of device free, so it
+            # keeps headroom while an untracked chunkAlloc exhausts the device.
+            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM": "True",
+            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM_PAGE_MB": "2",
+            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "True",
+            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SELF_CHECK": "True",
+            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_LOG": "False",
+        },
+        exec_properties = {
+            # Consumes essentially all device memory (the untracked side-channel
+            # allocation), so reserve a whole GPU to keep it off shared devices.
+            "test.resources:gpu-memory": gpu_memory,
+        },
+        # As above: reserving GPU memory has to be paired with requiring a GPU, or
+        # a CPU lane schedules it and fails before the test runs.
+        gpu_constraints = ["//:has_gpu"],
+        tags = ["gpu"],
+        target_compatible_with = select({
+            "@platforms//os:macos": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }) + compatible_with,
+        deps = [
+            ":TestUtils",
+            "//MLRT:Driver/DeviceContextImpl",
+            "//Support:Base",
+            "@llvm-project//llvm:Support",
+        ],
+    )
+    # A whole GPU is the gpu-memory each executor pool advertises: 180 on B200,
+    # 288 on MI355. Any less leaves room for other tests on the GPU this fills.
+    # The macro reads gpu-memory as a plain string, so it can't be a select().
+    for suffix, gpu_memory, compatible_with in [
+        (
+            "",
+            "180",
+            select({
+                "//:mi355_gpu": ["@platforms//:incompatible"],
+                "//conditions:default": [],
+            }),
+        ),
+        (
+            "Mi355",
+            "288",
+            ["//:mi355_gpu"],
+        ),
+    ]
+]
 
 modular_cc_test(
     name = "GPUMemoryManagerFallthroughTest",
