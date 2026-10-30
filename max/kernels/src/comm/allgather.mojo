@@ -332,9 +332,9 @@ def _allgather_p2p_kernel[
                         ]
 
         # Synchronize after writing.
-        _multi_gpu_barrier[ngpus, is_start=False, domain_id=domain_id](
-            rank_sigs, my_sig, _my_rank
-        )
+        _multi_gpu_barrier[
+            ngpus, is_start=False, sync_after_wait=True, domain_id=domain_id
+        ](rank_sigs, my_sig, _my_rank)
 
 
 @__llvm_metadata(
@@ -443,9 +443,9 @@ def _allgather_tma_kernel[
                 cp_async_bulk_commit_group()
                 cp_async_bulk_wait_group[0]()
 
-        _multi_gpu_barrier[ngpus, is_start=False, domain_id=domain_id](
-            rank_sigs, my_sig, _my_rank
-        )
+        _multi_gpu_barrier[
+            ngpus, is_start=False, sync_after_wait=True, domain_id=domain_id
+        ](rank_sigs, my_sig, _my_rank)
 
 
 @inline(.always)

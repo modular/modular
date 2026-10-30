@@ -30,6 +30,7 @@ from max.gpu import (
     grid_dim,
     thread_idx,
 )
+from max.gpu.primitives.grid_controls import _SUPPORT_PDL_LAUNCH
 from max.gpu.sync import barrier
 from max.gpu.sync import named_barrier
 from .lamport import LAMPORT_SENTINEL_U32, Lamport, LamportGeneration
@@ -373,6 +374,9 @@ def _multi_gpu_barrier[
     is_start: Bool,
     need_fence: Bool = False,
     *,
+    sync_after_wait: Bool = False,
+    arrive: Bool = True,
+    wait: Bool = True,
     named_barrier_threads: Int = 0,
     named_barrier_id: Int = 1,
     domain_id: Int = 0,
@@ -390,6 +394,22 @@ def _multi_gpu_barrier[
         need_fence: Whether memory fence is needed.
             If True, uses release/acquire semantics.
             If False, uses volatile memory operations for faster communication.
+        sync_after_wait: Whether the block syncs again after the wait on the
+            peers' flags. Only the first `ngpus` threads spin on those flags,
+            so without this the other warps leave the barrier while the peers
+            may still be reading this GPU's buffers. Set it when a PDL release
+            (`launch_dependent_grids` or the `PDL` exit) follows the end
+            barrier: the dependent could otherwise overwrite those buffers
+            before the peers are done. It is a whole-block `barrier()` and is
+            rejected together with `named_barrier_threads`, which only orders
+            its own participants. It is a no-op on targets without PDL, where
+            nothing releases a dependent early.
+        arrive: Whether this call posts the arrival flag to the peers. An end
+            barrier splits into `arrive=True, wait=False` right after the last
+            read of the peers' buffers and `arrive=False, wait=True` later, so
+            the wait overlaps whatever the kernel does in between. The two
+            halves must be called by the same threads, in this order.
+        wait: Whether this call waits for the peers' arrival flags.
         named_barrier_threads: When > 0, use a named barrier scoped to this
             many threads instead of a CTA-wide `barrier()` (PTX `bar.sync 0`).
         named_barrier_id: Hardware named-barrier id (0..15). Only used when
@@ -423,7 +443,12 @@ def _multi_gpu_barrier[
         0 <= domain_id < NUM_BARRIER_DOMAINS
     ), "domain_id out of range for barrier counter banks"
 
-    comptime if not is_start:
+    comptime assert arrive or wait, "a barrier call must arrive or wait"
+    comptime assert not is_start or (
+        arrive and wait
+    ), "the start barrier cannot be split"
+
+    comptime if not is_start and arrive:
         comptime if named_barrier_threads > 0:
             named_barrier[Int32(named_barrier_threads)](Int32(named_barrier_id))
         else:
@@ -432,6 +457,10 @@ def _multi_gpu_barrier[
     comptime assert not (
         need_fence and is_start
     ), "Start barrier should not need fence"
+    comptime assert not (sync_after_wait and named_barrier_threads > 0), (
+        "sync_after_wait is a whole-block barrier; a named barrier cannot"
+        " order the warps that do not take part in it"
+    )
     comptime flag_t = Signal.flag_t
     # Linearise block_idx
     var bid = (
@@ -460,8 +489,10 @@ def _multi_gpu_barrier[
             .unsafe_offset(bid * MAX_GPUS)
             .unsafe_offset(my_gpu)
         )
-        var val = internal_counter_ptr[] + 1
-        internal_counter_ptr[] = val
+        var val = internal_counter_ptr[]
+        comptime if arrive:
+            val += 1
+            internal_counter_ptr[] = val
 
         # peer_counter follows the whole self_counter array
         comptime peer_counter_offset = size_of[
@@ -505,22 +536,28 @@ def _multi_gpu_barrier[
         # instead of the lighter weight volatile loop used for nvidia GPUs.
         comptime if need_fence or is_amd_gpu():
             # broadcast the value to all peers that I reached the barrier
-            Atomic[Scalar[flag_t]].store[ordering=Ordering.RELEASE](
-                peer_counter_ptr, val
-            )
-            while (
-                Atomic[Scalar[flag_t]].load[ordering=Ordering.ACQUIRE](
-                    self_counter_ptr
+            comptime if arrive:
+                Atomic[Scalar[flag_t]].store[ordering=Ordering.RELEASE](
+                    peer_counter_ptr, val
                 )
-                != val
-            ):
-                pass
+            comptime if wait:
+                while (
+                    Atomic[Scalar[flag_t]].load[ordering=Ordering.ACQUIRE](
+                        self_counter_ptr
+                    )
+                    != val
+                ):
+                    pass
         else:
-            peer_counter_ptr.unsafe_store[volatile=True](val)
-            while self_counter_ptr.unsafe_load[volatile=True]() != val:
-                pass
+            comptime if arrive:
+                peer_counter_ptr.unsafe_store[volatile=True](val)
+            comptime if wait:
+                while self_counter_ptr.unsafe_load[volatile=True]() != val:
+                    pass
 
-    comptime if is_start or need_fence:
+    comptime if wait and (
+        is_start or need_fence or (sync_after_wait and _SUPPORT_PDL_LAUNCH)
+    ):
         comptime if named_barrier_threads > 0:
             named_barrier[Int32(named_barrier_threads)](Int32(named_barrier_id))
         else:

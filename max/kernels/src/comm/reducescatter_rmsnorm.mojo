@@ -188,6 +188,13 @@ def _reducescatter_rmsnorm_kernel[
         rank_sigs, rank_sigs[my_rank], my_rank
     )
 
+    # With PDL the end barrier is split: a block tells its peers it is done
+    # reading their inputs right after its last row's loads, and waits for the
+    # peers' flags only after the last row's norm, so the wait overlaps that
+    # compute instead of sitting on the dependent's release path.
+    comptime split_end_barrier = pdl_level > PDLLevel.OFF
+    var arrived = False
+
     # Grid-strided over local owned rows; the ragged partition bounds them, so
     # no `row < rows` guard is needed.
     for local_row in range(block_idx.x, my_count, num_blocks):
@@ -230,6 +237,20 @@ def _reducescatter_rmsnorm_kernel[
             # `reduced` == the standalone reduce-scatter shard (residual stream).
             sum_out.store((local_row, col_idx), reduced)
 
+        # The `sum_out` store depends on every P2P load of this row, so all of
+        # this block's reads of the peers' inputs are done once the block
+        # syncs here (the loads are invariant, so only that data dependency
+        # keeps them above the barrier).
+        comptime if split_end_barrier:
+            if local_row + num_blocks >= my_count:
+                _multi_gpu_barrier[
+                    ngpus,
+                    is_start=False,
+                    wait=False,
+                    domain_id=domain_id,
+                ](rank_sigs, rank_sigs[my_rank], my_rank)
+                arrived = True
+
         # Mean-square over the full row. Divide by `cols` (full H) FIRST, add
         # epsilon SECOND (not the shard count; epsilon outside the division).
         var thread_m2 = (reduced_f**2).reduce_add()
@@ -248,13 +269,32 @@ def _reducescatter_rmsnorm_kernel[
     # End barrier: peers P2P-read this rank's `src_ptrs`, so they must not be
     # reused until every peer is done. Deferring to the next collective's start
     # barrier breaks once a second grouped op shares the domain (`domain_id`).
-    _multi_gpu_barrier[ngpus, is_start=False, domain_id=domain_id](
-        rank_sigs, rank_sigs[my_rank], my_rank
-    )
+    comptime if split_end_barrier:
+        # A block with no rows has not arrived yet.
+        if not arrived:
+            _multi_gpu_barrier[
+                ngpus,
+                is_start=False,
+                wait=False,
+                domain_id=domain_id,
+            ](rank_sigs, rank_sigs[my_rank], my_rank)
+        _multi_gpu_barrier[
+            ngpus,
+            is_start=False,
+            sync_after_wait=True,
+            arrive=False,
+            domain_id=domain_id,
+        ](rank_sigs, rank_sigs[my_rank], my_rank)
+    else:
+        _multi_gpu_barrier[ngpus, is_start=False, domain_id=domain_id](
+            rank_sigs, rank_sigs[my_rank], my_rank
+        )
 
     # Must stay after the end barrier: released earlier, the next kernel could
     # reuse `src_ptrs` memory while peers are still reading it. The graph
     # compiler sees this op as the last reader and cannot know about the peers.
+    # Only the first warp waits on the peers inside the barrier, hence the
+    # block sync after the wait.
     comptime if pdl_level > PDLLevel.OFF:
         launch_dependent_grids()
 

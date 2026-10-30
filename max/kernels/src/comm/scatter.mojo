@@ -111,7 +111,9 @@ def scatter_pull_kernel[
                 data_ptr.unsafe_load(tail_idx),
             )
 
-        _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, _my_rank)
+        _multi_gpu_barrier[ngpus, is_start=False, sync_after_wait=True](
+            rank_sigs, my_sig, _my_rank
+        )
 
 
 # --- Wrapper functions ---

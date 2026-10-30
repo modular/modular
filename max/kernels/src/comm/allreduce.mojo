@@ -1128,9 +1128,12 @@ def _allreduce_1stage_kernel[
                         accum_type=accum_type,
                     ](elem_idx, ptrs_ngpus, output_layout, output_lambda)
 
-        _multi_gpu_barrier[ngpus, is_start=False, domain_id=domain_id](
-            rank_sigs, my_sig, _my_rank
-        )
+        _multi_gpu_barrier[
+            ngpus,
+            is_start=False,
+            sync_after_wait=True,
+            domain_id=domain_id,
+        ](rank_sigs, my_sig, _my_rank)
 
 
 @inline(.always)

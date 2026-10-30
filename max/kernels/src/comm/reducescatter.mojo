@@ -511,9 +511,12 @@ def _reducescatter_kernel[
                     config.stride,
                 )
 
-        _multi_gpu_barrier[ngpus, is_start=False, domain_id=domain_id](
-            rank_sigs, my_sig, _my_rank
-        )
+        _multi_gpu_barrier[
+            ngpus,
+            is_start=False,
+            sync_after_wait=True,
+            domain_id=domain_id,
+        ](rank_sigs, my_sig, _my_rank)
 
 
 @__llvm_metadata(
