@@ -44,7 +44,6 @@
 #include "mlir/Tools/ParseUtilities.h"
 #include "mlir/Tools/mlir-translate/MlirTranslateMain.h"
 #include "mlir/Tools/mlir-translate/Translation.h"
-#include "llvm/ADT/StringSwitch.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Option/ArgList.h"
@@ -99,7 +98,6 @@ struct TranslateOptions {
   bool allowUnregisteredDialects = false;
   bool errorDiagnosticsOnly = false;
   bool noImplicitModule = false;
-  bool enablePrebuiltPackages = false;
 };
 
 /// Forwards the `-mllvm` values, and the printing flags that kgen-translate
@@ -150,6 +148,8 @@ ErrorOr<ContextRef> createContext() {
 int runTranslation(const State &state, const mlir::Translation &translation,
                    ArrayRef<std::string> inputs,
                    const TranslateOptions &options) {
+  TraceProfiler profiler(options.driverOptions.timeTrace,
+                         options.driverOptions.timeTraceGranularity);
   std::string errorMessage;
   std::unique_ptr<llvm::MemoryBuffer> input =
       mlir::openInputFile(inputs.empty() ? "-" : inputs.front(), &errorMessage);
@@ -400,13 +400,6 @@ int run(State state) {
   if (!parseForwardedCLOptions(state, args))
     return EXIT_FAILURE;
 
-  ErrorOr<ContextRef> ctxOr = createContext();
-  if (ctxOr.isError())
-    return state.reportError(
-        llvm::formatv("failed to create context: {0}", ctxOr.getError()));
-
-  TraceProfiler profiler(options.driverOptions.timeTrace,
-                         options.driverOptions.timeTraceGranularity);
   mlir::Translation translation(
       [&](const std::shared_ptr<llvm::SourceMgr> &sourceMgr,
           llvm::raw_ostream &output, MLIRContext *context) {
@@ -452,6 +445,8 @@ int main(int argc, char *argv[]) {
     DriverOptions &driverOptions = options.driverOptions;
     FrontendOptions &frontendOptions = options.frontendOptions;
     CompilationOptions &compilationOptions = options.compilationOptions;
+    frontendOptions.useMLIRDiagnostics = true;
+    frontendOptions.disablePrebuiltPackages = true;
 #define MOJO_OPTION_WITH_MARSHALLING(...)                                      \
   PARSE_OPTION_WITH_MARSHALLING(args, errors, __VA_ARGS__)
 #include "Mojo/tools/kgen-translate/KGENTranslateOptions.inc"
@@ -483,30 +478,11 @@ int main(int argc, char *argv[]) {
       return state.reportError(err.getError());
   }
 
-  bool useMLIRDiagnostics = true;
-  if (const llvm::opt::Arg *arg =
-          args.getLastArg(options::OPT_use_mlir_diagnostics,
-                          options::OPT_use_mlir_diagnostics_eq);
-      arg && arg->getOption().matches(options::OPT_use_mlir_diagnostics_eq)) {
-    std::optional<bool> value =
-        llvm::StringSwitch<std::optional<bool>>(arg->getValue())
-            .Cases({"true", "TRUE", "True", "1"}, true)
-            .Cases({"false", "FALSE", "False", "0"}, false)
-            .Default(std::nullopt);
-    if (!value)
-      return state.reportError(
-          llvm::formatv("invalid value '{0}' for --use-mlir-diagnostics, "
-                        "expected a boolean",
-                        arg->getValue()));
-    useMLIRDiagnostics = *value;
-  }
-  if (state.diagnosticFormat == DiagnosticFormat::JSON && useMLIRDiagnostics) {
+  if (state.diagnosticFormat == DiagnosticFormat::JSON &&
+      options.frontendOptions.useMLIRDiagnostics) {
     return state.reportError("--diagnostic-format=json is incompatible "
                              "with --use-mlir-diagnostics=true");
   }
-  options.frontendOptions.useMLIRDiagnostics = useMLIRDiagnostics;
-  options.frontendOptions.disablePrebuiltPackages =
-      !options.enablePrebuiltPackages;
 
   if (!parseForwardedCLOptions(state, args))
     return EXIT_FAILURE;
@@ -516,8 +492,6 @@ int main(int argc, char *argv[]) {
     return state.reportError(
         llvm::formatv("failed to create context: {0}", ctxOr.getError()));
 
-  TraceProfiler profiler(options.driverOptions.timeTrace,
-                         options.driverOptions.timeTraceGranularity);
   mlir::Translation translation(
       [&](const std::shared_ptr<llvm::SourceMgr> &sourceMgr,
           llvm::raw_ostream &output, MLIRContext *context) {

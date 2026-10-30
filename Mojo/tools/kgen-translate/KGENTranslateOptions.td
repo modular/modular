@@ -46,12 +46,11 @@ def mojo_enable_prebuilt_packages : Flag<["--", "-"],
   "mojo-enable-prebuilt-packages">,
   Group<TestingOptionGroup>,
   HelpText<"Uses prebuilt packages when importing Mojo source.">,
-  MarshallingInfoFlag<TranslateOpts<"enablePrebuiltPackages">>;
+  MarshallingInfoNegativeFlag<FrontendOpts<"disablePrebuiltPackages">>;
 
-def use_mlir_diagnostics : Flag<["--", "-"], "use-mlir-diagnostics">,
-  Group<TestingOptionGroup>,
-  HelpText<"Reports diagnostics through MLIR, which `--verify-diagnostics` "
-           "needs. This is the default.">;
 def use_mlir_diagnostics_eq : Joined<["--", "-"], "use-mlir-diagnostics=">,
   Group<TestingOptionGroup>, MetaVarName<"BOOL">,
-  HelpText<"Sets whether diagnostics are reported through MLIR.">;
+  HelpText<"Sets whether diagnostics are reported through MLIR, which "
+           "`--verify-diagnostics` needs. Defaults to `true`.">,
+  MarshallingInfoCustom<FrontendOpts<"useMLIRDiagnostics">,
+    "makeChoiceNormalizer<bool>({{\"true\", true}, {\"false\", false}})">;
