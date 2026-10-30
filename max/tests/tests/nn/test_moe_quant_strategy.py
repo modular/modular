@@ -28,11 +28,16 @@ itself takes. CPU only.
 from __future__ import annotations
 
 import numpy as np
+import pytest
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.legacy.moe.quant_strategy import NvMxf4f8Strategy
+from max.nn.legacy.activation import GatedActivation
+from max.nn.legacy.moe.quant_strategy import (
+    NvMxf4f8Strategy,
+    _gated_activation_ops,
+)
 from max.nn.legacy.quant_config import (
     InputScaleSpec,
     QuantConfig,
@@ -144,3 +149,16 @@ def test_prepare_swiglu_operands_places_scales_on_the_hidden_device() -> None:
         assert prepared.expert_scales is not None
         assert prepared.c_input_scales.device == gpu
         assert prepared.expert_scales.device == gpu
+
+
+def test_gated_activation_ops_rejects_activations_without_a_graph_form() -> (
+    None
+):
+    """``situ`` is fused-kernel only; it must not fall through to SiLU."""
+    spec = TensorType(DType.float32, shape=(2, 8), device=DeviceRef.CPU())
+    with Graph("situ_unsupported", input_types=[spec]) as graph:
+        (x,) = graph.inputs
+        with pytest.raises(NotImplementedError, match="situ"):
+            _gated_activation_ops(
+                x.tensor, GatedActivation("situ", alpha=4.0, limit=25.0)
+            )

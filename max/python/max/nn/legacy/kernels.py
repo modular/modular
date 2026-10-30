@@ -12194,7 +12194,10 @@ def swiglu_quantize_dynamic_block_scaled(
     :func:`quantize_dynamic_block_scaled` would, without writing the
     activation out. ``gate`` is the first half of each row and ``up`` the
     second. The formats and arguments match
-    :func:`quantize_dynamic_block_scaled`. Runs on NVIDIA SM100 and SM120.
+    :func:`quantize_dynamic_block_scaled`. Runs on NVIDIA SM100 and SM120
+    (NVFP4 and MXFP8), and on AMD CDNA4 (MI355X) for MXFP8 only, with
+    rank-2 ``[M, N // 32]`` row-major scales and ``tensor_sf`` fixed at
+    1.0 (MXFP8 is purely block scaled).
 
     Args:
         gate_up: The bfloat16 input. Shape: ``[M, 2 * N]``.
@@ -12213,19 +12216,51 @@ def swiglu_quantize_dynamic_block_scaled(
 
     Returns:
         The quantized ``[M, N]`` activation (``[M, N // 2]`` packed FP4) and
-        its rank-5 interleaved scales.
+        its scales: rank-5 interleaved on SM100/SM120, rank-2
+        ``[M, N // sf_vector_size]`` row-major on AMD.
 
     Raises:
-        ValueError: If the GPU is not SM100 or SM120, ``gate_up`` is not a
-            rank-2 bfloat16 tensor with a static even width whose halves
-            are whole scale blocks, or the format arguments do not name a
-            supported format.
+        ValueError: If the GPU is not SM100, SM120, or AMD CDNA4 (MI355X),
+            ``gate_up`` is not a rank-2 bfloat16 tensor with a static even
+            width whose halves are whole scale blocks, the format arguments
+            do not name a supported format, or the format is not MXFP8 on
+            AMD.
     """
-    if not (_is_sm10x_gpu() or _is_sm12x_gpu()):
+    is_amd = _is_amd_gpu()
+    if not (is_amd or _is_sm10x_gpu() or _is_sm12x_gpu()):
         raise ValueError(
-            "swiglu_quantize_dynamic_block_scaled requires an NVIDIA SM100 or"
-            " SM120 GPU"
+            "swiglu_quantize_dynamic_block_scaled requires an NVIDIA SM100,"
+            " SM120, or AMD CDNA4 (MI355X) GPU"
         )
+    if is_amd:
+        # The Mojo dispatcher runs the gated MXFP8 kernel on MI355X only;
+        # gate here too so other HIP devices fail with the documented
+        # error instead of a kernel compile assert.
+        architecture = accelerator_architecture_name()
+        if not architecture.startswith("gfx950"):
+            raise ValueError(
+                "swiglu_quantize_dynamic_block_scaled requires an AMD CDNA4"
+                f" (MI355X) GPU, got {architecture}"
+            )
+        if out_type != DType.float8_e4m3fn:
+            raise ValueError(
+                "swiglu_quantize_dynamic_block_scaled on AMD supports MXFP8"
+                f" only (out_type=float8_e4m3fn), got out_type={out_type}"
+            )
+        if scales_type != DType.float8_e8m0fnu:
+            raise ValueError(
+                "scales_type must be float8_e8m0fnu for MXFP8 on AMD, got"
+                f" {scales_type}"
+            )
+        if sf_vector_size != 32:
+            raise ValueError(
+                "sf_vector_size must be 32 for MXFP8 on AMD, got"
+                f" {sf_vector_size}"
+            )
+        if isinstance(tensor_sf, TensorValue) or float(tensor_sf) != 1.0:
+            raise ValueError(
+                "tensor_sf must be 1.0 on AMD: MXFP8 is purely block scaled"
+            )
     if gate_up.rank != 2:
         raise ValueError("gate_up must be a rank 2 tensor")
     if gate_up.dtype != DType.bfloat16:

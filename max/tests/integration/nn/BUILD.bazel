@@ -158,6 +158,7 @@ modular_py_test(
             "test_sgmv_kernels_gpu.py",
             "test_smallm_streaming_matmul_gpu.py",
             "test_swiglu_nvfp4_graph_capture_mwe_gpu.py",
+            "test_swiglu_quantize_mxfp8_amd_gpu.py",
             "test_w4a8_grouped_matmul_amd_gpu.py",
         ],
     ) + ["conftest.py"],
@@ -467,6 +468,31 @@ modular_py_test(
         "gpu",
     ],
     target_compatible_with = ["//:mi355_gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "swiglu_quantize_mxfp8_amd_tests",
+    size = "large",
+    srcs = [
+        "test_swiglu_quantize_mxfp8_amd_gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:mi355_gpu"],
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+    ],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",

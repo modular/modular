@@ -63,6 +63,7 @@ modular_eager_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/tests/integration/test_common:graph_utils",
     ],
 )
 

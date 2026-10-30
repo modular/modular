@@ -126,6 +126,10 @@ def _gated_activation_ops(
     up = gate_up[:, moe_dim:]
     if activation.fused_activation == "gelu_tanh":
         return ops.gelu(gate, approximate="tanh") * up
+    if activation.fused_activation not in ("silu", "swigluoai"):
+        raise NotImplementedError(
+            f"no graph-op form of the {activation.fused_activation!r} activation"
+        )
     if activation.limit != 0.0:
         gate = ops.min(gate, activation.limit)
         up = ops.min(ops.max(up, -activation.limit), activation.limit)

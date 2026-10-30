@@ -1053,7 +1053,8 @@ struct Struct_swiglu_quantize_dynamic_block_scaled:
         Args:
             output: The quantized activation of shape `[M, N]` (or `N // 2`
                 packed FP4).
-            scales: The block scales in the 5D TCGEN interleaved layout.
+            scales: The block scales in the 5D TCGEN interleaved layout on
+                SM100/SM120, or rank-2 row-major on AMD CDNA4.
             gate_up: The input of shape `[M, 2 * N]`, `gate` then `up`.
             tensor_sf: The tensor-wise scale factor.
             context: The device context.
@@ -1065,7 +1066,9 @@ struct Struct_swiglu_quantize_dynamic_block_scaled:
         comptime scales_type = type_of(scales).dtype
         comptime in_dtype = type_of(gate_up).dtype
         comptime assert type_of(output).rank == 2
-        comptime assert type_of(scales).rank == 5
+        comptime assert (
+            type_of(scales).rank == 2 or type_of(scales).rank == 5
+        ), "scales must be rank 2 (AMD) or rank 5 (SM100/SM120)"
         comptime assert type_of(gate_up).rank == 2
         comptime assert is_gpu[target](), (
             "gated block-scaled quantization only supports GPUs with native"

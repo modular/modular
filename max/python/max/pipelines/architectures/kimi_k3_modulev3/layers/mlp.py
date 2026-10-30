@@ -19,8 +19,11 @@ from __future__ import annotations
 
 from max import functional as F
 from max.dtype import DType
+from max.graph import TensorValue
 from max.nn import Linear, Module
 from max.nn.common_layers.mesh_axis import TP
+from max.nn.legacy.activation import GatedActivation
+from max.nn.legacy.kernels import swiglu_quantize_dynamic_block_scaled
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMesh, NamedMapping
 
@@ -54,6 +57,32 @@ def kimi_situ_and_mul(
     if linear_beta is not None:
         up = linear_beta * F.tanh(up / linear_beta)
     return F.cast(situ * up, out_dtype)
+
+
+def _kimi_situ_and_mul_quantize_mxfp8(
+    gate_up: Tensor, beta: float, linear_beta: float | None
+) -> tuple[TensorValue, TensorValue]:
+    """SiTU-and-mul and its MXFP8 requant in one kernel.
+
+    BF16 ``[gate | up]`` -> (E4M3 values, E8M0 row-major scales): what
+    ``kimi_situ_and_mul`` followed by ``quantize_mxfp8`` computes, without
+    writing the activation out. The op splits the LOCAL tensor at its
+    midpoint, so under TP each rank's ``[gate_r ; up_r]`` shard needs no
+    width argument.
+    """
+    return swiglu_quantize_dynamic_block_scaled(
+        TensorValue(gate_up),
+        GatedActivation("situ", alpha=beta, limit=abs(linear_beta or 0.0)),
+        tensor_sf=1.0,
+        sf_vector_size=32,
+        scales_type=DType.float8_e8m0fnu,
+        out_type=DType.float8_e4m3fn,
+    )
+
+
+kimi_situ_and_mul_quantize_mxfp8 = F.functional(
+    _kimi_situ_and_mul_quantize_mxfp8
+)
 
 
 class KimiK3DenseMLP(Module[[Tensor], Tensor]):

@@ -99,7 +99,12 @@ from max.tensor.sharding import (
 
 from . import ep
 from .amd_w4a8_validation import validate_amd_packed_k, validate_amd_tp_w4a8
-from .mlp import KimiK3DenseMLP, kimi_situ_and_mul, tensor_parallel_dense_mlp
+from .mlp import (
+    KimiK3DenseMLP,
+    kimi_situ_and_mul,
+    kimi_situ_and_mul_quantize_mxfp8,
+    tensor_parallel_dense_mlp,
+)
 from .moe_router import make_kimi_k3_moe_router
 from .tensor_parallel import check_divisible, shard_interleaved_blocks
 
@@ -436,17 +441,14 @@ class KimiK3LatentMoE(Module[..., Tensor]):
                     out_dtype=self.dtype,
                 )
             )
-            activated = kimi_situ_and_mul(
-                gate_up,
-                self.beta,
-                self.linear_beta,
-                self.moe_intermediate_size,
-            )
             # SiTU hands back BF16, so the down projection re-quantizes
-            # rather than chaining a quantized intermediate. The FFN-width
-            # axis is still TP-sharded here (SiTU is elementwise), so the
-            # quantized activations and their scales carry the same split.
-            quantized, act_scales = quantize_mxfp8(activated)
+            # rather than chaining a quantized intermediate; the activation
+            # and that requant run as one kernel. The FFN-width axis is
+            # still TP-sharded here (SiTU is elementwise), so the quantized
+            # activations and their scales carry the same split.
+            quantized, act_scales = kimi_situ_and_mul_quantize_mxfp8(
+                gate_up, self.beta, self.linear_beta
+            )
             quantized, act_scales = (
                 ffn_sharded(quantized),
                 ffn_sharded(act_scales),

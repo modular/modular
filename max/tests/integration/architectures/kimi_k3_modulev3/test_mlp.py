@@ -10,20 +10,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Numerical verification for :func:`kimi_situ_and_mul` and
-:class:`KimiK3DenseMLP`.
+"""Numerical verification for :func:`kimi_situ_and_mul`,
+:func:`kimi_situ_and_mul_quantize_mxfp8`, and :class:`KimiK3DenseMLP`.
 """
 
 from __future__ import annotations
 
 import numpy as np
-from max.driver import Accelerator
+import pytest
+from max.driver import Accelerator, accelerator_api, accelerator_count
 from max.dtype import DType
 from max.pipelines.architectures.kimi_k3_modulev3.layers.mlp import (
     KimiK3DenseMLP,
     kimi_situ_and_mul,
+    kimi_situ_and_mul_quantize_mxfp8,
+)
+from max.pipelines.architectures.kimi_k3_modulev3.layers.moe_latent import (
+    quantize_mxfp8,
 )
 from max.tensor import Tensor, default_device
+from test_common.graph_utils import is_gfx950
 
 
 def _numpy_situ_and_mul(
@@ -88,6 +94,89 @@ def test_kimi_situ_and_mul_passes_up_through_unchanged_when_linear_beta_none() -
     assert rel_error < 1e-3, (
         f"linear_beta=None path diverges: rel_error={rel_error}"
     )
+
+
+@pytest.mark.compile_on_gpu(
+    "mo.quantize.dynamic.block.scaled and the fused swiglu quantize are"
+    " custom ops the interpreter can't bind"
+)
+def test_kimi_situ_and_mul_quantize_mxfp8_matches_chain_bytes() -> None:
+    """The fused SiTU+quantize wrapper vs the chain it replaces, byte-wise.
+
+    ``kimi_situ_and_mul`` + ``quantize_mxfp8`` (what the routed experts ran)
+    and the fused kernel quantize the same bf16-rounded SiTU, but their fp32
+    transcendentals differ by an ulp on some inputs, which can flip a bf16
+    rounding at a block max and shift that block's scale by one E8M0 step.
+    The mismatch count is therefore gated small, not zero: a real divergence
+    (a swapped gate/up, a launch geometry on 2N, a missing scale column)
+    mismatches whole blocks, orders of magnitude past the gate.
+    """
+    if (
+        accelerator_count() == 0
+        or accelerator_api() != "hip"
+        or not is_gfx950()
+    ):
+        pytest.skip("needs an AMD gfx950 GPU")
+    beta, linear_beta = 4.0, 25.0
+    rng = np.random.default_rng(7)
+    max_scale_diffs = 4
+    max_data_diffs = 128
+    for m, width in [(64, 384), (8, 3072)]:
+        # Signed data past both saturations: |gate| > 9 * beta drives tanh
+        # to +-1, |up| > linear_beta drives the soft saturation.
+        gate_up_np = (rng.standard_normal((m, 2 * width)) * 2).astype(
+            np.float32
+        )
+        gate_up_np[:, 0:width:9] = 40.0
+        gate_up_np[:, width::11] = 100.0
+
+        with default_device(Accelerator()):
+            gate_up = Tensor(gate_up_np, dtype=DType.float32).cast(
+                DType.bfloat16
+            )
+            chain_q, chain_scales = quantize_mxfp8(
+                kimi_situ_and_mul(gate_up, beta, linear_beta, width)
+            )
+            fused_q, fused_scales = kimi_situ_and_mul_quantize_mxfp8(
+                gate_up, beta, linear_beta
+            )
+            neg_q, neg_scales = kimi_situ_and_mul_quantize_mxfp8(
+                gate_up, beta, -linear_beta
+            )
+            chain_q_bytes = chain_q.storage.view(DType.uint8).to_numpy()
+            chain_scales_bytes = chain_scales.storage.view(
+                DType.uint8
+            ).to_numpy()
+            fused_q_bytes = fused_q.storage.view(DType.uint8).to_numpy()
+            fused_scales_bytes = fused_scales.storage.view(
+                DType.uint8
+            ).to_numpy()
+
+        # beta * tanh(x / beta) is even in beta, so a negative linear_beta
+        # must build and match its positive twin.
+        np.testing.assert_array_equal(
+            neg_q.storage.view(DType.uint8).to_numpy(), fused_q_bytes
+        )
+        np.testing.assert_array_equal(
+            neg_scales.storage.view(DType.uint8).to_numpy(),
+            fused_scales_bytes,
+        )
+
+        scale_diffs = int(
+            np.count_nonzero(fused_scales_bytes != chain_scales_bytes)
+        )
+        data_diffs = int(np.count_nonzero(fused_q_bytes != chain_q_bytes))
+        print(
+            f"M={m} gate_up={2 * width}: fused vs chain:"
+            f" {data_diffs} of {fused_q_bytes.size} data bytes,"
+            f" {scale_diffs} of {fused_scales_bytes.size} scales differ"
+        )
+        assert scale_diffs <= max_scale_diffs, (
+            f"M={m}: {scale_diffs} scales differ"
+        )
+        assert data_diffs <= max_data_diffs, (
+            f"M={m}: {data_diffs} data bytes differ"
+        )
 
 
 def test_dense_mlp_matches_independent_reference() -> None:

@@ -42,6 +42,7 @@ def activation_function_from_name(
 _FUSED_ACTIVATION_CONSTANTS: dict[str, tuple[str, ...]] = {
     "silu": ("limit",),
     "swigluoai": ("alpha", "limit"),
+    "situ": ("alpha", "limit"),
     "gelu_tanh": (),
 }
 
@@ -60,6 +61,10 @@ class GatedActivation:
     - ``"gelu_tanh"``: ``gelu(gate) * up`` with the tanh approximation
       ``gelu(x) = 0.5 * x * (1 + tanh(0.7978845608028654 *
       (x + 0.044715 * x**3)))``.
+    - ``"situ"``: ``beta * tanh(gate / beta) * sigmoid(gate) * u`` with
+      ``beta = alpha`` (non-zero), where ``u`` is
+      ``linear_beta * tanh(up / linear_beta)`` for a non-zero ``limit``
+      (``linear_beta``) and ``up`` itself for ``limit = 0``.
 
     ``gated_activation_fn`` replaces the activation with graph ops, for
     activations no kernel fuses. It takes the ``[gate | up]`` projection and
@@ -74,11 +79,14 @@ class GatedActivation:
     """The activation fused kernels compute."""
 
     alpha: float = 0.0
-    """The sigmoid scale of ``"swigluoai"``; must be 0 for the others."""
+    """The sigmoid scale of ``"swigluoai"`` and the gate's tanh scale
+    ``beta`` of ``"situ"`` (non-zero there); must be 0 for the others."""
 
     limit: float = 0.0
-    """The clamp bound of ``"swigluoai"`` and ``"silu"`` (0 leaves ``"silu"``
-    unclamped); must be 0 for ``"gelu_tanh"``."""
+    """The clamp bound of ``"swigluoai"`` and ``"silu"`` (0 leaves
+    ``"silu"`` unclamped), and the up half's soft saturation
+    ``linear_beta`` of ``"situ"`` (0 passes ``up`` through); must be 0 for
+    ``"gelu_tanh"``."""
 
     gated_activation_fn: Callable[[TensorValue, int], TensorValue] | None = None
     """Graph-op replacement for the activation, or ``None`` to fuse it."""
@@ -98,6 +106,8 @@ class GatedActivation:
             raise ValueError(f"limit must be non-negative, got {self.limit}")
         if name == "swigluoai" and (self.alpha == 0.0 or self.limit == 0.0):
             raise ValueError("swigluoai needs a non-zero alpha and limit")
+        if name == "situ" and self.alpha == 0.0:
+            raise ValueError("situ needs a non-zero alpha (beta)")
         if self.gated_activation_fn is not None and (
             name != "silu" or self.limit != 0.0
         ):

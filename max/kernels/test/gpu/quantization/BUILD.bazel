@@ -32,6 +32,7 @@ _FP8_FP4_TESTS = [
     "test_grouped_nvfp4_quantization_pdl.mojo",
     "test_grouped_nvfp4_row_amax_quantization.mojo",
     "test_swiglu_block_scaled_quantization.mojo",
+    "test_swiglu_quantize_mxfp8_amd.mojo",
     "test_rope_block_scaled_quantization.mojo",
     "test_rms_norm_block_scaled_quantization.mojo",
 ]
@@ -87,6 +88,8 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": ["//:b200_gpu"],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    # The fused SiTU + MXFP8 kernel is CDNA4 (MI355X) only.
+    "test_swiglu_quantize_mxfp8_amd.mojo": ["//:mi355_gpu"],
     "test_rope_block_scaled_quantization.mojo": select({
         "//:b200_gpu": ["//:b200_gpu"],
         "//conditions:default": ["@platforms//:incompatible"],
