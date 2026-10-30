@@ -14,7 +14,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 from typing import ClassVar
 
 from max.dtype import DType
@@ -36,6 +37,7 @@ from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithPermissiveMaxSeqLen,
     ArchConfigWithStoredKVParams,
+    ModelOutputConfig,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.modeling.config_enums import (
@@ -361,15 +363,18 @@ class GptOssConfig(
     def finalize(
         self,
         huggingface_config: AutoConfig,
-        state_dict: dict[str, WeightData],
-        return_logits: ReturnLogits,
-    ) -> None:
-        """Define parameters that can't be determined just from the pipeline config.
+        state_dict: Mapping[str, WeightData],
+        outputs: ModelOutputConfig,
+    ) -> Self:
+        """Returns the config completed with checkpoint and output requirements.
 
         Args:
-            huggingface_config: The HuggingFace model configuration object.
-            state_dict: The model's state dictionary containing weights.
-            return_logits: Whether to return the last token, all tokens or a variable number of logits.
+            huggingface_config: The checkpoint's model configuration.
+            state_dict: The adapted checkpoint weights.
+            outputs: The outputs the pipeline requires.
+
+        Returns:
+            A copy of this config with the checkpoint-dependent fields set.
         """
         # When tie_word_embeddings=True, the embedding weights are shared with
         # the output weights.
@@ -377,9 +382,11 @@ class GptOssConfig(
             getattr(huggingface_config, "tie_word_embeddings", False)
             or "language_model.lm_head.weight" not in state_dict
         )
-
-        self.tie_word_embeddings = tie_word_embeddings
-        self.return_logits = return_logits
+        return replace(
+            self,
+            tie_word_embeddings=tie_word_embeddings,
+            return_logits=outputs.return_logits,
+        )
 
 
 _HIDDEN_ACTIVATION_MAP = {
