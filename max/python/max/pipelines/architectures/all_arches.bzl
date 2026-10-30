@@ -100,6 +100,7 @@ ALL_ARCHITECTURES = [
     "//max/python/max/pipelines/architectures/pixtral",
     "//max/python/max/pipelines/architectures/pixtral_modulev3",
     "//max/python/max/pipelines/architectures/qwen2",
+    "//max/python/max/pipelines/architectures/qwen2_modulev3",
     "//max/python/max/pipelines/architectures/qwen2_5vl",
     "//max/python/max/pipelines/architectures/qwen3",
     "//max/python/max/pipelines/architectures/qwen3_5",

@@ -403,6 +403,11 @@ def register_all_models() -> None:
         ),
         _LazyArch("Qwen2ForCausalLM", ".qwen2", "qwen2_arch"),
         _LazyArch(
+            "Qwen2ForCausalLM_ModuleV3",
+            ".qwen2_modulev3",
+            "qwen2_modulev3_arch",
+        ),
+        _LazyArch(
             "Qwen2_5_VLForConditionalGeneration",
             ".qwen2_5vl",
             "qwen2_5_vl_arch",
