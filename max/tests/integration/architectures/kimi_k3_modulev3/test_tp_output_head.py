@@ -40,7 +40,6 @@ def test_output_head_tp2_matches_tp1() -> None:
     total_seq_len = int(input_row_offsets_np[-1])
 
     h_np = rng.standard_normal((total_seq_len, hidden)).astype(np.float32)
-    norm_weight_np = rng.standard_normal(hidden).astype(np.float32)
     lm_head_np = (
         rng.standard_normal((vocab, hidden)) / np.sqrt(hidden)
     ).astype(np.float32)
@@ -48,7 +47,6 @@ def test_output_head_tp2_matches_tp1() -> None:
 
     with default_device(Accelerator(0)):
         h1 = Tensor(h_np, dtype=DType.float32)
-        norm_weight1 = Tensor(norm_weight_np, dtype=DType.float32)
         lm_head_weight1 = Tensor(lm_head_np, dtype=DType.float32)
         input_row_offsets1 = Tensor(input_row_offsets_np, dtype=DType.uint32)
         return_n_logits1 = Tensor(return_n_logits_np, dtype=DType.int64)
@@ -57,7 +55,6 @@ def test_output_head_tp2_matches_tp1() -> None:
             h1,
             input_row_offsets1,
             return_n_logits1,
-            norm_weight1,
             lm_head_weight1,
             return_logits=ReturnLogits.LAST_TOKEN,
         )
@@ -69,7 +66,6 @@ def test_output_head_tp2_matches_tp1() -> None:
     )
     with default_device(mesh):
         h2 = Tensor(h_np, dtype=DType.float32)
-        norm_weight2 = Tensor(norm_weight_np, dtype=DType.float32)
         lm_head_weight2 = tensor_parallel_lm_head_weight(
             Tensor(lm_head_np, dtype=DType.float32), mesh
         )
@@ -80,7 +76,6 @@ def test_output_head_tp2_matches_tp1() -> None:
             h2,
             input_row_offsets2,
             return_n_logits2,
-            norm_weight2,
             lm_head_weight2,
             return_logits=ReturnLogits.LAST_TOKEN,
         )

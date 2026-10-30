@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Verifies TP=2 matches TP=1 for the attention-residual mixture."""
+"""Verifies TP=2 matches TP=1 for the fused attention-residual mixture."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ import pytest
 from max.driver import Accelerator
 from max.dtype import DType
 from max.pipelines.architectures.kimi_k3_modulev3.layers.attn_residual import (
-    kimi_k3_attn_res_mix,
+    kimi_k3_attn_res_mix_norm,
 )
 from max.tensor import Tensor, default_device
 from max.tensor.sharding import DeviceMesh
@@ -29,8 +29,8 @@ def _rel_error(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.max(np.abs(a - b)) / max(np.max(np.abs(b)), 1e-12))
 
 
-@pytest.mark.compile_on_gpu("attn_res_mix has no custom.declare declaration")
-def test_attn_res_mix_tp2_matches_tp1() -> None:
+@pytest.mark.compile_on_gpu("attn_res_mix_norm has no custom.declare")
+def test_attn_res_mix_norm_tp2_matches_tp1() -> None:
     hidden, total_seq_len, num_candidates = 32, 5, 3
     rng = np.random.default_rng(0)
 
@@ -42,14 +42,16 @@ def test_attn_res_mix_tp2_matches_tp1() -> None:
         for _ in range(num_candidates - 1)
     ]
     proj_weight_np = rng.standard_normal((1, hidden)).astype(np.float32)
-    norm_weight_np = rng.standard_normal(hidden).astype(np.float32)
+    res_norm_weight_np = rng.standard_normal(hidden).astype(np.float32)
+    out_norm_weight_np = rng.standard_normal(hidden).astype(np.float32)
 
     with default_device(Accelerator(0)):
-        out1 = kimi_k3_attn_res_mix(
+        out1 = kimi_k3_attn_res_mix_norm(
             Tensor(prefix_sum_np, dtype=DType.float32),
             [Tensor(c, dtype=DType.float32) for c in block_residual_np],
             Tensor(proj_weight_np, dtype=DType.float32),
-            Tensor(norm_weight_np, dtype=DType.float32),
+            Tensor(res_norm_weight_np, dtype=DType.float32),
+            Tensor(out_norm_weight_np, dtype=DType.float32),
         ).to_numpy()
 
     devices = [Accelerator(0), Accelerator(1)]
@@ -57,12 +59,15 @@ def test_attn_res_mix_tp2_matches_tp1() -> None:
         devices=tuple(devices), mesh_shape=(2,), axis_names=("tp",)
     )
     with default_device(mesh):
-        out2 = kimi_k3_attn_res_mix(
+        out2 = kimi_k3_attn_res_mix_norm(
             Tensor(prefix_sum_np, dtype=DType.float32),
             [Tensor(c, dtype=DType.float32) for c in block_residual_np],
             Tensor(proj_weight_np, dtype=DType.float32),
-            Tensor(norm_weight_np, dtype=DType.float32),
+            Tensor(res_norm_weight_np, dtype=DType.float32),
+            Tensor(out_norm_weight_np, dtype=DType.float32),
         ).to_numpy()
 
     err = _rel_error(out2, out1)
-    assert err < 1e-4, f"attn_res_mix TP=2 vs TP=1 diverges: rel_error={err}"
+    assert err < 1e-4, (
+        f"attn_res_mix_norm TP=2 vs TP=1 diverges: rel_error={err}"
+    )

@@ -63,7 +63,7 @@ from .moe_latent import (
     expert_parallel_latent_moe,
     tensor_parallel_latent_moe,
 )
-from .norm import KIMI_RMS_NORM_EPS, kimi_rms_norm
+from .norm import KIMI_RMS_NORM_EPS
 
 
 def _tp_active(mesh: DeviceMesh) -> bool:
@@ -149,17 +149,15 @@ class KimiK3DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
             mla_freqs_cis: The rotary frequencies that go with
             ``mla_prefill_plan``.
         """
-        x, prefix_sum, stack = kimi_k3_attn_res_pre_attention(
+        normed, prefix_sum, stack = kimi_k3_attn_res_pre_attention(
             hidden_states,
             block_residual,
             self.layer_idx,
             self.attn_res_block_size,
             self.self_attention_res_proj_weight,
             self.self_attention_res_norm_weight,
+            self.input_layernorm_weight,
             self.rms_norm_eps,
-        )
-        normed = kimi_rms_norm(
-            x, self.input_layernorm_weight, self.rms_norm_eps
         )
 
         if isinstance(self.attention, KimiK3KDAAttention):
@@ -206,16 +204,14 @@ class KimiK3DecoderLayer(Module[..., tuple[Tensor, list[Tensor]]]):
         if _tp_active(self.attention.o_proj.weight.mesh):
             attn_out = F.allreduce_sum(attn_out, mesh_axis=TP)
 
-        mixed, prefix = kimi_k3_attn_res_post_attention(
+        normed2, prefix = kimi_k3_attn_res_post_attention(
             prefix_sum,
             attn_out,
             stack,
             self.mlp_res_proj_weight,
             self.mlp_res_norm_weight,
+            self.post_attention_layernorm_weight,
             self.rms_norm_eps,
-        )
-        normed2 = kimi_rms_norm(
-            mixed, self.post_attention_layernorm_weight, self.rms_norm_eps
         )
         if isinstance(self.ffn, KimiK3LatentMoE):
             ffn_out = self.ffn(

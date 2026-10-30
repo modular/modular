@@ -24,10 +24,10 @@ actual forward pass.
 Mirrors two things from ``kimi_k3/kimi_k3.py``'s top-level ``KimiK3`` easy to
 miss by only porting the per-layer pieces:
 
-* a FINAL, model-level ``kimi_k3_attn_res_mix`` after the layer loop, over
-  separate ``output_attn_res_proj``/``output_attn_res_norm`` weights distinct
-  from any layer's own residual-mix weights -- skipping it silently feeds the
-  output head the last layer's raw (unmixed) stream;
+* a FINAL, model-level ``kimi_k3_attn_res_mix_norm`` after the layer loop,
+  over separate ``output_attn_res_proj``/``output_attn_res_norm`` weights
+  distinct from any layer's own residual-mix weights -- skipping it silently
+  feeds the output head the last layer's raw (unmixed) stream;
 * ``lm_head`` is never tied to ``embed_tokens`` on this checkpoint
   (``tie_word_embeddings`` is false), so it gets its own weight.
 
@@ -82,7 +82,7 @@ from max.tensor.sharding import (
 )
 
 from .layers import ep
-from .layers.attn_residual import kimi_k3_attn_res_mix
+from .layers.attn_residual import kimi_k3_attn_res_mix_norm
 from .layers.decoder_layer import (
     KimiK3DecoderLayer,
     expert_parallel_decoder_layer,
@@ -96,6 +96,7 @@ from .layers.mla_attention import (
 )
 from .layers.mlp import KimiK3DenseMLP
 from .layers.moe_latent import KimiK3LatentMoE
+from .layers.norm import KIMI_RMS_NORM_EPS
 from .layers.output_head import (
     kimi_k3_output_head,
     tensor_parallel_lm_head_weight,
@@ -516,18 +517,22 @@ class KimiK3Model(Module[..., ModuleV3Outputs]):
                     ep_buffers=ep_buffers,
                 )
 
-        mixed = kimi_k3_attn_res_mix(
+        # The final norm rides the fused mix; the output head takes the
+        # already-normed hidden state (norm-then-gather is per-row
+        # identical to V2's gather-then-norm).
+        normed = kimi_k3_attn_res_mix_norm(
             hidden_states,
             block_residual,
             self.output_attn_res_proj_weight,
             self.output_attn_res_norm_weight,
-            self.config.rms_norm_eps,
+            self.final_norm_weight,
+            eps=self.config.rms_norm_eps,
+            norm_eps=KIMI_RMS_NORM_EPS,
         )
         output = kimi_k3_output_head(
-            mixed,
+            normed,
             input_row_offsets,
             return_n_logits,
-            self.final_norm_weight,
             self.lm_head_weight,
             self.return_logits,
         )

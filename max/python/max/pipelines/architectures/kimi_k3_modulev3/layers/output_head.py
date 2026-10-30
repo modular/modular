@@ -24,11 +24,15 @@ by reaching for a framework default:
   reference lists it in ``_tied_weights_keys`` -- the tie must be decided
   from config, never assumed from the name list.
 * the final norm is ``kimi_rms_norm`` (cast-then-multiply), not
-  :class:`~max.nn.norm.RMSNorm`'s Gemma-style default.
-* only the last token's hidden state is normalized and projected for the
-  ``LAST_TOKEN`` case (the common path) -- norm and projection both run
-  per-token, so gathering the last row BEFORE normalizing (not after) saves
-  real arithmetic, not just a reorder.
+  :class:`~max.nn.norm.RMSNorm`'s Gemma-style default -- and it is applied by
+  the model-level residual mixture (``kimi_k3_attn_res_mix_norm``), whose
+  output is this layer's input: the head itself receives an ALREADY-NORMED
+  hidden state and only projects.
+* only the last token's hidden state is projected for the ``LAST_TOKEN``
+  case (the common path) -- the projection runs per-token, so gathering the
+  last row first saves real arithmetic, not just a reorder. Norm-then-gather
+  is per-row identical, which is what makes folding the norm into the
+  mixture safe.
 
 Scope cut, explicit: ``return_hidden_states`` (``ReturnHiddenStates``'s
 ``LAST``/``LAST_PER_DEVICE``/``ALL_NORMALIZED``/``ALL``/``SELECTED_LAYERS``
@@ -47,8 +51,6 @@ from max.nn.legacy.transformer import ReturnLogits
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMesh, NamedMapping
 
-from .norm import KIMI_RMS_NORM_EPS, kimi_rms_norm
-
 
 def tensor_parallel_lm_head_weight(
     lm_head_weight: Tensor, mesh: DeviceMesh
@@ -66,20 +68,19 @@ def kimi_k3_output_head(
     hidden_states: Tensor,
     input_row_offsets: Tensor,
     return_n_logits: Tensor,
-    final_norm_weight: Tensor,
     lm_head_weight: Tensor,
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
 ) -> tuple[Tensor, ...]:
-    """Normalizes the model-level stream and projects it to the vocabulary.
+    """Projects the model-level stream's final norm to the vocabulary.
 
     Args:
-        hidden_states: ``[total_seq_len, hidden]`` ragged stream entering
-            ``model.norm``.
+        hidden_states: ``[total_seq_len, hidden]`` ragged stream, already
+            normalized by the model-level residual mixture
+            (``kimi_k3_attn_res_mix_norm``); the head only projects it.
         input_row_offsets: ``[batch_size + 1]`` ragged row offsets; the head
             gathers ``input_row_offsets[1:] - 1`` for the last-token case.
         return_n_logits: ``[1]`` per-sequence logit count, used by the
             VARIABLE branch.
-        final_norm_weight: ``language_model.model.norm.weight``, ``[hidden]``.
         lm_head_weight: ``language_model.lm_head.weight``,
             ``[vocab, hidden]`` as stored in the checkpoint, hence the
             transpose in the projection. Sharded on the vocab axis under TP;
@@ -94,8 +95,7 @@ def kimi_k3_output_head(
     tp_sharded = TP in mesh.axis_names and mesh.axis_size(TP) > 1
 
     def project(h: Tensor) -> Tensor:
-        normed = kimi_rms_norm(h, final_norm_weight, KIMI_RMS_NORM_EPS)
-        logits = normed @ lm_head_weight.T
+        logits = h @ lm_head_weight.T
         if tp_sharded:
             logits = F.allgather(logits, tensor_axis=-1, mesh_axis=TP)
         return F.cast(logits, DType.float32)

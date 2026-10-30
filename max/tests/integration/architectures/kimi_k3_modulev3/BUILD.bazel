@@ -422,6 +422,7 @@ modular_eager_py_test(
         "test.resources:gpu-memory": "2",
     },
     gpu_constraints = ["//:has_gpu"],
+    shard_count = 4,
     tags = ["gpu"],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -432,6 +433,8 @@ modular_eager_py_test(
         "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
         "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
     ],
 )
