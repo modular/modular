@@ -34,13 +34,13 @@ miss by only porting the per-layer pieces:
 Weight loading is a direct, from-scratch port of
 ``kimi_k3/weight_adapters.py``'s ``convert_kimi_k3_state_dict`` onto this
 module tree, reading a plain ``dict[str, np.ndarray]`` (e.g. from
-``safetensors.numpy.load_file``) instead of MAX's ``Weights``/``WeightData``
-plumbing -- V2's own adapter only exists bound to that heavier
-``PipelineConfig``/``Weights`` machinery, which this module does not depend
-on. The four checkpoint-shape transforms it
-needs (fused qkv conv, fused gate/up, stacked experts, de-padded ``A_log``)
-are reproduced here rather than imported, so this module has no import
-dependency on the ``kimi_k3`` (V2) package.
+``safetensors.numpy.load_file``) instead of MAX's
+``Weights``/``WeightData`` plumbing -- V2's own adapter only exists bound
+to that heavier ``PipelineConfig``/``Weights`` machinery, which this
+module does not depend on. The five checkpoint-shape transforms it needs
+(fused qkv projection, fused qkv conv, fused gate/up, stacked experts,
+de-padded ``A_log``) are reproduced here rather than imported, so this
+module has no import dependency on the ``kimi_k3`` (V2) package.
 """
 
 from __future__ import annotations
@@ -587,6 +587,16 @@ def _fuse_gate_up(gate: np.ndarray, up: np.ndarray) -> np.ndarray:
     return np.ascontiguousarray(np.concatenate([gate, up], axis=0))
 
 
+def _fuse_qkv_proj(q: np.ndarray, k: np.ndarray, v: np.ndarray) -> np.ndarray:
+    """Merges q, k and v into one ``[3 * inner, hidden]`` projection weight.
+
+    ``KimiK3KDAAttention.qkv_proj`` takes the merged weight. This eager
+    loader is single-device, so a plain row concat is the TP-degree-1 case
+    of the weight adapter's per-rank interleave.
+    """
+    return np.ascontiguousarray(np.concatenate([q, k, v], axis=0))
+
+
 def _fuse_qkv_conv_weight(
     q: np.ndarray, k: np.ndarray, v: np.ndarray
 ) -> np.ndarray:
@@ -793,14 +803,13 @@ def load_kimi_k3_weights(
         attn = layer.attention
         if layer.is_kda:
             assert isinstance(attn, KimiK3KDAAttention)
-            attn.q_proj.weight = Tensor(
-                get(f"{attn_src}.q_proj.weight"), dtype=DType.float32
-            )
-            attn.k_proj.weight = Tensor(
-                get(f"{attn_src}.k_proj.weight"), dtype=DType.float32
-            )
-            attn.v_proj.weight = Tensor(
-                get(f"{attn_src}.v_proj.weight"), dtype=DType.float32
+            attn.qkv_proj.weight = Tensor(
+                _fuse_qkv_proj(
+                    get(f"{attn_src}.q_proj.weight"),
+                    get(f"{attn_src}.k_proj.weight"),
+                    get(f"{attn_src}.v_proj.weight"),
+                ),
+                dtype=DType.float32,
             )
             attn.f_a_proj.weight = Tensor(
                 get(f"{attn_src}.f_a_proj.weight"), dtype=DType.float32

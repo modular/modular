@@ -180,10 +180,8 @@ def test_decoder_layer_kda_moe_tp1_matches_tp2() -> None:
     shared_inter = moe_inter
     beta, linear_beta, eps = 1.5, 1.5, 1e-5
 
+    qkv_parts_np = [_arr(inner, hidden) for _ in range(3)]  # q, k, v
     attn_weights = {
-        "q_proj": _arr(inner, hidden),
-        "k_proj": _arr(inner, hidden),
-        "v_proj": _arr(inner, hidden),
         "f_a_proj": _arr(head_dim, hidden),
         "f_b_proj": _arr(inner, head_dim),
         "b_proj": _arr(heads, hidden),
@@ -232,6 +230,9 @@ def test_decoder_layer_kda_moe_tp1_matches_tp2() -> None:
             head_dim=head_dim,
             conv_kernel_size=conv_kernel,
             gate_lower_bound=None,
+        )
+        attention.qkv_proj.weight = Tensor(
+            interleave_for_tp(qkv_parts_np, tp_size), dtype=DType.float32
         )
         for name, arr in attn_weights.items():
             getattr(attention, name).weight = Tensor(arr, dtype=DType.float32)

@@ -13,12 +13,17 @@
 """Kimi K3's fused q/k/v short convolution (ModuleV3).
 
 Direct V3 port of ``kimi_k3/layers/short_conv.py``'s ``kimi_short_conv_qkv``:
-three depthwise causal convs (one each on q, k, v, no bias, each followed by
-``silu``) fused into one call over the concatenated ``[q ; k ; v]`` channels,
-reusing MAX's shared ``gated_delta_conv1d_fwd`` kernel (also used by Qwen3.5)
-rather than adding a new one. Bridges ``Tensor`` to the kernel's
-``TensorValue``/``BufferValue`` interface the same way
-``nemotron_h_modulev3/layers/mamba2.py`` bridges its own conv/SSM pools.
+three depthwise causal convs (one each on q, k, v, no bias) fused into one
+call over the concatenated ``[q ; k ; v]`` channels, reusing MAX's shared
+``gated_delta_conv1d_fwd`` kernel (also used by Qwen3.5) rather than adding
+a new one. Bridges ``Tensor`` to the kernel's ``TensorValue``/``BufferValue``
+interface the same way ``nemotron_h_modulev3/layers/mamba2.py`` bridges its
+own conv/SSM pools.
+
+The conv's fp32 output is returned without the per-channel ``silu`` and
+cast: applied per q/k/v slice in the caller they fuse with the slice
+itself into one elementwise launch, while applied here over the whole
+output they would be a launch of their own.
 """
 
 from __future__ import annotations
@@ -41,15 +46,13 @@ def _kimi_short_conv_qkv(
     # output, and its MAX wrapper declares that output fp32 unconditionally
     # -- so the working dtype is fp32 whatever the model runs at; the pool
     # alone is free to stay narrower.
-    out_dtype = TensorValue(x_qkv_ragged).dtype
-    conv = gated_delta_conv1d_fwd(
+    return gated_delta_conv1d_fwd(
         qkv_input_ragged=ops.cast(TensorValue(x_qkv_ragged), DType.float32),
         conv_weight=ops.cast(TensorValue(conv_weight), DType.float32),
         conv_state=BufferValue(conv_pool),
         slot_idx=TensorValue(conv_row_id),
         input_row_offsets=TensorValue(input_row_offsets),
     )
-    return ops.cast(ops.silu(conv), out_dtype)
 
 
 kimi_short_conv_qkv = F.functional(_kimi_short_conv_qkv)

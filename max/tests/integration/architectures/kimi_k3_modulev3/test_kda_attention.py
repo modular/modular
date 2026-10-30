@@ -17,16 +17,21 @@ L2-normalizes q/k and folds the query scale in internally, so a
 hand-derived expected value risks being wrong about the kernel's own
 preprocessing rather than the layer's orchestration around it. These
 instead prove the layer compiles and runs at both of V2's supported
-gate-mode branches, and that the "fail loudly on an unsupported gate bound"
-guard V2 has is preserved.
+gate-mode branches, that the gated ``o_norm`` receives the recurrence's
+fp32 output and rounds it once to the model dtype, and that the "fail
+loudly on an unsupported gate bound" guard V2 has is preserved.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import numpy as np
 import pytest
+from max import functional as F
 from max.driver import Accelerator
 from max.dtype import DType
+from max.pipelines.architectures.kimi_k3_modulev3.layers import kda_attention
 from max.pipelines.architectures.kimi_k3_modulev3.layers.kda_attention import (
     KimiK3KDAAttention,
 )
@@ -103,6 +108,63 @@ def test_forward_pass_runs_with_correct_shape_and_dtype(
         )
         assert out.shape == [6, _HIDDEN]
         assert out.dtype == DType.bfloat16
+
+
+@pytest.mark.compile_on_gpu("gated_delta_conv1d_fwd mutates its state in place")
+def test_gated_norm_receives_fp32_o_and_rounds_once_to_model_dtype(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``o_norm`` must see ``kda_decode``'s fp32 ``o`` and be asked for the
+    model dtype, so ``o`` is rounded exactly once inside the fused norm with
+    no separate cast launch to widen it back.
+
+    The dtype pair alone can't catch a narrowing that re-widens before the
+    norm (the fp32 is restored, the rounding lost), so the ``o`` reaching the
+    norm must also be the very tensor the decode's reshape produced."""
+    real_decode: Callable[..., Tensor] = kda_attention.kda_decode
+    real_reshape: Callable[..., Tensor] = F.reshape
+    real_norm: Callable[..., Tensor] = kda_attention.kimi_rms_norm_gated
+    decode_outs: list[Tensor] = []
+    reshaped_decode: list[Tensor] = []
+    calls: list[tuple[DType, DType | None, bool]] = []
+
+    def spy_decode(*args: object, **kwargs: object) -> Tensor:
+        out = real_decode(*args, **kwargs)
+        decode_outs.append(out)
+        return out
+
+    def spy_reshape(t: Tensor, *args: object, **kwargs: object) -> Tensor:
+        out = real_reshape(t, *args, **kwargs)
+        if any(t is d for d in decode_outs):
+            reshaped_decode.append(out)
+        return out
+
+    def spy_norm(
+        x: Tensor,
+        weight: Tensor,
+        gate: Tensor,
+        eps: float,
+        out_dtype: DType | None = None,
+    ) -> Tensor:
+        calls.append((x.dtype, out_dtype, any(x is r for r in reshaped_decode)))
+        return real_norm(x, weight, gate, eps, out_dtype=out_dtype)
+
+    monkeypatch.setattr(kda_attention, "kda_decode", spy_decode)
+    monkeypatch.setattr(F, "reshape", spy_reshape)
+    monkeypatch.setattr(kda_attention, "kimi_rms_norm_gated", spy_norm)
+    with default_device(Accelerator()):
+        layer = _make_layer(gate_lower_bound=-5.0)
+        x, conv_pool, state_pool, slot_idx, input_row_offsets = (
+            _make_pools_and_input(total_seq_len=6, batch_size=2)
+        )
+        out = layer(
+            x, conv_pool, slot_idx, state_pool, slot_idx, input_row_offsets
+        )
+    assert decode_outs, "the layer never called kda_decode"
+    assert {o.dtype for o in decode_outs} == {DType.float32}
+    assert calls, "the layer never called the gated norm"
+    assert calls == [(DType.float32, DType.bfloat16, True)] * len(calls)
+    assert out.dtype == DType.bfloat16
 
 
 def test_unsupported_gate_lower_bound_raises() -> None:

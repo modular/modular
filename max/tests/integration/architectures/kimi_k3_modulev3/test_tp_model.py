@@ -103,14 +103,16 @@ def _assign_weights(
         ap = f"{p}.self_attn"
         if layer.is_kda:
             assert isinstance(attn, KimiK3KDAAttention)
-            attn.q_proj.weight = Tensor(
-                raw[f"{ap}.q_proj.weight"], dtype=DType.float32
-            )
-            attn.k_proj.weight = Tensor(
-                raw[f"{ap}.k_proj.weight"], dtype=DType.float32
-            )
-            attn.v_proj.weight = Tensor(
-                raw[f"{ap}.v_proj.weight"], dtype=DType.float32
+            attn.qkv_proj.weight = Tensor(
+                interleave_for_tp(
+                    [
+                        raw[f"{ap}.q_proj.weight"],
+                        raw[f"{ap}.k_proj.weight"],
+                        raw[f"{ap}.v_proj.weight"],
+                    ],
+                    tp_size,
+                ),
+                dtype=DType.float32,
             )
             attn.f_a_proj.weight = Tensor(
                 raw[f"{ap}.f_a_proj.weight"], dtype=DType.float32

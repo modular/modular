@@ -13,14 +13,14 @@
 """Maps a Kimi K3 safetensors checkpoint onto the module tree.
 
 The tree is the ModuleV3 registry's layout for the text tower
-(:class:`~.model.KimiK3Model`).
-Builds the ``dict[str, Weights] -> dict[str, WeightData]`` the registry
-loads from, applying the same shape transforms (fused qkv conv, fused
-gate/up, stacked experts, de-padded ``A_log``) that ``model.py``'s
+(:class:`~.model.KimiK3Model`). Builds the
+``dict[str, Weights] -> dict[str, WeightData]`` the registry loads from,
+applying the same shape transforms (fused qkv projection, fused qkv conv,
+fused gate/up, stacked experts, de-padded ``A_log``) that ``model.py``'s
 ``load_kimi_k3_weights`` applies to a live module -- re-derived locally
 here rather than imported, to avoid a dependency on V2's package. Layer,
-KDA, and expert counts instead come from
-:class:`~.model_config.KimiK3Config`, the single source of truth for those.
+KDA, and expert counts instead come from :class:`~.model_config.KimiK3Config`,
+the single source of truth for those.
 
 Loads MXFP4-packed routed experts now that ``moe_latent.py`` has a compute
 path for them (the AMD CDNA4 W4A8 arm). The packed bytes fuse and stack the
@@ -71,9 +71,6 @@ _DIRECT_LAYER_WEIGHTS = (
 # the checkpoint's own ``self_attn``.
 _DIRECT_ATTN_WEIGHTS = {
     "kda": (
-        "q_proj",
-        "k_proj",
-        "v_proj",
         "f_a_proj",
         "f_b_proj",
         "b_proj",
@@ -212,6 +209,50 @@ def _fuse_gate_up(
     """
     fused = interleave_for_tp([_elements(gate), _elements(up)], tp_size)
     return _rewrap(fused, gate, name)
+
+
+def _fuse_qkv_proj(
+    q: WeightData,
+    k: WeightData,
+    v: WeightData,
+    name: str,
+    tp_size: int,
+    dtype: DType | None = None,
+) -> WeightData:
+    """Merges q, k and v into one ``[3 * inner, hidden]`` projection weight.
+
+    ``KimiK3KDAAttention.qkv_proj`` takes the merged weight, interleaved per
+    TP rank like the conv weight that consumes its output. Castable float
+    parts are cast to ``dtype`` first (the dtype the final cast pass would
+    give each), so parts stored in different float dtypes still merge.
+
+    Raises:
+        ValueError: If the parts differ in shape, or still differ in dtype
+            after the cast.
+    """
+    parts = [q, k, v]
+    if dtype is not None:
+        parts = [
+            part.astype(dtype) if part.dtype in _CASTABLE_DTYPES else part
+            for part in parts
+        ]
+    for axis, part in zip(("q", "k", "v"), parts, strict=True):
+        if part.dtype != parts[0].dtype or tuple(part.shape) != tuple(
+            parts[0].shape
+        ):
+            raise ValueError(
+                f"Kimi K3: {axis}_proj has dtype {part.dtype} and shape"
+                f" {tuple(part.shape)}, but must match q_proj's"
+                f" {parts[0].dtype} and {tuple(parts[0].shape)}."
+            )
+    rows = [_elements(part) for part in parts]
+    shape = (sum(r.shape[0] for r in rows), *rows[0].shape[1:])
+    out = _stack_output(shape, rows[0].dtype)
+    pairs = []
+    for p, src, dst in _interleaved_slices([r.shape[0] for r in rows], tp_size):
+        pairs.append((out[dst], rows[p][src]))
+    _copy_into(pairs)
+    return _rewrap(_settle(out), parts[0], name)
 
 
 def _fuse_qkv_conv_weight(
@@ -437,7 +478,8 @@ def convert_kimi_k3_state_dict(
 
     The names it produces are :class:`~.model.KimiK3Model`'s own. Under TP,
     every fused tensor (gate/up, routed-expert gate/up and its MXFP4 scales,
-    the KDA qkv conv) is interleaved per TP rank by :func:`interleave_for_tp`.
+    the KDA qkv projection, the KDA qkv conv) is interleaved per TP rank by
+    :func:`interleave_for_tp`.
 
     Args:
         **unused_kwargs: Accepted so every adapter shares one signature.
@@ -507,6 +549,14 @@ def convert_kimi_k3_state_dict(
                 state_dict, f"{attn_src}.{name}.weight"
             )
         if is_kda:
+            out[f"{attn_dst}.qkv_proj.weight"] = _fuse_qkv_proj(
+                _wd(state_dict, f"{attn_src}.q_proj.weight"),
+                _wd(state_dict, f"{attn_src}.k_proj.weight"),
+                _wd(state_dict, f"{attn_src}.v_proj.weight"),
+                f"{attn_dst}.qkv_proj.weight",
+                tp_size,
+                dtype,
+            )
             q_conv, k_conv, v_conv = (
                 _wd(state_dict, f"{attn_src}.{axis}_conv1d.weight")
                 for axis in ("q", "k", "v")

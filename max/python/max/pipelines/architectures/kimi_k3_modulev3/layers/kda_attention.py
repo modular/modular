@@ -46,7 +46,7 @@ from max.nn.common_layers.mesh_axis import TP
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMesh, NamedMapping
 
-from .norm import KimiRMSNormGated
+from .norm import KimiRMSNormGated, kimi_rms_norm_gated
 from .short_conv import kimi_short_conv_qkv
 from .tensor_parallel import check_divisible, shard_interleaved_blocks
 
@@ -141,11 +141,16 @@ class KimiK3KDAAttention(
         self.gate_lower_bound = gate_lower_bound
         inner = num_heads * head_dim
 
-        self.q_proj = Linear(in_dim=hidden_size, out_dim=inner, bias=False)
-        self.k_proj = Linear(in_dim=hidden_size, out_dim=inner, bias=False)
-        self.v_proj = Linear(in_dim=hidden_size, out_dim=inner, bias=False)
-        # Fused q/k/v depthwise conv weight: see `fuse_qkv_conv_weight` in
-        # the V2 weight adapter, which concatenates the checkpoint's
+        # One merged q/k/v projection: three separate GEMMs followed by an
+        # axis-1 concat cannot fuse, one GEMM can. Under TP the merged
+        # weight is interleaved per rank exactly like `conv_weight` (see
+        # `_fuse_qkv_proj` in the weight adapter), so the `split` below
+        # still hands each rank its own q, k and v.
+        self.qkv_proj = Linear(
+            in_dim=hidden_size, out_dim=3 * inner, bias=False
+        )
+        # Fused q/k/v depthwise conv weight: see `_fuse_qkv_conv_weight`
+        # in the weight adapter, which concatenates the checkpoint's
         # separate per-projection conv weights at load time.
         self.conv_weight = Tensor.zeros([3 * inner, conv_kernel_size])
 
@@ -195,7 +200,7 @@ class KimiK3KDAAttention(
         tp_active = TP in mesh.axis_names and mesh.axis_size(TP) > 1
         tp_size = mesh.axis_size(TP) if tp_active else 1
 
-        qkv = F.concat([self.q_proj(x), self.k_proj(x), self.v_proj(x)], axis=1)
+        qkv = self.qkv_proj(x)
         qkv = kimi_short_conv_qkv(
             qkv, self.conv_weight, conv_pool, conv_row_id, input_row_offsets
         )
@@ -206,15 +211,20 @@ class KimiK3KDAAttention(
             qkv = qkv.rebind_mapping(NamedMapping(qkv.mesh, (None, TP)))
         elif mesh.num_devices > 1:
             # Same restatement, for a mesh with no `tp` axis (pure EP).
-            # Here q/k/v_proj are replicated rather than sharded, but the
+            # Here `qkv_proj` is replicated rather than sharded, but the
             # custom op's output still needs the mapping restated.
             qkv = qkv.rebind_mapping(NamedMapping(qkv.mesh, (None, None)))
         q_flat, k_flat, v_flat = qkv.split([inner, inner, inner], axis=1)
 
         def as_heads(flat: Tensor) -> Tensor:
-            return F.reshape(
-                flat, [1, total_seq_len, self.num_heads, self.head_dim]
+            heads = flat.reshape(
+                [1, total_seq_len, self.num_heads, self.head_dim]
             )
+            # silu and the cast back to the model dtype run per q/k/v slice
+            # (the conv returns fp32 without them, `short_conv.py`), so each
+            # fuses with the split that feeds it instead of forming a
+            # separate launch over the conv's whole output.
+            return F.silu(heads).cast(x.dtype)
 
         q = as_heads(q_flat)
         k = as_heads(k_flat)
@@ -246,9 +256,13 @@ class KimiK3KDAAttention(
             gate_mode = "safe"
 
         # `out_type` is one device's result, so it takes the local head
-        # count. `_kda_decode` replaces the device.
+        # count. `_kda_decode` replaces the device. fp32 because `o_norm`
+        # computes in fp32 anyway: a model-dtype output would round `o` once
+        # before the norm and need a cast launch to widen it back. (The
+        # prefill-optimized `kda_chunk`, which this decode-only port never
+        # calls, asserts a bf16 output on AMD.)
         out_type = TensorType(
-            x.dtype,
+            DType.float32,
             [1, total_seq_len, self.num_heads // tp_size, self.head_dim],
             device=x.mesh.devices[0] if x.is_distributed else x.device,
         )
@@ -275,7 +289,14 @@ class KimiK3KDAAttention(
         gate = F.reshape(
             self.g_proj(x), [total_seq_len, self.num_heads, self.head_dim]
         )
-        normed = self.o_norm(o, gate)
+        # `o_norm` consumes the fp32 recurrence output and rounds once to
+        # the model dtype inside the fused norm (via `out_dtype`), so
+        # `o_proj` sees the model dtype with no separate cast launch.
+        # Called as the function rather than through the module's forward
+        # because the output dtype is this layer's per-call choice.
+        normed = kimi_rms_norm_gated(
+            o, self.o_norm.weight, gate, self.o_norm.eps, out_dtype=x.dtype
+        )
         return self.o_proj(F.reshape(normed, [total_seq_len, inner]))
 
 
@@ -294,9 +315,9 @@ def tensor_parallel_kda_attention(
     check_divisible("KDA head count", layer.num_heads, tp_size)
 
     row_mapping = NamedMapping(mesh, (TP, None))
-    layer.q_proj.weight = layer.q_proj.weight.to(row_mapping)
-    layer.k_proj.weight = layer.k_proj.weight.to(row_mapping)
-    layer.v_proj.weight = layer.v_proj.weight.to(row_mapping)
+    layer.qkv_proj.weight = shard_interleaved_blocks(
+        layer.qkv_proj.weight, mesh, num_blocks=3, axis=0
+    )
     layer.f_b_proj.weight = layer.f_b_proj.weight.to(row_mapping)
     layer.b_proj.weight = layer.b_proj.weight.to(row_mapping)
     layer.a_log = layer.a_log.to(row_mapping)

@@ -196,9 +196,13 @@ def test_kda_tp1_matches_tp2(gate_lower_bound: float | None) -> None:
     slot_idx_np = np.arange(batch_size, dtype=np.uint32)
 
     def assign(layer: KimiK3KDAAttention, tp_size: int) -> None:
-        layer.q_proj.weight = Tensor(weights["q_proj"], dtype=DType.float32)
-        layer.k_proj.weight = Tensor(weights["k_proj"], dtype=DType.float32)
-        layer.v_proj.weight = Tensor(weights["v_proj"], dtype=DType.float32)
+        layer.qkv_proj.weight = Tensor(
+            interleave_for_tp(
+                [weights["q_proj"], weights["k_proj"], weights["v_proj"]],
+                tp_size,
+            ),
+            dtype=DType.float32,
+        )
         layer.f_a_proj.weight = Tensor(weights["f_a_proj"], dtype=DType.float32)
         layer.f_b_proj.weight = Tensor(weights["f_b_proj"], dtype=DType.float32)
         layer.b_proj.weight = Tensor(weights["b_proj"], dtype=DType.float32)

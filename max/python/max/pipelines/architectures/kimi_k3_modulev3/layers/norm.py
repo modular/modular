@@ -14,7 +14,7 @@
 
 K3's KDA layer needs ``o_norm``, fla's ``FusedRMSNormGated(activation="sigmoid")``
 (``modeling_kimi_linear.py``'s import of ``fla.modules.FusedRMSNormGated``).
-The real Triton kernel (``external-llm-servers/sglang/.../fla/fused_norm_gate.py``)
+The real Triton kernel (fla's ``fla/modules/fused_norm_gate.py``)
 normalizes in fp32 (``b_x_hat = b_x * b_rstd``), multiplies by the weight
 (``b_y = b_x_hat * b_w``), THEN multiplies by ``sigmoid(gate)``
 (``b_y = b_y * tl.sigmoid(b_g)``), with a single cast to the output dtype at
@@ -60,15 +60,25 @@ def kimi_rms_norm(x: Tensor, weight: Tensor, eps: float) -> Tensor:
 
 
 def kimi_rms_norm_gated(
-    x: Tensor, weight: Tensor, gate: Tensor, eps: float
+    x: Tensor,
+    weight: Tensor,
+    gate: Tensor,
+    eps: float,
+    out_dtype: DType | None = None,
 ) -> Tensor:
     """Applies fla's ``FusedRMSNormGated(activation="sigmoid")``.
 
     The whole expression runs in fp32 with one cast at the end, matching the
     Triton kernel: normalize, multiply by the weight, THEN multiply by
     ``sigmoid(gate)`` -- gating the WEIGHTED output, not the raw input.
+
+    ``out_dtype`` (defaulting to ``x``'s dtype) only picks where that one
+    output rounding happens; the internal arithmetic stays fp32, so an
+    fp32 input with a narrower ``out_dtype`` keeps full fp32 precision up to
+    the single store-cast.
     """
-    out_dtype = x.dtype
+    if out_dtype is None:
+        out_dtype = x.dtype
     normed = rms_norm(
         F.cast(x, DType.float32),
         F.cast(weight, DType.float32),

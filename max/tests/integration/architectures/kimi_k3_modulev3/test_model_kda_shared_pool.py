@@ -37,6 +37,9 @@ from max.pipelines.architectures.kimi_k3_modulev3.layers.kda_attention import (
 from max.pipelines.architectures.kimi_k3_modulev3.layers.mlp import (
     KimiK3DenseMLP,
 )
+from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
+    interleave_for_tp,
+)
 from max.tensor import Tensor, default_device
 
 _RNG = np.random.default_rng(20261022)
@@ -62,9 +65,10 @@ def _build_layer() -> KimiK3DecoderLayer:
         conv_kernel_size=_CONV_KERNEL,
         gate_lower_bound=None,
     )
-    attention.q_proj.weight = Tensor(_arr(inner, _HIDDEN), dtype=DType.float32)
-    attention.k_proj.weight = Tensor(_arr(inner, _HIDDEN), dtype=DType.float32)
-    attention.v_proj.weight = Tensor(_arr(inner, _HIDDEN), dtype=DType.float32)
+    attention.qkv_proj.weight = Tensor(
+        interleave_for_tp([_arr(inner, _HIDDEN) for _ in range(3)], 1),
+        dtype=DType.float32,
+    )
     attention.f_a_proj.weight = Tensor(
         _arr(_HEAD_DIM, _HIDDEN), dtype=DType.float32
     )

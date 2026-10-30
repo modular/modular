@@ -13,11 +13,12 @@
 """``convert_kimi_k3_state_dict`` (ModuleV3): key naming and shape transforms.
 
 CPU-only: everything here is dict-to-dict conversion over real (small,
-synthetic) tensors, not graph construction. The shape transforms (fused
-qkv conv, fused gate/up, stacked experts, de-padded ``A_log``) are checked
-numerically against ``model.py``'s own numpy helpers -- the same transforms
-applied to the same raw arrays -- rather than against a hand-computed
-expectation, so the two implementations cannot silently drift apart.
+synthetic) tensors, not graph construction. The shape transforms (fused qkv
+projection, fused qkv conv, fused gate/up, stacked experts, de-padded
+``A_log``) are checked numerically against ``model.py``'s own numpy helpers
+-- the same transforms applied to the same raw arrays -- rather than against
+a hand-computed expectation, so the two implementations cannot silently
+drift apart.
 """
 
 from __future__ import annotations
@@ -429,9 +430,7 @@ def test_key_set_matches_the_module_tree(
         attn = f"{dst}.attention"
         if is_kda:
             expected |= {
-                f"{attn}.q_proj.weight",
-                f"{attn}.k_proj.weight",
-                f"{attn}.v_proj.weight",
+                f"{attn}.qkv_proj.weight",
                 f"{attn}.f_a_proj.weight",
                 f"{attn}.f_b_proj.weight",
                 f"{attn}.b_proj.weight",
@@ -472,6 +471,106 @@ def test_key_set_matches_the_module_tree(
                 f"{ffn}.shared_experts.down_proj.weight",
             }
     assert set(converted) == expected
+
+
+def test_fused_qkv_proj_matches_model_py(
+    checkpoint: dict[str, Any], converted: dict[str, WeightData]
+) -> None:
+    """At the loader's own TP degree (1) the adapter's merged ``qkv_proj``
+    must agree with ``model.py``'s eager-loader helper."""
+    attn_src = f"{_TEXT}.layers.0.self_attn"
+    q, k, v = (
+        _to_numpy(checkpoint[f"{attn_src}.{axis}_proj.weight"].data())
+        for axis in ("q", "k", "v")
+    )
+    expected = _to_numpy(
+        WeightData.from_numpy(km._fuse_qkv_proj(q, k, v), "ref").astype(
+            DType.bfloat16
+        )
+    )
+    actual = _to_numpy(converted["layers.0.attention.qkv_proj.weight"])
+    np.testing.assert_array_equal(actual, expected)
+
+
+@pytest.mark.parametrize("tp_size", [1, 2, 8])
+def test_fused_qkv_proj_interleaves_per_rank(tp_size: int) -> None:
+    """Rank ``r``'s contiguous shard of the merged weight is its slice of
+    q, k and v -- not whole projections.
+
+    Parts carry disjoint values, so a plain ``[q; k; v]`` concat is
+    distinguishable from the interleave at every TP degree above 1.
+    """
+    rows, cols = 8, 5
+    arrays = [
+        _RNG.standard_normal((rows, cols)).astype(np.float32) + 100 * i
+        for i in range(3)
+    ]
+    q, k, v = (
+        WeightData.from_numpy(a, axis)
+        for a, axis in zip(arrays, ("q", "k", "v"), strict=True)
+    )
+    fused = wa._fuse_qkv_proj(q, k, v, "qkv_proj.weight", tp_size)
+    actual = _to_numpy(fused)
+    np.testing.assert_array_equal(actual, interleave_for_tp(arrays, tp_size))
+    # The production property, stated directly: each rank's contiguous
+    # shard holds its rows of every part, in q, k, v order.
+    per_rank = rows // tp_size
+    for r in range(tp_size):
+        shard = actual[r * 3 * per_rank : (r + 1) * 3 * per_rank]
+        for p, part in enumerate(arrays):
+            np.testing.assert_array_equal(
+                shard[p * per_rank : (p + 1) * per_rank],
+                part[r * per_rank : (r + 1) * per_rank],
+            )
+
+
+def test_fused_qkv_proj_spilled_output_is_byte_identical(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With the spill threshold at zero the merged weight is file-backed
+    but holds the same bytes as the in-memory one."""
+    arrays = [_fp32((8, 5)) + 100 * i for i in range(3)]
+    q, k, v = (
+        WeightData.from_numpy(a, axis)
+        for a, axis in zip(arrays, ("q", "k", "v"), strict=True)
+    )
+    in_memory = _to_numpy(wa._fuse_qkv_proj(q, k, v, "qkv", 2))
+    monkeypatch.setattr(wa, "_SPILL_BYTES", 0)
+    spilled = _to_numpy(wa._fuse_qkv_proj(q, k, v, "qkv", 2))
+    np.testing.assert_array_equal(spilled, in_memory)
+
+
+def test_fused_qkv_proj_rejects_mismatched_parts() -> None:
+    """A checkpoint whose q/k/v projections disagree in shape or dtype must
+    fail loudly, not produce a silently mis-merged weight."""
+    q = _weight(_fp32((8, 5)), "q_proj").data()
+    k_bad_shape = _weight(_fp32((8, 4)), "k_proj").data()
+    v_bad_dtype = _weight(_fp32((8, 5)), "v_proj", DType.bfloat16).data()
+    k = _weight(_fp32((8, 5)), "k_proj").data()
+    with pytest.raises(ValueError, match="k_proj has dtype"):
+        wa._fuse_qkv_proj(q, k_bad_shape, k, "qkv_proj.weight", 2)
+    with pytest.raises(ValueError, match="v_proj has dtype"):
+        wa._fuse_qkv_proj(q, k, v_bad_dtype, "qkv_proj.weight", 2)
+
+
+def test_fused_qkv_proj_casts_mixed_float_parts_to_the_model_dtype() -> None:
+    """Parts stored in different float dtypes each cast to the model dtype
+    before merging, as the final cast pass would; a non-float part still
+    fails loudly."""
+    arrays = [_fp32((8, 5)) + 100 * i for i in range(3)]
+    q = _weight(arrays[0], "q_proj", DType.float32).data()
+    k = _weight(arrays[1], "k_proj", DType.bfloat16).data()
+    v = _weight(arrays[2], "v_proj", DType.float16).data()
+    fused = wa._fuse_qkv_proj(q, k, v, "qkv_proj.weight", 2, DType.float32)
+    assert fused.dtype == DType.float32
+    expected = interleave_for_tp(
+        [_to_numpy(part.astype(DType.float32)) for part in (q, k, v)], 2
+    )
+    np.testing.assert_array_equal(_to_numpy(fused), expected)
+
+    v_int = _weight_u8(np.zeros((8, 5), np.uint8), "v_proj").data()
+    with pytest.raises(ValueError, match="v_proj has dtype"):
+        wa._fuse_qkv_proj(q, k, v_int, "qkv_proj.weight", 2, DType.float32)
 
 
 def test_fused_qkv_conv_matches_model_py(
@@ -607,7 +706,7 @@ def test_unpinned_weights_resolve_to_the_model_dtype(
 def test_non_pinned_weights_keep_their_stored_dtype(
     converted: dict[str, WeightData],
 ) -> None:
-    assert converted["layers.0.attention.q_proj.weight"].dtype == (
+    assert converted["layers.0.attention.qkv_proj.weight"].dtype == (
         DType.bfloat16
     )
     assert converted["embed_tokens.weight"].dtype == DType.bfloat16

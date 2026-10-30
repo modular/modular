@@ -50,6 +50,9 @@ from max.dtype import DType
 from max.pipelines.architectures.kimi_k3_modulev3.layers.kda_attention import (
     KimiK3KDAAttention,
 )
+from max.pipelines.architectures.kimi_k3_modulev3.weight_adapters import (
+    interleave_for_tp,
+)
 from max.tensor import Tensor, default_device
 
 # Same geometry as V2's test_kda_attention_gpu.py: the kernel is compiled for
@@ -194,9 +197,17 @@ def _make_v3_layer_with_weights(
         conv_kernel_size=CONV_KERNEL,
         gate_lower_bound=gate_lower_bound,
     )
-    layer.q_proj.weight = Tensor(weights["q_proj_weight"], dtype=DType.float32)
-    layer.k_proj.weight = Tensor(weights["k_proj_weight"], dtype=DType.float32)
-    layer.v_proj.weight = Tensor(weights["v_proj_weight"], dtype=DType.float32)
+    layer.qkv_proj.weight = Tensor(
+        interleave_for_tp(
+            [
+                weights["q_proj_weight"],
+                weights["k_proj_weight"],
+                weights["v_proj_weight"],
+            ],
+            1,
+        ),
+        dtype=DType.float32,
+    )
     layer.conv_weight = Tensor(weights["conv_weight"], dtype=DType.float32)
     layer.f_a_proj.weight = Tensor(
         weights["f_a_proj_weight"], dtype=DType.float32
