@@ -101,15 +101,8 @@ void KGENDialect::registerTypes() {
   registerPrettyType(
       "simd", &SIMDType::parse, mlir::TypeID::get<SIMDType>(),
       +[](AsmPrinter &p, Type type) {
-        auto simd = cast<SIMDType>(type);
-        if (simd.isScalar()) {
-          p << "scalar<";
-          printDTypeParamValue(p, simd.getDType());
-          p << ">";
-        } else {
-          p << "simd";
-          simd.print(p);
-        }
+        KGENParamPrinter::createDiagnosticPrinter().printSIMDBody(
+            p, cast<SIMDType>(type));
       });
   registerKeywordParser("scalar", [](AsmParser &p) -> Type {
     TypedAttr resultDType;
@@ -119,6 +112,52 @@ void KGENDialect::registerTypes() {
       return {};
     return SIMDType::get(1, resultDType);
   });
+}
+
+//===----------------------------------------------------------------------===//
+// ParamPrintableTypeInterface
+//===----------------------------------------------------------------------===//
+
+void StructInstanceType::printWith(AsmPrinter &p,
+                                   KGENParamPrinter &printer) const {
+  p << getMnemonic();
+  printer.printStructInstanceBody(p, *this);
+}
+
+void StructType::printWith(AsmPrinter &p, KGENParamPrinter &printer) const {
+  p << getMnemonic();
+  printer.printStructBody(p, *this);
+}
+
+void PointerType::printWith(AsmPrinter &p, KGENParamPrinter &printer) const {
+  p << getMnemonic();
+  printer.printPointerBody(p, *this);
+}
+
+void ParamListType::printWith(AsmPrinter &p, KGENParamPrinter &printer) const {
+  p << getMnemonic();
+  printer.printParamListBody(p, *this);
+}
+
+void TypeValueType::printWith(AsmPrinter &p, KGENParamPrinter &printer) const {
+  p << getMnemonic();
+  printer.printTypeValueBody(p, *this);
+}
+
+void VariantType::printWith(AsmPrinter &p, KGENParamPrinter &printer) const {
+  p << getMnemonic();
+  printer.printVariantBody(p, *this);
+}
+
+void SIMDType::printWith(AsmPrinter &p, KGENParamPrinter &printer) const {
+  printer.printSIMDBody(p, *this);
+}
+
+// Not registered as a pretty type, so it prints with its dialect prefix.
+void FuncLiteralType::printWith(AsmPrinter &p,
+                                KGENParamPrinter &printer) const {
+  p << "!kgen." << getMnemonic();
+  printer.printFuncLiteralBody(p, *this);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1100,18 +1139,8 @@ static ParseResult parsePointerOptionals(AsmParser &p, TypedAttr &addressSpace,
 
 static void printPointerOptionals(AsmPrinter &p, TypedAttr addressSpace,
                                   bool isNonNull) {
-  // Get default values for comparison
-  auto defaultAddrSpace =
-      IntegerAttr::get(IndexType::get(addressSpace.getContext()), 0);
-
-  if (addressSpace != defaultAddrSpace) {
-    p << ", ";
-    printIndexParamValue(p, addressSpace);
-  }
-
-  if (isNonNull) {
-    p << ", nonnull";
-  }
+  KGENParamPrinter::createDiagnosticPrinter().printPointerOptionals(
+      p, addressSpace, isNonNull);
 }
 
 LogicalResult PointerType::verify(function_ref<InFlightDiagnostic()> emitError,
@@ -1581,57 +1610,7 @@ Type StructType::parse(AsmParser &p) {
 
 /// Print the StructType.
 void StructType::print(AsmPrinter &p) const {
-  p << '<';
-
-  TypedAttr variadic = getElementTypesVariadic();
-  auto attr = dyn_cast<ParamListAttr>(variadic);
-  // A resolved layout prints as `(...)`, a list of types. Everything else
-  // prints as a parameter value, and an explicit domain is denoted.
-  bool printsAsTypes = isLayoutDomain() && attr &&
-                       isa<TypeType>(attr.getType().getElementType());
-  if (!printsAsTypes) {
-    // Parametric expression or complex metatype - print without parens.  We
-    // print :param_list<Movable> if the elements are not TypeType metatype.
-    if (!isa<TypeType>(
-            cast<ParamListType>(variadic.getType()).getElementType()))
-      printColonTypeParamValue(p, variadic);
-    else
-      printParamValue(p, variadic, variadic.getType());
-  } else {
-    // Concrete types with simple metatype - print with parens.
-    p << '(';
-    if (!attr.getValues().empty()) {
-      SmallVector<Type> types;
-      for (TypedAttr value : attr.getValues())
-        types.push_back(ParamType::get(value));
-      printParamTypes(p, types);
-    }
-    p << ')';
-  }
-
-  KGEN::printIsMemoryOnly(p, getIsMemoryOnly());
-
-  if (getIsParamPack())
-    p << " isParamPack";
-
-  if (isLayoutDomain() && !printsAsTypes)
-    p << " layout";
-  else if (isValueDomain())
-    p << " value";
-
-  // Print alignment if not the default (1).
-  TypedAttr minAlign = getMinAlignment();
-  if (auto intAttr = dyn_cast<IntegerAttr>(minAlign)) {
-    if (intAttr.getInt() != 1)
-      p << " align(" << intAttr.getInt() << ")";
-  } else if (minAlign) {
-    // Parametric alignment expression.
-    p << " align(";
-    printIndexParamValue(p, minAlign);
-    p << ")";
-  }
-
-  p << '>';
+  KGENParamPrinter::createDiagnosticPrinter().printStructBody(p, *this);
 }
 
 /// Verify that the variadic parameter is valid.
@@ -2093,19 +2072,7 @@ static ParseResult parseVariantTypes(AsmParser &p, TypedAttr &variadic) {
 }
 
 static void printVariantTypes(AsmPrinter &p, TypedAttr variadic) {
-  // Print an empty variadic or a parametric variadic.
-  auto attr = dyn_cast<ParamListAttr>(variadic);
-  if (!attr || attr.getValues().empty()) {
-    p << '[';
-    printParamValue(p, variadic);
-    p << ']';
-    return;
-  }
-
-  SmallVector<Type> values;
-  for (TypedAttr value : attr.getValues())
-    values.push_back(ParamType::get(value));
-  printParamTypes(p, values);
+  KGENParamPrinter::createDiagnosticPrinter().printVariantTypes(p, variadic);
 }
 
 OptionalParseResult VariantType::parseValue(AsmParser &p,

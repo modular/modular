@@ -217,4 +217,24 @@ def SugaredTypeInterface : TypeInterface<"SugaredTypeInterface"> {
   ];
 }
 
+//===----------------------------------------------------------------------===//
+// ParamPrintableTypeInterface
+//===----------------------------------------------------------------------===//
+
+def ParamPrintableTypeInterface : TypeInterface<"ParamPrintableTypeInterface"> {
+  let description = [{
+    Implemented by types that print nested parameters.
+  }];
+
+  let cppNamespace = "::M::KGEN";
+
+  let methods = [
+    InterfaceMethod<[{
+      Prints this type with `printer`, so its nested parameters keep the
+      printer's context.
+    }], "void", "printWith",
+        (ins "AsmPrinter &":$p, "::M::KGEN::KGENParamPrinter &":$printer)>,
+  ];
+}
+
 #endif // KGEN_KGENDIALECT_KGENTYPEINTERFACES_TD

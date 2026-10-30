@@ -2037,16 +2037,34 @@ kgen.generator @use_string_address<a: !kgen.pointer<scalar<si8>>>() {
   hlcf.return
 }
 
+kgen.generator @use_type<T: type>() {
+  hlcf.return
+}
+
+// CHECK-LABEL: kgen.func export @hello_only
+kgen.generator export @hello_only() {
+  kgen.param.apply from_func = [() -> !kgen.pointer<scalar<si8>>: @get_hello_address]()
+  // CHECK: kgen.call @"use_string_address,a=#interp.memref<xxh3:[[HELLO_HASH:[0-9a-f]+]], 0, 0>"
+  kgen.call @use_string_address<:!kgen.pointer<scalar<si8>> from_func>() : () -> ()
+  hlcf.return
+}
+
 // CHECK-LABEL: kgen.func export @entry
 kgen.generator export @entry() {
   kgen.param.declare from_poc: !kgen.pointer<scalar<si8>> = <string_address("world")>
   kgen.param.apply from_func = [() -> !kgen.pointer<scalar<si8>>: @get_hello_address]()
-  // CHECK: kgen.call {{.*}}#interp.memref<{{.*}}world
+  // CHECK: kgen.call @"use_string_address,a=#interp.memref<xxh3:[[WORLD_HASH:[0-9a-f]+]], 0, 0>"
   kgen.call @use_string_address<:!kgen.pointer<scalar<si8>> from_poc>() : () -> ()
-  // COM: Ensure the mem slot for "world" does not appear again. This means the
-  // interpreter state was correctly reset after evaluating POC::string_address.
-  // CHECK-NOT: world
+  // COM: The "hello" model matches the one built with nothing else live, so
+  // COM: interpreter state was reset after evaluating POC::string_address.
+  // CHECK-NEXT: kgen.call @"use_string_address,a=#interp.memref<xxh3:[[HELLO_HASH]], 0, 0>"
   kgen.call @use_string_address<:!kgen.pointer<scalar<si8>> from_func>() : () -> ()
+  // COM: A memref nested in a type parameter is digested too. The pointer
+  // COM: keeps the mangler from decomposing the struct, so its parameters
+  // COM: print through the type printer.
+  // CHECK-NEXT: kgen.call @"use_type,T=
+  // CHECK-SAME: #interp.memref<xxh3:[[WORLD_HASH]], 0, 0>
+  kgen.call @use_type<:type !kgen.pointer<struct_inst<"Holder"[p]<:!kgen.pointer<scalar<si8>> from_poc>>>>() : () -> ()
   hlcf.return
 }
 

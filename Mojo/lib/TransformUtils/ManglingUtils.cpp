@@ -215,12 +215,7 @@ void collectTypeForMangling(Type type, SmallVectorImpl<Fragment> &out) {
   // Fallback to asm printer; we have special cased all the types that introduce
   // escaped characters that can result in escape character bloat due to
   // nesting.
-  std::string printed;
-  {
-    llvm::raw_string_ostream os(printed);
-    printKGENType(os, type);
-  }
-  out.push_back({FragmentKind::Escaped, std::move(printed)});
+  out.push_back({FragmentKind::Escaped, getTypeAsString(type).str()});
 }
 
 void collectParameterFragments(TypedAttr value,

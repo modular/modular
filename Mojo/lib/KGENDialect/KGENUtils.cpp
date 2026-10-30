@@ -17,6 +17,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Mojo/KGENDialect/KGENUtils.h"
+#include "Mojo/Interpreter/InterpreterAttrs.h"
 #include "Mojo/KGENDialect/KGENDType.h"
 #include "Mojo/KGENDialect/KGENInterfaces.h"
 #include "Mojo/KGENDialect/KGENOps.h"
@@ -27,6 +28,7 @@
 #include "Mojo/Support/CompilerProfiling.h"
 #include "Support/Compiler/MLIRDType.h"
 #include "Support/Compiler/VerifyUtils.h"
+#include "Support/HashUtils.h"
 #include "Support/MDialect/MAttrs.h"
 #include "Support/MDialect/ParserUtils.h"
 #include "Support/ML/DType.h"
@@ -115,17 +117,21 @@ std::string DedupContext::finalize(StringRef raw, char labelPrefix) {
 }
 
 std::string KGEN::getParamAsString(Attribute value) {
-  SmallVector<char, 128> result;
+  // This string is never parsed back, so use the mangle printer: it dedups
+  // repeated subexpressions and digests MemRefAttr memory models.
+  std::string str;
   {
-    llvm::raw_svector_ostream os(result);
+    llvm::raw_string_ostream os(str);
     if (auto ta = dyn_cast<TypedAttr>(value)) {
       StreamAsmPrinter p(os);
-      printParamValue(p, ta, {});
+      KGENParamPrinter printer = KGENParamPrinter::createManglePrinter();
+      printer.printParamValue(p, ta, {});
+      str = printer.finalize(str, 'e');
     } else {
       os << value;
     }
   }
-  return std::string(result.data(), result.size());
+  return str;
 }
 
 StringAttr KGEN::getParamTypeAsString(TypedAttr value) {
@@ -361,26 +367,175 @@ void KGENParamPrinter::printKGENType(AsmPrinter &p, Type type) {
   if (succeeded(p.printAlias(type)))
     return;
 
-  // Handle other special cases for parameters here.  These each are sugar for a
-  // kgen type.
-  auto *dialect = type.getContext()->getLoadedDialect<KGENDialect>();
-  assert(dialect && "cannot print KGEN type without KGEN dialect");
-  if (auto it = dialect->typePrintFns.find(type.getTypeID());
-      it != dialect->typePrintFns.end()) {
-    // TODO(MOCO-5077): these free-function printers (and the `p << type`
-    // fallback below) do not carry `dedup`, so a comptime-alias chain nested
-    // inside such a type re-expands without labels instead of printing
-    // linearly. Upgrade trigger: thread the printer (or its DedupContext)
-    // through TypePrintFn and the MLIR type printer so nested type params
-    // dedup too.
-    it->second(p, type);
+  if (auto printable = dyn_cast<ParamPrintableTypeInterface>(type)) {
+    printable.printWith(p, *this);
   } else if (auto signature = dyn_cast<FuncType>(type)) {
     printFuncType(p, signature);
   } else if (auto generator = dyn_cast<GeneratorType>(type)) {
     printGenerator(p, generator);
   } else {
-    p << type;
+    auto *dialect = type.getContext()->getLoadedDialect<KGENDialect>();
+    assert(dialect && "cannot print KGEN type without KGEN dialect");
+    auto it = dialect->typePrintFns.find(type.getTypeID());
+    if (it == dialect->typePrintFns.end()) {
+      p << type;
+      return;
+    }
+    // TODO(MOCO-5077): types that POP and LIT register cannot implement
+    // ParamPrintableTypeInterface without a dependency cycle, so their nested
+    // parameters still print through a fresh printer and lose dedup and memref
+    // hashing. Upgrade trigger: let a registered printer take the
+    // KGENParamPrinter.
+    it->second(p, type);
   }
+}
+
+void KGENParamPrinter::printStructInstanceBody(AsmPrinter &p,
+                                               StructInstanceType type) {
+  p << '<';
+  p.printStrippedAttrOrType(type.getName());
+  if (!type.getParamNames().empty()) {
+    p << '[';
+    KGEN::printParamNames(p, type.getParamNames());
+    p << ']';
+  }
+  printParameterValues(p, type.getParamValues());
+  if (!type.getFields().empty()) {
+    p << '(';
+    printStructDefFields(p, type.getFields());
+    p << ')';
+  }
+  printIsMemoryOnly(p, type.getIsMemoryOnly());
+  p << '>';
+}
+
+void KGENParamPrinter::printStructBody(AsmPrinter &p, StructType type) {
+  p << '<';
+
+  TypedAttr variadic = type.getElementTypesVariadic();
+  auto attr = dyn_cast<ParamListAttr>(variadic);
+  // A resolved layout prints as `(...)`, a list of types. Everything else
+  // prints as a parameter value, and an explicit domain is denoted.
+  bool printsAsTypes = type.isLayoutDomain() && attr &&
+                       isa<TypeType>(attr.getType().getElementType());
+  if (!printsAsTypes) {
+    // Parametric expression or complex metatype - print without parens.  We
+    // print :param_list<Movable> if the elements are not TypeType metatype.
+    if (!isa<TypeType>(
+            cast<ParamListType>(variadic.getType()).getElementType()))
+      printColonTypeParamValue(p, variadic);
+    else
+      printParamValue(p, variadic, variadic.getType());
+  } else {
+    // Concrete types with simple metatype - print with parens.
+    p << '(';
+    if (!attr.getValues().empty()) {
+      SmallVector<Type> types;
+      for (TypedAttr value : attr.getValues())
+        types.push_back(ParamType::get(value));
+      printParamTypes(p, types);
+    }
+    p << ')';
+  }
+
+  printIsMemoryOnly(p, type.getIsMemoryOnly());
+
+  if (type.getIsParamPack())
+    p << " isParamPack";
+
+  if (type.isLayoutDomain() && !printsAsTypes)
+    p << " layout";
+  else if (type.isValueDomain())
+    p << " value";
+
+  // Print alignment if not the default (1).
+  TypedAttr minAlign = type.getMinAlignment();
+  if (auto intAttr = dyn_cast<IntegerAttr>(minAlign)) {
+    if (intAttr.getInt() != 1)
+      p << " align(" << intAttr.getInt() << ")";
+  } else if (minAlign) {
+    // Parametric alignment expression.
+    p << " align(";
+    printParamValue(p, minAlign);
+    p << ")";
+  }
+
+  p << '>';
+}
+
+void KGENParamPrinter::printPointerBody(AsmPrinter &p, PointerType type) {
+  p << '<';
+  printParamType(p, type.getElementType());
+  printPointerOptionals(p, type.getAddressSpace(), type.getIsNonNull());
+  p << '>';
+}
+
+void KGENParamPrinter::printParamListBody(AsmPrinter &p, ParamListType type) {
+  p << '<';
+  printParamType(p, type.getElementType());
+  p << '>';
+}
+
+void KGENParamPrinter::printTypeValueBody(AsmPrinter &p, TypeValueType type) {
+  p << '<';
+  printTypeParamValue(p, type.getTypeValue());
+  p << '>';
+}
+
+void KGENParamPrinter::printVariantBody(AsmPrinter &p, VariantType type) {
+  p << '<';
+  printVariantTypes(p, type.getVariadic());
+  p << '>';
+}
+
+// Sugars `simd<1, t>` to `scalar<t>`.
+void KGENParamPrinter::printSIMDBody(AsmPrinter &p, SIMDType type) {
+  if (type.isScalar()) {
+    p << "scalar<";
+    printParamValue(p, type.getDType());
+  } else {
+    p << "simd<";
+    printParamValue(p, type.getSize());
+    p << ", ";
+    printParamValue(p, type.getDType());
+  }
+  p << '>';
+}
+
+void KGENParamPrinter::printFuncLiteralBody(AsmPrinter &p,
+                                            FuncLiteralType type) {
+  p << '<';
+  printTypeParamValue(p, type.getFuncLiteral());
+  p << '>';
+}
+
+void KGENParamPrinter::printPointerOptionals(AsmPrinter &p,
+                                             TypedAttr addressSpace,
+                                             bool isNonNull) {
+  auto defaultAddrSpace =
+      IntegerAttr::get(IndexType::get(addressSpace.getContext()), 0);
+  if (addressSpace != defaultAddrSpace) {
+    p << ", ";
+    printParamValue(p, addressSpace);
+  }
+  if (isNonNull)
+    p << ", nonnull";
+}
+
+void KGENParamPrinter::printVariantTypes(AsmPrinter &p, TypedAttr variadic) {
+  // Print an empty variadic or a parametric variadic.
+  auto attr = dyn_cast<ParamListAttr>(variadic);
+  if (!attr || attr.getValues().empty()) {
+    p << '[';
+    printParamValue(p, variadic);
+    p << ']';
+    return;
+  }
+
+  SmallVector<Type> values;
+  for (TypedAttr value : attr.getValues())
+    values.push_back(ParamType::get(value));
+  printParamTypes(p, values);
 }
 
 void KGEN::printKGENType(AsmPrinter &p, Type type) {
@@ -1642,12 +1797,37 @@ void KGENParamPrinter::printParamValue(AsmPrinter &p, TypedAttr value,
   printParamValueImpl(p, value, type);
 }
 
+std::string KGENParamPrinter::memRefDigest(Attribute model) {
+  // Attributes are uniqued, so a shared model is a shared pointer; cache by
+  // identity so an identical model is hashed only once.
+  const void *key = model.getAsOpaquePointer();
+  if (auto it = memRefDigests.find(key); it != memRefDigests.end())
+    return it->second;
+
+  raw_xxhash128_stream stream;
+  model.print(stream);
+  std::string digest = stream.hashString();
+  memRefDigests[key] = digest;
+  return digest;
+}
+
 void KGENParamPrinter::printParamValueImpl(AsmPrinter &p, TypedAttr value,
                                            Type type) {
   // If the attribute's type provides a pretty printing hook, try to use it.
   if (auto typeItf = dyn_cast<ParameterTypeInterface>(value.getType()))
     if (succeeded(typeItf.printValue(p, value, *this)))
       return;
+
+  // A MemRefAttr's model can reference every live allocation, so inlining it
+  // as hex blows up the string. Hash it for every string except the op
+  // printer, so we do not break round-tripping.
+  if (hashMemRefs) {
+    if (auto memref = dyn_cast<MemRefAttr>(value)) {
+      p << "#interp.memref<xxh3:" << memRefDigest(memref.getModel()) << ", "
+        << memref.getIndex() << ", " << memref.getOffset() << ">";
+      return;
+    }
+  }
 
   if (isa<UnknownAttr>(value)) {
     p << "*?";
@@ -1959,7 +2139,8 @@ void KGEN::extendWithModularEnvAttr(ModuleOp moduleOp,
                         .extend(getModuleEnvAttr(moduleOp)));
 }
 
-void KGEN::printIsMemoryOnly(AsmPrinter &p, TypedAttr isMemoryOnly) {
+void KGENParamPrinter::printIsMemoryOnly(AsmPrinter &p,
+                                         TypedAttr isMemoryOnly) {
   if (auto boolAttr = dyn_cast<BoolAttr>(isMemoryOnly)) {
     if (boolAttr.getValue())
       p << " memoryOnly";
@@ -1969,6 +2150,11 @@ void KGEN::printIsMemoryOnly(AsmPrinter &p, TypedAttr isMemoryOnly) {
   p << " memoryOnly(";
   printParamValue(p, isMemoryOnly, isMemoryOnly.getType());
   p << ")";
+}
+
+void KGEN::printIsMemoryOnly(AsmPrinter &p, TypedAttr isMemoryOnly) {
+  KGENParamPrinter::createDiagnosticPrinter().printIsMemoryOnly(p,
+                                                                isMemoryOnly);
 }
 
 ParseResult KGEN::parseIsMemoryOnly(AsmParser &p, TypedAttr &isMemoryOnly) {
@@ -2038,20 +2224,6 @@ ParseResult KGEN::parseStructDefField(AsmParser &p, StringAttr &name,
   return success();
 }
 
-void KGEN::printStructDefField(AsmPrinter &p, StringAttr name,
-                               TypedAttr typeValue, ArrayAttr annotations) {
-  printParamName(p, name);
-  p << ": ";
-  printTypeParamValue(p, typeValue);
-  if (!annotations.empty()) {
-    p << "[";
-    llvm::interleaveComma(annotations, p, [&](Attribute a) {
-      p.printAttribute(cast<AnnotationAttr>(a));
-    });
-    p << "]";
-  }
-}
-
 ParseResult
 KGEN::parseStructDefFields(AsmParser &p,
                            SmallVector<StructDefFieldAttr> &fields) {
@@ -2068,12 +2240,38 @@ KGEN::parseStructDefFields(AsmParser &p,
   });
 }
 
-void KGEN::printStructDefFields(AsmPrinter &p,
-                                ArrayRef<StructDefFieldAttr> fields) {
+void KGENParamPrinter::printStructDefField(AsmPrinter &p, StringAttr name,
+                                           TypedAttr typeValue,
+                                           ArrayAttr annotations) {
+  printParamName(p, name);
+  p << ": ";
+  printTypeParamValue(p, typeValue);
+  if (!annotations.empty()) {
+    p << "[";
+    llvm::interleaveComma(annotations, p, [&](Attribute a) {
+      p.printAttribute(cast<AnnotationAttr>(a));
+    });
+    p << "]";
+  }
+}
+
+void KGEN::printStructDefField(AsmPrinter &p, StringAttr name,
+                               TypedAttr typeValue, ArrayAttr annotations) {
+  KGENParamPrinter::createDiagnosticPrinter().printStructDefField(
+      p, name, typeValue, annotations);
+}
+
+void KGENParamPrinter::printStructDefFields(
+    AsmPrinter &p, ArrayRef<StructDefFieldAttr> fields) {
   llvm::interleaveComma(fields, p, [&](StructDefFieldAttr field) {
     printStructDefField(p, field.getName(), field.getTypeValue(),
                         field.getAnnotations());
   });
+}
+
+void KGEN::printStructDefFields(AsmPrinter &p,
+                                ArrayRef<StructDefFieldAttr> fields) {
+  KGENParamPrinter::createDiagnosticPrinter().printStructDefFields(p, fields);
 }
 
 //===----------------------------------------------------------------------===//

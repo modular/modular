@@ -929,6 +929,7 @@ modular_cc_library(
         "//AsyncRT:CompilerSupport",
         "//Support:ADT",
         "//Support:DebugInfoDialect",
+        "//Support:HashUtils",
         "//Support:IPInt",
         "//Support:MDialect",
         "@llvm-project//mlir:LLVMDialect",

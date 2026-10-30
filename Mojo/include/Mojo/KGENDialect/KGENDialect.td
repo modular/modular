@@ -71,6 +71,11 @@ def KGENDialect : Dialect {
     template <typename TypeT>
     void registerMnemonicType();
 
+    /// Like `registerMnemonicType`, for a type with parameters that does not
+    /// implement ParamPrintableTypeInterface.
+    template <typename TypeT>
+    void registerMnemonicTypeWithoutParamPrinter();
+
     /// Get the "name" of the type, if it has registered one.
     std::optional<StringRef> getTypeName(mlir::TypeID id);
 

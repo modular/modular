@@ -69,11 +69,7 @@ private:
   bool finalized = false;
 };
 
-/// Printer for KGEN parameter expressions and types. The recursive printing
-/// routines are methods so the dedup state is carried implicitly and cannot be
-/// dropped or injected partway through a print. The printer owns its dedup
-/// context (if any) and is non-copyable: copying would silently create a
-/// second, empty context and break label sharing across a print.
+/// Printer for KGEN parameter expressions and types.
 class KGENParamPrinter {
 public:
   KGENParamPrinter(const KGENParamPrinter &) = delete;
@@ -81,30 +77,28 @@ public:
   KGENParamPrinter(KGENParamPrinter &&) = default;
   KGENParamPrinter &operator=(KGENParamPrinter &&) = default;
 
-  /// Prints every subexpression in full. Use it for diagnostics and IR that
-  /// must round-trip through the parser.
+  /// Prints every subexpression in full. Use for round trip printing and
+  /// diagnostics.
   static KGENParamPrinter createDiagnosticPrinter() {
     return KGENParamPrinter();
   }
 
-  /// Prints a repeated non-trivial subexpression (see
-  /// `KGENDialect::registerNonTrivialParamAttrs`) once, then refers to it by a
-  /// label. Use it for mangled names and display strings, which are never
-  /// parsed back.
+  /// Prints for a string that is never parsed back and is size sensitive:
+  /// dedups repeated subexpressions and hashes `MemRefAttr` instead of inlining
+  /// them.
   static KGENParamPrinter createManglePrinter() {
     KGENParamPrinter printer;
     printer.dedup.emplace();
+    printer.hashMemRefs = true;
     return printer;
   }
 
-  /// Rewrites the dedup placeholders in `raw`, which must contain everything
-  /// printed with this printer, in print order. `labelPrefix` is prepended to
-  /// each label; it must not appear in the printed text. Returns `raw`
-  /// unchanged when this printer does not dedup.
+  /// Rewrites the dedup placeholders into `raw`.
   std::string finalize(StringRef raw, char labelPrefix = '`') {
     return dedup ? dedup->finalize(raw, labelPrefix) : std::string(raw);
   }
 
+  // Print a complete type or attribute, including mnemonic/prefix.
   void printKGENType(AsmPrinter &p, Type type);
   void printParamType(AsmPrinter &p, Type type);
   void printParamTypes(AsmPrinter &p, ArrayRef<Type> types);
@@ -120,6 +114,24 @@ public:
                        ArrayRef<TypedAttr> paramValues,
                        DenseBoolArrayAttr discharged = {});
 
+  /// Print the body after a composite type's mnemonic.
+  void printStructInstanceBody(AsmPrinter &p, StructInstanceType type);
+  void printStructBody(AsmPrinter &p, StructType type);
+  void printPointerBody(AsmPrinter &p, PointerType type);
+  void printParamListBody(AsmPrinter &p, ParamListType type);
+  void printTypeValueBody(AsmPrinter &p, TypeValueType type);
+  void printVariantBody(AsmPrinter &p, VariantType type);
+  void printSIMDBody(AsmPrinter &p, SIMDType type);
+  void printFuncLiteralBody(AsmPrinter &p, FuncLiteralType type);
+
+  void printPointerOptionals(AsmPrinter &p, TypedAttr addressSpace,
+                             bool isNonNull);
+  void printVariantTypes(AsmPrinter &p, TypedAttr variadic);
+  void printIsMemoryOnly(AsmPrinter &p, TypedAttr isMemoryOnly);
+  void printStructDefField(AsmPrinter &p, StringAttr name, TypedAttr typeValue,
+                           ArrayAttr annotations);
+  void printStructDefFields(AsmPrinter &p, ArrayRef<StructDefFieldAttr> fields);
+
 private:
   KGENParamPrinter() = default;
 
@@ -128,7 +140,11 @@ private:
                              ArrayRef<TypedAttr> operands);
   void printParamValueImpl(AsmPrinter &p, TypedAttr value, Type type);
 
+  std::string memRefDigest(Attribute model);
+
   std::optional<DedupContext> dedup;
+  bool hashMemRefs = false;
+  DenseMap<const void *, std::string> memRefDigests;
 };
 
 /// Returns true if `value` is a compound parameter expression eligible for a
@@ -251,7 +267,6 @@ ParseResult parseStructDefField(AsmParser &p, StringAttr &name,
                                 TypedAttr &typeValue, ArrayAttr &annotations);
 void printStructDefField(AsmPrinter &p, StringAttr name, TypedAttr typeValue,
                          ArrayAttr annotations);
-
 /// Parser & printer for array of simplified StructDefFieldAttrs.
 ParseResult parseStructDefFields(AsmParser &p,
                                  SmallVector<StructDefFieldAttr> &fields);

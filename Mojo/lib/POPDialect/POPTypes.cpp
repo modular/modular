@@ -316,8 +316,8 @@ void POPDialect::registerTypes() {
       >();
 
   auto *dialect = getContext()->getOrLoadDialect<KGENDialect>();
-  dialect->registerMnemonicType<ArrayType>();
-  dialect->registerMnemonicType<UnionType>();
+  dialect->registerMnemonicTypeWithoutParamPrinter<ArrayType>();
+  dialect->registerMnemonicTypeWithoutParamPrinter<UnionType>();
 }
 
 //===----------------------------------------------------------------------===//

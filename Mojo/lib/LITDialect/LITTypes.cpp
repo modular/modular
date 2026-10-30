@@ -45,9 +45,9 @@ void LITDialect::registerTypes() {
       >();
 
   auto *dialect = getContext()->getOrLoadDialect<KGENDialect>();
-  dialect->registerMnemonicType<MetaType>();
-  dialect->registerMnemonicType<TraitType>();
-  dialect->registerMnemonicType<OriginType>();
+  dialect->registerMnemonicTypeWithoutParamPrinter<MetaType>();
+  dialect->registerMnemonicTypeWithoutParamPrinter<TraitType>();
+  dialect->registerMnemonicTypeWithoutParamPrinter<OriginType>();
   dialect->registerMnemonicType<OriginSetType>();
 
   // LIT compound expressions; see `registerNonTrivialParamAttrs`. The

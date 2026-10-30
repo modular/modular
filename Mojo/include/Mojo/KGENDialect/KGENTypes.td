@@ -77,7 +77,8 @@ def KGEN_ParamType : KGENType<"Param", "param", [
 //===----------------------------------------------------------------------===//
 
 def KGEN_TypeValueType : KGENType<"TypeValue", "typevalue",
-    [DeclareTypeInterfaceMethods<TraitSymbolInterface>]> {
+    [DeclareTypeInterfaceMethods<TraitSymbolInterface>,
+     DeclareTypeInterfaceMethods<ParamPrintableTypeInterface>]> {
   let summary = "Type specified by a parameter expression (value domain)";
   let description = [{
     This is the value domain counterpart to KGEN ParamType. It allows
@@ -535,7 +536,8 @@ def KGEN_FuncLiteralTypeGeneratorType : DialectType<KGENDialect,
 //===----------------------------------------------------------------------===//
 
 def KGEN_FuncLiteralType : KGENType<"FuncLiteral", "func.literal", [
-  DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
+  DeclareTypeInterfaceMethods<ParameterTypeInterface>,
+  DeclareTypeInterfaceMethods<ParamPrintableTypeInterface>]> {
   let summary = "The type of a KGEN literal function";
   let description = [{
     This type describes the type of a literal function in KGEN, in additional to
@@ -568,7 +570,8 @@ def KGEN_FuncLiteralType : KGENType<"FuncLiteral", "func.literal", [
 def PointerType : KGENType<"Pointer", "pointer", [
     DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
     DeclareTypeInterfaceMethods<DataLayoutInterface>,
-    DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>,
+    DeclareTypeInterfaceMethods<ParamPrintableTypeInterface>]> {
   let summary = "parameterized pointer type";
   let description = [{
     This type represents a pointer. The pointee type is parameterized with a
@@ -661,7 +664,8 @@ class PointerOf<Type type> : ConfinedType<PointerType,
 def KGEN_ParamListType : KGENType<"ParamList", "param_list", [
     DeclareTypeInterfaceMethods<DataLayoutInterface>,
     DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
-    DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>,
+    DeclareTypeInterfaceMethods<ParamPrintableTypeInterface>]> {
   let summary = "parameterized variadic type";
   let description = [{
     The `!kgen.param_list` type represents a homogeneously typed list
@@ -769,7 +773,8 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
     DeclareTypeInterfaceMethods<ParameterTypeInterface>,
     DeclareTypeInterfaceMethods<DataLayoutInterface>,
     DeclareTypeInterfaceMethods<ContextuallyEvaluatedTypeInterface,
-                                ["evaluateWithContext"]>]> {
+                                ["evaluateWithContext"]>,
+    DeclareTypeInterfaceMethods<ParamPrintableTypeInterface>]> {
   let summary = "parameterized struct type";
   let description = [{
     This type represents a struct. A struct contains element types arranged in
@@ -986,7 +991,8 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
 // StructInstanceType
 //===----------------------------------------------------------------------===//
 
-def KGEN_StructInstanceType : KGENType<"StructInstance", "struct_inst"> {
+def KGEN_StructInstanceType : KGENType<"StructInstance", "struct_inst",
+    [DeclareTypeInterfaceMethods<ParamPrintableTypeInterface>]> {
   let summary = "concretized mojo struct type";
   let description = [{
     This type represents a concretized mojo source struct type. It is the result
@@ -1059,7 +1065,8 @@ def KGEN_StructInstanceType : KGENType<"StructInstance", "struct_inst"> {
 def KGEN_VariantType : KGENType<"Variant", "variant", [
     DeclareTypeInterfaceMethods<ParameterTypeInterface>,
     DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
-    DeclareTypeInterfaceMethods<DataLayoutInterface>
+    DeclareTypeInterfaceMethods<DataLayoutInterface>,
+    DeclareTypeInterfaceMethods<ParamPrintableTypeInterface>
 ]> {
   let summary = "A parametric variant type.";
   let description = [{
@@ -1181,7 +1188,8 @@ def KGEN_NeverType : KGENType<"Never", "never", [
 def KGEN_SIMDType : KGENType<"SIMD", "simd", [
     DeclareTypeInterfaceMethods<DataLayoutInterface>,
     DeclareTypeInterfaceMethods<MemoryableTypeInterface>,
-    DeclareTypeInterfaceMethods<ParameterTypeInterface>]> {
+    DeclareTypeInterfaceMethods<ParameterTypeInterface>,
+    DeclareTypeInterfaceMethods<ParamPrintableTypeInterface>]> {
   let summary = "parameterized SIMD vector type";
   let description = [{
     This type is parameterized with a size and a !kgen.dtype type.
