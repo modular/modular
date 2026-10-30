@@ -222,3 +222,8 @@ This version is still a work in progress.
 
 - Fixed rejection of negative integer and floating-point literals in `match`
   patterns.
+
+- `input()` no longer drops piped input after the first line. Each call read
+  ahead into a stream buffer that was then discarded, so the next call raised
+  `EOF`
+  ([#7198](https://github.com/modular/modular/issues/7198)).
