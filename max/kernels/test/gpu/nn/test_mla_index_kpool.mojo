@@ -18,6 +18,7 @@ from std.testing import assert_almost_equal, assert_equal, assert_true
 
 from layout import TileTensor, row_major
 from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
+from max.gpu.primitives.grid_controls import PDLLevel
 
 from nn.attention.gpu.mla_index_kpool import (
     KPOOL_EXPAND_BLOCK_SIZE,
@@ -165,6 +166,7 @@ def test_kpool_compress[
         out_tile.Engine,
         head_dim,
         kpool,
+        PDLLevel.OFF,
     ]
     ctx.enqueue_function[kernel](
         out_tile,
@@ -327,6 +329,7 @@ def test_kpool_one_is_identity[head_dim: Int](ctx: DeviceContext) raises:
         out_tile.Engine,
         head_dim,
         kpool,
+        PDLLevel.OFF,
     ]
     ctx.enqueue_function[kernel](
         out_tile,
@@ -465,6 +468,7 @@ def test_decode_writer_matches_prefill_writer[
         prefill_tile.Engine,
         head_dim,
         kpool,
+        PDLLevel.OFF,
     ]
     ctx.enqueue_function[prefill_kernel](
         prefill_tile,
@@ -1130,6 +1134,7 @@ def test_expand_topk[
         kpool,
         pool_topk,
         always_select_tail,
+        PDLLevel.OFF,
     ]
     ctx.enqueue_function[kernel](
         out_tile,
@@ -1630,6 +1635,7 @@ def _seed_chunk[
         type_of(slot_t.as_imm()).Engine,
         head_dim,
         kpool,
+        PDLLevel.OFF,
     ]
     ctx.enqueue_function[kern](
         ring_t,
@@ -1889,6 +1895,7 @@ def test_kpool_ring_close[
         type_of(slot_t.as_imm()).Engine,
         head_dim,
         kpool,
+        PDLLevel.OFF,
     ]
     ctx.enqueue_function[kern](
         out_t,

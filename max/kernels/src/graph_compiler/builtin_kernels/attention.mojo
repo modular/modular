@@ -28,6 +28,7 @@ import extensibility
 from max.gpu.host import DeviceAttribute, DeviceBuffer, DeviceContext
 from layout import Coord
 from max.gpu.host.info import is_cpu, is_gpu
+from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from kv_cache.paged_sparse_kv_index_remap import (
     NoRemap,
     PagedKVRemap,
@@ -127,6 +128,11 @@ from .kernels import (
     _unsafe_str_to_coord,
 )
 
+# The k-pool ops sit between the PDL-enabled indexer top-k and the sparse MLA
+# decode, so each one launches while the grid before it drains and waits for
+# that grid before its first read.
+comptime KPOOL_PDL_LEVEL = PDLLevel.ON
+
 
 @extensibility.register("mo.mla.kpool.expand_topk")
 struct MLAKPoolExpandTopK:
@@ -205,6 +211,7 @@ struct MLAKPoolExpandTopK:
                 kpool,
                 pool_topk,
                 always_select_tail,
+                KPOOL_PDL_LEVEL,
             ]
         ](
             out_tt,
@@ -214,6 +221,7 @@ struct MLAKPoolExpandTopK:
             Int32(total_seq_len),
             grid_dim=(total_seq_len, 1, 1),
             block_dim=(KPOOL_EXPAND_BLOCK_SIZE, 1, 1),
+            attributes=pdl_launch_attributes(KPOOL_PDL_LEVEL),
         )
 
 
@@ -309,6 +317,7 @@ struct MLAKPoolCompress:
                 pooled_tt.Engine,
                 head_dim,
                 kpool,
+                KPOOL_PDL_LEVEL,
             ]
         ](
             pooled_tt,
@@ -320,6 +329,7 @@ struct MLAKPoolCompress:
             clen_tt.as_imm(),
             grid_dim=(total_pools, 1, 1),
             block_dim=(head_dim, 1, 1),
+            attributes=pdl_launch_attributes(KPOOL_PDL_LEVEL),
         )
 
 
@@ -416,6 +426,7 @@ struct MLAKPoolSeedTail:
                 type_of(slot_tt.as_imm()).Engine,
                 head_dim,
                 kpool,
+                KPOOL_PDL_LEVEL,
             ]
         ](
             tail_tt,
@@ -427,6 +438,7 @@ struct MLAKPoolSeedTail:
             Int32(batch_size),
             grid_dim=(batch_size, 1, 1),
             block_dim=(head_dim, 1, 1),
+            attributes=pdl_launch_attributes(KPOOL_PDL_LEVEL),
         )
 
 
@@ -547,6 +559,7 @@ struct MLAKPoolRingClose:
                 type_of(slot_tt.as_imm()).Engine,
                 head_dim,
                 kpool,
+                KPOOL_PDL_LEVEL,
             ]
         ](
             pooled_tt,
@@ -561,6 +574,7 @@ struct MLAKPoolRingClose:
             Int32(batch_size),
             grid_dim=(batch_size, 1, 1),
             block_dim=(head_dim, 1, 1),
+            attributes=pdl_launch_attributes(KPOOL_PDL_LEVEL),
         )
 
 

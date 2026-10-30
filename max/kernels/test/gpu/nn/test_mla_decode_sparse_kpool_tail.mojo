@@ -53,6 +53,7 @@ from std.random import randn, seed
 
 from max.gpu import *
 from max.gpu.host import DeviceContext, HostBuffer
+from max.gpu.primitives.grid_controls import PDLLevel
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mla_index_kpool import (
@@ -260,6 +261,7 @@ def run_case[
         kpool,
         pool_topk,
         select_tail,
+        PDLLevel.OFF,
     ]
     ctx.enqueue_function[expand_kernel](
         expand_out,
