@@ -189,6 +189,7 @@ def test_tma_replace_global_addr_in_gmem_descriptor[
     _ = old_src^
     _ = new_src^
     _ = dst^
+    _ = device_tensormaps^
 
 
 # Test loading a single 2d tile.
@@ -357,6 +358,7 @@ def test_tma_replace_global_addr_in_smem_descriptor[
     _ = old_src^
     _ = new_src^
     _ = dst^
+    _ = device_tensormaps^
 
 
 @__llvm_arg_metadata(template_tma_tensormap, `nvvm.grid_constant`)
@@ -572,6 +574,7 @@ def test_tma_replace_global_dim_in_smem_descriptor[
     _ = old_src^
     _ = new_src^
     _ = dst^
+    _ = device_tensormaps^
 
 
 def main() raises:
