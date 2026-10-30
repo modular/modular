@@ -13,11 +13,11 @@
 """OLMo 2 transformer architecture for text generation."""
 
 from .arch import olmo2_modulev3_arch
-from .model import Olmo2Model
 from .model_config import Olmo2Config
+from .olmo2 import Olmo2
 
 __all__ = [
+    "Olmo2",
     "Olmo2Config",
-    "Olmo2Model",
     "olmo2_modulev3_arch",
 ]

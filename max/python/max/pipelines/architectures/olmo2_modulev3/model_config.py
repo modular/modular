@@ -15,14 +15,15 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
-from typing import ClassVar, Literal
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
+from typing import ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
 from max.nn.legacy.kv_cache import KVCacheParamInterface
-from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.legacy.transformer import ReturnLogits
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import (
@@ -33,6 +34,7 @@ from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
     ArchConfigWithPermissiveMaxSeqLen,
     ArchConfigWithStoredKVParams,
+    ModelOutputConfig,
 )
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.modeling.config_enums import (
@@ -235,17 +237,25 @@ class Olmo2Config(
     def finalize(
         self,
         huggingface_config: AutoConfig,
-        state_dict: dict[str, WeightData],
-        return_logits: ReturnLogits,
-        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
-        norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm",
-        attention_bias: bool = False,
-    ) -> None:
-        """Define parameters that can't be determined just from the pipeline config."""
+        state_dict: Mapping[str, WeightData],
+        outputs: ModelOutputConfig,
+    ) -> Self:
+        """Returns the config completed with checkpoint and output requirements.
+
+        Args:
+            huggingface_config: The checkpoint's model configuration.
+            state_dict: The adapted checkpoint weights.
+            outputs: The outputs the pipeline requires.
+
+        Returns:
+            A copy of this config with the checkpoint-dependent fields set.
+        """
         tie_word_embeddings = (
             getattr(huggingface_config, "tie_word_embeddings", False)
             or "language_model.lm_head.weight" not in state_dict
         )
-
-        self.tie_word_embeddings = tie_word_embeddings
-        self.return_logits = return_logits
+        return replace(
+            self,
+            tie_word_embeddings=tie_word_embeddings,
+            return_logits=outputs.return_logits,
+        )

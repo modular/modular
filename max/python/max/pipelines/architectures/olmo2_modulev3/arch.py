@@ -15,16 +15,12 @@
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    TextTokenizer,
-)
+from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
-from ..llama3_modulev3.batch_processor import Llama3ModuleV3BatchProcessor
 from . import weight_adapters
-from .model import Olmo2Model
 from .model_config import Olmo2Config
+from .olmo2 import Olmo2
 
 olmo2_modulev3_arch = SupportedArchitecture(
     name="Olmo2ForCausalLM_ModuleV3",
@@ -39,7 +35,7 @@ olmo2_modulev3_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     default_encoding=Olmo2Config.DEFAULT_ENCODING,
     supported_encodings=Olmo2Config.SUPPORTED_ENCODINGS,
-    pipeline_model=Olmo2Model,
+    modules={GraphRole.DECODER: Olmo2},
     tokenizer=TextTokenizer,
     context_type=TextContext,
     multi_gpu_supported=False,
@@ -48,6 +44,5 @@ olmo2_modulev3_arch = SupportedArchitecture(
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
     config=Olmo2Config,
-    batching=Llama3ModuleV3BatchProcessor,
     memory_planner=PagedMemoryPlanner,
 )
