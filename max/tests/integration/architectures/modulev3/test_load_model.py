@@ -41,7 +41,7 @@ from max.pipelines.architectures.llama3_modulev3.weight_adapters import (
     convert_safetensor_state_dict,
 )
 from max.pipelines.architectures.olmo_modulev3.model import OlmoModel
-from max.pipelines.architectures.phi3_modulev3.model import Phi3Model
+from max.pipelines.architectures.phi3_modulev3 import phi3_modulev3_arch
 from max.pipelines.lib import MemoryPlan, WeightTransform
 from test_common.load_model_helpers import (
     assert_load_model_succeeds,
@@ -56,7 +56,7 @@ from transformers import PretrainedConfig
     "model_cls,repo_id",
     [
         (Llama3Model, "meta-llama/Llama-3.1-8B-Instruct"),
-        (Phi3Model, "microsoft/phi-4"),
+        (phi3_modulev3_arch.pipeline_model, "microsoft/phi-4"),
         (OlmoModel, "allenai/OLMo-1B-hf"),
         (Llama3Model, "ibm-granite/granite-3.1-8b-instruct"),
     ],
