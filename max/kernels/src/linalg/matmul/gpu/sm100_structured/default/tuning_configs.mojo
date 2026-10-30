@@ -1107,6 +1107,27 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             is_small_bn=False,
             batch_size=1,
         ),
+        # Automatically generated from [tuning_table_sm100_bf16.yaml]
+        # index: [41]
+        TuningConfigSM100(
+            M=17,
+            M_end=129,
+            N=512,
+            K=5120,
+            mma_shape=(128, 64, 16),
+            cta_group=1,
+            cluster_shape=(1, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+            swapAB=True,
+            k_group_size=1,
+            num_accum_pipeline_stages=1,
+            num_clc_pipeline_stages=0,
+            num_split_k=16,
+            num_pipeline_stages=5,
+            is_small_bn=False,
+            batch_size=1,
+        ),
         # ----------------END-TUNING-LIST-SM100-BF16----------------
     ]
 
