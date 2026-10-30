@@ -27,7 +27,12 @@ from typing import Any
 
 from max import functional as F
 from max.dtype import DType
-from max.graph import TensorValue, ops
+from max.graph import BufferType, TensorValue, ops
+from max.nn.legacy.kernels import (
+    BLOCKWISE_FP8_LANE_BYTES,
+    amd_mega_ffn_workspace_words,
+    preshuffle_block_scaled_b,
+)
 from max.nn.legacy.kernels import (
     block_scales_interleave as _block_scales_interleave,
 )
@@ -42,6 +47,9 @@ from max.nn.legacy.kernels import (
 )
 from max.nn.legacy.kernels import (
     grouped_dynamic_scaled_fp8_matmul as _grouped_dynamic_scaled_fp8_matmul,
+)
+from max.nn.legacy.kernels import (
+    grouped_ffn_blockwise_fp8_amd as _grouped_ffn_blockwise_fp8_amd,
 )
 from max.nn.legacy.kernels import (
     grouped_matmul_block_scaled as _grouped_matmul_block_scaled,
@@ -374,14 +382,80 @@ def _silu_quantize_fp8(
 silu_quantize_fp8 = F.functional(_silu_quantize_fp8)
 
 
+def _grouped_ffn_blockwise_fp8_amd_graph(
+    x: TensorValue,
+    x_scales: TensorValue,
+    gate_up: TensorValue,
+    gate_up_scales: TensorValue,
+    down: TensorValue,
+    down_scales: TensorValue,
+    expert_start_indices: TensorValue,
+    expert_ids: TensorValue,
+    usage_stats: TensorValue,
+    estimated_total_m: TensorValue,
+    mega_band_m: int,
+    mega_max_rows: int,
+    activation_fp32: bool,
+    swiglu_limit: float,
+) -> TensorValue:
+    # The counters persist across executions: one buffer per call site,
+    # zeroed once at load and never again.
+    workspace = ops.buffer_create(
+        BufferType(
+            DType.uint32,
+            shape=[
+                amd_mega_ffn_workspace_words(
+                    int(gate_up.shape[0]),
+                    mega_max_rows,
+                    int(x.shape[0]),
+                    grids=2,
+                )
+            ],
+            device=x.device,
+        ),
+        init_value=0,
+    )
+    return _grouped_ffn_blockwise_fp8_amd(
+        x,
+        gate_up,
+        x_scales,
+        gate_up_scales,
+        down,
+        down_scales,
+        expert_start_indices,
+        expert_ids,
+        usage_stats,
+        workspace,
+        estimated_total_m,
+        mega_band_m=mega_band_m,
+        mega_max_rows=mega_max_rows,
+        activation_fp32=activation_fp32,
+        swiglu_limit=swiglu_limit,
+    )
+
+
+grouped_ffn_blockwise_fp8_amd = F.functional(
+    _grouped_ffn_blockwise_fp8_amd_graph
+)
+
+
+def _preshuffle_blockwise_fp8_b(weight: TensorValue) -> TensorValue:
+    return preshuffle_block_scaled_b(weight, BLOCKWISE_FP8_LANE_BYTES)
+
+
+preshuffle_blockwise_fp8_b = F.functional(_preshuffle_blockwise_fp8_b)
+
+
 __all__ = [
     "block_scales_interleave",
     "dynamic_block_scaled_matmul",
     "dynamic_block_scaled_matmul_amd",
     "dynamic_scaled_matmul",
     "grouped_dynamic_scaled_fp8_matmul",
+    "grouped_ffn_blockwise_fp8_amd",
     "grouped_matmul_block_scaled",
     "grouped_quantize_dynamic_block_scaled",
+    "preshuffle_blockwise_fp8_b",
     "quantize_dynamic_block_scaled",
     "quantize_dynamic_block_scaled_mxfp4",
     "quantize_dynamic_scaled_float8",

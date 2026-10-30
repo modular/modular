@@ -22,9 +22,14 @@ from typing import Any, ClassVar, TypeVar
 
 from max import functional as F
 from max import tree
-from max.driver import CPU, Device
+from max.driver import (
+    CPU,
+    Device,
+    accelerator_api,
+    accelerator_architecture_name,
+)
 from max.dtype import DType
-from max.graph import DimLike, TensorValue
+from max.graph import DimLike, Graph, TensorValue
 from max.nn import Module
 from max.nn.common_layers.functional_kernels import (
     moe_create_indices,
@@ -34,7 +39,7 @@ from max.nn.common_layers.functional_kernels import (
 from max.nn.common_layers.moe import MoEGate
 from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.legacy.moe.expert_parallel import _SHARED_EXPERT_STREAM_ID
-from max.nn.legacy.quant_config import QuantConfig
+from max.nn.legacy.quant_config import QuantConfig, QuantFormat
 from max.nn.sequential import ModuleList
 from max.tensor import (
     Tensor,
@@ -60,6 +65,7 @@ from .quant_ops import (
     routed_weight_dtype,
 )
 from .quant_tensor import (
+    FP8BlockActivation,
     FP8BlockTensor,
     MXFP8Tensor,
     NVFP4Tensor,
@@ -67,6 +73,23 @@ from .quant_tensor import (
 )
 
 _M = TypeVar("_M", bound=Module[..., Any])
+
+_AMD_BLOCKWISE_MEGA_FFN_SHAPES = frozenset({(6144, 2048), (4096, 2048)})
+"""``(hidden, expert width)`` pairs the blockwise-FP8 AMD MegaFFN is
+validated on: GLM-5.3 and GLM-5.3-Flash."""
+
+_AMD_BLOCKWISE_MEGA_FFN_OP = "mo.grouped.ffn.blockwise.fp8.amd"
+"""The blockwise-FP8 AMD MegaFFN op, registered only by the closed-source
+kernel packages."""
+
+
+def _blockwise_mega_ffn_amd_is_registered() -> bool:
+    """Reports whether the current graph's kernel library has the MegaFFN op.
+
+    A source-only build lacks it, so its experts run the grouped-matmul chain.
+    """
+    with ensure_context():
+        return _AMD_BLOCKWISE_MEGA_FFN_OP in Graph.current._kernel_library
 
 
 def _on_device(module: _M, device: int) -> _M:
@@ -587,7 +610,7 @@ class ExpertParallelMoE(QuantizedMoE):
     @property
     def gate_up_proj(self) -> list[QuantAwareTensor]:
         """Per-device stacked ``[gate, up]`` weight bundle for local experts."""
-        per_device: list[list[QuantAwareTensor]] = [
+        per_device: list[list[list[QuantAwareTensor]]] = [
             [] for _ in self.mesh.devices
         ]
 
@@ -597,20 +620,16 @@ class ExpertParallelMoE(QuantizedMoE):
             up_w = self.shared_experts.up_proj.weight
             for i in range(self.mesh.num_devices):
                 per_device[i].append(
-                    quant_ops.concat_weights(
-                        gate_w.local_shards[i], up_w.local_shards[i], axis=0
-                    )
+                    [gate_w.local_shards[i], up_w.local_shards[i]]
                 )
 
         for n, expert in enumerate(self.experts):
             assert isinstance(expert, QuantizedMLP)
             idx = n // self._num_local_experts
             per_device[idx].append(
-                quant_ops.concat_weights(
-                    expert.gate_proj.weight, expert.up_proj.weight, axis=0
-                )
+                [expert.gate_proj.weight, expert.up_proj.weight]
             )
-        stacked = [quant_ops.stack(local, axis=0) for local in per_device]
+        stacked = self._stack_local_experts(per_device)
         if self._uses_fused_swiglu:
             permuted: list[QuantAwareTensor] = []
             for w in stacked:
@@ -622,7 +641,7 @@ class ExpertParallelMoE(QuantizedMoE):
     @property
     def down_proj(self) -> list[QuantAwareTensor]:
         """Per-device stacked down-projection weight bundle for local experts."""
-        per_device: list[list[QuantAwareTensor]] = [
+        per_device: list[list[list[QuantAwareTensor]]] = [
             [] for _ in self.mesh.devices
         ]
         if self.ep_batch_manager.config.fused_shared_expert:
@@ -631,13 +650,34 @@ class ExpertParallelMoE(QuantizedMoE):
             )
             for i in range(self.mesh.num_devices):
                 per_device[i].append(
-                    self.shared_experts.down_proj.weight.local_shards[i]
+                    [self.shared_experts.down_proj.weight.local_shards[i]]
                 )
         for n, expert in enumerate(self.experts):
             assert isinstance(expert, QuantizedMLP)
             idx = n // self._num_local_experts
-            per_device[idx].append(expert.down_proj.weight)
-        return [quant_ops.stack(local, axis=0) for local in per_device]
+            per_device[idx].append([expert.down_proj.weight])
+        return self._stack_local_experts(per_device)
+
+    def _stack_local_experts(
+        self, per_device: list[list[list[QuantAwareTensor]]]
+    ) -> list[QuantAwareTensor]:
+        """Stacks each device's experts in the MegaFFN's order if it runs.
+
+        Each expert's projections are joined along ``N``.
+        """
+        if self._blockwise_mega_ffn_amd_eligible():
+            return [
+                quant_ops.stack_blockwise_mega_ffn(experts, device)
+                for experts, device in zip(
+                    per_device, self.mesh.devices, strict=True
+                )
+            ]
+        return [
+            quant_ops.stack(
+                [quant_ops.join_projections(p) for p in experts], axis=0
+            )
+            for experts in per_device
+        ]
 
     # ----- local expert compute ----------------------------------------------
 
@@ -649,6 +689,34 @@ class ExpertParallelMoE(QuantizedMoE):
             gate_scales.append(expert.gate_proj.weight.input_scale)
         gate_scales = F.stack(gate_scales, axis=0)
         return F.max(gate_scales, axis=0)
+
+    def _blockwise_mega_ffn_amd_eligible(self) -> bool:
+        """Whether the gfx950 blockwise-FP8 experts can run as one MegaFFN op.
+
+        The shapes it is validated on are GLM-5.3's, where it matches the
+        tiled grouped-matmul chain bit for bit. It needs a single-node EP:
+        ``estimated_total_m`` counts only this node's tokens, so it bounds no
+        remote node's rows, and the kernel traps
+        past its row bound. The SwiGLU runs in bf16 or, after a float32
+        gate/up cast, in fp32, either one clamped. The op ships
+        only with the closed-source kernels, so the weight stacking and the
+        expert compute both fall back to the chain where it is not registered.
+        """
+        config = self.ep_batch_manager.config
+        quant_config = self.quant_config
+        accum = self.gate_up_accum_dtype
+        return (
+            accelerator_api() == "hip"
+            and accelerator_architecture_name().startswith("gfx950")
+            and config.n_nodes == 1
+            and (self.hidden_dim, self.moe_dim)
+            in _AMD_BLOCKWISE_MEGA_FFN_SHAPES
+            and quant_config is not None
+            and quant_config.format == QuantFormat.BLOCKSCALED_FP8
+            and quant_config.weight_scale.block_size == (128, 128)
+            and (accum is None or accum == DType.float32)
+            and _blockwise_mega_ffn_amd_is_registered()
+        )
 
     def _local_compute(
         self,
@@ -663,9 +731,43 @@ class ExpertParallelMoE(QuantizedMoE):
         gate_up = self.gate_up_proj
         down = self.down_proj
         usage_stats = payload.usage_stats
+        config = self.ep_batch_manager.config
+        if self._blockwise_mega_ffn_amd_eligible():
+            assert usage_stats is not None
+            first = gate_up[0]
+            assert isinstance(first, FP8BlockTensor)
+            band = quant_ops.amd_blockwise_mega_band_m(
+                int(first.weight.shape[0])
+            )
+            mega_max_rows = quant_ops.amd_blockwise_mega_max_rows(
+                band, config.n_gpus_per_node, config.top_k
+            )
+            outputs: list[Tensor] = []
+            with ensure_context():
+                for i in range(len(tokens)):
+                    t, gu, dn = tokens[i], gate_up[i], down[i]
+                    assert isinstance(t, FP8BlockActivation)
+                    assert isinstance(gu, FP8BlockTensor)
+                    assert isinstance(dn, FP8BlockTensor)
+                    outputs.append(
+                        quant_ops.grouped_ffn_blockwise_fp8_amd_ep(
+                            t,
+                            gu,
+                            dn,
+                            payload.expert_start[i],
+                            payload.expert_ids[i],
+                            usage_stats[i],
+                            estimated_total_m,
+                            band,
+                            mega_max_rows,
+                            activation_fp32=self.gate_up_accum_dtype
+                            == DType.float32,
+                            swiglu_limit=self.swiglu_limit,
+                        )
+                    )
+            return outputs
         # The decode concurrency cap bounds every expert's rows to
         # ``cap * n_ranks / top_k``; 0 leaves the MI355 kernel unbounded.
-        config = self.ep_batch_manager.config
         decode_grid_m_cap = 0
         if config.max_batch_size > 0:
             n_ranks = config.n_gpus_per_node * config.n_nodes

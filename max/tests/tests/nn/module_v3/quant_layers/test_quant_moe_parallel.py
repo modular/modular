@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import dataclasses
 import re
+from collections.abc import Sequence
 from types import SimpleNamespace
 from typing import cast
 from unittest.mock import MagicMock
@@ -25,7 +26,8 @@ import pytest
 from max import functional as F
 from max.driver import CPU, Device
 from max.dtype import DType
-from max.graph import Graph
+from max.graph import Graph, KernelLibrary
+from max.nn.common_layers import quant_moe, quant_ops
 from max.nn.common_layers.functional_kernels import (
     moe_create_indices,
 )
@@ -36,9 +38,11 @@ from max.nn.common_layers.quant_moe import (
     TensorParallelMoE,
 )
 from max.nn.common_layers.quant_tensor import (
+    FP8BlockActivation,
     FP8BlockTensor,
     MXFP8Tensor,
     NVFP4Tensor,
+    QuantAwareTensor,
 )
 from max.nn.legacy.comm.ep import EPConfig
 from max.nn.legacy.comm.ep.ep_config import NUM_GROUPS
@@ -81,6 +85,8 @@ _SEQ_LEN = 4
 # divides evenly across 2 devices on every sharded axis.
 _FP8_HIDDEN_DIM = 256
 _FP8_MOE_DIM = 512
+
+_MEGA_FFN_OP = "mo.grouped.ffn.blockwise.fp8.amd"
 
 
 # --------------------------------------------------------------------------- #
@@ -538,6 +544,181 @@ def test_expert_parallel_moe_fp8_weights(
                 _HIDDEN_DIM,
                 _MOE_DIM,
             ]
+
+
+def test_expert_parallel_moe_runs_blockwise_mega_ffn(
+    mock_accelerator: MagicMock,
+    fp8_quant_config: QuantConfig,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An eligible layer hands each device's experts to the MegaFFN op, with
+    the decode band of its slot count and the row bound of that band."""
+    calls: list[tuple[int, tuple[object, ...], dict[str, object]]] = []
+
+    def fake_mega_ffn(
+        tokens: FP8BlockActivation,
+        gate_up: FP8BlockTensor,
+        down: FP8BlockTensor,
+        *args: object,
+        **kwargs: object,
+    ) -> Tensor:
+        calls.append((int(gate_up.weight.shape[0]), args, kwargs))
+        return Tensor.zeros(
+            [tokens.data.shape[0], _HIDDEN_DIM],
+            dtype=DType.bfloat16,
+            device=tokens.data.device,
+        )
+
+    monkeypatch.setattr(
+        quant_ops, "grouped_ffn_blockwise_fp8_amd_ep", fake_mega_ffn
+    )
+    monkeypatch.setattr(
+        ExpertParallelMoE, "_blockwise_mega_ffn_amd_eligible", lambda _: True
+    )
+    with F.lazy():
+        devices = [mock_accelerator(0), mock_accelerator(1)]
+        mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
+        replicated = DeviceMapping(mesh, (Replicated(),))
+        ep_batch_manager, comm_buffers = _build_ep_batch_manager(
+            _ep_config(
+                DType.float8_e4m3fn,
+                len(devices),
+                dispatch_quant_config=fp8_quant_config,
+            ),
+            devices,
+        )
+        with default_device(mesh), default_dtype(DType.bfloat16):
+            layer = ExpertParallelMoE(
+                hidden_dim=_HIDDEN_DIM,
+                num_experts=_NUM_EXPERTS,
+                num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+                moe_dim=_MOE_DIM,
+                quant_config=fp8_quant_config,
+                ep_batch_manager=ep_batch_manager,
+            )
+            layer(
+                Tensor.zeros(
+                    [_SEQ_LEN, _HIDDEN_DIM],
+                    dtype=DType.bfloat16,
+                    device=replicated,
+                ),
+                comm_buffers,
+            )
+
+    assert len(calls) == len(devices)
+    for slots, args, kwargs in calls:
+        band = quant_ops.amd_blockwise_mega_band_m(slots)
+        assert args[-2:] == (
+            band,
+            quant_ops.amd_blockwise_mega_max_rows(
+                band, len(devices), _NUM_EXPERTS_PER_TOKEN
+            ),
+        )
+        assert kwargs["activation_fp32"] is False
+        assert kwargs["swiglu_limit"] == 0.0
+
+
+@pytest.mark.parametrize("registered", [False, True])
+def test_expert_parallel_moe_blockwise_mega_ffn_needs_registered_op(
+    mock_accelerator: MagicMock,
+    fp8_quant_config: QuantConfig,
+    monkeypatch: pytest.MonkeyPatch,
+    registered: bool,
+) -> None:
+    """The MegaFFN runs only where the kernel library registers its op.
+
+    Elsewhere an otherwise eligible layer stacks its experts row-major and
+    runs the grouped-matmul chain, as a source-only build must.
+    """
+    calls: list[int] = []
+    stacked: list[int] = []
+    stack_blockwise_mega_ffn = quant_ops.stack_blockwise_mega_ffn
+
+    def spy_stack(
+        experts: Sequence[Sequence[QuantAwareTensor]], device: Device
+    ) -> FP8BlockTensor:
+        stacked.append(len(experts))
+        return stack_blockwise_mega_ffn(experts, device)
+
+    def fake_mega_ffn(
+        tokens: FP8BlockActivation,
+        gate_up: FP8BlockTensor,
+        down: FP8BlockTensor,
+        *args: object,
+        **kwargs: object,
+    ) -> Tensor:
+        calls.append(int(gate_up.weight.shape[0]))
+        return Tensor.zeros(
+            [tokens.data.shape[0], _HIDDEN_DIM],
+            dtype=DType.bfloat16,
+            device=tokens.data.device,
+        )
+
+    contains = KernelLibrary.__contains__
+
+    def library_contains(library: KernelLibrary, kernel: str) -> bool:
+        if kernel == _MEGA_FFN_OP:
+            return registered
+        return contains(library, kernel)
+
+    monkeypatch.setattr(KernelLibrary, "__contains__", library_contains)
+    monkeypatch.setattr(
+        quant_ops, "grouped_ffn_blockwise_fp8_amd_ep", fake_mega_ffn
+    )
+    monkeypatch.setattr(quant_ops, "stack_blockwise_mega_ffn", spy_stack)
+    monkeypatch.setattr(quant_moe, "accelerator_api", lambda: "hip")
+    monkeypatch.setattr(
+        quant_moe, "accelerator_architecture_name", lambda: "gfx950"
+    )
+    monkeypatch.setattr(
+        quant_moe,
+        "_AMD_BLOCKWISE_MEGA_FFN_SHAPES",
+        frozenset({(_HIDDEN_DIM, _MOE_DIM)}),
+    )
+    with F.lazy():
+        devices = [mock_accelerator(0), mock_accelerator(1)]
+        mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
+        replicated = DeviceMapping(mesh, (Replicated(),))
+        ep_batch_manager, comm_buffers = _build_ep_batch_manager(
+            _ep_config(
+                DType.float8_e4m3fn,
+                len(devices),
+                dispatch_quant_config=fp8_quant_config,
+            ),
+            devices,
+        )
+        with default_device(mesh), default_dtype(DType.bfloat16):
+            layer = ExpertParallelMoE(
+                hidden_dim=_HIDDEN_DIM,
+                num_experts=_NUM_EXPERTS,
+                num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+                moe_dim=_MOE_DIM,
+                quant_config=fp8_quant_config,
+                ep_batch_manager=ep_batch_manager,
+            )
+            layer(
+                Tensor.zeros(
+                    [_SEQ_LEN, _HIDDEN_DIM],
+                    dtype=DType.bfloat16,
+                    device=replicated,
+                ),
+                comm_buffers,
+            )
+            ir = str(Graph.current._mlir_op)
+
+    local_experts = _NUM_EXPERTS // len(devices)
+    assert _MEGA_FFN_OP not in ir
+    if registered:
+        # One preshuffled gate/up stack and one down stack per device.
+        assert stacked == [local_experts] * 2 * len(devices)
+        assert calls == [local_experts] * len(devices)
+        assert "grouped.matmul" not in ir
+    else:
+        assert stacked == []
+        assert calls == []
+        assert ir.count('"mo.grouped.matmul.dynamic.scaled.fp8"') == (
+            2 * len(devices)
+        )
 
 
 def test_tensor_parallel_moe_nvfp4_weights(

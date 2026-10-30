@@ -8733,6 +8733,160 @@ def grouped_ffn_block_scaled_amd(
     return results[0].tensor
 
 
+def grouped_ffn_blockwise_fp8_amd(
+    hidden_states: TensorValue,
+    gate_up_weight: TensorValue,
+    a_scales: TensorValue,
+    gate_up_scales: TensorValue,
+    down_weight: TensorValue,
+    down_scales: TensorValue,
+    expert_start_indices: TensorValue,
+    expert_ids: TensorValue,
+    expert_usage_stats_host: TensorValue,
+    workspace: BufferValue,
+    estimated_total_m: TensorValue,
+    mega_band_m: int,
+    mega_max_rows: int,
+    activation_fp32: bool = False,
+    swiglu_limit: float = 0.0,
+) -> TensorValue:
+    """Runs a blockwise-FP8 MoE FFN on AMD gfx950 as one MegaFFN launch.
+
+    Bit for bit the chain it replaces: :func:`grouped_dynamic_scaled_fp8_matmul`
+    into bf16, the SwiGLU fused into the row-bounded ``(1, 128)`` dynamic
+    quantize, then :func:`grouped_dynamic_scaled_fp8_matmul`. Up to
+    ``mega_band_m`` estimated rows it runs the decode MegaFFN, above it the
+    prefill MegaFFN.
+
+    Args:
+        hidden_states: E4M3 rows grouped by expert, ``[total_tokens, H]``.
+        gate_up_weight: Gate/up weight split ``[gate | up]``, ``[num_experts,
+            2 * I, H]``, in the order :func:`preshuffle_block_scaled_b`
+            writes with :data:`BLOCKWISE_FP8_LANE_BYTES`.
+        a_scales: The rows' fp32 scales, token-minor ``[H / 128,
+            max_rows]``.
+        gate_up_scales: Gate/up fp32 weight scales, ``[num_experts,
+            2 * I / 128, H / 128]``.
+        down_weight: Down weight ``[num_experts, H, I]``, preshuffled as
+            ``gate_up_weight``.
+        down_scales: Down fp32 weight scales, ``[num_experts, H / 128,
+            I / 128]``.
+        expert_start_indices: Where each expert's rows start.
+        expert_ids: The expert ID for each slot.
+        expert_usage_stats_host: ``[max_tokens_per_expert,
+            num_active_experts]``.
+        workspace: The persistent MegaFFN counter buffer: minted once per
+            call site with ``ops.buffer_create(..., init_value=0)``, sized by
+            :func:`amd_mega_ffn_workspace_words` with ``grids=2``, never
+            zeroed again.
+        estimated_total_m: Row-count estimate that picks the regime.
+        mega_band_m: The decode MegaFFN runs when ``estimated_total_m`` is
+            at most this.
+        mega_max_rows: The most rows this GPU can receive inside that band.
+        activation_fp32: Runs the SwiGLU in fp32, as the chain does after a
+            float32 gate/up cast; otherwise in bf16.
+        swiglu_limit: A non-zero value clamps the SwiGLU's inputs,
+            ``silu(min(gate, limit)) * clamp(up, -limit, limit)``.
+
+    Returns:
+        The bf16 FFN output, ``[total_tokens, H]``.
+
+    Raises:
+        TypeError: If the operands are not E4M3 or the scales not fp32.
+        ValueError: If an operand's shape does not match ``gate_up_weight``'s.
+    """
+    for name, t in (
+        ("hidden_states", hidden_states),
+        ("gate_up_weight", gate_up_weight),
+        ("down_weight", down_weight),
+    ):
+        if t.dtype != DType.float8_e4m3fn:
+            raise TypeError(f"{name} must be float8_e4m3fn but got {t.dtype}")
+    for name, t in (
+        ("a_scales", a_scales),
+        ("gate_up_scales", gate_up_scales),
+        ("down_scales", down_scales),
+    ):
+        if t.dtype != DType.float32:
+            raise TypeError(f"{name} must be float32 but got {t.dtype}")
+    num_experts, n1, hidden = (int(d) for d in gate_up_weight.shape)
+    moe_dim = n1 // 2
+    # The op sizes everything from gate_up_weight; None matches any rows.
+    for name, t, want in (
+        ("hidden_states", hidden_states, [None, hidden]),
+        ("a_scales", a_scales, [hidden // 128, None]),
+        (
+            "gate_up_scales",
+            gate_up_scales,
+            [num_experts, n1 // 128, hidden // 128],
+        ),
+        ("down_weight", down_weight, [num_experts, hidden, moe_dim]),
+        (
+            "down_scales",
+            down_scales,
+            [num_experts, hidden // 128, moe_dim // 128],
+        ),
+    ):
+        if t.rank != len(want) or any(
+            w is not None and int(d) != w
+            for d, w in zip(t.shape, want, strict=True)
+        ):
+            raise ValueError(
+                f"{name} must be {want} (None: any) for a"
+                f" {list(gate_up_weight.shape)} gate_up_weight, but got"
+                f" {list(t.shape)}"
+            )
+    rows = hidden_states.shape[0]
+    results = ops.inplace_custom(
+        "mo.grouped.ffn.blockwise.fp8.amd",
+        device=hidden_states.device,
+        values=[
+            hidden_states,
+            gate_up_weight,
+            a_scales,
+            gate_up_scales,
+            down_weight,
+            down_scales,
+            expert_start_indices,
+            expert_ids,
+            workspace,
+            expert_usage_stats_host[1],
+            estimated_total_m.cast(DType.uint32),
+            ops.constant(
+                mega_band_m, dtype=DType.uint32, device=DeviceRef.CPU()
+            ),
+            ops.constant(
+                mega_max_rows, dtype=DType.uint32, device=DeviceRef.CPU()
+            ),
+        ],
+        out_types=[
+            TensorType(
+                dtype=DType.bfloat16,
+                shape=[rows, down_weight.shape[1]],
+                device=hidden_states.device,
+            ),
+            # The prefill MegaFFN's intermediate and its block-major scales:
+            # op outputs so the memory planner owns them. Unused by callers.
+            TensorType(
+                dtype=DType.float8_e4m3fn,
+                shape=[rows, moe_dim],
+                device=hidden_states.device,
+            ),
+            TensorType(
+                dtype=DType.float32,
+                shape=[rows + 128 * (num_experts + 1), moe_dim // 128],
+                device=hidden_states.device,
+            ),
+        ],
+        parameters={
+            "scales_max_padded_m": int(a_scales.shape[1]),
+            "act_fp32": activation_fp32,
+            "swiglu_limit": float(swiglu_limit),
+        },
+    )
+    return results[0].tensor
+
+
 # MFMA geometry of the AMD preb B layouts, mirroring the constants of the
 # same name in `linalg/matmul/gpu/amd/block_scaled_preshuffle_layouts.mojo`.
 _MFMA_MN_LANES = 16
@@ -8747,6 +8901,10 @@ two 16-byte halves at a K stride), so 24 is the only width that needs the
 plane-split layout.
 """
 
+BLOCKWISE_FP8_LANE_BYTES = 32
+"""Bytes one lane feeds the MFMA in the blockwise-FP8 MegaFFN: a whole
+32-byte fragment, K-contiguous as the chain's unscaled MFMAs read it."""
+
 
 def preshuffle_block_scaled_b(
     weight: TensorValue, lane_bytes: int = _MFMA_LANE_BYTES
@@ -8759,15 +8917,17 @@ def preshuffle_block_scaled_b(
     the ``b_5d_grouped_layout`` the kernel reads with coalesced loads. With
     :data:`MXFP6_LANE_BYTES`, no power-of-two load covers a lane, so each MFMA
     tile stores the first 16 bytes of every lane fragment as one plane and the
-    last 8 as a second, each ordered ``(KLane, NLane, byte)``. Lanes are
+    last 8 as a second, each ordered ``(KLane, NLane, byte)``; with
+    :data:`BLOCKWISE_FP8_LANE_BYTES` both planes are 16 bytes. Lanes are
     counted in bytes, so a wider element type permutes as its bytes would: a
     bf16 weight lands in the B layout of :func:`smallm_streaming_matmul`.
 
     Args:
         weight: Row-major expert weights ``[E, N, K]`` as the checkpoint
             stores them, with any graph-side reordering of N already applied.
-        lane_bytes: Bytes one lane feeds the MFMA: 16, or
-            :data:`MXFP6_LANE_BYTES` for MXFP6.
+        lane_bytes: Bytes one lane feeds the MFMA: 16,
+            :data:`MXFP6_LANE_BYTES` for MXFP6, or
+            :data:`BLOCKWISE_FP8_LANE_BYTES` for the blockwise-FP8 MegaFFN.
 
     Returns:
         The permuted weights, same shape and dtype.
@@ -8776,10 +8936,15 @@ def preshuffle_block_scaled_b(
         ValueError: If the weight is not rank 3, ``N`` is not a multiple of 16,
             or a row is not a whole number of MFMA K tiles.
     """
-    if lane_bytes not in (_MFMA_LANE_BYTES, MXFP6_LANE_BYTES):
+    if lane_bytes not in (
+        _MFMA_LANE_BYTES,
+        MXFP6_LANE_BYTES,
+        BLOCKWISE_FP8_LANE_BYTES,
+    ):
         raise ValueError(
             f"unsupported preb lane width {lane_bytes}; expected"
-            f" {_MFMA_LANE_BYTES} or {MXFP6_LANE_BYTES}"
+            f" {_MFMA_LANE_BYTES}, {MXFP6_LANE_BYTES} or"
+            f" {BLOCKWISE_FP8_LANE_BYTES}"
         )
     if weight.rank != 3:
         raise ValueError(f"expected weight of rank 3 but got {weight.rank}")
@@ -8793,6 +8958,15 @@ def preshuffle_block_scaled_b(
         )
     lane = lane_bytes // elem_bytes
     n0, k0 = n // _MFMA_MN_LANES, k // (_MFMA_K_LANES * lane)
+    if lane_bytes == BLOCKWISE_FP8_LANE_BYTES:
+        # One permute rather than the split and concat below: hoisted into
+        # init, that form held every layer's intermediate at once, twice the
+        # experts at peak; this one peaks one layer above them.
+        plane = _MFMA_LANE_BYTES // elem_bytes
+        w = weight.reshape([e, n0, _MFMA_MN_LANES, k0, _MFMA_K_LANES, 2, plane])
+        # (n0, nlane, k0, klane, plane, byte) -> (n0, k0, plane, klane, nlane,
+        # byte)
+        return ops.permute(w, [0, 1, 3, 5, 4, 2, 6]).reshape([e, n, k])
     w = weight.reshape([e, n0, _MFMA_MN_LANES, k0, _MFMA_K_LANES, lane])
     # (n0, nlane, k0, klane, byte) -> (n0, k0, klane, nlane, byte)
     w = ops.permute(w, [0, 1, 3, 4, 2, 5])

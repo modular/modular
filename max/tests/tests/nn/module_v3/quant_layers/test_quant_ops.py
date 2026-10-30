@@ -40,6 +40,7 @@ from max.nn.common_layers.quant_tensor import (
     NVFP4Activation,
     NVFP4Tensor,
     NVFP4TensorQuantizer,
+    QuantAwareTensor,
 )
 from max.nn.legacy.comm.ep import EPConfig
 from max.nn.legacy.quant_config import QuantConfig, QuantFormat
@@ -360,6 +361,43 @@ def test_sigma_permute_interleaves_gate_and_up_rows() -> None:
     assert permuted.weight_scale_2 is weight.weight_scale_2
     assert permuted.input_scale is weight.input_scale
     assert permuted.block_size == weight.block_size
+
+
+@pytest.mark.parametrize("experts, halves", [(3, 1), (10, 2)])
+def test_stack_blockwise_mega_ffn_permutes_each_expert(
+    experts: int, halves: int
+) -> None:
+    """Joined from one projection or two, stacked in one group or several,
+    each expert's bytes land in the blockwise MegaFFN's 32-byte-lane order
+    and the scales stack row-major."""
+    n, k = 32, 256
+    rng = np.random.default_rng(5)
+    data = rng.integers(0, 256, (experts, n, k), dtype=np.uint8)
+    scales = rng.random((experts, n // 16, k // 128)).astype(np.float32)
+    rows, scale_rows = n // halves, n // 16 // halves
+    items: list[list[QuantAwareTensor]] = [
+        [
+            FP8BlockTensor(
+                weight=Tensor(data[e, h * rows : (h + 1) * rows], device=CPU()),
+                weight_scale_inv=Tensor(
+                    scales[e, h * scale_rows : (h + 1) * scale_rows],
+                    device=CPU(),
+                ),
+            )
+            for h in range(halves)
+        ]
+        for e in range(experts)
+    ]
+
+    stacked = quant_ops.stack_blockwise_mega_ffn(items, CPU())
+
+    expected = (
+        data.reshape(experts, n // 16, 16, k // 128, 4, 2, 16)
+        .transpose(0, 1, 3, 5, 4, 2, 6)
+        .reshape(experts, n, k)
+    )
+    np.testing.assert_array_equal(stacked.weight.to_numpy(), expected)
+    np.testing.assert_array_equal(stacked.weight_scale_inv.to_numpy(), scales)
 
 
 # --------------------------------------------------------------------------- #

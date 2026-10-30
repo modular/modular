@@ -15,12 +15,18 @@
 
 from __future__ import annotations
 
+import itertools
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 from max import functional as F
-from max.driver import CPU, accelerator_api, accelerator_architecture_name
+from max.driver import (
+    CPU,
+    Device,
+    accelerator_api,
+    accelerator_architecture_name,
+)
 from max.dtype import DType
 from max.graph import TensorValue
 from max.nn.common_layers.functional_kernels import (
@@ -52,8 +58,10 @@ from .quant_kernels import (
     dynamic_block_scaled_matmul_amd,
     dynamic_scaled_matmul,
     grouped_dynamic_scaled_fp8_matmul,
+    grouped_ffn_blockwise_fp8_amd,
     grouped_matmul_block_scaled,
     grouped_quantize_dynamic_block_scaled,
+    preshuffle_blockwise_fp8_b,
     quantize_dynamic_block_scaled,
     quantize_dynamic_block_scaled_mxfp4,
     quantize_dynamic_scaled_float8,
@@ -360,6 +368,76 @@ def quantized_weight(
             block_size=block_size,
         )
     return _CONTAINERS[quant_config.format].zeros(shape, block_size=block_size)
+
+
+_BLOCKWISE_MEGA_FFN_PERMUTE_GROUP = 8
+"""Experts per permute when :func:`stack_blockwise_mega_ffn` stacks a layer."""
+
+
+def stack_blockwise_mega_ffn(
+    experts: Sequence[Sequence[QuantAwareTensor]], device: Device
+) -> FP8BlockTensor:
+    """Stacks FP8 expert weights in the blockwise MegaFFN's 32-byte-lane order.
+
+    As :func:`stack` of each expert's projections concatenated along ``N``,
+    with each expert's weight bytes permuted the way the op reads them. Init
+    concatenates, stacks and permutes on the host and moves only the result
+    to ``device``.
+
+    Args:
+        experts: Each expert's :class:`FP8BlockTensor` projections in slot
+            order, concatenated in the order given: ``[gate, up]`` or
+            ``[down]``.
+        device: The device the experts run on.
+
+    Returns:
+        The permuted weight stack and the row-major scale stack.
+    """
+    # Any of this done on the device leaves a temporary freed between
+    # resident stacks; those holes left a 0.9-utilization KV cache no
+    # contiguous block. Groups bound the host's temporaries to a fraction of
+    # the experts.
+    items = [
+        join_projections([_fp8_block_on(p, CPU()) for p in projections])
+        for projections in experts
+    ]
+    assert all_fp8_block(items)
+    first = items[0]
+    assert isinstance(first, FP8BlockTensor)
+    n = len(items)
+    n_groups = -(-n // _BLOCKWISE_MEGA_FFN_PERMUTE_GROUP)
+    bounds = [n * g // n_groups for g in range(n_groups + 1)]
+    groups = [
+        preshuffle_blockwise_fp8_b(
+            F.stack([w.weight for w in items[lo:hi]], axis=0)
+        )
+        for lo, hi in itertools.pairwise(bounds)
+    ]
+    weight = groups[0] if n_groups == 1 else F.concat(groups, axis=0)
+    scales = F.stack([w.weight_scale_inv for w in items], axis=0)
+    return FP8BlockTensor(
+        weight=weight.to(device),
+        weight_scale_inv=scales.to(device),
+        block_size=first.block_size,
+    )
+
+
+def join_projections(
+    projections: Sequence[QuantAwareTensor],
+) -> QuantAwareTensor:
+    """Returns one expert's projections concatenated along ``N``."""
+    if len(projections) == 1:
+        return projections[0]
+    return concat_weights(*projections, axis=0)
+
+
+def _fp8_block_on(weight: QuantAwareTensor, device: Device) -> FP8BlockTensor:
+    assert isinstance(weight, FP8BlockTensor)
+    return FP8BlockTensor(
+        weight=weight.weight.to(device),
+        weight_scale_inv=weight.weight_scale_inv.to(device),
+        block_size=weight.block_size,
+    )
 
 
 def stack(items: list[QuantAwareTensor], axis: int = 0) -> QuantAwareTensor:
@@ -1185,6 +1263,84 @@ def _grouped_fp8_matmul(
         weight_spec,
         out_type=out_type,
         **grid_kwargs,
+    )
+
+
+def amd_blockwise_mega_band_m(num_experts: int) -> int:
+    """Returns the blockwise-FP8 MoE FFN's decode band.
+
+    Up to this ``estimated_total_m`` the op runs its decode MegaFFN, above
+    it its prefill MegaFFN. The decode MegaFFN works in 16-row blocks, so it
+    wins while the expert slots average few rows: GLM-5.3 (33 slots, EP8)
+    crosses over between 384 and 512, GLM-5.3-Flash (145 slots, EP2) still
+    wins at 768, the largest step measured.
+    """
+    return min(11 * num_experts, 768)
+
+
+def amd_blockwise_mega_max_rows(band: int, n_gpus: int, top_k: int) -> int:
+    """Returns the most rows one GPU receives inside the decode band.
+
+    A step of ``T`` tokens has ``estimated_total_m = T * top_k / n_gpus``, so
+    inside the band ``T <= band * n_gpus / top_k``: at most ``band * n_gpus``
+    routed rows land on one GPU, plus the fused shared expert's ``T``. The
+    decode MegaFFN traps past this bound.
+    """
+    return band * n_gpus + -(-band * n_gpus // top_k)
+
+
+def grouped_ffn_blockwise_fp8_amd_ep(
+    tokens: FP8BlockActivation,
+    gate_up: FP8BlockTensor,
+    down: FP8BlockTensor,
+    expert_start_indices: Tensor,
+    expert_ids: Tensor,
+    expert_usage_stats: Tensor,
+    estimated_total_m: Tensor,
+    mega_band_m: int,
+    mega_max_rows: int,
+    *,
+    activation_fp32: bool = False,
+    swiglu_limit: float = 0.0,
+) -> Tensor:
+    """Runs blockwise-FP8 EP experts on MI355 as one MegaFFN launch.
+
+    Bit for bit :func:`grouped_matmul_silu` then :func:`grouped_matmul`.
+
+    Args:
+        tokens: The EP dispatch output, its scales token-minor.
+        gate_up: The ``[gate | up]`` expert weight stack, as
+            :func:`stack_blockwise_mega_ffn` stacks it.
+        down: The down expert weight stack, stacked the same way.
+        expert_start_indices: Where each expert's rows start.
+        expert_ids: The expert ID for each slot.
+        expert_usage_stats: ``[max_tokens_per_expert, num_active_experts]``.
+        estimated_total_m: Row-count estimate that picks the regime.
+        mega_band_m: The decode MegaFFN runs up to this
+            ``estimated_total_m`` (see :func:`amd_blockwise_mega_band_m`).
+        mega_max_rows: The most rows this GPU receives at decode.
+        activation_fp32: Runs the SwiGLU in fp32, as a float32
+            ``accum_dtype`` does.
+        swiglu_limit: A non-zero value clamps the SwiGLU's inputs.
+
+    Returns:
+        The bf16 expert outputs, ``[total_tokens, H]``.
+    """
+    return grouped_ffn_blockwise_fp8_amd(
+        tokens.data,
+        tokens.scales,
+        gate_up.weight,
+        gate_up.weight_scale_inv,
+        down.weight,
+        down.weight_scale_inv,
+        expert_start_indices,
+        expert_ids,
+        expert_usage_stats.to(CPU()),
+        estimated_total_m,
+        mega_band_m,
+        mega_max_rows,
+        activation_fp32,
+        swiglu_limit,
     )
 
 
