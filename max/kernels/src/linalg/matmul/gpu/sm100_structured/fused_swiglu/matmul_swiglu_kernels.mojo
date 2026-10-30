@@ -60,7 +60,6 @@ from max.gpu.sync import (
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.compute.arch.tcgen05 import *
 from max.gpu.primitives.grid_controls import (
-    launch_dependent_grids,
     PDLLevel,
     wait_on_dependent_grids,
 )
@@ -201,6 +200,9 @@ def load_AB[
     mma_shape: Coord[Int, Int, Int],
     cta_group: Int = 1,
     k_group_size: Int = 1,
+    load_a: Bool = True,
+    load_b: Bool = True,
+    claim_stage: Bool = True,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
@@ -217,8 +219,16 @@ def load_AB[
     b_multicast_mask: UInt16,
     iter_idx: UInt32,
     elect_one_cta: Bool,
+    stage_in: UInt32 = UInt32.MAX,
 ):
     """TMA producer phase that loads A and B tiles from GMEM into SMEM via multicast.
+
+    ``claim_stage`` waits for the stage to be free and sets the barrier's
+    expected bytes for both operands; with it False the call fills the
+    ``stage_in`` stage that an earlier ``claim_stage`` call claimed.
+    ``load_a`` and ``load_b`` select the operands this call loads, so the
+    static weight can be loaded ahead of the PDL wait and the activation after
+    it.
 
     Parameters:
         a_type: DType of the A operand elements.
@@ -242,6 +252,10 @@ def load_AB[
             (defaults to 1).
         k_group_size: Number of K tiles loaded per pipeline stage
             (defaults to 1).
+        load_a: Whether to load the A tiles (defaults to True).
+        load_b: Whether to load the B tiles (defaults to True).
+        claim_stage: Whether to claim the current producer stage (defaults
+            to True).
 
     Args:
         a_tma_op: TMA tensor map descriptor for the A operand.
@@ -261,6 +275,7 @@ def load_AB[
         iter_idx: Current K iteration index for this pipeline stage.
         elect_one_cta: Whether this CTA sets up the TMA barrier byte
             expectation.
+        stage_in: Stage to fill when ``claim_stage`` is False.
     """
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -279,7 +294,14 @@ def load_AB[
     comptime a_tma_rows = a_desc_shape.element_types[1].static_value
     comptime b_tma_rows = b_desc_shape.element_types[1].static_value
 
-    var stage = load_mma_pipeline.producer_stage()
+    var stage = stage_in
+    comptime if claim_stage:
+        stage = load_mma_pipeline.producer_stage()
+    else:
+        debug_assert(
+            stage_in != UInt32.MAX,
+            "claim_stage=False needs the stage an earlier call claimed",
+        )
     var tma_mbar = load_mma_pipeline.producer_mbar(stage)
     var a_gmem_slice_coord = (
         peer_cta_coord[2] * a_tma_rows + work_tile_coord[0] * BM
@@ -291,11 +313,13 @@ def load_AB[
     )
     var batch_coord = work_tile_coord[2]
 
-    load_mma_pipeline.wait_consumer()
+    comptime if claim_stage:
+        load_mma_pipeline.wait_consumer()
 
     if elect_one_sync():
-        if elect_one_cta:
-            tma_mbar[0].expect_bytes(Int32(expected_bytes))
+        comptime if claim_stage:
+            if elect_one_cta:
+                tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
         for jj in range(k_group_size):
             var j = UInt32(jj)
@@ -316,27 +340,29 @@ def load_AB[
                 b_smem_tile.layout,
             )
 
-            a_tma_op.async_multicast_load_3d[cta_group](
-                a_smem_slice,
-                tma_mbar[0],
-                (
-                    Int(iter_idx + j) * BK,
-                    a_gmem_slice_coord,
-                    batch_coord,
-                ),
-                a_multicast_mask,
-            )
+            comptime if load_a:
+                a_tma_op.async_multicast_load_3d[cta_group](
+                    a_smem_slice,
+                    tma_mbar[0],
+                    (
+                        Int(iter_idx + j) * BK,
+                        a_gmem_slice_coord,
+                        batch_coord,
+                    ),
+                    a_multicast_mask,
+                )
 
-            b_tma_op.async_multicast_load_3d[cta_group](
-                b_smem_slice,
-                tma_mbar[0],
-                (
-                    Int(iter_idx + j) * BK,
-                    b_gmem_slice_coord,
-                    batch_coord,
-                ),
-                b_multicast_mask,
-            )
+            comptime if load_b:
+                b_tma_op.async_multicast_load_3d[cta_group](
+                    b_smem_slice,
+                    tma_mbar[0],
+                    (
+                        Int(iter_idx + j) * BK,
+                        b_gmem_slice_coord,
+                        batch_coord,
+                    ),
+                    b_multicast_mask,
+                )
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1576,6 +1602,30 @@ def blackwell_swiglu_warp_specialized_kernel[
     comptime num_clc_pipeline_stages = config.num_clc_pipeline_stages
     comptime num_accum_pipeline_stages = config.num_accum_pipeline_stages
 
+    # The weight tiles of the first work tile's leading pipeline groups load
+    # before the PDL wait, so they stream in while the predecessor grid drains.
+    # Two groups measured as well as four and holds less of the ring. By
+    # contract the weight (the B operand, or A when swapped) and the bias are
+    # constant model weights, written before any grid in the chain launches, so
+    # both are read ahead of the wait; only the activation waits for the
+    # predecessor.
+    #
+    # The kernel never calls `launch_dependent_grids()`, so a dependent grid
+    # launches when this one completes. On B200 in an RMSNorm -> gate/up ->
+    # down chain, releasing at kernel entry was slower per layer at one token
+    # (3.4-3.9 us on Llama-3.1-8B, 2.3 us on the 70B shard, 0.3 us on the tuned
+    # shape) and at up to 64 tokens on the two-wave 8B config. It was 0.5-2 us
+    # faster per layer from 4 tokens up on the one-wave configs (the 70B shard,
+    # the tuned shape). That gain is inside the tie band, and avoiding the
+    # one-token loss needs a runtime branch on M, so no release is issued.
+    comptime assert (
+        pdl_level != PDLLevel.NO_WAIT_OVERLAP_AT_END
+    ), "the fused SwiGLU kernel always waits when PDL is on"
+    comptime pdl_on = pdl_level > PDLLevel.OFF
+    comptime prefetch_tiles_n = min(
+        2, num_group_pipeline_stages
+    ) if pdl_on else 0
+
     comptime NUM_TMEM_COLS = 512
     comptime stage_stride_cols = NUM_TMEM_COLS // num_accum_pipeline_stages
 
@@ -1776,16 +1826,80 @@ def blackwell_swiglu_warp_specialized_kernel[
 
     # ===== TMA Load Warp =====
     if WarpRole.is_main_load():
-        comptime if pdl_level > PDLLevel.OFF:
+        comptime if pdl_on and prefetch_tiles_n == 0:
             wait_on_dependent_grids()
 
+        var first_tile = True
         for current in scheduler.work_iterator():
             # With no CLC stages the scheduler warp exits before consuming
             # throttle signals, and the zero-length throttle array aliases
             # the next barrier in shared memory (`tmem_dealloc_mbar`).
             comptime if num_clc_pipeline_stages > 0:
                 scheduler.throttle_signal(is_first_cta_in_cluster)
-            for i in range(0, Int(num_iters), k_group_size):
+            var first_iter = 0
+            comptime if prefetch_tiles_n > 0:
+                if first_tile:
+                    first_tile = False
+                    var pf_stages = StaticTuple[UInt32, prefetch_tiles_n]()
+                    comptime for pf in range(prefetch_tiles_n):
+                        if pf * k_group_size < Int(num_iters):
+                            pf_stages[pf] = load_mma_pipeline.producer_stage()
+                            load_AB[
+                                block_tile_shape=config.block_tile_shape,
+                                mma_shape=config.mma_shape,
+                                cta_group=cta_group,
+                                k_group_size=k_group_size,
+                                load_a=AB_swapped,
+                                load_b=not AB_swapped,
+                            ](
+                                a_tma_op,
+                                b_tma_op,
+                                a_smem_tt,
+                                b_smem_tt,
+                                load_mma_pipeline,
+                                peer_cta_coord,
+                                (
+                                    Int(current.m),
+                                    Int(current.n),
+                                    Int(current.k_start),
+                                ),
+                                a_multicast_mask,
+                                b_multicast_mask,
+                                UInt32(pf * k_group_size),
+                                elect_one_cta,
+                            )
+                            load_mma_pipeline.producer_step()
+                    wait_on_dependent_grids()
+                    comptime for pf in range(prefetch_tiles_n):
+                        if pf * k_group_size < Int(num_iters):
+                            load_AB[
+                                block_tile_shape=config.block_tile_shape,
+                                mma_shape=config.mma_shape,
+                                cta_group=cta_group,
+                                k_group_size=k_group_size,
+                                load_a=not AB_swapped,
+                                load_b=AB_swapped,
+                                claim_stage=False,
+                            ](
+                                a_tma_op,
+                                b_tma_op,
+                                a_smem_tt,
+                                b_smem_tt,
+                                load_mma_pipeline,
+                                peer_cta_coord,
+                                (
+                                    Int(current.m),
+                                    Int(current.n),
+                                    Int(current.k_start),
+                                ),
+                                a_multicast_mask,
+                                b_multicast_mask,
+                                UInt32(pf * k_group_size),
+                                elect_one_cta,
+                                pf_stages[pf],
+                            )
+                    first_iter = prefetch_tiles_n * k_group_size
+            for i in range(first_iter, Int(num_iters), k_group_size):
                 load_AB[
                     block_tile_shape=config.block_tile_shape,
                     mma_shape=config.mma_shape,
@@ -1871,14 +1985,13 @@ def blackwell_swiglu_warp_specialized_kernel[
         tcgen05_release_allocation_lock[Int32(cta_group)]()
         tmem_dealloc_mbar[].wait()
 
-        comptime if pdl_level > PDLLevel.OFF:
-            launch_dependent_grids()
-
         tcgen05_dealloc[Int32(cta_group)](tmem_addr, NUM_TMEM_COLS)
 
     # ===== Epilogue Load Producer Warp (warp 7, bias only) =====
     comptime if config.use_bias:
         if WarpRole.is_epilogue_load():
+            # The bias is a constant model weight (see the prefetch note
+            # above), so this warp reads it without waiting on the predecessor.
             var epi_load_pl = ProducerConsumerPipeline[2](
                 smem.epilogue_load_mbars.unsafe_ptr()
             )

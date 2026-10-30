@@ -293,6 +293,7 @@ _B200_SMOKE_TESTS = [
 ]
 
 _B200_TESTS = [
+    "test_matmul_sm100_swiglu_pdl.mojo",
     "test_bulk_mma_pair_cta_sm100.mojo",
     "test_mma_ws_partial_sm100.mojo",
     "test_tma_mma_sm100.mojo",
@@ -383,6 +384,7 @@ _B200_TESTS = [
 ]
 
 _GPU_MEMORY = {
+    "test_matmul_sm100_swiglu_pdl.mojo": "4",
     "test_batched_matmul.mojo": "5",
     "test_batched_matmul_sm100_scaled.mojo": "1.5",
     "test_block_scaled_mma_amd.mojo": "1",

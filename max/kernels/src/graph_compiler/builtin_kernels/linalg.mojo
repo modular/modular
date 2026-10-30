@@ -2687,7 +2687,7 @@ struct MatmulSwiGLU:
         comptime assert type_of(output).dtype == DType.bfloat16
         comptime assert type_of(a).dtype == DType.bfloat16
         comptime assert type_of(b).dtype == DType.bfloat16
-        matmul_swiglu_dispatch_sm100_bf16(
+        matmul_swiglu_dispatch_sm100_bf16[pdl_level=PDLLevel.ON](
             output.to_tile_tensor(),
             a.to_tile_tensor(),
             b.to_tile_tensor(),
@@ -2728,7 +2728,7 @@ struct MatmulSwiGLUBias:
         comptime assert type_of(a).dtype == DType.bfloat16
         comptime assert type_of(b).dtype == DType.bfloat16
         comptime assert type_of(bias).dtype == DType.bfloat16
-        matmul_swiglu_dispatch_sm100_bf16[has_bias=True](
+        matmul_swiglu_dispatch_sm100_bf16[pdl_level=PDLLevel.ON, has_bias=True](
             output.to_tile_tensor(),
             a.to_tile_tensor(),
             b.to_tile_tensor(),
