@@ -18,6 +18,7 @@ from std.sys import bit_width_of
 
 from std.builtin.dtype import _uint_type_of_width
 from max.gpu import WARP_SIZE, block_idx, thread_idx
+from max.gpu.primitives import block
 from max.gpu.sync import barrier
 from max.gpu.primitives.grid_controls import (
     PDL,
@@ -705,6 +706,98 @@ def topp_minp_sampling_kernel[
 
 
 @inline(.always)
+@__name(t"minp_max_threshold_{dtype}_{out_idx_type}_{block_size}")
+def minp_max_threshold_kernel[
+    dtype: DType,
+    out_idx_type: DType,
+    block_size: Int,
+](
+    min_p_coeffs_: ImmPointer[Scalar[dtype], ImmUntrackedOrigin],
+    probs_: ImmPointer[Scalar[dtype], ImmUntrackedOrigin],
+    out_token_ids: MutPointer[Scalar[out_idx_type], MutUntrackedOrigin],
+    vocab_size: Int32,
+):
+    """Min-p sampling with no ordering anywhere.
+
+    One block per row: reduce the row's maximum probability, form the min-p
+    threshold from it, mask and renormalize, then draw from the masked set.
+
+    Parameters:
+        dtype: DType - scalar values dtype.
+        out_idx_type: DType - output index type.
+        block_size: Int - Number of threads per block.
+
+    Args:
+        min_p_coeffs_: Per-row min-p coefficients, in the caller's range [0, 1]
+            (`min_p_sampling_gpu`'s `min_ps`), not probabilities.
+        probs_: Post-softmax probabilities [batch_size, vocab_size], the buffer
+            `topp_minp_sampling_kernel` reads.
+        out_token_ids: Output token ids [batch_size].
+        vocab_size: Number of tokens in the vocabulary per row.
+
+    The sorted path reaches the same answer in four steps that this one
+    collapses into two scans of the row plus a per-thread walk:
+
+    1. The row maximum. `topk_wrapper[is_top_p=False]` reduces the same buffer
+       with K=1 and writes `p_thresholds[batch_id] = min_p * max` in `dtype`.
+       A max reduce computes the same value, so the threshold below is the same
+       number the sorted path compares against, bit for bit.
+    2. Mask and renormalize: the set is `p >= threshold`, and the sum over it is
+       the normalizer.
+    3. Draw: `r = uniform * sum`, then walk the set subtracting probabilities
+       until `r <= 0`. The sorted path walks the set in descending-probability
+       order; this walks it in thread-major order, a fixed permutation of the
+       row, which draws from the same distribution.
+    """
+    var _vocab = Int(vocab_size)
+    var tid = thread_idx.x
+    var batch_id = block_idx.x
+    var row = probs_.unsafe_offset(batch_id * _vocab)
+
+    # Pass 1: the row maximum, the same reduction the K=1 top-k does.
+    var thread_max = Scalar[dtype].MIN_FINITE
+    for i in range(tid, _vocab, block_size):
+        thread_max = max(thread_max, row[i])
+    var row_max = block.max[block_size=block_size](thread_max)
+
+    # Pass 2: masked sum. The threshold is the sorted path's, evaluated in
+    # `dtype` so `p >= threshold` selects exactly the same elements, and the
+    # sum accumulates in `dtype` like `sum_filtered_probs` does.
+    var threshold = min_p_coeffs_[batch_id] * row_max
+    var thread_sum = Scalar[dtype](0.0)
+    for i in range(tid, _vocab, block_size):
+        if row[i] >= threshold:
+            thread_sum += row[i]
+
+    var total = block.sum[block_size=block_size](thread_sum)
+    var seg_start = block.prefix_sum[block_size=block_size, exclusive=True](
+        thread_sum
+    )
+
+    # Pass 3: the draw. One uniform per row, the same one the sorted path
+    # draws, scaled by the normalizer; the thread whose segment of
+    # thread-major order holds `r` then walks its own elements.
+    var rng = Random(seed=SEED)
+    var r = total * rng.step_uniform()[0].cast[dtype]()
+    if total <= 0.0:
+        # Nothing clears the threshold (min_p > 1, or an all-zero row). The
+        # sorted path leaves the output untouched in this case; write a token
+        # rather than none.
+        if tid == 0:
+            out_token_ids[batch_id] = Int(0).cast[out_idx_type]()
+        return
+
+    if r >= seg_start and r < seg_start + thread_sum:
+        var remaining = r - seg_start
+        for i in range(tid, _vocab, block_size):
+            if row[i] >= threshold:
+                remaining -= row[i]
+                out_token_ids[batch_id] = Int(i).cast[out_idx_type]()
+                if remaining <= 0.0:
+                    break
+
+
+@inline(.always)
 def _is_supported_dtype[dtype: DType]() -> Bool:
     """
     Check if the type is supported by the radix sort kernel.
@@ -725,6 +818,7 @@ def _topp_minp_sampling_gpu[
     //,
     is_top_p: Bool,
     _test_sort: Bool = False,
+    use_max_threshold_minp: Bool = False,
 ](
     ctx: DeviceContext,
     p_thresholds: TileTensor[dtype, ...],
@@ -749,6 +843,12 @@ def _topp_minp_sampling_gpu[
             threshold for token inclusion.
         _test_sort: Bool - For internal testing purposes to check if the
             sorted probs are in descending order.
+        use_max_threshold_minp: Bool - Min-P only. False (default) keeps the
+            sort-based path: K=1 top-k for the row maximum, a radix sort of the
+            probabilities, then the sampler's walk over the sorted prefix. True
+            drops the sort and uses `minp_max_threshold_kernel`: row max,
+            threshold, mask, renormalize, draw. Top-P always uses the
+            sort-based path.
     Args:
         ctx: DeviceContext
             The context for GPU execution.
@@ -784,6 +884,13 @@ def _topp_minp_sampling_gpu[
     comptime assert _is_supported_dtype[dtype](), String(
         "Unsupported dtype: ", dtype
     )
+    comptime assert not (use_max_threshold_minp and is_top_p), String(
+        "use_max_threshold_minp is for Min-P only"
+    )
+    comptime assert not (use_max_threshold_minp and _test_sort), String(
+        "_test_sort checks the sorted probabilities, which the "
+        "max-and-threshold Min-P path does not produce"
+    )
 
     comptime BLOCK_SIZE = WARP_SIZE if ctx.target.is_apple_gpu() else 256
 
@@ -803,7 +910,11 @@ def _topp_minp_sampling_gpu[
 
     var input_size = input_logits.num_elements()
     # TODO: Should softmax be done in-place without needing this other buffer?
-    var probs_buf = ctx.enqueue_create_buffer[dtype](input_size * 2)
+    # The radix sort ping-pongs between two buffers; the max-and-threshold
+    # Min-P path reads the probabilities once more and needs only one.
+    var probs_buf = ctx.enqueue_create_buffer[dtype](
+        input_size if use_max_threshold_minp else input_size * 2
+    )
     var input_probs = TileTensor(
         probs_buf,
         row_major(batch_size, vocab_size),
@@ -816,6 +927,24 @@ def _topp_minp_sampling_gpu[
         input_logits.rank - 1,
         ctx,
     )
+
+    comptime if use_max_threshold_minp:
+        # Min-p needs no ordering: the threshold is a function of the row
+        # maximum alone, so the K=1 top-k, the radix sort, the ids buffer the
+        # sort carries, and the skip-sort flag all drop out.
+        comptime minp_kernel = minp_max_threshold_kernel[
+            dtype, out_idx_type, BLOCK_SIZE
+        ]
+        ctx.enqueue_function[minp_kernel](
+            p_thresholds.to_device_buffer(ctx),
+            probs_buf,
+            out_token_ids.to_device_buffer(ctx),
+            Int32(vocab_size),
+            grid_dim=batch_size,
+            block_dim=BLOCK_SIZE,
+        )
+        _ = probs_buf^
+        return
 
     # Step 2: Do a Top K=1 search on each vocab_size row of the
     #   probabilities tensor. This is to check if the most probable
@@ -943,6 +1072,7 @@ def min_p_sampling_gpu[
     out_idx_type: DType,
     //,
     _test_sort: Bool = False,
+    use_max_threshold: Bool = False,
 ](
     ctx: DeviceContext,
     min_ps: TileTensor[dtype, address_space=.GENERIC, ...],
@@ -954,9 +1084,32 @@ def min_p_sampling_gpu[
 ) raises:
     """
     GPU implementation of Min-P sampling for token selection.
-    This function applies temperature scaling, softmax, a radix sort, and then
-    samples tokens based on the calculated probability threshold (Min-P).
+    This function applies temperature scaling and softmax, and then samples
+    tokens based on the calculated probability threshold (Min-P).
+
+    Parameters:
+        dtype: DType - The data type of the input logits, min_ps, and
+            temperature.
+        out_idx_type: DType - The data type for output token indices.
+        _test_sort: Bool - For internal testing purposes to check if the
+            sorted probs are in descending order. Requires the sort-based path.
+        use_max_threshold: Bool - Whether to sample without ordering: reduce the
+            row maximum, form the threshold from it, mask, renormalize, and
+            draw. False (default) keeps the path that radix sorts the
+            probabilities first. Both draw from the same set of tokens.
+
+    Args:
+        ctx: DeviceContext
+            The context for GPU execution.
+        min_ps: Per-row min-p coefficients in [0, 1]; the threshold is
+            `min_p * max_probability`.
+        input_logits: Input logits tensor of shape [batch_size, vocab_size].
+        out_token_ids: Output buffer for sampled token indices of shape
+            [batch_size, 1].
+        temperature: Temperature for softmax scaling of logits (default=1.0).
     """
-    _topp_minp_sampling_gpu[is_top_p=False, _test_sort=_test_sort](
-        ctx, min_ps, input_logits, out_token_ids, temperature
-    )
+    _topp_minp_sampling_gpu[
+        is_top_p=False,
+        _test_sort=_test_sort,
+        use_max_threshold_minp=use_max_threshold,
+    ](ctx, min_ps, input_logits, out_token_ids, temperature)
