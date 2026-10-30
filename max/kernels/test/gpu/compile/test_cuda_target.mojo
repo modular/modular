@@ -116,9 +116,9 @@ def test_hello_mojo_sm90() raises:
 # ===-----------------------------------------------------------------------===#
 
 
-def erf_elementwise(
-    buf: MutPointer[Float32, MutAnyOrigin], len: Int, ctx: DeviceContext
-) raises:
+def erf_elementwise[
+    buf_origin: MutOrigin
+](buf: MutPointer[Float32, buf_origin], len: Int, ctx: DeviceContext) raises:
     # Each thread will process 4 * simd_width elements.
     comptime granularity = 4 * simd_width_of[DType.float32]()
     var tid = granularity * global_idx.x
@@ -144,14 +144,14 @@ def _verify_erf_elementwise(asm: StringSlice) raises:
 
 def test_erf_elementwise_sm80() raises:
     var asm = _compile_code[
-        erf_elementwise, target=get_gpu_target["sm_80"]()
+        erf_elementwise[MutUntrackedOrigin], target=get_gpu_target["sm_80"]()
     ]().asm
     _verify_erf_elementwise(asm)
 
 
 def test_erf_elementwise_sm90() raises:
     var asm = _compile_code[
-        erf_elementwise, target=get_gpu_target["sm_90"]()
+        erf_elementwise[MutUntrackedOrigin], target=get_gpu_target["sm_90"]()
     ]().asm
     _verify_erf_elementwise(asm)
 
@@ -161,7 +161,9 @@ def test_erf_elementwise_sm90() raises:
 # ===-----------------------------------------------------------------------===#
 
 
-def erf_kernel(buf: MutPointer[Float32, MutAnyOrigin], len: Int):
+def erf_kernel[
+    buf_origin: MutOrigin
+](buf: MutPointer[Float32, buf_origin], len: Int):
     var tid = thread_idx.x + block_dim.y * block_idx.y
 
     if tid >= len:
@@ -179,12 +181,16 @@ def _verify_erf_kernel(asm: StringSlice) raises -> None:
 
 
 def test_erf_kernel_sm80() raises:
-    var asm = _compile_code[erf_kernel, target=get_gpu_target["sm_80"]()]().asm
+    var asm = _compile_code[
+        erf_kernel[MutUntrackedOrigin], target=get_gpu_target["sm_80"]()
+    ]().asm
     _verify_erf_kernel(asm)
 
 
 def test_erf_kernel_sm90() raises:
-    var asm = _compile_code[erf_kernel, target=get_gpu_target["sm_90"]()]().asm
+    var asm = _compile_code[
+        erf_kernel[MutUntrackedOrigin], target=get_gpu_target["sm_90"]()
+    ]().asm
     _verify_erf_kernel(asm)
 
 
@@ -253,10 +259,12 @@ def test_barrier_sm90() raises:
 # ===-----------------------------------------------------------------------===#
 
 
-def gemm(
-    c: MutPointer[Float32, MutAnyOrigin],
-    a: ImmPointer[Float32, ImmutAnyOrigin],
-    b: ImmPointer[Float32, ImmutAnyOrigin],
+def gemm[
+    c_origin: MutOrigin, a_origin: ImmOrigin, b_origin: ImmOrigin
+](
+    c: MutPointer[Float32, c_origin],
+    a: ImmPointer[Float32, a_origin],
+    b: ImmPointer[Float32, b_origin],
     m: Int,
     n: Int,
     k: Int,
@@ -348,12 +356,18 @@ def _verify_gemm(asm: StringSlice) raises:
 
 
 def test_gemm_sm80() raises:
-    var asm = _compile_code[gemm, target=get_gpu_target["sm_80"]()]().asm
+    var asm = _compile_code[
+        gemm[MutUntrackedOrigin, ImmUntrackedOrigin, ImmUntrackedOrigin],
+        target=get_gpu_target["sm_80"](),
+    ]().asm
     _verify_gemm(asm)
 
 
 def test_gemm_sm90() raises:
-    var asm = _compile_code[gemm, target=get_gpu_target["sm_90"]()]().asm
+    var asm = _compile_code[
+        gemm[MutUntrackedOrigin, ImmUntrackedOrigin, ImmUntrackedOrigin],
+        target=get_gpu_target["sm_90"](),
+    ]().asm
     _verify_gemm(asm)
 
 

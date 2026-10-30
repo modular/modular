@@ -94,10 +94,10 @@ from std.testing import assert_equal
 
 @__llvm_arg_metadata(descriptor, `nvvm.grid_constant`)
 def gather4_raw_smoke_kernel[
-    dtype: DType, row_width: Int
+    dtype: DType, row_width: Int, out_origin: MutOrigin
 ](
     descriptor: TMADescriptor,
-    d_out: MutPointer[Scalar[dtype], MutAnyOrigin],
+    d_out: MutPointer[Scalar[dtype], out_origin],
     row0: Int32,
     row1: Int32,
     row2: Int32,
@@ -364,7 +364,9 @@ def test_raw_smoke[
 
     var shared_mem_bytes = 4 * row_width * size_of[dtype]()
 
-    comptime kernel = gather4_raw_smoke_kernel[dtype, row_width]
+    comptime kernel = gather4_raw_smoke_kernel[
+        dtype, row_width, origin_of(d_out)
+    ]
     ctx.enqueue_function[kernel](
         tma_desc,
         d_out,
@@ -512,6 +514,8 @@ def _run_paged_gather4_test[
         type_of(kv_tile).tile_shape,
         type_of(kv_tile).desc_shape,
         swizzle_mode,
+        origin_of(d_out),
+        origin_of(d_indices),
     ]
     ctx.enqueue_function[kernel](
         kv_tile,
@@ -680,6 +684,8 @@ def test_continuous_kv_cache[
         type_of(kv_tile).tile_shape,
         type_of(kv_tile).desc_shape,
         swizzle_mode,
+        origin_of(d_out),
+        origin_of(d_indices),
     ]
     ctx.enqueue_function[kernel](
         kv_tile,
@@ -756,6 +762,8 @@ def test_device_buffer_overload[
         type_of(kv_tile).tile_shape,
         type_of(kv_tile).desc_shape,
         TensorMapSwizzle.SWIZZLE_NONE,
+        origin_of(d_out),
+        origin_of(d_indices),
     ]
     ctx.enqueue_function[kernel](
         kv_tile,
@@ -816,10 +824,12 @@ def gather4_kernel[
     tile_shape_param: Coord,
     desc_shape_param: Coord,
     swizzle_mode: TensorMapSwizzle,
+    out_origin: MutOrigin,
+    indices_origin: MutOrigin,
 ](
     kv_tile: TMATensorTile[dtype, tile_shape_param, desc_shape_param],
-    d_out: MutPointer[Scalar[dtype], MutAnyOrigin],
-    d_indices: MutPointer[Int32, MutAnyOrigin],
+    d_out: MutPointer[Scalar[dtype], out_origin],
+    d_indices: MutPointer[Int32, indices_origin],
     num_tiles: Int32,
 ):
     """While-loop gather4 loader using the level 3 TMATensorTile API.
@@ -947,6 +957,8 @@ def test_wide_gather4_device_buffer[
         type_of(kv_tile).tile_shape,
         type_of(kv_tile).desc_shape,
         swizzle_mode,
+        origin_of(d_out),
+        origin_of(d_indices),
     ]
     ctx.enqueue_function[kernel](
         kv_tile,
@@ -1080,6 +1092,8 @@ def test_wide_gather4_paged_kv[
         type_of(kv_tile).tile_shape,
         type_of(kv_tile).desc_shape,
         swizzle_mode,
+        origin_of(d_out),
+        origin_of(d_indices),
     ]
     ctx.enqueue_function[kernel](
         kv_tile,
@@ -1214,6 +1228,8 @@ def test_wide_gather4_continuous_kv[
         type_of(kv_tile).tile_shape,
         type_of(kv_tile).desc_shape,
         swizzle_mode,
+        origin_of(d_out),
+        origin_of(d_indices),
     ]
     ctx.enqueue_function[kernel](
         kv_tile,
@@ -1353,6 +1369,8 @@ def test_wide_gather4_mha_operand[
         type_of(kv_tile).tile_shape,
         type_of(kv_tile).desc_shape,
         swizzle_mode,
+        origin_of(d_out),
+        origin_of(d_indices),
     ]
     ctx.enqueue_function[kernel](
         kv_tile,
@@ -1451,6 +1469,8 @@ def test_non_divisible_width[
         type_of(kv_tile).tile_shape,
         type_of(kv_tile).desc_shape,
         swizzle_mode,
+        origin_of(d_out),
+        origin_of(d_indices),
     ]
     ctx.enqueue_function[kernel](
         kv_tile,
@@ -1522,10 +1542,12 @@ def gather4_tile_api_kernel[
     num_threads: Int,
     tile_shape: Coord,
     desc_shape: Coord,
+    indices_origin: MutOrigin,
+    output_origin: MutOrigin,
 ](
     g4t_tma: TMATensorTile[dtype, tile_shape, desc_shape],
-    d_indices: MutPointer[Int32, MutAnyOrigin],
-    output: MutPointer[Scalar[dtype], MutAnyOrigin],
+    d_indices: MutPointer[Int32, indices_origin],
+    output: MutPointer[Scalar[dtype], output_origin],
 ):
     """Loads bn rows via async_copy_gather4_tile, then copies SMEM to
     global output for verification."""
@@ -1618,6 +1640,8 @@ def test_gather4_tile_api[
         num_threads,
         type_of(g4t_tma).tile_shape,
         type_of(g4t_tma).desc_shape,
+        origin_of(d_indices),
+        origin_of(out_device),
     ]
     ctx.enqueue_function[kernel](
         g4t_tma,
@@ -1796,6 +1820,8 @@ def test_gather4_tile_api_paged[
         num_threads,
         type_of(g4t_tma).tile_shape,
         type_of(g4t_tma).desc_shape,
+        origin_of(d_indices),
+        origin_of(out_device),
     ]
     ctx.enqueue_function[kernel](
         g4t_tma,

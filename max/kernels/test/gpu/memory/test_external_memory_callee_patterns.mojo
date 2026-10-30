@@ -34,7 +34,7 @@ comptime EXPECTED_SUM = BLOCK_SIZE * (BLOCK_SIZE - 1) // 2
 
 @inline(.never)
 def _callee_fill_and_reduce(
-    data: MutPointer[Float32, MutAnyOrigin], local_idx: Int, blk_idx: Int
+    data: MutPointer[Float32, _], local_idx: Int, blk_idx: Int
 ):
     """Each thread writes its index into shared memory; thread 0 reduces to sum.
     """
@@ -57,7 +57,9 @@ def test_external_memory_in_callee(ctx: DeviceContext) raises:
     """Verify that external_memory used only in a callee works correctly."""
     print("== test_external_memory_in_callee")
 
-    def callee_kernel(data: MutPointer[Float32, MutAnyOrigin]):
+    def callee_kernel[
+        data_origin: MutOrigin
+    ](data: MutPointer[Float32, data_origin]):
         # Kernel itself does NOT call external_memory; the callee does.
         _callee_fill_and_reduce(data, thread_idx.x, block_idx.x)
 
@@ -69,7 +71,7 @@ def test_external_memory_in_callee(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(dev_buf, host_buf)
 
-    comptime kernel = callee_kernel
+    comptime kernel = callee_kernel[origin_of(dev_buf)]
     ctx.enqueue_function[kernel](
         dev_buf,
         grid_dim=NUM_BLOCKS,
@@ -94,9 +96,7 @@ def test_external_memory_in_callee(ctx: DeviceContext) raises:
 
 
 @inline(.never)
-def _deep_baz(
-    data: MutPointer[Float32, MutAnyOrigin], local_idx: Int, blk_idx: Int
-):
+def _deep_baz(data: MutPointer[Float32, _], local_idx: Int, blk_idx: Int):
     """Innermost callee — owns the external_memory reference."""
     var smem = external_memory[
         Float32,
@@ -114,9 +114,7 @@ def _deep_baz(
 
 
 @inline(.never)
-def _deep_bar(
-    data: MutPointer[Float32, MutAnyOrigin], local_idx: Int, blk_idx: Int
-):
+def _deep_bar(data: MutPointer[Float32, _], local_idx: Int, blk_idx: Int):
     """Pass-through callee — does NOT reference external_memory."""
     _deep_baz(data, local_idx, blk_idx)
 
@@ -125,7 +123,9 @@ def test_external_memory_deep_callgraph(ctx: DeviceContext) raises:
     """Verify that external_memory 2 levels below the kernel works correctly."""
     print("== test_external_memory_deep_callgraph")
 
-    def deep_kernel(data: MutPointer[Float32, MutAnyOrigin]):
+    def deep_kernel[
+        data_origin: MutOrigin
+    ](data: MutPointer[Float32, data_origin]):
         # Kernel calls _deep_bar which calls _deep_baz (the only ext_memory user).
         _deep_bar(data, thread_idx.x, block_idx.x)
 
@@ -137,7 +137,7 @@ def test_external_memory_deep_callgraph(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(dev_buf, host_buf)
 
-    comptime kernel = deep_kernel
+    comptime kernel = deep_kernel[origin_of(dev_buf)]
     ctx.enqueue_function[kernel](
         dev_buf,
         grid_dim=NUM_BLOCKS,

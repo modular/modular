@@ -19,11 +19,11 @@ from max.gpu.host import Attribute
 
 
 def test_function_attributes() raises:
-    def kernel(x: MutPointer[Int, MutAnyOrigin]):
+    def kernel[x_origin: MutOrigin](x: MutPointer[Int, x_origin]):
         x[0] = thread_idx.x
 
     with DeviceContext() as ctx:
-        var func = ctx.compile_function[kernel]()
+        var func = ctx.compile_function[kernel[MutUntrackedOrigin]]()
         assert_equal(func.get_attribute(Attribute.LOCAL_SIZE_BYTES), 0)
 
 

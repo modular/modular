@@ -25,13 +25,13 @@ from max.gpu.host import DeviceContext
 def test_compile_function() raises:
     print("== test_compile_function")
 
-    def kernel(x: Pointer[Int, MutAnyOrigin]):
+    def kernel[x_origin: MutOrigin](x: Pointer[Int, x_origin]):
         x[unsafe_offset=0] = thread_idx.x
 
     # CHECK: tid.x
 
     with DeviceContext() as ctx:
-        _ = ctx.compile_function[kernel]()
+        _ = ctx.compile_function[kernel[MutUntrackedOrigin]]()
 
 
 def main() raises:

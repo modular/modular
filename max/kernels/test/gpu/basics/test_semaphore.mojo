@@ -22,9 +22,11 @@ comptime NUM_BLOCKS = 32
 comptime NUM_THREADS = 64
 
 
-def test_named_barrier_semaphore_equal_kernel(
-    locks_ptr: MutPointer[Int32, MutAnyOrigin],
-    shared_ptr: MutPointer[Int32, MutAnyOrigin],
+def test_named_barrier_semaphore_equal_kernel[
+    locks_origin: MutOrigin, shared_origin: MutOrigin
+](
+    locks_ptr: MutPointer[Int32, locks_origin],
+    shared_ptr: MutPointer[Int32, shared_origin],
 ):
     var sema = NamedBarrierSemaphore[Int32(NUM_THREADS), 4, 1](
         locks_ptr, thread_idx.x
@@ -51,10 +53,14 @@ def test_named_barrier_semaphore_equal(ctx: DeviceContext) raises:
     locks_data.to_device()
     shared_data.to_device()
 
-    comptime kernel = test_named_barrier_semaphore_equal_kernel
+    var locks_ptr = locks_data.device_tensor().unsafe_ptr()
+    var shared_ptr = shared_data.device_tensor().unsafe_ptr()
+    comptime kernel = test_named_barrier_semaphore_equal_kernel[
+        type_of(locks_ptr).origin, type_of(shared_ptr).origin
+    ]
     ctx.enqueue_function[kernel](
-        locks_data.device_tensor().unsafe_ptr(),
-        shared_data.device_tensor().unsafe_ptr(),
+        locks_ptr,
+        shared_ptr,
         grid_dim=(NUM_BLOCKS),
         block_dim=(NUM_THREADS),
     )
@@ -64,9 +70,11 @@ def test_named_barrier_semaphore_equal(ctx: DeviceContext) raises:
         assert_equal(shared_host[i], Int32(i))
 
 
-def test_named_barrier_semaphore_less_than_kernel(
-    locks_ptr: MutPointer[Int32, MutAnyOrigin],
-    shared_ptr: MutPointer[Int32, MutAnyOrigin],
+def test_named_barrier_semaphore_less_than_kernel[
+    locks_origin: MutOrigin, shared_origin: MutOrigin
+](
+    locks_ptr: MutPointer[Int32, locks_origin],
+    shared_ptr: MutPointer[Int32, shared_origin],
 ):
     var sema = NamedBarrierSemaphore[Int32(NUM_THREADS), 4, 1](
         locks_ptr, thread_idx.x
@@ -93,10 +101,14 @@ def test_named_barrier_semaphore_less_than(ctx: DeviceContext) raises:
     locks_data.to_device()
     shared_data.to_device()
 
-    comptime kernel = test_named_barrier_semaphore_less_than_kernel
+    var locks_ptr = locks_data.device_tensor().unsafe_ptr()
+    var shared_ptr = shared_data.device_tensor().unsafe_ptr()
+    comptime kernel = test_named_barrier_semaphore_less_than_kernel[
+        type_of(locks_ptr).origin, type_of(shared_ptr).origin
+    ]
     ctx.enqueue_function[kernel](
-        locks_data.device_tensor().unsafe_ptr(),
-        shared_data.device_tensor().unsafe_ptr(),
+        locks_ptr,
+        shared_ptr,
         grid_dim=(NUM_BLOCKS),
         block_dim=(NUM_THREADS),
     )

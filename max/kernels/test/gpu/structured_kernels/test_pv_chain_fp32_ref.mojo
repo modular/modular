@@ -158,10 +158,13 @@ def _dequant_to_f32[T: DType](v: Scalar[T]) -> Float32:
 def kernel_pv_chain[
     cfg: MhaConfigV2,
     T: DType,
+    src_v_subtile_origin: MutOrigin,
+    src_p_origin: MutOrigin,
+    dump_origin: MutOrigin,
 ](
-    src_v_subtile_ptr: MutPointer[Scalar[T], MutAnyOrigin],
-    src_p_ptr: MutPointer[Scalar[T], MutAnyOrigin],
-    dump_ptr: MutPointer[Float32, MutAnyOrigin],
+    src_v_subtile_ptr: MutPointer[Scalar[T], src_v_subtile_origin],
+    src_p_ptr: MutPointer[Scalar[T], src_p_origin],
+    dump_ptr: MutPointer[Float32, dump_origin],
 ):
     """Loads V from sub-tile-major SMEM, fills P per-lane from gmem,
     calls `mma_PV`, dumps per-lane FP32 accumulator to `dump_ptr`.
@@ -336,7 +339,15 @@ def test_pv_chain[T: DType](ctx: DeviceContext) raises -> Bool:
                 host_p[key * Q_BLOCK_SIZE + q] = _quantize[T](_P_fp32(key, q))
 
     # ---- Launch the kernel ------------------------------------------------
-    ctx.enqueue_function[kernel_pv_chain[CFG, T]](
+    ctx.enqueue_function[
+        kernel_pv_chain[
+            CFG,
+            T,
+            origin_of(dev_v_subtile),
+            origin_of(dev_p),
+            origin_of(dev_dump),
+        ]
+    ](
         dev_v_subtile.unsafe_ptr(),
         dev_p.unsafe_ptr(),
         dev_dump.unsafe_ptr(),

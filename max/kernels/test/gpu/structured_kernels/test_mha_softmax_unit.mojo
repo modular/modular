@@ -181,7 +181,7 @@ def _accumulate_o_from_att(
 
 @inline(.always)
 def _emit_diag(
-    out_ptr: MutPointer[Float32, MutAnyOrigin],
+    out_ptr: MutPointer[Float32, _],
     o_reg: RegTile[.float32, _, MutUntrackedOrigin],
     softmax: OnlineSoftmax,
 ):
@@ -215,9 +215,9 @@ def _emit_diag(
 # ----------------------------------------------------------------------------
 
 
-def kernel_case1_uniform(
-    out_ptr: MutPointer[Float32, MutAnyOrigin],
-):
+def kernel_case1_uniform[
+    out_origin: MutOrigin,
+](out_ptr: MutPointer[Float32, out_origin],):
     var att_block = reg_alloc[.float32](ATT_LAYOUT)
     var o_reg = reg_alloc[.float32](O_LAYOUT)
     _ = att_block.fill(0)
@@ -252,9 +252,9 @@ def kernel_case1_uniform(
 # ----------------------------------------------------------------------------
 
 
-def kernel_case2_one_hot(
-    out_ptr: MutPointer[Float32, MutAnyOrigin],
-):
+def kernel_case2_one_hot[
+    out_origin: MutOrigin,
+](out_ptr: MutPointer[Float32, out_origin],):
     var att_block = reg_alloc[.float32](ATT_LAYOUT)
     var o_reg = reg_alloc[.float32](O_LAYOUT)
     _ = att_block.fill(0)
@@ -289,9 +289,9 @@ def kernel_case2_one_hot(
 # ----------------------------------------------------------------------------
 
 
-def kernel_case3_negative(
-    out_ptr: MutPointer[Float32, MutAnyOrigin],
-):
+def kernel_case3_negative[
+    out_origin: MutOrigin,
+](out_ptr: MutPointer[Float32, out_origin],):
     var att_block = reg_alloc[.float32](ATT_LAYOUT)
     var o_reg = reg_alloc[.float32](O_LAYOUT)
     _ = att_block.fill(0)
@@ -328,9 +328,9 @@ def kernel_case3_negative(
 # ----------------------------------------------------------------------------
 
 
-def kernel_case4_subnormal(
-    out_ptr: MutPointer[Float32, MutAnyOrigin],
-):
+def kernel_case4_subnormal[
+    out_origin: MutOrigin,
+](out_ptr: MutPointer[Float32, out_origin],):
     var att_block = reg_alloc[.float32](ATT_LAYOUT)
     var o_reg = reg_alloc[.float32](O_LAYOUT)
     _ = att_block.fill(0)
@@ -386,9 +386,9 @@ def _logit_for_tile(t: Int) -> Float32:
     return Float32(10.0)
 
 
-def kernel_case5_eager(
-    out_ptr: MutPointer[Float32, MutAnyOrigin],
-):
+def kernel_case5_eager[
+    out_origin: MutOrigin,
+](out_ptr: MutPointer[Float32, out_origin],):
     var att_block = reg_alloc[.float32](ATT_LAYOUT)
     var o_reg = reg_alloc[.float32](O_LAYOUT)
     _ = att_block.fill(0)
@@ -416,9 +416,9 @@ def kernel_case5_eager(
     _emit_diag(out_ptr, o_reg, softmax)
 
 
-def kernel_case5_lazy(
-    out_ptr: MutPointer[Float32, MutAnyOrigin],
-):
+def kernel_case5_lazy[
+    out_origin: MutOrigin,
+](out_ptr: MutPointer[Float32, out_origin],):
     var att_block = reg_alloc[.float32](ATT_LAYOUT)
     var o_reg = reg_alloc[.float32](O_LAYOUT)
     # `att_bf16_full` plays the role of the previous tile's already-exp'd
@@ -470,7 +470,7 @@ def test_case1_uniform(ctx: DeviceContext) raises:
     var size = NUM_LANES * DIAG_PER_LANE
     var dev_out = ctx.enqueue_create_buffer[.float32](size)
     _ = dev_out.enqueue_fill(Float32(-1))
-    ctx.enqueue_function[kernel_case1_uniform](
+    ctx.enqueue_function[kernel_case1_uniform[origin_of(dev_out)]](
         dev_out, grid_dim=1, block_dim=NUM_LANES
     )
     with dev_out.map_to_host() as host_out:
@@ -497,7 +497,7 @@ def test_case2_one_hot(ctx: DeviceContext) raises:
     var size = NUM_LANES * DIAG_PER_LANE
     var dev_out = ctx.enqueue_create_buffer[.float32](size)
     _ = dev_out.enqueue_fill(Float32(-1))
-    ctx.enqueue_function[kernel_case2_one_hot](
+    ctx.enqueue_function[kernel_case2_one_hot[origin_of(dev_out)]](
         dev_out, grid_dim=1, block_dim=NUM_LANES
     )
     with dev_out.map_to_host() as host_out:
@@ -535,7 +535,7 @@ def test_case3_negative(ctx: DeviceContext) raises:
     var size = NUM_LANES * DIAG_PER_LANE
     var dev_out = ctx.enqueue_create_buffer[.float32](size)
     _ = dev_out.enqueue_fill(Float32(-1))
-    ctx.enqueue_function[kernel_case3_negative](
+    ctx.enqueue_function[kernel_case3_negative[origin_of(dev_out)]](
         dev_out, grid_dim=1, block_dim=NUM_LANES
     )
     with dev_out.map_to_host() as host_out:
@@ -560,7 +560,7 @@ def test_case4_subnormal(ctx: DeviceContext) raises:
     var size = NUM_LANES * DIAG_PER_LANE
     var dev_out = ctx.enqueue_create_buffer[.float32](size)
     _ = dev_out.enqueue_fill(Float32(-1))
-    ctx.enqueue_function[kernel_case4_subnormal](
+    ctx.enqueue_function[kernel_case4_subnormal[origin_of(dev_out)]](
         dev_out, grid_dim=1, block_dim=NUM_LANES
     )
     with dev_out.map_to_host() as host_out:
@@ -591,10 +591,10 @@ def test_case5_lazy_vs_eager(ctx: DeviceContext) raises:
     var dev_lazy = ctx.enqueue_create_buffer[.float32](size)
     _ = dev_eager.enqueue_fill(Float32(-1))
     _ = dev_lazy.enqueue_fill(Float32(-1))
-    ctx.enqueue_function[kernel_case5_eager](
+    ctx.enqueue_function[kernel_case5_eager[origin_of(dev_eager)]](
         dev_eager, grid_dim=1, block_dim=NUM_LANES
     )
-    ctx.enqueue_function[kernel_case5_lazy](
+    ctx.enqueue_function[kernel_case5_lazy[origin_of(dev_lazy)]](
         dev_lazy, grid_dim=1, block_dim=NUM_LANES
     )
     with dev_eager.map_to_host() as host_e, dev_lazy.map_to_host() as host_l:

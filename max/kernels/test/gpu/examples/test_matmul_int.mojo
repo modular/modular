@@ -29,10 +29,12 @@ comptime TILE_SZ_B = 16
 comptime TILE_SZ_RATIO = TILE_SZ_A // TILE_SZ_B
 
 
-def matmul(
-    a_ptr: MutPointer[Int, MutAnyOrigin],
-    b_ptr: MutPointer[Int, MutAnyOrigin],
-    c_ptr: MutPointer[Int, MutAnyOrigin],
+def matmul[
+    a_origin: MutOrigin, b_origin: MutOrigin, c_origin: MutOrigin
+](
+    a_ptr: MutPointer[Int, a_origin],
+    b_ptr: MutPointer[Int, b_origin],
+    c_ptr: MutPointer[Int, c_origin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
@@ -136,7 +138,9 @@ def run_matmul(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
-    ctx.enqueue_function[matmul](
+    ctx.enqueue_function[
+        matmul[origin_of(a_device), origin_of(b_device), origin_of(c_device)]
+    ](
         a_device,
         b_device,
         c_device,

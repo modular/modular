@@ -20,10 +20,12 @@ from max.gpu.host import DeviceExternalFunction
 from max.gpu.host.compile import _compile_code
 
 
-def vec_func(
-    in0: ImmPointer[Float32, ImmutAnyOrigin],
-    in1: ImmPointer[Float32, ImmutAnyOrigin],
-    output: MutPointer[Float32, MutAnyOrigin],
+def vec_func[
+    in0_origin: ImmOrigin, in1_origin: ImmOrigin, output_origin: MutOrigin
+](
+    in0: ImmPointer[Float32, in0_origin],
+    in1: ImmPointer[Float32, in1_origin],
+    output: MutPointer[Float32, output_origin],
     len: Int,
 ):
     var tid = global_idx.x
@@ -45,7 +47,15 @@ def test_vec_add(ctx: DeviceContext) raises:
     var block_dim = 32
 
     var info = DeviceExternalFunction(
-        ctx, _compile_code[vec_func, emission_kind="object"]()
+        ctx,
+        _compile_code[
+            vec_func[
+                ImmOrigin(origin_of(in0_device)),
+                ImmOrigin(origin_of(in1_device)),
+                origin_of(out_device),
+            ],
+            emission_kind="object",
+        ](),
     )
     ctx.enqueue_function(
         info,

@@ -72,9 +72,9 @@ def _scalb_double[
 
 
 def _kernel[
-    func: _UnaryFn, input: _InputFn, dtype: DType
+    func: _UnaryFn, input: _InputFn, dtype: DType, output_origin: MutOrigin
 ](
-    output: MutPointer[Scalar[dtype], MutAnyOrigin]
+    output: MutPointer[Scalar[dtype], output_origin]
 ) where dtype.is_floating_point():
     output[thread_idx.x] = func(input[dtype](thread_idx.x))
 
@@ -83,7 +83,7 @@ def _check[
     func: _UnaryFn, name: StaticString, dtype: DType, input: _InputFn
 ](ctx: DeviceContext) raises where dtype.is_floating_point():
     var out_device = ctx.enqueue_create_buffer[dtype](_N)
-    ctx.enqueue_function[_kernel[func, input, dtype]](
+    ctx.enqueue_function[_kernel[func, input, dtype, origin_of(out_device)]](
         out_device, grid_dim=1, block_dim=_N
     )
     with out_device.map_to_host() as out_host:
@@ -106,9 +106,9 @@ def _check_all[
 
 
 def _comptime_kernel[
-    func: _UnaryFn, dtype: DType
+    func: _UnaryFn, dtype: DType, output_origin: MutOrigin
 ](
-    output: MutPointer[Scalar[dtype], MutAnyOrigin]
+    output: MutPointer[Scalar[dtype], output_origin]
 ) where dtype.is_floating_point():
     # The compile-time interpreter evaluates `func`, and it cannot run the
     # `air.*` intrinsics that the Metal hooks lower to.
@@ -120,7 +120,7 @@ def _check_comptime[
     func: _UnaryFn, name: StaticString, dtype: DType
 ](ctx: DeviceContext) raises where dtype.is_floating_point():
     var out_device = ctx.enqueue_create_buffer[dtype](1)
-    ctx.enqueue_function[_comptime_kernel[func, dtype]](
+    ctx.enqueue_function[_comptime_kernel[func, dtype, origin_of(out_device)]](
         out_device, grid_dim=1, block_dim=1
     )
     with out_device.map_to_host() as out_host:

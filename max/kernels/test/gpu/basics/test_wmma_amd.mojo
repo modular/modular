@@ -123,15 +123,17 @@ def mma_kernel[
     mma_m: Int,
     mma_n: Int,
     mma_k: Int,
+    a_origin: ImmOrigin,
+    b_origin: ImmOrigin,
+    c_origin: MutOrigin,
 ](
-    a_ptr: ImmPointer[Scalar[in_dtype], ImmutAnyOrigin],
-    b_ptr: ImmPointer[Scalar[in_dtype], ImmutAnyOrigin],
-    c_ptr: MutPointer[Scalar[out_dtype], MutAnyOrigin],
+    a_ptr: ImmPointer[Scalar[in_dtype], a_origin],
+    b_ptr: ImmPointer[Scalar[in_dtype], b_origin],
+    c_ptr: MutPointer[Scalar[out_dtype], c_origin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
 ):
-    var m = Int(m_dev)
     var n = Int(n_dev)
     var k = Int(k_dev)
 
@@ -196,7 +198,15 @@ def run_mma[
     ctx.enqueue_copy(c_device, c_host)
 
     comptime kernel = mma_kernel[
-        in_dtype, accum_dtype, out_dtype, mma_m, mma_n, mma_k
+        in_dtype,
+        accum_dtype,
+        out_dtype,
+        mma_m,
+        mma_n,
+        mma_k,
+        ImmOrigin(origin_of(a_device)),
+        ImmOrigin(origin_of(b_device)),
+        origin_of(c_device),
     ]
 
     ctx.enqueue_function[kernel](

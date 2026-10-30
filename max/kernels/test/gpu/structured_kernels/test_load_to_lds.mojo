@@ -26,9 +26,11 @@ from structured_kernels.amd_tile_io import _load_from_lds, _load_to_lds
 def _copy_through_lds[
     dtype: DType,
     width: Int,
+    src_origin: MutOrigin,
+    dst_origin: MutOrigin,
 ](
-    src: MutPointer[Scalar[dtype], MutAnyOrigin],
-    dst: MutPointer[Scalar[dtype], MutAnyOrigin],
+    src: MutPointer[Scalar[dtype], src_origin],
+    dst: MutPointer[Scalar[dtype], dst_origin],
     valid_elements: Int32,
 ):
     var smem = unsafe_stack_allocation[
@@ -67,7 +69,9 @@ def _run_case[dtype: DType, width: Int](ctx: DeviceContext) raises:
     var dev_out = ctx.enqueue_create_buffer[dtype](count)
     ctx.enqueue_copy(dev_in, host_in)
 
-    ctx.enqueue_function[_copy_through_lds[dtype, width]](
+    ctx.enqueue_function[
+        _copy_through_lds[dtype, width, origin_of(dev_in), origin_of(dev_out)]
+    ](
         dev_in,
         dev_out,
         Int32(count),
@@ -84,7 +88,9 @@ def _run_case[dtype: DType, width: Int](ctx: DeviceContext) raises:
 
     comptime valid_elements = count // 2
     dev_out.enqueue_fill(Scalar[dtype](7))
-    ctx.enqueue_function[_copy_through_lds[dtype, width]](
+    ctx.enqueue_function[
+        _copy_through_lds[dtype, width, origin_of(dev_in), origin_of(dev_out)]
+    ](
         dev_in,
         dev_out,
         Int32(valid_elements),

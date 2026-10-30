@@ -23,7 +23,7 @@ def sendmsg_kernel():
     sendmsg(Int32(1), Int32(0))
 
 
-def implicitarg_ptr_kernel(y: MutPointer[UInt8, MutAnyOrigin]):
+def implicitarg_ptr_kernel[y_origin: MutOrigin](y: MutPointer[UInt8, y_origin]):
     y[0] = implicitarg_ptr()[0]
 
 
@@ -36,7 +36,9 @@ def test_sendmsg() raises:
 
 def test_implicitarg_ptr() raises:
     var ir = _compile_code[
-        implicitarg_ptr_kernel, target=MI355X_TARGET, emission_kind="llvm"
+        implicitarg_ptr_kernel[MutUntrackedOrigin],
+        target=MI355X_TARGET,
+        emission_kind="llvm",
     ]().asm
     assert_true(
         "llvm.amdgcn.implicitarg.ptr" in ir,

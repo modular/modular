@@ -282,9 +282,11 @@ def test_swizzle_round_trip_bf16() raises:
 def kernel_load_K_fp8[
     cfg: MhaConfigV2,
     depth: Int,
+    src_swz_origin: MutOrigin,
+    dump_origin: MutOrigin,
 ](
-    src_swz_ptr: MutPointer[Float8_e4m3fn, MutAnyOrigin],
-    dump_ptr: MutPointer[Float8_e4m3fn, MutAnyOrigin],
+    src_swz_ptr: MutPointer[Float8_e4m3fn, src_swz_origin],
+    dump_ptr: MutPointer[Float8_e4m3fn, dump_origin],
 ):
     """Loads K SMEM from `src_swz_ptr` (already swizzled), calls
     `MhaMmaOp.load_K`, and dumps each lane's fragment to `dump_ptr`.
@@ -392,7 +394,9 @@ def test_load_K_fp8[
                 var swz = _Op._swizzle_K_sub(sr, sc)
                 host_init[sub_id * sub_bytes + swz] = _pattern_fp8(r, c)
 
-    ctx.enqueue_function[kernel_load_K_fp8[CFG, depth]](
+    ctx.enqueue_function[
+        kernel_load_K_fp8[CFG, depth, origin_of(dev_init), origin_of(dev_dump)]
+    ](
         dev_init.unsafe_ptr(),
         dev_dump.unsafe_ptr(),
         grid_dim=1,
@@ -494,9 +498,11 @@ def test_load_K_fp8[
 def kernel_load_V_fp8[
     cfg: MhaConfigV2,
     depth: Int,
+    src_origin: MutOrigin,
+    dump_origin: MutOrigin,
 ](
-    src_ptr: MutPointer[Float8_e4m3fn, MutAnyOrigin],
-    dump_ptr: MutPointer[Float8_e4m3fn, MutAnyOrigin],
+    src_ptr: MutPointer[Float8_e4m3fn, src_origin],
+    dump_ptr: MutPointer[Float8_e4m3fn, dump_origin],
 ):
     """Fills V SMEM from `src_ptr` (no swizzle), calls
     `MhaMmaOp.load_V`, and dumps each lane's fragment to `dump_ptr`.
@@ -615,7 +621,9 @@ def test_load_V_fp8[
                 var off = slot_row * _V_SUB_COLS + depth_v % _V_SUB_COLS
                 host_init[off] = _pattern_fp8(key, depth_v)
 
-    ctx.enqueue_function[kernel_load_V_fp8[CFG, depth]](
+    ctx.enqueue_function[
+        kernel_load_V_fp8[CFG, depth, origin_of(dev_init), origin_of(dev_dump)]
+    ](
         dev_init.unsafe_ptr(),
         dev_dump.unsafe_ptr(),
         grid_dim=1,

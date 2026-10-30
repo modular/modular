@@ -55,7 +55,9 @@ def test_cross_device_copy_round_trip() raises:
             assert_equal(host[i], Int32(i * 3))
 
 
-def _sleep_then_write(ptr: MutPointer[Int32, MutAnyOrigin], value: Int32):
+def _sleep_then_write[
+    ptr_origin: MutOrigin
+](ptr: MutPointer[Int32, ptr_origin], value: Int32):
     sleep(0.5)
     ptr[] = value
 
@@ -69,7 +71,7 @@ def test_cross_device_copy_waits_for_source_stream() raises:
     dst.enqueue_fill(-1)
     ctx0.synchronize()
     ctx1.synchronize()
-    ctx0.enqueue_function[_sleep_then_write](
+    ctx0.enqueue_function[_sleep_then_write[origin_of(src)]](
         src, Int32(7), grid_dim=1, block_dim=1
     )
     # No `enqueue_wait_for`: the copy must order itself after ctx0.
@@ -147,13 +149,13 @@ def test_copy_from_another_driver_fails_cleanly() raises:
 
 
 def _enable_all_worker(
-    error_slot: Pointer[NoneType, MutUnsafeAnyOrigin]
-) -> Pointer[NoneType, MutUnsafeAnyOrigin]:
+    error_slot: Pointer[NoneType, MutUntrackedOrigin]
+) -> Pointer[NoneType, MutUntrackedOrigin]:
     try:
         DeviceContext.enable_all_peer_access()
     except e:
         error_slot.unsafe_bitcast[Optional[Error]]()[] = e^
-    return Pointer[NoneType, MutUnsafeAnyOrigin].unsafe_dangling()
+    return Pointer[NoneType, MutUntrackedOrigin].unsafe_dangling()
 
 
 def test_enable_all_concurrent() raises:
@@ -173,12 +175,12 @@ def test_enable_all_concurrent() raises:
     for i in range(num_callers):
         var rc = external_call["pthread_create", c_int](
             Pointer(to=threads[i]),
-            Optional[Pointer[NoneType, MutUnsafeAnyOrigin]](),
+            Optional[Pointer[NoneType, MutUntrackedOrigin]](),
             _enable_all_worker,
             Pointer(to=errors[i]).unsafe_bitcast[NoneType](),
         )
         assert_equal(rc, 0, "pthread_create failed")
-    var retval = Pointer[NoneType, MutUnsafeAnyOrigin].unsafe_dangling()
+    var retval = Pointer[NoneType, MutUntrackedOrigin].unsafe_dangling()
     for i in range(num_callers):
         var rc = external_call["pthread_join", c_int](
             threads[i], Pointer(to=retval)
@@ -191,7 +193,9 @@ def test_enable_all_concurrent() raises:
     assert_true(DeviceContext.all_peer_access_enabled())
 
 
-def _write_peer(ptr: MutPointer[Int32, MutAnyOrigin], value: Int32):
+def _write_peer[
+    ptr_origin: MutOrigin
+](ptr: MutPointer[Int32, ptr_origin], value: Int32):
     ptr[] = value
 
 
@@ -206,7 +210,7 @@ def test_kernel_writes_through_peer_pointer() raises:
     target.enqueue_fill(0)
     ctx0.synchronize()
     # Only peer access makes device 0's address valid on device 1.
-    ctx1.enqueue_function[_write_peer](
+    ctx1.enqueue_function[_write_peer[origin_of(target)]](
         target, Int32(42), grid_dim=1, block_dim=1
     )
     ctx1.synchronize()

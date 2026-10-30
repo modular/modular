@@ -20,10 +20,12 @@ from std.testing import assert_equal
 
 
 # A Simple Kernel performing the sum of two arrays
-def vec_func(
-    in0: ImmPointer[Float32, ImmutAnyOrigin],
-    in1: ImmPointer[Float32, ImmutAnyOrigin],
-    output: MutPointer[Float32, MutAnyOrigin],
+def vec_func[
+    in0_origin: ImmOrigin, in1_origin: ImmOrigin, out_origin: MutOrigin
+](
+    in0: ImmPointer[Float32, in0_origin],
+    in1: ImmPointer[Float32, in1_origin],
+    output: MutPointer[Float32, out_origin],
     len_dev: Int32,
     supplement_dev: Int32,
 ):
@@ -37,15 +39,17 @@ def vec_func(
 
 
 def test_declared_arg_types(ctx: DeviceContext) raises:
-    var compiled = ctx.compile_function[vec_func]()
+    var compiled = ctx.compile_function[
+        vec_func[ImmUntrackedOrigin, ImmUntrackedOrigin, MutUntrackedOrigin]
+    ]()
     comptime arg_types = type_of(compiled).declared_arg_types
 
     # The list is always present and reports the kernel's arity.
     assert_equal(arg_types.length, 5)
 
     # Indexing yields the declared argument types in order.
-    comptime assert arg_types[0] == ImmPointer[Float32, ImmutAnyOrigin]
-    comptime assert arg_types[2] == MutPointer[Float32, MutAnyOrigin]
+    comptime assert arg_types[0] == ImmPointer[Float32, ImmUntrackedOrigin]
+    comptime assert arg_types[2] == MutPointer[Float32, MutUntrackedOrigin]
     comptime assert arg_types[3] == Int32
     comptime assert arg_types[4] == Int32
 
@@ -84,7 +88,13 @@ def test_basic(ctx: DeviceContext) raises:
 
     # Execute the kernel on the device.
     #  - notice the simple function call like invocation
-    ctx.enqueue_function[vec_func](
+    ctx.enqueue_function[
+        vec_func[
+            ImmOrigin(origin_of(in0_device)),
+            ImmOrigin(origin_of(in1_device)),
+            origin_of(out_device),
+        ]
+    ](
         in0_device,
         in1_device,
         out_device,

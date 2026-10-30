@@ -58,10 +58,9 @@ comptime TokenFmt = MXTokenFormat[
 
 
 @__name("mxfp6_send_buf_probe")
-def _send_buf_probe_kernel(
-    buf: Pointer[UInt8, MutAnyOrigin],
-    src: Pointer[BFloat16, MutAnyOrigin],
-):
+def _send_buf_probe_kernel[
+    buf_origin: MutOrigin, src_origin: MutOrigin
+](buf: Pointer[UInt8, buf_origin], src: Pointer[BFloat16, src_origin]):
     """Runs one token through the dispatch packer, as `ep_dispatch` would."""
     TokenFmt.copy_token_to_send_buf[.bfloat16, BLOCK](buf, src, Float32(1.0))
 
@@ -87,7 +86,9 @@ def main() raises:
     var buf_d = ctx.enqueue_create_buffer[.uint8](token_bytes)
     buf_d.enqueue_fill(UInt8(0))
 
-    ctx.enqueue_function[_send_buf_probe_kernel](
+    ctx.enqueue_function[
+        _send_buf_probe_kernel[origin_of(buf_d), origin_of(src_d)]
+    ](
         buf_d.unsafe_ptr(),
         src_d.unsafe_ptr(),
         grid_dim=1,
@@ -99,13 +100,9 @@ def main() raises:
     var ref_scales_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](SCALE_K)
     quantize_mxfp6_amd[FP6Format.E2M3](
         ctx,
-        TileTensor[origin=MutAnyOrigin](
-            ref_out_d, row_major(Idx[1], Idx[QUANT_BYTES])
-        ),
-        TileTensor[origin=MutAnyOrigin](
-            ref_scales_d, row_major(Idx[1], Idx[SCALE_K])
-        ),
-        TileTensor[origin=MutAnyOrigin](src_d, row_major(Idx[1], Idx[HID])),
+        TileTensor(ref_out_d, row_major(Idx[1], Idx[QUANT_BYTES])),
+        TileTensor(ref_scales_d, row_major(Idx[1], Idx[SCALE_K])),
+        TileTensor(src_d, row_major(Idx[1], Idx[HID])),
     )
 
     var buf_h = ctx.enqueue_create_host_buffer[.uint8](token_bytes)

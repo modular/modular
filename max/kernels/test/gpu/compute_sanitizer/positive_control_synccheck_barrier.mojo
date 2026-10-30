@@ -36,7 +36,9 @@ from max.gpu.sync import barrier
 comptime PAIR_THREADS = 2 * WARPGROUP_SIZE
 
 
-def two_warpgroup_barrier(dst: MutPointer[Int32, MutAnyOrigin]):
+def two_warpgroup_barrier[
+    dst_origin: MutOrigin
+](dst: MutPointer[Int32, dst_origin]):
     var tid = Int(thread_idx.x)
     var wg = tid // WARPGROUP_SIZE
     var slot = tid % WARPGROUP_SIZE
@@ -60,7 +62,7 @@ def two_warpgroup_barrier(dst: MutPointer[Int32, MutAnyOrigin]):
 def main() raises:
     with DeviceContext() as ctx:
         var dst = ctx.enqueue_create_buffer[.int32](PAIR_THREADS)
-        ctx.enqueue_function[two_warpgroup_barrier](
+        ctx.enqueue_function[two_warpgroup_barrier[origin_of(dst)]](
             dst,
             grid_dim=(1,),
             block_dim=(PAIR_THREADS,),

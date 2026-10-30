@@ -23,27 +23,39 @@ from max.gpu.host.compile import _compile_code, get_gpu_target
 comptime _SM80 = get_gpu_target["sm_80"]()
 
 
-def mulhi_u32(out_p: MutPointer[UInt32, MutAnyOrigin], a: UInt32, b: UInt32):
+def mulhi_u32[
+    out_origin: MutOrigin
+](out_p: MutPointer[UInt32, out_origin], a: UInt32, b: UInt32):
     out_p[0] = mulhi(a, b)
 
 
-def mulhi_s32(out_p: MutPointer[Int32, MutAnyOrigin], a: Int32, b: Int32):
+def mulhi_s32[
+    out_origin: MutOrigin
+](out_p: MutPointer[Int32, out_origin], a: Int32, b: Int32):
     out_p[0] = mulhi(a, b)
 
 
-def mulhi_u64(out_p: MutPointer[UInt64, MutAnyOrigin], a: UInt64, b: UInt64):
+def mulhi_u64[
+    out_origin: MutOrigin
+](out_p: MutPointer[UInt64, out_origin], a: UInt64, b: UInt64):
     out_p[0] = mulhi(a, b)
 
 
-def mulhi_s64(out_p: MutPointer[Int64, MutAnyOrigin], a: Int64, b: Int64):
+def mulhi_s64[
+    out_origin: MutOrigin
+](out_p: MutPointer[Int64, out_origin], a: Int64, b: Int64):
     out_p[0] = mulhi(a, b)
 
 
-def mulwide_u32(out_p: MutPointer[UInt64, MutAnyOrigin], a: UInt32, b: UInt32):
+def mulwide_u32[
+    out_origin: MutOrigin
+](out_p: MutPointer[UInt64, out_origin], a: UInt32, b: UInt32):
     out_p[0] = mulwide(a, b)
 
 
-def mulwide_s32(out_p: MutPointer[Int64, MutAnyOrigin], a: Int32, b: Int32):
+def mulwide_s32[
+    out_origin: MutOrigin
+](out_p: MutPointer[Int64, out_origin], a: Int32, b: Int32):
     out_p[0] = mulwide(a, b)
 
 
@@ -57,20 +69,26 @@ def _assert_single_multiply(asm: String, instruction: StaticString) raises:
 
 def main() raises:
     _assert_single_multiply(
-        _compile_code[mulhi_u32, target=_SM80]().asm, "mul.hi.u32"
+        _compile_code[mulhi_u32[MutUntrackedOrigin], target=_SM80]().asm,
+        "mul.hi.u32",
     )
     _assert_single_multiply(
-        _compile_code[mulhi_s32, target=_SM80]().asm, "mul.hi.s32"
+        _compile_code[mulhi_s32[MutUntrackedOrigin], target=_SM80]().asm,
+        "mul.hi.s32",
     )
     _assert_single_multiply(
-        _compile_code[mulhi_u64, target=_SM80]().asm, "mul.hi.u64"
+        _compile_code[mulhi_u64[MutUntrackedOrigin], target=_SM80]().asm,
+        "mul.hi.u64",
     )
     _assert_single_multiply(
-        _compile_code[mulhi_s64, target=_SM80]().asm, "mul.hi.s64"
+        _compile_code[mulhi_s64[MutUntrackedOrigin], target=_SM80]().asm,
+        "mul.hi.s64",
     )
     _assert_single_multiply(
-        _compile_code[mulwide_u32, target=_SM80]().asm, "mul.wide.u32"
+        _compile_code[mulwide_u32[MutUntrackedOrigin], target=_SM80]().asm,
+        "mul.wide.u32",
     )
     _assert_single_multiply(
-        _compile_code[mulwide_s32, target=_SM80]().asm, "mul.wide.s32"
+        _compile_code[mulwide_s32[MutUntrackedOrigin], target=_SM80]().asm,
+        "mul.wide.s32",
     )

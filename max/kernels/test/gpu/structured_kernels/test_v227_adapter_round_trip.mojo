@@ -138,10 +138,14 @@ def _pattern_fp8(key: Int, depth: Int) -> Float8_e4m3fn:
 # from BOTH slots and dumps both fragment sets to global. The host asserts
 # they are bit-identical: `W∘R == (W_ours ∘ R_ours)` over the slot.
 # --------------------------------------------------------------------------- #
-def kernel_v227_round_trip(
-    v_src_ptr: MutPointer[Float8_e4m3fn, MutAnyOrigin],
-    dump_v227_ptr: MutPointer[Float8_e4m3fn, MutAnyOrigin],
-    dump_ref_ptr: MutPointer[Float8_e4m3fn, MutAnyOrigin],
+def kernel_v227_round_trip[
+    v_src_origin: MutOrigin,
+    dump_v227_origin: MutOrigin,
+    dump_ref_origin: MutOrigin,
+](
+    v_src_ptr: MutPointer[Float8_e4m3fn, v_src_origin],
+    dump_v227_ptr: MutPointer[Float8_e4m3fn, dump_v227_origin],
+    dump_ref_ptr: MutPointer[Float8_e4m3fn, dump_ref_origin],
 ):
     # DRAM V tile: tight (KV_BLOCK, DEPTH) row-major, stride (DEPTH, 1).
     # Matches the canonical v227 closed-form case (key = global_row,
@@ -150,7 +154,7 @@ def kernel_v227_round_trip(
         Coord[ComptimeInt[KV_BLOCK], ComptimeInt[DEPTH]].element_types,
         Coord[ComptimeInt[DEPTH], ComptimeInt[1]].element_types,
     ]
-    var v_src = TileTensor[.float8_e4m3fn, v_src_layout, MutAnyOrigin](
+    var v_src = TileTensor[.float8_e4m3fn, v_src_layout, v_src_origin](
         v_src_ptr, v_src_layout()
     )
 
@@ -234,7 +238,13 @@ def test_v227_round_trip(ctx: DeviceContext) raises:
             for depth_v in range(DEPTH):
                 host_src[key * DEPTH + depth_v] = _pattern_fp8(key, depth_v)
 
-    ctx.enqueue_function[kernel_v227_round_trip](
+    ctx.enqueue_function[
+        kernel_v227_round_trip[
+            origin_of(dev_src),
+            origin_of(dev_dump_v227),
+            origin_of(dev_dump_ref),
+        ]
+    ](
         dev_src.unsafe_ptr(),
         dev_dump_v227.unsafe_ptr(),
         dev_dump_ref.unsafe_ptr(),

@@ -24,10 +24,12 @@ def test_fill_thread_idx(ctx: DeviceContext) raises:
     var output_buffer = ctx.enqueue_create_buffer[.int](buffer_size)
     output_buffer.enqueue_fill(9)
 
-    def kernel(output: MutPointer[Int, MutAnyOrigin]):
+    def kernel[
+        output_origin: MutOrigin
+    ](output: MutPointer[Int, output_origin]):
         output[global_idx.x] = thread_idx.x
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function[kernel[origin_of(output_buffer)]](
         output_buffer,
         grid_dim=buffer_size // block_dim,
         block_dim=block_dim,
@@ -46,10 +48,12 @@ def test_fill_block_idx(ctx: DeviceContext) raises:
     var output_buffer = ctx.enqueue_create_buffer[.int](buffer_size)
     output_buffer.enqueue_fill(9)
 
-    def kernel(output: MutPointer[Int, MutAnyOrigin]):
+    def kernel[
+        output_origin: MutOrigin
+    ](output: MutPointer[Int, output_origin]):
         output[global_idx.x] = block_idx.x
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function[kernel[origin_of(output_buffer)]](
         output_buffer,
         grid_dim=buffer_size // block_dim,
         block_dim=block_dim,

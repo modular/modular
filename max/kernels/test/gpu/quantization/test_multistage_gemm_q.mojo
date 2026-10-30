@@ -77,9 +77,11 @@ def create_ref_b[
     b_layout: TensorLayout,
     group_size: Int,
     pack_factor: Int,
+    b_packed_origin: ImmOrigin,
+    b_out_origin: MutOrigin,
 ](
-    b_packed: TileTensor[mut=False, type_q, b_q_layout, ImmutAnyOrigin],
-    b_out: TileTensor[mut=True, type_b, b_layout, MutAnyOrigin],
+    b_packed: TileTensor[type_q, b_q_layout, b_packed_origin],
+    b_out: TileTensor[type_b, b_layout, b_out_origin],
 ):
     comptime WARP_SIZE = 32
     comptime BLOCK_N = 128
@@ -295,6 +297,8 @@ def test_repack_Q4_0_for_sm8x[
         repacked_dequan_tensor.LayoutType,
         group_size,
         pack_factor,
+        ImmOrigin(repacked_b_tensor.origin),
+        repacked_dequan_tensor.origin,
     ]
 
     ctx.enqueue_function[dequan](
@@ -502,6 +506,8 @@ def test_quantized[
         b_ref_tensor.LayoutType,
         group_size,
         pack_factor,
+        ImmOrigin(b_tensor.origin),
+        b_ref_tensor.origin,
     ]
 
     ctx.enqueue_function[dequan](

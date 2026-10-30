@@ -25,10 +25,13 @@ def semaphore_vector_reduce[
     dtype: DType,
     N: Int,
     num_parts: Int,
+    c_origin: MutOrigin,
+    a_origin: ImmOrigin,
+    locks_origin: MutOrigin,
 ](
-    c_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
-    a_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
-    locks: MutPointer[Int32, MutAnyOrigin],
+    c_ptr: MutPointer[Scalar[dtype], c_origin],
+    a_ptr: ImmPointer[Scalar[dtype], a_origin],
+    locks: MutPointer[Int32, locks_origin],
 ):
     var tid = thread_idx.x
     var block_idx = block_idx.x
@@ -77,7 +80,14 @@ def run_vector_reduction[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(c_device, c_host)
 
-    comptime kernel = semaphore_vector_reduce[dtype, N, num_parts]
+    comptime kernel = semaphore_vector_reduce[
+        dtype,
+        N,
+        num_parts,
+        origin_of(c_device),
+        ImmOrigin(origin_of(a_device)),
+        origin_of(lock_dev),
+    ]
     ctx.enqueue_function[kernel](
         c_device,
         a_device,
@@ -106,11 +116,17 @@ def run_vector_reduction[
 
 
 def semaphore_matrix_reduce[
-    dtype: DType, M: Int, N: Int, num_parts: Int
+    dtype: DType,
+    M: Int,
+    N: Int,
+    num_parts: Int,
+    c_origin: MutOrigin,
+    a_origin: ImmOrigin,
+    locks_origin: MutOrigin,
 ](
-    c_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
-    a_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
-    locks: MutPointer[Int32, MutAnyOrigin],
+    c_ptr: MutPointer[Scalar[dtype], c_origin],
+    a_ptr: ImmPointer[Scalar[dtype], a_origin],
+    locks: MutPointer[Int32, locks_origin],
 ):
     var tid = thread_idx.x
     var block_idx = block_idx.x
@@ -166,7 +182,15 @@ def run_matrix_reduction[
 
     var block_size = 1024
 
-    comptime kernel = semaphore_matrix_reduce[dtype, M, N, num_parts]
+    comptime kernel = semaphore_matrix_reduce[
+        dtype,
+        M,
+        N,
+        num_parts,
+        origin_of(c_device),
+        ImmOrigin(origin_of(a_device)),
+        origin_of(lock_dev),
+    ]
     ctx.enqueue_function[kernel](
         c_device,
         a_device,

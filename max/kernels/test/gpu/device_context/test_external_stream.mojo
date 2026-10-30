@@ -29,9 +29,11 @@ def native_stream_ptr(
         return unsafe_cast[Type=NoneType](HIP(stream))
 
 
-def scale_kernel(
-    input: ImmPointer[Float32, ImmutAnyOrigin],
-    output: MutPointer[Float32, MutAnyOrigin],
+def scale_kernel[
+    in_origin: ImmOrigin, out_origin: MutOrigin
+](
+    input: ImmPointer[Float32, in_origin],
+    output: MutPointer[Float32, out_origin],
     n_dev: Int32,
     scale: Float32,
 ):
@@ -70,7 +72,9 @@ def main() raises:
         # Run a kernel on this new stream
         # Note: DeviceStream currently only runs pre-compiled kernels, so the
         # compilation step here is needed.
-        var func = ctx.compile_function[scale_kernel]()
+        var func = ctx.compile_function[
+            scale_kernel[ImmUntrackedOrigin, MutUntrackedOrigin]
+        ]()
         stream.enqueue_function(
             func,
             dev_in,

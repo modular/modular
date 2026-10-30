@@ -18,11 +18,14 @@ from std.testing import assert_equal
 
 
 def kernel[
-    dtype: DType
+    dtype: DType,
+    input_origin: ImmOrigin,
+    output_origin: MutOrigin,
+    shared_data_origin: MutOrigin,
 ](
-    input: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
-    output: MutPointer[Scalar[dtype], MutAnyOrigin],
-    shared_data: MutPointer[Scalar[dtype], MutAnyOrigin],
+    input: ImmPointer[Scalar[dtype], input_origin],
+    output: MutPointer[Scalar[dtype], output_origin],
+    shared_data: MutPointer[Scalar[dtype], shared_data_origin],
     size_dev: Int32,
 ):
     var size = Int(size_dev)
@@ -59,7 +62,14 @@ def test_barrier[dtype: DType](ctx: DeviceContext) raises:
     ctx.enqueue_copy(output_buffer, output_host)
     ctx.enqueue_copy(shared_buffer, shared_host)
 
-    ctx.enqueue_function[kernel[dtype]](
+    ctx.enqueue_function[
+        kernel[
+            dtype,
+            ImmOrigin(origin_of(input_buffer)),
+            origin_of(output_buffer),
+            origin_of(shared_buffer),
+        ]
+    ](
         input_buffer,
         output_buffer,
         shared_buffer,

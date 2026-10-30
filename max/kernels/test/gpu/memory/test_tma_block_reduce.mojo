@@ -93,8 +93,9 @@ def global_reduction_kernel[
     InputFnType: ImplicitlyCopyable
     & RegisterPassable
     & def[width: Int, _rank: Int](idx: IndexList[_rank]) -> SIMD[dtype, width],
+    out_origin: MutOrigin,
 ](
-    d_out: MutPointer[Scalar[accum_type], MutAnyOrigin],
+    d_out: MutPointer[Scalar[accum_type], out_origin],
     num_cols_dev: Int32,
     input_fn: InputFnType,
 ):
@@ -123,15 +124,16 @@ def tma_reduction_kernel[
     dtype: DType,
     accum_type: DType,
     simd_width: Int,
+    data_origin: MutOrigin,
+    out_origin: MutOrigin,
 ](
     descriptor: TMADescriptor,
     rows_dev: Int32,
     cols_dev: Int32,
-    d_data: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
-    d_out: MutPointer[Scalar[accum_type], MutAnyOrigin],
+    d_data: MutPointer[Scalar[dtype], data_origin],
+    d_out: MutPointer[Scalar[accum_type], out_origin],
 ):
     # `Int` is not device-passable; widen the fixed-width args.
-    var rows = Int(rows_dev)
     var cols = Int(cols_dev)
     var shmem = external_memory[
         Scalar[dtype], address_space=.SHARED, alignment=128
@@ -204,7 +206,9 @@ def test_tma_block_reduce[
 
     # Define the kernel launch function for benchmarking
     @inline(.always)
-    def kernel_launch(ctx: DeviceContext) raises {mut d_data, imm} -> None:
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {mut d_data, mut d_out, imm} -> None:
         comptime if use_tma:
             var tma_desc = create_tma_descriptor[dtype](
                 d_data,
@@ -215,7 +219,11 @@ def test_tma_block_reduce[
             # Calculate shared memory size needed per row.
             var shared_mem_bytes = cols * size_of[dtype]()
             comptime kernel = tma_reduction_kernel[
-                dtype, accum_type, simd_width
+                dtype,
+                accum_type,
+                simd_width,
+                origin_of(d_data),
+                origin_of(d_out),
             ]
             ctx.enqueue_function[kernel](
                 tma_desc,
@@ -245,6 +253,7 @@ def test_tma_block_reduce[
                 simd_width,
                 max_warps_per_block,
                 type_of(input_fn_2d),
+                origin_of(d_out),
             ]
 
             ctx.enqueue_function[kernel](

@@ -43,11 +43,16 @@ comptime N_CONSUMERS = 512  # oversubscribed vs CU count -> widens the window
 comptime MSG_ELEMS = 256
 
 
-def ordering_guard_kernel(
-    payload: MutPointer[Float32, MutAnyOrigin],
-    flags: MutPointer[Int32, MutAnyOrigin],
-    output: MutPointer[Float32, MutAnyOrigin],
-    scratch: MutPointer[Float32, MutAnyOrigin],
+def ordering_guard_kernel[
+    payload_origin: MutOrigin,
+    flags_origin: MutOrigin,
+    output_origin: MutOrigin,
+    scratch_origin: MutOrigin,
+](
+    payload: MutPointer[Float32, payload_origin],
+    flags: MutPointer[Int32, flags_origin],
+    output: MutPointer[Float32, output_origin],
+    scratch: MutPointer[Float32, scratch_origin],
 ):
     """Block 0 is the producer (~ wait SM); blocks 1.. are consumers (~ reduce
     SMs), one payload slot each."""
@@ -103,7 +108,14 @@ def main() raises:
         ctx.enqueue_memset(flags, Int32(0))
         ctx.enqueue_memset(output, Float32(0))
 
-        ctx.enqueue_function[ordering_guard_kernel](
+        ctx.enqueue_function[
+            ordering_guard_kernel[
+                origin_of(payload),
+                origin_of(flags),
+                origin_of(output),
+                origin_of(scratch),
+            ]
+        ](
             payload,
             flags,
             output,

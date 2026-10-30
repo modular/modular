@@ -136,24 +136,18 @@ def _run_fusion_check[
     ctx.enqueue_copy(input_d, input_h)
     ctx.enqueue_copy(a_off_d, a_off_h)
 
-    var input_tt = TileTensor[origin=ImmutAnyOrigin](
+    var input_tt = TileTensor(
         input_d, row_major(total_tokens, Idx[input_dim])
-    )
-    var a_off_tt = TileTensor[origin=ImmutAnyOrigin](
-        a_off_d, row_major[n_off]()
-    )
+    ).as_imm()
+    var a_off_tt = TileTensor(a_off_d, row_major[n_off]()).as_imm()
 
     # The fused_silu_mx_kernel is monomorphic over layout types; bind the
     # comptime params (dtypes, layouts, threads/SMs).
     comptime out_layout = type_of(
-        TileTensor[origin=MutAnyOrigin](
-            input_d, row_major(total_tokens, Idx[output_dim])
-        )
+        TileTensor(input_d, row_major(total_tokens, Idx[output_dim]))
     ).LayoutType
     comptime slot_scales_layout = type_of(
-        TileTensor[origin=MutAnyOrigin](
-            input_d, row_major(num_active * max_padded_M, Idx[scale_K])
-        )
+        TileTensor(input_d, row_major(num_active * max_padded_M, Idx[scale_K]))
     ).LayoutType
 
     comptime kernel = fused_silu_mx_kernel[
@@ -179,13 +173,11 @@ def _run_fusion_check[
     fused_scales_d.enqueue_fill(Float8_e8m0fnu(0))
 
     ctx.enqueue_function[kernel](
-        TileTensor[origin=MutAnyOrigin](
-            out_d, row_major(total_tokens, Idx[output_dim])
-        ),
+        TileTensor(out_d, row_major(total_tokens, Idx[output_dim])),
         # The kernel treats `scales` as a flat slot byte buffer via
         # `scale_4d_slot_byte_off`; the [slot_rows, scale_K] 2D wrapper just
         # supplies the base pointer and total element count.
-        TileTensor[origin=MutAnyOrigin](
+        TileTensor(
             fused_scales_d,
             row_major(num_active * max_padded_M, Idx[scale_K]),
         ),
@@ -227,12 +219,8 @@ def _run_fusion_check[
     ctx.enqueue_copy(raw_d, raw_h)
     ref_d.enqueue_fill(UInt8(0))
     Shuffler[1].preshuffle_grouped_scale_4d_gpu[K_SCALES=scale_K](
-        TileTensor[origin=ImmutAnyOrigin](
-            raw_d, row_major(total_tokens, Idx[scale_K])
-        ),
-        TileTensor[origin=MutAnyOrigin](
-            ref_d, row_major(num_active * max_padded_M, Idx[scale_K])
-        ),
+        TileTensor(raw_d, row_major(total_tokens, Idx[scale_K])).as_imm(),
+        TileTensor(ref_d, row_major(num_active * max_padded_M, Idx[scale_K])),
         a_off_tt,
         num_active,
         # The kernel's (possibly inflated) stride, not max_tokens.
@@ -329,22 +317,16 @@ def _run_activation_probe[
     ctx.enqueue_copy(input_d, input_h)
     ctx.enqueue_copy(a_off_d, a_off_h)
 
-    var input_tt = TileTensor[origin=ImmutAnyOrigin](
+    var input_tt = TileTensor(
         input_d, row_major(total_tokens, Idx[input_dim])
-    )
-    var a_off_tt = TileTensor[origin=ImmutAnyOrigin](
-        a_off_d, row_major[n_off]()
-    )
+    ).as_imm()
+    var a_off_tt = TileTensor(a_off_d, row_major[n_off]()).as_imm()
 
     comptime out_layout = type_of(
-        TileTensor[origin=MutAnyOrigin](
-            input_d, row_major(total_tokens, Idx[output_dim])
-        )
+        TileTensor(input_d, row_major(total_tokens, Idx[output_dim]))
     ).LayoutType
     comptime scales_layout = type_of(
-        TileTensor[origin=MutAnyOrigin](
-            input_d, row_major(NUM_ACTIVE * max_padded_M, Idx[scale_K])
-        )
+        TileTensor(input_d, row_major(NUM_ACTIVE * max_padded_M, Idx[scale_K]))
     ).LayoutType
 
     comptime kernel = fused_silu_mx_kernel[
@@ -370,10 +352,8 @@ def _run_activation_probe[
     scales_d.enqueue_fill(Float8_e8m0fnu(0))
 
     ctx.enqueue_function[kernel](
-        TileTensor[origin=MutAnyOrigin](
-            out_d, row_major(total_tokens, Idx[output_dim])
-        ),
-        TileTensor[origin=MutAnyOrigin](
+        TileTensor(out_d, row_major(total_tokens, Idx[output_dim])),
+        TileTensor(
             scales_d, row_major(NUM_ACTIVE * max_padded_M, Idx[scale_K])
         ),
         input_tt,

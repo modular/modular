@@ -43,9 +43,9 @@ from layout import TileTensor, row_major
 
 
 # Derived from https://docs.nvidia.com/cuda/cuda-c-programming-guide/#kernel-example-vector-scalar-multiplication
-def cluster_launch_control(
-    data: MutPointer[Float32, MutAnyOrigin], n_dev: Int32
-):
+def cluster_launch_control[
+    data_origin: MutOrigin
+](data: MutPointer[Float32, data_origin], n_dev: Int32):
     # `Int` is not device-passable; widen the fixed-width arg.
     var n = Int(n_dev)
     var result = unsafe_stack_allocation[
@@ -104,7 +104,7 @@ def cluster_launch_control(
         if not clusterlaunchcontrol_query_cancel_is_canceled(result):
             break
 
-        bx = clusterlaunchcontrol_query_cancel_get_first_ctaid["x"](result)
+        _ = clusterlaunchcontrol_query_cancel_get_first_ctaid["x"](result)
 
         # Releases read result to the async proxy.
         # Matches `ptx::fence_proxy_async_generic_sync_restrict`.
@@ -213,7 +213,7 @@ def test_cluster_launch_control(ctx: DeviceContext) raises:
 
     var data = ctx.enqueue_create_buffer[.float32](n)
 
-    comptime kernel = cluster_launch_control
+    comptime kernel = cluster_launch_control[origin_of(data)]
     ctx.enqueue_function[kernel](
         data,
         Int32(n),

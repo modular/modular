@@ -113,16 +113,12 @@ def _run_case[
     out_d.enqueue_fill(UInt8(0))
     scales_d.enqueue_fill(Float8_e8m0fnu(0))
 
-    var input_tt = TileTensor[origin=ImmutAnyOrigin](
+    var input_tt = TileTensor(
         input_d, row_major(total_tokens, Idx[input_dim])
-    )
-    var off_tt = TileTensor[origin=ImmutAnyOrigin](off_d, row_major[n_off]())
-    var out_tt = TileTensor[origin=MutAnyOrigin](
-        out_d, row_major(total_tokens, Idx[out_bytes])
-    )
-    var scales_tt = TileTensor[origin=MutAnyOrigin](
-        scales_d, row_major(scale_rows, Idx[scale_k])
-    )
+    ).as_imm()
+    var off_tt = TileTensor(off_d, row_major[n_off]()).as_imm()
+    var out_tt = TileTensor(out_d, row_major(total_tokens, Idx[out_bytes]))
+    var scales_tt = TileTensor(scales_d, row_major(scale_rows, Idx[scale_k]))
 
     comptime kernel = fused_silu_mxfp6_kernel[
         DType.float8_e8m0fnu,

@@ -18,9 +18,11 @@ from std.testing import assert_equal, assert_true
 from std.utils.numerics import inf, isnan, nan, neg_inf
 
 
-def id(
-    input: ImmPointer[Float32, ImmutAnyOrigin],
-    output: MutPointer[Float32, MutAnyOrigin],
+def id[
+    input_origin: ImmOrigin, output_origin: MutOrigin
+](
+    input: ImmPointer[Float32, input_origin],
+    output: MutPointer[Float32, output_origin],
     len_dev: Int32,
 ):
     var len = Int(len_dev)
@@ -53,7 +55,7 @@ def run_vec_add(ctx: DeviceContext) raises:
 
     var block_dim = 32
 
-    comptime kernel = id
+    comptime kernel = id[ImmOrigin(origin_of(in_device)), origin_of(out_device)]
     ctx.enqueue_function[kernel](
         in_device,
         out_device,

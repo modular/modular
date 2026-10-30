@@ -22,26 +22,26 @@ comptime _SM100A = get_gpu_target["sm_100a"]()
 
 
 def do_prefetch[
-    dtype: DType, *, offset: Int = 0
-](addr: ImmPointer[Scalar[dtype], ImmutAnyOrigin]):
+    dtype: DType, origin: ImmOrigin, *, offset: Int = 0
+](addr: ImmPointer[Scalar[dtype], origin]):
     prefetch(addr.unsafe_offset(offset))
 
 
-def do_prefetch_global(
-    addr: Pointer[Float32, ImmutAnyOrigin, address_space=.GLOBAL]
-):
+def do_prefetch_global[
+    origin: ImmOrigin
+](addr: Pointer[Float32, origin, address_space=.GLOBAL]):
     prefetch(addr)
 
 
-def do_prefetch_constant(
-    addr: Pointer[Float32, ImmutAnyOrigin, address_space=.CONSTANT]
-):
+def do_prefetch_constant[
+    origin: ImmOrigin
+](addr: Pointer[Float32, origin, address_space=.CONSTANT]):
     prefetch(addr)
 
 
 def do_prefetch_stack[
-    address_space: AddressSpace
-](output: MutPointer[Float32, MutAnyOrigin]):
+    address_space: AddressSpace, origin: MutOrigin
+](output: MutPointer[Float32, origin]):
     var buffer = stack_allocation[4, Float32, address_space=address_space]()
     buffer[0] = output[0]
     prefetch(buffer)
@@ -51,38 +51,57 @@ def do_prefetch_stack[
 def test_prefetch_nvidia_generic() raises:
     assert_true(
         "prefetch.L2 ["
-        in _compile_code[do_prefetch[.float16], target=_SM100A]()
+        in _compile_code[
+            do_prefetch[.float16, ImmUntrackedOrigin], target=_SM100A
+        ]()
     )
     assert_true(
         "prefetch.L2 ["
-        in _compile_code[do_prefetch[.float32], target=_SM100A]()
-    )
-    assert_true(
-        "prefetch.L2 [" in _compile_code[do_prefetch[.int32], target=_SM100A]()
+        in _compile_code[
+            do_prefetch[.float32, ImmUntrackedOrigin], target=_SM100A
+        ]()
     )
     assert_true(
         "prefetch.L2 ["
-        in _compile_code[do_prefetch[.int64, offset=42], target=_SM100A]()
+        in _compile_code[
+            do_prefetch[.int32, ImmUntrackedOrigin], target=_SM100A
+        ]()
+    )
+    assert_true(
+        "prefetch.L2 ["
+        in _compile_code[
+            do_prefetch[.int64, ImmUntrackedOrigin, offset=42], target=_SM100A
+        ]()
     )
 
 
 def test_prefetch_nvidia_address_spaces() raises:
     assert_true(
         "prefetch.global.L2 ["
-        in _compile_code[do_prefetch_global, target=_SM100A]()
+        in _compile_code[
+            do_prefetch_global[ImmUntrackedOrigin], target=_SM100A
+        ]()
     )
     assert_true(
         "prefetch.local.L2 ["
-        in _compile_code[do_prefetch_stack[.LOCAL], target=_SM100A]()
+        in _compile_code[
+            do_prefetch_stack[.LOCAL, MutUntrackedOrigin], target=_SM100A
+        ]()
     )
     # PTX has no `prefetch` for shared or constant memory, so the hint is
     # dropped. Match `.L2 [` rather than `prefetch.`, which debug-info builds
     # also emit in the `.file` directive naming this test.
     assert_false(
-        ".L2 [" in _compile_code[do_prefetch_stack[.SHARED], target=_SM100A]()
+        ".L2 ["
+        in _compile_code[
+            do_prefetch_stack[.SHARED, MutUntrackedOrigin], target=_SM100A
+        ]()
     )
     assert_false(
-        ".L2 [" in _compile_code[do_prefetch_constant, target=_SM100A]()
+        ".L2 ["
+        in _compile_code[
+            do_prefetch_constant[ImmUntrackedOrigin], target=_SM100A
+        ]()
     )
 
 

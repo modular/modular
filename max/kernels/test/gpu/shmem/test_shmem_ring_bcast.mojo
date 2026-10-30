@@ -21,11 +21,13 @@ from shmem import *
 from std.testing import assert_equal
 
 
-def ring_bcast(
-    data: Pointer[c_int, MutAnyOrigin],
+def ring_bcast[
+    data_origin: MutOrigin, psync_origin: MutOrigin
+](
+    data: Pointer[c_int, data_origin],
     nelem_dev: Int32,
     root: c_int,
-    psync: Pointer[UInt64, MutAnyOrigin],
+    psync: Pointer[UInt64, psync_origin],
 ):
     # `Int` is not device-passable; widen the fixed-width arg.
     var nelem = Int(nelem_dev)
@@ -63,7 +65,9 @@ def test_ring_bcast(ctx: SHMEMContext) raises:
 
     var root: Int32 = 0
     ctx.barrier_all()
-    ctx.enqueue_function_collective_checked[ring_bcast](
+    ctx.enqueue_function_collective_checked[
+        ring_bcast[origin_of(data), type_of(psync).origin]
+    ](
         data,
         Int32(data_len),
         root,

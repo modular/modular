@@ -28,7 +28,7 @@ def _createpolicy[priority: StaticString]() -> UInt64:
     ]()
 
 
-def kernel_policies(dst: MutPointer[UInt64, MutAnyOrigin]):
+def kernel_policies[dst_origin: MutOrigin](dst: MutPointer[UInt64, dst_origin]):
     dst[0] = _createpolicy["evict_normal"]()
     dst[1] = _createpolicy["evict_first"]()
     dst[2] = _createpolicy["evict_last"]()
@@ -38,7 +38,9 @@ def kernel_policies(dst: MutPointer[UInt64, MutAnyOrigin]):
 def test_tma_cache_hint_matches_createpolicy(ctx: DeviceContext) raises:
     var host = unsafe_alloc[UInt64](4)
     var dev = ctx.enqueue_create_buffer[.uint64](4)
-    ctx.enqueue_function[kernel_policies](dev, grid_dim=(1,), block_dim=(1,))
+    ctx.enqueue_function[kernel_policies[origin_of(dev)]](
+        dev, grid_dim=(1,), block_dim=(1,)
+    )
     ctx.enqueue_copy(host, dev)
     ctx.synchronize()
 

@@ -32,11 +32,13 @@ comptime step_factor = 2
 comptime chunk_size = 1024 * 256
 
 
-def ring_reduce(
-    dst_ptr: Pointer[c_int, MutAnyOrigin],
-    src_ptr: Pointer[c_int, ImmutAnyOrigin],
+def ring_reduce[
+    dst_origin: MutOrigin, src_origin: MutOrigin, signal_origin: MutOrigin
+](
+    dst_ptr: Pointer[c_int, dst_origin],
+    src_ptr: Pointer[c_int, src_origin],
     nreduce_dev: Int32,
-    signal_ptr: Pointer[UInt64, MutAnyOrigin],
+    signal_ptr: Pointer[UInt64, signal_origin],
     chunk_size_dev: Int32,
 ):
     """Perform Allreduce using ring algorithm.
@@ -154,7 +156,13 @@ def bench_ring_reduce(ctx: SHMEMContext) raises:
 
         # Warmup iterations
         for _ in range(warmup_iters):
-            ctx.enqueue_function_collective_checked[ring_reduce](
+            ctx.enqueue_function_collective_checked[
+                ring_reduce[
+                    origin_of(dst),
+                    origin_of(src),
+                    type_of(signal).origin,
+                ]
+            ](
                 dst,
                 src,
                 Int32(num_ints),
@@ -168,8 +176,14 @@ def bench_ring_reduce(ctx: SHMEMContext) raises:
             ctx.barrier_all()
         ctx.synchronize()
 
-        def benchmark() raises {imm}:
-            ctx.enqueue_function_collective_checked[ring_reduce](
+        def benchmark() raises {mut dst, mut src, imm}:
+            ctx.enqueue_function_collective_checked[
+                ring_reduce[
+                    origin_of(dst),
+                    origin_of(src),
+                    type_of(signal).origin,
+                ]
+            ](
                 dst,
                 src,
                 Int32(num_ints),

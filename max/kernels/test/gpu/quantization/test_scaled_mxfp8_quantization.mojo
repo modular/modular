@@ -81,9 +81,9 @@ def test_dynamic_mxfp8_quant[
     # Run the quantization kernel
     quantize_dynamic_scaled_fp4fp8[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
         ctx,
-        output_tensor.as_unsafe_any_origin(),
-        scales_tensor.as_unsafe_any_origin(),
-        input_tensor.as_unsafe_any_origin(),
+        output_tensor,
+        scales_tensor,
+        input_tensor.as_imm(),
         num_cols=n,
         num_cols_padded=n,
     )
@@ -117,7 +117,7 @@ def test_dynamic_mxfp8_quant[
 
                         var fp8_sf = get_scale_factor[
                             SF_VECTOR_SIZE=SF_VECTOR_SIZE
-                        ](scales_tensor_host.as_unsafe_any_origin(), idx0, idx1)
+                        ](scales_tensor_host, idx0, idx1)
 
                         var output_dequantized = (
                             output * fp8_sf.cast[.float32]()
@@ -194,9 +194,9 @@ def test_dynamic_mxfp8_quant_degenerate_blocks(
 
     quantize_dynamic_scaled_fp4fp8[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
         ctx,
-        output_tensor.as_unsafe_any_origin(),
-        scales_tensor.as_unsafe_any_origin(),
-        input_tensor.as_unsafe_any_origin(),
+        output_tensor,
+        scales_tensor,
+        input_tensor.as_imm(),
         num_cols=N,
         num_cols_padded=N,
     )
@@ -206,17 +206,25 @@ def test_dynamic_mxfp8_quant_degenerate_blocks(
         with scales_device.map_to_host() as scales_host:
             var output_tensor_host = TileTensor(out_host, input_layout)
             var scales_tensor_host = TileTensor(scales_host, scales_layout)
+            var zero_block_scale = bitcast[DType.uint8](
+                get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+                    scales_tensor_host, 0, 64
+                )
+            )
+            var tiny_block_scale = bitcast[DType.uint8](
+                get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
+                    scales_tensor_host, 0, tiny_block * SF_VECTOR_SIZE
+                )
+            )
             print(
-                t"M = {m} e8m0 scale byte: zero block"
-                t" {bitcast[DType.uint8]( get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE]( scales_tensor_host.as_unsafe_any_origin(), 0, 64 ) )} tiny"
-                t" block"
-                t" {bitcast[DType.uint8]( get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE]( scales_tensor_host.as_unsafe_any_origin(), 0, tiny_block * SF_VECTOR_SIZE, ) )}"
+                t"M = {m} e8m0 scale byte: zero block {zero_block_scale}"
+                t" tiny block {tiny_block_scale}"
             )
             for row in range(m):
                 for col in range(N):
                     var fp8_sf = get_scale_factor[
                         SF_VECTOR_SIZE=SF_VECTOR_SIZE
-                    ](scales_tensor_host.as_unsafe_any_origin(), row, col)
+                    ](scales_tensor_host, row, col)
                     var dequantized = (
                         output_tensor_host[row, col].cast[DType.float32]()
                         * fp8_sf.cast[DType.float32]()
@@ -292,12 +300,12 @@ def test_mxfp8_async_matches_sync[
         TileTensor(
             out_sync.unsafe_ptr().unsafe_bitcast[Scalar[out_dtype]](),
             input_layout,
-        ).as_unsafe_any_origin(),
+        ),
         TileTensor(
             sf_sync.unsafe_ptr().unsafe_bitcast[Scalar[MXFP8_SF_DTYPE]](),
             scales_layout,
-        ).as_unsafe_any_origin(),
-        input_tensor.as_unsafe_any_origin(),
+        ),
+        input_tensor.as_imm(),
         num_cols=N,
         num_cols_padded=N,
     )
@@ -306,12 +314,12 @@ def test_mxfp8_async_matches_sync[
         TileTensor(
             out_async.unsafe_ptr().unsafe_bitcast[Scalar[out_dtype]](),
             input_layout,
-        ).as_unsafe_any_origin(),
+        ),
         TileTensor(
             sf_async.unsafe_ptr().unsafe_bitcast[Scalar[MXFP8_SF_DTYPE]](),
             scales_layout,
-        ).as_unsafe_any_origin(),
-        input_tensor.as_unsafe_any_origin(),
+        ),
+        input_tensor.as_imm(),
     )
     ctx.synchronize()
 

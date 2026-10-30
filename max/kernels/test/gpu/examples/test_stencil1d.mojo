@@ -23,9 +23,11 @@ from layout import TileTensor, row_major
 comptime BLOCK_DIM = 8
 
 
-def stencil1d(
-    a_ptr: MutPointer[Float32, MutAnyOrigin],
-    b_ptr: MutPointer[Float32, MutAnyOrigin],
+def stencil1d[
+    a_origin: MutOrigin, b_origin: MutOrigin
+](
+    a_ptr: MutPointer[Float32, a_origin],
+    b_ptr: MutPointer[Float32, b_origin],
     arr_size_dev: Int32,
     coeff0_dev: Int32,
     coeff1_dev: Int32,
@@ -50,9 +52,11 @@ def stencil1d(
         )
 
 
-def stencil1d_smem(
-    a_ptr: MutPointer[Float32, MutAnyOrigin],
-    b_ptr: MutPointer[Float32, MutAnyOrigin],
+def stencil1d_smem[
+    a_origin: MutOrigin, b_origin: MutOrigin
+](
+    a_ptr: MutPointer[Float32, a_origin],
+    b_ptr: MutPointer[Float32, b_origin],
     arr_size_dev: Int32,
     coeff0_dev: Int32,
     coeff1_dev: Int32,
@@ -114,7 +118,11 @@ def run_stencil1d[smem: Bool](ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    comptime func_select = stencil1d_smem if smem == True else stencil1d
+    comptime a_origin = origin_of(a_device)
+    comptime b_origin = origin_of(b_device)
+    comptime func_select = stencil1d_smem[
+        a_origin, b_origin
+    ] if smem == True else stencil1d[a_origin, b_origin]
 
     for _ in range(iterations):
         ctx.enqueue_function[func_select](

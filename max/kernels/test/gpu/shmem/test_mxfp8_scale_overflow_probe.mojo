@@ -78,12 +78,22 @@ comptime NPROBE = 32
 comptime probe_layout = row_major[NPROBE]()
 
 
-def _cast_probe_kernel(
-    vals: TileTensor[.float32, type_of(probe_layout), MutAnyOrigin],
-    e8m0_out: TileTensor[.float8_e8m0fnu, type_of(probe_layout), MutAnyOrigin],
-    e8m0_back: TileTensor[.float32, type_of(probe_layout), MutAnyOrigin],
-    e4m3_out: TileTensor[.float8_e4m3fn, type_of(probe_layout), MutAnyOrigin],
-    recip_out: TileTensor[.float32, type_of(probe_layout), MutAnyOrigin],
+def _cast_probe_kernel[
+    vals_origin: MutOrigin,
+    e8m0_out_origin: MutOrigin,
+    e8m0_back_origin: MutOrigin,
+    e4m3_out_origin: MutOrigin,
+    recip_out_origin: MutOrigin,
+](
+    vals: TileTensor[.float32, type_of(probe_layout), vals_origin],
+    e8m0_out: TileTensor[
+        .float8_e8m0fnu, type_of(probe_layout), e8m0_out_origin
+    ],
+    e8m0_back: TileTensor[.float32, type_of(probe_layout), e8m0_back_origin],
+    e4m3_out: TileTensor[
+        .float8_e4m3fn, type_of(probe_layout), e4m3_out_origin
+    ],
+    recip_out: TileTensor[.float32, type_of(probe_layout), recip_out_origin],
     n: Int32,
 ):
     var i = global_idx.x
@@ -172,12 +182,20 @@ def test_cast_behavior(ctx: DeviceContext) raises:
     var e4m3_d = ctx.enqueue_create_buffer[.float8_e4m3fn](NPROBE)
     var recip_d = ctx.enqueue_create_buffer[.float32](NPROBE)
 
-    ctx.enqueue_function[_cast_probe_kernel](
-        TileTensor[origin=MutAnyOrigin](vals_d, probe_layout),
-        TileTensor[origin=MutAnyOrigin](e8m0_d, probe_layout),
-        TileTensor[origin=MutAnyOrigin](back_d, probe_layout),
-        TileTensor[origin=MutAnyOrigin](e4m3_d, probe_layout),
-        TileTensor[origin=MutAnyOrigin](recip_d, probe_layout),
+    ctx.enqueue_function[
+        _cast_probe_kernel[
+            origin_of(vals_d),
+            origin_of(e8m0_d),
+            origin_of(back_d),
+            origin_of(e4m3_d),
+            origin_of(recip_d),
+        ]
+    ](
+        TileTensor(vals_d, probe_layout),
+        TileTensor(e8m0_d, probe_layout),
+        TileTensor(back_d, probe_layout),
+        TileTensor(e4m3_d, probe_layout),
+        TileTensor(recip_d, probe_layout),
         Int32(NPROBE),
         grid_dim=1,
         block_dim=NPROBE,
@@ -515,20 +533,16 @@ def test_fused_silu_adversarial[
     ctx.enqueue_copy(input_d, input_h)
     ctx.enqueue_copy(off_d, off_h)
 
-    var input_tt = TileTensor[origin=ImmutAnyOrigin](
+    var input_tt = TileTensor(
         input_d, row_major(SILU_TOKENS, Idx[input_dim])
-    )
-    var off_tt = TileTensor[origin=ImmutAnyOrigin](off_d, row_major[n_off]())
+    ).as_imm()
+    var off_tt = TileTensor(off_d, row_major[n_off]()).as_imm()
 
     comptime out_layout = type_of(
-        TileTensor[origin=MutAnyOrigin](
-            input_d, row_major(SILU_TOKENS, Idx[output_dim])
-        )
+        TileTensor(input_d, row_major(SILU_TOKENS, Idx[output_dim]))
     ).LayoutType
     comptime scales_layout = type_of(
-        TileTensor[origin=MutAnyOrigin](
-            input_d, row_major(max_padded_M, Idx[scale_K])
-        )
+        TileTensor(input_d, row_major(max_padded_M, Idx[scale_K]))
     ).LayoutType
 
     comptime kernel = fused_silu_mx_kernel[
@@ -558,12 +572,8 @@ def test_fused_silu_adversarial[
     scales_d.enqueue_fill(Float8_e8m0fnu(0))
 
     ctx.enqueue_function[kernel](
-        TileTensor[origin=MutAnyOrigin](
-            out_d, row_major(SILU_TOKENS, Idx[output_dim])
-        ),
-        TileTensor[origin=MutAnyOrigin](
-            scales_d, row_major(max_padded_M, Idx[scale_K])
-        ),
+        TileTensor(out_d, row_major(SILU_TOKENS, Idx[output_dim])),
+        TileTensor(scales_d, row_major(max_padded_M, Idx[scale_K])),
         input_tt,
         off_tt,
         Int32(max_padded_M),

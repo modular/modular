@@ -50,13 +50,13 @@ def test_compile_code() raises:
 def test_compile_function() raises:
     print("== test_compile_function")
 
-    def kernel(x: MutPointer[Int, MutAnyOrigin]):
+    def kernel[x_origin: MutOrigin](x: MutPointer[Int, x_origin]):
         x[0] = thread_idx.x
 
     # CHECK: tid.x
 
     with DeviceContext() as ctx:
-        _ = ctx.compile_function[kernel, dump_asm=True]()
+        _ = ctx.compile_function[kernel[MutUntrackedOrigin], dump_asm=True]()
 
 
 def kernel_inlined_assembly():
@@ -113,7 +113,9 @@ def test_compile_function_with_path_func() raises:
 def test_short_nvptx_ptr() raises:
     print("== test_short_nvptx_ptr")
 
-    def do_some_shared_mem_op(src: ImmPointer[Int32, ImmutAnyOrigin]):
+    def do_some_shared_mem_op[
+        src_origin: ImmOrigin
+    ](src: ImmPointer[Int32, src_origin]):
         var a = unsafe_stack_allocation[20, Int32, address_space=.SHARED]()
         a[thread_idx.x] = src[0]
         barrier()
@@ -127,7 +129,9 @@ def test_short_nvptx_ptr() raises:
     # CHECK-NEXT: ld.global.b32
     # CHECK-NEXT: st.shared.b32
     with DeviceContext() as ctx:
-        _ = ctx.compile_function[do_some_shared_mem_op, dump_asm=True]()
+        _ = ctx.compile_function[
+            do_some_shared_mem_op[ImmUntrackedOrigin], dump_asm=True
+        ]()
 
 
 # CHECK-LABEL: test_exp2_compile
@@ -135,20 +139,32 @@ def test_exp2_compile() raises:
     print("== test_exp2_compile")
 
     # https://godbolt.org/z/j9ecfjjP1
-    def exp_op(output: MutPointer[Float32, MutAnyOrigin], max_scaled: Int32):
+    def exp_op[
+        output_origin: MutOrigin
+    ](output: MutPointer[Float32, output_origin], max_scaled: Int32):
         output[] = exp2(
             output[] * 1.44269504088896340736 - max_scaled.cast[.float32]()
         )
 
     # CHECK: "target-cpu"="sm_80" "target-features"="+ptx81,+sm_80" "tune-cpu"="sm_80"
-    print(_compile_code[exp_op, target=A100.target, emission_kind="llvm-opt"]())
+    print(
+        _compile_code[
+            exp_op[MutUntrackedOrigin],
+            target=A100.target,
+            emission_kind="llvm-opt",
+        ]()
+    )
     # CHECK: fma.rn.f32
-    print(_compile_code[exp_op, target=A100.target, emission_kind="asm"]())
+    print(
+        _compile_code[
+            exp_op[MutUntrackedOrigin], target=A100.target, emission_kind="asm"
+        ]()
+    )
 
     # CHECK: fma.rn.ftz.f32
     print(
         _compile_code[
-            exp_op,
+            exp_op[MutUntrackedOrigin],
             target=A100.target,
             emission_kind="asm",
             compile_options="target-abi=shortptr,denormal-fp-math-f32=preserve-sign",

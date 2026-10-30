@@ -24,17 +24,19 @@ from max.gpu.memory import (
     fence_proxy_tensormap_generic_sys_release,
 )
 
-comptime OpaquePointer = ImmPointer[NoneType, ImmutAnyOrigin]
+comptime OpaquePointer[origin: ImmOrigin] = ImmPointer[NoneType, origin]
 
 
 # CHECK-LABEL: test_async_copy_asm
 def test_async_copy_asm():
     print("== test_async_copy_asm")
 
-    def test_async_copy_kernel(
-        dst_mem: MutPointer[Float32, MutAnyOrigin, address_space=.SHARED],
-        tma_descriptor: OpaquePointer,
-        mem_bar: MutPointer[Float32, MutAnyOrigin, address_space=.SHARED],
+    def test_async_copy_kernel[
+        smem_origin: MutOrigin, desc_origin: ImmOrigin, bar_origin: MutOrigin
+    ](
+        dst_mem: MutPointer[Float32, smem_origin, address_space=.SHARED],
+        tma_descriptor: OpaquePointer[desc_origin],
+        mem_bar: MutPointer[Float32, bar_origin, address_space=.SHARED],
         *coords: Int32,
     ):
         # CHECK: cp.async.bulk.tensor.2d.shared::cluster.global.tile.mbarrier::complete_tx::bytes
@@ -48,7 +50,9 @@ def test_async_copy_asm():
 
     print(
         _compile_code[
-            test_async_copy_kernel,
+            test_async_copy_kernel[
+                MutUntrackedOrigin, ImmUntrackedOrigin, MutUntrackedOrigin
+            ],
             target=get_gpu_target["sm_90"](),
         ]()
     )
@@ -58,9 +62,11 @@ def test_async_copy_asm():
 def test_async_store_asm():
     print("== test_async_store_asm")
 
-    def test_async_store_kernel(
-        src_mem: ImmPointer[Float32, ImmutAnyOrigin, address_space=.SHARED],
-        tma_descriptor: OpaquePointer,
+    def test_async_store_kernel[
+        smem_origin: ImmOrigin, desc_origin: ImmOrigin
+    ](
+        src_mem: ImmPointer[Float32, smem_origin, address_space=.SHARED],
+        tma_descriptor: OpaquePointer[desc_origin],
         *coords: Int32,
     ):
         # CHECK: cp.async.bulk.tensor.2d.global.shared::cta.tile.bulk_group [%rd1, {%r2, %r3}], [%r1];
@@ -82,7 +88,7 @@ def test_async_store_asm():
 
     print(
         _compile_code[
-            test_async_store_kernel,
+            test_async_store_kernel[ImmUntrackedOrigin, ImmUntrackedOrigin],
             target=get_gpu_target["sm_90"](),
         ]()
     )
@@ -92,9 +98,11 @@ def test_async_store_asm():
 def test_async_bulk_tensor_reduce_asm():
     print("== test_async_bulk_tensor_reduce_asm")
 
-    def test_async_bulk_tensor_reduce_asm(
-        src_mem: ImmPointer[Float32, ImmutAnyOrigin, address_space=.SHARED],
-        tma_descriptor: OpaquePointer,
+    def test_async_bulk_tensor_reduce_asm[
+        smem_origin: ImmOrigin, desc_origin: ImmOrigin
+    ](
+        src_mem: ImmPointer[Float32, smem_origin, address_space=.SHARED],
+        tma_descriptor: OpaquePointer[desc_origin],
         *coords: Int32,
     ):
         cp_async_bulk_tensor_reduce_global_shared_cta[
@@ -114,7 +122,9 @@ def test_async_bulk_tensor_reduce_asm():
 
     print(
         _compile_code[
-            test_async_bulk_tensor_reduce_asm,
+            test_async_bulk_tensor_reduce_asm[
+                ImmUntrackedOrigin, ImmUntrackedOrigin
+            ],
             target=get_gpu_target["sm_90"](),
         ]()
     )
@@ -124,9 +134,9 @@ def test_async_bulk_tensor_reduce_asm():
 def test_tma_fence_proxy():
     print("== test_tma_fence_proxy")
 
-    def test_tma_fence_proxy_kernel(
-        descriptor_ptr: MutPointer[Int32, MutAnyOrigin]
-    ):
+    def test_tma_fence_proxy_kernel[
+        desc_origin: MutOrigin
+    ](descriptor_ptr: MutPointer[Int32, desc_origin]):
         # CHECK: fence.proxy.tensormap::generic.acquire.sys [%rd1], 128;
         fence_proxy_tensormap_generic_sys_acquire(descriptor_ptr, 128)
         # CHECK: fence.proxy.tensormap::generic.release.sys;
@@ -134,7 +144,7 @@ def test_tma_fence_proxy():
 
     print(
         _compile_code[
-            test_tma_fence_proxy_kernel,
+            test_tma_fence_proxy_kernel[MutUntrackedOrigin],
             target=get_gpu_target["sm_90"](),
         ]()
     )

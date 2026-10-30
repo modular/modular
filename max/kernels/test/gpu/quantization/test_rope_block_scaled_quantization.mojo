@@ -50,7 +50,7 @@ def _quantize[
         TileTensor(
             dst.unsafe_ptr().unsafe_bitcast[Scalar[out_dtype]](),
             row_major(m, Idx[out_N]),
-        ).as_unsafe_any_origin(),
+        ),
         TileTensor(
             sf.unsafe_ptr().unsafe_bitcast[Scalar[scales_dtype]](),
             row_major(
@@ -60,8 +60,8 @@ def _quantize[
                 Idx[SF_ATOM_M[1]],
                 Idx[SF_ATOM_K],
             ),
-        ).as_unsafe_any_origin(),
-        TileTensor(src, row_major(m, Idx[N])).as_unsafe_any_origin(),
+        ),
+        TileTensor(src, row_major(m, Idx[N])),
         num_cols=N,
         num_cols_padded=N,
     )
@@ -164,14 +164,10 @@ def test_rope_quantize_matches_unfused[
         interleaved=True,
         target=StaticString("gpu"),
     ](
-        x=TileTensor(x, heads_layout).as_unsafe_any_origin(),
-        input_row_offsets=TileTensor(
-            row_offsets, row_major(Idx[2])
-        ).as_unsafe_any_origin(),
-        start_pos=TileTensor(
-            start_pos, row_major(Idx[1])
-        ).as_unsafe_any_origin(),
-        freqs_cis=TileTensor(ref_freqs, freqs_layout).as_unsafe_any_origin(),
+        x=TileTensor(x, heads_layout),
+        input_row_offsets=TileTensor(row_offsets, row_major(Idx[2])),
+        start_pos=TileTensor(start_pos, row_major(Idx[1])),
+        freqs_cis=TileTensor(ref_freqs, freqs_layout),
         context=ctx,
         output_fn=output_fn,
     )
@@ -188,13 +184,13 @@ def test_rope_quantize_matches_unfused[
         TileTensor(
             out_fused.unsafe_ptr().unsafe_bitcast[Scalar[out_dtype]](),
             out_layout,
-        ).as_unsafe_any_origin(),
+        ),
         TileTensor(
             sf_fused.unsafe_ptr().unsafe_bitcast[Scalar[scales_dtype]](),
             scales_layout,
-        ).as_unsafe_any_origin(),
-        TileTensor(x, x_layout).as_unsafe_any_origin(),
-        TileTensor(freqs, freqs_layout).as_unsafe_any_origin(),
+        ),
+        TileTensor(x, x_layout).as_imm(),
+        TileTensor(freqs, freqs_layout).as_imm(),
         Float32(1.0),
         ctx,
     )
@@ -246,15 +242,13 @@ def test_rope_quantize_rejects_unpacked_fp4_output(
             head_dim=head_dim,
             inverse=False,
         ](
-            TileTensor(out, row_major(Idx[m], Idx[N])).as_unsafe_any_origin(),
+            TileTensor(out, row_major(Idx[m], Idx[N])),
             TileTensor(
                 sf.unsafe_ptr().unsafe_bitcast[Scalar[NVFP4_SF_DTYPE]](),
                 scales_layout,
-            ).as_unsafe_any_origin(),
-            TileTensor(x, row_major(Idx[m], Idx[N])).as_unsafe_any_origin(),
-            TileTensor(
-                freqs, row_major(Idx[m], Idx[64])
-            ).as_unsafe_any_origin(),
+            ),
+            TileTensor(x, row_major(Idx[m], Idx[N])).as_imm(),
+            TileTensor(freqs, row_major(Idx[m], Idx[64])).as_imm(),
             Float32(1.0),
             ctx,
         )

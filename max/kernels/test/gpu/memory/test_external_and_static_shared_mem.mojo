@@ -23,7 +23,9 @@ from std.testing import assert_equal
 
 
 def test_external_shared_mem(ctx: DeviceContext) raises:
-    def dynamic_smem_kernel(data: MutPointer[Float32, MutAnyOrigin]):
+    def dynamic_smem_kernel[
+        data_origin: MutOrigin
+    ](data: MutPointer[Float32, data_origin]):
         var sram = unsafe_stack_allocation[
             16,
             Float32,
@@ -47,7 +49,7 @@ def test_external_shared_mem(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(res_device, res_host_ptr)
 
-    comptime kernel_func = dynamic_smem_kernel
+    comptime kernel_func = dynamic_smem_kernel[origin_of(res_device)]
     ctx.enqueue_function[kernel_func](
         GridBlockLaunchConfig(grid_dim=1, block_dim=16, shared_mem_bytes=24960),
         res_device,

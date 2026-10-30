@@ -79,7 +79,9 @@ comptime PAIR_THREADS = 2 * WARPGROUP_SIZE
 comptime PAIR_BAR: Int32 = 2
 
 
-def two_warpgroup_handoff(dst: MutPointer[Int32, MutAnyOrigin]):
+def two_warpgroup_handoff[
+    dst_origin: MutOrigin
+](dst: MutPointer[Int32, dst_origin]):
     """WG1 publishes and leaves; WG0 rendezvouses later and consumes.
 
     This mirrors the SM100 softmax epilogue, where WG1 takes the pair barrier
@@ -118,7 +120,7 @@ def two_warpgroup_handoff(dst: MutPointer[Int32, MutAnyOrigin]):
 def check_two_warpgroup_handoff() raises:
     with DeviceContext() as ctx:
         var dst = ctx.enqueue_create_buffer[.int32](PAIR_THREADS)
-        ctx.enqueue_function[two_warpgroup_handoff](
+        ctx.enqueue_function[two_warpgroup_handoff[origin_of(dst)]](
             dst,
             grid_dim=(1,),
             block_dim=(PAIR_THREADS,),
@@ -147,7 +149,9 @@ comptime PARTIAL_THREADS = (CONS_WARPS + 2) * WARP_SIZE
 comptime PARTIAL_BAR: Int32 = 1
 
 
-def partial_cta_handoff(dst: MutPointer[Int32, MutAnyOrigin]):
+def partial_cta_handoff[
+    dst_origin: MutOrigin
+](dst: MutPointer[Int32, dst_origin]):
     """Consumers and one producer warp rendezvous; a third role never joins.
 
     This mirrors `sparse_index_fp8_sm100_prefill`: the consumer warps stage
@@ -215,7 +219,7 @@ def partial_cta_handoff(dst: MutPointer[Int32, MutAnyOrigin]):
 def check_partial_cta_handoff() raises:
     with DeviceContext() as ctx:
         var dst = ctx.enqueue_create_buffer[.int32](PARTIAL_THREADS)
-        ctx.enqueue_function[partial_cta_handoff](
+        ctx.enqueue_function[partial_cta_handoff[origin_of(dst)]](
             dst,
             grid_dim=(1,),
             block_dim=(PARTIAL_THREADS,),

@@ -28,7 +28,8 @@ def kernel_wrapper[
     dtype: DType,
     simd_width: Int,
     kernel_fn: def(SIMD[dtype, simd_width]) thin -> SIMD[dtype, simd_width],
-](device_ptr: MutPointer[Scalar[dtype], MutAnyOrigin]):
+    device_origin: MutOrigin,
+](device_ptr: MutPointer[Scalar[dtype], device_origin]):
     var val = device_ptr.unsafe_load[width=simd_width](
         thread_idx.x * simd_width
     )
@@ -51,7 +52,9 @@ def _kernel_launch_helper[
     var device_ptr = ctx.enqueue_create_buffer[dtype](buffer_size)
     ctx.enqueue_copy(device_ptr, host_ptr)
 
-    comptime kernel = kernel_wrapper[dtype, simd_width, kernel_fn]
+    comptime kernel = kernel_wrapper[
+        dtype, simd_width, kernel_fn, origin_of(device_ptr)
+    ]
     ctx.enqueue_function[kernel](device_ptr, grid_dim=1, block_dim=block_size)
 
     ctx.enqueue_copy(host_ptr, device_ptr)
