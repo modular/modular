@@ -40,7 +40,7 @@ Access is warp-collective: `tcgen05.ld` and `tcgen05.st` take a collective
 base in the address and place each thread's registers relative to it, so a
 TMEM operand is always a base, never `base + lane`, and its layout says which
 cells this thread's registers hold. Two views exist. The row view of a warp's
-`(32, N)` tile is its row 0 (`tile[:1, :]`): the
+`(32, N)` tile is its row 0 (`tile.tile[1, N](coord[0, 0])`): the
 `32x32b` shape hands thread `t` lane `base + t`, so the copy means "these
 columns of the lane this thread owns". The `16x256b` view of a `(16, N)` half
 of that tile, `tmem_16x256b(block)`, has layout `TMem16x256bLayout[N]`, a
@@ -1094,7 +1094,7 @@ def tmem_16x256b(
 
     Args:
         block: A `(16, N)` block of a warp's `(32, N)` TMEM tile, such as
-            `warp_tile[Idx[16 * half] : Idx[16 * (half + 1)], :]`.
+            `warp_tile.tile[16, N](coord[half, 0])`.
 
     Returns:
         The fragment view over the block's storage.

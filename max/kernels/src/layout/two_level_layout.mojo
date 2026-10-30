@@ -535,16 +535,6 @@ struct _TwoLevelLayout[
         i: The dimension index.
     """
 
-    comptime is_static_shape[i: Int]: Bool = Self._shape_types[
-        i
-    ].is_static_value
-    """Returns whether the i-th flattened shape dimension is known at compile
-    time.
-
-    Parameters:
-        i: The dimension index.
-    """
-
     comptime static_stride[i: Int]: Int = (
         _LowestImage[Self.Inner, i] if _InnerBitCount[Self.Inner, i]
         > 0 else Self._stride_types[i].static_value

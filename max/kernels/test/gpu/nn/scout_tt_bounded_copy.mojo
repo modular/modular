@@ -123,8 +123,8 @@ def scout_bounded(
     # Sub-tile + bounded masked copy over depth//BK column tiles (NO swizzle so
     # the dst layout is the trivial row-major one we read back directly).
     comptime for q_id in range(depth // BK):
-        var dst_tile = q_smem[:, Idx[q_id * BK] : Idx[(q_id + 1) * BK]]
-        var src_tile = q_tt[:, Idx[q_id * BK] : Idx[(q_id + 1) * BK]]
+        var dst_tile = q_smem.tile[BM, BK](Coord(Idx[0], Idx[q_id]))
+        var src_tile = q_tt.tile[BM, BK](Coord(Idx[0], Idx[q_id]))
         copy_dram_to_sram_async[
             thread_layout=copy_layout,
             swizzle=None,

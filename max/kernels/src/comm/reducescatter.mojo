@@ -456,60 +456,45 @@ def _reducescatter_kernel[
             comptime assert (
                 in_layout.rank == 2
             ), "axis-aware reduce-scatter expects a rank-2 input layout"
-            # `:` keeps the parent's extent type, so each axis slices to its own
-            # view type.
-            comptime if axis == 0:
-                # Scatter along rows.
-                comptime SlicedTile = type_of(
-                    reordered[0][u_start : u_start + n_units, :]
-                )
-                comptime SlicedRevTile = SlicedTile.ViewType[
-                    Layout[
-                        SlicedTile.LayoutType._shape_types.reverse(),
-                        SlicedTile.LayoutType._stride_types.reverse(),
-                    ]
+            # Both axes slice both dimensions, so either one names the type.
+            comptime SlicedTile = type_of(
+                reordered[0][u_start : u_start + n_units, :]
+            )
+            comptime SlicedRevTile = SlicedTile.ViewType[
+                Layout[
+                    SlicedTile.LayoutType._shape_types.reverse(),
+                    SlicedTile.LayoutType._stride_types.reverse(),
                 ]
+            ]
 
-                def row_tiles_at[i: Int]() {imm} -> SlicedRevTile:
+            def sliced_tiles_at[i: Int]() {imm} -> SlicedRevTile:
+                comptime if axis == 0:
+                    # Scatter along rows.
                     var sliced = reordered[i][u_start : u_start + n_units, :]
                     return SlicedRevTile(
                         sliced._storage, sliced.layout.reverse()
                     )
-
-                _reduce_scatter_impl[ngpus, use_multimem=use_multimem](
-                    Array[_, num_buffers](fill_with_unrolled=row_tiles_at),
-                    output_layout,
-                    output_lambda,
-                    n_elements,
-                    config.stride,
-                )
-            else:
-                # Scatter along columns.
-                var col_start = u_start * simd_width
-                var col_end = col_start + n_units * simd_width
-                comptime SlicedTile = type_of(
-                    reordered[0][:, col_start:col_end]
-                )
-                comptime SlicedRevTile = SlicedTile.ViewType[
-                    Layout[
-                        SlicedTile.LayoutType._shape_types.reverse(),
-                        SlicedTile.LayoutType._stride_types.reverse(),
+                else:
+                    # axis == 1: scatter along columns.
+                    var col_start = u_start * simd_width
+                    var sliced = reordered[i][
+                        :, col_start : col_start + n_units * simd_width
                     ]
-                ]
-
-                def col_tiles_at[i: Int]() {imm} -> SlicedRevTile:
-                    var sliced = reordered[i][:, col_start:col_end]
                     return SlicedRevTile(
                         sliced._storage, sliced.layout.reverse()
                     )
 
-                _reduce_scatter_impl[ngpus, use_multimem=use_multimem](
-                    Array[_, num_buffers](fill_with_unrolled=col_tiles_at),
-                    output_layout,
-                    output_lambda,
-                    n_elements,
-                    config.stride,
-                )
+            var sliced_tiles = Array[_, num_buffers](
+                fill_with_unrolled=sliced_tiles_at
+            )
+
+            _reduce_scatter_impl[ngpus, use_multimem=use_multimem](
+                sliced_tiles,
+                output_layout,
+                output_lambda,
+                n_elements,
+                config.stride,
+            )
 
         _multi_gpu_barrier[
             ngpus,

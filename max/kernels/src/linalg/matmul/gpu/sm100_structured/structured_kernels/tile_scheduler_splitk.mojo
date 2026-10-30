@@ -738,8 +738,12 @@ struct TileScheduler[
         var reduction_frag = workspace_tile.tile[REDUCTION_BM, REDUCTION_BN](
             Coord(warp_id_x, warp_id_y)
         )
-        var reduction_upper = reduction_frag[:16, :]
-        var reduction_lower = reduction_frag[16:32, :]
+        var reduction_upper = reduction_frag.tile[16, REDUCTION_BN](
+            Coord(Idx[0], Idx[0])
+        )
+        var reduction_lower = reduction_frag.tile[16, REDUCTION_BN](
+            Coord(Idx[1], Idx[0])
+        )
         var stage_addr = tmem  # Track address for iteration
 
         comptime for stage in range(num_widths):
