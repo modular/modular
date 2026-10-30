@@ -1028,6 +1028,13 @@ def simd_load_from_tensor_pointer[
     ](tensor, indices)
 
 
+def _strided_lanes_mask[width: Int, stride: Int]() -> IndexList[width]:
+    var mask = IndexList[width]()
+    for i in range(width):
+        mask[i] = i * stride
+    return mask
+
+
 @doc_hidden
 @inline(.always)
 def simd_load_from_managed_tensor_slice[
@@ -1101,6 +1108,52 @@ def simd_load_from_managed_tensor_slice[
             case 1:
                 return load_stride1()
             case _:
+                # `strided_load` lowers to a gather on CPU, which is slow for
+                # the small strides that permute views produce (e.g. NHWC ->
+                # NCHW has an innermost stride of C). Load one contiguous
+                # window covering all lanes and shuffle the lanes out instead.
+                # Gated to CPU: the GPU path is unmeasured.
+                comptime if (
+                    not is_gpu()
+                    and dtype != .bool
+                    and simd_width > 1
+                    and _last_stride_value > 1
+                    and _last_stride_value <= 8
+                ):
+                    # Round the stride up to a power of two to keep the window
+                    # width a power of two. Lane `i` sits at `i * stride`, so
+                    # the last lane stays inside the window.
+                    comptime window_stride = (
+                        2 if _last_stride_value
+                        <= 2 else (4 if _last_stride_value <= 4 else 8)
+                    )
+                    comptime window = window_stride * simd_width
+
+                    # Highest offset the view addresses. Negative strides
+                    # contribute 0, as their maximum is at index 0. Every
+                    # offset between `flat_index` and `last` is inside the
+                    # underlying buffer, so a window ending at or before
+                    # `last` cannot read out of bounds.
+                    var last = 0
+                    comptime for d in range(rank):
+                        last += max(
+                            0,
+                            (tensor.dim_size[d]() - 1)
+                            * tensor.stride_length[d](),
+                        )
+
+                    if flat_index + window - 1 <= last:
+                        # The lanes between the strided ones are loaded and
+                        # discarded, which is harmless since this is a read.
+                        var v = tensor._ptr.unsafe_load[
+                            width=window, invariant=invariant
+                        ](flat_index)
+                        comptime mask = _strided_lanes_mask[
+                            simd_width, _last_stride_value
+                        ]()
+                        return v._shuffle_list[
+                            simd_width, mask.as_index_tuple()
+                        ](v)
                 return load_strided(_last_stride_value)
 
 
