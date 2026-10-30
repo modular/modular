@@ -28,7 +28,7 @@ import numpy as np
 import numpy.typing as npt
 import PIL.Image
 from max.pipelines.context import PixelContext, TokenBuffer
-from max.pipelines.context.exceptions import PromptTooLongError
+from max.pipelines.context.exceptions import InputError, PromptTooLongError
 from max.pipelines.context.outputs import GenerationOutput
 from max.pipelines.diffusion.schedulers import SchedulerFactory
 from max.pipelines.lib.request_text import retrieve_input_text
@@ -251,6 +251,7 @@ class PixelGenerationTokenizer(
             raise ValueError(
                 "pipeline_config is required for PixelGenerationTokenizer."
             )
+        self._pipeline_config = pipeline_config
         models = pipeline_config.models
         metadata = models.metadata
 
@@ -869,6 +870,20 @@ class PixelGenerationTokenizer(
             if pixel_options.steps is not None
             else self._default_num_inference_steps
         )
+        model_config = self._pipeline_config.model
+        max_dimension = model_config.max_image_dimension
+        for name, value in (("width", width), ("height", height)):
+            if value > max_dimension:
+                raise InputError(
+                    f"{name}={value} exceeds the maximum of {max_dimension}."
+                )
+        max_steps = model_config.max_diffusion_steps
+        if num_inference_steps > max_steps:
+            raise InputError(
+                f"steps={num_inference_steps} exceeds the maximum of "
+                f"{max_steps}."
+            )
+
         timesteps, sigmas = self._scheduler.retrieve_timesteps_and_sigmas(
             image_seq_len, num_inference_steps, sigma_min=None
         )

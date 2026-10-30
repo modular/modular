@@ -928,6 +928,24 @@ class MAXModelConfig(MAXModelConfigBase):
     )
     """Override the attention sliding-window size in tokens."""
 
+    max_image_dimension: int = Field(
+        default=8192,
+        gt=0,
+        description=(
+            "Largest width or height, in pixels, accepted for a generated "
+            "image or video request. Larger requests are rejected as invalid."
+        ),
+    )
+
+    max_diffusion_steps: int = Field(
+        default=100,
+        gt=0,
+        description=(
+            "Largest denoising step count accepted for a generated image or "
+            "video request. Larger requests are rejected as invalid."
+        ),
+    )
+
     enable_echo: bool = Field(
         default=False,
         description="Whether the model should be built with echo capabilities.",
@@ -1176,6 +1194,8 @@ class MAXModelConfig(MAXModelConfigBase):
             vision_config_overrides=dict(args.vision_config_overrides),
             rope_type=args.rope_type,
             sliding_window=args.sliding_window,
+            max_image_dimension=args.max_image_dimension,
+            max_diffusion_steps=args.max_diffusion_steps,
             enable_echo=args.enable_echo,
             chat_template=args.chat_template,
             use_subgraphs=args.use_subgraphs,
