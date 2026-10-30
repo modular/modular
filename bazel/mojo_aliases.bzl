@@ -9,6 +9,10 @@ _PACKAGES = {
 _EXTRA_ALIASES = {
     "__init__.mojo": "Mojo/stdlib/std:__init__.mojo",
     "std_srcs": "Mojo/stdlib/std:std_srcs",
+    # The `max` package the HAL DeviceContext's exports compile against. A
+    # plugin backend whose accelerator the generic HAL `max` can't resolve
+    # overrides it with its own HAL package.
+    "hal_device_context_max": "max/mojo/max/_driver/max_license:max",
 }
 
 _MAX_PACKAGES = {
