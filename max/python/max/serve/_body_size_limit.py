@@ -16,11 +16,15 @@
 Without a bound, a single client can force the server to buffer an arbitrarily
 large request body in memory (the routes read the whole body before validating
 it), so a handful of connections can exhaust host memory. This middleware caps
-the accepted body size and rejects anything larger with HTTP 413.
+the accepted body size and rejects anything larger with HTTP 413. It also
+bounds how long the body may take to arrive, rejecting with HTTP 408, so a
+``Content-Length`` larger than the bytes actually sent cannot hold a request
+open indefinitely.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Iterable
 
@@ -31,6 +35,7 @@ logger = logging.getLogger("max.serve")
 
 # HTTP "Content Too Large".
 _HTTP_CONTENT_TOO_LARGE = 413
+_HTTP_REQUEST_TIMEOUT = 408
 
 
 def _declared_content_length(
@@ -72,10 +77,15 @@ class RequestBodySizeLimitMiddleware:
     """
 
     def __init__(
-        self, app: asgi_types.ASGI3Application, *, max_bytes: int
+        self,
+        app: asgi_types.ASGI3Application,
+        *,
+        max_bytes: int,
+        body_timeout_s: float = 0,
     ) -> None:
         self._app = app
         self._max_bytes = max_bytes
+        self._body_timeout_s = body_timeout_s
 
     async def __call__(
         self,
@@ -83,30 +93,69 @@ class RequestBodySizeLimitMiddleware:
         receive: asgi_types.ASGIReceiveCallable,
         send: asgi_types.ASGISendCallable,
     ) -> None:
-        if self._max_bytes <= 0 or scope["type"] != "http":
+        if scope["type"] != "http" or (
+            self._max_bytes <= 0 and self._body_timeout_s <= 0
+        ):
             await self._app(scope, receive, send)
             return
 
         declared = _declared_content_length(scope["headers"])
         received = 0
+        loop = asyncio.get_running_loop()
+        # Total budget for the whole body, so a client trickling bytes cannot
+        # extend it. Started lazily at the first read.
+        deadline: float | None = None
+        body_complete = False
 
         async def limited_receive() -> asgi_types.ASGIReceiveEvent:
-            nonlocal received
+            nonlocal received, deadline, body_complete
             # Raise from inside receive, not from ``__call__``: only here, in
             # the route handler's frame, does the error reach Starlette's
             # exception handlers and become the shared 413 envelope rather than
             # a bare 500. An honest oversized Content-Length is refused before
             # the first byte; a missing or dishonest one is caught by counting.
-            if declared is not None and declared > self._max_bytes:
+            if (
+                self._max_bytes > 0
+                and declared is not None
+                and declared > self._max_bytes
+            ):
                 raise self._too_large(declared)
-            event = await receive()
+            if self._body_timeout_s > 0 and not body_complete:
+                # A Content-Length larger than the bytes actually sent leaves
+                # receive() waiting forever; once the body is complete,
+                # receive() legitimately blocks until disconnect, so only
+                # bound the wait while the body is still incomplete.
+                if deadline is None:
+                    deadline = loop.time() + self._body_timeout_s
+                try:
+                    event = await asyncio.wait_for(
+                        receive(), timeout=max(deadline - loop.time(), 0)
+                    )
+                except asyncio.TimeoutError:
+                    raise self._timed_out() from None
+            else:
+                event = await receive()
             if event["type"] == "http.request":
+                body_complete = not event.get("more_body", False)
                 received += len(event.get("body", b""))
-                if received > self._max_bytes:
+                if self._max_bytes > 0 and received > self._max_bytes:
                     raise self._too_large(received)
             return event
 
         await self._app(scope, limited_receive, send)
+
+    def _timed_out(self) -> HTTPException:
+        logger.warning(
+            "Request body not received within %s seconds",
+            self._body_timeout_s,
+        )
+        return HTTPException(
+            status_code=_HTTP_REQUEST_TIMEOUT,
+            detail=(
+                f"Request body was not fully received within "
+                f"{self._body_timeout_s} seconds."
+            ),
+        )
 
     def _too_large(self, size: int) -> HTTPException:
         logger.warning(

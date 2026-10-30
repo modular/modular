@@ -370,11 +370,11 @@ def fastapi_app(
     app = FastAPI(title="MAX Serve", lifespan=lifespan_wrap)
     app.state.zmq_endpoint_base = zmq_endpoint_base
 
-    if settings.max_request_bytes > 0:
-        app.add_middleware(
-            RequestBodySizeLimitMiddleware,
-            max_bytes=settings.max_request_bytes,
-        )
+    app.add_middleware(
+        RequestBodySizeLimitMiddleware,
+        max_bytes=settings.max_request_bytes,
+        body_timeout_s=settings.request_body_timeout_s,
+    )
 
     if settings.transaction_recording_file is not None:
         transaction_recording_file = settings.transaction_recording_file

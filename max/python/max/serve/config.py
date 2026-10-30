@@ -204,6 +204,19 @@ class Settings(BaseSettings):
         alias="MAX_SERVE_MAX_REQUEST_BYTES",
     )
 
+    request_body_timeout_s: float = Field(
+        description=(
+            "Maximum time in seconds a client may take to deliver a complete "
+            "HTTP request body. Requests that do not finish sending their body "
+            "in time (for example, a Content-Length larger than the bytes "
+            "actually sent) are rejected with HTTP 408 instead of holding the "
+            "connection open. Set 0 to disable the timeout."
+        ),
+        default=30.0,
+        ge=0,
+        alias="MAX_SERVE_REQUEST_BODY_TIMEOUT_S",
+    )
+
     # File URI configuration
     allowed_image_roots: list[str] = Field(
         description="List of allowed root directories for file:// URI access",

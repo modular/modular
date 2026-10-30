@@ -13,7 +13,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+import asyncio
+from collections.abc import Iterator, MutableMapping
+from typing import Any
 
 import pytest
 from fastapi import FastAPI, Request
@@ -106,6 +108,60 @@ def test_zero_disables_limit() -> None:
     response = client.post("/echo", content=body)
     assert response.status_code == 200
     assert response.json() == {"len": _LIMIT * 4}
+
+
+@pytest.mark.asyncio
+async def test_stalled_body_times_out() -> None:
+    """A body that never completes is rejected with 408, not left hanging."""
+    app = FastAPI()
+    app.add_middleware(
+        RequestBodySizeLimitMiddleware, max_bytes=0, body_timeout_s=0.2
+    )
+
+    @app.post("/echo")
+    async def echo(request: Request) -> dict[str, int]:
+        return {"len": len(await request.body())}
+
+    async def receive() -> MutableMapping[str, Any]:
+        await asyncio.sleep(3600)
+        raise AssertionError("unreachable")
+
+    sent: list[MutableMapping[str, Any]] = []
+
+    async def send(message: MutableMapping[str, Any]) -> None:
+        sent.append(message)
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": "/echo",
+        "raw_path": b"/echo",
+        "query_string": b"",
+        "headers": [(b"content-length", b"100")],
+        "client": ("127.0.0.1", 1),
+        "server": ("127.0.0.1", 80),
+    }
+    await asyncio.wait_for(app(scope, receive, send), timeout=10)
+    start = next(m for m in sent if m["type"] == "http.response.start")
+    assert start["status"] == 408
+
+
+def test_complete_body_with_timeout_passes() -> None:
+    app = FastAPI()
+    app.add_middleware(
+        RequestBodySizeLimitMiddleware, max_bytes=0, body_timeout_s=5
+    )
+
+    @app.post("/echo")
+    async def echo(request: Request) -> dict[str, int]:
+        return {"len": len(await request.body())}
+
+    response = TestClient(app).post("/echo", content=b"x" * 10)
+    assert response.status_code == 200
+    assert response.json() == {"len": 10}
 
 
 def test_get_request_unaffected() -> None:
