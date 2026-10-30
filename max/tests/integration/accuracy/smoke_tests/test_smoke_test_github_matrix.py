@@ -122,6 +122,19 @@ def test_nightly_8xb200_pinned() -> None:
     }
 
 
+def test_nightly_4xb200_pinned() -> None:
+    """Pins the nightly 4xB200 set; widen it only deliberately."""
+    result = CliRunner().invoke(
+        smoke_test_github_matrix.main,
+        ["--framework", "max-ci", "--tier", "nightly", "--run-on-4xb200"],
+    )
+    assert result.exit_code == 0
+    scheduled = {job["model"] for job in json.loads(result.output)["include"]}
+    assert scheduled == {
+        "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+    }
+
+
 def test_8xmi355_stays_opt_in() -> None:
     """8xMI355 nodes are scarce, so landing there must be a deliberate choice.
 

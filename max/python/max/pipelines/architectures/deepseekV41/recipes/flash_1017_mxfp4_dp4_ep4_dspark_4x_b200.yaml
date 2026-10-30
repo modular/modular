@@ -1,0 +1,50 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+# 4x B200 recipe for DeepSeek-V4.1-Flash-1017: data parallel across all four
+# GPUs with expert-parallel MXFP4 routed experts, FP8 linears and the
+# checkpoint's DSpark draft head.
+model:
+  model_path: deepseek-ai/DeepSeek-V4.1-Flash-1017
+  trust_remote_code: true
+  huggingface_model_revision: 1bae0e1088993b9b82de08f59de5be5a34e42170
+  huggingface_weight_revision: 1bae0e1088993b9b82de08f59de5be5a34e42170
+  device_specs: [0, 1, 2, 3]
+  data_parallel_degree: 4
+  quantization_encoding: float8_e4m3fn
+  max_length: 1048576
+  kv_cache:
+    enable_prefix_caching: true
+    enable_dp_cross_replica_prefix_copy: false
+
+speculative:
+  speculative_method: dspark
+  num_speculative_tokens: 5
+  draft_proposal: sampled
+  draft_head_parallelism: replica
+  draft_probs_layout: replica
+  logits_delivery: replica
+
+runtime:
+  ep_size: 4
+  max_batch_size: 16
+  max_batch_input_tokens: 8192
+  enable_chunked_prefill: true
+  dp_ce_balance_timeout_ms: 500
+  dp_ce_balance_threshold: 0.6
+  device_graph_capture: true
+  enable_spec_decode_mixed_batches: true
+
+sampling:
+  enable_structured_output: true
+  structured_output_any_whitespace: true
+  tool_call_policy: default_strict_false_and_best_effort

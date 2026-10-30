@@ -72,6 +72,7 @@ MODELS: Mapping[str, set[str]] = {
     "deepseek-ai/DeepSeek-V2-Lite-Chat__modulev3": VARIANT | _1xB200 | _1xMI355,
     "deepseek-ai/DeepSeek-V3.1-Terminus": _8xB200,
     "deepseek-ai/DeepSeek-V4-Flash-0731__tp2": NIGHTLY | VARIANT | _2xB200,
+    "deepseek-ai/DeepSeek-V4.1-Flash-1017": NIGHTLY | _4xB200,
     "google/diffusiongemma-26B-A4B-it": DISABLE,
     "google/gemma-3-1b-it": _1xB200,  # TODO(KERN-3014)
     "google/gemma-3-27b-it": _1xB200 | _1xMI355,
