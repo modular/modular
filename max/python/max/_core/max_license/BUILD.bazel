@@ -69,6 +69,7 @@ modular_nanobind_library(
     deps = [
         ":DLPackPython",
         ":DriverViewStrides",
+        "//MLRT:Driver/ChunkedStagingRegion",
         "//MLRT:Driver/DeviceAffinity",
         "//AsyncRT:Runtime",
         # Headers only. Do not link //MLRT:Driver/DeviceContextImpl statically

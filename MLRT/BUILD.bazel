@@ -486,6 +486,24 @@ modular_cc_library(
     ],
 )
 
+# Pinned host staging region shared by MAX's tiered KV connectors (through the
+# Python `_ChunkedStagingRegion`) and Mach's host tier (through its C shim).
+modular_cc_library(
+    name = "Driver/ChunkedStagingRegion",
+    srcs = ["lib/Driver/DeviceContext/ChunkedStagingRegion.cpp"],
+    hdrs = ["include/MLRT/Driver/DeviceContext/ChunkedStagingRegion.h"],
+    includes = ["include"],
+    visibility = ["//MLRT:consumers"],
+    deps = [
+        ":Driver/DeviceContextAPI",
+        "//AsyncRT:Runtime",
+        "//AsyncRT:Support",
+        "//Support:Base",
+        "//Support:Log",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
 # Header-only target for DeviceContext/CompilationDevice interfaces.
 # Broken out so that //Target:DriverPlugin can depend on these headers
 # without creating a circular dependency with Driver/DeviceContextImpl.
