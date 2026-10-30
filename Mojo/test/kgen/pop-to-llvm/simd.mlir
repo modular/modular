@@ -526,4 +526,88 @@ kgen.func @floordiv_simd(
   hlcf.return %0, %1, %2 : !kgen.simd<4, f32>, !kgen.scalar<uindex>, !kgen.simd<2, index>
 }
 
+// Signed floor division by a constant uses benjoffe's multiply-high sequences.
+// The multipliers and shifts match the reference implementation's `params()`.
+// CHECK-LABEL: @floordiv_const
+kgen.func @floordiv_const(%x : !kgen.scalar<si32>, %v : !kgen.simd<2, index>) -> (
+  !kgen.scalar<si32>, !kgen.scalar<si32>, !kgen.scalar<si32>,
+  !kgen.scalar<si32>, !kgen.scalar<si32>, !kgen.scalar<si32>,
+  !kgen.simd<2, index>, !kgen.scalar<si32>, !kgen.simd<2, index>
+) {
+  // CHECK-DAG: [[V:%.*]] = builtin.unrealized_conversion_cast %arg1
+  // CHECK-DAG: [[X:%.*]] = builtin.unrealized_conversion_cast %arg0
+  %c3 = kgen.param.constant: scalar<si32> = <<3>>
+  %cm6 = kgen.param.constant: scalar<si32> = <<-6>>
+  %c13 = kgen.param.constant: scalar<si32> = <<13>>
+  %cm13 = kgen.param.constant: scalar<si32> = <<-13>>
+  %c5 = kgen.param.constant: scalar<si32> = <<5>>
+  %cm3 = kgen.param.constant: scalar<si32> = <<-3>>
+  %v7 = kgen.param.constant: simd<2, index> = <<7, 7>>
+  %c8 = kgen.param.constant: scalar<si32> = <<8>>
+  %v35 = kgen.param.constant: simd<2, index> = <<3, 5>>
+
+  // Sign-selected, d > 0, shift == W.
+  // CHECK: [[M:%.*]] = llvm.mlir.constant(1431655766 : i32) : i32
+  // CHECK-NEXT: [[C31:%.*]] = llvm.mlir.constant(31 : i32) : i32
+  // CHECK-NEXT: [[SIGN:%.*]] = llvm.ashr [[X]], [[C31]] : i32
+  // CHECK-NEXT: [[MSEL:%.*]] = llvm.add [[M]], [[SIGN]] : i32
+  // CHECK-NEXT: [[XW:%.*]] = llvm.sext [[X]] : i32 to i64
+  // CHECK-NEXT: [[MW:%.*]] = llvm.sext [[MSEL]] : i32 to i64
+  // CHECK-NEXT: [[PROD:%.*]] = llvm.mul [[XW]], [[MW]] : i64
+  // CHECK-NEXT: [[C32:%.*]] = llvm.mlir.constant(32 : i64) : i64
+  // CHECK-NEXT: [[HI:%.*]] = llvm.ashr [[PROD]], [[C32]] : i64
+  // CHECK-NEXT: llvm.trunc [[HI]] : i64 to i32
+  // CHECK-NOT: llvm.sdiv
+  %0 = pop.floordiv %x, %c3 : !kgen.scalar<si32>
+
+  // Sign-selected, d < 0, shift == W + 1.
+  // CHECK: llvm.mlir.constant(-1431655765 : i32) : i32
+  // CHECK: llvm.trunc
+  // CHECK-NEXT: [[C1:%.*]] = llvm.mlir.constant(1 : i32) : i32
+  // CHECK-NEXT: llvm.ashr %{{.*}}, [[C1]] : i32
+  %1 = pop.floordiv %x, %cm6 : !kgen.scalar<si32>
+
+  // Round-up, d > 0.
+  // CHECK: llvm.mlir.constant(1321528399 : i32) : i32
+  // CHECK-NEXT: [[NEG1:%.*]] = llvm.mlir.constant(-1 : i32) : i32
+  // CHECK-NEXT: [[LT:%.*]] = llvm.icmp "slt" [[X]], [[NEG1]] : i32
+  // CHECK-NEXT: [[BIAS:%.*]] = llvm.zext [[LT]] : i1 to i32
+  // CHECK-NEXT: llvm.add [[X]], [[BIAS]] : i32
+  %2 = pop.floordiv %x, %c13 : !kgen.scalar<si32>
+
+  // Round-up, d < 0.
+  // CHECK: llvm.mlir.constant(-1321528399 : i32) : i32
+  // CHECK-NEXT: [[ONE:%.*]] = llvm.mlir.constant(1 : i32) : i32
+  // CHECK-NEXT: [[GT:%.*]] = llvm.icmp "sgt" [[X]], [[ONE]] : i32
+  // CHECK-NEXT: [[BIAS:%.*]] = llvm.zext [[GT]] : i1 to i32
+  // CHECK-NEXT: llvm.sub [[X]], [[BIAS]] : i32
+  %3 = pop.floordiv %x, %cm13 : !kgen.scalar<si32>
+
+  // Round-down, d > 0.
+  // CHECK: llvm.mlir.constant(858993459 : i32) : i32
+  // CHECK-NEXT: [[MAXM1:%.*]] = llvm.mlir.constant(2147483647 : i32) : i32
+  // CHECK-NEXT: llvm.icmp "ult" [[X]], [[MAXM1]] : i32
+  %4 = pop.floordiv %x, %c5 : !kgen.scalar<si32>
+
+  // Round-down, d < 0.
+  // CHECK: llvm.mlir.constant(-1431655765 : i32) : i32
+  // CHECK-NEXT: [[MIN:%.*]] = llvm.mlir.constant(-2147483648 : i32) : i32
+  // CHECK-NEXT: llvm.icmp "ugt" [[X]], [[MIN]] : i32
+  %5 = pop.floordiv %x, %cm3 : !kgen.scalar<si32>
+
+  // A splat vector divisor takes a 128-bit product.
+  // CHECK: llvm.mlir.constant(#M.dense_array<5270498306774157605, 5270498306774157605> : vector<2xi64>)
+  // CHECK: llvm.mul %{{.*}}, %{{.*}} : vector<2xi128>
+  // CHECK: llvm.trunc %{{.*}} : vector<2xi128> to vector<2xi64>
+  %6 = pop.floordiv %v, %v7 : !kgen.simd<2, index>
+
+  // Powers of two and non-splat divisors keep the generic sequence.
+  // CHECK: llvm.sdiv [[X]], %{{.*}} : i32
+  %7 = pop.floordiv %x, %c8 : !kgen.scalar<si32>
+  // CHECK: llvm.sdiv [[V]], %{{.*}} : vector<2xi64>
+  %8 = pop.floordiv %v, %v35 : !kgen.simd<2, index>
+
+  hlcf.return %0, %1, %2, %3, %4, %5, %6, %7, %8 : !kgen.scalar<si32>, !kgen.scalar<si32>, !kgen.scalar<si32>, !kgen.scalar<si32>, !kgen.scalar<si32>, !kgen.scalar<si32>, !kgen.simd<2, index>, !kgen.scalar<si32>, !kgen.simd<2, index>
+}
+
 }
