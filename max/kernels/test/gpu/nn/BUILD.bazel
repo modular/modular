@@ -381,6 +381,12 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: GEX-2562
+    # Programmatic dependent launch is an SM90+ feature; elsewhere the test
+    # would only repeat the unfused comparison.
+    "test_moe_routing_pdl.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     # The router's warp-bitonic top-k and lane-group reductions have never
     # been exercised on Metal; opt out until someone confirms them there.
     "test_sink_gate_router.mojo": select({

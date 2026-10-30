@@ -228,7 +228,9 @@ def moe_create_indices_kernel[
     var scale_carry = UInt32(0)
     var max_count = UInt32(0)
 
-    with PDL():
+    # Release right after the wait; dependents wait for this kernel to finish
+    # before they read what it writes (see `PDL`).
+    with PDL[overlap_at_beginning=True]():
         for base in range(0, num_experts, block_threads):
             var chunk_experts = min(block_threads, num_experts - base)
             var expert = base + tid
@@ -875,7 +877,9 @@ def group_limited_router_kernel[
         scores_type
     ]()
 
-    with PDL():
+    # Release right after the wait; dependents wait for this kernel to finish
+    # before they read what it writes (see `PDL`).
+    with PDL[overlap_at_beginning=True]():
         var thread_expert_score = scores_input_fn[width=1]((token_idx, tid))
 
         thread_expert_score += thread_expert_bias
@@ -1608,7 +1612,9 @@ def single_group_router_eplb_kernel[
     var l_id = lane_id()
     var thread_expert_bias = expert_bias[tid].cast[scores_type]()
 
-    with PDL():
+    # Release right after the wait; dependents wait for this kernel to finish
+    # before they read what it writes (see `PDL`).
+    with PDL[overlap_at_beginning=True]():
         var Lidx = Int(layer_idx[Idx[0]][0])
 
         var thread_expert_score = scores_input_fn[width=1]((token_idx, tid))
@@ -2441,7 +2447,9 @@ def sink_gate_router_kernel[
     var lane_id = lane_id()
     var thread_bias = Float32(expert_bias[tid])
 
-    with PDL():
+    # Release right after the wait; dependents wait for this kernel to finish
+    # before they read what it writes (see `PDL`).
+    with PDL[overlap_at_beginning=True]():
         var thread_logit = Float32(logits[token_idx, tid])
         var biased_score = sigmoid(thread_logit) + thread_bias
 
@@ -2922,7 +2930,9 @@ def eplb_remap_kernel[
         address_space=.SHARED,
     ]()
 
-    with PDL():
+    # Release right after the wait; dependents wait for this kernel to finish
+    # before they read what it writes (see `PDL`).
+    with PDL[overlap_at_beginning=True]():
         # Broadcast scalar layer index. Every thread reads the same address →
         # one HBM transaction, hot in L1 for the rest of the block.
         var Lidx = Int(layer_idx[Idx[0]][0])
