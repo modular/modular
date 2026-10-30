@@ -133,6 +133,12 @@ build --test_env=MODULAR_TELEMETRY_ENABLED=false
 # Fix parallel tests competing for a single CPU on graviton
 build --test_env=KMP_AFFINITY=none
 
+# Newer Bazel sets HOME=$TEST_TMPDIR in test actions
+# (https://github.com/fmeum/bazel/commit/a3a69aad03b9c24bd52a7b9d19c5160da14203e5),
+# which hides caches under the real home, such as HuggingFace's. Inherit HOME
+# for now, until we migrate to random per-action HOMEs.
+build --test_env=HOME
+
 # Differentiate between accidental 'bazel run' vs 'bazel test'
 test --test_env=MODULAR_RUNNING_TESTS=true
 
