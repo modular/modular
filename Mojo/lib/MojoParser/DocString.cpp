@@ -354,8 +354,9 @@ static SmallVector<StringAttr> getFunctionArgumentNames(FnOp funcOp) {
       sig.getNumArguments() - sig.hasMemoryOnlyResult() - sig.isThrows();
   // Methods take `self` as an explicit first argument, for which
   // documentation isn't required.
-  bool hasSelf = isa<StructDeclOp, TraitDeclOp>(funcOp->getParentOp()) &&
-                 !funcOp.getIsStatic();
+  bool hasSelf =
+      isa<StructDeclOp, TraitDeclOp, ExtensionDeclOp>(funcOp->getParentOp()) &&
+      !funcOp.getIsStatic();
 
   SmallVector<StringAttr> argNames;
   for (size_t idx = hasSelf; idx < end; ++idx)
